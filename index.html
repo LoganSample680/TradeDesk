@@ -395,7 +395,9 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
         <button class="btn-del" id="cf-del" style="display:none" onclick="deleteClient()">Delete client</button>
       </div>
       <div class="fg fg2">
-        <div class="f"><label>Full name</label><input id="cf-name" placeholder="John &amp; Sarah Smith"></div>
+        <div class="f"><label>Full name</label><input id="cf-name" placeholder="John &amp; Sarah Smith" oninput="checkClientDupe(this.value)">
+          <div id="cf-dupe-warn" style="display:none;font-size:11px;color:#A32D2D;margin-top:4px;background:#FEE8E8;border-radius:var(--r);padding:6px 8px"></div>
+        </div>
         <div class="f"><label>Phone</label><input id="cf-phone" type="tel" placeholder="XXX-XXX-XXXX" maxlength="12" oninput="fmtPhone(this)"></div>
         <div class="f" style="grid-column:1/-1"><label>Property address</label><input id="cf-addr" placeholder="1234 Maple St, Wichita KS 67201"></div>
         <div class="f"><label>Property type</label><select id="cf-ptype"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>
@@ -3003,12 +3005,31 @@ function togglePipeGroup(key){
   if(grpDiv){const a=grpDiv.querySelector('span');if(a)a.style.transform=window._pipelineExpand[key]?'rotate(90deg)':'';}
   arrows.forEach(a=>a.style.transform=window._pipelineExpand[key]?'rotate(90deg)':'');
 }
+function checkClientDupe(val){
+  const warn=document.getElementById('cf-dupe-warn');if(!warn)return;
+  if(!val||val.trim().length<2){warn.style.display='none';return;}
+  const name=val.trim().toLowerCase();
+  const match=clients.find(c=>{
+    if(editClientId&&c.id===editClientId)return false;
+    const cn=c.name.toLowerCase();
+    // Exact, contains, or first word matches
+    return cn===name||cn.includes(name)||name.includes(cn)||
+      cn.split(' ')[0]===name.split(' ')[0];
+  });
+  if(match){
+    warn.style.display='';
+    warn.textContent='⚠ '+match.name+' is already in your records — are you sure this is a different client?';
+  } else {
+    warn.style.display='none';
+  }
+}
 function openNewClient(){
   editClientId=null;
   const srch=document.getElementById('cf-search');if(srch)srch.value='';
   document.getElementById('cf-title').textContent='New client';
   document.getElementById('cf-del').style.display='none';
   ['cf-name','cf-phone','cf-addr','cf-ref','cf-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const dw=document.getElementById('cf-dupe-warn');if(dw)dw.style.display='none';;
   const csrc=document.getElementById('cf-source');if(csrc)csrc.value='';
   const crw=document.getElementById('cf-ref-wrap');if(crw)crw.style.display='none';
   document.getElementById('cf-ptype').value='Single family home';
