@@ -1476,19 +1476,19 @@ let gps={active:false,startCoords:null,endCoords:null,startTime:null,clientId:nu
 
 const JOB_COLORS=['#185FA5','#1D9E75','#D85A30','#D4537E','#7F77DD','#BA7517','#E24B4A','#444441'];
 const SCOPE_ITEMS=[
-  {id:'sand',    label:'Sanding',         desc:'Tap to enter hours', defaultHrs:2,  flat:0,  rateKey:'e-scope-r-sand',    defaultRate:45,
+  {id:'sand',    label:'Sanding',         desc:'', defaultHrs:2,  flat:0,  rateKey:'e-scope-r-sand',    defaultRate:45,
    clientDesc:'All surfaces will be sanded to ensure proper paint adhesion and a smooth, lasting finish.'},
-  {id:'spackle', label:'Spackle/patching',desc:'Tap to enter hours', defaultHrs:1,  flat:0,  rateKey:'e-scope-r-spackle', defaultRate:50,
+  {id:'spackle', label:'Spackle/patching',desc:'', defaultHrs:1,  flat:0,  rateKey:'e-scope-r-spackle', defaultRate:50,
    clientDesc:'All nail holes, cracks, dents, and surface imperfections will be filled, spackled, and sanded smooth before painting.'},
-  {id:'prime',   label:'Primer coat',     desc:'Tap to enter hours', defaultHrs:0,  flat:0,  rateKey:'e-scope-r-prime',   defaultRate:40,
+  {id:'prime',   label:'Primer coat',     desc:'', defaultHrs:0,  flat:0,  rateKey:'e-scope-r-prime',   defaultRate:40,
    clientDesc:'A full coat of primer will be applied to all surfaces before finish coats to promote adhesion, cover stains, and ensure true color.'},
-  {id:'tape',    label:'Tape & masking',  desc:'Tap to enter hours', defaultHrs:1,  flat:0,  rateKey:'e-scope-r-tape',    defaultRate:35,
+  {id:'tape',    label:'Tape & masking',  desc:'', defaultHrs:1,  flat:0,  rateKey:'e-scope-r-tape',    defaultRate:35,
    clientDesc:'All trim, windows, doors, and floors will be masked and protected with drop cloths before any painting begins.'},
-  {id:'caulk',   label:'Caulking',        desc:'Tap to enter hours', defaultHrs:1,  flat:0,  rateKey:'e-scope-r-caulk',   defaultRate:45,
+  {id:'caulk',   label:'Caulking',        desc:'', defaultHrs:1,  flat:0,  rateKey:'e-scope-r-caulk',   defaultRate:45,
    clientDesc:'All gaps, seams, and cracked corners will be caulked and sealed for a clean, professional finish and to prevent moisture intrusion.'},
-  {id:'movefurn',label:'Move furniture',  desc:'Tap to enter hours', defaultHrs:0,  flat:0,  rateKey:'e-scope-r-movefurn',defaultRate:75,
+  {id:'movefurn',label:'Move furniture',  desc:'', defaultHrs:0,  flat:0,  rateKey:'e-scope-r-movefurn',defaultRate:75,
    clientDesc:'Furniture will be moved away from walls prior to painting and returned to its original position upon completion.'},
-  {id:'cleanup', label:'Final cleanup',   desc:'Tap to enter hours', defaultHrs:0,  flat:0,  rateKey:'e-scope-r-cleanup', defaultRate:40,
+  {id:'cleanup', label:'Final cleanup',   desc:'', defaultHrs:0,  flat:0,  rateKey:'e-scope-r-cleanup', defaultRate:40,
    clientDesc:'All drop cloths and debris will be removed and work areas cleaned and left in the same condition as found.'},
 ];
 const SURF_TYPES=[
@@ -4643,7 +4643,7 @@ function buildScopeGrid(){
           '<span class="slabel" style="flex:1;min-width:0;word-break:break-word">'+s.label+'</span>'+
           '<span id="scope-hrs-badge-'+s.id+'" style="font-size:10px;font-weight:800;color:var(--blue-dk);background:var(--blue-lt);padding:2px 5px;border-radius:8px;display:none;text-align:right;line-height:1.5;flex-shrink:0;white-space:nowrap"></span>'+
         '</div>'+
-        '<span class="sprice" style="display:block;font-size:10px;color:var(--text3);font-weight:400">'+s.desc+' — tap to enter hours</span>'+
+        '<span class="sprice" style="display:block;font-size:10px;color:var(--text3);font-weight:400">Tap to enter hours</span>'+
       '</div></div>';
   }).join('');
   scopeHrsStore={};
