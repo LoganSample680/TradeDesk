@@ -6167,31 +6167,19 @@ function downloadProposalPDF(){
   if(!proposal||!proposal.innerHTML.trim()){
     zAlert('Generate the proposal first.',{title:'Nothing to print'});return;
   }
-  // Build a clean standalone print window
   const cname=(document.getElementById('e-cname')?.value||'Estimate').replace(/[^a-z0-9]/gi,'_');
   const bname=document.getElementById('e-bname')?.value||"ZJ's Painting";
-  const win=window.open('','_blank');
-  if(!win){zAlert('Allow pop-ups to download the PDF.',{title:'Pop-up blocked'});return;}
-  win.document.write(`<!DOCTYPE html><html><head>
+  const html=`<!DOCTYPE html><html><head>
 <meta charset="utf-8">
 <title>${bname} — Estimate for ${cname.replace(/_/g,' ')}</title>
 <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#1a1a1a;padding:0}
-:root{
-  --blue:#185FA5;--blue-lt:#EBF2FB;--blue-dk:#0D3B6E;
-  --green:#63B841;--green-lt:#F0FBF0;--green-mid:#3B8C2A;
-  --border:#E0E0DC;--text:#1a1a1a;--text2:#444;--text3:#888;
-  --bg:#fff;--bg2:#F8F8F6;--r:6px;--rl:12px
-}
+:root{--blue:#185FA5;--blue-lt:#EBF2FB;--blue-dk:#0D3B6E;--green:#63B841;--green-lt:#F0FBF0;--green-mid:#3B8C2A;--border:#E0E0DC;--text:#1a1a1a;--text2:#444;--text3:#888;--bg:#fff;--bg2:#F8F8F6;--r:6px;--rl:12px}
 table{width:100%;border-collapse:collapse}
 ol{padding-left:18px;line-height:2}
-@media print{
-  @page{margin:0.5in;size:letter}
-  body{padding:0}
-  .no-print{display:none!important}
-}
+@media print{@page{margin:0.5in;size:letter}body{padding:0}.no-print{display:none!important}}
 </style>
 </head><body>
 <div class="no-print" style="background:#185FA5;color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center">
@@ -6200,8 +6188,18 @@ ol{padding-left:18px;line-height:2}
 </div>
 ${proposal.innerHTML}
 <script>setTimeout(()=>window.print(),600)<\/script>
-</body></html>`);
-  win.document.close();
+</body></html>`;
+  // Use blob URL — no popup permission needed
+  const blob=new Blob([html],{type:'text/html'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.target='_blank';
+  a.rel='noopener';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url),10000);
 }
 function syncAdj(){const val=parseInt(v('est-adj'));document.getElementById('est-adj-val').textContent=(val>=0?'+':'')+fmt(Math.abs(val));renderEstReview();}
 function buildDescription(){
