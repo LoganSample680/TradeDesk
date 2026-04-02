@@ -1,10 +1,10 @@
-# ZJ's Painting & Special Coatings — Business Suite
+# TradeDesk — All-in-One Contractor Suite
 
 A complete mobile-first business management app for a solo painting contractor. Built as a single HTML file — no server, no dependencies, no install. Runs entirely in the browser from a GitHub Pages URL.
 
 ## Live App
 
-**[Open the app](https://YOUR_GITHUB_USERNAME.github.io/zj-painting/)**
+**[Open the app](https://logansample680.github.io/zj-painting/)**
 
 Bookmark it on your iPhone home screen: Safari → Share → Add to Home Screen
 
@@ -84,6 +84,6 @@ That's the whole deploy process. Every time you push a change to `main`, GitHub 
 
 ## Legal
 
-Built for Zach Johnson, ZJ's Painting & Special Coatings, Wichita KS.  
+Built for ZJ's Painting & Special Coatings, Wichita KS. Powered by TradeDesk.  
 Tax estimates are not a substitute for a licensed CPA.  
 Lien deadlines are based on KS K.S.A. 60-1105 — verify with a Kansas attorney before filing.
