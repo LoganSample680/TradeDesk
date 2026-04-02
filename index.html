@@ -3007,18 +3007,17 @@ function togglePipeGroup(key){
 }
 function checkClientDupe(val){
   const warn=document.getElementById('cf-dupe-warn');if(!warn)return;
-  if(!val||val.trim().length<2){warn.style.display='none';return;}
-  const name=val.trim().toLowerCase();
+  if(!val||val.trim().length<3){warn.style.display='none';return;}
+  const name=val.trim().toLowerCase().replace(/\s+/g,' ');
   const match=clients.find(c=>{
     if(editClientId&&c.id===editClientId)return false;
-    const cn=c.name.toLowerCase();
-    // Exact, contains, or first word matches
-    return cn===name||cn.includes(name)||name.includes(cn)||
-      cn.split(' ')[0]===name.split(' ')[0];
+    const cn=c.name.toLowerCase().replace(/\s+/g,' ');
+    // Only match if names are very similar — exact or one fully contains the other (min 5 chars)
+    return cn===name||(name.length>=5&&cn===name)||(name.length>=5&&cn.startsWith(name))||(name.length>=5&&name.startsWith(cn));
   });
   if(match){
     warn.style.display='';
-    warn.textContent='⚠ '+match.name+' is already in your records — are you sure this is a different client?';
+    warn.textContent='⚠ '+match.name+' is already in your records — is this a different client?';
   } else {
     warn.style.display='none';
   }
@@ -3074,7 +3073,13 @@ function saveClient(){
   const isNew=!editClientId;
   if(isNew){
     const ph=v('cf-phone').replace(/\D/g,'');
-    const dupe=clients.find(x=>x.name.toLowerCase()===name.toLowerCase()||(ph.length===10&&x.phone&&x.phone.replace(/\D/g,'')===ph));
+    const nameLow=name.toLowerCase().replace(/\s+/g,' ');
+    const dupe=clients.find(x=>{
+      const xn=x.name.toLowerCase().replace(/\s+/g,' ');
+      const samePhone=ph.length===10&&x.phone&&x.phone.replace(/\D/g,'')===ph;
+      const sameName=xn===nameLow;
+      return samePhone||sameName;
+    });
     if(dupe){zAlert(dupe.name+' is already in your clients.',{title:'Client already exists'});return;}
   }
   const ref=v('cf-ref')||'';
