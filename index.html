@@ -9233,6 +9233,9 @@ let _ob={step:1,name:'',email:'',password:'',businessType:'',businessName:'',pho
 
 async function showOnboarding(){
   document.getElementById('supa-boot-overlay')?.remove();
+  document.getElementById('welcome-overlay')?.remove();
+  // If already signed in, skip to step 3 (business type)
+  if(_supaUser&&_ob.step===1){_ob.step=3;}
   const ov=document.createElement('div');
   ov.id='onboarding-overlay';
   ov.style.cssText='position:fixed;inset:0;z-index:9999;background:var(--bg);overflow-y:auto;padding:0';
@@ -9565,24 +9568,31 @@ async function obSubmit(){
   function setProgress(msg){if(prog){prog.style.display='';prog.textContent=msg;}}
   try{
     setProgress('Creating your account...');
-    const{data:authData,error:authErr}=await _supa.auth.signUp({email:_ob.email,password:_ob.password});
+    let uid=_supaUser?.id;
 
-    // If already registered, route to login instead of erroring
-    if(authErr){
-      if(authErr.message?.toLowerCase().includes('already registered')||authErr.status===422){
-        document.getElementById('onboarding-overlay')?.remove();
-        supaShowLogin();
-        setTimeout(()=>{
-          const el=document.getElementById('supa-login-err');
-          if(el)el.textContent='Account already exists — sign in below.';
-          el.style.color='var(--blue)';
-        },100);
-        return;
+    if(!uid){
+      // Create auth account
+      const{data:authData,error:authErr}=await _supa.auth.signUp({email:_ob.email,password:_ob.password});
+      if(authErr){
+        if(authErr.message?.toLowerCase().includes('already registered')||authErr.status===422){
+          document.getElementById('onboarding-overlay')?.remove();
+          showWelcomeScreen();
+          setTimeout(()=>{
+            document.getElementById('welcome-overlay')?.remove();
+            supaShowLogin();
+            setTimeout(()=>{const el=document.getElementById('supa-login-err');if(el){el.textContent='Account already exists — sign in below.';el.style.color='#185FA5';}},150);
+          },50);
+          return;
+        }
+        throw authErr;
       }
-      throw authErr;
+      // Sign in immediately for live RLS session
+      const{data:signInData,error:signInErr}=await _supa.auth.signInWithPassword({email:_ob.email,password:_ob.password});
+      if(signInErr)throw new Error('Account created — please sign in to continue.');
+      uid=signInData.user?.id;
+      _supaUser=signInData.user;
     }
-
-    const uid=signInData.user?.id||authData.user?.id;if(!uid)throw new Error('Account creation failed');
+    if(!uid)throw new Error('Could not get user ID');
 
     setProgress('Setting up your business...');
     const{data:acct,error:acctErr}=await _supa.from('accounts').insert({
@@ -9640,12 +9650,7 @@ async function supaInit(){
   if(!supaEnabled())return;
   try{
     _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{
-      auth:{
-        persistSession:true,
-        autoRefreshToken:true,
-        detectSessionInUrl:false,
-        storage:window.localStorage
-      }
+      auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storage:window.localStorage}
     });
     const{data:{session}}=await _supa.auth.getSession();
     if(session){
@@ -9654,20 +9659,23 @@ async function supaInit(){
       if(hasAccount){
         await supaLoadFromCloud();
       } else {
-        // Signed in but no account row — show onboarding to complete setup
+        // Signed in but no account row yet — could be existing user before new schema
+        // Show onboarding but skip auth step (already signed in)
+        document.getElementById('supa-boot-overlay')?.remove();
+        renderDash();buildScopeGrid();
         showOnboarding();
       }
     } else {
-      // Not signed in — show onboarding (new user path)
+      // Not signed in — show welcome screen
       document.getElementById('supa-boot-overlay')?.remove();
       renderDash();buildScopeGrid();
-      supaSetStatus('local');
-      supaShowLogin();
+      showWelcomeScreen();
     }
     _supa.auth.onAuthStateChange(async(event,session)=>{
       if(event==='SIGNED_IN'){
         _supaUser=session.user;
         document.getElementById('supa-login-overlay')?.remove();
+        document.getElementById('welcome-overlay')?.remove();
         const hasAccount=await loadAccountData();
         if(hasAccount){
           await supaLoadFromCloud();
@@ -9677,7 +9685,7 @@ async function supaInit(){
       } else if(event==='SIGNED_OUT'){
         _supaUser=null;_user=null;_account=null;_config=null;
         supaSetStatus('local');
-        supaShowLogin();
+        showWelcomeScreen();
       }
     });
   }catch(e){
@@ -9686,6 +9694,24 @@ async function supaInit(){
     renderDash();buildScopeGrid();
     supaSetStatus('local');
   }
+}
+
+function showWelcomeScreen(){
+  if(document.getElementById('welcome-overlay'))return;
+  const ov=document.createElement('div');
+  ov.id='welcome-overlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:#0D1117;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;';
+  ov.innerHTML=
+    '<div style="max-width:400px;width:100%;text-align:center">'+
+      '<div style="width:56px;height:56px;border-radius:14px;background:#185FA5;display:flex;align-items:center;justify-content:center;margin:0 auto 20px">'+
+        '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>'+
+      '</div>'+
+      '<div style="font-size:32px;font-weight:800;color:#fff;letter-spacing:-.5px;margin-bottom:10px">TradeDesk</div>'+
+      '<div style="font-size:15px;color:rgba(255,255,255,.45);line-height:1.6;margin-bottom:48px">The all-in-one business suite for contractors</div>'+
+      '<button onclick="showOnboarding()" style="width:100%;padding:14px;border-radius:10px;border:none;background:#185FA5;color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:12px;box-shadow:0 4px 20px rgba(24,95,165,.4)">Get started</button>'+
+      '<button onclick="document.getElementById(\'welcome-overlay\').remove();supaShowLogin();" style="width:100%;padding:14px;border-radius:10px;border:1.5px solid rgba(255,255,255,.15);background:transparent;color:rgba(255,255,255,.7);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">I already have an account</button>'+
+    '</div>';
+  document.body.appendChild(ov);
 }
 
 function supaShowLogin(){
