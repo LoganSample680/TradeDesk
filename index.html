@@ -1522,7 +1522,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span class="nbadge" id="nb-jobs-badge"></span></div><span>Jobs</span>
   </button>
   <button class="nb" id="nb-cal" onclick="goPg('pg-cal')">
-    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><circle cx="8" cy="16" r="1" fill="currentColor"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg></div><span>Cal</span>
+    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><circle cx="8" cy="16" r="1" fill="currentColor"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg></div><span>Calendar</span>
   </button>
   <button class="nb" id="nb-money" onclick="goPg('pg-money')">
     <div class="bx"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg><span class="nbadge" id="nb-money-badge"></span></div><span>Collect</span>
@@ -6296,9 +6296,9 @@ ol{padding-left:18px;line-height:2}
 @media print{@page{margin:0.5in;size:letter}body{padding:0}.no-print{display:none!important}}
 </style>
 </head><body>
-<div class="no-print" style="background:#185FA5;color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center">
-  <span style="font-weight:700">TradeDesk — Proposal PDF</span>
-  <button onclick="window.print()" style="background:#fff;color:#185FA5;border:none;padding:8px 18px;border-radius:6px;font-weight:700;font-size:14px;cursor:pointer">⬇ Save as PDF</button>
+<div class="no-print" style="background:#0D1117;color:#fff;padding:10px 20px;display:flex;justify-content:space-between;align-items:center">
+  <span style="font-weight:700;font-size:14px">TradeDesk Proposal</span>
+  <button onclick="window.print()" style="background:#185FA5;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-weight:700;font-size:14px;cursor:pointer">⬇ Save / Print PDF</button>
 </div>
 ${proposal.innerHTML}
 <script>setTimeout(()=>window.print(),600)<\/script>
@@ -9218,7 +9218,7 @@ async function loadAccountData(){
     if(zd){
       // Returning user from before onboarding schema — let them into the app
       // They can complete account setup later from Settings
-      _user={id:_supaUser.id,email:_supaUser.email,name:_supaUser.email?.split('@')[0]||'',role:'owner',account_id:null};
+      _user={id:_supaUser.id,email:_supaUser.email,name:'',role:'owner',account_id:null};
       applyPermissions();
       return true;
     }
@@ -9233,7 +9233,8 @@ function applyPermissions(){
   const nameEl=document.getElementById('nav-user-name');
   const roleEl=document.getElementById('nav-user-role');
   const avatarEl=document.getElementById('nav-user-avatar');
-  const name=getUserName()||_supaUser?.email?.split('@')[0]||'You';
+  const rawName=getUserName()||'';
+  const name=rawName&&!rawName.includes('@')?rawName:(_account?.business_name||'My Account');
   if(nameEl)nameEl.textContent=name;
   if(roleEl)roleEl.textContent=getRole().charAt(0).toUpperCase()+getRole().slice(1);
   if(avatarEl)avatarEl.textContent=name.charAt(0).toUpperCase();
@@ -9648,8 +9649,10 @@ async function obSubmit(){
 function getDashGreeting(){
   const hr=new Date().getHours();
   const time=hr<12?'Good morning':hr<17?'Good afternoon':'Good evening';
-  const name=getUserName()||'';
-  return name?time+', '+name.split(' ')[0]+'!':time+'!';
+  // Prefer actual name from user record, fall back to first word of business name, never use email
+  const raw=getUserName()||'';
+  const name=raw&&!raw.includes('@')?raw.split(' ')[0]:'';
+  return name?time+', '+name+'!':time+'!';
 }
 
 // ── Supabase cloud sync ───────────────────────────────────────────────
