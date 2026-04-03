@@ -1101,6 +1101,13 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     </div>
     <div class="card"><div class="card-hd">Terms &amp; conditions</div><div id="est-terms" style="font-size:11px;color:var(--text3);line-height:1.7;max-height:120px;overflow-y:auto"></div></div>
     <div class="brow"><button class="btn" onclick="goEstStep(5)">&#8592; Back</button><button class="btn btn-xl" id="confirm-btn" onclick="confirmContract()" style="background:var(--bg2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>Confirm &amp; close job</button></div>
+    <div style="margin-top:10px;padding:10px 14px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);font-size:12px;color:var(--blue-dk)">
+      📧 <strong>Email a copy to the client?</strong>
+      <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+        <input type="email" id="sig-client-email" placeholder="client@email.com" style="flex:1;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:#fff;font-size:13px;font-family:inherit;color:var(--text)">
+        <button class="btn btn-sm" onclick="emailProposalToClient()" style="flex-shrink:0;background:var(--blue);color:#fff;border-color:var(--blue)">Send copy</button>
+      </div>
+    </div>
   </div>
   <div id="est-s7" style="display:none">
     <div style="text-align:center;padding:28px 16px">
@@ -1110,14 +1117,21 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
       <div class="card" id="est-done-sum" style="text-align:left;margin-bottom:16px"></div>
 
       <div style="display:grid;gap:8px;margin-top:4px">
-        <button class="btn btn-g btn-full" style="font-size:15px;padding:14px" onclick="goToDepositFromEstimate()">Collect 25% deposit &#8594;</button>
+        <button class="btn btn-g btn-full" style="font-size:15px;padding:14px" onclick="goToDepositFromEstimate()">💵 Collect cash deposit</button>
+        <button class="btn btn-full" id="stripe-deposit-btn" style="font-size:15px;padding:14px;background:#0D1117;color:#fff;border:none" onclick="collectStripeDepositInPerson()">💳 Collect deposit by card</button>
         <div style="display:flex;gap:8px">
           <button class="btn btn-full" onclick="schedJobFromEstimate()" style="font-size:13px">Schedule job</button>
           <button class="btn btn-full" onclick="goBackToClient()" style="font-size:13px">View client</button>
         </div>
       </div>
-    </div>
-  </div>
+      <div id="stripe-deposit-link" style="display:none;margin-top:10px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px;text-align:left">
+        <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:4px">💳 Send payment link to client</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Client opens on their phone and pays the deposit now</div>
+        <div style="display:flex;gap:8px">
+          <input id="stripe-deposit-input" readonly style="flex:1;font-size:11px;padding:7px 10px;border-radius:var(--r);border:1px solid var(--border2);background:#fff;font-family:inherit;min-width:0">
+          <button onclick="copyDepositLink()" class="btn btn-sm" style="flex-shrink:0">Copy</button>
+        </div>
+      </div>
 </div>
 <div class="pg" id="pg-cal">
   <div class="tbar"><div class="tbar-title">Calendar</div><button class="btn btn-p btn-sm" onclick="goPg('pg-schedule')">+ Schedule</button></div>
@@ -6466,6 +6480,73 @@ async function sendProposalLink(){
     zAlert('Could not generate link: '+e.message+'\n\nMake sure the proposals storage bucket exists in Supabase.',{title:'Error'});
     if(btn){btn.innerHTML='🔗 Send to client';btn.disabled=false;}
   }
+}
+
+function copyDepositLink(){
+  const input=document.getElementById('stripe-deposit-input');
+  if(!input)return;
+  navigator.clipboard.writeText(input.value).catch(()=>{input.select();document.execCommand('copy');});
+  const btn=document.querySelector('[onclick="copyDepositLink()"]');
+  if(btn){btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy',2000);}
+}
+
+async function collectStripeDepositInPerson(){
+  if(!S.stripePk){
+    zAlert('Add your Stripe key in Settings to collect card payments.',{title:'Stripe not set up'});return;
+  }
+  const bid=bids.find(b=>b.id===lastCreatedBidId);
+  if(!bid){zAlert('No bid found.',{title:'Error'});return;}
+  const cname=bid.client_name||'Client';
+  const deposit=Math.round((bid.amount||0)*.25*100)/100;
+  const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
+  const proposalKey=`proposals/${_supaUser.id}/${bid.id}_${token}.json`;
+
+  const btn=document.getElementById('stripe-deposit-btn');
+  if(btn){btn.textContent='⏳ Generating link...';btn.disabled=true;}
+
+  try{
+    // Upload a minimal proposal JSON for the payment link
+    const proposalData={
+      id:bid.id,token,clientName:cname,businessName:S.bname||'TradeDesk',
+      contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
+      proposalHtml:'<p>Deposit for '+cname+'</p>',
+      amount:bid.amount||0,deposit,
+      createdAt:new Date().toISOString(),status:'pending',
+      notifyEmail:_supaUser.email,stripePk:S.stripePk||'',
+    };
+    await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true});
+    const baseUrl=window.location.origin+window.location.pathname.replace('index.html','');
+    const link=`${baseUrl}sign.html?t=${token}&u=${_supaUser.id}&b=${bid.id}`;
+    const linkBox=document.getElementById('stripe-deposit-link');
+    const input=document.getElementById('stripe-deposit-input');
+    if(linkBox)linkBox.style.display='block';
+    if(input)input.value=link;
+    if(btn){btn.textContent='💳 Collect deposit by card';btn.disabled=false;}
+  }catch(e){
+    console.error(e);
+    zAlert('Could not generate payment link: '+e.message,{title:'Error'});
+    if(btn){btn.textContent='💳 Collect deposit by card';btn.disabled=false;}
+  }
+}
+
+function emailProposalToClient(){
+  const email=document.getElementById('sig-client-email')?.value?.trim();
+  if(!email||!email.includes('@')){zAlert('Enter a valid email address.',{title:'Email required'});return;}
+  const proposal=document.getElementById('est-proposal');
+  if(!proposal){return;}
+  // Build mailto with proposal summary
+  const bid=bids.find(b=>b.id===lastCreatedBidId);
+  const amount=bid?.amount||0;
+  const bname=S.bname||'Your contractor';
+  const subject=encodeURIComponent(`${bname} — Painting Proposal`);
+  const body=encodeURIComponent(
+    `Hi,\n\nThank you for choosing ${bname}. Here is a summary of your painting proposal:\n\n`+
+    `Total: $${amount.toFixed(2)}\n`+
+    `Deposit (25%): $${(amount*.25).toFixed(2)}\n`+
+    `Balance due on completion: $${(amount*.75).toFixed(2)}\n\n`+
+    `Please contact us with any questions.\n\n${bname}`
+  );
+  window.open(`mailto:${email}?subject=${subject}&body=${body}`);
 }
 
 function copyProposalLink(){
