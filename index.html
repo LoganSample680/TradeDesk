@@ -6422,6 +6422,7 @@ async function sendProposalLink(){
       status:'pending',
       notifyEmail:_supaUser.email,
       stripePk:S.stripePk||'',
+      stripePk:S.stripePk||'',
     };
 
     const{error}=await _supa.storage.from('proposals').upload(
