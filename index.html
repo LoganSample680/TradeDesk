@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="TradeDesk">
 <title>TradeDesk</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23185FA5'/><text y='.9em' font-size='80' x='10'>🔨</text></svg>">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>@import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=swap');*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
 :root{
@@ -9567,6 +9568,15 @@ async function obSubmit(){
     const{data:authData,error:authErr}=await _supa.auth.signUp({email:_ob.email,password:_ob.password});
     if(authErr)throw authErr;
     const uid=authData.user?.id;if(!uid)throw new Error('Account creation failed');
+
+    // Explicitly set the session so auth.uid() works for RLS before any inserts
+    if(authData.session){
+      await _supa.auth.setSession({access_token:authData.session.access_token,refresh_token:authData.session.refresh_token});
+    } else {
+      // Email confirmation is on — sign in immediately to get a live session
+      const{data:signInData,error:signInErr}=await _supa.auth.signInWithPassword({email:_ob.email,password:_ob.password});
+      if(signInErr)throw new Error('Account created but sign-in failed. Please sign in manually.');
+    }
     _supaUser=authData.user;
 
     setProgress('Setting up your business...');
