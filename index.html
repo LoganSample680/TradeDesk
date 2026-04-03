@@ -1378,6 +1378,20 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
       </div>
     </div>
   </div>
+  <div class="card">
+    <div class="card-hd">Payments <span>Accept card &amp; bank transfer on proposals</span></div>
+    <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px">
+      Create a free account at <strong>stripe.com</strong>, then paste your publishable key below. Clients can pay their deposit by card or bank transfer when they sign. Money goes directly to your bank — TradeDesk never touches it.
+    </div>
+    <div class="f">
+      <label>Stripe publishable key <span style="font-size:10px;font-weight:400;color:var(--text3)">(starts with pk_live_ or pk_test_)</span></label>
+      <input id="set-stripe-pk" placeholder="pk_live_..." style="font-family:monospace;font-size:12px">
+    </div>
+    <div id="stripe-status-msg" style="font-size:11px;margin-top:6px;min-height:16px"></div>
+    <div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.6">
+      Your key is stored securely and only used to process payments on your proposals. Processing fees (2.9% + $0.30 card, 0.8% max $5 ACH) are automatically logged as tax-deductible business expenses.
+    </div>
+  </div>
   <div class="card"><div class="card-hd">Estimator defaults</div>
     <div class="fg fg2">
       <div class="f"><label>Profit margin target (%)</label><input type="number" id="set-margin"></div>
@@ -1780,12 +1794,13 @@ function loadSettingsForm(){
   sf('set-b10',S.b10);sf('set-b12',S.b12);sf('set-b22',S.b22);sf('set-b24',S.b24);sf('set-b32',S.b32);sf('set-b35',S.b35);
   sf('set-ksl',S.ksLow);sf('set-kst',S.ksTop);sf('set-ksh',S.ksHigh);sf('set-kss',S.ksStdS);sf('set-ksm',S.ksStdM);
   sf('set-goal-monthly',S.goalMonthly||'');
-  sf('set-labor-rate',S.laborRate||45);sf('set-bname',S.bname);sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
+  sf('set-labor-rate',S.laborRate||45);sf('set-bname',S.bname);
+  sf('set-stripe-pk',S.stripePk||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
   sf('set-margin',S.margin);sf('set-cov',S.cov);sf('set-p1',S.p1);sf('set-p2',S.p2);sf('set-p3',S.p3);sf('set-mm',S.mm);sf('set-r-walls',S.rWalls||1.50);sf('set-r-ceil',S.rCeil||1.25);sf('set-r-trim',S.rTrim||1.75);sf('set-r-door',S.rDoor||85);sf('set-r-win',S.rWin||45);sf('set-r-ext',S.rExt||1.60);sf('set-r-deck',S.rDeck||1.25);
 }
 function saveSettings(){
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
-  S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),bemail:gs('set-bemail'),veh:gs('set-veh'),vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,p1:gf('set-p1')||35,p2:gf('set-p2')||58,p3:gf('set-p3')||82,mm:gf('set-mm')||20,rWalls:gf('set-r-walls')||1.50,rCeil:gf('set-r-ceil')||1.25,rTrim:gf('set-r-trim')||1.75,rDoor:gf('set-r-door')||85,rWin:gf('set-r-win')||45,rExt:gf('set-r-ext')||1.60,rDeck:gf('set-r-deck')||1.25};
+  S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),bemail:gs('set-bemail'),veh:gs('set-veh'),stripePk:gs('set-stripe-pk')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,p1:gf('set-p1')||35,p2:gf('set-p2')||58,p3:gf('set-p3')||82,mm:gf('set-mm')||20,rWalls:gf('set-r-walls')||1.50,rCeil:gf('set-r-ceil')||1.25,rTrim:gf('set-r-trim')||1.75,rDoor:gf('set-r-door')||85,rWin:gf('set-r-win')||45,rExt:gf('set-r-ext')||1.60,rDeck:gf('set-r-deck')||1.25};
   applySettings();saveAll();
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
 }
@@ -6358,6 +6373,7 @@ async function sendProposalLink(){
       createdAt:new Date().toISOString(),
       status:'pending',
       notifyEmail:_supaUser.email,
+      stripePk:S.stripePk||'',
     };
 
     const{error}=await _supa.storage.from('proposals').upload(
