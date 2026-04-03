@@ -9196,20 +9196,29 @@ function renderHittersList(){
 async function loadAccountData(){
   if(!_supa||!_supaUser)return false;
   try{
-    const{data:u}=await _supa.from('users').select('*').eq('id',_supaUser.id).single();
-    if(!u||!u.account_id)return false;
-    _user=u;
-    const{data:a}=await _supa.from('accounts').select('*').eq('id',u.account_id).single();
-    _account=a;
-    const{data:cfg}=await _supa.from('account_config').select('*').eq('account_id',u.account_id).single();
-    _config=cfg;
-    const{data:vehs}=await _supa.from('vehicles').select('*').eq('account_id',u.account_id);
-    _vehicles=vehs||[];
-    if(_account?.business_name)S.bname=_account.business_name;
-    if(_account?.phone)S.bphone=_account.phone;
-    if(_account?.license_info)S.blic=_account.license_info;
-    applyPermissions();
-    return true;
+    const{data:u}=await _supa.from('users').select('*').eq('id',_supaUser.id).maybeSingle();
+    if(u&&u.account_id){
+      _user=u;
+      const{data:a}=await _supa.from('accounts').select('*').eq('id',u.account_id).maybeSingle();
+      _account=a;
+      const{data:cfg}=await _supa.from('account_config').select('*').eq('account_id',u.account_id).maybeSingle();
+      _config=cfg;
+      const{data:vehs}=await _supa.from('vehicles').select('*').eq('account_id',u.account_id);
+      _vehicles=vehs||[];
+      if(_account?.business_name)S.bname=_account.business_name;
+      if(_account?.phone)S.bphone=_account.phone;
+      if(_account?.license_info)S.blic=_account.license_info;
+      applyPermissions();
+      return true;
+    }
+    // No users row — check for pre-schema user via zj_data
+    const{data:zd}=await _supa.from('zj_data').select('user_id').eq('user_id',_supaUser.id).maybeSingle();
+    if(zd){
+      _user={id:_supaUser.id,email:_supaUser.email,name:'',role:'owner',account_id:null};
+      applyPermissions();
+      return true;
+    }
+    return false;
   }catch(e){console.warn('loadAccountData failed:',e);return false;}
 }
 
@@ -9623,7 +9632,9 @@ function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 async function supaInit(){
   if(!supaEnabled())return;
   try{
-    _supa=supabase.createClient(SUPA_URL,SUPA_KEY);
+    _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{
+      auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storage:window.localStorage}
+    });
     const{data:{session}}=await _supa.auth.getSession();
     if(session){
       _supaUser=session.user;
@@ -9631,11 +9642,13 @@ async function supaInit(){
       if(hasAccount){
         await supaLoadFromCloud();
       } else {
-        // Signed in but no account row — show onboarding to complete setup
-        showOnboarding();
+        // Signed in but no data at all — go to app, let them use it
+        document.getElementById('supa-boot-overlay')?.remove();
+        renderDash();buildScopeGrid();
+        supaSetStatus('cloud');
       }
     } else {
-      // Not signed in — show onboarding (new user path)
+      // Not signed in — show login screen
       document.getElementById('supa-boot-overlay')?.remove();
       renderDash();buildScopeGrid();
       supaSetStatus('local');
@@ -9649,7 +9662,10 @@ async function supaInit(){
         if(hasAccount){
           await supaLoadFromCloud();
         } else {
-          showOnboarding();
+          // Pre-schema user — just load the app
+          document.getElementById('supa-boot-overlay')?.remove();
+          renderDash();buildScopeGrid();
+          supaSetStatus('cloud');
         }
       } else if(event==='SIGNED_OUT'){
         _supaUser=null;_user=null;_account=null;_config=null;
@@ -9744,7 +9760,7 @@ async function supaSaveToCloud(){
 async function supaLoadFromCloud(){
   if(!_supa||!_supaUser)return;
   try{
-    const{data,error}=await _supa.from('zj_data').select('*').eq('user_id',_supaUser.id).single();
+    const{data,error}=await _supa.from('zj_data').select('*').eq('user_id',_supaUser.id).maybeSingle();
     if(error||!data){
       // No cloud data yet — use local, dismiss loading
       document.getElementById('supa-boot-overlay')?.remove();
