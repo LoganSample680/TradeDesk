@@ -102,7 +102,7 @@ input[type=text]:focus{border-color:var(--blue)}
 
       <div class="pay-opt" id="opt-ach" onclick="selPay('ach')">
         <div class="pay-opt-icon">🏦</div>
-        <div><div class="pay-opt-title">Pay by bank transfer (ACH)</div><div class="pay-opt-sub">Lower fees — 0.8%, max $5. Takes 2–5 business days</div></div>
+        <div><div class="pay-opt-title">Pay by bank transfer (ACH)</div><div class="pay-opt-sub">Direct bank transfer — secure via Stripe</div></div>
         <div class="radio" id="radio-ach"></div>
       </div>
       <div class="pay-opt" id="opt-cash" onclick="selPay('cash')">
@@ -124,9 +124,7 @@ input[type=text]:focus{border-color:var(--blue)}
         <div style="background:var(--bg);border:1.5px solid var(--border2);border-radius:var(--r);padding:16px;margin-bottom:14px;font-size:13px;color:var(--text3);text-align:center">
           Bank transfer powered by Stripe — verify your bank account securely
         </div>
-        <div style="background:#EBF2FB;border-radius:var(--r);padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--blue-dk);line-height:1.6">
-          💡 ACH fees are capped at $5 — much cheaper than card on large deposits.
-        </div>
+
         <button class="btn btn-green" id="ach-btn" onclick="payACH()">Pay by bank transfer (ACH)</button>
       </div>
       <div id="sec-cash" style="display:none">
@@ -168,7 +166,13 @@ const pages=['pg-load','pg-sign','pg-pay','pg-done','pg-err'];
 const show=id=>pages.forEach(p=>document.getElementById(p).style.display=p===id?'block':'none');
 
 async function init(){
-  const key=new URLSearchParams(location.search).get('key');
+  const params=new URLSearchParams(location.search);
+  // Support both short token (?t=token&u=uid&b=bidId) and full key (?key=...)
+  let key=params.get('key');
+  if(!key){
+    const t=params.get('t'),u=params.get('u'),b=params.get('b');
+    if(t&&u&&b)key=`proposals/${u}/${b}_${t}.json`;
+  }
   if(!key){show('pg-err');return;}
   try{
     const{data,error}=await _supa.storage.from('proposals').download(key);
@@ -237,7 +241,7 @@ function selPay(opt){
 }
 
 async function payCard(){
-  if(!STRIPE_PK){document.getElementById('pay-err').textContent='Card payments not yet configured — please pay cash or contact your contractor.';return;}
+  if(!STRIPE_PK){selPay('cash');return;}
   const btn=document.getElementById('card-btn');
   btn.disabled=true;btn.textContent='Connecting to Stripe...';
   try{
@@ -263,7 +267,7 @@ async function payCard(){
 }
 
 async function payACH(){
-  if(!STRIPE_PK){document.getElementById('pay-err').textContent='ACH payments not yet configured — please pay cash or contact your contractor.';return;}
+  if(!STRIPE_PK){selPay('cash');return;}
   const btn=document.getElementById('ach-btn');
   btn.disabled=true;btn.textContent='Connecting...';
   try{
@@ -285,7 +289,7 @@ async function payACH(){
     else throw new Error('No checkout URL');
   }catch(e){
     console.error(e);
-    document.getElementById('pay-err').textContent='ACH unavailable right now. Please choose another option.';
+    document.getElementById('pay-err').textContent='Bank transfer unavailable. Please select card or cash.';
     btn.disabled=false;btn.textContent='Pay by bank transfer (ACH)';
   }
 }
@@ -293,7 +297,7 @@ async function payACH(){
 async function submitCash(){
   const btn=event.target;btn.disabled=true;btn.textContent='Confirming...';
   const name=document.getElementById('sig-name').value.trim();
-  const key=new URLSearchParams(location.search).get('key');
+  const params2=new URLSearchParams(location.search);let key=params2.get('key');if(!key){const t=params2.get('t'),u=params2.get('u'),b=params2.get('b');if(t&&u&&b)key=`proposals/${u}/${b}_${t}.json`;}
   const ts=new Date().toISOString();
   try{
     const updated={..._prop,status:'signed',signedAt:ts,signerName:name,paymentMethod:'cash',signatureDataUrl:_sigData};
@@ -315,6 +319,8 @@ async function submitCash(){
 
 function showDone(method){
   const isPaid=method==='card'||method==='ach';
+  const isCard=method==='card';
+  const isAch=method==='ach';
   document.getElementById('done-icon').textContent=isPaid?'🎉':'✅';
   document.getElementById('done-title').textContent=isPaid?'Payment confirmed!':'Proposal signed!';
   document.getElementById('done-msg').textContent=isPaid

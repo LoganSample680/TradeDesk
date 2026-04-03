@@ -6368,7 +6368,8 @@ async function sendProposalLink(){
 
     // Build the signing URL
     const baseUrl=window.location.origin+window.location.pathname.replace('index.html','');
-    const signingUrl=`${baseUrl}sign.html?key=${encodeURIComponent(proposalKey)}`;
+    // Use short token in URL — clean, no storage path exposed
+    const signingUrl=`${baseUrl}sign.html?t=${token}&u=${_supaUser.id}&b=${bidId}`;
 
     // Show the link
     const bar=document.getElementById('proposal-link-bar');
