@@ -9094,6 +9094,9 @@ async function supaInit(){
       _supaUser=session.user;
       await supaLoadFromCloud();
     } else {
+      // No session — remove loading screen and show login
+      document.getElementById('supa-boot-overlay')?.remove();
+      renderDash();buildScopeGrid();
       supaSetStatus('local');
       supaShowLogin();
     }
@@ -9102,14 +9105,18 @@ async function supaInit(){
         _supaUser=session.user;
         document.getElementById('supa-login-overlay')?.remove();
         await supaLoadFromCloud();
-        renderDash();
       } else if(event==='SIGNED_OUT'){
         _supaUser=null;
         supaSetStatus('local');
         supaShowLogin();
       }
     });
-  }catch(e){console.warn('Supabase init failed:',e);supaSetStatus('local');}
+  }catch(e){
+    console.warn('Supabase init failed:',e);
+    document.getElementById('supa-boot-overlay')?.remove();
+    renderDash();buildScopeGrid();
+    supaSetStatus('local');
+  }
 }
 
 function supaShowLogin(){
@@ -9128,7 +9135,7 @@ function supaShowLogin(){
     '<input type="password" id="supa-pass" placeholder="Password" style="font-size:16px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"></div>'+
     '<button onclick="supaSignIn()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Sign in</button>'+
     '<button onclick="supaSignUp()" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:16px">Create account</button>'+
-    '<button onclick="document.getElementById(\'supa-login-overlay\').remove()" style="width:100%;padding:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Use offline (data stays on this device only)</button>'+
+    '<button onclick="document.getElementById(\'supa-login-overlay\').remove();document.getElementById(\'supa-boot-overlay\')?.remove();renderDash();buildScopeGrid();" style="width:100%;padding:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Use offline (data stays on this device only)</button>'+
     '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:10px;text-align:center;min-height:16px"></div>'+
     '</div>';
   document.body.appendChild(overlay);
@@ -9192,25 +9199,38 @@ async function supaLoadFromCloud(){
   if(!_supa||!_supaUser)return;
   try{
     const{data,error}=await _supa.from('zj_data').select('*').eq('user_id',_supaUser.id).single();
-    if(error||!data){supaSetStatus('local');return;}
+    if(error||!data){
+      // No cloud data yet — use local, dismiss loading
+      document.getElementById('supa-boot-overlay')?.remove();
+      renderDash();buildScopeGrid();
+      supaSetStatus('synced');
+      return;
+    }
     const parse=(s,fb)=>{try{return s?JSON.parse(s):fb}catch{return fb}};
-    if(data.clients)clients=parse(data.clients,clients);
-    if(data.bids)bids=parse(data.bids,bids);
-    if(data.jobs)jobs=parse(data.jobs,jobs);
-    if(data.payments)payments=parse(data.payments,payments);
-    if(data.income)income=parse(data.income,income);
-    if(data.expenses)expenses=parse(data.expenses,expenses);
-    if(data.mileage)mileage=parse(data.mileage,mileage);
-    if(data.liens)liens=parse(data.liens,liens);
+    // Cloud is primary — overwrite everything from cloud
+    clients=parse(data.clients,clients);
+    bids=parse(data.bids,bids);
+    jobs=parse(data.jobs,jobs);
+    payments=parse(data.payments,payments);
+    income=parse(data.income,income);
+    expenses=parse(data.expenses,expenses);
+    mileage=parse(data.mileage,mileage);
+    liens=parse(data.liens,liens);
     if(data.settings){const ss=parse(data.settings,null);if(ss){S={...S,...ss};applySettings();}}
-    saveAll();
+    saveAll(); // persist cloud data to localStorage as cache
     supaSetStatus('synced');
-    // Re-render everything so the UI reflects cloud data
-    renderDash();
+    // Dismiss loading screen and render with cloud data
+    document.getElementById('supa-boot-overlay')?.remove();
+    renderDash();buildScopeGrid();
     renderClientList&&renderClientList();
     renderJobsPage&&renderJobsPage();
     renderMoneyPage&&renderMoneyPage();
-  }catch(e){console.warn('Cloud load failed:',e);supaSetStatus('error');}
+  }catch(e){
+    console.warn('Cloud load failed:',e);
+    document.getElementById('supa-boot-overlay')?.remove();
+    renderDash();buildScopeGrid();
+    supaSetStatus('error');
+  }
 }
 
 function supaSetStatus(s){
@@ -9225,8 +9245,19 @@ function supaSetStatus(s){
 
 loadAll();applySettings();
 if(supaEnabled()){
-  supaSetStatus('syncing');
+  // Show loading overlay — don't render local data, wait for cloud
+  (function showLoadingScreen(){
+    const ov=document.createElement('div');
+    ov.id='supa-boot-overlay';
+    ov.style.cssText='position:fixed;inset:0;z-index:9998;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px';
+    ov.innerHTML='<div style="font-size:28px;font-weight:800">TradeDesk</div>'+
+      '<div style="font-size:13px;color:var(--text3)">🔄 Loading your data...</div>';
+    document.body.appendChild(ov);
+  })();
   supaInit();
+} else {
+  // Offline mode — render from localStorage immediately
+  renderDash();buildScopeGrid();
 }
 
 (function seedTestData(){
@@ -9311,6 +9342,6 @@ if(supaEnabled()){
   console.log('[ZP] Seed v3 — 14 clients, all lifecycle states');
 })();
 
-renderDash();buildScopeGrid();</script>
+</script>
 </body>
 </html>
