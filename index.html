@@ -412,7 +412,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     </div>
   </div>
   <div id="dash-resume" style="margin-bottom:10px;display:none"></div>
-  <div id="dash-resume-est" style="display:none;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--rl);padding:10px 14px;margin-bottom:10px"></div>
+  <div id="dash-resume-est" style="margin-bottom:10px"></div>
   <div id="dash-goal" style="margin-bottom:10px"></div>
   <div id="dash-pipeline"></div>
   <div class="card"><div class="card-hd">Today on the calendar</div><div id="dash-today"></div></div>
@@ -2099,22 +2099,50 @@ function renderDash(){
   if(csub){csub.textContent=subCollect;csub.style.color=collectItems.length?'#A32D2D':'var(--text3)';}
 
   renderPipeline();
-  // Resume estimate banner
+  // Resume estimate section — show ALL pending estimates
   const resumeEl=document.getElementById('dash-resume-est');
   if(resumeEl){
+    const pendingBids=bids.filter(b=>b.status==='Pending'||b.status==='Draft');
     const draft=loadEstFullDraft();
+    let html='';
+    // Active draft (not yet saved as a bid)
     if(draft&&draft.cname){
-      resumeEl.style.display='';
-      resumeEl.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">'+
-        '<div><div style="font-size:13px;font-weight:700">📋 Resume estimate</div>'+
-        '<div style="font-size:11px;color:var(--text3)">Draft for '+draft.cname+' — not yet sent</div></div>'+
-        '<div style="display:flex;gap:6px">'+
-          '<button onclick="resumeEstimateDraft()" class="btn btn-sm btn-p">Resume</button>'+
-          '<button onclick="clearEstFullDraft();renderDash()" class="btn btn-sm" style="color:var(--text3)">Discard</button>'+
-        '</div></div>';
-    } else {
-      resumeEl.style.display='none';
+      html+='<div style="background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--rl);padding:10px 14px;margin-bottom:8px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">'+
+          '<div><div style="font-size:13px;font-weight:700">📋 Resume estimate</div>'+
+          '<div style="font-size:11px;color:var(--text3)">Draft for '+draft.cname+' — not yet sent</div></div>'+
+          '<div style="display:flex;gap:6px">'+
+            '<button onclick="resumeEstimateDraft()" class="btn btn-sm btn-p">Resume</button>'+
+            '<button onclick="clearEstFullDraft();renderDash()" class="btn btn-sm" style="color:var(--text3)">Discard</button>'+
+          '</div>'+
+        '</div>'+
+      '</div>';
     }
+    // Pending bids waiting to be accepted
+    if(pendingBids.length){
+      html+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:10px 14px;margin-bottom:8px">'+
+        '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px">📬 Pending estimates ('+pendingBids.length+')</div>'+
+        pendingBids.map(b=>{
+          const cl=clients.find(c=>c.id===b.client_id);
+          const name=cl?cl.name:(b.client_name||'Client');
+          const days=Math.floor((new Date(todayKey())-new Date((b.bid_date||todayKey())+'T12:00:00'))/86400000);
+          const daysStr=days>0?days+'d ago':'Today';
+          const hasNotes=!!(b.notesCanvas);
+          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);gap:8px">'+
+            '<div style="min-width:0">'+
+              '<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+name+'</div>'+
+              '<div style="font-size:11px;color:var(--text3)">'+fmt(b.amount)+' · '+daysStr+(hasNotes?' · 📝':'')+'</div>'+
+            '</div>'+
+            '<div style="display:flex;gap:5px;flex-shrink:0">'+
+              '<button onclick="openBidNotes('+b.id+')" class="btn btn-sm" style="background:var(--amber-lt);color:#856404;border-color:var(--amber);font-size:11px">📝</button>'+
+              '<button onclick="openEditBid('+b.id+')" class="btn btn-sm btn-p" style="font-size:11px">Edit</button>'+
+              '<button onclick="goPg('pg-clients');setTimeout(()=>openClientDetail('+b.client_id+'),200)" class="btn btn-sm" style="font-size:11px">View</button>'+
+            '</div>'+
+          '</div>';
+        }).join('')+
+      '</div>';
+    }
+    resumeEl.innerHTML=html;
   }
   renderGoal();
   checkGoalPrompt();
