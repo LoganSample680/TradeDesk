@@ -114,43 +114,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #app{transition:padding-left .25s ease;}
 #supa-status{transition:left .25s ease;}
 
-/* Desktop collapsed — nav slides out, content fills full width */
+/* Collapsed state — desktop only when user clicks hamburger */
 body.nav-collapsed #nav{transform:translateX(-220px);box-shadow:none;}
 body.nav-collapsed #app{padding-left:0!important;}
 body.nav-collapsed #supa-status{left:0!important;}
 body.nav-collapsed .drive-banner{left:0!important;}
 
-/* App hamburger — always visible, floats top-left */
+/* App hamburger — only shows when nav is collapsed */
 #app-hamburger{
-  display:flex;position:fixed;top:14px;left:14px;z-index:198;
+  display:none;position:fixed;top:14px;left:14px;z-index:300;
   width:38px;height:38px;border-radius:9px;
   background:var(--nav-bg);border:none;cursor:pointer;
   align-items:center;justify-content:center;
   box-shadow:0 2px 12px rgba(0,0,0,.35);
-  opacity:0;pointer-events:none;transition:opacity .2s;
 }
-/* Only show it when nav is collapsed or on mobile */
-body.nav-collapsed #app-hamburger,
-body:not(.nav-open) #app-hamburger{opacity:0;pointer-events:none;}
-@media(max-width:900px){
-  #app-hamburger{opacity:1!important;pointer-events:auto!important;}
-}
-body.nav-collapsed #app-hamburger{opacity:1!important;pointer-events:auto!important;}
 #app-hamburger svg{width:18px;height:18px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round}
+body.nav-collapsed #app-hamburger{display:flex;}
 
 /* Overlay — mobile only */
 #nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:199;}
-
-/* Tablet/mobile — nav hidden by default, overlay toggle */
-@media(max-width:900px){
-  #nav{transform:translateX(-220px);}
-  #app{padding-left:0!important;}
-  #supa-status{left:0!important;}
-  .drive-banner{left:0!important;}
-  #app-hamburger{display:flex;}
-  body.nav-open #nav{transform:translateX(0);}
-  body.nav-open #nav-overlay{display:block;}
-}
 .pg{display:none;padding:20px 24px 24px}.drive-active .pg{padding-top:70px}
 #pg-leads,#pg-jobs,#pg-money{padding-top:4px}
 .pg.active{display:block}
@@ -1623,16 +1605,12 @@ function guardedSubmit(fn){
   try{fn();}catch(e){_submitting=false;throw e;}
 }
 function toggleNav(){
-  if(window.innerWidth<=900){
-    document.body.classList.toggle('nav-open');
-  } else {
-    const collapsed=document.body.classList.toggle('nav-collapsed');
-    localStorage.setItem('navCollapsed',collapsed?'1':'0');
-  }
+  const collapsed=document.body.classList.toggle('nav-collapsed');
+  localStorage.setItem('navCollapsed',collapsed?'1':'0');
 }
-// Always start with nav open — clear any saved collapsed state
+// Always start with nav visible — clear any old collapsed state
 localStorage.removeItem('navCollapsed');
-document.body.classList.remove('nav-collapsed');
+document.body.classList.remove('nav-collapsed','nav-open');
 let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[];
 let currentClientId=null,editClientId=null,clientFilter='new';
 let estSurfaces=[],estSurfId=0,estStep=1,estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
