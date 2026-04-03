@@ -120,16 +120,23 @@ body.nav-collapsed #app{padding-left:0!important;}
 body.nav-collapsed #supa-status{left:0!important;}
 body.nav-collapsed .drive-banner{left:0!important;}
 
-/* App hamburger — floats top-left when nav is hidden */
+/* App hamburger — always visible, floats top-left */
 #app-hamburger{
-  display:none;position:fixed;top:14px;left:14px;z-index:198;
+  display:flex;position:fixed;top:14px;left:14px;z-index:198;
   width:38px;height:38px;border-radius:9px;
   background:var(--nav-bg);border:none;cursor:pointer;
   align-items:center;justify-content:center;
   box-shadow:0 2px 12px rgba(0,0,0,.35);
+  opacity:0;pointer-events:none;transition:opacity .2s;
 }
+/* Only show it when nav is collapsed or on mobile */
+body.nav-collapsed #app-hamburger,
+body:not(.nav-open) #app-hamburger{opacity:0;pointer-events:none;}
+@media(max-width:900px){
+  #app-hamburger{opacity:1!important;pointer-events:auto!important;}
+}
+body.nav-collapsed #app-hamburger{opacity:1!important;pointer-events:auto!important;}
 #app-hamburger svg{width:18px;height:18px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round}
-body.nav-collapsed #app-hamburger{display:flex;}
 
 /* Overlay — mobile only */
 #nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:199;}
@@ -1617,18 +1624,15 @@ function guardedSubmit(fn){
 }
 function toggleNav(){
   if(window.innerWidth<=900){
-    // Mobile/tablet — slide over content as overlay
     document.body.classList.toggle('nav-open');
   } else {
-    // Desktop — collapse/expand sidebar
     const collapsed=document.body.classList.toggle('nav-collapsed');
     localStorage.setItem('navCollapsed',collapsed?'1':'0');
   }
 }
-// On desktop restore collapsed state; on mobile start hidden
-if(window.innerWidth>900&&localStorage.getItem('navCollapsed')==='1'){
-  document.body.classList.add('nav-collapsed');
-}
+// Always start with nav open — clear any saved collapsed state
+localStorage.removeItem('navCollapsed');
+document.body.classList.remove('nav-collapsed');
 let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[];
 let currentClientId=null,editClientId=null,clientFilter='new';
 let estSurfaces=[],estSurfId=0,estStep=1,estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
