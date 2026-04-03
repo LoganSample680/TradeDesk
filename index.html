@@ -100,16 +100,50 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #app{padding-left:var(--nav-w);padding-bottom:0;min-height:100vh}
 #supa-status{left:var(--nav-w)}
 .drive-banner{left:var(--nav-w)}
-/* ── Mobile: collapse sidebar to icons ── */
-@media(max-width:767px){
-  :root{--nav-w:60px}
-  #nav-logo-text,#nav-section-label,#nav-user-name,#nav-user-role{display:none}
-  #nav-logo{padding:16px 14px;justify-content:center}
-  .nb{padding:10px;justify-content:center;gap:0;margin:1px 4px;width:calc(100% - 8px);border-radius:6px}
-  .nb span:not(.nbadge){display:none}
-  .nb.active::before{display:none}
-  #nav-user{justify-content:center;padding:12px 8px}
-  #app{padding-left:60px;padding-bottom:0}
+/* ── Hamburger toggle ── */
+#nav-hamburger{
+  display:flex;align-items:center;justify-content:center;
+  width:32px;height:32px;border-radius:6px;cursor:pointer;
+  background:none;border:none;color:rgba(255,255,255,.6);
+  margin-left:auto;flex-shrink:0;transition:color .15s;
+}
+#nav-hamburger:hover{color:#fff;background:rgba(255,255,255,.08)}
+#nav-hamburger svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+/* Collapsed state */
+body.nav-collapsed{--nav-w:0px}
+body.nav-collapsed #nav{transform:translateX(-220px);box-shadow:none;}
+body.nav-collapsed #app{padding-left:0}
+body.nav-collapsed #supa-status{left:0}
+body.nav-collapsed .drive-banner{left:0}
+#nav{transition:transform .25s ease;}
+#app{transition:padding-left .25s ease;}
+#supa-status{transition:left .25s ease;}
+/* Overlay when nav open on small screens */
+#nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;}
+body.nav-open #nav-overlay{display:block;}
+/* Mobile */
+@media(max-width:900px){
+  body:not(.nav-open) #nav{transform:translateX(-220px);}
+  body:not(.nav-open) #app{padding-left:0}
+  body:not(.nav-open) #supa-status{left:0}
+  body:not(.nav-open) .drive-banner{left:0}
+  body.nav-open #nav{transform:translateX(0);}
+  body.nav-open #app{padding-left:0}
+  #app-hamburger{display:flex;}
+}
+/* App-level hamburger for when nav is closed */
+#app-hamburger{
+  display:none;position:fixed;top:12px;left:12px;z-index:198;
+  width:36px;height:36px;border-radius:8px;
+  background:var(--nav-bg);border:none;cursor:pointer;
+  align-items:center;justify-content:center;
+  box-shadow:0 2px 8px rgba(0,0,0,.25);
+}
+#app-hamburger svg{width:18px;height:18px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round}
+@media(min-width:901px){
+  #app-hamburger{display:none!important}
+  body.nav-collapsed #app-hamburger{display:flex!important}
+  body.nav-collapsed #app{padding-left:0}
 }
 .pg{display:none;padding:20px 24px 24px}.drive-active .pg{padding-top:70px}
 #pg-leads,#pg-jobs,#pg-money{padding-top:4px}
@@ -373,6 +407,8 @@ input:checked+.dm-slider{background:var(--blue)}
 input:checked+.dm-slider:before{transform:translateX(22px)}</style>
 </head>
 <body>
+<div id="nav-overlay" onclick="toggleNav()"></div>
+<button id="app-hamburger" onclick="toggleNav()"><svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
 <div id="app">
 <div class="pg active" id="pg-dash">
   <div class="tbar"><div><div class="tbar-title" id="dash-greet">Good Morning, Zach</div><div class="tbar-sub" id="dash-date"></div></div><div style="display:flex;align-items:center;gap:5px"><span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Year</span><select id="dash-year-sel" onchange="setDashYear(this.value)" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)"></select></div></select></div>
@@ -1526,6 +1562,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   <div id="nav-logo">
   <div id="nav-logo-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>
   <span id="nav-logo-text">TradeDesk</span>
+  <button id="nav-hamburger" onclick="toggleNav()" aria-label="Toggle menu"><svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
 </div>
 <div id="nav-section-label">Menu</div>
   <button class="nb active" id="nb-dash" onclick="goPg('pg-dash')">
@@ -1565,6 +1602,17 @@ function guardedSubmit(fn){
   setTimeout(()=>{_submitting=false;},1200);
   try{fn();}catch(e){_submitting=false;throw e;}
 }
+function toggleNav(){
+  const isSmall=window.innerWidth<=900;
+  if(isSmall){
+    document.body.classList.toggle('nav-open');
+  } else {
+    document.body.classList.toggle('nav-collapsed');
+    localStorage.setItem('navCollapsed',document.body.classList.contains('nav-collapsed')?'1':'0');
+  }
+}
+// Restore nav state on load
+if(localStorage.getItem('navCollapsed')==='1')document.body.classList.add('nav-collapsed');
 let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[];
 let currentClientId=null,editClientId=null,clientFilter='new';
 let estSurfaces=[],estSurfId=0,estStep=1,estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
@@ -9347,11 +9395,11 @@ function applyPermissions(){
 }
 
 // ── Onboarding ────────────────────────────────────────────────────────
-let _ob={step:1,name:'',email:'',password:'',businessType:'',businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[]};
+let _ob={step:1,name:'',email:'',password:'',businessType:'',businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:''};
 
 async function showOnboarding(){
   // Always reset to step 1 with clean state
-  _ob={step:1,name:'',email:'',password:'',businessType:'',businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[]};
+  _ob={step:1,name:'',email:'',password:'',businessType:'',businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:''};
   document.getElementById('supa-boot-overlay')?.remove();
   document.getElementById('welcome-overlay')?.remove();
   document.getElementById('onboarding-overlay')?.remove();
@@ -9439,6 +9487,7 @@ function renderObStep(){
   else if(_ob.step===6)obStep6(body);
   else if(_ob.step===7)obStep7(body);
   else if(_ob.step===8)obStep8(body);
+  else if(_ob.step===9)obStep9(body);
 }
 
 function obBtn(label,onclick,secondary){
@@ -9645,7 +9694,7 @@ function obStep7(el){
     '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">👥</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Add your team</div><div style="font-size:14px;color:var(--text3)">Optional — you can add crew later in Settings</div></div>'+
     '<div id="ob-team-list">'+(_ob.team.length?_ob.team.map((m,i)=>obTeamRow(m,i)).join(''):'')+'</div>'+
     '<button onclick="obAddTeam()" style="width:100%;padding:12px;border-radius:var(--r);border:2px dashed var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;color:var(--blue);font-weight:700;margin-bottom:14px">+ Add team member</button>'+
-    obBtn('Continue — skip for now','_ob.step=8;renderObStep()')+
+    obBtn('Continue','_ob.step=8;renderObStep()')+
     obBtn('Back','_ob.step=6;renderObStep()',true);
 }
 
@@ -9669,6 +9718,31 @@ function obAddTeam(){
 }
 
 function obStep8(el){
+  el.innerHTML=
+    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">💳</div>'+
+    '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Accept card payments</div>'+
+    '<div style="font-size:14px;color:var(--text3)">Optional — clients can always pay cash if you skip this</div></div>'+
+    '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;margin-bottom:18px;font-size:13px;color:#166534;line-height:1.7">'+
+      '<strong>How it works:</strong> Clients pay their deposit directly to your bank account via Stripe. You get paid instantly on card, or within 2-5 days on bank transfer. Stripe charges 2.9% + $0.30 per card transaction — auto-logged as a tax deductible expense.'+
+    '</div>'+
+    obInput('ob-stripe-key','Stripe Publishable Key (optional)','pk_live_...','text',_ob.stripeKey)+
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:16px;line-height:1.6">Find this at <strong>dashboard.stripe.com → Developers → API keys</strong>. Starts with pk_live_</div>'+
+    '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
+    obBtn('Continue','obNext8()')+
+    obBtn('Skip — cash only for now','_ob.stripeKey=\'\';_ob.step=9;renderObStep()',true)+
+    obBtn('Back','_ob.step=8;renderObStep()',true);
+}
+function obNext8(){
+  const key=(document.getElementById('ob-stripe-key')?.value||'').trim();
+  if(key&&!key.startsWith('pk_')){
+    const err=document.getElementById('ob-err');
+    if(err)err.textContent='That doesn\'t look like a Stripe publishable key — should start with pk_live_ or pk_test_';
+    return;
+  }
+  _ob.stripeKey=key;
+  _ob.step=9;renderObStep();
+}
+function obStep9(el){
   el.innerHTML=
     '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">✓</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">You\'re all set</div><div style="font-size:14px;color:var(--text3)">Review your details before creating your account</div></div>'+
     '<div style="background:var(--bg2);border-radius:var(--r);padding:14px;margin-bottom:16px">'+
@@ -9736,7 +9810,7 @@ async function obSubmit(){
     }
 
     setProgress('Configuring your workflow...');
-    const cfg={...BUSINESS_CONFIGS[_ob.businessType]||BUSINESS_CONFIGS.other,account_id:acct.id,business_type:_ob.businessType,state:_ob.state};
+    const cfg={...BUSINESS_CONFIGS[_ob.businessType]||BUSINESS_CONFIGS.other,account_id:acct.id,business_type:_ob.businessType,state:_ob.state,stripe_pk:_ob.stripeKey||null};
     const{data:cfgData}=await _supa.from('account_config').insert(cfg).select().single();
     _config=cfgData;
 
