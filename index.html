@@ -109,19 +109,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 }
 #nav-hamburger:hover{color:#fff;background:rgba(255,255,255,.08)}
 #nav-hamburger svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
-/* ── App layout ── */
-#app{padding-left:var(--nav-w);padding-bottom:0;min-height:100vh}
-#supa-status{left:var(--nav-w)}
-.drive-banner{left:var(--nav-w)}
-/* ── Hamburger toggle ── */
-#nav-hamburger{
-  display:flex;align-items:center;justify-content:center;
-  width:32px;height:32px;border-radius:6px;cursor:pointer;
-  background:none;border:none;color:rgba(255,255,255,.6);
-  margin-left:auto;flex-shrink:0;transition:color .15s;
-}
-#nav-hamburger:hover{color:#fff;background:rgba(255,255,255,.08)}
-#nav-hamburger svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
 /* Collapsed state */
 body.nav-collapsed{--nav-w:0px}
 body.nav-collapsed #nav{transform:translateX(-220px);box-shadow:none;}
@@ -131,7 +118,7 @@ body.nav-collapsed .drive-banner{left:0}
 #nav{transition:transform .25s ease;}
 #app{transition:padding-left .25s ease;}
 #supa-status{transition:left .25s ease;}
-/* Overlay */
+/* Overlay when nav open on small screens */
 #nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;}
 body.nav-open #nav-overlay{display:block;}
 /* Mobile */
@@ -144,6 +131,8 @@ body.nav-open #nav-overlay{display:block;}
   body.nav-open #app{padding-left:0}
   #app-hamburger{display:flex;}
 }
+/* App-level hamburger for when nav is closed */
+/* App hamburger — only shows when nav is hidden */
 #app-hamburger{
   display:none;position:fixed;top:14px;left:14px;z-index:198;
   width:36px;height:36px;border-radius:8px;
@@ -158,10 +147,13 @@ body.nav-open #nav-overlay{display:block;}
   body.nav-collapsed #app{padding-left:0!important}
   body.nav-collapsed .pg{padding-left:60px}
 }
-/* When collapsed, push greeting right so hamburger doesnt cover it */
-body.nav-collapsed .tbar-title,body.nav-collapsed #dash-greet{padding-left:48px;transition:padding-left .25s ease;}
+/* When app hamburger is visible, push content down so it doesnt overlap */
+body.nav-collapsed .pg,body:not(.nav-open) .pg{
+  padding-top:20px;
+}
 @media(max-width:900px){
-  .tbar-title,#dash-greet{padding-left:48px;}
+  body:not(.nav-open) .pg{padding-top:20px;}
+  body:not(.nav-open) #pg-dash .tbar-title{padding-left:48px;}
 }
 .pg{display:none;padding:20px 24px 24px}.drive-active .pg{padding-top:70px}
 #pg-leads,#pg-jobs,#pg-money{padding-top:4px}
@@ -425,49 +417,6 @@ input:checked+.dm-slider{background:var(--blue)}
 input:checked+.dm-slider:before{transform:translateX(22px)}</style>
 </head>
 <body>
-<div id="nav">
-  <div id="nav-logo" style="padding:16px 20px">
-  <div id="nav-logo-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>
-  <span id="nav-logo-text">TradeDesk</span>
-  <button id="nav-hamburger" onclick="toggleNav()" aria-label="Toggle menu"><svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
-</div>
-<div id="nav-section-label">Menu</div>
-  <button class="nb active" id="nb-dash" onclick="goPg('pg-dash')">
-    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div><span>Home</span>
-  </button>
-  <button class="nb" id="nb-leads" onclick="goPg('pg-leads')">
-    <div class="bx"><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span class="nbadge" id="nb-leads-badge"></span></div><span>Leads</span>
-  </button>
-  <button class="nb" id="nb-clients" onclick="goPg('pg-clients')">
-    <div class="bx"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></div><span>Clients</span>
-  </button>
-  <button class="nb" id="nb-jobs" onclick="goPg('pg-jobs')">
-    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span class="nbadge" id="nb-jobs-badge"></span></div><span>Jobs</span>
-  </button>
-  <button class="nb" id="nb-cal" onclick="goPg('pg-cal')">
-    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><circle cx="8" cy="16" r="1" fill="currentColor"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg></div><span>Calendar</span>
-  </button>
-  <button class="nb" id="nb-money" onclick="goPg('pg-money')">
-    <div class="bx"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg><span class="nbadge" id="nb-money-badge"></span></div><span>Collect</span>
-  </button>
-  <button class="nb" id="nb-taxes" onclick="goPg('pg-taxes')">
-    <div class="bx"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><span>Taxes</span>
-  </button>
-  <button class="nb" id="nb-tracker" onclick="goPg('pg-tracker')">
-    <div class="bx"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div><span>Tracker</span>
-  </button>
-  <div id="nav-spacer"></div>
-  <button class="nb" id="nb-settings" onclick="goPg('pg-settings')">
-    <div class="bx"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></div><span>Settings</span>
-  </button>
-  <div id="nav-user" onclick="goPg('pg-settings')" style="cursor:pointer">
-    <div id="nav-user-avatar">Z</div>
-    <div style="min-width:0">
-      <div id="nav-user-name">My Account</div>
-      <div id="nav-user-role">Owner</div>
-    </div>
-  </div>
-</div>
 <div id="nav-overlay" onclick="toggleNav()"></div>
 <button id="app-hamburger" onclick="toggleNav()"><svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
 <div id="app">
@@ -541,6 +490,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   </div>
 
 
+</div>
 <div class="pg" id="pg-clients">
   <div class="tbar"><div class="tbar-title" id="clients-page-title">Clients</div><button class="btn btn-p btn-sm" id="clients-new-btn" onclick="openNewClient()">+ New</button></div>
   <div id="cf-search-wrap" style="margin-bottom:8px">
@@ -1632,6 +1582,41 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <button onclick="notesExpandCanvas()" style="font-size:11px;color:var(--blue-dk);background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:3px 8px;cursor:pointer;font-family:inherit">+ More space</button>
   </div>
 </div>
+<div id="nav">
+  <div id="nav-logo" style="padding:16px 20px">
+  <div id="nav-logo-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>
+  <span id="nav-logo-text">TradeDesk</span>
+  <button id="nav-hamburger" onclick="toggleNav()" aria-label="Toggle menu"><svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
+</div>
+<div id="nav-section-label">Menu</div>
+  <button class="nb active" id="nb-dash" onclick="goPg('pg-dash')">
+    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div><span>Home</span>
+  </button>
+  <button class="nb" id="nb-leads" onclick="goPg('pg-leads')">
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span class="nbadge" id="nb-leads-badge"></span></div><span>Leads</span>
+  </button>
+  <button class="nb" id="nb-clients" onclick="goPg('pg-clients')">
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></div><span>Clients</span>
+  </button>
+  <button class="nb" id="nb-jobs" onclick="goPg('pg-jobs')">
+    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span class="nbadge" id="nb-jobs-badge"></span></div><span>Jobs</span>
+  </button>
+  <button class="nb" id="nb-cal" onclick="goPg('pg-cal')">
+    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><circle cx="8" cy="16" r="1" fill="currentColor"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg></div><span>Calendar</span>
+  </button>
+  <button class="nb" id="nb-money" onclick="goPg('pg-money')">
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg><span class="nbadge" id="nb-money-badge"></span></div><span>Collect</span>
+  </button>
+  <button class="nb" id="nb-taxes" onclick="goPg('pg-taxes')">
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><span>Taxes</span>
+  </button>
+  <button class="nb" id="nb-tracker" onclick="goPg('pg-tracker')">
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div><span>Tracker</span>
+  </button>
+  <div id="nav-spacer"></div>
+  <button class="nb" id="nb-settings" onclick="goPg('pg-settings')">
+    <div class="bx"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></div><span>Settings</span>
+  </button>
 <script>
 // ── Submit guard — prevents double-tap on any button ─────────────────────
 let _submitting=false;
@@ -1642,12 +1627,16 @@ function guardedSubmit(fn){
   try{fn();}catch(e){_submitting=false;throw e;}
 }
 function toggleNav(){
-  const collapsed=document.body.classList.toggle('nav-collapsed');
-  localStorage.setItem('navCollapsed',collapsed?'1':'0');
+  const isSmall=window.innerWidth<=900;
+  if(isSmall){
+    document.body.classList.toggle('nav-open');
+  } else {
+    document.body.classList.toggle('nav-collapsed');
+    localStorage.setItem('navCollapsed',document.body.classList.contains('nav-collapsed')?'1':'0');
+  }
 }
-// Always start with nav visible — clear any old collapsed state
-localStorage.removeItem('navCollapsed');
-document.body.classList.remove('nav-collapsed','nav-open');
+// Restore nav state on load
+if(localStorage.getItem('navCollapsed')==='1')document.body.classList.add('nav-collapsed');
 let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[];
 let currentClientId=null,editClientId=null,clientFilter='new';
 let estSurfaces=[],estSurfId=0,estStep=1,estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
