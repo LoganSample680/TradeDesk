@@ -3586,6 +3586,7 @@ function renderCDBids(){
     if(!isWon){
       actBtns.push('<button class="btn btn-sm" onclick="sendBidEmail('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#9993; Send email</button>');
       actBtns.push('<button class="btn btn-sm" onclick="openEditBid('+b.id+')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">✎ Revise bid</button>');
+      actBtns.push('<button class="btn btn-sm" onclick="openBidNotes('+b.id+')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">📝 Notes</button>');
       actBtns.push('<button class="btn btn-sm" onclick="markBidAbandoned('+b.id+')" style="background:#FFF8F0;color:#A32D2D;border-color:#A32D2D">No response</button>');
       actBtns.push('<button class="btn-del" onclick="deleteBid('+b.id+')" style="font-size:11px;padding:5px 8px">Delete</button>');
     }
@@ -8941,6 +8942,15 @@ let _notesCtx=null;           // canvas 2d context
 let _notesDpr=1;              // device pixel ratio
 let _notesCanvasH=2400;       // logical height in px (grows with "+ More space")
 let _notesPanelOpen=false;
+
+function openBidNotes(bidId){
+  // Set the active bid context so notes save to correct bid
+  editingBidId=bidId;
+  lastCreatedBidId=bidId;
+  // Show the fab and open the panel
+  showNotesFab();
+  toggleNotesPanel();
+}
 
 function showNotesFab(){
   // Called when entering pg-est with a bid in progress
