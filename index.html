@@ -97,7 +97,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #nav-user-name{font-size:12px;font-weight:600;color:rgba(255,255,255,.7);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 #nav-user-role{font-size:10px;color:rgba(255,255,255,.35);margin-top:1px;}
 /* ── App layout ── */
-#app{margin-left:var(--nav-w);padding-bottom:0;min-height:100vh}
+#app{padding-left:var(--nav-w);padding-bottom:0;min-height:100vh}
 #supa-status{left:var(--nav-w)}
 .drive-banner{left:var(--nav-w)}
 /* ── Hamburger toggle ── */
@@ -109,30 +109,61 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 }
 #nav-hamburger:hover{color:#fff;background:rgba(255,255,255,.08)}
 #nav-hamburger svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
-/* ── Nav collapse / hamburger ── */
-#nav{transition:transform .25s ease;}
-#app{transition:margin-left .25s ease;}
-#supa-status{transition:left .25s ease;}
-
-/* Collapsed state — desktop only when user clicks hamburger */
+/* ── App layout ── */
+#app{padding-left:var(--nav-w);padding-bottom:0;min-height:100vh}
+#supa-status{left:var(--nav-w)}
+.drive-banner{left:var(--nav-w)}
+/* ── Hamburger toggle ── */
+#nav-hamburger{
+  display:flex;align-items:center;justify-content:center;
+  width:32px;height:32px;border-radius:6px;cursor:pointer;
+  background:none;border:none;color:rgba(255,255,255,.6);
+  margin-left:auto;flex-shrink:0;transition:color .15s;
+}
+#nav-hamburger:hover{color:#fff;background:rgba(255,255,255,.08)}
+#nav-hamburger svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+/* Collapsed state */
+body.nav-collapsed{--nav-w:0px}
 body.nav-collapsed #nav{transform:translateX(-220px);box-shadow:none;}
-body.nav-collapsed #app{margin-left:0!important;}
-body.nav-collapsed #supa-status{left:0!important;}
-body.nav-collapsed .drive-banner{left:0!important;}
-
-/* App hamburger — only shows when nav is collapsed */
+body.nav-collapsed #app{padding-left:0}
+body.nav-collapsed #supa-status{left:0}
+body.nav-collapsed .drive-banner{left:0}
+#nav{transition:transform .25s ease;}
+#app{transition:padding-left .25s ease;}
+#supa-status{transition:left .25s ease;}
+/* Overlay */
+#nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;}
+body.nav-open #nav-overlay{display:block;}
+/* Mobile */
+@media(max-width:900px){
+  body:not(.nav-open) #nav{transform:translateX(-220px);}
+  body:not(.nav-open) #app{padding-left:0}
+  body:not(.nav-open) #supa-status{left:0}
+  body:not(.nav-open) .drive-banner{left:0}
+  body.nav-open #nav{transform:translateX(0);}
+  body.nav-open #app{padding-left:0}
+  #app-hamburger{display:flex;}
+}
 #app-hamburger{
-  display:none;position:fixed;top:14px;left:14px;z-index:300;
-  width:38px;height:38px;border-radius:9px;
+  display:none;position:fixed;top:14px;left:14px;z-index:198;
+  width:36px;height:36px;border-radius:8px;
   background:var(--nav-bg);border:none;cursor:pointer;
   align-items:center;justify-content:center;
-  box-shadow:0 2px 12px rgba(0,0,0,.35);
+  box-shadow:0 2px 10px rgba(0,0,0,.3);
 }
 #app-hamburger svg{width:18px;height:18px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round}
-body.nav-collapsed #app-hamburger{display:flex;}
-
-/* Overlay — mobile only */
-#nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:199;}
+@media(min-width:901px){
+  #app-hamburger{display:none!important}
+  body.nav-collapsed #app-hamburger{display:flex!important}
+  body.nav-collapsed #app{padding-left:0!important}
+  body.nav-collapsed .pg{padding-left:60px}
+}
+/* When collapsed, push greeting right so hamburger doesnt cover it */
+body.nav-collapsed #pg-dash .tbar-title{padding-left:48px;}
+@media(max-width:900px){
+  body:not(.nav-open) .pg{padding-top:20px;}
+  body:not(.nav-open) #pg-dash .tbar-title{padding-left:48px;}
+}
 .pg{display:none;padding:20px 24px 24px}.drive-active .pg{padding-top:70px}
 #pg-leads,#pg-jobs,#pg-money{padding-top:4px}
 .pg.active{display:block}
