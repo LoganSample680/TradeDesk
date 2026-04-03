@@ -9948,13 +9948,12 @@ async function supaInit(){
       _supaUser=session.user;
       const hasAccount=await loadAccountData();
       if(hasAccount){
-        // Fully set up — load cloud data and show app
         await supaLoadFromCloud();
       } else {
-        // Signed in but no account row — needs onboarding
+        // Signed in but no account row — load app anyway, skip onboarding loop
         document.getElementById('supa-boot-overlay')?.remove();
         renderDash();buildScopeGrid();
-        showOnboarding();
+        supaSetStatus('cloud');
       }
     } else {
       // No session — show welcome screen
