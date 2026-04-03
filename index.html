@@ -9624,7 +9624,14 @@ function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 async function supaInit(){
   if(!supaEnabled())return;
   try{
-    _supa=supabase.createClient(SUPA_URL,SUPA_KEY);
+    _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{
+      auth:{
+        persistSession:true,
+        autoRefreshToken:true,
+        detectSessionInUrl:false,
+        storage:window.localStorage
+      }
+    });
     const{data:{session}}=await _supa.auth.getSession();
     if(session){
       _supaUser=session.user;
