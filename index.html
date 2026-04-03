@@ -8,7 +8,6 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="TradeDesk">
 <title>TradeDesk</title>
-<link rel="icon" type="image/x-icon" href="favicon.ico">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>@import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=swap');*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
 :root{
@@ -100,60 +99,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #app{padding-left:var(--nav-w);padding-bottom:0;min-height:100vh}
 #supa-status{left:var(--nav-w)}
 .drive-banner{left:var(--nav-w)}
-/* ── Hamburger toggle ── */
-#nav-hamburger{
-  display:flex;align-items:center;justify-content:center;
-  width:32px;height:32px;border-radius:6px;cursor:pointer;
-  background:none;border:none;color:rgba(255,255,255,.6);
-  margin-left:auto;flex-shrink:0;transition:color .15s;
-}
-#nav-hamburger:hover{color:#fff;background:rgba(255,255,255,.08)}
-#nav-hamburger svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
-/* Collapsed state */
-body.nav-collapsed{--nav-w:0px}
-body.nav-collapsed #nav{transform:translateX(-220px);box-shadow:none;}
-body.nav-collapsed #app{padding-left:0}
-body.nav-collapsed #supa-status{left:0}
-body.nav-collapsed .drive-banner{left:0}
-#nav{transition:transform .25s ease;}
-#app{transition:padding-left .25s ease;}
-#supa-status{transition:left .25s ease;}
-/* Overlay when nav open on small screens */
-#nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;}
-body.nav-open #nav-overlay{display:block;}
-/* Mobile */
-@media(max-width:900px){
-  body:not(.nav-open) #nav{transform:translateX(-220px);}
-  body:not(.nav-open) #app{padding-left:0}
-  body:not(.nav-open) #supa-status{left:0}
-  body:not(.nav-open) .drive-banner{left:0}
-  body.nav-open #nav{transform:translateX(0);}
-  body.nav-open #app{padding-left:0}
-  #app-hamburger{display:flex;}
-}
-/* App-level hamburger for when nav is closed */
-/* App hamburger — only shows when nav is hidden */
-#app-hamburger{
-  display:none;position:fixed;top:14px;left:14px;z-index:198;
-  width:36px;height:36px;border-radius:8px;
-  background:var(--nav-bg);border:none;cursor:pointer;
-  align-items:center;justify-content:center;
-  box-shadow:0 2px 10px rgba(0,0,0,.3);
-}
-#app-hamburger svg{width:18px;height:18px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round}
-@media(min-width:901px){
-  #app-hamburger{display:none!important}
-  body.nav-collapsed #app-hamburger{display:flex!important}
-  body.nav-collapsed #app{padding-left:0!important}
-  body.nav-collapsed .pg{padding-left:60px}
-}
-/* When app hamburger is visible, push content down so it doesnt overlap */
-body.nav-collapsed .pg,body:not(.nav-open) .pg{
-  padding-top:20px;
-}
-@media(max-width:900px){
-  body:not(.nav-open) .pg{padding-top:20px;}
-  body:not(.nav-open) #pg-dash .tbar-title{padding-left:48px;}
+/* ── Mobile: collapse sidebar to icons ── */
+@media(max-width:767px){
+  :root{--nav-w:60px}
+  #nav-logo-text,#nav-section-label,#nav-user-name,#nav-user-role{display:none}
+  #nav-logo{padding:16px 14px;justify-content:center}
+  .nb{padding:10px;justify-content:center;gap:0;margin:1px 4px;width:calc(100% - 8px);border-radius:6px}
+  .nb span:not(.nbadge){display:none}
+  .nb.active::before{display:none}
+  #nav-user{justify-content:center;padding:12px 8px}
+  #app{padding-left:60px;padding-bottom:0}
 }
 .pg{display:none;padding:20px 24px 24px}.drive-active .pg{padding-top:70px}
 #pg-leads,#pg-jobs,#pg-money{padding-top:4px}
@@ -417,8 +372,6 @@ input:checked+.dm-slider{background:var(--blue)}
 input:checked+.dm-slider:before{transform:translateX(22px)}</style>
 </head>
 <body>
-<div id="nav-overlay" onclick="toggleNav()"></div>
-<button id="app-hamburger" onclick="toggleNav()"><svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
 <div id="app">
 <div class="pg active" id="pg-dash">
   <div class="tbar"><div><div class="tbar-title" id="dash-greet">Good Morning, Zach</div><div class="tbar-sub" id="dash-date"></div></div><div style="display:flex;align-items:center;gap:5px"><span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Year</span><select id="dash-year-sel" onchange="setDashYear(this.value)" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)"></select></div></select></div>
@@ -1062,20 +1015,15 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   <div id="est-s5" style="display:none">
     <div id="est-proposal"></div>
     
-    <div class="brow" style="flex-wrap:wrap;gap:6px">
-      <button class="btn" onclick="goEstStep(4)" style="flex:1;min-width:80px">← Adjust</button>
-      <button class="btn" onclick="downloadProposalPDF()" style="flex:1;min-width:80px;background:var(--bg2);border-color:var(--border2)">📄 PDF</button>
-      <button class="btn btn-g" id="send-proposal-btn" onclick="sendProposalLink()" style="flex:1;min-width:80px">🔗 Send</button>
-      <button class="btn btn-p" onclick="goEstStep(6)" style="flex:1;min-width:80px">Sign here</button>
+    <div class="brow">
+      <button class="btn" onclick="goEstStep(4)">&#8592; Adjust</button>
+      <button class="btn" onclick="sendEstimateEmail()" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">&#128247; Share</button>
+      <button class="btn" onclick="downloadProposalPDF()" style="background:var(--bg2);border-color:var(--border2)">&#128196; PDF</button>
+      <button class="btn btn-p" onclick="goEstStep(6)">Signs here &#8594;</button>
     </div>
-    <div id="proposal-link-bar" style="display:none;margin-top:8px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px">
-      <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:4px">✓ Signing link ready</div>
-      <div id="proposal-link-label" style="font-size:11px;color:var(--blue);margin-bottom:8px;font-weight:600"></div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input id="proposal-link-input" readonly style="flex:1;font-size:11px;padding:7px 10px;border-radius:var(--r);border:1px solid var(--border2);background:#fff;color:var(--text2);font-family:inherit;min-width:0">
-        <button onclick="copyProposalLink()" class="btn btn-sm" style="flex-shrink:0">Copy</button>
-      </div>
-      <div style="font-size:11px;color:var(--text3);margin-top:6px">Client opens the link on any device, reviews, signs, and you get notified.</div>
+    <div id="est-sent-bar" style="display:none;margin-top:8px;background:var(--green-lt);border:1px solid var(--green);border-radius:var(--r);padding:8px 12px;flex-direction:row;align-items:center;justify-content:space-between;gap:8px">
+      <div style="font-size:12px;color:var(--green);font-weight:700">✓ Estimate sent</div>
+      <button class="btn btn-sm" onclick="markEstSigned()" style="background:var(--green);color:#fff;border-color:var(--green)">Mark as signed</button>
     </div>
   </div>
   <div id="est-s6" style="display:none">
@@ -1101,13 +1049,6 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     </div>
     <div class="card"><div class="card-hd">Terms &amp; conditions</div><div id="est-terms" style="font-size:11px;color:var(--text3);line-height:1.7;max-height:120px;overflow-y:auto"></div></div>
     <div class="brow"><button class="btn" onclick="goEstStep(5)">&#8592; Back</button><button class="btn btn-xl" id="confirm-btn" onclick="confirmContract()" style="background:var(--bg2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>Confirm &amp; close job</button></div>
-    <div style="margin-top:10px;padding:10px 14px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);font-size:12px;color:var(--blue-dk)">
-      📧 <strong>Email a copy to the client?</strong>
-      <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
-        <input type="email" id="sig-client-email" placeholder="client@email.com" style="flex:1;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:#fff;font-size:13px;font-family:inherit;color:var(--text)">
-        <button class="btn btn-sm" onclick="emailProposalToClient()" style="flex-shrink:0;background:var(--blue);color:#fff;border-color:var(--blue)">Send copy</button>
-      </div>
-    </div>
   </div>
   <div id="est-s7" style="display:none">
     <div style="text-align:center;padding:28px 16px">
@@ -1117,21 +1058,14 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
       <div class="card" id="est-done-sum" style="text-align:left;margin-bottom:16px"></div>
 
       <div style="display:grid;gap:8px;margin-top:4px">
-        <button class="btn btn-g btn-full" style="font-size:15px;padding:14px" onclick="goToDepositFromEstimate()">💵 Collect cash deposit</button>
-        <button class="btn btn-full" id="stripe-deposit-btn" style="font-size:15px;padding:14px;background:#0D1117;color:#fff;border:none" onclick="collectStripeDepositInPerson()">💳 Collect deposit by card</button>
+        <button class="btn btn-g btn-full" style="font-size:15px;padding:14px" onclick="goToDepositFromEstimate()">Collect 25% deposit &#8594;</button>
         <div style="display:flex;gap:8px">
           <button class="btn btn-full" onclick="schedJobFromEstimate()" style="font-size:13px">Schedule job</button>
           <button class="btn btn-full" onclick="goBackToClient()" style="font-size:13px">View client</button>
         </div>
       </div>
-      <div id="stripe-deposit-link" style="display:none;margin-top:10px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px;text-align:left">
-        <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:4px">💳 Send payment link to client</div>
-        <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Client opens on their phone and pays the deposit now</div>
-        <div style="display:flex;gap:8px">
-          <input id="stripe-deposit-input" readonly style="flex:1;font-size:11px;padding:7px 10px;border-radius:var(--r);border:1px solid var(--border2);background:#fff;font-family:inherit;min-width:0">
-          <button onclick="copyDepositLink()" class="btn btn-sm" style="flex-shrink:0">Copy</button>
-        </div>
-      </div>
+    </div>
+  </div>
 </div>
 <div class="pg" id="pg-cal">
   <div class="tbar"><div class="tbar-title">Calendar</div><button class="btn btn-p btn-sm" onclick="goPg('pg-schedule')">+ Schedule</button></div>
@@ -1438,20 +1372,6 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
       </div>
     </div>
   </div>
-  <div class="card">
-    <div class="card-hd">Payments <span>Accept card &amp; bank transfer on proposals</span></div>
-    <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px">
-      Create a free account at <strong>stripe.com</strong>, then paste your publishable key below. Clients can pay their deposit by card or bank transfer when they sign. Money goes directly to your bank — TradeDesk never touches it.
-    </div>
-    <div class="f">
-      <label>Stripe publishable key <span style="font-size:10px;font-weight:400;color:var(--text3)">(starts with pk_live_ or pk_test_)</span></label>
-      <input id="set-stripe-pk" placeholder="pk_live_..." style="font-family:monospace;font-size:12px">
-    </div>
-    <div id="stripe-status-msg" style="font-size:11px;margin-top:6px;min-height:16px"></div>
-    <div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.6">
-      Your key is stored securely and only used to process payments on your proposals. Processing fees (2.9% + $0.30 card, 0.8% max $5 ACH) are automatically logged as tax-deductible business expenses.
-    </div>
-  </div>
   <div class="card"><div class="card-hd">Estimator defaults</div>
     <div class="fg fg2">
       <div class="f"><label>Profit margin target (%)</label><input type="number" id="set-margin"></div>
@@ -1583,10 +1503,9 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   </div>
 </div>
 <div id="nav">
-  <div id="nav-logo" style="padding:16px 20px">
+  <div id="nav-logo">
   <div id="nav-logo-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>
   <span id="nav-logo-text">TradeDesk</span>
-  <button id="nav-hamburger" onclick="toggleNav()" aria-label="Toggle menu"><svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
 </div>
 <div id="nav-section-label">Menu</div>
   <button class="nb active" id="nb-dash" onclick="goPg('pg-dash')">
@@ -1602,7 +1521,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span class="nbadge" id="nb-jobs-badge"></span></div><span>Jobs</span>
   </button>
   <button class="nb" id="nb-cal" onclick="goPg('pg-cal')">
-    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><circle cx="8" cy="16" r="1" fill="currentColor"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg></div><span>Calendar</span>
+    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><circle cx="8" cy="16" r="1" fill="currentColor"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg></div><span>Cal</span>
   </button>
   <button class="nb" id="nb-money" onclick="goPg('pg-money')">
     <div class="bx"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg><span class="nbadge" id="nb-money-badge"></span></div><span>Collect</span>
@@ -1626,17 +1545,6 @@ function guardedSubmit(fn){
   setTimeout(()=>{_submitting=false;},1200);
   try{fn();}catch(e){_submitting=false;throw e;}
 }
-function toggleNav(){
-  const isSmall=window.innerWidth<=900;
-  if(isSmall){
-    document.body.classList.toggle('nav-open');
-  } else {
-    document.body.classList.toggle('nav-collapsed');
-    localStorage.setItem('navCollapsed',document.body.classList.contains('nav-collapsed')?'1':'0');
-  }
-}
-// Restore nav state on load
-if(localStorage.getItem('navCollapsed')==='1')document.body.classList.add('nav-collapsed');
 let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[];
 let currentClientId=null,editClientId=null,clientFilter='new';
 let estSurfaces=[],estSurfId=0,estStep=1,estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
@@ -1866,13 +1774,12 @@ function loadSettingsForm(){
   sf('set-b10',S.b10);sf('set-b12',S.b12);sf('set-b22',S.b22);sf('set-b24',S.b24);sf('set-b32',S.b32);sf('set-b35',S.b35);
   sf('set-ksl',S.ksLow);sf('set-kst',S.ksTop);sf('set-ksh',S.ksHigh);sf('set-kss',S.ksStdS);sf('set-ksm',S.ksStdM);
   sf('set-goal-monthly',S.goalMonthly||'');
-  sf('set-labor-rate',S.laborRate||45);sf('set-bname',S.bname);
-  sf('set-stripe-pk',S.stripePk||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
+  sf('set-labor-rate',S.laborRate||45);sf('set-bname',S.bname);sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
   sf('set-margin',S.margin);sf('set-cov',S.cov);sf('set-p1',S.p1);sf('set-p2',S.p2);sf('set-p3',S.p3);sf('set-mm',S.mm);sf('set-r-walls',S.rWalls||1.50);sf('set-r-ceil',S.rCeil||1.25);sf('set-r-trim',S.rTrim||1.75);sf('set-r-door',S.rDoor||85);sf('set-r-win',S.rWin||45);sf('set-r-ext',S.rExt||1.60);sf('set-r-deck',S.rDeck||1.25);
 }
 function saveSettings(){
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
-  S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),bemail:gs('set-bemail'),veh:gs('set-veh'),stripePk:gs('set-stripe-pk')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,p1:gf('set-p1')||35,p2:gf('set-p2')||58,p3:gf('set-p3')||82,mm:gf('set-mm')||20,rWalls:gf('set-r-walls')||1.50,rCeil:gf('set-r-ceil')||1.25,rTrim:gf('set-r-trim')||1.75,rDoor:gf('set-r-door')||85,rWin:gf('set-r-win')||45,rExt:gf('set-r-ext')||1.60,rDeck:gf('set-r-deck')||1.25};
+  S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),bemail:gs('set-bemail'),veh:gs('set-veh'),vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,p1:gf('set-p1')||35,p2:gf('set-p2')||58,p3:gf('set-p3')||82,mm:gf('set-mm')||20,rWalls:gf('set-r-walls')||1.50,rCeil:gf('set-r-ceil')||1.25,rTrim:gf('set-r-trim')||1.75,rDoor:gf('set-r-door')||85,rWin:gf('set-r-win')||45,rExt:gf('set-r-ext')||1.60,rDeck:gf('set-r-deck')||1.25};
   applySettings();saveAll();
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
 }
@@ -6388,9 +6295,9 @@ ol{padding-left:18px;line-height:2}
 @media print{@page{margin:0.5in;size:letter}body{padding:0}.no-print{display:none!important}}
 </style>
 </head><body>
-<div class="no-print" style="background:#0D1117;color:#fff;padding:10px 20px;display:flex;justify-content:space-between;align-items:center">
-  <span style="font-weight:700;font-size:14px">TradeDesk Proposal</span>
-  <button onclick="window.print()" style="background:#185FA5;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-weight:700;font-size:14px;cursor:pointer">⬇ Save / Print PDF</button>
+<div class="no-print" style="background:#185FA5;color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center">
+  <span style="font-weight:700">TradeDesk — Proposal PDF</span>
+  <button onclick="window.print()" style="background:#fff;color:#185FA5;border:none;padding:8px 18px;border-radius:6px;font-weight:700;font-size:14px;cursor:pointer">⬇ Save as PDF</button>
 </div>
 ${proposal.innerHTML}
 <script>setTimeout(()=>window.print(),600)<\/script>
@@ -6408,159 +6315,6 @@ ${proposal.innerHTML}
   setTimeout(()=>URL.revokeObjectURL(url),10000);
 }
 function syncAdj(){const val=parseInt(v('est-adj'));document.getElementById('est-adj-val').textContent=(val>=0?'+':'')+fmt(Math.abs(val));renderEstReview();}
-
-// ── Client signing link ────────────────────────────────────────────────
-async function sendProposalLink(){
-  const proposal=document.getElementById('est-proposal');
-  if(!proposal||!proposal.innerHTML.trim()){
-    zAlert('Generate the proposal first.',{title:'Nothing to print'});return;
-  }
-  if(!supaEnabled()||!_supaUser){
-    zAlert('Sign in to Supabase to send client links.',{title:'Sign in required'});return;
-  }
-
-  const btn=document.getElementById('send-proposal-btn');
-  if(btn){btn.textContent='⏳ Saving...';btn.disabled=true;}
-
-  try{
-    const cname=document.getElementById('e-cname')?.value||'Client';
-    const cemail=document.getElementById('e-cemail')?.value||document.getElementById('e-email')?.value||'';
-    const bname=document.getElementById('e-bname')?.value||S.bname||"TradeDesk";
-    const bidId=lastCreatedBidId||Date.now();
-    const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
-    const proposalKey=`proposals/${_supaUser.id}/${bidId}_${token}.json`;
-
-    // Store proposal data as JSON in Supabase Storage
-    const proposalData={
-      id:bidId,
-      token,
-      clientName:cname,
-      clientEmail:cemail,
-      businessName:bname,
-      contractorUserId:_supaUser.id,
-      contractorEmail:_supaUser.email,
-      proposalHtml:proposal.innerHTML,
-      amount:calcEst().final,
-      deposit:Math.round(calcEst().final*.25*100)/100,
-      createdAt:new Date().toISOString(),
-      status:'pending',
-      notifyEmail:_supaUser.email,
-      stripePk:S.stripePk||'',
-    };
-
-    const{error}=await _supa.storage.from('proposals').upload(
-      proposalKey,
-      JSON.stringify(proposalData),
-      {contentType:'application/json',upsert:true}
-    );
-    if(error)throw error;
-
-    // Build the signing URL with human-readable display
-    const baseUrl=window.location.origin+window.location.pathname.replace('index.html','');
-    const signingUrl=`${baseUrl}sign.html?t=${token}&u=${_supaUser.id}&b=${bidId}`;
-    // Human-readable label: Business - Client - Date - Proposal
-    const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-    const linkLabel=`${bname} — ${cname} — ${dateStr} — Proposal`;
-
-    // Show the link
-    const bar=document.getElementById('proposal-link-bar');
-    const input=document.getElementById('proposal-link-input');
-    const labelEl=document.getElementById('proposal-link-label');
-    if(bar)bar.style.display='block';
-    if(input)input.value=signingUrl;
-    if(labelEl)labelEl.textContent=linkLabel;
-
-    // Store token on the bid for verification later
-    const bid=bids.find(b=>b.id===bidId);
-    if(bid){bid.signingToken=token;bid.signingKey=proposalKey;saveAll();}
-
-    if(btn){btn.innerHTML='✓ Link ready';btn.disabled=false;}
-  }catch(e){
-    console.error('sendProposalLink failed:',e);
-    zAlert('Could not generate link: '+e.message+'\n\nMake sure the proposals storage bucket exists in Supabase.',{title:'Error'});
-    if(btn){btn.innerHTML='🔗 Send to client';btn.disabled=false;}
-  }
-}
-
-function copyDepositLink(){
-  const input=document.getElementById('stripe-deposit-input');
-  if(!input)return;
-  navigator.clipboard.writeText(input.value).catch(()=>{input.select();document.execCommand('copy');});
-  const btn=document.querySelector('[onclick="copyDepositLink()"]');
-  if(btn){btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy',2000);}
-}
-
-async function collectStripeDepositInPerson(){
-  if(!S.stripePk){
-    zAlert('Add your Stripe key in Settings to collect card payments.',{title:'Stripe not set up'});return;
-  }
-  const bid=bids.find(b=>b.id===lastCreatedBidId);
-  if(!bid){zAlert('No bid found.',{title:'Error'});return;}
-  const cname=bid.client_name||'Client';
-  const deposit=Math.round((bid.amount||0)*.25*100)/100;
-  const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
-  const proposalKey=`proposals/${_supaUser.id}/${bid.id}_${token}.json`;
-
-  const btn=document.getElementById('stripe-deposit-btn');
-  if(btn){btn.textContent='⏳ Generating link...';btn.disabled=true;}
-
-  try{
-    // Upload a minimal proposal JSON for the payment link
-    const proposalData={
-      id:bid.id,token,clientName:cname,businessName:S.bname||'TradeDesk',
-      contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
-      proposalHtml:'<p>Deposit for '+cname+'</p>',
-      amount:bid.amount||0,deposit,
-      createdAt:new Date().toISOString(),status:'pending',
-      notifyEmail:_supaUser.email,stripePk:S.stripePk||'',
-    };
-    await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true});
-    const baseUrl=window.location.origin+window.location.pathname.replace('index.html','');
-    const link=`${baseUrl}sign.html?t=${token}&u=${_supaUser.id}&b=${bid.id}`;
-    const linkBox=document.getElementById('stripe-deposit-link');
-    const input=document.getElementById('stripe-deposit-input');
-    if(linkBox)linkBox.style.display='block';
-    if(input)input.value=link;
-    if(btn){btn.textContent='💳 Collect deposit by card';btn.disabled=false;}
-  }catch(e){
-    console.error(e);
-    zAlert('Could not generate payment link: '+e.message,{title:'Error'});
-    if(btn){btn.textContent='💳 Collect deposit by card';btn.disabled=false;}
-  }
-}
-
-function emailProposalToClient(){
-  const email=document.getElementById('sig-client-email')?.value?.trim();
-  if(!email||!email.includes('@')){zAlert('Enter a valid email address.',{title:'Email required'});return;}
-  const proposal=document.getElementById('est-proposal');
-  if(!proposal){return;}
-  // Build mailto with proposal summary
-  const bid=bids.find(b=>b.id===lastCreatedBidId);
-  const amount=bid?.amount||0;
-  const bname=S.bname||'Your contractor';
-  const subject=encodeURIComponent(`${bname} — Painting Proposal`);
-  const body=encodeURIComponent(
-    `Hi,\n\nThank you for choosing ${bname}. Here is a summary of your painting proposal:\n\n`+
-    `Total: $${amount.toFixed(2)}\n`+
-    `Deposit (25%): $${(amount*.25).toFixed(2)}\n`+
-    `Balance due on completion: $${(amount*.75).toFixed(2)}\n\n`+
-    `Please contact us with any questions.\n\n${bname}`
-  );
-  window.open(`mailto:${email}?subject=${subject}&body=${body}`);
-}
-
-function copyProposalLink(){
-  const input=document.getElementById('proposal-link-input');
-  if(!input)return;
-  navigator.clipboard.writeText(input.value).then(()=>{
-    const btn=document.querySelector('[onclick="copyProposalLink()"]');
-    if(btn){btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy',2000);}
-  }).catch(()=>{
-    input.select();document.execCommand('copy');
-    const btn=document.querySelector('[onclick="copyProposalLink()"]');
-    if(btn){btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy',2000);}
-  });
-}
 function buildDescription(){
   const rooms=estSurfaces.filter(s=>s.qty>0);
   const roomList=[...new Set(rooms.map(s=>(s.room||'').split(' — ')[0].replace('[Ext] ','').trim()))].filter(Boolean);
@@ -6605,7 +6359,7 @@ function buildProposal(){
       ${blic?`<div style="font-size:11px;margin-top:2px;opacity:.75">${blic}</div>`:''}
     </div>
     <div style="text-align:right">
-      <div style="font-size:16px;font-weight:800">Paint Proposal</div>
+      <div style="font-size:16px;font-weight:800">Paint Estimate</div>
       <div style="font-size:11px;margin-top:4px;opacity:.85"># ${estNum}</div>
       <div style="font-size:11px;opacity:.85">DATE: ${ds}</div>
     </div>
@@ -9442,32 +9196,20 @@ function renderHittersList(){
 async function loadAccountData(){
   if(!_supa||!_supaUser)return false;
   try{
-    const{data:u}=await _supa.from('users').select('*').eq('id',_supaUser.id).maybeSingle();
-    if(u&&u.account_id){
-      // Full account setup — load everything
-      _user=u;
-      const{data:a}=await _supa.from('accounts').select('*').eq('id',u.account_id).maybeSingle();
-      _account=a;
-      const{data:cfg}=await _supa.from('account_config').select('*').eq('account_id',u.account_id).maybeSingle();
-      _config=cfg;
-      const{data:vehs}=await _supa.from('vehicles').select('*').eq('account_id',u.account_id);
-      _vehicles=vehs||[];
-      if(_account?.business_name)S.bname=_account.business_name;
-      if(_account?.phone)S.bphone=_account.phone;
-      if(_account?.license_info)S.blic=_account.license_info;
-      applyPermissions();
-      return true;
-    }
-    // No users row — check if they have existing zj_data (pre-schema user)
-    const{data:zd}=await _supa.from('zj_data').select('user_id').eq('user_id',_supaUser.id).maybeSingle();
-    if(zd){
-      // Returning user from before onboarding schema — let them into the app
-      // They can complete account setup later from Settings
-      _user={id:_supaUser.id,email:_supaUser.email,name:'',role:'owner',account_id:null};
-      applyPermissions();
-      return true;
-    }
-    return false;
+    const{data:u}=await _supa.from('users').select('*').eq('id',_supaUser.id).single();
+    if(!u||!u.account_id)return false;
+    _user=u;
+    const{data:a}=await _supa.from('accounts').select('*').eq('id',u.account_id).single();
+    _account=a;
+    const{data:cfg}=await _supa.from('account_config').select('*').eq('account_id',u.account_id).single();
+    _config=cfg;
+    const{data:vehs}=await _supa.from('vehicles').select('*').eq('account_id',u.account_id);
+    _vehicles=vehs||[];
+    if(_account?.business_name)S.bname=_account.business_name;
+    if(_account?.phone)S.bphone=_account.phone;
+    if(_account?.license_info)S.blic=_account.license_info;
+    applyPermissions();
+    return true;
   }catch(e){console.warn('loadAccountData failed:',e);return false;}
 }
 
@@ -9478,22 +9220,17 @@ function applyPermissions(){
   const nameEl=document.getElementById('nav-user-name');
   const roleEl=document.getElementById('nav-user-role');
   const avatarEl=document.getElementById('nav-user-avatar');
-  const rawName=getUserName()||'';
-  const name=rawName&&!rawName.includes('@')?rawName:(_account?.business_name||'My Account');
+  const name=getUserName()||_supaUser?.email?.split('@')[0]||'You';
   if(nameEl)nameEl.textContent=name;
   if(roleEl)roleEl.textContent=getRole().charAt(0).toUpperCase()+getRole().slice(1);
   if(avatarEl)avatarEl.textContent=name.charAt(0).toUpperCase();
 }
 
 // ── Onboarding ────────────────────────────────────────────────────────
-let _ob={step:1,name:'',email:'',password:'',businessType:'',businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:''};
+let _ob={step:1,name:'',email:'',password:'',businessType:'',businessName:'',phone:'',address:'',licenseInfo:'',role:'owner',vehicles:[],team:[]};
 
 async function showOnboarding(){
-  // Always reset to step 1 with clean state
-  _ob={step:1,name:'',email:'',password:'',businessType:'',businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:''};
   document.getElementById('supa-boot-overlay')?.remove();
-  document.getElementById('welcome-overlay')?.remove();
-  document.getElementById('onboarding-overlay')?.remove();
   const ov=document.createElement('div');
   ov.id='onboarding-overlay';
   ov.style.cssText='position:fixed;inset:0;z-index:9999;background:var(--bg);overflow-y:auto;padding:0';
@@ -9578,7 +9315,6 @@ function renderObStep(){
   else if(_ob.step===6)obStep6(body);
   else if(_ob.step===7)obStep7(body);
   else if(_ob.step===8)obStep8(body);
-  else if(_ob.step===9)obStep9(body);
 }
 
 function obBtn(label,onclick,secondary){
@@ -9603,7 +9339,6 @@ function obStep1(el){
         ).join('')+
       '</div>'+
       obBtn("Get started — it's free","_ob.step=2;renderObStep()")+
-      '<div style="text-align:center;margin-top:14px"><button onclick="document.getElementById(\'onboarding-overlay\').remove();supaShowLogin()" style="border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Already have an account? <span style="color:var(--blue);font-weight:600">Sign in</span></button></div>'+
     '</div>';
 }
 
@@ -9679,8 +9414,6 @@ function obStep4(el){
     '<div class="f" style="margin-bottom:14px"><label>Phone number</label>'+
     '<input type="tel" id="ob-bphone" placeholder="316-555-0100" value="'+((_ob.phone)||'')+'" maxlength="12" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,10).replace(/^(\\d{3})(\\d{3})(\\d{1,4})$/,\'$1-$2-$3\').replace(/^(\\d{3})(\\d{1,3})$/,\'$1-$2\')" style="font-size:16px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"></div>'+
     obInput('ob-baddr','Business address (optional)','1234 Main St, Wichita KS','text',_ob.address)+
-    '<div style="margin-bottom:18px"><label style="display:block;font-size:12px;font-weight:700;color:#5f5e5a;margin-bottom:6px;letter-spacing:.02em;text-transform:uppercase">State <span style="color:#A32D2D">*</span></label>'+
-    '<select id="ob-state" style="width:100%;box-sizing:border-box;font-size:15px;padding:11px 14px;border-radius:10px;border:1.5px solid #e0dfd8;background:#fff;color:#1a1a18;font-family:inherit"><option value="">Select state...</option><option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS" selected>KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option></select></div>'+
     obInput('ob-blic','License / insurance info (optional)','Licensed & Insured · KS #12345','text',_ob.licenseInfo)+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
     obBtn('Continue','obNext4()')+
@@ -9695,8 +9428,6 @@ function obNext4(){
   if(!phone){if(err)err.textContent='Enter a phone number.';return;}
   _ob.businessName=bname;_ob.phone=phone;
   _ob.address=document.getElementById('ob-baddr')?.value.trim()||'';
-  _ob.state=document.getElementById('ob-state')?.value||'';
-  if(!_ob.state){if(err)err.textContent='Select your state.';return;}
   _ob.licenseInfo=document.getElementById('ob-blic')?.value.trim()||'';
   _ob.step=5;renderObStep();
 }
@@ -9785,7 +9516,7 @@ function obStep7(el){
     '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">👥</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Add your team</div><div style="font-size:14px;color:var(--text3)">Optional — you can add crew later in Settings</div></div>'+
     '<div id="ob-team-list">'+(_ob.team.length?_ob.team.map((m,i)=>obTeamRow(m,i)).join(''):'')+'</div>'+
     '<button onclick="obAddTeam()" style="width:100%;padding:12px;border-radius:var(--r);border:2px dashed var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;color:var(--blue);font-weight:700;margin-bottom:14px">+ Add team member</button>'+
-    obBtn('Continue','_ob.step=8;renderObStep()')+
+    obBtn('Continue — skip for now','_ob.step=8;renderObStep()')+
     obBtn('Back','_ob.step=6;renderObStep()',true);
 }
 
@@ -9810,31 +9541,6 @@ function obAddTeam(){
 
 function obStep8(el){
   el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">💳</div>'+
-    '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Accept card payments</div>'+
-    '<div style="font-size:14px;color:var(--text3)">Optional — clients can always pay cash if you skip this</div></div>'+
-    '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;margin-bottom:18px;font-size:13px;color:#166534;line-height:1.7">'+
-      '<strong>How it works:</strong> Clients pay their deposit directly to your bank account via Stripe. You get paid instantly on card, or within 2-5 days on bank transfer. Stripe charges 2.9% + $0.30 per card transaction — auto-logged as a tax deductible expense.'+
-    '</div>'+
-    obInput('ob-stripe-key','Stripe Publishable Key (optional)','pk_live_...','text',_ob.stripeKey)+
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:16px;line-height:1.6">Find this at <strong>dashboard.stripe.com → Developers → API keys</strong>. Starts with pk_live_</div>'+
-    '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
-    obBtn('Continue','obNext8()')+
-    obBtn('Skip — cash only for now','_ob.stripeKey=\'\';_ob.step=9;renderObStep()',true)+
-    obBtn('Back','_ob.step=8;renderObStep()',true);
-}
-function obNext8(){
-  const key=(document.getElementById('ob-stripe-key')?.value||'').trim();
-  if(key&&!key.startsWith('pk_')){
-    const err=document.getElementById('ob-err');
-    if(err)err.textContent='That doesn\'t look like a Stripe publishable key — should start with pk_live_ or pk_test_';
-    return;
-  }
-  _ob.stripeKey=key;
-  _ob.step=9;renderObStep();
-}
-function obStep9(el){
-  el.innerHTML=
     '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">✓</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">You\'re all set</div><div style="font-size:14px;color:var(--text3)">Review your details before creating your account</div></div>'+
     '<div style="background:var(--bg2);border-radius:var(--r);padding:14px;margin-bottom:16px">'+
       '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px"><span style="color:var(--text2)">Name</span><strong>'+_ob.name+'</strong></div>'+
@@ -9857,36 +9563,15 @@ async function obSubmit(){
   function setProgress(msg){if(prog){prog.style.display='';prog.textContent=msg;}}
   try{
     setProgress('Creating your account...');
-    // Sign up
     const{data:authData,error:authErr}=await _supa.auth.signUp({email:_ob.email,password:_ob.password});
-    if(authErr){
-      if(authErr.message?.toLowerCase().includes('already registered')||authErr.status===422){
-        // Already has an account — close onboarding, show login
-        document.getElementById('onboarding-overlay')?.remove();
-        showWelcomeScreen();
-        setTimeout(()=>{
-          document.getElementById('welcome-overlay')?.remove();
-          supaShowLogin();
-          setTimeout(()=>{
-            const el=document.getElementById('supa-login-err');
-            if(el){el.textContent='Account already exists — sign in below.';el.style.color='#185FA5';}
-          },150);
-        },50);
-        return;
-      }
-      throw authErr;
-    }
-    // Sign in immediately to get live session for RLS
-    const{data:signInData,error:signInErr}=await _supa.auth.signInWithPassword({email:_ob.email,password:_ob.password});
-    if(signInErr)throw new Error('Account created — please sign in to continue.');
-    const uid=signInData.user?.id;
-    if(!uid)throw new Error('Could not get user ID');
-    _supaUser=signInData.user;
+    if(authErr)throw authErr;
+    const uid=authData.user?.id;if(!uid)throw new Error('Account creation failed');
+    _supaUser=authData.user;
 
     setProgress('Setting up your business...');
     const{data:acct,error:acctErr}=await _supa.from('accounts').insert({
       business_name:_ob.businessName,phone:_ob.phone,email:_ob.email,
-      address:_ob.address,license_info:_ob.licenseInfo,owner_id:uid,state:_ob.state
+      address:_ob.address,license_info:_ob.licenseInfo,owner_id:uid
     }).select().single();
     if(acctErr)throw acctErr;
     _account=acct;
@@ -9901,7 +9586,7 @@ async function obSubmit(){
     }
 
     setProgress('Configuring your workflow...');
-    const cfg={...BUSINESS_CONFIGS[_ob.businessType]||BUSINESS_CONFIGS.other,account_id:acct.id,business_type:_ob.businessType,state:_ob.state,stripe_pk:_ob.stripeKey||null};
+    const cfg={...BUSINESS_CONFIGS[_ob.businessType]||BUSINESS_CONFIGS.other,account_id:acct.id,business_type:_ob.businessType};
     const{data:cfgData}=await _supa.from('account_config').insert(cfg).select().single();
     _config=cfgData;
 
@@ -9925,10 +9610,8 @@ async function obSubmit(){
 function getDashGreeting(){
   const hr=new Date().getHours();
   const time=hr<12?'Good morning':hr<17?'Good afternoon':'Good evening';
-  // Prefer actual name from user record, fall back to first word of business name, never use email
-  const raw=getUserName()||'';
-  const name=raw&&!raw.includes('@')?raw.split(' ')[0]:'';
-  return name?time+', '+name+'!':time+'!';
+  const name=getUserName()||'';
+  return name?time+', '+name.split(' ')[0]+'!':time+'!';
 }
 
 // ── Supabase cloud sync ───────────────────────────────────────────────
@@ -9940,9 +9623,7 @@ function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 async function supaInit(){
   if(!supaEnabled())return;
   try{
-    _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{
-      auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storage:window.localStorage}
-    });
+    _supa=supabase.createClient(SUPA_URL,SUPA_KEY);
     const{data:{session}}=await _supa.auth.getSession();
     if(session){
       _supaUser=session.user;
@@ -9950,22 +9631,20 @@ async function supaInit(){
       if(hasAccount){
         await supaLoadFromCloud();
       } else {
-        // Signed in but no account row — load app anyway, skip onboarding loop
-        document.getElementById('supa-boot-overlay')?.remove();
-        renderDash();buildScopeGrid();
-        supaSetStatus('cloud');
+        // Signed in but no account row — show onboarding to complete setup
+        showOnboarding();
       }
     } else {
-      // No session — show welcome screen
+      // Not signed in — show onboarding (new user path)
       document.getElementById('supa-boot-overlay')?.remove();
       renderDash();buildScopeGrid();
-      showWelcomeScreen();
+      supaSetStatus('local');
+      supaShowLogin();
     }
     _supa.auth.onAuthStateChange(async(event,session)=>{
       if(event==='SIGNED_IN'){
         _supaUser=session.user;
         document.getElementById('supa-login-overlay')?.remove();
-        document.getElementById('welcome-overlay')?.remove();
         const hasAccount=await loadAccountData();
         if(hasAccount){
           await supaLoadFromCloud();
@@ -9975,7 +9654,7 @@ async function supaInit(){
       } else if(event==='SIGNED_OUT'){
         _supaUser=null;_user=null;_account=null;_config=null;
         supaSetStatus('local');
-        showWelcomeScreen();
+        supaShowLogin();
       }
     });
   }catch(e){
@@ -9984,24 +9663,6 @@ async function supaInit(){
     renderDash();buildScopeGrid();
     supaSetStatus('local');
   }
-}
-
-function showWelcomeScreen(){
-  if(document.getElementById('welcome-overlay'))return;
-  const ov=document.createElement('div');
-  ov.id='welcome-overlay';
-  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:#0D1117;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;';
-  ov.innerHTML=
-    '<div style="max-width:400px;width:100%;text-align:center">'+
-      '<div style="width:56px;height:56px;border-radius:14px;background:#185FA5;display:flex;align-items:center;justify-content:center;margin:0 auto 20px">'+
-        '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>'+
-      '</div>'+
-      '<div style="font-size:32px;font-weight:800;color:#fff;letter-spacing:-.5px;margin-bottom:10px">TradeDesk</div>'+
-      '<div style="font-size:15px;color:rgba(255,255,255,.45);line-height:1.6;margin-bottom:48px">The all-in-one business suite for contractors</div>'+
-      '<button onclick="showOnboarding()" style="width:100%;padding:14px;border-radius:10px;border:none;background:#185FA5;color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:12px;box-shadow:0 4px 20px rgba(24,95,165,.4)">Get started</button>'+
-      '<button onclick="document.getElementById(\'welcome-overlay\').remove();supaShowLogin();" style="width:100%;padding:14px;border-radius:10px;border:1.5px solid rgba(255,255,255,.15);background:transparent;color:rgba(255,255,255,.7);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">I already have an account</button>'+
-    '</div>';
-  document.body.appendChild(ov);
 }
 
 function supaShowLogin(){
@@ -10083,7 +9744,7 @@ async function supaSaveToCloud(){
 async function supaLoadFromCloud(){
   if(!_supa||!_supaUser)return;
   try{
-    const{data,error}=await _supa.from('zj_data').select('*').eq('user_id',_supaUser.id).maybeSingle();
+    const{data,error}=await _supa.from('zj_data').select('*').eq('user_id',_supaUser.id).single();
     if(error||!data){
       // No cloud data yet — use local, dismiss loading
       document.getElementById('supa-boot-overlay')?.remove();
