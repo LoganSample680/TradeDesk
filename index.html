@@ -1018,13 +1018,17 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     
     <div class="brow">
       <button class="btn" onclick="goEstStep(4)">&#8592; Adjust</button>
-      <button class="btn" onclick="sendEstimateEmail()" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">&#128247; Share</button>
       <button class="btn" onclick="downloadProposalPDF()" style="background:var(--bg2);border-color:var(--border2)">&#128196; PDF</button>
+      <button class="btn btn-g" onclick="sendProposalLink()" style="flex:1.5">&#128279; Send to client</button>
       <button class="btn btn-p" onclick="goEstStep(6)">Signs here &#8594;</button>
     </div>
-    <div id="est-sent-bar" style="display:none;margin-top:8px;background:var(--green-lt);border:1px solid var(--green);border-radius:var(--r);padding:8px 12px;flex-direction:row;align-items:center;justify-content:space-between;gap:8px">
-      <div style="font-size:12px;color:var(--green);font-weight:700">✓ Estimate sent</div>
-      <button class="btn btn-sm" onclick="markEstSigned()" style="background:var(--green);color:#fff;border-color:var(--green)">Mark as signed</button>
+    <div id="proposal-link-bar" style="display:none;margin-top:8px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px">
+      <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:6px">✓ Signing link ready — share with client</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="proposal-link-input" readonly style="flex:1;font-size:12px;padding:7px 10px;border-radius:var(--r);border:1px solid var(--border2);background:#fff;color:var(--text);font-family:inherit;min-width:0">
+        <button onclick="copyProposalLink()" class="btn btn-sm" style="flex-shrink:0">Copy</button>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px">Client opens the link, reviews the proposal, signs, and you get notified.</div>
     </div>
   </div>
   <div id="est-s6" style="display:none">
@@ -6316,6 +6320,86 @@ ${proposal.innerHTML}
   setTimeout(()=>URL.revokeObjectURL(url),10000);
 }
 function syncAdj(){const val=parseInt(v('est-adj'));document.getElementById('est-adj-val').textContent=(val>=0?'+':'')+fmt(Math.abs(val));renderEstReview();}
+
+// ── Client signing link ────────────────────────────────────────────────
+async function sendProposalLink(){
+  const proposal=document.getElementById('est-proposal');
+  if(!proposal||!proposal.innerHTML.trim()){
+    zAlert('Generate the proposal first.',{title:'Nothing to print'});return;
+  }
+  if(!supaEnabled()||!_supaUser){
+    zAlert('Sign in to Supabase to send client links.',{title:'Sign in required'});return;
+  }
+
+  const btn=document.querySelector('[onclick="sendProposalLink()"]');
+  if(btn){btn.textContent='Saving...';btn.disabled=true;}
+
+  try{
+    const cname=document.getElementById('e-cname')?.value||'Client';
+    const cemail=document.getElementById('e-cemail')?.value||document.getElementById('e-email')?.value||'';
+    const bname=document.getElementById('e-bname')?.value||S.bname||"TradeDesk";
+    const bidId=lastCreatedBidId||Date.now();
+    const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
+    const proposalKey=`proposals/${_supaUser.id}/${bidId}_${token}.json`;
+
+    // Store proposal data as JSON in Supabase Storage
+    const proposalData={
+      id:bidId,
+      token,
+      clientName:cname,
+      clientEmail:cemail,
+      businessName:bname,
+      contractorUserId:_supaUser.id,
+      contractorEmail:_supaUser.email,
+      proposalHtml:proposal.innerHTML,
+      amount:calcEst().final,
+      deposit:Math.round(calcEst().final*.25*100)/100,
+      createdAt:new Date().toISOString(),
+      status:'pending',
+      notifyEmail:_supaUser.email,
+    };
+
+    const{error}=await _supa.storage.from('proposals').upload(
+      proposalKey,
+      JSON.stringify(proposalData),
+      {contentType:'application/json',upsert:true}
+    );
+    if(error)throw error;
+
+    // Build the signing URL
+    const baseUrl=window.location.origin+window.location.pathname.replace('index.html','');
+    const signingUrl=`${baseUrl}sign.html?key=${encodeURIComponent(proposalKey)}`;
+
+    // Show the link
+    const bar=document.getElementById('proposal-link-bar');
+    const input=document.getElementById('proposal-link-input');
+    if(bar)bar.style.display='block';
+    if(input)input.value=signingUrl;
+
+    // Store token on the bid for verification later
+    const bid=bids.find(b=>b.id===bidId);
+    if(bid){bid.signingToken=token;bid.signingKey=proposalKey;saveAll();}
+
+    if(btn){btn.textContent='✓ Link ready';btn.disabled=false;}
+  }catch(e){
+    console.error('sendProposalLink failed:',e);
+    zAlert('Could not generate link: '+e.message+'\n\nMake sure the proposals storage bucket exists in Supabase.',{title:'Error'});
+    if(btn){btn.textContent='↗ Send to client';btn.disabled=false;}
+  }
+}
+
+function copyProposalLink(){
+  const input=document.getElementById('proposal-link-input');
+  if(!input)return;
+  navigator.clipboard.writeText(input.value).then(()=>{
+    const btn=document.querySelector('[onclick="copyProposalLink()"]');
+    if(btn){btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy',2000);}
+  }).catch(()=>{
+    input.select();document.execCommand('copy');
+    const btn=document.querySelector('[onclick="copyProposalLink()"]');
+    if(btn){btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy',2000);}
+  });
+}
 function buildDescription(){
   const rooms=estSurfaces.filter(s=>s.qty>0);
   const roomList=[...new Set(rooms.map(s=>(s.room||'').split(' — ')[0].replace('[Ext] ','').trim()))].filter(Boolean);
@@ -9241,11 +9325,11 @@ function applyPermissions(){
 }
 
 // ── Onboarding ────────────────────────────────────────────────────────
-let _ob={step:1,name:'',email:'',password:'',businessType:'',businessName:'',phone:'',address:'',licenseInfo:'',role:'owner',vehicles:[],team:[]};
+let _ob={step:1,name:'',email:'',password:'',businessType:'',businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[]};
 
 async function showOnboarding(){
   // Always reset to step 1 with clean state
-  _ob={step:1,name:'',email:'',password:'',businessType:'',businessName:'',phone:'',address:'',licenseInfo:'',role:'owner',vehicles:[],team:[]};
+  _ob={step:1,name:'',email:'',password:'',businessType:'',businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[]};
   document.getElementById('supa-boot-overlay')?.remove();
   document.getElementById('welcome-overlay')?.remove();
   document.getElementById('onboarding-overlay')?.remove();
@@ -9433,6 +9517,8 @@ function obStep4(el){
     '<div class="f" style="margin-bottom:14px"><label>Phone number</label>'+
     '<input type="tel" id="ob-bphone" placeholder="316-555-0100" value="'+((_ob.phone)||'')+'" maxlength="12" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,10).replace(/^(\\d{3})(\\d{3})(\\d{1,4})$/,\'$1-$2-$3\').replace(/^(\\d{3})(\\d{1,3})$/,\'$1-$2\')" style="font-size:16px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"></div>'+
     obInput('ob-baddr','Business address (optional)','1234 Main St, Wichita KS','text',_ob.address)+
+    '<div style="margin-bottom:18px"><label style="display:block;font-size:12px;font-weight:700;color:#5f5e5a;margin-bottom:6px;letter-spacing:.02em;text-transform:uppercase">State <span style="color:#A32D2D">*</span></label>'+
+    '<select id="ob-state" style="width:100%;box-sizing:border-box;font-size:15px;padding:11px 14px;border-radius:10px;border:1.5px solid #e0dfd8;background:#fff;color:#1a1a18;font-family:inherit"><option value="">Select state...</option><option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS" selected>KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option></select></div>'+
     obInput('ob-blic','License / insurance info (optional)','Licensed & Insured · KS #12345','text',_ob.licenseInfo)+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
     obBtn('Continue','obNext4()')+
@@ -9447,6 +9533,8 @@ function obNext4(){
   if(!phone){if(err)err.textContent='Enter a phone number.';return;}
   _ob.businessName=bname;_ob.phone=phone;
   _ob.address=document.getElementById('ob-baddr')?.value.trim()||'';
+  _ob.state=document.getElementById('ob-state')?.value||'';
+  if(!_ob.state){if(err)err.textContent='Select your state.';return;}
   _ob.licenseInfo=document.getElementById('ob-blic')?.value.trim()||'';
   _ob.step=5;renderObStep();
 }
@@ -9611,7 +9699,7 @@ async function obSubmit(){
     setProgress('Setting up your business...');
     const{data:acct,error:acctErr}=await _supa.from('accounts').insert({
       business_name:_ob.businessName,phone:_ob.phone,email:_ob.email,
-      address:_ob.address,license_info:_ob.licenseInfo,owner_id:uid
+      address:_ob.address,license_info:_ob.licenseInfo,owner_id:uid,state:_ob.state
     }).select().single();
     if(acctErr)throw acctErr;
     _account=acct;
@@ -9626,7 +9714,7 @@ async function obSubmit(){
     }
 
     setProgress('Configuring your workflow...');
-    const cfg={...BUSINESS_CONFIGS[_ob.businessType]||BUSINESS_CONFIGS.other,account_id:acct.id,business_type:_ob.businessType};
+    const cfg={...BUSINESS_CONFIGS[_ob.businessType]||BUSINESS_CONFIGS.other,account_id:acct.id,business_type:_ob.businessType,state:_ob.state};
     const{data:cfgData}=await _supa.from('account_config').insert(cfg).select().single();
     _config=cfgData;
 

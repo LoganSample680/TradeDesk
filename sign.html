@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Review & Sign Proposal — TradeDesk</title>
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --blue:#185FA5;--blue-lt:#EBF2FB;--blue-dk:#0D3B6E;
+  --green:#27500A;--green-lt:#EAF3DE;--green-mid:#3B6D11;
+  --border:#e0dfd8;--border2:#cccbc4;
+  --text:#1a1a18;--text2:#5f5e5a;--text3:#9a9890;
+  --bg:#f7f7f5;--bg2:#fff;--r:10px;--rl:14px;
+  --navy:#0D1117;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.topbar{background:var(--navy);padding:14px 20px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:100}
+.topbar-logo{width:28px;height:28px;border-radius:7px;background:var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.topbar-logo svg{width:16px;height:16px}
+.topbar-name{font-size:15px;font-weight:800;color:#fff;letter-spacing:-.3px}
+.topbar-sub{font-size:11px;color:rgba(255,255,255,.4);margin-left:auto}
+.container{max-width:680px;margin:0 auto;padding:20px 16px 60px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:20px;margin-bottom:16px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.section-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px}
+.amount-box{background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--rl);padding:20px;text-align:center;margin-bottom:20px}
+.amount-box .total{font-size:36px;font-weight:800;color:var(--blue-dk);letter-spacing:-.5px}
+.amount-box .deposit{font-size:14px;color:var(--blue);margin-top:6px}
+.sig-area{border:2px dashed var(--border2);border-radius:var(--r);background:#fff;position:relative;margin-bottom:12px;touch-action:none;cursor:crosshair}
+.sig-area canvas{display:block;width:100%;height:180px}
+.sig-placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:14px;pointer-events:none}
+.btn-primary{width:100%;padding:16px;border-radius:var(--r);border:none;background:var(--navy);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 2px 12px rgba(0,0,0,.2)}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed}
+.btn-clear{width:100%;padding:10px;border-radius:var(--r);border:1.5px solid var(--border2);background:#fff;color:var(--text2);font-size:13px;cursor:pointer;font-family:inherit;margin-bottom:8px}
+.status{text-align:center;padding:60px 20px}
+.status-icon{font-size:56px;margin-bottom:16px}
+.status h2{font-size:24px;font-weight:800;margin-bottom:8px}
+.status p{font-size:14px;color:var(--text2);line-height:1.6}
+.field-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px}
+.field-row:last-child{border-bottom:none}
+.field-label{color:var(--text3)}
+.field-val{font-weight:600;text-align:right}
+.terms{font-size:11px;color:var(--text3);line-height:1.7;background:var(--bg);border-radius:var(--r);padding:12px;border:1px solid var(--border);max-height:120px;overflow-y:auto;margin-bottom:14px}
+input[type=text]{width:100%;padding:11px 14px;border-radius:var(--r);border:1.5px solid var(--border2);background:#fff;font-size:15px;font-family:inherit;color:var(--text);outline:none}
+input[type=text]:focus{border-color:var(--blue)}
+label{display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-bottom:6px}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-logo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+  </div>
+  <span class="topbar-name">TradeDesk</span>
+  <span class="topbar-sub" id="top-biz"></span>
+</div>
+
+<div class="container">
+  <div id="loading" class="status">
+    <div class="status-icon">⏳</div>
+    <h2>Loading your proposal...</h2>
+    <p>Just a moment.</p>
+  </div>
+
+  <div id="main-content" style="display:none">
+    <!-- Proposal summary -->
+    <div class="card">
+      <div class="section-label">Proposal summary</div>
+      <div id="proposal-summary"></div>
+    </div>
+
+    <!-- Full proposal -->
+    <div class="card">
+      <div class="section-label">Full proposal</div>
+      <div id="proposal-html" style="font-size:13px"></div>
+    </div>
+
+    <!-- Sign -->
+    <div class="card" id="sign-section">
+      <div class="section-label">Sign to accept</div>
+      <div style="margin-bottom:14px">
+        <label>Your full name</label>
+        <input type="text" id="sig-name" placeholder="Type your full name" oninput="checkReady()">
+      </div>
+      <div class="section-label" style="margin-top:14px">Draw your signature</div>
+      <div class="sig-area" id="sig-area">
+        <canvas id="sig-canvas"></canvas>
+        <div class="sig-placeholder" id="sig-placeholder">Sign with your finger or mouse</div>
+      </div>
+      <button class="btn-clear" onclick="clearSig()">Clear signature</button>
+      <div class="terms" id="terms-text">
+        By signing below, you agree to the total price, scope of work, and all payment terms above.
+        This constitutes a legally binding agreement under the applicable state's Uniform Electronic Transactions Act (UETA).
+        A 25% deposit is due before work begins. Remaining balance is due upon completion.
+      </div>
+      <button class="btn-primary" id="submit-btn" disabled onclick="submitSignature()">
+        ✓ I agree — sign this proposal
+      </button>
+      <div id="submit-err" style="color:#A32D2D;font-size:12px;text-align:center;margin-top:8px;min-height:16px"></div>
+    </div>
+  </div>
+
+  <div id="signed-content" style="display:none">
+    <div class="status">
+      <div class="status-icon">✅</div>
+      <h2>Proposal signed!</h2>
+      <p id="signed-msg">Your signature has been recorded. The contractor will be in touch shortly to confirm your start date.</p>
+    </div>
+  </div>
+
+  <div id="error-content" style="display:none">
+    <div class="status">
+      <div class="status-icon">❌</div>
+      <h2>Proposal not found</h2>
+      <p>This link may have expired or is invalid. Please contact your contractor for a new link.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPA_URL='https://mwtsmctajhrrybblgorf.supabase.co';
+const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
+const _supa=supabase.createClient(SUPA_URL,SUPA_KEY);
+
+let _proposal=null;
+let sigCanvas,sigCtx,isSigning=false,hasInk=false;
+
+function fmt(n){return '$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
+
+async function init(){
+  const params=new URLSearchParams(window.location.search);
+  const key=params.get('key');
+  if(!key){showError();return;}
+
+  try{
+    // Download proposal JSON from Supabase Storage
+    const{data,error}=await _supa.storage.from('proposals').download(key);
+    if(error||!data)throw error||new Error('Not found');
+    const text=await data.text();
+    _proposal=JSON.parse(text);
+
+    if(_proposal.status==='signed'){
+      document.getElementById('signed-msg').textContent='This proposal was already signed. The contractor has been notified.';
+      showSigned();return;
+    }
+
+    // Render
+    document.getElementById('top-biz').textContent=_proposal.businessName||'';
+    document.getElementById('proposal-html').innerHTML=_proposal.proposalHtml||'';
+    document.getElementById('proposal-summary').innerHTML=`
+      <div class="amount-box">
+        <div class="total">${fmt(_proposal.amount)}</div>
+        <div class="deposit">Deposit due to start: ${fmt(_proposal.deposit)}</div>
+      </div>
+      <div class="field-row"><span class="field-label">Client</span><span class="field-val">${_proposal.clientName||''}</span></div>
+      <div class="field-row"><span class="field-label">Contractor</span><span class="field-val">${_proposal.businessName||''}</span></div>
+      <div class="field-row"><span class="field-label">Date</span><span class="field-val">${new Date(_proposal.createdAt).toLocaleDateString()}</span></div>
+      <div class="field-row"><span class="field-label">Status</span><span class="field-val" style="color:#B8600A">Awaiting signature</span></div>
+    `;
+    document.getElementById('loading').style.display='none';
+    document.getElementById('main-content').style.display='block';
+    initCanvas();
+  }catch(e){
+    console.error(e);showError();
+  }
+}
+
+function initCanvas(){
+  sigCanvas=document.getElementById('sig-canvas');
+  const dpr=window.devicePixelRatio||1;
+  const w=sigCanvas.offsetWidth||340;
+  sigCanvas.width=w*dpr;
+  sigCanvas.height=180*dpr;
+  sigCtx=sigCanvas.getContext('2d');
+  sigCtx.scale(dpr,dpr);
+  sigCtx.lineCap='round';sigCtx.lineJoin='round';
+  sigCtx.lineWidth=2.5;sigCtx.strokeStyle='#1a1a18';
+
+  const pos=e=>{const r=sigCanvas.getBoundingClientRect();const s=e.touches?e.touches[0]:e;return{x:(s.clientX-r.left),y:(s.clientY-r.top)};};
+  sigCanvas.addEventListener('mousedown',e=>{isSigning=true;const p=pos(e);sigCtx.beginPath();sigCtx.moveTo(p.x,p.y);});
+  sigCanvas.addEventListener('touchstart',e=>{e.preventDefault();isSigning=true;const p=pos(e);sigCtx.beginPath();sigCtx.moveTo(p.x,p.y);},{passive:false});
+  sigCanvas.addEventListener('mousemove',e=>{if(!isSigning)return;const p=pos(e);sigCtx.lineTo(p.x,p.y);sigCtx.stroke();markInk();});
+  sigCanvas.addEventListener('touchmove',e=>{e.preventDefault();if(!isSigning)return;const p=pos(e);sigCtx.lineTo(p.x,p.y);sigCtx.stroke();markInk();},{passive:false});
+  sigCanvas.addEventListener('mouseup',()=>isSigning=false);
+  sigCanvas.addEventListener('touchend',()=>isSigning=false);
+}
+
+function markInk(){
+  hasInk=true;
+  document.getElementById('sig-placeholder').style.display='none';
+  checkReady();
+}
+
+function clearSig(){
+  if(!sigCtx)return;
+  sigCtx.clearRect(0,0,sigCanvas.width,sigCanvas.height);
+  hasInk=false;
+  document.getElementById('sig-placeholder').style.display='';
+  checkReady();
+}
+
+function checkReady(){
+  const name=(document.getElementById('sig-name')?.value||'').trim();
+  const btn=document.getElementById('submit-btn');
+  if(btn)btn.disabled=!(name.length>1&&hasInk);
+}
+
+async function submitSignature(){
+  const name=(document.getElementById('sig-name')?.value||'').trim();
+  const err=document.getElementById('submit-err');
+  const btn=document.getElementById('submit-btn');
+  if(!name||!hasInk){if(err)err.textContent='Please enter your name and draw your signature.';return;}
+
+  btn.disabled=true;btn.textContent='Submitting...';
+
+  try{
+    const sigDataUrl=sigCanvas.toDataURL('image/png');
+    const ts=new Date().toISOString();
+
+    // Update proposal JSON with signed status
+    const updated={..._proposal,
+      status:'signed',
+      signedAt:ts,
+      signerName:name,
+      signerIp:'(client browser)',
+      signatureDataUrl:sigDataUrl,
+    };
+
+    const key=new URLSearchParams(window.location.search).get('key');
+    await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true});
+
+    // Also write to a signed_proposals table for Zach's dashboard to query
+    await _supa.from('signed_proposals').upsert({
+      bid_id:String(_proposal.id),
+      contractor_user_id:_proposal.contractorUserId,
+      client_name:_proposal.clientName,
+      client_signed_name:name,
+      amount:_proposal.amount,
+      deposit:_proposal.deposit,
+      signed_at:ts,
+      notify_email:_proposal.notifyEmail,
+      storage_key:key,
+    });
+
+    showSigned();
+  }catch(e){
+    console.error(e);
+    if(err)err.textContent='Something went wrong. Please try again.';
+    btn.disabled=false;btn.textContent='✓ I agree — sign this proposal';
+  }
+}
+
+function showSigned(){
+  document.getElementById('loading').style.display='none';
+  document.getElementById('main-content').style.display='none';
+  document.getElementById('signed-content').style.display='block';
+}
+
+function showError(){
+  document.getElementById('loading').style.display='none';
+  document.getElementById('error-content').style.display='block';
+}
+
+init();
+</script>
+</body>
+</html>
