@@ -97,7 +97,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #nav-user-name{font-size:12px;font-weight:600;color:rgba(255,255,255,.7);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 #nav-user-role{font-size:10px;color:rgba(255,255,255,.35);margin-top:1px;}
 /* ── App layout ── */
-#app{padding-left:var(--nav-w);padding-bottom:0;min-height:100vh}
+#app{margin-left:var(--nav-w);padding-bottom:0;min-height:100vh}
 #supa-status{left:var(--nav-w)}
 .drive-banner{left:var(--nav-w)}
 /* ── Hamburger toggle ── */
@@ -111,12 +111,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #nav-hamburger svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
 /* ── Nav collapse / hamburger ── */
 #nav{transition:transform .25s ease;}
-#app{transition:padding-left .25s ease;}
+#app{transition:margin-left .25s ease;}
 #supa-status{transition:left .25s ease;}
 
 /* Collapsed state — desktop only when user clicks hamburger */
 body.nav-collapsed #nav{transform:translateX(-220px);box-shadow:none;}
-body.nav-collapsed #app{padding-left:0!important;}
+body.nav-collapsed #app{margin-left:0!important;}
 body.nav-collapsed #supa-status{left:0!important;}
 body.nav-collapsed .drive-banner{left:0!important;}
 
@@ -10213,4 +10213,3 @@ if(supaEnabled()){
 </script>
 </body>
 </html>
-<!-- deploy Fri Apr  3 20:59:33 UTC 2026 -->
