@@ -100,6 +100,11 @@ input[type=text]:focus{border-color:var(--blue)}
         <div class="radio on" id="radio-card"><div style="width:8px;height:8px;border-radius:50%;background:#fff"></div></div>
       </div>
 
+      <div class="pay-opt" id="opt-ach" onclick="selPay('ach')">
+        <div class="pay-opt-icon">🏦</div>
+        <div><div class="pay-opt-title">Pay by bank transfer (ACH)</div><div class="pay-opt-sub">Lower fees — 0.8%, max $5. Takes 2–5 business days</div></div>
+        <div class="radio" id="radio-ach"></div>
+      </div>
       <div class="pay-opt" id="opt-cash" onclick="selPay('cash')">
         <div class="pay-opt-icon">💵</div>
         <div><div class="pay-opt-title">Pay cash</div><div class="pay-opt-sub">I'll pay the contractor directly in person</div></div>
@@ -115,6 +120,15 @@ input[type=text]:focus{border-color:var(--blue)}
         <button class="btn btn-green" id="card-btn" onclick="payCard()">Pay deposit by card</button>
       </div>
 
+      <div id="sec-ach" style="display:none">
+        <div style="background:var(--bg);border:1.5px solid var(--border2);border-radius:var(--r);padding:16px;margin-bottom:14px;font-size:13px;color:var(--text3);text-align:center">
+          Bank transfer powered by Stripe — verify your bank account securely
+        </div>
+        <div style="background:#EBF2FB;border-radius:var(--r);padding:10px 12px;margin-bottom:14px;font-size:12px;color:var(--blue-dk);line-height:1.6">
+          💡 ACH fees are capped at $5 — much cheaper than card on large deposits.
+        </div>
+        <button class="btn btn-green" id="ach-btn" onclick="payACH()">Pay by bank transfer (ACH)</button>
+      </div>
       <div id="sec-cash" style="display:none">
         <div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:12px;margin-bottom:14px;font-size:13px;color:#92400E;line-height:1.6">
           <strong>Cash selected.</strong> Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.
@@ -210,13 +224,15 @@ function backToSign(){show('pg-sign');scrollTo(0,0);}
 
 function selPay(opt){
   _payOpt=opt;
-  ['card','cash'].forEach(o=>{
+  ['card','ach','cash'].forEach(o=>{
     document.getElementById('opt-'+o).classList.toggle('sel',o===opt);
     const r=document.getElementById('radio-'+o);
     r.classList.toggle('on',o===opt);
-    r.innerHTML=o===opt?'<div style="width:8px;height:8px;border-radius:50%;background:#fff"></div>':'';
+    r.style.borderColor=o===opt?'var(--blue)':'var(--border2)';
+    r.innerHTML=o===opt?'<div style="width:8px;height:8px;border-radius:50%;background:'+(o==='card'?'#fff':'var(--blue)')+'"></div>':'';
   });
   document.getElementById('sec-card').style.display=opt==='card'?'block':'none';
+  document.getElementById('sec-ach').style.display=opt==='ach'?'block':'none';
   document.getElementById('sec-cash').style.display=opt==='cash'?'block':'none';
 }
 
@@ -246,6 +262,34 @@ async function payCard(){
   }
 }
 
+async function payACH(){
+  if(!STRIPE_PK){document.getElementById('pay-err').textContent='ACH payments not yet configured — please pay cash or contact your contractor.';return;}
+  const btn=document.getElementById('ach-btn');
+  btn.disabled=true;btn.textContent='Connecting...';
+  try{
+    const{data,error}=await _supa.functions.invoke('create-checkout',{
+      body:{
+        amount:Math.round(_prop.deposit*100),currency:'usd',
+        paymentMethod:'us_bank_account',
+        proposalKey:new URLSearchParams(location.search).get('key'),
+        clientName:_prop.clientName,businessName:_prop.businessName,
+        bidId:String(_prop.id),contractorUserId:_prop.contractorUserId,
+        notifyEmail:_prop.notifyEmail,signatureDataUrl:_sigData,
+        signerName:document.getElementById('sig-name').value.trim(),
+        successUrl:location.href+'&payment=success&method=ach',
+        cancelUrl:location.href,
+      }
+    });
+    if(error)throw error;
+    if(data?.url)location.href=data.url;
+    else throw new Error('No checkout URL');
+  }catch(e){
+    console.error(e);
+    document.getElementById('pay-err').textContent='ACH unavailable right now. Please choose another option.';
+    btn.disabled=false;btn.textContent='Pay by bank transfer (ACH)';
+  }
+}
+
 async function submitCash(){
   const btn=event.target;btn.disabled=true;btn.textContent='Confirming...';
   const name=document.getElementById('sig-name').value.trim();
@@ -270,10 +314,10 @@ async function submitCash(){
 }
 
 function showDone(method){
-  const isCard=method==='card';
-  document.getElementById('done-icon').textContent=isCard?'🎉':'✅';
-  document.getElementById('done-title').textContent=isCard?'Payment confirmed!':'Proposal signed!';
-  document.getElementById('done-msg').textContent=isCard
+  const isPaid=method==='card'||method==='ach';
+  document.getElementById('done-icon').textContent=isPaid?'🎉':'✅';
+  document.getElementById('done-title').textContent=isPaid?'Payment confirmed!':'Proposal signed!';
+  document.getElementById('done-msg').textContent=isPaid
     ?'Your deposit has been received. The contractor will be in touch to confirm your start date.'
     :'Your proposal is signed. The contractor will collect your deposit on arrival.';
   document.getElementById('done-rows').innerHTML=
@@ -286,6 +330,7 @@ function showDone(method){
 
 // Set initial state
 document.getElementById('sec-card').style.display='block';
+document.getElementById('sec-ach').style.display='none';
 document.getElementById('sec-cash').style.display='none';
 init();
 </script>
