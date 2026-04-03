@@ -159,10 +159,9 @@ body.nav-open #nav-overlay{display:block;}
   body.nav-collapsed .pg{padding-left:60px}
 }
 /* When collapsed, push greeting right so hamburger doesnt cover it */
-body.nav-collapsed #pg-dash .tbar-title{padding-left:48px;}
+body.nav-collapsed .tbar-title,body.nav-collapsed #dash-greet{padding-left:48px;transition:padding-left .25s ease;}
 @media(max-width:900px){
-  body:not(.nav-open) .pg{padding-top:20px;}
-  body:not(.nav-open) #pg-dash .tbar-title{padding-left:48px;}
+  .tbar-title,#dash-greet{padding-left:48px;}
 }
 .pg{display:none;padding:20px 24px 24px}.drive-active .pg{padding-top:70px}
 #pg-leads,#pg-jobs,#pg-money{padding-top:4px}
