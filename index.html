@@ -6243,6 +6243,13 @@ function onCustomerPaintChange(){
   const checked=document.getElementById('e-customer-paint')?.checked;
   const picker=document.getElementById('paint-picker');
   if(picker)picker.style.opacity=checked?'0.4':'1';
+  // Clear the required border on paint picker if customer supplies paint
+  const card=document.getElementById('paint-picker-card');
+  if(card)card.style.border=checked?'':'';
+  // Auto-set e-paint to a placeholder so validation passes
+  const paintEl=document.getElementById('e-paint');
+  if(paintEl&&checked&&!paintEl.value)paintEl.value='customer';
+  else if(paintEl&&!checked&&paintEl.value==='customer')paintEl.value='';
   renderEstRunning();renderEstReview();
 }
 
@@ -6858,11 +6865,18 @@ function buildProposal(){
     if(diff&&roomNames.length)roomCosts[roomNames[roomNames.length-1]].total+=diff;
   }
 
+  // Get job-level scope descriptions (since scope is job-level not per-room)
+  const activeScope=SCOPE_ITEMS.filter(sc=>scopeOn(sc.id)&&sc.clientDesc);
+  const scopeSummary=activeScope.map(sc=>sc.label).join(', ');
+
   // Build table rows — one per room
-  const roomRows=roomNames.map(room=>{
+  const roomRows=roomNames.map((room,roomIdx)=>{
     const r=roomCosts[room];
-    const scopeDesc=r.scopeLabels.length?' · '+r.scopeLabels.join(', '):'';
-    const descContent='<strong>'+room+'</strong>'+(r.color?'<br><span style="font-size:11px;color:#666">'+r.color+'</span>':'')+'<br><span style="font-size:11px;color:#666">Labor &amp; scope'+scopeDesc+'</span>';
+    // Show scope description only on the first room row to avoid repetition
+    const showScopeHere=roomIdx===0&&scopeSummary;
+    const descContent='<strong>'+room+'</strong>'+(r.color?'<br><span style="font-size:11px;color:#666">Color: '+r.color+'</span>':'')+
+      '<br><span style="font-size:11px;color:#666">Labor &amp; painting</span>'+
+      (showScopeHere?'<br><span style="font-size:11px;color:#888;font-style:italic">Scope: '+scopeSummary+'</span>':'');
     return `<tr style="border-bottom:1px solid var(--border)">
       <td style="padding:10px 12px;text-align:center;font-weight:700;vertical-align:top">1</td>
       <td style="padding:10px 12px;line-height:1.6;color:#1a1a1a;font-size:12px">${descContent}</td>
@@ -6936,10 +6950,6 @@ function buildProposal(){
       </tr>
     </tfoot>
   </table>
-  <div style="padding:12px 16px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--bg2)">
-    <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Scope of work</div>
-    <div style="font-size:12px;line-height:1.7;color:#1a1a1a">${description}</div>
-  </div>
   <div style="padding:14px 16px;display:grid;grid-template-columns:1fr 1fr;gap:14px;border-top:1px solid var(--border)">
     <div>
       <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Payment Terms</div>
@@ -7256,11 +7266,12 @@ function markFieldFilled(el){
 }
 
 function validateAndGoStep5(){
+  const customerPaintChecked=document.getElementById('e-customer-paint')?.checked||false;
   const paint=document.getElementById('e-paint')?.value||'';
-  if(!paint){
+  if(!paint&&!customerPaintChecked){
     const card=document.getElementById('paint-picker-card');
     if(card){card.style.border='2px solid #A32D2D';card.scrollIntoView&&card.scrollIntoView({behavior:'smooth',block:'center'});}
-    zAlert('Select a paint type.',{title:'Required'});return;
+    zAlert('Select a paint type, or check "Customer supplies paint".',{title:'Required'});return;
   }
   const days=parseInt(document.getElementById('e-days')?.value)||0;
   if(!days||days<1){
