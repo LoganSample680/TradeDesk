@@ -6874,20 +6874,23 @@ function buildProposal(){
   // Build table rows — one per room — showing per-room scope in description
   const roomRows=roomNames.map((room,roomIdx)=>{
     const r=roomCosts[room];
-    // Per-room scope labels
-    let roomScopeLabels=[];
+    // Per-room scope items with full client descriptions
+    let roomScopeItems=[];
     if(hasRoomScope&&roomScopeMap[room]){
-      roomScopeLabels=SCOPE_ITEMS.filter(sc=>{
-        const e=roomScopeMap[room][sc.id];return e&&e.active;
-      }).map(sc=>sc.label);
+      roomScopeItems=SCOPE_ITEMS.filter(sc=>{
+        const e=roomScopeMap[room][sc.id];return e&&e.active&&sc.clientDesc;
+      });
     } else if(!hasRoomScope&&roomIdx===0){
-      // Job-level fallback — show once on first room
-      roomScopeLabels=SCOPE_ITEMS.filter(sc=>scopeOn(sc.id)).map(sc=>sc.label);
+      roomScopeItems=SCOPE_ITEMS.filter(sc=>scopeOn(sc.id)&&sc.clientDesc);
     }
-    const scopeStr=roomScopeLabels.length?roomScopeLabels.join(', '):'';
-    const descContent='<strong>'+room+'</strong>'+(r.color?'<br><span style="font-size:11px;color:#666">Color: '+r.color+'</span>':'')+
-      '<br><span style="font-size:11px;color:#666">Labor &amp; painting</span>'+
-      (scopeStr?'<br><span style="font-size:11px;color:#888;font-style:italic">'+scopeStr+'</span>':'');
+    const scopeHtml=roomScopeItems.length
+      ?'<ol style="margin:6px 0 0 0;padding-left:16px;font-size:11px;color:#444;line-height:1.8">'+
+        roomScopeItems.map(sc=>'<li><strong>'+sc.label+':</strong> '+sc.clientDesc+'</li>').join('')+
+        '</ol>'
+      :'';
+    const descContent='<strong style="font-size:13px">'+room+'</strong>'+
+      (r.color?'<br><span style="font-size:11px;color:#666">Color: '+r.color+'</span>':'')+
+      scopeHtml;
     return `<tr style="border-bottom:1px solid var(--border)">
       <td style="padding:10px 12px;text-align:center;font-weight:700;vertical-align:top">1</td>
       <td style="padding:10px 12px;line-height:1.6;color:#1a1a1a;font-size:12px">${descContent}</td>
