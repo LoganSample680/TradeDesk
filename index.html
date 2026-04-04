@@ -9716,9 +9716,21 @@ async function obSubmit(){
   try{
     setProgress('Creating your account...');
     const{data:authData,error:authErr}=await _supa.auth.signUp({email:_ob.email,password:_ob.password});
-    if(authErr)throw authErr;
-    const uid=authData.user?.id;if(!uid)throw new Error('Account creation failed');
-    _supaUser=authData.user;
+    if(authErr){
+      if(authErr.message?.toLowerCase().includes('already registered')||authErr.status===422){
+        document.getElementById('onboarding-overlay')?.remove();
+        supaShowLogin();
+        setTimeout(()=>{const el=document.getElementById('supa-login-err');if(el){el.textContent='Account already exists — sign in below.';el.style.color='var(--blue)';}},150);
+        return;
+      }
+      throw authErr;
+    }
+    // Sign in immediately to get a live session so RLS works for inserts
+    const{data:signInData,error:signInErr}=await _supa.auth.signInWithPassword({email:_ob.email,password:_ob.password});
+    if(signInErr)throw new Error('Account created — please sign in to continue.');
+    const uid=signInData.user?.id;
+    if(!uid)throw new Error('Could not get user ID');
+    _supaUser=signInData.user;
 
     setProgress('Setting up your business...');
     const{data:acct,error:acctErr}=await _supa.from('accounts').insert({
