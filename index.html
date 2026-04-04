@@ -1577,8 +1577,9 @@ function guardedSubmit(fn){
 let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[];
 let currentClientId=null,editClientId=null,clientFilter='new';
 let estSurfaces=[],estSurfId=0,estStep=1,estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
-let scopeHrsStore={};
-let scopeActiveMap={};  // tracks which scope items are ON — source of truth, not DOM
+let scopeHrsStore={};  // legacy — now keyed by room: roomScopeMap[roomName][scopeId]
+let scopeActiveMap={};  // legacy — now keyed by room
+let roomScopeMap={};  // PRIMARY: {roomName: {scopeId: {active:bool, hrs:N, rate:N, cost:N}}}
 let sigCanvas,sigCtx,isSigning=false;
 let trackerTab='income',cdTab='overview',trackerYear=new Date().getFullYear();
 let selectedColor='#185FA5';
@@ -1959,7 +1960,7 @@ function _doOpenEstimate(c){
     const adj=document.getElementById('est-adj');if(adj)adj.value=0;
     const adjv=document.getElementById('est-adj-val');if(adjv)adjv.textContent='0%';
     ['est-adj-reason','inc-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-    scopeActiveMap={};scopeHrsStore={};
+    scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
   SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
     const epEl=document.getElementById('e-paint');if(epEl)epEl.value='';
     document.querySelectorAll('#paint-picker .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));
@@ -4391,8 +4392,9 @@ function openEditBid(bidId){
     if(totalMiles>0){sf('e-travel',(Math.round(totalMiles*10)/10).toString());}
     const linked=document.getElementById('e-client-linked');
     if(linked)linked.innerHTML='<span class="conn-tag">'+(c?c.name:'linked')+' — editing existing bid</span>';
-    scopeActiveMap={};scopeHrsStore={};
+    scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
   SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
+    roomScopeMap=b.roomScopeMap?JSON.parse(JSON.stringify(b.roomScopeMap)):{};
     if(b.scope&&Object.keys(b.scope).length){Object.entries(b.scope).forEach(([id,val])=>toggleScope(id,!!val));}
     else{['sand','spackle'].forEach(id=>toggleScope(id,true));}
     if(b.surfaces&&b.surfaces.length){estSurfaces=[...b.surfaces];estSurfId=Math.max(...b.surfaces.map(s=>s.id||0),0);}
@@ -4831,14 +4833,18 @@ function discardDriveTrip(){
   hideDriveBanner();resetDriveUI();
 }
 
-function buildScopeGrid(){
+function buildScopeGrid(roomName){
   const el=document.getElementById('est-scope-grid');if(!el)return;
+  const useRoom=!!roomName;
+  if(useRoom)_currentScopeRoom=roomName;
   el.innerHTML=SCOPE_ITEMS.map(s=>{
-    const isOn=!!scopeActiveMap[s.id];
-    const entry=scopeHrsStore[s.id]||{};
-    const hrs=typeof entry==='object'?entry.hrs:entry;
-    const rate=typeof entry==='object'?entry.rate:null;
-    return '<div class="stog'+(isOn?' on':'')+'" id="est-st-'+s.id+'" onclick="toggleScope(\''+s.id+'\')">'+
+    const isOn=useRoom?roomScopeOn(roomName,s.id):!!scopeActiveMap[s.id];
+    const entry=useRoom?((roomScopeMap[roomName]&&roomScopeMap[roomName][s.id])||{}):scopeHrsStore[s.id]||{};
+    const hrs=entry.hrs||0;
+    const rate=entry.rate||0;
+    const safeRoom=roomName?(roomName+'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"):'';
+    const clickFn=useRoom?'toggleScopeRoom(\\''+s.id+'\\',\\''+safeRoom+'\\')':'toggleScope(\\''+s.id+'\\')';
+    return '<div class="stog'+(isOn?' on':'')+'" id="est-st-'+s.id+'" onclick="'+clickFn+'">'+
       '<input type="checkbox" id="est-sc-'+s.id+'" style="display:none"'+(isOn?' checked':'')+'>'+
       '<div class="sdot"></div>'+
       '<div style="flex:1;min-width:0">'+
@@ -4849,7 +4855,82 @@ function buildScopeGrid(){
         '<span class="sprice" style="display:block;font-size:10px;color:var(--text3);font-weight:400">'+(isOn&&hrs?'= $'+(entry.cost||Math.round(hrs*(rate||45))):'Tap to enter hours')+'</span>'+
       '</div></div>';
   }).join('');
-  // NOTE: do NOT reset scopeHrsStore or scopeActiveMap — state persists across room saves
+  // State lives in roomScopeMap / scopeActiveMap — never reset here
+}
+function toggleScopeRoom(id, roomName){
+  const wasOn=roomScopeOn(roomName,id);
+  const nowOn=!wasOn;
+  if(!nowOn){
+    if(roomScopeMap[roomName])delete roomScopeMap[roomName][id];
+    const cb=document.getElementById('est-sc-'+id);const tog=document.getElementById('est-st-'+id);
+    if(cb)cb.checked=false;if(tog)tog.classList.remove('on');
+    const badge=document.getElementById('scope-hrs-badge-'+id);
+    if(badge){badge.textContent='';badge.style.display='none';}
+    saveEstFullDraft();
+  } else {
+    if(!roomScopeMap[roomName])roomScopeMap[roomName]={};
+    roomScopeMap[roomName][id]={active:true,hrs:0,rate:45,cost:0};
+    const cb=document.getElementById('est-sc-'+id);const tog=document.getElementById('est-st-'+id);
+    if(cb)cb.checked=true;if(tog)tog.classList.add('on');
+    const sc=SCOPE_ITEMS.find(x=>x.id===id);
+    promptScopeHoursRoom(id,sc?sc.label:id,roomName);
+  }
+}
+function promptScopeHoursRoom(id,label,roomName){
+  const existing=(roomScopeMap[roomName]&&roomScopeMap[roomName][id])||{};
+  const existHrs=existing.hrs||'';
+  const existRate=existing.rate||45;
+  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:18px;font-weight:800;margin-bottom:2px">'+label+'</div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:4px">For: <strong>'+roomName+'</strong></div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">Hours and rate for this room only</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">'+
+      '<div><label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Hours</label>'+
+        '<input type="number" id="scope-hrs-popup" value="'+existHrs+'" min="0" step="0.5" placeholder="0.0" inputmode="decimal"'+
+          ' style="font-size:28px;font-weight:700;padding:12px;border-radius:var(--r);border:2px solid var(--blue);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
+          ' oninput="_syncScopePopupHint()"></div>'+
+      '<div><label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Rate ($/hr)</label>'+
+        '<input type="number" id="scope-rate-popup" value="'+existRate+'" min="0" step="5" placeholder="45" inputmode="decimal"'+
+          ' style="font-size:28px;font-weight:700;padding:12px;border-radius:var(--r);border:2px solid var(--green);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
+          ' oninput="_syncScopePopupHint()"></div>'+
+    '</div>'+
+    '<div id="scope-popup-hint" style="font-size:13px;font-weight:700;color:var(--green-mid);text-align:center;margin-bottom:14px;min-height:20px"></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      '<button id="scope-cancel-btn" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
+      '<button id="scope-save-btn" style="padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Save ✓</button>'+
+    '</div>';
+  overlay.appendChild(box);document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)_cancelScopeHoursRoom(id,roomName);});
+  box.querySelector('#scope-cancel-btn').onclick=()=>_cancelScopeHoursRoom(id,roomName);
+  box.querySelector('#scope-save-btn').onclick=()=>_saveScopeHoursRoom(id,roomName);
+  setTimeout(()=>{_syncScopePopupHint();const inp=document.getElementById('scope-hrs-popup');if(inp){inp.focus();inp.select();}},80);
+}
+function _saveScopeHoursRoom(id,roomName){
+  const hrs=parseFloat(document.getElementById('scope-hrs-popup')?.value)||0;
+  const rate=parseFloat(document.getElementById('scope-rate-popup')?.value)||45;
+  if(hrs>0){
+    setRoomScope(roomName,id,true,hrs,rate);
+    const badge=document.getElementById('scope-hrs-badge-'+id);
+    if(badge){badge.innerHTML=hrs+'h<br>$'+rate+'/hr';badge.style.display='';}
+    const tog=document.getElementById('est-st-'+id);if(tog)tog.classList.add('on');
+    const cb=document.getElementById('est-sc-'+id);if(cb)cb.checked=true;
+  } else {
+    if(roomScopeMap[roomName])delete roomScopeMap[roomName][id];
+    const cb=document.getElementById('est-sc-'+id);const tog=document.getElementById('est-st-'+id);
+    if(cb)cb.checked=false;if(tog)tog.classList.remove('on');
+    const badge=document.getElementById('scope-hrs-badge-'+id);
+    if(badge){badge.textContent='';badge.style.display='none';}
+  }
+  closeTopModal();renderEstRunning&&renderEstRunning();saveEstFullDraft();
+}
+function _cancelScopeHoursRoom(id,roomName){
+  if(!roomScopeOn(roomName,id)){
+    const cb=document.getElementById('est-sc-'+id);const tog=document.getElementById('est-st-'+id);
+    if(cb)cb.checked=false;if(tog)tog.classList.remove('on');
+  }
+  closeTopModal();
 }
 function toggleScope(id,force){
   const wasOn=!!scopeActiveMap[id];
@@ -4946,7 +5027,16 @@ function _cancelScopeHours(id){
   closeTopModal();
 }
 function scopeOn(id){return !!scopeActiveMap[id];}
+function getRoomScope(roomName){return roomScopeMap[roomName]||(roomScopeMap[roomName]={});}
+function roomScopeOn(roomName,id){return !!(roomScopeMap[roomName]&&roomScopeMap[roomName][id]&&roomScopeMap[roomName][id].active);}
+function setRoomScope(roomName,id,active,hrs,rate){
+  if(!roomScopeMap[roomName])roomScopeMap[roomName]={};
+  if(!active){delete roomScopeMap[roomName][id];return;}
+  const cost=hrs&&rate?Math.round(hrs*rate*100)/100:0;
+  roomScopeMap[roomName][id]={active:true,hrs:hrs||0,rate:rate||45,cost};
+}
 let surfJobType='interior', surfColor='', surfRoom='';
+let _currentScopeRoom='';  // room name currently shown in scope grid
 function addSurfColorField(){
   const list=document.getElementById('surf-colors-list');if(!list)return;
   const inp=document.createElement('input');
@@ -5276,8 +5366,8 @@ function finishRoom(){
 function showRoomSavedState(roomCount){
   document.getElementById('surf-step-a').style.display='none';
   document.getElementById('surf-step-b').style.display='none';
-  // Rebuild scope grid so it shows in step 3
-  buildScopeGrid();
+  // Get the room name just saved from the last surface entry
+  const lastSavedRoom=estSurfaces.length>0?cleanRoomName(estSurfaces[estSurfaces.length-1].room):'';
   const surf3=document.getElementById('est-s3');
   if(!surf3)return;
   let doneDiv=document.getElementById('surf-room-done');
@@ -5313,7 +5403,8 @@ function showRoomSavedState(roomCount){
       })()+
     '</div>'+
     '<div style="margin:12px 0;background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:14px">'+
-      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">Scope of work — check everything that applies</div>'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Scope of work for '+lastSavedRoom+'</div>'+
+      '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Check what applies to this room and enter hours</div>'+
       '<div class="sg" id="est-scope-grid"></div>'+
     '</div>'+
     '<div style="display:grid;gap:10px">'+
@@ -5321,6 +5412,8 @@ function showRoomSavedState(roomCount){
         '+ Add another room'+
       '</button>'+
     '</div>';
+  // Now render scope grid for this specific room
+  if(lastSavedRoom)buildScopeGrid(lastSavedRoom);
 }
 
 function addAnotherRoom(){
@@ -6176,6 +6269,7 @@ function saveEstFullDraft(){
       cond:document.getElementById('e-cond')?.value||'',
       scope:SCOPE_ITEMS.reduce((o,s)=>{o[s.id]=!!scopeOn(s.id);return o;},{}),
       scopeHrs:{...scopeHrsStore},
+      roomScopeMap:{...JSON.parse(JSON.stringify(roomScopeMap))},
       scopeRates,
       rWalls:document.getElementById('e-r-walls')?.value||'',
       rCeil:document.getElementById('e-r-ceil')?.value||'',
@@ -6234,6 +6328,7 @@ function restoreEstFullDraft(d){
   if(d.scopeRates){SCOPE_ITEMS.forEach(sc=>{if(d.scopeRates[sc.id])set(sc.rateKey,d.scopeRates[sc.id]);});}
   // Restore scopeHrsStore
   if(d.scopeHrs)scopeHrsStore={...d.scopeHrs};
+  if(d.roomScopeMap)roomScopeMap=JSON.parse(JSON.stringify(d.roomScopeMap));
   if(d.paint){
     const el=document.getElementById('e-paint');if(el)el.value=d.paint;
     const btn=document.getElementById('pp-'+d.paint);
@@ -6251,7 +6346,7 @@ function restoreEstFullDraft(d){
   }
 
   // Sync DOM if scope grid is currently rendered
-  buildScopeGrid();
+  buildScopeGrid(_currentScopeRoom||undefined);
   if(d.surfaces&&d.surfaces.length){
     estSurfaces=d.surfaces;
     estSurfId=Math.max(0,...estSurfaces.map(s=>s.id))+1;
@@ -6309,17 +6404,31 @@ function calcEst(){
     laborTotal+=cost;lines.push({label:(s.room||t.l),qty:s.qty,unit:t.unit,sub:cost});
   });
   SCOPE_ITEMS.forEach(sc=>{
-    if(!scopeOn(sc.id))return;
-    const entry=scopeHrsStore[sc.id]||{};
-    const hrs=typeof entry==='object'?entry.hrs||0:entry||0;
-    const scopeRate=parseFloat(document.getElementById(sc.rateKey)?.value)||sc.defaultRate||45;
-    const rate=typeof entry==='object'&&entry.rate>0?entry.rate:scopeRate;
-    const cost=Math.round(hrs*rate*100)/100;
-    if(hrs>0||cost>0){
-      laborTotal+=cost;
-      if(hrs>0)totalLaborHours+=hrs;
-      const lbl=sc.label+(hrs?' ('+hrs+'h)':'')+(cost?' — $'+cost:'');
-      lines.push({label:lbl,qty:hrs||1,unit:hrs?'hrs':'flat',sub:cost});
+    // Per-room scope: aggregate hrs/cost across all rooms
+    const hasRoomScope=Object.keys(roomScopeMap).length>0&&
+      Object.values(roomScopeMap).some(r=>r[sc.id]&&r[sc.id].active);
+    if(hasRoomScope){
+      let totalHrs=0,totalCost=0;
+      Object.values(roomScopeMap).forEach(r=>{
+        const e=r[sc.id];if(!e||!e.active||!e.hrs)return;
+        totalHrs+=e.hrs;totalCost+=e.cost||Math.round(e.hrs*(e.rate||45)*100)/100;
+      });
+      if(totalHrs>0){
+        laborTotal+=totalCost;totalLaborHours+=totalHrs;
+        lines.push({label:sc.label+' ('+totalHrs+'h)',qty:totalHrs,unit:'hrs',sub:totalCost});
+      }
+    } else {
+      // Fall back to job-level scope
+      if(!scopeOn(sc.id))return;
+      const entry=scopeHrsStore[sc.id]||{};
+      const hrs=typeof entry==='object'?entry.hrs||0:entry||0;
+      const scopeRate=parseFloat(document.getElementById(sc.rateKey)?.value)||sc.defaultRate||45;
+      const rate=typeof entry==='object'&&entry.rate>0?entry.rate:scopeRate;
+      const cost=Math.round(hrs*rate*100)/100;
+      if(hrs>0||cost>0){
+        laborTotal+=cost;if(hrs>0)totalLaborHours+=hrs;
+        lines.push({label:sc.label+(hrs?' ('+hrs+'h)':''),qty:hrs||1,unit:hrs?'hrs':'flat',sub:cost});
+      }
     }
   });
   let matTotal=0;const paintLines=[];const colorGals={};let totalPaintSqFt=0;
@@ -6520,7 +6629,12 @@ function copyProposalLink(){
 function buildDescription(){
   const rooms=estSurfaces.filter(s=>s.qty>0);
   const roomList=[...new Set(rooms.map(s=>cleanRoomName(s.room)))].filter(Boolean);
-  const activeScope=SCOPE_ITEMS.filter(sc=>scopeOn(sc.id)&&sc.clientDesc);
+  // Collect active scope from roomScopeMap (per-room) or fall back to job-level
+  const hasRoomScopeDesc=Object.keys(roomScopeMap).length>0&&Object.values(roomScopeMap).some(r=>Object.keys(r).length>0);
+  const activeScope=SCOPE_ITEMS.filter(sc=>{
+    if(hasRoomScopeDesc)return Object.values(roomScopeMap).some(r=>r[sc.id]&&r[sc.id].active);
+    return scopeOn(sc.id);
+  }).filter(sc=>sc.clientDesc);
   const isExt=estSurfaces.some(s=>s.type==='ext_walls'||s.type==='ext_trim'||s.type==='deck');
   const customerPaint=document.getElementById('e-customer-paint')?.checked||false;
   const matDesc=customerPaint
@@ -6801,14 +6915,15 @@ if(!hasSignature()&&typedSig.length<=2){zAlert('Please type your name or draw yo
   if(estLinkedClientId){
     const c=getClientById(estLinkedClientId);
     const days=parseInt(v('e-days'))||2;
-    const ss={}; SCOPE_ITEMS.forEach(s=>{ss[s.id]=!!scopeOn(s.id);});
+    const ss={}; SCOPE_ITEMS.forEach(s=>{ss[s.id]=!!scopeOn(s.id)||(Object.values(roomScopeMap).some(r=>r[s.id]&&r[s.id].active));});
+    const savedRoomScopeMap=JSON.parse(JSON.stringify(roomScopeMap));
     if(editingBidId){
       const b=bids.find(x=>x.id===editingBidId);
       if(b){
         b.amount=final;b.days=days;b.status='Closed Won';b.draft=false;
         b.notes=v('e-cnotes');b.addr=v('e-caddr');
         b.name=cname;b.phone=v('e-cphone');
-        b.scope=ss;b.surfaces=[...estSurfaces];
+        b.scope=ss;b.roomScopeMap=savedRoomScopeMap;b.surfaces=[...estSurfaces];
         b.type=getBidIncomeLabel({surfaces:estSurfaces});
         b.cond=v('e-cond');b.paint=v('e-paint');
         b.allowWeekend=document.getElementById('e-allow-weekend')?.checked||false;
@@ -6821,7 +6936,7 @@ if(!hasSignature()&&typedSig.length<=2){zAlert('Please type your name or draw yo
         draft.amount=final;draft.days=days;draft.status='Closed Won';draft.draft=false;
         draft.followup='';draft.notes=v('e-cnotes');draft.addr=v('e-caddr');
         draft.name=cname;draft.phone=v('e-cphone');
-        draft.scope=ss;draft.surfaces=[...estSurfaces];
+        draft.scope=ss;draft.roomScopeMap=savedRoomScopeMap;draft.surfaces=[...estSurfaces];
         draft.type=getBidIncomeLabel({surfaces:estSurfaces});
         draft.cond=v('e-cond');draft.paint=v('e-paint');
         draft.completion_date='';draft.collStage='none';
@@ -6877,7 +6992,7 @@ function clearEstimatorForm(){
   ['e-cname','e-cphone','e-caddr','e-cnotes','est-adj-reason'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const adj=document.getElementById('est-adj');if(adj)adj.value=0;
   const adjV=document.getElementById('est-adj-val');if(adjV)adjV.textContent='0%';
-  scopeActiveMap={};scopeHrsStore={};
+  scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
   SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
   const ep2=document.getElementById('e-paint');if(ep2)ep2.value='';
   document.querySelectorAll('#paint-picker .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));
