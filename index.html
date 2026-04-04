@@ -6746,6 +6746,84 @@ function buildProposal(){
   const allowWeekend=document.getElementById('e-allow-weekend')?.checked||false;
   const description=buildDescription();
   const matLine=matTotal+flatAdd;
+  const customerPaint=document.getElementById('e-customer-paint')?.checked||false;
+
+  // Build per-room cost rows for the proposal table
+  const gR=id=>parseFloat(document.getElementById(id)?.value)||0;
+  const R={walls:gR('e-r-walls')||S.rWalls||1.00,ceiling:gR('e-r-ceil')||S.rCeil||0.85,trim:gR('e-r-trim')||S.rTrim||1.50,doors:gR('e-r-door')||S.rDoor||95,windows:gR('e-r-win')||S.rWin||50,cabinets:38,ext_walls:gR('e-r-ext')||S.rExt||1.10,ext_trim:gR('e-r-trim')||S.rTrim||1.50,deck:gR('e-r-deck')||S.rDeck||1.00};
+  const coats=scopeOn('twocoat')?2:1;
+  const contingencyPct=typeof S.contingencyPct==='number'?S.contingencyPct:7;
+  const hasRoomScope=Object.keys(roomScopeMap).length>0&&Object.values(roomScopeMap).some(r=>Object.keys(r).length>0);
+
+  // Aggregate surface cost per room
+  const roomCosts={};
+  estSurfaces.forEach(s=>{
+    if(!s.qty)return;
+    const t=SURF_TYPES.find(x=>x.v===s.type);if(!t)return;
+    const roomName=cleanRoomName(s.room)||'Other';
+    const color=(s.room||'').split(' — ')[1]||'';
+    if(!roomCosts[roomName])roomCosts[roomName]={surfCost:0,scopeCost:0,color,scopeLabels:[]};
+    if(color&&!roomCosts[roomName].color)roomCosts[roomName].color=color;
+    const rate=R[s.type]||0;
+    roomCosts[roomName].surfCost+=Math.round(s.qty*rate*(t.unit==='sq ft'?coats:1)*100)/100;
+  });
+
+  // Add per-room scope costs
+  if(hasRoomScope){
+    Object.entries(roomScopeMap).forEach(([room,scope])=>{
+      if(!roomCosts[room])return;
+      Object.entries(scope).forEach(([scId,entry])=>{
+        if(!entry||!entry.active)return;
+        const sc=SCOPE_ITEMS.find(x=>x.id===scId);
+        roomCosts[room].scopeCost+=entry.cost||Math.round((entry.hrs||0)*(entry.rate||45)*100)/100;
+        if(sc)roomCosts[room].scopeLabels.push(sc.label);
+      });
+    });
+  } else {
+    // Job-level scope — split evenly across rooms proportionally by surface cost
+    const totalSurfCost=Object.values(roomCosts).reduce((s,r)=>s+r.surfCost,0)||1;
+    const totalJobScopeCost=laborTotal/(1+contingencyPct/100)-totalSurfCost;
+    if(totalJobScopeCost>0){
+      Object.values(roomCosts).forEach(r=>{
+        r.scopeCost=Math.round(totalJobScopeCost*(r.surfCost/totalSurfCost)*100)/100;
+      });
+    }
+  }
+
+  // Apply contingency to each room proportionally
+  const roomNames=Object.keys(roomCosts);
+  const totalPreConting=roomNames.reduce((s,r)=>s+roomCosts[r].surfCost+roomCosts[r].scopeCost,0)||1;
+  roomNames.forEach(room=>{
+    const r=roomCosts[room];
+    const roomTotal=r.surfCost+r.scopeCost;
+    r.total=Math.round(roomTotal*(1+contingencyPct/100)*(laborTotal/Math.max(totalPreConting*(1+contingencyPct/100),1)>0?1:1)*100)/100;
+    // Simple: apply contingency directly
+    r.total=Math.round(roomTotal*(1+contingencyPct/100)*100)/100;
+  });
+
+  // Normalize room totals to match laborTotal exactly
+  const roomTotalSum=roomNames.reduce((s,r)=>s+roomCosts[r].total,0);
+  if(roomTotalSum>0&&roomNames.length>0){
+    const scale=laborTotal/roomTotalSum;
+    roomNames.forEach(room=>{roomCosts[room].total=Math.round(roomCosts[room].total*scale*100)/100;});
+    // Fix rounding: add diff to last room
+    const diff=Math.round((laborTotal-roomNames.reduce((s,r)=>s+roomCosts[r].total,0))*100)/100;
+    if(diff&&roomNames.length)roomCosts[roomNames[roomNames.length-1]].total+=diff;
+  }
+
+  // Build table rows — one per room
+  const roomRows=roomNames.map(room=>{
+    const r=roomCosts[room];
+    const scopeDesc=r.scopeLabels.length?' · '+r.scopeLabels.join(', '):'';
+    const descContent='<strong>'+room+'</strong>'+(r.color?'<br><span style="font-size:11px;color:#666">'+r.color+'</span>':'')+'<br><span style="font-size:11px;color:#666">Labor &amp; scope'+scopeDesc+'</span>';
+    return `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:10px 12px;text-align:center;font-weight:700;vertical-align:top">1</td>
+      <td style="padding:10px 12px;line-height:1.6;color:#1a1a1a;font-size:12px">${descContent}</td>
+      <td style="padding:10px 12px;text-align:right;font-weight:700;vertical-align:top">${fmt(r.total)}</td>
+      <td style="padding:10px 12px;text-align:right;font-weight:700;vertical-align:top">${fmt(r.total)}</td>
+    </tr>`;
+  }).join('');
+
   document.getElementById('est-proposal').innerHTML=`
 <div class="proposal" style="background:#fff;color:#1a1a1a;border-radius:var(--rl);overflow:hidden;border:1px solid var(--border)">
   <div style="background:var(--blue);color:#fff;padding:20px;display:flex;justify-content:space-between;align-items:flex-start">
@@ -6784,17 +6862,12 @@ function buildProposal(){
       </tr>
     </thead>
     <tbody>
-      <tr style="border-bottom:1px solid var(--border)">
-        <td style="padding:12px;text-align:center;font-weight:700;vertical-align:top">1</td>
-        <td style="padding:12px;line-height:1.6;color:#1a1a1a;font-size:12px">${description}</td>
-        <td style="padding:12px;text-align:right;font-weight:700;vertical-align:top">${fmt(final-matLine)}</td>
-        <td style="padding:12px;text-align:right;font-weight:700;vertical-align:top">${fmt(final-matLine)}</td>
-      </tr>
+      ${roomRows}
       ${matLine>0?`<tr style="border-bottom:1px solid var(--border)">
         <td style="padding:8px 12px;text-align:center;font-weight:700;vertical-align:top">1</td>
         <td style="padding:8px 12px;font-size:12px;color:#1a1a1a">
           <strong>Paint, Primer &amp; Materials</strong><br>
-          <span style="font-size:11px;color:#666">Includes paint, primer, tape, plastic sheeting, rollers, brushes, drop cloths and all supplies needed to complete the job.</span>
+          <span style="font-size:11px;color:#666">Includes paint, primer, tape, plastic sheeting, rollers, brushes, drop cloths and all supplies needed to complete the job.${customerPaint?' Paint supplied by customer.':''}</span>
         </td>
         <td style="padding:8px 12px;text-align:right;font-weight:700;vertical-align:top">${fmt(matLine)}</td>
         <td style="padding:8px 12px;text-align:right;font-weight:700;vertical-align:top">${fmt(matLine)}</td>
@@ -6816,6 +6889,10 @@ function buildProposal(){
       </tr>
     </tfoot>
   </table>
+  <div style="padding:12px 16px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--bg2)">
+    <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Scope of work</div>
+    <div style="font-size:12px;line-height:1.7;color:#1a1a1a">${description}</div>
+  </div>
   <div style="padding:14px 16px;display:grid;grid-template-columns:1fr 1fr;gap:14px;border-top:1px solid var(--border)">
     <div>
       <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Payment Terms</div>
