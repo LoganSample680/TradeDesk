@@ -772,7 +772,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   <div class="steps" id="est-steps">
     <div class="step active" id="est-st-1" onclick="goEstStep(1)"><div class="snum">1</div><span class="slbl">Client</span></div>
     <div class="ssep"></div>
-    <div class="step" id="est-st-2" onclick="goEstStep(2)"><div class="snum">2</div><span class="slbl">Scope</span></div>
+    <div class="step" id="est-st-2" onclick="goEstStep(2)"><div class="snum">2</div><span class="slbl">Rates</span></div>
     <div class="ssep"></div>
     <div class="step" id="est-st-3" onclick="goEstStep(3)"><div class="snum">3</div><span class="slbl">Surfaces</span></div>
     <div class="ssep"></div>
@@ -802,7 +802,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
       <div class="f"><label>Walkthrough notes</label><textarea id="e-cnotes" placeholder="What did you see? What does the client want?"></textarea></div>
     </div>
 
-    <div class="brow"><button class="btn btn-p" id="est-s1-next" onclick="validateAndGoStep2()" style="background:var(--border2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>Next: Scope &#8594;</button></div>
+    <div class="brow"><button class="btn btn-p" id="est-s1-next" onclick="validateAndGoStep2()" style="background:var(--border2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>Next: Rates &#8594;</button></div>
   </div>
   <div id="est-s2" style="display:none">
     <div class="card"><div class="card-hd">Rates for this job</div>
@@ -833,9 +833,6 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
           <div style="font-weight:700">Poor</div><div style="font-size:10px;color:inherit;margin-top:2px;opacity:.7">Heavy prep</div>
         </button>
       </div>
-    </div>
-    <div class="card" id="scope-picker-card"><div class="card-hd">Scope of work <span style="color:var(--text3);font-weight:400;font-size:11px">* Check everything you'll do</span></div>
-      <div class="sg" id="est-scope-grid"></div>
     </div>
     <input type="hidden" id="e-paint" value="">
     <input type="hidden" id="e-colors" value="0">
@@ -5274,6 +5271,8 @@ function finishRoom(){
 function showRoomSavedState(roomCount){
   document.getElementById('surf-step-a').style.display='none';
   document.getElementById('surf-step-b').style.display='none';
+  // Rebuild scope grid so it shows in step 3
+  buildScopeGrid();
   const surf3=document.getElementById('est-s3');
   if(!surf3)return;
   let doneDiv=document.getElementById('surf-room-done');
@@ -5307,6 +5306,10 @@ function showRoomSavedState(roomCount){
           recentSurfs.map(s=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span style="color:var(--text2)">'+(SURF_LABELS2[s.type]||s.type)+'</span><span style="font-weight:700">'+s.qty.toLocaleString()+(s.type==='trim'||s.type==='ext_trim'?' lf':' sf')+'</span></div>').join('')+
         '</div>';
       })()+
+    '</div>'+
+    '<div style="margin:12px 0;background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:14px">'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">Scope of work — check everything that applies</div>'+
+      '<div class="sg" id="est-scope-grid"></div>'+
     '</div>'+
     '<div style="display:grid;gap:10px">'+
       '<button onclick="addAnotherRoom()" style="padding:14px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+
@@ -6143,12 +6146,6 @@ function runStep2Validation(){
     if(card){card.style.border='2px solid #A32D2D';card.scrollIntoView&&card.scrollIntoView({behavior:'smooth',block:'center'});}
     zAlert('Select the property condition.',{title:'Required'});return false;
   }
-  const anyScope=SCOPE_ITEMS.some(s=>scopeOn(s.id));
-  if(!anyScope){
-    const card=document.getElementById('scope-picker-card');
-    if(card){card.style.border='2px solid #A32D2D';card.scrollIntoView&&card.scrollIntoView({behavior:'smooth',block:'center'});}
-    zAlert('Select at least one scope item.',{title:'Required'});return false;
-  }
   return true;
 }
 
@@ -6933,8 +6930,7 @@ function checkStep1Ready(){
 }
 function checkStep2Ready(){
   const cond=document.getElementById('e-cond')?.value||'';
-  const anyScope=SCOPE_ITEMS.some(s=>scopeOn(s.id));
-  const ready=!!(cond&&anyScope);
+  const ready=!!cond;
   const btn=document.getElementById('est-s2-next');
   if(!btn)return;
   btn.disabled=!ready;
