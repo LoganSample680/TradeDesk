@@ -1578,6 +1578,7 @@ let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},p
 let currentClientId=null,editClientId=null,clientFilter='new';
 let estSurfaces=[],estSurfId=0,estStep=1,estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
 let scopeHrsStore={};
+let scopeActiveMap={};  // tracks which scope items are ON — source of truth, not DOM
 let sigCanvas,sigCtx,isSigning=false;
 let trackerTab='income',cdTab='overview',trackerYear=new Date().getFullYear();
 let selectedColor='#185FA5';
@@ -1777,12 +1778,8 @@ function saveScopeDefault(id,checked){
 }
 function applyDefaultScope(){
   const defaults=S.defaultScope||{};
-  SCOPE_ITEMS.forEach(s=>{
-    const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);
-    if(!cb)return;
-    const on=!!defaults[s.id];
-    cb.checked=on;if(tog)on?tog.classList.add('on'):tog.classList.remove('on');
-  });
+  SCOPE_ITEMS.forEach(s=>{scopeActiveMap[s.id]=!!defaults[s.id];});
+  buildScopeGrid();
   checkStep2Ready();
 }
 function applySettings(){
@@ -1960,9 +1957,10 @@ function _doOpenEstimate(c){
     const linked=document.getElementById('e-client-linked');
     if(linked)linked.innerHTML='<span class="conn-tag">'+c.name+'</span>';
     const adj=document.getElementById('est-adj');if(adj)adj.value=0;
-    const adjv=document.getElementById('est-adj-val');if(adjv)adjv.textContent='$0';
+    const adjv=document.getElementById('est-adj-val');if(adjv)adjv.textContent='0%';
     ['est-adj-reason','inc-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-    SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
+    scopeActiveMap={};scopeHrsStore={};
+  SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
     const epEl=document.getElementById('e-paint');if(epEl)epEl.value='';
     document.querySelectorAll('#paint-picker .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));
     const edEl=document.getElementById('e-days');
@@ -4393,7 +4391,8 @@ function openEditBid(bidId){
     if(totalMiles>0){sf('e-travel',(Math.round(totalMiles*10)/10).toString());}
     const linked=document.getElementById('e-client-linked');
     if(linked)linked.innerHTML='<span class="conn-tag">'+(c?c.name:'linked')+' — editing existing bid</span>';
-    SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
+    scopeActiveMap={};scopeHrsStore={};
+  SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
     if(b.scope&&Object.keys(b.scope).length){Object.entries(b.scope).forEach(([id,val])=>toggleScope(id,!!val));}
     else{['sand','spackle'].forEach(id=>toggleScope(id,true));}
     if(b.surfaces&&b.surfaces.length){estSurfaces=[...b.surfaces];estSurfId=Math.max(...b.surfaces.map(s=>s.id||0),0);}
@@ -4411,7 +4410,7 @@ function openEditBid(bidId){
     }
     if(b.colors!==undefined){const el=document.getElementById('e-colors');if(el){el.value=b.colors;el.style.borderColor='var(--border2)';el.style.background='var(--bg2)';}}
     const adj=document.getElementById('est-adj');if(adj)adj.value=0;
-    const adjv=document.getElementById('est-adj-val');if(adjv)adjv.textContent='$0';
+    const adjv=document.getElementById('est-adj-val');if(adjv)adjv.textContent='0%';
     renderEstSurfs();
     goEstStep(2);
     const tip=document.querySelector('#est-s2 .tip');
@@ -4835,30 +4834,36 @@ function discardDriveTrip(){
 function buildScopeGrid(){
   const el=document.getElementById('est-scope-grid');if(!el)return;
   el.innerHTML=SCOPE_ITEMS.map(s=>{
-    return '<div class="stog" id="est-st-'+s.id+'" onclick="toggleScope(\''+s.id+'\')">'+
-      '<input type="checkbox" id="est-sc-'+s.id+'" style="display:none">'+
+    const isOn=!!scopeActiveMap[s.id];
+    const entry=scopeHrsStore[s.id]||{};
+    const hrs=typeof entry==='object'?entry.hrs:entry;
+    const rate=typeof entry==='object'?entry.rate:null;
+    return '<div class="stog'+(isOn?' on':'')+'" id="est-st-'+s.id+'" onclick="toggleScope(\''+s.id+'\')">'+
+      '<input type="checkbox" id="est-sc-'+s.id+'" style="display:none"'+(isOn?' checked':'')+'>'+
       '<div class="sdot"></div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px;min-width:0">'+
           '<span class="slabel" style="flex:1;min-width:0;word-break:break-word">'+s.label+'</span>'+
-          '<span id="scope-hrs-badge-'+s.id+'" style="font-size:10px;font-weight:800;color:var(--blue-dk);background:var(--blue-lt);padding:2px 5px;border-radius:8px;display:none;text-align:right;line-height:1.5;flex-shrink:0;white-space:nowrap"></span>'+
+          '<span id="scope-hrs-badge-'+s.id+'" style="font-size:10px;font-weight:800;color:var(--blue-dk);background:var(--blue-lt);padding:2px 5px;border-radius:8px;'+(isOn&&hrs?'':'display:none;')+'text-align:right;line-height:1.5;flex-shrink:0;white-space:nowrap">'+(isOn&&hrs?hrs+'h<br>'+(rate?'$'+rate+'/hr':''):'')+'</span>'+
         '</div>'+
-        '<span class="sprice" style="display:block;font-size:10px;color:var(--text3);font-weight:400">Tap to enter hours</span>'+
+        '<span class="sprice" style="display:block;font-size:10px;color:var(--text3);font-weight:400">'+(isOn&&hrs?'= $'+(entry.cost||Math.round(hrs*(rate||45))):'Tap to enter hours')+'</span>'+
       '</div></div>';
   }).join('');
-  scopeHrsStore={};
+  // NOTE: do NOT reset scopeHrsStore or scopeActiveMap — state persists across room saves
 }
 function toggleScope(id,force){
+  const wasOn=!!scopeActiveMap[id];
+  const nowOn=force!==undefined?!!force:!wasOn;
+  scopeActiveMap[id]=nowOn;
+  // Sync DOM if grid is rendered
   const cb=document.getElementById('est-sc-'+id);
   const tog=document.getElementById('est-st-'+id);
-  if(!cb)return;
-  const wasOn=cb.checked;
-  if(force!==undefined)cb.checked=force;else cb.checked=!cb.checked;
-  if(tog)tog.classList.toggle('on',cb.checked);
-  if(cb.checked&&!wasOn&&force===undefined){
+  if(cb)cb.checked=nowOn;
+  if(tog)tog.classList.toggle('on',nowOn);
+  if(nowOn&&!wasOn&&force===undefined){
     const sc=SCOPE_ITEMS.find(x=>x.id===id);
     promptScopeHours(id,sc?sc.label:id);
-  } else if(!cb.checked){
+  } else if(!nowOn){
     delete scopeHrsStore[id];
     const badge=document.getElementById('scope-hrs-badge-'+id);
     if(badge){badge.textContent='';badge.style.display='none';}
@@ -4940,7 +4945,7 @@ function _cancelScopeHours(id){
   }
   closeTopModal();
 }
-function scopeOn(id){return document.getElementById('est-sc-'+id)?.checked;}
+function scopeOn(id){return !!scopeActiveMap[id];}
 let surfJobType='interior', surfColor='', surfRoom='';
 function addSurfColorField(){
   const list=document.getElementById('surf-colors-list');if(!list)return;
@@ -6241,23 +6246,12 @@ function restoreEstFullDraft(d){
     if(btn){document.querySelectorAll('[id^=cond-]').forEach(b=>b.classList.remove('active-surf-btn'));btn.classList.add('active-surf-btn');}
   }
   if(d.scope){
-    SCOPE_ITEMS.forEach(s=>{
-      const cb=document.getElementById('est-sc-'+s.id);
-      const tog=document.getElementById('est-st-'+s.id);
-      const badge=document.getElementById('scope-hrs-badge-'+s.id);
-      if(!cb)return;
-      const on=!!d.scope[s.id];
-      cb.checked=on;
-      if(tog)on?tog.classList.add('on'):tog.classList.remove('on');
-      if(badge&&on&&d.scopeHrs&&d.scopeHrs[s.id]){
-        const entry=d.scopeHrs[s.id];
-        const hrs=typeof entry==='object'?entry.hrs:entry;
-        const rate=typeof entry==='object'?entry.rate:null;
-        badge.innerHTML=(hrs?hrs+'h':'')+'<br>'+(rate?'$'+rate+'/hr':'');
-        badge.style.display='';
-      }
-    });
+    // Restore into maps first — DOM gets synced when buildScopeGrid() runs
+    SCOPE_ITEMS.forEach(s=>{scopeActiveMap[s.id]=!!d.scope[s.id];});
   }
+
+  // Sync DOM if scope grid is currently rendered
+  buildScopeGrid();
   if(d.surfaces&&d.surfaces.length){
     estSurfaces=d.surfaces;
     estSurfId=Math.max(0,...estSurfaces.map(s=>s.id))+1;
@@ -6882,7 +6876,8 @@ function clearEstimatorForm(){
   clearSurfDraft();clearEstFullDraft();
   ['e-cname','e-cphone','e-caddr','e-cnotes','est-adj-reason'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const adj=document.getElementById('est-adj');if(adj)adj.value=0;
-  const adjV=document.getElementById('est-adj-val');if(adjV)adjV.textContent='$0';
+  const adjV=document.getElementById('est-adj-val');if(adjV)adjV.textContent='0%';
+  scopeActiveMap={};scopeHrsStore={};
   SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
   const ep2=document.getElementById('e-paint');if(ep2)ep2.value='';
   document.querySelectorAll('#paint-picker .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));
