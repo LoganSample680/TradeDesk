@@ -2119,50 +2119,49 @@ function renderDash(){
   if(csub){csub.textContent=subCollect;csub.style.color=collectItems.length?'#A32D2D':'var(--text3)';}
 
   renderPipeline();
-  // Resume estimate section — show ALL pending estimates
+  // Unified pending estimates section
   const resumeEl=document.getElementById('dash-resume-est');
   if(resumeEl){
     const pendingBids=bids.filter(b=>b.status==='Pending'||b.status==='Draft');
     const draft=loadEstFullDraft();
-    let html='';
-    // Active draft (not yet saved as a bid)
-    if(draft&&draft.cname){
-      html+='<div style="background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--rl);padding:10px 14px;margin-bottom:8px">'+
-        '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">'+
-          '<div><div style="font-size:13px;font-weight:700">📋 Resume estimate</div>'+
-          '<div style="font-size:11px;color:var(--text3)">Draft for '+draft.cname+' — not yet sent</div></div>'+
-          '<div style="display:flex;gap:6px">'+
-            '<button onclick="resumeEstimateDraft()" class="btn btn-sm btn-p">Resume</button>'+
-            '<button onclick="clearEstFullDraft();renderDash()" class="btn btn-sm" style="color:var(--text3)">Discard</button>'+
-          '</div>'+
+    const hasDraft=!!(draft&&draft.cname);
+    const hasAny=hasDraft||pendingBids.length>0;
+    if(!hasAny){resumeEl.innerHTML='';return;}
+    const totalCount=pendingBids.length+(hasDraft?1:0);
+    let rows='';
+    // Draft row first
+    if(hasDraft){
+      rows+='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);gap:8px">'+
+        '<div style="min-width:0;cursor:pointer" onclick="resumeEstimateDraft()">'+
+          '<div style="font-size:13px;font-weight:700;color:var(--blue)">'+draft.cname+'</div>'+
+          '<div style="font-size:11px;color:var(--text3)">Draft — not yet sent</div>'+
+        '</div>'+
+        '<div style="display:flex;gap:6px;flex-shrink:0">'+
+          '<button onclick="resumeEstimateDraft()" class="btn btn-sm btn-p" style="font-size:11px">Resume</button>'+
+          '<button onclick="clearEstFullDraft();renderDash()" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Discard</button>'+
         '</div>'+
       '</div>';
     }
-    // Pending bids waiting to be accepted
-    if(pendingBids.length){
-      html+='<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:10px 14px;margin-bottom:8px">'+
-        '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px">📬 Pending estimates ('+pendingBids.length+')</div>'+
-        pendingBids.map(b=>{
-          const cl=clients.find(c=>c.id===b.client_id);
-          const name=cl?cl.name:(b.client_name||'Client');
-          const days=Math.floor((new Date(todayKey())-new Date((b.bid_date||todayKey())+'T12:00:00'))/86400000);
-          const daysStr=days>0?days+'d ago':'Today';
-          const hasNotes=!!(b.notesCanvas);
-          return '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);gap:8px">'+
-            '<div style="min-width:0">'+
-              '<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+name+'</div>'+
-              '<div style="font-size:11px;color:var(--text3)">'+fmt(b.amount)+' · '+daysStr+(hasNotes?' · 📝':'')+'</div>'+
-            '</div>'+
-            '<div style="display:flex;gap:5px;flex-shrink:0">'+
-              '<button onclick="openBidNotes('+b.id+')" class="btn btn-sm" style="background:var(--amber-lt);color:#856404;border-color:var(--amber);font-size:11px">📝</button>'+
-              '<button onclick="openEditBid('+b.id+')" class="btn btn-sm btn-p" style="font-size:11px">Edit</button>'+
-              '<button onclick="viewBidClient('+b.client_id+')" class="btn btn-sm" style="font-size:11px">View</button>'+
-            '</div>'+
-          '</div>';
-        }).join('')+
+    // Sent pending bids — tap row to go to client
+    rows+=pendingBids.map(b=>{
+      const cl=clients.find(c=>c.id===b.client_id);
+      const name=cl?cl.name:(b.client_name||'Client');
+      const days=Math.floor((new Date(todayKey())-new Date((b.bid_date||todayKey())+'T12:00:00'))/86400000);
+      const daysStr=days>0?days+'d ago':'Today';
+      const hasNotes=!!(b.notesCanvas);
+      return '<div onclick="viewBidClient('+b.client_id+')" style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);gap:8px;cursor:pointer">'+
+        '<div style="min-width:0">'+
+          '<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+name+'</div>'+
+          '<div style="font-size:11px;color:var(--text3)">'+fmt(b.amount)+' · '+daysStr+(hasNotes?' · 📝':'')+'</div>'+
+        '</div>'+
+        '<div style="font-size:18px;color:var(--text3)">›</div>'+
       '</div>';
-    }
-    resumeEl.innerHTML=html;
+    }).join('');
+    resumeEl.innerHTML=
+      '<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:10px 14px;margin-bottom:8px">'+
+        '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:4px">📬 Pending estimates ('+totalCount+')</div>'+
+        rows+
+      '</div>';
   }
   renderGoal();
   checkGoalPrompt();
