@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="TradeDesk">
 <title>TradeDesk</title>
+<link rel="icon" type="image/x-icon" href="favicon.ico">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>@import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=swap');*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
 :root{
@@ -38,7 +39,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   position:fixed;top:0;left:0;bottom:0;width:var(--nav-w);
   background:var(--nav-bg);
   display:flex;flex-direction:column;
-  z-index:1000;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
+  z-index:200;overflow-y:auto;overflow-x:hidden;
   border-right:1px solid var(--nav-border);
   box-shadow:2px 0 20px rgba(0,0,0,0.15);
 }
@@ -99,21 +100,61 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #app{padding-left:var(--nav-w);padding-bottom:0;min-height:100vh}
 #supa-status{left:var(--nav-w)}
 .drive-banner{left:var(--nav-w)}
-/* ── Mobile: collapse sidebar to icons ── */
-@media(max-width:767px){
-  :root{--nav-w:60px}
-  #nav-logo-text,#nav-section-label,#nav-user-name,#nav-user-role{display:none}
-  #nav-logo{padding:16px 14px;justify-content:center}
-  .nb{padding:10px;justify-content:center;gap:0;margin:1px 4px;width:calc(100% - 8px);border-radius:6px}
-  .nb span:not(.nbadge){display:none}
-  .nb.active::before{display:none}
-  #nav-user{justify-content:center;padding:12px 8px}
-  #app{padding-left:60px;padding-bottom:0}
+/* ── Hamburger toggle ── */
+#nav-hamburger{
+  display:flex;align-items:center;justify-content:center;
+  width:32px;height:32px;border-radius:6px;cursor:pointer;
+  background:none;border:none;color:rgba(255,255,255,.6);
+  margin-left:auto;flex-shrink:0;transition:color .15s;
 }
-input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:22px;height:22px;border-radius:50%;background:#0D1117;cursor:pointer;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3);margin-top:-8px;}
-input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:#0D1117;cursor:pointer;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transform:translateY(0);}
-input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(to right,var(--blue-lt),var(--blue));}
+#nav-hamburger:hover{color:#fff;background:rgba(255,255,255,.08)}
+#nav-hamburger svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round}
+/* Collapsed state */
+body.nav-collapsed{--nav-w:0px}
+body.nav-collapsed #nav{transform:translateX(-220px);box-shadow:none;}
+body.nav-collapsed #app{padding-left:0}
+body.nav-collapsed #supa-status{left:0}
+body.nav-collapsed .drive-banner{left:0}
+#nav{transition:transform .25s ease;}
+#app{transition:padding-left .25s ease;}
+#supa-status{transition:left .25s ease;}
+/* Overlay when nav open on small screens */
+#nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;}
+body.nav-open #nav-overlay{display:block;}
+/* Mobile */
+@media(max-width:900px){
+  body:not(.nav-open) #nav{transform:translateX(-220px);}
+  body:not(.nav-open) #app{padding-left:0}
+  body:not(.nav-open) #supa-status{left:0}
+  body:not(.nav-open) .drive-banner{left:0}
+  body.nav-open #nav{transform:translateX(0);}
+  body.nav-open #app{padding-left:0}
+  #app-hamburger{display:flex;}
+}
+/* App-level hamburger for when nav is closed */
+/* App hamburger — only shows when nav is hidden */
+#app-hamburger{
+  display:none;position:fixed;top:14px;left:14px;z-index:198;
+  width:36px;height:36px;border-radius:8px;
+  background:var(--nav-bg);border:none;cursor:pointer;
+  align-items:center;justify-content:center;
+  box-shadow:0 2px 10px rgba(0,0,0,.3);
+}
+#app-hamburger svg{width:18px;height:18px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round}
+@media(min-width:901px){
+  #app-hamburger{display:none!important}
+  body.nav-collapsed #app-hamburger{display:flex!important}
+  body.nav-collapsed #app{padding-left:0!important}
+  body.nav-collapsed .pg{padding-left:60px}
+}
+/* When app hamburger is visible, push content down so it doesnt overlap */
+body.nav-collapsed .pg,body:not(.nav-open) .pg{
+  padding-top:20px;
+}
+@media(max-width:900px){
+  body:not(.nav-open) .pg{padding-top:20px;}
+  body:not(.nav-open) #pg-dash .tbar-title{padding-left:48px;}
+}
 .pg{display:none;padding:20px 24px 24px}.drive-active .pg{padding-top:70px}
 #pg-leads,#pg-jobs,#pg-money{padding-top:4px}
 .pg.active{display:block}
@@ -124,10 +165,10 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .card-hd{font-size:13px;font-weight:700;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;color:var(--text)}
 .card-hd span{font-size:10px;font-weight:400;color:var(--text3)}
 .mets{display:grid;grid-template-columns:repeat(auto-fit,minmax(85px,1fr));gap:7px;margin-bottom:12px}
-.met{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:10px;display:flex;flex-direction:column}
-.met-l{font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);min-height:28px;display:flex;align-items:flex-end;padding-bottom:2px}
-.met-v{font-size:20px;font-weight:800;line-height:1.1;margin-top:2px}
-.met-s{font-size:10px;color:var(--text3);margin-top:3px}
+.met{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:10px}
+.met-l{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:3px}
+.met-v{font-size:17px;font-weight:700}
+.met-s{font-size:10px;color:var(--text3);margin-top:2px}
 .fg{display:grid;gap:9px;margin-bottom:10px}
 .fg2{grid-template-columns:repeat(auto-fit,minmax(145px,1fr))}
 .fg3{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}
@@ -263,7 +304,6 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .cal-cell.other{background:var(--bg2);opacity:.35;pointer-events:none}
 .cal-cell.today .cdn{background:var(--blue);color:#fff;border-radius:50%}
 .cal-cell.booked{background:#fafaf8}
-.cal-cell.cal-rain{}
 .cdn{font-size:11px;font-weight:600;width:20px;height:20px;display:flex;align-items:center;justify-content:center;margin-bottom:2px;color:var(--text3)}
 .cjob{font-size:10px;font-weight:700;padding:2px 4px;border-radius:2px;margin-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4;color:#fff}
 .av-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;margin:.5rem 0}
@@ -377,6 +417,8 @@ input:checked+.dm-slider{background:var(--blue)}
 input:checked+.dm-slider:before{transform:translateX(22px)}</style>
 </head>
 <body>
+<div id="nav-overlay" onclick="toggleNav()"></div>
+<button id="app-hamburger" onclick="toggleNav()"><svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
 <div id="app">
 <div class="pg active" id="pg-dash">
   <div class="tbar"><div><div class="tbar-title" id="dash-greet">Good Morning, Zach</div><div class="tbar-sub" id="dash-date"></div></div><div style="display:flex;align-items:center;gap:5px"><span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Year</span><select id="dash-year-sel" onchange="setDashYear(this.value)" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)"></select></div></select></div>
@@ -385,7 +427,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   
   <div id="dash-quick" style="margin-bottom:12px">
     <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Quick actions</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px">
       <button onclick="goPg('pg-clients');setTimeout(()=>openNewClient(),100)" style="position:relative;padding:11px 4px 10px;border-radius:var(--rl);border:2px solid var(--blue);background:var(--blue);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:2px;width:100%">
         <span style="position:absolute;top:4px;left:6px;font-size:10px;font-weight:800;opacity:.75">1</span>
         <span style="font-size:17px">👤</span><span style="font-size:10px">New client</span>
@@ -406,14 +448,18 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
         <span style="position:absolute;top:4px;left:6px;font-size:10px;font-weight:800;opacity:.75">5</span>
         <span style="font-size:17px">🧾</span><span style="font-size:10px">Expense</span>
       </button>
-      <button onclick="quickAction('collect')" id="qa-collect-btn" style="position:relative;padding:11px 4px 10px;border-radius:var(--rl);border:2px solid var(--green);background:var(--green);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:2px;width:100%">
+      <button onclick="quickAction('complete')" style="position:relative;padding:11px 4px 10px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);color:var(--text);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:2px;width:100%">
         <span style="position:absolute;top:4px;left:6px;font-size:10px;font-weight:800;opacity:.75">6</span>
+        <span style="font-size:17px">✅</span><span style="font-size:10px">Complete</span>
+      </button>
+      <button onclick="quickAction('collect')" id="qa-collect-btn" style="position:relative;padding:11px 4px 10px;border-radius:var(--rl);border:2px solid var(--green);background:var(--green);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:2px;width:100%">
+        <span style="position:absolute;top:4px;left:6px;font-size:10px;font-weight:800;opacity:.75">7</span>
         <span style="font-size:17px">💰</span><span id="qa-collect-label" style="font-size:10px">Collect</span>
       </button>
     </div>
   </div>
   <div id="dash-resume" style="margin-bottom:10px;display:none"></div>
-  <div id="dash-resume-est" style="margin-bottom:10px"></div>
+  <div id="dash-resume-est" style="display:none;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--rl);padding:10px 14px;margin-bottom:10px"></div>
   <div id="dash-goal" style="margin-bottom:10px"></div>
   <div id="dash-pipeline"></div>
   <div class="card"><div class="card-hd">Today on the calendar</div><div id="dash-today"></div></div>
@@ -606,16 +652,13 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
 
         
         <div style="margin-bottom:16px">
-          <label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:6px">Vehicle <span style="color:#A32D2D">*</span></label>
-          <select id="cd-vehicle-sel" onchange="selectDriveVehicleByName(this.value)" style="width:100%;font-size:16px;font-weight:600;padding:12px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit">
-            <option value="">— Select vehicle —</option>
-          </select>
-          <div id="cd-no-vehicles" style="display:none;background:#FFF0F0;border:1px solid #A32D2D;border-radius:var(--r);padding:12px;font-size:12px;color:#A32D2D;margin-top:6px">
-            No vehicles added — go to Settings to add one first.
-            <button class="btn btn-sm btn-p" onclick="goToVehicleSettings()" style="margin-top:6px;display:block;width:100%">Go to Settings → Add vehicle</button>
+          <label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:8px">Vehicle <span style="color:#A32D2D">*</span></label>
+          <div id="cd-vehicle-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
+          <div id="cd-no-vehicles" style="display:none;background:#FFF0F0;border:1px solid #A32D2D;border-radius:var(--r);padding:12px;font-size:12px;color:#A32D2D">
+            No vehicles added — you must add a vehicle before logging a trip.
+            <button class="btn btn-sm btn-p" onclick="goToVehicleSettings()" style="margin-left:8px;font-size:11px;margin-top:6px;display:block;width:100%">Go to Settings → Add vehicle</button>
           </div>
-          <div id="cd-last-odom-hint" style="font-size:11px;color:var(--text3);margin-top:6px"></div>
-          <div id="cd-vehicle-chips" style="display:none"></div>
+          <div id="cd-vehicle-required-msg" style="display:none;font-size:11px;color:#A32D2D;margin-top:4px">Select a vehicle to continue</div>
         </div>
 
         
@@ -630,11 +673,11 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
             
           </div>
         </div>
-        <div id="cd-supply-job-picker" style="display:none;margin-bottom:16px"></div>
 
         
         <div style="margin-bottom:12px">
           <label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:4px">Odometer reading (miles) <span style="color:#A32D2D">*</span></label>
+          <div id="cd-last-odom-hint" style="font-size:11px;color:var(--text3);margin-bottom:6px"></div>
           <input type="number" id="cd-odom-start" placeholder="Enter current reading" min="0"
             style="font-size:28px;font-weight:700;padding:14px;border-radius:var(--r);border:2px solid var(--blue);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"
             oninput="validateOdomStart(this);checkTripReady()">
@@ -775,7 +818,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   <div class="steps" id="est-steps">
     <div class="step active" id="est-st-1" onclick="goEstStep(1)"><div class="snum">1</div><span class="slbl">Client</span></div>
     <div class="ssep"></div>
-    <div class="step" id="est-st-2" onclick="goEstStep(2)"><div class="snum">2</div><span class="slbl">Rates</span></div>
+    <div class="step" id="est-st-2" onclick="goEstStep(2)"><div class="snum">2</div><span class="slbl">Scope</span></div>
     <div class="ssep"></div>
     <div class="step" id="est-st-3" onclick="goEstStep(3)"><div class="snum">3</div><span class="slbl">Surfaces</span></div>
     <div class="ssep"></div>
@@ -805,7 +848,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
       <div class="f"><label>Walkthrough notes</label><textarea id="e-cnotes" placeholder="What did you see? What does the client want?"></textarea></div>
     </div>
 
-    <div class="brow"><button class="btn btn-p" id="est-s1-next" onclick="validateAndGoStep2()" style="background:var(--border2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>Next: Rates &#8594;</button></div>
+    <div class="brow"><button class="btn btn-p" id="est-s1-next" onclick="validateAndGoStep2()" style="background:var(--border2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>Next: Scope &#8594;</button></div>
   </div>
   <div id="est-s2" style="display:none">
     <div class="card"><div class="card-hd">Rates for this job</div>
@@ -837,6 +880,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
         </button>
       </div>
     </div>
+    <div class="card" id="scope-picker-card"><div class="card-hd">Scope of work <span style="color:var(--text3);font-weight:400;font-size:11px">* Check everything you'll do</span></div>
+      <div class="sg" id="est-scope-grid"></div>
+    </div>
+    <input type="hidden" id="e-paint" value="">
     <input type="hidden" id="e-colors" value="0">
     <input type="hidden" id="e-travel" value="0">
     <input type="hidden" id="e-cond" value="">
@@ -974,13 +1021,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <div id="est-s4" style="display:none">
     <div class="card"><div class="card-hd">Bid breakdown</div><div id="est-review"></div></div>
     <div class="card"><div class="card-hd">Price adjustment</div>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-        <label style="font-size:11px;color:var(--text2);min-width:80px">Adjust price</label>
-        <input type="range" id="est-adj" min="-40" max="40" step="1" value="0" oninput="syncAdj()" style="flex:1;accent-color:var(--navy,#0D1117);height:6px;cursor:pointer">
-        <span id="est-adj-val" style="font-size:12px;font-weight:700;min-width:55px;text-align:right;color:var(--blue)">0%</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:10px;padding:0 2px">
-        <span>-40%</span><span>0</span><span>+40%</span>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <label style="font-size:11px;color:var(--text2);min-width:120px">Adjust final price</label>
+        <input type="range" id="est-adj" min="-500" max="500" step="25" value="0" oninput="syncAdj()" style="flex:1;accent-color:var(--blue)">
+        <span id="est-adj-val" style="font-size:12px;font-weight:700;min-width:45px;text-align:right">$0</span>
       </div>
       <div class="f"><label>Reason (optional)</label><input type="text" id="est-adj-reason" placeholder="Repeat customer discount, difficult access..."></div>
       <div style="display:flex;align-items:center;gap:12px;margin-top:10px">
@@ -988,17 +1032,17 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
         <span id="est-final-disp" style="font-size:24px;font-weight:700;color:var(--blue)"></span>
       </div>
     </div>
-    <div class="card" id="paint-picker-card"><div class="card-hd">Who's supplying the paint?</div>
-      <input type="hidden" id="e-customer-paint-hidden">
-      <select id="paint-supply-sel" onchange="onPaintSupplyChange(this.value)" style="font-size:15px;font-weight:600;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;margin-bottom:8px">
-        <option value="interior">I'm supplying paint</option>
-        <option value="customer">Customer supplies paint</option>
-      </select>
-      <div id="paint-supply-note" style="display:none;font-size:11px;color:#856404;background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 10px;line-height:1.6">
-        Paint cost removed from estimate. No warranty provided on finish quality — client assumes responsibility.
+    <div class="card" id="paint-picker-card"><div class="card-hd">Paint for this job <span style="color:#A32D2D;font-weight:400;font-size:11px">* Required</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px" id="paint-picker">
+        <button onclick="selectPaint('interior',this)" class="surf-type-btn" id="pp-interior" style="padding:12px;font-size:12px;text-align:center">
+          <div style="font-weight:700">Interior</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px">ProMar 200</div>
+        </button>
+        <button onclick="selectPaint('exterior',this)" class="surf-type-btn" id="pp-exterior" style="padding:12px;font-size:12px;text-align:center">
+          <div style="font-weight:700">Exterior</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px">$106/gal</div>
+        </button>
       </div>
-      <input type="hidden" id="e-paint" value="">
-      <input type="hidden" id="e-customer-paint">
     </div>
     <div class="card">
       <div class="f">
@@ -1021,26 +1065,24 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <div class="brow" style="flex-wrap:wrap;gap:6px">
       <button class="btn" onclick="goEstStep(4)" style="flex:1;min-width:80px">← Adjust</button>
       <button class="btn" onclick="downloadProposalPDF()" style="flex:1;min-width:80px;background:var(--bg2);border-color:var(--border2)">📄 PDF</button>
-      <button class="btn btn-g" id="send-proposal-btn" onclick="sendProposalLink()" style="flex:1;min-width:80px">🔗 Send to client</button>
+      <button class="btn btn-g" id="send-proposal-btn" onclick="sendProposalLink()" style="flex:1;min-width:80px">🔗 Send</button>
       <button class="btn btn-p" onclick="goEstStep(6)" style="flex:1;min-width:80px">Sign here</button>
     </div>
     <div id="proposal-link-bar" style="display:none;margin-top:8px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px">
-      <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:8px">✓ Signing link ready — tap to open, or copy to share</div>
-      <a id="proposal-link-anchor" href="#" target="_blank" style="display:block;background:#fff;border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px;text-decoration:none;margin-bottom:8px">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em;font-weight:700">Proposal link</div>
-        <div id="proposal-link-label" style="font-size:14px;font-weight:700;color:var(--blue-dk)"></div>
-        <div style="font-size:10px;color:var(--blue);margin-top:3px">Tap to open ↗</div>
-      </a>
-      <input id="proposal-link-input" readonly style="display:none">
-      <button onclick="copyProposalLink()" class="btn btn-sm" style="width:100%;margin-bottom:4px">📋 Copy link to share with client</button>
-      <div style="font-size:11px;color:var(--text3);margin-top:4px">Client opens on any device, reviews, signs, and you get notified.</div>
+      <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:4px">✓ Signing link ready</div>
+      <div id="proposal-link-label" style="font-size:11px;color:var(--blue);margin-bottom:8px;font-weight:600"></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="proposal-link-input" readonly style="flex:1;font-size:11px;padding:7px 10px;border-radius:var(--r);border:1px solid var(--border2);background:#fff;color:var(--text2);font-family:inherit;min-width:0">
+        <button onclick="copyProposalLink()" class="btn btn-sm" style="flex-shrink:0">Copy</button>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px">Client opens the link on any device, reviews, signs, and you get notified.</div>
     </div>
   </div>
   <div id="est-s6" style="display:none">
     <div class="card"><div class="card-hd">Review &amp; sign</div>
       <div id="est-sig-sum"></div><hr>
       <div class="fg fg2">
-        <div class="f"><label>Client printed name <span style="font-size:10px;font-weight:400;color:var(--text3)">(required)</span></label><input id="sig-pname" placeholder="Full name" oninput="checkConfirmReady()"></div>
+        <div class="f"><label>Client printed name <span style="font-size:10px;font-weight:400;color:var(--text3)">(required to enable signing)</span></label><input id="sig-pname" placeholder="Full name" oninput="checkConfirmReady()"></div>
         <div class="f"><label>Date</label><input id="sig-date" readonly></div>
       </div>
       <div class="f" style="margin-bottom:8px">
@@ -1059,6 +1101,13 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     </div>
     <div class="card"><div class="card-hd">Terms &amp; conditions</div><div id="est-terms" style="font-size:11px;color:var(--text3);line-height:1.7;max-height:120px;overflow-y:auto"></div></div>
     <div class="brow"><button class="btn" onclick="goEstStep(5)">&#8592; Back</button><button class="btn btn-xl" id="confirm-btn" onclick="confirmContract()" style="background:var(--bg2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>Confirm &amp; close job</button></div>
+    <div style="margin-top:10px;padding:10px 14px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);font-size:12px;color:var(--blue-dk)">
+      📧 <strong>Email a copy to the client?</strong>
+      <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+        <input type="email" id="sig-client-email" placeholder="client@email.com" style="flex:1;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:#fff;font-size:13px;font-family:inherit;color:var(--text)">
+        <button class="btn btn-sm" onclick="emailProposalToClient()" style="flex-shrink:0;background:var(--blue);color:#fff;border-color:var(--blue)">Send copy</button>
+      </div>
+    </div>
   </div>
   <div id="est-s7" style="display:none">
     <div style="text-align:center;padding:28px 16px">
@@ -1068,14 +1117,21 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
       <div class="card" id="est-done-sum" style="text-align:left;margin-bottom:16px"></div>
 
       <div style="display:grid;gap:8px;margin-top:4px">
-        <button class="btn btn-g btn-full" style="font-size:15px;padding:14px" onclick="goToDepositFromEstimate()">Collect 25% deposit &#8594;</button>
+        <button class="btn btn-g btn-full" style="font-size:15px;padding:14px" onclick="goToDepositFromEstimate()">💵 Collect cash deposit</button>
+        <button class="btn btn-full" id="stripe-deposit-btn" style="font-size:15px;padding:14px;background:#0D1117;color:#fff;border:none" onclick="collectStripeDepositInPerson()">💳 Collect deposit by card</button>
         <div style="display:flex;gap:8px">
           <button class="btn btn-full" onclick="schedJobFromEstimate()" style="font-size:13px">Schedule job</button>
           <button class="btn btn-full" onclick="goBackToClient()" style="font-size:13px">View client</button>
         </div>
       </div>
-    </div>
-  </div>
+      <div id="stripe-deposit-link" style="display:none;margin-top:10px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px;text-align:left">
+        <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:4px">💳 Send payment link to client</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px">Client opens on their phone and pays the deposit now</div>
+        <div style="display:flex;gap:8px">
+          <input id="stripe-deposit-input" readonly style="flex:1;font-size:11px;padding:7px 10px;border-radius:var(--r);border:1px solid var(--border2);background:#fff;font-family:inherit;min-width:0">
+          <button onclick="copyDepositLink()" class="btn btn-sm" style="flex-shrink:0">Copy</button>
+        </div>
+      </div>
 </div>
 <div class="pg" id="pg-cal">
   <div class="tbar"><div class="tbar-title">Calendar</div><button class="btn btn-p btn-sm" onclick="goPg('pg-schedule')">+ Schedule</button></div>
@@ -1324,12 +1380,12 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   <div class="tip"><strong>Update every January.</strong> IRS rate: <a href="https://www.irs.gov/tax-professionals/standard-mileage-rates" style="color:var(--blue-dk)">irs.gov</a> &nbsp;·&nbsp; KS taxes: <a href="https://ksrevenue.gov" style="color:var(--blue-dk)">ksrevenue.gov</a></div>
   <div class="card"><div class="card-hd">Mileage &amp; year</div>
     <div class="fg fg2">
-      <div class="f"><label>IRS mileage rate ($/mile)</label><input type="number" id="set-irs" step="0.001"><div style="font-size:10px;color:var(--text3);margin-top:3px">2025 = $0.700 · 2026 = TBD (update Jan)</div></div>
+      <div class="f"><label>IRS mileage rate ($/mile)</label><input type="number" id="set-irs" step="0.001"><div style="font-size:10px;color:var(--text3);margin-top:3px">2024 = $0.670 · 2025 = $0.700</div></div>
       <div class="f"><label>Tax year</label><select id="set-year"><option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option></select></div>
     </div>
   </div>
   <div class="card"><div class="card-hd">Federal standard deductions</div>
-    <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
+    <div class="fg fg2">
       <div class="f"><label>Single ($)</label><input type="number" id="set-fs"></div>
       <div class="f"><label>Married filing jointly ($)</label><input type="number" id="set-fm"></div>
       <div class="f"><label>Married filing separately ($)</label><input type="number" id="set-fms"></div>
@@ -1347,10 +1403,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     </div>
   </div>
   <div class="card"><div class="card-hd">Kansas tax rates</div>
-    <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
+    <div class="fg fg2">
       <div class="f"><label>Lower rate (%)</label><input type="number" id="set-ksl" step="0.001"></div>
-      <div class="f"><label>Upper rate (%)</label><input type="number" id="set-ksh" step="0.001"></div>
       <div class="f"><label>Lower bracket top — single ($)</label><input type="number" id="set-kst"></div>
+      <div class="f"><label>Upper rate (%)</label><input type="number" id="set-ksh" step="0.001"></div>
       <div class="f"><label>Std deduction — single ($)</label><input type="number" id="set-kss"></div>
       <div class="f"><label>Std deduction — MFJ ($)</label><input type="number" id="set-ksm"></div>
     </div>
@@ -1375,47 +1431,41 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
         <label>Vehicles <span style="font-size:10px;color:var(--text3);font-weight:400">(IRS log requires vehicle description per trip)</span></label>
         <div id="set-vehicles-list" style="margin-bottom:8px"></div>
         <div style="display:flex;gap:8px">
-          <div style="flex:1;display:flex;flex-direction:column;gap:6px">
-            <input id="set-new-veh" placeholder="Year, make, model (e.g. 2019 White F-150)" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)">
-            <input id="set-new-veh-nick" placeholder="Nickname (optional — e.g. Work Truck)" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)">
-          </div>
-          <button class="btn btn-sm btn-p" onclick="addVehicle()" style="align-self:flex-start">+ Add</button>
+          <input id="set-new-veh" placeholder="e.g. 2019 White F-150" style="flex:1;font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)">
+          <button class="btn btn-sm btn-p" onclick="addVehicle()">+ Add</button>
         </div>
         <div style="font-size:10px;color:var(--text3);margin-top:5px">Year, make, model is enough. No VIN needed for standard mileage rate deductions.</div>
       </div>
     </div>
   </div>
-  <div class="card"><div class="card-hd">💳 Stripe payments <span>Accept card &amp; bank deposits from clients</span></div>
-    <div style="font-size:13px;color:var(--text2);margin-bottom:10px;line-height:1.6">Enter your Stripe publishable key to enable card and ACH payments on client signing pages. Without it, clients see cash only.</div>
-    <div class="f" style="margin-bottom:8px"><label>Stripe Publishable Key</label>
-      <input type="text" id="set-stripe-pk" placeholder="pk_live_..." style="font-size:13px;padding:9px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;font-family:monospace">
+  <div class="card">
+    <div class="card-hd">Payments <span>Accept card &amp; bank transfer on proposals</span></div>
+    <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px">
+      Create a free account at <strong>stripe.com</strong>, then paste your publishable key below. Clients can pay their deposit by card or bank transfer when they sign. Money goes directly to your bank — TradeDesk never touches it.
     </div>
-    <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Find at dashboard.stripe.com → Developers → API keys → Publishable key</div>
-    <button class="btn btn-p btn-sm" onclick="saveStripeKey()">Save Stripe key</button>
+    <div class="f">
+      <label>Stripe publishable key <span style="font-size:10px;font-weight:400;color:var(--text3)">(starts with pk_live_ or pk_test_)</span></label>
+      <input id="set-stripe-pk" placeholder="pk_live_..." style="font-family:monospace;font-size:12px">
+    </div>
+    <div id="stripe-status-msg" style="font-size:11px;margin-top:6px;min-height:16px"></div>
+    <div style="font-size:10px;color:var(--text3);margin-top:6px;line-height:1.6">
+      Your key is stored securely and only used to process payments on your proposals. Processing fees (2.9% + $0.30 card, 0.8% max $5 ACH) are automatically logged as tax-deductible business expenses.
+    </div>
   </div>
   <div class="card"><div class="card-hd">Estimator defaults</div>
-    <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
+    <div class="fg fg2">
       <div class="f"><label>Profit margin target (%)</label><input type="number" id="set-margin"></div>
       <div class="f"><label>Paint coverage (sq ft/gal)</label><input type="number" id="set-cov"></div>
       <div class="f"><label>Standard paint ($/gal)</label><input type="number" id="set-p1"></div>
       <div class="f"><label>Premium paint ($/gal)</label><input type="number" id="set-p2"></div>
       <div class="f"><label>Ultra paint ($/gal)</label><input type="number" id="set-p3"></div>
-      <div style="grid-column:1/-1">
-        <a href="https://www.sherwin-williams.com/en-us/paint/interior-paint" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--blue);font-weight:600;text-decoration:none;padding:6px 10px;background:var(--blue-lt);border-radius:var(--r);border:1px solid var(--blue)">
-          🔗 Check current Sherwin-Williams prices
-        </a>
-        <a href="https://www.homedepot.com/b/Paint/N-5yc1vZbqmi" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--blue);font-weight:600;text-decoration:none;padding:6px 10px;background:var(--blue-lt);border-radius:var(--r);border:1px solid var(--blue);margin-left:6px">
-          🔗 Home Depot paint prices
-        </a>
-        <div style="font-size:11px;color:var(--text3);margin-top:6px">Check current prices and update the fields above. SW ProMar 200 interior ~$42/gal. SW exterior ~$106/gal.</div>
-      </div>
       <div class="f"><label>Materials markup (%)</label><input type="number" id="set-mm"></div>
     </div>
   </div>
   <div class="card">
     <div class="card-hd">Labor rates ($/sq ft or flat) <span>Set these to match what you actually charge</span></div>
     <div class="tip">These are your base labor rates before scope add-ons. If a $2,500 job feels like it should show more profit, raise these to match your real pricing.</div>
-    <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
+    <div class="fg fg3">
       <div class="f"><label>Walls ($/sf)</label><input type="number" id="set-r-walls" step="0.05"></div>
       <div class="f"><label>Ceiling ($/sf)</label><input type="number" id="set-r-ceil" step="0.05"></div>
       <div class="f"><label>Trim ($/lin ft)</label><input type="number" id="set-r-trim" step="0.05"></div>
@@ -1432,7 +1482,6 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <button class="btn btn-p" onclick="saveSettings()">Save all settings</button>
     <button class="btn" onclick="if(supaEnabled())supaSignOut()" style="font-size:12px;color:var(--text3)">Sign out of cloud sync</button>
     <button class="btn" onclick="resetSettings()">Reset defaults</button>
-    <button class="btn" id="location-settings-btn" onclick="resetLocationPermission()" style="font-size:12px">📍 Location access</button>
   </div>
   <div id="set-saved" style="display:none;margin-top:8px" class="tip tip-s">Settings saved!</div>
   <div class="card" style="margin-top:16px;border:1px solid #A32D2D">
@@ -1534,9 +1583,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   </div>
 </div>
 <div id="nav">
-  <div id="nav-logo">
+  <div id="nav-logo" style="padding:16px 20px">
   <div id="nav-logo-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>
   <span id="nav-logo-text">TradeDesk</span>
+  <button id="nav-hamburger" onclick="toggleNav()" aria-label="Toggle menu"><svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
 </div>
 <div id="nav-section-label">Menu</div>
   <button class="nb active" id="nb-dash" onclick="goPg('pg-dash')">
@@ -1576,59 +1626,26 @@ function guardedSubmit(fn){
   setTimeout(()=>{_submitting=false;},1200);
   try{fn();}catch(e){_submitting=false;throw e;}
 }
+function toggleNav(){
+  const isSmall=window.innerWidth<=900;
+  if(isSmall){
+    document.body.classList.toggle('nav-open');
+  } else {
+    document.body.classList.toggle('nav-collapsed');
+    localStorage.setItem('navCollapsed',document.body.classList.contains('nav-collapsed')?'1':'0');
+  }
+}
+// Restore nav state on load
+if(localStorage.getItem('navCollapsed')==='1')document.body.classList.add('nav-collapsed');
 let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[];
 let currentClientId=null,editClientId=null,clientFilter='new';
 let estSurfaces=[],estSurfId=0,estStep=1,estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
-let scopeHrsStore={};  // legacy — now keyed by room: roomScopeMap[roomName][scopeId]
-let scopeActiveMap={};  // legacy — now keyed by room
-let roomScopeMap={};  // PRIMARY: {roomName: {scopeId: {active:bool, hrs:N, rate:N, cost:N}}}
+let scopeHrsStore={};
 let sigCanvas,sigCtx,isSigning=false;
 let trackerTab='income',cdTab='overview',trackerYear=new Date().getFullYear();
 let selectedColor='#185FA5';
 let schedType='estimate';
 let availYear,availMonth,calYear,calMonth;
-let _weatherCache=null,_weatherCacheTime=0,_weatherLoading=false;
-// WMO weather code → {icon, label, rain}
-function _wmoIcon(code,precip){
-  if(precip>=60)return{icon:'🌧️',label:'Rain',rain:true};
-  if(precip>=30)return{icon:'🌦️',label:'Showers',rain:true};
-  if(code===0)return{icon:'☀️',label:'Sunny',rain:false};
-  if(code<=2)return{icon:'⛅',label:'Partly cloudy',rain:false};
-  if(code<=3)return{icon:'☁️',label:'Cloudy',rain:false};
-  if(code<=48)return{icon:'🌫️',label:'Fog',rain:false};
-  if(code<=67)return{icon:'🌧️',label:'Rain',rain:true};
-  if(code<=77)return{icon:'🌨️',label:'Snow',rain:false};
-  if(code<=82)return{icon:'🌧️',label:'Rain',rain:true};
-  if(code<=99)return{icon:'⛈️',label:'Storm',rain:true};
-  return{icon:'🌤️',label:'',rain:false};
-}
-async function fetchWeather(){
-  const now=Date.now();
-  if(_weatherCache&&now-_weatherCacheTime<1800000)return _weatherCache;
-  if(_weatherLoading)return _weatherCache;
-  _weatherLoading=true;
-  try{
-    if(!S.weatherLat||!S.weatherLon){console.warn('No location set — skipping weather');return{};}
-    const lat=S.weatherLat,lon=S.weatherLon;
-    const url='https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lon+
-      '&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max'+
-      '&temperature_unit=fahrenheit&timezone=America%2FChicago&forecast_days=14';
-    const res=await fetch(url);
-    const data=await res.json();
-    const map={};
-    (data.daily?.time||[]).forEach((date,i)=>{
-      const code=data.daily.weathercode[i]||0;
-      const precip=data.daily.precipitation_probability_max[i]||0;
-      const hi=Math.round(data.daily.temperature_2m_max[i]||0);
-      const lo=Math.round(data.daily.temperature_2m_min[i]||0);
-      const w=_wmoIcon(code,precip);
-      map[date]={...w,hi,lo,precip};
-    });
-    _weatherCache=map;_weatherCacheTime=now;
-    return map;
-  }catch(e){console.warn('Weather fetch failed:',e);return {};}
-  finally{_weatherLoading=false;}
-}
 const now=new Date();
 calYear=now.getFullYear();calMonth=now.getMonth();
 availYear=now.getFullYear();availMonth=now.getMonth();
@@ -1649,12 +1666,8 @@ const SCOPE_ITEMS=[
    clientDesc:'All gaps, seams, and cracked corners will be caulked and sealed for a clean, professional finish and to prevent moisture intrusion.'},
   {id:'movefurn',label:'Move furniture',  desc:'', defaultHrs:0,  flat:0,  rateKey:'e-scope-r-movefurn',defaultRate:75,
    clientDesc:'Furniture will be moved away from walls prior to painting and returned to its original position upon completion.'},
-  {id:'cleanup', label:'Final cleanup',   desc:'', defaultHrs:0,  flat:0,  rateKey:'e-scope-r-cleanup',  defaultRate:40,
+  {id:'cleanup', label:'Final cleanup',   desc:'', defaultHrs:0,  flat:0,  rateKey:'e-scope-r-cleanup', defaultRate:40,
    clientDesc:'All drop cloths and debris will be removed and work areas cleaned and left in the same condition as found.'},
-  {id:'scaffold', label:'Scaffolding',     desc:'', defaultHrs:0,  flat:0,  rateKey:'e-scope-r-scaffold', defaultRate:65,
-   clientDesc:'Scaffolding will be erected and secured to safely access high walls, ceilings, or exterior surfaces. Setup, tear-down, and all safety requirements are included.'},
-  {id:'pwash',   label:'Pressure washing', desc:'', defaultHrs:0,  flat:0,  rateKey:'e-scope-r-pwash',    defaultRate:55,
-   clientDesc:'All exterior surfaces will be pressure washed to remove dirt, mold, mildew, and loose paint prior to painting. Surfaces must fully cure and dry for a minimum of 48 hours after washing before any paint is applied — this ensures maximum paint adhesion and a lasting finish.'},
 ];
 const SURF_TYPES=[
   {v:'walls',l:'Walls',unit:'sq ft',rate:1.25,mf:1},
@@ -1689,7 +1702,7 @@ const CHECKS=[
 ];
 const CAT_CFG={urgent:{label:'Do right away',color:'#A32D2D'},biz:{label:'Business setup in Kansas',color:'#185FA5'},tax:{label:'Tax & accounting',color:'#854F0B'},ks:{label:'Kansas market & marketing',color:'#27500A'}};
 
-let S={stripePk:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:"ZJ's Painting & Special Coatings",bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:38,p2:62,p3:88,mm:15,rWalls:1.00,rCeil:0.85,rTrim:1.50,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00};
+let S={goalMonthly:0,laborRate:45,irsRate:.670,taxYear:2024,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:"ZJ's Painting & Special Coatings",bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:38,p2:62,p3:88,mm:15,rWalls:1.00,rCeil:0.85,rTrim:1.50,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00};
 
 // ── Account / User / Config global state ─────────────────────────────
 let _account=null;   // accounts row
@@ -1827,8 +1840,12 @@ function saveScopeDefault(id,checked){
 }
 function applyDefaultScope(){
   const defaults=S.defaultScope||{};
-  SCOPE_ITEMS.forEach(s=>{scopeActiveMap[s.id]=!!defaults[s.id];});
-  buildScopeGrid();
+  SCOPE_ITEMS.forEach(s=>{
+    const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);
+    if(!cb)return;
+    const on=!!defaults[s.id];
+    cb.checked=on;if(tog)on?tog.classList.add('on'):tog.classList.remove('on');
+  });
   checkStep2Ready();
 }
 function applySettings(){
@@ -1849,7 +1866,8 @@ function loadSettingsForm(){
   sf('set-b10',S.b10);sf('set-b12',S.b12);sf('set-b22',S.b22);sf('set-b24',S.b24);sf('set-b32',S.b32);sf('set-b35',S.b35);
   sf('set-ksl',S.ksLow);sf('set-kst',S.ksTop);sf('set-ksh',S.ksHigh);sf('set-kss',S.ksStdS);sf('set-ksm',S.ksStdM);
   sf('set-goal-monthly',S.goalMonthly||'');
-  sf('set-labor-rate',S.laborRate||45);sf('set-bname',S.bname);sf('set-stripe-pk',S.stripePk||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
+  sf('set-labor-rate',S.laborRate||45);sf('set-bname',S.bname);
+  sf('set-stripe-pk',S.stripePk||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
   sf('set-margin',S.margin);sf('set-cov',S.cov);sf('set-p1',S.p1);sf('set-p2',S.p2);sf('set-p3',S.p3);sf('set-mm',S.mm);sf('set-r-walls',S.rWalls||1.50);sf('set-r-ceil',S.rCeil||1.25);sf('set-r-trim',S.rTrim||1.75);sf('set-r-door',S.rDoor||85);sf('set-r-win',S.rWin||45);sf('set-r-ext',S.rExt||1.60);sf('set-r-deck',S.rDeck||1.25);
 }
 function saveSettings(){
@@ -1878,26 +1896,7 @@ function clearMileageOnly(){
   },{title:'Clear mileage',yes:'Delete mileage',danger:true});
 }
 
-function resetSettings(){zConfirm('Reset all settings to defaults?',()=>{S={irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:"ZJ's Painting & Special Coatings",bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:38,p2:62,p3:88,mm:15,rWalls:1.00,rCeil:0.85,rTrim:1.50,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00};applySettings();loadSettingsForm();},{title:'Reset settings',yes:'Reset',danger:false});}
-function resetLocationPermission(){
-  // Clear stored location so modal re-prompts
-  delete S.weatherLat;delete S.weatherLon;S.locationDenied=false;
-  _weatherCache=null;saveAll();
-  updateLocationBtn();
-  requestLocationPermission(()=>{
-    updateLocationBtn();
-    zAlert('Location access granted. Weather and GPS drive are now enabled.',{title:'✓ Location enabled'});
-  },()=>{
-    updateLocationBtn();
-    zAlert('Location not allowed. You can try again any time from Settings.',{title:'Location blocked'});
-  });
-}
-function updateLocationBtn(){
-  const btn=document.getElementById('location-settings-btn');if(!btn)return;
-  if(S.locationDenied){btn.textContent='📍 Location: Off — tap to enable';btn.style.color='var(--text3)';}
-  else if(S.weatherLat){btn.textContent='📍 Location: On ✓';btn.style.color='var(--green-mid)';}
-  else{btn.textContent='📍 Location access';btn.style.color='';}
-}
+function resetSettings(){zConfirm('Reset all settings to defaults?',()=>{S={irsRate:.670,taxYear:2024,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:"ZJ's Painting & Special Coatings",bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:38,p2:62,p3:88,mm:15,rWalls:1.00,rCeil:0.85,rTrim:1.50,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00};applySettings();loadSettingsForm();},{title:'Reset settings',yes:'Reset',danger:false});}
 
 function goPg(id){
   // Preserve currentClientId across navigation — only clear on explicit new client selection
@@ -1932,7 +1931,7 @@ function goPg(id){
   if(id==='pg-tracker'){renderTrackerTab();populateExpJobSel();}
   if(id==='pg-taxes')calcTax();
   if(id==='pg-settings'){buildScopeDefaultsUI();
-    loadSettingsForm();renderVehicleSettings();updateLocationBtn();
+    loadSettingsForm();renderVehicleSettings();
     if(window._scrollToVehicles){
       window._scrollToVehicles=false;
       setTimeout(()=>{
@@ -2025,10 +2024,9 @@ function _doOpenEstimate(c){
     const linked=document.getElementById('e-client-linked');
     if(linked)linked.innerHTML='<span class="conn-tag">'+c.name+'</span>';
     const adj=document.getElementById('est-adj');if(adj)adj.value=0;
-    const adjv=document.getElementById('est-adj-val');if(adjv)adjv.textContent='0%';
+    const adjv=document.getElementById('est-adj-val');if(adjv)adjv.textContent='$0';
     ['est-adj-reason','inc-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-    scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
-  SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
+    SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
     const epEl=document.getElementById('e-paint');if(epEl)epEl.value='';
     document.querySelectorAll('#paint-picker .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));
     const edEl=document.getElementById('e-days');
@@ -2179,54 +2177,21 @@ function renderDash(){
   if(csub){csub.textContent=subCollect;csub.style.color=collectItems.length?'#A32D2D':'var(--text3)';}
 
   renderPipeline();
-  // Unified pending estimates section
+  // Resume estimate banner
   const resumeEl=document.getElementById('dash-resume-est');
   if(resumeEl){
-    const pendingBids=bids.filter(b=>b.status==='Pending'||b.status==='Draft');
     const draft=loadEstFullDraft();
-    // Show draft only if no non-draft pending bid for same client already exists
-    const hasDraft=!!(draft&&draft.cname&&
-      !pendingBids.some(b=>!b.draft&&(b.client_name===draft.cname||
-        (b.client_id&&clients.find(c=>c.id===b.client_id)&&clients.find(c=>c.id===b.client_id).name===draft.cname))));
-    const hasAny=hasDraft||pendingBids.length>0;
-    if(!hasAny){
-      resumeEl.innerHTML='';
+    if(draft&&draft.cname){
+      resumeEl.style.display='';
+      resumeEl.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;gap:10px">'+
+        '<div><div style="font-size:13px;font-weight:700">📋 Resume estimate</div>'+
+        '<div style="font-size:11px;color:var(--text3)">Draft for '+draft.cname+' — not yet sent</div></div>'+
+        '<div style="display:flex;gap:6px">'+
+          '<button onclick="resumeEstimateDraft()" class="btn btn-sm btn-p">Resume</button>'+
+          '<button onclick="clearEstFullDraft();renderDash()" class="btn btn-sm" style="color:var(--text3)">Discard</button>'+
+        '</div></div>';
     } else {
-    const totalCount=pendingBids.length+(hasDraft?1:0);
-    let rows='';
-    // Draft row first
-    if(hasDraft){
-      rows+='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);gap:8px">'+
-        '<div style="min-width:0;cursor:pointer" onclick="resumeEstimateDraft()">'+
-          '<div style="font-size:13px;font-weight:700;color:var(--blue)">'+draft.cname+'</div>'+
-          '<div style="font-size:11px;color:var(--text3)">Draft — not yet sent</div>'+
-        '</div>'+
-        '<div style="display:flex;gap:6px;flex-shrink:0">'+
-          '<button onclick="resumeEstimateDraft()" class="btn btn-sm btn-p" style="font-size:11px">Resume</button>'+
-          '<button onclick="clearEstFullDraft();renderDash()" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Discard</button>'+
-        '</div>'+
-      '</div>';
-    }
-    // Sent pending bids — tap row to go to client
-    rows+=pendingBids.map(b=>{
-      const cl=clients.find(c=>c.id===b.client_id);
-      const name=cl?cl.name:(b.client_name||'Client');
-      const days=Math.floor((new Date(todayKey())-new Date((b.bid_date||todayKey())+'T12:00:00'))/86400000);
-      const daysStr=days>0?days+'d ago':'Today';
-      const hasNotes=!!(b.notesCanvas);
-      return '<div onclick="viewBidClient('+b.client_id+')" style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);gap:8px;cursor:pointer">'+
-        '<div style="min-width:0">'+
-          '<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+name+'</div>'+
-          '<div style="font-size:11px;color:var(--text3)">'+fmt(b.amount)+' · '+daysStr+(hasNotes?' · 📝':'')+'</div>'+
-        '</div>'+
-        '<div style="font-size:18px;color:var(--text3)">›</div>'+
-      '</div>';
-    }).join('');
-    resumeEl.innerHTML=
-      '<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:10px 14px;margin-bottom:8px">'+
-        '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:4px">📬 Pending estimates ('+totalCount+')</div>'+
-        rows+
-      '</div>';
+      resumeEl.style.display='none';
     }
   }
   renderGoal();
@@ -3699,7 +3664,6 @@ function renderCDBids(){
     if(!isWon){
       actBtns.push('<button class="btn btn-sm" onclick="sendBidEmail('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#9993; Send email</button>');
       actBtns.push('<button class="btn btn-sm" onclick="openEditBid('+b.id+')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">✎ Revise bid</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="openBidNotes('+b.id+')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">📝 Notes</button>');
       actBtns.push('<button class="btn btn-sm" onclick="markBidAbandoned('+b.id+')" style="background:#FFF8F0;color:#A32D2D;border-color:#A32D2D">No response</button>');
       actBtns.push('<button class="btn-del" onclick="deleteBid('+b.id+')" style="font-size:11px;padding:5px 8px">Delete</button>');
     }
@@ -4357,10 +4321,6 @@ function logPayment(){
 
   const newBalance=getBidBalance(bid);
   if(newBalance<=0.01){
-    // Auto-mark job complete when fully paid
-    if(!bid.completion_date)bid.completion_date=todayKey();
-    jobs.filter(j=>j.client_id===bid.client_id&&j.eventType!=='estimate'&&j.status!=='done').forEach(j=>{j.status='done';if(!j.completion_date)j.completion_date=todayKey();});
-    saveAll();
     renderClientDetail();
     const banner=document.createElement('div');
     banner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;animation:slideDown .3s ease';
@@ -4464,9 +4424,7 @@ function openEditBid(bidId){
     if(totalMiles>0){sf('e-travel',(Math.round(totalMiles*10)/10).toString());}
     const linked=document.getElementById('e-client-linked');
     if(linked)linked.innerHTML='<span class="conn-tag">'+(c?c.name:'linked')+' — editing existing bid</span>';
-    scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
-  SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
-    roomScopeMap=b.roomScopeMap?JSON.parse(JSON.stringify(b.roomScopeMap)):{};
+    SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
     if(b.scope&&Object.keys(b.scope).length){Object.entries(b.scope).forEach(([id,val])=>toggleScope(id,!!val));}
     else{['sand','spackle'].forEach(id=>toggleScope(id,true));}
     if(b.surfaces&&b.surfaces.length){estSurfaces=[...b.surfaces];estSurfId=Math.max(...b.surfaces.map(s=>s.id||0),0);}
@@ -4478,13 +4436,13 @@ function openEditBid(bidId){
     }
     if(b.paint){
       const el=document.getElementById('e-paint');if(el)el.value=b.paint;
-      const sel=document.getElementById('paint-supply-sel');
-      if(sel)sel.value=b.paint==='customer'?'customer':(b.paint||'interior');
-      onPaintSupplyChange(b.paint==='customer'?'customer':(b.paint||'interior'));
+      const pb=document.getElementById('pp-'+b.paint);
+      document.querySelectorAll('#paint-picker .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));
+      if(pb)pb.classList.add('active-surf-btn');
     }
     if(b.colors!==undefined){const el=document.getElementById('e-colors');if(el){el.value=b.colors;el.style.borderColor='var(--border2)';el.style.background='var(--bg2)';}}
     const adj=document.getElementById('est-adj');if(adj)adj.value=0;
-    const adjv=document.getElementById('est-adj-val');if(adjv)adjv.textContent='0%';
+    const adjv=document.getElementById('est-adj-val');if(adjv)adjv.textContent='$0';
     renderEstSurfs();
     goEstStep(2);
     const tip=document.querySelector('#est-s2 .tip');
@@ -4510,37 +4468,18 @@ function saveLien(){
 }
 function releaseLien(bidId){zConfirm('Mark this lien as resolved and released?',()=>{const l=liens.find(x=>x.bid_id===bidId);if(l){l.status='resolved';saveAll();renderCDBids();}},{title:'Release lien',yes:'Mark resolved',danger:false});}
 
-function getVehicles(){
-  let vehs=S.vehicles||[];
-  if(!vehs.length&&S.veh&&S.veh.trim()){vehs=[S.veh.trim()];}
-  // Migrate legacy string array to object array
-  return vehs.map(v=>typeof v==='string'?{name:v,nickname:''}:v);
-}
-function getVehicleLabel(v){
-  if(!v)return '';
-  if(typeof v==='string')return v;
-  return (v.nickname&&v.nickname.trim())||v.name||'';
-}
-function getVehicleFullLabel(v){
-  if(!v)return '';
-  if(typeof v==='string')return v;
-  const nick=v.nickname&&v.nickname.trim();
-  return nick?nick+' ('+v.name+')':v.name||'';
-}
+function getVehicles(){return S.vehicles||[];}
 
 function addVehicle(){
   const inp=document.getElementById('set-new-veh');
-  const nickInp=document.getElementById('set-new-veh-nick');
   const name=(inp?inp.value.trim():'');
-  const nickname=(nickInp?nickInp.value.trim():'');
   if(!name)return zAlert('Enter a vehicle description (e.g. 2019 White F-150)');
   const vehs=getVehicles();
-  if(vehs.find(v=>v.name===name))return zAlert('Vehicle already added.');
-  vehs.push({name,nickname});
+  if(vehs.find(v=>v===name))return zAlert('Vehicle already added.');
+  vehs.push(name);
   S.vehicles=vehs;
   saveAll();
   if(inp)inp.value='';
-  if(nickInp)nickInp.value='';
   renderVehicleSettings();
 }
 
@@ -4556,54 +4495,18 @@ function renderVehicleSettings(){
   const el=document.getElementById('set-vehicles-list');if(!el)return;
   const vehs=getVehicles();
   if(!vehs.length){el.innerHTML='<div style="font-size:12px;color:var(--text3);margin-bottom:4px">No vehicles added yet.</div>';return;}
-  el.innerHTML=vehs.map((v,i)=>{
-    const label=getVehicleLabel(v);
-    const sub=v.nickname&&v.nickname.trim()?v.name:'';
-    const nickVal=v.nickname||'';
-    return '<div style="background:var(--bg2);border-radius:var(--r);padding:8px 12px;margin-bottom:4px">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center">'+
-        '<div style="font-size:13px;font-weight:700">'+label+'</div>'+
-        '<button class="btn-del" onclick="removeVehicle('+i+')" style="font-size:11px;padding:3px 8px">Remove</button>'+
-      '</div>'+
-      (sub?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+sub+'</div>':'')+
-      '<input placeholder="Nickname (optional — e.g. Work Truck)" data-veh-idx="'+i+'" oninput="updateVehicleNick('+i+',this.value)" style="margin-top:6px;font-size:12px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit">'+
-    '</div>';
-  }).join('');
-  // Set input values after innerHTML (avoids quote issues)
-  vehs.forEach((v,i)=>{
-    const inp=el.querySelector('[data-veh-idx="'+i+'"]');
-    if(inp)inp.value=v.nickname||'';
-  });
-}
-function updateVehicleNick(idx,nick){
-  const vehs=getVehicles();
-  if(vehs[idx]){vehs[idx].nickname=nick;S.vehicles=vehs;saveAll();}
+  el.innerHTML=vehs.map((v,i)=>
+    '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg2);border-radius:var(--r);padding:8px 12px;margin-bottom:4px">'+
+      '<div style="font-size:13px;font-weight:600">'+v+'</div>'+
+      '<button class="btn-del" onclick="removeVehicle('+i+')" style="font-size:11px;padding:3px 8px">Remove</button>'+
+    '</div>'
+  ).join('');
 }
 
 function setTripPurpose(purpose, btn){
   gps.purpose=purpose;
   document.querySelectorAll('#cd-purpose-chips .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));
   if(btn)btn.classList.add('active-surf-btn');
-  // Show job picker for supply runs so mileage ties to correct job
-  const jobPicker=document.getElementById('cd-supply-job-picker');
-  if(jobPicker){
-    if(purpose==='Supply run'){
-      const activeJobs=bids.filter(b=>b.status==='Closed Won');
-      if(activeJobs.length){
-        jobPicker.style.display='block';
-        jobPicker.innerHTML='<label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:6px">Which job? <span style="font-weight:400;opacity:.7">(optional)</span></label>'+
-          '<select id="cd-supply-job-sel" style="width:100%;font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)" onchange="gps.supplyJobId=this.value">'+
-          '<option value="">— Select job —</option>'+
-          activeJobs.map(b=>{const c=getClientById(b.client_id);return'<option value="'+b.id+'">'+(c?c.name:'Client')+' — '+fmt(b.amount)+'</option>';}).join('')+
-          '</select>';
-      } else {
-        jobPicker.style.display='none';
-      }
-    } else {
-      jobPicker.style.display='none';
-      gps.supplyJobId=null;
-    }
-  }
   checkTripReady();
 }
 
@@ -4628,52 +4531,36 @@ function validateOdomStart(input){
 }
 
 function renderDriveVehicleChips(){
-  // Now uses dropdown — this just populates the select
-  const sel=document.getElementById('cd-vehicle-sel');
+  const chips=document.getElementById('cd-vehicle-chips');
   const noVeh=document.getElementById('cd-no-vehicles');
+  if(!chips)return;
   const vehs=getVehicles();
   if(!vehs.length){
-    if(sel)sel.style.display='none';
+    chips.style.display='none';
     if(noVeh)noVeh.style.display='block';
     const btn=document.getElementById('cd-start-trip-btn');
     if(btn){btn.disabled=true;btn.style.background='var(--border2)';btn.style.cursor='not-allowed';}
     return;
   }
+  chips.style.display='flex';
   if(noVeh)noVeh.style.display='none';
-  if(sel){
-    sel.style.display='block';
-    sel.innerHTML='<option value="">— Select vehicle —</option>'+
-      vehs.map(v=>{
-        const label=getVehicleLabel(v);
-        const full=getVehicleFullLabel(v);
-        return '<option value="'+v.name+'"'+(gps.vehicle===v.name?' selected':'')+'>'+full+'</option>';
-      }).join('');
-    // Auto-select if only one vehicle
-    if(vehs.length===1&&!gps.vehicle){
-      gps.vehicle=vehs[0].name;
-      sel.value=vehs[0].name;
-      updateOdomHint();
-      checkTripReady();
-    }
-  }
-}
-function updateOdomHint(){
+  chips.innerHTML=vehs.map((v,i)=>{
+    const active=gps.vehicle===v;
+    return '<div onclick="selectDriveVehicle('+i+')" style="padding:8px 14px;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;border:2px solid '+(active?'var(--blue)':'var(--border2)')+';background:'+(active?'var(--blue)':'var(--bg2)')+';color:'+(active?'#fff':'var(--text2)')+'">'+v+'</div>';
+  }).join('');
   const hint=document.getElementById('cd-last-odom-hint');
   if(hint&&gps.vehicle){
     const last=getLastOdomForVehicle(gps.vehicle);
-    hint.textContent=last?'Last recorded: '+last.toLocaleString()+' mi — enter current odometer':'First trip — enter your starting odometer reading';
-  } else if(hint){hint.textContent='';}
+    hint.textContent=last?'Last recorded: '+last.toLocaleString()+' mi — enter current reading':'First trip in this vehicle — enter starting odometer';
+  }
 }
-function selectDriveVehicleByName(name){
-  gps.vehicle=name;
-  updateOdomHint();
-  const odom=document.getElementById('cd-odom-start');if(odom&&odom.value)validateOdomStart(odom);
-  checkTripReady();
-}
+
 function selectDriveVehicle(idx){
   const vehs=getVehicles();
-  gps.vehicle=vehs[idx]?vehs[idx].name:'';
+  gps.vehicle=vehs[idx]||'';
   renderDriveVehicleChips();
+  const msg=document.getElementById('cd-vehicle-required-msg');if(msg)msg.style.display='none';
+  const odom=document.getElementById('cd-odom-start');if(odom&&odom.value)validateOdomStart(odom);
   checkTripReady();
 }
 function checkTripReady(){
@@ -4736,8 +4623,6 @@ function confirmStartDrive(){
   }
   gps.active=true;
   gps.clientId=currentClientId;
-  // Get live GPS coords for start of trip
-  if(!S.locationDenied&&navigator.geolocation){navigator.geolocation.getCurrentPosition(p=>{gps.startCoords={lat:p.coords.latitude,lon:p.coords.longitude};},()=>{},{enableHighAccuracy:true,timeout:8000});}  
   const c=getClientById(currentClientId);
   gps.clientName=c?c.name:'Client';
   gps.odomStart=val;
@@ -4953,120 +4838,33 @@ function discardDriveTrip(){
   hideDriveBanner();resetDriveUI();
 }
 
-function buildScopeGrid(roomName){
+function buildScopeGrid(){
   const el=document.getElementById('est-scope-grid');if(!el)return;
-  _currentScopeRoom=roomName||'';
   el.innerHTML=SCOPE_ITEMS.map(s=>{
-    const isOn=roomName?roomScopeOn(roomName,s.id):!!scopeActiveMap[s.id];
-    const entry=roomName?((roomScopeMap[roomName]&&roomScopeMap[roomName][s.id])||{}):(scopeHrsStore[s.id]||{});
-    const hrs=entry.hrs||0;
-    const rate=entry.rate||0;
-    // Use data attribute for room name to avoid string escaping issues in onclick
-    const roomAttr=roomName?(' data-room="'+encodeURIComponent(roomName)+'"'):'';
-    const clickHandler=roomName
-      ?'onclick="toggleScopeRoom(\''+s.id+'\',decodeURIComponent(this.dataset.room))"'
-      :'onclick="toggleScope(\''+s.id+'\')"';
-    return '<div class="stog'+(isOn?' on':'')+'" id="est-st-'+s.id+'" '+clickHandler+roomAttr+'>'+
-      '<input type="checkbox" id="est-sc-'+s.id+'" style="display:none"'+(isOn?' checked':'')+'>'+
+    return '<div class="stog" id="est-st-'+s.id+'" onclick="toggleScope(\''+s.id+'\')">'+
+      '<input type="checkbox" id="est-sc-'+s.id+'" style="display:none">'+
       '<div class="sdot"></div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:4px;min-width:0">'+
           '<span class="slabel" style="flex:1;min-width:0;word-break:break-word">'+s.label+'</span>'+
-          '<span id="scope-hrs-badge-'+s.id+'" style="font-size:10px;font-weight:800;color:var(--blue-dk);background:var(--blue-lt);padding:2px 5px;border-radius:8px;'+(isOn&&hrs?'':'display:none;')+'text-align:right;line-height:1.5;flex-shrink:0;white-space:nowrap">'+(isOn&&hrs?hrs+'h<br>'+(rate?'$'+rate+'/hr':''):'')+'</span>'+
+          '<span id="scope-hrs-badge-'+s.id+'" style="font-size:10px;font-weight:800;color:var(--blue-dk);background:var(--blue-lt);padding:2px 5px;border-radius:8px;display:none;text-align:right;line-height:1.5;flex-shrink:0;white-space:nowrap"></span>'+
         '</div>'+
-        '<span class="sprice" style="display:block;font-size:10px;color:var(--text3);font-weight:400">'+(isOn&&hrs?'= $'+(entry.cost||Math.round(hrs*(rate||45))):'Tap to enter hours')+'</span>'+
+        '<span class="sprice" style="display:block;font-size:10px;color:var(--text3);font-weight:400">Tap to enter hours</span>'+
       '</div></div>';
   }).join('');
-  // NOTE: never reset scopeHrsStore, scopeActiveMap, or roomScopeMap here
-}
-function toggleScopeRoom(id, roomName){
-  const wasOn=roomScopeOn(roomName,id);
-  const nowOn=!wasOn;
-  if(!nowOn){
-    if(roomScopeMap[roomName])delete roomScopeMap[roomName][id];
-    const cb=document.getElementById('est-sc-'+id);const tog=document.getElementById('est-st-'+id);
-    if(cb)cb.checked=false;if(tog)tog.classList.remove('on');
-    const badge=document.getElementById('scope-hrs-badge-'+id);
-    if(badge){badge.textContent='';badge.style.display='none';}
-    saveEstFullDraft();
-  } else {
-    if(!roomScopeMap[roomName])roomScopeMap[roomName]={};
-    roomScopeMap[roomName][id]={active:true,hrs:0,rate:45,cost:0};
-    const cb=document.getElementById('est-sc-'+id);const tog=document.getElementById('est-st-'+id);
-    if(cb)cb.checked=true;if(tog)tog.classList.add('on');
-    const sc=SCOPE_ITEMS.find(x=>x.id===id);
-    promptScopeHoursRoom(id,sc?sc.label:id,roomName);
-  }
-}
-function promptScopeHoursRoom(id,label,roomName){
-  const existing=(roomScopeMap[roomName]&&roomScopeMap[roomName][id])||{};
-  const existHrs=existing.hrs||'';
-  const existRate=existing.rate||45;
-  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
-  const box=document.createElement('div');box.className='zmodal';
-  box.innerHTML=
-    '<div style="font-size:18px;font-weight:800;margin-bottom:2px">'+label+'</div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:4px">For: <strong>'+roomName+'</strong></div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">Hours and rate for this room only</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">'+
-      '<div><label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Hours</label>'+
-        '<input type="number" id="scope-hrs-popup" value="'+existHrs+'" min="0" step="0.5" placeholder="0.0" inputmode="decimal"'+
-          ' style="font-size:28px;font-weight:700;padding:12px;border-radius:var(--r);border:2px solid var(--blue);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
-          ' oninput="_syncScopePopupHint()"></div>'+
-      '<div><label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Rate ($/hr)</label>'+
-        '<input type="number" id="scope-rate-popup" value="'+existRate+'" min="0" step="5" placeholder="45" inputmode="decimal"'+
-          ' style="font-size:28px;font-weight:700;padding:12px;border-radius:var(--r);border:2px solid var(--green);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
-          ' oninput="_syncScopePopupHint()"></div>'+
-    '</div>'+
-    '<div id="scope-popup-hint" style="font-size:13px;font-weight:700;color:var(--green-mid);text-align:center;margin-bottom:14px;min-height:20px"></div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
-      '<button id="scope-cancel-btn" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
-      '<button id="scope-save-btn" style="padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Save ✓</button>'+
-    '</div>';
-  overlay.appendChild(box);document.body.appendChild(overlay);
-  overlay.addEventListener('click',e=>{if(e.target===overlay)_cancelScopeHoursRoom(id,roomName);});
-  box.querySelector('#scope-cancel-btn').onclick=()=>_cancelScopeHoursRoom(id,roomName);
-  box.querySelector('#scope-save-btn').onclick=()=>_saveScopeHoursRoom(id,roomName);
-  setTimeout(()=>{_syncScopePopupHint();const inp=document.getElementById('scope-hrs-popup');if(inp){inp.focus();inp.select();}},80);
-}
-function _saveScopeHoursRoom(id,roomName){
-  const hrs=parseFloat(document.getElementById('scope-hrs-popup')?.value)||0;
-  const rate=parseFloat(document.getElementById('scope-rate-popup')?.value)||45;
-  if(hrs>0){
-    setRoomScope(roomName,id,true,hrs,rate);
-    const badge=document.getElementById('scope-hrs-badge-'+id);
-    if(badge){badge.innerHTML=hrs+'h<br>$'+rate+'/hr';badge.style.display='';}
-    const tog=document.getElementById('est-st-'+id);if(tog)tog.classList.add('on');
-    const cb=document.getElementById('est-sc-'+id);if(cb)cb.checked=true;
-  } else {
-    if(roomScopeMap[roomName])delete roomScopeMap[roomName][id];
-    const cb=document.getElementById('est-sc-'+id);const tog=document.getElementById('est-st-'+id);
-    if(cb)cb.checked=false;if(tog)tog.classList.remove('on');
-    const badge=document.getElementById('scope-hrs-badge-'+id);
-    if(badge){badge.textContent='';badge.style.display='none';}
-  }
-  closeTopModal();renderEstRunning&&renderEstRunning();saveEstFullDraft();
-}
-function _cancelScopeHoursRoom(id,roomName){
-  if(!roomScopeOn(roomName,id)){
-    const cb=document.getElementById('est-sc-'+id);const tog=document.getElementById('est-st-'+id);
-    if(cb)cb.checked=false;if(tog)tog.classList.remove('on');
-  }
-  closeTopModal();
+  scopeHrsStore={};
 }
 function toggleScope(id,force){
-  const wasOn=!!scopeActiveMap[id];
-  const nowOn=force!==undefined?!!force:!wasOn;
-  scopeActiveMap[id]=nowOn;
-  // Sync DOM if grid is rendered
   const cb=document.getElementById('est-sc-'+id);
   const tog=document.getElementById('est-st-'+id);
-  if(cb)cb.checked=nowOn;
-  if(tog)tog.classList.toggle('on',nowOn);
-  if(nowOn&&!wasOn&&force===undefined){
+  if(!cb)return;
+  const wasOn=cb.checked;
+  if(force!==undefined)cb.checked=force;else cb.checked=!cb.checked;
+  if(tog)tog.classList.toggle('on',cb.checked);
+  if(cb.checked&&!wasOn&&force===undefined){
     const sc=SCOPE_ITEMS.find(x=>x.id===id);
     promptScopeHours(id,sc?sc.label:id);
-  } else if(!nowOn){
+  } else if(!cb.checked){
     delete scopeHrsStore[id];
     const badge=document.getElementById('scope-hrs-badge-'+id);
     if(badge){badge.textContent='';badge.style.display='none';}
@@ -5148,17 +4946,8 @@ function _cancelScopeHours(id){
   }
   closeTopModal();
 }
-function scopeOn(id){return !!scopeActiveMap[id];}
-function getRoomScope(roomName){return roomScopeMap[roomName]||(roomScopeMap[roomName]={});}
-function roomScopeOn(roomName,id){return !!(roomScopeMap[roomName]&&roomScopeMap[roomName][id]&&roomScopeMap[roomName][id].active);}
-function setRoomScope(roomName,id,active,hrs,rate){
-  if(!roomScopeMap[roomName])roomScopeMap[roomName]={};
-  if(!active){delete roomScopeMap[roomName][id];return;}
-  const cost=hrs&&rate?Math.round(hrs*rate*100)/100:0;
-  roomScopeMap[roomName][id]={active:true,hrs:hrs||0,rate:rate||45,cost};
-}
+function scopeOn(id){return document.getElementById('est-sc-'+id)?.checked;}
 let surfJobType='interior', surfColor='', surfRoom='';
-let _currentScopeRoom='';  // room name currently shown in scope grid
 function addSurfColorField(){
   const list=document.getElementById('surf-colors-list');if(!list)return;
   const inp=document.createElement('input');
@@ -5229,13 +5018,6 @@ function onSurfRoomName(input){
 const SURF_ORDER=['walls','ceiling','trim','ext_walls','ext_trim','deck','doors','windows','cabinets'];
 const SURF_NEEDS_H=['walls','ceiling','ext_walls','deck'];
 const SURF_IS_COUNT=['doors','windows','cabinets'];
-// Strip legacy surface-type suffixes from room names (e.g. "Dining doors" -> "Dining")
-function cleanRoomName(room){
-  const raw=(room||'').split(' — ')[0].replace('[Ext] ','').trim();
-  const types=['walls','ceiling','trim','doors','windows','cabinets','ext_walls','ext_trim','deck'];
-  for(const t of types){if(raw.endsWith(' '+t))return raw.slice(0,-(t.length+1)).trim();}
-  return raw;
-}
 const SURF_LABELS={walls:'Walls',ceiling:'Ceiling',trim:'Trim',doors:'Doors',windows:'Windows',cabinets:'Cabinets',ext_walls:'Siding',ext_trim:'Ext trim',deck:'Deck'};
 
 function goSurfStepA(){
@@ -5450,7 +5232,7 @@ function saveSurfBAndNext(){
   if(SURF_IS_COUNT.includes(type)){
     const m=surfBMeasurements[type]||{count:1};
     const count=m.count||1;
-    estSurfaces.push({id:++estSurfId,type,qty:count,room:prefix+surfRoom+colorNote});
+    estSurfaces.push({id:++estSurfId,type,qty:count,room:prefix+surfRoom+' '+type+colorNote});
     surfBIdx++;
     if(surfBIdx<surfBQueue.length)renderSurfBCurrent();
     else finishRoom();
@@ -5479,7 +5261,7 @@ function finishRoom(){
   if(btn){btn.disabled=false;btn.style.background='var(--blue)';btn.style.color='#fff';btn.style.borderColor='var(--blue)';btn.style.cursor='pointer';}
   surfWhatSelected=[];surfBQueue=[];surfBIdx=0;surfBMeasurements={};surfColor='';surfRoom='';
   updateSurfWhatUI();
-  const rooms=new Set(estSurfaces.map(s=>cleanRoomName(s.room)));
+  const rooms=new Set(estSurfaces.map(s=>(s.room||'').split(' — ')[0].replace('[Ext] ','').trim()));
   const roomCount=rooms.size;
   const rcl=document.getElementById('surf-room-count');if(rcl)rcl.textContent=roomCount+' room'+(roomCount!==1?'s':'')+' added';
   showRoomSavedState(roomCount);
@@ -5488,8 +5270,6 @@ function finishRoom(){
 function showRoomSavedState(roomCount){
   document.getElementById('surf-step-a').style.display='none';
   document.getElementById('surf-step-b').style.display='none';
-  // Get the room name just saved from the last surface entry
-  const lastSavedRoom=estSurfaces.length>0?cleanRoomName(estSurfaces[estSurfaces.length-1].room):'';
   const surf3=document.getElementById('est-s3');
   if(!surf3)return;
   let doneDiv=document.getElementById('surf-room-done');
@@ -5511,11 +5291,11 @@ function showRoomSavedState(roomCount){
       '</div>'+
       (()=>{
         const roomSurfs=estSurfaces.filter(s=>{
-          const base=cleanRoomName(s.room);
+          const base=(s.room||'').split(' — ')[0].replace('[Ext] ','').trim();
           return base===surfRoom||(estSurfaces.length>0&&s===estSurfaces[estSurfaces.length-1]);
         });
         const recentRoom=estSurfaces.length>0?(estSurfaces[estSurfaces.length-1].room||'').split(' — ')[0].replace('[Ext] ','').trim():'';
-        const recentSurfs=estSurfaces.filter(s=>cleanRoomName(s.room)===recentRoom);
+        const recentSurfs=estSurfaces.filter(s=>(s.room||'').split(' — ')[0].replace('[Ext] ','').trim()===recentRoom);
         if(!recentSurfs.length)return '';
         const SURF_LABELS2={walls:'Walls',ceiling:'Ceiling',trim:'Trim',doors:'Doors',windows:'Windows',cabinets:'Cabinets',ext_walls:'Siding',ext_trim:'Ext trim',deck:'Deck'};
         return '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin-bottom:10px">'+
@@ -5524,18 +5304,11 @@ function showRoomSavedState(roomCount){
         '</div>';
       })()+
     '</div>'+
-    '<div style="margin:12px 0;background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:14px">'+
-      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Scope of work for '+lastSavedRoom+'</div>'+
-      '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">Check what applies to this room and enter hours</div>'+
-      '<div class="sg" id="est-scope-grid"></div>'+
-    '</div>'+
     '<div style="display:grid;gap:10px">'+
       '<button onclick="addAnotherRoom()" style="padding:14px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+
         '+ Add another room'+
       '</button>'+
     '</div>';
-  // Now render scope grid for this specific room
-  if(lastSavedRoom)buildScopeGrid(lastSavedRoom);
 }
 
 function addAnotherRoom(){
@@ -5564,7 +5337,7 @@ function initSurfStep(){
   if(estSurfaces.length>0){
     const btn=document.getElementById('est-s3-next-btn');
     if(btn){btn.disabled=false;btn.style.background='var(--blue)';btn.style.color='#fff';btn.style.borderColor='var(--blue)';btn.style.cursor='pointer';}
-    const rooms=new Set(estSurfaces.map(s=>cleanRoomName(s.room)));
+    const rooms=new Set(estSurfaces.map(s=>(s.room||'').split(' — ')[0].replace('[Ext] ','').trim()));
     const rcl=document.getElementById('surf-room-count');if(rcl)rcl.textContent=rooms.size+' room'+(rooms.size!==1?'s':'')+' added';
   }
 }
@@ -5573,76 +5346,35 @@ function renderSurfRoomsLogged(){
   const el=document.getElementById('surf-rooms-logged');if(!el)return;
   if(!estSurfaces.length){el.innerHTML='';return;}
   const roomMap={};
-  const surfTypeNames=['walls','ceiling','trim','doors','windows','cabinets','ext_walls','ext_trim','deck'];
   estSurfaces.forEach(s=>{
-    // Strip surface type suffix from room name if it got appended (legacy data fix)
-    let rawBase=cleanRoomName(s.room);
-    surfTypeNames.forEach(t=>{if(rawBase.endsWith(' '+t))rawBase=rawBase.slice(0,-(t.length+1)).trim();});
-    const base=rawBase||'Other';
+    const base=(s.room||'').split(' — ')[0].replace('[Ext] ','').trim();
     if(!roomMap[base])roomMap[base]=[];
     const t=SURF_TYPES.find(x=>x.v===s.type)||{l:s.type,unit:''};
     roomMap[base].push(t.l+': '+s.qty.toLocaleString()+(t.unit?' '+t.unit:''));
   });
   el.innerHTML=Object.entries(roomMap).map(([room,lines])=>
-    '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--green-lt);border:1px solid var(--green);border-radius:var(--r);padding:8px 12px;margin-bottom:6px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;background:var(--green-lt);border:1px solid var(--green);border-radius:var(--r);padding:8px 12px;margin-bottom:6px">'+
       '<div>'+
         '<div style="font-size:12px;font-weight:700;color:var(--green-mid)">'+room+'</div>'+
         '<div style="font-size:11px;color:var(--text3)">'+lines.join(' · ')+'</div>'+
       '</div>'+
-      '<div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px">'+
-      '<button data-room="'+encodeURIComponent(room)+'" onclick="editRoomSurfs(decodeURIComponent(this.dataset.room))" style="font-size:11px;padding:3px 8px;border-radius:var(--r);border:1px solid var(--green);background:#fff;color:var(--green-mid);cursor:pointer;font-weight:600;font-family:inherit">Edit</button>'+
-      '<button data-room="'+encodeURIComponent(room)+'" onclick="removeRoomSurfs(decodeURIComponent(this.dataset.room))" style="border:none;background:none;cursor:pointer;font-size:16px;color:var(--text3);padding:0">✕</button>'+
-      '</div>'+
+      '<button data-room="'+encodeURIComponent(room)+'" onclick="removeRoomSurfs(decodeURIComponent(this.dataset.room))" style="border:none;background:none;cursor:pointer;font-size:16px;color:var(--text3);padding:0 0 0 8px;flex-shrink:0">✕</button>'+
     '</div>'
   ).join('');
 }
 
 function removeRoomSurfs(roomBase){
   estSurfaces=estSurfaces.filter(s=>{
-    const base=cleanRoomName(s.room);
+    const base=(s.room||'').split(' — ')[0].replace('[Ext] ','').trim();
     return base!==roomBase;
   });
-  // Also clear scope for this room
-  if(roomScopeMap[roomBase])delete roomScopeMap[roomBase];
   renderEstSurfs();renderEstRunning();saveSurfDraft();renderSurfRoomsLogged();
   if(!estSurfaces.length){
     const btn=document.getElementById('est-s3-next-btn');
     if(btn){btn.disabled=true;btn.style.background='var(--border2)';btn.style.color='var(--text3)';btn.style.borderColor='var(--border2)';btn.style.cursor='not-allowed';}
   }
-  const rooms=new Set(estSurfaces.map(s=>cleanRoomName(s.room)));
+  const rooms=new Set(estSurfaces.map(s=>(s.room||'').split(' — ')[0].replace('[Ext] ','').trim()));
   const rcl=document.getElementById('surf-room-count');if(rcl)rcl.textContent=rooms.size>0?rooms.size+' room'+(rooms.size!==1?'s':'')+' added':'';
-}
-
-function editRoomSurfs(roomBase){
-  // Remove surfaces for this room and re-open the form pre-filled with room name
-  // so Zach can re-enter dimensions — scope is preserved
-  const existingSurfs=estSurfaces.filter(s=>cleanRoomName(s.room)===roomBase);
-  const color=existingSurfs.length?(existingSurfs[0].room||'').split(' — ')[1]||'':'';
-  // Remove the room's surfaces
-  estSurfaces=estSurfaces.filter(s=>cleanRoomName(s.room)!==roomBase);
-  renderEstSurfs();renderEstRunning();saveSurfDraft();renderSurfRoomsLogged();
-  // Hide the saved state and open the room form pre-filled
-  const doneDiv=document.getElementById('surf-room-done');
-  if(doneDiv)doneDiv.style.display='none';
-  document.getElementById('surf-step-a').style.display='';
-  document.getElementById('surf-step-b').style.display='none';
-  // Pre-fill room name
-  const rn=document.getElementById('surf-room-name');
-  if(rn){
-    rn.value=roomBase;
-    rn.style.borderColor='var(--green)';
-    rn.style.background='var(--green-lt)';
-    onSurfRoomName(rn);
-  }
-  // Pre-fill color if exists
-  const sc=document.getElementById('surf-color');
-  if(sc&&color)sc.value=color;
-  // Update title
-  const title=document.getElementById('surf-card-title');
-  if(title)title.textContent='Edit: '+roomBase;
-  // Scroll to room card
-  const card=document.getElementById('surf-room-card');
-  if(card)card.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 function addManualSurface(){}
@@ -6342,30 +6074,14 @@ function selectCond(val, btn){
   const card=document.getElementById('cond-picker-card');if(card)card.style.border='';
   checkStep2Ready();saveEstFullDraft();
 }
-function selectPaint(key,btn){
-  // Legacy — now handled by onPaintSupplyChange
-  const sel=document.getElementById('paint-supply-sel');
-  if(sel)sel.value=key;
-  onPaintSupplyChange(key);
-}
-function onPaintSupplyChange(val){
-  const isCustomer=val==='customer';
-  const paintEl=document.getElementById('e-paint');
-  if(paintEl)paintEl.value=isCustomer?'customer':val;
-  const custEl=document.getElementById('e-customer-paint');
-  if(custEl)custEl.value=isCustomer?'1':'';
-  const note=document.getElementById('paint-supply-note');
-  if(note)note.style.display=isCustomer?'block':'none';
-  const card=document.getElementById('paint-picker-card');
-  if(card)card.style.border='';
-  checkStep1Ready();renderEstRunning();renderEstReview();saveEstFullDraft();
-}
-function onCustomerPaintChange(){
-  // Legacy checkbox handler — not used with new dropdown but kept for safety
-  const checked=document.getElementById('e-customer-paint')?.value==='1';
-  const paintEl=document.getElementById('e-paint');
-  if(paintEl&&checked&&!paintEl.value)paintEl.value='customer';
-  renderEstRunning();renderEstReview();
+function selectPaint(key, btn){
+  document.querySelectorAll('#paint-picker .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));
+  if(btn)btn.classList.add('active-surf-btn');
+  const el=document.getElementById('e-paint');
+  if(el){el.value=key;el.style.borderColor='var(--border2)';el.style.background='var(--bg2)';}
+
+  const card=document.getElementById('paint-picker-card');if(card)card.style.border='';
+  checkStep1Ready();saveEstFullDraft();
 }
 
 function validateJobSettings(){
@@ -6413,6 +6129,12 @@ function runStep2Validation(){
     if(card){card.style.border='2px solid #A32D2D';card.scrollIntoView&&card.scrollIntoView({behavior:'smooth',block:'center'});}
     zAlert('Select the property condition.',{title:'Required'});return false;
   }
+  const anyScope=SCOPE_ITEMS.some(s=>scopeOn(s.id));
+  if(!anyScope){
+    const card=document.getElementById('scope-picker-card');
+    if(card){card.style.border='2px solid #A32D2D';card.scrollIntoView&&card.scrollIntoView({behavior:'smooth',block:'center'});}
+    zAlert('Select at least one scope item.',{title:'Required'});return false;
+  }
   return true;
 }
 
@@ -6438,7 +6160,6 @@ function saveEstFullDraft(){
       cond:document.getElementById('e-cond')?.value||'',
       scope:SCOPE_ITEMS.reduce((o,s)=>{o[s.id]=!!scopeOn(s.id);return o;},{}),
       scopeHrs:{...scopeHrsStore},
-      roomScopeMap:{...JSON.parse(JSON.stringify(roomScopeMap))},
       scopeRates,
       rWalls:document.getElementById('e-r-walls')?.value||'',
       rCeil:document.getElementById('e-r-ceil')?.value||'',
@@ -6497,12 +6218,10 @@ function restoreEstFullDraft(d){
   if(d.scopeRates){SCOPE_ITEMS.forEach(sc=>{if(d.scopeRates[sc.id])set(sc.rateKey,d.scopeRates[sc.id]);});}
   // Restore scopeHrsStore
   if(d.scopeHrs)scopeHrsStore={...d.scopeHrs};
-  if(d.roomScopeMap)roomScopeMap=JSON.parse(JSON.stringify(d.roomScopeMap));
   if(d.paint){
     const el=document.getElementById('e-paint');if(el)el.value=d.paint;
-    const sel=document.getElementById('paint-supply-sel');
-    if(sel)sel.value=d.paint==='customer'?'customer':(d.paint||'interior');
-    onPaintSupplyChange(d.paint==='customer'?'customer':(d.paint||'interior'));
+    const btn=document.getElementById('pp-'+d.paint);
+    if(btn){document.querySelectorAll('#paint-picker .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));btn.classList.add('active-surf-btn');}
   }
   if(d.cond){
     const condMap={'1.0':'good','1.2':'fair','1.5':'poor'};
@@ -6511,12 +6230,23 @@ function restoreEstFullDraft(d){
     if(btn){document.querySelectorAll('[id^=cond-]').forEach(b=>b.classList.remove('active-surf-btn'));btn.classList.add('active-surf-btn');}
   }
   if(d.scope){
-    // Restore into maps first — DOM gets synced when buildScopeGrid() runs
-    SCOPE_ITEMS.forEach(s=>{scopeActiveMap[s.id]=!!d.scope[s.id];});
+    SCOPE_ITEMS.forEach(s=>{
+      const cb=document.getElementById('est-sc-'+s.id);
+      const tog=document.getElementById('est-st-'+s.id);
+      const badge=document.getElementById('scope-hrs-badge-'+s.id);
+      if(!cb)return;
+      const on=!!d.scope[s.id];
+      cb.checked=on;
+      if(tog)on?tog.classList.add('on'):tog.classList.remove('on');
+      if(badge&&on&&d.scopeHrs&&d.scopeHrs[s.id]){
+        const entry=d.scopeHrs[s.id];
+        const hrs=typeof entry==='object'?entry.hrs:entry;
+        const rate=typeof entry==='object'?entry.rate:null;
+        badge.innerHTML=(hrs?hrs+'h':'')+'<br>'+(rate?'$'+rate+'/hr':'');
+        badge.style.display='';
+      }
+    });
   }
-
-  // Sync DOM if scope grid is currently rendered
-  buildScopeGrid(_currentScopeRoom||undefined);
   if(d.surfaces&&d.surfaces.length){
     estSurfaces=d.surfaces;
     estSurfId=Math.max(0,...estSurfaces.map(s=>s.id))+1;
@@ -6537,7 +6267,6 @@ function clearEstFullDraft(){
     if(idx>-1){bids.splice(idx,1);saveAll();}
     lastCreatedBidId=null;
   }
-  editingBidId=null;
 }
 
 // ── Income type helper — derives correct label from bid surfaces ─────────
@@ -6565,7 +6294,6 @@ function calcEst(){
     deck:    gR('e-r-deck') ||S.rDeck ||1.00,
   };
   const paintCostPerGal=gR('e-paint-rate')||(estSurfaces.some(s=>s.type==='ext_walls'||s.type==='ext_trim'||s.type==='deck')?106:42);
-  const customerPaint=document.getElementById('e-customer-paint')?.value==='1'||false;
   const cov=COVERAGE();const matMark=MATMARK();const coats=scopeOn('twocoat')?2:1;
   let laborTotal=0,totalLaborHours=0;const lines=[];
   estSurfaces.forEach(s=>{
@@ -6575,31 +6303,17 @@ function calcEst(){
     laborTotal+=cost;lines.push({label:(s.room||t.l),qty:s.qty,unit:t.unit,sub:cost});
   });
   SCOPE_ITEMS.forEach(sc=>{
-    // Per-room scope: aggregate hrs/cost across all rooms
-    const hasRoomScope=Object.keys(roomScopeMap).length>0&&
-      Object.values(roomScopeMap).some(r=>r[sc.id]&&r[sc.id].active);
-    if(hasRoomScope){
-      let totalHrs=0,totalCost=0;
-      Object.values(roomScopeMap).forEach(r=>{
-        const e=r[sc.id];if(!e||!e.active||!e.hrs)return;
-        totalHrs+=e.hrs;totalCost+=e.cost||Math.round(e.hrs*(e.rate||45)*100)/100;
-      });
-      if(totalHrs>0){
-        laborTotal+=totalCost;totalLaborHours+=totalHrs;
-        lines.push({label:sc.label+' ('+totalHrs+'h)',qty:totalHrs,unit:'hrs',sub:totalCost});
-      }
-    } else {
-      // Fall back to job-level scope
-      if(!scopeOn(sc.id))return;
-      const entry=scopeHrsStore[sc.id]||{};
-      const hrs=typeof entry==='object'?entry.hrs||0:entry||0;
-      const scopeRate=parseFloat(document.getElementById(sc.rateKey)?.value)||sc.defaultRate||45;
-      const rate=typeof entry==='object'&&entry.rate>0?entry.rate:scopeRate;
-      const cost=Math.round(hrs*rate*100)/100;
-      if(hrs>0||cost>0){
-        laborTotal+=cost;if(hrs>0)totalLaborHours+=hrs;
-        lines.push({label:sc.label+(hrs?' ('+hrs+'h)':''),qty:hrs||1,unit:hrs?'hrs':'flat',sub:cost});
-      }
+    if(!scopeOn(sc.id))return;
+    const entry=scopeHrsStore[sc.id]||{};
+    const hrs=typeof entry==='object'?entry.hrs||0:entry||0;
+    const scopeRate=parseFloat(document.getElementById(sc.rateKey)?.value)||sc.defaultRate||45;
+    const rate=typeof entry==='object'&&entry.rate>0?entry.rate:scopeRate;
+    const cost=Math.round(hrs*rate*100)/100;
+    if(hrs>0||cost>0){
+      laborTotal+=cost;
+      if(hrs>0)totalLaborHours+=hrs;
+      const lbl=sc.label+(hrs?' ('+hrs+'h)':'')+(cost?' — $'+cost:'');
+      lines.push({label:lbl,qty:hrs||1,unit:hrs?'hrs':'flat',sub:cost});
     }
   });
   let matTotal=0;const paintLines=[];const colorGals={};let totalPaintSqFt=0;
@@ -6609,22 +6323,14 @@ function calcEst(){
   });
   Object.entries(colorGals).forEach(([color,sqFt])=>{
     const gals=Math.ceil(sqFt*coats/cov*1.10*2)/2;
-    const cost=customerPaint?0:Math.round(gals*paintCostPerGal*matMark*100)/100;
-    matTotal+=cost;paintLines.push({color,sqFt:Math.round(sqFt),gals,cost,customerPaint});
+    const cost=Math.round(gals*paintCostPerGal*matMark*100)/100; // matMark covers waste, rollers, supplies
+    matTotal+=cost;paintLines.push({color,sqFt:Math.round(sqFt),gals,cost});
   });
   const flatAdd=0;const scopeFlats=[];
-  const adjPct=parseInt(v('est-adj'))||0;
-  // 7% contingency baked silently into labor (industry standard callback buffer)
-  const contingencyPct=typeof S.contingencyPct==='number'?S.contingencyPct:7;
-  const laborWithContingency=Math.round(laborTotal*(1+contingencyPct/100)*100)/100;
-  const base=laborWithContingency+matTotal;
-  const adj=Math.round(base*(adjPct/100)*100)/100;
-  const finalRaw=Math.max(0,Math.round((base+adj)*100)/100);
-  // Round to nearest $100 for clean pricing (e.g. $617→$600, $650→$700)
-  const final=Math.round(finalRaw/25)*25||finalRaw;
-  // Floor materials at 18% of total so it looks reasonable vs bid size
-  const matFinal=Math.max(matTotal,Math.round(final*0.18*100)/100);
-  return{lines,laborTotal:laborWithContingency,matTotal:matFinal,flatAdd,scopeFlats,colorAdd:0,travel:0,base,bid:final,adj,final,
+  const adj=parseInt(v('est-adj'))||0;
+  const base=laborTotal+matTotal;
+  const final=Math.max(0,Math.round((base+adj)*100)/100);
+  return{lines,laborTotal,matTotal,flatAdd,scopeFlats,colorAdd:0,travel:0,base,bid:final,adj,final,
     profit:0,margin:0,paintLines,totalPaintSqFt,coats,totalLaborHours,laborRate:R.walls,paintCostPerGal,R};
 }
 function renderEstRunning(){
@@ -6639,78 +6345,26 @@ function renderEstRunning(){
   el.innerHTML=html;
 }
 function renderEstReview(){
-  const{lines,base,adj,final,laborTotal,matTotal,totalLaborHours,laborRate,paintCostPerGal,paintLines,totalPaintSqFt}=calcEst();
+  const{lines,base,adj,final,laborTotal,matTotal,totalLaborHours,laborRate,paintCostPerGal,paintLines}=calcEst();
   const el=document.getElementById('est-review');if(!el)return;
   if(!estSurfaces.length&&!lines.length){el.innerHTML='<div class="empty">No surfaces added yet.</div>';return;}
-
-  // Build per-room data: surfaces + sqft + scope
-  const roomData={};let totalSqft=0;
-  estSurfaces.forEach(s=>{
-    if(!s.qty)return;
-    const t=SURF_TYPES.find(x=>x.v===s.type);
-    const roomName=cleanRoomName(s.room)||'Other';
-    const color=(s.room||'').split(' — ')[1]||'';
-    if(!roomData[roomName])roomData[roomName]={sqft:0,surfaces:[],color,scopeCost:0,scopeItems:[]};
-    if(color&&!roomData[roomName].color)roomData[roomName].color=color;
-    if(t&&t.unit==='sq ft'){roomData[roomName].sqft+=s.qty;totalSqft+=s.qty;}
-    const surfLabel=(t?t.l:s.type)+(t&&t.unit!=='sq ft'?' ('+s.qty+' '+t.unit+')':'');
-    if(!roomData[roomName].surfaces.includes(surfLabel))roomData[roomName].surfaces.push(surfLabel);
-  });
-
-  // Add per-room scope costs
-  Object.entries(roomScopeMap).forEach(([room,scope])=>{
-    if(!roomData[room])return;
-    let roomScopeCost=0;const scopeLabels=[];
-    Object.entries(scope).forEach(([scId,entry])=>{
-      if(!entry||!entry.active)return;
-      const sc=SCOPE_ITEMS.find(x=>x.id===scId);
-      const cost=entry.cost||Math.round((entry.hrs||0)*(entry.rate||45)*100)/100;
-      roomScopeCost+=cost;
-      if(sc&&entry.hrs)scopeLabels.push({label:sc.label,hrs:entry.hrs,rate:entry.rate||45,cost});
-    });
-    roomData[room].scopeCost=roomScopeCost;
-    roomData[room].scopeItems=scopeLabels;
-  });
-
-  let html='';
-
-  // Per-room breakdown
-  html+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Room breakdown</div>';
-  Object.entries(roomData).forEach(([room,data])=>{
-    const paintLine=paintLines.find(p=>cleanRoomName(p.color)===room||p.color.startsWith(room));
-    const paintCost=paintLine?paintLine.cost:0;
-    html+='<div style="border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;margin-bottom:8px">'+
-      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">'+
-        '<div>'+
-          '<div style="font-size:13px;font-weight:800">'+room+'</div>'+
-          (data.color?'<div style="font-size:11px;color:var(--text3)">'+data.color+'</div>':'')+
-        '</div>'+
-        '<div style="font-size:11px;color:var(--text3);text-align:right">'+data.surfaces.join(' · ')+'</div>'+
-      '</div>'+
-      (data.sqft?'<div style="font-size:11px;color:var(--text2);margin-bottom:4px">'+data.sqft.toLocaleString()+' paintable sq ft</div>':'')+
-      (data.scopeItems.length?
-        data.scopeItems.map(si=>
-          '<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0;color:var(--text2)">'+
-            '<span>'+si.label+' ('+si.hrs+'h @ $'+si.rate+'/hr)</span>'+
-            '<span style="font-weight:700;color:var(--blue)">'+fmt(si.cost)+'</span>'+
-          '</div>'
-        ).join('')
-      :'')+
-    '</div>';
-  });
-
-  // Total sqft
-  html+='<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:2px solid var(--border2);font-weight:700;margin-bottom:12px">'+
-    '<span>Total paintable sq ft</span><span style="color:var(--blue)">'+totalSqft.toLocaleString()+' sq ft</span></div>';
-
-  // Metrics summary
-  html+='<div class="mets" style="margin-bottom:12px">'+
-    '<div class="met"><div class="met-l">Labor hours</div><div class="met-v">'+totalLaborHours.toFixed(1)+'h</div></div>'+
+  let html='<div class="mets" style="margin-bottom:12px">'+
+    '<div class="met"><div class="met-l">Labor hours</div><div class="met-v">'+totalLaborHours.toFixed(1)+'h</div><div class="met-s">@ '+fmt(laborRate)+'/hr</div></div>'+
     '<div class="met"><div class="met-l">Labor cost</div><div class="met-v" style="color:var(--blue)">'+fmt(laborTotal)+'</div></div>'+
-    '<div class="met"><div class="met-l">Materials</div><div class="met-v" style="color:var(--blue)">'+fmt(matTotal)+'</div></div>'+
+    '<div class="met"><div class="met-l">Materials</div><div class="met-v" style="color:var(--blue)">'+fmt(matTotal)+'</div><div class="met-s">@ '+fmt(paintCostPerGal)+'/gal</div></div>'+
     '<div class="met"><div class="met-l">Total</div><div class="met-v" style="color:var(--green-mid);font-size:18px">'+fmt(final)+'</div></div>'+
   '</div>';
-
+  if(lines.length){
+    html+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Labor breakdown</div>';
+    html+=lines.map(l=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)">'+
+      '<span>'+l.label+'</span><span style="font-weight:700">'+fmt(l.sub)+'</span></div>').join('');
+  }
+  if(paintLines&&paintLines.length){
+    html+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin:10px 0 6px">Paint &amp; materials</div>';
+    html+=paintLines.map(p=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)">'+
+      '<span>'+p.color+' <span style="color:var(--text3)">('+p.gals+' gal)</span></span>'+
+      '<span style="font-weight:700">'+fmt(p.cost)+'</span></div>').join('');
+  }
   el.innerHTML=html;
   const fd=document.getElementById('est-final-disp');if(fd)fd.textContent=fmt(final);
 }
@@ -6734,9 +6388,9 @@ ol{padding-left:18px;line-height:2}
 @media print{@page{margin:0.5in;size:letter}body{padding:0}.no-print{display:none!important}}
 </style>
 </head><body>
-<div class="no-print" style="background:#185FA5;color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center">
-  <span style="font-weight:700">TradeDesk — Proposal PDF</span>
-  <button onclick="window.print()" style="background:#fff;color:#185FA5;border:none;padding:8px 18px;border-radius:6px;font-weight:700;font-size:14px;cursor:pointer">⬇ Save as PDF</button>
+<div class="no-print" style="background:#0D1117;color:#fff;padding:10px 20px;display:flex;justify-content:space-between;align-items:center">
+  <span style="font-weight:700;font-size:14px">TradeDesk Proposal</span>
+  <button onclick="window.print()" style="background:#185FA5;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-weight:700;font-size:14px;cursor:pointer">⬇ Save / Print PDF</button>
 </div>
 ${proposal.innerHTML}
 <script>setTimeout(()=>window.print(),600)<\/script>
@@ -6753,153 +6407,173 @@ ${proposal.innerHTML}
   document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url),10000);
 }
-function saveStripeKey(){
-  const key=(document.getElementById('set-stripe-pk')?.value||'').trim();
-  if(key&&!key.startsWith('pk_')){zAlert('Should start with pk_live_ or pk_test_',{title:'Invalid key'});return;}
-  S.stripePk=key;saveAll();
-  if(_supa&&_supaUser&&_config?.account_id){
-    _supa.from('account_config').update({stripe_pk:key||null}).eq('account_id',_config.account_id).then(()=>{});
-  }
-  zAlert(key?'Stripe key saved — card payments enabled on signing links':'Stripe removed — clients will see cash only');
-}
-function syncAdj(){const pct=parseInt(v('est-adj')||0);document.getElementById('est-adj-val').textContent=(pct>0?'+':'')+pct+'%';renderEstReview();}
+function syncAdj(){const val=parseInt(v('est-adj'));document.getElementById('est-adj-val').textContent=(val>=0?'+':'')+fmt(Math.abs(val));renderEstReview();}
 
+// ── Client signing link ────────────────────────────────────────────────
 async function sendProposalLink(){
   const proposal=document.getElementById('est-proposal');
-  if(!proposal||!proposal.innerHTML.trim()){zAlert('Generate the proposal first.',{title:'Nothing to print'});return;}
-  if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.',{title:'Sign in required'});return;}
+  if(!proposal||!proposal.innerHTML.trim()){
+    zAlert('Generate the proposal first.',{title:'Nothing to print'});return;
+  }
+  if(!supaEnabled()||!_supaUser){
+    zAlert('Sign in to Supabase to send client links.',{title:'Sign in required'});return;
+  }
+
   const btn=document.getElementById('send-proposal-btn');
   if(btn){btn.textContent='⏳ Saving...';btn.disabled=true;}
+
   try{
     const cname=document.getElementById('e-cname')?.value||'Client';
-    const bname=document.getElementById('e-bname')?.value||S.bname||'TradeDesk';
+    const cemail=document.getElementById('e-cemail')?.value||document.getElementById('e-email')?.value||'';
+    const bname=document.getElementById('e-bname')?.value||S.bname||"TradeDesk";
     const bidId=lastCreatedBidId||Date.now();
     const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
     const proposalKey=`proposals/${_supaUser.id}/${bidId}_${token}.json`;
+
+    // Store proposal data as JSON in Supabase Storage
     const proposalData={
-      id:bidId,token,clientName:cname,businessName:bname,
-      contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
+      id:bidId,
+      token,
+      clientName:cname,
+      clientEmail:cemail,
+      businessName:bname,
+      contractorUserId:_supaUser.id,
+      contractorEmail:_supaUser.email,
       proposalHtml:proposal.innerHTML,
-      amount:(()=>{const e=calcEst();const raw=Math.max(0,e.laborTotal+e.matTotal);return Math.round(raw/25)*25||raw;})(),
-      deposit:(()=>{const e=calcEst();const raw=Math.max(0,e.laborTotal+e.matTotal);const tot=Math.round(raw/25)*25||raw;return Math.round(tot*.25*100)/100;})(),
-      createdAt:new Date().toISOString(),status:'pending',
-      notifyEmail:_supaUser.email,stripePk:S.stripePk||'',
+      amount:calcEst().final,
+      deposit:Math.round(calcEst().final*.25*100)/100,
+      createdAt:new Date().toISOString(),
+      status:'pending',
+      notifyEmail:_supaUser.email,
+      stripePk:S.stripePk||'',
     };
-    // Upload with 8s timeout — never let storage hang in the field
-    const uploadPromise=_supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true});
-    const timeoutPromise=new Promise((_,rej)=>setTimeout(()=>rej(new Error('Upload timed out')),8000));
-    const uploadResult=await Promise.race([uploadPromise,timeoutPromise]).catch(e=>({error:e}));
-    if(uploadResult.error)console.warn('Storage upload issue (link may still work):',uploadResult.error.message);
-    // Always show the link — structure is valid whether upload succeeded or not
-    const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
-    const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
+
+    const{error}=await _supa.storage.from('proposals').upload(
+      proposalKey,
+      JSON.stringify(proposalData),
+      {contentType:'application/json',upsert:true}
+    );
+    if(error)throw error;
+
+    // Build the signing URL with human-readable display
+    const baseUrl=window.location.origin+window.location.pathname.replace('index.html','');
+    const signingUrl=`${baseUrl}sign.html?t=${token}&u=${_supaUser.id}&b=${bidId}`;
+    // Human-readable label: Business - Client - Date - Proposal
     const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-    const linkLabel=bname+' — '+cname+' — '+dateStr+' — Proposal';
+    const linkLabel=`${bname} — ${cname} — ${dateStr} — Proposal`;
+
+    // Show the link
     const bar=document.getElementById('proposal-link-bar');
     const input=document.getElementById('proposal-link-input');
     const labelEl=document.getElementById('proposal-link-label');
     if(bar)bar.style.display='block';
     if(input)input.value=signingUrl;
     if(labelEl)labelEl.textContent=linkLabel;
-    const anchorEl=document.getElementById('proposal-link-anchor');if(anchorEl)anchorEl.href=signingUrl;
+
+    // Store token on the bid for verification later
     const bid=bids.find(b=>b.id===bidId);
     if(bid){bid.signingToken=token;bid.signingKey=proposalKey;saveAll();}
-    if(btn){btn.textContent='✓ Link ready';btn.disabled=false;}
+
+    if(btn){btn.innerHTML='✓ Link ready';btn.disabled=false;}
   }catch(e){
     console.error('sendProposalLink failed:',e);
-    const msg=e.message||'Unknown error';
-    if(msg.includes('Bucket not found')||msg.includes('bucket')){
-      zAlert('Storage bucket not found.\n\nIn Supabase → Storage → create a bucket named "proposals" and set it to Public.',{title:'Setup required'});
-    } else if(msg.includes('row-level security')||msg.includes('RLS')){
-      zAlert('Permission error. Run the fix-storage-rls.sql file in your Supabase SQL editor.',{title:'Permission error'});
-    } else {
-      zAlert('Could not generate link: '+msg,{title:'Error'});
-    }
+    zAlert('Could not generate link: '+e.message+'\n\nMake sure the proposals storage bucket exists in Supabase.',{title:'Error'});
     if(btn){btn.innerHTML='🔗 Send to client';btn.disabled=false;}
   }
+}
+
+function copyDepositLink(){
+  const input=document.getElementById('stripe-deposit-input');
+  if(!input)return;
+  navigator.clipboard.writeText(input.value).catch(()=>{input.select();document.execCommand('copy');});
+  const btn=document.querySelector('[onclick="copyDepositLink()"]');
+  if(btn){btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy',2000);}
+}
+
+async function collectStripeDepositInPerson(){
+  if(!S.stripePk){
+    zAlert('Add your Stripe key in Settings to collect card payments.',{title:'Stripe not set up'});return;
+  }
+  const bid=bids.find(b=>b.id===lastCreatedBidId);
+  if(!bid){zAlert('No bid found.',{title:'Error'});return;}
+  const cname=bid.client_name||'Client';
+  const deposit=Math.round((bid.amount||0)*.25*100)/100;
+  const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
+  const proposalKey=`proposals/${_supaUser.id}/${bid.id}_${token}.json`;
+
+  const btn=document.getElementById('stripe-deposit-btn');
+  if(btn){btn.textContent='⏳ Generating link...';btn.disabled=true;}
+
+  try{
+    // Upload a minimal proposal JSON for the payment link
+    const proposalData={
+      id:bid.id,token,clientName:cname,businessName:S.bname||'TradeDesk',
+      contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
+      proposalHtml:'<p>Deposit for '+cname+'</p>',
+      amount:bid.amount||0,deposit,
+      createdAt:new Date().toISOString(),status:'pending',
+      notifyEmail:_supaUser.email,stripePk:S.stripePk||'',
+    };
+    await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true});
+    const baseUrl=window.location.origin+window.location.pathname.replace('index.html','');
+    const link=`${baseUrl}sign.html?t=${token}&u=${_supaUser.id}&b=${bid.id}`;
+    const linkBox=document.getElementById('stripe-deposit-link');
+    const input=document.getElementById('stripe-deposit-input');
+    if(linkBox)linkBox.style.display='block';
+    if(input)input.value=link;
+    if(btn){btn.textContent='💳 Collect deposit by card';btn.disabled=false;}
+  }catch(e){
+    console.error(e);
+    zAlert('Could not generate payment link: '+e.message,{title:'Error'});
+    if(btn){btn.textContent='💳 Collect deposit by card';btn.disabled=false;}
+  }
+}
+
+function emailProposalToClient(){
+  const email=document.getElementById('sig-client-email')?.value?.trim();
+  if(!email||!email.includes('@')){zAlert('Enter a valid email address.',{title:'Email required'});return;}
+  const proposal=document.getElementById('est-proposal');
+  if(!proposal){return;}
+  // Build mailto with proposal summary
+  const bid=bids.find(b=>b.id===lastCreatedBidId);
+  const amount=bid?.amount||0;
+  const bname=S.bname||'Your contractor';
+  const subject=encodeURIComponent(`${bname} — Painting Proposal`);
+  const body=encodeURIComponent(
+    `Hi,\n\nThank you for choosing ${bname}. Here is a summary of your painting proposal:\n\n`+
+    `Total: $${amount.toFixed(2)}\n`+
+    `Deposit (25%): $${(amount*.25).toFixed(2)}\n`+
+    `Balance due on completion: $${(amount*.75).toFixed(2)}\n\n`+
+    `Please contact us with any questions.\n\n${bname}`
+  );
+  window.open(`mailto:${email}?subject=${subject}&body=${body}`);
 }
 
 function copyProposalLink(){
   const input=document.getElementById('proposal-link-input');
   if(!input)return;
-  navigator.clipboard.writeText(input.value).catch(()=>{input.select();document.execCommand('copy');});
-  const btn=document.querySelector('[onclick="copyProposalLink()"]');
-  if(btn){btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy',2000);}
+  navigator.clipboard.writeText(input.value).then(()=>{
+    const btn=document.querySelector('[onclick="copyProposalLink()"]');
+    if(btn){btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy',2000);}
+  }).catch(()=>{
+    input.select();document.execCommand('copy');
+    const btn=document.querySelector('[onclick="copyProposalLink()"]');
+    if(btn){btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy',2000);}
+  });
 }
 function buildDescription(){
+  const rooms=estSurfaces.filter(s=>s.qty>0);
+  const roomList=[...new Set(rooms.map(s=>(s.room||'').split(' — ')[0].replace('[Ext] ','').trim()))].filter(Boolean);
+  const activeScope=SCOPE_ITEMS.filter(sc=>scopeOn(sc.id)&&sc.clientDesc);
   const isExt=estSurfaces.some(s=>s.type==='ext_walls'||s.type==='ext_trim'||s.type==='deck');
-  const customerPaint=document.getElementById('e-customer-paint')?.value==='1'||false;
-  const matDesc=customerPaint
-    ?'All materials (tape, plastic, rollers, brushes) included in price. <strong>Paint supplied by customer — no warranty provided on finish.</strong>'
-    :(isExt?'Exterior-grade paint':'Sherwin-Williams ProMar 200 interior paint')+' and all materials included in price.';
-
-  // Build per-room data from estSurfaces
-  const roomData={};
-  estSurfaces.forEach(s=>{
-    if(!s.qty)return;
-    const t=SURF_TYPES.find(x=>x.v===s.type);
-    const roomName=cleanRoomName(s.room)||'Other';
-    const color=(s.room||'').split(' — ')[1]||'';
-    if(!roomData[roomName])roomData[roomName]={color,surfaces:[],scopeItems:[]};
-    if(color&&!roomData[roomName].color)roomData[roomName].color=color;
-    const surfLabel=t?t.l:s.type;
-    if(!roomData[roomName].surfaces.includes(surfLabel))roomData[roomName].surfaces.push(surfLabel);
-  });
-
-  // Add per-room scope descriptions (plain English only, no costs)
-  const hasRoomScope=Object.keys(roomScopeMap).length>0&&Object.values(roomScopeMap).some(r=>Object.keys(r).length>0);
-  if(hasRoomScope){
-    Object.entries(roomScopeMap).forEach(([room,scope])=>{
-      if(!roomData[room])return;
-      Object.entries(scope).forEach(([scId,entry])=>{
-        if(!entry||!entry.active)return;
-        const sc=SCOPE_ITEMS.find(x=>x.id===scId);
-        if(sc&&sc.clientDesc)roomData[room].scopeItems.push(sc.label);
-      });
-    });
-  } else {
-    // Job-level fallback — apply same scope to all rooms
-    const activeIds=SCOPE_ITEMS.filter(sc=>scopeOn(sc.id)).map(sc=>sc.label);
-    Object.keys(roomData).forEach(room=>{roomData[room].scopeItems=activeIds;});
-  }
-
+  const matDesc=(isExt?'Exterior-grade paint ($106/gal)':'Sherwin-Williams ProMar 200 interior paint')+' and all materials included in price.';
   let html='';
-  const roomNames=Object.keys(roomData);
-
-  if(roomNames.length===1){
-    // Single room — simple list format
-    const room=roomNames[0];
-    const data=roomData[room];
-    html+='<div style="margin-bottom:6px"><strong>Area:</strong> '+room+(data.color?' — '+data.color:'')+'</div>';
-    html+='<div style="font-weight:700;margin-bottom:4px">Scope of work:</div>';
-    html+='<ol style="margin:0 0 6px 0;padding-left:18px;line-height:2">';
-    const allScope=hasRoomScope
-      ?SCOPE_ITEMS.filter(sc=>{const e=roomScopeMap[room]&&roomScopeMap[room][sc.id];return e&&e.active&&sc.clientDesc;})
-      :SCOPE_ITEMS.filter(sc=>scopeOn(sc.id)&&sc.clientDesc);
-    allScope.forEach(sc=>{html+='<li><strong>'+sc.label+':</strong> '+sc.clientDesc+'</li>';});
-    html+='<li><strong>Paint &amp; Materials:</strong> '+matDesc+'</li>';
-    html+='</ol>';
-  } else {
-    // Multiple rooms — per-room breakdown
-    html+='<div style="font-weight:700;margin-bottom:8px">Scope of work by room:</div>';
-    roomNames.forEach(room=>{
-      const data=roomData[room];
-      const roomScope=hasRoomScope
-        ?SCOPE_ITEMS.filter(sc=>{const e=roomScopeMap[room]&&roomScopeMap[room][sc.id];return e&&e.active;})
-        :SCOPE_ITEMS.filter(sc=>scopeOn(sc.id));
-      html+='<div style="margin-bottom:10px;padding:8px 10px;border-left:3px solid var(--blue);background:var(--bg2);border-radius:0 var(--r) var(--r) 0">'+
-        '<div style="font-size:13px;font-weight:800;margin-bottom:2px">'+room+'</div>'+
-        (data.color?'<div style="font-size:11px;color:var(--text3);margin-bottom:4px">Color: '+data.color+'</div>':'')+
-        '<div style="font-size:11px;color:var(--text2);margin-bottom:4px">Surfaces: '+data.surfaces.join(', ')+'</div>'+
-        (roomScope.length?'<div style="font-size:11px;color:var(--text2)">Work: '+roomScope.map(sc=>sc.label).join(', ')+'</div>':'')+
-      '</div>';
-    });
-    html+='<div style="margin-top:8px;font-size:12px"><strong>Paint &amp; Materials:</strong> '+matDesc+'</div>';
-  }
-
-  if(customerPaint){
-    html+='<div style="margin-top:6px;padding:8px 12px;background:#FEF3C7;border:1px solid #D97706;border-radius:6px;font-size:12px;color:#92400E"><strong>⚠ No Warranty:</strong> Customer-supplied paint. Contractor assumes no responsibility for color, coverage, or finish quality.</div>';
-  }
+  if(roomList.length)html+='<div style="margin-bottom:6px"><strong>Areas:</strong> '+roomList.join(', ')+'</div>';
+  html+='<div style="font-weight:700;margin-bottom:4px">Scope of work:</div>';
+  html+='<ol style="margin:0 0 6px 0;padding-left:18px;line-height:2">';
+  activeScope.forEach(sc=>{html+='<li><strong>'+sc.label+':</strong> '+sc.clientDesc+'</li>';});
+  html+='<li><strong>Paint &amp; Materials:</strong> '+matDesc+'</li>';
+  html+='</ol>';
   return html;
 }
 function buildProposal(){
@@ -6922,101 +6596,6 @@ function buildProposal(){
   const allowWeekend=document.getElementById('e-allow-weekend')?.checked||false;
   const description=buildDescription();
   const matLine=matTotal+flatAdd;
-  const customerPaint=document.getElementById('e-customer-paint')?.value==='1'||false;
-
-  // Build per-room cost rows for the proposal table
-  const gR=id=>parseFloat(document.getElementById(id)?.value)||0;
-  const R={walls:gR('e-r-walls')||S.rWalls||1.00,ceiling:gR('e-r-ceil')||S.rCeil||0.85,trim:gR('e-r-trim')||S.rTrim||1.50,doors:gR('e-r-door')||S.rDoor||95,windows:gR('e-r-win')||S.rWin||50,cabinets:38,ext_walls:gR('e-r-ext')||S.rExt||1.10,ext_trim:gR('e-r-trim')||S.rTrim||1.50,deck:gR('e-r-deck')||S.rDeck||1.00};
-  const coats=scopeOn('twocoat')?2:1;
-  const contingencyPct=typeof S.contingencyPct==='number'?S.contingencyPct:7;
-  const hasRoomScope=Object.keys(roomScopeMap).length>0&&Object.values(roomScopeMap).some(r=>Object.keys(r).length>0);
-
-  // Aggregate surface cost per room
-  const roomCosts={};
-  estSurfaces.forEach(s=>{
-    if(!s.qty)return;
-    const t=SURF_TYPES.find(x=>x.v===s.type);if(!t)return;
-    const roomName=cleanRoomName(s.room)||'Other';
-    const color=(s.room||'').split(' — ')[1]||'';
-    if(!roomCosts[roomName])roomCosts[roomName]={surfCost:0,scopeCost:0,color,scopeLabels:[]};
-    if(color&&!roomCosts[roomName].color)roomCosts[roomName].color=color;
-    const rate=R[s.type]||0;
-    roomCosts[roomName].surfCost+=Math.round(s.qty*rate*(t.unit==='sq ft'?coats:1)*100)/100;
-  });
-
-  // Add per-room scope costs
-  if(hasRoomScope){
-    Object.entries(roomScopeMap).forEach(([room,scope])=>{
-      if(!roomCosts[room])return;
-      Object.entries(scope).forEach(([scId,entry])=>{
-        if(!entry||!entry.active)return;
-        const sc=SCOPE_ITEMS.find(x=>x.id===scId);
-        roomCosts[room].scopeCost+=entry.cost||Math.round((entry.hrs||0)*(entry.rate||45)*100)/100;
-        if(sc)roomCosts[room].scopeLabels.push(sc.label);
-      });
-    });
-  } else {
-    // Job-level scope — split evenly across rooms proportionally by surface cost
-    const totalSurfCost=Object.values(roomCosts).reduce((s,r)=>s+r.surfCost,0)||1;
-    const totalJobScopeCost=laborTotal/(1+contingencyPct/100)-totalSurfCost;
-    if(totalJobScopeCost>0){
-      Object.values(roomCosts).forEach(r=>{
-        r.scopeCost=Math.round(totalJobScopeCost*(r.surfCost/totalSurfCost)*100)/100;
-      });
-    }
-  }
-
-  // Apply contingency to each room proportionally
-  const roomNames=Object.keys(roomCosts);
-  const totalPreConting=roomNames.reduce((s,r)=>s+roomCosts[r].surfCost+roomCosts[r].scopeCost,0)||1;
-  roomNames.forEach(room=>{
-    const r=roomCosts[room];
-    const roomTotal=r.surfCost+r.scopeCost;
-    r.total=Math.round(roomTotal*(1+contingencyPct/100)*(laborTotal/Math.max(totalPreConting*(1+contingencyPct/100),1)>0?1:1)*100)/100;
-    // Simple: apply contingency directly
-    r.total=Math.round(roomTotal*(1+contingencyPct/100)*100)/100;
-  });
-
-  // Normalize room totals to match laborTotal exactly
-  const roomTotalSum=roomNames.reduce((s,r)=>s+roomCosts[r].total,0);
-  if(roomTotalSum>0&&roomNames.length>0){
-    const scale=laborTotal/roomTotalSum;
-    roomNames.forEach(room=>{roomCosts[room].total=Math.round(roomCosts[room].total*scale*100)/100;});
-    // Fix rounding: add diff to last room
-    const diff=Math.round((laborTotal-roomNames.reduce((s,r)=>s+roomCosts[r].total,0))*100)/100;
-    if(diff&&roomNames.length)roomCosts[roomNames[roomNames.length-1]].total+=diff;
-  }
-  // Proposal total = what's actually on the rows — rooms + materials
-  const proposalTotal=Math.round((roomNames.reduce((s,r)=>s+roomCosts[r].total,0)+matLine+(adj||0))*100)/100;
-
-  // Build table rows — one per room — showing per-room scope in description
-  const roomRows=roomNames.map((room,roomIdx)=>{
-    const r=roomCosts[room];
-    // Per-room scope items with full client descriptions
-    let roomScopeItems=[];
-    if(hasRoomScope&&roomScopeMap[room]){
-      roomScopeItems=SCOPE_ITEMS.filter(sc=>{
-        const e=roomScopeMap[room][sc.id];return e&&e.active&&sc.clientDesc;
-      });
-    } else if(!hasRoomScope&&roomIdx===0){
-      roomScopeItems=SCOPE_ITEMS.filter(sc=>scopeOn(sc.id)&&sc.clientDesc);
-    }
-    const scopeHtml=roomScopeItems.length
-      ?'<ol style="margin:6px 0 0 0;padding-left:16px;font-size:11px;color:#444;line-height:1.8">'+
-        roomScopeItems.map(sc=>'<li><strong>'+sc.label+':</strong> '+sc.clientDesc+'</li>').join('')+
-        '</ol>'
-      :'';
-    const descContent='<strong style="font-size:13px">'+room+'</strong>'+
-      (r.color?'<br><span style="font-size:11px;color:#666">Color: '+r.color+'</span>':'')+
-      scopeHtml;
-    return `<tr style="border-bottom:1px solid var(--border)">
-      <td style="padding:10px 12px;text-align:center;font-weight:700;vertical-align:top">1</td>
-      <td style="padding:10px 12px;line-height:1.6;color:#1a1a1a;font-size:12px">${descContent}</td>
-      <td style="padding:10px 12px;text-align:right;font-weight:700;vertical-align:top">${fmt(r.total)}</td>
-      <td style="padding:10px 12px;text-align:right;font-weight:700;vertical-align:top">${fmt(r.total)}</td>
-    </tr>`;
-  }).join('');
-
   document.getElementById('est-proposal').innerHTML=`
 <div class="proposal" style="background:#fff;color:#1a1a1a;border-radius:var(--rl);overflow:hidden;border:1px solid var(--border)">
   <div style="background:var(--blue);color:#fff;padding:20px;display:flex;justify-content:space-between;align-items:flex-start">
@@ -7055,22 +6634,18 @@ function buildProposal(){
       </tr>
     </thead>
     <tbody>
-      ${roomRows}
       <tr style="border-bottom:1px solid var(--border)">
-        <td style="padding:8px 12px;text-align:center;font-weight:700;vertical-align:top">1</td>
-        <td style="padding:8px 12px;font-size:12px;color:#1a1a1a">
-          <strong>${customerPaint?'Materials':'Paint, Primer &amp; Materials'}</strong><br>
-          <span style="font-size:11px;color:#666">${customerPaint?'Tape, plastic sheeting, rollers, brushes, drop cloths and all supplies. Paint supplied by customer — no warranty on finish.':'Includes paint, primer, tape, plastic sheeting, rollers, brushes, drop cloths and all supplies needed to complete the job.'}</span>
-        </td>
-        <td style="padding:8px 12px;text-align:right;font-weight:700;vertical-align:top">${fmt(matLine)}</td>
-        <td style="padding:8px 12px;text-align:right;font-weight:700;vertical-align:top">${fmt(matLine)}</td>
+        <td style="padding:12px;text-align:center;font-weight:700;vertical-align:top">1</td>
+        <td style="padding:12px;line-height:1.6;color:#1a1a1a;font-size:12px">${description}</td>
+        <td style="padding:12px;text-align:right;font-weight:700;vertical-align:top">${fmt(final)}</td>
+        <td style="padding:12px;text-align:right;font-weight:700;vertical-align:top">${fmt(final)}</td>
       </tr>
       ${adj?`<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 12px;text-align:center"></td><td style="padding:8px 12px;color:var(--text2)">${adjReason||'Price adjustment'}</td><td style="padding:8px 12px;text-align:right">${adj>0?'+':''}${fmt(adj)}</td><td style="padding:8px 12px;text-align:right">${adj>0?'+':''}${fmt(adj)}</td></tr>`:''}
     </tbody>
     <tfoot>
       <tr style="border-top:2px solid var(--border)">
         <td colspan="3" style="padding:8px 12px;text-align:right;font-weight:700;color:var(--text3);font-size:11px">SUBTOTAL</td>
-        <td style="padding:8px 12px;text-align:right;font-weight:700">${fmt(proposalTotal)}</td>
+        <td style="padding:8px 12px;text-align:right;font-weight:700">${fmt(final)}</td>
       </tr>
       <tr>
         <td colspan="3" style="padding:4px 12px;text-align:right;color:var(--text3);font-size:11px">TAX RATE / SALES TAX</td>
@@ -7078,14 +6653,10 @@ function buildProposal(){
       </tr>
       <tr style="background:var(--blue);color:#fff">
         <td colspan="3" style="padding:10px 12px;text-align:right;font-weight:800;font-size:14px">TOTAL</td>
-        <td style="padding:10px 12px;text-align:right;font-weight:800;font-size:14px">${fmt(proposalTotal)}</td>
+        <td style="padding:10px 12px;text-align:right;font-weight:800;font-size:14px">${fmt(final)}</td>
       </tr>
     </tfoot>
   </table>
-  ${estSurfaces.some(s=>s.type==='ext_walls'||s.type==='ext_trim'||s.type==='deck')?`<div style="padding:10px 16px;background:#FEF3C7;border-top:1px solid #D97706;border-bottom:1px solid #D97706">
-    <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#92400E;margin-bottom:4px">⚠ Weather Notice — Exterior Work</div>
-    <div style="font-size:11px;color:#92400E;line-height:1.7">Exterior painting is weather-dependent. Start dates and completion timelines may shift based on temperature, rain, or high winds. Paint will not be applied to wet or damp surfaces. If surfaces were pressure washed, a minimum 48-hour dry time is required before painting begins. ${getBusinessName()} will communicate any weather-related delays promptly and reschedule at the earliest suitable date at no additional charge.</div>
-  </div>`:''}
   <div style="padding:14px 16px;display:grid;grid-template-columns:1fr 1fr;gap:14px;border-top:1px solid var(--border)">
     <div>
       <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Payment Terms</div>
@@ -7107,7 +6678,7 @@ function buildProposal(){
     </div>
   </div>
 </div>`;
-  document.getElementById('est-sig-sum').innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><div style="font-size:15px;font-weight:700">${cname}</div><div style="font-size:12px;color:var(--text2)">${caddr}</div></div><div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--blue)">${fmt(proposalTotal)}</div><div style="font-size:11px;color:var(--text3)">${estNum}</div></div></div>`;
+  document.getElementById('est-sig-sum').innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><div style="font-size:15px;font-weight:700">${cname}</div><div style="font-size:12px;color:var(--text2)">${caddr}</div></div><div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--blue)">${fmt(final)}</div><div style="font-size:11px;color:var(--text3)">${estNum}</div></div></div>`;
   document.getElementById('est-terms').innerHTML='<strong>Terms &amp; Conditions</strong><br><br>1. <strong>Payment:</strong> 25% deposit before work begins. Balance due on completion.<br><br>2. <strong>Cancellation:</strong> Materials cost deducted from deposit if client cancels after work has started.<br><br>3. <strong>Scope:</strong> This estimate covers only the work described. Any additional work requires a written change order and additional charge. Scope descriptions are estimates based on walkthrough — final scope may vary based on site conditions.<br><br>4. <strong>Warranty:</strong> Workmanship warranted 1 year from completion. Excludes pre-existing damage, moisture damage, and substrate failure.<br><br>5. <strong>Liability:</strong> Contractor not responsible for pre-existing damage, water or moisture damage, or damage from pressure washing.<br><br>By typing your name below, you agree to all scope, price, and terms above. This is a binding agreement under the Kansas Uniform Electronic Transactions Act (UETA).';
   document.getElementById('sig-date').value=ds;
   document.getElementById('sig-pname').value=cname;
@@ -7259,15 +6830,14 @@ if(!hasSignature()&&typedSig.length<=2){zAlert('Please type your name or draw yo
   if(estLinkedClientId){
     const c=getClientById(estLinkedClientId);
     const days=parseInt(v('e-days'))||2;
-    const ss={}; SCOPE_ITEMS.forEach(s=>{ss[s.id]=!!scopeOn(s.id)||(Object.values(roomScopeMap).some(r=>r[s.id]&&r[s.id].active));});
-    const savedRoomScopeMap=JSON.parse(JSON.stringify(roomScopeMap));
+    const ss={}; SCOPE_ITEMS.forEach(s=>{ss[s.id]=!!scopeOn(s.id);});
     if(editingBidId){
       const b=bids.find(x=>x.id===editingBidId);
       if(b){
         b.amount=final;b.days=days;b.status='Closed Won';b.draft=false;
         b.notes=v('e-cnotes');b.addr=v('e-caddr');
         b.name=cname;b.phone=v('e-cphone');
-        b.scope=ss;b.roomScopeMap=savedRoomScopeMap;b.surfaces=[...estSurfaces];
+        b.scope=ss;b.surfaces=[...estSurfaces];
         b.type=getBidIncomeLabel({surfaces:estSurfaces});
         b.cond=v('e-cond');b.paint=v('e-paint');
         b.allowWeekend=document.getElementById('e-allow-weekend')?.checked||false;
@@ -7280,7 +6850,7 @@ if(!hasSignature()&&typedSig.length<=2){zAlert('Please type your name or draw yo
         draft.amount=final;draft.days=days;draft.status='Closed Won';draft.draft=false;
         draft.followup='';draft.notes=v('e-cnotes');draft.addr=v('e-caddr');
         draft.name=cname;draft.phone=v('e-cphone');
-        draft.scope=ss;draft.roomScopeMap=savedRoomScopeMap;draft.surfaces=[...estSurfaces];
+        draft.scope=ss;draft.surfaces=[...estSurfaces];
         draft.type=getBidIncomeLabel({surfaces:estSurfaces});
         draft.cond=v('e-cond');draft.paint=v('e-paint');
         draft.completion_date='';draft.collStage='none';
@@ -7335,8 +6905,7 @@ function clearEstimatorForm(){
   clearSurfDraft();clearEstFullDraft();
   ['e-cname','e-cphone','e-caddr','e-cnotes','est-adj-reason'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const adj=document.getElementById('est-adj');if(adj)adj.value=0;
-  const adjV=document.getElementById('est-adj-val');if(adjV)adjV.textContent='0%';
-  scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
+  const adjV=document.getElementById('est-adj-val');if(adjV)adjV.textContent='$0';
   SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
   const ep2=document.getElementById('e-paint');if(ep2)ep2.value='';
   document.querySelectorAll('#paint-picker .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));
@@ -7384,7 +6953,8 @@ function checkStep1Ready(){
 }
 function checkStep2Ready(){
   const cond=document.getElementById('e-cond')?.value||'';
-  const ready=!!cond;
+  const anyScope=SCOPE_ITEMS.some(s=>scopeOn(s.id));
+  const ready=!!(cond&&anyScope);
   const btn=document.getElementById('est-s2-next');
   if(!btn)return;
   btn.disabled=!ready;
@@ -7402,12 +6972,11 @@ function markFieldFilled(el){
 }
 
 function validateAndGoStep5(){
-  const customerPaintChecked=document.getElementById('e-customer-paint')?.checked||false;
   const paint=document.getElementById('e-paint')?.value||'';
-  if(!paint&&!customerPaintChecked){
+  if(!paint){
     const card=document.getElementById('paint-picker-card');
     if(card){card.style.border='2px solid #A32D2D';card.scrollIntoView&&card.scrollIntoView({behavior:'smooth',block:'center'});}
-    zAlert('Select a paint type, or check "Customer supplies paint".',{title:'Required'});return;
+    zAlert('Select a paint type.',{title:'Required'});return;
   }
   const days=parseInt(document.getElementById('e-days')?.value)||0;
   if(!days||days<1){
@@ -7485,15 +7054,6 @@ function goEstStep(n){
   if(n===2&&estStep<2&&!document.getElementById('e-cond')?.value){applyDefaultScope();}
   if(n===4){
     if(!estSurfaces.length){zAlert('Add at least one room and surface before reviewing.',{title:'No surfaces yet'});return;}
-    // Init paint dropdown if not already set
-    const pSel=document.getElementById('paint-supply-sel');
-    const pVal=document.getElementById('e-paint')?.value;
-    if(pSel&&!pSel.value&&!pVal){pSel.value='interior';onPaintSupplyChange('interior');}
-    else if(pSel&&pVal&&pSel.value!==pVal){pSel.value=pVal==='customer'?'customer':(pVal||'interior');}
-    // Auto-select exterior if job has exterior surfaces
-    if(pSel&&!pVal&&estSurfaces.some(s=>s.type==='ext_walls'||s.type==='ext_trim'||s.type==='deck')){
-      pSel.value='exterior';onPaintSupplyChange('exterior');
-    }
     renderEstReview();
   }
   if(n===5){const d=document.getElementById('est-desc-text');if(d&&!d.value.trim())d.value=buildDescription();buildProposal();setTimeout(initEstNotesCanvas,100);}
@@ -7504,66 +7064,7 @@ function cm(d){calMonth+=d;if(calMonth>11){calMonth=0;calYear++;}if(calMonth<0){
 function renderCalendar(){renderCalMonthLabel();renderCalGrid();renderCalAvail();renderCalConflicts();renderCalWeek();renderCalUpcoming();}
 function renderCalMonthLabel(){const M=['January','February','March','April','May','June','July','August','September','October','November','December'];document.getElementById('cal-month-lbl').textContent=M[calMonth]+' '+calYear;}
 function getJobsOnDay(key){const res=[];jobs.forEach(job=>{const d=parseInt(job.days)||1,b=parseInt(job.buffer)||0;for(let i=0;i<d;i++){if(addDays(job.start,i)===key){res.push({job,isBuf:false});return;}}for(let i=d;i<d+b;i++){if(addDays(job.start,i)===key){res.push({job,isBuf:true});return;}}});return res;}
-function requestLocationPermission(onGranted, onDenied){
-  // If already have coords, just call granted
-  if(S.weatherLat&&S.weatherLon){if(onGranted)onGranted();return;}
-  // If already denied, call denied
-  if(S.locationDenied){if(onDenied)onDenied();return;}
-  // Show permission modal
-  const overlay=document.createElement('div');
-  overlay.className='zmodal-overlay';
-  overlay.style.cssText='align-items:center;padding:20px';
-  const box=document.createElement('div');
-  box.className='zmodal';
-  box.innerHTML=
-    '<div style="text-align:center;margin-bottom:16px">'+
-      '<div style="font-size:40px;margin-bottom:10px">📍</div>'+
-      '<div style="font-size:18px;font-weight:800;margin-bottom:6px">Allow location access?</div>'+
-      '<div style="font-size:13px;color:var(--text2);line-height:1.6">TradeDesk uses your location for:<br>'+
-      '<strong>🌤 Live weather</strong> on your calendar<br>'+
-      '<strong>🚗 GPS tracking</strong> for mileage deductions<br><br>'+
-      'Your location is never shared or stored on our servers — it stays on your device only.</div>'+
-    '</div>'+
-    '<button id="loc-allow-btn" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Allow location access</button>'+
-    '<button id="loc-deny-btn" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;font-size:13px;color:var(--text3);cursor:pointer;font-family:inherit">Not now — skip weather &amp; GPS</button>';
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
-  box.querySelector('#loc-allow-btn').onclick=()=>{
-    overlay.remove();
-    navigator.geolocation.getCurrentPosition(pos=>{
-      S.weatherLat=Math.round(pos.coords.latitude*10000)/10000;
-      S.weatherLon=Math.round(pos.coords.longitude*10000)/10000;
-      S.locationDenied=false;
-      saveAll();
-      if(onGranted)onGranted();
-    },err=>{
-      S.locationDenied=true;saveAll();
-      if(onDenied)onDenied();
-    },{enableHighAccuracy:true,timeout:10000});
-  };
-  box.querySelector('#loc-deny-btn').onclick=()=>{
-    overlay.remove();
-    S.locationDenied=true;saveAll();
-    if(onDenied)onDenied();
-  };
-}
-
-// Call on every calendar open to get live location for weather
-async function refreshLocationAndWeather(){
-  if(S.locationDenied)return;
-  if(!('geolocation' in navigator))return;
-  navigator.geolocation.getCurrentPosition(pos=>{
-    const newLat=Math.round(pos.coords.latitude*10000)/10000;
-    const newLon=Math.round(pos.coords.longitude*10000)/10000;
-    // Only invalidate cache if moved more than ~0.5 miles
-    if(Math.abs(newLat-(S.weatherLat||0))>0.007||Math.abs(newLon-(S.weatherLon||0))>0.007){
-      _weatherCache=null;
-    }
-    S.weatherLat=newLat;S.weatherLon=newLon;saveAll();
-  },()=>{},{enableHighAccuracy:false,timeout:5000,maximumAge:300000});
-}
-
-async function renderCalGrid(){
+function renderCalGrid(){
   const{booked,buf}=getBookedDays();const DNAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   let html=DNAMES.map(d=>`<div class="cal-dh">${d}</div>`).join('');
   const first=new Date(calYear,calMonth,1),last=new Date(calYear,calMonth+1,0),dow=first.getDay(),tk=todayKey();
@@ -7571,23 +7072,15 @@ async function renderCalGrid(){
   for(let i=0;i<dow;i++){const d=new Date(calYear,calMonth,1-dow+i);cells.push({d,other:true});}
   for(let i=1;i<=last.getDate();i++)cells.push({d:new Date(calYear,calMonth,i),other:false});
   while(cells.length%7!==0){const l=cells[cells.length-1].d,nd=new Date(l);nd.setDate(l.getDate()+1);cells.push({d:nd,other:true});}
-  // Fetch weather (cached — won't block render on repeat calls)
-  const weather=await fetchWeather();
   cells.forEach(({d,other})=>{
     const key=dateKey(d),isToday=key===tk,dj=getJobsOnDay(key);
-    const wx=!other?weather[key]:null;
     let cls='cal-cell';
     if(other)cls+=' other';
     else if(booked.has(key)||buf.has(key))cls+=' booked';
     if(isToday&&!other)cls+=' today';
-    if(wx&&wx.rain&&!other)cls+=' cal-rain';
-    const clickable=!other;
+    const clickable=!other&&dj.length>0;
     html+='<div class="'+cls+'"'+(clickable?' onclick="expandCalDay('+key+')" style="cursor:pointer"':'')+'>'+
-      '<div style="display:flex;justify-content:space-between;align-items:center">'+
-        '<div class="cdn">'+d.getDate()+'</div>'+
-        (wx?'<div style="font-size:13px;line-height:1" title="'+wx.label+' · '+wx.hi+'°/'+wx.lo+'°F'+'">'+wx.icon+'</div>':'') +
-      '</div>'+
-      (wx?'<div style="font-size:9px;color:'+(wx.rain?'#A32D2D':'var(--text3)')+';font-weight:600;margin-bottom:1px;line-height:1">'+wx.hi+'°/'+wx.lo+'°'+(wx.precip>20?' · '+wx.precip+'%':'')+'</div>':'')+
+      '<div class="cdn">'+d.getDate()+'</div>'+
       dj.map(({job,isBuf})=>
         '<div class="cjob" style="background:'+(isBuf?lighten(job.color):job.color)+';'+(isBuf?'color:'+job.color+';':'')+'">'+(isBuf?'buf':(job.eventType==='estimate'?'📋 ':'')+job.name)+'</div>'
       ).join('')+
@@ -8377,7 +7870,7 @@ function avPrev(){
 }
 function avNext(){availMonth++;if(availMonth>11){availMonth=0;availYear++;}refreshAvail();}
 function onStartChange(){const sv=v('s-start');if(sv){availYear=parseD(sv).getFullYear();availMonth=parseD(sv).getMonth();}refreshAvail();updateSchedPreview();}
-async function refreshAvail(){
+function refreshAvail(){
   const M=['January','February','March','April','May','June','July','August','September','October','November','December'];
   document.getElementById('avail-month-lbl').textContent=M[availMonth]+' '+availYear;
   const{booked,buf}=getBookedDays(),selected=v('s-start'),days=parseInt(v('s-days'))||1,b=parseInt(v('s-buf'))||0,today=todayKey();
@@ -8387,26 +7880,22 @@ async function refreshAvail(){
   for(let i=0;i<dow;i++){const d=new Date(availYear,availMonth,1-dow+i);cells.push({key:dateKey(d),other:true});}
   for(let i=1;i<=last.getDate();i++)cells.push({key:dateKey(new Date(availYear,availMonth,i)),other:false});
   while(cells.length%7!==0){const l=cells[cells.length-1];cells.push({key:addDays(l.key,1),other:true});}
-  const weather=await fetchWeather();
   document.getElementById('avail-grid').innerHTML=cells.map(({key,other})=>{
     if(other)return'<div class="av-d av-other">'+parseInt(key.split('-')[2])+'</div>';
     const isPast=key<today,isTaken=booked.has(key),isBuf=buf.has(key),isSel=selected&&key>=selected&&key<=selEnd,isStart=key===selected;
     const dow=parseD(key).getDay();
     const isWeekend=dow===0||dow===6;
-    const wx=weather[key];
-    const wxHtml=wx?'<div style="font-size:11px;line-height:1">'+wx.icon+'</div><div style="font-size:8px;color:'+(wx.rain?'#A32D2D':'inherit')+';font-weight:600;line-height:1.2">'+wx.hi+'°</div>':'';
-    const dayNum=parseInt(key.split('-')[2]);
-    if(isPast)return'<div class="av-d av-past">'+dayNum+'</div>';
+    if(isPast)return'<div class="av-d av-past">'+parseInt(key.split('-')[2])+'</div>';
     if(schedType==='estimate'){
-      if(isSel)return'<div class="av-d av-sel" onclick="pickDay(\''+key+'\')">'+dayNum+(isStart?'<br><span style="font-size:9px">start</span>':'')+wxHtml+'</div>';
-      if(isWeekend)return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')" style="background:var(--blue-lt);color:var(--blue-dk)">'+dayNum+wxHtml+'</div>';
-      return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')">'+dayNum+wxHtml+'</div>';
+      if(isSel)return'<div class="av-d av-sel" onclick="pickDay(\''+key+'\')">'+parseInt(key.split('-')[2])+(isStart?'<br><span style="font-size:10px">start</span>':'')+' </div>';
+      if(isWeekend)return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')" style="background:var(--blue-lt);color:var(--blue-dk)">'+parseInt(key.split('-')[2])+'</div>';
+      return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')">'+parseInt(key.split('-')[2])+'</div>';
     }
-    if(isTaken)return'<div class="av-d av-taken">'+dayNum+wxHtml+'</div>';
-    if(isBuf)return'<div class="av-d av-buf">'+dayNum+'</div>';
-    if(isSel)return'<div class="av-d av-sel" onclick="pickDay(\''+key+'\')">'+dayNum+(isStart?'<br><span style="font-size:9px">start</span>':'')+wxHtml+'</div>';
-    if(isWeekend&&!document.getElementById('s-allow-weekend')?.checked)return'<div class="av-d av-past">'+dayNum+'</div>';
-    return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')">'+dayNum+wxHtml+'</div>';
+    if(isTaken)return'<div class="av-d av-taken">'+parseInt(key.split('-')[2])+'</div>';
+    if(isBuf)return'<div class="av-d av-buf">'+parseInt(key.split('-')[2])+'</div>';
+    if(isSel)return'<div class="av-d av-sel" onclick="pickDay(\''+key+'\')">'+parseInt(key.split('-')[2])+(isStart?'<br><span style="font-size:10px">start</span>':'')+' </div>';
+    if(isWeekend&&!document.getElementById('s-allow-weekend')?.checked)return'<div class="av-d av-past">'+parseInt(key.split('-')[2])+'</div>';
+    return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')">'+parseInt(key.split('-')[2])+'</div>';
   }).join('');
 }
 function pickDay(key){
@@ -9623,17 +9112,6 @@ let _notesDpr=1;              // device pixel ratio
 let _notesCanvasH=2400;       // logical height in px (grows with "+ More space")
 let _notesPanelOpen=false;
 
-function openBidNotes(bidId){
-  editingBidId=bidId;
-  lastCreatedBidId=bidId;
-  showNotesFab();
-  toggleNotesPanel();
-}
-function viewBidClient(clientId){
-  goPg('pg-clients');
-  setTimeout(()=>openClientDetail(clientId),200);
-}
-
 function showNotesFab(){
   // Called when entering pg-est with a bid in progress
   const fab=document.getElementById('notes-fab');
@@ -9966,6 +9444,7 @@ async function loadAccountData(){
   try{
     const{data:u}=await _supa.from('users').select('*').eq('id',_supaUser.id).maybeSingle();
     if(u&&u.account_id){
+      // Full account setup — load everything
       _user=u;
       const{data:a}=await _supa.from('accounts').select('*').eq('id',u.account_id).maybeSingle();
       _account=a;
@@ -9979,9 +9458,11 @@ async function loadAccountData(){
       applyPermissions();
       return true;
     }
-    // No users row — check for pre-schema user via zj_data
+    // No users row — check if they have existing zj_data (pre-schema user)
     const{data:zd}=await _supa.from('zj_data').select('user_id').eq('user_id',_supaUser.id).maybeSingle();
     if(zd){
+      // Returning user from before onboarding schema — let them into the app
+      // They can complete account setup later from Settings
       _user={id:_supaUser.id,email:_supaUser.email,name:'',role:'owner',account_id:null};
       applyPermissions();
       return true;
@@ -9997,7 +9478,8 @@ function applyPermissions(){
   const nameEl=document.getElementById('nav-user-name');
   const roleEl=document.getElementById('nav-user-role');
   const avatarEl=document.getElementById('nav-user-avatar');
-  const name=getUserName()||_supaUser?.email?.split('@')[0]||'You';
+  const rawName=getUserName()||'';
+  const name=rawName&&!rawName.includes('@')?rawName:(_account?.business_name||'My Account');
   if(nameEl)nameEl.textContent=name;
   if(roleEl)roleEl.textContent=getRole().charAt(0).toUpperCase()+getRole().slice(1);
   if(avatarEl)avatarEl.textContent=name.charAt(0).toUpperCase();
@@ -10007,7 +9489,11 @@ function applyPermissions(){
 let _ob={step:1,name:'',email:'',password:'',businessType:'',businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:''};
 
 async function showOnboarding(){
+  // Always reset to step 1 with clean state
+  _ob={step:1,name:'',email:'',password:'',businessType:'',businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:''};
   document.getElementById('supa-boot-overlay')?.remove();
+  document.getElementById('welcome-overlay')?.remove();
+  document.getElementById('onboarding-overlay')?.remove();
   const ov=document.createElement('div');
   ov.id='onboarding-overlay';
   ov.style.cssText='position:fixed;inset:0;z-index:9999;background:var(--bg);overflow-y:auto;padding:0';
@@ -10070,7 +9556,7 @@ function renderObStep(){
           '</div>'+
           '<span style="font-size:15px;font-weight:800;color:var(--text)">TradeDesk</span>'+
         '</div>'+
-        '<span style="font-size:12px;color:var(--text3);font-weight:600">'+_ob.step+' of 9</span>'+
+        '<span style="font-size:12px;color:var(--text3);font-weight:600">'+_ob.step+' of 8</span>'+
       '</div>'+
       // Progress bar
       '<div style="height:3px;background:var(--border)"><div style="height:100%;width:'+pct+'%;background:var(--blue);transition:width .4s ease"></div></div>'+
@@ -10117,6 +9603,7 @@ function obStep1(el){
         ).join('')+
       '</div>'+
       obBtn("Get started — it's free","_ob.step=2;renderObStep()")+
+      '<div style="text-align:center;margin-top:14px"><button onclick="document.getElementById(\'onboarding-overlay\').remove();supaShowLogin()" style="border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Already have an account? <span style="color:var(--blue);font-weight:600">Sign in</span></button></div>'+
     '</div>';
 }
 
@@ -10192,7 +9679,8 @@ function obStep4(el){
     '<div class="f" style="margin-bottom:14px"><label>Phone number</label>'+
     '<input type="tel" id="ob-bphone" placeholder="316-555-0100" value="'+((_ob.phone)||'')+'" maxlength="12" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,10).replace(/^(\\d{3})(\\d{3})(\\d{1,4})$/,\'$1-$2-$3\').replace(/^(\\d{3})(\\d{1,3})$/,\'$1-$2\')" style="font-size:16px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"></div>'+
     obInput('ob-baddr','Business address (optional)','1234 Main St, Wichita KS','text',_ob.address)+
-    '<div class="f" style="margin-bottom:14px"><label>State <span style="color:#A32D2D">*</span></label><select id="ob-state" style="font-size:15px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"><option value="">Select state...</option><option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS" selected>KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option></select></div>'+
+    '<div style="margin-bottom:18px"><label style="display:block;font-size:12px;font-weight:700;color:#5f5e5a;margin-bottom:6px;letter-spacing:.02em;text-transform:uppercase">State <span style="color:#A32D2D">*</span></label>'+
+    '<select id="ob-state" style="width:100%;box-sizing:border-box;font-size:15px;padding:11px 14px;border-radius:10px;border:1.5px solid #e0dfd8;background:#fff;color:#1a1a18;font-family:inherit"><option value="">Select state...</option><option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS" selected>KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option></select></div>'+
     obInput('ob-blic','License / insurance info (optional)','Licensed & Insured · KS #12345','text',_ob.licenseInfo)+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
     obBtn('Continue','obNext4()')+
@@ -10208,7 +9696,7 @@ function obNext4(){
   _ob.businessName=bname;_ob.phone=phone;
   _ob.address=document.getElementById('ob-baddr')?.value.trim()||'';
   _ob.state=document.getElementById('ob-state')?.value||'';
-  if(!_ob.state){if(err)err.textContent='Please select your state.';return;}
+  if(!_ob.state){if(err)err.textContent='Select your state.';return;}
   _ob.licenseInfo=document.getElementById('ob-blic')?.value.trim()||'';
   _ob.step=5;renderObStep();
 }
@@ -10325,23 +9813,25 @@ function obStep8(el){
     '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">💳</div>'+
     '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Accept card payments</div>'+
     '<div style="font-size:14px;color:var(--text3)">Optional — clients can always pay cash if you skip this</div></div>'+
-    '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:var(--r);padding:14px;margin-bottom:16px;font-size:13px;color:#166534;line-height:1.7">'+
-    '<strong>How it works:</strong> Clients pay their deposit directly to your bank via Stripe. Card payments include a 2.9% + $0.30 fee — auto-logged as a tax deductible expense.'+
+    '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:10px;padding:14px;margin-bottom:18px;font-size:13px;color:#166534;line-height:1.7">'+
+      '<strong>How it works:</strong> Clients pay their deposit directly to your bank account via Stripe. You get paid instantly on card, or within 2-5 days on bank transfer. Stripe charges 2.9% + $0.30 per card transaction — auto-logged as a tax deductible expense.'+
     '</div>'+
     obInput('ob-stripe-key','Stripe Publishable Key (optional)','pk_live_...','text',_ob.stripeKey)+
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:16px;line-height:1.6">Find at <strong>dashboard.stripe.com → Developers → API keys</strong>. Starts with pk_live_</div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:16px;line-height:1.6">Find this at <strong>dashboard.stripe.com → Developers → API keys</strong>. Starts with pk_live_</div>'+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
     obBtn('Continue','obNext8()')+
     obBtn('Skip — cash only for now','_ob.stripeKey=\'\';_ob.step=9;renderObStep()',true)+
-    obBtn('Back','_ob.step=7;renderObStep()',true);
+    obBtn('Back','_ob.step=8;renderObStep()',true);
 }
 function obNext8(){
   const key=(document.getElementById('ob-stripe-key')?.value||'').trim();
   if(key&&!key.startsWith('pk_')){
     const err=document.getElementById('ob-err');
-    if(err)err.textContent='Should start with pk_live_ or pk_test_';return;
+    if(err)err.textContent='That doesn\'t look like a Stripe publishable key — should start with pk_live_ or pk_test_';
+    return;
   }
-  _ob.stripeKey=key;_ob.step=9;renderObStep();
+  _ob.stripeKey=key;
+  _ob.step=9;renderObStep();
 }
 function obStep9(el){
   el.innerHTML=
@@ -10357,7 +9847,7 @@ function obStep9(el){
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
     '<div id="ob-progress" style="display:none;font-size:12px;color:var(--text3);text-align:center;margin-bottom:8px"></div>'+
     obBtn('Create my account','obSubmit()')+
-    obBtn('Back','_ob.step=8;renderObStep()',true);
+    obBtn('Back','_ob.step=7;renderObStep()',true);
 }
 
 async function obSubmit(){
@@ -10367,17 +9857,26 @@ async function obSubmit(){
   function setProgress(msg){if(prog){prog.style.display='';prog.textContent=msg;}}
   try{
     setProgress('Creating your account...');
+    // Sign up
     const{data:authData,error:authErr}=await _supa.auth.signUp({email:_ob.email,password:_ob.password});
     if(authErr){
       if(authErr.message?.toLowerCase().includes('already registered')||authErr.status===422){
+        // Already has an account — close onboarding, show login
         document.getElementById('onboarding-overlay')?.remove();
-        supaShowLogin();
-        setTimeout(()=>{const el=document.getElementById('supa-login-err');if(el){el.textContent='Account already exists — sign in below.';el.style.color='var(--blue)';}},150);
+        showWelcomeScreen();
+        setTimeout(()=>{
+          document.getElementById('welcome-overlay')?.remove();
+          supaShowLogin();
+          setTimeout(()=>{
+            const el=document.getElementById('supa-login-err');
+            if(el){el.textContent='Account already exists — sign in below.';el.style.color='#185FA5';}
+          },150);
+        },50);
         return;
       }
       throw authErr;
     }
-    // Sign in immediately to get a live session so RLS works for inserts
+    // Sign in immediately to get live session for RLS
     const{data:signInData,error:signInErr}=await _supa.auth.signInWithPassword({email:_ob.email,password:_ob.password});
     if(signInErr)throw new Error('Account created — please sign in to continue.');
     const uid=signInData.user?.id;
@@ -10388,7 +9887,7 @@ async function obSubmit(){
     const{data:acct,error:acctErr}=await _supa.from('accounts').insert({
       business_name:_ob.businessName,phone:_ob.phone,email:_ob.email,
       address:_ob.address,license_info:_ob.licenseInfo,owner_id:uid,state:_ob.state
-    }).select().maybeSingle();
+    }).select().single();
     if(acctErr)throw acctErr;
     _account=acct;
 
@@ -10403,7 +9902,7 @@ async function obSubmit(){
 
     setProgress('Configuring your workflow...');
     const cfg={...BUSINESS_CONFIGS[_ob.businessType]||BUSINESS_CONFIGS.other,account_id:acct.id,business_type:_ob.businessType,state:_ob.state,stripe_pk:_ob.stripeKey||null};
-    const{data:cfgData}=await _supa.from('account_config').insert(cfg).select().maybeSingle();
+    const{data:cfgData}=await _supa.from('account_config').insert(cfg).select().single();
     _config=cfgData;
 
     await _supa.from('zj_data').insert({user_id:uid,account_id:acct.id});
@@ -10426,8 +9925,10 @@ async function obSubmit(){
 function getDashGreeting(){
   const hr=new Date().getHours();
   const time=hr<12?'Good morning':hr<17?'Good afternoon':'Good evening';
-  const name=getUserName()||'';
-  return name?time+', '+name.split(' ')[0]+'!':time+'!';
+  // Prefer actual name from user record, fall back to first word of business name, never use email
+  const raw=getUserName()||'';
+  const name=raw&&!raw.includes('@')?raw.split(' ')[0]:'';
+  return name?time+', '+name+'!':time+'!';
 }
 
 // ── Supabase cloud sync ───────────────────────────────────────────────
@@ -10447,41 +9948,35 @@ async function supaInit(){
       _supaUser=session.user;
       const hasAccount=await loadAccountData();
       if(hasAccount){
+        // Fully set up — load cloud data and show app
         await supaLoadFromCloud();
       } else {
-        // Signed in but no data at all — go to app, let them use it
+        // Signed in but no account row — needs onboarding
         document.getElementById('supa-boot-overlay')?.remove();
         renderDash();buildScopeGrid();
-        supaSetStatus('cloud');
+        showOnboarding();
       }
     } else {
-      // Not signed in — show login screen
+      // No session — show welcome screen
       document.getElementById('supa-boot-overlay')?.remove();
       renderDash();buildScopeGrid();
-      supaSetStatus('local');
-      supaShowLogin();
+      showWelcomeScreen();
     }
     _supa.auth.onAuthStateChange(async(event,session)=>{
       if(event==='SIGNED_IN'){
         _supaUser=session.user;
         document.getElementById('supa-login-overlay')?.remove();
+        document.getElementById('welcome-overlay')?.remove();
         const hasAccount=await loadAccountData();
         if(hasAccount){
           await supaLoadFromCloud();
         } else {
-          // Pre-schema user — just load the app
-          document.getElementById('supa-boot-overlay')?.remove();
-          renderDash();buildScopeGrid();
-          supaSetStatus('cloud');
+          showOnboarding();
         }
       } else if(event==='SIGNED_OUT'){
         _supaUser=null;_user=null;_account=null;_config=null;
-        // Clear all data so next user starts fresh — never bleed data between accounts
-        clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
-        S={...S,bname:'',bphone:'',blic:'',bemail:'',stripePk:'',vehicles:[],weatherLat:null,weatherLon:null,locationDenied:false};
-        saveAll();
         supaSetStatus('local');
-        supaShowLogin();
+        showWelcomeScreen();
       }
     });
   }catch(e){
@@ -10490,6 +9985,24 @@ async function supaInit(){
     renderDash();buildScopeGrid();
     supaSetStatus('local');
   }
+}
+
+function showWelcomeScreen(){
+  if(document.getElementById('welcome-overlay'))return;
+  const ov=document.createElement('div');
+  ov.id='welcome-overlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:#0D1117;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;';
+  ov.innerHTML=
+    '<div style="max-width:400px;width:100%;text-align:center">'+
+      '<div style="width:56px;height:56px;border-radius:14px;background:#185FA5;display:flex;align-items:center;justify-content:center;margin:0 auto 20px">'+
+        '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>'+
+      '</div>'+
+      '<div style="font-size:32px;font-weight:800;color:#fff;letter-spacing:-.5px;margin-bottom:10px">TradeDesk</div>'+
+      '<div style="font-size:15px;color:rgba(255,255,255,.45);line-height:1.6;margin-bottom:48px">The all-in-one business suite for contractors</div>'+
+      '<button onclick="showOnboarding()" style="width:100%;padding:14px;border-radius:10px;border:none;background:#185FA5;color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:12px;box-shadow:0 4px 20px rgba(24,95,165,.4)">Get started</button>'+
+      '<button onclick="document.getElementById(\'welcome-overlay\').remove();supaShowLogin();" style="width:100%;padding:14px;border-radius:10px;border:1.5px solid rgba(255,255,255,.15);background:transparent;color:rgba(255,255,255,.7);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">I already have an account</button>'+
+    '</div>';
+  document.body.appendChild(ov);
 }
 
 function supaShowLogin(){
@@ -10573,10 +10086,7 @@ async function supaLoadFromCloud(){
   try{
     const{data,error}=await _supa.from('zj_data').select('*').eq('user_id',_supaUser.id).maybeSingle();
     if(error||!data){
-      // First time this user has signed in — no cloud data yet.
-      // Clear any localStorage data from a previous user on this device.
-      clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
-      saveAll();
+      // No cloud data yet — use local, dismiss loading
       document.getElementById('supa-boot-overlay')?.remove();
       renderDash();buildScopeGrid();
       supaSetStatus('synced');
@@ -10601,8 +10111,6 @@ async function supaLoadFromCloud(){
     renderClientList&&renderClientList();
     renderJobsPage&&renderJobsPage();
     renderMoneyPage&&renderMoneyPage();
-    // Prompt for location if not yet set
-    setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
   }catch(e){
     console.warn('Cloud load failed:',e);
     document.getElementById('supa-boot-overlay')?.remove();
