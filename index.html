@@ -837,7 +837,6 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
         </button>
       </div>
     </div>
-    <input type="hidden" id="e-paint" value="">
     <input type="hidden" id="e-colors" value="0">
     <input type="hidden" id="e-travel" value="0">
     <input type="hidden" id="e-cond" value="">
@@ -989,21 +988,18 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
         <span id="est-final-disp" style="font-size:24px;font-weight:700;color:var(--blue)"></span>
       </div>
     </div>
-    <div class="card" id="paint-picker-card"><div class="card-hd">Paint for this job <span style="color:#A32D2D;font-weight:400;font-size:11px">* Required</span></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px" id="paint-picker">
-        <button onclick="selectPaint('interior',this)" class="surf-type-btn" id="pp-interior" style="padding:12px;font-size:12px;text-align:center">
-          <div style="font-weight:700">Interior</div>
-          <div style="font-size:10px;color:var(--text3);margin-top:2px">ProMar 200</div>
-        </button>
-        <button onclick="selectPaint('exterior',this)" class="surf-type-btn" id="pp-exterior" style="padding:12px;font-size:12px;text-align:center">
-          <div style="font-weight:700">Exterior</div>
-          <div style="font-size:10px;color:var(--text3);margin-top:2px">$106/gal</div>
-        </button>
+    <div class="card" id="paint-picker-card"><div class="card-hd">Who's supplying the paint?</div>
+      <input type="hidden" id="e-customer-paint-hidden">
+      <select id="paint-supply-sel" onchange="onPaintSupplyChange(this.value)" style="font-size:15px;font-weight:600;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;margin-bottom:8px">
+        <option value="interior">I'm supplying paint — Interior (ProMar 200, ~$42/gal)</option>
+        <option value="exterior">I'm supplying paint — Exterior (~$106/gal)</option>
+        <option value="customer">Customer supplies paint — no warranty on finish</option>
+      </select>
+      <div id="paint-supply-note" style="display:none;font-size:11px;color:#856404;background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 10px;line-height:1.6">
+        Paint cost removed from estimate. No warranty provided on finish quality — client assumes responsibility.
       </div>
-      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;font-weight:600;padding:10px;background:var(--amber-lt);border-radius:var(--r);border:1px solid var(--amber)">
-        <input type="checkbox" id="e-customer-paint" style="width:18px;height:18px;accent-color:var(--blue);cursor:pointer;appearance:auto;-webkit-appearance:checkbox;flex-shrink:0" onchange="onCustomerPaintChange()">
-        <div><div>Customer supplies paint</div><div style="font-size:11px;font-weight:400;color:#856404;margin-top:2px">Paint cost removed · No warranty provided on finish</div></div>
-      </label>
+      <input type="hidden" id="e-paint" value="">
+      <input type="hidden" id="e-customer-paint">
     </div>
     <div class="card">
       <div class="f">
@@ -2189,7 +2185,9 @@ function renderDash(){
   if(resumeEl){
     const pendingBids=bids.filter(b=>b.status==='Pending'||b.status==='Draft');
     const draft=loadEstFullDraft();
-    const hasDraft=!!(draft&&draft.cname);
+    // Only show draft banner if draft exists, is recent (48h), and hasn't been saved as a pending bid
+    const draftBidExists=draft&&draft.cname&&bids.some(b=>b.draft&&b.id===draft.lastBidId);
+    const hasDraft=!!(draft&&draft.cname&&!draftBidExists);
     const hasAny=hasDraft||pendingBids.length>0;
     if(!hasAny){
       resumeEl.innerHTML='';
@@ -4480,9 +4478,9 @@ function openEditBid(bidId){
     }
     if(b.paint){
       const el=document.getElementById('e-paint');if(el)el.value=b.paint;
-      const pb=document.getElementById('pp-'+b.paint);
-      document.querySelectorAll('#paint-picker .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));
-      if(pb)pb.classList.add('active-surf-btn');
+      const sel=document.getElementById('paint-supply-sel');
+      if(sel)sel.value=b.paint==='customer'?'customer':(b.paint||'interior');
+      onPaintSupplyChange(b.paint==='customer'?'customer':(b.paint||'interior'));
     }
     if(b.colors!==undefined){const el=document.getElementById('e-colors');if(el){el.value=b.colors;el.style.borderColor='var(--border2)';el.style.background='var(--bg2)';}}
     const adj=document.getElementById('est-adj');if(adj)adj.value=0;
@@ -6307,26 +6305,29 @@ function selectCond(val, btn){
   const card=document.getElementById('cond-picker-card');if(card)card.style.border='';
   checkStep2Ready();saveEstFullDraft();
 }
-function selectPaint(key, btn){
-  document.querySelectorAll('#paint-picker .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));
-  if(btn)btn.classList.add('active-surf-btn');
-  const el=document.getElementById('e-paint');
-  if(el){el.value=key;el.style.borderColor='var(--border2)';el.style.background='var(--bg2)';}
-  const card=document.getElementById('paint-picker-card');if(card)card.style.border='';
-  checkStep1Ready();saveEstFullDraft();
+function selectPaint(key,btn){
+  // Legacy — now handled by onPaintSupplyChange
+  const sel=document.getElementById('paint-supply-sel');
+  if(sel)sel.value=key;
+  onPaintSupplyChange(key);
 }
-
-function onCustomerPaintChange(){
-  const checked=document.getElementById('e-customer-paint')?.checked;
-  const picker=document.getElementById('paint-picker');
-  if(picker)picker.style.opacity=checked?'0.4':'1';
-  // Clear the required border on paint picker if customer supplies paint
+function onPaintSupplyChange(val){
+  const isCustomer=val==='customer';
+  const paintEl=document.getElementById('e-paint');
+  if(paintEl)paintEl.value=isCustomer?'customer':val;
+  const custEl=document.getElementById('e-customer-paint');
+  if(custEl)custEl.value=isCustomer?'1':'';
+  const note=document.getElementById('paint-supply-note');
+  if(note)note.style.display=isCustomer?'block':'none';
   const card=document.getElementById('paint-picker-card');
-  if(card)card.style.border=checked?'':'';
-  // Auto-set e-paint to a placeholder so validation passes
+  if(card)card.style.border='';
+  checkStep1Ready();renderEstRunning();renderEstReview();saveEstFullDraft();
+}
+function onCustomerPaintChange(){
+  // Legacy checkbox handler — not used with new dropdown but kept for safety
+  const checked=document.getElementById('e-customer-paint')?.value==='1';
   const paintEl=document.getElementById('e-paint');
   if(paintEl&&checked&&!paintEl.value)paintEl.value='customer';
-  else if(paintEl&&!checked&&paintEl.value==='customer')paintEl.value='';
   renderEstRunning();renderEstReview();
 }
 
@@ -6462,8 +6463,9 @@ function restoreEstFullDraft(d){
   if(d.roomScopeMap)roomScopeMap=JSON.parse(JSON.stringify(d.roomScopeMap));
   if(d.paint){
     const el=document.getElementById('e-paint');if(el)el.value=d.paint;
-    const btn=document.getElementById('pp-'+d.paint);
-    if(btn){document.querySelectorAll('#paint-picker .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));btn.classList.add('active-surf-btn');}
+    const sel=document.getElementById('paint-supply-sel');
+    if(sel)sel.value=d.paint==='customer'?'customer':(d.paint||'interior');
+    onPaintSupplyChange(d.paint==='customer'?'customer':(d.paint||'interior'));
   }
   if(d.cond){
     const condMap={'1.0':'good','1.2':'fair','1.5':'poor'};
@@ -6498,6 +6500,7 @@ function clearEstFullDraft(){
     if(idx>-1){bids.splice(idx,1);saveAll();}
     lastCreatedBidId=null;
   }
+  editingBidId=null;
 }
 
 // ── Income type helper — derives correct label from bid surfaces ─────────
@@ -6525,7 +6528,7 @@ function calcEst(){
     deck:    gR('e-r-deck') ||S.rDeck ||1.00,
   };
   const paintCostPerGal=gR('e-paint-rate')||(estSurfaces.some(s=>s.type==='ext_walls'||s.type==='ext_trim'||s.type==='deck')?106:42);
-  const customerPaint=document.getElementById('e-customer-paint')?.checked||false;
+  const customerPaint=document.getElementById('e-customer-paint')?.value==='1'||false;
   const cov=COVERAGE();const matMark=MATMARK();const coats=scopeOn('twocoat')?2:1;
   let laborTotal=0,totalLaborHours=0;const lines=[];
   estSurfaces.forEach(s=>{
@@ -6784,7 +6787,7 @@ function copyProposalLink(){
 }
 function buildDescription(){
   const isExt=estSurfaces.some(s=>s.type==='ext_walls'||s.type==='ext_trim'||s.type==='deck');
-  const customerPaint=document.getElementById('e-customer-paint')?.checked||false;
+  const customerPaint=document.getElementById('e-customer-paint')?.value==='1'||false;
   const matDesc=customerPaint
     ?'All materials (tape, plastic, rollers, brushes) included in price. <strong>Paint supplied by customer — no warranty provided on finish.</strong>'
     :(isExt?'Exterior-grade paint':'Sherwin-Williams ProMar 200 interior paint')+' and all materials included in price.';
@@ -6878,7 +6881,7 @@ function buildProposal(){
   const allowWeekend=document.getElementById('e-allow-weekend')?.checked||false;
   const description=buildDescription();
   const matLine=matTotal+flatAdd;
-  const customerPaint=document.getElementById('e-customer-paint')?.checked||false;
+  const customerPaint=document.getElementById('e-customer-paint')?.value==='1'||false;
 
   // Build per-room cost rows for the proposal table
   const gR=id=>parseFloat(document.getElementById(id)?.value)||0;
@@ -7038,7 +7041,7 @@ function buildProposal(){
   </table>
   ${estSurfaces.some(s=>s.type==='ext_walls'||s.type==='ext_trim'||s.type==='deck')?`<div style="padding:10px 16px;background:#FEF3C7;border-top:1px solid #D97706;border-bottom:1px solid #D97706">
     <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#92400E;margin-bottom:4px">⚠ Weather Notice — Exterior Work</div>
-    <div style="font-size:11px;color:#92400E;line-height:1.7">Exterior painting is weather-dependent. Start dates and completion timelines may shift based on temperature, rain, or high winds. Paint will not be applied to wet or damp surfaces. If surfaces were pressure washed, a minimum 48-hour dry time is required before painting begins. Zach Johnson Painting will communicate any weather-related delays promptly and reschedule at the earliest suitable date at no additional charge.</div>
+    <div style="font-size:11px;color:#92400E;line-height:1.7">Exterior painting is weather-dependent. Start dates and completion timelines may shift based on temperature, rain, or high winds. Paint will not be applied to wet or damp surfaces. If surfaces were pressure washed, a minimum 48-hour dry time is required before painting begins. ${getBusinessName()} will communicate any weather-related delays promptly and reschedule at the earliest suitable date at no additional charge.</div>
   </div>`:''}
   <div style="padding:14px 16px;display:grid;grid-template-columns:1fr 1fr;gap:14px;border-top:1px solid var(--border)">
     <div>
@@ -7439,6 +7442,15 @@ function goEstStep(n){
   if(n===2&&estStep<2&&!document.getElementById('e-cond')?.value){applyDefaultScope();}
   if(n===4){
     if(!estSurfaces.length){zAlert('Add at least one room and surface before reviewing.',{title:'No surfaces yet'});return;}
+    // Init paint dropdown if not already set
+    const pSel=document.getElementById('paint-supply-sel');
+    const pVal=document.getElementById('e-paint')?.value;
+    if(pSel&&!pSel.value&&!pVal){pSel.value='interior';onPaintSupplyChange('interior');}
+    else if(pSel&&pVal&&pSel.value!==pVal){pSel.value=pVal==='customer'?'customer':(pVal||'interior');}
+    // Auto-select exterior if job has exterior surfaces
+    if(pSel&&!pVal&&estSurfaces.some(s=>s.type==='ext_walls'||s.type==='ext_trim'||s.type==='deck')){
+      pSel.value='exterior';onPaintSupplyChange('exterior');
+    }
     renderEstReview();
   }
   if(n===5){const d=document.getElementById('est-desc-text');if(d&&!d.value.trim())d.value=buildDescription();buildProposal();setTimeout(initEstNotesCanvas,100);}
