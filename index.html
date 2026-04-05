@@ -124,10 +124,10 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .card-hd{font-size:13px;font-weight:700;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;color:var(--text)}
 .card-hd span{font-size:10px;font-weight:400;color:var(--text3)}
 .mets{display:grid;grid-template-columns:repeat(auto-fit,minmax(85px,1fr));gap:7px;margin-bottom:12px}
-.met{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:10px}
-.met-l{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:3px}
-.met-v{font-size:17px;font-weight:700}
-.met-s{font-size:10px;color:var(--text3);margin-top:2px}
+.met{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:10px;display:flex;flex-direction:column}
+.met-l{font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);min-height:28px;display:flex;align-items:flex-end;padding-bottom:2px}
+.met-v{font-size:20px;font-weight:800;line-height:1.1;margin-top:2px}
+.met-s{font-size:10px;color:var(--text3);margin-top:3px}
 .fg{display:grid;gap:9px;margin-bottom:10px}
 .fg2{grid-template-columns:repeat(auto-fit,minmax(145px,1fr))}
 .fg3{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}
@@ -1044,7 +1044,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <div class="card"><div class="card-hd">Review &amp; sign</div>
       <div id="est-sig-sum"></div><hr>
       <div class="fg fg2">
-        <div class="f"><label>Client printed name <span style="font-size:10px;font-weight:400;color:var(--text3)">(required to enable signing)</span></label><input id="sig-pname" placeholder="Full name" oninput="checkConfirmReady()"></div>
+        <div class="f"><label>Client printed name <span style="font-size:10px;font-weight:400;color:var(--text3)">(required)</span></label><input id="sig-pname" placeholder="Full name" oninput="checkConfirmReady()"></div>
         <div class="f"><label>Date</label><input id="sig-date" readonly></div>
       </div>
       <div class="f" style="margin-bottom:8px">
@@ -1333,7 +1333,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     </div>
   </div>
   <div class="card"><div class="card-hd">Federal standard deductions</div>
-    <div class="fg fg2">
+    <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
       <div class="f"><label>Single ($)</label><input type="number" id="set-fs"></div>
       <div class="f"><label>Married filing jointly ($)</label><input type="number" id="set-fm"></div>
       <div class="f"><label>Married filing separately ($)</label><input type="number" id="set-fms"></div>
@@ -1351,10 +1351,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     </div>
   </div>
   <div class="card"><div class="card-hd">Kansas tax rates</div>
-    <div class="fg fg2">
+    <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
       <div class="f"><label>Lower rate (%)</label><input type="number" id="set-ksl" step="0.001"></div>
-      <div class="f"><label>Lower bracket top — single ($)</label><input type="number" id="set-kst"></div>
       <div class="f"><label>Upper rate (%)</label><input type="number" id="set-ksh" step="0.001"></div>
+      <div class="f"><label>Lower bracket top — single ($)</label><input type="number" id="set-kst"></div>
       <div class="f"><label>Std deduction — single ($)</label><input type="number" id="set-kss"></div>
       <div class="f"><label>Std deduction — MFJ ($)</label><input type="number" id="set-ksm"></div>
     </div>
@@ -1398,7 +1398,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <button class="btn btn-p btn-sm" onclick="saveStripeKey()">Save Stripe key</button>
   </div>
   <div class="card"><div class="card-hd">Estimator defaults</div>
-    <div class="fg fg2">
+    <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
       <div class="f"><label>Profit margin target (%)</label><input type="number" id="set-margin"></div>
       <div class="f"><label>Paint coverage (sq ft/gal)</label><input type="number" id="set-cov"></div>
       <div class="f"><label>Standard paint ($/gal)</label><input type="number" id="set-p1"></div>
@@ -1419,7 +1419,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   <div class="card">
     <div class="card-hd">Labor rates ($/sq ft or flat) <span>Set these to match what you actually charge</span></div>
     <div class="tip">These are your base labor rates before scope add-ons. If a $2,500 job feels like it should show more profit, raise these to match your real pricing.</div>
-    <div class="fg fg3">
+    <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
       <div class="f"><label>Walls ($/sf)</label><input type="number" id="set-r-walls" step="0.05"></div>
       <div class="f"><label>Ceiling ($/sf)</label><input type="number" id="set-r-ceil" step="0.05"></div>
       <div class="f"><label>Trim ($/lin ft)</label><input type="number" id="set-r-trim" step="0.05"></div>
@@ -6941,15 +6941,15 @@ function buildProposal(){
     </thead>
     <tbody>
       ${roomRows}
-      ${matLine>0?`<tr style="border-bottom:1px solid var(--border)">
+      <tr style="border-bottom:1px solid var(--border)">
         <td style="padding:8px 12px;text-align:center;font-weight:700;vertical-align:top">1</td>
         <td style="padding:8px 12px;font-size:12px;color:#1a1a1a">
-          <strong>Paint, Primer &amp; Materials</strong><br>
-          <span style="font-size:11px;color:#666">Includes paint, primer, tape, plastic sheeting, rollers, brushes, drop cloths and all supplies needed to complete the job.${customerPaint?' Paint supplied by customer.':''}</span>
+          <strong>${customerPaint?'Materials':'Paint, Primer &amp; Materials'}</strong><br>
+          <span style="font-size:11px;color:#666">${customerPaint?'Tape, plastic sheeting, rollers, brushes, drop cloths and all supplies. Paint supplied by customer — no warranty on finish.':'Includes paint, primer, tape, plastic sheeting, rollers, brushes, drop cloths and all supplies needed to complete the job.'}</span>
         </td>
         <td style="padding:8px 12px;text-align:right;font-weight:700;vertical-align:top">${fmt(matLine)}</td>
         <td style="padding:8px 12px;text-align:right;font-weight:700;vertical-align:top">${fmt(matLine)}</td>
-      </tr>`:''}
+      </tr>
       ${adj?`<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 12px;text-align:center"></td><td style="padding:8px 12px;color:var(--text2)">${adjReason||'Price adjustment'}</td><td style="padding:8px 12px;text-align:right">${adj>0?'+':''}${fmt(adj)}</td><td style="padding:8px 12px;text-align:right">${adj>0?'+':''}${fmt(adj)}</td></tr>`:''}
     </tbody>
     <tfoot>
