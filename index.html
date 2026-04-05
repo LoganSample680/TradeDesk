@@ -1612,7 +1612,8 @@ async function fetchWeather(){
   if(_weatherLoading)return _weatherCache;
   _weatherLoading=true;
   try{
-    const lat=S.weatherLat||37.6872,lon=S.weatherLon||-97.3301;
+    if(!S.weatherLat||!S.weatherLon){console.warn('No location set — skipping weather');return{};}
+    const lat=S.weatherLat,lon=S.weatherLon;
     const url='https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lon+
       '&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max'+
       '&temperature_unit=fahrenheit&timezone=America%2FChicago&forecast_days=14';
@@ -4714,6 +4715,8 @@ function confirmStartDrive(){
   }
   gps.active=true;
   gps.clientId=currentClientId;
+  // Get live GPS coords for start of trip
+  if(!S.locationDenied&&navigator.geolocation){navigator.geolocation.getCurrentPosition(p=>{gps.startCoords={lat:p.coords.latitude,lon:p.coords.longitude};},()=>{},{enableHighAccuracy:true,timeout:8000});}  
   const c=getClientById(currentClientId);
   gps.clientName=c?c.name:'Client';
   gps.odomStart=val;
@@ -7419,6 +7422,65 @@ function cm(d){calMonth+=d;if(calMonth>11){calMonth=0;calYear++;}if(calMonth<0){
 function renderCalendar(){renderCalMonthLabel();renderCalGrid();renderCalAvail();renderCalConflicts();renderCalWeek();renderCalUpcoming();}
 function renderCalMonthLabel(){const M=['January','February','March','April','May','June','July','August','September','October','November','December'];document.getElementById('cal-month-lbl').textContent=M[calMonth]+' '+calYear;}
 function getJobsOnDay(key){const res=[];jobs.forEach(job=>{const d=parseInt(job.days)||1,b=parseInt(job.buffer)||0;for(let i=0;i<d;i++){if(addDays(job.start,i)===key){res.push({job,isBuf:false});return;}}for(let i=d;i<d+b;i++){if(addDays(job.start,i)===key){res.push({job,isBuf:true});return;}}});return res;}
+function requestLocationPermission(onGranted, onDenied){
+  // If already have coords, just call granted
+  if(S.weatherLat&&S.weatherLon){if(onGranted)onGranted();return;}
+  // If already denied, call denied
+  if(S.locationDenied){if(onDenied)onDenied();return;}
+  // Show permission modal
+  const overlay=document.createElement('div');
+  overlay.className='zmodal-overlay';
+  overlay.style.cssText='align-items:center;padding:20px';
+  const box=document.createElement('div');
+  box.className='zmodal';
+  box.innerHTML=
+    '<div style="text-align:center;margin-bottom:16px">'+
+      '<div style="font-size:40px;margin-bottom:10px">📍</div>'+
+      '<div style="font-size:18px;font-weight:800;margin-bottom:6px">Allow location access?</div>'+
+      '<div style="font-size:13px;color:var(--text2);line-height:1.6">TradeDesk uses your location for:<br>'+
+      '<strong>🌤 Live weather</strong> on your calendar<br>'+
+      '<strong>🚗 GPS tracking</strong> for mileage deductions<br><br>'+
+      'Your location is never shared or stored on our servers — it stays on your device only.</div>'+
+    '</div>'+
+    '<button id="loc-allow-btn" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Allow location access</button>'+
+    '<button id="loc-deny-btn" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;font-size:13px;color:var(--text3);cursor:pointer;font-family:inherit">Not now — skip weather &amp; GPS</button>';
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  box.querySelector('#loc-allow-btn').onclick=()=>{
+    overlay.remove();
+    navigator.geolocation.getCurrentPosition(pos=>{
+      S.weatherLat=Math.round(pos.coords.latitude*10000)/10000;
+      S.weatherLon=Math.round(pos.coords.longitude*10000)/10000;
+      S.locationDenied=false;
+      saveAll();
+      if(onGranted)onGranted();
+    },err=>{
+      S.locationDenied=true;saveAll();
+      if(onDenied)onDenied();
+    },{enableHighAccuracy:true,timeout:10000});
+  };
+  box.querySelector('#loc-deny-btn').onclick=()=>{
+    overlay.remove();
+    S.locationDenied=true;saveAll();
+    if(onDenied)onDenied();
+  };
+}
+
+// Call on every calendar open to get live location for weather
+async function refreshLocationAndWeather(){
+  if(S.locationDenied)return;
+  if(!('geolocation' in navigator))return;
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const newLat=Math.round(pos.coords.latitude*10000)/10000;
+    const newLon=Math.round(pos.coords.longitude*10000)/10000;
+    // Only invalidate cache if moved more than ~0.5 miles
+    if(Math.abs(newLat-(S.weatherLat||0))>0.007||Math.abs(newLon-(S.weatherLon||0))>0.007){
+      _weatherCache=null;
+    }
+    S.weatherLat=newLat;S.weatherLon=newLon;saveAll();
+  },()=>{},{enableHighAccuracy:false,timeout:5000,maximumAge:300000});
+}
+
 async function renderCalGrid(){
   const{booked,buf}=getBookedDays();const DNAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   let html=DNAMES.map(d=>`<div class="cal-dh">${d}</div>`).join('');
@@ -10446,6 +10508,8 @@ async function supaLoadFromCloud(){
     renderClientList&&renderClientList();
     renderJobsPage&&renderJobsPage();
     renderMoneyPage&&renderMoneyPage();
+    // Prompt for location if not yet set
+    setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
   }catch(e){
     console.warn('Cloud load failed:',e);
     document.getElementById('supa-boot-overlay')?.remove();
