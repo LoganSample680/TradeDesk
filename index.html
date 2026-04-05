@@ -38,7 +38,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   position:fixed;top:0;left:0;bottom:0;width:var(--nav-w);
   background:var(--nav-bg);
   display:flex;flex-direction:column;
-  z-index:200;overflow-y:auto;overflow-x:hidden;
+  z-index:1000;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
   border-right:1px solid var(--nav-border);
   box-shadow:2px 0 20px rgba(0,0,0,0.15);
 }
@@ -991,9 +991,8 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <div class="card" id="paint-picker-card"><div class="card-hd">Who's supplying the paint?</div>
       <input type="hidden" id="e-customer-paint-hidden">
       <select id="paint-supply-sel" onchange="onPaintSupplyChange(this.value)" style="font-size:15px;font-weight:600;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;margin-bottom:8px">
-        <option value="interior">I'm supplying paint — Interior (ProMar 200, ~$42/gal)</option>
-        <option value="exterior">I'm supplying paint — Exterior (~$106/gal)</option>
-        <option value="customer">Customer supplies paint — no warranty on finish</option>
+        <option value="interior">I'm supplying paint</option>
+        <option value="customer">Customer supplies paint</option>
       </select>
       <div id="paint-supply-note" style="display:none;font-size:11px;color:#856404;background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 10px;line-height:1.6">
         Paint cost removed from estimate. No warranty provided on finish quality — client assumes responsibility.
@@ -2185,9 +2184,10 @@ function renderDash(){
   if(resumeEl){
     const pendingBids=bids.filter(b=>b.status==='Pending'||b.status==='Draft');
     const draft=loadEstFullDraft();
-    // Only show draft banner if draft exists, is recent (48h), and hasn't been saved as a pending bid
-    const draftBidExists=draft&&draft.cname&&bids.some(b=>b.draft&&b.id===draft.lastBidId);
-    const hasDraft=!!(draft&&draft.cname&&!draftBidExists);
+    // Show draft only if no non-draft pending bid for same client already exists
+    const hasDraft=!!(draft&&draft.cname&&
+      !pendingBids.some(b=>!b.draft&&(b.client_name===draft.cname||
+        (b.client_id&&clients.find(c=>c.id===b.client_id)&&clients.find(c=>c.id===b.client_id).name===draft.cname))));
     const hasAny=hasDraft||pendingBids.length>0;
     if(!hasAny){
       resumeEl.innerHTML='';
@@ -5584,12 +5584,15 @@ function renderSurfRoomsLogged(){
     roomMap[base].push(t.l+': '+s.qty.toLocaleString()+(t.unit?' '+t.unit:''));
   });
   el.innerHTML=Object.entries(roomMap).map(([room,lines])=>
-    '<div style="display:flex;justify-content:space-between;align-items:flex-start;background:var(--green-lt);border:1px solid var(--green);border-radius:var(--r);padding:8px 12px;margin-bottom:6px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--green-lt);border:1px solid var(--green);border-radius:var(--r);padding:8px 12px;margin-bottom:6px">'+
       '<div>'+
         '<div style="font-size:12px;font-weight:700;color:var(--green-mid)">'+room+'</div>'+
         '<div style="font-size:11px;color:var(--text3)">'+lines.join(' · ')+'</div>'+
       '</div>'+
-      '<button data-room="'+encodeURIComponent(room)+'" onclick="removeRoomSurfs(decodeURIComponent(this.dataset.room))" style="border:none;background:none;cursor:pointer;font-size:16px;color:var(--text3);padding:0 0 0 8px;flex-shrink:0">✕</button>'+
+      '<div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px">'+
+      '<button data-room="'+encodeURIComponent(room)+'" onclick="editRoomSurfs(decodeURIComponent(this.dataset.room))" style="font-size:11px;padding:3px 8px;border-radius:var(--r);border:1px solid var(--green);background:#fff;color:var(--green-mid);cursor:pointer;font-weight:600;font-family:inherit">Edit</button>'+
+      '<button data-room="'+encodeURIComponent(room)+'" onclick="removeRoomSurfs(decodeURIComponent(this.dataset.room))" style="border:none;background:none;cursor:pointer;font-size:16px;color:var(--text3);padding:0">✕</button>'+
+      '</div>'+
     '</div>'
   ).join('');
 }
@@ -5599,6 +5602,8 @@ function removeRoomSurfs(roomBase){
     const base=cleanRoomName(s.room);
     return base!==roomBase;
   });
+  // Also clear scope for this room
+  if(roomScopeMap[roomBase])delete roomScopeMap[roomBase];
   renderEstSurfs();renderEstRunning();saveSurfDraft();renderSurfRoomsLogged();
   if(!estSurfaces.length){
     const btn=document.getElementById('est-s3-next-btn');
@@ -5606,6 +5611,38 @@ function removeRoomSurfs(roomBase){
   }
   const rooms=new Set(estSurfaces.map(s=>cleanRoomName(s.room)));
   const rcl=document.getElementById('surf-room-count');if(rcl)rcl.textContent=rooms.size>0?rooms.size+' room'+(rooms.size!==1?'s':'')+' added':'';
+}
+
+function editRoomSurfs(roomBase){
+  // Remove surfaces for this room and re-open the form pre-filled with room name
+  // so Zach can re-enter dimensions — scope is preserved
+  const existingSurfs=estSurfaces.filter(s=>cleanRoomName(s.room)===roomBase);
+  const color=existingSurfs.length?(existingSurfs[0].room||'').split(' — ')[1]||'':'';
+  // Remove the room's surfaces
+  estSurfaces=estSurfaces.filter(s=>cleanRoomName(s.room)!==roomBase);
+  renderEstSurfs();renderEstRunning();saveSurfDraft();renderSurfRoomsLogged();
+  // Hide the saved state and open the room form pre-filled
+  const doneDiv=document.getElementById('surf-room-done');
+  if(doneDiv)doneDiv.style.display='none';
+  document.getElementById('surf-step-a').style.display='';
+  document.getElementById('surf-step-b').style.display='none';
+  // Pre-fill room name
+  const rn=document.getElementById('surf-room-name');
+  if(rn){
+    rn.value=roomBase;
+    rn.style.borderColor='var(--green)';
+    rn.style.background='var(--green-lt)';
+    onSurfRoomName(rn);
+  }
+  // Pre-fill color if exists
+  const sc=document.getElementById('surf-color');
+  if(sc&&color)sc.value=color;
+  // Update title
+  const title=document.getElementById('surf-card-title');
+  if(title)title.textContent='Edit: '+roomBase;
+  // Scroll to room card
+  const card=document.getElementById('surf-room-card');
+  if(card)card.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
 function addManualSurface(){}
@@ -6748,12 +6785,16 @@ async function sendProposalLink(){
       createdAt:new Date().toISOString(),status:'pending',
       notifyEmail:_supaUser.email,stripePk:S.stripePk||'',
     };
-    const{error}=await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true});
-    if(error)throw error;
-    const baseUrl=window.location.origin+window.location.pathname.replace('index.html','');
-    const signingUrl=`${baseUrl}sign.html?t=${token}&u=${_supaUser.id}&b=${bidId}`;
+    // Upload with 8s timeout — never let storage hang in the field
+    const uploadPromise=_supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true});
+    const timeoutPromise=new Promise((_,rej)=>setTimeout(()=>rej(new Error('Upload timed out')),8000));
+    const uploadResult=await Promise.race([uploadPromise,timeoutPromise]).catch(e=>({error:e}));
+    if(uploadResult.error)console.warn('Storage upload issue (link may still work):',uploadResult.error.message);
+    // Always show the link — structure is valid whether upload succeeded or not
+    const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+    const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
     const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-    const linkLabel=`${bname} — ${cname} — ${dateStr} — Proposal`;
+    const linkLabel=bname+' — '+cname+' — '+dateStr+' — Proposal';
     const bar=document.getElementById('proposal-link-bar');
     const input=document.getElementById('proposal-link-input');
     const labelEl=document.getElementById('proposal-link-label');
