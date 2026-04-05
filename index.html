@@ -1437,6 +1437,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <button class="btn btn-p" onclick="saveSettings()">Save all settings</button>
     <button class="btn" onclick="if(supaEnabled())supaSignOut()" style="font-size:12px;color:var(--text3)">Sign out of cloud sync</button>
     <button class="btn" onclick="resetSettings()">Reset defaults</button>
+    <button class="btn" id="location-settings-btn" onclick="resetLocationPermission()" style="font-size:12px">📍 Location access</button>
   </div>
   <div id="set-saved" style="display:none;margin-top:8px" class="tip tip-s">Settings saved!</div>
   <div class="card" style="margin-top:16px;border:1px solid #A32D2D">
@@ -1883,6 +1884,25 @@ function clearMileageOnly(){
 }
 
 function resetSettings(){zConfirm('Reset all settings to defaults?',()=>{S={irsRate:.670,taxYear:2024,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:"ZJ's Painting & Special Coatings",bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:38,p2:62,p3:88,mm:15,rWalls:1.00,rCeil:0.85,rTrim:1.50,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00};applySettings();loadSettingsForm();},{title:'Reset settings',yes:'Reset',danger:false});}
+function resetLocationPermission(){
+  // Clear stored location so modal re-prompts
+  delete S.weatherLat;delete S.weatherLon;S.locationDenied=false;
+  _weatherCache=null;saveAll();
+  updateLocationBtn();
+  requestLocationPermission(()=>{
+    updateLocationBtn();
+    zAlert('Location access granted. Weather and GPS drive are now enabled.',{title:'✓ Location enabled'});
+  },()=>{
+    updateLocationBtn();
+    zAlert('Location not allowed. You can try again any time from Settings.',{title:'Location blocked'});
+  });
+}
+function updateLocationBtn(){
+  const btn=document.getElementById('location-settings-btn');if(!btn)return;
+  if(S.locationDenied){btn.textContent='📍 Location: Off — tap to enable';btn.style.color='var(--text3)';}
+  else if(S.weatherLat){btn.textContent='📍 Location: On ✓';btn.style.color='var(--green-mid)';}
+  else{btn.textContent='📍 Location access';btn.style.color='';}
+}
 
 function goPg(id){
   // Preserve currentClientId across navigation — only clear on explicit new client selection
@@ -1917,7 +1937,7 @@ function goPg(id){
   if(id==='pg-tracker'){renderTrackerTab();populateExpJobSel();}
   if(id==='pg-taxes')calcTax();
   if(id==='pg-settings'){buildScopeDefaultsUI();
-    loadSettingsForm();renderVehicleSettings();
+    loadSettingsForm();renderVehicleSettings();updateLocationBtn();
     if(window._scrollToVehicles){
       window._scrollToVehicles=false;
       setTimeout(()=>{
