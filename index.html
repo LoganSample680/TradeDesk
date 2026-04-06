@@ -7909,6 +7909,159 @@ function showWorkflowGate(msg,btnLabel,btnAction){
   document.body.appendChild(o);
   o.addEventListener('click',e=>{if(e.target===o)o.remove();});
 }
+// ── Expense flow ──────────────────────────────────────────────────────
+let _expState={imageData:null,imageKey:null};
+
+function openExpenseFlow(){
+  if(document.getElementById('expense-modal'))return;
+  const ov=document.createElement('div');
+  ov.id='expense-modal';
+  ov.style.cssText='position:fixed;inset:0;z-index:9990;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;animation:fadein .15s';
+  const catOpts=IRS_EXPENSE_CATS.map(c=>'<option value="'+c.id+'">'+c.icon+' '+c.label+'</option>').join('');
+  const jobOpts='<option value="">— Not tied to a specific job —</option>'+
+    bids.filter(b=>b.status==='Closed Won').map(b=>'<option value="'+b.id+'">'+(b.client_name||b.name)+(b.addr?' · '+b.addr.split(',')[0]:'')+'</option>').join('');
+  const today=new Date().toISOString().slice(0,10);
+  ov.innerHTML=
+    '<div style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;max-width:600px;max-height:92vh;overflow-y:auto;padding:20px 20px 40px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">'+
+        '<div style="font-size:18px;font-weight:800">Log expense</div>'+
+        '<button onclick="closeExpenseFlow()" style="border:none;background:none;font-size:24px;cursor:pointer;color:var(--text3)">×</button>'+
+      '</div>'+
+      '<div id="exp-scan-area" style="border:2px dashed var(--border2);border-radius:14px;padding:20px;text-align:center;margin-bottom:18px;cursor:pointer;background:var(--bg2)" onclick="expTriggerScan()">'+
+        '<div style="font-size:36px;margin-bottom:8px">📷</div>'+
+        '<div style="font-size:14px;font-weight:700">Scan receipt</div>'+
+        '<div style="font-size:12px;color:var(--text3);margin-top:4px">Tap to photograph — AI extracts everything automatically</div>'+
+        '<input type="file" id="exp-file-inp" accept="image/*" capture="environment" style="display:none" onchange="expProcessPhoto(this)">'+
+      '</div>'+
+      '<div id="exp-scan-status" style="display:none;margin-bottom:14px"></div>'+
+      '<div id="exp-preview-img" style="display:none;margin-bottom:14px;text-align:center"></div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
+        '<div class="f"><label>Vendor / Store *</label><input id="em-vendor" placeholder="Home Depot..." style="font-size:14px"></div>'+
+        '<div class="f"><label>Amount * ($)</label><input id="em-amount" type="number" step="0.01" placeholder="0.00" style="font-size:14px"></div>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
+        '<div class="f"><label>Date *</label><input id="em-date" type="date" value="'+today+'" style="font-size:14px"></div>'+
+        '<div class="f"><label>Category *</label><select id="em-cat" style="font-size:13px">'+catOpts+'</select></div>'+
+      '</div>'+
+      '<div style="margin-bottom:14px">'+
+        '<label style="display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-bottom:6px">Link to a job? <span style="font-weight:400;font-size:10px">(optional — skip for back-tax entries)</span></label>'+
+        '<select id="em-job" style="font-size:13px;width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit">'+jobOpts+'</select>'+
+      '</div>'+
+      '<div class="f" style="margin-bottom:16px"><label>Notes (optional)</label><textarea id="em-notes" placeholder="What was this for?" style="min-height:44px;font-size:13px"></textarea></div>'+
+      '<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:10px 12px;margin-bottom:16px;font-size:12px;color:var(--amber);line-height:1.6">'+
+        '<strong>📅 Backdating?</strong> For back-tax entries (2023–2024), change the date above. No job link needed — just vendor, amount, date, and category.'+
+      '</div>'+
+      '<button class="btn btn-p btn-full btn-xl" onclick="expSave()" id="exp-save-btn">Save expense</button>'+
+      '<div id="exp-save-err" style="color:#A32D2D;font-size:12px;text-align:center;margin-top:8px;min-height:16px"></div>'+
+    '</div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)closeExpenseFlow();});
+  _expState={imageData:null,imageKey:null};
+}
+
+function closeExpenseFlow(){document.getElementById('expense-modal')?.remove();_expState={imageData:null,imageKey:null};}
+function expTriggerScan(){document.getElementById('exp-file-inp')?.click();}
+
+async function expProcessPhoto(input){
+  const file=input.files[0];if(!file)return;
+  const status=document.getElementById('exp-scan-status');
+  const scanArea=document.getElementById('exp-scan-area');
+  status.style.display='block';
+  status.innerHTML='<div class="tip"><strong>📡 Reading receipt...</strong></div>';
+  scanArea.style.opacity='.5';
+  const b64=await compressAndEncodeImage(file);
+  _expState.imageData={b64,type:'image/jpeg'};
+  try{
+    const session=_supa?await _supa.auth.getSession():null;
+    const token=session?.data?.session?.access_token;
+    const resp=await fetch('https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/scan-receipt',{
+      method:'POST',
+      headers:{'Content-Type':'application/json',...(token?{'Authorization':'Bearer '+token}:{})},
+      body:JSON.stringify({imageBase64:b64,mediaType:'image/jpeg'})
+    });
+    if(!resp.ok)throw new Error('Scan error '+resp.status);
+    const parsed=await resp.json();
+    if(parsed.vendor)document.getElementById('em-vendor').value=parsed.vendor;
+    if(parsed.amount)document.getElementById('em-amount').value=parsed.amount;
+    if(parsed.date)document.getElementById('em-date').value=parsed.date;
+    if(parsed.category)document.getElementById('em-cat').value=parsed.category;
+    if(parsed.notes)document.getElementById('em-notes').value=parsed.notes;
+    const preview=document.getElementById('exp-preview-img');
+    preview.style.display='block';
+    const reader=new FileReader();
+    reader.onload=e=>preview.innerHTML='<img src="'+e.target.result+'" style="max-height:80px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green-mid);margin-top:4px;font-weight:700">✓ Receipt captured</div>';
+    reader.readAsDataURL(file);
+    status.innerHTML='<div class="tip tip-s"><strong>✓ Receipt read:</strong> '+(parsed.vendor||'vendor')+' · $'+(parsed.amount||'?')+'</div>';
+    scanArea.style.opacity='1';scanArea.style.borderColor='var(--green-mid)';
+  }catch(e){
+    status.innerHTML='<div class="tip tip-w">Could not auto-read — fill in manually below.</div>';
+    scanArea.style.opacity='1';
+  }
+  input.value='';
+}
+
+async function compressAndEncodeImage(file){
+  return new Promise(resolve=>{
+    const img=new Image();
+    const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      const MAX=1200;let w=img.width,h=img.height;
+      if(w>MAX){h=Math.round(h*(MAX/w));w=MAX;}
+      if(h>MAX){w=Math.round(w*(MAX/h));h=MAX;}
+      const canvas=document.createElement('canvas');
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg',0.75).split(',')[1]);
+    };
+    img.src=url;
+  });
+}
+
+async function expSave(){
+  const btn=document.getElementById('exp-save-btn');
+  const err=document.getElementById('exp-save-err');
+  const vendor=(document.getElementById('em-vendor')?.value||'').trim();
+  const amount=parseFloat(document.getElementById('em-amount')?.value||0);
+  const date=document.getElementById('em-date')?.value||'';
+  const cat=document.getElementById('em-cat')?.value||'other';
+  const jobId=parseInt(document.getElementById('em-job')?.value)||null;
+  const notes=(document.getElementById('em-notes')?.value||'').trim();
+  if(!vendor){if(err)err.textContent='Enter a vendor name.';return;}
+  if(!amount||amount<=0){if(err)err.textContent='Enter a valid amount.';return;}
+  if(!date){if(err)err.textContent='Select a date.';return;}
+  btn.disabled=true;btn.textContent='Saving...';
+  if(err)err.textContent='';
+  let receipt_key=null,expires_at=null;
+  if(_expState.imageData&&_supaUser&&supaEnabled()){
+    try{
+      const fileName='receipts/'+_supaUser.id+'/'+Date.now()+'_'+Math.random().toString(36).slice(2)+'.jpg';
+      const blob=await(await fetch('data:image/jpeg;base64,'+_expState.imageData.b64)).blob();
+      const{error}=await _supa.storage.from('receipts').upload(fileName,blob,{contentType:'image/jpeg',upsert:false});
+      if(!error){
+        receipt_key=fileName;
+        const rd=new Date(date+'T12:00:00');rd.setFullYear(rd.getFullYear()+7);
+        expires_at=rd.toISOString().slice(0,10);
+      }
+    }catch(e){console.warn('Receipt upload:',e);}
+  }
+  const catInfo=IRS_EXPENSE_CATS.find(c=>c.id===cat)||{};
+  const job=jobId?bids.find(b=>b.id===jobId):null;
+  expenses.push({
+    id:Date.now(),date,cat,catLabel:catInfo.label||cat,vendor,amount,notes,
+    job_id:jobId,job_name:job?job.client_name||job.name:'',client_id:job?job.client_id:null,
+    receipt:receipt_key?'Yes — photo stored':'No receipt photo',receipt_key,expires_at,
+    deductible:catInfo.deductible!==false,meals_50:!!(catInfo.meals_50),
+  });
+  expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
+  saveAll();
+  if(typeof renderExpenses==='function')renderExpenses();
+  showToast((new Date(date).getFullYear()<new Date().getFullYear()?'Back-tax expense':'Expense')+' saved — '+vendor+' '+fmt(amount),receipt_key?'📎':'🧾');
+  closeExpenseFlow();
+  goPg('pg-tracker');
+  setTimeout(()=>{const b=document.getElementById('tr-t-expenses');if(b)b.click();},200);
+}
+
 function quickAction(type){
   if(type==='collect'){openCollectModal();return;}
   const tk=todayKey();
