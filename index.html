@@ -8982,23 +8982,22 @@ function onStateChange(state){
 }
 
 // ── Receipt viewer ────────────────────────────────────────────────────
-async function viewReceipt(key){
-  if(!_supa||!key)return zAlert('Receipt not available.');
-  try{
-    const{data,error}=await _supa.storage.from('receipts').createSignedUrl(key,300);
-    if(error||!data?.signedUrl)throw new Error('Could not load receipt');
-    const ov=document.createElement('div');
-    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;cursor:pointer';
-    ov.onclick=()=>ov.remove();
-    ov.innerHTML='<div style="max-width:600px;width:100%;text-align:center">'+
-      '<img src="'+data.signedUrl+'" style="max-width:100%;max-height:80vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5)">'+
-      '<div style="margin-top:12px;display:flex;gap:10px;justify-content:center">'+
-        '<a href="'+data.signedUrl+'" target="_blank" style="color:#fff;font-size:13px;font-weight:600;text-decoration:none;background:rgba(255,255,255,.15);padding:8px 16px;border-radius:8px">⬇ Open full size</a>'+
-        '<button onclick="this.closest(\'div\').parentElement.remove()" style="color:#fff;font-size:13px;font-weight:600;background:rgba(255,255,255,.15);border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-family:inherit">✕ Close</button>'+
-      '</div>'+
-    '</div>';
-    document.body.appendChild(ov);
-  }catch(e){zAlert('Could not load receipt image: '+e.message);}
+function viewReceipt(expId){
+  const exp=expenses.find(e=>e.id==expId);
+  const src=exp?.receipt_img;
+  if(!src)return zAlert('No receipt photo stored for this expense.',{title:'No photo'});
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.innerHTML='<div style="max-width:600px;width:100%;text-align:center">'+
+    '<img src="'+src+'" style="max-width:100%;max-height:80vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5)">'+
+    '<div style="margin-top:12px;display:flex;gap:10px;justify-content:center">'+
+      '<a href="'+src+'" download="receipt_'+(exp.date||'')+'_'+(exp.vendor||'').replace(/[^a-z0-9]/gi,'_')+'.jpg" style="color:#fff;font-size:13px;font-weight:600;text-decoration:none;background:rgba(255,255,255,.15);padding:8px 16px;border-radius:8px">⬇ Save photo</a>'+
+      '<button onclick="this.closest(\'.rcpt-ov\').remove()" style="color:#fff;font-size:13px;font-weight:600;background:rgba(255,255,255,.15);border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-family:inherit">✕ Close</button>'+
+    '</div>'+
+  '</div>';
+  ov.className='rcpt-ov';
+  document.body.appendChild(ov);
 }
 
 // ── State-based tax & lien info ────────────────────────────────────────
@@ -9095,7 +9094,7 @@ function exportExpensesCSV(){
     const cat=IRS_EXPENSE_CATS.find(c=>c.id===e.cat)||{label:e.cat||'Other',line:''};
     return [e.date||'','"'+(e.vendor||'').replace(/"/g,'""')+'"','"'+cat.label+'"','"'+(cat.line||'')+'"',
       (e.amount||0).toFixed(2),e.deductible===false?'No':'Yes',
-      '"'+(e.job_name||'').replace(/"/g,'""')+'"',e.receipt_key?'Yes':'No'].join(',');
+      '"'+(e.job_name||'').replace(/"/g,'""')+'"',e.receipt_img||e.receipt_key?'Yes':'No'].join(',');
   });
   const total=filtered.reduce((s,e)=>s+e.amount,0);
   const csv=['"'+biz+' — Expenses — '+(yr==='all'?'All Years':yr)+'"','',header.join(','),...rows,'','TOTAL,,,,"'+total.toFixed(2)+'",,,'  ].join('\n');
@@ -9239,7 +9238,7 @@ function exportTaxPDF(){
   yrExp.forEach(e=>{
     const cat=IRS_EXPENSE_CATS.find(c=>c.id===e.cat)||{icon:'',label:e.cat||'Other'};
     h+='<tr><td>'+(e.date||'')+'</td><td style="font-weight:600">'+(e.vendor||'-')+'</td><td>'+cat.icon+' '+cat.label+'</td><td style="color:#9a9890">'+(e.job_name||'-')+'</td>';
-    h+='<td>'+(e.receipt_key?'Yes':'No')+'</td><td style="text-align:right;font-weight:700">('+fmt(e.amount)+')</td></tr>';
+    h+='<td>'+(e.receipt_img||e.receipt_key?'Yes':'No')+'</td><td style="text-align:right;font-weight:700">('+fmt(e.amount)+')</td></tr>';
   });
   h+='<tr class="tr"><td colspan="5">Total</td><td style="text-align:right">('+fmt(tExp)+')</td></tr></tbody></table></div>';
   // Mileage
@@ -9273,7 +9272,7 @@ function exportTaxReport(){openExportPanel();}
 async function exportReceiptImages(){
   if(!_supa||!_supaUser){zAlert('Sign in to export receipt photos.',{title:'Sign in required'});return;}
   const yr=document.getElementById('exp-panel-year')?.value||new Date().getFullYear();
-  const filtered=expenses.filter(e=>e.receipt_key&&(yr==='all'||String(new Date(e.date).getFullYear())===String(yr)));
+  const filtered=expenses.filter(e=>e.receipt_img&&(yr==='all'||String(new Date(e.date).getFullYear())===String(yr)));
   if(!filtered.length){zAlert('No stored receipt photos for '+yr+'.',{title:'No receipts'});return;}
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
@@ -9283,7 +9282,7 @@ async function exportReceiptImages(){
   let done=0;
   for(const e of filtered){
     try{
-      const{data,error}=await _supa.storage.from('receipts').createSignedUrl(e.receipt_key,60);
+      const data={signedUrl:e.receipt_img}; const error=null;
       if(error||!data?.signedUrl){done++;continue;}
       const a=document.createElement('a');
       a.href=data.signedUrl;
@@ -9583,7 +9582,7 @@ function renderExpenses(){
   const deductible=filtered.filter(e=>e.deductible!==false).reduce((s,e)=>s+(e.meals_50?e.amount*0.5:e.amount),0);
   const noReceipt=filtered.filter(e=>!e.receipt||e.receipt.includes('No'));
   const today=todayKey();
-  const purgeable=expenses.filter(e=>e.expires_at&&e.expires_at<today&&e.receipt_key);
+  const purgeable=expenses.filter(e=>e.expires_at&&e.expires_at<today&&e.receipt_img);
   let html='';
   if(purgeable.length){
     html+='<div class="tip tip-w" style="display:flex;justify-content:space-between;align-items:center"><span>'+purgeable.length+' receipt image'+(purgeable.length>1?'s':'')+' past 7 years — images can be deleted, records kept</span><button class="btn btn-sm" onclick="purgeOldReceiptImages()" style="flex-shrink:0;margin-left:8px">Clean up</button></div>';
@@ -9623,8 +9622,8 @@ function renderExpenses(){
     ['Date','Category','Vendor','Amount','Receipt'].map(h=>'<th>'+h+'</th>').join('')+'<th></th></tr></thead><tbody>'+
     [...filtered].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(r=>{
       const info=IRS_EXPENSE_CATS.find(c=>c.id===r.cat);
-      const hasImg=!!(r.receipt_key);
-      const recLabel=hasImg?'<button onclick="viewReceipt(\''+r.receipt_key+'\')" style="background:var(--green-lt);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">📎 View</button>':'<span style="color:#A32D2D;font-weight:700;font-size:10px">Missing</span>';
+      const hasImg=!!(r.receipt_img||r.receipt_key);
+      const recLabel=hasImg?'<button onclick="viewReceipt('+r.id+')" style="background:var(--green-lt);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">📎 View</button>':'<span style="color:#A32D2D;font-weight:700;font-size:10px">Missing</span>';
       return '<tr>'+
         '<td class="mute">'+r.date+'</td>'+
         '<td class="mute" style="font-size:10px">'+(info?info.icon+' '+info.label:r.catLabel||r.cat||'—')+'</td>'+
@@ -9640,11 +9639,10 @@ function renderExpenses(){
 async function purgeOldReceiptImages(){
   if(!supaEnabled()||!_supaUser)return zAlert('Sign in to manage cloud receipts.');
   const today=todayKey();
-  const old=expenses.filter(e=>e.expires_at&&e.expires_at<today&&e.receipt_key);
+  const old=expenses.filter(e=>e.expires_at&&e.expires_at<today&&e.receipt_img);
   zConfirm('Delete '+old.length+' receipt image'+(old.length>1?'s':'')+' older than 7 years? Dollar amounts and records are kept permanently — only the photos are removed.',async()=>{
     for(const e of old){
-      try{await _supa.storage.from('receipts').remove([e.receipt_key]);}catch(err){console.warn(err);}
-      e.receipt_key=null;e.receipt='Records kept — image purged after 7 years';
+      e.receipt_img=null;e.receipt_key=null;e.receipt='Records kept — image purged after 7 years';
     }
     saveAll();renderExpenses();showToast(old.length+' receipt images purged — records kept','🗑️');
   },{title:'Purge old receipt images',yes:'Delete images',danger:true});
