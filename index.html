@@ -8130,20 +8130,8 @@ async function expSave(){
   }
   btn.disabled=true;btn.textContent='Saving...';
   if(err)err.textContent='';
-  let receipt_key=null,expires_at=null;
-  if(_expState.imageData&&_supaUser&&supaEnabled()){
-    try{
-      const fileName='receipts/'+_supaUser.id+'/'+Date.now()+'_'+Math.random().toString(36).slice(2)+'.jpg';
-      const blob=await(await fetch('data:image/jpeg;base64,'+_expState.imageData.b64)).blob();
-      const{error:upErr}=await _supa.storage.from('receipts').upload(fileName,blob,{contentType:'image/jpeg',upsert:true});
-      if(upErr){console.warn('Receipt storage error:',upErr.message,JSON.stringify(upErr));}
-      else{
-        receipt_key=fileName;
-        const rd=new Date(date+'T12:00:00');rd.setFullYear(rd.getFullYear()+7);
-        expires_at=rd.toISOString().slice(0,10);
-      }
-    }catch(e){console.warn('Receipt upload exception:',e);}
-  }
+  // Store photo inline on the expense record — no storage bucket needed
+  const receipt_img=_expState.imageData?('data:image/jpeg;base64,'+_expState.imageData.b64):null;
   const catInfo=IRS_EXPENSE_CATS.find(c=>c.id===cat)||{};
   const job=jobId?bids.find(b=>b.id===jobId):null;
   expenses.push({
@@ -8155,7 +8143,7 @@ async function expSave(){
   expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
   saveAll();
   if(typeof renderExpenses==='function')renderExpenses();
-  showToast((new Date(date).getFullYear()<new Date().getFullYear()?'Back-tax expense':'Expense')+' saved — '+vendor+' '+fmt(amount),receipt_key?'📎':'🧾');
+  showToast((new Date(date).getFullYear()<new Date().getFullYear()?'Back-tax expense':'Expense')+' saved — '+vendor+' '+fmt(amount),receipt_img?'📎':'🧾');
   closeExpenseFlow();
   goPg('pg-tracker');
   setTimeout(()=>{const b=document.getElementById('tr-t-expenses');if(b)b.click();},200);
