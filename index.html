@@ -7909,6 +7909,25 @@ function showWorkflowGate(msg,btnLabel,btnAction){
   document.body.appendChild(o);
   o.addEventListener('click',e=>{if(e.target===o)o.remove();});
 }
+// ── IRS Schedule C expense categories ────────────────────────────────
+const IRS_EXPENSE_CATS=[
+  {id:'materials',  icon:'🪣', label:'Materials & supplies',    deductible:true, line:'Part II Line 22'},
+  {id:'tools',      icon:'🔧', label:'Tools & equipment',       deductible:true, line:'Part II Line 22'},
+  {id:'fuel',       icon:'⛽', label:'Vehicle — fuel',          deductible:true, line:'Part II Line 9'},
+  {id:'vehicle',    icon:'🚗', label:'Vehicle — maintenance',   deductible:true, line:'Part II Line 9'},
+  {id:'subs',       icon:'👷', label:'Subcontractors',          deductible:true, line:'Part II Line 11'},
+  {id:'insurance',  icon:'🛡️', label:'Insurance',               deductible:true, line:'Part II Line 15'},
+  {id:'marketing',  icon:'📢', label:'Advertising & marketing', deductible:true, line:'Part II Line 8'},
+  {id:'phone',      icon:'📱', label:'Phone & software',        deductible:true, line:'Part II Line 25'},
+  {id:'ppe',        icon:'🦺', label:'Uniforms & PPE',          deductible:true, line:'Part II Line 22'},
+  {id:'meals',      icon:'🍽️', label:'Meals (50% deductible)',  deductible:true, meals_50:true, line:'Part II Line 24b'},
+  {id:'professional',icon:'⚖️',label:'Professional fees',       deductible:true, line:'Part II Line 17'},
+  {id:'fees',       icon:'💳', label:'Payment processing fees', deductible:true, line:'Part II Line 10'},
+  {id:'rent',       icon:'🏠', label:'Rent & storage',          deductible:true, line:'Part II Line 20'},
+  {id:'utilities',  icon:'💡', label:'Utilities',               deductible:true, line:'Part II Line 25'},
+  {id:'other',      icon:'📦', label:'Other business expense',  deductible:true, line:'Part II Line 27'},
+];
+
 // ── Expense flow ──────────────────────────────────────────────────────
 let _expState={imageData:null,imageKey:null};
 
