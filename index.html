@@ -10894,6 +10894,24 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local';
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 
+function showWelcomeScreen(){
+  if(document.getElementById('welcome-overlay'))return;
+  const ov=document.createElement('div');
+  ov.id='welcome-overlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:#0D1117;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;';
+  ov.innerHTML=
+    '<div style="max-width:400px;width:100%;text-align:center">'+
+      '<div style="width:56px;height:56px;border-radius:14px;background:#185FA5;display:flex;align-items:center;justify-content:center;margin:0 auto 20px">'+
+        '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>'+
+      '</div>'+
+      '<div style="font-size:32px;font-weight:800;color:#fff;letter-spacing:-.5px;margin-bottom:10px">TradeDesk</div>'+
+      '<div style="font-size:15px;color:rgba(255,255,255,.45);line-height:1.6;margin-bottom:48px">The all-in-one business suite for contractors</div>'+
+      '<button onclick="showOnboarding()" style="width:100%;padding:14px;border-radius:10px;border:none;background:#185FA5;color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:12px;box-shadow:0 4px 20px rgba(24,95,165,.4)">Get started</button>'+
+      '<button onclick="document.getElementById(\'welcome-overlay\').remove();supaShowLogin();" style="width:100%;padding:14px;border-radius:10px;border:1.5px solid rgba(255,255,255,.15);background:transparent;color:rgba(255,255,255,.7);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">I already have an account</button>'+
+    '</div>';
+  document.body.appendChild(ov);
+}
+
 async function supaInit(){
   if(!supaEnabled())return;
   try{
