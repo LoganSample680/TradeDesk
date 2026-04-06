@@ -1243,7 +1243,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   </div>
 </div>
 <div class="pg" id="pg-tracker">
-  <div class="tbar"><div class="tbar-title">Business tracker</div><div style="display:flex;align-items:center;gap:8px"><button class="btn btn-sm" onclick="openExportPanel()">⬇ Export</button><span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Year</span><select id="tracker-year-sel" onchange="setTrackerYear(parseInt(this.value))" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)"></select></div></div>
+  <div class="tbar"><div class="tbar-title">Books</div><div style="display:flex;align-items:center;gap:8px"><button class="btn btn-sm" onclick="openExportPanel()">⬇ Export</button><span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Year</span><select id="tracker-year-sel" onchange="setTrackerYear(parseInt(this.value))" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)"></select></div></div>
   <div class="fbar">
     <button class="fb active" id="tr-t-income" onclick="setTrTab('income',this)">Income</button>
     <button class="fb" id="tr-t-expenses" onclick="setTrTab('expenses',this)">Expenses</button>
@@ -1609,7 +1609,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <div class="bx"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><span>Taxes</span>
   </button>
   <button class="nb" id="nb-tracker" onclick="goPg('pg-tracker')">
-    <div class="bx"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div><span>Tracker</span>
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div><span>Books</span>
   </button>
   <div id="nav-spacer"></div>
   <button class="nb" id="nb-settings" onclick="goPg('pg-settings')">
