@@ -8149,7 +8149,7 @@ async function expSave(){
   expenses.push({
     id:Date.now(),date,cat,catLabel:catInfo.label||cat,vendor,amount,notes,
     job_id:jobId,job_name:job?job.client_name||job.name:'',client_id:job?job.client_id:null,
-    receipt:receipt_key?'Yes — photo stored':_expState.hasReceipt?'Yes — scanned (storage unavailable)':'No receipt photo',receipt_key,expires_at,
+    receipt:receipt_img?'Yes — photo stored':'No receipt photo',receipt_img,
     deductible:catInfo.deductible!==false,meals_50:!!(catInfo.meals_50),
   });
   expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
