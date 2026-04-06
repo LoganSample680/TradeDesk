@@ -8821,7 +8821,49 @@ function renderMonthlyPL(){
   el.innerHTML=html;
 }
 
-// ── Export system ────────────────────────────────────────────────────
+// ── Receipt viewer ────────────────────────────────────────────────────
+async function viewReceipt(key){
+  if(!_supa||!key)return zAlert('Receipt not available.');
+  try{
+    const{data,error}=await _supa.storage.from('receipts').createSignedUrl(key,300);
+    if(error||!data?.signedUrl)throw new Error('Could not load receipt');
+    const ov=document.createElement('div');
+    ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;cursor:pointer';
+    ov.onclick=()=>ov.remove();
+    ov.innerHTML='<div style="max-width:600px;width:100%;text-align:center">'+
+      '<img src="'+data.signedUrl+'" style="max-width:100%;max-height:80vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5)">'+
+      '<div style="margin-top:12px;display:flex;gap:10px;justify-content:center">'+
+        '<a href="'+data.signedUrl+'" target="_blank" style="color:#fff;font-size:13px;font-weight:600;text-decoration:none;background:rgba(255,255,255,.15);padding:8px 16px;border-radius:8px">⬇ Open full size</a>'+
+        '<button onclick="this.closest(\'div\').parentElement.remove()" style="color:#fff;font-size:13px;font-weight:600;background:rgba(255,255,255,.15);border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-family:inherit">✕ Close</button>'+
+      '</div>'+
+    '</div>';
+    document.body.appendChild(ov);
+  }catch(e){zAlert('Could not load receipt image: '+e.message);}
+}
+
+// ── State-based tax & lien info ────────────────────────────────────────
+async function fetchStateInfo(state){
+  if(!state||!supaEnabled())return;
+  const cacheKey='zp3_state_info_'+state;
+  const cached=localStorage.getItem(cacheKey);
+  if(cached){
+    try{const p=JSON.parse(cached);if(p.ts&&Date.now()-p.ts<30*24*60*60*1000){S.stateInfo=p.data;return;}}catch(e){}
+  }
+  try{
+    const session=await _supa.auth.getSession();
+    const token=session?.data?.session?.access_token;
+    const resp=await fetch('https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/scan-receipt',{
+      method:'POST',
+      headers:{'Content-Type':'application/json',...(token?{'Authorization':'Bearer '+token}:{})},
+      body:JSON.stringify({stateInfoQuery:true,state})
+    });
+    // Falls back gracefully if function doesn't handle this yet
+  }catch(e){console.warn('fetchStateInfo:',e);}
+}
+
+function getStateInfo(){return S.stateInfo||null;}
+
+
 function openExportPanel(){
   const yr=trackerYear||S.taxYear||new Date().getFullYear();
   const years=[...new Set([
@@ -8833,9 +8875,9 @@ function openExportPanel(){
   years.sort();
   const ov=document.createElement('div');
   ov.id='export-panel';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9995;display:flex;align-items:flex-end;justify-content:center;animation:fadein .15s';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9995;display:flex;align-items:center;justify-content:center;padding:20px;animation:fadein .15s';
   ov.innerHTML=
-    '<div style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;max-width:600px;padding:24px 20px 40px;max-height:90vh;overflow-y:auto">'+
+    '<div style="background:var(--bg);border-radius:16px;width:100%;max-width:560px;padding:24px 20px 28px;max-height:90vh;overflow-y:auto">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
         '<div style="font-size:18px;font-weight:800">Export records</div>'+
         '<button onclick="document.getElementById(\'export-panel\').remove()" style="border:none;background:none;font-size:24px;cursor:pointer;color:var(--text3)">×</button>'+
@@ -8918,70 +8960,142 @@ function exportMileageCSV(){
 function exportTaxPDF(){
   const yr=getExportYear()==='all'?String(new Date().getFullYear()):getExportYear();
   const biz=S.bname||"ZJ's Painting & Special Coatings";
-  const yrIncome=income.filter(r=>r.date?.startsWith(yr)).sort((a,b)=>a.date.localeCompare(b.date));
-  const yrExp=expenses.filter(r=>r.date?.startsWith(yr)).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  const yrMiles=mileage.filter(r=>r.date?.startsWith(yr)).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const status=S.txStatus||'single';
+  const yrIncome=income.filter(r=>r.date&&r.date.startsWith(yr)).sort((a,b)=>a.date.localeCompare(b.date));
+  const yrExp=expenses.filter(r=>r.date&&r.date.startsWith(yr)).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const yrMiles=mileage.filter(r=>r.date&&r.date.startsWith(yr)).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const tInc=yrIncome.reduce((s,r)=>s+r.amount,0);
   const tExp=yrExp.reduce((s,r)=>s+r.amount,0);
   const tMiles=yrMiles.reduce((s,r)=>s+(r.miles||0),0);
   const mileDed=tMiles*IRS();
-  const net=tInc-tExp-mileDed;
-  const seTax=Math.max(0,net*0.9235*0.153);
+  const net=Math.max(0,tInc-tExp-mileDed);
+  const seBase=net*0.9235;
+  const seTax=Math.ceil(seBase*0.153);
+  const seDed=seTax/2;
+  const stdDed=STD_DED[status]||14600;
+  const agi=net-seDed;
+  const fedTaxable=Math.max(0,agi-stdDed);
+  const fedTax=Math.ceil(calcBrackets(fedTaxable,FED_BRACKETS[status]||FED_BRACKETS.single));
+  const ksTaxable=Math.max(0,agi-(KS_STD[status]||3500));
+  const ksTax=Math.ceil(calcBrackets(ksTaxable,KS_BRACKETS[status]||KS_BRACKETS.single));
+  const totalTax=seTax+fedTax+ksTax;
   const byCat={};
   yrExp.forEach(e=>{
-    const cat=IRS_EXPENSE_CATS.find(c=>c.id===e.cat)||{label:e.cat||'Other',icon:'📦',line:'Part II Line 27'};
+    const cat=IRS_EXPENSE_CATS.find(c=>c.id===e.cat)||{label:e.cat||'Other',icon:'',line:'Part II Line 27'};
     if(!byCat[cat.label])byCat[cat.label]={label:cat.label,icon:cat.icon||'',line:cat.line||'',total:0};
     byCat[cat.label].total+=e.amount;
   });
-  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${biz} Tax Report ${yr}</title>
-<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#1a1a18;font-size:11px;line-height:1.5}
-@media print{@page{margin:.6in;size:letter}body{padding:0}}
-.hdr{background:#0D1117;color:#fff;padding:20px 28px}.hdr-t{font-size:20px;font-weight:800}.hdr-s{font-size:12px;opacity:.6;margin-top:3px}
-.body{padding:20px 28px}.sec{margin-bottom:20px}.sec-t{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#9a9890;border-bottom:2px solid #e0dfd8;padding-bottom:5px;margin-bottom:10px}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}.box{border:1px solid #e0dfd8;border-radius:8px;padding:10px 12px}
-.box-l{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9a9890;margin-bottom:3px}.box-v{font-size:17px;font-weight:800}
-.green{color:#27500A}.red{color:#791F1F}.blue{color:#185FA5}
-table{width:100%;border-collapse:collapse;font-size:10px}th{text-align:left;padding:4px 7px;background:#f7f7f5;border-bottom:2px solid #e0dfd8;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#9a9890}
-td{padding:5px 7px;border-bottom:1px solid #f0efec}.tr td{font-weight:800;border-top:2px solid #e0dfd8;background:#f7f7f5}
-.note{font-size:9px;color:#9a9890;border-top:1px solid #e0dfd8;padding-top:10px;margin-top:16px;line-height:1.6}
-.pill{display:inline-block;padding:1px 6px;border-radius:20px;font-size:8px;font-weight:700;background:#e0dfd8;color:#5f5e5a}
-</style></head><body>
-<div class="hdr"><div class="hdr-t">${biz}</div><div class="hdr-s">Schedule C Tax Report — ${yr} &nbsp;·&nbsp; Generated ${new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div></div>
-<div class="body">
-<div class="sec"><div class="sec-t">Summary</div>
-<div class="grid">
-<div class="box"><div class="box-l">Gross Revenue</div><div class="box-v green">${fmt(tInc)}</div></div>
-<div class="box"><div class="box-l">Total Deductions</div><div class="box-v red">(${fmt(tExp+mileDed)})</div></div>
-<div class="box"><div class="box-l">Net Profit</div><div class="box-v ${net>=0?'blue':'red'}">${net<0?'('+fmt(Math.abs(net))+')':fmt(net)}</div></div>
-<div class="box"><div class="box-l">SE Tax Est.</div><div class="box-v">${fmt(seTax)}</div></div>
-<div class="box"><div class="box-l">Miles Driven</div><div class="box-v">${tMiles.toFixed(1)} mi</div></div>
-<div class="box"><div class="box-l">Mileage Deduction</div><div class="box-v red">(${fmt(mileDed)})</div></div>
-</div></div>
-<div class="sec"><div class="sec-t">Income — ${yrIncome.length} transactions</div>
-<table><thead><tr><th>Date</th><th>Client</th><th>Type</th><th>Method</th><th style="text-align:right">Amount</th></tr></thead><tbody>
-${yrIncome.map(r=>`<tr><td>${r.date||''}</td><td>${r.client_name||''}</td><td>${r.type||''}</td><td>${r.method||''}</td><td style="text-align:right;font-weight:700">${fmt(r.amount)}</td></tr>`).join('')}
-<tr class="tr"><td colspan="4">Total Income</td><td style="text-align:right">${fmt(tInc)}</td></tr></tbody></table></div>
-<div class="sec"><div class="sec-t">Expenses by IRS Category</div>
-<table><thead><tr><th>Category</th><th>Schedule C</th><th style="text-align:right">Total</th></tr></thead><tbody>
-${Object.values(byCat).sort((a,b)=>b.total-a.total).map(c=>`<tr><td>${c.icon} ${c.label}</td><td style="color:#9a9890">${c.line}</td><td style="text-align:right;font-weight:700;color:#791F1F">(${fmt(c.total)})</td></tr>`).join('')}
-<tr class="tr"><td colspan="2">Total Expenses</td><td style="text-align:right">(${fmt(tExp)})</td></tr></tbody></table></div>
-<div class="sec"><div class="sec-t">Expense Detail — ${yrExp.length} entries (01/01/${yr} — 12/31/${yr})</div>
-<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Job</th><th>Receipt</th><th style="text-align:right">Amount</th></tr></thead><tbody>
-${yrExp.map(e=>{const cat=IRS_EXPENSE_CATS.find(c=>c.id===e.cat)||{icon:'📦',label:e.cat||'Other'};return`<tr><td>${e.date||''}</td><td style="font-weight:600">${e.vendor||'—'}</td><td>${cat.icon} ${cat.label}</td><td style="color:#9a9890">${e.job_name||'—'}</td><td>${e.receipt_key?'<span class="pill">📎 Yes</span>':'<span class="pill" style="background:#FCEBEB;color:#791F1F">No</span>'}</td><td style="text-align:right;font-weight:700">(${fmt(e.amount)})</td></tr>`;}).join('')}
-<tr class="tr"><td colspan="5">Total</td><td style="text-align:right">(${fmt(tExp)})</td></tr></tbody></table></div>
-<div class="sec"><div class="sec-t">Mileage Log — ${yrMiles.length} trips · $${IRS().toFixed(3)}/mi</div>
-<table><thead><tr><th>Date</th><th>Vehicle</th><th>Route</th><th>Purpose / Client</th><th style="text-align:right">Miles</th><th style="text-align:right">Deduction</th></tr></thead><tbody>
-${yrMiles.map(m=>`<tr><td>${m.date||''}</td><td>${m.vehicle||''}</td><td>${m.from||''}${m.to?' → '+m.to:''}</td><td>${m.purpose||''}${m.client_name?' · '+m.client_name:''}</td><td style="text-align:right">${(m.miles||0).toFixed(1)}</td><td style="text-align:right;color:#791F1F">(${fmt((m.miles||0)*IRS())})</td></tr>`).join('')}
-<tr class="tr"><td colspan="4">Total</td><td style="text-align:right">${tMiles.toFixed(1)}</td><td style="text-align:right">(${fmt(mileDed)})</td></tr></tbody></table></div>
-<div class="note">⚠️ Not a substitute for professional tax advice. Verify all figures with a CPA before filing. SE tax estimated at 15.3% on 92.35% of net profit per IRS Schedule SE.</div>
-</div><scr"+"ipt>setTimeout(()=>window.print(),800)</scr"+"ipt></body></html>`;
-  const blob=new Blob([html],{type:'text/html'});
+  const d=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  const statusLabel={single:'Single',mfj:'Married Filing Jointly',hoh:'Head of Household'}[status]||status;
+  // Build HTML using string concat — no template literals to avoid parser issues
+  let h='<!DOCTYPE html><html><head><meta charset="utf-8">';
+  h+='<title>'+biz+' Tax Report '+yr+'</title>';
+  h+='<style>';
+  h+='*{box-sizing:border-box;margin:0;padding:0}';
+  h+='body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;color:#1a1a18;font-size:11px;line-height:1.5}';
+  h+='@media print{@page{margin:.6in;size:letter}}';
+  h+='.hdr{background:#0D1117;color:#fff;padding:20px 28px}';
+  h+='.hdr-t{font-size:20px;font-weight:800}';
+  h+='.hdr-s{font-size:12px;opacity:.6;margin-top:3px}';
+  h+='.body{padding:20px 28px}';
+  h+='.sec{margin-bottom:20px}';
+  h+='.sec-t{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#9a9890;border-bottom:2px solid #e0dfd8;padding-bottom:5px;margin-bottom:10px}';
+  h+='.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}';
+  h+='.box{border:1px solid #e0dfd8;border-radius:8px;padding:10px 12px}';
+  h+='.bl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9a9890;margin-bottom:3px}';
+  h+='.bv{font-size:17px;font-weight:800}';
+  h+='.green{color:#27500A}.red{color:#791F1F}.blue{color:#185FA5}';
+  h+='table{width:100%;border-collapse:collapse;font-size:10px}';
+  h+='th{text-align:left;padding:4px 7px;background:#f7f7f5;border-bottom:2px solid #e0dfd8;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#9a9890}';
+  h+='td{padding:5px 7px;border-bottom:1px solid #f0efec}';
+  h+='.tr td{font-weight:800;border-top:2px solid #e0dfd8;background:#f7f7f5}';
+  h+='.two{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}';
+  h+='.ts{border:1px solid #e0dfd8;border-radius:8px;overflow:hidden}';
+  h+='.th{padding:8px 12px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}';
+  h+='.tr2{display:flex;justify-content:space-between;padding:6px 12px;border-top:1px solid #f0efec;font-size:10px}';
+  h+='.tsub{font-size:8px;color:#9a9890;display:block}';
+  h+='.ttot{display:flex;justify-content:space-between;padding:8px 12px;font-weight:800;background:#f7f7f5;border-top:2px solid #e0dfd8}';
+  h+='.tall{display:flex;justify-content:space-between;padding:10px 14px;font-weight:800;font-size:13px;background:#FFF0F0;border-top:2px solid #791F1F}';
+  h+='.note{font-size:9px;color:#9a9890;border-top:1px solid #e0dfd8;padding-top:10px;margin-top:16px;line-height:1.6}';
+  h+='</style></head><body>';
+  // Header
+  h+='<div class="hdr"><div class="hdr-t">'+biz+'</div>';
+  h+='<div class="hdr-s">Tax Report — '+yr+' &nbsp;·&nbsp; '+statusLabel+' &nbsp;·&nbsp; '+d+'</div></div>';
+  h+='<div class="body">';
+  // Income & deductions
+  h+='<div class="sec"><div class="sec-t">Income &amp; Deductions — Schedule C</div>';
+  h+='<div class="grid">';
+  h+='<div class="box"><div class="bl">Gross Revenue</div><div class="bv green">'+fmt(tInc)+'</div></div>';
+  h+='<div class="box"><div class="bl">Business Expenses</div><div class="bv red">('+fmt(tExp)+')</div></div>';
+  h+='<div class="box"><div class="bl">Mileage Deduction</div><div class="bv red">('+fmt(mileDed)+')</div></div>';
+  h+='<div class="box"><div class="bl">Net SE Income</div><div class="bv blue">'+fmt(net)+'</div></div>';
+  h+='<div class="box"><div class="bl">Miles Driven</div><div class="bv">'+tMiles.toFixed(1)+' mi</div></div>';
+  h+='<div class="box"><div class="bl">IRS Rate</div><div class="bv">$'+IRS().toFixed(3)+'/mi</div></div>';
+  h+='</div></div>';
+  // Tax breakdown
+  h+='<div class="sec"><div class="sec-t">Tax Liability — Federal vs '+S.state+' State</div>';
+  h+='<div class="two">';
+  // Federal
+  h+='<div class="ts">';
+  h+='<div class="th" style="background:#EBF2FB;color:#0C447C">Federal (IRS)</div>';
+  h+='<div class="tr2"><span>SE income base (92.35%)<span class="tsub">Schedule SE</span></span><span>'+fmt(seBase)+'</span></div>';
+  h+='<div class="tr2"><span>Self-employment tax (15.3%)<span class="tsub">Social Security + Medicare</span></span><span class="red">'+fmt(seTax)+'</span></div>';
+  h+='<div class="tr2"><span>1/2 SE deduction<span class="tsub">Reduces federal AGI</span></span><span class="green">('+fmt(seDed)+')</span></div>';
+  h+='<div class="tr2"><span>Standard deduction<span class="tsub">Form 1040 — '+statusLabel+'</span></span><span class="green">('+fmt(stdDed)+')</span></div>';
+  h+='<div class="tr2"><span>Federal taxable income</span><span style="font-weight:700">'+fmt(fedTaxable)+'</span></div>';
+  h+='<div class="tr2"><span>Federal income tax<span class="tsub">Form 1040 brackets</span></span><span class="red">'+fmt(fedTax)+'</span></div>';
+  h+='<div class="ttot"><span>Total Federal</span><span class="red">'+fmt(seTax+fedTax)+'</span></div>';
+  h+='</div>';
+  // State
+  h+='<div class="ts">';
+  h+='<div class="th" style="background:#EAF3DE;color:#27500A">'+S.state+' State</div>';
+  h+='<div class="tr2"><span>State AGI</span><span>'+fmt(agi)+'</span></div>';
+  h+='<div class="tr2"><span>Standard deduction<span class="tsub">'+statusLabel+'</span></span><span class="green">('+fmt(KS_STD[status]||3500)+')</span></div>';
+  h+='<div class="tr2"><span>State taxable income</span><span style="font-weight:700">'+fmt(ksTaxable)+'</span></div>';
+  h+='<div class="tr2"><span>State income tax</span><span class="red">'+fmt(ksTax)+'</span></div>';
+  h+='<div class="ttot"><span>Total State</span><span class="red">'+fmt(ksTax)+'</span></div>';
+  h+='</div></div>';
+  // Combined
+  h+='<div class="ts">';
+  h+='<div class="tr2"><span>Self-employment tax</span><span class="red">'+fmt(seTax)+'</span></div>';
+  h+='<div class="tr2"><span>Federal income tax</span><span class="red">'+fmt(fedTax)+'</span></div>';
+  h+='<div class="tr2"><span>'+S.state+' state income tax</span><span class="red">'+fmt(ksTax)+'</span></div>';
+  h+='<div class="tall"><span>Total Estimated Tax Liability</span><span class="red">'+fmt(totalTax)+'</span></div>';
+  h+='</div></div>';
+  // Income table
+  h+='<div class="sec"><div class="sec-t">Income — '+yrIncome.length+' transactions</div>';
+  h+='<table><thead><tr><th>Date</th><th>Client</th><th>Type</th><th>Method</th><th style="text-align:right">Amount</th></tr></thead><tbody>';
+  yrIncome.forEach(r=>{h+='<tr><td>'+(r.date||'')+'</td><td>'+(r.client_name||'')+'</td><td>'+(r.type||'')+'</td><td>'+(r.method||'')+'</td><td style="text-align:right;font-weight:700">'+fmt(r.amount)+'</td></tr>';});
+  h+='<tr class="tr"><td colspan="4">Total Income</td><td style="text-align:right">'+fmt(tInc)+'</td></tr></tbody></table></div>';
+  // Expenses by category
+  h+='<div class="sec"><div class="sec-t">Expenses by IRS Category</div>';
+  h+='<table><thead><tr><th>Category</th><th>Schedule C Line</th><th style="text-align:right">Total</th></tr></thead><tbody>';
+  Object.values(byCat).sort((a,b)=>b.total-a.total).forEach(c=>{h+='<tr><td>'+c.icon+' '+c.label+'</td><td style="color:#9a9890">'+c.line+'</td><td style="text-align:right;font-weight:700;color:#791F1F">('+fmt(c.total)+')</td></tr>';});
+  h+='<tr class="tr"><td colspan="2">Total Expenses</td><td style="text-align:right">('+fmt(tExp)+')</td></tr></tbody></table></div>';
+  // Expense detail
+  h+='<div class="sec"><div class="sec-t">Expense Detail — '+yrExp.length+' entries (01/01/'+yr+' - 12/31/'+yr+')</div>';
+  h+='<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Job</th><th>Receipt</th><th style="text-align:right">Amount</th></tr></thead><tbody>';
+  yrExp.forEach(e=>{
+    const cat=IRS_EXPENSE_CATS.find(c=>c.id===e.cat)||{icon:'',label:e.cat||'Other'};
+    h+='<tr><td>'+(e.date||'')+'</td><td style="font-weight:600">'+(e.vendor||'-')+'</td><td>'+cat.icon+' '+cat.label+'</td><td style="color:#9a9890">'+(e.job_name||'-')+'</td>';
+    h+='<td>'+(e.receipt_key?'Yes':'No')+'</td><td style="text-align:right;font-weight:700">('+fmt(e.amount)+')</td></tr>';
+  });
+  h+='<tr class="tr"><td colspan="5">Total</td><td style="text-align:right">('+fmt(tExp)+')</td></tr></tbody></table></div>';
+  // Mileage
+  h+='<div class="sec"><div class="sec-t">Mileage Log — '+yrMiles.length+' trips at $'+IRS().toFixed(3)+'/mi</div>';
+  h+='<table><thead><tr><th>Date</th><th>Vehicle</th><th>Route</th><th>Purpose</th><th style="text-align:right">Miles</th><th style="text-align:right">Deduction</th></tr></thead><tbody>';
+  yrMiles.forEach(m=>{h+='<tr><td>'+(m.date||'')+'</td><td>'+(m.vehicle||'')+'</td><td>'+(m.from||'')+' - '+(m.to||'')+'</td><td>'+(m.purpose||'')+(m.client_name?' - '+m.client_name:'')+'</td><td style="text-align:right">'+((m.miles||0).toFixed(1))+'</td><td style="text-align:right;color:#791F1F">('+fmt((m.miles||0)*IRS())+')</td></tr>';});
+  h+='<tr class="tr"><td colspan="4">Total</td><td style="text-align:right">'+tMiles.toFixed(1)+'</td><td style="text-align:right">('+fmt(mileDed)+')</td></tr></tbody></table></div>';
+  h+='<div class="note">Estimates only. Verify with a CPA before filing. Federal SE tax at 15.3% on 92.35% of net per Schedule SE.</div>';
+  h+='</div></body></html>';
+  const blob=new Blob([h],{type:'text/html'});
   const url=URL.createObjectURL(blob);
   const w=window.open(url,'_blank');
   if(!w){const a=document.createElement('a');a.href=url;a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);}
   setTimeout(()=>URL.revokeObjectURL(url),30000);
-  showToast('Tax report opened — Print → Save as PDF','📄');
+  showToast('Tax report opened — Print to save as PDF','📄');
 }
+
 
 function exportFullBackup(){
   const biz=(S.bname||'TradeDesk').replace(/\s+/g,'_');
@@ -9320,7 +9434,7 @@ function renderExpenses(){
     [...filtered].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(r=>{
       const info=IRS_EXPENSE_CATS.find(c=>c.id===r.cat);
       const hasImg=!!(r.receipt_key);
-      const recLabel=hasImg?'<span style="color:var(--green-mid);font-weight:700;font-size:10px">📎 Yes</span>':'<span style="color:#A32D2D;font-weight:700;font-size:10px">Missing</span>';
+      const recLabel=hasImg?'<button onclick="viewReceipt(\''+r.receipt_key+'\')" style="background:var(--green-lt);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">📎 View</button>':'<span style="color:#A32D2D;font-weight:700;font-size:10px">Missing</span>';
       return '<tr>'+
         '<td class="mute">'+r.date+'</td>'+
         '<td class="mute" style="font-size:10px">'+(info?info.icon+' '+info.label:r.catLabel||r.cat||'—')+'</td>'+
@@ -10575,7 +10689,7 @@ function obStep4(el){
     '<div class="f" style="margin-bottom:14px"><label>Phone number</label>'+
     '<input type="tel" id="ob-bphone" placeholder="316-555-0100" value="'+((_ob.phone)||'')+'" maxlength="12" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,10).replace(/^(\\d{3})(\\d{3})(\\d{1,4})$/,\'$1-$2-$3\').replace(/^(\\d{3})(\\d{1,3})$/,\'$1-$2\')" style="font-size:16px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"></div>'+
     obInput('ob-baddr','Business address (optional)','1234 Main St, Wichita KS','text',_ob.address)+
-    '<div class="f" style="margin-bottom:14px"><label>State <span style="color:#A32D2D">*</span></label><select id="ob-state" style="font-size:15px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"><option value="">Select state...</option><option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS" selected>KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option></select></div>'+
+    '<div class="f" style="margin-bottom:14px"><label>State <span style="color:#A32D2D">*</span></label><select id="ob-state" style="font-size:15px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"><option value="">— Select your state —</option><option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS">KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option></select></div>'+
     obInput('ob-blic','License / insurance info (optional)','Licensed & Insured · KS #12345','text',_ob.licenseInfo)+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
     obBtn('Continue','obNext4()')+
