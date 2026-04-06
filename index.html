@@ -8046,6 +8046,7 @@ async function expProcessPhoto(input){
     reader.readAsDataURL(file);
     status.innerHTML='<div class="tip tip-s"><strong>✓ Receipt read:</strong> '+(parsed.vendor||'vendor')+' · $'+(parsed.amount||'?')+'</div>';
     scanArea.style.opacity='1';scanArea.style.borderColor='var(--green-mid)';
+    _expState.hasReceipt=true;
   }catch(e){
     console.warn('Receipt scan failed:',e);
     status.innerHTML='<div class="tip tip-w">Could not auto-read — fill in manually below.</div>';
@@ -8084,6 +8085,20 @@ async function expSave(){
   if(!vendor){if(err)err.textContent='Enter a vendor name.';return;}
   if(!amount||amount<=0){if(err)err.textContent='Enter a valid amount.';return;}
   if(!date){if(err)err.textContent='Select a date.';return;}
+  // Duplicate check — same vendor, amount, and date within 2 days
+  const dupExp=expenses.find(e=>{
+    if(e.vendor&&vendor&&e.vendor.toLowerCase()===vendor.toLowerCase()&&
+       Math.abs(e.amount-amount)<0.01){
+      const d1=new Date(e.date),d2=new Date(date);
+      return Math.abs(d1-d2)<2*86400000;
+    }
+    return false;
+  });
+  if(dupExp){
+    if(err)err.textContent='Possible duplicate: '+dupExp.vendor+' $'+dupExp.amount+' already logged on '+dupExp.date+'. Save anyway?';
+    if(!confirm('Possible duplicate: '+dupExp.vendor+' $'+dupExp.amount+' already logged on '+dupExp.date+'. Save anyway?'))return;
+    if(err)err.textContent='';
+  }
   btn.disabled=true;btn.textContent='Saving...';
   if(err)err.textContent='';
   let receipt_key=null,expires_at=null;
@@ -8104,7 +8119,7 @@ async function expSave(){
   expenses.push({
     id:Date.now(),date,cat,catLabel:catInfo.label||cat,vendor,amount,notes,
     job_id:jobId,job_name:job?job.client_name||job.name:'',client_id:job?job.client_id:null,
-    receipt:receipt_key?'Yes — photo stored':'No receipt photo',receipt_key,expires_at,
+    receipt:receipt_key?'Yes — photo stored':_expState.hasReceipt?'Yes — scanned (storage unavailable)':'No receipt photo',receipt_key,expires_at,
     deductible:catInfo.deductible!==false,meals_50:!!(catInfo.meals_50),
   });
   expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
@@ -9010,6 +9025,7 @@ function openExportPanel(){
       exportOptionHTML('exportTaxPDF()','📄','Full tax report — PDF','Schedule C summary, income, expenses by IRS category, mileage log. Print or save — IRS audit ready.')+
       exportOptionHTML('exportMileageCSV()','🚗','Mileage log CSV','Every trip — date, client, miles, IRS deduction. Meets IRS contemporaneous recordkeeping.')+
       exportOptionHTML('exportFullBackup()','💾','Full data backup','All clients, jobs, bids, income, expenses, mileage. JSON — restore or migrate anytime.')+
+      exportOptionHTML('exportReceiptImages()','🖼️','Receipt photos','Download all stored receipt images as a ZIP — IRS audit ready. Requires cloud sync sign-in.')+
     '</div>';
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -9223,6 +9239,35 @@ function exportFullBackup(){
 }
 
 function exportTaxReport(){openExportPanel();}
+
+async function exportReceiptImages(){
+  if(!_supa||!_supaUser){zAlert('Sign in to export receipt photos.',{title:'Sign in required'});return;}
+  const yr=document.getElementById('exp-panel-year')?.value||new Date().getFullYear();
+  const filtered=expenses.filter(e=>e.receipt_key&&(yr==='all'||String(new Date(e.date).getFullYear())===String(yr)));
+  if(!filtered.length){zAlert('No stored receipt photos for '+yr+'.',{title:'No receipts'});return;}
+  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:8px">📥 Downloading '+filtered.length+' receipts...</div>'+
+    '<div id="rcpt-dl-prog" style="font-size:13px;color:var(--text3)">Getting signed URLs...</div>';
+  overlay.appendChild(box);document.body.appendChild(overlay);
+  let done=0;
+  for(const e of filtered){
+    try{
+      const{data,error}=await _supa.storage.from('receipts').createSignedUrl(e.receipt_key,60);
+      if(error||!data?.signedUrl){done++;continue;}
+      const a=document.createElement('a');
+      a.href=data.signedUrl;
+      const fname=(e.date||'nodate')+'_'+(e.vendor||'vendor').replace(/[^a-z0-9]/gi,'_')+'_$'+(e.amount||0)+'.jpg';
+      a.download=fname;a.target='_blank';
+      document.body.appendChild(a);a.click();document.body.removeChild(a);
+      done++;
+      document.getElementById('rcpt-dl-prog').textContent=done+' of '+filtered.length+' downloaded...';
+      await new Promise(r=>setTimeout(r,400)); // stagger downloads
+    }catch(err){done++;console.warn('Receipt download failed:',err);}
+  }
+  document.getElementById('rcpt-dl-prog').textContent='Done — '+done+' receipts downloaded.';
+  setTimeout(()=>overlay.remove(),2000);
+}
 function showTaxReportModal(){openExportPanel();}
 
 
