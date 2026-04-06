@@ -9033,7 +9033,7 @@ function exportTaxPDF(){
   h+='<div class="box"><div class="bl">IRS Rate</div><div class="bv">$'+IRS().toFixed(3)+'/mi</div></div>';
   h+='</div></div>';
   // Tax breakdown
-  h+='<div class="sec"><div class="sec-t">Tax Liability — Federal vs '+S.state+' State</div>';
+  h+='<div class="sec"><div class="sec-t">Tax Liability — Federal vs '+(S.state||'State')+' State</div>';
   h+='<div class="two">';
   // Federal
   h+='<div class="ts">';
@@ -9048,7 +9048,7 @@ function exportTaxPDF(){
   h+='</div>';
   // State
   h+='<div class="ts">';
-  h+='<div class="th" style="background:#EAF3DE;color:#27500A">'+S.state+' State</div>';
+  h+='<div class="th" style="background:#EAF3DE;color:#27500A">'+(S.state||'State')+' Tax</div>';
   h+='<div class="tr2"><span>State AGI</span><span>'+fmt(agi)+'</span></div>';
   h+='<div class="tr2"><span>Standard deduction<span class="tsub">'+statusLabel+'</span></span><span class="green">('+fmt(KS_STD[status]||3500)+')</span></div>';
   h+='<div class="tr2"><span>State taxable income</span><span style="font-weight:700">'+fmt(ksTaxable)+'</span></div>';
@@ -9059,7 +9059,7 @@ function exportTaxPDF(){
   h+='<div class="ts">';
   h+='<div class="tr2"><span>Self-employment tax</span><span class="red">'+fmt(seTax)+'</span></div>';
   h+='<div class="tr2"><span>Federal income tax</span><span class="red">'+fmt(fedTax)+'</span></div>';
-  h+='<div class="tr2"><span>'+S.state+' state income tax</span><span class="red">'+fmt(ksTax)+'</span></div>';
+  h+='<div class="tr2"><span>'+(S.state||'State')+' state income tax</span><span class="red">'+fmt(ksTax)+'</span></div>';
   h+='<div class="tall"><span>Total Estimated Tax Liability</span><span class="red">'+fmt(totalTax)+'</span></div>';
   h+='</div></div>';
   // Income table
@@ -10473,6 +10473,7 @@ async function loadAccountData(){
       if(_account?.business_name)S.bname=_account.business_name;
       if(_account?.phone)S.bphone=_account.phone;
       if(_account?.license_info)S.blic=_account.license_info;
+      if(_account?.state)S.state=_account.state;
       applyPermissions();
       return true;
     }
@@ -10906,7 +10907,7 @@ async function obSubmit(){
 
     await _supa.from('zj_data').insert({user_id:uid,account_id:acct.id});
 
-    S.bname=_ob.businessName;S.bphone=_ob.phone;S.blic=_ob.licenseInfo;
+    S.bname=_ob.businessName;S.bphone=_ob.phone;S.blic=_ob.licenseInfo;S.state=_ob.state||'KS';
     _user={id:uid,email:_ob.email,name:_ob.name,role:_ob.role,account_id:acct.id};
     _vehicles=_ob.vehicles;
 
