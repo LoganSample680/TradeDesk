@@ -1391,7 +1391,14 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
       <div class="f"><label>35% top ($)</label><input type="number" id="set-b35"></div>
     </div>
   </div>
-  <div class="card"><div class="card-hd">Kansas tax rates</div>
+  <div class="card">
+    <div class="card-hd">
+      <span id="set-state-label">State tax rates</span>
+      <span>
+        <select id="set-state" onchange="onStateChange(this.value)" style="font-size:12px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)"><option value="">— Select state —</option><option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS">KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option></select>
+      </span>
+    </div>
+    <div id="set-state-info" style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.5;display:none"></div>
     <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
       <div class="f"><label>Lower rate (%)</label><input type="number" id="set-ksl" step="0.001"></div>
       <div class="f"><label>Upper rate (%)</label><input type="number" id="set-ksh" step="0.001"></div>
@@ -1399,6 +1406,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
       <div class="f"><label>Std deduction — single ($)</label><input type="number" id="set-kss"></div>
       <div class="f"><label>Std deduction — MFJ ($)</label><input type="number" id="set-ksm"></div>
     </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:8px">Rates auto-fill when you select a state. You can override any value manually.</div>
   </div>
   <div class="card"><div class="card-hd">Goals</div>
     <div class="fg fg2">
@@ -1415,7 +1423,6 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
       <div class="f"><label>Business name</label><input id="set-bname"></div>
       <div class="f"><label>Phone</label><input id="set-bphone" type="tel" maxlength="12" oninput="fmtPhone(this)"></div>
       <div class="f"><label>License / insured</label><input id="set-blic"></div>
-      <div class="f"><label>Jurisdiction state</label><select id="set-state" onchange="S.state=this.value;saveAll()"><option value="">— Select state —</option><option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS">KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option></select></div>
       <div class="f"><label>Reply-to email</label><input type="email" id="set-bemail" placeholder="zach@yourpainting.com"></div>
       <div class="f" style="grid-column:1/-1" id="settings-vehicles-section">
         <label>Vehicles <span style="font-size:10px;color:var(--text3);font-weight:400">(IRS log requires vehicle description per trip)</span></label>
@@ -1905,7 +1912,8 @@ function loadSettingsForm(){
   sf('set-b10',S.b10);sf('set-b12',S.b12);sf('set-b22',S.b22);sf('set-b24',S.b24);sf('set-b32',S.b32);sf('set-b35',S.b35);
   sf('set-ksl',S.ksLow);sf('set-kst',S.ksTop);sf('set-ksh',S.ksHigh);sf('set-kss',S.ksStdS);sf('set-ksm',S.ksStdM);
   sf('set-goal-monthly',S.goalMonthly||'');
-  sf('set-labor-rate',S.laborRate||45);sf('set-bname',S.bname);sf('set-state',S.state||'KS');sf('set-stripe-pk',S.stripePk||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
+  sf('set-labor-rate',S.laborRate||45);sf('set-bname',S.bname);sf('set-state',S.state||'KS');
+  if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-stripe-pk',S.stripePk||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
   sf('set-margin',S.margin);sf('set-cov',S.cov);sf('set-p1',S.p1);sf('set-p2',S.p2);sf('set-p3',S.p3);sf('set-mm',S.mm);sf('set-r-walls',S.rWalls||1.50);sf('set-r-ceil',S.rCeil||1.25);sf('set-r-trim',S.rTrim||1.75);sf('set-r-door',S.rDoor||85);sf('set-r-win',S.rWin||45);sf('set-r-ext',S.rExt||1.60);sf('set-r-deck',S.rDeck||1.25);
 }
 function saveSettings(){
@@ -8820,6 +8828,90 @@ function renderMonthlyPL(){
     '<span style="text-align:right;color:'+(grandNet>=0?'var(--green-mid)':'#A32D2D')+'">'+fmt(grandNet)+'</span>'+
   '</div>';
   el.innerHTML=html;
+}
+
+// ── State tax rates database ──────────────────────────────────────────
+const STATE_TAX={
+  AL:{name:'Alabama',      low:2.0, high:5.0,  top:3000,   stdS:3000,  stdM:8500,  noTax:false},
+  AK:{name:'Alaska',       low:0,   high:0,    top:0,      stdS:0,     stdM:0,     noTax:true,  note:'No state income tax'},
+  AZ:{name:'Arizona',      low:2.5, high:2.5,  top:999999, stdS:14600, stdM:29200, noTax:false, note:'Flat 2.5%'},
+  AR:{name:'Arkansas',     low:2.0, high:4.7,  top:89100,  stdS:2340,  stdM:4680,  noTax:false},
+  CA:{name:'California',   low:1.0, high:9.3,  top:68350,  stdS:5202,  stdM:10404, noTax:false},
+  CO:{name:'Colorado',     low:4.4, high:4.4,  top:999999, stdS:14600, stdM:29200, noTax:false, note:'Flat 4.4%'},
+  CT:{name:'Connecticut',  low:2.0, high:6.99, top:10000,  stdS:0,     stdM:0,     noTax:false},
+  DE:{name:'Delaware',     low:2.2, high:6.6,  top:60000,  stdS:3250,  stdM:6500,  noTax:false},
+  FL:{name:'Florida',      low:0,   high:0,    top:0,      stdS:0,     stdM:0,     noTax:true,  note:'No state income tax'},
+  GA:{name:'Georgia',      low:5.49,high:5.49, top:999999, stdS:12000, stdM:24000, noTax:false, note:'Flat 5.49%'},
+  HI:{name:'Hawaii',       low:1.4, high:11.0, top:400000, stdS:2200,  stdM:4400,  noTax:false},
+  ID:{name:'Idaho',        low:5.8, high:5.8,  top:999999, stdS:14600, stdM:29200, noTax:false, note:'Flat 5.8%'},
+  IL:{name:'Illinois',     low:4.95,high:4.95, top:999999, stdS:2425,  stdM:4850,  noTax:false, note:'Flat 4.95%'},
+  IN:{name:'Indiana',      low:3.05,high:3.05, top:999999, stdS:1000,  stdM:2000,  noTax:false, note:'Flat 3.05%'},
+  IA:{name:'Iowa',         low:4.4, high:6.0,  top:75000,  stdS:14600, stdM:29200, noTax:false},
+  KS:{name:'Kansas',       low:3.1, high:5.7,  top:33000,  stdS:3500,  stdM:8000,  noTax:false},
+  KY:{name:'Kentucky',     low:4.0, high:4.0,  top:999999, stdS:2980,  stdM:2980,  noTax:false, note:'Flat 4.0%'},
+  LA:{name:'Louisiana',    low:1.85,high:4.25, top:50000,  stdS:4500,  stdM:9000,  noTax:false},
+  ME:{name:'Maine',        low:5.8, high:7.15, top:58050,  stdS:14600, stdM:29200, noTax:false},
+  MD:{name:'Maryland',     low:2.0, high:5.75, top:250000, stdS:2400,  stdM:4850,  noTax:false},
+  MA:{name:'Massachusetts',low:5.0, high:5.0,  top:999999, stdS:4400,  stdM:8800,  noTax:false, note:'Flat 5.0%'},
+  MI:{name:'Michigan',     low:4.25,high:4.25, top:999999, stdS:5600,  stdM:11200, noTax:false, note:'Flat 4.25%'},
+  MN:{name:'Minnesota',    low:5.35,high:9.85, top:183340, stdS:14575, stdM:29150, noTax:false},
+  MS:{name:'Mississippi',  low:4.7, high:4.7,  top:999999, stdS:2300,  stdM:4600,  noTax:false, note:'Flat 4.7%'},
+  MO:{name:'Missouri',     low:1.5, high:4.95, top:9000,   stdS:14600, stdM:29200, noTax:false},
+  MT:{name:'Montana',      low:4.7, high:5.9,  top:20500,  stdS:14600, stdM:29200, noTax:false},
+  NE:{name:'Nebraska',     low:2.46,high:5.84, top:36290,  stdS:7900,  stdM:15800, noTax:false},
+  NV:{name:'Nevada',       low:0,   high:0,    top:0,      stdS:0,     stdM:0,     noTax:true,  note:'No state income tax'},
+  NH:{name:'New Hampshire',low:0,   high:0,    top:0,      stdS:0,     stdM:0,     noTax:true,  note:'No income tax on wages'},
+  NJ:{name:'New Jersey',   low:1.4, high:10.75,top:1000000,stdS:1000,  stdM:2000,  noTax:false},
+  NM:{name:'New Mexico',   low:1.7, high:5.9,  top:210000, stdS:14600, stdM:29200, noTax:false},
+  NY:{name:'New York',     low:4.0, high:10.9, top:25000000,stdS:8000, stdM:16050, noTax:false},
+  NC:{name:'North Carolina',low:4.5,high:4.5,  top:999999, stdS:12750, stdM:25500, noTax:false, note:'Flat 4.5%'},
+  ND:{name:'North Dakota', low:1.1, high:2.5,  top:440600, stdS:14600, stdM:29200, noTax:false},
+  OH:{name:'Ohio',         low:2.75,high:3.5,  top:115300, stdS:2400,  stdM:4800,  noTax:false},
+  OK:{name:'Oklahoma',     low:0.25,high:4.75, top:12200,  stdS:6350,  stdM:12700, noTax:false},
+  OR:{name:'Oregon',       low:4.75,high:9.9,  top:250000, stdS:2420,  stdM:4840,  noTax:false},
+  PA:{name:'Pennsylvania', low:3.07,high:3.07, top:999999, stdS:0,     stdM:0,     noTax:false, note:'Flat 3.07%'},
+  RI:{name:'Rhode Island', low:3.75,high:5.99, top:73450,  stdS:10550, stdM:21150, noTax:false},
+  SC:{name:'South Carolina',low:0,  high:6.4,  top:17150,  stdS:14600, stdM:29200, noTax:false},
+  SD:{name:'South Dakota', low:0,   high:0,    top:0,      stdS:0,     stdM:0,     noTax:true,  note:'No state income tax'},
+  TN:{name:'Tennessee',    low:0,   high:0,    top:0,      stdS:0,     stdM:0,     noTax:true,  note:'No state income tax'},
+  TX:{name:'Texas',        low:0,   high:0,    top:0,      stdS:0,     stdM:0,     noTax:true,  note:'No state income tax'},
+  UT:{name:'Utah',         low:4.65,high:4.65, top:999999, stdS:947,   stdM:1894,  noTax:false, note:'Flat 4.65%'},
+  VT:{name:'Vermont',      low:3.35,high:8.75, top:213150, stdS:7000,  stdM:14050, noTax:false},
+  VA:{name:'Virginia',     low:2.0, high:5.75, top:17000,  stdS:8000,  stdM:16000, noTax:false},
+  WA:{name:'Washington',   low:0,   high:0,    top:0,      stdS:0,     stdM:0,     noTax:true,  note:'No state income tax'},
+  WV:{name:'West Virginia',low:2.36,high:5.12, top:60000,  stdS:0,     stdM:0,     noTax:false},
+  WI:{name:'Wisconsin',    low:3.5, high:7.65, top:405550, stdS:13230, stdM:24490, noTax:false},
+  WY:{name:'Wyoming',      low:0,   high:0,    top:0,      stdS:0,     stdM:0,     noTax:true,  note:'No state income tax'},
+};
+
+function onStateChange(state){
+  S.state=state;
+  const info=STATE_TAX[state];
+  if(!info)return;
+  const lbl=document.getElementById('set-state-label');
+  if(lbl)lbl.textContent=info.name+' tax rates';
+  const infoEl=document.getElementById('set-state-info');
+  if(infoEl){
+    if(info.noTax||info.note){
+      infoEl.style.display='block';
+      infoEl.innerHTML=info.noTax
+        ?'✅ <strong>'+info.name+' has no state income tax.</strong> $0 state tax will be calculated.'
+        :'ℹ️ '+info.note;
+    } else {
+      infoEl.style.display='none';
+    }
+  }
+  const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
+  sf('set-ksl',info.low);
+  sf('set-ksh',info.high);
+  sf('set-kst',info.top===999999?0:info.top);
+  sf('set-kss',info.stdS);
+  sf('set-ksm',info.stdM);
+  S.ksLow=info.low;S.ksHigh=info.high;
+  S.ksTop=info.top===999999?0:info.top;
+  S.ksStdS=info.stdS;S.ksStdM=info.stdM;
+  saveAll();
+  showToast(info.name+' tax rates loaded','🗺️');
 }
 
 // ── Receipt viewer ────────────────────────────────────────────────────
