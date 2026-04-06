@@ -8313,6 +8313,7 @@ function saveQuickExpense(clientId){
     job_id:bidId,
     job_name:bid?bid.client_name||'':''
   });
+  expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
   saveAll();
   const overlay=document.querySelector('.zmodal-overlay');
   if(overlay)overlay.remove();
@@ -9007,6 +9008,7 @@ function addExpense(){
     job_name:job?job.client_name||job.name:'',
     client_id:job?job.client_id:null
   });
+  expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
   saveAll();renderExpenses();
   ['exp-vendor','exp-amount','exp-notes'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('scan-result').style.display='none';
@@ -10811,6 +10813,7 @@ async function supaLoadFromCloud(){
     payments=parse(data.payments,payments);
     income=parse(data.income,income);
     expenses=parse(data.expenses,expenses);
+    expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
     mileage=parse(data.mileage,mileage);
     liens=parse(data.liens,liens);
     if(data.settings){const ss=parse(data.settings,null);if(ss){S={...S,...ss};applySettings();}}
