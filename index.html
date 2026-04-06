@@ -6821,7 +6821,7 @@ ol{padding-left:18px;line-height:2}
   <button onclick="window.print()" style="background:#fff;color:#185FA5;border:none;padding:8px 18px;border-radius:6px;font-weight:700;font-size:14px;cursor:pointer">⬇ Save as PDF</button>
 </div>
 ${proposal.innerHTML}
-<script>setTimeout(()=>window.print(),600)<\/script>
+<scr"+"ipt>setTimeout(()=>window.print(),600)</scr"+"ipt>
 </body></html>`;
   // Use blob URL — no popup permission needed
   const blob=new Blob([html],{type:'text/html'});
@@ -8970,7 +8970,7 @@ ${yrExp.map(e=>{const cat=IRS_EXPENSE_CATS.find(c=>c.id===e.cat)||{icon:'📦',l
 ${yrMiles.map(m=>`<tr><td>${m.date||''}</td><td>${m.vehicle||''}</td><td>${m.from||''}${m.to?' → '+m.to:''}</td><td>${m.purpose||''}${m.client_name?' · '+m.client_name:''}</td><td style="text-align:right">${(m.miles||0).toFixed(1)}</td><td style="text-align:right;color:#791F1F">(${fmt((m.miles||0)*IRS())})</td></tr>`).join('')}
 <tr class="tr"><td colspan="4">Total</td><td style="text-align:right">${tMiles.toFixed(1)}</td><td style="text-align:right">(${fmt(mileDed)})</td></tr></tbody></table></div>
 <div class="note">⚠️ Not a substitute for professional tax advice. Verify all figures with a CPA before filing. SE tax estimated at 15.3% on 92.35% of net profit per IRS Schedule SE.</div>
-</div><script>setTimeout(()=>window.print(),800)<\/script></body></html>`;
+</div><scr"+"ipt>setTimeout(()=>window.print(),800)</scr"+"ipt></body></html>`;
   const blob=new Blob([html],{type:'text/html'});
   const url=URL.createObjectURL(blob);
   const w=window.open(url,'_blank');
