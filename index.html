@@ -7998,17 +7998,25 @@ async function expProcessPhoto(input){
   const file=input.files[0];if(!file)return;
   const status=document.getElementById('exp-scan-status');
   const scanArea=document.getElementById('exp-scan-area');
+
+  // Check auth first — Edge Function requires a valid session
+  const session=_supa?await _supa.auth.getSession():null;
+  const token=session?.data?.session?.access_token;
+  if(!token){
+    status.style.display='block';
+    status.innerHTML='<div class="tip tip-w">Sign in to use receipt scanning. <button class="btn btn-sm btn-p" onclick="supaShowLogin()" style="margin-left:8px">Sign in</button></div>';
+    input.value='';return;
+  }
+
   status.style.display='block';
   status.innerHTML='<div class="tip"><strong>📡 Reading receipt...</strong></div>';
   scanArea.style.opacity='.5';
   const b64=await compressAndEncodeImage(file);
   _expState.imageData={b64,type:'image/jpeg'};
   try{
-    const session=_supa?await _supa.auth.getSession():null;
-    const token=session?.data?.session?.access_token;
     const resp=await fetch('https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/scan-receipt',{
       method:'POST',
-      headers:{'Content-Type':'application/json',...(token?{'Authorization':'Bearer '+token}:{})},
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
       body:JSON.stringify({imageBase64:b64,mediaType:'image/jpeg'})
     });
     if(!resp.ok)throw new Error('Scan error '+resp.status);
@@ -8026,6 +8034,7 @@ async function expProcessPhoto(input){
     status.innerHTML='<div class="tip tip-s"><strong>✓ Receipt read:</strong> '+(parsed.vendor||'vendor')+' · $'+(parsed.amount||'?')+'</div>';
     scanArea.style.opacity='1';scanArea.style.borderColor='var(--green-mid)';
   }catch(e){
+    console.warn('Receipt scan failed:',e);
     status.innerHTML='<div class="tip tip-w">Could not auto-read — fill in manually below.</div>';
     scanArea.style.opacity='1';
   }
