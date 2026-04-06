@@ -10746,7 +10746,8 @@ async function supaLoadFromCloud(){
     renderClientList&&renderClientList();
     renderJobsPage&&renderJobsPage();
     renderMoneyPage&&renderMoneyPage();
-    // Prompt for location if not yet set
+    // Check for new signatures + prompt location
+    setTimeout(()=>checkNewSignatures(),2000);
     setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
   }catch(e){
     console.warn('Cloud load failed:',e);
@@ -10778,6 +10779,8 @@ if(supaEnabled()){
     document.body.appendChild(ov);
   })();
   supaInit();
+  // Cmd+K / Ctrl+K global search
+  document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();openSearch();}});
 } else {
   // Offline mode — render from localStorage immediately
   renderDash();buildScopeGrid();
