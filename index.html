@@ -7999,9 +7999,18 @@ async function expProcessPhoto(input){
   const status=document.getElementById('exp-scan-status');
   const scanArea=document.getElementById('exp-scan-area');
 
-  // Check auth first — Edge Function requires a valid session
-  const session=_supa?await _supa.auth.getSession():null;
-  const token=session?.data?.session?.access_token;
+  // Get auth token
+  let token=null;
+  if(_supa){
+    const{data}=await _supa.auth.getSession();
+    token=data?.session?.access_token||null;
+    // If no session, try refreshing
+    if(!token){
+      const{data:r}=await _supa.auth.refreshSession();
+      token=r?.session?.access_token||null;
+    }
+  }
+
   if(!token){
     status.style.display='block';
     status.innerHTML='<div class="tip tip-w">Sign in to use receipt scanning. <button class="btn btn-sm btn-p" onclick="supaShowLogin()" style="margin-left:8px">Sign in</button></div>';
@@ -8019,7 +8028,11 @@ async function expProcessPhoto(input){
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
       body:JSON.stringify({imageBase64:b64,mediaType:'image/jpeg'})
     });
-    if(!resp.ok)throw new Error('Scan error '+resp.status);
+    if(!resp.ok){
+      const errText=await resp.text();
+      console.warn('scan-receipt response:',resp.status,errText);
+      throw new Error('Scan error '+resp.status);
+    }
     const parsed=await resp.json();
     if(parsed.vendor)document.getElementById('em-vendor').value=parsed.vendor;
     if(parsed.amount)document.getElementById('em-amount').value=parsed.amount;
