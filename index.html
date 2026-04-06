@@ -335,7 +335,17 @@ body.dark .prop-hdr{background:#0D2A45}
 body.dark .gps-status{background:var(--green-lt);border-color:#2D5A14}
 body.dark .met{background:var(--bg2)}
 body.dark .card{background:var(--bg2)}
-body.dark #nav{background:var(--bg2);border-color:var(--border)}
+body.dark #nav{background:#0A0A08;border-color:rgba(255,255,255,.06)}
+body.dark .met{background:var(--bg2);border-color:var(--border)}
+body.dark .k-card{background:var(--bg2);border-color:var(--border)}
+body.dark .kanban-col{background:var(--bg3)}
+body.dark .search-box{background:var(--bg2)}
+body.dark #global-search-input{color:var(--text)}
+body.dark .search-result-item:hover{background:var(--bg3)}
+body.dark .detail-hdr{background:linear-gradient(135deg,#080808 0%,#0D2A45 100%)}
+body.dark input{background:var(--bg2)!important}
+body.dark select{background:var(--bg2)!important}
+body.dark textarea{background:var(--bg2)!important}
 body.dark .iform{background:var(--bg2)}
 body.dark .overdue-banner{background:#330000;border-color:#A32D2D}
 body.dark .drive-btn{background:#1A4A0A}
@@ -363,6 +373,41 @@ body.dark .cal-dh{border-color:var(--border)}
 body.dark .gps-status{border-color:#2D5A14}
 body.dark .fbar .fb{background:var(--bg2);border-color:var(--border2);color:var(--text2)}
 body.dark .fbar .fb.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+/* ── Global search ── */
+.search-overlay{position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.6);display:flex;align-items:flex-start;justify-content:center;padding:60px 20px 20px;animation:fadein .15s}
+.search-box{background:var(--bg);border-radius:16px;width:100%;max-width:580px;box-shadow:0 24px 64px rgba(0,0,0,.3);overflow:hidden}
+.search-input-wrap{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--border)}
+.search-input-wrap svg{flex-shrink:0;opacity:.5}
+#global-search-input{border:none;background:none;font-size:17px;color:var(--text);font-family:inherit;flex:1;outline:none;padding:0}
+.search-results{max-height:400px;overflow-y:auto}
+.search-result-item{display:flex;align-items:center;gap:12px;padding:12px 18px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s}
+.search-result-item:hover{background:var(--bg2)}
+.search-result-item:last-child{border-bottom:none}
+.search-result-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px}
+.search-result-name{font-size:14px;font-weight:600}
+.search-result-meta{font-size:11px;color:var(--text3);margin-top:1px}
+.search-empty{padding:32px;text-align:center;color:var(--text3);font-size:14px}
+/* ── Kanban jobs ── */
+.kanban{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:4px}
+.kanban-col{background:var(--bg2);border-radius:var(--rl);padding:12px;min-height:80px}
+.kanban-col-hd{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center}
+.kanban-col-hd .k-count{background:var(--border2);color:var(--text2);border-radius:20px;padding:1px 7px;font-size:10px}
+.k-card{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:10px;margin-bottom:8px;cursor:pointer;transition:box-shadow .15s,border-color .15s}
+.k-card:hover{box-shadow:0 3px 12px rgba(0,0,0,.1);border-color:var(--border2)}
+.k-card:last-child{margin-bottom:0}
+.k-name{font-size:13px;font-weight:700;margin-bottom:3px}
+.k-sub{font-size:11px;color:var(--text3)}
+.k-amount{font-size:12px;font-weight:700;color:var(--text2);margin-top:5px}
+/* ── Empty state ── */
+.empty-state{text-align:center;padding:48px 20px;color:var(--text3)}
+.empty-state-icon{font-size:44px;margin-bottom:12px}
+.empty-state h3{font-size:16px;font-weight:700;color:var(--text2);margin-bottom:6px}
+.empty-state p{font-size:13px;line-height:1.6;margin-bottom:16px}
+/* ── Notifications toast ── */
+.toast{position:fixed;bottom:24px;right:24px;background:#0D1117;color:#fff;border-radius:12px;padding:14px 18px;font-size:13px;font-weight:600;box-shadow:0 8px 32px rgba(0,0,0,.3);z-index:9997;display:flex;align-items:center;gap:10px;max-width:320px;animation:toast-in .25s ease;transform-origin:bottom right}
+@keyframes toast-in{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.toast-icon{font-size:18px;flex-shrink:0}
+.toast-close{background:none;border:none;color:rgba(255,255,255,.5);cursor:pointer;font-size:16px;margin-left:8px;padding:0;line-height:1}
 .tbl{width:100%;border-collapse:collapse;font-size:12px}
 .tbl th{text-align:left;padding:5px 6px;border-bottom:1px solid var(--border);font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3)}
 .tbl td{padding:6px;border-bottom:1px solid var(--border)}
@@ -1473,10 +1518,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   <div id="leads-list"></div>
 </div>
 <div class="pg" id="pg-jobs">
-  <div class="tbar"><div class="tbar-title">Jobs</div><button class="btn btn-p btn-sm" onclick="goPg('pg-schedule')">+ Schedule</button></div>
-  <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:12px">
+  <div class="tbar"><div><div class="tbar-title">Jobs</div><div class="tbar-sub" id="jobs-count-sub"></div></div><button class="btn btn-p btn-sm" onclick="goPg('pg-schedule')">+ Schedule</button></div>
+  <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:14px">
     <div style="display:flex;gap:6px;padding-bottom:4px;min-width:max-content">
-      <button class="fb active" id="jft-all"       onclick="setJobFilter('all',this)">All</button>
+      <button class="fb active" id="jft-all"       onclick="setJobFilter('all',this)">Board</button>
       <button class="fb"        id="jft-scheduled"  onclick="setJobFilter('scheduled',this)">Scheduled</button>
       <button class="fb"        id="jft-active"     onclick="setJobFilter('active',this)">Active</button>
       <button class="fb"        id="jft-completed"  onclick="setJobFilter('completed',this)">Completed</button>
@@ -1485,7 +1530,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   <div id="jobs-list"></div>
 </div>
 <div class="pg" id="pg-money">
-  <div class="tbar"><div class="tbar-title">Money</div></div>
+  <div class="tbar"><div><div class="tbar-title">Collect</div><div class="tbar-sub" id="money-count-sub"></div></div></div>
   <div id="money-summary" style="margin-bottom:12px"></div>
   <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:12px">
     <div style="display:flex;gap:6px;padding-bottom:4px;min-width:max-content">
@@ -1537,6 +1582,9 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   <div id="nav-logo">
   <div id="nav-logo-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>
   <span id="nav-logo-text">TradeDesk</span>
+  <button onclick="openSearch()" title="Search" style="margin-left:auto;background:none;border:none;cursor:pointer;padding:4px;border-radius:6px;color:rgba(255,255,255,.5);display:flex;align-items:center" id="nav-search-btn">
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+  </button>
 </div>
 <div id="nav-section-label">Menu</div>
   <button class="nb active" id="nb-dash" onclick="goPg('pg-dash')">
@@ -6805,6 +6853,7 @@ async function sendProposalLink(){
     const bid=bids.find(b=>b.id===bidId);
     if(bid){bid.signingToken=token;bid.signingKey=proposalKey;saveAll();}
     if(btn){btn.textContent='✓ Link ready';btn.disabled=false;}
+    showToast('Signing link ready — copy and send to client','🔗');
   }catch(e){
     console.error('sendProposalLink failed:',e);
     const msg=e.message||'Unknown error';
@@ -10430,6 +10479,78 @@ function getDashGreeting(){
   return name?time+', '+name.split(' ')[0]+'!':time+'!';
 }
 
+
+// ── Global search ────────────────────────────────────────────────────
+function openSearch(){
+  if(document.getElementById('global-search-overlay'))return;
+  const ov=document.createElement('div');
+  ov.id='global-search-overlay';
+  ov.className='search-overlay';
+  ov.onclick=e=>{if(e.target===ov)closeSearch();};
+  ov.innerHTML=
+    '<div class="search-box">'+
+      '<div class="search-input-wrap">'+
+        '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>'+
+        '<input id="global-search-input" placeholder="Search clients, jobs, bids..." autocomplete="off" oninput="runSearch(this.value)">'+
+        '<button onclick="closeSearch()" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:20px;padding:0;line-height:1">×</button>'+
+      '</div>'+
+      '<div class="search-results" id="search-results"><div class="search-empty">Start typing to search...</div></div>'+
+    '</div>';
+  document.body.appendChild(ov);
+  setTimeout(()=>document.getElementById('global-search-input')?.focus(),100);
+  document.addEventListener('keydown',searchEsc);
+}
+function searchEsc(e){if(e.key==='Escape')closeSearch();}
+function closeSearch(){document.getElementById('global-search-overlay')?.remove();document.removeEventListener('keydown',searchEsc);}
+
+function runSearch(q){
+  const el=document.getElementById('search-results');if(!el)return;
+  q=(q||'').toLowerCase().trim();
+  if(!q){el.innerHTML='<div class="search-empty">Start typing to search...</div>';return;}
+  const results=[];
+  // Search clients
+  clients.forEach(c=>{
+    if(c.name?.toLowerCase().includes(q)||c.addr?.toLowerCase().includes(q)||c.phone?.includes(q)){
+      const st=getClientStage(c.id);
+      results.push({type:'client',icon:'👤',bg:'var(--blue-lt)',name:c.name,meta:c.addr?.split(',')[0]||c.phone||'',sub:st.label,action:()=>{closeSearch();openClientDetail(c.id);}});
+    }
+  });
+  // Search bids
+  bids.forEach(b=>{
+    if(b.client_name?.toLowerCase().includes(q)||b.name?.toLowerCase().includes(q)){
+      results.push({type:'bid',icon:'📋',bg:'var(--amber-lt)',name:b.client_name||b.name,meta:'Bid · '+fmt(b.amount||0),sub:b.status||'Pending',action:()=>{closeSearch();goPg('pg-clients');}});
+    }
+  });
+  // Search by amount
+  if(/^\$?[\d,]+$/.test(q.replace(/\s/g,''))){
+    const amt=parseFloat(q.replace(/[$,]/g,''));
+    bids.filter(b=>Math.abs((b.amount||0)-amt)<50).forEach(b=>{
+      results.push({type:'bid',icon:'💰',bg:'var(--green-lt)',name:b.client_name,meta:fmt(b.amount),sub:b.status,action:()=>{closeSearch();goPg('pg-clients');}});
+    });
+  }
+  if(!results.length){el.innerHTML='<div class="search-empty">No results for "'+q.slice(0,30)+'"</div>';return;}
+  el.innerHTML=results.slice(0,8).map((r,i)=>`
+    <div class="search-result-item" onclick="_searchResults[${i}].action()">
+      <div class="search-result-icon" style="background:${r.bg}">${r.icon}</div>
+      <div style="min-width:0;flex:1">
+        <div class="search-result-name">${r.name||''}</div>
+        <div class="search-result-meta">${r.meta||''} ${r.sub?'· '+r.sub:''}</div>
+      </div>
+    </div>
+  `).join('');
+  window._searchResults=results;
+}
+
+// ── Toast notifications ────────────────────────────────────────────────
+function showToast(msg,icon,duration){
+  icon=icon||'✓';duration=duration||3500;
+  const t=document.createElement('div');
+  t.className='toast';
+  t.innerHTML='<span class="toast-icon">'+icon+'</span><span style="flex:1">'+msg+'</span><button class="toast-close" onclick="this.parentElement.remove()">×</button>';
+  document.body.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';t.style.transform='scale(.9) translateY(8px)';t.style.transition='all .3s';setTimeout(()=>t.remove(),300);},duration);
+}
+
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
@@ -10568,6 +10689,30 @@ async function supaSaveToCloud(){
   }catch(e){console.warn('Cloud save failed:',e);supaSetStatus('error');}
 }
 
+async function checkNewSignatures(){
+  if(!_supa||!_supaUser)return;
+  try{
+    const since=localStorage.getItem('zp3_last_sig_check')||new Date(Date.now()-86400000).toISOString();
+    const{data}=await _supa.from('signed_proposals')
+      .select('client_name,payment_method,payment_status,signed_at')
+      .eq('contractor_user_id',_supaUser.id)
+      .gt('signed_at',since)
+      .order('signed_at',{ascending:false})
+      .limit(5);
+    if(data&&data.length){
+      data.forEach(s=>{
+        const isPaid=s.payment_status==='paid';
+        const method=s.payment_method==='cash'?'💵 Cash':'💳 Card';
+        showToast(
+          (s.client_name||'Client')+' signed'+(isPaid?' & paid deposit':' — cash on arrival'),
+          isPaid?'🎉':'✅',
+          6000
+        );
+      });
+      localStorage.setItem('zp3_last_sig_check',new Date().toISOString());
+    }
+  }catch(e){console.warn('checkNewSignatures:',e);}
+}
 async function supaLoadFromCloud(){
   if(!_supa||!_supaUser)return;
   try{
