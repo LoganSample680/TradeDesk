@@ -7975,7 +7975,7 @@ function openExpenseFlow(){
         '<div class="f"><label>Amount * ($)</label><input id="em-amount" type="number" step="0.01" placeholder="0.00" style="font-size:14px"></div>'+
       '</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
-        '<div class="f"><label>Date *</label><input id="em-date" type="date" value="'+today+'" style="font-size:14px"></div>'+
+        '<div class="f"><label>Date *</label><input id="em-date" type="text" placeholder="MM/DD/YYYY" value="'+today.replace(/(\d{4})-(\d{2})-(\d{2})/,'$2/$3/$1')+'" style="font-size:14px" oninput="_fmtExpDate(this)"></div>'+
         '<div class="f"><label>Category *</label><select id="em-cat" style="font-size:13px">'+catOpts+'</select></div>'+
       '</div>'+
       '<div style="margin-bottom:14px">'+
@@ -7991,7 +7991,13 @@ function openExpenseFlow(){
   _expState={imageData:null,imageKey:null};
 }
 
-function closeExpenseFlow(){document.getElementById('expense-modal')?.remove();_expState={imageData:null,imageKey:null};}
+function closeExpenseFlow(){document.getElementById('expense-modal')?.remove();_expState={imageData:null,imageKey:null,hasReceipt:false};}
+function _fmtExpDate(el){
+  let v=el.value.replace(/\D/g,'');
+  if(v.length>2)v=v.slice(0,2)+'/'+v.slice(2);
+  if(v.length>5)v=v.slice(0,5)+'/'+v.slice(5,9);
+  el.value=v;
+}
 function expTriggerScan(){document.getElementById('exp-file-inp')?.click();}
 
 async function expProcessPhoto(input){
@@ -8090,7 +8096,8 @@ function _confirmReceiptDate(aiDate,statusEl){
   const scanArea=document.getElementById('exp-scan-area');
   if(scanArea)scanArea.after(div);
   div.querySelector('#rcpt-yes-btn').onclick=()=>{
-    const el=document.getElementById('em-date');if(el&&aiDate)el.value=aiDate;
+    const el=document.getElementById('em-date');
+    if(el&&aiDate){const m=aiDate.match(/(\d{4})-(\d{2})-(\d{2})/);el.value=m?m[2]+'/'+m[3]+'/'+m[1]:aiDate;}
     div.remove();
     if(statusEl)statusEl.innerHTML='<div class="tip tip-s"><strong>✓ Receipt saved</strong> — fill in any missing fields and tap Save.</div>';
   };
