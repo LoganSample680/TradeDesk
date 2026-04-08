@@ -3945,6 +3945,7 @@ function renderCDBids(){
       if(balance>0.01&&days>=21)actBtns.push('<button class="btn btn-sm btn-r" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'intent\')">💬 Intent to lien</button>');
       if(lien&&lien.status!=='resolved'&&getBidBalance(b)<=0.01)actBtns.push('<button class="btn btn-sm" onclick="releaseLien('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">✓ Release lien</button>');
       actBtns.push('<button class="btn btn-sm" onclick="openEditBid('+b.id+')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">✎ Revise bid</button>');
+      actBtns.push('<button class="btn btn-sm" onclick="showSupplyList('+b.id+')" style="background:#FFF0E8;color:#854F0B;border-color:#E89B50">📦 Supply list</button>');
       actBtns.push('<button class="btn-del" onclick="deleteBid('+b.id+')" style="font-size:11px;padding:5px 8px">Delete</button>');
     }
     if(!isWon){
@@ -4232,6 +4233,239 @@ function confirmJobDone(jobId){
   }
 }
 // Alias called by post-job debrief after saving hours
+function showSupplyList(bidId){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  const surfs=b.surfaces||[];
+  const scope=b.roomScopeMap||{};
+  const coats=Object.values(scope).some(r=>r.twocoat?.active)?2:1;
+
+  // ── Helpers ────────────────────────────────────────────────
+  const allSwProds=Object.values(SW_PRODUCTS).flat();
+  const totalSqFt=surfs.filter(s=>['walls','ceiling','ext_walls','deck'].includes(s.type)).reduce((sum,s)=>sum+(s.qty||0),0);
+  const totalRooms=new Set(surfs.map(s=>cleanRoomName(s.room))).size||1;
+  const totalLinFt=surfs.filter(s=>s.type==='trim'||s.type==='ext_trim').reduce((sum,s)=>sum+(s.qty||0),0);
+  const hasCabinets=surfs.some(s=>s.type==='cabinets');
+  const hasDoors=surfs.some(s=>s.type==='doors');
+  const hasExterior=surfs.some(s=>['ext_walls','ext_trim','deck'].includes(s.type));
+  const hasInterior=surfs.some(s=>['walls','ceiling','trim','doors','windows','cabinets'].includes(s.type));
+  const hasCeiling=surfs.some(s=>s.type==='ceiling');
+  const scopeActive=(id)=>Object.values(scope).some(r=>r[id]?.active);
+
+  // ── Build paint lines per product+color ──────────────────
+  const orderMap={};
+  surfs.forEach(s=>{
+    if(!s.qty)return;
+    const t=SURF_TYPES.find(x=>x.v===s.type);if(!t||t.unit!=='sq ft')return;
+    const spec=(s.room||'').indexOf(' — ')>-1?(s.room||'').split(' — ').slice(1).join(' — '):'';
+    const key=spec||'Paint';
+    if(!orderMap[key])orderMap[key]={sqFt:0,spec,cov:350};
+    orderMap[key].sqFt+=s.qty;
+    const prodName=spec.split(' · ')[0].trim();
+    const prod=allSwProds.find(p=>p.name===prodName);
+    if(prod)orderMap[key].cov=prod.cov||350;
+  });
+  const paintItems=Object.entries(orderMap).map(([key,od])=>{
+    const rawGals=od.sqFt*coats/od.cov*1.10;
+    const wholeCans=Math.ceil(rawGals);
+    const parts=od.spec.split(' · ');
+    const prod=parts[0]||'Paint';
+    const colorFinish=parts.slice(1).join(' · ')||od.spec;
+    const swMatch=od.spec.match(/SW \d+/i);
+    const swHex=swMatch&&_swColors?(_swColors.find(c=>c.sw.toLowerCase()===swMatch[0].toLowerCase())?.hex||''):'';
+    return{label:prod,detail:colorFinish,qty:wholeCans,unit:'gal',hex:swHex,cat:'paint'};
+  });
+
+  // ── Core supplies (always) ────────────────────────────────
+  const sqFtBuckets=Math.ceil(totalSqFt/400)||1;  // 1 bucket per ~400sf
+  const rollerCovers=Math.ceil(totalSqFt/200)||2; // ~200sf per cover
+  const trayLiners=Math.max(rollerCovers,2);
+  const dropCloths=Math.max(totalRooms,2);
+  const tapeRolls=Math.max(Math.ceil(totalRooms*1.5),2);
+  const stirSticks=Math.max(paintItems.length*2,4);
+
+  const coreItems=[
+    {label:'9" Roller frame',qty:1,unit:'',cat:'tools',note:'3/8" nap for smooth, 1/2" for textured'},
+    {label:'9" Roller covers',qty:rollerCovers,unit:'',cat:'tools',note:'3/8" nap interior / 1/2" nap exterior or texture'},
+    {label:'Paint tray',qty:1,unit:'',cat:'tools',note:''},
+    {label:'Paint tray liners',qty:trayLiners,unit:'',cat:'tools',note:'One per color change'},
+    {label:'Extension pole',qty:1,unit:'',cat:'tools',note:'4–8 ft for walls and ceilings'},
+    {label:"2\" angled sash brush",qty:1,unit:'',cat:'tools',note:'Cutting in at trim and corners'},
+    {label:'Drop cloths',qty:dropCloths,unit:'',cat:'tools',note:'Canvas preferred — 1 per room'},
+    {label:"Blue painter's tape (1\")",qty:tapeRolls,unit:'rolls',cat:'tools',note:'FrogTape recommended for clean lines'},
+    {label:'Stir sticks',qty:stirSticks,unit:'',cat:'tools',note:''},
+    {label:'5-in-1 tool',qty:1,unit:'',cat:'tools',note:'Open cans, scrape, etc.'},
+    {label:'Paint can opener',qty:1,unit:'',cat:'tools',note:''},
+    {label:'Rags / shop towels',qty:1,unit:'pack',cat:'tools',note:''},
+  ];
+
+  // ── Scope-driven supplies ─────────────────────────────────
+  const scopeItems=[];
+
+  if(scopeActive('sand')){
+    scopeItems.push({label:'120-grit sandpaper',qty:Math.ceil(totalSqFt/150),unit:'sheets',cat:'prep',note:'Scuff walls and trim'});
+    scopeItems.push({label:'220-grit sandpaper',qty:Math.ceil(totalSqFt/200),unit:'sheets',cat:'prep',note:'Final smooth before paint'});
+    scopeItems.push({label:'Sanding block',qty:1,unit:'',cat:'prep',note:''});
+  }
+  if(scopeActive('spackle')){
+    scopeItems.push({label:'Lightweight spackle',qty:Math.ceil(totalRooms/3),unit:'quart',cat:'prep',note:'DAP or USG for nail holes & dings'});
+    scopeItems.push({label:'4\" putty knife',qty:1,unit:'',cat:'prep',note:''});
+    scopeItems.push({label:'6\" flexible putty knife',qty:1,unit:'',cat:'prep',note:'Feathering larger patches'});
+    if(totalSqFt>600)scopeItems.push({label:'Joint compound (all-purpose)',qty:1,unit:'gallon',cat:'prep',note:'For larger wall repairs'});
+  }
+  if(scopeActive('prime')){
+    const primeGals=Math.ceil(totalSqFt/350*1.10);
+    scopeItems.push({label:"Primer (PVA or SW ProMar 200 Primer)",qty:primeGals,unit:'gal',cat:'prep',note:'One coat over bare drywall or stains'});
+  }
+  if(scopeActive('tape')){
+    scopeItems.push({label:'Plastic sheeting (4mil)',qty:Math.ceil(totalRooms/2),unit:'roll',cat:'prep',note:'Cover floors and large furniture'});
+    scopeItems.push({label:'Masking paper (12\")',qty:1,unit:'roll',cat:'prep',note:'Protecting trim during wall work'});
+  }
+  if(scopeActive('caulk')){
+    const caulkTubes=Math.max(Math.ceil(totalRooms*1.5),2);
+    scopeItems.push({label:"Painter's caulk (white)",qty:caulkTubes,unit:'tubes',cat:'prep',note:'DAP Alex Plus — paintable in 30 min'});
+    scopeItems.push({label:'Caulk gun',qty:1,unit:'',cat:'tools',note:''});
+  }
+  if(scopeActive('movefurn')){
+    scopeItems.push({label:'Moving blankets / furniture pads',qty:Math.ceil(totalRooms/2),unit:'',cat:'tools',note:'Protect furniture and floors'});
+  }
+  if(scopeActive('popcorn')){
+    scopeItems.push({label:'Garden pump sprayer',qty:1,unit:'',cat:'tools',note:'Wet popcorn before scraping'});
+    scopeItems.push({label:'Wide drywall knife (10\"+)',qty:1,unit:'',cat:'tools',note:'Scraping popcorn'});
+    scopeItems.push({label:'All-purpose joint compound',qty:Math.ceil(totalSqFt/200),unit:'gallon',cat:'prep',note:'Skim coat after removal'});
+    scopeItems.push({label:'Respirator mask (N95)',qty:2,unit:'',cat:'tools',note:'Fine dust — protect your lungs'});
+    scopeItems.push({label:'Safety goggles',qty:1,unit:'',cat:'tools',note:''});
+  }
+  if(scopeActive('wallpaper')){
+    scopeItems.push({label:'Wallpaper scoring tool',qty:1,unit:'',cat:'tools',note:'Zinsser Paper Tiger'});
+    scopeItems.push({label:'Wallpaper remover solution',qty:Math.ceil(totalSqFt/200),unit:'gallon',cat:'prep',note:'DIF or similar'});
+    scopeItems.push({label:'Wide plastic scraper (6\"+)',qty:1,unit:'',cat:'tools',note:''});
+    scopeItems.push({label:'Spray bottle',qty:1,unit:'',cat:'tools',note:'For wetting strips during removal'});
+    scopeItems.push({label:'PVA primer',qty:Math.ceil(totalSqFt/350),unit:'gal',cat:'prep',note:'Required after wallpaper removal'});
+  }
+  if(scopeActive('pwash')){
+    scopeItems.push({label:'Pressure washer',qty:1,unit:'rental',cat:'rental',note:'2000-3000 PSI — Home Depot or Sunbelt'});
+    scopeItems.push({label:'TSP cleaner / degreaser',qty:2,unit:'lb',cat:'prep',note:'Mix with water for pre-wash'});
+  }
+  if(scopeActive('scaffold')){
+    scopeItems.push({label:'Scaffolding',qty:1,unit:'rental',cat:'rental',note:'Price by job — Sunbelt or local rental yard'});
+  }
+
+  // ── Surface-specific extras ───────────────────────────────
+  if(hasCeiling){
+    scopeItems.push({label:'1/2\" nap roller covers (ceiling)',qty:Math.ceil(hasCeiling?totalRooms/2:1),unit:'',cat:'tools',note:'Thicker nap pushes into texture'});
+    scopeItems.push({label:'Neck/head protection',qty:1,unit:'',cat:'tools',note:'Neck roll or wide-brim hat for spray'});
+  }
+  if(hasExterior){
+    scopeItems.push({label:'Exterior caulk (paintable)',qty:Math.ceil(totalRooms),unit:'tubes',cat:'prep',note:'OSI or DAP Dynaflex for exterior gaps'});
+    scopeItems.push({label:'Wire brush',qty:1,unit:'',cat:'tools',note:'Remove loose exterior paint and rust'});
+    scopeItems.push({label:'1\" nap roller covers (exterior)',qty:Math.ceil(totalSqFt/150),unit:'',cat:'tools',note:'Thicker nap for rough siding'});
+  }
+  if(hasDoors||hasCabinets){
+    scopeItems.push({label:'400-grit wet/dry sandpaper',qty:4,unit:'sheets',cat:'prep',note:'Between coats on doors and cabinets'});
+    scopeItems.push({label:'Tack cloth',qty:Math.ceil((hasDoors?surfs.filter(s=>s.type==='doors').reduce((sum,s)=>sum+s.qty,0):0)/3)||2,unit:'',cat:'prep',note:'Wipe dust before final coat'});
+    scopeItems.push({label:'2\" foam roller (doors)',qty:2,unit:'',cat:'tools',note:'Minimal texture on flat doors'});
+  }
+
+  // ── Assemble sections ──────────────────────────────────────
+  const sections=[
+    {id:'paint',label:'🎨 Paint',color:'#1a365d',bg:'#EBF2FB',items:paintItems},
+    {id:'prep',label:'🔧 Prep supplies',color:'#854F0B',bg:'#FFF7ED',items:scopeItems.filter(i=>i.cat==='prep')},
+    {id:'tools',label:'🪣 Tools & protection',color:'#2d6a4f',bg:'#F0FBF4',items:[...coreItems,...scopeItems].filter(i=>i.cat==='tools')},
+    {id:'rental',label:'🏗️ Rentals',color:'#5B21B6',bg:'#F5F3FF',items:scopeItems.filter(i=>i.cat==='rental')},
+  ].filter(s=>s.items.length>0);
+
+  // ── Build modal ────────────────────────────────────────────
+  const c=getClientById(b.client_id);
+  const ov=document.createElement('div');ov.className='zmodal-overlay';
+  const box=document.createElement('div');
+  box.style.cssText='background:var(--bg);border-radius:var(--rl);padding:0;width:100%;max-width:600px;max-height:92vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,.25)';
+
+  // Header
+  const hdr=document.createElement('div');
+  hdr.style.cssText='background:linear-gradient(135deg,#854F0B,#B45309);color:#fff;padding:18px 20px 14px;flex-shrink:0';
+  hdr.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
+      '<div>'+
+        '<div style="font-size:18px;font-weight:800;line-height:1.1">📦 Supply List</div>'+
+        '<div style="font-size:12px;opacity:.85;margin-top:3px">'+(c?c.name:'Job')+' · '+(totalSqFt?totalSqFt.toLocaleString()+' sq ft · ':'')+totalRooms+' room'+(totalRooms!==1?'s':'')+' · '+coats+' coat'+(coats!==1?'s':'')+'</div>'+
+      '</div>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'+
+      '<button onclick="supplyCheckAll(this)" style="font-size:11px;padding:4px 10px;border-radius:20px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;cursor:pointer;font-family:inherit">✓ Check all</button>'+
+      '<button onclick="supplyUncheckAll(this)" style="font-size:11px;padding:4px 10px;border-radius:20px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;cursor:pointer;font-family:inherit">↺ Uncheck all</button>'+
+    '</div>';
+  box.appendChild(hdr);
+
+  // Scrollable body
+  const body=document.createElement('div');
+  body.id='supply-list-body';
+  body.style.cssText='overflow-y:auto;padding:16px;flex:1';
+
+  sections.forEach(sec=>{
+    const secDiv=document.createElement('div');
+    secDiv.style.cssText='margin-bottom:16px';
+    secDiv.innerHTML=
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:'+sec.color+';background:'+sec.bg+';padding:6px 10px;border-radius:6px;margin-bottom:8px">'+sec.label+'</div>';
+
+    sec.items.forEach((item,idx)=>{
+      const row=document.createElement('label');
+      row.style.cssText='display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background .1s;margin-bottom:4px;background:var(--bg)';
+      row.onmouseover=()=>row.style.background='var(--bg2)';
+      row.onmouseout=()=>row.style.background='var(--bg)';
+      const hexDot=item.hex?'<span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:'+item.hex+';border:1px solid rgba(0,0,0,.15);margin-right:4px;vertical-align:middle;flex-shrink:0"></span>':'';
+      row.innerHTML=
+        '<input type="checkbox" class="supply-check" style="width:18px;height:18px;flex-shrink:0;margin-top:1px;accent-color:var(--blue);cursor:pointer;appearance:auto;-webkit-appearance:checkbox">'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">'+
+            '<span class="supply-label" style="font-size:13px;font-weight:600;color:var(--text)">'+hexDot+item.label+(item.qty>1||item.unit?' <span style="color:var(--blue-dk);font-weight:800">× '+(item.unit?item.qty+' '+item.unit:item.qty)+'</span>':'')+'</span>'+
+            (item.unit==='rental'?'<span style="font-size:10px;background:#F5F3FF;color:#5B21B6;padding:2px 6px;border-radius:10px;font-weight:700;flex-shrink:0">RENTAL</span>':'')+
+          '</div>'+
+          (item.note?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+item.note+'</div>':'')+
+          (item.detail?'<div style="font-size:11px;color:var(--text2);margin-top:1px">'+item.detail+'</div>':'')+
+        '</div>';
+      // Strike through on check
+      const cb=row.querySelector('input');
+      cb.onchange=()=>{
+        const lbl=row.querySelector('.supply-label');
+        lbl.style.textDecoration=cb.checked?'line-through':'none';
+        lbl.style.opacity=cb.checked?'0.45':'1';
+      };
+      secDiv.appendChild(row);
+    });
+    body.appendChild(secDiv);
+  });
+
+  // Footer note
+  const foot=document.createElement('div');
+  foot.style.cssText='padding:10px 16px 6px;font-size:10px;color:var(--text3);border-top:1px solid var(--border);flex-shrink:0;line-height:1.6';
+  foot.textContent='Quantities are calculated from job surfaces and scope. Verify with your SW rep for dark colors. Rental items need to be arranged in advance.';
+  body.appendChild(foot);
+  box.appendChild(body);
+  ov.appendChild(box);
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  document.body.appendChild(ov);
+}
+
+function supplyCheckAll(btn){
+  const body=document.getElementById('supply-list-body');
+  if(!body)return;
+  body.querySelectorAll('.supply-check').forEach(cb=>{
+    cb.checked=true;
+    const lbl=cb.closest('label').querySelector('.supply-label');
+    if(lbl){lbl.style.textDecoration='line-through';lbl.style.opacity='0.45';}
+  });
+}
+function supplyUncheckAll(btn){
+  const body=document.getElementById('supply-list-body');
+  if(!body)return;
+  body.querySelectorAll('.supply-check').forEach(cb=>{
+    cb.checked=false;
+    const lbl=cb.closest('label').querySelector('.supply-label');
+    if(lbl){lbl.style.textDecoration='none';lbl.style.opacity='1';}
+  });
+}
+
 function confirmMarkComplete(jobId){confirmJobDone(jobId);}
 function callClient(){const c=getClientById(currentClientId);if(c&&c.phone)window.location.href='tel:'+c.phone.replace(/\D/g,'');}
 function openMapsDir(){const c=getClientById(currentClientId);if(!c||!c.addr)return zAlert('No address on file for this client.');window.open('https://maps.apple.com/?daddr='+encodeURIComponent(c.addr),'_blank');}
