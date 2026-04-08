@@ -500,16 +500,16 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   
   <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:8px">
     <div style="display:flex;gap:6px;min-width:max-content;padding-bottom:2px">
-      <button class="fb active" id="cft-all"       onclick="setCF('all',this)">All</button>
-      <button class="fb"        id="cft-new"       onclick="setCF('new',this)">New</button>
-      <button class="fb"        id="cft-estimate"  onclick="setCF('estimate',this)">Estimate</button>
-      <button class="fb"        id="cft-pending"   onclick="setCF('pending',this)">Pending</button>
-      <button class="fb"        id="cft-follow_up" onclick="setCF('follow_up',this)">Follow up</button>
-      <button class="fb"        id="cft-won"       onclick="setCF('won',this)">Won</button>
-      <button class="fb"        id="cft-active"    onclick="setCF('active',this)">Active</button>
-      <button class="fb"        id="cft-collect"   onclick="setCF('collect',this)">Collect</button>
-      <button class="fb"        id="cft-closed"    onclick="setCF('closed',this)">Closed</button>
-      <button class="fb"        id="cft-refarm"    onclick="setCF('refarm',this)">Cold leads</button>
+      <button type="button" class="fb active" id="cft-all"       onclick="setCF('all',this)">All</button>
+      <button type="button" class="fb"        id="cft-new"       onclick="setCF('new',this)">New</button>
+      <button type="button" class="fb"        id="cft-estimate"  onclick="setCF('estimate',this)">Estimate</button>
+      <button type="button" class="fb"        id="cft-pending"   onclick="setCF('pending',this)">Pending</button>
+      <button type="button" class="fb"        id="cft-follow_up" onclick="setCF('follow_up',this)">Follow up</button>
+      <button type="button" class="fb"        id="cft-won"       onclick="setCF('won',this)">Won</button>
+      <button type="button" class="fb"        id="cft-active"    onclick="setCF('active',this)">Active</button>
+      <button type="button" class="fb"        id="cft-collect"   onclick="setCF('collect',this)">Collect</button>
+      <button type="button" class="fb"        id="cft-closed"    onclick="setCF('closed',this)">Closed</button>
+      <button type="button" class="fb"        id="cft-refarm"    onclick="setCF('refarm',this)">Cold leads</button>
     </div>
   </div>
   <div id="cf-tab-counts" style="font-size:11px;color:var(--text3);margin-bottom:8px"></div>
@@ -728,11 +728,11 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   </div>
   
   <div class="fbar">
-    <button class="fb active" id="cdt-overview" onclick="setCDTab('overview',this)">Overview</button>
-    <button class="fb" id="cdt-bids" onclick="setCDTab('bids',this)">Bids</button>
-    <button class="fb" id="cdt-jobs" onclick="setCDTab('jobs',this)">Jobs</button>
-    <button class="fb" id="cdt-mileage" onclick="setCDTab('mileage',this)">Mileage</button>
-    <button class="fb" id="cdt-expenses" onclick="setCDTab('expenses',this)">Expenses</button>
+    <button type="button" class="fb active" id="cdt-overview" onclick="setCDTab('overview',this)">Overview</button>
+    <button type="button" class="fb" id="cdt-bids" onclick="setCDTab('bids',this)">Bids</button>
+    <button type="button" class="fb" id="cdt-jobs" onclick="setCDTab('jobs',this)">Jobs</button>
+    <button type="button" class="fb" id="cdt-mileage" onclick="setCDTab('mileage',this)">Mileage</button>
+    <button type="button" class="fb" id="cdt-expenses" onclick="setCDTab('expenses',this)">Expenses</button>
   </div>
   <div id="cdt-overview-content">
     <div id="cd-estimates-upcoming"></div>
@@ -1143,8 +1143,8 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
 
   
   <div class="fbar" style="margin-bottom:12px">
-    <button class="fb active" id="sched-tab-est" onclick="setSchedType('estimate',this)">Schedule estimate</button>
-    <button class="fb" id="sched-tab-job" onclick="setSchedType('job',this)">Schedule job</button>
+    <button type="button" class="fb active" id="sched-tab-est" onclick="setSchedType('estimate',this)">Schedule estimate</button>
+    <button type="button" class="fb" id="sched-tab-job" onclick="setSchedType('job',this)">Schedule job</button>
   </div>
 
   <div class="card">
@@ -1245,11 +1245,11 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
 <div class="pg" id="pg-tracker">
   <div class="tbar"><div class="tbar-title">Books</div><div style="display:flex;align-items:center;gap:8px"><button class="btn btn-sm" onclick="openExportPanel()">⬇ Export</button><span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Year</span><select id="tracker-year-sel" onchange="setTrackerYear(parseInt(this.value))" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)"></select></div></div>
   <div class="fbar">
-    <button class="fb active" id="tr-t-income" onclick="setTrTab('income',this)">Income</button>
-    <button class="fb" id="tr-t-expenses" onclick="setTrTab('expenses',this)">Expenses</button>
-    <button class="fb" id="tr-t-mileage" onclick="setTrTab('mileage',this)">Mileage</button>
-    <button class="fb" id="tr-t-jobs" onclick="setTrTab('jobs',this)">Jobs</button>
-    <button class="fb" id="tr-t-summary" onclick="setTrTab('summary',this)">Summary</button>
+    <button type="button" class="fb active" id="tr-t-income" onclick="setTrTab('income',this)">Income</button>
+    <button type="button" class="fb" id="tr-t-expenses" onclick="setTrTab('expenses',this)">Expenses</button>
+    <button type="button" class="fb" id="tr-t-mileage" onclick="setTrTab('mileage',this)">Mileage</button>
+    <button type="button" class="fb" id="tr-t-jobs" onclick="setTrTab('jobs',this)">Jobs</button>
+    <button type="button" class="fb" id="tr-t-summary" onclick="setTrTab('summary',this)">Summary</button>
   </div>
   <div id="tr-income">
     
@@ -1311,7 +1311,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   <div class="tbar"><div class="tbar-title">Taxes</div><button class="btn btn-sm btn-p" onclick="openExportPanel()">⬇ Export</button></div>
   <div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-size:11px;color:#92400E;line-height:1.6"><strong>⚠️ Not a licensed tax tool.</strong> These numbers are estimates only — not a substitute for a CPA. Do not file taxes based solely on these figures. Consult a qualified tax professional, especially for self-employment tax and quarterly payments.</div>
   <div class="fbs" style="margin-bottom:14px">
-    <button class="fb active" id="tx-tab-current" onclick="setTaxTab('current',this)">Current year</button>
+    <button type="button" class="fb active" id="tx-tab-current" onclick="setTaxTab('current',this)">Current year</button>
   </div>
   <div id="tx-current-pane">
 
@@ -1513,11 +1513,11 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   <div class="tbar"><div class="tbar-title">Leads</div><button class="btn btn-p btn-sm" onclick="openNewClient()">+ New lead</button></div>
   <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:12px">
     <div style="display:flex;gap:6px;padding-bottom:4px;min-width:max-content">
-      <button class="fb active" id="lft-all"      onclick="setLeadFilter('all',this)">All</button>
-      <button class="fb"        id="lft-new"      onclick="setLeadFilter('new',this)">New</button>
-      <button class="fb"        id="lft-estimate" onclick="setLeadFilter('estimate',this)">Estimate</button>
-      <button class="fb"        id="lft-follow_up" onclick="setLeadFilter('follow_up',this)">Follow-up</button>
-      <button class="fb"        id="lft-pending"  onclick="setLeadFilter('pending',this)">Pending bid</button>
+      <button type="button" class="fb active" id="lft-all"      onclick="setLeadFilter('all',this)">All</button>
+      <button type="button" class="fb"        id="lft-new"      onclick="setLeadFilter('new',this)">New</button>
+      <button type="button" class="fb"        id="lft-estimate" onclick="setLeadFilter('estimate',this)">Estimate</button>
+      <button type="button" class="fb"        id="lft-follow_up" onclick="setLeadFilter('follow_up',this)">Follow-up</button>
+      <button type="button" class="fb"        id="lft-pending"  onclick="setLeadFilter('pending',this)">Pending bid</button>
     </div>
   </div>
   <div id="leads-list"></div>
@@ -1526,10 +1526,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   <div class="tbar"><div><div class="tbar-title">Jobs</div><div class="tbar-sub" id="jobs-count-sub"></div></div><button class="btn btn-p btn-sm" onclick="goPg('pg-schedule')">+ Schedule</button></div>
   <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:14px">
     <div style="display:flex;gap:6px;padding-bottom:4px;min-width:max-content">
-      <button class="fb active" id="jft-all"       onclick="setJobFilter('all',this)">Board</button>
-      <button class="fb"        id="jft-scheduled"  onclick="setJobFilter('scheduled',this)">Scheduled</button>
-      <button class="fb"        id="jft-active"     onclick="setJobFilter('active',this)">Active</button>
-      <button class="fb"        id="jft-completed"  onclick="setJobFilter('completed',this)">Completed</button>
+      <button type="button" class="fb active" id="jft-all"       onclick="setJobFilter('all',this)">Board</button>
+      <button type="button" class="fb"        id="jft-scheduled"  onclick="setJobFilter('scheduled',this)">Scheduled</button>
+      <button type="button" class="fb"        id="jft-active"     onclick="setJobFilter('active',this)">Active</button>
+      <button type="button" class="fb"        id="jft-completed"  onclick="setJobFilter('completed',this)">Completed</button>
     </div>
   </div>
   <div id="jobs-list"></div>
@@ -1539,11 +1539,11 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   <div id="money-summary" style="margin-bottom:12px"></div>
   <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:12px">
     <div style="display:flex;gap:6px;padding-bottom:4px;min-width:max-content">
-      <button class="fb active" id="mft-all"      onclick="setMoneyFilter('all',this)">All owed</button>
-      <button class="fb"        id="mft-overdue"  onclick="setMoneyFilter('overdue',this)">Overdue</button>
-      <button class="fb"        id="mft-partial"  onclick="setMoneyFilter('partial',this)">Partial</button>
-      <button class="fb"        id="mft-unpaid"   onclick="setMoneyFilter('unpaid',this)">Unsent</button>
-      <button class="fb"        id="mft-paid"     onclick="setMoneyFilter('paid',this)">Paid</button>
+      <button type="button" class="fb active" id="mft-all"      onclick="setMoneyFilter('all',this)">All owed</button>
+      <button type="button" class="fb"        id="mft-overdue"  onclick="setMoneyFilter('overdue',this)">Overdue</button>
+      <button type="button" class="fb"        id="mft-partial"  onclick="setMoneyFilter('partial',this)">Partial</button>
+      <button type="button" class="fb"        id="mft-unpaid"   onclick="setMoneyFilter('unpaid',this)">Unsent</button>
+      <button type="button" class="fb"        id="mft-paid"     onclick="setMoneyFilter('paid',this)">Paid</button>
     </div>
   </div>
   <div id="money-list"></div>
@@ -1778,16 +1778,20 @@ function getConfig(){return _config||BUSINESS_CONFIGS.painting;}
 function getBusinessName(){return _account?.business_name||S.bname||"TradeDesk";}
 function getUserName(){return _user?.name||'';}
 function getOwnerName(){
-  // Per-user name stored by user ID — never shared across accounts
+  // Check localStorage first (device-specific, fast)
   if(_supaUser?.id){
     const stored=localStorage.getItem('zp3_uname_'+_supaUser.id);
     if(stored)return stored;
   }
+  // Fall back to S.ownerName (synced from Supabase on other devices)
+  if(S.ownerName)return S.ownerName;
   return _user?.name||'';
 }
 function setOwnerName(name){
   if(_supaUser?.id)localStorage.setItem('zp3_uname_'+_supaUser.id,name);
   if(_user)_user.name=name;
+  // Also store in S so it syncs to Supabase with the rest of settings
+  S.ownerName=name;
 }
 let FED_BRACKETS={single:[],mfj:[],mfs:[],hoh:[]};
 let STD_DED={single:14600,mfj:29200,mfs:14600,hoh:21900};
@@ -11378,6 +11382,17 @@ function supaSaveDebounced(){
 async function supaSaveToCloud(){
   if(!_supa||!_supaUser)return;
   try{
+    // Strip receipt images from sync payload — store separately in localStorage
+    // Base64 images are too large for Supabase text columns and break sync
+    const expensesForSync=expenses.map(e=>{
+      if(e.receipt_img){
+        // Save image to localStorage keyed by expense id
+        try{localStorage.setItem('zp3_rcpt_'+e.id,e.receipt_img);}catch(err){}
+        const{receipt_img,...rest}=e;
+        return{...rest,receipt_img_local:true};
+      }
+      return e;
+    });
     const payload={
       user_id:_supaUser.id,
       clients:JSON.stringify(clients),
@@ -11385,7 +11400,7 @@ async function supaSaveToCloud(){
       jobs:JSON.stringify(jobs),
       payments:JSON.stringify(payments),
       income:JSON.stringify(income),
-      expenses:JSON.stringify(expenses),
+      expenses:JSON.stringify(expensesForSync),
       mileage:JSON.stringify(mileage),
       liens:JSON.stringify(liens),
       settings:JSON.stringify(S),
