@@ -1162,6 +1162,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
       <div style="font-size:11px;color:var(--text3);margin-top:4px;margin-left:28px">Saturday and Sunday will show as available when scheduling</div>
     </div>
         <div class="brow"><button class="btn" onclick="goEstStep(3)">&#8592; Back</button><button class="btn btn-p" onclick="validateAndGoStep5()">Generate proposal &#8594;</button></div>
+        <div class="brow" style="margin-top:6px"><button class="btn" onclick="saveAndExitEstimate()" style="width:100%;background:var(--bg2);border-color:var(--border2);color:var(--text2);font-size:13px">💾 Save bid &amp; exit — I'll finish later</button></div>
   </div>
   <div id="est-s5" style="display:none">
     <div id="est-proposal"></div>
@@ -8234,8 +8235,8 @@ function buildProposal(){
     const diff=Math.round((laborTotal-roomNames.reduce((s,r)=>s+roomCosts[r].total,0))*100)/100;
     if(diff&&roomNames.length)roomCosts[roomNames[roomNames.length-1]].total+=diff;
   }
-  // Proposal total = what's actually on the rows — rooms + materials
-  const proposalTotal=Math.round((roomNames.reduce((s,r)=>s+roomCosts[r].total,0)+matLine+(adj||0))*100)/100;
+  // Use final from calcEst directly — room/mat breakdown is display only
+  const proposalTotal=final;
 
   // Build table rows — one per room — showing per-room scope in description
   const roomRows=roomNames.map((room,roomIdx)=>{
@@ -8265,7 +8266,8 @@ function buildProposal(){
           return '<div style="font-size:11px;color:#555;line-height:1.7"><span style="font-weight:600;color:#333">'+ps.surfLabel+':</span> '+dot+ps.spec+'</div>';
         }).join('')+'</div>'
       :'';
-    const descContent='<strong style="font-size:13px">'+room+'</strong>'+
+    const custPaintBadge=customerPaint?'<span style="font-size:10px;background:#FEF3C7;color:#856404;border:1px solid #D97706;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700">Client supplies paint</span>':'';
+    const descContent='<strong style="font-size:13px">'+room+'</strong>'+custPaintBadge+
       paintSpecHtml+
       scopeHtml;
     const rowBg=roomIdx%2===0?'#ffffff':'#f8fafc';
@@ -8319,8 +8321,8 @@ function buildProposal(){
       <tr style="border-bottom:1px solid var(--border)">
         <td style="padding:8px 12px;text-align:center;font-weight:700;vertical-align:top">1</td>
         <td style="padding:8px 12px;font-size:12px;color:#1a1a1a">
-          <strong>${customerPaint?'Materials':'Paint, Primer &amp; Materials'}</strong><br>
-          <span style="font-size:11px;color:#666">${customerPaint?'Tape, plastic sheeting, rollers, brushes, drop cloths and all supplies. Paint supplied by customer — no warranty on finish.':'Includes paint, primer, tape, plastic sheeting, rollers, brushes, drop cloths and all supplies needed to complete the job.'}</span>
+          <strong>${customerPaint?'Prep &amp; Application Supplies':'Paint, Primer &amp; Materials'}</strong><br>
+          <span style="font-size:11px;color:#666">${customerPaint?'All prep supplies, tape, plastic sheeting, rollers, brushes, and drop cloths included. <strong>Paint to be supplied by client prior to start date.</strong> No warranty is provided on finish quality, sheen, or color accuracy when client-supplied paint is used.':'Includes paint, primer, tape, plastic sheeting, rollers, brushes, drop cloths and all supplies needed to complete the job.'}</span>
         </td>
         <td style="padding:8px 12px;text-align:right;font-weight:700;vertical-align:top">${fmt(matLine)}</td>
         <td style="padding:8px 12px;text-align:right;font-weight:700;vertical-align:top">${fmt(matLine)}</td>
@@ -8629,10 +8631,16 @@ function saveAndExitEstimate(){
   if(lastCreatedBidId){
     const b=bids.find(x=>x.id===lastCreatedBidId);
     if(b){
-      b.amount=final;b.status=b.status==='Closed Won'?'Closed Won':'Pending';
+      b.amount=final;
+      b.status=b.status==='Closed Won'?'Closed Won':'Pending';
+      b.draft=false; // clear draft flag so getClientBids() picks it up
+      delete b.draft;
       if(!b.followup)b.followup=addDays(todayKey(),3);
       if(clientId&&!b.client_id)b.client_id=clientId;
-      b.surfaces=[...estSurfaces];b.roomScopeMap=JSON.parse(JSON.stringify(roomScopeMap));
+      b.surfaces=[...estSurfaces];
+      b.roomScopeMap=JSON.parse(JSON.stringify(roomScopeMap));
+      b.paint=document.getElementById('e-paint')?.value||'';
+      b.days=days;
     }
   } else {
     const c=clientId?getClientById(clientId):null;
