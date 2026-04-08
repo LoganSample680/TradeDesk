@@ -985,6 +985,16 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
         
         <div id="surf-b-subopts" style="margin-bottom:12px;display:none"></div>
 
+        <!-- Product line selector -->
+        <div style="margin-top:14px;background:var(--bg2);border-radius:var(--rl);border:1px solid var(--border2);overflow:hidden">
+          <div style="padding:10px 12px 8px;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between">
+            <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3)">Product <span style="color:#A32D2D">*</span></div>
+            <div id="sw-product-selected" style="font-size:11px;font-weight:700;color:var(--blue)"></div>
+          </div>
+          <div id="sw-product-grid" style="padding:8px 10px;display:grid;grid-template-columns:1fr 1fr;gap:5px"></div>
+          <input type="hidden" id="sw-selected-product" value="">
+        </div>
+
         <!-- Color browser -->
         <div style="margin-top:14px;background:var(--bg2);border-radius:var(--rl);border:1px solid var(--border2);overflow:hidden">
           <!-- Header with selected pill -->
@@ -5545,6 +5555,81 @@ function swOpenFullscreenColor(hex,name,sw){
   const useBtn=ov.querySelector('#sw-use-btn');
   if(useBtn)useBtn.onclick=(e)=>{e.stopPropagation();swSelectColor(sw,name.replace(/ \(SW.*\)/,'').trim(),hex);ov.remove();};
 }
+// ══ SW Product Lines ══════════════════════════════════════
+const SW_PRODUCTS={
+  interior:[
+    {id:'pm700', name:'ProMar 700',    sub:'Budget · rentals, new construction',        price:'$'},
+    {id:'pm400', name:'ProMar 400',    sub:'Economy · fast flips, basic repaint',        price:'$'},
+    {id:'pm200', name:'ProMar 200',    sub:'Standard · everyday residential',            price:'$$'},
+    {id:'sp',    name:'SuperPaint',    sub:'Mid-grade · paint+primer, high traffic',     price:'$$'},
+    {id:'cash',  name:'Cashmere',      sub:'Premium feel · smooth luxury finish',        price:'$$$'},
+    {id:'dur',   name:'Duration Home', sub:'Durable · kids, pets, high traffic',         price:'$$$'},
+    {id:'em',    name:'Emerald',       sub:'Top tier · best hide, washable',             price:'$$$$'},
+    {id:'emde',  name:'Emerald Designer',sub:'Best of best · flawless finish',           price:'$$$$'},
+  ],
+  exterior:[
+    {id:'a100',  name:'A-100 Exterior',    sub:'Budget exterior',                        price:'$'},
+    {id:'spe',   name:'SuperPaint Ext.',   sub:'Standard · workhorse exterior',          price:'$$'},
+    {id:'dure',  name:'Duration Exterior', sub:'Premium · 25yr warranty',               price:'$$$'},
+    {id:'eme',   name:'Emerald Exterior',  sub:'Best · color retention, self-cleaning', price:'$$$$'},
+  ],
+  trim:[
+    {id:'pm200t',name:'ProMar 200',        sub:'Standard trim & doors',                 price:'$$'},
+    {id:'pclass',name:'ProClassic WB',     sub:'Smooth trim & cabinetry',               price:'$$$'},
+    {id:'emure', name:'Emerald Urethane',  sub:'Best · doors, cabinets, furniture',     price:'$$$$'},
+  ],
+};
+const SURF_PRODUCT_TYPE={
+  walls:'interior',ceiling:'interior',
+  ext_walls:'exterior',ext_trim:'exterior',deck:'exterior',
+  trim:'trim',doors:'trim',windows:'trim',cabinets:'trim',
+};
+let _swProduct=null;
+
+function swRenderProductGrid(surfType){
+  const grid=document.getElementById('sw-product-grid');if(!grid)return;
+  const category=SURF_PRODUCT_TYPE[surfType]||'interior';
+  const products=SW_PRODUCTS[category]||SW_PRODUCTS.interior;
+  grid.innerHTML='';
+  products.forEach(p=>{
+    const btn=document.createElement('button');
+    btn.type='button';
+    btn.dataset.id=p.id;
+    btn.style.cssText='padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);cursor:pointer;font-family:inherit;text-align:left;transition:border .1s';
+    btn.innerHTML='<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">'+
+      '<span style="font-size:12px;font-weight:700;color:var(--text)">'+p.name+'</span>'+
+      '<span style="font-size:11px;color:var(--text3)">'+p.price+'</span>'+
+      '</div>'+
+      '<div style="font-size:10px;color:var(--text3);line-height:1.3">'+p.sub+'</div>';
+    btn.onclick=()=>swSelectProduct(p,btn);
+    grid.appendChild(btn);
+  });
+}
+
+function swSelectProduct(p,btn){
+  document.querySelectorAll('#sw-product-grid button').forEach(b=>{
+    b.style.border='1px solid var(--border2)';b.style.background='var(--bg)';
+  });
+  btn.style.border='2px solid var(--blue)';btn.style.background='var(--blue-lt)';
+  _swProduct=p;
+  const h=document.getElementById('sw-selected-product');if(h)h.value=p.id;
+  const lbl=document.getElementById('sw-product-selected');if(lbl)lbl.textContent=p.name;
+}
+
+function swResetProduct(){
+  _swProduct=null;
+  const h=document.getElementById('sw-selected-product');if(h)h.value='';
+  const lbl=document.getElementById('sw-product-selected');if(lbl)lbl.textContent='';
+  document.querySelectorAll('#sw-product-grid button').forEach(b=>{
+    b.style.border='1px solid var(--border2)';b.style.background='var(--bg)';
+  });
+}
+
+function swGetProductName(){
+  if(!_swProduct)return'';
+  return _swProduct.name;
+}
+
 function addSurfColorField(){
   const list=document.getElementById('surf-colors-list');if(!list)return;
   const inp=document.createElement('input');
@@ -5654,8 +5739,11 @@ function goSurfStepB(){
 function renderSurfBCurrent(){
   // Reset color+finish for each new surface type
   _swResetColorUI();
+  swResetProduct();
   const roomSqftVal=parseFloat(document.getElementById('surf-room-sqft')?.value)||0;
   const type=surfBQueue[surfBIdx];
+  // Render product grid filtered for this surface type
+  swRenderProductGrid(type);
   const label=SURF_LABELS[type]||type;
   const total=surfBQueue.length;
   const prog=document.getElementById('surf-b-progress');
@@ -5816,14 +5904,18 @@ function adjSurfBCount(d){
 }
 
 function saveSurfBAndNext(){
-  // Require color and finish
+  // Require product, color and finish
+  const _productVal=(document.getElementById('sw-selected-product')?.value||'').trim();
   const _colorVal=(document.getElementById('surf-color-b')?.value||'').trim();
   const _finishVal=(document.getElementById('sw-selected-finish')?.value||'').trim();
   const _accentVal=(document.getElementById('sw-accent-note')?.value||'').trim();
+  if(!_productVal){
+    zAlert('Select a paint product for this surface.',{title:'Product required'});return;
+  }
   if(!_colorVal){
-    const el=document.getElementById('surf-color-b');
+    const el=document.getElementById('sw-search-input');
     if(el){el.style.borderColor='#A32D2D';el.style.background='var(--red-lt)';el.focus();}
-    zAlert('Enter a color for this surface.',{title:'Color required'});return;
+    zAlert('Select a color for this surface.',{title:'Color required'});return;
   }
   if(!_finishVal){
     zAlert('Select a finish for this surface.',{title:'Finish required'});return;
@@ -5832,7 +5924,8 @@ function saveSurfBAndNext(){
   const _finish=document.getElementById('sw-selected-finish')?.value||_swFinish||'';
   const _surfColorVal=(document.getElementById('surf-color-b')?.value||surfColor||'').trim();
   const _accentNote=(document.getElementById('sw-accent-note')?.value||'').trim();
-  const colorNote=_surfColorVal?' — '+_surfColorVal+(_finish?' ['+_finish+']':'')+(_accentNote?' + Accent: '+_accentNote:''):'  ';
+  const _productName=swGetProductName();
+  const colorNote=_surfColorVal?' — '+(_productName?_productName+' · ':'')+_surfColorVal+(_finish?' ['+_finish+']':'')+(_accentNote?' + Accent: '+_accentNote:''):'  ';
   const prefix=surfJobType==='exterior'?'[Ext] ':'';
 
   if(type==='walls'||type==='ext_walls'||type==='ceiling'||type==='deck'){
