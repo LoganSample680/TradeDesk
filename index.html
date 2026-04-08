@@ -1252,7 +1252,6 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <button class="fb" id="tr-t-summary" onclick="setTrTab('summary',this)">Summary</button>
   </div>
   <div id="tr-income">
-    <div class="tip">Income is logged automatically when you record a payment on a client's bid. To add income, go to a client record and tap <strong>Log payment</strong>.</div>
     
     <input type="hidden" id="inc-date"><input type="hidden" id="inc-client-sel">
     <input type="hidden" id="inc-type"><input type="hidden" id="inc-amount">
@@ -1261,7 +1260,6 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <div class="card"><div class="card-hd">Income log</div><div id="inc-table"></div></div>
   </div>
   <div id="tr-expenses" style="display:none">
-    <div class="tip">Photo every receipt the moment you buy something.</div>
     <div class="card">
       <div class="card-hd">Scan a receipt
         <span><button class="btn btn-sm btn-p" onclick="triggerReceiptScan()">📷 Scan</button></span>
@@ -1270,7 +1268,6 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
       <input type="file" id="receipt-file-input" accept="image/*" capture="environment" style="display:none" onchange="processReceiptPhoto(this)">
       <div id="scan-result" style="display:none"></div>
     </div>
-    <div class="tip">To log an expense, tap <strong>4. Log Expense</strong> on the home screen — it links automatically to the client and job.</div>
     <div class="card"><div class="card-hd">Expense log</div><div id="exp-table"></div></div>
   </div>
   <div id="tr-mileage" style="display:none">
