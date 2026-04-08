@@ -916,9 +916,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
         </div>
 
         <input type="hidden" id="surf-color" class="surf-color-entry" value="">
-        <input type="hidden" id="sw-selected-hex" value="">
-        <input type="hidden" id="sw-selected-finish" value="">
-        <div id="surf-colors-list" style="display:none"></div>
+        <input type="hidden" id="surf-colors-list" style="display:none"></input>
 
         <div style="margin-bottom:14px">
           <label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:8px">What needs painting? <span style="font-weight:400;opacity:.6">Select all that apply</span></label>
@@ -1002,6 +1000,12 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
           </div>
           <input type="hidden" id="sw-selected-hex" value="">
           <input type="hidden" id="sw-selected-finish" value="">
+          <div id="sw-accent-wrap" style="display:none;margin-top:8px">
+            <input id="sw-accent-note" placeholder="Accent wall color e.g. Naval (SW 6244) Eggshell" 
+              style="font-size:12px;padding:7px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);width:100%;box-sizing:border-box">
+          </div>
+          <button type="button" onclick="document.getElementById('sw-accent-wrap').style.display=document.getElementById('sw-accent-wrap').style.display==='none'?'block':'none'" 
+            style="margin-top:6px;font-size:11px;color:var(--blue-dk);background:none;border:none;cursor:pointer;font-family:inherit;padding:0">+ Accent wall?</button>
         </div>
 
         <button class="btn btn-p btn-full" id="surf-b-next-btn" onclick="saveSurfBAndNext()" style="font-size:15px;padding:14px;margin-top:10px">
@@ -5299,7 +5303,7 @@ let _currentScopeRoom='';  // room name currently shown in scope grid
 let _swColors=null,_swFinish='';
 async function swLoadColors(){
   if(_swColors)return _swColors;
-  try{const r=await fetch('sw-colors.json');_swColors=await r.json();}
+  try{const r=await fetch('sw-colors.json?v=2');_swColors=await r.json();}
   catch(e){_swColors=[
     {sw:'SW 7008',name:'Alabaster',hex:'#EDE9DD'},
     {sw:'SW 7015',name:'Repose Gray',hex:'#CCC9C0'},
@@ -5391,11 +5395,12 @@ function _swResetColorUI(){
   const clrBtn=document.getElementById('sw-clear-btn');if(clrBtn)clrBtn.style.display='none';
   const finH=document.getElementById('sw-selected-finish');if(finH)finH.value='';
   _swFinish='';
-  document.querySelectorAll('.sw-finish-btn').forEach((b,i)=>{
-    if(i===0){b.style.border='2px solid var(--blue)';b.style.background='var(--blue-lt)';b.style.color='var(--blue-dk)';b.style.fontWeight='700';}
-    else{b.style.border='1px solid var(--border2)';b.style.background='var(--bg2)';b.style.color='var(--text)';b.style.fontWeight='600';}
+  document.querySelectorAll('#surf-step-b .sw-finish-btn').forEach(b=>{
+    b.style.border='1px solid var(--border2)';b.style.background='var(--bg)';b.style.color='var(--text)';b.style.fontWeight='600';
   });
   const dd=document.getElementById('sw-dropdown');if(dd)dd.style.display='none';
+  const aw=document.getElementById('sw-accent-wrap');if(aw)aw.style.display='none';
+  const an=document.getElementById('sw-accent-note');if(an)an.value='';
 }
 function swClearColor(){
   const inp=document.getElementById('surf-color');
@@ -5409,8 +5414,8 @@ function swClearColor(){
   surfColor='';
 }
 function swSelectFinish(btn){
-  document.querySelectorAll('.sw-finish-btn').forEach(b=>{
-    b.style.border='1px solid var(--border2)';b.style.background='var(--bg2)';b.style.color='var(--text)';b.style.fontWeight='600';
+  document.querySelectorAll('#surf-step-b .sw-finish-btn').forEach(b=>{
+    b.style.border='1px solid var(--border2)';b.style.background='var(--bg)';b.style.color='var(--text)';b.style.fontWeight='600';
   });
   btn.style.border='2px solid var(--blue)';btn.style.background='var(--blue-lt)';btn.style.color='var(--blue-dk)';btn.style.fontWeight='700';
   _swFinish=btn.dataset.finish;
@@ -5718,6 +5723,7 @@ function saveSurfBAndNext(){
   // Require color and finish
   const _colorVal=(document.getElementById('surf-color-b')?.value||'').trim();
   const _finishVal=(document.getElementById('sw-selected-finish')?.value||'').trim();
+  const _accentVal=(document.getElementById('sw-accent-note')?.value||'').trim();
   if(!_colorVal){
     const el=document.getElementById('surf-color-b');
     if(el){el.style.borderColor='#A32D2D';el.style.background='var(--red-lt)';el.focus();}
@@ -5729,7 +5735,8 @@ function saveSurfBAndNext(){
   const type=surfBQueue[surfBIdx];
   const _finish=document.getElementById('sw-selected-finish')?.value||_swFinish||'';
   const _surfColorVal=(document.getElementById('surf-color-b')?.value||surfColor||'').trim();
-  const colorNote=_surfColorVal?' — '+_surfColorVal+(_finish?' ['+_finish+']':''):'  ';
+  const _accentNote=(document.getElementById('sw-accent-note')?.value||'').trim();
+  const colorNote=_surfColorVal?' — '+_surfColorVal+(_finish?' ['+_finish+']':'')+(_accentNote?' + Accent: '+_accentNote:''):'  ';
   const prefix=surfJobType==='exterior'?'[Ext] ':'';
 
   if(type==='walls'||type==='ext_walls'||type==='ceiling'||type==='deck'){
