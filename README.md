@@ -4,7 +4,7 @@ A complete mobile-first business management app for solo and small contractors. 
 
 ## Live App
 
-**[https://logansample680.github.io/zj-painting/](https://logansample680.github.io/zj-painting/)**
+**https://logansample680.github.io/TradeDesk/**
 
 Safari → Share → Add to Home Screen
 
