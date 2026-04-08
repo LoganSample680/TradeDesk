@@ -11493,15 +11493,14 @@ function supaSetStatus(s){
   _syncStatus=s;
   const el=document.getElementById('supa-status');
   if(!el)return;
-  const labels={local:'',syncing:'🔄 Saving...',synced:'✅ Synced',error:'⚠️ Sync error'};
-  const colors={local:'var(--text3)',syncing:'var(--amber)',synced:'var(--green-mid)',error:'#A32D2D'};
-  el.textContent=labels[s]||'';
-  el.style.color=colors[s]||'var(--text3)';
-  el.style.opacity='1';
-  // Auto-hide after 3s for synced, keep visible for syncing/error
-  clearTimeout(el._hideTimer);
-  if(s==='synced'||s==='local'){
-    el._hideTimer=setTimeout(()=>{el.style.opacity='0';},3000);
+  // Only show errors — syncing/synced are silent
+  if(s==='error'){
+    el.textContent='⚠️ Sync error — check connection';
+    el.style.color='#A32D2D';
+    el.style.opacity='1';
+  } else {
+    el.textContent='';
+    el.style.opacity='0';
   }
 }
 
