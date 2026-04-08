@@ -5300,7 +5300,7 @@ let surfJobType='interior', surfColor='', surfRoom='';
 let _currentScopeRoom='';  // room name currently shown in scope grid
 
 // ── SW Color Search ──────────────────────────────────────────
-let _swColors=null,_swFinish='';
+
 async function swLoadColors(){
   if(_swColors)return _swColors;
   try{const r=await fetch('sw-colors.json?v=2');_swColors=await r.json();}
@@ -5552,7 +5552,8 @@ function goSurfStepB(){
   surfBMeasurements={};
   document.getElementById('surf-step-a').style.display='none';
   document.getElementById('surf-step-b').style.display='';
-  document.getElementById('surf-b-roomname').textContent=surfRoom+(surfColor?' — '+surfColor:'');
+  document.getElementById('surf-b-roomname').textContent=surfRoom;
+  swInitFamilyGrid();
   renderSurfBCurrent();
 }
 
