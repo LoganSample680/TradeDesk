@@ -8140,7 +8140,6 @@ function buildProposal(){
   // Build per-room cost rows for the proposal table
   const gR=id=>parseFloat(document.getElementById(id)?.value)||0;
   const R={walls:gR('e-r-walls')||S.rWalls||1.00,ceiling:gR('e-r-ceil')||S.rCeil||0.85,trim:gR('e-r-trim')||S.rTrim||1.50,doors:gR('e-r-door')||S.rDoor||95,windows:gR('e-r-win')||S.rWin||50,cabinets:38,ext_walls:gR('e-r-ext')||S.rExt||1.10,ext_trim:gR('e-r-trim')||S.rTrim||1.50,deck:gR('e-r-deck')||S.rDeck||1.00};
-  const coats=scopeOn('twocoat')?2:1;
   const contingencyPct=typeof S.contingencyPct==='number'?S.contingencyPct:7;
   const hasRoomScope=Object.keys(roomScopeMap).length>0&&Object.values(roomScopeMap).some(r=>Object.keys(r).length>0);
 
