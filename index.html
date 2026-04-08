@@ -97,7 +97,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #nav-user-role{font-size:10px;color:rgba(255,255,255,.35);margin-top:1px;}
 /* ── App layout ── */
 #app{padding-left:var(--nav-w);padding-bottom:0;min-height:100vh}
-#supa-status{left:var(--nav-w)}
+#supa-status{left:var(--nav-w);transition:opacity 0.8s ease;opacity:0}
 .drive-banner{left:var(--nav-w)}
 /* ── Mobile: collapse sidebar to icons ── */
 @media(max-width:767px){
@@ -11497,6 +11497,12 @@ function supaSetStatus(s){
   const colors={local:'var(--text3)',syncing:'var(--amber)',synced:'var(--green-mid)',error:'#A32D2D'};
   el.textContent=labels[s]||'';
   el.style.color=colors[s]||'var(--text3)';
+  el.style.opacity='1';
+  // Auto-hide after 3s for synced, keep visible for syncing/error
+  clearTimeout(el._hideTimer);
+  if(s==='synced'||s==='local'){
+    el._hideTimer=setTimeout(()=>{el.style.opacity='0';},3000);
+  }
 }
 
 loadAll();applySettings();
