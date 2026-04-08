@@ -7800,7 +7800,7 @@ function renderEstRunning(){
   el.innerHTML=html;
 }
 function renderEstReview(){
-  const{lines,base,adj,final,laborTotal,matTotal,totalLaborHours,laborRate,paintCostPerGal,paintLines,totalPaintSqFt}=calcEst();
+  const{lines,base,adj,final,laborTotal,matTotal,totalLaborHours,laborRate,paintCostPerGal,paintLines,totalPaintSqFt,coats}=calcEst();
   const el=document.getElementById('est-review');if(!el)return;
   if(!estSurfaces.length&&!lines.length){el.innerHTML='<div class="empty">No surfaces added yet.</div>';return;}
 
