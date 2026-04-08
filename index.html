@@ -11382,12 +11382,11 @@ function supaSaveDebounced(){
 async function supaSaveToCloud(){
   if(!_supa||!_supaUser)return;
   try{
-    // Strip receipt images from sync payload — store separately in localStorage
-    // Base64 images are too large for Supabase text columns and break sync
+    // Separate receipt images into their own column to keep main payload lean
+    const receiptImages={};
     const expensesForSync=expenses.map(e=>{
       if(e.receipt_img){
-        // Save image to localStorage keyed by expense id
-        try{localStorage.setItem('zp3_rcpt_'+e.id,e.receipt_img);}catch(err){}
+        receiptImages[e.id]=e.receipt_img;
         const{receipt_img,...rest}=e;
         return{...rest,receipt_img_local:true};
       }
@@ -11404,6 +11403,7 @@ async function supaSaveToCloud(){
       mileage:JSON.stringify(mileage),
       liens:JSON.stringify(liens),
       settings:JSON.stringify(S),
+      receipt_images:JSON.stringify(receiptImages),
       updated_at:new Date().toISOString()
     };
     const{error}=await _supa.from('zj_data').upsert(payload,{onConflict:'user_id'});
@@ -11457,7 +11457,10 @@ async function supaLoadFromCloud(){
     jobs=parse(data.jobs,jobs);
     payments=parse(data.payments,payments);
     income=parse(data.income,income);
-    expenses=parse(data.expenses,expenses);
+    // Restore receipt images from dedicated column back onto expense records
+    const rcptImgs=parse(data.receipt_images,{});
+    const rawExp=parse(data.expenses,expenses);
+    expenses=rawExp.map(e=>rcptImgs[e.id]?{...e,receipt_img:rcptImgs[e.id]}:e);
     expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
     mileage=parse(data.mileage,mileage);
     liens=parse(data.liens,liens);
