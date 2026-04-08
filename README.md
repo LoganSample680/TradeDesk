@@ -1,12 +1,12 @@
-# TradeDesk — All-in-One Contractor Suite
+# TradeDesk — All-in-One Contractor Business Suite
 
-A complete mobile-first business management app for a solo painting contractor. Built as a single HTML file — no server, no dependencies, no install. Runs entirely in the browser from a GitHub Pages URL.
+A complete mobile-first business management app for solo and small contractors. Built as a single HTML file — no install, no app store, runs entirely in the browser. Add to iPhone home screen for a native app experience.
 
 ## Live App
 
-**[Open the app](https://logansample680.github.io/zj-painting/)**
+**[https://logansample680.github.io/zj-painting/](https://logansample680.github.io/zj-painting/)**
 
-Bookmark it on your iPhone home screen: Safari → Share → Add to Home Screen
+Safari → Share → Add to Home Screen
 
 ---
 
@@ -15,75 +15,118 @@ Bookmark it on your iPhone home screen: Safari → Share → Add to Home Screen
 | File | Description |
 |------|-------------|
 | `index.html` | The full app — every feature in one file |
-| `signing-setup/README.md` | How to set up remote PDF signing + notifications |
-| `signing-setup/webhook-test.sh` | Test your ntfy push notifications |
-| `signing-setup/docuseal-env.txt` | Railway deployment variables for DocuSeal |
+| `supabase-setup.sql` | Run once in Supabase SQL Editor to create the database |
+| `supabase-setup/README.md` | Step-by-step Supabase + cloud sync setup |
+| `signing-setup/README.md` | DocuSeal + ntfy remote signing and notifications |
 
 ---
 
 ## Features
 
-**Estimate builder (7 steps)**
-- Client info + per-job labor rates set upfront
-- Scope of work — tap each item, enter hours + rate, saves to bid
-- Room-by-room surface entry with L×W auto-calc
-- Bid review with full cost breakdown
-- Proposal generation — matches real ZJ bid format
+### Estimate Builder — 7 Steps
+- Client info with live duplicate detection
+- Per-job labor rates set upfront — never hardcoded
+- Scope of work — tap each item, set hours + rate per job
+- Room-by-room surface entry with L×W auto sq ft calculation
+- Bid review with full cost breakdown (labor, materials, scope)
+- Pre-proposal confirmation screen showing client, total, deposit
+- Single-line proposal — client sees one price, not the internal math
 - PDF download for remote signing
-- Client signature (typed name + draw canvas)
+- Client e-signature (typed name + draw canvas)
+- UETA-compliant terms and change order language
 
-**Job management**
-- Full lifecycle: Lead → Estimate → Signed → Scheduled → Active → Complete → Collect
+### Client Management
+- Full client records — name, phone, address, property type, lead source
+- Duplicate detection on name and phone
+- Client risk levels: normal / watch / high risk / blacklisted
+- Timeline view — every bid, job, payment, and note in one place
+- SMS templates for follow-up, reminders, and collections
+
+### Job Lifecycle
+- Lead → Estimate → Signed → Scheduled → Active → Complete → Collect
 - Price adjustment on completion (raise or lower with required reason)
-- Before/after photo attachment
 - Calendar with availability and conflict detection
 
-**Collections**
-- 7/14/21/30 day escalation workflow
-- Pre-written SMS templates at each stage
-- Mechanic's lien filing (KS K.S.A. 60-1105 deadline warnings)
-- Client risk system (normal / watch / high risk / blacklisted)
+### Collections & Lien Workflow
+- 7 / 14 / 21 / 30 day escalation with pre-written SMS at each stage
+- Kansas mechanic's lien filing (K.S.A. 60-1105 deadline warnings)
+- Client risk tracking and blacklist
 
-**Money**
-- Payment logging with deposit / final / custom
-- Mileage tracking with IRS rate
-- Expense tracking with receipt camera
-- Quarterly tax estimates (KS + federal)
-- Lead source analytics with close rate and revenue per source
+### Receipt Scanner (AI-Powered)
+- Photograph any receipt — Claude AI reads vendor, amount, date, category
+- Date confirmation step before saving
+- Receipt photo stored inline with the expense record
+- Duplicate receipt detection
+- Export all receipts as a single PDF — one per page, sorted by date, IRS ready
 
-**Notes & Sketches**
-- ✏️ floating canvas — available during any active estimate
-- Saves to the bid record automatically
-- Infinite scroll, Apple Pencil compatible
+### Books & Taxes
+- Income tracking (auto-logged from payments)
+- Expense tracking with IRS Schedule C categories
+- Mileage log with IRS rate deduction
+- Quarterly tax estimates (federal + Kansas)
+- Full tax report PDF, expenses CSV, mileage CSV, full data backup
+
+### Dashboard
+- YTD revenue, expenses, mileage, taxes, profit
+- Pipeline health with booking pace
+- Lead source analytics — close rate and revenue per source
+- What needs attention — collections, follow-ups, cold leads
+
+### Notes Canvas
+- Floating pencil button during any active estimate
+- Full-screen infinite canvas, Apple Pencil compatible
+- Auto-saves to the bid record
+
+### Cloud Sync
+- Sign in / sign up on first launch
+- All data syncs in background after every save
+- Restore everything on any new device
+- Per-user data isolation — each account sees only their own data
 
 ---
 
-## Data storage
+## Cloud Sync Setup
 
-All data lives in `localStorage` on the device. Nothing is sent to any server. Take regular exports via the Taxes → Export report function as backup until cloud sync is added.
+See [`supabase-setup/README.md`](supabase-setup/README.md).
+
+1. Create a free project at [supabase.com](https://supabase.com)
+2. Run `supabase-setup.sql` in SQL Editor
+3. Copy Project URL and anon key into `index.html`
+4. Push — done
 
 ---
 
-## Remote signing setup
+## Remote Signing Setup
 
-See [`signing-setup/README.md`](signing-setup/README.md) for the full walkthrough. Zero monthly cost using DocuSeal + ntfy.
+See [`signing-setup/README.md`](signing-setup/README.md).
+
+DocuSeal (self-hosted free on Railway) + ntfy push notifications. Zero monthly cost.
 
 ---
 
-## Deploying to GitHub Pages
+## Deploying
 
-1. Fork or clone this repo
-2. Go to repo **Settings → Pages**
-3. Source: **Deploy from branch → main → / (root)**
-4. Save — GitHub gives you a URL in ~60 seconds
-5. Open the URL on your iPhone and add to home screen
+GitHub Pages is already configured. Every push to `main` goes live automatically.
 
-That's the whole deploy process. Every time you push a change to `main`, GitHub Pages updates automatically.
+To self-host (Nginx, Proxmox, etc) — serve `index.html` as a static file. The app calls Supabase directly from the browser, no backend required.
+
+---
+
+## Stack
+
+| Layer | Tech |
+|-------|------|
+| App | Vanilla JS, single HTML file, no dependencies |
+| Hosting | GitHub Pages |
+| Auth + Database | Supabase (Postgres + GoTrue) |
+| Receipt AI | Claude Haiku via Supabase Edge Function |
+| Signing | DocuSeal |
+| Notifications | ntfy.sh |
 
 ---
 
 ## Legal
 
-Built for ZJ's Painting & Special Coatings, Wichita KS. Powered by TradeDesk.  
-Tax estimates are not a substitute for a licensed CPA.  
-Lien deadlines are based on KS K.S.A. 60-1105 — verify with a Kansas attorney before filing.
+Tax estimates are not a substitute for a licensed CPA.
+Lien deadlines based on KS K.S.A. 60-1105 — verify with a Kansas attorney before filing.
+Electronic signatures comply with the Kansas Uniform Electronic Transactions Act (UETA).
