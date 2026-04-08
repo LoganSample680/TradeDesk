@@ -1017,7 +1017,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
         <div id="surf-b-subopts" style="margin-bottom:12px;display:none"></div>
 
         <!-- Product line selector -->
-        <div style="margin-top:14px;background:var(--bg2);border-radius:var(--rl);border:1px solid var(--border2);overflow:hidden">
+        <div id="sw-product-wrap" style="margin-top:14px;background:var(--bg2);border-radius:var(--rl);border:1px solid var(--border2);overflow:hidden">
           <div style="padding:10px 12px 8px;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between">
             <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3)">Product <span style="color:#A32D2D">*</span></div>
             <div id="sw-product-selected" style="font-size:11px;font-weight:700;color:var(--blue)"></div>
@@ -1028,7 +1028,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
         </div>
 
         <!-- Color browser -->
-        <div style="margin-top:14px;background:var(--bg2);border-radius:var(--rl);border:1px solid var(--border2);overflow:hidden">
+        <div id="sw-color-wrap" style="margin-top:14px;background:var(--bg2);border-radius:var(--rl);border:1px solid var(--border2);overflow:hidden">
           <!-- Header with selected pill -->
           <div style="padding:10px 12px 8px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border2)">
             <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3)">Color &amp; Finish <span style="color:#A32D2D">*</span></div>
@@ -6267,9 +6267,11 @@ function goSurfScopeToMeasure(){
   if(scopeFirst)scopeFirst.style.display='none';
   if(measureWrap)measureWrap.style.display='';
   const isCustomer=document.getElementById('e-customer-paint')?.value==='1';
-  ['sw-product-grid-hdr','sw-product-grid','sw-selected-product','sw-state-family','sw-state-swatches',
-   'sw-family-grid','sw-swatch-grid','sw-search-wrap','sw-selected-pill','sw-finish-grid','sw-accent-wrap']
-    .forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=isCustomer?'none':'';});
+  // Hide/show the entire product and color wrapper cards
+  ['sw-product-wrap','sw-color-wrap'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el)el.style.display=isCustomer?'none':'';
+  });
   if(!isCustomer){swInitFamilyGrid();}
   renderSurfBCurrent();
 }
@@ -6550,28 +6552,29 @@ function adjSurfBCount(d){
 }
 
 function saveSurfBAndNext(){
-  // Require product, color and finish
-  const _productVal=(document.getElementById('sw-selected-product')?.value||'').trim();
-  const _colorVal=(document.getElementById('surf-color-b')?.value||'').trim();
-  const _finishVal=(document.getElementById('sw-selected-finish')?.value||'').trim();
-  const _accentVal=(document.getElementById('sw-accent-note')?.value||'').trim();
-  if(!_productVal){
-    zAlert('Select a paint product for this surface.',{title:'Product required'});return;
+  const isCustomer=document.getElementById('e-customer-paint')?.value==='1';
+
+  // Only validate product/color/finish when Zach supplies paint
+  if(!isCustomer){
+    const _productVal=(document.getElementById('sw-selected-product')?.value||'').trim();
+    const _colorVal=(document.getElementById('surf-color-b')?.value||'').trim();
+    const _finishVal=(document.getElementById('sw-selected-finish')?.value||'').trim();
+    if(!_productVal){zAlert('Select a paint product for this surface.',{title:'Product required'});return;}
+    if(!_colorVal){
+      const el=document.getElementById('sw-search-input');
+      if(el){el.style.borderColor='#A32D2D';el.style.background='var(--red-lt)';el.focus();}
+      zAlert('Select a color for this surface.',{title:'Color required'});return;
+    }
+    if(!_finishVal){zAlert('Select a finish for this surface.',{title:'Finish required'});return;}
   }
-  if(!_colorVal){
-    const el=document.getElementById('sw-search-input');
-    if(el){el.style.borderColor='#A32D2D';el.style.background='var(--red-lt)';el.focus();}
-    zAlert('Select a color for this surface.',{title:'Color required'});return;
-  }
-  if(!_finishVal){
-    zAlert('Select a finish for this surface.',{title:'Finish required'});return;
-  }
+
   const type=surfBQueue[surfBIdx];
   const _finish=document.getElementById('sw-selected-finish')?.value||_swFinish||'';
   const _surfColorVal=(document.getElementById('surf-color-b')?.value||surfColor||'').trim();
   const _accentNote=(document.getElementById('sw-accent-note')?.value||'').trim();
   const _productName=swGetProductName();
-  const colorNote=_surfColorVal?' — '+(_productName?_productName+' · ':'')+_surfColorVal+(_finish?' ['+_finish+']':'')+(_accentNote?' + Accent: '+_accentNote:''):'  ';
+  // When customer supplies paint, save surface without any color/product spec
+  const colorNote=isCustomer?'':(_surfColorVal?' — '+(_productName?_productName+' · ':'')+_surfColorVal+(_finish?' ['+_finish+']':'')+(_accentNote?' + Accent: '+_accentNote:''):'  ');
   const prefix=surfJobType==='exterior'?'[Ext] ':'';
 
   if(type==='walls'||type==='ext_walls'||type==='ceiling'||type==='deck'){
