@@ -1233,14 +1233,23 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
       </button>
     </div>
     <div id="proposal-link-bar" style="display:none;margin-top:8px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px">
-      <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:8px">✓ Signing link ready — tap to open, or copy to share</div>
+      <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:8px">✓ Link ready — send to client</div>
       <a id="proposal-link-anchor" href="#" target="_blank" style="display:block;background:#fff;border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px;text-decoration:none;margin-bottom:8px">
-        <div style="font-size:11px;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em;font-weight:700">Proposal link</div>
-        <div id="proposal-link-label" style="font-size:14px;font-weight:700;color:var(--blue-dk)"></div>
-        <div style="font-size:10px;color:var(--blue);margin-top:3px">Tap to open ↗</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="font-size:24px;line-height:1;flex-shrink:0">📄</div>
+          <div style="flex:1;min-width:0;overflow:hidden">
+            <div id="proposal-link-label" style="font-size:13px;font-weight:700;color:var(--blue-dk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+            <div id="proposal-link-sublabel" style="font-size:11px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+          </div>
+          <div style="font-size:11px;color:var(--blue);white-space:nowrap;flex-shrink:0;font-weight:600">View ↗</div>
+        </div>
       </a>
       <input id="proposal-link-input" readonly style="display:none">
-      <button onclick="copyProposalLink()" class="btn btn-sm" style="width:100%;margin-bottom:6px">📋 Copy link to share with client</button>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+        <button onclick="sendProposalViaSms()" class="btn btn-g" style="font-size:13px;padding:9px 6px">📱 Text client</button>
+        <button onclick="sendProposalViaEmail()" class="btn" style="font-size:13px;padding:9px 6px;background:var(--bg2);border-color:var(--border2)">✉️ Email client</button>
+      </div>
+      <button onclick="copyProposalLink()" class="btn btn-sm" style="width:100%;margin-bottom:6px">📋 Copy link</button>
       <button onclick="saveAndExitEstimate()" class="btn btn-p" style="width:100%;font-size:14px">✓ Done — back to home</button>
       <div style="font-size:11px;color:var(--text3);margin-top:6px">Bid saved as Pending. You'll get a follow-up reminder in 3 days if no response.</div>
     </div>
@@ -8494,9 +8503,24 @@ async function sendProposalLink(){
     const bar=document.getElementById('proposal-link-bar');
     const input=document.getElementById('proposal-link-input');
     const labelEl=document.getElementById('proposal-link-label');
-    if(bar)bar.style.display='block';
+    const sublabelEl=document.getElementById('proposal-link-sublabel');
+    if(bar){
+      bar.style.display='block';
+      // Store share data on the element for SMS/email functions
+      bar.dataset.signingUrl=signingUrl;
+      bar.dataset.cname=cname;
+      bar.dataset.bname=bname;
+      const c=getClientById(estLinkedClientId);
+      bar.dataset.cphone=(document.getElementById('e-cphone')?.value||c?.phone||'').replace(/\D/g,'');
+      bar.dataset.cemail=c?.email||'';
+    }
     if(input)input.value=signingUrl;
-    if(labelEl)labelEl.textContent=linkLabel;
+    if(labelEl)labelEl.textContent=cname+"'s Painting Estimate";
+    if(sublabelEl){
+      const est=calcEst();const tot=Math.max(0,est.laborTotal+est.matTotal);
+      const rounded=Math.round(tot/25)*25||tot;
+      sublabelEl.textContent=bname+' · '+fmt(rounded)+' · '+dateStr;
+    }
     const anchorEl=document.getElementById('proposal-link-anchor');if(anchorEl)anchorEl.href=signingUrl;
     const bid=bids.find(b=>b.id===bidId);
     if(bid){bid.signingToken=token;bid.signingKey=proposalKey;saveAll();}
@@ -8521,7 +8545,28 @@ function copyProposalLink(){
   if(!input)return;
   navigator.clipboard.writeText(input.value).catch(()=>{input.select();document.execCommand('copy');});
   const btn=document.querySelector('[onclick="copyProposalLink()"]');
-  if(btn){btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy',2000);}
+  if(btn){btn.textContent='✓ Copied!';setTimeout(()=>btn.textContent='📋 Copy link',2000);}
+}
+function _proposalShareData(){
+  const bar=document.getElementById('proposal-link-bar');
+  return bar?{url:bar.dataset.signingUrl||'',cname:bar.dataset.cname||'Client',bname:bar.dataset.bname||S.bname||'Us',cphone:bar.dataset.cphone||'',cemail:bar.dataset.cemail||''}:{url:'',cname:'Client',bname:S.bname||'Us',cphone:'',cemail:''};
+}
+function sendProposalViaSms(){
+  const d=_proposalShareData();
+  if(!d.url){zAlert('Generate the proposal link first.',{title:'No link yet'});return;}
+  const firstName=d.cname.split(/[\s,&]+/)[0];
+  const msg='Hi '+firstName+', your painting estimate from '+d.bname+' is ready to view and sign online:\n\n'+d.url+'\n\nReply with any questions!';
+  const href='sms:'+(d.cphone?d.cphone:'')+'&body='+encodeURIComponent(msg);
+  window.location.href=href;
+}
+function sendProposalViaEmail(){
+  const d=_proposalShareData();
+  if(!d.url){zAlert('Generate the proposal link first.',{title:'No link yet'});return;}
+  const firstName=d.cname.split(/[\s,&]+/)[0];
+  const subject='Your Painting Estimate from '+d.bname;
+  const body='Hi '+firstName+',\n\nYour painting estimate from '+d.bname+' is ready to view and sign online:\n\n'+d.url+'\n\nPlease let me know if you have any questions!\n\n'+d.bname;
+  const href='mailto:'+(d.cemail?d.cemail:'')+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+  window.location.href=href;
 }
 function buildDescription(){
   const isExt=estSurfaces.some(s=>s.type==='ext_walls'||s.type==='ext_trim'||s.type==='deck');
