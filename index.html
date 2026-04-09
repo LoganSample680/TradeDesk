@@ -870,22 +870,8 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
         <div style="font-size:10px;color:var(--blue-dk)">Pre-filled from settings. Adjust per client — higher for difficult access, lower for repeat customers.</div>
       </div>
     </div>
-    <div class="card" id="cond-picker-card"><div class="card-hd">Overall condition <span style="color:var(--text3);font-weight:400;font-size:11px">* Required</span></div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:4px">
-        <button onclick="selectCond('1.0',this)" class="surf-type-btn" id="cond-good" style="padding:10px;font-size:12px;text-align:center">
-          <div style="font-weight:700">Good</div><div style="font-size:10px;color:inherit;margin-top:2px;opacity:.7">Minor prep</div>
-        </button>
-        <button onclick="selectCond('1.2',this)" class="surf-type-btn" id="cond-fair" style="padding:10px;font-size:12px;text-align:center">
-          <div style="font-weight:700">Fair</div><div style="font-size:10px;color:inherit;margin-top:2px;opacity:.7">Moderate prep</div>
-        </button>
-        <button onclick="selectCond('1.5',this)" class="surf-type-btn" id="cond-poor" style="padding:10px;font-size:12px;text-align:center">
-          <div style="font-weight:700">Poor</div><div style="font-size:10px;color:inherit;margin-top:2px;opacity:.7">Heavy prep</div>
-        </button>
-      </div>
-    </div>
-    <input type="hidden" id="e-colors" value="0">
-    <input type="hidden" id="e-travel" value="0">
-    <input type="hidden" id="e-cond" value="">
+    <input type="hidden" id="e-cond" value="1.0">
+
     <div class="brow"><button class="btn" onclick="goEstStep(1)">&#8592; Back</button><button class="btn btn-p" id="est-s2-next" onclick="validateAndGoStep3()" style="background:var(--border2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>Next: Surfaces &#8594;</button></div>
   </div>
   <div id="est-s3" style="display:none">
@@ -3923,6 +3909,8 @@ function renderCDBids(){
     }
     const actBtns=[];
     if(isWon){
+      // Close job button — when won but not yet marked complete
+      if(!b.completion_date){const linkedJob=jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id);const jid=linkedJob?.id;if(jid)actBtns.push('<button class="btn btn-sm" onclick="markJobDone('+jid+')" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid)">✓ Close job</button>');}
       if(balance>0.01)actBtns.push('<button class="btn btn-sm btn-g" onclick="openPayPanel('+b.id+')">+ Log payment</button>');
       actBtns.push('<button class="btn btn-sm" onclick="toggleBidSummary('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128196; View bid</button>');
       actBtns.push('<button class="btn btn-sm" onclick="printInvoice('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128438; Print invoice</button>');
@@ -8736,8 +8724,8 @@ function checkStep1Ready(){
   else{btn.style.background='var(--border2)';btn.style.color='var(--text3)';btn.style.borderColor='var(--border2)';btn.style.cursor='not-allowed';}
 }
 function checkStep2Ready(){
-  const cond=document.getElementById('e-cond')?.value||'';
-  const ready=!!cond;
+  // Condition now defaults to 1.0 (good) — always ready
+  const ready=true;
   const btn=document.getElementById('est-s2-next');
   if(!btn)return;
   btn.disabled=!ready;
