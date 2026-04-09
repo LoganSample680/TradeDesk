@@ -6235,6 +6235,9 @@ function goSurfStepB(){
   if(measureWrap)measureWrap.style.display='none';
   // Read THIS room's stored paint supply — default to Zach (false)
   const _isc=roomScopeMap[surfRoom]?._customerPaint===true;
+  // Ensure every room has an explicit value — no ambiguity
+  if(!roomScopeMap[surfRoom])roomScopeMap[surfRoom]={};
+  if(roomScopeMap[surfRoom]._customerPaint===undefined)roomScopeMap[surfRoom]._customerPaint=false;
   // Sync global DOM so goSurfScopeToMeasure can read it for hiding color picker
   const _custEl=document.getElementById('e-customer-paint');
   if(_custEl)_custEl.value=_isc?'1':'';
@@ -6448,23 +6451,24 @@ function renderSurfBCurrent(){
   if(type==='walls'||type==='ext_walls'){
     const m=surfBMeasurements[type]||{sqft:'',len:'',wid:'',hgt:9};
     dims.innerHTML=
-      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'+
         '<div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Room length (ft)</label>'+
         '<input type="number" id="surf-b-len" value="'+(m.len||'')+'" min="0" step="1" placeholder="0" inputmode="decimal"'+
-          ' style="font-size:22px;font-weight:700;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
+          ' style="font-size:24px;font-weight:700;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
           ' oninput="updateWallSqft()"></div>'+
         '<div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Room width (ft)</label>'+
         '<input type="number" id="surf-b-wid" value="'+(m.wid||'')+'" min="0" step="1" placeholder="0" inputmode="decimal"'+
-          ' style="font-size:22px;font-weight:700;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
-          ' oninput="updateWallSqft()"></div>'+
-        '<div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Ceiling ht (ft)</label>'+
-        '<input type="number" id="surf-b-hgt" value="'+(m.hgt||9)+'" min="6" step="0.5" placeholder="9" inputmode="decimal"'+
-          ' style="font-size:22px;font-weight:700;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
+          ' style="font-size:24px;font-weight:700;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
           ' oninput="updateWallSqft()"></div>'+
       '</div>'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
+        '<label style="font-size:10px;font-weight:700;color:var(--text3);white-space:nowrap">Ceiling height (ft)</label>'+
+        '<input type="number" id="surf-b-hgt" value="'+(m.hgt||9)+'" min="6" step="0.5" placeholder="9" inputmode="decimal"'+
+          ' style="font-size:18px;font-weight:700;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:80px;box-sizing:border-box;text-align:center"'+
+          ' oninput="updateWallSqft()">'+
+      '</div>'+
       '<div style="background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center;margin-bottom:8px">'+
-        '<div style="font-size:11px;color:var(--text3);margin-bottom:4px">(Length + Width) × 2 × Height = Wall sq ft</div>'+
-        '<div id="surf-b-sqftcalc" style="font-size:18px;font-weight:800;color:var(--blue)">Enter dimensions above</div>'+
+        '<div id="surf-b-sqftcalc" style="font-size:16px;font-weight:800;color:var(--blue)">Enter dimensions above</div>'+
       '</div>'+
       '<div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Or enter wall sq ft directly:</label>'+
       '<input type="number" id="surf-b-sqft" value="'+(m.sqft||'')+'" min="0" step="1" placeholder="0" inputmode="decimal"'+
@@ -6563,16 +6567,14 @@ function updateWallSqft(manual){
   const w=parseFloat(document.getElementById('surf-b-wid')?.value)||0;
   const h=parseFloat(document.getElementById('surf-b-hgt')?.value)||9;
   if(manual){
-    // Manual entry — recalc wall area for gallons using current h
     const v=parseFloat(sqEl?.value)||0;
-    if(calc)calc.textContent=v>0?v.toLocaleString()+' sq ft (pricing)':'Enter dimensions above';
+    if(calc)calc.textContent=v>0?'Wall area: '+v.toLocaleString()+' sq ft':'Enter dimensions above';
     return;
   }
   if(l>0&&w>0){
-    const floorSqft=Math.round(l*w);           // for pricing
-    const wallSqft=Math.round((l+w)*2*h);       // for gallons (hidden)
-    if(sqEl)sqEl.value=floorSqft;
-    if(calc)calc.textContent=l+' × '+w+' = '+floorSqft.toLocaleString()+' sq ft  ·  wall area '+wallSqft.toLocaleString()+' sf (for paint calc)';
+    const wallSqft=Math.round((l+w)*2*h);
+    if(sqEl)sqEl.value=wallSqft;
+    if(calc)calc.textContent='Wall area: '+wallSqft.toLocaleString()+' sq ft';
   } else {
     if(calc)calc.textContent='Enter room length and width above';
   }
