@@ -855,25 +855,66 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <div class="brow"><button class="btn btn-p" id="est-s1-next" onclick="validateAndGoStep2()" style="background:var(--border2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>Next: Rates &#8594;</button></div>
   </div>
   <div id="est-s2" style="display:none">
-    <div class="card"><div class="card-hd">Rates for this job</div>
-      <div style="background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 12px;margin-top:8px">
-        <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:8px">💰 Rates for this job — adjust per client profile</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-          <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Walls ($/sf)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRate('e-r-walls',-0.25)" style="padding:0 8px;font-size:16px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;line-height:1;height:36px;flex-shrink:0">−</button><input type="number" id="e-r-walls" step="0.25" style="font-size:16px;font-weight:700;padding:7px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="renderEstRunning&&renderEstRunning()"><button type="button" onclick="adjRate('e-r-walls',0.25)" style="padding:0 8px;font-size:16px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;line-height:1;height:36px;flex-shrink:0">+</button></div></div>
-          <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Ceiling ($/sf)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRate('e-r-ceil',-0.25)" style="padding:0 8px;font-size:16px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;line-height:1;height:36px;flex-shrink:0">−</button><input type="number" id="e-r-ceil" step="0.25" style="font-size:16px;font-weight:700;padding:7px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="renderEstRunning&&renderEstRunning()"><button type="button" onclick="adjRate('e-r-ceil',0.25)" style="padding:0 8px;font-size:16px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;line-height:1;height:36px;flex-shrink:0">+</button></div></div>
-          <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Trim ($/lin ft)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRate('e-r-trim',-0.25)" style="padding:0 8px;font-size:16px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;line-height:1;height:36px;flex-shrink:0">−</button><input type="number" id="e-r-trim" step="0.25" style="font-size:16px;font-weight:700;padding:7px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="renderEstRunning&&renderEstRunning()"><button type="button" onclick="adjRate('e-r-trim',0.25)" style="padding:0 8px;font-size:16px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;line-height:1;height:36px;flex-shrink:0">+</button></div></div>
-          <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Doors ($/door)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRate('e-r-door',-5)" style="padding:0 8px;font-size:16px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;line-height:1;height:36px;flex-shrink:0">−</button><input type="number" id="e-r-door" step="5" style="font-size:16px;font-weight:700;padding:7px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="renderEstRunning&&renderEstRunning()"><button type="button" onclick="adjRate('e-r-door',5)" style="padding:0 8px;font-size:16px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;line-height:1;height:36px;flex-shrink:0">+</button></div></div>
-          <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Windows ($/window)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRate('e-r-win',-5)" style="padding:0 8px;font-size:16px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;line-height:1;height:36px;flex-shrink:0">−</button><input type="number" id="e-r-win" step="5" style="font-size:16px;font-weight:700;padding:7px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="renderEstRunning&&renderEstRunning()"><button type="button" onclick="adjRate('e-r-win',5)" style="padding:0 8px;font-size:16px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;line-height:1;height:36px;flex-shrink:0">+</button></div></div>
-          <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Exterior walls ($/sf)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRate('e-r-ext',-0.25)" style="padding:0 8px;font-size:16px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;line-height:1;height:36px;flex-shrink:0">−</button><input type="number" id="e-r-ext" step="0.25" style="font-size:16px;font-weight:700;padding:7px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="renderEstRunning&&renderEstRunning()"><button type="button" onclick="adjRate('e-r-ext',0.25)" style="padding:0 8px;font-size:16px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;line-height:1;height:36px;flex-shrink:0">+</button></div></div>
-          <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Deck/fence ($/sf)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRate('e-r-deck',-0.25)" style="padding:0 8px;font-size:16px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;line-height:1;height:36px;flex-shrink:0">−</button><input type="number" id="e-r-deck" step="0.25" style="font-size:16px;font-weight:700;padding:7px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="renderEstRunning&&renderEstRunning()"><button type="button" onclick="adjRate('e-r-deck',0.25)" style="padding:0 8px;font-size:16px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;line-height:1;height:36px;flex-shrink:0">+</button></div></div>
-          <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Paint cost ($/gal)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRate('e-paint-rate',-1)" style="padding:0 8px;font-size:16px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;line-height:1;height:36px;flex-shrink:0">−</button><input type="number" id="e-paint-rate" step="1" style="font-size:16px;font-weight:700;padding:7px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="renderEstRunning&&renderEstRunning()"><button type="button" onclick="adjRate('e-paint-rate',1)" style="padding:0 8px;font-size:16px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;line-height:1;height:36px;flex-shrink:0">+</button></div></div>
-        </div>
-        <div style="font-size:10px;color:var(--blue-dk)">Pre-filled from settings. Adjust per client — higher for difficult access, lower for repeat customers.</div>
+    <div class="card">
+      <div class="card-hd">What type of property is this?</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:14px">One tap sets pricing and paint tier automatically. You can always override later.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px" id="prop-tier-grid">
+        <button type="button" id="ptier-rental" onclick="selectPropertyTier('rental')"
+          style="padding:14px 10px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s">
+          <div style="font-size:22px;margin-bottom:4px">🏚️</div>
+          <div style="font-size:13px;font-weight:800;color:var(--text)">Rental / Fixer</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px;line-height:1.4">Beat up, basic finish<br>ProMar 700</div>
+          <div style="font-size:11px;font-weight:700;color:var(--text3);margin-top:6px">−18%</div>
+        </button>
+        <button type="button" id="ptier-avg" onclick="selectPropertyTier('avg')"
+          style="padding:14px 10px;border-radius:var(--r);border:2px solid var(--blue);background:var(--blue-lt);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s">
+          <div style="font-size:22px;margin-bottom:4px">🏠</div>
+          <div style="font-size:13px;font-weight:800;color:var(--blue-dk)">Average Home</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px;line-height:1.4">Standard job<br>ProMar 200</div>
+          <div style="font-size:11px;font-weight:700;color:var(--blue);margin-top:6px">Base price</div>
+        </button>
+        <button type="button" id="ptier-nice" onclick="selectPropertyTier('nice')"
+          style="padding:14px 10px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s">
+          <div style="font-size:22px;margin-bottom:4px">🏡</div>
+          <div style="font-size:13px;font-weight:800;color:var(--text)">Well-Maintained</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px;line-height:1.4">Owner takes pride<br>SuperPaint / Cashmere</div>
+          <div style="font-size:11px;font-weight:700;color:var(--green-mid);margin-top:6px">+22%</div>
+        </button>
+        <button type="button" id="ptier-premium" onclick="selectPropertyTier('premium')"
+          style="padding:14px 10px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s">
+          <div style="font-size:22px;margin-bottom:4px">🏛️</div>
+          <div style="font-size:13px;font-weight:800;color:var(--text)">High-End / Premium</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:2px;line-height:1.4">Mansion, demanding client<br>Duration / Emerald</div>
+          <div style="font-size:11px;font-weight:700;color:#856404;margin-top:6px">+50%</div>
+        </button>
       </div>
+      <div id="prop-tier-hint" style="margin-top:10px;font-size:11px;color:var(--text3);text-align:center;min-height:16px"></div>
     </div>
+
+    <!-- Hidden rate inputs — still used by calcEst, set from settings -->
+    <input type="hidden" id="e-r-walls"><input type="hidden" id="e-r-ceil">
+    <input type="hidden" id="e-r-trim"><input type="hidden" id="e-r-door">
+    <input type="hidden" id="e-r-win"><input type="hidden" id="e-r-ext">
+    <input type="hidden" id="e-r-deck"><input type="hidden" id="e-paint-rate">
     <input type="hidden" id="e-cond" value="1.0">
 
-    <div class="brow"><button class="btn" onclick="goEstStep(1)">&#8592; Back</button><button class="btn btn-p" id="est-s2-next" onclick="validateAndGoStep3()" style="background:var(--border2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>Next: Surfaces &#8594;</button></div>
+    <!-- Advanced rates — collapsed by default -->
+    <details style="margin-top:12px">
+      <summary style="font-size:11px;color:var(--text3);cursor:pointer;padding:6px 0;list-style:none;display:flex;align-items:center;gap:6px">
+        <span style="font-size:14px">⚙️</span> Advanced: override rates for this job
+      </summary>
+      <div style="margin-top:10px;background:var(--bg2);border-radius:var(--r);padding:12px">
+        <div style="font-size:10px;color:var(--text3);margin-bottom:8px">These pull from Settings. Change here to override for this job only.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Walls ($/wall sf)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRateAdv('e-r-walls-adv',-0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">−</button><input type="number" id="e-r-walls-adv" step="0.25" style="font-size:14px;padding:5px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="syncAdvRate('e-r-walls-adv','e-r-walls')"><button type="button" onclick="adjRateAdv('e-r-walls-adv',0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">+</button></div></div>
+          <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Ceiling ($/sf)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRateAdv('e-r-ceil-adv',-0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">−</button><input type="number" id="e-r-ceil-adv" step="0.25" style="font-size:14px;padding:5px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="syncAdvRate('e-r-ceil-adv','e-r-ceil')"><button type="button" onclick="adjRateAdv('e-r-ceil-adv',0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">+</button></div></div>
+          <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Trim ($/lin ft)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRateAdv('e-r-trim-adv',-0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">−</button><input type="number" id="e-r-trim-adv" step="0.25" style="font-size:14px;padding:5px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="syncAdvRate('e-r-trim-adv','e-r-trim')"><button type="button" onclick="adjRateAdv('e-r-trim-adv',0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">+</button></div></div>
+          <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Doors ($/door)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRateAdv('e-r-door-adv',-5)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">−</button><input type="number" id="e-r-door-adv" step="5" style="font-size:14px;padding:5px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="syncAdvRate('e-r-door-adv','e-r-door')"><button type="button" onclick="adjRateAdv('e-r-door-adv',5)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">+</button></div></div>
+        </div>
+      </div>
+    </details>
+
+    <div class="brow"><button class="btn" onclick="goEstStep(1)">&#8592; Back</button><button class="btn btn-p" onclick="goEstStep(3)">Next: Surfaces &#8594;</button></div>
   </div>
   <div id="est-s3" style="display:none">
 
@@ -1566,8 +1607,8 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <div class="card-hd">Labor rates ($/sq ft or flat) <span>Set these to match what you actually charge</span></div>
     <div class="tip">These are your base labor rates before scope add-ons. If a $2,500 job feels like it should show more profit, raise these to match your real pricing.</div>
     <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
-      <div class="f"><label>Walls ($/sf)</label><input type="number" id="set-r-walls" step="0.05"></div>
-      <div class="f"><label>Ceiling ($/sf)</label><input type="number" id="set-r-ceil" step="0.05"></div>
+      <div class="f"><label>Walls ($/actual wall sqft)</label><input type="number" id="set-r-walls" step="0.05"></div>
+      <div class="f"><label>Ceiling ($/sqft)</label><input type="number" id="set-r-ceil" step="0.05"></div>
       <div class="f"><label>Trim ($/lin ft)</label><input type="number" id="set-r-trim" step="0.05"></div>
       <div class="f"><label>Doors ($/door)</label><input type="number" id="set-r-door" step="1"></div>
       <div class="f"><label>Windows ($/window)</label><input type="number" id="set-r-win" step="1"></div>
@@ -1762,6 +1803,7 @@ let estSurfaces=[],estSurfId=0,estStep=1,estLinkedClientId=null,editingBidId=nul
 let scopeHrsStore={};  // legacy — now keyed by room: roomScopeMap[roomName][scopeId]
 let scopeActiveMap={};  // legacy — now keyed by room
 let roomScopeMap={};  // PRIMARY: {roomName: {scopeId: {active:bool, hrs:N, rate:N, cost:N}}}
+let estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};  // property profile for this estimate
 let sigCanvas,sigCtx,isSigning=false;
 let trackerTab='income',cdTab='overview',trackerYear=new Date().getFullYear();
 let selectedColor='#185FA5';
@@ -1906,7 +1948,7 @@ const CHECKS=[
 ];
 const CAT_CFG={urgent:{label:'Do right away',color:'#A32D2D'},biz:{label:'Business setup in Kansas',color:'#185FA5'},tax:{label:'Tax & accounting',color:'#854F0B'},ks:{label:'Kansas market & marketing',color:'#27500A'}};
 
-let S={stripePk:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:"ZJ's Painting & Special Coatings",bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:38,p2:62,p3:88,mm:15,rWalls:4.00,rCeil:1.00,rTrim:3.50,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00};
+let S={stripePk:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:"ZJ's Painting & Special Coatings",bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:38,p2:62,p3:88,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00};
 
 // ── Account / User / Config global state ─────────────────────────────
 let _account=null;   // accounts row
@@ -1987,7 +2029,7 @@ const COVERAGE=()=>S.cov||350;
 const MARGIN=()=>(S.margin||25)/100;
 const MATMARK=()=>1+((S.mm||20)/100);
 const PAINT_COST=()=>({interior:S.p1||42,exterior:S.p2||106}); // ProMar 200 interior / $106 exterior
-const LABOR_RATES=()=>({walls:S.rWalls||1.25,ceiling:S.rCeil||1.00,trim:S.rTrim||4.00,doors:S.rDoor||95,windows:S.rWin||50,cabinets:S.rCabinets||38,ext_walls:S.rExt||1.10,ext_trim:S.rTrim||4.00,deck:S.rDeck||1.00});
+const LABOR_RATES=()=>({walls:S.rWalls||1.30,ceiling:S.rCeil||1.00,trim:S.rTrim||4.00,doors:S.rDoor||95,windows:S.rWin||50,cabinets:S.rCabinets||38,ext_walls:S.rExt||1.10,ext_trim:S.rTrim||4.00,deck:S.rDeck||1.00});
 function initials(name){const p=(name||'?').trim().split(' ');return p.length>=2?(p[0][0]+p[p.length-1][0]).toUpperCase():(name||'?').substring(0,2).toUpperCase();}
 function stageAvatar(stage){
   const m={
@@ -2085,12 +2127,12 @@ function loadSettingsForm(){
   sf('set-goal-monthly',S.goalMonthly||'');
   sf('set-labor-rate',S.laborRate||45);sf('set-owner-name',getOwnerName()||'');sf('set-bname',S.bname);sf('set-state',S.state||'KS');
   if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-stripe-pk',S.stripePk||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
-  sf('set-margin',S.margin);sf('set-cov',S.cov);sf('set-p1',S.p1);sf('set-p2',S.p2);sf('set-p3',S.p3);sf('set-mm',S.mm);sf('set-r-walls',S.rWalls||1.25);sf('set-r-ceil',S.rCeil||1.00);sf('set-r-trim',S.rTrim||4.00);sf('set-r-door',S.rDoor||95);sf('set-r-win',S.rWin||50);sf('set-r-ext',S.rExt||1.10);sf('set-r-deck',S.rDeck||1.00);
+  sf('set-margin',S.margin);sf('set-cov',S.cov);sf('set-p1',S.p1);sf('set-p2',S.p2);sf('set-p3',S.p3);sf('set-mm',S.mm);sf('set-r-walls',S.rWalls||1.30);sf('set-r-ceil',S.rCeil||1.00);sf('set-r-trim',S.rTrim||4.00);sf('set-r-door',S.rDoor||95);sf('set-r-win',S.rWin||50);sf('set-r-ext',S.rExt||1.10);sf('set-r-deck',S.rDeck||1.00);
   sf('set-review-url',S.reviewUrl||'');
 }
 function saveSettings(){
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
-  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),stripePk:gs('set-stripe-pk')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,p1:gf('set-p1')||35,p2:gf('set-p2')||58,p3:gf('set-p3')||82,mm:gf('set-mm')||20,rWalls:gf('set-r-walls')||4.00,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.50,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,reviewUrl:gs('set-review-url')||''};
+  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),stripePk:gs('set-stripe-pk')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,p1:gf('set-p1')||35,p2:gf('set-p2')||58,p3:gf('set-p3')||82,mm:gf('set-mm')||20,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,reviewUrl:gs('set-review-url')||''};
   applySettings();saveAll();
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
 }
@@ -2114,7 +2156,7 @@ function clearMileageOnly(){
   },{title:'Clear mileage',yes:'Delete mileage',danger:true});
 }
 
-function resetSettings(){zConfirm('Reset all settings to defaults?',()=>{S={irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:"ZJ's Painting & Special Coatings",bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:38,p2:62,p3:88,mm:15,rWalls:4.00,rCeil:1.00,rTrim:3.50,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00};applySettings();loadSettingsForm();},{title:'Reset settings',yes:'Reset',danger:false});}
+function resetSettings(){zConfirm('Reset all settings to defaults?',()=>{S={irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:"ZJ's Painting & Special Coatings",bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:38,p2:62,p3:88,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00};applySettings();loadSettingsForm();},{title:'Reset settings',yes:'Reset',danger:false});}
 function resetLocationPermission(){
   // Clear stored location so modal re-prompts
   delete S.weatherLat;delete S.weatherLon;S.locationDenied=false;
@@ -2240,7 +2282,7 @@ function _doOpenEstimate(c){
     if(S.bname)sf('e-bname',S.bname);
     if(S.bphone)sf('e-bphone',S.bphone);
     if(S.blic)sf('e-blic',S.blic);
-    sf('e-r-walls',S.rWalls||1.25);sf('e-r-ceil',S.rCeil||1.00);sf('e-r-trim',S.rTrim||4.00);
+    sf('e-r-walls',S.rWalls||1.30);sf('e-r-ceil',S.rCeil||1.00);sf('e-r-trim',S.rTrim||3.25);sf('e-r-walls-adv',S.rWalls||1.30);sf('e-r-ceil-adv',S.rCeil||1.00);sf('e-r-trim-adv',S.rTrim||3.25);sf('e-r-door',S.rDoor||95);sf('e-r-door-adv',S.rDoor||95);sf('e-r-win',S.rWin||50);sf('e-r-ext',S.rExt||1.10);sf('e-r-deck',S.rDeck||1.00);
     sf('e-r-door',S.rDoor||95);sf('e-r-win',S.rWin||50);sf('e-r-ext',S.rExt||1.10);
     sf('e-r-deck',S.rDeck||1.00);sf('e-paint-rate',42);
     SCOPE_ITEMS.forEach(sc=>{sf(sc.rateKey,sc.defaultRate);});
@@ -2263,7 +2305,7 @@ function _doOpenEstimate(c){
     const adj=document.getElementById('est-adj');if(adj)adj.value=0;
     const adjv=document.getElementById('est-adj-val');if(adjv)adjv.textContent='0%';
     ['est-adj-reason','inc-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-    scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
+    scopeActiveMap={};scopeHrsStore={};roomScopeMap={};estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};
   SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
     const epEl=document.getElementById('e-paint');if(epEl)epEl.value='interior';const custEl2=document.getElementById('e-customer-paint');if(custEl2)custEl2.value='';
     document.querySelectorAll('#paint-picker .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));
@@ -5085,7 +5127,7 @@ function openEditBid(bidId){
     if(totalMiles>0){sf('e-travel',(Math.round(totalMiles*10)/10).toString());}
     const linked=document.getElementById('e-client-linked');
     if(linked)linked.innerHTML='<span class="conn-tag">'+(c?c.name:'linked')+' — editing existing bid</span>';
-    scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
+    scopeActiveMap={};scopeHrsStore={};roomScopeMap={};estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};
   SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
     roomScopeMap=b.roomScopeMap?JSON.parse(JSON.stringify(b.roomScopeMap)):{};
     if(b.scope&&Object.keys(b.scope).length){Object.entries(b.scope).forEach(([id,val])=>toggleScope(id,!!val));}
@@ -7902,14 +7944,14 @@ function getBidIncomeLabel(bid){
 function calcEst(){
   const gR=id=>parseFloat(document.getElementById(id)?.value)||0;
   const R={
-    walls:   gR('e-r-walls')||S.rWalls||1.25,
+    walls:   gR('e-r-walls')||S.rWalls||1.30,
     ceiling: gR('e-r-ceil') ||S.rCeil ||1.00,
-    trim:    gR('e-r-trim') ||S.rTrim ||3.50,
+    trim:    gR('e-r-trim') ||S.rTrim ||3.25,
     doors:   gR('e-r-door') ||S.rDoor ||95,
     windows: gR('e-r-win')  ||S.rWin  ||50,
     cabinets:38,
     ext_walls:gR('e-r-ext') ||S.rExt  ||1.10,
-    ext_trim: gR('e-r-trim')||S.rTrim ||3.50,
+    ext_trim: gR('e-r-trim')||S.rTrim ||3.25,
     deck:    gR('e-r-deck') ||S.rDeck ||1.00,
   };
   const paintCostPerGal=gR('e-paint-rate')||(estSurfaces.some(s=>s.type==='ext_walls'||s.type==='ext_trim'||s.type==='deck')?106:42);
@@ -7919,9 +7961,10 @@ function calcEst(){
   estSurfaces.forEach(s=>{
     if(!s.qty)return;const t=SURF_TYPES.find(x=>x.v===s.type);if(!t)return;
     const rate=R[s.type]||0;
-    // s.qty = room floor area (L×W) — wall rate is per room sq ft, calibrated to cover full wall labor.
-    // coats not applied to labor; twocoat scope item handles the extra-coat charge separately.
-    const cost=Math.round(s.qty*rate*100)/100;
+    // Walls/ext_walls: use actual wall sqft (perimeter×height) — industry standard for labor pricing.
+    // Ceiling/deck/trim: use qty as entered. Coats not in labor — twocoat scope handles it.
+    const laborQty=(s.type==='walls'||s.type==='ext_walls')?(s.wallSqft||s.qty):s.qty;
+    const cost=Math.round(laborQty*rate*100)/100;
     laborTotal+=cost;
     // Build label: SurfaceType · Room · Color [Finish]
     const _roomBase=cleanRoomName(s.room)||'';
@@ -8000,8 +8043,9 @@ function calcEst(){
   const flatAdd=0;const scopeFlats=[];
   const adjPct=parseInt(v('est-adj'))||0;
   // 7% contingency baked silently into labor (industry standard callback buffer)
-  // Straight math — no contingency padding, no rounding, no materials floor
-  const base=Math.round((laborTotal+matTotal)*100)/100;
+  // Property tier multiplier applied to total (set by selectPropertyTier in step 2)
+  const tierMult=(typeof estPropertyTier!=='undefined'&&estPropertyTier.mult)||1.00;
+  const base=Math.round((laborTotal+matTotal)*tierMult*100)/100;
   const adj=Math.round(base*(adjPct/100)*100)/100;
   const final=Math.max(0,Math.round((base+adj)*100)/100);
   return{lines,laborTotal,matTotal,customerPaint,flatAdd,scopeFlats,colorAdd:0,travel:0,base,bid:final,adj,final,
@@ -8406,7 +8450,7 @@ function buildProposal(){
 
   // Build per-room cost rows for the proposal table
   const gR=id=>parseFloat(document.getElementById(id)?.value)||0;
-  const R={walls:gR('e-r-walls')||S.rWalls||1.25,ceiling:gR('e-r-ceil')||S.rCeil||1.00,trim:gR('e-r-trim')||S.rTrim||4.00,doors:gR('e-r-door')||S.rDoor||95,windows:gR('e-r-win')||S.rWin||50,cabinets:38,ext_walls:gR('e-r-ext')||S.rExt||1.10,ext_trim:gR('e-r-trim')||S.rTrim||4.00,deck:gR('e-r-deck')||S.rDeck||1.00};
+  const R={walls:gR('e-r-walls')||S.rWalls||1.30,ceiling:gR('e-r-ceil')||S.rCeil||1.00,trim:gR('e-r-trim')||S.rTrim||4.00,doors:gR('e-r-door')||S.rDoor||95,windows:gR('e-r-win')||S.rWin||50,cabinets:38,ext_walls:gR('e-r-ext')||S.rExt||1.10,ext_trim:gR('e-r-trim')||S.rTrim||4.00,deck:gR('e-r-deck')||S.rDeck||1.00};
   const hasRoomScope=Object.keys(roomScopeMap).length>0&&Object.values(roomScopeMap).some(r=>Object.keys(r).length>0);
 
   // Aggregate surface cost per room — track per-surface colors
@@ -8837,7 +8881,7 @@ function clearEstimatorForm(){
   ['e-cname','e-cphone','e-caddr','e-cnotes','est-adj-reason'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const adj=document.getElementById('est-adj');if(adj)adj.value=0;
   const adjV=document.getElementById('est-adj-val');if(adjV)adjV.textContent='0%';
-  scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
+  scopeActiveMap={};scopeHrsStore={};roomScopeMap={};estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};
   SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
   const ep2=document.getElementById('e-paint');if(ep2)ep2.value='';
   const ecp=document.getElementById('e-customer-paint');if(ecp)ecp.value='';
@@ -8934,12 +8978,54 @@ function adjRate(id,delta){
   el.value=next;
   if(typeof renderEstRunning==='function')renderEstRunning();
 }
+function adjRateAdv(advId,delta){
+  const el=document.getElementById(advId);if(!el)return;
+  const cur=parseFloat(el.value)||0;
+  const next=Math.round((cur+delta)*100)/100;
+  if(next<0)return;
+  el.value=next;
+  // sync to hidden field that calcEst reads
+  const hiddenId=advId.replace('-adv','');
+  const hidden=document.getElementById(hiddenId);
+  if(hidden)hidden.value=next;
+  if(typeof renderEstRunning==='function')renderEstRunning();
+}
+function syncAdvRate(advId,hiddenId){
+  const adv=document.getElementById(advId);const hidden=document.getElementById(hiddenId);
+  if(adv&&hidden)hidden.value=adv.value;
+  if(typeof renderEstRunning==='function')renderEstRunning();
+}
+const PROP_TIERS={
+  rental: {key:'rental',mult:0.82,paint:'ProMar 700',label:'Rental / Fixer',hint:'Basic finish — ProMar 700. Price reflects straightforward prep on a budget property.'},
+  avg:    {key:'avg',   mult:1.00,paint:'ProMar 200',label:'Average Home',  hint:'Standard job — ProMar 200. Solid work, everyday homeowner.'},
+  nice:   {key:'nice',  mult:1.22,paint:'SuperPaint', label:'Well-Maintained',hint:'Owner takes pride — SuperPaint or Cashmere. Extra care, better finish.'},
+  premium:{key:'premium',mult:1.50,paint:'Duration Home',label:'High-End / Premium',hint:'Demanding client or luxury home — Duration or Emerald. Top quality throughout.'},
+};
+function selectPropertyTier(key){
+  const tier=PROP_TIERS[key];if(!tier)return;
+  estPropertyTier=tier;
+  // Update button styles
+  Object.keys(PROP_TIERS).forEach(k=>{
+    const btn=document.getElementById('ptier-'+k);if(!btn)return;
+    if(k===key){
+      btn.style.borderColor='var(--blue)';btn.style.background='var(--blue-lt)';
+    } else {
+      btn.style.borderColor='var(--border2)';btn.style.background='var(--bg2)';
+    }
+  });
+  const hint=document.getElementById('prop-tier-hint');
+  if(hint)hint.textContent=tier.hint;
+  // Enable Next button
+  const nxt=document.getElementById('est-s2-next-btn');
+  if(nxt){nxt.style.background='';nxt.style.color='';nxt.style.borderColor='';nxt.disabled=false;}
+  if(typeof renderEstRunning==='function')renderEstRunning();
+}
 function prefillEstimateRates(){
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
   if(S.bname)sf('e-bname',S.bname);
   if(S.bphone)sf('e-bphone',S.bphone);
   if(S.blic)sf('e-blic',S.blic);
-  sf('e-r-walls',S.rWalls||1.25);sf('e-r-ceil',S.rCeil||1.00);sf('e-r-trim',S.rTrim||4.00);
+  sf('e-r-walls',S.rWalls||1.30);sf('e-r-ceil',S.rCeil||1.00);sf('e-r-trim',S.rTrim||3.25);sf('e-r-walls-adv',S.rWalls||1.30);sf('e-r-ceil-adv',S.rCeil||1.00);sf('e-r-trim-adv',S.rTrim||3.25);sf('e-r-door',S.rDoor||95);sf('e-r-door-adv',S.rDoor||95);sf('e-r-win',S.rWin||50);sf('e-r-ext',S.rExt||1.10);sf('e-r-deck',S.rDeck||1.00);
   sf('e-r-door',S.rDoor||95);sf('e-r-win',S.rWin||50);sf('e-r-ext',S.rExt||1.10);
   sf('e-r-deck',S.rDeck||1.00);sf('e-paint-rate',42);
   SCOPE_ITEMS.forEach(sc=>{sf(sc.rateKey,sc.defaultRate);});
@@ -9057,7 +9143,12 @@ function goEstStep(n){
       }
     },100);
   }
-  if(n===2){setTimeout(checkStep2Ready,50);if(estStep<2&&!document.getElementById('e-cond')?.value)applyDefaultScope();}
+  if(n===2){
+    setTimeout(checkStep2Ready,50);
+    if(estStep<2&&!document.getElementById('e-cond')?.value)applyDefaultScope();
+    // Auto-select current tier visually (defaults to 'avg')
+    setTimeout(()=>selectPropertyTier(estPropertyTier&&estPropertyTier.key||'avg'),80);
+  }
   if(n===4){
     if(!estSurfaces.length){zAlert('Add at least one room and surface before reviewing.',{title:'No surfaces yet'});return;}
     // Ensure paint supply defaults to interior if not yet set
