@@ -6636,7 +6636,8 @@ function finishRoom(){
   showRoomSavedState(roomCount);
   window.scrollTo({top:0,left:0,behavior:'instant'});document.body.scrollTop=0;document.documentElement.scrollTop=0;
 }
-  document.getElementById('surf-step-a').style.display='none';
+
+function showRoomSavedState(roomCount){
   document.getElementById('surf-step-b').style.display='none';
   // Get the room name just saved from the last surface entry
   const lastSavedRoom=estSurfaces.length>0?cleanRoomName(estSurfaces[estSurfaces.length-1].room):'';
