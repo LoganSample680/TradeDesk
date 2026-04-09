@@ -4237,7 +4237,8 @@ function showSupplyList(bidId){
     const spec=(s.room||'').indexOf(' — ')>-1?(s.room||'').split(' — ').slice(1).join(' — '):'';
     const key=spec||'Paint';
     if(!orderMap[key])orderMap[key]={sqFt:0,spec,cov:350};
-    orderMap[key].sqFt+=s.qty;
+    const paintSqft=s.wallSqft||s.qty;  // wall area for gallons, floor area for pricing
+    orderMap[key].sqFt+=paintSqft;
     const prodName=spec.split(' · ')[0].trim();
     const prod=allSwProds.find(p=>p.name===prodName);
     if(prod)orderMap[key].cov=prod.cov||350;
@@ -6519,18 +6520,20 @@ function adjWallCount(d){
 function updateWallSqft(manual){
   const sqEl=document.getElementById('surf-b-sqft');
   const calc=document.getElementById('surf-b-sqftcalc');
-  if(manual){
-    const v=parseFloat(sqEl?.value)||0;
-    if(calc)calc.textContent=v>0?v.toLocaleString()+' sq ft (entered directly)':'Enter dimensions above';
-    return;
-  }
   const l=parseFloat(document.getElementById('surf-b-len')?.value)||0;
   const w=parseFloat(document.getElementById('surf-b-wid')?.value)||0;
   const h=parseFloat(document.getElementById('surf-b-hgt')?.value)||9;
+  if(manual){
+    // Manual entry — recalc wall area for gallons using current h
+    const v=parseFloat(sqEl?.value)||0;
+    if(calc)calc.textContent=v>0?v.toLocaleString()+' sq ft (pricing)':'Enter dimensions above';
+    return;
+  }
   if(l>0&&w>0){
-    const wallSqft=Math.round((l+w)*2*h);
-    if(sqEl){sqEl.value=wallSqft;}
-    if(calc)calc.textContent='('+l+' + '+w+') × 2 × '+h+' = '+wallSqft.toLocaleString()+' sq ft';
+    const floorSqft=Math.round(l*w);           // for pricing
+    const wallSqft=Math.round((l+w)*2*h);       // for gallons (hidden)
+    if(sqEl)sqEl.value=floorSqft;
+    if(calc)calc.textContent=l+' × '+w+' = '+floorSqft.toLocaleString()+' sq ft  ·  wall area '+wallSqft.toLocaleString()+' sf (for paint calc)';
   } else {
     if(calc)calc.textContent='Enter room length and width above';
   }
@@ -6631,8 +6634,10 @@ function saveSurfBAndNext(){
     const _l=parseFloat(document.getElementById('surf-b-len')?.value)||0;
     const _w=parseFloat(document.getElementById('surf-b-wid')?.value)||0;
     const _h=parseFloat(document.getElementById('surf-b-hgt')?.value)||9;
-    surfBMeasurements[type]={sqft,len:_l,wid:_w,hgt:_h};
-    estSurfaces.push({id:++estSurfId,type,qty:sqft,room:prefix+surfRoom+colorNote});
+    // wallSqft = perimeter × height for paint gallon calc; qty = floor area for labor pricing
+    const _wallSqft=(type==='walls'||type==='ext_walls')&&_l>0&&_w>0?Math.round((_l+_w)*2*_h):sqft;
+    surfBMeasurements[type]={sqft,len:_l,wid:_w,hgt:_h,wallSqft:_wallSqft};
+    estSurfaces.push({id:++estSurfId,type,qty:sqft,wallSqft:_wallSqft,room:prefix+surfRoom+colorNote});
     surfBIdx++;
     if(surfBIdx<surfBQueue.length){window.scrollTo({top:0,left:0,behavior:'instant'});document.body.scrollTop=0;renderSurfBCurrent();}
     else finishRoom();
@@ -7823,8 +7828,10 @@ function calcEst(){
     const spec=(s.room||'').indexOf(' — ')>-1?(s.room||'').split(' — ').slice(1).join(' — '):'';
     const key=spec||'Paint';
     const roomName=cleanRoomName(s.room)||'';
+    // Use wallSqft (perimeter×height) for paint volume; fall back to qty for ceiling/deck
+    const paintSqft=s.wallSqft||s.qty;
     if(!orderMap[key])orderMap[key]={sqFt:0,cov:_prodCov(s.room),price:_prodContractorPrice(s.room),spec,surfaces:[],rooms:[]};
-    orderMap[key].sqFt+=s.qty;
+    orderMap[key].sqFt+=paintSqft;
     orderMap[key].surfaces.push({type:s.type,qty:s.qty});
     if(roomName&&!orderMap[key].rooms.includes(roomName))orderMap[key].rooms.push(roomName);
   });
@@ -8865,7 +8872,7 @@ function goEstStep(n){
       }
     },100);
   }
-  if(n===2&&estStep<2&&!document.getElementById('e-cond')?.value){applyDefaultScope();}
+  if(n===2){setTimeout(checkStep2Ready,50);if(estStep<2&&!document.getElementById('e-cond')?.value)applyDefaultScope();}
   if(n===4){
     if(!estSurfaces.length){zAlert('Add at least one room and surface before reviewing.',{title:'No surfaces yet'});return;}
     // Ensure paint supply defaults to interior if not yet set
