@@ -2039,7 +2039,7 @@ function getBookedDays(){
   });
   return{booked,buf};
 }
-function getNextAvail(){const{booked,buf}=getBookedDays();const all=new Set([...booked,...buf]);let d=todayKey();for(let i=0;i<180;i++){if(!all.has(d)){const dt=parseD(d);return{key:d,label:dt.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})};}d=addDays(d,1);}return{key:todayKey(),label:'Check calendar'};}
+function getNextAvail(){const{booked,buf}=getBookedDays();const all=new Set([...booked,...buf]);const allowWknd=document.getElementById('s-allow-weekend')?.checked||false;let d=todayKey();for(let i=0;i<180;i++){const dow=parseD(d).getDay();const isWknd=dow===0||dow===6;if(!all.has(d)&&(allowWknd||!isWknd)){const dt=parseD(d);return{key:d,label:dt.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})};}d=addDays(d,1);}return{key:todayKey(),label:'Check calendar'};}
 
 function buildScopeDefaultsUI(){
   const el=document.getElementById('set-scope-defaults');if(!el)return;
@@ -6405,14 +6405,44 @@ function renderSurfBCurrent(){
   if(!dims||!subopts)return;
   subopts.style.display='none';
 
-  if(type==='walls'||type==='ext_walls'||type==='ceiling'||type==='deck'){
+  if(type==='walls'||type==='ext_walls'){
+    const m=surfBMeasurements[type]||{sqft:'',len:'',wid:'',hgt:9};
+    dims.innerHTML=
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">'+
+        '<div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Room length (ft)</label>'+
+        '<input type="number" id="surf-b-len" value="'+(m.len||'')+'" min="0" step="1" placeholder="0" inputmode="decimal"'+
+          ' style="font-size:22px;font-weight:700;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
+          ' oninput="updateWallSqft()"></div>'+
+        '<div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Room width (ft)</label>'+
+        '<input type="number" id="surf-b-wid" value="'+(m.wid||'')+'" min="0" step="1" placeholder="0" inputmode="decimal"'+
+          ' style="font-size:22px;font-weight:700;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
+          ' oninput="updateWallSqft()"></div>'+
+        '<div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Ceiling ht (ft)</label>'+
+        '<input type="number" id="surf-b-hgt" value="'+(m.hgt||9)+'" min="6" step="0.5" placeholder="9" inputmode="decimal"'+
+          ' style="font-size:22px;font-weight:700;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
+          ' oninput="updateWallSqft()"></div>'+
+      '</div>'+
+      '<div style="background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center;margin-bottom:8px">'+
+        '<div style="font-size:11px;color:var(--text3);margin-bottom:4px">(Length + Width) × 2 × Height = Wall sq ft</div>'+
+        '<div id="surf-b-sqftcalc" style="font-size:18px;font-weight:800;color:var(--blue)">Enter dimensions above</div>'+
+      '</div>'+
+      '<div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Or enter wall sq ft directly:</label>'+
+      '<input type="number" id="surf-b-sqft" value="'+(m.sqft||'')+'" min="0" step="1" placeholder="0" inputmode="decimal"'+
+        ' style="font-size:22px;font-weight:700;padding:8px;border-radius:var(--r);border:2px solid var(--blue);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
+        ' oninput="updateWallSqft(true)"></div>';
+    setTimeout(()=>{const el=document.getElementById('surf-b-len');if(el)el.focus();},80);
+    if(m.len&&m.wid)setTimeout(updateWallSqft,50);
+    return;
+  }
+
+  if(type==='ceiling'||type==='deck'){
     const m=surfBMeasurements[type]||{sqft:''};
-    // Auto-fill ceiling from walls — same room footprint
+    // Auto-fill ceiling from walls sqft
     const wallsSqft=surfBMeasurements.walls?.sqft||surfBMeasurements.ext_walls?.sqft||0;
     const autoFillSqft=(type==='ceiling'&&!m.sqft&&wallsSqft)?wallsSqft:null;
     if(autoFillSqft)m.sqft=autoFillSqft;
     dims.innerHTML=
-      (autoFillSqft?'<div style="font-size:11px;color:var(--green-mid);font-weight:700;margin-bottom:8px;text-align:center">✓ Auto-filled from walls — edit if different</div>':'')+
+      (autoFillSqft?'<div style="font-size:11px;color:var(--green-mid);font-weight:700;margin-bottom:8px;text-align:center">✓ Auto-filled from room dimensions — edit if different</div>':'')+
       '<div style="display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;gap:8px;margin-bottom:10px">'+
         '<div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Length (ft)</label>'+
         '<input type="number" id="surf-b-len" value="" min="0" step="1" placeholder="0" inputmode="decimal"'+
@@ -6486,7 +6516,26 @@ function adjWallCount(d){
   renderSurfBCurrent();
 }
 
-function updateSqftCalc(manualSqft){
+function updateWallSqft(manual){
+  const sqEl=document.getElementById('surf-b-sqft');
+  const calc=document.getElementById('surf-b-sqftcalc');
+  if(manual){
+    const v=parseFloat(sqEl?.value)||0;
+    if(calc)calc.textContent=v>0?v.toLocaleString()+' sq ft (entered directly)':'Enter dimensions above';
+    return;
+  }
+  const l=parseFloat(document.getElementById('surf-b-len')?.value)||0;
+  const w=parseFloat(document.getElementById('surf-b-wid')?.value)||0;
+  const h=parseFloat(document.getElementById('surf-b-hgt')?.value)||9;
+  if(l>0&&w>0){
+    const wallSqft=Math.round((l+w)*2*h);
+    if(sqEl){sqEl.value=wallSqft;}
+    if(calc)calc.textContent='('+l+' + '+w+') × 2 × '+h+' = '+wallSqft.toLocaleString()+' sq ft';
+  } else {
+    if(calc)calc.textContent='Enter room length and width above';
+  }
+}
+
   const lenEl=document.getElementById('surf-b-len');
   const widEl=document.getElementById('surf-b-wid');
   const sqEl=document.getElementById('surf-b-sqft');
@@ -6578,7 +6627,10 @@ function saveSurfBAndNext(){
     const sqEl=document.getElementById('surf-b-sqft');
     const sqft=Math.round(parseFloat(sqEl?sqEl.value:0)||0);
     if(!sqft){zAlert('Enter the square footage.',{title:'Measurements needed'});return;}
-    surfBMeasurements[type]={sqft};
+    const _l=parseFloat(document.getElementById('surf-b-len')?.value)||0;
+    const _w=parseFloat(document.getElementById('surf-b-wid')?.value)||0;
+    const _h=parseFloat(document.getElementById('surf-b-hgt')?.value)||9;
+    surfBMeasurements[type]={sqft,len:_l,wid:_w,hgt:_h};
     estSurfaces.push({id:++estSurfId,type,qty:sqft,room:prefix+surfRoom+colorNote});
     surfBIdx++;
     if(surfBIdx<surfBQueue.length){window.scrollTo({top:0,left:0,behavior:'instant'});document.body.scrollTop=0;renderSurfBCurrent();}
@@ -9994,6 +10046,8 @@ async function refreshAvail(){
   }).join('');
 }
 function pickDay(key){
+  const _dow=parseD(key).getDay();
+  if((_dow===0||_dow===6)&&!document.getElementById('s-allow-weekend')?.checked)return;
   document.getElementById('s-start').value=key;
   if(schedType==='estimate'&&key===todayKey()){
     const timeEl=document.getElementById('s-time');
