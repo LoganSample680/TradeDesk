@@ -4240,7 +4240,9 @@ function showSupplyList(bidId){
     if(!spec)return;
     const key=spec;
     if(!orderMap[key])orderMap[key]={sqFt:0,spec,cov:350,surfaces:[]};
-    orderMap[key].sqFt+=s.qty; // s.qty is now wall sqft from perimeter×height
+    // Use wallSqft for paint calc (perimeter×height); ceiling/deck use floor area (qty)
+    const paintSqft=(s.type==='walls'||s.type==='ext_walls')?(s.wallSqft||s.qty):s.qty;
+    orderMap[key].sqFt+=paintSqft;
     orderMap[key].surfaces.push(s.type);
     const prodName=spec.split(' · ')[0].trim();
     const prod=allSwProds.find(p=>p.name===prodName);
@@ -6568,15 +6570,15 @@ function updateWallSqft(manual){
   const h=parseFloat(document.getElementById('surf-b-hgt')?.value)||9;
   if(manual){
     const v=parseFloat(sqEl?.value)||0;
-    if(calc)calc.textContent=v>0?'Wall area: '+v.toLocaleString()+' sq ft':'Enter dimensions above';
+    if(calc)calc.textContent=v>0?v.toLocaleString()+' sq ft':'Enter dimensions above';
     return;
   }
   if(l>0&&w>0){
-    const wallSqft=Math.round((l+w)*2*h);
-    if(sqEl)sqEl.value=wallSqft;
-    if(calc)calc.textContent='Wall area: '+wallSqft.toLocaleString()+' sq ft';
+    const floorSqft=Math.round(l*w);
+    if(sqEl)sqEl.value=floorSqft;
+    if(calc)calc.textContent=floorSqft.toLocaleString()+' sq ft';
   } else {
-    if(calc)calc.textContent='Enter room length and width above';
+    if(calc)calc.textContent='';
   }
 }
 
