@@ -8485,19 +8485,7 @@ function saveStripeKey(){
 function syncAdj(){const pct=parseInt(v('est-adj')||0);document.getElementById('est-adj-val').textContent=(pct>0?'+':'')+pct+'%';renderEstReview();}
 
 async function shortenUrl(url){
-  // 1. Try Bitly if key is set — produces trusted bit.ly/xxxxx links
-  if(S.bitlyKey){
-    try{
-      const r=await fetch('https://api-ssl.bitly.com/v4/shorten',{method:'POST',headers:{'Authorization':'Bearer '+S.bitlyKey,'Content-Type':'application/json'},body:JSON.stringify({long_url:url}),signal:AbortSignal.timeout(5000)});
-      if(r.ok){const d=await r.json();if(d.link)return d.link;}
-    }catch(e){console.warn('Bitly unavailable, trying is.gd');}
-  }
-  // 2. Fall back to is.gd — free, no key, cleaner than tinyurl: is.gd/AbCdEf
-  try{
-    const r=await fetch('https://is.gd/create.php?format=simple&url='+encodeURIComponent(url),{signal:AbortSignal.timeout(5000)});
-    if(r.ok){const s=(await r.text()).trim();if(s.startsWith('https://is.gd/'))return s;}
-  }catch(e){console.warn('is.gd unavailable, using full URL');}
-  // 3. Full URL fallback — always works
+  // TODO: swap baseUrl to Cloudflare Pages domain (zjspainting.pages.dev) tomorrow
   return url;
 }
 function saveBitlyKey(){
@@ -8535,8 +8523,6 @@ async function sendProposalLink(){
     const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
     const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
     const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-    // Shorten URL so clients see tinyurl.com/xxxxx instead of raw GitHub URL
-    if(btn)btn.textContent='⏳ Shortening link...';
     const shortUrl=await shortenUrl(signingUrl);
     const bar=document.getElementById('proposal-link-bar');
     const input=document.getElementById('proposal-link-input');
