@@ -9934,7 +9934,36 @@ async function refreshAvail(){
   const M=['January','February','March','April','May','June','July','August','September','October','November','December'];
   document.getElementById('avail-month-lbl').textContent=M[availMonth]+' '+availYear;
   const{booked,buf}=getBookedDays(),selected=v('s-start'),days=parseInt(v('s-days'))||1,b=parseInt(v('s-buf'))||0,today=todayKey();
-  const selEnd=selected?addDays(selected,days+b-1):null;
+  const allowWknd=document.getElementById('s-allow-weekend')?.checked||false;
+
+  // Build workday-aware end date — skip weekends unless allowed
+  function calcWorkEnd(startKey, numDays) {
+    if(!startKey) return null;
+    let count=0, cur=startKey;
+    while(count < numDays) {
+      const dow=parseD(cur).getDay();
+      if(allowWknd || (dow!==0 && dow!==6)) count++;
+      if(count < numDays) cur=addDays(cur,1);
+    }
+    // Add buffer (buffer days are calendar days after end)
+    return b>0 ? {workEnd:cur, bufEnd:addDays(cur,b)} : {workEnd:cur, bufEnd:cur};
+  }
+
+  const endCalc=selected?calcWorkEnd(selected,days):null;
+  const selEnd=endCalc?.workEnd||null;
+  const selBufEnd=endCalc?.bufEnd||null;
+
+  // Build set of all highlighted workdays in the selection
+  const selDays=new Set();
+  if(selected&&selEnd){
+    let cur=selected;
+    while(cur<=selBufEnd){
+      const dow=parseD(cur).getDay();
+      if(allowWknd||(dow!==0&&dow!==6)) selDays.add(cur);
+      cur=addDays(cur,1);
+    }
+  }
+
   const first=new Date(availYear,availMonth,1),last=new Date(availYear,availMonth+1,0),dow=first.getDay();
   const cells=[];
   for(let i=0;i<dow;i++){const d=new Date(availYear,availMonth,1-dow+i);cells.push({key:dateKey(d),other:true});}
@@ -9943,24 +9972,24 @@ async function refreshAvail(){
   const weather=await fetchWeather();
   document.getElementById('avail-grid').innerHTML=cells.map(({key,other})=>{
     if(other)return'<div class="av-d av-other">'+parseInt(key.split('-')[2])+'</div>';
-    const isPast=key<today,isTaken=booked.has(key),isBuf=buf.has(key),isSel=selected&&key>=selected&&key<=selEnd,isStart=key===selected;
-    const dow=parseD(key).getDay();
-    const isWeekend=dow===0||dow===6;
+    const isPast=key<today,isTaken=booked.has(key),isBuf=buf.has(key)&&!selDays.has(key);
+    const isSel=selDays.has(key),isStart=key===selected;
+    const dayDow=parseD(key).getDay();
+    const isWeekend=dayDow===0||dayDow===6;
+    const isWorkday=!isWeekend||(allowWknd);
     const wx=weather[key];
     const wxHtml=wx?'<div style="font-size:11px;line-height:1">'+wx.icon+'</div><div style="font-size:8px;color:'+(wx.rain?'#A32D2D':'inherit')+';font-weight:600;line-height:1.2">'+wx.hi+'°</div>':'';
     const dayNum=parseInt(key.split('-')[2]);
     if(isPast)return'<div class="av-d av-past">'+dayNum+'</div>';
+    // Weekends grayed when not allowed — never blue, never selectable
+    if(isWeekend&&!allowWknd)return'<div class="av-d av-past">'+dayNum+'</div>';
     if(schedType==='estimate'){
-      const allowWknd=document.getElementById('s-allow-weekend')?.checked||false;
-      if(isWeekend&&!allowWknd)return'<div class="av-d av-past">'+dayNum+'</div>';
       if(isSel)return'<div class="av-d av-sel" onclick="pickDay(\''+key+'\')">'+dayNum+(isStart?'<br><span style="font-size:9px">start</span>':'')+wxHtml+'</div>';
-      if(isWeekend)return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')" style="background:var(--blue-lt);color:var(--blue-dk)">'+dayNum+wxHtml+'</div>';
       return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')">'+dayNum+wxHtml+'</div>';
     }
     if(isTaken)return'<div class="av-d av-taken">'+dayNum+wxHtml+'</div>';
     if(isBuf)return'<div class="av-d av-buf">'+dayNum+'</div>';
     if(isSel)return'<div class="av-d av-sel" onclick="pickDay(\''+key+'\')">'+dayNum+(isStart?'<br><span style="font-size:9px">start</span>':'')+wxHtml+'</div>';
-    if(isWeekend&&!document.getElementById('s-allow-weekend')?.checked)return'<div class="av-d av-past">'+dayNum+'</div>';
     return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')">'+dayNum+wxHtml+'</div>';
   }).join('');
 }
