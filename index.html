@@ -2549,7 +2549,8 @@ function renderDash(){
   // Unified pending estimates section
   const resumeEl=document.getElementById('dash-resume-est');
   if(resumeEl){
-    const pendingBids=bids.filter(b=>b.status==='Pending'||b.status==='Draft').sort((a,b)=>(b.bid_date||'').localeCompare(a.bid_date||''));
+    // Only show estimates still being built — Draft status or Pending with no bid_date (never sent)
+    const pendingBids=bids.filter(b=>(b.status==='Draft')||(b.status==='Pending'&&!b.bid_date)).sort((a,b)=>(b.bid_date||'').localeCompare(a.bid_date||''));
     const draft=loadEstFullDraft();
     const hasDraft=!!(draft&&draft.cname);
     const hasAny=hasDraft||pendingBids.length>0;
@@ -2557,7 +2558,7 @@ function renderDash(){
       let html='<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:10px 14px;margin-bottom:8px">';
       // Section header
       const total=pendingBids.length+(hasDraft?1:0);
-      html+='<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">📬 Estimates in progress ('+(total)+')</div>';
+      html+='<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px">✏️ Estimates in progress ('+(total)+')</div>';
       // Draft row (unsaved, localStorage only)
       if(hasDraft){
         html+='<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);margin-bottom:6px">'+
@@ -5966,24 +5967,46 @@ let _currentScopeRoom='';  // room name currently shown in scope grid
 let _swColors=null,_swFinish='',_swCurrentFamily=null;
 
 const SW_FAMILIES=[
-  {id:'white',  label:'White',   bg:'#F2EFE4',tc:'#555'},
-  {id:'gray',   label:'Gray',    bg:'#B0ACA4',tc:'#fff'},
-  {id:'beige',  label:'Beige',   bg:'#C8BA9E',tc:'#555'},
-  {id:'blue',   label:'Blue',    bg:'#4A7FA5',tc:'#fff'},
-  {id:'green',  label:'Green',   bg:'#5A7A50',tc:'#fff'},
-  {id:'teal',   label:'Teal',    bg:'#4A8F8A',tc:'#fff'},
-  {id:'yellow', label:'Yellow',  bg:'#D4A830',tc:'#555'},
-  {id:'orange', label:'Orange',  bg:'#C47840',tc:'#fff'},
-  {id:'red',    label:'Red',     bg:'#A03535',tc:'#fff'},
-  {id:'pink',   label:'Pink',    bg:'#C87878',tc:'#fff'},
-  {id:'purple', label:'Purple',  bg:'#6A5080',tc:'#fff'},
-  {id:'brown',  label:'Brown',   bg:'#6A4E35',tc:'#fff'},
-  {id:'black',  label:'Black',   bg:'#2A2A2A',tc:'#fff'},
+  {id:'white',  label:'White',      bg:'#F2EFE4',tc:'#555'},
+  {id:'gray',   label:'Gray',       bg:'#B0ACA4',tc:'#fff'},
+  {id:'beige',  label:'Beige',      bg:'#C8BA9E',tc:'#555'},
+  {id:'blue',   label:'Blue',       bg:'#4A7FA5',tc:'#fff'},
+  {id:'green',  label:'Green',      bg:'#5A7A50',tc:'#fff'},
+  {id:'teal',   label:'Teal',       bg:'#4A8F8A',tc:'#fff'},
+  {id:'yellow', label:'Yellow',     bg:'#D4A830',tc:'#555'},
+  {id:'orange', label:'Orange',     bg:'#C47840',tc:'#fff'},
+  {id:'red',    label:'Red',        bg:'#A03535',tc:'#fff'},
+  {id:'pink',   label:'Pink',       bg:'#C87878',tc:'#fff'},
+  {id:'purple', label:'Purple',     bg:'#6A5080',tc:'#fff'},
+  {id:'brown',  label:'Brown',      bg:'#6A4E35',tc:'#fff'},
+  {id:'black',  label:'Black',      bg:'#2A2A2A',tc:'#fff'},
+  {id:'stain',  label:'Deck Stain', bg:'#7B4E2A',tc:'#fff'},
 ];
 
 async function swLoadColors(){
   if(_swColors)return _swColors;
-  try{const r=await fetch('sw-colors.json?v=5');_swColors=await r.json();}
+  const STAIN_COLORS=[
+    {sw:'SD Natural',   name:'Natural',        hex:'#C19A6B',family:'stain'},
+    {sw:'SD Cedar',     name:'Cedar',          hex:'#9B4E24',family:'stain'},
+    {sw:'SD Redwood',   name:'Redwood',        hex:'#8B2E1A',family:'stain'},
+    {sw:'SD Mahogany',  name:'Mahogany',       hex:'#6B2D0F',family:'stain'},
+    {sw:'SD Walnut',    name:'Dark Walnut',    hex:'#4A2912',family:'stain'},
+    {sw:'SD Espresso',  name:'Espresso',       hex:'#2E1A0E',family:'stain'},
+    {sw:'SD Driftwood', name:'Driftwood',      hex:'#9C8C7A',family:'stain'},
+    {sw:'SD Slate',     name:'Slate Gray',     hex:'#7A7A78',family:'stain'},
+    {sw:'SD Charcoal',  name:'Charcoal',       hex:'#3C3C3A',family:'stain'},
+    {sw:'SD Teak',      name:'Teak',           hex:'#B07D45',family:'stain'},
+    {sw:'SD Honey',     name:'Honey',          hex:'#C89050',family:'stain'},
+    {sw:'SD Pecan',     name:'Pecan',          hex:'#8C5C2A',family:'stain'},
+    {sw:'SD Bark',      name:'Bark Brown',     hex:'#5C3A1E',family:'stain'},
+    {sw:'SD GreyWash',  name:'Gray Wash',      hex:'#B0ACA6',family:'stain'},
+  ];
+  try{
+    const r=await fetch('sw-colors.json?v=6');
+    const loaded=await r.json();
+    // Merge stain colors in (they're not in the SW catalog file)
+    _swColors=[...loaded,...STAIN_COLORS.filter(s=>!loaded.find(c=>c.sw===s.sw))];
+  }
   catch(e){_swColors=[
     {sw:'SW 7008',name:'Alabaster',hex:'#EDE9DD',family:'white'},
     {sw:'SW 7015',name:'Repose Gray',hex:'#CCC9C0',family:'gray'},
@@ -5993,6 +6016,7 @@ async function swLoadColors(){
     {sw:'SW 7069',name:'Iron Ore',hex:'#3B3D3E',family:'black'},
     {sw:'SW 6244',name:'Naval',hex:'#273C53',family:'blue'},
     {sw:'SW 7643',name:'Peppercorn',hex:'#595650',family:'gray'},
+    ...STAIN_COLORS,
   ];}
   return _swColors;
 }
@@ -6207,6 +6231,13 @@ const SW_PRODUCTS={
     {id:'eme',    name:'Emerald Exterior',   sub:'Best · self-cleaning, color retention',     price:'$$$$',retail:86,  contractor:54, cov:400},
     {id:'loxon',  name:'Loxon Masonry',      sub:'Masonry/concrete/stucco exterior',          price:'$$$', retail:70,  contractor:44, cov:300},
   ],
+  deck:[
+    {id:'sd_semi', name:'SuperDeck Semi-Trans',sub:'Semi-transparent stain · shows wood grain',  price:'$$',  retail:58,  contractor:38, cov:250},
+    {id:'sd_solid',name:'SuperDeck Solid',     sub:'Solid stain · full hide, longest lasting',   price:'$$',  retail:65,  contractor:42, cov:300},
+    {id:'arv_semi',name:'Deckscapes Semi-Trans',sub:'Semi-transparent · natural wood look',       price:'$$',  retail:52,  contractor:34, cov:250},
+    {id:'arv_solid',name:'Deckscapes Solid',   sub:'Solid stain · great for weathered wood',     price:'$$',  retail:60,  contractor:38, cov:300},
+    {id:'dec_paint',name:'Porch & Floor Paint',sub:'Solid paint · porches, concrete, wood floors',price:'$$', retail:68,  contractor:44, cov:350},
+  ],
   trim:[
     {id:'pm200t', name:'ProMar 200',         sub:'Standard trim & doors',                     price:'$$',  retail:83,  contractor:32, cov:400},
     {id:'ase',    name:'All Surface Enamel', sub:'Versatile enamel · doors, metal, wood',     price:'$$$', retail:50,  contractor:38, cov:400},
@@ -6245,7 +6276,7 @@ const SW_PRODUCT_INFO={
 };
 const SURF_PRODUCT_TYPE={
   walls:'interior',ceiling:'ceiling',
-  ext_walls:'exterior',ext_trim:'exterior',deck:'exterior',
+  ext_walls:'exterior',ext_trim:'exterior',deck:'deck',
   trim:'trim',doors:'trim',windows:'trim',cabinets:'trim',
 };
 let _swProduct=null;
@@ -9018,6 +9049,11 @@ function schedJobFromEstimate(){
 }
 function clearEstimatorForm(){
   estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;lastCreatedBidId=null;
+  // Reset surface step state so previous room name doesn't carry into next estimate
+  surfRoom='';surfColor='';surfWhatSelected=[];surfBQueue=[];surfBIdx=0;surfBMeasurements={};
+  _swLastProductByCategory={};
+  const rnEl=document.getElementById('surf-room-name');
+  if(rnEl){rnEl.value='';rnEl.style.borderColor='#A32D2D';rnEl.style.background='var(--red-lt)';}
   clearSurfDraft();clearEstFullDraft();
   ['e-cname','e-cphone','e-caddr','e-cnotes','est-adj-reason'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const adj=document.getElementById('est-adj');if(adj)adj.value=0;
@@ -9141,11 +9177,11 @@ function syncAdvRate(advId,hiddenId){
 }
 const PROP_TIERS={
   rental: {key:'rental',mult:0.82,paint:'ProMar 700',label:'Rental / Fixer',hint:'Basic finish — ProMar 700. Price reflects straightforward prep on a budget property.',
-    products:{interior:'pm700',exterior:'a100',ceiling:'pm200c',trim:'pm200t'}},
+    products:{interior:'pm700',exterior:'a100',trim:'pm200t'}},
   avg:    {key:'avg',   mult:1.00,paint:'ProMar 200',label:'Average Home',  hint:'Standard job — ProMar 200. Solid work, everyday homeowner.',
-    products:{interior:'pm200',exterior:'spe',ceiling:'pm200c',trim:'pm200t'}},
+    products:{interior:'pm200',exterior:'spe',trim:'pm200t'}},
   nice:   {key:'nice',  mult:1.22,paint:'SuperPaint', label:'Well-Maintained',hint:'Owner takes pride — SuperPaint or Cashmere. Extra care, better finish.',
-    products:{interior:'sp',exterior:'spe',ceiling:'emin',trim:'pclassw'}},
+    products:{interior:'sp',exterior:'spe',trim:'pclassw'}},
   premium:{key:'premium',mult:1.50,paint:'Duration Home',label:'High-End / Premium',hint:'Demanding client or luxury home — Duration or Emerald. Top quality throughout.',
     products:{interior:'dur',exterior:'dure',ceiling:'emceil',trim:'pclassw'}},
 };
