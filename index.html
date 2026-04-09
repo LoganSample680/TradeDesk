@@ -113,6 +113,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   .card{padding:14px}
   .f label{font-size:11px}
   .mets{grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px}
+  .met-v{font-size:14px}
   .btn{min-height:44px;padding:11px 16px}
   .btn-sm{padding:8px 12px;font-size:12px;min-height:36px}
   .btn-xl{min-height:52px;padding:15px 22px}
@@ -2578,12 +2579,15 @@ function renderDash(){
       const days=Math.floor((new Date(todayKey())-new Date((b.bid_date||todayKey())+'T12:00:00'))/86400000);
       const daysStr=days>0?days+'d ago':'Today';
       const hasNotes=!!(b.notesCanvas);
-      return '<div onclick="viewBidClient('+b.client_id+')" style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);gap:8px;cursor:pointer">'+
-        '<div style="min-width:0">'+
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);gap:8px">'+
+        '<div style="min-width:0;flex:1;cursor:pointer" onclick="viewBidClient('+b.client_id+')">'+
           '<div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+name+'</div>'+
           '<div style="font-size:11px;color:var(--text3)">'+fmt(b.amount)+' · '+daysStr+(hasNotes?' · 📝':'')+'</div>'+
         '</div>'+
-        '<div style="font-size:18px;color:var(--text3)">›</div>'+
+        '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'+
+          '<button onclick="openEditBid('+b.id+')" class="btn btn-sm btn-p" style="font-size:11px">Resume editing</button>'+
+          '<div onclick="viewBidClient('+b.client_id+')" style="font-size:18px;color:var(--text3);cursor:pointer;line-height:1">›</div>'+
+        '</div>'+
       '</div>';
     }).join('');
     resumeEl.innerHTML=
@@ -8675,13 +8679,13 @@ function buildProposal(){
       :'';
     const _roomCustPaint=roomCosts[room]&&(roomScopeMap[room]?._customerPaint===true);
     const custPaintBadge=_roomCustPaint?'<span style="display:inline-block;font-size:10px;background:#FEF3C7;color:#856404;border:1px solid #D97706;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700;vertical-align:middle">Client supplies paint</span>':'';
-    const descContent='<div style="font-size:13px;font-weight:800;color:#1a365d;line-height:1.3">'+room+custPaintBadge+'</div>'+
+    const descContent='<div style="font-size:15px;font-weight:800;color:#1a365d;line-height:1.3;margin-bottom:4px">'+room+custPaintBadge+'</div>'+
       paintSpecHtml+
       scopeHtml;
     const rowBg=roomIdx%2===0?'#ffffff':'#f8fafc';
     return `<tr style="border-bottom:1px solid #e2e8f0;background:${rowBg}">
       <td style="padding:14px 16px;line-height:1.7;color:#2d3748;font-size:12px">${descContent}</td>
-      <td style="padding:14px 16px;text-align:right;font-weight:700;vertical-align:top;color:#1a365d">${fmt(r.total)}</td>
+      <td style="padding:14px 8px 14px 4px;text-align:right;font-weight:700;vertical-align:top;color:#1a365d;white-space:nowrap">${fmt(r.total)}</td>
     </tr>`;
   }).join('');
 
@@ -8717,7 +8721,7 @@ function buildProposal(){
     <thead>
       <tr style="background:var(--bg2);border-bottom:2px solid var(--border)">
         <th style="padding:8px 16px;text-align:left;font-weight:800;text-transform:uppercase;color:var(--text3);font-size:10px">DESCRIPTION</th>
-        <th style="padding:8px 16px;text-align:right;font-weight:800;text-transform:uppercase;color:var(--text3);width:90px;font-size:10px">AMOUNT</th>
+        <th style="padding:8px 8px 8px 4px;text-align:right;font-weight:800;text-transform:uppercase;color:var(--text3);width:80px;font-size:10px;white-space:nowrap">AMOUNT</th>
       </tr>
     </thead>
     <tbody>
@@ -8727,7 +8731,7 @@ function buildProposal(){
           <strong>${anyRoomCustomerPaint?'Paint, Primer &amp; Materials (partial)':(customerPaint?'Prep &amp; Application Supplies':'Paint, Primer &amp; Materials')}</strong><br>
           <span style="font-size:11px;color:#666">${anyRoomCustomerPaint?'Includes all paint, primer, and supplies for contractor-painted rooms. For rooms where client supplies paint: all prep supplies and application labor included. No warranty on finish quality for client-supplied paint.':customerPaint?'All prep supplies, tape, plastic sheeting, rollers, brushes, and drop cloths included. Paint to be supplied by client prior to start date. No warranty on finish quality.':'Includes paint, primer, tape, plastic sheeting, rollers, brushes, drop cloths and all supplies needed to complete the job.'}</span>
         </td>
-        <td style="padding:10px 16px;text-align:right;font-weight:700;vertical-align:top">${fmt(matLine)}</td>
+        <td style="padding:10px 8px 10px 4px;text-align:right;font-weight:700;vertical-align:top;white-space:nowrap">${fmt(matLine)}</td>
       </tr>
       ${adj?`<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 16px;color:var(--text2)">${adjReason||'Price adjustment'}</td><td style="padding:8px 16px;text-align:right">${adj>0?'+':''}${fmt(adj)}</td></tr>`:''}
     </tbody>
@@ -8996,7 +9000,7 @@ function schedJobFromEstimate(){
   else{openClientDetail(estLinkedClientId,window._fromDash);}
 }
 function clearEstimatorForm(){
-  estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;
+  estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;lastCreatedBidId=null;
   clearSurfDraft();clearEstFullDraft();
   ['e-cname','e-cphone','e-caddr','e-cnotes','est-adj-reason'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const adj=document.getElementById('est-adj');if(adj)adj.value=0;
