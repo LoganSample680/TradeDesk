@@ -6258,21 +6258,12 @@ function goSurfStepB(){
     sg.innerHTML=SCOPE_ITEMS.map(s=>{
       const isOn=roomScopeOn(surfRoom,s.id);
       const roomAttr=' data-room="'+encodeURIComponent(surfRoom)+'"';
-      const _cost=_roomSqFt>0
-        ?Math.round(((s.ratePerSqFt||0)*_roomSqFt+(s.flatRate||0))*100)/100
-        :(s.flatRate||0);
-      const priceBadge=_cost>0
-        ?'<span style="font-size:12px;font-weight:800;color:'+(isOn?'rgba(255,255,255,.9)':'var(--green-mid)')+';margin-left:auto;flex-shrink:0;padding-left:8px">+$'+_cost+'</span>'
-        :'';
       return '<div class="stog'+(isOn?' on':'')+'" id="est-st-'+s.id+'" onclick="toggleScopeRoom(\''+s.id+'\',decodeURIComponent(this.dataset.room))"'+roomAttr+' style="align-items:center">'+
         '<input type="checkbox" id="est-sc-'+s.id+'" style="display:none"'+(isOn?' checked':'')+'>'+
         '<div class="sdot"></div>'+
-        '<div style="flex:1;min-width:0;display:flex;align-items:center;gap:4px">'+
-          '<div style="flex:1;min-width:0">'+
-            '<div style="font-size:13px;font-weight:700">'+(s.icon||'')+' '+s.label+'</div>'+
-            '<div style="font-size:10px;opacity:.65;margin-top:1px;line-height:1.3">'+s.hint+'</div>'+
-          '</div>'+
-          priceBadge+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:13px;font-weight:700">'+(s.icon||'')+' '+s.label+'</div>'+
+          '<div style="font-size:10px;opacity:.65;margin-top:1px;line-height:1.3">'+s.hint+'</div>'+
         '</div></div>';
     }).join('');
   }
@@ -6453,29 +6444,29 @@ function renderSurfBCurrent(){
   if(type==='walls'||type==='ext_walls'){
     const m=surfBMeasurements[type]||{sqft:'',len:'',wid:'',hgt:9};
     dims.innerHTML=
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'+
-        '<div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Room length (ft)</label>'+
-        '<input type="number" id="surf-b-len" value="'+(m.len||'')+'" min="0" step="1" placeholder="0" inputmode="decimal"'+
-          ' style="font-size:24px;font-weight:700;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
-          ' oninput="updateWallSqft()"></div>'+
-        '<div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Room width (ft)</label>'+
-        '<input type="number" id="surf-b-wid" value="'+(m.wid||'')+'" min="0" step="1" placeholder="0" inputmode="decimal"'+
-          ' style="font-size:24px;font-weight:700;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
-          ' oninput="updateWallSqft()"></div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">'+
+        '<div>'+
+          '<label style="font-size:11px;font-weight:600;color:var(--text3);display:block;margin-bottom:6px">Length (ft)</label>'+
+          '<input type="number" id="surf-b-len" value="'+(m.len||'')+'" min="0" step="1" placeholder="0" inputmode="decimal"'+
+            ' style="font-size:28px;font-weight:700;padding:12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
+            ' oninput="updateWallSqft()">'+
+        '</div>'+
+        '<div>'+
+          '<label style="font-size:11px;font-weight:600;color:var(--text3);display:block;margin-bottom:6px">Width (ft)</label>'+
+          '<input type="number" id="surf-b-wid" value="'+(m.wid||'')+'" min="0" step="1" placeholder="0" inputmode="decimal"'+
+            ' style="font-size:28px;font-weight:700;padding:12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
+            ' oninput="updateWallSqft()">'+
+        '</div>'+
       '</div>'+
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">'+
-        '<label style="font-size:10px;font-weight:700;color:var(--text3);white-space:nowrap">Ceiling height (ft)</label>'+
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'+
+        '<label style="font-size:11px;font-weight:600;color:var(--text3);white-space:nowrap">Ceiling height</label>'+
         '<input type="number" id="surf-b-hgt" value="'+(m.hgt||9)+'" min="6" step="0.5" placeholder="9" inputmode="decimal"'+
-          ' style="font-size:18px;font-weight:700;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:80px;box-sizing:border-box;text-align:center"'+
+          ' style="font-size:16px;font-weight:700;padding:8px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:70px;box-sizing:border-box;text-align:center"'+
           ' oninput="updateWallSqft()">'+
+        '<span style="font-size:13px;color:var(--text3)">ft</span>'+
+        '<div id="surf-b-sqftcalc" style="margin-left:auto;font-size:18px;font-weight:800;color:var(--text)"></div>'+
       '</div>'+
-      '<div style="background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center;margin-bottom:8px">'+
-        '<div id="surf-b-sqftcalc" style="font-size:16px;font-weight:800;color:var(--blue)">Enter dimensions above</div>'+
-      '</div>'+
-      '<div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Or enter wall sq ft directly:</label>'+
-      '<input type="number" id="surf-b-sqft" value="'+(m.sqft||'')+'" min="0" step="1" placeholder="0" inputmode="decimal"'+
-        ' style="font-size:22px;font-weight:700;padding:8px;border-radius:var(--r);border:2px solid var(--blue);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
-        ' oninput="updateWallSqft(true)"></div>';
+      '<input type="number" id="surf-b-sqft" value="'+(m.sqft||'')+'" min="0" step="1" placeholder="0" inputmode="decimal" style="display:none" oninput="updateWallSqft(true)">';
     setTimeout(()=>{const el=document.getElementById('surf-b-len');if(el)el.focus();},80);
     if(m.len&&m.wid)setTimeout(updateWallSqft,50);
     return;
@@ -6568,18 +6559,12 @@ function updateWallSqft(manual){
   const l=parseFloat(document.getElementById('surf-b-len')?.value)||0;
   const w=parseFloat(document.getElementById('surf-b-wid')?.value)||0;
   const h=parseFloat(document.getElementById('surf-b-hgt')?.value)||9;
-  if(manual){
-    const v=parseFloat(sqEl?.value)||0;
-    if(calc)calc.textContent=v>0?v.toLocaleString()+' sq ft':'Enter dimensions above';
-    return;
-  }
-  if(l>0&&w>0){
-    const floorSqft=Math.round(l*w);
-    if(sqEl)sqEl.value=floorSqft;
-    if(calc)calc.textContent=floorSqft.toLocaleString()+' sq ft';
-  } else {
-    if(calc)calc.textContent='';
-  }
+  const floorSqft=l>0&&w>0?Math.round(l*w):0;
+  const wallSqft=l>0&&w>0?Math.round((l+w)*2*h):0;
+  if(sqEl)sqEl.value=floorSqft||'';
+  if(calc)calc.textContent=floorSqft>0?floorSqft+' sq ft':'';
+  // Store wallSqft on the hidden input as a data attribute for save to read
+  if(sqEl)sqEl.dataset.wallSqft=wallSqft||'';
 }
 
 function updateSqftCalc(manualSqft){
