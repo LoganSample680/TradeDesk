@@ -6593,7 +6593,7 @@ function saveSurfBAndNext(){
     surfBMeasurements[type]={sqft};
     estSurfaces.push({id:++estSurfId,type,qty:sqft,room:prefix+surfRoom+colorNote});
     surfBIdx++;
-    if(surfBIdx<surfBQueue.length)renderSurfBCurrent();
+    if(surfBIdx<surfBQueue.length){window.scrollTo({top:0,left:0,behavior:'instant'});document.body.scrollTop=0;renderSurfBCurrent();}
     else finishRoom();
     return;
   }
@@ -6618,7 +6618,7 @@ function saveSurfBAndNext(){
   surfBMeasurements[type]={len:l,hgt:h};
   estSurfaces.push({id:++estSurfId,type,qty,room:prefix+surfRoom+colorNote});
   surfBIdx++;
-  if(surfBIdx<surfBQueue.length)renderSurfBCurrent();
+  if(surfBIdx<surfBQueue.length){window.scrollTo({top:0,left:0,behavior:'instant'});document.body.scrollTop=0;renderSurfBCurrent();}
   else finishRoom();
 }
 
@@ -6634,9 +6634,8 @@ function finishRoom(){
   const roomCount=rooms.size;
   const rcl=document.getElementById('surf-room-count');if(rcl)rcl.textContent=roomCount+' room'+(roomCount!==1?'s':'')+' added';
   showRoomSavedState(roomCount);
+  window.scrollTo({top:0,left:0,behavior:'instant'});document.body.scrollTop=0;document.documentElement.scrollTop=0;
 }
-
-function showRoomSavedState(roomCount){
   document.getElementById('surf-step-a').style.display='none';
   document.getElementById('surf-step-b').style.display='none';
   // Get the room name just saved from the last surface entry
@@ -8263,15 +8262,27 @@ function buildProposal(){
         roomScopeItems.map(sc=>'<li style="padding:1px 0"><span style="color:#1a365d;font-weight:700">'+sc.label+':</span> '+sc.clientDesc+'</li>').join('')+
         '</ol>'
       :'';
-    // Build per-surface paint spec lines
+    // Build per-surface paint spec lines — surface label then indented spec
     const paintSpecHtml=r.paintSpecs&&r.paintSpecs.length
-      ?'<div style="margin-top:4px">'+ r.paintSpecs.map(ps=>{
-          // Extract hex for swatch if color data loaded
-          const specLower=ps.spec.toLowerCase();
+      ?'<div style="margin-top:8px">'+ r.paintSpecs.map(ps=>{
           const swMatch=ps.spec.match(/SW \d+/i);
           const swHex=swMatch&&_swColors?(_swColors.find(c=>c.sw.toLowerCase()===swMatch[0].toLowerCase())?.hex||''):'';
-          const dot=swHex?'<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:'+swHex+';border:1px solid rgba(0,0,0,.15);margin-right:3px;vertical-align:middle;flex-shrink:0"></span>':'';
-          return '<div style="font-size:11px;color:#555;line-height:1.7"><span style="font-weight:600;color:#333">'+ps.surfLabel+':</span> '+dot+ps.spec+'</div>';
+          const dot=swHex?'<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+swHex+';border:1px solid rgba(0,0,0,.15);margin-right:5px;vertical-align:middle;flex-shrink:0"></span>':'';
+          const parts=ps.spec.split(' \xb7 ');
+          const product=parts[0]||'';
+          const colorFinish=parts.slice(1).join(' \xb7 ')||ps.spec;
+          const finishMatch=colorFinish.match(/\[([^\]]+)\]$/);
+          const finish=finishMatch?finishMatch[1]:'';
+          const colorOnly=colorFinish.replace(/\s*\[[^\]]+\]$/,'').trim();
+          return '<div style="margin-bottom:6px">'+
+            '<div style="font-size:11px;font-weight:700;color:#1a365d;margin-bottom:2px">'+ps.surfLabel+'</div>'+
+            '<div style="font-size:11px;color:#4a5568;padding-left:12px;border-left:2px solid #e2e8f0;display:flex;align-items:center;flex-wrap:wrap;gap:3px">'+
+              dot+
+              (product?'<span>'+product+'</span>':'')+
+              (colorOnly?'<span style="color:#a0aec0">&middot;</span><span>'+colorOnly+'</span>':'')+
+              (finish?'<span style="color:#a0aec0">&middot;</span><span style="color:#2b6cb0;font-weight:600">'+finish+'</span>':'')+
+            '</div>'+
+          '</div>';
         }).join('')+'</div>'
       :'';
     const _roomCustPaint=roomCosts[room]&&(roomScopeMap[room]?._customerPaint===true);
