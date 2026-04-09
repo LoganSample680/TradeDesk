@@ -8555,17 +8555,31 @@ function sendProposalViaSms(){
   const d=_proposalShareData();
   if(!d.url){zAlert('Generate the proposal link first.',{title:'No link yet'});return;}
   const firstName=d.cname.split(/[\s,&]+/)[0];
-  const msg='Hi '+firstName+', your painting estimate from '+d.bname+' is ready to view and sign online:\n\n'+d.url+'\n\nReply with any questions!';
-  const href='sms:'+(d.cphone?d.cphone:'')+'&body='+encodeURIComponent(msg);
+  const msg=
+    'Hey '+firstName+'!\n\n'+
+    'It was great meeting with you today — really looking forward to the project.\n\n'+
+    'Your painting proposal is all ready to go. Tap the link below to view everything we went over and sign when you\'re ready:\n\n'+
+    d.url+'\n\n'+
+    'Any questions at all, just shoot me a text. Talk soon!\n\n'+
+    '— '+d.bname;
+  const href='sms:'+(d.cphone||'')+'&body='+encodeURIComponent(msg);
   window.location.href=href;
 }
 function sendProposalViaEmail(){
   const d=_proposalShareData();
   if(!d.url){zAlert('Generate the proposal link first.',{title:'No link yet'});return;}
   const firstName=d.cname.split(/[\s,&]+/)[0];
-  const subject='Your Painting Estimate from '+d.bname;
-  const body='Hi '+firstName+',\n\nYour painting estimate from '+d.bname+' is ready to view and sign online:\n\n'+d.url+'\n\nPlease let me know if you have any questions!\n\n'+d.bname;
-  const href='mailto:'+(d.cemail?d.cemail:'')+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+  const subject='Your Painting Proposal from '+d.bname+' is Ready!';
+  const body=
+    'Hey '+firstName+',\n\n'+
+    'It was great meeting with you today — I really enjoyed getting a look at the project and I\'m excited to get started!\n\n'+
+    'Your painting proposal is ready to view. Everything we went over is laid out in full detail, and you can sign right from the page when you\'re ready to move forward:\n\n'+
+    '        '+d.url+'\n\n'+
+    'Once you sign, I\'ll get you locked in on the schedule and we\'ll take it from there.\n\n'+
+    'Don\'t hesitate to reach out if you have any questions or want to make any changes — happy to go over anything!\n\n'+
+    'Looking forward to working with you,\n\n'+
+    d.bname;
+  const href='mailto:'+(d.cemail||'')+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
   window.location.href=href;
 }
 function buildDescription(){
