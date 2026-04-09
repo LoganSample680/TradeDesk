@@ -9864,33 +9864,19 @@ function quickAction(type){
   const wonUnscheduled=bids.filter(b=>b.status==='Closed Won'&&!jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id&&j.eventType!=='estimate'&&j.start>=tk));
 
   if(type==='drive'){
-    const options=[];
+    // Build optional suggestions from today's schedule (shown as chips, not forced)
+    const suggestions=[];
     todayJobs.filter(j=>j.eventType!=='estimate').forEach(j=>{
       const c=getClientById(j.client_id);
-      if(c&&!options.find(o=>o.clientId===j.client_id))
-        options.push({label:c.name,sub:(j.addr||c.addr||'').split(',')[0],clientId:j.client_id,jobId:j.id,icon:'🔨'});
+      if(c&&!suggestions.find(s=>s.clientId===j.client_id))
+        suggestions.push({label:c.name,addr:c.addr||'',clientId:j.client_id,icon:'🔨',purpose:'Job site'});
     });
     todayEstimates.forEach(j=>{
       const c=getClientById(j.client_id);
-      if(c&&!options.find(o=>o.clientId===j.client_id))
-        options.push({label:c.name,sub:'Estimate today'+(j.time?' @ '+fmtTime(j.time):''),clientId:j.client_id,jobId:j.id,icon:'📋'});
+      if(c&&!suggestions.find(s=>s.clientId===j.client_id))
+        suggestions.push({label:c.name,addr:c.addr||'',clientId:j.client_id,icon:'📋',purpose:'Estimate'});
     });
-    if(!options.length){
-      const week=addDays(tk,7);
-      jobs.filter(j=>j.start>=tk&&j.start<=week&&j.eventType!=='estimate').forEach(j=>{
-        const c=getClientById(j.client_id);
-        if(c&&!options.find(o=>o.clientId===j.client_id))
-          options.push({label:c.name,sub:'Job starts '+j.start,clientId:j.client_id,jobId:j.id,icon:'🔨'});
-      });
-    }
-    if(!options.length){
-      bids.filter(b=>b.status==='Closed Won').slice(0,4).forEach(b=>{
-        const c=getClientById(b.client_id);
-        if(c&&!options.find(o=>o.clientId===b.client_id))
-          options.push({label:c.name,sub:(c.addr||'').split(',')[0]||'Active job',clientId:b.client_id,bidId:b.id,icon:'🏠'});
-      });
-    }
-    showQuickPicker('Start Drive','Who are you heading to?',options,'drive',true);
+    openLogTripModal({suggestions});
   } else if(type==='expense'){
     openExpenseFlow();
   } else if(type==='estimate'){
@@ -11416,6 +11402,64 @@ function startDriveToClient(){
   const purpose=hasWon?'Job site':hasPending?'Estimate':'Estimate';
   openLogTripModal({clientId:currentClientId,toAddress:c?c.addr:'',purpose,clientName:c?c.name:''});
 }
+let _lmCoords={from:null,to:null};
+let _tripSearchTimers={};
+function tripPlaceSearch(fieldId,suggId,val){
+  clearTimeout(_tripSearchTimers[fieldId]);
+  const box=document.getElementById(suggId);if(!box)return;
+  if(val.length<2){box.style.display='none';return;}
+  _tripSearchTimers[fieldId]=setTimeout(async()=>{
+    try{
+      const r=await fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit=6',{headers:{'Accept-Language':'en-US'}});
+      const d=await r.json();
+      const features=d.features||[];
+      if(!features.length){box.style.display='none';return;}
+      box.innerHTML=features.map(f=>{
+        const p=f.properties;
+        const name=p.name||'';
+        const num=p.housenumber||'';
+        const street=p.street||'';
+        const city=p.city||p.town||p.village||'';
+        const state=p.state||'';
+        const post=p.postcode||'';
+        const line1=name||(num?num+' '+street:street)||city;
+        const line2=[name&&street?(num?num+' '+street:street):'',city,state,post].filter(Boolean).join(', ');
+        const [lon,lat]=f.geometry.coordinates;
+        const whichKey=fieldId==='lm-from'?'from':'to';
+        const safeL1=line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const safeL2=line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        return '<div onclick="selectTripPlace(\''+fieldId+'\',\''+suggId+'\',\''+whichKey+'\',\''+safeL1+'\',\''+safeL2+'\','+lat+','+lon+')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
+          '<div style="font-size:13px;font-weight:600;color:var(--text)">'+line1+'</div>'+
+          (line2?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+line2+'</div>':'')+
+        '</div>';
+      }).join('');
+      box.style.display='block';
+    }catch(e){if(box)box.style.display='none';}
+  },320);
+}
+function selectTripPlace(fieldId,suggId,coordKey,line1,line2,lat,lng){
+  const full=line2?line1+', '+line2:line1;
+  const inp=document.getElementById(fieldId);if(inp)inp.value=full;
+  _lmCoords[coordKey]={lat,lng};
+  const box=document.getElementById(suggId);if(box)box.style.display='none';
+  const mv=document.getElementById('lm-miles-val');if(mv)mv.value='0';
+  const rr=document.getElementById('lm-route-result');if(rr)rr.style.display='none';
+}
+function fillTripSuggestion(clientId,addr,purpose){
+  const toInp=document.getElementById('lm-to');
+  if(toInp&&addr){toInp.value=addr;_lmCoords.to=null;}
+  if(clientId){
+    const sel=document.getElementById('lm-client');
+    if(sel)sel.value=String(clientId);
+  }
+  if(purpose){
+    document.getElementById('lm-purpose').value=purpose;
+    const row=document.querySelector('[data-lm-chip-row]');
+    if(row)row.querySelectorAll('button').forEach(b=>{b.classList.toggle('active-surf-btn',b.textContent.trim()===purpose);});
+  }
+  const mv=document.getElementById('lm-miles-val');if(mv)mv.value='0';
+  const rr=document.getElementById('lm-route-result');if(rr)rr.style.display='none';
+}
 function openLogTripModal(opts){
   opts=opts||{};
   const today=todayKey();
@@ -11428,12 +11472,31 @@ function openLogTripModal(opts){
   const PURPOSES=['Estimate','Job site','Supply run','Other'];
   const prefill=opts.purpose||'Estimate';
   const purposeChips=PURPOSES.map(p=>'<button type="button" onclick="this.parentElement.querySelectorAll(\'button\').forEach(b=>b.classList.remove(\'active-surf-btn\'));this.classList.add(\'active-surf-btn\');document.getElementById(\'lm-purpose\').value=\''+p+'\'" class="surf-type-btn'+(p===prefill?' active-surf-btn':'')+'" style="flex:1;text-align:center;padding:8px 4px;font-size:12px">'+p+'</button>').join('');
+  // Optional quick-select chips for today's scheduled jobs/estimates
+  const suggList=opts.suggestions&&opts.suggestions.length?opts.suggestions:[];
+  const suggHtml=suggList.length
+    ?'<div style="margin-bottom:14px">'+
+        '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Scheduled today — tap to fill</div>'+
+        '<div style="display:flex;flex-wrap:wrap;gap:6px">'+
+          suggList.map(s=>{
+            const safeLabel=(s.label||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+            const safeAddr=(s.addr||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+            const safePurpose=(s.purpose||'').replace(/'/g,"\\'");
+            return '<button type="button" onclick="fillTripSuggestion('+s.clientId+',\''+safeAddr+'\',\''+safePurpose+'\')" style="display:flex;align-items:center;gap:5px;padding:7px 10px;border-radius:20px;border:1.5px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:600;cursor:pointer;color:var(--text)">'+
+              (s.icon||'📍')+' <span>'+safeLabel+'</span>'+
+            '</button>';
+          }).join('')+
+        '</div>'+
+      '</div>'
+    :'';
+  _lmCoords={from:null,to:null};
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
   overlay.innerHTML='<div style="background:var(--bg);border-radius:var(--rl);padding:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'+
       '<div style="font-size:17px;font-weight:800">🚗 Log a trip</div>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0 4px;line-height:1">×</button>'+
     '</div>'+
+    suggHtml+
     '<input type="hidden" id="lm-purpose" value="'+prefill+'">'+
     '<input type="hidden" id="lm-miles-val" value="0">'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
@@ -11441,17 +11504,21 @@ function openLogTripModal(opts){
       '<div class="f" style="margin:0"><label>Vehicle</label><select id="lm-vehicle" style="width:100%">'+vehOpts+'</select></div>'+
     '</div>'+
     '<div class="f" style="margin-bottom:12px"><label>Trip type</label>'+
-      '<div style="display:flex;gap:6px;margin-top:6px">'+purposeChips+'</div>'+
+      '<div data-lm-chip-row style="display:flex;gap:6px;margin-top:6px">'+purposeChips+'</div>'+
     '</div>'+
     '<div class="f" style="margin-bottom:12px"><label>Client <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>'+
       '<select id="lm-client" style="width:100%">'+clientOpts+'</select></div>'+
     '<div class="f" style="margin-bottom:12px"><label>Starting from</label>'+
       '<div style="display:flex;gap:8px">'+
-        '<input id="lm-from" placeholder="Your address or last job" style="flex:1" value="'+(opts.fromAddress||'')+'">'+
+        '<input id="lm-from" placeholder="Your address or last job" style="flex:1" value="'+(opts.fromAddress||'')+'" oninput="tripPlaceSearch(\'lm-from\',\'lm-from-sugg\',this.value)" autocomplete="off">'+
         '<button type="button" onclick="grabMyLocation()" class="btn btn-sm" id="lm-gps-btn" style="white-space:nowrap;flex-shrink:0;min-height:44px">📍 GPS</button>'+
-      '</div></div>'+
-    '<div class="f" style="margin-bottom:14px"><label>Driving to</label>'+
-      '<input id="lm-to" placeholder="1234 Maple St, Wichita KS" value="'+(opts.toAddress||'')+'"></div>'+
+      '</div>'+
+      '<div id="lm-from-sugg" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);margin-top:2px;overflow:hidden;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>'+
+      '</div>'+
+    '<div class="f" style="margin-bottom:4px"><label>Driving to <span style="font-size:10px;font-weight:400;color:var(--text3)">— type a name or address</span></label>'+
+      '<input id="lm-to" placeholder="e.g. Sherwin-Williams Topeka or 123 Main St" value="'+(opts.toAddress||'')+'" oninput="tripPlaceSearch(\'lm-to\',\'lm-to-sugg\',this.value)" autocomplete="off">'+
+      '<div id="lm-to-sugg" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);margin-top:2px;overflow:hidden;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>'+
+      '</div>'+
     '<button type="button" onclick="calculateAndShowRoute()" class="btn btn-p" style="width:100%;margin-bottom:10px;min-height:48px;font-size:15px" id="lm-calc-btn">🗺 Calculate miles</button>'+
     '<div id="lm-route-result" style="display:none;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:14px;margin-bottom:14px;text-align:center">'+
       '<div id="lm-miles-display" style="font-size:32px;font-weight:800;color:var(--blue-dk)"></div>'+
@@ -11482,19 +11549,33 @@ async function grabMyLocation(){
   }finally{if(btn){btn.disabled=false;btn.textContent='📍 GPS';}}
 }
 async function calculateAndShowRoute(){
-  const from=(document.getElementById('lm-from')?.value||'').trim();
-  const to=(document.getElementById('lm-to')?.value||'').trim();
-  if(!from||!to){zAlert('Enter both a starting address and a destination.');return;}
+  const fromVal=(document.getElementById('lm-from')?.value||'').trim();
+  const toVal=(document.getElementById('lm-to')?.value||'').trim();
+  if(!fromVal||!toVal){zAlert('Enter both a starting point and a destination.');return;}
   const btn=document.getElementById('lm-calc-btn');
   if(btn){btn.disabled=true;btn.textContent='Calculating...';}
   try{
-    const result=await calcTripRoute(from,to);
-    document.getElementById('lm-miles-val').value=result.miles;
-    document.getElementById('lm-miles-display').textContent=result.miles.toFixed(1)+' miles';
-    document.getElementById('lm-time-display').textContent='~'+result.mins+' min drive · IRS deduction: '+fmt(result.miles*IRS());
+    let fromCoords=_lmCoords.from;
+    let toCoords=_lmCoords.to;
+    const geocode=async addr=>{
+      const r=await fetch('https://nominatim.openstreetmap.org/search?q='+encodeURIComponent(addr)+'&format=json&limit=1',{headers:{'Accept-Language':'en-US','User-Agent':'TradeDesk/1.0'}});
+      const d=await r.json();
+      if(!d||!d.length)throw new Error('Address not found: "'+addr+'" — try adding city and state');
+      return{lat:parseFloat(d[0].lat),lng:parseFloat(d[0].lon)};
+    };
+    if(!fromCoords)fromCoords=await geocode(fromVal);
+    if(!toCoords)toCoords=await geocode(toVal);
+    const r=await fetch('https://router.project-osrm.org/route/v1/driving/'+fromCoords.lng+','+fromCoords.lat+';'+toCoords.lng+','+toCoords.lat+'?overview=false');
+    const rd=await r.json();
+    if(!rd||rd.code!=='Ok'||!rd.routes?.length)throw new Error('No route found between these locations');
+    const miles=Math.round(rd.routes[0].distance/1609.34*10)/10;
+    const mins=Math.round(rd.routes[0].duration/60);
+    document.getElementById('lm-miles-val').value=miles;
+    document.getElementById('lm-miles-display').textContent=miles.toFixed(1)+' miles';
+    document.getElementById('lm-time-display').textContent='~'+mins+' min drive · IRS deduction: '+fmt(miles*IRS());
     document.getElementById('lm-route-result').style.display='block';
   }catch(e){
-    zAlert(e.message+'\n\nTip: Include city and state in both addresses.',{title:'Could not calculate route'});
+    zAlert(e.message+'\n\nTip: Try typing the city and state, or pick from the search suggestions.',{title:'Could not calculate route'});
   }finally{if(btn){btn.disabled=false;btn.textContent='🗺 Calculate miles';}}
 }
 function saveLoggedTrip(){
