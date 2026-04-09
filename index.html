@@ -100,18 +100,40 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #app{padding-left:var(--nav-w);padding-bottom:0;min-height:100vh}
 #supa-status{left:var(--nav-w);transition:opacity 0.8s ease;opacity:0}
 .drive-banner{left:var(--nav-w)}
-/* ── Mobile: collapse sidebar to icons ── */
+/* ── Mobile: bottom tab bar + full-width layout ── */
 @media(max-width:767px){
-  :root{--nav-w:60px}
-  #nav-logo-text,#nav-section-label,#nav-user-name,#nav-user-role{display:none}
-  #nav-logo{padding:16px 14px;justify-content:center}
-  .nb{padding:10px;justify-content:center;gap:0;margin:1px 4px;width:calc(100% - 8px);border-radius:6px}
-  .nb span:not(.nbadge){display:none}
-  .nb.active::before{display:none}
-  .nb.active{background:rgba(24,95,165,.2);border-radius:6px}
-  #nav-user{justify-content:center;padding:12px 8px}
-  #app{padding-left:60px;padding-bottom:0}
+  #nav{display:none}
+  #app{padding-left:0;padding-bottom:68px}
+  #supa-status{left:0;bottom:68px}
+  .drive-banner{left:0}
+  .pg{padding:14px 16px 20px}
+  #pg-leads,#pg-jobs,#pg-money{padding-top:8px}
+  .drive-active .pg{padding-top:60px}
+  .tbar-title{font-size:19px}
+  .card{padding:14px}
+  .f label{font-size:11px}
+  .mets{grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px}
+  .btn{min-height:44px;padding:11px 16px}
+  .btn-sm{padding:8px 12px;font-size:12px;min-height:36px}
+  .btn-xl{min-height:52px;padding:15px 22px}
+  .btn-del{min-height:36px;padding:6px 10px}
+  .fb{padding:8px 14px;font-size:12px;min-height:36px}
+  .zmodal-overlay{padding:10px}
 }
+/* ── Bottom Tab Bar ── */
+#mobile-tabbar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:1000;background:var(--nav-bg);border-top:1px solid var(--nav-border);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(max-width:767px){#mobile-tabbar{display:flex}}
+.mtb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:none;border:none;color:var(--nav-text);cursor:pointer;padding:8px 2px 10px;font-family:inherit;font-size:10px;font-weight:600;letter-spacing:.01em;-webkit-tap-highlight-color:transparent;position:relative;min-height:56px;transition:color .15s}
+.mtb.active{color:#fff}
+.mtb svg{width:22px;height:22px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.mtb-dot{position:absolute;top:7px;right:calc(50% - 16px);width:8px;height:8px;background:#e53e3e;border-radius:50%;border:2px solid var(--nav-bg)}
+#mobile-more-ov{display:none;position:fixed;inset:0;z-index:1999;background:rgba(0,0,0,.55)}
+#mobile-more-sheet{position:absolute;bottom:0;left:0;right:0;background:var(--nav-bg);border-radius:20px 20px 0 0;padding-bottom:calc(env(safe-area-inset-bottom,0px) + 68px);animation:slideup .2s ease}
+@keyframes slideup{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.mmi{display:flex;align-items:center;gap:14px;padding:14px 22px;color:var(--nav-text);font-size:14px;font-weight:600;cursor:pointer;border:none;background:none;width:100%;font-family:inherit;-webkit-tap-highlight-color:transparent;text-align:left;transition:background .1s}
+.mmi:active{background:var(--nav-hover)}
+.mmi svg{width:20px;height:20px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;opacity:.7}
+.mmi.active-pg{color:#fff}.mmi.active-pg svg{opacity:1}
 input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;}
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:22px;height:22px;border-radius:50%;background:#0D1117;cursor:pointer;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3);margin-top:-8px;}
 input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:#0D1117;cursor:pointer;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transform:translateY(0);}
@@ -437,7 +459,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   
   <div id="dash-quick" style="margin-bottom:12px">
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">Quick actions</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(95px,1fr));gap:8px">
       <button onclick="goPg('pg-clients');setTimeout(()=>openNewClient(),100)" style="padding:13px 6px;border-radius:var(--rl);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:5px;width:100%;transition:transform .1s,box-shadow .15s;border:1.5px solid var(--blue);background:var(--blue);color:#fff;box-shadow:0 2px 8px rgba(24,95,165,.25)">
         <span style="font-size:20px">👤</span><span>New client</span>
       </button>
@@ -1788,6 +1810,55 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     </div>
   </div>
   <div id="supa-status" style="position:fixed;bottom:62px;left:0;right:0;text-align:center;font-size:10px;pointer-events:none;z-index:400;padding:2px 0;background:var(--bg)"></div>
+</div><!-- end #nav -->
+<!-- ── Mobile bottom tab bar ── -->
+<div id="mobile-tabbar">
+  <button class="mtb active" id="mtb-dash" onclick="goPg('pg-dash')">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    Home
+  </button>
+  <button class="mtb" id="mtb-jobs" onclick="goPg('pg-jobs')">
+    <span id="mtb-jobs-dot" class="mtb-dot" style="display:none"></span>
+    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+    Jobs
+  </button>
+  <button class="mtb" id="mtb-est" onclick="goPg('pg-est')">
+    <svg viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+    Estimate
+  </button>
+  <button class="mtb" id="mtb-clients" onclick="goPg('pg-clients')">
+    <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+    Clients
+  </button>
+  <button class="mtb" id="mtb-more" onclick="openMobileMore()">
+    <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="19" cy="12" r="1" fill="currentColor"/></svg>
+    More
+  </button>
+</div>
+<!-- ── Mobile More sheet ── -->
+<div id="mobile-more-ov" onclick="closeMobileMore()">
+  <div id="mobile-more-sheet" onclick="event.stopPropagation()">
+    <div style="width:40px;height:4px;background:rgba(255,255,255,.2);border-radius:2px;margin:12px auto 10px"></div>
+    <button class="mmi" id="mmi-money" onclick="mobileNavTo('pg-money')">
+      <svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Collect
+    </button>
+    <button class="mmi" id="mmi-cal" onclick="mobileNavTo('pg-cal')">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><circle cx="8" cy="16" r="1" fill="currentColor"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg>Calendar
+    </button>
+    <button class="mmi" id="mmi-tracker" onclick="mobileNavTo('pg-tracker')">
+      <svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>Books &amp; P&amp;L
+    </button>
+    <button class="mmi" id="mmi-taxes" onclick="mobileNavTo('pg-taxes')">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Taxes
+    </button>
+    <button class="mmi" id="mmi-leads" onclick="mobileNavTo('pg-leads')">
+      <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>Leads
+    </button>
+    <button class="mmi" id="mmi-settings" onclick="mobileNavTo('pg-settings')">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Settings
+    </button>
+  </div>
+</div>
 <script>
 // ── Submit guard — prevents double-tap on any button ─────────────────────
 let _submitting=false;
@@ -2177,6 +2248,9 @@ function updateLocationBtn(){
   else{btn.textContent='📍 Location access';btn.style.color='';}
 }
 
+function openMobileMore(){const ov=document.getElementById('mobile-more-ov');if(ov)ov.style.display='block';}
+function closeMobileMore(){const ov=document.getElementById('mobile-more-ov');if(ov)ov.style.display='none';}
+function mobileNavTo(pg){closeMobileMore();goPg(pg);}
 function goPg(id){
   // Preserve currentClientId across navigation — only clear on explicit new client selection
   if(id==='pg-dash')window._fromDash=false;
@@ -2190,6 +2264,15 @@ function goPg(id){
     'pg-clients':'nb-clients','pg-cal':'nb-cal','pg-tracker':'nb-tracker',
     'pg-taxes':'nb-taxes','pg-settings':'nb-settings','pg-checklist':'nb-settings'
   }[id]||('nb-'+id.replace('pg-','')));if(nb)nb.classList.add('active');
+  // Sync mobile bottom tab bar
+  const _mtbMap={'pg-dash':'mtb-dash','pg-jobs':'mtb-jobs','pg-est':'mtb-est','pg-clients':'mtb-clients'};
+  document.querySelectorAll('.mtb').forEach(b=>b.classList.remove('active'));
+  const _mtb=document.getElementById(_mtbMap[id]||'');
+  if(_mtb)_mtb.classList.add('active');
+  else{const _mm=document.getElementById('mtb-more');if(_mm)_mm.classList.add('active');}
+  document.querySelectorAll('.mmi').forEach(b=>b.classList.remove('active-pg'));
+  const _mmiKey={'pg-money':'mmi-money','pg-cal':'mmi-cal','pg-tracker':'mmi-tracker','pg-taxes':'mmi-taxes','pg-leads':'mmi-leads','pg-settings':'mmi-settings','pg-checklist':'mmi-settings','pg-schedule':'mmi-cal'}[id];
+  if(_mmiKey){const _mi=document.getElementById(_mmiKey);if(_mi)_mi.classList.add('active-pg');}
   window.scrollTo({top:0,left:0,behavior:"instant"});document.body.scrollTop=0;document.documentElement.scrollTop=0;
   if(id==='pg-dash')renderDash();
   if(id==='pg-clients'){
