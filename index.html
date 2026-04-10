@@ -8837,8 +8837,8 @@ async function sendProposalLink(){
       id:bidId,token,clientName:cname,businessName:bname,
       contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
       proposalHtml:proposal.innerHTML,
-      amount:(()=>{const e=calcEst();const raw=Math.max(0,e.laborTotal+e.matTotal);return Math.round(raw/25)*25||raw;})(),
-      deposit:(()=>{const e=calcEst();const raw=Math.max(0,e.laborTotal+e.matTotal);const tot=Math.round(raw/25)*25||raw;return Math.round(tot*.25*100)/100;})(),
+      amount:(()=>{const _sb=bids.find(b=>b.id===bidId);if(_sb?.amount)return _sb.amount;const e=calcEst();const raw=Math.max(0,e.laborTotal+e.matTotal);return Math.round(raw/25)*25||raw;})(),
+      deposit:(()=>{const _sb=bids.find(b=>b.id===bidId);const _amt=_sb?.amount||(()=>{const e=calcEst();const raw=Math.max(0,e.laborTotal+e.matTotal);return Math.round(raw/25)*25||raw;})();return Math.round(_amt*0.25*100)/100;})(),
       createdAt:new Date().toISOString(),status:'pending',
       notifyEmail:_supaUser.email,stripePk:S.stripePk||'',
     };
@@ -8869,8 +8869,8 @@ async function sendProposalLink(){
     if(input)input.value=shortUrl;
     if(labelEl)labelEl.textContent=cname+"'s Painting Proposal";
     if(sublabelEl){
-      const est=calcEst();const tot=Math.max(0,est.laborTotal+est.matTotal);
-      const rounded=Math.round(tot/25)*25||tot;
+      const _sb2=bids.find(b=>b.id===bidId);
+      const rounded=_sb2?.amount||(()=>{const est=calcEst();const tot=Math.max(0,est.laborTotal+est.matTotal);return Math.round(tot/25)*25||tot;})();
       sublabelEl.textContent=bname+' · '+fmt(rounded)+' · '+dateStr;
     }
     if(shorturlEl)shorturlEl.textContent=shortUrl.replace(/^https?:\/\//,'');
@@ -14222,7 +14222,7 @@ function renderTeam(){
     const hasLoc=d.lat&&d.lon;
     const mapUrl=hasLoc?'https://www.google.com/maps?q='+d.lat+','+d.lon:'';
     const locAgo=hasLoc&&d.locAt?_timeAgo(d.locAt):'';
-    return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
+    return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px'+(hasLoc?';cursor:pointer':'')+'" '+(hasLoc?'onclick="window.open(\''+mapUrl+'\',\'_blank\')"':'')+'>'+
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
         '<div style="display:flex;align-items:center;gap:10px">'+
           '<div style="font-size:22px">'+(d.label==='iPad'||d.label==='iPhone'?'📱':'💻')+'</div>'+
@@ -14230,12 +14230,12 @@ function renderTeam(){
             '<div style="font-size:13px;font-weight:700">'+d.label+(isMe?' <span style="font-size:9px;background:var(--blue);color:#fff;padding:1px 6px;border-radius:8px">This device</span>':'')+'</div>'+
             '<div style="font-size:10px;color:'+(isActive?'var(--green-mid)':'var(--text3)')+'">'+
               (isActive?'🟢 Active':'⚪ Last seen '+ago)+'</div>'+
-            (hasLoc?'<div style="font-size:10px;color:var(--text3);margin-top:1px">📍 Location updated '+locAgo+'</div>':'')+
+            (hasLoc?'<div style="font-size:10px;color:var(--blue);margin-top:1px">📍 Tap to view on map · '+locAgo+'</div>':'')+
           '</div>'+
         '</div>'+
         '<div style="display:flex;gap:6px;align-items:center">'+
-          (hasLoc?'<a href="'+mapUrl+'" target="_blank" style="font-size:11px;font-weight:700;background:var(--blue-lt);color:var(--blue);border:1px solid var(--blue);border-radius:var(--r);padding:5px 10px;text-decoration:none;white-space:nowrap">🗺 View map</a>':'')+
-          (!isMe?'<button onclick="removeDevice(\''+d.id+'\')" style="font-size:10px;color:#A32D2D;border:1px solid #A32D2D;border-radius:var(--r);padding:5px 8px;background:none;cursor:pointer;font-family:inherit">Remove</button>':'')+
+          (hasLoc?'<span style="font-size:11px;font-weight:700;background:var(--blue-lt);color:var(--blue);border:1px solid var(--blue);border-radius:var(--r);padding:5px 10px;white-space:nowrap">🗺 Map</span>':'')+
+          (!isMe?'<button onclick="event.stopPropagation();removeDevice(\''+d.id+'\')" style="font-size:10px;color:#A32D2D;border:1px solid #A32D2D;border-radius:var(--r);padding:5px 8px;background:none;cursor:pointer;font-family:inherit">Remove</button>':'')+
         '</div>'+
       '</div>'+
     '</div>';
@@ -14582,14 +14582,34 @@ function showScheduleAlerts(){
   if(!alerts.length)return;
   const a=alerts[0];
   const remaining=alerts.slice(1);
-  if(remaining.length)localStorage.setItem('zp3_schedule_alerts',JSON.stringify(remaining));
-  else localStorage.removeItem('zp3_schedule_alerts');
+  localStorage.setItem('zp3_schedule_alerts',JSON.stringify(remaining));
+  window._currentScheduleAlert=a;
   const payLine=a.isPaid?' and paid their deposit':'';
+  const titleStr='New signature!'+(remaining.length?' ('+(alerts.length-remaining.length)+' of '+alerts.length+')':'');
+  const laterLabel='Later'+(remaining.length?' · '+remaining.length+' more':'');
   zConfirm(
     (a.isPaid?'💰':'🎉')+' '+a.name+' signed their painting proposal'+payLine+'.\n\nGet them on the schedule now?',
     ()=>showScheduleSuggestion(a.clientId,a.bidId,a.name),
-    {title:'New signature!',yes:'Schedule now',no:'Later',danger:false}
+    {title:titleStr,yes:'Schedule now',no:laterLabel,danger:false,
+    onNo:()=>{
+      const q=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
+      if(window._currentScheduleAlert)q.push(window._currentScheduleAlert);
+      window._currentScheduleAlert=null;
+      localStorage.setItem('zp3_schedule_alerts',JSON.stringify(q));
+      if(q.length)setTimeout(showScheduleAlerts,400);
+    }}
   );
+}
+function deferScheduleAlert(){
+  document.getElementById('sched-suggest-overlay')?.remove();
+  if(window._currentScheduleAlert){
+    const q=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
+    q.push(window._currentScheduleAlert);
+    localStorage.setItem('zp3_schedule_alerts',JSON.stringify(q));
+    window._currentScheduleAlert=null;
+    if(q.length>1)showToast(q.length+' clients waiting to schedule','📋');
+    setTimeout(showScheduleAlerts,400);
+  }
 }
 function scheduleFromAlert(clientId,bidId){
   showScheduleSuggestion(clientId,bidId);
@@ -14632,7 +14652,7 @@ function showScheduleSuggestion(clientId,bidId,clientNameFallback){
     '</div>'+
     '<button id="sched-lock-btn" onclick="quickScheduleJob('+bidId+',\''+startKey+'\','+clientId+')" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">✓ Lock it in — '+startLabel+'</button>'+
     '<button onclick="document.getElementById(\'sched-suggest-overlay\').remove();'+(bidId?'schedFromBid('+bidId+')':'goPg(\'pg-schedule\')')+'" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-bottom:6px">Pick a different date</button>'+
-    '<button onclick="document.getElementById(\'sched-suggest-overlay\').remove()" style="width:100%;padding:8px;border:none;background:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit">Later</button>';
+    '<button onclick="deferScheduleAlert()" style="width:100%;padding:8px;border:none;background:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit">Later</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
@@ -14653,11 +14673,16 @@ function quickScheduleJob(bidId,startKey,clientId){
     time:'',hours:null,notes:bid.notes||'',status:'upcoming'
   });
   saveAll();renderDash();renderJobsPage&&renderJobsPage();
+  window._currentScheduleAlert=null;
   document.getElementById('sched-suggest-overlay')?.remove();
   showToast(name+' scheduled for '+parseD(startKey).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}),'📅');
-  // Offer to go to calendar
-  setTimeout(()=>zConfirm('Job locked in for '+parseD(startKey).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+'.\n\nView on calendar?',
-    ()=>goPg('pg-cal'),{title:'✓ Scheduled!',yes:'View calendar',no:'Stay here',danger:false}),400);
+  const _nextAlerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
+  const _moreStr=_nextAlerts.length?' · '+_nextAlerts.length+' more client'+(_nextAlerts.length>1?'s':'')+' to schedule':'';
+  // Offer to go to calendar, then chain to next alert either way
+  setTimeout(()=>zConfirm('Job locked in for '+parseD(startKey).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+'.'+_moreStr+'\n\nView on calendar?',
+    ()=>{goPg('pg-cal');setTimeout(showScheduleAlerts,600);},
+    {title:'✓ Scheduled!',yes:'View calendar',no:_nextAlerts.length?'Next client ('+_nextAlerts.length+')':'Done',danger:false,
+    onNo:()=>setTimeout(showScheduleAlerts,300)}),400);
 }
 function discardInProgressBid(bidId){
   if(!confirm('Discard this estimate?'))return;
