@@ -8936,7 +8936,38 @@ async function sendProposalLink(){
   try{
     const cname=document.getElementById('e-cname')?.value||'Client';
     const bname=document.getElementById('e-bname')?.value||S.bname||"ZJ's Painting & Special Coatings";
-    const bidId=editingBidId||lastCreatedBidId||_newBidId();
+    // Resolve bid ID — if the current bid was already sent (has a signingToken),
+    // create a fresh bid so each proposal gets its own unique link and record.
+    let bidId=editingBidId||lastCreatedBidId;
+    const _resolvedBid=bidId?bids.find(b=>b.id===bidId):null;
+    if(!bidId||(_resolvedBid&&_resolvedBid.signingToken)){
+      // Already sent once, or no bid at all — mint a new bid for this proposal
+      const{final}=calcEst();
+      const _caddr=document.getElementById('e-caddr')?.value||'';
+      const _days=parseInt(document.getElementById('e-days')?.value)||2;
+      const _ss={};SCOPE_ITEMS.forEach(s=>{_ss[s.id]=!!scopeOn(s.id);});
+      const freshBid={
+        id:_newBidId(),
+        client_id:estLinkedClientId||_resolvedBid?.client_id||null,
+        client_name:cname,name:cname,
+        phone:document.getElementById('e-cphone')?.value||_resolvedBid?.phone||'',
+        addr:_caddr||_resolvedBid?.addr||'',
+        bid_date:todayKey(),followup:addDays(todayKey(),7),
+        amount:final||_resolvedBid?.amount||0,
+        type:getBidIncomeLabel({surfaces:estSurfaces})||_resolvedBid?.type||'Painting job',
+        days:_days,status:'Pending',
+        notes:document.getElementById('e-cnotes')?.value||'',
+        completion_date:'',collStage:'none',collHistory:[],
+        scope:_ss,surfaces:[...estSurfaces],
+        cond:document.getElementById('e-cond')?.value||'',
+        paint:document.getElementById('e-paint')?.value||'',
+        colors:document.getElementById('e-colors')?.value||'',
+        roomScopeMap:JSON.parse(JSON.stringify(roomScopeMap||{})),
+      };
+      bids.unshift(freshBid);
+      lastCreatedBidId=freshBid.id;
+      bidId=freshBid.id;
+    }
     const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
     const proposalKey=`proposals/${_supaUser.id}/${bidId}_${token}.json`;
     const proposalData={
