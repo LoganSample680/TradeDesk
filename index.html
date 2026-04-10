@@ -764,6 +764,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   <div id="cdt-overview-content">
     <div id="cd-estimates-upcoming"></div>
     <div class="card" id="cd-client-mets"></div>
+    <div class="card" id="cd-addresses-card"><div class="card-hd" style="display:flex;justify-content:space-between;align-items:center">Properties<button class="btn btn-sm btn-p" onclick="openAddAddressModal()" style="font-size:11px">+ Add address</button></div><div id="cd-addresses-list"></div></div>
     <div class="card"><div class="card-hd">Activity timeline</div><div id="cd-timeline"></div></div>
     <div class="card" id="cd-risk-card"><div class="card-hd">Client risk</div><div id="cd-risk-content"></div></div>
   </div>
@@ -1930,8 +1931,20 @@ function guardedSubmit(fn){
   try{fn();}catch(e){_submitting=false;throw e;}
 }
 let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[];
+// Collision-resistant bid ID: milliseconds * 1000 + random 0-998 = 13-16 digit unique number
+function _newBidId(){return Date.now()*1000+Math.floor(Math.random()*999);}
 let currentClientId=null,editClientId=null,clientFilter='new';
 let estSurfaces=[],estSurfId=0,estStep=1,estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
+let _estAddrOptions=[];
+function _pickEstAddr(i){
+  const a=_estAddrOptions[i];if(!a)return;
+  const f=document.getElementById('e-caddr');if(f){f.value=a.addr;markFieldFilled(f);saveEstFullDraft();}
+  document.querySelectorAll('#_est-addr-picker button').forEach((b,j)=>{
+    b.style.background=j===i?'var(--blue)':'var(--bg2)';
+    b.style.color=j===i?'#fff':'var(--text3)';
+    b.style.borderColor=j===i?'var(--blue)':'var(--border2)';
+  });
+}
 let scopeHrsStore={};  // legacy — now keyed by room: roomScopeMap[roomName][scopeId]
 let scopeActiveMap={};  // legacy — now keyed by room
 let roomScopeMap={};  // PRIMARY: {roomName: {scopeId: {active:bool, hrs:N, rate:N, cost:N}}}
@@ -2501,7 +2514,7 @@ function _doOpenEstimate(c){
   editingBidId=null;
   // Create a draft bid immediately so notes have an ID to attach to from the first stroke
   const draftBid={
-    id:Date.now(),
+    id:_newBidId(),
     client_id:c.id,
     client_name:c.name||'',
     name:c.name||'',
@@ -2523,6 +2536,16 @@ function _doOpenEstimate(c){
     sf('e-cname',c.name||'');
     sf('e-cphone',c.phone||'');
     sf('e-caddr',c.addr||'');
+    // If client has multiple addresses, show a picker hint below the address field
+    _estAddrOptions=[{label:'Primary',addr:c.addr||''},...(c.extraAddresses||[])];
+    const _addrField=document.getElementById('e-caddr');
+    const _oldHint=document.getElementById('_est-addr-picker');if(_oldHint)_oldHint.remove();
+    if(_addrField&&_estAddrOptions.length>1){
+      const _hint=document.createElement('div');_hint.id='_est-addr-picker';
+      _hint.style.cssText='margin-top:4px;display:flex;gap:6px;flex-wrap:wrap';
+      _hint.innerHTML=_estAddrOptions.map((a,i)=>'<button type="button" onclick="_pickEstAddr('+i+')" style="font-size:10px;padding:4px 9px;border:1px solid '+(i===0?'var(--blue)':'var(--border2)')+';border-radius:20px;background:'+(i===0?'var(--blue)':'var(--bg2)')+';color:'+(i===0?'#fff':'var(--text3)')+';cursor:pointer;font-family:inherit;font-weight:600">'+escHtml(a.label)+'</button>').join('');
+      _addrField.parentElement.appendChild(_hint);
+    }
     sf('e-cnotes','');
     if(c.ptype){const el=document.getElementById('e-cprop');if(el)el.value=c.ptype;}
     if(S.bname)sf('e-bname',S.bname);
@@ -3897,7 +3920,8 @@ function saveClient(){
   const ref=v('cf-ref')||'';
   const occupation=v('cf-occupation')||'';
   const tier=v('cf-tier')||'';
-  const c={id:editClientId||Date.now(),name,phone:v('cf-phone'),email:v('cf-email'),addr:v('cf-addr'),ptype:v('cf-ptype'),source,ref,notes:v('cf-notes'),created:todayKey()};
+  const _existingClient=editClientId?clients.find(x=>x.id===editClientId):null;
+  const c={id:editClientId||Date.now(),name,phone:v('cf-phone'),email:v('cf-email'),addr:v('cf-addr'),ptype:v('cf-ptype'),source,ref,notes:v('cf-notes'),created:todayKey(),extraAddresses:_existingClient?.extraAddresses||[]};
   if(editClientId){const i=clients.findIndex(x=>x.id===editClientId);if(i>=0)clients[i]=c;}
   else clients.push(c);
   saveAll();
@@ -4034,6 +4058,7 @@ function renderClientDetail(){
   renderCDTimeline();
   renderCDRisk();
   renderCDEstimatesUpcoming();
+  renderCDAddresses();
   renderTodayLegs();
   setCDTab('overview',document.getElementById('cdt-overview'));
 }
@@ -4896,7 +4921,76 @@ function supplyUncheckAll(btn){
 
 function confirmMarkComplete(jobId){confirmJobDone(jobId);}
 function callClient(){const c=getClientById(currentClientId);if(c&&c.phone)window.location.href='tel:'+c.phone.replace(/\D/g,'');}
-function openMapsDir(){const c=getClientById(currentClientId);if(!c||!c.addr)return zAlert('No address on file for this client.');window.open('https://maps.apple.com/?daddr='+encodeURIComponent(c.addr),'_blank');}
+let _mapsPickerAddrs=[];
+function openMapsDir(){
+  const c=getClientById(currentClientId);if(!c||!c.addr)return zAlert('No address on file for this client.');
+  const extras=(c.extraAddresses||[]).filter(a=>a.addr);
+  if(extras.length===0){window.open('https://maps.apple.com/?daddr='+encodeURIComponent(c.addr),'_blank');return;}
+  // Multiple addresses — show picker
+  _mapsPickerAddrs=[{label:'Primary',addr:c.addr},...extras];
+  const btns=_mapsPickerAddrs.map((a,i)=>'<button onclick="_mapsPickAddr('+i+')" style="display:block;width:100%;text-align:left;padding:11px 14px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);font-size:13px;cursor:pointer;font-family:inherit;color:var(--text);margin-bottom:6px"><span style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:2px">'+escHtml(a.label)+'</span>'+escHtml(a.addr)+'</button>').join('');
+  zAlert('<div style="text-align:left">'+btns+'</div>',{title:'Get directions to...'});
+}
+function _mapsPickAddr(idx){
+  const a=_mapsPickerAddrs[idx];
+  if(a)window.open('https://maps.apple.com/?daddr='+encodeURIComponent(a.addr),'_blank');
+  document.querySelector('.zmodal-overlay')?.remove();
+}
+let _cdAddrList=[];
+function _cdMapAddr(i){const a=_cdAddrList[i];if(a)window.open('https://maps.apple.com/?daddr='+encodeURIComponent(a),'_blank');}
+function renderCDAddresses(){
+  const el=document.getElementById('cd-addresses-list');if(!el)return;
+  const c=getClientById(currentClientId);if(!c)return;
+  const extras=(c.extraAddresses||[]);
+  _cdAddrList=[c.addr,...extras.map(a=>a.addr)];
+  let html='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border)">'+
+    '<div><div style="font-size:12px;font-weight:700">Primary</div><div style="font-size:13px;color:var(--text2);margin-top:2px">'+escHtml(c.addr||'No address')+'</div></div>'+
+    '<button onclick="_cdMapAddr(0)" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text3)">Map</button></div>';
+  extras.forEach((a,i)=>{
+    html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border)">'+
+      '<div><div style="font-size:12px;font-weight:700;color:var(--text3)">'+escHtml(a.label||'Property '+(i+2))+'</div><div style="font-size:13px;color:var(--text2);margin-top:2px">'+escHtml(a.addr)+'</div></div>'+
+      '<div style="display:flex;gap:6px;flex-shrink:0">'+
+        '<button onclick="_cdMapAddr('+(i+1)+')" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text3)">Map</button>'+
+        '<button onclick="removeClientAddress('+i+')" style="background:none;border:1px solid #A32D2D;border-radius:var(--r);padding:5px 8px;font-size:11px;cursor:pointer;font-family:inherit;color:#A32D2D">✕</button>'+
+      '</div></div>';
+  });
+  if(extras.length===0)html+='<div style="font-size:12px;color:var(--text3);padding:6px 0 2px">No additional properties — tap + Add address to add one.</div>';
+  el.innerHTML=html;
+}
+function openAddAddressModal(){
+  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
+  overlay.innerHTML='<div class="zmodal" style="max-width:360px"><div class="zmodal-title">Add property address</div>'+
+    '<div class="f" style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;display:block;margin-bottom:4px">Label (e.g. Vacation home, Rental)</label>'+
+    '<input id="_aa-label" placeholder="Vacation home" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit"></div>'+
+    '<div class="f" style="margin-bottom:14px"><label style="font-size:11px;font-weight:700;display:block;margin-bottom:4px">Address <span style="color:#A32D2D">*</span></label>'+
+    '<input id="_aa-addr" placeholder="5678 Oak Ave, Wichita KS 67206" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit"></div>'+
+    '<div style="display:flex;gap:8px">'+
+      '<button onclick="saveAddClientAddress()" class="btn btn-g" style="flex:1">Add</button>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Cancel</button>'+
+    '</div></div>';
+  document.body.appendChild(overlay);
+  setTimeout(()=>{const el=document.getElementById('_aa-label');if(el)el.focus();},80);
+}
+function saveAddClientAddress(){
+  const addr=(document.getElementById('_aa-addr')?.value||'').trim();
+  if(!addr){zAlert('Enter an address.');return;}
+  const label=(document.getElementById('_aa-label')?.value||'').trim()||'Additional property';
+  const c=getClientById(currentClientId);if(!c)return;
+  if(!c.extraAddresses)c.extraAddresses=[];
+  c.extraAddresses.push({label,addr});
+  saveAll();
+  document.querySelector('.zmodal-overlay')?.remove();
+  renderCDAddresses();
+}
+function removeClientAddress(idx){
+  const c=getClientById(currentClientId);if(!c||!c.extraAddresses)return;
+  zConfirm('Remove this address?',()=>{
+    c.extraAddresses.splice(idx,1);
+    saveAll();
+    renderCDAddresses();
+  });
+}
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function driveToJob(jobId){
   const j=jobs.find(x=>x.id===jobId);
   if(!j||!j.client_id){zAlert('No client linked to this job. Open the client record manually.');return;}
@@ -8842,7 +8936,7 @@ async function sendProposalLink(){
   try{
     const cname=document.getElementById('e-cname')?.value||'Client';
     const bname=document.getElementById('e-bname')?.value||S.bname||"ZJ's Painting & Special Coatings";
-    const bidId=editingBidId||lastCreatedBidId||Date.now();
+    const bidId=editingBidId||lastCreatedBidId||_newBidId();
     const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
     const proposalKey=`proposals/${_supaUser.id}/${bidId}_${token}.json`;
     const proposalData={
@@ -9342,7 +9436,7 @@ function sendEstimateEmail(){
     const c=getClientById(estLinkedClientId);
     const days=parseInt(v('e-days'))||2;
     const ss={};SCOPE_ITEMS.forEach(s=>{ss[s.id]=!!scopeOn(s.id);});
-    const newBid={id:Date.now(),client_id:estLinkedClientId,client_name:c?c.name:cname,name:cname,phone:v('e-cphone'),addr:caddr,bid_date:todayKey(),followup:addDays(todayKey(),7),amount:final,type:getBidIncomeLabel({surfaces:estSurfaces}),days,status:'Pending',notes:v('e-cnotes'),completion_date:'',collStage:'none',collHistory:[],scope:ss,surfaces:[...estSurfaces],cond:v('e-cond'),paint:v('e-paint'),colors:v('e-colors')};
+    const newBid={id:_newBidId(),client_id:estLinkedClientId,client_name:c?c.name:cname,name:cname,phone:v('e-cphone'),addr:caddr,bid_date:todayKey(),followup:addDays(todayKey(),7),amount:final,type:getBidIncomeLabel({surfaces:estSurfaces}),days,status:'Pending',notes:v('e-cnotes'),completion_date:'',collStage:'none',collHistory:[],scope:ss,surfaces:[...estSurfaces],cond:v('e-cond'),paint:v('e-paint'),colors:v('e-colors')};
     bids.unshift(newBid);lastCreatedBidId=newBid.id;
   }
   if(lastCreatedBidId){
@@ -9454,7 +9548,7 @@ if(!hasSignature()&&typedSig.length<=2){zAlert('Please type your name or draw yo
         // Fallback: no draft found, create fresh
         const exists=bids.find(b=>b.client_id===estLinkedClientId&&Math.abs(b.amount-final)<0.01&&b.bid_date===todayKey()&&b.status==='Pending');
         if(exists){exists.status='Closed Won';exists.notes=(exists.notes||'')+' Signed in person '+todayKey();lastCreatedBidId=exists.id;}
-        else{const newBid={id:Date.now(),client_id:estLinkedClientId,client_name:c?c.name:'',name:cname,phone:v('e-cphone'),addr:v('e-caddr'),bid_date:todayKey(),followup:'',amount:final,type:getBidIncomeLabel({surfaces:estSurfaces}),days,status:'Closed Won',notes:v('e-cnotes'),completion_date:'',scope:ss,surfaces:[...estSurfaces],cond:v('e-cond'),paint:v('e-paint'),colors:v('e-colors'),allowWeekend:document.getElementById('e-allow-weekend')?.checked||false};bids.unshift(newBid);lastCreatedBidId=newBid.id;}
+        else{const newBid={id:_newBidId(),client_id:estLinkedClientId,client_name:c?c.name:'',name:cname,phone:v('e-cphone'),addr:v('e-caddr'),bid_date:todayKey(),followup:'',amount:final,type:getBidIncomeLabel({surfaces:estSurfaces}),days,status:'Closed Won',notes:v('e-cnotes'),completion_date:'',scope:ss,surfaces:[...estSurfaces],cond:v('e-cond'),paint:v('e-paint'),colors:v('e-colors'),allowWeekend:document.getElementById('e-allow-weekend')?.checked||false};bids.unshift(newBid);lastCreatedBidId=newBid.id;}
       }
     }
     _submitting=true;setTimeout(()=>{_submitting=false;},2000);
