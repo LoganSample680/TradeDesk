@@ -7982,6 +7982,11 @@ function addEstSurf(){
 function removeEstSurf(id){
   estSurfaces=estSurfaces.filter(s=>s.id!==id);
   renderEstSurfs();renderEstRunning();saveSurfDraft();
+  const btn=document.getElementById('est-s3-next-btn');
+  if(btn){
+    if(estSurfaces.length>0){btn.disabled=false;btn.style.background='var(--blue)';btn.style.color='#fff';btn.style.borderColor='var(--blue)';btn.style.cursor='pointer';}
+    else{btn.disabled=true;btn.style.background='var(--bg2)';btn.style.color='var(--text3)';btn.style.borderColor='var(--border)';btn.style.cursor='not-allowed';}
+  }
 }
 
 function updateEstSurf(id,key,val){
@@ -8394,21 +8399,23 @@ function calcEst(){
   const orderMap={};
   let totalPaintSqFt=0;
   estSurfaces.forEach(s=>{
-    if(!s.qty)return;const t=SURF_TYPES.find(x=>x.v===s.type);if(!t||t.unit!=='sq ft')return;
-    totalPaintSqFt+=s.qty;
+    if(!s.qty)return;const t=SURF_TYPES.find(x=>x.v===s.type);if(!t)return;
+    // Convert non-sqft surfaces to sqft equivalent using material factor (mf)
+    // e.g. trim: 1 lin ft × 0.4 mf = 0.4 sqft paintable; doors: 1 door × 20 mf = 20 sqft
+    const paintSqft=t.unit==='sq ft'?(s.wallSqft||s.qty):s.qty*t.mf;
+    if(!paintSqft)return;
+    totalPaintSqFt+=(t.unit==='sq ft'?s.qty:paintSqft);
     const spec=(s.room||'').indexOf(' — ')>-1?(s.room||'').split(' — ').slice(1).join(' — '):'';
     const key=spec||'Paint';
     const roomName=cleanRoomName(s.room)||'';
-    // Use wallSqft (perimeter×height) for paint volume; fall back to qty for ceiling/deck
-    const paintSqft=s.wallSqft||s.qty;
     if(!orderMap[key])orderMap[key]={sqFt:0,cov:_prodCov(s.room),price:_prodContractorPrice(s.room),spec,surfaces:[],rooms:[]};
     orderMap[key].sqFt+=paintSqft;
     orderMap[key].surfaces.push({type:s.type,qty:s.qty});
     if(roomName&&!orderMap[key].rooms.includes(roomName))orderMap[key].rooms.push(roomName);
   });
   Object.entries(orderMap).forEach(([key,od])=>{
-    // Round up to nearest half-gallon, add 10% waste
-    const rawGals=od.sqFt*coats/od.cov*1.10;
+    // Round up to nearest half-gallon, add 15% waste
+    const rawGals=od.sqFt*coats/od.cov*1.15;
     const gals=Math.ceil(rawGals*2)/2;
     const wholeCans=Math.ceil(gals);
     // Per-room customer paint — if ANY room in this order group is customer-paint, flag it
@@ -13961,6 +13968,7 @@ function supaShowLogin(){
     '<div class="f" style="margin-bottom:20px"><label>Password</label>'+
     '<input type="password" id="supa-pass" placeholder="Password" style="font-size:16px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"></div>'+
     '<button onclick="supaSignIn()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Sign in</button>'+
+    '<div style="text-align:right;margin-bottom:10px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:13px;cursor:pointer;font-family:inherit;padding:0;text-decoration:underline">Forgot password?</button></div>'+
     '<button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:16px">Create account</button>'+
     '<button onclick="document.getElementById(\'supa-login-overlay\').remove();document.getElementById(\'supa-boot-overlay\')?.remove();renderDash();buildScopeGrid();" style="width:100%;padding:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Use offline (data stays on this device only)</button>'+
     '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:10px;text-align:center;min-height:16px"></div>'+
@@ -13991,6 +13999,15 @@ async function supaSignUp(){
   else{if(err)err.textContent='Check your email to confirm, then sign in.';}
 }
 
+async function supaForgotPassword(){
+  const email=document.getElementById('supa-email')?.value?.trim();
+  const err=document.getElementById('supa-login-err');
+  if(!email){if(err){err.style.color='#A32D2D';err.textContent='Enter your email address above first.';}return;}
+  if(err){err.style.color='var(--text3)';err.textContent='Sending reset link...';}
+  const{error}=await _supa.auth.resetPasswordForEmail(email,{redirectTo:window.location.href});
+  if(error){if(err){err.style.color='#A32D2D';err.textContent=error.message;}}
+  else{if(err){err.style.color='#1a7340';err.textContent='Reset link sent — check your email.';}}
+}
 async function supaSignOut(){if(_supa)await _supa.auth.signOut();}
 
 function supaSaveDebounced(){
@@ -14061,10 +14078,12 @@ async function checkNewSignatures(){
       });
       if(changed){
         saveAll();
-        // Store alerts to show as schedule prompt on next renderDash
+        // Store alerts to show as schedule prompt
         const existing=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
         localStorage.setItem('zp3_schedule_alerts',JSON.stringify([...existing,...alerts]));
         renderDash();
+        // Call directly — don't rely on renderDash chain which may be guarded
+        setTimeout(showScheduleAlerts,400);
       }
       localStorage.setItem('zp3_last_sig_check',new Date().toISOString());
     }
