@@ -1315,7 +1315,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   </div>
 </div>
 <div class="pg" id="pg-schedule">
-  <div class="tbar"><div class="tbar-title">Schedule</div></div>
+  <div class="tbar"><div class="tbar-title">Schedule</div><button class="btn btn-sm" onclick="openTimeOffModal()" style="background:var(--amber-lt);border-color:#D97706;color:#92400E;font-weight:700">🏖 Time off</button></div>
 
   
   <div class="fbar" style="margin-bottom:12px">
@@ -1406,6 +1406,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
         <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--bg2);border-radius:2px;margin-right:3px;border:1px solid var(--border)"></span>Open</span>
         <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--red-lt);border-radius:2px;margin-right:3px"></span>Booked</span>
         <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--amber-lt);border-radius:2px;margin-right:3px"></span>Buffer</span>
+        <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:#FDE68A;border-radius:2px;margin-right:3px"></span>Time off</span>
         <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:#7F77DD;border-radius:2px;margin-right:3px"></span>Estimate</span>
         <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:#185FA5;border-radius:2px;margin-right:3px"></span>Job</span>
       </div>
@@ -1426,6 +1427,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <button type="button" class="fb" id="tr-t-mileage" onclick="setTrTab('mileage',this)">Mileage</button>
     <button type="button" class="fb" id="tr-t-jobs" onclick="setTrTab('jobs',this)">Jobs</button>
     <button type="button" class="fb" id="tr-t-summary" onclick="setTrTab('summary',this)">Summary</button>
+    <button type="button" class="fb" id="tr-t-hiring" onclick="setTrTab('hiring',this)">👥 Hiring</button>
   </div>
   <div id="tr-income">
     
@@ -1482,6 +1484,9 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
       <div class="card"><div class="card-hd">Top expenses</div><div id="sum-exp"></div></div>
     </div>
     <div class="card"><div class="card-hd">Miles by client</div><div id="sum-mile"></div></div>
+  </div>
+  <div id="tr-hiring" style="display:none">
+    <div id="hiring-calc-root"></div>
   </div>
 </div>
 <div class="pg" id="pg-taxes">
@@ -1691,6 +1696,17 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <button class="btn" id="location-settings-btn" onclick="resetLocationPermission()" style="font-size:12px">📍 Location access</button>
   </div>
   <div id="set-saved" style="display:none;margin-top:8px" class="tip tip-s">Settings saved!</div>
+
+  <!-- Team & Fleet -->
+  <div class="card" style="margin-top:16px">
+    <div class="card-hd">Team &amp; Fleet <button onclick="openAddEmployeeModal()" class="btn btn-sm btn-p" style="font-size:11px">+ Add member</button></div>
+    <div id="team-list" style="margin-bottom:12px"></div>
+    <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Registered devices</div>
+      <div id="device-list"></div>
+    </div>
+  </div>
+
   <div class="card" style="margin-top:16px;border:1px solid #A32D2D">
     <div class="card-hd" style="color:#A32D2D">Danger zone</div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Use this to wipe all test data and start fresh. Cannot be undone.</div>
@@ -2043,7 +2059,7 @@ const CHECKS=[
 ];
 const CAT_CFG={urgent:{label:'Do right away',color:'#A32D2D'},biz:{label:'Business setup in Kansas',color:'#185FA5'},tax:{label:'Tax & accounting',color:'#854F0B'},ks:{label:'Kansas market & marketing',color:'#27500A'}};
 
-let S={stripePk:'',bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:"ZJ's Painting & Special Coatings",bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:83,p2:65,p3:95,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00};
+let S={stripePk:'',bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:"ZJ's Painting & Special Coatings",bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:83,p2:65,p3:95,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,timeOff:[],employees:[],devices:[]};
 
 // ── Account / User / Config global state ─────────────────────────────
 let _account=null;   // accounts row
@@ -2161,8 +2177,70 @@ function getClientExpenses(cid){return expenses.filter(e=>e.client_id===cid);}
 function getClientBids(cid){return bids.filter(b=>b.client_id===cid&&!b.draft);}
 function getClientJobs(cid){return jobs.filter(j=>j.client_id===cid);}
 function getClientIncome(cid){return income.filter(i=>i.client_id===cid);}
+function getTimeOffDays(){
+  const days=new Set();
+  (S.timeOff||[]).forEach(block=>{
+    let cur=block.start;
+    while(cur<=block.end){days.add(cur);cur=addDays(cur,1);}
+  });
+  return days;
+}
+function addTimeOff(start,end,label){
+  if(!S.timeOff)S.timeOff=[];
+  S.timeOff.push({start,end,label:label||''});
+  S.timeOff.sort((a,b)=>a.start.localeCompare(b.start));
+  saveSettings();refreshAvail();renderCalendar&&renderCalendar();
+}
+function removeTimeOff(idx){
+  if(!S.timeOff)return;
+  S.timeOff.splice(idx,1);
+  saveSettings();refreshAvail();renderCalendar&&renderCalendar();
+}
+function openTimeOffModal(){
+  const existing=document.getElementById('timeoff-modal-overlay');
+  if(existing){existing.remove();return;}
+  const ov=document.createElement('div');ov.id='timeoff-modal-overlay';ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  const render=()=>{
+    const blocks=S.timeOff||[];
+    box.innerHTML=
+      '<div style="font-size:17px;font-weight:800;margin-bottom:4px">🏖 Time off</div>'+
+      '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Block dates from scheduling</div>'+
+      (blocks.length?'<div style="margin-bottom:12px">'+blocks.map((b,i)=>
+        '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--amber-lt);border:1px solid #D97706;border-radius:var(--r);padding:8px 10px;margin-bottom:6px">'+
+          '<div>'+
+            '<div style="font-size:12px;font-weight:700;color:#92400E">'+(b.label||'Time off')+'</div>'+
+            '<div style="font-size:11px;color:var(--text3)">'+b.start+(b.start!==b.end?' → '+b.end:'')+'</div>'+
+          '</div>'+
+          '<button onclick="removeTimeOff('+i+');document.getElementById(\'timeoff-modal-overlay\').remove();openTimeOffModal()" style="border:none;background:#A32D2D;color:#fff;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>'+
+        '</div>'
+      ).join('')+'</div>':'<div style="font-size:12px;color:var(--text3);margin-bottom:12px;text-align:center;padding:10px">No time off blocked</div>')+
+      '<div style="background:var(--bg2);border-radius:var(--r);padding:12px;border:1px solid var(--border);margin-bottom:12px">'+
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Add block</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'+
+          '<div><label style="font-size:11px;font-weight:600;color:var(--text2)">Start</label><input type="date" id="to-start" style="width:100%;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:14px;font-family:inherit"></div>'+
+          '<div><label style="font-size:11px;font-weight:600;color:var(--text2)">End</label><input type="date" id="to-end" style="width:100%;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:14px;font-family:inherit"></div>'+
+        '</div>'+
+        '<input type="text" id="to-label" placeholder="Label (optional — Vacation, Holiday...)" style="width:100%;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:13px;font-family:inherit;margin-bottom:8px;box-sizing:border-box">'+
+        '<button onclick="_toAdd()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">+ Add time off</button>'+
+      '</div>'+
+      '<button onclick="document.getElementById(\'timeoff-modal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text3)">Close</button>';
+    window._toAdd=()=>{
+      const s=document.getElementById('to-start')?.value;
+      const e=document.getElementById('to-end')?.value||s;
+      if(!s){zAlert('Pick a start date.');return;}
+      if(e<s){zAlert('End date must be on or after start date.');return;}
+      addTimeOff(s,e,document.getElementById('to-label')?.value||'');
+      document.getElementById('timeoff-modal-overlay').remove();openTimeOffModal();
+    };
+  };
+  render();ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
 function getBookedDays(){
   const booked=new Set(),buf=new Set();
+  // Include time-off blocks as booked
+  getTimeOffDays().forEach(d=>booked.add(d));
   jobs.forEach(j=>{
     if(j.eventType==='estimate'&&j.time){
       const h=parseInt((j.time||'0').split(':')[0]);
@@ -2179,6 +2257,24 @@ function getBookedDays(){
   return{booked,buf};
 }
 function getNextAvail(){const{booked,buf}=getBookedDays();const all=new Set([...booked,...buf]);const allowWknd=document.getElementById('s-allow-weekend')?.checked||false;let d=todayKey();for(let i=0;i<180;i++){const dow=parseD(d).getDay();const isWknd=dow===0||dow===6;if(!all.has(d)&&(allowWknd||!isWknd)){const dt=parseD(d);return{key:d,label:dt.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})};}d=addDays(d,1);}return{key:todayKey(),label:'Check calendar'};}
+// Standalone next-avail that doesn't need DOM — used for scheduling suggestions
+function getNextAvailForBid(bid){
+  const{booked,buf}=getBookedDays();const all=new Set([...booked,...buf]);
+  const allowWknd=!!(bid&&bid.allowWeekend);
+  // Start from tomorrow at earliest
+  let d=addDays(todayKey(),1);
+  for(let i=0;i<180;i++){
+    const dow=parseD(d).getDay();const isWknd=dow===0||dow===6;
+    if(!all.has(d)&&(allowWknd||!isWknd))return d;
+    d=addDays(d,1);
+  }
+  return addDays(todayKey(),1);
+}
+function _jobEndDate(startKey,numDays,allowWknd){
+  let count=0,cur=startKey;
+  while(count<numDays){const dow=parseD(cur).getDay();if(allowWknd||(dow!==0&&dow!==6))count++;if(count<numDays)cur=addDays(cur,1);}
+  return cur;
+}
 
 function buildScopeDefaultsUI(){
   const el=document.getElementById('set-scope-defaults');if(!el)return;
@@ -2317,7 +2413,7 @@ function goPg(id){
   if(id==='pg-tracker'){renderTrackerTab();populateExpJobSel();}
   if(id==='pg-taxes')calcTax();
   if(id==='pg-settings'){buildScopeDefaultsUI();
-    loadSettingsForm();renderVehicleSettings();updateLocationBtn();
+    loadSettingsForm();renderVehicleSettings();updateLocationBtn();renderTeam();
     if(window._scrollToVehicles){
       window._scrollToVehicles=false;
       setTimeout(()=>{
@@ -4214,7 +4310,11 @@ function rescheduleEstimate(jobId){
   j.cancelReason='Rescheduled';
   j.cancelDate=todayKey();
   saveAll();
-  schedForClient();
+  if(j.eventType!=='estimate'&&j.bid_id){
+    schedFromBid(j.bid_id);
+  }else{
+    schedForClient();
+  }
 }
 
 function renderCDJobs(){
@@ -7982,6 +8082,11 @@ function addEstSurf(){
 function removeEstSurf(id){
   estSurfaces=estSurfaces.filter(s=>s.id!==id);
   renderEstSurfs();renderEstRunning();saveSurfDraft();
+  const btn=document.getElementById('est-s3-next-btn');
+  if(btn){
+    if(estSurfaces.length>0){btn.disabled=false;btn.style.background='var(--blue)';btn.style.color='#fff';btn.style.borderColor='var(--blue)';btn.style.cursor='pointer';}
+    else{btn.disabled=true;btn.style.background='var(--bg2)';btn.style.color='var(--text3)';btn.style.borderColor='var(--border)';btn.style.cursor='not-allowed';}
+  }
 }
 
 function updateEstSurf(id,key,val){
@@ -8394,21 +8499,23 @@ function calcEst(){
   const orderMap={};
   let totalPaintSqFt=0;
   estSurfaces.forEach(s=>{
-    if(!s.qty)return;const t=SURF_TYPES.find(x=>x.v===s.type);if(!t||t.unit!=='sq ft')return;
-    totalPaintSqFt+=s.qty;
+    if(!s.qty)return;const t=SURF_TYPES.find(x=>x.v===s.type);if(!t)return;
+    // Convert non-sqft surfaces to sqft equivalent using material factor (mf)
+    // e.g. trim: 1 lin ft × 0.4 mf = 0.4 sqft paintable; doors: 1 door × 20 mf = 20 sqft
+    const paintSqft=t.unit==='sq ft'?(s.wallSqft||s.qty):s.qty*t.mf;
+    if(!paintSqft)return;
+    totalPaintSqFt+=(t.unit==='sq ft'?s.qty:paintSqft);
     const spec=(s.room||'').indexOf(' — ')>-1?(s.room||'').split(' — ').slice(1).join(' — '):'';
     const key=spec||'Paint';
     const roomName=cleanRoomName(s.room)||'';
-    // Use wallSqft (perimeter×height) for paint volume; fall back to qty for ceiling/deck
-    const paintSqft=s.wallSqft||s.qty;
     if(!orderMap[key])orderMap[key]={sqFt:0,cov:_prodCov(s.room),price:_prodContractorPrice(s.room),spec,surfaces:[],rooms:[]};
     orderMap[key].sqFt+=paintSqft;
     orderMap[key].surfaces.push({type:s.type,qty:s.qty});
     if(roomName&&!orderMap[key].rooms.includes(roomName))orderMap[key].rooms.push(roomName);
   });
   Object.entries(orderMap).forEach(([key,od])=>{
-    // Round up to nearest half-gallon, add 10% waste
-    const rawGals=od.sqFt*coats/od.cov*1.10;
+    // Round up to nearest half-gallon, add 15% waste
+    const rawGals=od.sqFt*coats/od.cov*1.15;
     const gals=Math.ceil(rawGals*2)/2;
     const wholeCans=Math.ceil(gals);
     // Per-room customer paint — if ANY room in this order group is customer-paint, flag it
@@ -8684,7 +8791,7 @@ async function sendProposalLink(){
   try{
     const cname=document.getElementById('e-cname')?.value||'Client';
     const bname=document.getElementById('e-bname')?.value||S.bname||"ZJ's Painting & Special Coatings";
-    const bidId=lastCreatedBidId||Date.now();
+    const bidId=editingBidId||lastCreatedBidId||Date.now();
     const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
     const proposalKey=`proposals/${_supaUser.id}/${bidId}_${token}.json`;
     const proposalData={
@@ -8730,7 +8837,16 @@ async function sendProposalLink(){
     if(shorturlEl)shorturlEl.textContent=shortUrl.replace(/^https?:\/\//,'');
     const anchorEl=document.getElementById('proposal-link-anchor');if(anchorEl)anchorEl.href=shortUrl;
     const bid=bids.find(b=>b.id===bidId);
-    if(bid){bid.signingToken=token;bid.signingKey=proposalKey;saveAll();}
+    if(bid){
+      bid.signingToken=token;bid.signingKey=proposalKey;
+      // Promote to Pending so it shows in "Sent proposals" section
+      if(bid.status==='Draft'||!bid.status)bid.status='Pending';
+      if(!bid.followup)bid.followup=addDays(todayKey(),7);
+      saveAll();
+    }
+    // Reset sig-check window so any missed signatures get caught
+    const _lastCheck=localStorage.getItem('zp3_last_sig_check');
+    if(!_lastCheck)localStorage.setItem('zp3_last_sig_check',new Date(Date.now()-86400000*7).toISOString());
     if(btn){btn.textContent='✓ Link ready';btn.disabled=false;}
     showToast('Signing link ready — copy and send to client','🔗');
   }catch(e){
@@ -10694,6 +10810,10 @@ async function refreshAvail(){
   const M=['January','February','March','April','May','June','July','August','September','October','November','December'];
   document.getElementById('avail-month-lbl').textContent=M[availMonth]+' '+availYear;
   const{booked,buf}=getBookedDays(),selected=v('s-start'),days=parseInt(v('s-days'))||1,b=parseInt(v('s-buf'))||0,today=todayKey();
+  const timeOffDays=getTimeOffDays();
+  const _schedBidId=parseInt(v('s-bid-sel'))||null;
+  const _schedBid=_schedBidId?bids.find(b=>b.id===_schedBidId):null;
+  const _hasPwash=schedType==='job'&&_schedBid?.scope?.pwash===true;
   const allowWknd=document.getElementById('s-allow-weekend')?.checked||false;
 
   // Build workday-aware end date — skip weekends unless allowed
@@ -10739,16 +10859,19 @@ async function refreshAvail(){
     const isWorkday=!isWeekend||(allowWknd);
     const wx=weather[key];
     const wxHtml=wx?'<div style="font-size:11px;line-height:1">'+wx.icon+'</div><div style="font-size:8px;color:'+(wx.rain?'#A32D2D':'inherit')+';font-weight:600;line-height:1.2">'+wx.hi+'°</div>':'';
+    const isRainBlocked=_hasPwash&&wx&&wx.rain;
     const dayNum=parseInt(key.split('-')[2]);
     if(isPast)return'<div class="av-d av-past">'+dayNum+'</div>';
     // Weekends grayed when not allowed — never blue, never selectable
     if(isWeekend&&!allowWknd)return'<div class="av-d av-past">'+dayNum+'</div>';
+    if(timeOffDays.has(key))return'<div class="av-d" style="background:#FDE68A;color:#92400E;font-size:10px;font-weight:700;cursor:not-allowed;text-align:center;padding:2px;border-radius:6px" title="Time off">'+dayNum+'<br>🏖</div>';
     if(schedType==='estimate'){
       if(isSel)return'<div class="av-d av-sel" onclick="pickDay(\''+key+'\')">'+dayNum+(isStart?'<br><span style="font-size:9px">start</span>':'')+wxHtml+'</div>';
       return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')">'+dayNum+wxHtml+'</div>';
     }
     if(isTaken)return'<div class="av-d av-taken">'+dayNum+wxHtml+'</div>';
     if(isBuf)return'<div class="av-d av-buf">'+dayNum+'</div>';
+    if(isRainBlocked)return'<div class="av-d av-taken" title="Rain forecast — pressure wash blocked" style="background:#FEE8E8;cursor:not-allowed">'+dayNum+wxHtml+'</div>';
     if(isSel)return'<div class="av-d av-sel" onclick="pickDay(\''+key+'\')">'+dayNum+(isStart?'<br><span style="font-size:9px">start</span>':'')+wxHtml+'</div>';
     return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')">'+dayNum+wxHtml+'</div>';
   }).join('');
@@ -10806,6 +10929,11 @@ function scheduleJob(){
   const{booked}=getBookedDays();for(let i=0;i<days;i++){if(booked.has(addDays(start,i)))return zAlert('One or more days already booked. Pick a different start date.');}
   const bidId=parseInt(v('s-bid-sel'))||null,bid=bidId?bids.find(b=>b.id===bidId):null;
   if(bid&&bid.status==='Pending'){return zAlert('The estimate must be signed (Closed Won) before scheduling.',{title:'Estimate not signed'});}
+  // Rain block: pressure wash can't start on a rainy day
+  if(schedType==='job'&&bid&&bid.scope&&bid.scope.pwash){
+    const wx=_weatherCache&&_weatherCache[start];
+    if(wx&&wx.rain){return zAlert('Rain is in the forecast for '+start+'.\n\nPressure washing requires dry conditions — pick a clear day.',{title:'⛈️ Rain in forecast'});}
+  }
   // Duplicate guard: same bid already has a job scheduled
   if(bidId&&jobs.some(j=>j.bid_id===bidId&&j.eventType==='job'&&j.status!=='canceled')){
     return zAlert('This job is already scheduled. Edit or cancel the existing one first.',{title:'Already scheduled'});}
@@ -10837,7 +10965,7 @@ function resetSched(){
 
 function setTrTab(tab,btn){
   trackerTab=tab;
-  ['income','expenses','mileage','jobs','summary'].forEach(t=>{
+  ['income','expenses','mileage','jobs','summary','hiring'].forEach(t=>{
     const el=document.getElementById('tr-'+t);if(el)el.style.display=t===tab?'block':'none';
     const tb=document.getElementById('tr-t-'+t);if(tb)tb.classList.toggle('active',t===tab);
   });
@@ -10846,6 +10974,7 @@ function setTrTab(tab,btn){
   if(tab==='mileage')renderAllMileage();
   if(tab==='jobs')renderJobsHistory();
   if(tab==='summary'){renderSummary();renderJobSummary();renderMonthlyPL();}
+  if(tab==='hiring')renderHiringCalc();
 }
 function getTrackerYears(){
   const allDates=[
@@ -12203,6 +12332,12 @@ function renderJobsPage(){
     const s=getClientStage(c.id).stage;
     return allowed.includes(s);
   }).sort((a,b)=>{
+    // Sort by closest upcoming job date first
+    const jA=getClientJobs(a.id).filter(j=>j.eventType!=='estimate'&&j.status!=='canceled'&&j.start>=tk).sort((x,y)=>x.start.localeCompare(y.start))[0];
+    const jB=getClientJobs(b.id).filter(j=>j.eventType!=='estimate'&&j.status!=='canceled'&&j.start>=tk).sort((x,y)=>x.start.localeCompare(y.start))[0];
+    if(jA&&jB)return jA.start.localeCompare(jB.start);
+    if(jA)return -1;
+    if(jB)return 1;
     const pa=getClientStage(a.id).priority||9,pb=getClientStage(b.id).priority||9;
     return pa-pb;
   });
@@ -12219,24 +12354,42 @@ function renderJobsPage(){
     const paid=wonBid?getBidPaid(wonBid.id):0;
     const balance=wonBid?getBidBalance(wonBid):0;
     const hasSurfaces=wonBid?.surfaces?.length>0;
-    return '<div onclick="openJobSheet('+c.id+')" style="display:flex;justify-content:space-between;align-items:center;padding:13px 0;border-bottom:1px solid var(--border);cursor:pointer;gap:10px">'+
-      '<div style="min-width:0;flex:1">'+
-        '<div style="font-size:14px;font-weight:700;color:var(--text)">'+c.name+'</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+
-          (c.addr?c.addr.split(',')[0]:'')+(nextJob?' · Starts '+nextJob.start:'')+
+    // Interior vs exterior detection
+    const isExt=wonBid&&(wonBid.type==='Exterior painting'||(wonBid.surfaces||[]).some(s=>s.type&&(s.type.startsWith('ext')||s.type==='deck')));
+    const typeColor=isExt?'#C47840':'#185FA5'; // orange=exterior, blue=interior
+    const typeLabel=isExt?'Exterior':'Interior';
+    const typeBg=isExt?'#FFF0E0':'#EBF2FB';
+    // Next job start display
+    const nextStart=nextJob?parseD(nextJob.start).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'';
+    // "Move up" flag: interior job scheduled more than 2 weeks out
+    const daysOut=nextJob?Math.round((parseD(nextJob.start)-parseD(tk))/86400000):null;
+    const canMoveUp=nextJob&&isExt===false&&daysOut!==null&&daysOut>14;
+    return '<div onclick="openJobSheet('+c.id+')" style="display:flex;align-items:center;gap:0;border-bottom:1px solid var(--border);cursor:pointer">'+
+      // Colored left stripe: blue=interior, orange=exterior
+      '<div style="width:4px;align-self:stretch;background:'+typeColor+';border-radius:3px 0 0 3px;flex-shrink:0"></div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 0 11px 10px;gap:10px;flex:1;min-width:0">'+
+        '<div style="min-width:0;flex:1">'+
+          '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:2px">'+
+            '<span style="font-size:14px;font-weight:700;color:var(--text)">'+c.name+'</span>'+
+            '<span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;background:'+typeBg+';color:'+typeColor+';padding:1px 6px;border-radius:8px">'+typeLabel+'</span>'+
+            (canMoveUp?'<span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:8px" title="Interior — consider moving up if exterior frees up">📞 can move up</span>':'')+
+          '</div>'+
+          '<div style="font-size:11px;color:var(--text3)">'+
+            (c.addr?c.addr.split(',')[0]:'')+(nextStart?' · '+nextStart:'')+
+          '</div>'+
+          (wonBid?
+            '<div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap">'+
+              (paid>0?'<span style="font-size:10px;font-weight:700;background:var(--green-lt);color:var(--green-mid);padding:2px 7px;border-radius:10px">'+fmt(paid)+' paid</span>':
+                      '<span style="font-size:10px;font-weight:700;background:var(--amber-lt);color:#856404;padding:2px 7px;border-radius:10px">No deposit</span>')+
+              (balance>0.01?'<span style="font-size:10px;font-weight:700;background:#FEE8E8;color:#A32D2D;padding:2px 7px;border-radius:10px">'+fmt(balance)+' due</span>':'')+
+              (hasSurfaces?'<span style="font-size:10px;font-weight:600;background:var(--bg2);color:var(--text3);padding:2px 7px;border-radius:10px">📦 Supplies</span>':'')+
+            '</div>'
+          :'')+
         '</div>'+
-        (wonBid?
-          '<div style="display:flex;gap:8px;margin-top:5px;flex-wrap:wrap">'+
-            (paid>0?'<span style="font-size:10px;font-weight:700;background:var(--green-lt);color:var(--green-mid);padding:2px 7px;border-radius:10px">'+fmt(paid)+' paid</span>':
-                    '<span style="font-size:10px;font-weight:700;background:var(--amber-lt);color:#856404;padding:2px 7px;border-radius:10px">No deposit yet</span>')+
-            (balance>0.01?'<span style="font-size:10px;font-weight:700;background:#FEE8E8;color:#A32D2D;padding:2px 7px;border-radius:10px">'+fmt(balance)+' due</span>':'')+
-            (hasSurfaces?'<span style="font-size:10px;font-weight:600;background:var(--bg2);color:var(--text3);padding:2px 7px;border-radius:10px">📦 Supply list</span>':'')+
-          '</div>'
-        :'')+
-      '</div>'+
-      '<div style="text-align:right;flex-shrink:0">'+
-        '<div style="font-size:11px;font-weight:700;color:'+st.color+'">'+st.label+'</div>'+
-        (wonBid?'<div style="font-size:13px;font-weight:800;color:var(--text);margin-top:2px">'+fmt(wonBid.amount)+'</div>':'')+
+        '<div style="text-align:right;flex-shrink:0">'+
+          '<div style="font-size:11px;font-weight:700;color:'+st.color+'">'+st.label+'</div>'+
+          (wonBid?'<div style="font-size:13px;font-weight:800;color:var(--text);margin-top:2px">'+fmt(wonBid.amount)+'</div>':'')+
+        '</div>'+
       '</div>'+
     '</div>';
   }).join('');
@@ -13946,6 +14099,283 @@ async function supaInit(){
   }
 }
 
+// ══════════════════════════════════════════════════════════════════
+// TEAM & FLEET MANAGEMENT
+// ══════════════════════════════════════════════════════════════════
+const PERM_LABELS={canEstimate:'Estimate jobs',canSchedule:'Schedule jobs',canSeeFinancials:'View financials',canEditClients:'Edit clients',canManageTeam:'Manage team'};
+const ROLE_COLORS={owner:'#185FA5',painter:'#3B6D11',estimator:'#8B4513'};
+const ROLE_BG={owner:'#EBF2FB',painter:'#EAF3DE',estimator:'#FFF0E0'};
+
+function _initDeviceId(){
+  let id=localStorage.getItem('zp3_device_id');
+  if(!id){id='dev_'+Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);localStorage.setItem('zp3_device_id',id);}
+  return id;
+}
+function _deviceLabel(){
+  const ua=navigator.userAgent;
+  if(/iPad/.test(ua))return'iPad';
+  if(/iPhone/.test(ua))return'iPhone';
+  if(/Android.*Tablet|Android.*SM-T/i.test(ua))return'Android Tablet';
+  if(/Android/i.test(ua))return'Android';
+  if(/Macintosh/.test(ua))return'Mac';
+  if(/Windows/.test(ua))return'Windows PC';
+  return'Device';
+}
+function registerDevice(){
+  const id=_initDeviceId();
+  const label=_deviceLabel();
+  const now=new Date().toISOString();
+  if(!S.devices)S.devices=[];
+  const idx=S.devices.findIndex(d=>d.id===id);
+  if(idx>-1){S.devices[idx].lastSeen=now;S.devices[idx].label=label;}
+  else S.devices.push({id,label,lastSeen:now,addedAt:now});
+  saveSettings();
+}
+function renderTeam(){
+  const el=document.getElementById('team-list');if(!el)return;
+  const emps=S.employees||[];
+  if(!emps.length){
+    el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:6px 0">No team members yet — just you. Add someone when you hire.</div>';
+  }else{
+    el.innerHTML=emps.map((e,i)=>{
+      const rc=ROLE_COLORS[e.role]||'var(--text2)';const rb=ROLE_BG[e.role]||'var(--bg2)';
+      const perms=Object.entries(e.permissions||{}).filter(([,v])=>v).map(([k])=>PERM_LABELS[k]||k).join(', ')||'No permissions';
+      return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px">'+
+          '<div style="display:flex;align-items:center;gap:8px">'+
+            '<div style="width:34px;height:34px;border-radius:50%;background:'+rc+';display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;flex-shrink:0">'+e.name.charAt(0).toUpperCase()+'</div>'+
+            '<div>'+
+              '<div style="font-size:13px;font-weight:700">'+e.name+'</div>'+
+              '<span style="font-size:10px;font-weight:700;background:'+rb+';color:'+rc+';padding:1px 7px;border-radius:8px;text-transform:capitalize">'+e.role+'</span>'+
+            '</div>'+
+          '</div>'+
+          (e.role!=='owner'?'<button onclick="openEditEmployeeModal('+i+')" style="font-size:11px;padding:4px 10px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">Edit</button>':'')+
+        '</div>'+
+        (e.phone?'<div style="font-size:11px;color:var(--text3);margin-top:4px">📞 '+e.phone+'</div>':'')+
+        '<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.5">'+perms+'</div>'+
+      '</div>';
+    }).join('');
+  }
+  // Devices
+  const del=document.getElementById('device-list');if(!del)return;
+  const devs=S.devices||[];
+  const myId=_initDeviceId();
+  if(!devs.length){del.innerHTML='<div style="font-size:11px;color:var(--text3)">No devices registered yet.</div>';return;}
+  del.innerHTML=devs.map(d=>{
+    const isMe=d.id===myId;
+    const ago=d.lastSeen?_timeAgo(d.lastSeen):'never';
+    const isActive=d.lastSeen&&(Date.now()-new Date(d.lastSeen).getTime())<3600000; // active within 1hr
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px">'+
+      '<div style="display:flex;align-items:center;gap:8px">'+
+        '<div style="font-size:20px">'+(d.label==='iPad'?'📱':d.label==='iPhone'?'📱':'💻')+'</div>'+
+        '<div>'+
+          '<div style="font-size:12px;font-weight:700">'+d.label+(isMe?' <span style="font-size:9px;background:var(--blue);color:#fff;padding:1px 6px;border-radius:8px">This device</span>':'')+'</div>'+
+          '<div style="font-size:10px;color:'+(isActive?'var(--green-mid)':'var(--text3)')+'">'+
+            (isActive?'🟢 Active · ':'⚪ Last seen ')+ago+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+      (!isMe?'<button onclick="removeDevice(\''+d.id+'\')" style="font-size:10px;color:#A32D2D;border:1px solid #A32D2D;border-radius:var(--r);padding:3px 8px;background:none;cursor:pointer;font-family:inherit">Remove</button>':'')+
+    '</div>';
+  }).join('');
+}
+function _timeAgo(iso){
+  const ms=Date.now()-new Date(iso).getTime();
+  if(ms<60000)return'just now';
+  if(ms<3600000)return Math.round(ms/60000)+'m ago';
+  if(ms<86400000)return Math.round(ms/3600000)+'h ago';
+  return Math.round(ms/86400000)+'d ago';
+}
+function removeDevice(id){
+  S.devices=(S.devices||[]).filter(d=>d.id!==id);
+  saveSettings();renderTeam();
+}
+function _employeeModalHTML(emp,idx){
+  const isNew=idx==null;
+  const e=emp||{name:'',role:'painter',phone:'',email:'',permissions:{canEstimate:true,canSchedule:true,canSeeFinancials:false,canEditClients:true,canManageTeam:false}};
+  return '<div style="font-size:17px;font-weight:800;margin-bottom:14px">'+(isNew?'Add team member':'Edit '+e.name)+'</div>'+
+    '<div class="fg fg2" style="margin-bottom:12px">'+
+      '<div class="f"><label>Full name</label><input id="emp-name" value="'+(e.name||'')+'" placeholder="John Smith" style="font-size:15px;padding:10px"></div>'+
+      '<div class="f"><label>Phone</label><input id="emp-phone" value="'+(e.phone||'')+'" placeholder="(555) 000-0000" style="font-size:15px;padding:10px"></div>'+
+    '</div>'+
+    '<div class="f" style="margin-bottom:12px"><label>Role</label>'+
+      '<select id="emp-role" style="font-size:14px;padding:10px">'+
+        '<option value="painter"'+(e.role==='painter'?' selected':'')+'>Painter</option>'+
+        '<option value="estimator"'+(e.role==='estimator'?' selected':'')+'>Estimator</option>'+
+        '<option value="owner"'+(e.role==='owner'?' selected':'')+'>Owner / Co-owner</option>'+
+      '</select>'+
+    '</div>'+
+    '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Permissions</div>'+
+    '<div style="display:grid;gap:6px;margin-bottom:14px">'+
+      Object.entries(PERM_LABELS).map(([k,lbl])=>{
+        const checked=e.permissions&&e.permissions[k];
+        return '<label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;padding:8px;background:var(--bg2);border-radius:var(--r)">'+
+          '<input type="checkbox" id="emp-p-'+k+'"'+(checked?' checked':'')+' style="width:16px;height:16px;cursor:pointer">'+lbl+'</label>';
+      }).join('')+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      (!isNew?'<button onclick="removeEmployee('+idx+')" style="padding:10px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>':'<div></div>')+
+      '<button onclick="_saveEmployee('+(isNew?'null':idx)+')" style="padding:10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+(isNew?'Add':'Save')+'</button>'+
+    '</div>'+
+    '<button onclick="document.getElementById(\'emp-modal-overlay\').remove()" style="width:100%;padding:8px;border:none;background:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>';
+}
+function openAddEmployeeModal(){
+  _openEmpModal(null,null);
+}
+function openEditEmployeeModal(idx){
+  const e=(S.employees||[])[idx];
+  _openEmpModal(e,idx);
+}
+function _openEmpModal(emp,idx){
+  document.getElementById('emp-modal-overlay')?.remove();
+  const ov=document.createElement('div');ov.id='emp-modal-overlay';ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=_employeeModalHTML(emp,idx);
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  setTimeout(()=>document.getElementById('emp-name')?.focus(),100);
+}
+function _saveEmployee(idx){
+  const name=document.getElementById('emp-name')?.value?.trim();
+  if(!name){zAlert('Enter a name.');return;}
+  const perms={};
+  Object.keys(PERM_LABELS).forEach(k=>{perms[k]=!!(document.getElementById('emp-p-'+k)?.checked);});
+  const emp={id:idx!=null?(S.employees[idx]?.id||Date.now()):Date.now(),name,role:document.getElementById('emp-role')?.value||'painter',phone:document.getElementById('emp-phone')?.value?.trim()||'',permissions:perms};
+  if(!S.employees)S.employees=[];
+  if(idx!=null)S.employees[idx]=emp;else S.employees.push(emp);
+  saveSettings();document.getElementById('emp-modal-overlay')?.remove();renderTeam();
+}
+function removeEmployee(idx){
+  if(!S.employees)return;
+  S.employees.splice(idx,1);
+  saveSettings();document.getElementById('emp-modal-overlay')?.remove();renderTeam();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// HIRING READINESS CALCULATOR
+// ══════════════════════════════════════════════════════════════════
+function renderHiringCalc(){
+  const el=document.getElementById('hiring-calc-root');if(!el)return;
+
+  // Pull trailing 90-day financials
+  const cutoff=addDays(todayKey(),-90);
+  const rev90=income.filter(r=>r.date>=cutoff).reduce((s,r)=>s+(r.amount||0),0);
+  const exp90=expenses.filter(e=>e.date>=cutoff).reduce((s,e)=>s+(e.amount||0),0);
+  const profit90=Math.max(0,rev90-exp90);
+  const monthlyProfit=Math.round(profit90/3);
+  const monthlyRev=Math.round(rev90/3);
+
+  // W-2 cost model — painter wages $18-30/hr typical in KS
+  const targetHr=parseInt(el.dataset.hr||22);
+  const annualGross=targetHr*2080;
+  const empFICA=Math.round(annualGross*0.0765);
+  const futa=Math.min(420,Math.round(annualGross*0.06));
+  const suta=Math.min(700,Math.round(annualGross*0.035));
+  const workersComp=Math.round(annualGross*0.072); // ~$7.20/$100 payroll for KS painting
+  const health=6000; // $500/mo employer contribution (conservative)
+  const retirement=Math.round(annualGross*0.03); // 3% 401k match
+  const misc=1200; // tools, uniform, training
+  const totalAnnual=annualGross+empFICA+futa+suta+workersComp+health+retirement+misc;
+  const totalMonthly=Math.round(totalAnnual/12);
+  const effectiveRate=Math.round(totalAnnual/annualGross*100);
+
+  // Hiring readiness signal
+  const ratio=monthlyProfit>0?monthlyProfit/totalMonthly:0;
+  let signal,sigColor,sigBg,advice;
+  if(ratio>=2.5){
+    signal='🟢 Ready to hire';sigColor='#1a7340';sigBg='#EAF3DE';
+    advice='Your profit covers the full cost of a W-2 employee '+ratio.toFixed(1)+'x over. You have the buffer to hire, train, and absorb slow months.';
+  }else if(ratio>=1.5){
+    signal='🟡 Getting close';sigColor='#856404';sigBg='#FEF3C7';
+    advice='You could technically afford it, but the margin is thin. One slow month could put you in the red. Aim to grow monthly profit to '+fmt(Math.round(totalMonthly*2.5))+' before hiring.';
+  }else{
+    signal='🔴 Not yet';sigColor='#A32D2D';sigBg='#FEE8E8';
+    advice='Monthly profit of '+fmt(monthlyProfit)+' doesn\'t cover the '+fmt(totalMonthly)+'/mo cost of a W-2 hire. You need '+fmt(Math.round(totalMonthly*2.5))+'/mo profit to hire safely.';
+  }
+
+  // How many extra jobs/month needed
+  const avgJobVal=bids.filter(b=>b.status==='Closed Won').reduce((s,b,_,a)=>s+(b.amount||0)/(a.length||1),0)||2500;
+  const avgProfit=avgJobVal*(S.margin||40)/100;
+  const jobsNeeded=avgProfit>0?Math.ceil(totalMonthly*1.5/avgProfit):0;
+
+  el.innerHTML=
+    '<div class="card">'+
+      '<div style="font-size:17px;font-weight:800;margin-bottom:2px">Hiring readiness</div>'+
+      '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Based on your last 90 days — W-2 employee full cost model</div>'+
+
+      // Status banner
+      '<div style="background:'+sigBg+';border-radius:var(--r);padding:14px;margin-bottom:14px">'+
+        '<div style="font-size:16px;font-weight:800;color:'+sigColor+';margin-bottom:4px">'+signal+'</div>'+
+        '<div style="font-size:12px;color:'+sigColor+';line-height:1.6">'+advice+'</div>'+
+      '</div>'+
+
+      // Wage slider
+      '<div style="margin-bottom:14px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
+          '<label style="font-size:12px;font-weight:700;color:var(--text2)">Target wage</label>'+
+          '<span style="font-size:16px;font-weight:800;color:var(--blue)">$'+targetHr+'/hr</span>'+
+        '</div>'+
+        '<input type="range" min="15" max="35" step="1" value="'+targetHr+'" oninput="document.getElementById(\'hiring-calc-root\').dataset.hr=this.value;renderHiringCalc()" style="width:100%;accent-color:var(--blue)">'+
+        '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-top:2px"><span>$15/hr</span><span>$35/hr</span></div>'+
+      '</div>'+
+
+      // Cost breakdown
+      '<div style="background:var(--bg2);border-radius:var(--r);border:1px solid var(--border);padding:12px;margin-bottom:14px">'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">True W-2 cost breakdown</div>'+
+        _hiringRow('Gross wages ('+targetHr+'/hr × 2,080 hrs)',annualGross,true)+
+        _hiringRow('Employer FICA (7.65%)',empFICA,false)+
+        _hiringRow('Federal unemployment (FUTA)',futa,false)+
+        _hiringRow('State unemployment (SUTA)',suta,false)+
+        _hiringRow('Workers comp (painting ~7.2%)',workersComp,false)+
+        _hiringRow('Health insurance (employer share)',health,false)+
+        _hiringRow('401k match (3%)',retirement,false)+
+        _hiringRow('Tools, uniform, training',misc,false)+
+        '<div style="border-top:2px solid var(--border);margin-top:8px;padding-top:8px;display:flex;justify-content:space-between">'+
+          '<span style="font-size:13px;font-weight:800">Total annual cost</span>'+
+          '<span style="font-size:13px;font-weight:800;color:#A32D2D">'+fmt(totalAnnual)+'</span>'+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:4px">= '+fmt(totalMonthly)+'/mo · '+effectiveRate+'% above base wage</div>'+
+      '</div>'+
+
+      // Your numbers
+      '<div style="background:var(--bg2);border-radius:var(--r);border:1px solid var(--border);padding:12px;margin-bottom:14px">'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Your last 90 days</div>'+
+        _hiringRow('Avg monthly revenue',monthlyRev,true)+
+        _hiringRow('Avg monthly expenses',Math.round(exp90/3),false)+
+        '<div style="border-top:2px solid var(--border);margin:8px 0;padding-top:8px;display:flex;justify-content:space-between">'+
+          '<span style="font-size:13px;font-weight:800">Avg monthly profit</span>'+
+          '<span style="font-size:13px;font-weight:800;color:'+(monthlyProfit>0?'var(--green-mid)':'#A32D2D')+'">'+fmt(monthlyProfit)+'</span>'+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--text3)">Profit covers employee cost '+ratio.toFixed(1)+'x · need 2.5x to hire safely</div>'+
+        (jobsNeeded>0?'<div style="font-size:11px;color:var(--blue);margin-top:4px;font-weight:600">Need ~'+jobsNeeded+' more jobs/month to hire comfortably (at avg '+fmt(Math.round(avgJobVal))+' job value)</div>':'')+
+      '</div>'+
+
+      // W-2 vs 1099
+      '<div style="background:var(--bg2);border-radius:var(--r);border:1px solid var(--border);padding:12px">'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">W-2 vs 1099 — the real talk</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+          '<div style="padding:10px;background:#EAF3DE;border-radius:var(--r)">'+
+            '<div style="font-size:11px;font-weight:800;color:var(--green-mid);margin-bottom:6px">✅ W-2 Employee</div>'+
+            '<div style="font-size:10px;color:var(--text2);line-height:1.7">You control their hours &amp; methods<br>Build real team culture<br>Workers comp covers injuries<br>Loyalty + retention<br>Easier to train your way<br>Qualifies for benefits</div>'+
+          '</div>'+
+          '<div style="padding:10px;background:#FEE8E8;border-radius:var(--r)">'+
+            '<div style="font-size:11px;font-weight:800;color:#A32D2D;margin-bottom:6px">⚠️ 1099 "Copout"</div>'+
+            '<div style="font-size:10px;color:var(--text2);line-height:1.7">IRS misclassification risk<br>YOU may be liable for injuries<br>Worker pays 15.3% FICA<br>No control over their methods<br>Harder to enforce standards<br>Damages trust &amp; culture</div>'+
+          '</div>'+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.7">'+
+          '<strong>Bottom line:</strong> 1099 saves money short-term but IRS can reclassify workers who follow your schedule, use your tools, and work only for you. Penalties are severe. Do it right with W-2 from day one.'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+}
+function _hiringRow(label,amount,isGross){
+  return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">'+
+    '<span style="color:var(--text2)">'+(isGross?'<strong>':'')+label+(isGross?'</strong>':'')+'</span>'+
+    '<span style="font-weight:'+(isGross?'800':'600')+';color:'+(isGross?'var(--text)':'var(--text2)')+'">'+fmt(amount)+'/yr</span>'+
+  '</div>';
+}
+
 function supaShowLogin(){
   if(!supaEnabled())return;
   if(document.getElementById('supa-login-overlay'))return;
@@ -13961,6 +14391,7 @@ function supaShowLogin(){
     '<div class="f" style="margin-bottom:20px"><label>Password</label>'+
     '<input type="password" id="supa-pass" placeholder="Password" style="font-size:16px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"></div>'+
     '<button onclick="supaSignIn()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Sign in</button>'+
+    '<div style="text-align:right;margin-bottom:10px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:13px;cursor:pointer;font-family:inherit;padding:0;text-decoration:underline">Forgot password?</button></div>'+
     '<button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:16px">Create account</button>'+
     '<button onclick="document.getElementById(\'supa-login-overlay\').remove();document.getElementById(\'supa-boot-overlay\')?.remove();renderDash();buildScopeGrid();" style="width:100%;padding:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Use offline (data stays on this device only)</button>'+
     '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:10px;text-align:center;min-height:16px"></div>'+
@@ -13991,6 +14422,15 @@ async function supaSignUp(){
   else{if(err)err.textContent='Check your email to confirm, then sign in.';}
 }
 
+async function supaForgotPassword(){
+  const email=document.getElementById('supa-email')?.value?.trim();
+  const err=document.getElementById('supa-login-err');
+  if(!email){if(err){err.style.color='#A32D2D';err.textContent='Enter your email address above first.';}return;}
+  if(err){err.style.color='var(--text3)';err.textContent='Sending reset link...';}
+  const{error}=await _supa.auth.resetPasswordForEmail(email,{redirectTo:window.location.href});
+  if(error){if(err){err.style.color='#A32D2D';err.textContent=error.message;}}
+  else{if(err){err.style.color='#1a7340';err.textContent='Reset link sent — check your email.';}}
+}
 async function supaSignOut(){if(_supa)await _supa.auth.signOut();}
 
 function supaSaveDebounced(){
@@ -14061,10 +14501,12 @@ async function checkNewSignatures(){
       });
       if(changed){
         saveAll();
-        // Store alerts to show as schedule prompt on next renderDash
+        // Store alerts to show as schedule prompt
         const existing=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
         localStorage.setItem('zp3_schedule_alerts',JSON.stringify([...existing,...alerts]));
         renderDash();
+        // Call directly — don't rely on renderDash chain which may be guarded
+        setTimeout(showScheduleAlerts,400);
       }
       localStorage.setItem('zp3_last_sig_check',new Date().toISOString());
     }
@@ -14080,13 +14522,77 @@ function showScheduleAlerts(){
   const payLine=a.isPaid?' and paid their deposit':'';
   zConfirm(
     (a.isPaid?'💰':'🎉')+' '+a.name+' signed their painting proposal'+payLine+'.\n\nGet them on the schedule now?',
-    ()=>scheduleFromAlert(a.clientId,a.bidId),
+    ()=>showScheduleSuggestion(a.clientId,a.bidId,a.name),
     {title:'New signature!',yes:'Schedule now',no:'Later',danger:false}
   );
 }
 function scheduleFromAlert(clientId,bidId){
-  if(clientId)openClientDetail(clientId);
-  else goPg('pg-schedule');
+  showScheduleSuggestion(clientId,bidId);
+}
+function showScheduleSuggestion(clientId,bidId,clientNameFallback){
+  const bid=bidId?bids.find(b=>b.id===bidId):null;
+  const c=clientId?getClientById(clientId):null;
+  const cname=c?.name||bid?.client_name||clientNameFallback||'Client';
+  const firstName=cname.split(/[\s,]+/)[0];
+  const phone=(c?.phone||bid?.phone||'').replace(/\D/g,'');
+  const days=bid?.days||2;
+  const allowWknd=!!(bid?.allowWeekend);
+  const bname=S.bname||"ZJ's Painting & Special Coatings";
+
+  const startKey=getNextAvailForBid(bid);
+  const endKey=_jobEndDate(startKey,days,allowWknd);
+  const fmtD=k=>parseD(k).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+  const startLabel=fmtD(startKey);
+  const endLabel=startKey===endKey?'':' – '+fmtD(endKey);
+  const rangeLabel=startLabel+endLabel+(days>1?' ('+days+' days)':'');
+
+  const smsMsg='Hey '+firstName+'! It\'s '+bname+'. Great news — you\'re all set. 🎨\n\nOur next available start date is '+startLabel+'. Does that work for you?\n\nJust reply YES and we\'ll lock you in!';
+  const smsHref='sms:'+(phone||'')+'&body='+encodeURIComponent(smsMsg);
+  const callHref=phone?'tel:'+phone:'';
+
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='sched-suggest-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:18px;font-weight:800;margin-bottom:2px">Schedule '+cname+'</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">'+(bid?fmt(bid.amount)+' · '+days+' day'+(days!==1?'s':''):'')+' painting job</div>'+
+    '<div style="background:var(--blue-lt);border:1.5px solid var(--blue);border-radius:var(--r);padding:14px;margin-bottom:14px;text-align:center">'+
+      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--blue);margin-bottom:4px">Next available</div>'+
+      '<div style="font-size:22px;font-weight:800;color:var(--blue-dk)">'+startLabel+'</div>'+
+      (endLabel?'<div style="font-size:12px;color:var(--blue);margin-top:2px">Through '+fmtD(endKey)+'</div>':'')+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:14px">Confirm with client, then tap "Lock it in"</div>'+
+    '<div style="display:grid;gap:8px;margin-bottom:8px">'+
+      (phone?'<a href="'+smsHref+'" style="display:block;padding:13px;border-radius:var(--r);border:none;background:#27AE60;color:#fff;font-size:15px;font-weight:700;text-align:center;text-decoration:none">📱 Text '+firstName+' to confirm</a>':'')+
+      (callHref?'<a href="'+callHref+'" style="display:block;padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;text-align:center;text-decoration:none">📞 Call '+firstName+'</a>':'')+
+    '</div>'+
+    '<button id="sched-lock-btn" onclick="quickScheduleJob('+bidId+',\''+startKey+'\','+clientId+')" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">✓ Lock it in — '+startLabel+'</button>'+
+    '<button onclick="document.getElementById(\'sched-suggest-overlay\').remove();'+(bidId?'schedFromBid('+bidId+')':'goPg(\'pg-schedule\')')+'" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-bottom:6px">Pick a different date</button>'+
+    '<button onclick="document.getElementById(\'sched-suggest-overlay\').remove()" style="width:100%;padding:8px;border:none;background:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit">Later</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function quickScheduleJob(bidId,startKey,clientId){
+  const bid=bidId?bids.find(b=>b.id===bidId):null;
+  if(!bid){zAlert('Bid not found.');return;}
+  // Guard: already scheduled?
+  if(jobs.some(j=>j.bid_id===bidId&&j.eventType==='job'&&j.status!=='canceled')){
+    zAlert('This job is already on the calendar.',{title:'Already scheduled'});
+    document.getElementById('sched-suggest-overlay')?.remove();return;
+  }
+  const days=bid.days||2;
+  const name=(bid.client_name||bid.name||'Job')+(bid.type?' — '+bid.type:'');
+  jobs.push({
+    id:Date.now(),bid_id:bidId,client_id:clientId||bid.client_id,
+    name,addr:bid.addr||'',start:startKey,days,buffer:1,
+    value:bid.amount||0,color:'#185FA5',eventType:'job',
+    time:'',hours:null,notes:bid.notes||'',status:'upcoming'
+  });
+  saveAll();renderDash();renderJobsPage&&renderJobsPage();
+  document.getElementById('sched-suggest-overlay')?.remove();
+  showToast(name+' scheduled for '+parseD(startKey).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}),'📅');
+  // Offer to go to calendar
+  setTimeout(()=>zConfirm('Job locked in for '+parseD(startKey).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+'.\n\nView on calendar?',
+    ()=>goPg('pg-cal'),{title:'✓ Scheduled!',yes:'View calendar',no:'Stay here',danger:false}),400);
 }
 function discardInProgressBid(bidId){
   if(!confirm('Discard this estimate?'))return;
@@ -14181,7 +14687,7 @@ function supaSetStatus(s){
   }
 }
 
-loadAll();applySettings();
+loadAll();applySettings();registerDevice();
 if(supaEnabled()){
   // Show loading overlay — don't render local data, wait for cloud
   (function showLoadingScreen(){
