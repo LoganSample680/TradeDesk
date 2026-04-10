@@ -12500,11 +12500,13 @@ function renderJobsPage(){
   if(!filtered.length){el.innerHTML='<div class="empty">No '+(jobFilter==='all'?'active jobs':jobFilter)+' right now.<br><br><button class="btn btn-p" onclick="goPg(\'pg-schedule\')">Schedule a job</button></div>';return;}
   el.innerHTML=filtered.map(c=>{
     const st=getClientStage(c.id);
-    const wonBid=getClientBids(c.id).filter(b=>b.status==='Closed Won').sort((a,b)=>(b.bid_date||'').localeCompare(a.bid_date||''))[0];
+    const wonBids_c=getClientBids(c.id).filter(b=>b.status==='Closed Won').sort((a,b)=>(b.bid_date||'').localeCompare(a.bid_date||''));
+    const wonBid=wonBids_c[0];
     const nextJob=getClientJobs(c.id).filter(j=>j.eventType!=='estimate'&&j.status!=='canceled'&&j.start>=tk).sort((a,b)=>a.start.localeCompare(b.start))[0];
-    const paid=wonBid?getBidPaid(wonBid.id):0;
-    const balance=wonBid?getBidBalance(wonBid):0;
-    const hasSurfaces=wonBid?.surfaces?.length>0;
+    const paid=wonBids_c.reduce((s,b)=>s+getBidPaid(b.id),0);
+    const balance=wonBids_c.reduce((s,b)=>s+getBidBalance(b),0);
+    const hasSurfaces=wonBids_c.some(b=>b.surfaces?.length>0);
+    const totalContract=wonBids_c.reduce((s,b)=>s+b.amount,0);
     // Interior vs exterior detection
     const isExt=wonBid&&(wonBid.type==='Exterior painting'||(wonBid.surfaces||[]).some(s=>s.type&&(s.type.startsWith('ext')||s.type==='deck')));
     const typeColor=isExt?'#C47840':'#185FA5'; // orange=exterior, blue=interior
@@ -12539,7 +12541,8 @@ function renderJobsPage(){
         '</div>'+
         '<div style="text-align:right;flex-shrink:0">'+
           '<div style="font-size:11px;font-weight:700;color:'+st.color+'">'+st.label+'</div>'+
-          (wonBid?'<div style="font-size:13px;font-weight:800;color:var(--text);margin-top:2px">'+fmt(wonBid.amount)+'</div>':'')+
+          (wonBids_c.length?'<div style="font-size:13px;font-weight:800;color:var(--text);margin-top:2px">'+fmt(totalContract)+'</div>':'')+
+          (wonBids_c.length>1?'<div style="font-size:10px;color:var(--text3)">'+wonBids_c.length+' bids</div>':'')+
         '</div>'+
       '</div>'+
     '</div>';
@@ -12553,10 +12556,11 @@ function openJobSheet(clientId){
   const bid=wonBids[0];
   const allJobs=getClientJobs(clientId).filter(j=>j.eventType!=='estimate'&&j.status!=='canceled');
   const nextJob=allJobs.filter(j=>j.start>=tk).sort((a,b)=>a.start.localeCompare(b.start))[0];
-  const paid=bid?getBidPaid(bid.id):0;
-  const balance=bid?getBidBalance(bid):0;
-  const total=bid?bid.amount:0;
-  const depositDue=bid?Math.round(total*.25*100)/100:0;
+  // Aggregate payment totals across all won bids (for multi-property clients)
+  const paid=wonBids.reduce((s,b)=>s+getBidPaid(b.id),0);
+  const balance=wonBids.reduce((s,b)=>s+getBidBalance(b),0);
+  const total=wonBids.reduce((s,b)=>s+b.amount,0);
+  const depositDue=bid?Math.round(bid.amount*.25*100)/100:0;
   const st=getClientStage(clientId);
 
   const ov=document.createElement('div');ov.className='zmodal-overlay';
@@ -12660,15 +12664,14 @@ function openJobSheet(clientId){
       '</div>';
   }
 
-  // ── Materials / supply list section ─────────────────────────
-  let supplyHtml='';
-  if(bid&&bid.surfaces&&bid.surfaces.length){
-    // Build paint summary inline (no modal needed for quick view)
+  // ── Materials / supply list + scope — one section per won bid ─
+  function _buildBidMaterialsHtml(b,showBidLabel){
+    if(!b||!b.surfaces||!b.surfaces.length)return'';
     const allSwProds=Object.values(SW_PRODUCTS).flat();
-    const _bidScope=bid.roomScopeMap||{};
+    const _bidScope=b.roomScopeMap||{};
     const _bidCoats=Object.values(_bidScope).some(r=>r.twocoat?.active)?2:1;
     const orderMap={};
-    bid.surfaces.forEach(s=>{
+    b.surfaces.forEach(s=>{
       if(!s.qty)return;
       const t=SURF_TYPES.find(x=>x.v===s.type);if(!t||t.unit!=='sq ft')return;
       const spec=(s.room||'').indexOf(' — ')>-1?(s.room||'').split(' — ').slice(1).join(' — '):'';
@@ -12686,46 +12689,41 @@ function openJobSheet(clientId){
       const prod=parts[0]||'Paint';
       const colorFinish=parts.slice(1).join(' · ')||od.spec;
       const swMatch=od.spec.match(/SW \d+/i);
-      const swHex=swMatch&&_swColors?(_swColors.find(c=>c.sw.toLowerCase()===swMatch[0].toLowerCase())?.hex||''):'';
+      const swHex=swMatch&&_swColors?(_swColors.find(cc=>cc.sw.toLowerCase()===swMatch[0].toLowerCase())?.hex||''):'';
       const dot=swHex?'<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+swHex+';border:1px solid rgba(0,0,0,.15);margin-right:5px;vertical-align:middle;flex-shrink:0"></span>':'';
       return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border2)">'+
-        '<div style="min-width:0;flex:1">'+
-          '<div style="font-size:12px;font-weight:700;color:var(--text)">'+prod+'</div>'+
-          '<div style="font-size:11px;color:var(--text3)">'+dot+colorFinish+'</div>'+
-        '</div>'+
-        '<div style="font-size:14px;font-weight:800;color:var(--blue-dk);flex-shrink:0;margin-left:10px">'+cans+' gal</div>'+
-      '</div>';
+        '<div style="min-width:0;flex:1"><div style="font-size:12px;font-weight:700;color:var(--text)">'+prod+'</div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+dot+colorFinish+'</div></div>'+
+        '<div style="font-size:14px;font-weight:800;color:var(--blue-dk);flex-shrink:0;margin-left:10px">'+cans+' gal</div></div>';
     }).join('');
-
-    supplyHtml=
-      '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'+
-          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">📦 Materials</div>'+
-          '<button onclick="this.closest(\'.zmodal-overlay\').remove();showSupplyList('+bid.id+')" style="padding:5px 12px;border-radius:20px;border:none;background:#FFF0E8;color:#854F0B;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Full supply list →</button>'+
-        '</div>'+
-        (paintRows||'<div style="font-size:12px;color:var(--text3)">No paint selected yet.</div>')+
-      '</div>';
+    const bidLabel=showBidLabel?(b.addr||b.name||b.type||'Bid '+b.bid_date||''):'';
+    return '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:'+(bidLabel?'4px':'10px')+'">'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">📦 Materials</div>'+
+        '<button onclick="this.closest(\'.zmodal-overlay\').remove();showSupplyList('+b.id+')" style="padding:5px 12px;border-radius:20px;border:none;background:#FFF0E8;color:#854F0B;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Full supply list →</button>'+
+      '</div>'+
+      (bidLabel?'<div style="font-size:11px;color:var(--text3);margin-bottom:8px">📍 '+escHtml(bidLabel)+'</div>':'')+
+      (paintRows||'<div style="font-size:12px;color:var(--text3)">No paint selected yet.</div>')+
+    '</div>';
   }
-
-  // ── Scope summary ────────────────────────────────────────────
-  let scopeHtml='';
-  if(bid&&bid.roomScopeMap&&Object.keys(bid.roomScopeMap).length){
+  function _buildBidScopeHtml(b,showBidLabel){
+    if(!b||!b.roomScopeMap||!Object.keys(b.roomScopeMap).length)return'';
     const allScope=[];
-    Object.entries(bid.roomScopeMap).forEach(([room,sc])=>{
-      SCOPE_ITEMS.filter(s=>sc[s.id]?.active).forEach(s=>{
-        if(!allScope.find(x=>x.id===s.id))allScope.push(s);
-      });
+    Object.entries(b.roomScopeMap).forEach(([room,sc])=>{
+      SCOPE_ITEMS.filter(s=>sc[s.id]?.active).forEach(s=>{if(!allScope.find(x=>x.id===s.id))allScope.push(s);});
     });
-    if(allScope.length){
-      scopeHtml=
-        '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
-          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">🔧 Scope of work</div>'+
-          '<div style="display:flex;flex-wrap:wrap;gap:5px">'+
-          allScope.map(s=>'<span style="font-size:11px;background:var(--bg2);border:1px solid var(--border2);border-radius:20px;padding:3px 9px;color:var(--text2)">'+s.icon+' '+s.label+'</span>').join('')+
-          '</div>'+
-        '</div>';
-    }
+    if(!allScope.length)return'';
+    const bidLabel=showBidLabel?(b.addr||b.name||b.type||''):'';
+    return '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:'+(bidLabel?'4px':'8px')+'">🔧 Scope of work</div>'+
+      (bidLabel?'<div style="font-size:11px;color:var(--text3);margin-bottom:8px">📍 '+escHtml(bidLabel)+'</div>':'')+
+      '<div style="display:flex;flex-wrap:wrap;gap:5px">'+
+        allScope.map(s=>'<span style="font-size:11px;background:var(--bg2);border:1px solid var(--border2);border-radius:20px;padding:3px 9px;color:var(--text2)">'+s.icon+' '+s.label+'</span>').join('')+
+      '</div></div>';
   }
+  const _multiWon=wonBids.length>1;
+  let supplyHtml=wonBids.map(b=>_buildBidMaterialsHtml(b,_multiWon)).join('');
+  let scopeHtml=wonBids.map(b=>_buildBidScopeHtml(b,_multiWon)).join('');
 
   // ── Before / After photos ────────────────────────────────────
   const jobForPhotos=allJobs.sort((a,b)=>b.start.localeCompare(a.start))[0];
