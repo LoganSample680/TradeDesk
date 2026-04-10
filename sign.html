@@ -187,10 +187,16 @@ async function init(){
       if(optAch)optAch.style.display='none';
       selPay('cash');
     }
-    if(_prop.status==='signed'||_prop.status==='paid'){
+    // Check proposal JSON status AND signed_proposals table (table is authoritative — storage can be cached)
+    let alreadySigned=_prop.status==='signed'||_prop.status==='paid';
+    if(!alreadySigned){
+      const{data:sigRow}=await _supa.from('signed_proposals').select('signed_at').eq('bid_id',String(_prop.id)).maybeSingle();
+      if(sigRow)alreadySigned=true;
+    }
+    if(alreadySigned){
       document.getElementById('done-icon').textContent='✅';
       document.getElementById('done-title').textContent='Already signed';
-      document.getElementById('done-msg').textContent='This proposal was already signed.';
+      document.getElementById('done-msg').textContent='This proposal was already signed. The contractor will be in touch to confirm your start date.';
       show('pg-done');return;
     }
     document.getElementById('top-biz').textContent=_prop.businessName||'';

@@ -965,7 +965,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
           <div>
             <label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Room name <span style="color:#A32D2D">*</span></label>
             <input id="surf-room-name" placeholder="Living room, Master bedroom..."
-              style="font-size:16px;font-weight:700;padding:10px 12px;width:100%;border:2px solid #A32D2D;background:var(--red-lt);border-radius:var(--r);outline:none;box-sizing:border-box;color:var(--text)"
+              style="font-size:16px;font-weight:700;padding:10px 12px;width:100%;border:1.5px solid var(--border2);background:var(--bg2);border-radius:var(--r);outline:none;box-sizing:border-box;color:var(--text)"
               oninput="onSurfRoomName(this)">
           </div>
           <div>
@@ -2174,7 +2174,7 @@ function getClientTier(c){
 function getTierColor(t){return t==='A'?'var(--green-mid)':t==='B'?'var(--blue)':'var(--text3)';} 
 function getClientMileage(cid){return mileage.filter(m=>m.client_id===cid);}
 function getClientExpenses(cid){return expenses.filter(e=>e.client_id===cid);}
-function getClientBids(cid){return bids.filter(b=>b.client_id===cid&&!b.draft);}
+function getClientBids(cid){return bids.filter(b=>b.client_id===cid&&(!b.draft||b.status==='Closed Won'));}
 function getClientJobs(cid){return jobs.filter(j=>j.client_id===cid);}
 function getClientIncome(cid){return income.filter(i=>i.client_id===cid);}
 function getTimeOffDays(){
@@ -10864,7 +10864,7 @@ async function refreshAvail(){
     if(isPast)return'<div class="av-d av-past">'+dayNum+'</div>';
     // Weekends grayed when not allowed — never blue, never selectable
     if(isWeekend&&!allowWknd)return'<div class="av-d av-past">'+dayNum+'</div>';
-    if(timeOffDays.has(key))return'<div class="av-d" style="background:#FDE68A;color:#92400E;font-size:10px;font-weight:700;cursor:not-allowed;text-align:center;padding:2px;border-radius:6px" title="Time off">'+dayNum+'<br>🏖</div>';
+    if(timeOffDays.has(key))return'<div class="av-d" style="background:#FDE68A;color:#92400E;font-weight:700;cursor:not-allowed" title="Time off">'+dayNum+'<br><span style="font-size:11px">🏖</span></div>';
     if(schedType==='estimate'){
       if(isSel)return'<div class="av-d av-sel" onclick="pickDay(\''+key+'\')">'+dayNum+(isStart?'<br><span style="font-size:9px">start</span>':'')+wxHtml+'</div>';
       return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')">'+dayNum+wxHtml+'</div>';
@@ -14313,9 +14313,12 @@ function renderHiringCalc(){
       '<div style="margin-bottom:14px">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
           '<label style="font-size:12px;font-weight:700;color:var(--text2)">Target wage</label>'+
-          '<span style="font-size:16px;font-weight:800;color:var(--blue)">$'+targetHr+'/hr</span>'+
+          '<span id="hiring-hr-disp" style="font-size:16px;font-weight:800;color:var(--blue)">$'+targetHr+'/hr</span>'+
         '</div>'+
-        '<input type="range" min="15" max="35" step="1" value="'+targetHr+'" oninput="document.getElementById(\'hiring-calc-root\').dataset.hr=this.value;renderHiringCalc()" style="width:100%;accent-color:var(--blue)">'+
+        '<input type="range" min="15" max="35" step="1" value="'+targetHr+'" id="hiring-hr-slider"'+
+        ' oninput="document.getElementById(\'hiring-hr-disp\').textContent=\'$\'+this.value+\'/hr\'"'+
+        ' onchange="document.getElementById(\'hiring-calc-root\').dataset.hr=this.value;renderHiringCalc()"'+
+        ' style="width:100%;accent-color:var(--blue)">'+
         '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-top:2px"><span>$15/hr</span><span>$35/hr</span></div>'+
       '</div>'+
 
@@ -14661,8 +14664,9 @@ async function supaLoadFromCloud(){
     renderClientList&&renderClientList();
     renderJobsPage&&renderJobsPage();
     renderMoneyPage&&renderMoneyPage();
-    // Check for new signatures + prompt location
+    // Check for new signatures on load + poll every 90s while app is open
     setTimeout(()=>checkNewSignatures(),2000);
+    setInterval(()=>checkNewSignatures(),90000);
     setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
   }catch(e){
     console.warn('Cloud load failed:',e);
