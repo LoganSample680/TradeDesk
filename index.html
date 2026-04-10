@@ -1420,13 +1420,16 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   </div>
 </div>
 <div class="pg" id="pg-team">
-  <div class="tbar"><div class="tbar-title">Team & Fleet</div><button class="btn btn-sm btn-p" onclick="openAddEmployeeModal()">+ Add member</button></div>
+  <div class="tbar"><div class="tbar-title">Fleet & Team</div><button class="btn btn-sm btn-p" onclick="openAddEmployeeModal()">+ Add member</button></div>
   <div class="card">
     <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Employees</div>
     <div id="team-page-list"></div>
   </div>
   <div class="card" style="margin-top:12px">
-    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Registered devices</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Devices</div>
+      <button onclick="registerDevice(true);renderTeam()" class="btn btn-sm" style="font-size:10px;padding:3px 8px">📍 Update my location</button>
+    </div>
     <div id="team-page-devices"></div>
   </div>
 </div>
@@ -1847,7 +1850,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     <div class="bx"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><span>Taxes</span>
   </button>
   <button class="nb" id="nb-team" onclick="goPg('pg-team')">
-    <div class="bx"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></div><span>Team</span>
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></div><span>Fleet</span>
   </button>
   <button class="nb" id="nb-tracker" onclick="goPg('pg-tracker')">
     <div class="bx"><svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div><span>Books</span>
@@ -1900,7 +1903,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
       <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><circle cx="8" cy="16" r="1" fill="currentColor"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg>Calendar
     </button>
     <button class="mmi" id="mmi-team" onclick="mobileNavTo('pg-team')">
-      <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Team &amp; Fleet
+      <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Fleet &amp; Team
     </button>
     <button class="mmi" id="mmi-tracker" onclick="mobileNavTo('pg-tracker')">
       <svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>Books &amp; P&amp;L
@@ -14157,7 +14160,7 @@ function _deviceLabel(){
   if(/Windows/.test(ua))return'Windows PC';
   return'Device';
 }
-function registerDevice(){
+function registerDevice(updateLocation){
   const id=_initDeviceId();
   const label=_deviceLabel();
   const now=new Date().toISOString();
@@ -14166,6 +14169,23 @@ function registerDevice(){
   if(idx>-1){S.devices[idx].lastSeen=now;S.devices[idx].label=label;}
   else S.devices.push({id,label,lastSeen:now,addedAt:now});
   saveSettings();
+  // Capture GPS if explicitly requested or first time registering
+  if(updateLocation||idx===-1){
+    if(navigator.geolocation){
+      navigator.geolocation.getCurrentPosition(pos=>{
+        const devIdx=S.devices.findIndex(d=>d.id===id);
+        if(devIdx>-1){
+          S.devices[devIdx].lat=pos.coords.latitude;
+          S.devices[devIdx].lon=pos.coords.longitude;
+          S.devices[devIdx].locAt=now;
+          saveSettings();
+          const tpl=document.getElementById('team-page-devices');
+          const tsl=document.getElementById('device-list');
+          if(tpl||tsl)renderTeam();
+        }
+      },()=>{},{enableHighAccuracy:false,timeout:5000,maximumAge:300000});
+    }
+  }
 }
 function renderTeam(){
   const el=document.getElementById('team-list');
@@ -14199,14 +14219,25 @@ function renderTeam(){
     const isMe=d.id===myId;
     const ago=d.lastSeen?_timeAgo(d.lastSeen):'never';
     const isActive=d.lastSeen&&(Date.now()-new Date(d.lastSeen).getTime())<3600000;
-    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px">'+
-      '<div style="display:flex;align-items:center;gap:8px">'+
-        '<div style="font-size:20px">'+(d.label==='iPad'||d.label==='iPhone'?'📱':'💻')+'</div>'+
-        '<div><div style="font-size:12px;font-weight:700">'+d.label+(isMe?' <span style="font-size:9px;background:var(--blue);color:#fff;padding:1px 6px;border-radius:8px">This device</span>':'')+'</div>'+
-          '<div style="font-size:10px;color:'+(isActive?'var(--green-mid)':'var(--text3)')+'">'+
-            (isActive?'🟢 Active · ':'⚪ Last seen ')+ago+'</div></div>'+
+    const hasLoc=d.lat&&d.lon;
+    const mapUrl=hasLoc?'https://www.google.com/maps?q='+d.lat+','+d.lon:'';
+    const locAgo=hasLoc&&d.locAt?_timeAgo(d.locAt):'';
+    return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
+        '<div style="display:flex;align-items:center;gap:10px">'+
+          '<div style="font-size:22px">'+(d.label==='iPad'||d.label==='iPhone'?'📱':'💻')+'</div>'+
+          '<div>'+
+            '<div style="font-size:13px;font-weight:700">'+d.label+(isMe?' <span style="font-size:9px;background:var(--blue);color:#fff;padding:1px 6px;border-radius:8px">This device</span>':'')+'</div>'+
+            '<div style="font-size:10px;color:'+(isActive?'var(--green-mid)':'var(--text3)')+'">'+
+              (isActive?'🟢 Active':'⚪ Last seen '+ago)+'</div>'+
+            (hasLoc?'<div style="font-size:10px;color:var(--text3);margin-top:1px">📍 Location updated '+locAgo+'</div>':'')+
+          '</div>'+
+        '</div>'+
+        '<div style="display:flex;gap:6px;align-items:center">'+
+          (hasLoc?'<a href="'+mapUrl+'" target="_blank" style="font-size:11px;font-weight:700;background:var(--blue-lt);color:var(--blue);border:1px solid var(--blue);border-radius:var(--r);padding:5px 10px;text-decoration:none;white-space:nowrap">🗺 View map</a>':'')+
+          (!isMe?'<button onclick="removeDevice(\''+d.id+'\')" style="font-size:10px;color:#A32D2D;border:1px solid #A32D2D;border-radius:var(--r);padding:5px 8px;background:none;cursor:pointer;font-family:inherit">Remove</button>':'')+
+        '</div>'+
       '</div>'+
-      (!isMe?'<button onclick="removeDevice(\''+d.id+'\')" style="font-size:10px;color:#A32D2D;border:1px solid #A32D2D;border-radius:var(--r);padding:3px 8px;background:none;cursor:pointer;font-family:inherit">Remove</button>':'')+
     '</div>';
   }).join('');
   const del=document.getElementById('device-list');if(del)del.innerHTML=devHtml;
@@ -14512,18 +14543,19 @@ async function supaSaveToCloud(){
 async function checkNewSignatures(){
   if(!_supa||!_supaUser)return;
   try{
-    const since=localStorage.getItem('zp3_last_sig_check')||new Date(Date.now()-86400000*7).toISOString();
-    const{data}=await _supa.from('signed_proposals')
+    // Query by pending bid IDs directly — immune to timestamp drift/timezone issues
+    const pendingBids=bids.filter(b=>b.signingToken&&b.status!=='Closed Won');
+    if(!pendingBids.length)return;
+    const bidIds=pendingBids.map(b=>String(b.id));
+    const{data,error}=await _supa.from('signed_proposals')
       .select('bid_id,client_name,payment_method,payment_status,signed_at,client_signed_name')
       .eq('contractor_user_id',_supaUser.id)
-      .gt('signed_at',since)
-      .order('signed_at',{ascending:false})
-      .limit(20);
+      .in('bid_id',bidIds);
+    if(error)throw error;
     if(data&&data.length){
       let changed=false;
       const alerts=[];
       data.forEach(s=>{
-        // Find matching bid and mark Closed Won
         const bid=bids.find(b=>String(b.id)===String(s.bid_id));
         if(bid&&bid.status!=='Closed Won'){
           bid.status='Closed Won';
@@ -14537,14 +14569,11 @@ async function checkNewSignatures(){
       });
       if(changed){
         saveAll();
-        // Store alerts to show as schedule prompt
         const existing=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
         localStorage.setItem('zp3_schedule_alerts',JSON.stringify([...existing,...alerts]));
         renderDash();
-        // Call directly — don't rely on renderDash chain which may be guarded
         setTimeout(showScheduleAlerts,400);
       }
-      localStorage.setItem('zp3_last_sig_check',new Date().toISOString());
     }
   }catch(e){console.warn('checkNewSignatures:',e);}
 }
@@ -14728,23 +14757,47 @@ loadAll();applySettings();registerDevice();
 
 // Pull-to-refresh: pull down from top → re-sync from cloud
 (function(){
-  let _ptrStart=0,_ptrEl=null;
+  let _ptrY=0,_ptrActive=false,_ptrBar=null;
+  function _ptrCreate(){
+    if(_ptrBar)return;
+    _ptrBar=document.createElement('div');
+    _ptrBar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;font-weight:700;padding:0 16px;height:0;overflow:hidden;transition:height .2s ease';
+    _ptrBar.innerHTML='<svg id="_ptr_spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="2.5" style="flex-shrink:0"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg><span id="_ptr_lbl">Pull to refresh</span>';
+    document.body.appendChild(_ptrBar);
+    const spin=document.getElementById('_ptr_spin');
+    let deg=0;setInterval(()=>{if(_ptrActive){deg+=8;spin.style.transform='rotate('+deg+'deg)';}},30);
+  }
   document.addEventListener('touchstart',e=>{
-    if(window.scrollY===0&&e.touches.length===1)_ptrStart=e.touches[0].clientY;
+    if(window.scrollY===0&&e.touches.length===1){_ptrY=e.touches[0].clientY;_ptrCreate();}
   },{passive:true});
   document.addEventListener('touchmove',e=>{
-    if(!_ptrStart)return;
-    const dy=e.touches[0].clientY-_ptrStart;
-    if(dy>60&&!_ptrEl){
-      _ptrEl=document.createElement('div');
-      _ptrEl.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--blue);color:#fff;text-align:center;font-size:13px;font-weight:700;padding:10px;transition:none';
-      _ptrEl.textContent='⬇ Release to refresh';
-      document.body.appendChild(_ptrEl);
+    if(!_ptrY)return;
+    const dy=e.touches[0].clientY-_ptrY;
+    if(dy>0&&_ptrBar){
+      const h=Math.min(dy*.4,44);
+      _ptrBar.style.height=h+'px';
+      const lbl=document.getElementById('_ptr_lbl');
+      if(lbl)lbl.textContent=dy>80?'↑ Release to refresh':'↓ Pull to refresh';
+      _ptrActive=dy>80;
     }
   },{passive:true});
-  document.addEventListener('touchend',()=>{
-    if(_ptrEl){_ptrEl.remove();_ptrEl=null;if(supaEnabled()&&_supa&&_supaUser){supaInit();}else{renderDash();}}
-    _ptrStart=0;
+  document.addEventListener('touchend',e=>{
+    if(!_ptrY){return;}
+    const dy=(e.changedTouches[0]?.clientY||0)-_ptrY;
+    _ptrY=0;
+    if(_ptrBar){
+      if(dy>80){
+        const lbl=document.getElementById('_ptr_lbl');if(lbl)lbl.textContent='Refreshing…';
+        setTimeout(()=>{
+          _ptrBar&&(_ptrBar.style.height='0');
+          setTimeout(()=>{_ptrBar&&_ptrBar.remove();_ptrBar=null;_ptrActive=false;},250);
+        },600);
+        if(supaEnabled()&&_supa&&_supaUser)supaInit();else renderDash();
+      }else{
+        _ptrBar.style.height='0';
+        setTimeout(()=>{_ptrBar&&_ptrBar.remove();_ptrBar=null;_ptrActive=false;},250);
+      }
+    }
   },{passive:true});
 })();
 
