@@ -4214,7 +4214,11 @@ function rescheduleEstimate(jobId){
   j.cancelReason='Rescheduled';
   j.cancelDate=todayKey();
   saveAll();
-  schedForClient();
+  if(j.eventType!=='estimate'&&j.bid_id){
+    schedFromBid(j.bid_id);
+  }else{
+    schedForClient();
+  }
 }
 
 function renderCDJobs(){
