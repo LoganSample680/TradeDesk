@@ -2575,6 +2575,7 @@ function renderDash(){
   const _rowStyle='display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px';
   const _nameStyle='font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
   const _btnStyle='font-size:11px;background:var(--bg);border-color:var(--border2)';
+  const _btnPStyle='font-size:11px';
   const _xStyle='font-size:11px;color:var(--text3);padding:6px 8px;background:var(--bg);border-color:var(--border2)';
   // ── Section 1: Estimates in progress (not yet sent to client) ──
   const resumeEl=document.getElementById('dash-resume-est');
@@ -2592,7 +2593,7 @@ function renderDash(){
           '<div style="flex:1;min-width:0"><div style="'+_nameStyle+'">'+draft.cname+'</div>'+
           '<div style="font-size:11px;color:var(--text3);margin-top:1px">Unsaved draft</div></div>'+
           '<div style="display:flex;gap:5px;flex-shrink:0">'+
-            '<button onclick="resumeEstimateDraft()" class="btn btn-sm btn-p" style="'+_btnStyle+'">Resume</button>'+
+            '<button onclick="resumeEstimateDraft()" class="btn btn-sm btn-p" style="'+_btnPStyle+'">Resume</button>'+
             '<button onclick="clearEstFullDraft();renderDash()" class="btn btn-sm" style="'+_xStyle+'">✕</button>'+
           '</div></div>';
       }
@@ -2604,7 +2605,7 @@ function renderDash(){
           '<div style="flex:1;min-width:0"><div style="'+_nameStyle+'">'+name+'</div>'+
           '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+amt+' — saved, not sent</div></div>'+
           '<div style="display:flex;gap:5px;flex-shrink:0">'+
-            '<button onclick="openEditBid('+b.id+',1)" class="btn btn-sm btn-p" style="'+_btnStyle+'">Resume</button>'+
+            '<button onclick="openEditBid('+b.id+',1)" class="btn btn-sm btn-p" style="'+_btnPStyle+'">Resume</button>'+
             '<button onclick="discardInProgressBid('+b.id+')" class="btn btn-sm" style="'+_xStyle+'">✕</button>'+
           '</div></div>';
       });
