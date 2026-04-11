@@ -104,7 +104,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 /* ── Mobile: bottom tab bar + full-width layout ── */
 @media(max-width:767px){
   #nav{display:none}
-  #app{padding-left:0;padding-bottom:68px}
+  #app{padding-left:0;padding-bottom:110px}
   #supa-status{left:0;bottom:68px}
   .drive-banner{left:0}
   .pg{padding:14px 16px 20px}
@@ -122,6 +122,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   .fb{padding:8px 14px;font-size:12px;min-height:36px}
   .zmodal-overlay{padding:10px}
 }
+/* ── Quick-Add Strip (above tab bar, mobile only) ── */
+#quick-strip{display:none;position:fixed;bottom:56px;left:0;right:0;z-index:999;background:var(--bg);border-top:1px solid var(--border);padding:7px 10px 6px;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+#quick-strip::-webkit-scrollbar{display:none}
+@media(max-width:767px){#quick-strip{display:flex}}
+.qs-btn{flex-shrink:0;padding:6px 12px;border-radius:20px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;transition:background .12s,color .12s;-webkit-tap-highlight-color:transparent}
+.qs-btn:active{background:var(--blue);color:#fff;border-color:var(--blue)}
 /* ── Bottom Tab Bar ── */
 #mobile-tabbar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:1000;background:var(--nav-bg);border-top:1px solid var(--nav-border);padding-bottom:env(safe-area-inset-bottom,0px)}
 @media(max-width:767px){#mobile-tabbar{display:flex}}
@@ -490,25 +496,16 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   <div class="card"><div class="card-hd">Today on the calendar</div><div id="dash-today"></div></div>
   <div id="dash-close-tip" style="display:none;margin-bottom:10px"></div>
   <div class="card"><div class="card-hd">Lead sources</div><div id="dash-sources"></div></div>
-  <div class="card" id="dash-action-card">
-    <div style="font-size:13px;font-weight:800;margin-bottom:10px">What needs attention</div>
-    <div id="dash-summary-leads" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
-      <div>
-        <div style="font-size:13px;font-weight:700">Leads</div>
-        <div id="dash-leads-sub" style="font-size:11px;color:var(--text3)">Loading...</div>
-      </div>
-      <button class="btn btn-sm btn-p" onclick="goPg('pg-leads')">View →</button>
-    </div>
-    <div id="dash-summary-collect" style="display:flex;justify-content:space-between;align-items:center;padding:10px 0">
-      <div>
-        <div style="font-size:13px;font-weight:700">Collections</div>
-        <div id="dash-collect-sub" style="font-size:11px;color:var(--text3)">Loading...</div>
-      </div>
-      <button class="btn btn-sm btn-r" onclick="goPg('pg-money')">Collect →</button>
-    </div>
-    <div id="dash-followups" style="display:none;border-top:1px solid var(--border);padding-top:10px;margin-top:4px"></div>
-    <div id="dash-fu" style="display:none"></div>
-    <div id="dash-collect" style="display:none"></div>
+  <!-- Hidden containers kept for backward-compat with renderDashFollowups / renderDashCollect -->
+  <div id="dash-leads-sub" style="display:none"></div>
+  <div id="dash-collect-sub" style="display:none"></div>
+  <div id="dash-followups" style="display:none"></div>
+  <div id="dash-fu" style="display:none"></div>
+  <div id="dash-collect" style="display:none"></div>
+  <div id="dash-summary-leads" style="display:none"></div>
+  <div id="dash-summary-collect" style="display:none"></div>
+  <div class="card" id="dash-action-card" style="padding:0">
+    <div id="dash-action-queue"></div>
   </div>
   <div class="card" id="dash-coldleads-card" style="display:none">
     <div class="card-hd">Cold leads <span id="dash-coldleads-count"></span></div>
@@ -548,11 +545,16 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
         <button class="btn-del" id="cf-del" style="display:none" onclick="deleteClient()">Delete client</button>
       </div>
       <div class="fg fg2">
-        <div class="f"><label>Full name</label><input id="cf-name" placeholder="John &amp; Sarah Smith" oninput="checkClientDupe(this.value)">
+        <div class="f"><label>Full name</label><input id="cf-name" placeholder="John &amp; Sarah Smith" oninput="checkClientDupe(this.value);clearFErr('cf-name')">
           <div id="cf-dupe-warn" style="display:none;font-size:11px;color:#A32D2D;margin-top:4px;background:#FEE8E8;border-radius:var(--r);padding:6px 8px"></div>
+          <div id="err-cf-name" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
         </div>
-        <div class="f"><label>Phone</label><input id="cf-phone" type="tel" placeholder="XXX-XXX-XXXX" maxlength="12" oninput="fmtPhone(this)"></div>
-        <div class="f" style="grid-column:1/-1"><label>Property address</label><input id="cf-addr" placeholder="1234 Maple St, Wichita KS 67201"></div>
+        <div class="f"><label>Phone</label><input id="cf-phone" type="tel" placeholder="XXX-XXX-XXXX" maxlength="12" oninput="fmtPhone(this);clearFErr('cf-phone')">
+          <div id="err-cf-phone" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
+        </div>
+        <div class="f" style="grid-column:1/-1"><label>Property address</label><input id="cf-addr" placeholder="1234 Maple St, Wichita KS 67201" oninput="clearFErr('cf-addr')">
+          <div id="err-cf-addr" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
+        </div>
         <div class="f"><label>Property type</label><select id="cf-ptype"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>
         <div class="f"><label>Email</label><input type="email" id="cf-email" placeholder="client@email.com"></div>
         <div class="f">
@@ -587,6 +589,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
             </optgroup>
             <option value="Other">Other</option>
           </select>
+          <div id="err-cf-source" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
         </div>
         <div class="f" id="cf-ref-wrap" style="display:none">
           <label>Referred by (name)</label>
@@ -848,15 +851,15 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   <div class="steps" id="est-steps">
     <div class="step active" id="est-st-1" onclick="goEstStep(1)"><div class="snum">1</div><span class="slbl">Client</span></div>
     <div class="ssep"></div>
-    <div class="step" id="est-st-2" onclick="goEstStep(2)"><div class="snum">2</div><span class="slbl">Rates</span></div>
+    <!-- Step 2 (Rates) is merged into step 3 (Surfaces) — keep dot hidden but in DOM for goEstStep loop -->
+    <div class="step" id="est-st-2" style="display:none"><div class="snum">2</div><span class="slbl">Rates</span></div>
+    <div class="step" id="est-st-3" onclick="goEstStep(3)"><div class="snum">2</div><span class="slbl">Surfaces</span></div>
     <div class="ssep"></div>
-    <div class="step" id="est-st-3" onclick="goEstStep(3)"><div class="snum">3</div><span class="slbl">Surfaces</span></div>
+    <div class="step" id="est-st-4" onclick="goEstStep(4)"><div class="snum">3</div><span class="slbl">Review</span></div>
     <div class="ssep"></div>
-    <div class="step" id="est-st-4" onclick="goEstStep(4)"><div class="snum">4</div><span class="slbl">Review</span></div>
+    <div class="step" id="est-st-5" onclick="goEstStep(5)"><div class="snum">4</div><span class="slbl">Proposal</span></div>
     <div class="ssep"></div>
-    <div class="step" id="est-st-5" onclick="goEstStep(5)"><div class="snum">5</div><span class="slbl">Proposal</span></div>
-    <div class="ssep"></div>
-    <div class="step" id="est-st-6" onclick="goEstStep(6)"><div class="snum">6</div><span class="slbl">Sign</span></div>
+    <div class="step" id="est-st-6" onclick="goEstStep(6)"><div class="snum">5</div><span class="slbl">Sign</span></div>
   </div>
   <div id="est-s1">
     <div class="card"><div class="card-hd">Your business</div>
@@ -879,76 +882,67 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
       <div class="f"><label>Walkthrough notes</label><textarea id="e-cnotes" placeholder="What did you see? What does the client want?"></textarea></div>
     </div>
 
-    <div class="brow"><button class="btn btn-p" id="est-s1-next" onclick="validateAndGoStep2()" style="background:var(--border2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>Next: Rates &#8594;</button></div>
+    <div class="brow"><button class="btn btn-p" id="est-s1-next" onclick="validateAndGoStep2()" style="background:var(--border2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>Next: Surfaces &#8594;</button></div>
   </div>
+  <!-- Step 2 (Rates) is now merged into Step 3. Hidden inputs kept here for DOM availability. -->
   <div id="est-s2" style="display:none">
-    <div class="card">
-      <div class="card-hd">What type of property is this?</div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:14px">One tap sets pricing and paint tier automatically. You can always override later.</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px" id="prop-tier-grid">
-        <button type="button" id="ptier-rental" onclick="selectPropertyTier('rental')"
-          style="padding:14px 10px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s">
-          <div style="font-size:22px;margin-bottom:4px">🏚️</div>
-          <div style="font-size:13px;font-weight:800;color:var(--text)">Rental / Fixer</div>
-          <div style="font-size:10px;color:var(--text3);margin-top:2px;line-height:1.4">Beat up, basic finish<br>ProMar 700</div>
-          <div style="font-size:11px;font-weight:700;color:var(--text3);margin-top:6px">−18%</div>
-        </button>
-        <button type="button" id="ptier-avg" onclick="selectPropertyTier('avg')"
-          style="padding:14px 10px;border-radius:var(--r);border:2px solid var(--blue);background:var(--blue-lt);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s">
-          <div style="font-size:22px;margin-bottom:4px">🏠</div>
-          <div style="font-size:13px;font-weight:800;color:var(--blue-dk)">Average Home</div>
-          <div style="font-size:10px;color:var(--text3);margin-top:2px;line-height:1.4">Standard job<br>ProMar 200</div>
-          <div style="font-size:11px;font-weight:700;color:var(--blue);margin-top:6px">Base price</div>
-        </button>
-        <button type="button" id="ptier-nice" onclick="selectPropertyTier('nice')"
-          style="padding:14px 10px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s">
-          <div style="font-size:22px;margin-bottom:4px">🏡</div>
-          <div style="font-size:13px;font-weight:800;color:var(--text)">Well-Maintained</div>
-          <div style="font-size:10px;color:var(--text3);margin-top:2px;line-height:1.4">Owner takes pride<br>SuperPaint / Cashmere</div>
-          <div style="font-size:11px;font-weight:700;color:var(--green-mid);margin-top:6px">+22%</div>
-        </button>
-        <button type="button" id="ptier-premium" onclick="selectPropertyTier('premium')"
-          style="padding:14px 10px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s">
-          <div style="font-size:22px;margin-bottom:4px">🏛️</div>
-          <div style="font-size:13px;font-weight:800;color:var(--text)">High-End / Premium</div>
-          <div style="font-size:10px;color:var(--text3);margin-top:2px;line-height:1.4">Mansion, demanding client<br>Duration / Emerald</div>
-          <div style="font-size:11px;font-weight:700;color:#856404;margin-top:6px">+50%</div>
-        </button>
-      </div>
-      <div id="prop-tier-hint" style="margin-top:10px;font-size:11px;color:var(--text3);text-align:center;min-height:16px"></div>
-    </div>
-
     <!-- Hidden rate inputs — still used by calcEst, set from settings -->
     <input type="hidden" id="e-r-walls"><input type="hidden" id="e-r-ceil">
     <input type="hidden" id="e-r-trim"><input type="hidden" id="e-r-door">
     <input type="hidden" id="e-r-win"><input type="hidden" id="e-r-ext">
     <input type="hidden" id="e-r-deck"><input type="hidden" id="e-paint-rate">
     <input type="hidden" id="e-cond" value="1.0">
-
-    <!-- Advanced rates — collapsed by default -->
-    <details style="margin-top:12px">
-      <summary style="font-size:11px;color:var(--text3);cursor:pointer;padding:6px 0;list-style:none;display:flex;align-items:center;gap:6px">
-        <span style="font-size:14px">⚙️</span> Advanced: override rates for this job
-      </summary>
-      <div style="margin-top:10px;background:var(--bg2);border-radius:var(--r);padding:12px">
-        <div style="font-size:10px;color:var(--text3);margin-bottom:8px">These pull from Settings. Change here to override for this job only.</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Walls ($/wall sf)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRateAdv('e-r-walls-adv',-0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">−</button><input type="number" id="e-r-walls-adv" step="0.25" style="font-size:14px;padding:5px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="syncAdvRate('e-r-walls-adv','e-r-walls')"><button type="button" onclick="adjRateAdv('e-r-walls-adv',0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">+</button></div></div>
-          <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Ceiling ($/sf)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRateAdv('e-r-ceil-adv',-0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">−</button><input type="number" id="e-r-ceil-adv" step="0.25" style="font-size:14px;padding:5px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="syncAdvRate('e-r-ceil-adv','e-r-ceil')"><button type="button" onclick="adjRateAdv('e-r-ceil-adv',0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">+</button></div></div>
-          <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Trim ($/lin ft)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRateAdv('e-r-trim-adv',-0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">−</button><input type="number" id="e-r-trim-adv" step="0.25" style="font-size:14px;padding:5px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="syncAdvRate('e-r-trim-adv','e-r-trim')"><button type="button" onclick="adjRateAdv('e-r-trim-adv',0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">+</button></div></div>
-          <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Doors ($/door)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRateAdv('e-r-door-adv',-5)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">−</button><input type="number" id="e-r-door-adv" step="5" style="font-size:14px;padding:5px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="syncAdvRate('e-r-door-adv','e-r-door')"><button type="button" onclick="adjRateAdv('e-r-door-adv',5)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">+</button></div></div>
-        </div>
-      </div>
-    </details>
-
-    <div class="brow"><button class="btn" onclick="goEstStep(1)">&#8592; Back</button><button class="btn btn-p" onclick="goEstStep(3)">Next: Surfaces &#8594;</button></div>
   </div>
   <div id="est-s3" style="display:none">
+    <!-- Property tier picker (was step 2, now at top of surfaces step) -->
+    <div class="card" style="margin-bottom:10px">
+      <div class="card-hd">Property type</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px">One tap sets pricing tier. Override anytime.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px" id="prop-tier-grid">
+        <button type="button" id="ptier-rental" onclick="selectPropertyTier('rental')"
+          style="padding:10px 8px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s">
+          <div style="font-size:18px;margin-bottom:2px">🏚️</div>
+          <div style="font-size:12px;font-weight:800;color:var(--text)">Rental / Fixer</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:1px">−18% · ProMar 700</div>
+        </button>
+        <button type="button" id="ptier-avg" onclick="selectPropertyTier('avg')"
+          style="padding:10px 8px;border-radius:var(--r);border:2px solid var(--blue);background:var(--blue-lt);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s">
+          <div style="font-size:18px;margin-bottom:2px">🏠</div>
+          <div style="font-size:12px;font-weight:800;color:var(--blue-dk)">Average Home</div>
+          <div style="font-size:10px;color:var(--blue);margin-top:1px">Base · ProMar 200</div>
+        </button>
+        <button type="button" id="ptier-nice" onclick="selectPropertyTier('nice')"
+          style="padding:10px 8px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s">
+          <div style="font-size:18px;margin-bottom:2px">🏡</div>
+          <div style="font-size:12px;font-weight:800;color:var(--text)">Well-Maintained</div>
+          <div style="font-size:10px;color:var(--green-mid);margin-top:1px">+22% · SuperPaint</div>
+        </button>
+        <button type="button" id="ptier-premium" onclick="selectPropertyTier('premium')"
+          style="padding:10px 8px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s">
+          <div style="font-size:18px;margin-bottom:2px">🏛️</div>
+          <div style="font-size:12px;font-weight:800;color:var(--text)">High-End</div>
+          <div style="font-size:10px;color:#856404;margin-top:1px">+50% · Duration</div>
+        </button>
+      </div>
+      <div id="prop-tier-hint" style="margin-top:8px;font-size:11px;color:var(--text3);text-align:center;min-height:14px"></div>
+      <!-- Advanced rates — collapsed -->
+      <details style="margin-top:10px">
+        <summary style="font-size:11px;color:var(--text3);cursor:pointer;padding:4px 0;list-style:none;display:flex;align-items:center;gap:6px">
+          <span style="font-size:13px">⚙️</span> Override rates for this job
+        </summary>
+        <div style="margin-top:8px;background:var(--bg2);border-radius:var(--r);padding:10px">
+          <div style="font-size:10px;color:var(--text3);margin-bottom:6px">Change here to override for this job only.</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Walls ($/wall sf)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRateAdv('e-r-walls-adv',-0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">−</button><input type="number" id="e-r-walls-adv" step="0.25" style="font-size:14px;padding:5px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="syncAdvRate('e-r-walls-adv','e-r-walls')"><button type="button" onclick="adjRateAdv('e-r-walls-adv',0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">+</button></div></div>
+            <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Ceiling ($/sf)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRateAdv('e-r-ceil-adv',-0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">−</button><input type="number" id="e-r-ceil-adv" step="0.25" style="font-size:14px;padding:5px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="syncAdvRate('e-r-ceil-adv','e-r-ceil')"><button type="button" onclick="adjRateAdv('e-r-ceil-adv',0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">+</button></div></div>
+            <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Trim ($/lin ft)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRateAdv('e-r-trim-adv',-0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">−</button><input type="number" id="e-r-trim-adv" step="0.25" style="font-size:14px;padding:5px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="syncAdvRate('e-r-trim-adv','e-r-trim')"><button type="button" onclick="adjRateAdv('e-r-trim-adv',0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">+</button></div></div>
+            <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Doors ($/door)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRateAdv('e-r-door-adv',-5)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">−</button><input type="number" id="e-r-door-adv" step="5" style="font-size:14px;padding:5px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="syncAdvRate('e-r-door-adv','e-r-door')"><button type="button" onclick="adjRateAdv('e-r-door-adv',5)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">+</button></div></div>
+          </div>
+        </div>
+      </details>
+    </div>
 
-    
     <div id="surf-rooms-logged" style="margin-bottom:8px"></div>
-
-    
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
       <button id="surf-type-int" onclick="setSurfJobType('interior')"
         style="padding:12px;border-radius:var(--rl);border:2px solid var(--blue);background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Interior</button>
@@ -1178,7 +1172,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
 
     
     <div class="brow" style="margin-top:10px">
-      <button class="btn" onclick="goEstStep(2)">&#8592; Back</button>
+      <button class="btn" onclick="goEstStep(1)">&#8592; Back</button>
       <button class="btn btn-p" id="est-s3-next-btn" onclick="goEstStep(4)"
         style="background:var(--border2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>
         Review &#8594;
@@ -1415,6 +1409,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
     </div>
     <div id="sched-preview" style="display:none;background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin:10px 0;font-size:12px"></div>
     <div class="f" style="margin-top:8px"><label>Notes</label><textarea id="s-notes" placeholder="Access info, what to bring, client preferences..."></textarea></div>
+    <div id="sched-err" style="display:none;font-size:12px;color:#A32D2D;background:#FEE8E8;border-radius:var(--r);padding:8px 10px;margin-bottom:8px"></div>
     <div class="brow">
       <button class="btn btn-g" onclick="scheduleJob()">Add to calendar</button>
       <button class="btn" onclick="resetSched()">Clear</button>
@@ -1870,6 +1865,15 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   </div>
   <div id="supa-status" style="position:fixed;bottom:62px;left:0;right:0;text-align:center;font-size:10px;pointer-events:none;z-index:400;padding:2px 0;background:var(--bg)"></div>
 </div><!-- end #nav -->
+<!-- ── Quick-Add Strip (above mobile tab bar) ── -->
+<div id="quick-strip">
+  <button class="qs-btn" onclick="quickAction('expense')">🧾 Expense</button>
+  <button class="qs-btn" onclick="quickAction('estimate')">📋 Estimate</button>
+  <button class="qs-btn" onclick="quickAction('drive')">🚗 Drive</button>
+  <button class="qs-btn" onclick="quickAction('collect')">💰 Collect</button>
+  <button class="qs-btn" onclick="goPg('pg-clients');setTimeout(openNewClient,100)">👤 New client</button>
+  <button class="qs-btn" onclick="goPg('pg-schedule')">📅 Schedule</button>
+</div>
 <!-- ── Mobile bottom tab bar ── -->
 <div id="mobile-tabbar">
   <button class="mtb active" id="mtb-dash" onclick="goPg('pg-dash')">
@@ -2592,7 +2596,7 @@ function _doOpenEstimate(c){
     checkStep1Ready();
     renderEstSurfs();
     goEstStep(1);
-    goEstStep(2);
+    goEstStep(3); // Jump to surfaces (step 2 is merged in)
   },50);
   goPg('pg-est');
 }
@@ -2805,6 +2809,7 @@ function renderDash(){
   renderDashToday();
   renderDashCollect();
   renderDashFollowups();
+  renderDashActionQueue();
   // Update new nav badges
   const _owing=bids.filter(b=>b.status==='Closed Won'&&getBidBalance(b)>0.01);
   const _cl=document.getElementById('qa-collect-label');
@@ -3207,6 +3212,84 @@ function renderDashFollowups(){
       '</div>';
     }).join('')+
     (dueBids.length>3?'<div style="font-size:11px;color:var(--text3);padding-top:6px">+'+( dueBids.length-3)+' more — tap View all</div>':'');
+}
+
+// ── Prioritized action queue for Home screen ─────────────────────────────────
+function renderDashActionQueue(){
+  const el=document.getElementById('dash-action-queue');if(!el)return;
+  const tk=todayKey();
+  const items=[];
+
+  // 1. Follow-ups overdue (highest urgency)
+  const dueBids=bids.filter(b=>b.status==='Pending'&&b.followup&&b.followup<=tk);
+  dueBids.forEach(b=>{
+    const c=getClientById(b.client_id);
+    const name=c?c.name:(b.client_name||'Client');
+    const daysOut=Math.floor((new Date(tk+'T12:00')-new Date((b.followup||tk)+'T12:00'))/86400000);
+    const urgency=daysOut>3?2:1;
+    const smsBody=encodeURIComponent('Hi '+name.split(' ')[0]+', just checking in on the estimate I sent — any questions?');
+    items.push({priority:urgency,icon:'⏰',label:name,sub:(daysOut>0?daysOut+'d overdue':'Due today')+' · '+fmt(b.amount),subColor:daysOut>0?'#A32D2D':'var(--amber)',
+      actions:(c&&c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+smsBody+'" class="btn btn-sm" style="border-color:var(--amber);color:var(--amber)">Text</a>':'')+
+              '<button onclick="openEditBid('+b.id+',5)" class="btn btn-sm">View bid</button>'});
+  });
+
+  // 2. Unpaid balance on completed jobs (collect money)
+  const collectBids=bids.filter(b=>b.status==='Closed Won'&&getBidBalance(b)>0.01&&b.completion_date);
+  collectBids.forEach(b=>{
+    const c=getClientById(b.client_id);
+    const name=c?c.name:(b.client_name||'Client');
+    const bal=getBidBalance(b);
+    items.push({priority:3,icon:'💰',label:name,sub:fmt(bal)+' outstanding',subColor:'#A32D2D',
+      actions:'<button onclick="openPayPanel('+b.id+',\'final\')" class="btn btn-sm btn-g">Collect →</button>'});
+  });
+
+  // 3. Active jobs with no deposit
+  const activeNoDeposit=bids.filter(b=>b.status==='Closed Won'&&getBidBalance(b)===b.amount&&!b.completion_date);
+  activeNoDeposit.forEach(b=>{
+    const c=getClientById(b.client_id);
+    const name=c?c.name:(b.client_name||'Client');
+    items.push({priority:4,icon:'📌',label:name,sub:'No deposit yet · '+fmt(b.amount),subColor:'var(--amber)',
+      actions:'<button onclick="openPayPanel('+b.id+',\'deposit\')" class="btn btn-sm btn-p">Get deposit</button>'});
+  });
+
+  // 4. Sent proposals awaiting signature
+  const sentBids=bids.filter(b=>b.signingToken&&b.status!=='Closed Won');
+  sentBids.forEach(b=>{
+    const c=getClientById(b.client_id);
+    const name=c?c.name:(b.client_name||'Client');
+    const days=b.bid_date?Math.floor((new Date(tk)-new Date(b.bid_date+'T12:00:00'))/86400000):0;
+    const daysStr=days===0?'Sent today':days+'d waiting';
+    items.push({priority:5,icon:'📨',label:name,sub:fmt(b.amount)+' · '+daysStr,subColor:days>=7?'var(--amber)':'var(--text3)',
+      actions:'<button onclick="resendProposalLink('+b.id+')" class="btn btn-sm">Resend</button>'});
+  });
+
+  // 5. New leads (need estimate)
+  const newLeads=clients.filter(c=>{const s=getClientStage(c.id).stage;return s==='new'||s==='est_scheduled';});
+  if(newLeads.length){
+    items.push({priority:6,icon:'🙋',label:newLeads.length+' new lead'+(newLeads.length!==1?'s':''),sub:'Need an estimate',subColor:'var(--blue)',
+      actions:'<button onclick="goPg(\'pg-leads\')" class="btn btn-sm btn-p">View leads</button>'});
+  }
+
+  if(!items.length){
+    el.innerHTML='<div style="padding:16px 14px;text-align:center;font-size:13px;color:var(--text3)">You\'re all caught up. Nice work.</div>';
+    return;
+  }
+
+  // Sort by priority (lower = more urgent)
+  items.sort((a,b)=>a.priority-b.priority);
+
+  el.innerHTML=
+    '<div style="padding:12px 14px 8px;border-bottom:1px solid var(--border)">'+
+      '<div style="font-size:13px;font-weight:800;color:var(--text)">Action queue <span style="font-size:11px;font-weight:500;color:var(--text3)">'+items.length+' item'+(items.length!==1?'s':'')+'</span></div>'+
+    '</div>'+
+    items.map((item,i)=>'<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;'+(i<items.length-1?'border-bottom:1px solid var(--border)':'')+'">'+
+      '<div style="font-size:20px;flex-shrink:0">'+item.icon+'</div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+item.label+'</div>'+
+        '<div style="font-size:11px;color:'+item.subColor+';margin-top:1px">'+item.sub+'</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:5px;flex-shrink:0">'+item.actions+'</div>'+
+    '</div>').join('');
 }
 
 function checkGoalPrompt(){
@@ -3890,18 +3973,33 @@ function openEditClient(){
   goPg('pg-clients');
   setTimeout(()=>{document.getElementById('client-form-wrap').style.display='block';document.getElementById('client-form-wrap').scrollIntoView({behavior:'smooth',block:'nearest'});},50);
 }
+function showFErr(fieldId,errId,msg){
+  const f=document.getElementById(fieldId);
+  const e=document.getElementById(errId);
+  if(f){f.style.borderColor='#A32D2D';f.style.background='var(--red-lt)';}
+  if(e){e.textContent=msg;e.style.display='block';}
+  if(f){f.scrollIntoView&&f.scrollIntoView({behavior:'smooth',block:'center'});f.focus();}
+}
+function clearFErr(fieldId){
+  const f=document.getElementById(fieldId);
+  const e=document.getElementById('err-'+fieldId);
+  if(f){f.style.borderColor='';f.style.background='';}
+  if(e){e.textContent='';e.style.display='none';}
+}
 function saveClient(){
   if(_submitting)return;
   _submitting=true;setTimeout(()=>{_submitting=false;},1500);
+  // Clear all field errors first
+  ['cf-name','cf-phone','cf-addr','cf-source'].forEach(clearFErr);
   const name=v('cf-name').trim();
-  if(!name){zAlert('Enter the client\'s name.',{title:'Required'});document.getElementById('cf-name').focus();return;}
+  if(!name){_submitting=false;showFErr('cf-name','err-cf-name','Enter the client\'s name.');return;}
   const phone=v('cf-phone').trim();
-  if(!phone){zAlert('Enter a phone number.',{title:'Required'});document.getElementById('cf-phone').focus();return;}
-  if(phone.replace(/\D/g,'').length<10){zAlert('Enter a valid 10-digit phone number.',{title:'Invalid phone'});document.getElementById('cf-phone').focus();return;}
+  if(!phone){_submitting=false;showFErr('cf-phone','err-cf-phone','Enter a phone number.');return;}
+  if(phone.replace(/\D/g,'').length<10){_submitting=false;showFErr('cf-phone','err-cf-phone','Enter a valid 10-digit phone number.');return;}
   const addr=v('cf-addr').trim();
-  if(!addr){zAlert('Enter the property address.',{title:'Required'});document.getElementById('cf-addr').focus();return;}
+  if(!addr){_submitting=false;showFErr('cf-addr','err-cf-addr','Enter the property address.');return;}
   const source=v('cf-source')||'';
-  if(!source){zAlert('Select a lead source — this is how you track what\'s working.',{title:'Required'});document.getElementById('cf-source').focus();return;}
+  if(!source){_submitting=false;showFErr('cf-source','err-cf-source','Select a lead source — this tracks what\'s working.');return;}
   const isNew=!editClientId;
   if(isNew){
     const ph=v('cf-phone').replace(/\D/g,'');
@@ -3915,7 +4013,7 @@ function saveClient(){
       const samePhone=realPhone&&xph===ph;
       return sameName||samePhone;
     });
-    if(dupe){zAlert(dupe.name+' is already in your clients.',{title:'Client already exists'});return;}
+    if(dupe){_submitting=false;showFErr('cf-name','err-cf-name',dupe.name+' is already in your clients.');return;}
   }
   const ref=v('cf-ref')||'';
   const occupation=v('cf-occupation')||'';
@@ -5294,6 +5392,7 @@ function openPayPanel(bidId, autoType){
         '<label>Check # / reference <span style="font-weight:400;color:var(--text3)">(optional)</span></label>'+
         '<input id="mpay-ref" placeholder="Optional" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit">'+
       '</div>'+
+      '<div id="mpay-err" style="display:none;font-size:12px;color:#A32D2D;background:#FEE8E8;border-radius:var(--r);padding:8px 10px;margin-bottom:8px"></div>'+
       '<button id="mpay-submit-btn" onclick="logPayment()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Record payment</button>'+
     '</div>';
 
@@ -5366,15 +5465,34 @@ function selectPayType(btn, bidId){
   }
 }
 
+function _mpayErr(msg){
+  const e=document.getElementById('mpay-err');
+  if(e){e.textContent=msg;e.style.display='block';}
+}
 function logPayment(){
   if(_submitting)return;
-  const type=v('mpay-type')||v('pay-type');if(!type){zAlert('Select a payment type.',{title:'Required'});return;}
-  const a=parseFloat(v('mpay-amount')||v('pay-amount'));if(!a||a<=0){zAlert('Enter an amount.',{title:'Required'});return;}
-  const pdate=v('mpay-date')||v('pay-date');if(!pdate){zAlert('Enter the date.',{title:'Required'});return;}
+  const errEl=document.getElementById('mpay-err');if(errEl){errEl.style.display='none';}
+  const type=v('mpay-type')||v('pay-type');
+  if(!type){_mpayErr('Select a payment type above.');return;}
+  const a=parseFloat(v('mpay-amount')||v('pay-amount'));
+  if(!a||a<=0){
+    const amtEl=document.getElementById('mpay-amount');
+    if(amtEl){amtEl.style.borderColor='#A32D2D';amtEl.focus();}
+    _mpayErr('Enter an amount.');return;
+  }
+  const pdate=v('mpay-date')||v('pay-date');
+  if(!pdate){
+    const dtEl=document.getElementById('mpay-date');
+    if(dtEl){dtEl.style.borderColor='#A32D2D';dtEl.focus();}
+    _mpayErr('Enter the date.');return;
+  }
   const isRefund=(type==='refund');
   if(!isRefund&&activePayBidId){
     const _chkBid=bids.find(b=>b.id===activePayBidId);
-    if(_chkBid&&a>getBidBalance(_chkBid)+0.01){zAlert('Amount exceeds the remaining balance of '+fmt(getBidBalance(_chkBid))+'. Enter the actual amount received.',{title:'Overpayment blocked'});return;}
+    if(_chkBid&&a>getBidBalance(_chkBid)+0.01){
+      const amtEl2=document.getElementById('mpay-amount');if(amtEl2)amtEl2.style.borderColor='#A32D2D';
+      _mpayErr('Amount exceeds balance of '+fmt(getBidBalance(_chkBid))+'. Enter the actual amount received.');return;
+    }
   }
   if(!activePayBidId)return;
   const bid=bids.find(b=>b.id===activePayBidId);if(!bid)return;
@@ -5539,8 +5657,8 @@ function openEditBid(bidId,startStep){
     const adj=document.getElementById('est-adj');if(adj)adj.value=0;
     const adjv=document.getElementById('est-adj-val');if(adjv)adjv.textContent='0%';
     renderEstSurfs();
-    goEstStep(startStep||2);
-    const tip=document.querySelector('#est-s2 .tip');
+    goEstStep(startStep||3); // step 2 merged into 3
+    const tip=document.querySelector('#est-s3 .tip');
     if(tip)tip.innerHTML='<strong>Editing existing bid</strong> for '+(c?c.name:b.name||'client')+' · previous amount: '+fmt(b.amount)+'. Re-enter surfaces and adjust as needed.';
     if((startStep||2)>=4){renderEstReview();renderEstRunning();}
   },80);
@@ -8397,7 +8515,9 @@ function safeGoEstStep(n){
   if(estStep<3&&n>=3){if(!runStep2Validation())return;}
   if(estStep<4&&n>=4){
     if(!estSurfaces.length){
-      zAlert('Add at least one surface before reviewing.',{title:'No surfaces yet'});
+      // Show brief inline notice in the surfaces panel
+      const tip=document.getElementById('surf-tip');
+      if(tip){tip.innerHTML='<span style="color:#A32D2D;font-weight:700">Add at least one surface before reviewing.</span>';tip.style.display='block';}
       goEstStep(3);return;
     }
   }
@@ -8405,17 +8525,21 @@ function safeGoEstStep(n){
 }
 function runStep1Validation(){
   const checks=[{id:'e-cname',label:'Client name'},{id:'e-cphone',label:'Phone number'},{id:'e-caddr',label:'Property address'}];
+  let firstBad=null;
   for(const {id,label} of checks){
     const el=document.getElementById(id);if(!el)continue;
     const val=(el.value||'').trim();
     const ok=id==='e-cphone'?val.replace(/\D/g,'').length>=10:val.length>0;
     if(!ok){
       el.style.borderColor='#A32D2D';el.style.background='var(--red-lt)';
-      el.scrollIntoView&&el.scrollIntoView({behavior:'smooth',block:'center'});
-      el.focus&&el.focus();
-      zAlert('Fill in '+label+' first.',{title:'Required'});return false;
+      // Show inline hint below field
+      let errDiv=document.getElementById('err-'+id);
+      if(!errDiv){errDiv=document.createElement('div');errDiv.id='err-'+id;errDiv.style.cssText='font-size:11px;color:#A32D2D;margin-top:3px';el.parentElement.appendChild(errDiv);}
+      errDiv.textContent=label+' is required.';
+      if(!firstBad)firstBad=el;
     }
   }
+  if(firstBad){firstBad.scrollIntoView&&firstBad.scrollIntoView({behavior:'smooth',block:'center'});firstBad.focus();return false;}
   return true;
 }
 function runStep2Validation(){return true;}
@@ -9892,9 +10016,10 @@ function validateAndGoStep3(){
 }
 function validateAndGoStep2(){
   if(!runStep1Validation())return;
-  goEstStep(2);
+  goEstStep(3); // Step 2 (tier) is now merged into step 3
 }
 function goEstStep(n){
+  if(n===2)n=3; // Step 2 (tier) is merged into step 3 — skip directly to surfaces
   if(n===3){
     const dd=document.getElementById('surf-room-done');if(dd)dd.style.display='none';
     setTimeout(initSurfStep,50);
@@ -11108,28 +11233,35 @@ function validateEstimateTime(){
   }
 }
 function updateSchedPreview(){const start=v('s-start'),days=parseInt(v('s-days'))||1,buf=parseInt(v('s-buf'))||0;const el=document.getElementById('sched-preview');if(!start){el.style.display='none';return;}const sf=parseD(start).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});const ef=parseD(addDays(start,days-1)).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});el.style.display='block';el.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:12px"><span><span style="color:var(--text2)">Start:</span> <strong>${sf}</strong></span><span><span style="color:var(--text2)">Finish:</span> <strong>${ef}</strong></span><span><span style="color:var(--text2)">Duration:</span> <strong>${days} day${days>1?'s':''}</strong></span>${buf>0?`<span><span style="color:var(--text2)">Buffer ends:</span> <strong>${parseD(addDays(start,days+buf-1)).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</strong></span>`:''}</div>`;}
+function _schedErr(msg,focusId){
+  const e=document.getElementById('sched-err');
+  if(e){e.textContent=msg;e.style.display='block';e.scrollIntoView&&e.scrollIntoView({behavior:'smooth',block:'nearest'});}
+  if(focusId){const f=document.getElementById(focusId);if(f){f.style.borderColor='#A32D2D';f.focus();}}
+}
 function scheduleJob(){
   if(_submitting)return;
+  const errEl=document.getElementById('sched-err');if(errEl)errEl.style.display='none';
+  ['s-name','s-start','s-bid-sel'].forEach(id=>{const f=document.getElementById(id);if(f)f.style.borderColor='';});
   // Blacklist gate
   const _sched_bid=parseInt(v('s-bid-sel'))||null;
   const _sched_b=_sched_bid?bids.find(b=>b.id===_sched_bid):null;
   if(_sched_b&&getClientRisk(_sched_b.client_id)==='blacklisted'){
-    zAlert('This client is blacklisted. Scheduling is blocked.',{title:'🚫 Blocked'});return;
+    _schedErr('This client is blacklisted. Scheduling is blocked.');return;
   }
-  const name=v('s-name').trim();if(!name)return zAlert('Enter a job name.');
-  const start=v('s-start');if(!start)return zAlert('Pick a start date.');
+  const name=v('s-name').trim();if(!name){_schedErr('Enter a job name.','s-name');return;}
+  const start=v('s-start');if(!start){_schedErr('Pick a start date.','s-start');return;}
   const days=parseInt(v('s-days'))||1;
-  const{booked}=getBookedDays();for(let i=0;i<days;i++){if(booked.has(addDays(start,i)))return zAlert('One or more days already booked. Pick a different start date.');}
+  const{booked}=getBookedDays();for(let i=0;i<days;i++){if(booked.has(addDays(start,i))){_schedErr('One or more days already booked — pick a different start date.','s-start');return;}}
   const bidId=parseInt(v('s-bid-sel'))||null,bid=bidId?bids.find(b=>b.id===bidId):null;
-  if(bid&&bid.status==='Pending'){return zAlert('The estimate must be signed (Closed Won) before scheduling.',{title:'Estimate not signed'});}
+  if(bid&&bid.status==='Pending'){_schedErr('The estimate must be signed (Closed Won) before scheduling.','s-bid-sel');return;}
   // Rain block: pressure wash can't start on a rainy day
   if(schedType==='job'&&bid&&bid.scope&&bid.scope.pwash){
     const wx=_weatherCache&&_weatherCache[start];
-    if(wx&&wx.rain){return zAlert('Rain is in the forecast for '+start+'.\n\nPressure washing requires dry conditions — pick a clear day.',{title:'⛈️ Rain in forecast'});}
+    if(wx&&wx.rain){_schedErr('Rain in the forecast for '+start+'. Pressure washing needs dry conditions — pick a clear day.','s-start');return;}
   }
   // Duplicate guard: same bid already has a job scheduled
   if(bidId&&jobs.some(j=>j.bid_id===bidId&&j.eventType==='job'&&j.status!=='canceled')){
-    return zAlert('This job is already scheduled. Edit or cancel the existing one first.',{title:'Already scheduled'});}
+    _schedErr('This job is already scheduled. Edit or cancel the existing one first.','s-bid-sel');return;}
   _submitting=true;setTimeout(()=>{_submitting=false;},1500);
   const clientId=schedType==='estimate'?(parseInt(v('s-client-sel'))||null):(bid?bid.client_id:null);
   const jobValue=schedType==='estimate'?0:(parseFloat(v('s-value'))||0);
@@ -12559,10 +12691,22 @@ function renderJobsPage(){
     // "Move up" flag: interior job scheduled more than 2 weeks out
     const daysOut=nextJob?Math.round((parseD(nextJob.start)-parseD(tk))/86400000):null;
     const canMoveUp=nextJob&&isExt===false&&daysOut!==null&&daysOut>14;
+    // Inline action buttons for active/scheduled jobs
+    const isActiveOrScheduled=st.stage==='active'||st.stage==='scheduled'||st.stage==='signed';
+    const nextJobId=nextJob?nextJob.id:null;
+    const canDone=isActiveOrScheduled&&nextJobId&&!nextJob.completion_date;
+    const canPay=wonBid&&balance>0.01;
+    const canOMW=isActiveOrScheduled&&c.phone;
+    const inlineActions=(isActiveOrScheduled&&(canDone||canPay||canOMW))?
+      '<div style="display:flex;gap:6px;margin-top:7px;padding-bottom:2px" onclick="event.stopPropagation()">'+
+        (canOMW?'<button onclick="sendOMWText('+c.id+')" class="btn btn-sm" style="flex:1;font-size:11px;padding:5px 0">🚗 OMW</button>':'')+
+        (canDone?'<button onclick="markJobDone('+nextJobId+')" class="btn btn-sm" style="flex:1;background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid);font-size:11px;padding:5px 0">✓ Done</button>':'')+
+        (canPay?'<button onclick="openPayPanel('+wonBid.id+',\''+(paid<=0?'deposit':'final')+'\')" class="btn btn-sm" style="flex:1;background:var(--blue);color:#fff;border-color:var(--blue);font-size:11px;padding:5px 0">💰 '+(paid<=0?'Deposit':'Pay')+'</button>':'')+
+      '</div>':'';
     return '<div onclick="openJobSheet('+c.id+')" style="display:flex;align-items:center;gap:0;border-bottom:1px solid var(--border);cursor:pointer">'+
       // Colored left stripe: blue=interior, orange=exterior
       '<div style="width:4px;align-self:stretch;background:'+typeColor+';border-radius:3px 0 0 3px;flex-shrink:0"></div>'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;padding:11px 0 11px 10px;gap:10px;flex:1;min-width:0">'+
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:11px 0 11px 10px;gap:10px;flex:1;min-width:0">'+
         '<div style="min-width:0;flex:1">'+
           '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:2px">'+
             '<span style="font-size:14px;font-weight:700;color:var(--text)">'+c.name+'</span>'+
@@ -12580,6 +12724,7 @@ function renderJobsPage(){
               (hasSurfaces?'<span style="font-size:10px;font-weight:600;background:var(--bg2);color:var(--text3);padding:2px 7px;border-radius:10px">📦 Supplies</span>':'')+
             '</div>'
           :'')+
+          inlineActions+
         '</div>'+
         '<div style="text-align:right;flex-shrink:0">'+
           '<div style="font-size:11px;font-weight:700;color:'+st.color+'">'+st.label+'</div>'+
