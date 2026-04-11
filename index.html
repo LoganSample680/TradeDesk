@@ -2161,7 +2161,14 @@ let KS_BRACKETS={single:[],mfj:[],mfs:[],hoh:[]};
 let KS_STD={single:3500,mfj:8000,mfs:4000,hoh:6000};
 
 function saveAll(){try{const lp=(k,d)=>localStorage.setItem(k,JSON.stringify(d));lp('zp3_clients',clients);lp('zp3_bids',bids);lp('zp3_jobs',jobs);lp('zp3_inc',income);lp('zp3_exp',expenses);lp('zp3_mil',mileage);lp('zp3_chk',checksState);lp('zp3_S',S);lp('zp3_pay',payments);lp('zp3_lien',liens);}catch(e){}supaSaveDebounced();}
-function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s?JSON.parse(s):d;};clients=lp('zp3_clients',[]);bids=lp('zp3_bids',[]);jobs=lp('zp3_jobs',[]);income=lp('zp3_inc',[]);expenses=lp('zp3_exp',[]);mileage=lp('zp3_mil',[]);checksState=lp('zp3_chk',{});payments=lp('zp3_pay',[]);liens=lp('zp3_lien',[]);const ss=lp('zp3_S',null);if(ss)S={...S,...ss};}catch(e){}}
+function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s?JSON.parse(s):d;};clients=lp('zp3_clients',[]);bids=lp('zp3_bids',[]);jobs=lp('zp3_jobs',[]);income=lp('zp3_inc',[]);expenses=lp('zp3_exp',[]);mileage=lp('zp3_mil',[]);checksState=lp('zp3_chk',{});payments=lp('zp3_pay',[]);liens=lp('zp3_lien',[]);const ss=lp('zp3_S',null);if(ss)S={...S,...ss};}catch(e){}
+  // One-time orphan cleanup: remove truly empty Draft bids (no surfaces, no amount) that have
+  // no business being in Estimates in Progress — these were created by navigating away at step 1
+  // before the _doOpenEstimate dedup fix. Safe to remove: they have zero data.
+  const _before=bids.length;
+  bids=bids.filter(b=>!(b.draft===true&&b.status==='Draft'&&(!b.surfaces||!b.surfaces.length)&&!b.signingToken&&!b.amount));
+  if(bids.length!==_before)try{localStorage.setItem('zp3_bids',JSON.stringify(bids));}catch(e){}
+}
 
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtShort=n=>{const v=Number(n||0);if(Math.abs(v)>=1000000)return'$'+(v/1000000).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'M';if(Math.abs(v)>=1000)return'$'+(v/1000).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'K';return'$'+v.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});};
@@ -2420,6 +2427,7 @@ function clearAllData(){
   zConfirm('This will permanently delete ALL clients, bids, jobs, income, expenses, and mileage. This cannot be undone.',()=>{
     zConfirm('Last chance — are you absolutely sure you want to delete everything?',()=>{
       clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];payments=[];liens=[];
+      S.employees=[];S.vehicles=[];
       estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;
       gps={active:false,startTime:null,clientId:null,clientName:'',odomStart:null,timerInt:null,vehicle:'',purpose:''};
       hideDriveBanner();clearSurfDraft();saveAll();renderDash();
@@ -2544,7 +2552,9 @@ function openEstimateForClient(){
 }
 function _doOpenEstimate(c){
   _resetNotesForNewEstimate();
-  // Full state wipe so no data bleeds from a previous estimate
+  // Full state wipe — prevents ANY bleed from a prior estimate session
+  _pendingSignToken=null;
+  _swLastProductByCategory={};
   estSurfaces=[];estSurfId=0;
   scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
   estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200',products:{interior:'pm200',exterior:'spe',trim:'pm200t'}};
@@ -5661,6 +5671,12 @@ function viewBidFromTimeline(bidId){
 function openEditBid(bidId,startStep){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
   const c=getClientById(b.client_id||currentClientId);
+  // Full state wipe — prevents ANY bleed from a prior estimate session
+  _pendingSignToken=null;
+  _swLastProductByCategory={};
+  surfRoom='';surfColor='';surfWhatSelected=[];surfBQueue=[];surfBIdx=0;surfBMeasurements={};
+  scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
+  estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200',products:{interior:'pm200',exterior:'spe',trim:'pm200t'}};
   editingBidId=bidId;lastCreatedBidId=null;
   estLinkedClientId=b.client_id||currentClientId;
   estSurfaces=[];estSurfId=0;
@@ -7641,6 +7657,8 @@ function finishRoom(){
   const btn=document.getElementById('est-s3-next-btn');
   if(btn){btn.disabled=false;btn.style.background='var(--blue)';btn.style.color='#fff';btn.style.borderColor='var(--blue)';btn.style.cursor='pointer';}
   surfWhatSelected=[];surfBQueue=[];surfBIdx=0;surfBMeasurements={};surfColor='';surfRoom='';_swResetColorUI();_swLastProductByCategory={};
+  _editRoomBackup=null; // room saved — cancel is no longer meaningful
+  document.getElementById('_edit-room-cancel')?.remove();
   updateSurfWhatUI();
   const rooms=new Set(estSurfaces.map(s=>cleanRoomName(s.room)));
   const roomCount=rooms.size;
@@ -7751,11 +7769,15 @@ function initSurfStep(){
   }
 }
 
+// Backup used by editRoom so Cancel can restore surfaces
+let _editRoomBackup=null;
 function editRoom(roomName){
   // Load existing surfaces for this room back into the form
   const roomSurfs=estSurfaces.filter(s=>cleanRoomName(s.room)===roomName);
   if(!roomSurfs.length)return;
-  // Remove existing surfaces for this room
+  // Backup the full surfaces array so Cancel can fully restore it
+  _editRoomBackup={roomName,surfaces:[...estSurfaces]};
+  // Remove existing surfaces for this room (they'll be re-added when user saves)
   estSurfaces=estSurfaces.filter(s=>cleanRoomName(s.room)!==roomName);
   // Reset the form to that room name
   const rn=document.getElementById('surf-room-name');
@@ -7767,17 +7789,32 @@ function editRoom(roomName){
   });
   updateSurfWhatUI();
   surfRoom=roomName;
-  // Hide done div, show step A
+  // Hide done div, show step A with a Cancel button
   const doneDiv=document.getElementById('surf-room-done');if(doneDiv)doneDiv.style.display='none';
   document.getElementById('surf-step-a').style.display='';
   document.getElementById('surf-step-b').style.display='none';
+  // Inject Cancel button near room name input so Zach can bail out safely
+  const existingCancel=document.getElementById('_edit-room-cancel');
+  if(!existingCancel){
+    const cancelBtn=document.createElement('button');
+    cancelBtn.id='_edit-room-cancel';
+    cancelBtn.type='button';
+    cancelBtn.textContent='✕ Cancel edit';
+    cancelBtn.style.cssText='margin-top:8px;padding:8px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text3);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;width:100%';
+    cancelBtn.onclick=cancelEditRoom;
+    if(rn&&rn.parentElement)rn.parentElement.appendChild(cancelBtn);
+  }
   // Update the next button
   const btn=document.getElementById('surf-next-to-dims');
   if(surfWhatSelected.length&&btn){btn.disabled=false;btn.style.background='var(--blue)';btn.style.color='#fff';btn.style.borderColor='var(--blue)';btn.style.cursor='pointer';}
   renderEstSurfs();renderEstRunning();renderSurfRoomsLogged();
   // Scroll to top
   const s3=document.getElementById('est-s3');if(s3)s3.scrollIntoView({behavior:'smooth',block:'start'});
-  zAlert('Editing "'+roomName+'". Re-enter measurements and colors for each surface.',{title:'Room loaded for editing'});
+}
+function cancelEditRoom(){
+  if(_editRoomBackup){estSurfaces=[..._editRoomBackup.surfaces];_editRoomBackup=null;}
+  document.getElementById('_edit-room-cancel')?.remove();
+  initSurfStep();renderEstSurfs();renderEstRunning();renderSurfRoomsLogged();
 }
 
 function renderSurfRoomsLogged(){
@@ -8994,10 +9031,10 @@ function renderEstReview(){
   const _tierPct=Math.round((_tierMult-1)*100);
   html+='<div class="mets" style="margin-bottom:12px">'+
     '<div class="met"><div class="met-l">Labor hours</div><div class="met-v">'+totalLaborHours.toFixed(1)+'h</div></div>'+
-    '<div class="met"><div class="met-l">Labor</div><div class="met-v" style="color:var(--blue)">'+fmt(laborTotal)+'</div></div>'+
-    '<div class="met"><div class="met-l">Materials</div><div class="met-v" style="color:var(--blue)">'+fmt(matTotal)+'</div></div>'+
-    (_tierPremium>0?'<div class="met"><div class="met-l" style="color:var(--amber)">'+(estPropertyTier?.label||'Tier')+' +'+_tierPct+'%</div><div class="met-v" style="color:var(--amber)">+'+fmt(_tierPremium)+'</div></div>':'')+
-    '<div class="met"><div class="met-l">Total</div><div class="met-v" style="color:var(--green-mid);font-size:18px">'+fmt(final)+'</div></div>'+
+    '<div class="met"><div class="met-l">Labor</div><div class="met-v" style="color:var(--blue)">'+fmtShort(laborTotal)+'</div></div>'+
+    '<div class="met"><div class="met-l">Materials</div><div class="met-v" style="color:var(--blue)">'+fmtShort(matTotal)+'</div></div>'+
+    (_tierPremium>0?'<div class="met"><div class="met-l" style="color:var(--amber)">'+(estPropertyTier?.label||'Tier')+' +'+_tierPct+'%</div><div class="met-v" style="color:var(--amber)">+'+fmtShort(_tierPremium)+'</div></div>':'')+
+    '<div class="met"><div class="met-l">Total</div><div class="met-v" style="color:var(--green-mid);font-size:18px">'+fmtShort(final)+'</div></div>'+
   '</div>';
 
   // ── Pricing health indicator ──────────────────────────────
@@ -9859,6 +9896,7 @@ function schedJobFromEstimate(){
   else{openClientDetail(estLinkedClientId,window._fromDash);}
 }
 function clearEstimatorForm(){
+  _pendingSignToken=null; // never let a stale token carry into the next estimate
   // Delete any unfinished Draft bid BEFORE nulling lastCreatedBidId
   // (saveAndExitEstimate already removes b.draft before calling this, so saved bids are safe)
   if(lastCreatedBidId){
