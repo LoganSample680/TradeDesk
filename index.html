@@ -2315,14 +2315,9 @@ function getBookedDays(){
   // Include time-off blocks as booked
   getTimeOffDays().forEach(d=>booked.add(d));
   jobs.forEach(j=>{
-    if(j.eventType==='estimate'&&j.time){
-      const h=parseInt((j.time||'0').split(':')[0]);
-      if(h>=17)return; // after 5pm — doesn't block painting day
-    }
-    if(j.eventType==='estimate'){
-      const dow=parseD(j.start).getDay();
-      if(dow===0||dow===6)return; // Sat/Sun estimate doesn't block anything
-    }
+    // Estimates never block a day — Zach can book multiple estimates on the same day
+    // at different times (morning, afternoon, evening). Only paint jobs block days.
+    if(j.eventType==='estimate')return;
     const workDays=getJobWorkDays(j);
     workDays.forEach(d=>booked.add(d));
     const lastDay=workDays.length?workDays[workDays.length-1]:j.start;
@@ -3746,13 +3741,14 @@ function onClientSearch(inp){
     if(!matched.length){el.innerHTML='<div class="empty">No clients match "'+q+'".</div>';return;}
     el.innerHTML=matched.map(c=>{
       const s=getClientStage(c.id);
-      const pendBid=getClientBids(c.id).find(b=>b.status==='Pending');
+      const pendBids=getClientBids(c.id).filter(b=>b.status==='Pending');
+      const pendBidSuffix=pendBids.length>1?' · '+pendBids.length+' bids out':pendBids.length===1?' · '+fmt(pendBids[0].amount):'';
       return '<div class="client-card" onclick="openClientDetail('+c.id+')" style="margin-bottom:4px">'+
         '<div style="display:flex;align-items:center;gap:10px">'+
           '<div class="cc-avatar" style="width:36px;height:36px;font-size:12px;flex-shrink:0;'+stageAvatar(s.stage)+'">'+initials(c.name)+'</div>'+
           '<div style="flex:1;min-width:0">'+
             '<div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.name+'</div>'+
-            '<div style="font-size:11px;color:var(--text3)">'+s.label+(pendBid?' · '+fmt(pendBid.amount):'')+'</div>'+
+            '<div style="font-size:11px;color:var(--text3)">'+s.label+pendBidSuffix+'</div>'+
           '</div>'+
           '<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:var(--text3);fill:none;stroke-width:2;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>'+
         '</div>'+
@@ -3879,11 +3875,12 @@ function renderClientList(){
   el.innerHTML=withStage.map(({c,s})=>{
     const wonBids=getClientBids(c.id).filter(b=>b.status==='Closed Won');
     const totalOwed=wonBids.reduce((sum,b)=>sum+getBidBalance(b),0);
-    const pendBid=getClientBids(c.id).find(b=>b.status==='Pending');
+    const pendBids=getClientBids(c.id).filter(b=>b.status==='Pending');
     const hasBal=totalOwed>0.01;
     const subLine=hasBal?'Balance: '+fmt(totalOwed):
-                  pendBid?'Bid out: '+fmt(pendBid.amount)+
-                    (pendBid.bid_date?(' · '+(()=>{const d=Math.floor((new Date(tk)-new Date(pendBid.bid_date+'T12:00:00'))/86400000);return d>0?d+'d ago':''})()):''):
+                  pendBids.length>1?pendBids.length+' bids out':
+                  pendBids.length===1?'Bid out: '+fmt(pendBids[0].amount)+
+                    (pendBids[0].bid_date?(' · '+(()=>{const d=Math.floor((new Date(tk)-new Date(pendBids[0].bid_date+'T12:00:00'))/86400000);return d>0?d+'d ago':''})()):''):
                   s.label;
     return '<div class="client-card" onclick="openClientDetail('+c.id+')" style="margin-bottom:4px">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">'+
@@ -3956,7 +3953,7 @@ function renderPipelineView(el, tk){
           const totalOwed=wonBids.reduce((sum,b)=>sum+getBidBalance(b),0);
           const wonJobs=getClientJobs(c.id).filter(j=>j.eventType!=='estimate'&&j.status==='done').length;
           const hasBal=totalOwed>0.01;
-          const pendBid=getClientBids(c.id).find(b=>b.status==='Pending');
+          const pendBids2=getClientBids(c.id).filter(b=>b.status==='Pending');
           return '<div class="client-card" onclick="openClientDetail('+c.id+')" style="margin-bottom:4px">'+
             '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">'+
               '<div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">'+
@@ -3964,7 +3961,7 @@ function renderPipelineView(el, tk){
                 '<div style="min-width:0">'+
                   '<div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.name+'</div>'+
                   '<div style="font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+
-                    (hasBal?fmt(totalOwed)+' owed':pendBid?fmt(pendBid.amount)+' bid out':c.addr||'No address')+
+                    (hasBal?fmt(totalOwed)+' owed':pendBids2.length>1?pendBids2.length+' bids out':pendBids2.length===1?fmt(pendBids2[0].amount)+' bid out':c.addr||'No address')+
                   '</div>'+
                 '</div>'+
               '</div>'+
@@ -5184,6 +5181,18 @@ function schedForClient(){
 }
 
 function schedFromBid(id){schedType='job';goPg('pg-schedule');setTimeout(()=>{setSchedType('job',document.getElementById('sched-tab-job'));const sel=document.getElementById('s-bid-sel');if(sel){sel.value=id;pullBid();}const bid=bids.find(b=>b.id===id);const wknd=document.getElementById('s-allow-weekend');if(wknd&&bid){wknd.checked=!!(bid.allowWeekend);refreshAvail();}},150);}
+
+function schedFromDate(dateKey){
+  schedType='estimate';
+  goPg('pg-schedule');
+  setTimeout(()=>{
+    const jobTab=document.getElementById('sched-tab-job');
+    if(jobTab)jobTab.style.display='none';
+    setSchedType('estimate',document.getElementById('sched-tab-est'));
+    const sd=document.getElementById('s-start');
+    if(sd&&dateKey){sd.value=dateKey;onStartChange();}
+  },150);
+}
 
 function getBidPayments(bidId){return payments.filter(p=>p.bid_id===bidId);}
 function getBidPaid(bidId){return payments.filter(p=>p.bid_id===bidId).reduce((s,p)=>s+p.amount,0);}
@@ -10305,16 +10314,21 @@ function renderCalAvail(){}
 
 function expandCalDay(key){
   const el=document.getElementById('cal-day-detail');if(!el)return;
+  // Toggle: tapping the same day again closes the panel
+  if(el.style.display==='block'&&el.dataset.openKey===String(key)){el.style.display='none';el.dataset.openKey='';return;}
+  el.dataset.openKey=String(key);
   const dj=getJobsOnDay(key).filter(x=>!x.isBuf);
-  if(!dj.length){el.style.display='none';return;}
   const d=parseD(key);
   const label=d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
   const isToday=key===todayKey();
   el.style.display='block';
   const slots=[];
-  for(let h=7;h<=19;h++){
-    const timeStr=(h>12?h-12:h)+':00 '+(h>=12?'PM':'AM');
-    const hKey=h<10?'0'+h+':00':h+':00';
+  // Show 7am–9pm (21:00) so evening estimates are visible
+  for(let h=7;h<=21;h++){
+    const ampm=h>=12?'PM':'AM';
+    const h12=h>12?h-12:h===0?12:h;
+    const timeStr=h12+':00 '+ampm;
+    const hKey=(h<10?'0':'')+h+':00';
     const jobsAtHour=dj.filter(({job})=>{
       if(!job.time)return false;
       const[jh]=job.time.split(':').map(Number);
@@ -10322,8 +10336,8 @@ function expandCalDay(key){
     });
     slots.push({h,timeStr,hKey,jobs:jobsAtHour});
   }
-  const allDay=dj.filter(({job})=>!job.time||job.eventType!=='estimate');
-  const timedEsts=dj.filter(({job})=>job.time&&job.eventType==='estimate');
+  const allDay=dj.filter(({job})=>!job.time&&job.eventType!=='estimate');
+  const timedEvents=dj.filter(({job})=>job.time);
 
   el.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:10px;border-bottom:2px solid var(--border)">'+
@@ -10333,6 +10347,7 @@ function expandCalDay(key){
       '</div>'+
       '<button onclick="closeCalDay()" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--text3)">&#10005;</button>'+
     '</div>'+
+    // All-day events (paint jobs with no time, or any untimed event)
     (allDay.length?
       '<div style="margin-bottom:12px">'+
         '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:6px">All day</div>'+
@@ -10356,30 +10371,35 @@ function expandCalDay(key){
         }).join('')+
       '</div>'
     :'')+
-    (timedEsts.length?
-      '<div>'+
-        '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:8px">Schedule</div>'+
-        slots.filter(s=>s.jobs.length||timedEsts.some(({job})=>{const[jh]=job.time.split(':').map(Number);return Math.abs(jh-s.h)<=0;})).map(s=>{
-          return '<div style="display:grid;grid-template-columns:44px 1fr;gap:8px;min-height:36px;position:relative">'+
-            '<div style="font-size:10px;color:var(--text3);padding-top:2px;text-align:right;flex-shrink:0">'+s.timeStr+'</div>'+
-            '<div style="border-left:1px solid var(--border);padding-left:8px;padding-bottom:4px">'+
-              (s.jobs.length?s.jobs.map(({job})=>{
-                const c=job.client_id?getClientById(job.client_id):null;
-                return '<div style="background:'+job.color+';border-radius:var(--r);padding:8px 10px;margin-bottom:4px;color:#fff">'+
-                  '<div style="font-size:12px;font-weight:700">'+job.name+'</div>'+
-                  '<div style="font-size:10px;opacity:.9">'+job.time+(job.hours?' · '+job.hours+'hr':'')+(job.addr?' · '+job.addr:'')+'</div>'+
-                  '<div style="display:flex;gap:6px;margin-top:6px">'+
-                    (c?'<button onclick="openClientDetail('+c.id+')" style="border:none;background:rgba(255,255,255,.2);color:#fff;border-radius:4px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Open client</button>':'')+
-                    '<button onclick="rescheduleEstimate('+job.id+')" style="border:none;background:rgba(255,255,255,.2);color:#fff;border-radius:4px;padding:4px 8px;font-size:10px;cursor:pointer;font-family:inherit">Reschedule</button>'+
-                    '<button onclick="cancelEstimate('+job.id+');closeCalDay();renderCalendar();" style="border:none;background:rgba(255,255,255,.15);color:#fff;border-radius:4px;padding:4px 8px;font-size:10px;cursor:pointer;font-family:inherit">Cancel</button>'+
-                  '</div>'+
-                '</div>';
-              }).join(''):'')  +
-            '</div>'+
-          '</div>';
-        }).join('')+
-      '</div>'
-    :'')+
+    // Hour-by-hour schedule — always shown so Zach can see open slots and book more
+    '<div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
+        '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3)">Schedule</div>'+
+        '<button onclick="closeCalDay();schedFromDate(\''+key+'\')" style="border:none;background:var(--blue);color:#fff;border-radius:20px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Book estimate</button>'+
+      '</div>'+
+      slots.map(s=>{
+        const hasEvent=s.jobs.length>0;
+        return '<div style="display:grid;grid-template-columns:52px 1fr;gap:6px;min-height:'+(hasEvent?'auto':'28px')+';position:relative;'+(hasEvent?'':'opacity:.55')+'" >'+
+          '<div style="font-size:10px;color:var(--text3);padding-top:3px;text-align:right;flex-shrink:0;border-right:1px solid var(--border);padding-right:8px">'+s.timeStr+'</div>'+
+          '<div style="padding-left:8px;padding-bottom:'+(hasEvent?'8':'0')+'px">'+
+            (s.jobs.map(({job})=>{
+              const c=job.client_id?getClientById(job.client_id):null;
+              const isEst=job.eventType==='estimate';
+              return '<div style="background:'+job.color+';border-radius:var(--r);padding:8px 10px;margin-bottom:4px;color:#fff">'+
+                '<div style="font-size:11px;font-weight:800;text-transform:uppercase;opacity:.85;margin-bottom:2px">'+(isEst?'📋 Estimate':'🎨 Paint job')+'</div>'+
+                '<div style="font-size:13px;font-weight:700">'+job.name+'</div>'+
+                '<div style="font-size:10px;opacity:.9;margin-top:1px">'+(job.hours?job.hours+'hr':'')+(job.addr?' · '+job.addr:'')+'</div>'+
+                '<div style="display:flex;gap:6px;margin-top:6px">'+
+                  (c?'<button onclick="openClientDetail('+c.id+')" style="border:none;background:rgba(255,255,255,.2);color:#fff;border-radius:4px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Open</button>':'')+
+                  (isEst?'<button onclick="rescheduleEstimate('+job.id+')" style="border:none;background:rgba(255,255,255,.2);color:#fff;border-radius:4px;padding:4px 8px;font-size:10px;cursor:pointer;font-family:inherit">Reschedule</button>':'')+
+                  '<button onclick="deleteJob('+job.id+');closeCalDay();renderCalendar();" style="border:none;background:rgba(255,255,255,.15);color:#fff;border-radius:4px;padding:4px 8px;font-size:10px;cursor:pointer;font-family:inherit">Delete</button>'+
+                '</div>'+
+              '</div>';
+            }).join(''))+
+          '</div>'+
+        '</div>';
+      }).join('')+
+    '</div>'+
   '';
   el.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
@@ -15029,31 +15049,35 @@ async function checkNewSignatures(){
         const existing=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
         localStorage.setItem('zp3_schedule_alerts',JSON.stringify([...existing,...alerts]));
         renderDash();
-        setTimeout(showScheduleAlerts,400);
+        // Guard: don't fire a second popup if one is already showing
+        if(!window._showingScheduleAlert)setTimeout(showScheduleAlerts,400);
       }
     }
   }catch(e){console.warn('checkNewSignatures:',e);}
 }
 function showScheduleAlerts(){
   const alerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
-  if(!alerts.length)return;
+  if(!alerts.length){window._showingScheduleAlert=false;return;}
+  window._showingScheduleAlert=true;
   const a=alerts[0];
   const remaining=alerts.slice(1);
   localStorage.setItem('zp3_schedule_alerts',JSON.stringify(remaining));
   window._currentScheduleAlert=a;
   const payLine=a.isPaid?' and paid their deposit':'';
-  const titleStr='New signature!'+(remaining.length?' ('+(alerts.length-remaining.length)+' of '+alerts.length+')':'');
+  const total=alerts.length;
+  const titleStr='New signature!'+(remaining.length?' ('+total+' total)':'');
   const laterLabel='Later'+(remaining.length?' · '+remaining.length+' more':'');
   zConfirm(
     (a.isPaid?'💰':'🎉')+' '+a.name+' signed their painting proposal'+payLine+'.\n\nGet them on the schedule now?',
-    ()=>showScheduleSuggestion(a.clientId,a.bidId,a.name),
+    ()=>{window._showingScheduleAlert=false;showScheduleSuggestion(a.clientId,a.bidId,a.name);},
     {title:titleStr,yes:'Schedule now',no:laterLabel,danger:false,
     onNo:()=>{
       const q=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
       if(window._currentScheduleAlert)q.push(window._currentScheduleAlert);
       window._currentScheduleAlert=null;
       localStorage.setItem('zp3_schedule_alerts',JSON.stringify(q));
-      if(q.length)setTimeout(showScheduleAlerts,400);
+      window._showingScheduleAlert=false;
+      if(q.length)showScheduleAlerts();
     }}
   );
 }
