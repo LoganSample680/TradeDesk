@@ -2551,9 +2551,10 @@ function _doOpenEstimate(c){
   surfRoom='';surfColor='';surfWhatSelected=[];surfBQueue=[];surfBIdx=0;surfBMeasurements={};_swLastProductByCategory={};
   estLinkedClientId=currentClientId;
   editingBidId=null;
-  // Reuse existing unsent bid for this client — prevents orphan bids on re-open/mobile nav
-  // Matches Draft (new), Pending (saved-not-sent), or any unsent status
-  const _existingDraft=bids.find(b=>b.client_id===c.id&&!b.signingToken&&b.status!=='Closed Won'&&b.status!=='Closed Lost');
+  // Reuse only a truly empty draft for this client (no surfaces, never worked on) — prevents
+  // orphan bids from accidental navigation away at step 1. Does NOT touch Pending bids with
+  // surfaces — those are real jobs for other properties and must stay in Estimates in Progress.
+  const _existingDraft=bids.find(b=>b.client_id===c.id&&b.draft===true&&b.status==='Draft'&&!b.signingToken&&(!b.surfaces||!b.surfaces.length));
   if(_existingDraft){
     lastCreatedBidId=_existingDraft.id;
     if(_existingDraft.surfaces&&_existingDraft.surfaces.length){
