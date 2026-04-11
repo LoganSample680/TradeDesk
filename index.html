@@ -12791,7 +12791,7 @@ function renderJobsPage(){
       '<div style="display:flex;gap:6px;margin-top:7px;padding-bottom:2px" onclick="event.stopPropagation()">'+
         (canOMW?'<button onclick="sendOMWText('+c.id+')" class="btn btn-sm" style="flex:1;font-size:11px;padding:5px 0">🚗 OMW</button>':'')+
         (canDone?'<button onclick="markJobDone('+nextJobId+')" class="btn btn-sm" style="flex:1;background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid);font-size:11px;padding:5px 0">✓ Done</button>':'')+
-        (canPay?'<button onclick="openPayPanel('+b.id+',\''+(paid<=0?\'deposit\':\'final\')+'\')" class="btn btn-sm" style="flex:1;background:var(--blue);color:#fff;border-color:var(--blue);font-size:11px;padding:5px 0">💰 '+(paid<=0?'Deposit':'Pay')+'</button>':'')+
+        (canPay?'<button onclick="openPayPanel('+b.id+',\''+(paid<=0?'deposit':'final')+'\')" class="btn btn-sm" style="flex:1;background:var(--blue);color:#fff;border-color:var(--blue);font-size:11px;padding:5px 0">💰 '+(paid<=0?'Deposit':'Pay')+'</button>':'')+
       '</div>':'';
     return '<div onclick="openJobSheet('+c.id+')" style="display:flex;align-items:center;gap:0;border-bottom:1px solid var(--border);cursor:pointer">'+
       '<div style="width:4px;align-self:stretch;background:'+typeColor+';border-radius:3px 0 0 3px;flex-shrink:0"></div>'+
