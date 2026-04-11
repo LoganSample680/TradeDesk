@@ -2516,25 +2516,37 @@ function _doOpenEstimate(c){
   surfRoom='';surfColor='';surfWhatSelected=[];surfBQueue=[];surfBIdx=0;surfBMeasurements={};_swLastProductByCategory={};
   estLinkedClientId=currentClientId;
   editingBidId=null;
-  // Create a draft bid immediately so notes have an ID to attach to from the first stroke
-  const draftBid={
-    id:_newBidId(),
-    client_id:c.id,
-    client_name:c.name||'',
-    name:c.name||'',
-    phone:c.phone||'',
-    addr:c.addr||'',
-    bid_date:todayKey(),
-    amount:0,
-    status:'Draft',
-    draft:true,
-    notesCanvas:null,
-    surfaces:[],
-    scope:{},
-  };
-  bids.unshift(draftBid);
-  lastCreatedBidId=draftBid.id;
-  saveAll();
+  // Reuse existing unsent draft bid for this client — prevents orphan bids on re-open/mobile nav
+  const _existingDraft=bids.find(b=>b.client_id===c.id&&!b.signingToken&&b.status!=='Closed Won'&&(b.status==='Draft'||b.draft));
+  if(_existingDraft){
+    lastCreatedBidId=_existingDraft.id;
+    if(_existingDraft.surfaces&&_existingDraft.surfaces.length){
+      estSurfaces=[..._existingDraft.surfaces];
+      estSurfId=estSurfaces.reduce((mx,s)=>Math.max(mx,s.id||0),0);
+    }
+    if(_existingDraft.roomScopeMap)roomScopeMap=JSON.parse(JSON.stringify(_existingDraft.roomScopeMap));
+    showToast('Resuming your previous estimate','✏️');
+  } else {
+    // Create a draft bid immediately so notes have an ID to attach to from the first stroke
+    const draftBid={
+      id:_newBidId(),
+      client_id:c.id,
+      client_name:c.name||'',
+      name:c.name||'',
+      phone:c.phone||'',
+      addr:c.addr||'',
+      bid_date:todayKey(),
+      amount:0,
+      status:'Draft',
+      draft:true,
+      notesCanvas:null,
+      surfaces:[],
+      scope:{},
+    };
+    bids.unshift(draftBid);
+    lastCreatedBidId=draftBid.id;
+    saveAll();
+  }
   setTimeout(()=>{
     const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
     sf('e-cname',c.name||'');
@@ -8693,7 +8705,7 @@ function calcEst(){
   // 83 = ProMar 200 retail; 81 = Duration Exterior retail — client-facing prices, not contractor cost
   const paintCostPerGal=gR('e-paint-rate')||(estSurfaces.some(s=>s.type==='ext_walls'||s.type==='ext_trim'||s.type==='deck')?81:83);
   const customerPaint=document.getElementById('e-customer-paint')?.value==='1'||false;
-  const cov=COVERAGE();const matMark=MATMARK();const coats=scopeOn('twocoat')?2:1;
+  const cov=COVERAGE();const matMark=MATMARK();const coats=(scopeOn('twocoat')||Object.values(roomScopeMap||{}).some(r=>r.twocoat?.active))?2:1;
   let laborTotal=0,totalLaborHours=0;const lines=[];
   estSurfaces.forEach(s=>{
     if(!s.qty)return;const t=SURF_TYPES.find(x=>x.v===s.type);if(!t)return;
@@ -9063,6 +9075,12 @@ async function sendProposalLink(){
     // Resolve bid ID — if the current bid was already sent (has a signingToken),
     // create a fresh bid so each proposal gets its own unique link and record.
     let bidId=editingBidId||lastCreatedBidId;
+    // On mobile, window.location.href (SMS/email) can lose in-memory lastCreatedBidId on return.
+    // Recover: find existing unsent draft for the linked client before creating a new one.
+    if(!bidId&&estLinkedClientId){
+      const _orphan=bids.find(b=>b.client_id===estLinkedClientId&&!b.signingToken&&b.status!=='Closed Won'&&(b.status==='Draft'||b.draft));
+      if(_orphan){bidId=_orphan.id;lastCreatedBidId=bidId;}
+    }
     const _resolvedBid=bidId?bids.find(b=>b.id===bidId):null;
     if(!bidId||(_resolvedBid&&_resolvedBid.signingToken)){
       // Already sent once, or no bid at all — mint a new bid for this proposal
@@ -9145,6 +9163,14 @@ async function sendProposalLink(){
       // Promote to Pending so it shows in "Sent proposals" section
       if(bid.status==='Draft'||!bid.status)bid.status='Pending';
       if(!bid.followup)bid.followup=addDays(todayKey(),7);
+      // Clean up any other orphan draft bids for this client (caused by mobile nav re-opens)
+      if(bid.client_id){
+        bids.forEach(b=>{
+          if(b.id!==bidId&&b.client_id===bid.client_id&&!b.signingToken&&b.status!=='Closed Won'&&(b.status==='Draft'||b.draft)){
+            b.status='Closed Lost';b.draft=false;
+          }
+        });
+      }
       saveAll();
     }
     // Reset sig-check window so any missed signatures get caught
@@ -9190,6 +9216,8 @@ function sendProposalViaSms(){
     'Any questions at all, just shoot me a text. Talk soon!\n\n'+
     '— '+d.bname;
   const href='sms:'+(d.cphone||'')+'&body='+encodeURIComponent(msg);
+  // Update dash before navigating so state is fresh if app resumes
+  setTimeout(renderDash,300);
   window.location.href=href;
 }
 function sendProposalViaEmail(){
@@ -9207,6 +9235,7 @@ function sendProposalViaEmail(){
     'Looking forward to working with you,\n\n'+
     d.bname;
   const href='mailto:'+(d.cemail||'')+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+  setTimeout(renderDash,300);
   window.location.href=href;
 }
 function buildDescription(){
@@ -12642,6 +12671,22 @@ function setJobFilter(f,btn){
   const ab=btn||document.getElementById('jft-'+f);if(ab)ab.classList.add('active');
   renderJobsPage();
 }
+// Compute stage for a single won bid (bid-centric, for Jobs page)
+function getBidStage(b){
+  const tk=todayKey();
+  // Find jobs linked directly to this bid; fall back to unlinked client jobs (legacy data)
+  let bidJobs=jobs.filter(j=>j.bid_id===b.id&&j.eventType!=='estimate'&&j.status!=='canceled');
+  if(!bidJobs.length)bidJobs=jobs.filter(j=>j.client_id===b.client_id&&!j.bid_id&&j.eventType!=='estimate'&&j.status!=='canceled');
+  const activeJob=bidJobs.find(j=>{const d=parseInt(j.days)||1;for(let i=0;i<d;i++)if(addDays(j.start,i)===tk)return true;return false;});
+  if(activeJob)return{stage:'active',label:'Active job today',color:'var(--green-mid)',priority:1,jobs:bidJobs};
+  const balance=getBidBalance(b);
+  if(b.completion_date&&balance>0.01)return{stage:'balance_due',label:'Balance due',color:'#A32D2D',priority:2,jobs:bidJobs};
+  const scheduled=bidJobs.filter(j=>j.start>=tk).sort((a,x)=>a.start.localeCompare(x.start))[0];
+  if(scheduled)return{stage:'scheduled',label:'Job scheduled',color:'#185FA5',priority:4,jobs:bidJobs};
+  if(balance<=0.01&&b.completion_date)return{stage:'paid',label:'Paid in full',color:'var(--green)',priority:8,jobs:bidJobs};
+  return{stage:'signed',label:'Signed — schedule job',color:'var(--blue)',priority:3,jobs:bidJobs};
+}
+
 function renderJobsPage(){
   const el=document.getElementById('jobs-list');if(!el)return;
   const tk=todayKey();
@@ -12653,83 +12698,77 @@ function renderJobsPage(){
     completed:['paid','balance_due']
   };
   const allowed=filterToStages[jobFilter]||JOB_STAGES;
-  const filtered=clients.filter(c=>{
-    const s=getClientStage(c.id).stage;
-    return allowed.includes(s);
-  }).sort((a,b)=>{
-    // Sort by closest upcoming job date first
-    const jA=getClientJobs(a.id).filter(j=>j.eventType!=='estimate'&&j.status!=='canceled'&&j.start>=tk).sort((x,y)=>x.start.localeCompare(y.start))[0];
-    const jB=getClientJobs(b.id).filter(j=>j.eventType!=='estimate'&&j.status!=='canceled'&&j.start>=tk).sort((x,y)=>x.start.localeCompare(y.start))[0];
-    if(jA&&jB)return jA.start.localeCompare(jB.start);
-    if(jA)return -1;
-    if(jB)return 1;
-    const pa=getClientStage(a.id).priority||9,pb=getClientStage(b.id).priority||9;
-    return pa-pb;
-  });
+  // Bid-centric: one card per won bid (each bid = separate property)
+  const wonBidsList=bids.filter(b=>b.status==='Closed Won');
+  const filtered=wonBidsList.filter(b=>allowed.includes(getBidStage(b).stage))
+    .sort((a,b2)=>{
+      const stA=getBidStage(a),stB=getBidStage(b2);
+      const jA=stA.jobs.filter(j=>j.start>=tk).sort((x,y)=>x.start.localeCompare(y.start))[0];
+      const jB=stB.jobs.filter(j=>j.start>=tk).sort((x,y)=>x.start.localeCompare(y.start))[0];
+      if(jA&&jB)return jA.start.localeCompare(jB.start);
+      if(jA)return -1;
+      if(jB)return 1;
+      return (stA.priority||9)-(stB.priority||9);
+    });
   const badge=document.getElementById('nb-jobs-badge');
   if(badge){
-    const n=clients.filter(c=>['active','scheduled','signed'].includes(getClientStage(c.id).stage)).length;
+    const n=wonBidsList.filter(b=>['active','scheduled','signed'].includes(getBidStage(b).stage)).length;
     badge.textContent=n||'';badge.style.display=n?'':'none';
   }
   if(!filtered.length){el.innerHTML='<div class="empty">No '+(jobFilter==='all'?'active jobs':jobFilter)+' right now.<br><br><button class="btn btn-p" onclick="goPg(\'pg-schedule\')">Schedule a job</button></div>';return;}
-  el.innerHTML=filtered.map(c=>{
-    const st=getClientStage(c.id);
-    const wonBids_c=getClientBids(c.id).filter(b=>b.status==='Closed Won').sort((a,b)=>(b.bid_date||'').localeCompare(a.bid_date||''));
-    const wonBid=wonBids_c[0];
-    const nextJob=getClientJobs(c.id).filter(j=>j.eventType!=='estimate'&&j.status!=='canceled'&&j.start>=tk).sort((a,b)=>a.start.localeCompare(b.start))[0];
-    const paid=wonBids_c.reduce((s,b)=>s+getBidPaid(b.id),0);
-    const balance=wonBids_c.reduce((s,b)=>s+getBidBalance(b),0);
-    const hasSurfaces=wonBids_c.some(b=>b.surfaces?.length>0);
-    const totalContract=wonBids_c.reduce((s,b)=>s+b.amount,0);
+  el.innerHTML=filtered.map(b=>{
+    const c=getClientById(b.client_id)||{name:b.client_name||b.name||'Client',id:b.client_id,phone:'',addr:b.addr||''};
+    const st=getBidStage(b);
+    const paid=getBidPaid(b.id);
+    const balance=getBidBalance(b);
+    const hasSurfaces=(b.surfaces||[]).length>0;
+    // Next job for this bid
+    const nextJob=st.jobs.filter(j=>j.start>=tk).sort((a,x)=>a.start.localeCompare(x.start))[0];
     // Interior vs exterior detection
-    const isExt=wonBid&&(wonBid.type==='Exterior painting'||(wonBid.surfaces||[]).some(s=>s.type&&(s.type.startsWith('ext')||s.type==='deck')));
-    const typeColor=isExt?'#C47840':'#185FA5'; // orange=exterior, blue=interior
+    const isExt=b.type==='Exterior painting'||(b.surfaces||[]).some(s=>s.type&&(s.type.startsWith('ext')||s.type==='deck'));
+    const typeColor=isExt?'#C47840':'#185FA5';
     const typeLabel=isExt?'Exterior':'Interior';
     const typeBg=isExt?'#FFF0E0':'#EBF2FB';
-    // Next job start display
+    // Property address (bid addr takes precedence over client addr for multi-property clients)
+    const propAddr=(b.addr||c.addr||'').split(',')[0];
     const nextStart=nextJob?parseD(nextJob.start).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'';
-    // "Move up" flag: interior job scheduled more than 2 weeks out
     const daysOut=nextJob?Math.round((parseD(nextJob.start)-parseD(tk))/86400000):null;
-    const canMoveUp=nextJob&&isExt===false&&daysOut!==null&&daysOut>14;
-    // Inline action buttons for active/scheduled jobs
+    const canMoveUp=nextJob&&!isExt&&daysOut!==null&&daysOut>14;
+    // Inline action buttons
     const isActiveOrScheduled=st.stage==='active'||st.stage==='scheduled'||st.stage==='signed';
     const nextJobId=nextJob?nextJob.id:null;
     const canDone=isActiveOrScheduled&&nextJobId&&!nextJob.completion_date;
-    const canPay=wonBid&&balance>0.01;
+    const canPay=balance>0.01;
     const canOMW=isActiveOrScheduled&&c.phone;
     const inlineActions=(isActiveOrScheduled&&(canDone||canPay||canOMW))?
       '<div style="display:flex;gap:6px;margin-top:7px;padding-bottom:2px" onclick="event.stopPropagation()">'+
         (canOMW?'<button onclick="sendOMWText('+c.id+')" class="btn btn-sm" style="flex:1;font-size:11px;padding:5px 0">🚗 OMW</button>':'')+
         (canDone?'<button onclick="markJobDone('+nextJobId+')" class="btn btn-sm" style="flex:1;background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid);font-size:11px;padding:5px 0">✓ Done</button>':'')+
-        (canPay?'<button onclick="openPayPanel('+wonBid.id+',\''+(paid<=0?'deposit':'final')+'\')" class="btn btn-sm" style="flex:1;background:var(--blue);color:#fff;border-color:var(--blue);font-size:11px;padding:5px 0">💰 '+(paid<=0?'Deposit':'Pay')+'</button>':'')+
+        (canPay?'<button onclick="openPayPanel('+b.id+',\''+(paid<=0?\'deposit\':\'final\')+'\')" class="btn btn-sm" style="flex:1;background:var(--blue);color:#fff;border-color:var(--blue);font-size:11px;padding:5px 0">💰 '+(paid<=0?'Deposit':'Pay')+'</button>':'')+
       '</div>':'';
     return '<div onclick="openJobSheet('+c.id+')" style="display:flex;align-items:center;gap:0;border-bottom:1px solid var(--border);cursor:pointer">'+
-      // Colored left stripe: blue=interior, orange=exterior
       '<div style="width:4px;align-self:stretch;background:'+typeColor+';border-radius:3px 0 0 3px;flex-shrink:0"></div>'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:11px 0 11px 10px;gap:10px;flex:1;min-width:0">'+
         '<div style="min-width:0;flex:1">'+
           '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:2px">'+
-            '<span style="font-size:14px;font-weight:700;color:var(--text)">'+c.name+'</span>'+
+            '<span style="font-size:14px;font-weight:700;color:var(--text)">'+escHtml(c.name)+'</span>'+
             '<span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;background:'+typeBg+';color:'+typeColor+';padding:1px 6px;border-radius:8px">'+typeLabel+'</span>'+
-            (canMoveUp?'<span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:8px" title="Interior — consider moving up if exterior frees up">📞 can move up</span>':'')+
+            (canMoveUp?'<span style="font-size:9px;font-weight:700;background:#FEF3C7;color:#92400E;padding:1px 6px;border-radius:8px">📞 can move up</span>':'')+
           '</div>'+
           '<div style="font-size:11px;color:var(--text3)">'+
-            (c.addr?c.addr.split(',')[0]:'')+(nextStart?' · '+nextStart:'')+
+            escHtml(propAddr)+(nextStart?' · '+nextStart:'')+
           '</div>'+
-          (wonBid?
-            '<div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap">'+
-              (paid>0?'<span style="font-size:10px;font-weight:700;background:var(--green-lt);color:var(--green-mid);padding:2px 7px;border-radius:10px">'+fmt(paid)+' paid</span>':
-                      '<span style="font-size:10px;font-weight:700;background:var(--amber-lt);color:#856404;padding:2px 7px;border-radius:10px">No deposit</span>')+
-              (balance>0.01?'<span style="font-size:10px;font-weight:700;background:#FEE8E8;color:#A32D2D;padding:2px 7px;border-radius:10px">'+fmt(balance)+' due</span>':'')+
-              (hasSurfaces?'<span style="font-size:10px;font-weight:600;background:var(--bg2);color:var(--text3);padding:2px 7px;border-radius:10px">📦 Supplies</span>':'')+
-            '</div>'
-          :'')+
+          '<div style="display:flex;gap:6px;margin-top:5px;flex-wrap:wrap">'+
+            (paid>0?'<span style="font-size:10px;font-weight:700;background:var(--green-lt);color:var(--green-mid);padding:2px 7px;border-radius:10px">'+fmt(paid)+' paid</span>':
+                    '<span style="font-size:10px;font-weight:700;background:var(--amber-lt);color:#856404;padding:2px 7px;border-radius:10px">No deposit</span>')+
+            (balance>0.01?'<span style="font-size:10px;font-weight:700;background:#FEE8E8;color:#A32D2D;padding:2px 7px;border-radius:10px">'+fmt(balance)+' due</span>':'')+
+            (hasSurfaces?'<span style="font-size:10px;font-weight:600;background:var(--bg2);color:var(--text3);padding:2px 7px;border-radius:10px">📦 Supplies</span>':'')+
+          '</div>'+
           inlineActions+
         '</div>'+
         '<div style="text-align:right;flex-shrink:0">'+
           '<div style="font-size:11px;font-weight:700;color:'+st.color+'">'+st.label+'</div>'+
-          (wonBids_c.length?'<div style="font-size:13px;font-weight:800;color:var(--text);margin-top:2px">'+fmt(totalContract)+'</div>':'')+
-          (wonBids_c.length>1?'<div style="font-size:10px;color:var(--text3)">'+wonBids_c.length+' bids</div>':'')+
+          '<div style="font-size:13px;font-weight:800;color:var(--text);margin-top:2px">'+fmt(b.amount)+'</div>'+
         '</div>'+
       '</div>'+
     '</div>';

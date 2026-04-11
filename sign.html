@@ -189,14 +189,30 @@ async function init(){
     }
     // Check proposal JSON status AND signed_proposals table (table is authoritative — storage can be cached)
     let alreadySigned=_prop.status==='signed'||_prop.status==='paid';
+    let _sigRecord=null;
     if(!alreadySigned){
-      const{data:sigRow}=await _supa.from('signed_proposals').select('signed_at').eq('bid_id',String(_prop.id)).maybeSingle();
-      if(sigRow)alreadySigned=true;
+      const{data:sigRow}=await _supa.from('signed_proposals').select('signed_at,client_signed_name,payment_method').eq('bid_id',String(_prop.id)).maybeSingle();
+      if(sigRow){alreadySigned=true;_sigRecord=sigRow;}
+    } else {
+      const{data:sigRow}=await _supa.from('signed_proposals').select('signed_at,client_signed_name,payment_method').eq('bid_id',String(_prop.id)).maybeSingle();
+      _sigRecord=sigRow;
     }
     if(alreadySigned){
+      const confNum='#CONF-'+String(_prop.id).slice(-6).toUpperCase();
+      const signedDate=_sigRecord?.signed_at?new Date(_sigRecord.signed_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'—';
+      const payMethod=_sigRecord?.payment_method;
+      const payLabel=payMethod==='card'?'💳 Card charged':payMethod==='ach'?'🏦 Bank transfer':payMethod==='cash'?'💵 Cash on arrival':'—';
       document.getElementById('done-icon').textContent='✅';
       document.getElementById('done-title').textContent='Already signed';
-      document.getElementById('done-msg').textContent='This proposal was already signed. The contractor will be in touch to confirm your start date.';
+      document.getElementById('done-msg').textContent='This proposal has already been signed. The contractor will be in touch to confirm your start date.';
+      document.getElementById('done-rows').innerHTML=
+        '<div class="row"><span class="rl">Confirmation</span><span class="rv" style="font-weight:700;color:var(--green)">'+confNum+'</span></div>'+
+        '<div class="row"><span class="rl">Client</span><span class="rv">'+(_prop.clientName||_sigRecord?.client_signed_name||'')+'</span></div>'+
+        (_prop.clientAddr?'<div class="row"><span class="rl">Address</span><span class="rv" style="text-align:right;max-width:220px">'+_prop.clientAddr+'</span></div>':'')+
+        '<div class="row"><span class="rl">Total</span><span class="rv">'+fmt(_prop.amount)+'</span></div>'+
+        '<div class="row"><span class="rl">Deposit</span><span class="rv">'+fmt(_prop.deposit)+'</span></div>'+
+        (payMethod?'<div class="row"><span class="rl">Payment</span><span class="rv">'+payLabel+'</span></div>':'')+
+        '<div class="row"><span class="rl">Signed</span><span class="rv">'+signedDate+'</span></div>';
       show('pg-done');return;
     }
     const _biz=_prop.businessName||'Your Contractor';
@@ -346,7 +362,9 @@ function showDone(method){
   document.getElementById('done-msg').textContent=isPaid
     ?'Your deposit has been received. The contractor will be in touch to confirm your start date.'
     :'Your proposal is signed. The contractor will collect your deposit on arrival.';
+  const _confNum=_prop?'#CONF-'+String(_prop.id).slice(-6).toUpperCase():'';
   document.getElementById('done-rows').innerHTML=
+    (_confNum?'<div class="row"><span class="rl">Confirmation</span><span class="rv" style="font-weight:700;color:var(--green)">'+_confNum+'</span></div>':'')+
     '<div class="row"><span class="rl">Client</span><span class="rv">'+(_prop?.clientName||'')+'</span></div>'+
     (_prop?.clientAddr?'<div class="row"><span class="rl">Address</span><span class="rv" style="text-align:right;max-width:220px">'+_prop.clientAddr+'</span></div>':'')+
     '<div class="row"><span class="rl">Total</span><span class="rv">'+fmt(_prop?.amount)+'</span></div>'+
