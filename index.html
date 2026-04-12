@@ -2554,13 +2554,36 @@ function _checkMultiPropertyThenOpen(c){
   if(activeBids.length>0){
     const bidWord=activeBids.length===1?'estimate':'estimates';
     zConfirm(c.name+' already has '+activeBids.length+' '+bidWord+' in progress. Is this for a different property?',
-      ()=>_doOpenEstimate(c),
+      ()=>_askNewPropertyAddress(c),
       {title:'Different property?',yes:'Yes — new property',no:'No — go back',danger:false});
     return;
   }
   _doOpenEstimate(c);
 }
-function _doOpenEstimate(c){
+function _askNewPropertyAddress(c){
+  // Show inline address prompt before opening estimate for a new property
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_new-prop-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">New property address</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">Enter the address for this job</div>'+
+    '<input id="_new-prop-addr" type="text" placeholder="123 Main St, City, ST" autocomplete="street-address" '+
+      'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);margin-bottom:14px">'+
+    '<button id="_new-prop-ok" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Open estimate</button>'+
+    '<button onclick="document.getElementById(\'_new-prop-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  const inp=document.getElementById('_new-prop-addr');
+  if(inp)setTimeout(()=>inp.focus(),80);
+  const go=()=>{
+    const addr=(inp?inp.value.trim():'')||c.addr||'';
+    document.getElementById('_new-prop-overlay')?.remove();
+    _doOpenEstimate(c,addr);
+  };
+  document.getElementById('_new-prop-ok').addEventListener('click',go);
+  if(inp)inp.addEventListener('keydown',e=>{if(e.key==='Enter')go();});
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function _doOpenEstimate(c,_overrideAddr){
   _resetNotesForNewEstimate();
   // Full state wipe — prevents ANY bleed from a prior estimate session
   _pendingSignToken=null;
@@ -2608,9 +2631,9 @@ function _doOpenEstimate(c){
     const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
     sf('e-cname',c.name||'');
     sf('e-cphone',c.phone||'');
-    sf('e-caddr',c.addr||'');
-    // If client has multiple addresses, show a picker hint below the address field
-    _estAddrOptions=[{label:'Primary',addr:c.addr||''},...(c.extraAddresses||[])];
+    sf('e-caddr',_overrideAddr||c.addr||'');
+    // If client has multiple addresses, show a picker hint below the address field (skip if override provided)
+    _estAddrOptions=_overrideAddr?[{label:'New property',addr:_overrideAddr}]:[{label:'Primary',addr:c.addr||''},...(c.extraAddresses||[])];
     const _addrField=document.getElementById('e-caddr');
     const _oldHint=document.getElementById('_est-addr-picker');if(_oldHint)_oldHint.remove();
     if(_addrField&&_estAddrOptions.length>1){
@@ -3817,7 +3840,14 @@ function getClientStage(cid){
 
   const pendingBids=cbids.filter(b=>b.status==='Pending');
   if(pendingBids.length){
-    const oldest=pendingBids.reduce((a,b)=>a.bid_date<b.bid_date?a:b);
+    const sentBids=pendingBids.filter(b=>b.signingToken);
+    const unsentBids=pendingBids.filter(b=>!b.signingToken);
+    // Saved but never sent to client — show as 'est_ready' (distinct from sent bids)
+    if(!sentBids.length&&unsentBids.length){
+      return{stage:'est_ready',label:'Estimate ready to send',color:'var(--blue)',priority:5};
+    }
+    const activePending=sentBids.length?sentBids:unsentBids;
+    const oldest=activePending.reduce((a,b)=>a.bid_date<b.bid_date?a:b);
     const days=oldest.bid_date?Math.floor((new Date(tk)-new Date(oldest.bid_date+'T12:00:00'))/(1000*60*60*24)):0;
     if(days>=30)return{stage:'abandoned',label:'Bid abandoned ('+days+'d)',color:'#999',priority:9};
     if(days>=14)return{stage:'bid_urgent',label:'Bid out '+days+'d — follow up',color:'var(--amber)',priority:5};
@@ -3842,7 +3872,7 @@ function renderClientList(){
   const STAGE_BUCKETS={
     new:       c=>getClientStage(c.id).stage==='new',
     estimate:  c=>getClientStage(c.id).stage==='est_scheduled',
-    pending:   c=>['bid_out','bid_urgent'].includes(getClientStage(c.id).stage),
+    pending:   c=>['est_ready','bid_out','bid_urgent'].includes(getClientStage(c.id).stage),
     follow_up: c=>getClientStage(c.id).stage==='bid_urgent',
     won:       c=>['signed','scheduled'].includes(getClientStage(c.id).stage),
     active:    c=>getClientStage(c.id).stage==='active',
@@ -12768,15 +12798,15 @@ function setLeadFilter(f,btn){
 }
 function renderLeadsPage(){
   const el=document.getElementById('leads-list');if(!el)return;
-  const LEAD_STAGES=['new','est_scheduled','bid_out','bid_urgent','abandoned'];
+  const LEAD_STAGES=['new','est_scheduled','est_ready','bid_out','bid_urgent','abandoned'];
   const stageMap={new:'new',estimate:'estimate',follow_up:'follow_up',
-    pending:'pending',bid_urgent:'follow_up',bid_out:'pending',abandoned:'follow_up'};
+    pending:'pending',bid_urgent:'follow_up',bid_out:'pending',est_ready:'pending',abandoned:'follow_up'};
   const filterToStages={
     all:LEAD_STAGES,
     new:['new'],
     estimate:['est_scheduled'],
     follow_up:['bid_urgent','abandoned'],
-    pending:['bid_out']
+    pending:['est_ready','bid_out']
   };
   const allowed=filterToStages[leadFilter]||LEAD_STAGES;
   const filtered=clients.filter(c=>{
@@ -12787,7 +12817,7 @@ function renderLeadsPage(){
     return pa-pb;
   });
   // Update leads badge
-  const allLeadClients=clients.filter(c=>['new','est_scheduled','bid_out','bid_urgent','abandoned'].includes(getClientStage(c.id).stage));
+  const allLeadClients=clients.filter(c=>LEAD_STAGES.includes(getClientStage(c.id).stage));
   const badge=document.getElementById('nb-leads-badge');
   if(badge){
     const fu=allLeadClients.filter(c=>{const s=getClientStage(c.id);return s.stage==='follow_up'||s.stage==='bid_urgent';});
@@ -15079,24 +15109,46 @@ function showScheduleAlerts(){
   const remaining=alerts.slice(1);
   localStorage.setItem('zp3_schedule_alerts',JSON.stringify(remaining));
   window._currentScheduleAlert=a;
+
+  // Remove any existing schedule alert modal
+  document.getElementById('_sched-alert-overlay')?.remove();
+
   const payLine=a.isPaid?' and paid their deposit':'';
-  const total=alerts.length;
-  const titleStr='New signature!'+(remaining.length?' ('+total+' total)':'');
-  const laterLabel='Later'+(remaining.length?' · '+remaining.length+' more':'');
-  zConfirm(
-    (a.isPaid?'💰':'🎉')+' '+a.name+' signed their painting proposal'+payLine+'.\n\nGet them on the schedule now?',
-    ()=>{window._showingScheduleAlert=false;showScheduleSuggestion(a.clientId,a.bidId,a.name);},
-    {title:titleStr,yes:'Schedule now',no:laterLabel,danger:false,
-    onNo:()=>{
-      const q=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
-      const hasMore=q.length>0; // check BEFORE pushing current back — prevents infinite loop
-      if(window._currentScheduleAlert)q.push(window._currentScheduleAlert);
-      window._currentScheduleAlert=null;
-      localStorage.setItem('zp3_schedule_alerts',JSON.stringify(q));
-      window._showingScheduleAlert=false;
-      if(hasMore)showScheduleAlerts(); // only advance if there are OTHER alerts waiting
-    }}
-  );
+  const moreNote=remaining.length?' <span style="color:var(--text3);font-weight:400">('+remaining.length+' more waiting)</span>':'';
+
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_sched-alert-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="text-align:center;font-size:32px;margin-bottom:6px">'+(a.isPaid?'💰':'🎉')+'</div>'+
+    '<div style="font-size:18px;font-weight:800;text-align:center;margin-bottom:4px">New signature!'+moreNote+'</div>'+
+    '<div style="font-size:14px;color:var(--text3);text-align:center;margin-bottom:20px">'+
+      escHtml(a.name)+' signed their painting proposal'+payLine+'.'+
+    '</div>'+
+    '<button id="_sched-alert-yes" style="width:100%;padding:16px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:16px">'+
+      'Schedule now →'+
+    '</button>'+
+    '<div style="text-align:center">'+
+      '<button id="_sched-alert-later" style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit;padding:4px 8px;text-decoration:underline;text-underline-offset:2px">'+
+        'Later'+(remaining.length?' · '+remaining.length+' more':'')+
+      '</button>'+
+    '</div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+
+  document.getElementById('_sched-alert-yes').addEventListener('click',()=>{
+    ov.remove();
+    window._showingScheduleAlert=false;
+    showScheduleSuggestion(a.clientId,a.bidId,a.name);
+  });
+  document.getElementById('_sched-alert-later').addEventListener('click',()=>{
+    ov.remove();
+    const q=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
+    const hasMore=q.length>0; // check BEFORE pushing — prevents infinite loop
+    if(window._currentScheduleAlert)q.push(window._currentScheduleAlert);
+    window._currentScheduleAlert=null;
+    localStorage.setItem('zp3_schedule_alerts',JSON.stringify(q));
+    window._showingScheduleAlert=false;
+    if(hasMore)showScheduleAlerts();
+  });
 }
 function deferScheduleAlert(){
   document.getElementById('sched-suggest-overlay')?.remove();
