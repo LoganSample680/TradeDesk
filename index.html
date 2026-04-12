@@ -15089,11 +15089,12 @@ function showScheduleAlerts(){
     {title:titleStr,yes:'Schedule now',no:laterLabel,danger:false,
     onNo:()=>{
       const q=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
+      const hasMore=q.length>0; // check BEFORE pushing current back — prevents infinite loop
       if(window._currentScheduleAlert)q.push(window._currentScheduleAlert);
       window._currentScheduleAlert=null;
       localStorage.setItem('zp3_schedule_alerts',JSON.stringify(q));
       window._showingScheduleAlert=false;
-      if(q.length)showScheduleAlerts();
+      if(hasMore)showScheduleAlerts(); // only advance if there are OTHER alerts waiting
     }}
   );
 }
@@ -15253,6 +15254,11 @@ async function supaLoadFromCloud(){
     setInterval(()=>checkNewSignatures(),90000);
     // Also check when user returns to the app (e.g., after sending SMS to client)
     document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkNewSignatures();});
+    // Re-surface any schedule alerts deferred from a prior session (stored in localStorage)
+    setTimeout(()=>{
+      const _deferred=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
+      if(_deferred.length&&!window._showingScheduleAlert)showScheduleAlerts();
+    },5000);
     setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
   }catch(e){
     console.warn('Cloud load failed:',e);
