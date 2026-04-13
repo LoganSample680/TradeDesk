@@ -2897,6 +2897,7 @@ function renderDash(){
           '<div style="'+_nameStyle+'">'+name+'</div>'+
           '<div style="font-size:11px;'+urgency+';margin-top:1px">'+amt+' · '+daysStr+'</div></div>'+
           '<div style="display:flex;gap:5px;flex-shrink:0">'+
+            (b.proposalHtml?'<button onclick="viewSavedProposal('+b.id+')" class="btn btn-sm" style="'+_btnStyle+'">View</button>':'')+
             '<button onclick="resendProposalLink('+b.id+')" class="btn btn-sm" style="'+_btnStyle+'">Resend</button>'+
             '<button onclick="markBidNoResponseFromDash('+b.id+')" class="btn btn-sm" style="'+_xStyle+'" title="No response — archive">✕</button>'+
           '</div></div>';
@@ -9367,6 +9368,9 @@ function _commitProposalSent(){
     if(bid.status==='Draft'||!bid.status)bid.status='Pending';
     bid.draft=false;
     if(!bid.followup)bid.followup=addDays(todayKey(),7);
+    // Snapshot the exact proposal HTML the client will sign — required for legal record
+    const proposalEl=document.getElementById('est-proposal');
+    if(proposalEl&&proposalEl.innerHTML.trim())bid.proposalHtml=proposalEl.innerHTML;
     saveAll();
   }
   _pendingSignToken=null;
@@ -9697,7 +9701,7 @@ function buildProposal(){
       <div style="font-size:11.5px;color:#2d3748;line-height:2">
         <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">1.</span><span><strong>Deposit:</strong> 25% due before work begins.</span></div>
         <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">2.</span><span><strong>Balance:</strong> Remainder due on completion.</span></div>
-        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">3.</span><span><strong>Cancellation:</strong> Materials cost deducted from deposit if canceled after work begins.</span></div>
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">3.</span><span><strong>Cancellation:</strong> If canceled after materials are purchased, client receives all purchased paint and a deposit refund minus documented materials cost. No other fee.</span></div>
         <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">4.</span><span><strong>Warranty:</strong> All workmanship warranted for 1 year. Excludes pre-existing conditions and substrate failure.</span></div>
         <div style="display:flex;align-items:baseline;gap:8px"><span style="color:#1a365d;font-weight:700;min-width:16px">5.</span><span><strong>Liability:</strong> Contractor not responsible for pre-existing damage or conditions present before work began.</span></div>
       </div>
@@ -9717,7 +9721,7 @@ function buildProposal(){
   </div>
 </div>`;
   document.getElementById('est-sig-sum').innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><div style="font-size:15px;font-weight:700">${cname}</div><div style="font-size:12px;color:var(--text2)">${caddr}</div></div><div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--blue)">${fmt(proposalTotal)}</div><div style="font-size:11px;color:var(--text3)">${estNum}</div></div></div>`;
-  document.getElementById('est-terms').innerHTML='<strong style="color:#1a365d">Terms &amp; Conditions</strong><br><br>1. <strong>Payment:</strong> A non-refundable 25% deposit is required before any work begins. The remaining balance is due upon completion of work.<br><br>2. <strong>Cancellation:</strong> If client cancels after materials have been purchased, the cost of those materials will be deducted from the deposit. The remainder, if any, will be refunded.<br><br>3. <strong>Change Orders:</strong> This proposal covers only the scope described herein. Any additional work, surfaces, or materials not listed require a written change order signed by both parties and may be billed at the current rate.<br><br>4. <strong>Warranty:</strong> All workmanship is warranted for one (1) year from the date of completion. This warranty covers labor defects and application failures. It does not cover pre-existing surface conditions, substrate failure, moisture damage, or damage caused by events outside the contractor\'s control.<br><br>5. <strong>Limitation of Liability:</strong> Contractor is not responsible for damage to surfaces, structures, or contents that existed prior to the start of work, or for conditions not disclosed at the time of walkthrough. Client assumes all risk associated with pressure washing services on their property.<br><br>6. <strong>Materials &amp; Sales Tax:</strong> Contractor purchases all materials and pays applicable Kansas sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.<br><br>By signing below, client acknowledges full agreement with all scope, pricing, and terms stated in this proposal. This document constitutes a legally binding agreement pursuant to the Kansas Uniform Electronic Transactions Act (K.S.A. 16-1601 et seq.).';
+  document.getElementById('est-terms').innerHTML='<strong style="color:#1a365d">Terms &amp; Conditions</strong><br><br>1. <strong>Payment:</strong> A non-refundable 25% deposit is required before any work begins. The remaining balance is due upon completion of work.<br><br>2. <strong>Cancellation:</strong> If client cancels after materials have been purchased, contractor will make all purchased paint and materials available for client pickup and refund the deposit minus the documented cost of those materials. No additional cancellation fee will be charged beyond the materials cost.<br><br>3. <strong>Change Orders:</strong> This proposal covers only the scope described herein. Any additional work, surfaces, or materials not listed require a written change order signed by both parties and may be billed at the current rate.<br><br>4. <strong>Warranty:</strong> All workmanship is warranted for one (1) year from the date of completion. This warranty covers labor defects and application failures. It does not cover pre-existing surface conditions, substrate failure, moisture damage, or damage caused by events outside the contractor\'s control.<br><br>5. <strong>Limitation of Liability:</strong> Contractor is not responsible for damage to surfaces, structures, or contents that existed prior to the start of work, or for conditions not disclosed at the time of walkthrough. Client assumes all risk associated with pressure washing services on their property.<br><br>6. <strong>Materials &amp; Sales Tax:</strong> Contractor purchases all materials and pays applicable Kansas sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.<br><br>By signing below, client acknowledges full agreement with all scope, pricing, and terms stated in this proposal. This document constitutes a legally binding agreement pursuant to the Kansas Uniform Electronic Transactions Act (K.S.A. 16-1601 et seq.).';
   document.getElementById('sig-date').value=ds;
   document.getElementById('sig-pname').value=cname;
   initSigPad();
@@ -9822,6 +9826,8 @@ function markEstSigned(){
   if(bidId){
     const b=bids.find(x=>x.id===bidId);
     if(b){
+      // Snapshot proposal HTML on in-person signing too (if not already saved from send step)
+      if(!b.proposalHtml){const proposalEl=document.getElementById('est-proposal');if(proposalEl&&proposalEl.innerHTML.trim())b.proposalHtml=proposalEl.innerHTML;}
       b.signedAt=new Date().toISOString();
       b.estStatus='signed';
       b.status='Closed Won'; // ← was missing: must be Closed Won to leave home page + trigger schedule
@@ -12101,6 +12107,25 @@ function getTopScope(scope){
 }
 
 function closeBidHistoryDetail(){const el=document.getElementById('tr-bid-detail');if(el)el.style.display='none';}
+function viewSavedProposal(bidId){
+  const b=bids.find(x=>x.id===bidId);
+  if(!b||!b.proposalHtml){zAlert('No saved proposal found for this bid. Proposals are saved starting from this update — older bids won\'t have one stored.',{title:'Not available'});return;}
+  const ov=document.createElement('div');
+  ov.setAttribute('data-pov','1');
+  ov.style.cssText='position:fixed;inset:0;background:#f0f4f8;z-index:10000;overflow-y:auto;-webkit-overflow-scrolling:touch';
+  const signedBadge=b.signedAt?
+    '<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px">'+
+      '<span style="font-size:16px">✓</span>'+
+      '<span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span>'+
+    '</div>':'';
+  ov.innerHTML=
+    '<div style="position:sticky;top:0;background:#1a365d;color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;z-index:1">'+
+      '<div style="font-size:15px;font-weight:800">Signed Proposal</div>'+
+      '<button onclick="document.querySelector(\'[data-pov]\').remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 14px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Close</button>'+
+    '</div>'+
+    '<div style="padding:16px;max-width:680px;margin:0 auto">'+signedBadge+b.proposalHtml+'</div>';
+  document.body.appendChild(ov);
+}
 function openBidHistoryDetail(bidId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
   const panel=document.getElementById('tr-bid-detail');
@@ -12124,6 +12149,10 @@ function openBidHistoryDetail(bidId){
       (b.addr?'<div style="font-size:12px;color:var(--text2);margin-top:2px">'+b.addr+'</div>':'')+
       '<div style="font-size:12px;color:var(--text3);margin-top:2px">'+b.bid_date+' · '+b.days+' day'+(b.days>1?'s':'')+'</div>'+
     '</div>'+
+
+    (b.proposalHtml?
+      '<button onclick="viewSavedProposal('+bidId+')" style="width:100%;padding:13px;border-radius:var(--r);border:1.5px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">View signed proposal →</button>':
+      '<div style="font-size:11px;color:var(--text3);text-align:center;padding:6px 0 10px;font-style:italic">No saved proposal (sent before this update)</div>')+
 
     '<div class="card" style="margin-bottom:10px">'+
       '<div class="card-hd">Financials</div>'+
