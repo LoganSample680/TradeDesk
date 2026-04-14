@@ -12239,18 +12239,26 @@ async function getCurrentLocAddress(){
     },err=>reject(err),{timeout:10000,enableHighAccuracy:false,maximumAge:60000});
   });
 }
-async function calcTripRoute(fromAddr,toAddr){
-  const geocode=async addr=>{
-    const r=await fetch('https://nominatim.openstreetmap.org/search?q='+encodeURIComponent(addr)+'&format=json&limit=1',{headers:{'Accept-Language':'en-US','User-Agent':'TradeDesk/1.0'}});
-    const d=await r.json();
-    if(!d||!d.length)throw new Error('Address not found: "'+addr+'" — try adding city and state');
-    return{lat:parseFloat(d[0].lat),lng:parseFloat(d[0].lon)};
-  };
-  const [from,to]=await Promise.all([geocode(fromAddr),geocode(toAddr)]);
-  const r=await fetch('https://router.project-osrm.org/route/v1/driving/'+from.lng+','+from.lat+';'+to.lng+','+to.lat+'?overview=false');
+function _photonGeocode(addr){
+  const bias=(S.weatherLat&&S.weatherLon)?'&lat='+S.weatherLat+'&lon='+S.weatherLon:'&lat=37.6922&lon=-97.3375';
+  return fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(addr)+'&limit=1'+bias+'&lang=en')
+    .then(r=>r.json())
+    .then(d=>{
+      if(!d||!d.features||!d.features.length)throw new Error('Address not found: "'+addr+'" — try a more specific address or add city and state');
+      const[lon,lat]=d.features[0].geometry.coordinates;
+      return{lat,lng:lon};
+    });
+}
+async function _valhallaRoute(fromCoords,toCoords){
+  const body={locations:[{lon:fromCoords.lng,lat:fromCoords.lat},{lon:toCoords.lng,lat:toCoords.lat}],costing:'auto',directions_options:{units:'miles'}};
+  const r=await fetch('https://valhalla1.openstreetmap.de/route',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json();
-  if(!d||d.code!=='Ok'||!d.routes||!d.routes.length)throw new Error('No route found between these addresses');
-  return{miles:Math.round(d.routes[0].distance/1609.34*10)/10,mins:Math.round(d.routes[0].duration/60)};
+  if(!d||!d.trip){const msg=d&&d.error?d.error:'No route found between these locations';throw new Error(msg);}
+  return{miles:Math.round(d.trip.summary.length*10)/10,mins:Math.round(d.trip.summary.time/60)};
+}
+async function calcTripRoute(fromAddr,toAddr){
+  const [from,to]=await Promise.all([_photonGeocode(fromAddr),_photonGeocode(toAddr)]);
+  return _valhallaRoute(from,to);
 }
 function startDriveToClient(){
   const c=getClientById(currentClientId);
@@ -12267,7 +12275,8 @@ function tripPlaceSearch(fieldId,suggId,val){
   if(val.length<2){box.style.display='none';return;}
   _tripSearchTimers[fieldId]=setTimeout(async()=>{
     try{
-      const r=await fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit=6',{headers:{'Accept-Language':'en-US'}});
+      const bias=(S.weatherLat&&S.weatherLon)?'&lat='+S.weatherLat+'&lon='+S.weatherLon:'&lat=37.6922&lon=-97.3375';
+      const r=await fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit=6'+bias+'&lang=en');
       const d=await r.json();
       const features=d.features||[];
       if(!features.length){box.style.display='none';return;}
@@ -12414,19 +12423,9 @@ async function calculateAndShowRoute(){
   try{
     let fromCoords=_lmCoords.from;
     let toCoords=_lmCoords.to;
-    const geocode=async addr=>{
-      const r=await fetch('https://nominatim.openstreetmap.org/search?q='+encodeURIComponent(addr)+'&format=json&limit=1',{headers:{'Accept-Language':'en-US','User-Agent':'TradeDesk/1.0'}});
-      const d=await r.json();
-      if(!d||!d.length)throw new Error('Address not found: "'+addr+'" — try adding city and state');
-      return{lat:parseFloat(d[0].lat),lng:parseFloat(d[0].lon)};
-    };
-    if(!fromCoords)fromCoords=await geocode(fromVal);
-    if(!toCoords)toCoords=await geocode(toVal);
-    const r=await fetch('https://router.project-osrm.org/route/v1/driving/'+fromCoords.lng+','+fromCoords.lat+';'+toCoords.lng+','+toCoords.lat+'?overview=false');
-    const rd=await r.json();
-    if(!rd||rd.code!=='Ok'||!rd.routes?.length)throw new Error('No route found between these locations');
-    const miles=Math.round(rd.routes[0].distance/1609.34*10)/10;
-    const mins=Math.round(rd.routes[0].duration/60);
+    if(!fromCoords)fromCoords=await _photonGeocode(fromVal);
+    if(!toCoords)toCoords=await _photonGeocode(toVal);
+    const{miles,mins}=await _valhallaRoute(fromCoords,toCoords);
     document.getElementById('lm-miles-val').value=miles;
     document.getElementById('lm-miles-display').textContent=miles.toFixed(1)+' miles';
     document.getElementById('lm-time-display').textContent='~'+mins+' min drive · IRS deduction: '+fmt(miles*IRS());
