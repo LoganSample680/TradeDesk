@@ -1758,7 +1758,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}</style>
   <div class="tbar"><div><div class="tbar-title">Jobs</div><div class="tbar-sub" id="jobs-count-sub"></div></div><button class="btn btn-p btn-sm" onclick="goPg('pg-schedule')">+ Schedule</button></div>
   <div style="margin-bottom:14px">
     <div style="display:flex;gap:6px;flex-wrap:wrap;padding-bottom:4px">
-      <button type="button" class="fb active" id="jft-all"       onclick="setJobFilter('all',this)">All</button>
+      <button type="button" class="fb active" id="jft-all"       onclick="setJobFilter('all',this)">Board</button>
       <button type="button" class="fb"        id="jft-scheduled"  onclick="setJobFilter('scheduled',this)">Scheduled</button>
       <button type="button" class="fb"        id="jft-active"     onclick="setJobFilter('active',this)">Active</button>
       <button type="button" class="fb"        id="jft-completed"  onclick="setJobFilter('completed',this)">Completed</button>
@@ -12490,24 +12490,25 @@ async function getCurrentLocAddress(){
     },err=>reject(err),{timeout:10000,enableHighAccuracy:false,maximumAge:60000});
   });
 }
+function _photonGeocode(addr){
+  const bias=(S.weatherLat&&S.weatherLon)?'&lat='+S.weatherLat+'&lon='+S.weatherLon:'&lat=37.6922&lon=-97.3375';
+  return fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(addr)+'&limit=1'+bias+'&lang=en')
+    .then(r=>r.json())
+    .then(d=>{
+      if(!d||!d.features||!d.features.length)throw new Error('Address not found: "'+addr+'" — try a more specific address or add city and state');
+      const[lon,lat]=d.features[0].geometry.coordinates;
+      return{lat,lng:lon};
+    });
+}
 async function _valhallaRoute(fromCoords,toCoords){
-  // Valhalla routing — OpenStreetMap Foundation production server, no API key, fast
   const body={locations:[{lon:fromCoords.lng,lat:fromCoords.lat},{lon:toCoords.lng,lat:toCoords.lat}],costing:'auto',directions_options:{units:'miles'}};
   const r=await fetch('https://valhalla1.openstreetmap.de/route',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json();
-  if(!d||!d.trip)throw new Error('No route found between these locations');
-  const miles=Math.round(d.trip.summary.length*10)/10;
-  const mins=Math.round(d.trip.summary.time/60);
-  return{miles,mins};
+  if(!d||!d.trip){const msg=d&&d.error?d.error:'No route found between these locations';throw new Error(msg);}
+  return{miles:Math.round(d.trip.summary.length*10)/10,mins:Math.round(d.trip.summary.time/60)};
 }
 async function calcTripRoute(fromAddr,toAddr){
-  const geocode=async addr=>{
-    const r=await fetch('https://nominatim.openstreetmap.org/search?q='+encodeURIComponent(addr)+'&format=json&limit=1&countrycodes=us',{headers:{'Accept-Language':'en-US','User-Agent':'TradeDesk/1.0'}});
-    const d=await r.json();
-    if(!d||!d.length)throw new Error('Address not found: "'+addr+'" — try adding city and state');
-    return{lat:parseFloat(d[0].lat),lng:parseFloat(d[0].lon)};
-  };
-  const [from,to]=await Promise.all([geocode(fromAddr),geocode(toAddr)]);
+  const [from,to]=await Promise.all([_photonGeocode(fromAddr),_photonGeocode(toAddr)]);
   return _valhallaRoute(from,to);
 }
 function startDriveToClient(){
@@ -12525,7 +12526,8 @@ function tripPlaceSearch(fieldId,suggId,val){
   if(val.length<2){box.style.display='none';return;}
   _tripSearchTimers[fieldId]=setTimeout(async()=>{
     try{
-      const r=await fetch('https://nominatim.openstreetmap.org/search?q='+encodeURIComponent(val)+'&format=json&limit=6&addressdetails=1&countrycodes=us',{headers:{'Accept-Language':'en-US','User-Agent':'TradeDesk/1.0'}});
+      const bias=(S.weatherLat&&S.weatherLon)?'&lat='+S.weatherLat+'&lon='+S.weatherLon:'&lat=37.6922&lon=-97.3375';
+      const r=await fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit=6'+bias+'&lang=en');
       const d=await r.json();
       if(!d||!d.length){box.style.display='none';return;}
       const whichKey=fieldId==='lm-from'?'from':'to';
@@ -12670,20 +12672,8 @@ async function calculateAndShowRoute(){
   try{
     let fromCoords=_lmCoords.from;
     let toCoords=_lmCoords.to;
-    // Geocode any addresses not already resolved from autocomplete selection
-    if(!fromCoords||!toCoords){
-      const geocode=async addr=>{
-        const r=await fetch('https://nominatim.openstreetmap.org/search?q='+encodeURIComponent(addr)+'&format=json&limit=1&countrycodes=us',{headers:{'Accept-Language':'en-US','User-Agent':'TradeDesk/1.0'}});
-        const d=await r.json();
-        if(!d||!d.length)throw new Error('Address not found: "'+addr+'" — try adding city and state');
-        return{lat:parseFloat(d[0].lat),lng:parseFloat(d[0].lon)};
-      };
-      const needed=[];
-      if(!fromCoords)needed.push(geocode(fromVal).then(c=>{fromCoords=c;}));
-      if(!toCoords)needed.push(geocode(toVal).then(c=>{toCoords=c;}));
-      await Promise.all(needed);
-    }
-    // Valhalla exact road routing — production OSM server, no API key, fast
+    if(!fromCoords)fromCoords=await _photonGeocode(fromVal);
+    if(!toCoords)toCoords=await _photonGeocode(toVal);
     const{miles,mins}=await _valhallaRoute(fromCoords,toCoords);
     document.getElementById('lm-miles-val').value=miles;
     document.getElementById('lm-miles-display').textContent=miles.toFixed(1)+' miles';
@@ -13029,6 +13019,7 @@ function renderJobsPage(){
     } else if(st.stage==='signed'){
       primaryBtn='<button onclick="schedFromBid('+b.id+')" style="padding:5px 14px;border-radius:20px;border:none;background:var(--blue);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Schedule →</button>';
     }
+    // Right side: amount + balance state
     const amtColor=balance>0.01?'#A32D2D':paid>0?'var(--green-mid)':'var(--text)';
     const amtSub=balance>0.01?'<div style="font-size:10px;font-weight:700;color:#A32D2D;margin-top:1px">'+fmt(balance)+' due</div>':
                  paid>0?'<div style="font-size:10px;font-weight:600;color:var(--green-mid);margin-top:1px">Paid ✓</div>':'';
@@ -13322,6 +13313,7 @@ function openJobSheet(clientId){
       }).join('')+
     '</div>';
   }
+
   body.innerHTML=payHtml+schedHtml+coHistoryHtml+supplyHtml+scopeHtml+photosHtml+visitNotesHtml+actionsHtml;
   box.appendChild(body);
   ov.appendChild(box);
@@ -13375,34 +13367,43 @@ function showChangeOrderModal(bidId,clientId){
   _coBidId=bidId;_coClientId=clientId;_coType=null;
   const c=getClientById(b.client_id)||{name:b.client_name||'Client'};
   const coNum=(b.changeOrders||[]).length+1;
+  // Build original scope summary
   const surfLines=(b.surfaces||[]).filter(s=>s.qty>0).map(s=>{
     const t=SURF_TYPES.find(x=>x.v===s.type);
     return t?t.label+(s.room?' ('+s.room.split(' — ')[0]+')':''):'';
   }).filter(Boolean);
   const scopeSummary=surfLines.length?surfLines.slice(0,4).join(', ')+(surfLines.length>4?' + '+(surfLines.length-4)+' more':''):'No surfaces recorded';
+
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
   const box=document.createElement('div');
   box.style.cssText='background:var(--bg);border-radius:var(--rl);width:100%;max-width:500px;max-height:92vh;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:20px;box-sizing:border-box';
   box.innerHTML=
+    // Header
     '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">'+
-      '<div><div style="font-size:18px;font-weight:800">Change Order #'+coNum+'</div>'+
-      '<div style="font-size:12px;color:var(--text3);margin-top:2px">'+escHtml(c.name)+'</div></div>'+
+      '<div>'+
+        '<div style="font-size:18px;font-weight:800">Change Order #'+coNum+'</div>'+
+        '<div style="font-size:12px;color:var(--text3);margin-top:2px">'+escHtml(c.name)+'</div>'+
+      '</div>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:var(--bg2);border:1px solid var(--border2);color:var(--text3);font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1">✕</button>'+
     '</div>'+
+    // Original contract box
     '<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:12px 14px;margin-bottom:16px">'+
       '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:6px">Original Contract</div>'+
       '<div style="font-size:20px;font-weight:800;color:var(--text);margin-bottom:4px">'+fmt(b.amount)+'</div>'+
       '<div style="font-size:11px;color:var(--text3);line-height:1.4">'+escHtml(scopeSummary)+'</div>'+
     '</div>'+
+    // Description
     '<div class="f" style="margin-bottom:12px">'+
       '<label style="font-size:11px;font-weight:700;color:var(--text3)">What changed? <span style="color:#A32D2D">*</span></label>'+
       '<textarea id="co-desc" placeholder="e.g. Added master bedroom ceiling, client requested accent wall in hallway..." '+
         'style="width:100%;min-height:72px;font-size:13px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:none;box-sizing:border-box;line-height:1.5"></textarea>'+
     '</div>'+
+    // Add / Reduce toggle
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">'+
       '<button id="co-add-btn" onclick="setCOType(\'add\','+bidId+')" style="padding:11px 8px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">+ Add work</button>'+
       '<button id="co-sub-btn" onclick="setCOType(\'sub\','+bidId+')" style="padding:11px 8px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">− Remove work</button>'+
     '</div>'+
+    // Amount input (hidden until type selected)
     '<div id="co-amount-wrap" style="display:none;margin-bottom:16px">'+
       '<label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:6px">Dollar amount <span style="color:#A32D2D">*</span></label>'+
       '<input type="number" id="co-amount" min="0" step="25" placeholder="0" inputmode="decimal" '+
@@ -13410,6 +13411,7 @@ function showChangeOrderModal(bidId,clientId){
         'oninput="_previewCO('+bidId+')">'+
       '<div id="co-preview" style="font-size:14px;font-weight:700;text-align:center;min-height:22px;margin-top:10px;padding:10px;background:var(--bg2);border-radius:var(--r)"></div>'+
     '</div>'+
+    // Buttons
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="padding:13px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
       '<button onclick="_reviewCO('+bidId+','+clientId+')" style="padding:13px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Review &amp; Sign →</button>'+
@@ -13453,34 +13455,44 @@ function _reviewCO(bidId,clientId){
   const delta=_coType==='add'?amt:-amt;
   const newTotal=Math.max(0,Math.round((b.amount+delta)*100)/100);
   const coData={desc,type:_coType,amount:amt,delta,originalAmount:b.amount,newAmount:newTotal,coNum};
+  // Show the CO document for signing
   document.querySelector('.zmodal-overlay')?.remove();
   _showCOSignDocument(b,c,coData,clientId);
 }
 
 function _showCOSignDocument(b,c,coData,clientId){
-  const{desc,type,amount,delta,originalAmount,newAmount,coNum}=coData;
+  const {desc,type,amount,delta,originalAmount,newAmount,coNum}=coData;
   const biz=S.bname||"ZJ's Painting & Special Coatings";
   const dateStr=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
-  const surfLines=(b.surfaces||[]).filter(s=>s.qty>0).map(s=>{const t=SURF_TYPES.find(x=>x.v===s.type);return t?t.label+(s.room?' ('+s.room.split(' — ')[0]+')':''):'';}).filter(Boolean);
+  // Build scope summary from original bid
+  const surfLines=(b.surfaces||[]).filter(s=>s.qty>0).map(s=>{
+    const t=SURF_TYPES.find(x=>x.v===s.type);
+    return t?t.label+(s.room?' ('+s.room.split(' — ')[0]+')':''):'';
+  }).filter(Boolean);
   const deltaLabel=type==='add'?'+'+fmt(amount):'-'+fmt(amount);
   const deltaColor=type==='add'?'var(--blue)':'#A32D2D';
+
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;box-sizing:border-box';
   const doc=document.createElement('div');
   doc.style.cssText='background:#fff;border-radius:12px;width:100%;max-width:540px;margin:auto;overflow:hidden;font-family:inherit;color:#111';
   doc.innerHTML=
+    // Document header
     '<div style="background:#1a365d;color:#fff;padding:20px 24px">'+
       '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;opacity:.7;margin-bottom:4px">Change Order</div>'+
       '<div style="font-size:22px;font-weight:800;margin-bottom:2px">'+escHtml(biz)+'</div>'+
       '<div style="font-size:13px;opacity:.8">'+escHtml(c.name)+' · '+dateStr+'</div>'+
     '</div>'+
     '<div style="padding:20px 24px">'+
+      // CO number badge
       '<div style="display:inline-block;background:#EBF2FB;color:#1a365d;font-size:12px;font-weight:800;padding:4px 12px;border-radius:20px;margin-bottom:18px">CO #'+coNum+'</div>'+
+      // Original contract
       '<div style="margin-bottom:18px;padding-bottom:18px;border-bottom:1.5px solid #e5e7eb">'+
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:8px">Original Contract</div>'+
         '<div style="font-size:24px;font-weight:800;color:#111;margin-bottom:6px">'+fmt(originalAmount)+'</div>'+
         (surfLines.length?'<div style="font-size:12px;color:#6b7280;line-height:1.5">'+escHtml(surfLines.join(' · '))+'</div>':'')+
       '</div>'+
+      // Change description
       '<div style="margin-bottom:18px;padding-bottom:18px;border-bottom:1.5px solid #e5e7eb">'+
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:8px">Change Requested</div>'+
         '<div style="font-size:14px;color:#111;line-height:1.5;margin-bottom:10px">'+escHtml(desc)+'</div>'+
@@ -13489,18 +13501,29 @@ function _showCOSignDocument(b,c,coData,clientId){
           '<span style="font-size:16px;font-weight:800;color:'+deltaColor+'">'+deltaLabel+'</span>'+
         '</div>'+
       '</div>'+
+      // New total
       '<div style="background:#f0fdf4;border:2px solid #86efac;border-radius:10px;padding:14px 18px;margin-bottom:24px;display:flex;justify-content:space-between;align-items:center">'+
         '<div style="font-size:13px;font-weight:700;color:#166534">New Contract Total</div>'+
         '<div style="font-size:26px;font-weight:800;color:#166534">'+fmt(newAmount)+'</div>'+
       '</div>'+
-      '<div style="font-size:11px;color:#6b7280;line-height:1.5;margin-bottom:20px;padding:12px;background:#f9fafb;border-radius:8px">By signing below, both parties agree to modify the original painting contract to reflect the scope and price changes described above. All other terms of the original contract remain in effect. This change order is legally binding upon signature per K.S.A. 16-1601 et seq.</div>'+
+      // Legal
+      '<div style="font-size:11px;color:#6b7280;line-height:1.5;margin-bottom:20px;padding:12px;background:#f9fafb;border-radius:8px">'+
+        'By signing below, both parties agree to modify the original painting contract to reflect the scope and price changes described above. All other terms of the original contract remain in effect. This change order is legally binding upon signature per K.S.A. 16-1601 et seq.'+
+      '</div>'+
+      // Signature canvas
       '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:6px">Client signature</div>'+
-      '<canvas id="co-sign-canvas" width="500" height="140" style="width:100%;height:140px;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;touch-action:none;cursor:crosshair;display:block;margin-bottom:4px"></canvas>'+
-      '<div style="display:flex;justify-content:flex-end;margin-bottom:14px"><button onclick="_clearCOCanvas()" style="font-size:11px;color:#6b7280;background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear</button></div>'+
+      '<canvas id="co-sign-canvas" width="500" height="140" '+
+        'style="width:100%;height:140px;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;touch-action:none;cursor:crosshair;display:block;margin-bottom:4px"></canvas>'+
+      '<div style="display:flex;justify-content:flex-end;margin-bottom:14px">'+
+        '<button onclick="_clearCOCanvas()" style="font-size:11px;color:#6b7280;background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear</button>'+
+      '</div>'+
+      // Typed name
       '<div style="margin-bottom:20px">'+
         '<label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:6px">Type full name to confirm</label>'+
-        '<input type="text" id="co-sign-name" placeholder="Full name" autocomplete="off" style="width:100%;box-sizing:border-box;font-size:16px;padding:10px 12px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-family:inherit;color:#111">'+
+        '<input type="text" id="co-sign-name" placeholder="Full name" autocomplete="off" '+
+          'style="width:100%;box-sizing:border-box;font-size:16px;padding:10px 12px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-family:inherit;color:#111">'+
       '</div>'+
+      // Action buttons
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
         '<button onclick="this.closest(\'[style*=fixed]\').remove();showChangeOrderModal('+b.id+','+clientId+')" style="padding:13px;border-radius:8px;border:1.5px solid #d1d5db;background:#f9fafb;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:#374151">← Back</button>'+
         '<button onclick="_submitCOSign('+b.id+','+clientId+')" style="padding:13px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">✓ Sign Change Order</button>'+
@@ -13508,7 +13531,9 @@ function _showCOSignDocument(b,c,coData,clientId){
     '</div>';
   ov.appendChild(doc);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  // Store CO data on the element for retrieval
   ov.dataset.coData=JSON.stringify(coData);
+  // Wire up signature canvas
   setTimeout(()=>{
     const canvas=document.getElementById('co-sign-canvas');if(!canvas)return;
     _coSignCanvas=canvas;_coSignCtx=canvas.getContext('2d');
@@ -13531,6 +13556,7 @@ function _submitCOSign(bidId,clientId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
   const signerName=(document.getElementById('co-sign-name')?.value||'').trim();
   if(!signerName){const el=document.getElementById('co-sign-name');if(el){el.style.borderColor='#A32D2D';el.focus();}zAlert('Type the client\'s full name to confirm.',{title:'Name required'});return;}
+  // Check canvas has something drawn
   let sigData='';
   if(_coSignCanvas){
     const d=_coSignCtx.getImageData(0,0,_coSignCanvas.width,_coSignCanvas.height).data;
@@ -13538,12 +13564,18 @@ function _submitCOSign(bidId,clientId){
     if(!hasSig){zAlert('Client needs to sign in the box above.',{title:'Signature required'});return;}
     sigData=_coSignCanvas.toDataURL('image/png');
   }
+  // Retrieve coData stored on overlay
   const ov=document.getElementById('co-sign-canvas')?.closest('[style*=fixed]');
   const coData=ov?.dataset?.coData?JSON.parse(ov.dataset.coData):null;
   if(!coData)return;
   const{desc,type,amount,delta,originalAmount,newAmount,coNum}=coData;
+  // Save CO
   if(!b.changeOrders)b.changeOrders=[];
-  b.changeOrders.push({id:Date.now(),coNum,date:todayKey(),desc,type,amount,delta,originalAmount,newAmount,signedAt:new Date().toISOString(),signerName,sigData});
+  b.changeOrders.push({
+    id:Date.now(),coNum,date:todayKey(),desc,type,amount,delta,
+    originalAmount,newAmount,
+    signedAt:new Date().toISOString(),signerName,sigData
+  });
   b.amount=newAmount;
   saveAll();renderDash();renderJobsPage();
   ov?.remove();
@@ -13551,6 +13583,7 @@ function _submitCOSign(bidId,clientId){
   setTimeout(()=>openJobSheet(clientId),300);
 }
 
+// legacy alias kept so any old calls still work
 function confirmChangeOrder(bidId,clientId){_reviewCO(bidId,clientId);}
 
 // ── Money page ────────────────────────────────────────────────────────────
