@@ -18,22 +18,18 @@ Deno.serve(async (req) => {
       });
     }
 
-    const supaAnon = createClient(
+    // Use service role client to verify token — works with both HS256 and ES256
+    const supaAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      { global: { headers: { Authorization: authHeader } } }
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
-    const { data: { user }, error: authErr } = await supaAnon.auth.getUser();
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authErr } = await supaAdmin.auth.getUser(token);
     if (authErr || !user) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401, headers: { ...CORS, 'Content-Type': 'application/json' },
       });
     }
-
-    const supaAdmin = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
 
     const { data: userRow } = await supaAdmin
       .from('users')
