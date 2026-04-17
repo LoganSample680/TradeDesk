@@ -70,11 +70,12 @@ Deno.serve(async (req) => {
     }
 
     // Build onboarding link — use passed returnUrl or fall back to app URL env
-    const baseUrl = returnUrl || Deno.env.get('APP_URL') || 'https://tradedesk.app';
+    // Use query params — Stripe strips URL fragments (#) from return URLs
+    const baseUrl = 'https://logansample680.github.io/TradeDesk/';
     const link = await stripe.accountLinks.create({
       account: stripeAccountId,
-      refresh_url: baseUrl + '#stripe-reauth',
-      return_url: baseUrl + '#stripe-return',
+      refresh_url: baseUrl + '?stripe_reauth=1',
+      return_url: baseUrl + '?stripe_connected=1',
       type: 'account_onboarding',
     });
 

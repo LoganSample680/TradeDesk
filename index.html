@@ -9808,9 +9808,9 @@ function openStripeConnect(){
 }
 
 async function checkStripeConnectReturn(){
-  const hash=window.location.hash;
-  if(hash==='#stripe-return'){
-    history.replaceState(null,'',window.location.pathname+window.location.search);
+  const params=new URLSearchParams(window.location.search);
+  if(params.get('stripe_connected')==='1'){
+    history.replaceState(null,'',window.location.pathname);
     await loadStripeConnectStatus();
     const st=_stripeConnectStatus;
     if(st?.charges_enabled){
@@ -9819,8 +9819,8 @@ async function checkStripeConnectReturn(){
       showToast('Stripe setup needs a bit more info — check Settings → Stripe.','⚠️');
     }
     goPg('pg-settings');
-  } else if(hash==='#stripe-reauth'){
-    history.replaceState(null,'',window.location.pathname+window.location.search);
+  } else if(params.get('stripe_reauth')==='1'){
+    history.replaceState(null,'',window.location.pathname);
     await startStripeConnect();
   }
 }
