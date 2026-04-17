@@ -1637,13 +1637,17 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
       </div>
     </div>
   </div>
-  <div class="card"><div class="card-hd">💳 Stripe payments <span>Accept card &amp; bank deposits from clients</span></div>
-    <div style="font-size:13px;color:var(--text2);margin-bottom:10px;line-height:1.6">Enter your Stripe publishable key to enable card and ACH payments on client signing pages. Without it, clients see cash only.</div>
-    <div class="f" style="margin-bottom:8px"><label>Stripe Publishable Key</label>
-      <input type="text" id="set-stripe-pk" placeholder="pk_live_..." style="font-size:13px;padding:9px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;font-family:monospace">
+  <div class="card"><div class="card-hd">💳 Stripe Connect <span>Accept card &amp; bank payments directly</span></div>
+    <div id="stripe-connect-status-ui">
+      <div style="font-size:12px;color:var(--text3);padding:10px 0">Checking Stripe status…</div>
     </div>
-    <div style="font-size:11px;color:var(--text3);margin-bottom:10px">Find at dashboard.stripe.com → Developers → API keys → Publishable key</div>
-    <button class="btn btn-p btn-sm" onclick="saveStripeKey()">Save Stripe key</button>
+    <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:6px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">Stripe Publishable Key</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:8px;line-height:1.5">Required for client signing pages — enter the key from your Stripe dashboard.</div>
+      <div class="f" style="margin-bottom:8px"><input type="text" id="set-stripe-pk" placeholder="pk_live_…" style="font-size:13px;padding:9px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;font-family:monospace"></div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:8px">dashboard.stripe.com → Developers → API keys → Publishable key</div>
+      <button class="btn btn-sm" onclick="saveStripeKey()">Save key</button>
+    </div>
   </div>
   <div class="card"><div class="card-hd">Estimator defaults</div>
     <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
@@ -2490,7 +2494,7 @@ function goPg(id){
   if(id==='pg-tracker'){renderTrackerTab();populateExpJobSel();}
   if(id==='pg-taxes')calcTax();
   if(id==='pg-settings'){buildScopeDefaultsUI();
-    loadSettingsForm();renderVehicleSettings();updateLocationBtn();renderTeam();
+    loadSettingsForm();renderVehicleSettings();updateLocationBtn();renderTeam();loadStripeConnectStatus();
     if(window._scrollToVehicles){
       window._scrollToVehicles=false;
       setTimeout(()=>{
@@ -5006,6 +5010,7 @@ function renderCDBids(){
       // Close job button — when won but not yet marked complete
       if(!b.completion_date){const linkedJob=jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id);const jid=linkedJob?.id;if(jid)actBtns.push('<button class="btn btn-sm" onclick="markJobDone('+jid+')" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid)">✓ Close job</button>');}
       if(balance>0.01)actBtns.push('<button class="btn btn-sm btn-g" onclick="openPayPanel('+b.id+')">+ Log payment</button>');
+      if(balance>0.01&&_stripeConnectStatus?.charges_enabled)actBtns.push('<button class="btn btn-sm" onclick="sendPaymentLink('+b.id+')" style="background:#635BFF;color:#fff;border-color:#635BFF;font-size:11px">💳 Send pay link</button>');
       if(balance>0.01&&b.completion_date){const _c=getClientById(b.client_id);if(_c&&_c.phone){const _msg=encodeURIComponent('Hi '+_c.name.split(' ')[0]+', this is '+(S.bname||'your contractor')+'. Just a friendly reminder that a balance of '+fmt(balance)+' is outstanding for your job at '+(b.addr||_c.addr||'your property')+'. Please let us know when you can take care of this. Thank you!');actBtns.push('<a href="sms:'+_c.phone.replace(/\D/g,'')+'&body='+_msg+'" onclick="autoLogContact('+b.client_id+',\'payment_request\')" class="btn btn-sm" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid);text-decoration:none">📲 Request pay</a>');}}
       if(getBidPaid(b.id)>(b.amount||0)+0.01)actBtns.push('<button class="btn btn-sm" onclick="openPayPanel('+b.id+')" style="background:#FFF0F0;color:#A32D2D;border-color:#A32D2D">↩ Issue refund</button>');
       actBtns.push('<button class="btn btn-sm" onclick="toggleBidSummary('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128196; View bid</button>');
@@ -9722,6 +9727,152 @@ function saveStripeKey(){
     _supa.from('account_config').update({stripe_pk:key||null}).eq('account_id',_config.account_id).then(()=>{});
   }
   zAlert(key?'Stripe key saved — card payments enabled on signing links':'Stripe removed — clients will see cash only');
+}
+
+// ── Stripe Connect ─────────────────────────────────────────────────────────
+let _stripeConnectStatus=null; // cached: {connected, charges_enabled, details_submitted, stripe_account_id}
+
+async function loadStripeConnectStatus(){
+  const el=document.getElementById('stripe-connect-status-ui');if(!el)return;
+  if(!supaEnabled()||!_supaUser){
+    el.innerHTML='<div style="font-size:12px;color:var(--text3)">Sign in to connect Stripe.</div>';return;
+  }
+  try{
+    const session=await _supa.auth.getSession();
+    const token=session?.data?.session?.access_token;
+    if(!token){el.innerHTML='<div style="font-size:12px;color:var(--text3)">Sign in to connect Stripe.</div>';return;}
+    const res=await fetch(SUPA_URL+'/functions/v1/stripe-connect-status',{
+      method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}'
+    });
+    const data=await res.json();
+    _stripeConnectStatus=data;
+    _renderStripeConnectUI(el,data);
+  }catch(e){
+    el.innerHTML='<div style="font-size:12px;color:var(--red)">Could not check Stripe status.</div>';
+  }
+}
+
+function _renderStripeConnectUI(el,data){
+  if(!data||!data.connected){
+    el.innerHTML=
+      '<div style="font-size:13px;color:var(--text2);margin-bottom:10px;line-height:1.5">Connect your Stripe account so clients can pay you directly via card or bank transfer. Money lands in your Stripe account instantly.</div>'+
+      '<button class="btn btn-p" onclick="startStripeConnect()" style="font-size:13px;padding:10px 18px">⚡ Connect Stripe Account</button>';
+    return;
+  }
+  if(data.connected&&!data.charges_enabled){
+    el.innerHTML=
+      '<div style="display:flex;align-items:center;gap:8px;background:#FFF8F0;border:1px solid var(--amber);border-radius:var(--r);padding:10px 12px;margin-bottom:10px">'+
+        '<span style="font-size:16px">⚠️</span>'+
+        '<div>'+
+          '<div style="font-size:13px;font-weight:700;color:#856404">Stripe setup incomplete</div>'+
+          '<div style="font-size:11px;color:var(--text3)">Account created but onboarding not finished.</div>'+
+        '</div>'+
+      '</div>'+
+      '<button class="btn btn-p btn-sm" onclick="startStripeConnect()">Resume setup →</button>';
+    return;
+  }
+  // Fully connected
+  el.innerHTML=
+    '<div style="display:flex;align-items:center;gap:8px;background:var(--green-lt);border:1px solid var(--green);border-radius:var(--r);padding:10px 12px;margin-bottom:10px">'+
+      '<span style="font-size:18px">✅</span>'+
+      '<div style="flex:1">'+
+        '<div style="font-size:13px;font-weight:700;color:var(--green-mid)">Stripe connected — payments active</div>'+
+        '<div style="font-size:11px;color:var(--text3)">Account: '+escHtml(data.stripe_account_id)+(data.payouts_enabled?' · Payouts on':' · Payouts pending')+'</div>'+
+      '</div>'+
+    '</div>'+
+    '<button class="btn btn-sm" onclick="openStripeConnect()" style="font-size:11px;color:var(--text3)">Manage in Stripe →</button>';
+}
+
+async function startStripeConnect(){
+  if(!supaEnabled()||!_supaUser){zAlert('Sign in first.');return;}
+  const btn=event?.target;if(btn){btn.disabled=true;btn.textContent='Starting…';}
+  try{
+    const session=await _supa.auth.getSession();
+    const token=session?.data?.session?.access_token;
+    const res=await fetch(SUPA_URL+'/functions/v1/stripe-connect-onboard',{
+      method:'POST',
+      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({returnUrl:window.location.href.split('#')[0]})
+    });
+    const data=await res.json();
+    if(data.error){zAlert('Stripe error: '+data.error);if(btn){btn.disabled=false;btn.textContent='⚡ Connect Stripe Account';}return;}
+    window.location.href=data.url;
+  }catch(e){
+    zAlert('Could not start Stripe Connect: '+e.message);
+    if(btn){btn.disabled=false;btn.textContent='⚡ Connect Stripe Account';}
+  }
+}
+
+function openStripeConnect(){
+  window.open('https://dashboard.stripe.com/','_blank');
+}
+
+async function checkStripeConnectReturn(){
+  const hash=window.location.hash;
+  if(hash==='#stripe-return'){
+    history.replaceState(null,'',window.location.pathname+window.location.search);
+    await loadStripeConnectStatus();
+    const st=_stripeConnectStatus;
+    if(st?.charges_enabled){
+      showToast('Stripe connected! You can now receive card payments.','✅');
+    } else {
+      showToast('Stripe setup needs a bit more info — check Settings → Stripe.','⚠️');
+    }
+    goPg('pg-settings');
+  } else if(hash==='#stripe-reauth'){
+    history.replaceState(null,'',window.location.pathname+window.location.search);
+    await startStripeConnect();
+  }
+}
+
+async function sendPaymentLink(bidId){
+  const bid=bids.find(b=>b.id===bidId);if(!bid)return;
+  const c=getClientById(bid.client_id);if(!c)return;
+  const balance=getBidBalance(bid);
+  if(balance<0.50){zAlert('No balance outstanding on this bid.');return;}
+  if(!supaEnabled()||!_supaUser){zAlert('Sign in to send payment links.');return;}
+  if(!_stripeConnectStatus?.charges_enabled){
+    zAlert('Connect your Stripe account in Settings first.','',{title:'Stripe not connected'});goPg('pg-settings');return;
+  }
+  try{
+    showToast('Creating payment link…','⏳');
+    const session=await _supa.auth.getSession();
+    const token=session?.data?.session?.access_token;
+    const baseUrl=window.location.href.split('#')[0];
+    const res=await fetch(SUPA_URL+'/functions/v1/create-checkout',{
+      method:'POST',
+      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({
+        amount:Math.round(balance*100),
+        currency:'usd',
+        paymentMethod:'card',
+        proposalKey:null,
+        clientName:c.name,
+        businessName:S.bname||'Your Contractor',
+        bidId:String(bid.id),
+        contractorUserId:_supaUser.id,
+        notifyEmail:_supaUser.email,
+        successUrl:baseUrl+'#paid-'+bid.id,
+        cancelUrl:baseUrl+'#cancel-'+bid.id,
+      })
+    });
+    const data=await res.json();
+    if(data.error){zAlert('Error: '+data.error);return;}
+    // Open SMS with the pay link
+    if(c.phone){
+      const msg=encodeURIComponent(
+        'Hi '+c.name.split(' ')[0]+', here\'s your payment link for '+fmt(balance)+' owed to '+(S.bname||'us')+': '+data.url+' — Thank you!'
+      );
+      window.open('sms:'+c.phone.replace(/\D/g,'')+'&body='+msg,'_self');
+    } else {
+      // No phone — copy to clipboard
+      navigator.clipboard.writeText(data.url).then(()=>showToast('Pay link copied to clipboard!','📋')).catch(()=>{});
+      zAlert('Payment link: '+data.url,'Copy this and send it to your client.',{title:'Payment link ready'});
+    }
+    autoLogContact(bid.client_id,'payment_link_sent');
+  }catch(e){
+    zAlert('Could not create payment link: '+e.message);
+  }
 }
 function syncAdj(){const pct=parseInt(v('est-adj')||0);document.getElementById('est-adj-val').textContent=(pct>0?'+':'')+pct+'%';renderEstReview();}
 
@@ -16438,6 +16589,7 @@ function showDailyBriefing(){
 
 loadAll();applySettings();registerDevice();
 setTimeout(showDailyBriefing,1200);
+setTimeout(checkStripeConnectReturn,800);
 
 // Pull-to-refresh: pull down from top → re-sync from cloud
 (function(){
