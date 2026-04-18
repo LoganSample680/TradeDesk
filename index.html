@@ -1650,6 +1650,24 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
     </div>
   </div>
   <div class="card">
+    <div class="card-hd">Sherwin-Williams Paint Prices <span id="sw-price-updated" style="font-size:10px;font-weight:400;color:var(--text3)">Last updated: Apr 2025</span></div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6">Contractor pricing used in material cost calculations. These are estimated PRO+ account rates — your actual price depends on your account discount tier. Tap refresh to update via AI.</div>
+    <div id="sw-price-table" style="display:grid;grid-template-columns:1fr auto auto;gap:4px 12px;font-size:11px;margin-bottom:12px">
+      <span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Product</span><span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Contractor</span><span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Retail</span>
+      <span>ProMar 700</span><span style="color:var(--green-mid)" id="spp-pm700">$20/gal</span><span style="color:var(--text3)">$55</span>
+      <span>ProMar 200</span><span style="color:var(--green-mid)" id="spp-pm200">$32/gal</span><span style="color:var(--text3)">$83</span>
+      <span>SuperPaint</span><span style="color:var(--green-mid)" id="spp-sp">$37/gal</span><span style="color:var(--text3)">$65</span>
+      <span>Cashmere</span><span style="color:var(--green-mid)" id="spp-cash">$40/gal</span><span style="color:var(--text3)">$60</span>
+      <span>Duration Home</span><span style="color:var(--green-mid)" id="spp-dur">$46/gal</span><span style="color:var(--text3)">$70</span>
+      <span>Emerald</span><span style="color:var(--green-mid)" id="spp-em">$52/gal</span><span style="color:var(--text3)">$74</span>
+      <span>SuperPaint Ext.</span><span style="color:var(--green-mid)" id="spp-spe">$38/gal</span><span style="color:var(--text3)">$63</span>
+      <span>Duration Ext.</span><span style="color:var(--green-mid)" id="spp-dure">$48/gal</span><span style="color:var(--text3)">$81</span>
+      <span>Emerald Urethane</span><span style="color:var(--green-mid)" id="spp-emure">$58/gal</span><span style="color:var(--text3)">$95</span>
+    </div>
+    <button class="btn btn-p" id="sw-price-refresh-btn" onclick="swRefreshPrices()" style="font-size:13px">🔄 Refresh SW prices via AI</button>
+    <div id="sw-price-refresh-status" style="font-size:12px;color:var(--text3);margin-top:8px;display:none"></div>
+  </div>
+  <div class="card">
     <div class="card-hd">Labor rates ($/sq ft or flat) <span>Set these to match what you actually charge</span></div>
     <div class="tip">These are your base labor rates before scope add-ons. If a $2,500 job feels like it should show more profit, raise these to match your real pricing.</div>
     <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
@@ -7398,6 +7416,49 @@ function swSelectProduct(p,btn){
 }
 
 
+
+async function swRefreshPrices(){
+  const btn=document.getElementById('sw-price-refresh-btn');
+  const status=document.getElementById('sw-price-refresh-status');
+  if(btn){btn.disabled=true;btn.textContent='Researching current prices...';}
+  if(status){status.style.display='block';status.textContent='Asking AI for current SW contractor prices...';}
+  try{
+    const month=new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'});
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:800,
+        messages:[{role:'user',content:'Provide estimated current Sherwin-Williams contractor (PRO+ account, ~35% off retail) prices per gallon for Topeka Kansas as of '+month+'. Return ONLY valid JSON, no other text, using this structure: {"pm700":{"c":20,"r":55},"pm200":{"c":32,"r":83},"sp":{"c":37,"r":65},"cash":{"c":40,"r":60},"dur":{"c":46,"r":70},"em":{"c":52,"r":74},"emde":{"c":62,"r":95},"spe":{"c":38,"r":63},"dure":{"c":48,"r":81},"eme":{"c":54,"r":86},"emure":{"c":58,"r":95}} where c=contractor price, r=retail price'}]
+      })
+    });
+    const data=await resp.json();
+    const text=data.content?.[0]?.text||'';
+    const m=text.match(/\{[\s\S]*\}/);
+    if(m){
+      const prices=JSON.parse(m[0]);
+      let updated=0;
+      Object.values(SW_PRODUCTS).flat().forEach(p=>{
+        const pd=prices[p.id];
+        if(pd){p.contractor=pd.c||pd.contractor;p.retail=pd.r||pd.retail;updated++;}
+      });
+      ['pm700','pm200','sp','cash','dur','em','spe','dure','emure'].forEach(id=>{
+        const el=document.getElementById('spp-'+id);
+        const pd=prices[id];
+        if(el&&pd)el.textContent='$'+(pd.c||pd.contractor)+'/gal';
+      });
+      const now=new Date().toLocaleDateString('en-US',{month:'short',year:'numeric'});
+      S.swPricesUpdated=now;S.swPrices=prices;saveAll();
+      const upd=document.getElementById('sw-price-updated');if(upd)upd.textContent='Last updated: '+now;
+      if(status)status.textContent='Updated '+updated+' prices as of '+now;
+    } else {throw new Error('No JSON in response');}
+  }catch(e){
+    if(status)status.textContent='Could not refresh — using cached prices. Try again later.';
+    console.warn('swRefreshPrices:',e);
+  }
+  if(btn){btn.disabled=false;btn.textContent='🔄 Refresh SW prices via AI';}
+}
 
 function swResetProduct(){
   _swProduct=null;
