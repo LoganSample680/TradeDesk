@@ -7409,6 +7409,7 @@ function swSelectProduct(p,btn){
   _swProduct=p;
   const h=document.getElementById('sw-selected-product');if(h)h.value=p.id;
   const lbl=document.getElementById('sw-product-selected');if(lbl)lbl.textContent=p.name;
+  if(p.retail)sf('e-paint-rate',p.retail);
   // Remember this product for this category so next surface can suggest it
   const type=surfBQueue[surfBIdx];
   const cat=SURF_PRODUCT_TYPE[type]||'interior';
@@ -7462,6 +7463,7 @@ async function swRefreshPrices(){
 
 function swResetProduct(){
   _swProduct=null;
+  sf('e-paint-rate',83);
   const h=document.getElementById('sw-selected-product');if(h)h.value='';
   const lbl=document.getElementById('sw-product-selected');if(lbl)lbl.textContent='';
   document.querySelectorAll('#sw-product-grid button').forEach(b=>{
