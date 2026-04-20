@@ -754,6 +754,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   </div>
   <div id="cdt-overview-content">
     <div id="cd-estimates-upcoming"></div>
+    <div class="card" id="cd-opp-card" style="display:none"><div id="cd-opportunities"></div></div>
     <div class="card" id="cd-client-mets"></div>
     <div class="card" id="cd-addresses-card"><div class="card-hd" style="display:flex;justify-content:space-between;align-items:center">Properties<button class="btn btn-sm btn-p" onclick="openAddAddressModal()" style="font-size:11px">+ Add address</button></div><div id="cd-addresses-list"></div></div>
     <div class="card" id="cd-notes-card">
@@ -2706,11 +2707,36 @@ function _askNewPropertyAddress(c){
   if(inp)inp.addEventListener('keydown',e=>{if(e.key==='Enter')go();});
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
-function _doOpenEstimate(c,_overrideAddr){
-  // Route non-painting trades to the generic estimate form
-  const _trade=getActiveTrade();
+let _tradePickCb=null;
+function _showTradePicker(title,cb){
+  _tradePickCb=cb;
+  const lines=_getTradeLines();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_trade-pick-ov';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+title+'</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">Which trade is this for?</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">'+
+    lines.map(id=>{const m=TRADE_META[id]||{icon:'🔧',label:id};return'<button onclick="_pickTrade(\''+id+'\')" style="padding:14px 10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center"><div style="font-size:22px;margin-bottom:4px">'+m.icon+'</div><div style="font-size:13px;font-weight:700;color:var(--text)">'+m.label+'</div></button>';}).join('')+
+    '</div>'+
+    '<button onclick="document.getElementById(\'_trade-pick-ov\')?.remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function _pickTrade(id){
+  document.getElementById('_trade-pick-ov')?.remove();
+  if(_tradePickCb){_tradePickCb(id);_tradePickCb=null;}
+}
+function _doOpenEstimate(c,_overrideAddr,_forceTrade){
+  const lines=_getTradeLines();
+  if(!_forceTrade&&lines.length>1){
+    _showTradePicker('New estimate',t=>_doOpenEstimate(c,_overrideAddr,t));
+    return;
+  }
+  const _trade=_forceTrade||getActiveTrade();
   if(_trade!=='painting'&&_trade!=='general'){
-    openGenericEstimate(c);
+    _activeTrade=_trade;_renderNavTradeSwitcher();
+    openGenericEstimate(c,null,_trade);
     return;
   }
   _resetNotesForNewEstimate();
@@ -4879,6 +4905,7 @@ function renderClientDetail(){
   renderClientNotes();
   renderCDRisk();
   renderCDEstimatesUpcoming();
+  renderCDOpportunities();
   renderCDAddresses();
   renderTodayLegs();
   setCDTab('overview',document.getElementById('cdt-overview'));
@@ -5199,6 +5226,85 @@ function renderCDBids(){
       '</div>';
   }).join('');
 }
+// ── Trade Opportunities ────────────────────────────────────────────────
+function addTradeOpportunity(clientId,trade,title,notes){
+  bids.unshift({id:_newBidId(),client_id:clientId,client_name:getClientById(clientId)?.name||'',trade_type:trade,type:title||(TRADE_META[trade]?.label+' opportunity'),notes:notes||'',status:'opportunity',bid_date:todayKey(),amount:0,draft:false});
+  saveAll();renderCDOpportunities();showToast('Opportunity added','✓');
+}
+function convertOpportunityToEstimate(bidId){
+  const opp=bids.find(b=>b.id===bidId);if(!opp)return;
+  const c=getClientById(opp.client_id);if(!c)return;
+  bids=bids.filter(b=>b.id!==bidId);saveAll();
+  _doOpenEstimate(c,null,opp.trade_type||getActiveTrade());
+}
+function deleteOpportunity(bidId){
+  bids=bids.filter(b=>b.id!==bidId);saveAll();renderCDOpportunities();
+}
+function renderCDOpportunities(){
+  const el=document.getElementById('cd-opportunities');if(!el)return;
+  const lines=_getTradeLines();
+  const opps=bids.filter(b=>b.client_id===currentClientId&&b.status==='opportunity');
+  const card=document.getElementById('cd-opp-card');
+  if(card)card.style.display=(lines.length>1||opps.length)?'':'none';
+  el.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
+      '<div style="font-size:14px;font-weight:700">Trade Opportunities</div>'+
+      '<button class="btn btn-sm btn-p" onclick="openAddOpportunity()" style="font-size:11px">+ Add</button>'+
+    '</div>'+
+    (opps.length?opps.map(o=>{
+      const m=TRADE_META[o.trade_type]||{icon:'🔧',label:o.trade_type||'Trade'};
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid var(--border)">'+
+        '<div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">'+
+          '<div style="font-size:20px;flex-shrink:0">'+m.icon+'</div>'+
+          '<div style="min-width:0"><div style="font-size:13px;font-weight:700">'+o.type+'</div>'+
+          '<div style="font-size:11px;color:var(--text3)">'+m.label+(o.notes?' · '+o.notes.substring(0,40):'')+'</div></div>'+
+        '</div>'+
+        '<div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px">'+
+          '<button class="btn btn-sm btn-p" onclick="convertOpportunityToEstimate('+o.id+')" style="font-size:11px">→ Estimate</button>'+
+          '<button class="btn-del" onclick="deleteOpportunity('+o.id+')" style="font-size:11px;padding:5px 8px">✕</button>'+
+        '</div>'+
+      '</div>';
+    }).join(''):'<div style="font-size:12px;color:var(--text3);padding:6px 0">No opportunities yet — track cross-trade follow-ups here.</div>');
+}
+let _oppSelTrade=null;
+function openAddOpportunity(){
+  const c=getClientById(currentClientId);if(!c)return;
+  const lines=_getTradeLines();
+  _oppSelTrade=lines[0]||null;
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_opp-ov';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Add opportunity</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">Track cross-trade work for '+c.name+'</div>'+
+    '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">Trade</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px" id="opp-trade-grid">'+
+    lines.map(id=>{const m=TRADE_META[id]||{icon:'🔧',label:id};const sel=id===_oppSelTrade;return'<button onclick="oppPickTrade(\''+id+'\')" id="opptrade-'+id+'" style="padding:10px 8px;border-radius:var(--r);border:2px solid '+(sel?'var(--blue)':'var(--border2)')+';background:'+(sel?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;text-align:center;font-size:12px;font-weight:'+(sel?700:400)+'"><div style="font-size:18px;margin-bottom:2px">'+m.icon+'</div>'+m.label+'</button>';}).join('')+
+    '</div>'+
+    '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:6px">Description</div><input id="opp-title" type="text" placeholder="e.g. Electrical diagnostic, HVAC tune-up" style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
+    '<div style="margin-bottom:14px"><div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:6px">Notes (optional)</div><input id="opp-notes" type="text" placeholder="Any details..." style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
+    '<button onclick="submitAddOpportunity()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Add opportunity</button>'+
+    '<button onclick="document.getElementById(\'_opp-ov\')?.remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  setTimeout(()=>document.getElementById('opp-title')?.focus(),80);
+}
+function oppPickTrade(id){
+  _oppSelTrade=id;
+  document.querySelectorAll('[id^=opptrade-]').forEach(b=>{
+    const sel=b.id==='opptrade-'+id;
+    b.style.borderColor=sel?'var(--blue)':'var(--border2)';b.style.background=sel?'var(--blue-lt)':'var(--bg2)';b.style.fontWeight=sel?'700':'400';
+  });
+}
+function submitAddOpportunity(){
+  if(!_oppSelTrade){showToast('Select a trade first','⚠️');return;}
+  const title=document.getElementById('opp-title')?.value.trim()||'';
+  if(!title){showToast('Add a description','⚠️');return;}
+  const notes=document.getElementById('opp-notes')?.value.trim()||'';
+  document.getElementById('_opp-ov')?.remove();
+  addTradeOpportunity(currentClientId,_oppSelTrade,title,notes);
+  _oppSelTrade=null;
+}
+
 function renderCDEstimatesUpcoming(){
   const el=document.getElementById('cd-estimates-upcoming');if(!el)return;
   const tk=todayKey();
@@ -15185,7 +15291,7 @@ function setActiveTrade(type){
 }
 
 function _getTradeLines(){
-  // trade_lines is a comma-separated string or array stored in account_config
+  if(_config?.is_dev)return Object.keys(TRADE_META);
   const raw=_config?.trade_lines;
   if(!raw)return[getActiveTrade()];
   if(Array.isArray(raw))return raw;
@@ -15210,11 +15316,12 @@ function _renderNavTradeSwitcher(){
 // ── Generic estimate (non-painting trades) ────────────────────────────
 let _geiClientId=null,_geiEditBidId=null,_geiLines=[];
 
-function openGenericEstimate(c,bidId){
+function openGenericEstimate(c,bidId,_tradePick){
   _geiClientId=c?.id||null;
   _geiEditBidId=bidId||null;
   _geiLines=[{desc:'',qty:1,unit:'',rate:'',total:0}];
-  const trade=getActiveTrade();
+  if(_tradePick)_activeTrade=_tradePick;
+  const trade=_tradePick||getActiveTrade();
   const m=TRADE_META[trade]||{icon:'🔧',label:trade.charAt(0).toUpperCase()+trade.slice(1)};
   const titleEl=document.getElementById('gei-trade-title');
   if(titleEl)titleEl.textContent=m.icon+' '+m.label+' Estimate';
