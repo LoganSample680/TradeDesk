@@ -1288,6 +1288,53 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
     </div>
   </div>
 </div>
+<div class="pg" id="pg-est-generic">
+  <div class="tbar">
+    <button class="btn btn-sm" onclick="goPg('pg-clients')" style="padding:6px 10px">← Back</button>
+    <div class="tbar-title" id="gei-trade-title">Estimate</div>
+    <button class="btn btn-p btn-sm" id="gei-save-btn" onclick="saveGenericEstimate()">Save</button>
+  </div>
+  <div style="padding:14px 14px 80px">
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
+        <div class="f" style="grid-column:1/-1"><label>Client name</label><input type="text" id="gei-client" placeholder="Client name"></div>
+        <div class="f" style="grid-column:1/-1"><label>Job address</label><input type="text" id="gei-addr" placeholder="123 Main St"></div>
+        <div class="f" style="grid-column:1/-1"><label>Job description</label><input type="text" id="gei-desc" placeholder="e.g. Replace water heater, install shutoff valve"></div>
+        <div class="f"><label>Est. duration</label><input type="text" id="gei-duration" placeholder="e.g. 4 hours, 2 days"></div>
+        <div class="f"><label>Scheduled date</label><input type="date" id="gei-date"></div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Line items</div>
+      <div id="gei-lines"></div>
+      <button class="btn btn-sm" onclick="addGeiLine()" style="margin-top:8px;width:auto;padding:8px 14px;font-size:13px">+ Add line</button>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-size:13px;color:var(--text2)">Subtotal</span>
+        <span id="gei-subtotal" style="font-weight:600;font-size:13px">$0.00</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:13px;color:var(--text2)">Tax / markup</span>
+          <input type="number" id="gei-tax-pct" value="0" min="0" max="100" step="0.5" oninput="calcGeiTotal()" style="width:56px;padding:4px 6px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;background:var(--bg2);color:var(--text)">
+          <span style="font-size:12px;color:var(--text3)">%</span>
+        </div>
+        <span id="gei-tax-amt" style="font-size:13px;color:var(--text2)">$0.00</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid var(--border)">
+        <span style="font-size:15px;font-weight:800">Total</span>
+        <span id="gei-total" style="font-size:22px;font-weight:800;color:var(--blue)">$0.00</span>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div class="f"><label>Notes / scope details</label><textarea id="gei-notes" rows="3" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical" placeholder="Any additional scope, exclusions, warranty info..."></textarea></div>
+    </div>
+    <button class="btn btn-p" onclick="sendGenericProposal()" style="margin-bottom:8px">🔗 Save &amp; get client link</button>
+    <button class="btn" onclick="saveGenericEstimate(true)" style="font-size:13px;color:var(--text2)">Save as draft</button>
+  </div>
+</div>
+
 <div class="pg" id="pg-cal">
   <div class="tbar"><div class="tbar-title">Calendar</div><button class="btn btn-p btn-sm" onclick="goPg('pg-schedule')">+ Schedule</button></div>
   <div id="cal-conflicts"></div>
@@ -1832,6 +1879,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   <button class="nb" id="nb-tracker" onclick="goPg('pg-tracker')">
     <div class="bx"><svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div><span>Books</span>
   </button>
+  <div id="nav-trade-switcher" style="display:none;padding:6px 10px 4px;border-top:1px solid var(--nav-border)">
+    <div style="font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.25);padding:0 4px 5px">Active trade</div>
+    <div id="nav-trade-pills" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 2px 4px"></div>
+  </div>
   <div id="nav-spacer"></div>
   <button class="nb" id="nb-settings" onclick="goPg('pg-settings')">
     <div class="bx"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></div><span>Settings</span>
@@ -2557,6 +2608,12 @@ function _askNewPropertyAddress(c){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 function _doOpenEstimate(c,_overrideAddr){
+  // Route non-painting trades to the generic estimate form
+  const _trade=getActiveTrade();
+  if(_trade!=='painting'&&_trade!=='general'){
+    openGenericEstimate(c);
+    return;
+  }
   _resetNotesForNewEstimate();
   // Full state wipe — prevents ANY bleed from a prior estimate session
   _pendingSignToken=null;
@@ -2599,6 +2656,7 @@ function _doOpenEstimate(c,_overrideAddr){
       notesCanvas:null,
       surfaces:[],
       scope:{},
+      trade_type:getActiveTrade(),
     };
     bids.unshift(draftBid);
     lastCreatedBidId=draftBid.id;
@@ -14972,6 +15030,8 @@ async function loadAccountData(){
       if(_account?.phone)S.bphone=_account.phone;
       if(_account?.license_info)S.blic=_account.license_info;
       if(_account?.state)S.state=_account.state;
+      _activeTrade=_config?.business_type||'painting';
+      _renderNavTradeSwitcher();
       applyPermissions();
       return true;
     }
@@ -15001,6 +15061,173 @@ function applyPermissions(){
   if(nameEl)nameEl.textContent=name;
   if(roleEl)roleEl.textContent=getRole().charAt(0).toUpperCase()+getRole().slice(1);
   if(avatarEl)avatarEl.textContent=name.charAt(0).toUpperCase();
+}
+
+// ── Multi-trade support ───────────────────────────────────────────────
+const TRADE_META={
+  painting:  {icon:'🎨',label:'Painting'},
+  plumbing:  {icon:'🔧',label:'Plumbing'},
+  electrical:{icon:'⚡',label:'Electrical'},
+  hvac:      {icon:'❄️',label:'HVAC'},
+  roofing:   {icon:'🏠',label:'Roofing'},
+  landscaping:{icon:'🌿',label:'Landscaping'},
+  general:   {icon:'🔨',label:'General'},
+  other:     {icon:'🛠',label:'Other'},
+};
+let _activeTrade=null; // set on login from account_config.business_type
+
+function getActiveTrade(){return _activeTrade||_config?.business_type||'painting';}
+
+function setActiveTrade(type){
+  _activeTrade=type;
+  _renderNavTradeSwitcher();
+  _renderDevTradeCard();
+}
+
+function _getTradeLines(){
+  // trade_lines is a comma-separated string or array stored in account_config
+  const raw=_config?.trade_lines;
+  if(!raw)return[getActiveTrade()];
+  if(Array.isArray(raw))return raw;
+  return raw.split(',').map(s=>s.trim()).filter(Boolean);
+}
+
+function _renderNavTradeSwitcher(){
+  const wrap=document.getElementById('nav-trade-switcher');
+  const pills=document.getElementById('nav-trade-pills');
+  if(!wrap||!pills)return;
+  const lines=_getTradeLines();
+  if(lines.length<=1){wrap.style.display='none';return;}
+  wrap.style.display='';
+  const active=getActiveTrade();
+  pills.innerHTML=lines.map(t=>{
+    const m=TRADE_META[t]||{icon:'🔧',label:t};
+    const sel=t===active;
+    return`<button onclick="setActiveTrade('${t}')" style="padding:4px 8px;border-radius:20px;border:1px solid ${sel?'var(--blue)':'rgba(255,255,255,.15)'};background:${sel?'var(--blue)':'rgba(255,255,255,.06)'};color:${sel?'#fff':'rgba(255,255,255,.55)'};font-size:11px;font-weight:${sel?700:400};cursor:pointer;font-family:inherit">${m.icon} ${m.label}</button>`;
+  }).join('');
+}
+
+// ── Generic estimate (non-painting trades) ────────────────────────────
+let _geiClientId=null,_geiEditBidId=null,_geiLines=[];
+
+function openGenericEstimate(c,bidId){
+  _geiClientId=c?.id||null;
+  _geiEditBidId=bidId||null;
+  _geiLines=[{desc:'',qty:1,unit:'',rate:'',total:0}];
+  const trade=getActiveTrade();
+  const m=TRADE_META[trade]||{icon:'🔧',label:trade.charAt(0).toUpperCase()+trade.slice(1)};
+  const titleEl=document.getElementById('gei-trade-title');
+  if(titleEl)titleEl.textContent=m.icon+' '+m.label+' Estimate';
+  const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val||'';};
+  sf('gei-client',c?.name||'');
+  sf('gei-addr',c?.addr||'');
+  sf('gei-desc','');sf('gei-duration','');sf('gei-notes','');sf('gei-tax-pct','0');
+  document.getElementById('gei-date').value=todayKey();
+  if(bidId){
+    const b=bids.find(x=>x.id===bidId);
+    if(b){
+      sf('gei-desc',b.type||'');sf('gei-notes',b.notes||'');
+      if(b.geiLines&&b.geiLines.length)_geiLines=JSON.parse(JSON.stringify(b.geiLines));
+      if(b.geiTaxPct)sf('gei-tax-pct',b.geiTaxPct);
+      if(b.days)sf('gei-duration',b.days+' day'+(b.days!==1?'s':''));
+    }
+  }
+  renderGeiLines();calcGeiTotal();
+  goPg('pg-est-generic');
+}
+
+function renderGeiLines(){
+  const el=document.getElementById('gei-lines');if(!el)return;
+  el.innerHTML=_geiLines.map((l,i)=>`
+    <div style="display:grid;grid-template-columns:1fr 52px 80px 80px 24px;gap:5px;align-items:center;margin-bottom:6px">
+      <input type="text" value="${escHtml(l.desc||'')}" oninput="_geiLines[${i}].desc=this.value" placeholder="Description" style="padding:7px 9px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">
+      <input type="number" value="${l.qty||1}" min="1" step="any" oninput="_geiLines[${i}].qty=parseFloat(this.value)||1;calcGeiTotal()" placeholder="Qty" style="padding:7px 5px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;text-align:center;background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">
+      <input type="number" value="${l.rate||''}" min="0" step="any" oninput="_geiLines[${i}].rate=parseFloat(this.value)||0;calcGeiTotal()" placeholder="Rate $" style="padding:7px 5px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;text-align:right;background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">
+      <div style="font-size:13px;font-weight:600;text-align:right;color:var(--text2);padding-right:2px">$${((l.qty||1)*(l.rate||0)).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
+      <button onclick="_geiLines.splice(${i},1);renderGeiLines();calcGeiTotal()" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px;padding:0;line-height:1">×</button>
+    </div>
+  `).join('');
+}
+
+function addGeiLine(){_geiLines.push({desc:'',qty:1,unit:'',rate:'',total:0});renderGeiLines();calcGeiTotal();}
+
+function calcGeiTotal(){
+  const sub=_geiLines.reduce((s,l)=>s+(l.qty||1)*(l.rate||0),0);
+  const pct=parseFloat(document.getElementById('gei-tax-pct')?.value)||0;
+  const tax=sub*pct/100;
+  const total=sub+tax;
+  const fmt=n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('gei-subtotal',fmt(sub));set('gei-tax-amt',fmt(tax));set('gei-total',fmt(total));
+  return{sub,tax,total};
+}
+
+function saveGenericEstimate(draft){
+  const v=id=>document.getElementById(id)?.value||'';
+  const{total}=calcGeiTotal();
+  const trade=getActiveTrade();
+  const taxPct=parseFloat(v('gei-tax-pct'))||0;
+  if(_geiEditBidId){
+    const b=bids.find(x=>x.id===_geiEditBidId);
+    if(b){
+      b.amount=total;b.type=v('gei-desc')||TRADE_META[trade]?.label+' job';
+      b.notes=v('gei-notes');b.geiLines=JSON.parse(JSON.stringify(_geiLines));
+      b.geiTaxPct=taxPct;b.status=draft?'Draft':'Pending';b.draft=!!draft;
+      b.trade_type=trade;saveAll();
+    }
+  } else {
+    const newBid={
+      id:_newBidId(),client_id:_geiClientId,
+      client_name:v('gei-client'),name:v('gei-client'),
+      phone:'',addr:v('gei-addr'),
+      bid_date:v('gei-date')||todayKey(),
+      amount:total,deposit:Math.round(total*0.25*100)/100,
+      type:v('gei-desc')||TRADE_META[trade]?.label+' job',
+      notes:v('gei-notes'),status:draft?'Draft':'Pending',draft:!!draft,
+      geiLines:JSON.parse(JSON.stringify(_geiLines)),geiTaxPct:taxPct,
+      trade_type:trade,
+    };
+    bids.unshift(newBid);_geiEditBidId=newBid.id;saveAll();
+  }
+  showToast(draft?'Draft saved':'Estimate saved','✅');
+  if(!draft)goPg('pg-clients');
+}
+
+async function sendGenericProposal(){
+  saveGenericEstimate(false);
+  // Build minimal proposal for sign.html
+  if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.');return;}
+  const v=id=>document.getElementById(id)?.value||'';
+  const{total}=calcGeiTotal();
+  const trade=getActiveTrade();
+  const taxPct=parseFloat(v('gei-tax-pct'))||0;
+  const lineHtml=_geiLines.filter(l=>l.desc||l.rate).map(l=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:13px"><span>${escHtml(l.desc||'')}</span><span>$${((l.qty||1)*(l.rate||0)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>`).join('');
+  const proposalHtml=`<h2 style="margin-bottom:12px">${TRADE_META[trade]?.icon||''} ${v('gei-desc')||'Service Estimate'}</h2>${lineHtml}${taxPct?`<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#666"><span>Tax/markup (${taxPct}%)</span><span>$${(total*(taxPct/(100+taxPct))).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>`:''}${v('gei-notes')?`<p style="margin-top:12px;font-size:13px;color:#444">${escHtml(v('gei-notes'))}</p>`:''}`;
+  const bidId=_geiEditBidId;
+  const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
+  const proposalKey=`proposals/${_supaUser.id}/${bidId}_${token}.json`;
+  const proposalData={
+    id:bidId,token,clientName:v('gei-client'),businessName:S.bname||getBusinessName(),
+    contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
+    proposalHtml,clientAddr:v('gei-addr'),
+    amount:total,deposit:Math.round(total*0.25*100)/100,
+    createdAt:new Date().toISOString(),status:'pending',
+    notifyEmail:_supaUser.email,
+    stripeConnectEnabled:!!(_stripeConnectStatus?.charges_enabled),
+    trade_type:trade,
+  };
+  await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true}).catch(()=>{});
+  const b=bids.find(x=>x.id===bidId);
+  if(b){b.signingToken=token;b.proposalKey=proposalKey;saveAll();}
+  const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
+  const shortUrl=await shortenUrl(signingUrl);
+  const bar=document.getElementById('proposal-link-bar');
+  const input=document.getElementById('proposal-link-input');
+  if(bar)bar.style.display='flex';
+  if(input)input.value=shortUrl||signingUrl;
+  showToast('Proposal link ready','🔗');
+  goPg('pg-clients');
 }
 
 function _renderDevTradeCard(){
