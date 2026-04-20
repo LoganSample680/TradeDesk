@@ -1642,6 +1642,11 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
       <div style="font-size:12px;color:var(--text3);padding:10px 0">Checking Stripe status…</div>
     </div>
   </div>
+  <div class="card" id="dev-trade-card" style="display:none">
+    <div class="card-hd">🛠 Dev — Trade type <span>Switch trade to test all workflows</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px" id="dev-trade-grid"></div>
+    <div style="font-size:11px;color:var(--text3)">Dev account only — changes business_type in DB immediately.</div>
+  </div>
   <div class="card"><div class="card-hd">Estimator defaults</div>
     <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
       <div class="f"><label>Profit margin target (%)</label><input type="number" id="set-margin"></div>
@@ -14984,6 +14989,7 @@ async function loadAccountData(){
 function applyPermissions(){
   const taxNav=document.getElementById('nb-taxes');
   if(taxNav)taxNav.style.display=canSeeTaxes()?'':'none';
+  _renderDevTradeCard();
   // Update nav user section
   const nameEl=document.getElementById('nav-user-name');
   const roleEl=document.getElementById('nav-user-role');
@@ -14995,6 +15001,35 @@ function applyPermissions(){
   if(nameEl)nameEl.textContent=name;
   if(roleEl)roleEl.textContent=getRole().charAt(0).toUpperCase()+getRole().slice(1);
   if(avatarEl)avatarEl.textContent=name.charAt(0).toUpperCase();
+}
+
+function _renderDevTradeCard(){
+  const card=document.getElementById('dev-trade-card');
+  if(!card)return;
+  if(!_config?.is_dev){card.style.display='none';return;}
+  card.style.display='';
+  const current=_config?.business_type||'painting';
+  const trades=[
+    {id:'painting',icon:'🎨',label:'Painting'},
+    {id:'plumbing',icon:'🔧',label:'Plumbing'},
+    {id:'electrical',icon:'⚡',label:'Electrical'},
+    {id:'hvac',icon:'❄️',label:'HVAC'},
+    {id:'roofing',icon:'🏠',label:'Roofing'},
+    {id:'landscaping',icon:'🌿',label:'Landscaping'},
+    {id:'general',icon:'🔨',label:'General'},
+    {id:'other',icon:'🛠',label:'Other'},
+  ];
+  const grid=document.getElementById('dev-trade-grid');
+  if(!grid)return;
+  grid.innerHTML=trades.map(t=>`<button onclick="devSwitchTrade('${t.id}')" style="padding:10px 6px;border-radius:var(--r);border:2px solid ${t.id===current?'var(--blue)':'var(--border2)'};background:${t.id===current?'var(--blue-lt)':'var(--bg2)'};cursor:pointer;font-family:inherit;text-align:center;font-size:12px;font-weight:${t.id===current?'700':'400'}"><div style="font-size:18px">${t.icon}</div>${t.label}</button>`).join('');
+}
+async function devSwitchTrade(type){
+  if(!_config?.is_dev||!_config?.account_id)return;
+  const cfg=BUSINESS_CONFIGS[type]||BUSINESS_CONFIGS.other;
+  _config={..._config,...cfg,business_type:type};
+  await _supa.from('account_config').update({business_type:type}).eq('account_id',_config.account_id);
+  _renderDevTradeCard();
+  showToast('Trade switched to '+type,'🛠');
 }
 
 // ── Onboarding ────────────────────────────────────────────────────────
