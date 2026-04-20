@@ -150,6 +150,15 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .card{background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
 .card-hd{font-size:14px;font-weight:700;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;color:var(--text)}
 .card-hd span{font-size:10px;font-weight:400;color:var(--text3)}
+.acc-sec{margin-bottom:8px;border:1px solid var(--border);border-radius:var(--rl);background:var(--bg);overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.acc-hd{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;cursor:pointer;user-select:none;-webkit-user-select:none}
+.acc-hd-left{flex:1;min-width:0}
+.acc-hd-title{font-size:14px;font-weight:700;color:var(--text)}
+.acc-hd-sub{font-size:11px;color:var(--text3);margin-top:2px}
+.acc-hd-arrow{font-size:11px;color:var(--text3);margin-left:10px;transition:transform .2s;flex-shrink:0}
+.acc-sec.open>.acc-hd .acc-hd-arrow{transform:rotate(180deg)}
+.acc-body{display:none;padding:0 16px 16px}
+.acc-sec.open>.acc-body{display:block}
 .mets{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:10px;margin-bottom:16px}
 .met{background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:12px 10px;display:flex;flex-direction:column;box-shadow:0 1px 4px rgba(0,0,0,.04);transition:box-shadow .15s;overflow:hidden;min-width:0}
 .met:hover{box-shadow:0 3px 12px rgba(0,0,0,.08)}
@@ -365,6 +374,7 @@ body.dark .prop-hdr{background:#0D2A45}
 body.dark .gps-status{background:var(--green-lt);border-color:#2D5A14}
 body.dark .met{background:var(--bg2)}
 body.dark .card{background:var(--bg2)}
+body.dark .acc-sec{background:var(--bg2)}
 body.dark #nav{background:#0A0A08;border-color:rgba(255,255,255,.06)}
 body.dark .met{background:var(--bg2);border-color:var(--border)}
 body.dark .k-card{background:var(--bg2);border-color:var(--border)}
@@ -1589,6 +1599,8 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 </div>
 <div class="pg" id="pg-settings">
   <div class="tbar"><div class="tbar-title">Settings &amp; rates</div></div>
+
+  <!-- Dark mode toggle — always visible -->
   <div class="card" style="margin-bottom:10px">
     <div class="dm-toggle">
       <div>
@@ -1598,141 +1610,229 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
       <label class="dm-switch"><input type="checkbox" id="dm-toggle" onchange="toggleDarkMode(this.checked)"><span class="dm-slider"></span></label>
     </div>
   </div>
-  <div class="tip"><strong>Update every January.</strong> IRS rate: <a href="https://www.irs.gov/tax-professionals/standard-mileage-rates" style="color:var(--blue-dk)">irs.gov</a> &nbsp;·&nbsp; KS taxes: <a href="https://ksrevenue.gov" style="color:var(--blue-dk)">ksrevenue.gov</a></div>
-  <div class="card"><div class="card-hd">Mileage &amp; year</div>
-    <div class="fg fg2">
-      <div class="f"><label>IRS mileage rate ($/mile)</label><input type="number" id="set-irs" step="0.001"><div style="font-size:10px;color:var(--text3);margin-top:3px">2025 = $0.700 · 2026 = TBD (update Jan)</div></div>
-      <div class="f"><label>Tax year</label><select id="set-year"><option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option></select></div>
-    </div>
-  </div>
-  <div class="card"><div class="card-hd">Federal standard deductions</div>
-    <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
-      <div class="f"><label>Single ($)</label><input type="number" id="set-fs"></div>
-      <div class="f"><label>Married filing jointly ($)</label><input type="number" id="set-fm"></div>
-      <div class="f"><label>Married filing separately ($)</label><input type="number" id="set-fms"></div>
-      <div class="f"><label>Head of household ($)</label><input type="number" id="set-fh"></div>
-    </div>
-  </div>
-  <div class="card"><div class="card-hd">Federal bracket tops (single) <span>MFJ auto-doubles</span></div>
-    <div class="fg fg3">
-      <div class="f"><label>10% top ($)</label><input type="number" id="set-b10"></div>
-      <div class="f"><label>12% top ($)</label><input type="number" id="set-b12"></div>
-      <div class="f"><label>22% top ($)</label><input type="number" id="set-b22"></div>
-      <div class="f"><label>24% top ($)</label><input type="number" id="set-b24"></div>
-      <div class="f"><label>32% top ($)</label><input type="number" id="set-b32"></div>
-      <div class="f"><label>35% top ($)</label><input type="number" id="set-b35"></div>
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-hd">
-      <span id="set-state-label">State tax rates</span>
-      <span>
-        <select id="set-state" onchange="onStateChange(this.value)" style="font-size:12px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)"><option value="">— Select state —</option><option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS">KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option></select>
-      </span>
-    </div>
-    <div id="set-state-info" style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.5;display:none"></div>
-    <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
-      <div class="f"><label>Lower rate (%)</label><input type="number" id="set-ksl" step="0.001"></div>
-      <div class="f"><label>Upper rate (%)</label><input type="number" id="set-ksh" step="0.001"></div>
-      <div class="f"><label>Lower bracket top — single ($)</label><input type="number" id="set-kst"></div>
-      <div class="f"><label>Std deduction — single ($)</label><input type="number" id="set-kss"></div>
-      <div class="f"><label>Std deduction — MFJ ($)</label><input type="number" id="set-ksm"></div>
-    </div>
-    <div style="font-size:10px;color:var(--text3);margin-top:8px">Rates auto-fill when you select a state. You can override any value manually.</div>
-  </div>
-  <div class="card"><div class="card-hd">Goals</div>
-    <div class="fg fg2">
-      <div class="f">
-        <label>Monthly revenue goal ($)</label>
-        <input type="number" id="set-goal-monthly" placeholder="e.g. 8000" min="0" step="500">
-        <div style="font-size:10px;color:var(--text3);margin-top:3px">What do you want to bring in each month?</div>
+
+  <!-- Dev Tools — only visible on dev accounts -->
+  <div class="acc-sec open" id="acc-dev" style="display:none">
+    <div class="acc-hd" onclick="toggleAccSection('acc-dev')">
+      <div class="acc-hd-left">
+        <div class="acc-hd-title">🛠 Dev Tools</div>
+        <div class="acc-hd-sub">Switch trade to test all workflows</div>
       </div>
+      <span class="acc-hd-arrow">▼</span>
+    </div>
+    <div class="acc-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px" id="dev-trade-grid"></div>
+      <div style="font-size:11px;color:var(--text3)">Dev account only — changes business_type in DB immediately.</div>
     </div>
   </div>
-  <div class="card"><div class="card-hd">Business info</div>
-    <div class="fg fg2">
-      <div class="f"><label>Your name</label><input id="set-owner-name" placeholder="Zach Johnson"></div>
-      <div class="f"><label>Default labor rate ($/hr)</label><input id="set-labor-rate" type="number" placeholder="45" min="0" step="5"></div>
-      <div class="f"><label>Business name</label><input id="set-bname"></div>
-      <div class="f"><label>Phone</label><input id="set-bphone" type="tel" maxlength="12" oninput="fmtPhone(this)"></div>
-      <div class="f"><label>License / insured</label><input id="set-blic"></div>
-      <div class="f" style="grid-column:1/-1">
-        <label>Proposal logo <span style="font-size:10px;font-weight:400;color:var(--text3)">(replaces business name text on client proposals)</span></label>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <div id="set-logo-preview" style="height:60px;min-width:120px;background:linear-gradient(135deg,#1a365d,#2a4a7f);border-radius:6px;display:flex;align-items:center;justify-content:center;padding:0 10px;box-sizing:border-box;flex-shrink:0"></div>
-          <div style="flex:1;min-width:160px">
-            <input type="file" id="set-logo-file" accept="image/*" style="display:none" onchange="handleLogoUpload(this)">
-            <button class="btn btn-sm" onclick="document.getElementById('set-logo-file').click()">Upload image</button>
-            <button class="btn btn-sm" onclick="clearLogoSetting()" style="margin-left:6px">Remove</button>
-            <div style="font-size:10px;color:var(--text3);margin-top:5px">PNG, JPG, or SVG. Shown on the dark blue header of every proposal you send.</div>
+  <!-- Keep legacy id for _renderDevTradeCard compatibility -->
+  <div id="dev-trade-card" style="display:none"></div>
+
+  <!-- Business Info -->
+  <div class="acc-sec open" id="acc-biz">
+    <div class="acc-hd" onclick="toggleAccSection('acc-biz')">
+      <div class="acc-hd-left">
+        <div class="acc-hd-title">Business Info</div>
+        <div class="acc-hd-sub">Name, contact, logo, vehicles, payments</div>
+      </div>
+      <span class="acc-hd-arrow">▼</span>
+    </div>
+    <div class="acc-body">
+      <div class="fg fg2" style="margin-top:8px">
+        <div class="f"><label>Your name</label><input id="set-owner-name" placeholder="Zach Johnson"></div>
+        <div class="f"><label>Business name</label><input id="set-bname"></div>
+        <div class="f"><label>Phone</label><input id="set-bphone" type="tel" maxlength="12" oninput="fmtPhone(this)"></div>
+        <div class="f"><label>Reply-to email</label><input type="email" id="set-bemail" placeholder="zach@yourpainting.com"></div>
+        <div class="f"><label>License / insured</label><input id="set-blic"></div>
+        <div class="f"><label>Google review link <span style="font-size:10px;font-weight:400;color:var(--text3)">(sent after job completion)</span></label><input type="url" id="set-review-url" placeholder="https://g.page/r/..."></div>
+        <div class="f" style="grid-column:1/-1">
+          <label>Proposal logo <span style="font-size:10px;font-weight:400;color:var(--text3)">(replaces business name text on proposals)</span></label>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div id="set-logo-preview" style="height:60px;min-width:120px;background:linear-gradient(135deg,#1a365d,#2a4a7f);border-radius:6px;display:flex;align-items:center;justify-content:center;padding:0 10px;box-sizing:border-box;flex-shrink:0"></div>
+            <div style="flex:1;min-width:160px">
+              <input type="file" id="set-logo-file" accept="image/*" style="display:none" onchange="handleLogoUpload(this)">
+              <button class="btn btn-sm" onclick="document.getElementById('set-logo-file').click()">Upload image</button>
+              <button class="btn btn-sm" onclick="clearLogoSetting()" style="margin-left:6px">Remove</button>
+              <div style="font-size:10px;color:var(--text3);margin-top:5px">PNG, JPG, or SVG. Shown on every proposal header.</div>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="f"><label>Reply-to email</label><input type="email" id="set-bemail" placeholder="zach@yourpainting.com"></div>
-      <div class="f"><label>Google review link <span style="font-size:10px;font-weight:400;color:var(--text3)">(sent to clients after job completion)</span></label><input type="url" id="set-review-url" placeholder="https://g.page/r/..."></div>
-      <div class="f" style="grid-column:1/-1" id="settings-vehicles-section">
-        <label>Vehicles <span style="font-size:10px;color:var(--text3);font-weight:400">(IRS log requires vehicle description per trip)</span></label>
-        <div id="set-vehicles-list" style="margin-bottom:8px"></div>
-        <div style="display:flex;gap:8px">
-          <div style="flex:1;display:flex;flex-direction:column;gap:6px">
-            <input id="set-new-veh" placeholder="Year, make, model (e.g. 2019 White F-150)" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)">
-            <input id="set-new-veh-nick" placeholder="Nickname (optional — e.g. Work Truck)" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)">
+        <div class="f" style="grid-column:1/-1" id="settings-vehicles-section">
+          <label>Vehicles <span style="font-size:10px;color:var(--text3);font-weight:400">(IRS log requires vehicle description per trip)</span></label>
+          <div id="set-vehicles-list" style="margin-bottom:8px"></div>
+          <div style="display:flex;gap:8px">
+            <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+              <input id="set-new-veh" placeholder="Year, make, model (e.g. 2019 White F-150)" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)">
+              <input id="set-new-veh-nick" placeholder="Nickname (optional — e.g. Work Truck)" style="width:100%;box-sizing:border-box;font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)">
+            </div>
+            <button class="btn btn-sm btn-p" onclick="addVehicle()" style="align-self:flex-start">+ Add</button>
           </div>
-          <button class="btn btn-sm btn-p" onclick="addVehicle()" style="align-self:flex-start">+ Add</button>
+          <div style="font-size:10px;color:var(--text3);margin-top:5px">Year, make, model is enough. No VIN needed for standard mileage rate.</div>
         </div>
-        <div style="font-size:10px;color:var(--text3);margin-top:5px">Year, make, model is enough. No VIN needed for standard mileage rate deductions.</div>
+      </div>
+      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px">💳 Stripe Connect <span style="font-size:10px;font-weight:400;color:var(--text3)">Accept card &amp; bank payments directly</span></div>
+        <div id="stripe-connect-status-ui">
+          <div style="font-size:12px;color:var(--text3);padding:4px 0">Checking Stripe status…</div>
+        </div>
       </div>
     </div>
   </div>
-  <div class="card"><div class="card-hd">💳 Stripe Connect <span>Accept card &amp; bank payments directly</span></div>
-    <div id="stripe-connect-status-ui">
-      <div style="font-size:12px;color:var(--text3);padding:10px 0">Checking Stripe status…</div>
+
+  <!-- Goals -->
+  <div class="acc-sec" id="acc-goals">
+    <div class="acc-hd" onclick="toggleAccSection('acc-goals')">
+      <div class="acc-hd-left">
+        <div class="acc-hd-title">Goals</div>
+        <div class="acc-hd-sub">Monthly revenue target</div>
+      </div>
+      <span class="acc-hd-arrow">▼</span>
+    </div>
+    <div class="acc-body">
+      <div class="fg fg2" style="margin-top:8px">
+        <div class="f">
+          <label>Monthly revenue goal ($)</label>
+          <input type="number" id="set-goal-monthly" placeholder="e.g. 8000" min="0" step="500">
+          <div style="font-size:10px;color:var(--text3);margin-top:3px">What do you want to bring in each month?</div>
+        </div>
+      </div>
     </div>
   </div>
-  <div class="card" id="dev-trade-card" style="display:none">
-    <div class="card-hd">🛠 Dev — Trade type <span>Switch trade to test all workflows</span></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px" id="dev-trade-grid"></div>
-    <div style="font-size:11px;color:var(--text3)">Dev account only — changes business_type in DB immediately.</div>
-  </div>
-  <div class="card"><div class="card-hd">Estimator defaults</div>
-    <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
-      <div class="f"><label>Profit margin target (%)</label><input type="number" id="set-margin"></div>
-      <div class="f"><label>Paint coverage (sq ft/gal)</label><input type="number" id="set-cov"></div>
-      <div class="f"><label>Materials markup (%)</label><input type="number" id="set-mm"></div>
+
+  <!-- Estimator Defaults -->
+  <div class="acc-sec" id="acc-est">
+    <div class="acc-hd" onclick="toggleAccSection('acc-est')">
+      <div class="acc-hd-left">
+        <div class="acc-hd-title">Estimator Defaults</div>
+        <div class="acc-hd-sub">Margin, coverage, markup</div>
+      </div>
+      <span class="acc-hd-arrow">▼</span>
+    </div>
+    <div class="acc-body">
+      <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px;margin-top:8px">
+        <div class="f"><label>Default labor rate ($/hr)</label><input id="set-labor-rate" type="number" placeholder="45" min="0" step="5"></div>
+        <div class="f"><label>Profit margin target (%)</label><input type="number" id="set-margin"></div>
+        <div class="f"><label>Paint coverage (sq ft/gal)</label><input type="number" id="set-cov"></div>
+        <div class="f"><label>Materials markup (%)</label><input type="number" id="set-mm"></div>
+      </div>
     </div>
   </div>
-  <div class="card">
-    <div class="card-hd">Sherwin-Williams Paint Prices <span id="sw-price-updated" style="font-size:10px;font-weight:400;color:var(--text3)">Last updated: Apr 2025</span></div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6">Contractor pricing used in material cost calculations. These are estimated PRO+ account rates — your actual price depends on your account discount tier. Tap refresh to update via AI.</div>
-    <div id="sw-price-table" style="display:grid;grid-template-columns:1fr auto auto;gap:4px 12px;font-size:11px;margin-bottom:12px">
-      <span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Product</span><span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Contractor</span><span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Retail</span>
-      <span>ProMar 700</span><span style="color:var(--green-mid)" id="spp-pm700">$20/gal</span><span style="color:var(--text3)">$55</span>
-      <span>ProMar 200</span><span style="color:var(--green-mid)" id="spp-pm200">$32/gal</span><span style="color:var(--text3)">$83</span>
-      <span>SuperPaint</span><span style="color:var(--green-mid)" id="spp-sp">$37/gal</span><span style="color:var(--text3)">$65</span>
-      <span>Cashmere</span><span style="color:var(--green-mid)" id="spp-cash">$40/gal</span><span style="color:var(--text3)">$60</span>
-      <span>Duration Home</span><span style="color:var(--green-mid)" id="spp-dur">$46/gal</span><span style="color:var(--text3)">$70</span>
-      <span>Emerald</span><span style="color:var(--green-mid)" id="spp-em">$52/gal</span><span style="color:var(--text3)">$74</span>
-      <span>SuperPaint Ext.</span><span style="color:var(--green-mid)" id="spp-spe">$38/gal</span><span style="color:var(--text3)">$63</span>
-      <span>Duration Ext.</span><span style="color:var(--green-mid)" id="spp-dure">$48/gal</span><span style="color:var(--text3)">$81</span>
-      <span>Emerald Urethane</span><span style="color:var(--green-mid)" id="spp-emure">$58/gal</span><span style="color:var(--text3)">$95</span>
+
+  <!-- Taxes -->
+  <div class="acc-sec" id="acc-taxes">
+    <div class="acc-hd" onclick="toggleAccSection('acc-taxes')">
+      <div class="acc-hd-left">
+        <div class="acc-hd-title">Taxes</div>
+        <div class="acc-hd-sub">Mileage rate, federal brackets, state rates</div>
+      </div>
+      <span class="acc-hd-arrow">▼</span>
     </div>
-    <button class="btn btn-p" id="sw-price-refresh-btn" onclick="swRefreshPrices()" style="font-size:13px">🔄 Refresh SW prices via AI</button>
-    <div id="sw-price-refresh-status" style="font-size:12px;color:var(--text3);margin-top:8px;display:none"></div>
+    <div class="acc-body">
+      <div class="tip" style="margin-top:8px"><strong>Update every January.</strong> IRS rate: <a href="https://www.irs.gov/tax-professionals/standard-mileage-rates" style="color:var(--blue-dk)">irs.gov</a> &nbsp;·&nbsp; KS taxes: <a href="https://ksrevenue.gov" style="color:var(--blue-dk)">ksrevenue.gov</a></div>
+      <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 8px">Mileage &amp; year</div>
+      <div class="fg fg2">
+        <div class="f"><label>IRS mileage rate ($/mile)</label><input type="number" id="set-irs" step="0.001"><div style="font-size:10px;color:var(--text3);margin-top:3px">2025 = $0.700 · 2026 = TBD (update Jan)</div></div>
+        <div class="f"><label>Tax year</label><select id="set-year"><option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option></select></div>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 8px">Federal standard deductions</div>
+      <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
+        <div class="f"><label>Single ($)</label><input type="number" id="set-fs"></div>
+        <div class="f"><label>Married filing jointly ($)</label><input type="number" id="set-fm"></div>
+        <div class="f"><label>Married filing separately ($)</label><input type="number" id="set-fms"></div>
+        <div class="f"><label>Head of household ($)</label><input type="number" id="set-fh"></div>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 8px">Federal bracket tops (single) <span style="font-size:10px;font-weight:400;color:var(--text3)">MFJ auto-doubles</span></div>
+      <div class="fg fg3">
+        <div class="f"><label>10% top ($)</label><input type="number" id="set-b10"></div>
+        <div class="f"><label>12% top ($)</label><input type="number" id="set-b12"></div>
+        <div class="f"><label>22% top ($)</label><input type="number" id="set-b22"></div>
+        <div class="f"><label>24% top ($)</label><input type="number" id="set-b24"></div>
+        <div class="f"><label>32% top ($)</label><input type="number" id="set-b32"></div>
+        <div class="f"><label>35% top ($)</label><input type="number" id="set-b35"></div>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 8px">
+        <span id="set-state-label">State tax rates</span>
+        <select id="set-state" onchange="onStateChange(this.value)" style="font-size:12px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);margin-left:8px;font-weight:400"><option value="">— Select state —</option><option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS">KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option></select>
+      </div>
+      <div id="set-state-info" style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.5;display:none"></div>
+      <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
+        <div class="f"><label>Lower rate (%)</label><input type="number" id="set-ksl" step="0.001"></div>
+        <div class="f"><label>Upper rate (%)</label><input type="number" id="set-ksh" step="0.001"></div>
+        <div class="f"><label>Lower bracket top — single ($)</label><input type="number" id="set-kst"></div>
+        <div class="f"><label>Std deduction — single ($)</label><input type="number" id="set-kss"></div>
+        <div class="f"><label>Std deduction — MFJ ($)</label><input type="number" id="set-ksm"></div>
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-top:8px">Rates auto-fill when you select a state. You can override any value manually.</div>
+    </div>
   </div>
-  <div class="card">
-    <div class="card-hd">Labor rates ($/sq ft or flat) <span>Set these to match what you actually charge</span></div>
-    <div class="tip">These are your base labor rates before scope add-ons. If a $2,500 job feels like it should show more profit, raise these to match your real pricing.</div>
-    <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
-      <div class="f"><label>Walls ($/actual wall sqft)</label><input type="number" id="set-r-walls" step="0.05"></div>
-      <div class="f"><label>Ceiling ($/sqft)</label><input type="number" id="set-r-ceil" step="0.05"></div>
-      <div class="f"><label>Trim ($/lin ft)</label><input type="number" id="set-r-trim" step="0.05"></div>
-      <div class="f"><label>Doors ($/door)</label><input type="number" id="set-r-door" step="1"></div>
-      <div class="f"><label>Windows ($/window)</label><input type="number" id="set-r-win" step="1"></div>
-      <div class="f"><label>Exterior walls ($/sf)</label><input type="number" id="set-r-ext" step="0.05"></div>
-      <div class="f"><label>Deck/fence ($/sf)</label><input type="number" id="set-r-deck" step="0.05"></div>
+
+  <!-- Sherwin-Williams — painting trade only -->
+  <div class="acc-sec" id="acc-sw" style="display:none">
+    <div class="acc-hd" onclick="toggleAccSection('acc-sw')">
+      <div class="acc-hd-left">
+        <div class="acc-hd-title">Sherwin-Williams Paint Prices</div>
+        <div class="acc-hd-sub" id="sw-price-updated">Last updated: Apr 2025</div>
+      </div>
+      <span class="acc-hd-arrow">▼</span>
     </div>
-    <div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.6">
-      Walls rate is per room sq ft (L×W floor area) — calibrated to cover full wall labor across the room. Trim rate is per linear foot and reflects prep complexity (taping, sanding, filling, smooth finish). Scope add-ons (sand, spackle, primer, etc.) stack on top automatically. These defaults target Topeka, KS market at ~$1,200 for a full 11×11 dining room.
+    <div class="acc-body">
+      <div style="font-size:12px;color:var(--text2);margin:8px 0 10px;line-height:1.6">Contractor pricing used in material cost calculations. PRO+ account estimated rates — actual price depends on your discount tier.</div>
+      <div id="sw-price-table" style="display:grid;grid-template-columns:1fr auto auto;gap:4px 12px;font-size:11px;margin-bottom:12px">
+        <span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Product</span><span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Contractor</span><span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Retail</span>
+        <span>ProMar 700</span><span style="color:var(--green-mid)" id="spp-pm700">$20/gal</span><span style="color:var(--text3)">$55</span>
+        <span>ProMar 200</span><span style="color:var(--green-mid)" id="spp-pm200">$32/gal</span><span style="color:var(--text3)">$83</span>
+        <span>SuperPaint</span><span style="color:var(--green-mid)" id="spp-sp">$37/gal</span><span style="color:var(--text3)">$65</span>
+        <span>Cashmere</span><span style="color:var(--green-mid)" id="spp-cash">$40/gal</span><span style="color:var(--text3)">$60</span>
+        <span>Duration Home</span><span style="color:var(--green-mid)" id="spp-dur">$46/gal</span><span style="color:var(--text3)">$70</span>
+        <span>Emerald</span><span style="color:var(--green-mid)" id="spp-em">$52/gal</span><span style="color:var(--text3)">$74</span>
+        <span>SuperPaint Ext.</span><span style="color:var(--green-mid)" id="spp-spe">$38/gal</span><span style="color:var(--text3)">$63</span>
+        <span>Duration Ext.</span><span style="color:var(--green-mid)" id="spp-dure">$48/gal</span><span style="color:var(--text3)">$81</span>
+        <span>Emerald Urethane</span><span style="color:var(--green-mid)" id="spp-emure">$58/gal</span><span style="color:var(--text3)">$95</span>
+      </div>
+      <button class="btn btn-p" id="sw-price-refresh-btn" onclick="swRefreshPrices()" style="font-size:13px">🔄 Refresh SW prices via AI</button>
+      <div id="sw-price-refresh-status" style="font-size:12px;color:var(--text3);margin-top:8px;display:none"></div>
+    </div>
+  </div>
+
+  <!-- Labor Rates — painting trade -->
+  <div class="acc-sec" id="acc-labor-painting" style="display:none">
+    <div class="acc-hd" onclick="toggleAccSection('acc-labor-painting')">
+      <div class="acc-hd-left">
+        <div class="acc-hd-title">🎨 Painting Labor Rates</div>
+        <div class="acc-hd-sub">$/sq ft or flat rate by surface type</div>
+      </div>
+      <span class="acc-hd-arrow">▼</span>
+    </div>
+    <div class="acc-body">
+      <div class="tip" style="margin-top:8px">Base labor rates before scope add-ons. If a $2,500 job feels like it should show more profit, raise these to match your real pricing.</div>
+      <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px;margin-top:8px">
+        <div class="f"><label>Walls ($/actual wall sqft)</label><input type="number" id="set-r-walls" step="0.05"></div>
+        <div class="f"><label>Ceiling ($/sqft)</label><input type="number" id="set-r-ceil" step="0.05"></div>
+        <div class="f"><label>Trim ($/lin ft)</label><input type="number" id="set-r-trim" step="0.05"></div>
+        <div class="f"><label>Doors ($/door)</label><input type="number" id="set-r-door" step="1"></div>
+        <div class="f"><label>Windows ($/window)</label><input type="number" id="set-r-win" step="1"></div>
+        <div class="f"><label>Exterior walls ($/sf)</label><input type="number" id="set-r-ext" step="0.05"></div>
+        <div class="f"><label>Deck/fence ($/sf)</label><input type="number" id="set-r-deck" step="0.05"></div>
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.6">
+        Walls rate is per room sq ft (L×W floor area). Trim is per linear foot. Add-ons (sand, spackle, primer) stack automatically. Defaults target Topeka, KS at ~$1,200 for a full 11×11 dining room.
+      </div>
+    </div>
+  </div>
+
+  <!-- Labor Rates — other trades (generic) -->
+  <div class="acc-sec" id="acc-labor-generic" style="display:none">
+    <div class="acc-hd" onclick="toggleAccSection('acc-labor-generic')">
+      <div class="acc-hd-left">
+        <div class="acc-hd-title" id="acc-labor-generic-title">Labor Rates</div>
+        <div class="acc-hd-sub">Hourly rate for line-item estimates</div>
+      </div>
+      <span class="acc-hd-arrow">▼</span>
+    </div>
+    <div class="acc-body">
+      <div class="fg fg2" style="margin-top:8px">
+        <div class="f"><label>Default hourly rate ($/hr)</label><input id="set-labor-rate-generic" type="number" placeholder="75" min="0" step="5"><div style="font-size:10px;color:var(--text3);margin-top:3px">Used as default rate in line-item estimates for this trade.</div></div>
+      </div>
     </div>
   </div>
 
@@ -1743,7 +1843,6 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
     <button class="btn" id="location-settings-btn" onclick="resetLocationPermission()" style="font-size:12px">📍 Location access</button>
   </div>
   <div id="set-saved" style="display:none;margin-top:8px" class="tip tip-s">Settings saved!</div>
-
 
   <div class="card" style="margin-top:16px;border:1px solid #A32D2D">
     <div class="card-hd" style="color:#A32D2D">Danger zone</div>
@@ -2530,7 +2629,7 @@ function goPg(id){
   if(id==='pg-tracker'){renderTrackerTab();populateExpJobSel();}
   if(id==='pg-taxes')calcTax();
   if(id==='pg-settings'){buildScopeDefaultsUI();
-    loadSettingsForm();renderVehicleSettings();updateLocationBtn();renderTeam();loadStripeConnectStatus();
+    loadSettingsForm();renderVehicleSettings();updateLocationBtn();renderTeam();loadStripeConnectStatus();_renderSettingsTradeSections();_renderDevTradeCard();
     if(window._scrollToVehicles){
       window._scrollToVehicles=false;
       setTimeout(()=>{
@@ -15082,6 +15181,7 @@ function setActiveTrade(type){
   _activeTrade=type;
   _renderNavTradeSwitcher();
   _renderDevTradeCard();
+  _renderSettingsTradeSections();
 }
 
 function _getTradeLines(){
@@ -15230,11 +15330,28 @@ async function sendGenericProposal(){
   goPg('pg-clients');
 }
 
+function toggleAccSection(id){
+  const sec=document.getElementById(id);
+  if(sec)sec.classList.toggle('open');
+}
+function _renderSettingsTradeSections(){
+  const trade=getActiveTrade();
+  const isPainting=trade==='painting';
+  const sw=document.getElementById('acc-sw');
+  const lp=document.getElementById('acc-labor-painting');
+  const lg=document.getElementById('acc-labor-generic');
+  const lgTitle=document.getElementById('acc-labor-generic-title');
+  if(sw)sw.style.display=isPainting?'':'none';
+  if(lp)lp.style.display=isPainting?'':'none';
+  if(lg){
+    lg.style.display=isPainting?'none':'';
+    if(lgTitle){const meta=TRADE_META[trade]||{icon:'🔧',label:'Trade'};lgTitle.textContent=(meta.icon+' '+meta.label+' Labor Rates').trim();}
+  }
+}
 function _renderDevTradeCard(){
-  const card=document.getElementById('dev-trade-card');
-  if(!card)return;
-  if(!_config?.is_dev){card.style.display='none';return;}
-  card.style.display='';
+  const accDev=document.getElementById('acc-dev');
+  if(!_config?.is_dev){if(accDev)accDev.style.display='none';return;}
+  if(accDev)accDev.style.display='';
   const current=_config?.business_type||'painting';
   const trades=[
     {id:'painting',icon:'🎨',label:'Painting'},
@@ -15255,12 +15372,13 @@ async function devSwitchTrade(type){
   const cfg=BUSINESS_CONFIGS[type]||BUSINESS_CONFIGS.other;
   _config={..._config,...cfg,business_type:type};
   await _supa.from('account_config').update({business_type:type}).eq('account_id',_config.account_id);
-  _renderDevTradeCard();
+  _activeTrade=type;
+  _renderDevTradeCard();_renderNavTradeSwitcher();_renderSettingsTradeSections();
   showToast('Trade switched to '+type,'🛠');
 }
 
 // ── Onboarding ────────────────────────────────────────────────────────
-let _ob={step:1,name:'',email:'',password:'',businessType:'',businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:''};
+let _ob={step:1,name:'',email:'',password:'',businessType:'',tradeLines:[],businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:''};
 
 async function showOnboarding(){
   document.getElementById('supa-boot-overlay')?.remove();
@@ -15410,16 +15528,18 @@ function obStep3(el){
     {id:'other',icon:'🛠️',label:'Other'},
   ];
   el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">🎨</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">What type of work do you do?</div><div style="font-size:14px;color:var(--text3)">This sets up your workflow and defaults</div></div>'+
+    '<div style="margin-bottom:24px"><div style="font-size:28px;margin-bottom:10px">🔧</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">What trades do you work?</div><div style="font-size:14px;color:var(--text3)">Select all that apply — tap to toggle. First selected = primary trade.</div></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">'+
-    types.map(t=>'<button onclick="obSelectType(\''+t.id+'\')" id="obtype-'+t.id+'" style="padding:16px 12px;border-radius:var(--r);border:2px solid '+(
-      _ob.businessType===t.id?'var(--blue)':'var(--border2)'
-    )+';background:'+(
-      _ob.businessType===t.id?'var(--blue-lt)':'var(--bg2)'
-    )+';cursor:pointer;font-family:inherit;text-align:center">'+
-      '<div style="font-size:24px;margin-bottom:4px">'+t.icon+'</div>'+
-      '<div style="font-size:13px;font-weight:700;color:var(--text)">'+t.label+'</div>'+
-    '</button>').join('')+
+    types.map(t=>{
+      const sel=_ob.tradeLines.includes(t.id);
+      const isPrimary=_ob.tradeLines[0]===t.id;
+      return '<button onclick="obSelectType(\''+t.id+'\')" id="obtype-'+t.id+'" style="padding:16px 12px;border-radius:var(--r);border:2px solid '+(sel?'var(--blue)':'var(--border2)')+';background:'+(sel?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;text-align:center;position:relative">'+
+        (isPrimary?'<div style="position:absolute;top:6px;right:6px;background:var(--blue);color:#fff;font-size:9px;font-weight:700;border-radius:3px;padding:1px 4px">PRIMARY</div>':'')+
+        (sel&&!isPrimary?'<div style="position:absolute;top:6px;right:6px;font-size:14px">✓</div>':'')+
+        '<div style="font-size:24px;margin-bottom:4px">'+t.icon+'</div>'+
+        '<div style="font-size:13px;font-weight:700;color:var(--text)">'+t.label+'</div>'+
+      '</button>';
+    }).join('')+
     '</div>'+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
     obBtn('Continue','obNext3()')+
@@ -15427,17 +15547,44 @@ function obStep3(el){
 }
 
 function obSelectType(t){
-  _ob.businessType=t;
-  document.querySelectorAll('[id^=obtype-]').forEach(b=>{
-    const sel=b.id==='obtype-'+t;
-    b.style.borderColor=sel?'var(--blue)':'var(--border2)';
-    b.style.background=sel?'var(--blue-lt)':'var(--bg2)';
+  const idx=_ob.tradeLines.indexOf(t);
+  if(idx===-1){
+    _ob.tradeLines.push(t);
+  } else {
+    _ob.tradeLines.splice(idx,1);
+  }
+  _ob.businessType=_ob.tradeLines[0]||'';
+  // Re-render just the grid buttons
+  const types=['painting','roofing','plumbing','electrical','hvac','landscaping','general','other'];
+  types.forEach(id=>{
+    const btn=document.getElementById('obtype-'+id);
+    if(!btn)return;
+    const sel=_ob.tradeLines.includes(id);
+    const isPrimary=_ob.tradeLines[0]===id;
+    btn.style.borderColor=sel?'var(--blue)':'var(--border2)';
+    btn.style.background=sel?'var(--blue-lt)':'var(--bg2)';
+    // Update badge
+    let badge=btn.querySelector('.ob-primary-badge');
+    let check=btn.querySelector('.ob-check-badge');
+    if(isPrimary){
+      if(!badge){badge=document.createElement('div');badge.className='ob-primary-badge';badge.style.cssText='position:absolute;top:6px;right:6px;background:var(--blue);color:#fff;font-size:9px;font-weight:700;border-radius:3px;padding:1px 4px';btn.appendChild(badge);}
+      badge.textContent='PRIMARY';
+      if(check)check.remove();
+    } else if(sel){
+      if(badge)badge.remove();
+      if(!check){check=document.createElement('div');check.className='ob-check-badge';check.style.cssText='position:absolute;top:6px;right:6px;font-size:14px';btn.appendChild(check);}
+      check.textContent='✓';
+    } else {
+      if(badge)badge.remove();
+      if(check)check.remove();
+    }
   });
 }
 
 function obNext3(){
   const err=document.getElementById('ob-err');
-  if(!_ob.businessType){if(err)err.textContent='Select your trade.';return;}
+  if(!_ob.tradeLines.length){if(err)err.textContent='Select at least one trade.';return;}
+  _ob.businessType=_ob.tradeLines[0];
   _ob.step=4;renderObStep();
 }
 
@@ -15598,7 +15745,7 @@ function obStep9(el){
       '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px"><span style="color:var(--text2)">Name</span><strong>'+_ob.name+'</strong></div>'+
       '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px"><span style="color:var(--text2)">Email</span><strong>'+_ob.email+'</strong></div>'+
       '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px"><span style="color:var(--text2)">Business</span><strong>'+_ob.businessName+'</strong></div>'+
-      '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px"><span style="color:var(--text2)">Trade</span><strong>'+_ob.businessType+'</strong></div>'+
+      '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px"><span style="color:var(--text2)">Trades</span><strong>'+(_ob.tradeLines.length?_ob.tradeLines.join(', '):_ob.businessType)+'</strong></div>'+
       '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px"><span style="color:var(--text2)">Role</span><strong>'+_ob.role+'</strong></div>'+
       '<div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--text2)">Vehicles</span><strong>'+_ob.vehicles.length+'</strong></div>'+
     '</div>'+
@@ -15651,7 +15798,8 @@ async function obSubmit(){
     }
 
     setProgress('Configuring your workflow...');
-    const cfg={...BUSINESS_CONFIGS[_ob.businessType]||BUSINESS_CONFIGS.other,account_id:acct.id,business_type:_ob.businessType,state:_ob.state};
+    const _obTradeLines=_ob.tradeLines.length>1?_ob.tradeLines.join(','):null;
+    const cfg={...BUSINESS_CONFIGS[_ob.businessType]||BUSINESS_CONFIGS.other,account_id:acct.id,business_type:_ob.businessType,state:_ob.state,...(_obTradeLines?{trade_lines:_obTradeLines}:{})};
     const{data:cfgData}=await _supa.from('account_config').insert(cfg).select().maybeSingle();
     _config=cfgData;
 
