@@ -15319,7 +15319,6 @@ function setActiveTrade(type){
 }
 
 function _getTradeLines(){
-  if(_config?.is_dev)return Object.keys(TRADE_META);
   const raw=_config?.trade_lines;
   if(!raw)return[getActiveTrade()];
   if(Array.isArray(raw))return raw;
@@ -15475,10 +15474,6 @@ function renderSettingsTrades(){
   if(!el)return;
   const lines=_getTradeLines();
   if(sub)sub.textContent=lines.map(t=>TRADE_META[t]?.label||t).join(', ');
-  if(_config?.is_dev){
-    el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:4px 0">Dev account — all 8 trades active automatically.</div>';
-    return;
-  }
   const allTrades=Object.keys(TRADE_META);
   const available=allTrades.filter(t=>!lines.includes(t));
   el.innerHTML=
@@ -15502,7 +15497,7 @@ function renderSettingsTrades(){
 }
 async function addTradeFromSettings(trade){
   if(!_config?.account_id)return;
-  const cur=_config?.is_dev?Object.keys(TRADE_META):_getTradeLines();
+  const cur=_getTradeLines();
   const newLines=[...new Set([...cur,trade])];
   const lineStr=newLines.join(',');
   if(supaEnabled()){
