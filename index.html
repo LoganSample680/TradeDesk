@@ -1629,6 +1629,20 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   <!-- Keep legacy id for _renderDevTradeCard compatibility -->
   <div id="dev-trade-card" style="display:none"></div>
 
+  <!-- Your Trades -->
+  <div class="acc-sec" id="acc-trades">
+    <div class="acc-hd" onclick="toggleAccSection('acc-trades')">
+      <div class="acc-hd-left">
+        <div class="acc-hd-title">Your Trades</div>
+        <div class="acc-hd-sub" id="acc-trades-sub">Tap to manage</div>
+      </div>
+      <span class="acc-hd-arrow">▼</span>
+    </div>
+    <div class="acc-body">
+      <div id="set-trades-content" style="margin-top:8px"></div>
+    </div>
+  </div>
+
   <!-- Business Info -->
   <div class="acc-sec" id="acc-biz">
     <div class="acc-hd" onclick="toggleAccSection('acc-biz')">
@@ -2630,7 +2644,7 @@ function goPg(id){
   if(id==='pg-tracker'){renderTrackerTab();populateExpJobSel();}
   if(id==='pg-taxes')calcTax();
   if(id==='pg-settings'){buildScopeDefaultsUI();
-    loadSettingsForm();renderVehicleSettings();updateLocationBtn();renderTeam();loadStripeConnectStatus();_renderSettingsTradeSections();_renderDevTradeCard();
+    loadSettingsForm();renderVehicleSettings();updateLocationBtn();renderTeam();loadStripeConnectStatus();_renderSettingsTradeSections();_renderDevTradeCard();renderSettingsTrades();
     if(window._scrollToVehicles){
       window._scrollToVehicles=false;
       setTimeout(()=>{
@@ -5200,6 +5214,7 @@ function renderCDBids(){
       actBtns.push('<button class="btn btn-sm" onclick="sendBidEmail('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#9993; Send email</button>');
       actBtns.push('<button class="btn btn-sm" onclick="openEditBid('+b.id+')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">✎ Revise bid</button>');
       actBtns.push('<button class="btn btn-sm" onclick="openBidNotes('+b.id+')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">📝 Notes</button>');
+      actBtns.push('<button class="btn btn-sm" onclick="markBidHandshake('+b.id+')" style="background:#FFF8E8;color:#856404;border-color:var(--amber);font-size:11px">🤝 Handshake</button>');
       actBtns.push('<button class="btn btn-sm" onclick="markBidAbandoned('+b.id+')" style="background:#FFF8F0;color:#A32D2D;border-color:#A32D2D">No response</button>');
       actBtns.push('<button class="btn-del" onclick="deleteBid('+b.id+')" style="font-size:11px;padding:5px 8px">Delete</button>');
     }
@@ -5218,6 +5233,7 @@ function renderCDBids(){
         '<div style="text-align:right">'+
           '<div style="font-size:16px;font-weight:700;color:var(--green-mid)">'+fmt(b.amount)+'</div>'+
           '<span class="bdg '+(SBADGE[b.status]||'')+'">'+b.status+'</span>'+
+          (b.handshake?'<br><span style="font-size:10px;font-weight:700;background:#FFF8E8;color:#856404;border:1px solid var(--amber);border-radius:4px;padding:1px 6px;white-space:nowrap;display:inline-block;margin-top:3px">🤝 Handshake</span>':'')+
         '</div>'+
       '</div>'+
       payHTML+
@@ -11502,6 +11518,18 @@ function markFUWon(bidId,cid){
     }
   },{title:'Won the job',yes:'Won — Schedule it'});
 }
+function markBidHandshake(bidId){
+  zConfirm(
+    'Handshake deals have no signed contract. If the client disputes payment or the scope, you have no legal protection.\n\nOnly use this as a last resort — you should always get a signature.',
+    ()=>{
+      const b=bids.find(x=>x.id===bidId);if(!b)return;
+      b.status='Closed Won';b.handshake=true;b.handshake_date=todayKey();
+      saveAll();renderCDBids();renderDash();
+      showToast('Marked as handshake — no signed contract on file','🤝');
+    },
+    {title:'🤝 Handshake deal — are you sure?',yes:'Yes, proceed without signature',no:'Cancel',danger:true}
+  );
+}
 function markBidAbandoned(bidId,cid){markFUAbandoned(bidId,cid);}
 function markFUAbandoned(bidId,cid){
   const b=bids.find(x=>x.id===bidId);
@@ -15440,6 +15468,65 @@ async function sendGenericProposal(){
 function toggleAccSection(id){
   const sec=document.getElementById(id);
   if(sec)sec.classList.toggle('open');
+}
+function renderSettingsTrades(){
+  const el=document.getElementById('set-trades-content');
+  const sub=document.getElementById('acc-trades-sub');
+  if(!el)return;
+  const lines=_getTradeLines();
+  if(sub)sub.textContent=lines.map(t=>TRADE_META[t]?.label||t).join(', ');
+  if(_config?.is_dev){
+    el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:4px 0">Dev account — all 8 trades active automatically.</div>';
+    return;
+  }
+  const allTrades=Object.keys(TRADE_META);
+  const available=allTrades.filter(t=>!lines.includes(t));
+  el.innerHTML=
+    '<div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5">Your active trade lines. Each gets its own estimate form and pipeline view.</div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">'+
+    lines.map(t=>{
+      const m=TRADE_META[t]||{icon:'🔧',label:t};
+      return '<div style="display:inline-flex;align-items:center;gap:5px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:20px;padding:5px 10px 5px 10px;font-size:13px;font-weight:600;color:var(--blue-dk)">'+
+        m.icon+' '+m.label+
+        (lines.length>1?'<button onclick="removeTradeFromSettings(\''+t+'\')" style="background:none;border:none;cursor:pointer;color:var(--blue-dk);font-size:15px;line-height:1;padding:0 0 0 4px;font-family:inherit;opacity:.6">×</button>':'')+
+      '</div>';
+    }).join('')+
+    '</div>'+
+    (available.length?
+      '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">Add a trade</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'+
+      available.map(t=>{const m=TRADE_META[t]||{icon:'🔧',label:t};return'<button onclick="addTradeFromSettings(\''+t+'\')" style="padding:10px 6px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center;font-size:12px"><div style="font-size:18px;margin-bottom:2px">'+m.icon+'</div>'+m.label+'</button>';}).join('')+
+      '</div>':
+      '<div style="font-size:11px;color:var(--text3)">All trades active.</div>'
+    );
+}
+async function addTradeFromSettings(trade){
+  if(!_config?.account_id)return;
+  const cur=_config?.is_dev?Object.keys(TRADE_META):_getTradeLines();
+  const newLines=[...new Set([...cur,trade])];
+  const lineStr=newLines.join(',');
+  if(supaEnabled()){
+    const{error}=await _supa.from('account_config').update({trade_lines:lineStr}).eq('account_id',_config.account_id);
+    if(error){showToast('SQL migration needed — see notes','⚠️');console.error(error);return;}
+  }
+  _config={..._config,trade_lines:lineStr};
+  renderSettingsTrades();_renderNavTradeSwitcher();_renderSettingsTradeSections();
+  showToast('Added '+(TRADE_META[trade]?.label||trade),'✓');
+}
+async function removeTradeFromSettings(trade){
+  if(!_config?.account_id)return;
+  const cur=_getTradeLines();
+  const newLines=cur.filter(t=>t!==trade);
+  if(!newLines.length){showToast('Cannot remove your only trade','⚠️');return;}
+  const lineStr=newLines.join(',');
+  if(supaEnabled()){
+    const{error}=await _supa.from('account_config').update({trade_lines:lineStr}).eq('account_id',_config.account_id);
+    if(error){showToast('SQL migration needed — see notes','⚠️');console.error(error);return;}
+  }
+  _config={..._config,trade_lines:lineStr};
+  if(_activeTrade===trade)_activeTrade=newLines[0];
+  renderSettingsTrades();_renderNavTradeSwitcher();_renderSettingsTradeSections();
+  showToast('Removed '+(TRADE_META[trade]?.label||trade),'✓');
 }
 function _renderSettingsTradeSections(){
   const trade=getActiveTrade();
