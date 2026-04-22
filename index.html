@@ -2760,7 +2760,7 @@ function _doOpenEstimate(c,_overrideAddr,_forceTrade){
   estSurfaces=[];estSurfId=0;
   scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
   estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200',products:{interior:'pm200',exterior:'spe',trim:'pm200t'}};
-  surfRoom='';surfColor='';surfWhatSelected=[];surfBQueue=[];surfBIdx=0;surfBMeasurements={};_swLastProductByCategory={};
+  surfRoom='';surfColor='';surfJobType='interior';surfWhatSelected=[];surfBQueue=[];surfBIdx=0;surfBMeasurements={};_swLastProductByCategory={};
   // Clear persistent DOM fields so they don't bleed from the previous estimate
   ['surf-room-name','laser-room-name','manual-room-name'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const _sigTyped=document.getElementById('sig-typed');if(_sigTyped)_sigTyped.value='';
@@ -2770,7 +2770,8 @@ function _doOpenEstimate(c,_overrideAddr,_forceTrade){
   // Reuse only a truly empty draft for this client (no surfaces, never worked on) — prevents
   // orphan bids from accidental navigation away at step 1. Does NOT touch Pending bids with
   // surfaces — those are real jobs for other properties and must stay in Estimates in Progress.
-  const _existingDraft=bids.find(b=>b.client_id===c.id&&b.draft===true&&b.status==='Draft'&&!b.signingToken&&(!b.surfaces||!b.surfaces.length));
+  const _curTrade=getActiveTrade();
+  const _existingDraft=bids.find(b=>b.client_id===c.id&&b.draft===true&&b.status==='Draft'&&!b.signingToken&&(!b.surfaces||!b.surfaces.length)&&(b.trade_type===_curTrade||!b.trade_type));
   if(_existingDraft){
     lastCreatedBidId=_existingDraft.id;
     if(_existingDraft.surfaces&&_existingDraft.surfaces.length){
@@ -6609,6 +6610,7 @@ function openEditBid(bidId,startStep){
   _pendingSignToken=null;
   _swLastProductByCategory={};
   surfRoom='';surfColor='';surfWhatSelected=[];surfBQueue=[];surfBIdx=0;surfBMeasurements={};
+  surfJobType=b.surfaces&&b.surfaces.some(s=>['ext_walls','ext_trim','deck'].includes(s.type))?'exterior':'interior';
   scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
   estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200',products:{interior:'pm200',exterior:'spe',trim:'pm200t'}};
   editingBidId=bidId;lastCreatedBidId=null;
@@ -10302,7 +10304,6 @@ function _commitProposalSent(){
 function sendProposalViaSms(){
   const d=_proposalShareData();
   if(!d.url){zAlert('Generate the proposal link first.',{title:'No link yet'});return;}
-  _commitProposalSent(); // ← bid moves to "Sent proposals" NOW (user is actually sending)
   const firstName=d.cname.split(/[\s,&]+/)[0];
   const msg=
     'Hey '+firstName+'!\n\n'+
@@ -10311,13 +10312,14 @@ function sendProposalViaSms(){
     d.url+'\n\n'+
     'Any questions at all, just shoot me a text. Talk soon!\n\n'+
     '— '+d.bname;
-  const href='sms:'+(d.cphone||'')+'&body='+encodeURIComponent(msg);
+  const href='sms:'+(d.cphone||'')+'?body='+encodeURIComponent(msg);
+  // Fire SMS FIRST while user gesture is fresh, then commit bid as sent
   window.location.href=href;
+  setTimeout(()=>_commitProposalSent(),400);
 }
 function sendProposalViaEmail(){
   const d=_proposalShareData();
   if(!d.url){zAlert('Generate the proposal link first.',{title:'No link yet'});return;}
-  _commitProposalSent(); // ← bid moves to "Sent proposals" NOW (user is actually sending)
   const firstName=d.cname.split(/[\s,&]+/)[0];
   const subject='Your Painting Proposal from '+d.bname+' is Ready!';
   const body=
@@ -10330,7 +10332,9 @@ function sendProposalViaEmail(){
     'Looking forward to working with you,\n\n'+
     d.bname;
   const href='mailto:'+(d.cemail||'')+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+  // Fire email FIRST while user gesture is fresh, then commit bid as sent
   window.location.href=href;
+  setTimeout(()=>_commitProposalSent(),400);
 }
 function buildDescription(){
   const isExt=estSurfaces.some(s=>s.type==='ext_walls'||s.type==='ext_trim'||s.type==='deck');
