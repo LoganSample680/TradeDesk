@@ -2371,7 +2371,7 @@ function getClientTier(c){
 function getTierColor(t){return t==='A'?'var(--green-mid)':t==='B'?'var(--blue)':'var(--text3)';} 
 function getClientMileage(cid){return mileage.filter(m=>m.client_id===cid);}
 function getClientExpenses(cid){return expenses.filter(e=>e.client_id===cid);}
-function getClientBids(cid){return bids.filter(b=>b.client_id===cid&&(!b.draft||b.status==='Closed Won'));}
+function getClientBids(cid){return bids.filter(b=>b.client_id===cid&&b.status!=='opportunity'&&(!b.draft||b.status==='Closed Won'));}
 function getClientJobs(cid){return jobs.filter(j=>j.client_id===cid);}
 function getClientIncome(cid){return income.filter(i=>i.client_id===cid);}
 // Returns the actual working calendar dates for a job, skipping weekends (unless job.allowWeekend)
@@ -2748,8 +2748,8 @@ function _doOpenEstimate(c,_overrideAddr,_forceTrade){
     return;
   }
   const _trade=_forceTrade||getActiveTrade();
+  _activeTrade=_trade;_renderNavTradeSwitcher();
   if(_trade!=='painting'&&_trade!=='general'){
-    _activeTrade=_trade;_renderNavTradeSwitcher();
     openGenericEstimate(c,null,_trade);
     return;
   }
@@ -2795,7 +2795,7 @@ function _doOpenEstimate(c,_overrideAddr,_forceTrade){
       notesCanvas:null,
       surfaces:[],
       scope:{},
-      trade_type:getActiveTrade(),
+      trade_type:_trade,
     };
     bids.unshift(draftBid);
     lastCreatedBidId=draftBid.id;
@@ -15341,14 +15341,15 @@ function _renderNavTradeSwitcher(){
 }
 
 // ── Generic estimate (non-painting trades) ────────────────────────────
-let _geiClientId=null,_geiEditBidId=null,_geiLines=[];
+let _geiClientId=null,_geiEditBidId=null,_geiLines=[],_geiTrade=null;
 
 function openGenericEstimate(c,bidId,_tradePick){
   _geiClientId=c?.id||null;
   _geiEditBidId=bidId||null;
   _geiLines=[{desc:'',qty:1,unit:'',rate:'',total:0}];
   if(_tradePick)_activeTrade=_tradePick;
-  const trade=_tradePick||getActiveTrade();
+  _geiTrade=_tradePick||getActiveTrade();
+  const trade=_geiTrade;
   const m=TRADE_META[trade]||{icon:'🔧',label:trade.charAt(0).toUpperCase()+trade.slice(1)};
   const titleEl=document.getElementById('gei-trade-title');
   if(titleEl)titleEl.textContent=m.icon+' '+m.label+' Estimate';
@@ -15399,7 +15400,7 @@ function calcGeiTotal(){
 function saveGenericEstimate(draft){
   const v=id=>document.getElementById(id)?.value||'';
   const{total}=calcGeiTotal();
-  const trade=getActiveTrade();
+  const trade=_geiTrade||getActiveTrade();
   const taxPct=parseFloat(v('gei-tax-pct'))||0;
   if(_geiEditBidId){
     const b=bids.find(x=>x.id===_geiEditBidId);
@@ -15433,7 +15434,7 @@ async function sendGenericProposal(){
   if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.');return;}
   const v=id=>document.getElementById(id)?.value||'';
   const{total}=calcGeiTotal();
-  const trade=getActiveTrade();
+  const trade=_geiTrade||getActiveTrade();
   const taxPct=parseFloat(v('gei-tax-pct'))||0;
   const lineHtml=_geiLines.filter(l=>l.desc||l.rate).map(l=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:13px"><span>${escHtml(l.desc||'')}</span><span>$${((l.qty||1)*(l.rate||0)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>`).join('');
   const proposalHtml=`<h2 style="margin-bottom:12px">${TRADE_META[trade]?.icon||''} ${v('gei-desc')||'Service Estimate'}</h2>${lineHtml}${taxPct?`<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#666"><span>Tax/markup (${taxPct}%)</span><span>$${(total*(taxPct/(100+taxPct))).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>`:''}${v('gei-notes')?`<p style="margin-top:12px;font-size:13px;color:#444">${escHtml(v('gei-notes'))}</p>`:''}`;
