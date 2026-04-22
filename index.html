@@ -7749,7 +7749,7 @@ async function swRefreshPrices(){
 
 function swResetProduct(){
   _swProduct=null;
-  sf('e-paint-rate',83);
+  const _pr=document.getElementById('e-paint-rate');if(_pr)_pr.value=83;
   const h=document.getElementById('sw-selected-product');if(h)h.value='';
   const lbl=document.getElementById('sw-product-selected');if(lbl)lbl.textContent='';
   document.querySelectorAll('#sw-product-grid button').forEach(b=>{
