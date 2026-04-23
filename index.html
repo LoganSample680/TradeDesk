@@ -1204,6 +1204,33 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
     </div>
       <input type="hidden" id="e-paint" value="">
       <input type="hidden" id="e-customer-paint">
+    <div class="card" id="portfolio-showcase-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:700">Portfolio Showcase</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">Offer a discount in exchange for portfolio photos</div>
+        </div>
+        <label style="position:relative;display:inline-block;width:44px;height:26px;flex-shrink:0;cursor:pointer">
+          <input type="checkbox" id="portfolio-toggle" onchange="togglePortfolioShowcase()" style="opacity:0;position:absolute;width:100%;height:100%;margin:0;cursor:pointer;z-index:1">
+          <span id="portfolio-track" style="position:absolute;inset:0;background:var(--border2);border-radius:13px;transition:background .2s"></span>
+          <span id="portfolio-thumb" style="position:absolute;top:3px;left:3px;width:20px;height:20px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .2s"></span>
+        </label>
+      </div>
+      <div id="portfolio-details" style="display:none;margin-top:12px">
+        <div class="fg fg2" style="margin-bottom:10px">
+          <div class="f">
+            <label>Discount % <span style="font-size:10px;font-weight:400;color:var(--text3)">(5–25)</span></label>
+            <input type="number" id="portfolio-pct" value="15" min="5" max="25" oninput="onPortfolioPctChange()">
+          </div>
+          <div class="f">
+            <label>Showcase homes target</label>
+            <input type="number" id="portfolio-target" value="5" min="1" max="50" oninput="updatePortfolioPreview()">
+          </div>
+        </div>
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">Proposal pitch preview</div>
+        <div id="portfolio-preview" style="background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 12px;font-size:11px;color:var(--text2);line-height:1.6"></div>
+      </div>
+    </div>
     <div class="card">
       <div class="f">
         <label>Est. days to complete <span style="color:#A32D2D">*</span></label>
@@ -1659,6 +1686,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         <div class="f"><label>Phone</label><input id="set-bphone" type="tel" maxlength="12" oninput="fmtPhone(this)"></div>
         <div class="f"><label>Reply-to email</label><input type="email" id="set-bemail" placeholder="zach@yourpainting.com"></div>
         <div class="f"><label>License / insured</label><input id="set-blic"></div>
+        <div class="f"><label>Years of experience</label><input type="number" id="set-byears" min="1" max="50" placeholder="e.g. 12"></div>
         <div class="f"><label>Google review link <span style="font-size:10px;font-weight:400;color:var(--text3)">(sent after job completion)</span></label><input type="url" id="set-review-url" placeholder="https://g.page/r/..."></div>
         <div class="f" style="grid-column:1/-1">
           <label>Proposal logo <span style="font-size:10px;font-weight:400;color:var(--text3)">(replaces business name text on proposals)</span></label>
@@ -2526,13 +2554,13 @@ function loadSettingsForm(){
   sf('set-goal-monthly',S.goalMonthly||'');
   sf('set-labor-rate',S.laborRate||45);sf('set-owner-name',getOwnerName()||'');sf('set-bname',S.bname);sf('set-state',S.state||'KS');
   _renderLogoPreview();
-  if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-bitly-key',S.bitlyKey||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
+  if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-bitly-key',S.bitlyKey||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-byears',S.byears||'');sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
   sf('set-margin',S.margin);sf('set-cov',S.cov);sf('set-mm',S.mm);sf('set-r-walls',S.rWalls||1.30);sf('set-r-ceil',S.rCeil||1.00);sf('set-r-trim',S.rTrim||4.00);sf('set-r-door',S.rDoor||95);sf('set-r-win',S.rWin||50);sf('set-r-ext',S.rExt||1.10);sf('set-r-deck',S.rDeck||1.00);
   sf('set-review-url',S.reviewUrl||'');
 }
 function saveSettings(){
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
-  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,reviewUrl:gs('set-review-url')||''};
+  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||''};
   applySettings();saveAll();
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
 }
@@ -9532,6 +9560,9 @@ function saveEstFullDraft(){
       paintRate:document.getElementById('e-paint-rate')?.value||'',
       adj:document.getElementById('est-adj')?.value||'0',
       adjReason:document.getElementById('est-adj-reason')?.value||'',
+      isPortfolio:document.getElementById('portfolio-toggle')?.checked||false,
+      portfolioPct:parseInt(document.getElementById('portfolio-pct')?.value)||15,
+      portfolioTarget:parseInt(document.getElementById('portfolio-target')?.value)||5,
       step:estStep,
       surfaces:estSurfaces,
       lastBidId:lastCreatedBidId,
@@ -9566,6 +9597,10 @@ function restoreEstFullDraft(d){
   set('e-cname',d.cname);set('e-cphone',d.cphone);set('e-caddr',d.caddr);
   set('e-cprop',d.cprop);set('e-cnotes',d.cnotes);set('e-days',d.days);
   set('est-adj',d.adj);set('est-adj-reason',d.adjReason);
+  if(d.portfolioPct!=null){const el=document.getElementById('portfolio-pct');if(el)el.value=d.portfolioPct;}
+  if(d.portfolioTarget!=null){const el=document.getElementById('portfolio-target');if(el)el.value=d.portfolioTarget;}
+  const _ptog=document.getElementById('portfolio-toggle');
+  if(_ptog&&d.isPortfolio!=null){_ptog.checked=!!d.isPortfolio;togglePortfolioShowcase();}
   // Restore surface rates
   if(d.rWalls)set('e-r-walls',d.rWalls);
   if(d.rCeil)set('e-r-ceil',d.rCeil);
@@ -10132,6 +10167,47 @@ async function sendPaymentLink(bidId){
   }
 }
 function syncAdj(){const pct=parseInt(v('est-adj')||0);document.getElementById('est-adj-val').textContent=(pct>0?'+':'')+pct+'%';renderEstReview();}
+function togglePortfolioShowcase(){
+  const on=document.getElementById('portfolio-toggle')?.checked||false;
+  const details=document.getElementById('portfolio-details');
+  const track=document.getElementById('portfolio-track');
+  const thumb=document.getElementById('portfolio-thumb');
+  if(details)details.style.display=on?'block':'none';
+  if(track)track.style.background=on?'var(--blue)':'var(--border2)';
+  if(thumb)thumb.style.transform=on?'translateX(18px)':'translateX(0)';
+  const pct=parseInt(document.getElementById('portfolio-pct')?.value)||15;
+  const adj=document.getElementById('est-adj');
+  const reason=document.getElementById('est-adj-reason');
+  if(on){
+    if(adj){adj.value=-pct;syncAdj();}
+    if(reason)reason.value='Portfolio showcase discount ('+pct+'% off)';
+    updatePortfolioPreview();
+  } else {
+    if(adj){adj.value=0;syncAdj();}
+    if(reason)reason.value='';
+  }
+  saveEstFullDraft();
+}
+function onPortfolioPctChange(){
+  const on=document.getElementById('portfolio-toggle')?.checked||false;
+  if(!on)return;
+  const pct=Math.min(25,Math.max(5,parseInt(document.getElementById('portfolio-pct')?.value)||15));
+  const adj=document.getElementById('est-adj');
+  if(adj){adj.value=-pct;syncAdj();}
+  const reason=document.getElementById('est-adj-reason');
+  if(reason)reason.value='Portfolio showcase discount ('+pct+'% off)';
+  updatePortfolioPreview();
+  saveEstFullDraft();
+}
+function updatePortfolioPreview(){
+  const preview=document.getElementById('portfolio-preview');if(!preview)return;
+  const pct=parseInt(document.getElementById('portfolio-pct')?.value)||15;
+  const target=parseInt(document.getElementById('portfolio-target')?.value)||5;
+  const years=S.byears||0;
+  const owner=getOwnerName()||'Your contractor';
+  const yearsPhrase=years?owner+' has '+years+' years of professional painting experience. ':owner+' has years of professional painting experience. ';
+  preview.textContent=yearsPhrase+'Having recently relocated to this area, he is selectively choosing '+target+' showcase homes to build his local portfolio. In exchange for permission to photograph your home before and after and feature it on his website, he is offering a '+pct+'% discount on this project.';
+}
 
 async function shortenUrl(url){
   // TODO: swap baseUrl to Cloudflare Pages domain (zjspainting.pages.dev) tomorrow
@@ -10206,6 +10282,13 @@ async function sendProposalLink(){
       deposit:Math.round(_propFinal*0.25*100)/100,
       createdAt:new Date().toISOString(),status:'pending',
       notifyEmail:_supaUser.email,stripeConnectEnabled:!!(_stripeConnectStatus?.charges_enabled),
+      isPortfolio:document.getElementById('portfolio-toggle')?.checked||false,
+      portfolioPct:parseInt(document.getElementById('portfolio-pct')?.value)||15,
+      portfolioTarget:parseInt(document.getElementById('portfolio-target')?.value)||5,
+      portfolioYears:S.byears||0,
+      portfolioOwnerName:getOwnerName()||'',
+      fullPrice:_propFinal,
+      discountedPrice:Math.round(_propFinal*(1-(parseInt(document.getElementById('portfolio-pct')?.value)||15)/100)*100)/100,
     };
     // Upload with 8s timeout — never let storage hang in the field
     const uploadPromise=_supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true});
@@ -10303,13 +10386,11 @@ function sendProposalViaSms(){
   const d=_proposalShareData();
   if(!d.url){zAlert('Generate the proposal link first.',{title:'No link yet'});return;}
   const firstName=d.cname.split(/[\s,&]+/)[0];
-  const msg=
-    'Hey '+firstName+'!\n\n'+
-    'It was great meeting with you today — really looking forward to the project.\n\n'+
-    'Your painting proposal is all ready to go. Tap the link below to view everything we went over and sign when you\'re ready:\n\n'+
-    d.url+'\n\n'+
-    'Any questions at all, just shoot me a text. Talk soon!\n\n'+
-    '— '+d.bname;
+  const isPortfolioOn=document.getElementById('portfolio-toggle')?.checked||false;
+  const ownerName=getOwnerName()||d.bname;
+  const msg=isPortfolioOn
+    ?'Hey '+firstName+'!\n\nGreat talking with you — your proposal is ready. Quick heads up: '+ownerName+' is building our local portfolio and has a special offer inside the proposal for you. Worth a look before you decide.\n\n'+d.url+'\n\nQuestions? Just reply. Talk soon!\n\n— '+d.bname
+    :'Hey '+firstName+'!\n\nIt was great meeting with you today — really looking forward to the project.\n\nYour painting proposal is all ready to go. Tap the link below to view everything we went over and sign when you\'re ready:\n\n'+d.url+'\n\nAny questions at all, just shoot me a text. Talk soon!\n\n— '+d.bname;
   const href='sms:'+(d.cphone||'')+'?body='+encodeURIComponent(msg);
   // Fire SMS FIRST while user gesture is fresh, then commit bid as sent
   window.location.href=href;
@@ -10432,6 +10513,11 @@ function buildProposal(){
   const description=buildDescription();
   const matLine=matTotal+flatAdd;
   const customerPaint=document.getElementById('e-customer-paint')?.value==='1'||false;
+  const _portfolioOn=document.getElementById('portfolio-toggle')?.checked||false;
+  const _portfolioPct=parseInt(document.getElementById('portfolio-pct')?.value)||15;
+  const _portfolioTarget=parseInt(document.getElementById('portfolio-target')?.value)||5;
+  const _portfolioYears=S.byears||0;
+  const _portfolioOwner=getOwnerName()||bname;
 
   // Build per-room cost rows for the proposal table
   const gR=id=>parseFloat(document.getElementById(id)?.value)||0;
@@ -10640,6 +10726,11 @@ function buildProposal(){
       <div style="margin-top:10px;font-size:10px;color:#718096;font-style:italic;line-height:1.5">Client's electronic signature on the signing page constitutes full acceptance of this proposal and is binding under Kansas UETA (K.S.A. 16-1601 et seq.).</div>
     </div>
   </div>
+  ${_portfolioOn?`<div style="margin:0 0 0;border-top:3px solid #16a34a;background:#f0fdf4;padding:18px 24px">
+    <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#16a34a;margin-bottom:8px">Portfolio Showcase Offer</div>
+    <div style="font-size:12px;color:#166534;line-height:1.7">${_portfolioYears?_portfolioOwner+' has '+_portfolioYears+' years of professional painting experience. ':_portfolioOwner+' has years of professional painting experience. '}Having recently relocated to this area, he is selectively choosing ${_portfolioTarget} showcase homes to build his local portfolio. In exchange for permission to photograph your home before and after and feature it on his website, he is offering a ${_portfolioPct}% discount on this project.</div>
+    <div style="margin-top:8px;font-size:11px;color:#16a34a;font-weight:700">Portfolio discount applied: ${_portfolioPct}% · You save ${fmt(Math.round(final*_portfolioPct/(100-_portfolioPct)))}</div>
+  </div>`:''}
 </div>`;
   document.getElementById('est-sig-sum').innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><div style="font-size:15px;font-weight:700">${cname}</div><div style="font-size:12px;color:var(--text2)">${caddr}</div></div><div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--blue)">${fmt(proposalTotal)}</div><div style="font-size:11px;color:var(--text3)">${estNum}</div></div></div>`;
   document.getElementById('est-terms').innerHTML='<strong style="color:#1a365d">Terms &amp; Conditions</strong><br><br>1. <strong>Payment:</strong> A non-refundable 25% deposit is required before any work begins. The remaining balance is due upon completion of work.<br><br>2. <strong>Cancellation:</strong> If client cancels after materials have been purchased, contractor will make all purchased paint and materials available for client pickup and refund the deposit minus the documented cost of those materials. No additional cancellation fee will be charged beyond the materials cost.<br><br>3. <strong>Change Orders:</strong> This proposal covers only the scope described herein. Any additional work, surfaces, or materials not listed require a written change order signed by both parties and may be billed at the current rate.<br><br>4. <strong>Warranty:</strong> All workmanship is warranted for one (1) year from the date of completion. This warranty covers labor defects and application failures. It does not cover pre-existing surface conditions, substrate failure, moisture damage, or damage caused by events outside the contractor\'s control.<br><br>5. <strong>Limitation of Liability:</strong> Contractor is not responsible for damage to surfaces, structures, or contents that existed prior to the start of work, or for conditions not disclosed at the time of walkthrough. Client assumes all risk associated with pressure washing services on their property.<br><br>6. <strong>Materials &amp; Sales Tax:</strong> Contractor purchases all materials and pays applicable Kansas sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.<br><br>7. <strong>Mechanic\'s Lien Notice:</strong> Under Kansas law (K.S.A. 60-1101 et seq.), contractor has the right to file a mechanic\'s lien against this property for any amounts unpaid under this agreement. Client is hereby notified of this right. Contractor will pursue all available legal remedies for non-payment, including lien filing.<br><br>By signing below, client acknowledges full agreement with all scope, pricing, and terms stated in this proposal. This document constitutes a legally binding agreement pursuant to the Kansas Uniform Electronic Transactions Act (K.S.A. 16-1601 et seq.).';
@@ -10825,6 +10916,8 @@ if(!hasSignature()&&typedSig.length<=2){zAlert('Please type your name or draw yo
         b.type=getBidIncomeLabel({surfaces:estSurfaces});
         b.cond=v('e-cond');b.paint=v('e-paint');
         b.allowWeekend=document.getElementById('e-allow-weekend')?.checked||false;
+        b.isPortfolio=document.getElementById('portfolio-toggle')?.checked||false;
+        b.portfolioPct=parseInt(document.getElementById('portfolio-pct')?.value)||15;
       }
       editingBidId=null;
     } else {
@@ -10839,6 +10932,8 @@ if(!hasSignature()&&typedSig.length<=2){zAlert('Please type your name or draw yo
         draft.cond=v('e-cond');draft.paint=v('e-paint');
         draft.completion_date='';draft.collStage='none';
         draft.allowWeekend=document.getElementById('e-allow-weekend')?.checked||false;
+        draft.isPortfolio=document.getElementById('portfolio-toggle')?.checked||false;
+        draft.portfolioPct=parseInt(document.getElementById('portfolio-pct')?.value)||15;
       } else {
         // Fallback: no draft found, create fresh
         const exists=bids.find(b=>b.client_id===estLinkedClientId&&Math.abs(b.amount-final)<0.01&&b.bid_date===todayKey()&&b.status==='Pending');
@@ -10903,6 +10998,8 @@ function clearEstimatorForm(){
   ['e-cname','e-cphone','e-caddr','e-cnotes','est-adj-reason'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const adj=document.getElementById('est-adj');if(adj)adj.value=0;
   const adjV=document.getElementById('est-adj-val');if(adjV)adjV.textContent='0%';
+  const _ptogClear=document.getElementById('portfolio-toggle');
+  if(_ptogClear){_ptogClear.checked=false;togglePortfolioShowcase();}
   scopeActiveMap={};scopeHrsStore={};roomScopeMap={};estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};
   SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
   const ep2=document.getElementById('e-paint');if(ep2)ep2.value='';
