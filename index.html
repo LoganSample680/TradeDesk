@@ -10206,7 +10206,7 @@ function updatePortfolioPreview(){
   const years=S.byears||0;
   const owner=getOwnerName()||'Your contractor';
   const yearsPhrase=years?owner+' has '+years+' years of professional painting experience. ':owner+' has years of professional painting experience. ';
-  preview.textContent=yearsPhrase+'Having recently relocated to this area, he is selectively choosing '+target+' showcase homes to build his local portfolio. In exchange for permission to photograph your home before and after and feature it on his website, he is offering a '+pct+'% discount on this project.';
+  preview.textContent='We are currently selecting a limited number of showcase homes to feature across our Social Media. Your home has been selected. In exchange for permission to photograph your home before and after completion and feature it across our platforms, we are offering '+pct+'% off this project. No personal information is shared without your explicit permission.';
 }
 
 async function shortenUrl(url){
@@ -10728,7 +10728,7 @@ function buildProposal(){
   </div>
   ${_portfolioOn?`<div style="margin:0 0 0;border-top:3px solid #16a34a;background:#f0fdf4;padding:18px 24px">
     <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#16a34a;margin-bottom:8px">Portfolio Showcase Offer</div>
-    <div style="font-size:12px;color:#166534;line-height:1.7">${_portfolioYears?_portfolioOwner+' has '+_portfolioYears+' years of professional painting experience. ':_portfolioOwner+' has years of professional painting experience. '}Having recently relocated to this area, he is selectively choosing ${_portfolioTarget} showcase homes to build his local portfolio. In exchange for permission to photograph your home before and after and feature it on his website, he is offering a ${_portfolioPct}% discount on this project.</div>
+    <div style="font-size:12px;color:#166534;line-height:1.7">We are currently selecting a limited number of showcase homes to feature across our Social Media. Your home has been selected. In exchange for permission to photograph your home before and after completion and feature it across our platforms, we are offering ${_portfolioPct}% off this project. No personal information is shared without your explicit permission.</div>
     <div style="margin-top:8px;font-size:11px;color:#16a34a;font-weight:700">Portfolio discount applied: ${_portfolioPct}% · You save ${fmt(Math.round(final*_portfolioPct/(100-_portfolioPct)))}</div>
   </div>`:''}
 </div>`;

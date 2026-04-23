@@ -220,8 +220,7 @@ function _showPortfolioOffer(){
   const discP=_prop.discountedPrice||Math.round(fullP*(1-pct/100)*100)/100;
   const savings=Math.round((fullP-discP)*100)/100;
   document.getElementById('po-pct-hdr').textContent=pct;
-  const yearsPhrase=years?owner+' has '+years+' years of professional painting experience. ':'';
-  document.getElementById('po-pitch').textContent=yearsPhrase+'Having recently relocated to this area, he is selectively choosing '+target+' showcase homes to build his local portfolio. In exchange for permission to photograph your home before and after and feature it on his website, he is offering a '+pct+'% discount on this project.';
+  document.getElementById('po-pitch').textContent='We are currently selecting a limited number of showcase homes to feature across our Social Media. Your home has been selected for this opportunity. In exchange for permission to photograph your home before and after completion and feature the results across our platforms, we are offering '+pct+'% off this project. No personal information is ever shared without your explicit permission.';
   document.getElementById('po-full-price').textContent=fmt(fullP);
   document.getElementById('po-disc-price').textContent=fmt(discP);
   document.getElementById('po-save-tag').textContent='Save '+fmt(savings);
