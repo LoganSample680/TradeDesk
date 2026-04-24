@@ -1017,7 +1017,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
       </div>
 
       
-      <div id="surf-step-b" style="display:none;position:fixed;inset:0;z-index:800;background:var(--bg);overflow-y:auto;padding:16px 16px 80px;box-sizing:border-box">
+      <div id="surf-step-b" style="display:none;position:fixed;inset:0;z-index:1100;background:var(--bg);overflow-y:auto;padding:16px 16px 80px;box-sizing:border-box">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
           <button onclick="goSurfStepA()" style="border:none;background:none;cursor:pointer;font-size:18px;color:var(--text3);padding:0">&#8592;</button>
           <div>
@@ -1960,7 +1960,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 
 
 <button id="notes-fab" onclick="toggleNotesPanel()" style="display:none;position:fixed;bottom:88px;right:14px;z-index:500;width:50px;height:50px;border-radius:50%;background:var(--blue);color:#fff;border:none;align-items:center;justify-content:center;font-size:22px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.3);font-family:inherit" title="Notes & Sketches">✏️</button>
-<div id="notes-panel" style="display:none;position:fixed;inset:0;z-index:600;background:var(--bg);flex-direction:column">
+<div id="notes-panel" style="display:none;position:fixed;inset:0;z-index:1100;background:var(--bg);flex-direction:column">
   <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg)">
     <div>
       <div style="font-size:17px;font-weight:800">Notes &amp; Sketches</div>
@@ -9316,7 +9316,7 @@ function showAdjReasonSheet(pct){
   const pills=isNeg?['Portfolio Showcase','Repeat customer','Competitive bid','Other']:['Difficult access','Rush job','Extra prep needed','Other'];
   const sheet=document.createElement('div');
   sheet.id='adj-reason-sheet';
-  sheet.style.cssText='display:flex;flex-direction:column;align-items:center;justify-content:flex-end;position:fixed;inset:0;z-index:900;background:rgba(0,0,0,.45)';
+  sheet.style.cssText='display:flex;flex-direction:column;align-items:center;justify-content:flex-end;position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,.45)';
   const inner=document.createElement('div');
   inner.style.cssText='width:100%;max-width:480px;margin-left:auto;margin-right:auto;border-radius:18px 18px 0 0;background:var(--bg);padding:20px 16px 36px;box-sizing:border-box;max-height:75vh;overflow-y:auto';
   inner.innerHTML=
