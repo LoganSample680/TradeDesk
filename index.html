@@ -2094,12 +2094,6 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 <script>
 // ── Submit guard — prevents double-tap on any button ─────────────────────
 let _submitting=false;
-function guardedSubmit(fn){
-  if(_submitting)return;
-  _submitting=true;
-  setTimeout(()=>{_submitting=false;},1200);
-  try{fn();}catch(e){_submitting=false;throw e;}
-}
 let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[],events=[];
 // Collision-resistant bid ID: milliseconds * 1000 + random 0-998 = 13-16 digit unique number
 function _newBidId(){return Date.now()*1000+Math.floor(Math.random()*999);}
@@ -2305,7 +2299,6 @@ const BUSINESS_CONFIGS={
 
 function getRole(){return _user?.role||'owner';}
 function isOwner(){return getRole()==='owner';}
-function canSeePricing(){return getRole()==='owner'||getRole()==='estimator';}
 function canSeeTaxes(){return isOwner();}
 function getConfig(){return _config||BUSINESS_CONFIGS.painting;}
 function getBusinessName(){return _account?.business_name||S.bname||"ZJ's Painting & Special Coatings";}
@@ -2938,10 +2931,6 @@ function estimateTax(netSelf){
 
 let _renderDashTimer=null;
 let _renderDashRunning=false;
-function renderDashDebounced(){
-  if(_renderDashTimer)clearTimeout(_renderDashTimer);
-  _renderDashTimer=setTimeout(renderDash,60);
-}
 function renderDash(){
   if(_renderDashRunning)return; // prevent cascade
   _renderDashRunning=true;
@@ -3571,7 +3560,6 @@ function emitEvent(type,clientId,extra){if(!events)events=[];events.push({id:Dat
 function autoLogContact(clientId,note){const c=getClientById(clientId);if(!c)return;c.last_contact_date=todayKey();const pb=bids.find(b=>b.client_id===clientId&&b.status==='Pending');if(pb){pb.last_followup_date=todayKey();if(!pb.followup||pb.followup<=todayKey())pb.followup=addDays(todayKey(),7);}emitEvent(note||'contact',clientId);try{saveAll();}catch(e){}}
 function markFollowupSent(bidId){const b=bids.find(x=>x.id===bidId);if(!b)return;b.last_followup_date=todayKey();b.followup=addDays(todayKey(),7);b.noResponseCount=(b.noResponseCount||0)+1;saveAll();setTimeout(renderDash,600);}
 function openExpenseForJob(jobId,clientId){const j=jobs.find(x=>x.id===jobId);goPg('pg-tracker');setTimeout(()=>{const sel=document.getElementById('exp-job');if(sel){for(let i=0;i<sel.options.length;i++){if(sel.options[i].value==jobId){sel.selectedIndex=i;break;}}}const expSec=document.getElementById('add-exp-form')||document.getElementById('exp-add-section');if(expSec)expSec.scrollIntoView({behavior:'smooth'});},200);}
-function markJobNoExpenses(jobId){const j=jobs.find(x=>x.id===jobId);if(j){j._noExpenses=true;saveAll();renderDash();}}
 function showActionPrompt(cfg){const ov=document.createElement('div');ov.className='zmodal-overlay';const box=document.createElement('div');box.className='zmodal';const actHtml=(cfg.actions||[]).map(a=>{const S_={p:'background:var(--blue);color:#fff;border:none',g:'background:var(--green);color:#fff;border:none',r:'background:#A32D2D;color:#fff;border:none',a:'background:#C0720A;color:#fff;border:none'};const s=S_[a.style]||'background:var(--bg2);color:var(--text2);border:1px solid var(--border2)';return'<button class="_ap-act" style="flex:1;padding:13px 6px;border-radius:var(--r);'+s+';font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;min-width:0">'+escHtml(a.label)+'</button>';}).join('');box.innerHTML='<div style="text-align:center;font-size:28px;margin-bottom:8px">'+cfg.emoji+'</div><div style="font-size:16px;font-weight:800;text-align:center;margin-bottom:6px">'+escHtml(cfg.title)+'</div>'+(cfg.body?'<div style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:18px;line-height:1.5">'+escHtml(cfg.body)+'</div>':'')+'<div style="display:flex;gap:8px;margin-bottom:12px">'+actHtml+'</div>'+(cfg.dismissLabel!==false?'<div style="text-align:center"><button class="_ap-dismiss" style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit;padding:4px 8px">'+escHtml(cfg.dismissLabel||'Do later')+'</button></div>':'');ov.appendChild(box);document.body.appendChild(ov);box.querySelectorAll('._ap-act').forEach((btn,i)=>{btn.addEventListener('click',()=>{ov.remove();if(cfg.actions[i]&&cfg.actions[i].fn)cfg.actions[i].fn();});});const dis=box.querySelector('._ap-dismiss');if(dis)dis.addEventListener('click',()=>{ov.remove();if(cfg.onDismiss)cfg.onDismiss();});ov.addEventListener('click',e=>{if(e.target===ov){ov.remove();if(cfg.onDismiss)cfg.onDismiss();}});return ov;}
 function renderDashCollect(){
   const el=document.getElementById('dash-collect');if(!el)return;
@@ -4351,12 +4339,6 @@ function renderPipeline(){
   function weekMonday(dateStr){
     const d=parseD(dateStr),dow=d.getDay(),diff=dow===0?-6:(1-dow);
     d.setDate(d.getDate()+diff);return dateKey(d);
-  }
-  function bookedWorkDays(monday){
-    const{booked}=getBookedDays();
-    let n=0;
-    for(let i=0;i<5;i++){if(booked.has(addDays(monday,i)))n++;}
-    return n;
   }
   function paintDaysInWeek(monday){
     let n=0;
@@ -7114,17 +7096,6 @@ function renderTodayLegs(){
   '</div>';
 }
 
-function toggleDrive(){if(gps.active)showEndDrive();else showStartDrive();}
-function startDrive(){showStartDrive();}
-function endDrive(){showEndDrive();}
-function startDriving(){showStartDrive();}
-function stopDriving(){showEndDrive();}
-function saveDriveTrip(){confirmEndDrive();}
-function discardDriveTrip(){
-  clearInterval(gps.timerInt);
-  gps={active:false,startCoords:null,startTime:null,clientId:null,clientName:'',timerInt:null,vehicle:'',purpose:''};
-  hideDriveBanner();resetDriveUI();
-}
 
 function buildScopeGrid(roomName){
   const el=document.getElementById('est-scope-grid')||document.getElementById('surf-scope-first-grid');
