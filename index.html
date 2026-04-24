@@ -522,10 +522,6 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   <div id="dash-followups" style="display:none"></div>
   <div id="dash-fu" style="display:none"></div>
   <div id="dash-collect" style="display:none"></div>
-  <div class="card" id="dash-coldleads-card" style="display:none">
-    <div class="card-hd">Cold leads <span id="dash-coldleads-count"></span></div>
-    <div id="dash-coldleads"></div>
-  </div>
 
 
 </div>
@@ -2300,7 +2296,6 @@ const BUSINESS_CONFIGS={
 function getRole(){return _user?.role||'owner';}
 function isOwner(){return getRole()==='owner';}
 function canSeeTaxes(){return isOwner();}
-function getConfig(){return _config||BUSINESS_CONFIGS.painting;}
 function getBusinessName(){return _account?.business_name||S.bname||"ZJ's Painting & Special Coatings";}
 function getUserName(){return _user?.name||'';}
 function getOwnerName(){
@@ -2929,7 +2924,6 @@ function estimateTax(netSelf){
   return seTax+fedTax+ksTax;
 }
 
-let _renderDashTimer=null;
 let _renderDashRunning=false;
 function renderDash(){
   if(_renderDashRunning)return; // prevent cascade
@@ -3240,46 +3234,7 @@ function riskBadge(cid){
   if(r==='watch')return '<span style="font-size:10px;font-weight:800;background:var(--amber);color:#fff;padding:2px 6px;border-radius:4px">👁 Watch</span>';
   return '';
 }
-function checkClientRiskGate(cid,action){
-  const r=getClientRisk(cid);
-  const c=getClientById(cid);
-  if(r==='blacklisted'){
-    zAlert('This client is blacklisted. '+action+' is blocked. View only.',{title:'🚫 Blacklisted client'});
-    return false;
-  }
-  if(r==='high_risk'){
-    // Show warning but allow with confirmation
-    return new Promise(res=>{
-      zConfirm('⚠️ This client previously required a lien for payment. Proceed with caution. Continue?',
-        ()=>res(true),{title:'High risk client',yes:'Proceed',danger:true,onNo:()=>res(false)});
-    });
-  }
-  return Promise.resolve(true);
-}
-
 // ── Enhanced lien filing with stage enforcement ───────────────────────────
-function openLienPanelGuarded(bidId){
-  // KS K.S.A. 60-1105: lien must be filed within 4 months of last work/materials
-  const bid=bids.find(b=>b.id===bidId);if(!bid)return;
-  const stage=getBidCollStage(bid);
-  const days=bid.completion_date?daysSince(bid.completion_date):0;
-  // Require intent stage before filing
-  if(stage!=='intent'&&stage!=='lien_filed'&&stage!=='lien_ready'){
-    zAlert('Send Intent to Lien notice to the client first before filing. Use the "Text client" actions to document your escalation steps.',{title:'Step required first'});
-    return;
-  }
-  // Warn if >90 days
-  if(days>90&&days<=120){
-    zConfirm('⚠️ It\'s been '+days+' days since job completion. Kansas lien window is 4 months. Proceed quickly.',()=>openLienPanel(bidId),{title:'Window closing',yes:'Proceed',danger:false});
-    return;
-  }
-  if(days>120){
-    zConfirm('🚨 It has been '+days+' days since completion. The Kansas 4-month lien window may have EXPIRED. Consult an attorney before filing.',()=>openLienPanel(bidId),{title:'Window may be expired',yes:'File anyway',danger:true});
-    return;
-  }
-  openLienPanel(bidId);
-}
-
 // ── Direct lien filing — no redirect, generates document immediately ──────
 function showFileLienDirect(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
@@ -3560,7 +3515,6 @@ function emitEvent(type,clientId,extra){if(!events)events=[];events.push({id:Dat
 function autoLogContact(clientId,note){const c=getClientById(clientId);if(!c)return;c.last_contact_date=todayKey();const pb=bids.find(b=>b.client_id===clientId&&b.status==='Pending');if(pb){pb.last_followup_date=todayKey();if(!pb.followup||pb.followup<=todayKey())pb.followup=addDays(todayKey(),7);}emitEvent(note||'contact',clientId);try{saveAll();}catch(e){}}
 function markFollowupSent(bidId){const b=bids.find(x=>x.id===bidId);if(!b)return;b.last_followup_date=todayKey();b.followup=addDays(todayKey(),7);b.noResponseCount=(b.noResponseCount||0)+1;saveAll();setTimeout(renderDash,600);}
 function openExpenseForJob(jobId,clientId){const j=jobs.find(x=>x.id===jobId);goPg('pg-tracker');setTimeout(()=>{const sel=document.getElementById('exp-job');if(sel){for(let i=0;i<sel.options.length;i++){if(sel.options[i].value==jobId){sel.selectedIndex=i;break;}}}const expSec=document.getElementById('add-exp-form')||document.getElementById('exp-add-section');if(expSec)expSec.scrollIntoView({behavior:'smooth'});},200);}
-function showActionPrompt(cfg){const ov=document.createElement('div');ov.className='zmodal-overlay';const box=document.createElement('div');box.className='zmodal';const actHtml=(cfg.actions||[]).map(a=>{const S_={p:'background:var(--blue);color:#fff;border:none',g:'background:var(--green);color:#fff;border:none',r:'background:#A32D2D;color:#fff;border:none',a:'background:#C0720A;color:#fff;border:none'};const s=S_[a.style]||'background:var(--bg2);color:var(--text2);border:1px solid var(--border2)';return'<button class="_ap-act" style="flex:1;padding:13px 6px;border-radius:var(--r);'+s+';font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;min-width:0">'+escHtml(a.label)+'</button>';}).join('');box.innerHTML='<div style="text-align:center;font-size:28px;margin-bottom:8px">'+cfg.emoji+'</div><div style="font-size:16px;font-weight:800;text-align:center;margin-bottom:6px">'+escHtml(cfg.title)+'</div>'+(cfg.body?'<div style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:18px;line-height:1.5">'+escHtml(cfg.body)+'</div>':'')+'<div style="display:flex;gap:8px;margin-bottom:12px">'+actHtml+'</div>'+(cfg.dismissLabel!==false?'<div style="text-align:center"><button class="_ap-dismiss" style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit;padding:4px 8px">'+escHtml(cfg.dismissLabel||'Do later')+'</button></div>':'');ov.appendChild(box);document.body.appendChild(ov);box.querySelectorAll('._ap-act').forEach((btn,i)=>{btn.addEventListener('click',()=>{ov.remove();if(cfg.actions[i]&&cfg.actions[i].fn)cfg.actions[i].fn();});});const dis=box.querySelector('._ap-dismiss');if(dis)dis.addEventListener('click',()=>{ov.remove();if(cfg.onDismiss)cfg.onDismiss();});ov.addEventListener('click',e=>{if(e.target===ov){ov.remove();if(cfg.onDismiss)cfg.onDismiss();}});return ov;}
 function renderDashCollect(){
   const el=document.getElementById('dash-collect');if(!el)return;
   const tk=todayKey();
@@ -4298,38 +4252,6 @@ function showSourceDetail(src){
     '</div>'+
     (pending>0?'<div style="font-size:11px;color:var(--amber);margin-top:8px;text-align:center">'+pending+' pending bid'+(pending>1?'s':'')+' — not yet counted in close rate</div>':'');
 }
-
-function renderRefarm(){
-  const el=document.getElementById('dash-coldleads');
-  const card=document.getElementById('dash-coldleads-card');
-  if(!el||!card)return;
-  const tk=todayKey();
-  const abandoned=bids.filter(b=>b.status==='Abandoned');
-  const isFirstOfMonth=new Date().getDate()===1;
-  const recentAbandons=abandoned.filter(b=>{
-    if(!b.abandonDate)return false;
-    const days=Math.floor((new Date(tk)-new Date(b.abandonDate+'T12:00:00'))/(1000*60*60*24));
-    return days<=31; // abandoned in last month
-  });
-  if(!recentAbandons.length&&!isFirstOfMonth){card.style.display='none';return;}
-  if(!abandoned.length){card.style.display='none';return;}
-  card.style.display='block';
-  const countEl=document.getElementById('dash-coldleads-count');
-  if(countEl)countEl.textContent='('+abandoned.length+')';
-  el.innerHTML='<div style="font-size:12px;color:var(--text2);margin-bottom:10px">These clients abandoned. Prices change, situations change. A quick call could turn into a job.</div>'+
-    abandoned.slice(0,5).map(b=>{
-      const daysSince=b.abandonDate?Math.floor((new Date(tk)-new Date(b.abandonDate+'T12:00:00'))/(1000*60*60*24)):90;
-      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">'+
-        '<div>'+
-          '<div style="font-size:13px;font-weight:700">'+b.client_name+'</div>'+
-          '<div style="font-size:11px;color:var(--text3)">'+fmt(b.amount)+' bid · went cold '+daysSince+' days ago</div>'+
-        '</div>'+
-        '<button class="btn btn-sm" onclick="openClientDetail('+b.client_id+')" style="flex-shrink:0;margin-left:8px">Call</button>'+
-      '</div>';
-    }).join('')+
-    (abandoned.length>5?'<div style="font-size:11px;color:var(--text3);text-align:center;padding-top:6px">+'+( abandoned.length-5)+' more cold leads</div>':'');
-}
-
 const CLOSE_RATE = 0.60; // 60% industry avg for professional solo painter in Kansas
 
 function renderPipeline(){
@@ -4660,79 +4582,6 @@ function renderClientList(){
 
   if(!filtered.length){el.innerHTML='<div class="empty">No clients here.</div>';return;}
 
-}
-function renderPipelineView(el, tk){
-  const STAGES=[
-    {key:'active',      label:'🟢 Active today',         color:'var(--green-mid)', desc:'Currently on the job'},
-    {key:'balance_due', label:'🔴 Collect payment',       color:'#A32D2D',          desc:'Job done — money owed'},
-    {key:'signed',      label:'🔵 Schedule the job',      color:'var(--blue)',       desc:'Won — get it on the calendar'},
-    {key:'scheduled',   label:'🔵 Job coming up',         color:'#185FA5',          desc:'On the calendar'},
-    {key:'bid_urgent',  label:'🟠 Follow up now',         color:'var(--amber)',      desc:'Bid out 14+ days — call today'},
-    {key:'bid_out',     label:'🟡 Bid out',               color:'#D85A30',          desc:'Waiting on answer'},
-    {key:'est_scheduled',label:'🟣 Estimate scheduled',   color:'#7F77DD',          desc:'Walk-through coming up'},
-    {key:'new',         label:'⚪ New lead',              color:'var(--text3)',      desc:'Just added'},
-    {key:'paid',        label:'✅ Paid in full',          color:'var(--green)',      desc:'Complete'},
-    {key:'abandoned',   label:'⬜ Abandoned',             color:'#999',             desc:'No response'},
-  ];
-
-  const groups={};
-  clients.forEach(c=>{
-    const s=getClientStage(c.id);
-    if(!groups[s.stage])groups[s.stage]=[];
-    groups[s.stage].push({c,s});
-  });
-
-  if(!clients.length){el.innerHTML='<div class="empty">No clients yet. Tap "+ New client" to add one.</div>';return;}
-
-  const COLLAPSED_BY_DEFAULT=new Set(['paid','abandoned']);
-  if(!window._pipelineExpand)window._pipelineExpand={};
-
-  let html='';
-  STAGES.forEach(({key,label,color})=>{
-    const group=groups[key];
-    if(!group||!group.length)return;
-    const isCollapsible=true;
-    const defaultCollapsed=COLLAPSED_BY_DEFAULT.has(key);
-    if(!(key in window._pipelineExpand))window._pipelineExpand[key]=!defaultCollapsed;
-    const isOpen=window._pipelineExpand[key];
-    const gid='pipe-grp-'+key;
-
-    html+=
-      '<div style="margin-bottom:10px">'+
-        '<div data-pkey="'+key+'" onclick="togglePipeGroup(this.dataset.pkey)" style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;user-select:none">'+
-          '<div style="width:10px;height:10px;border-radius:50%;background:'+color+';flex-shrink:0"></div>'+
-          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text2);flex:1">'+label+'</div>'+
-          '<div style="font-size:10px;color:var(--text3)">'+group.length+'</div>'+
-          '<span style="font-size:10px;color:var(--text3);margin-left:4px;transition:transform .2s;display:inline-block;transform:'+(isOpen?'rotate(90deg)':'')+'">&#9654;</span>'+
-        '</div>'+
-        '<div id="'+gid+'" style="display:'+(isOpen?'block':'none')+'">'+
-        group.map(({c,s})=>{
-          const wonBids=getClientBids(c.id).filter(b=>b.status==='Closed Won');
-          const totalOwed=wonBids.reduce((sum,b)=>sum+getBidBalance(b),0);
-          const wonJobs=getClientJobs(c.id).filter(j=>j.eventType!=='estimate'&&j.status==='done').length;
-          const hasBal=totalOwed>0.01;
-          const pendBids2=getClientBids(c.id).filter(b=>b.status==='Pending');
-          return '<div class="client-card" onclick="openClientDetail('+c.id+')" style="margin-bottom:4px">'+
-            '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">'+
-              '<div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">'+
-                '<div class="cc-avatar" style="width:36px;height:36px;font-size:12px;flex-shrink:0;'+stageAvatar(s.stage)+'">'+initials(c.name)+'</div>'+
-                '<div style="min-width:0">'+
-                  '<div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.name+'</div>'+
-                  '<div style="font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+
-                    (hasBal?fmt(totalOwed)+' owed':pendBids2.length>1?pendBids2.length+' bids out':pendBids2.length===1?fmt(pendBids2[0].amount)+' bid out':c.addr||'No address')+
-                  '</div>'+
-                '</div>'+
-              '</div>'+
-              '<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:var(--text3);fill:none;stroke-width:2;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>'+
-            '</div>'+
-          '</div>';
-        }).join('')+
-        '</div>'+
-      '</div>';
-  });
-  el.innerHTML=html;
-  const pb=bids.filter(b=>b.status==='Pending').length;
-  const badge=document.getElementById('nb-bid-badge');if(badge){badge.textContent=pb;badge.style.display=pb?'flex':'none';}
 }
 function togglePipeGroup(key){
   if(!window._pipelineExpand)window._pipelineExpand={};
@@ -5946,18 +5795,6 @@ function showSupplyList(bidId){
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   document.body.appendChild(ov);
 }
-
-function _saveAllSupplyState(body,checked){
-  const key='supplyChecked_'+body.dataset.bidId;
-  const st=JSON.parse(localStorage.getItem(key)||'{}');
-  body.querySelectorAll('.supply-check').forEach((cb,i)=>{st['_all_'+i]=checked;});
-  // rebuild full state from current checkboxes
-  const newSt={};
-  body.querySelectorAll('.supply-check').forEach((cb,i)=>{newSt['_all_'+i]=checked;});
-  // preserve section keys too — just overwrite everything
-  body.querySelectorAll('[data-supply-key]').forEach(el=>{newSt[el.dataset.supplyKey]=checked;});
-  localStorage.setItem(key,JSON.stringify(newSt));
-}
 function supplyCheckAll(btn){
   const body=document.getElementById('supply-list-body');
   if(!body)return;
@@ -6055,21 +5892,6 @@ function removeClientAddress(idx){
   });
 }
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-function driveToJob(jobId){
-  const j=jobs.find(x=>x.id===jobId);
-  if(!j||!j.client_id){zAlert('No client linked to this job. Open the client record manually.');return;}
-  openClientDetail(j.client_id);
-  setTimeout(()=>{
-    const btn=document.getElementById('cd-drive-btn');
-    if(btn){
-      btn.scrollIntoView({behavior:'smooth',block:'center'});
-      btn.style.transform='scale(1.03)';
-      btn.style.transition='transform .2s';
-      setTimeout(()=>{btn.style.transform='';},400);
-    }
-  },200);
-}
-
 function quickBid(){
   openEstimateForClient();
 }
@@ -6645,8 +6467,6 @@ function openLienPanel(bidId){
 function closeLienPanel(){document.getElementById('cd-lien-panel').style.display='none';activeLienBidId=null;}
 
 // editingBidId declared at top with est vars
-
-function openEditBidFromOverview(bidId){openEditBid(bidId);}
 function viewBidFromTimeline(bidId){
   setCDTab('bids',document.getElementById('cdt-bids'));
   setTimeout(()=>{
@@ -6892,12 +6712,6 @@ function selectDriveVehicleByName(name){
   gps.vehicle=name;
   checkTripReady();
 }
-function selectDriveVehicle(idx){
-  const vehs=getVehicles();
-  gps.vehicle=vehs[idx]?vehs[idx].name:'';
-  renderDriveVehicleChips();
-  checkTripReady();
-}
 function checkTripReady(){
   const hasVeh=!!gps.vehicle;
   const hasPurpose=!!gps.purpose;
@@ -6915,12 +6729,6 @@ function resetDriveUI(){
   document.getElementById('cd-drive-start').style.display='none';
   document.getElementById('cd-drive-active').style.display='none';
   document.getElementById('cd-drive-end').style.display='none';
-}
-
-function showStartDrive(){
-  document.getElementById('cd-drive-idle').style.display='none';
-  document.getElementById('cd-drive-start').style.display='block';
-  renderDriveVehicleChips();
 }
 function cancelStartDrive(){
   document.getElementById('cd-drive-start').style.display='none';
@@ -7031,18 +6839,6 @@ function saveEndDriveModal(){
   renderDash();
   showToast(miles.toFixed(1)+' mi logged · '+fmt(miles*IRS())+' deduction','🚗');
 }
-
-function confirmEndDrive(){
-  showEndDrive();
-  const tk=todayKey();
-  const todayEst=getClientJobs(currentClientId).find(j=>j.eventType==='estimate'&&j.start===tk&&j.status!=='canceled');
-  if(todayEst){
-    zConfirm('You have arrived at '+(getClientById(currentClientId)||{name:'the client'}).name+'! Ready to build the estimate?',
-      ()=>openEstimateForClient(),
-      {title:'Build estimate',yes:'Start estimate',danger:false,no:'Not yet'});
-  }
-}
-
 function updateDriveTimer(){
   if(!gps.startTime)return;
   const elapsed=Math.floor((Date.now()-gps.startTime)/1000);
@@ -7145,37 +6941,6 @@ function toggleScopeRoom(id, roomName){
   }
   saveEstFullDraft();
   renderEstRunning();
-}
-function promptScopeHoursRoom(id,label,roomName){
-  const existing=(roomScopeMap[roomName]&&roomScopeMap[roomName][id])||{};
-  const existHrs=existing.hrs||'';
-  const existRate=existing.rate||45;
-  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
-  const box=document.createElement('div');box.className='zmodal';
-  box.innerHTML=
-    '<div style="font-size:18px;font-weight:800;margin-bottom:2px">'+label+'</div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:4px">For: <strong>'+roomName+'</strong></div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">Hours and rate for this room only</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">'+
-      '<div><label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Hours</label>'+
-        '<input type="number" id="scope-hrs-popup" value="'+existHrs+'" min="0" step="0.5" placeholder="0.0" inputmode="decimal"'+
-          ' style="font-size:28px;font-weight:700;padding:12px;border-radius:var(--r);border:2px solid var(--blue);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
-          ' oninput="_syncScopePopupHint()"></div>'+
-      '<div><label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Rate ($/hr)</label>'+
-        '<input type="number" id="scope-rate-popup" value="'+existRate+'" min="0" step="5" placeholder="45" inputmode="decimal"'+
-          ' style="font-size:28px;font-weight:700;padding:12px;border-radius:var(--r);border:2px solid var(--green);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
-          ' oninput="_syncScopePopupHint()"></div>'+
-    '</div>'+
-    '<div id="scope-popup-hint" style="font-size:13px;font-weight:700;color:var(--green-mid);text-align:center;margin-bottom:14px;min-height:20px"></div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
-      '<button id="scope-cancel-btn" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
-      '<button id="scope-save-btn" style="padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Save ✓</button>'+
-    '</div>';
-  overlay.appendChild(box);document.body.appendChild(overlay);
-  overlay.addEventListener('click',e=>{if(e.target===overlay)_cancelScopeHoursRoom(id,roomName);});
-  box.querySelector('#scope-cancel-btn').onclick=()=>_cancelScopeHoursRoom(id,roomName);
-  box.querySelector('#scope-save-btn').onclick=()=>_saveScopeHoursRoom(id,roomName);
-  setTimeout(()=>{_syncScopePopupHint();const inp=document.getElementById('scope-hrs-popup');if(inp){inp.focus();inp.select();}},80);
 }
 function _saveScopeHoursRoom(id,roomName){
   const hrs=parseFloat(document.getElementById('scope-hrs-popup')?.value)||0;
@@ -7297,7 +7062,6 @@ function _cancelScopeHours(id){
   closeTopModal();
 }
 function scopeOn(id){return !!scopeActiveMap[id];}
-function getRoomScope(roomName){return roomScopeMap[roomName]||(roomScopeMap[roomName]={});}
 function roomScopeOn(roomName,id){return !!(roomScopeMap[roomName]&&roomScopeMap[roomName][id]&&roomScopeMap[roomName][id].active);}
 function setRoomScope(roomName,id,active,hrs,rate){
   if(!roomScopeMap[roomName])roomScopeMap[roomName]={};
@@ -7799,19 +7563,6 @@ function swResetProduct(){
 function swGetProductName(){
   if(!_swProduct)return'';
   return _swProduct.name;
-}
-
-function addSurfColorField(){
-  const list=document.getElementById('surf-colors-list');if(!list)return;
-  const inp=document.createElement('input');
-  inp.placeholder='Additional color...';inp.className='surf-color-entry';
-  inp.style.cssText='font-size:13px;padding:8px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box';
-  list.appendChild(inp);inp.focus();
-}
-function getSurfColors(){
-  const swInp=document.getElementById('surf-color-b')||document.getElementById('surf-color');
-  if(swInp&&swInp.value.trim())return[swInp.value.trim()];
-  return[...document.querySelectorAll('.surf-color-entry')].map(i=>i.value.trim()).filter(Boolean);
 }
 let surfType='walls', surfDoorOpt='trim', surfWinOpt='trim', surfCabOpt='uppers', surfCount=1; // compat
 let surfWhatSelected=[]; // which surface types toggled on for current room
@@ -8362,23 +8113,6 @@ function renderSurfBCurrent(){
     updateSurfBCalc();
   }
 }
-
-function adjWallCount(d){
-  const type=surfBQueue[surfBIdx];
-  if(!surfBMeasurements[type])surfBMeasurements[type]={wallCount:4,walls:[]};
-  const m=surfBMeasurements[type];
-  const oldCount=m.wallCount||4;
-  const savedWalls=[];
-  for(let w=1;w<=oldCount;w++){
-    const l=parseFloat(document.getElementById('surf-b-wall'+w+'l')?.value)||0;
-    const h=parseFloat(document.getElementById('surf-b-wall'+w+'h')?.value)||0;
-    savedWalls.push({l,h});
-  }
-  m.walls=savedWalls;
-  m.wallCount=Math.max(1,Math.min(12,oldCount+d));
-  renderSurfBCurrent();
-}
-
 function updateWallSqft(manual){
   const sqEl=document.getElementById('surf-b-sqft');
   const calc=document.getElementById('surf-b-sqftcalc');
@@ -8408,20 +8142,6 @@ function updateSqftCalc(manualSqft){
   const val=parseFloat(sqEl.value)||0;
   if(calc){calc.textContent=val>0?val.toLocaleString()+' sq ft':'Enter dimensions or type sq ft directly';calc.style.color=val>0?'var(--green-mid)':'var(--text3)';}
 }
-function updateWallCalc(){
-  const type=surfBQueue[surfBIdx];
-  const m=surfBMeasurements[type]||{wallCount:4};
-  const count=m.wallCount||4;
-  let total=0;
-  for(let w=1;w<=count;w++){
-    const l=parseFloat(document.getElementById('surf-b-wall'+w+'l')?.value)||0;
-    const h=parseFloat(document.getElementById('surf-b-wall'+w+'h')?.value)||0;
-    total+=Math.round(l*h);
-  }
-  const cr=document.getElementById('surf-b-wallcalc');
-  if(cr)cr.textContent=total>0?'Total: '+total.toLocaleString()+' sq ft':'';
-}
-
 function updateSurfBCalc(){
   const l=parseFloat(document.getElementById('surf-b-len')?.value)||0;
   const h=parseFloat(document.getElementById('surf-b-hgt')?.value)||0;
@@ -8770,558 +8490,7 @@ function editRoomSurfs(roomBase){
   zAlert('Room loaded for editing. Surface types are pre-selected. Re-enter measurements and colors — scope items are preserved.',{title:'Editing: '+roomBase});
 }
 
-function addManualSurface(){}
-function setManualSurf(){}
-function setSurfDoorOpt(o,b){setSurfBOpt(o);}
-function setSurfWinOpt(o,b){setSurfBOpt(o);}
-function setSurfCabOpt(o,b){setSurfBOpt(o);}
-
-const BOSCH_SERVICE   = '02a6c0d0-0451-4000-b000-fb3210111989';
-const BOSCH_CHAR      = '02a6c0d1-0451-4000-b000-fb3210111989';
-const BOSCH_TRIGGER   = new Uint8Array([0xC0,0x56,0x01,0x00,0x1E]);
-
-let laserDevice=null, laserChar=null, laserConnected=false;
-let activeLaserField='length'; // 'length' or 'height'
-let laserLength=null, laserHeight=null;
-let laserRoom='Living room', laserSurf='walls', laserColor='';
-
-async function connectLaser(){
-  const btn=document.getElementById('laser-connect-btn');
-  const status=document.getElementById('laser-status');
-  if(laserConnected){
-    status.innerHTML='<strong style="color:var(--green)">&#10003; Laser connected.</strong> Point at wall and press the button on the laser.';
-    return;
-  }
-  if(!navigator.bluetooth){
-    status.innerHTML='<strong style="color:#A32D2D">Bluetooth not available.</strong> Install the <a href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055" target="_blank" style="color:var(--blue)">iOSWebBLE Safari extension</a> first, then reopen this page in Safari.';
-    return;
-  }
-  try{
-    status.textContent='Scanning for Bosch Blaze...';
-    btn.textContent='Connecting...';
-    laserDevice = await navigator.bluetooth.requestDevice({
-      filters:[{namePrefix:'GLM'},{namePrefix:'Bosch'}],
-      optionalServices:[BOSCH_SERVICE]
-    });
-    const server = await laserDevice.gatt.connect();
-    const service = await server.getPrimaryService(BOSCH_SERVICE);
-    laserChar = await service.getCharacteristic(BOSCH_CHAR);
-    await laserChar.startNotifications();
-    laserChar.addEventListener('characteristicvaluechanged', onLaserMeasurement);
-    laserConnected=true;
-    btn.textContent='&#10003; Connected';
-    btn.style.background='var(--green)';
-    btn.style.color='#fff';
-    btn.style.borderColor='var(--green)';
-    status.innerHTML='<strong style="color:var(--green)">&#10003; Bosch Blaze connected!</strong><br>Tap <strong>Length</strong> field, point laser at wall, press button. Then tap <strong>Height</strong>, point at ceiling, press button.';
-    laserDevice.addEventListener('gattserverdisconnected', ()=>{
-      laserConnected=false;
-      btn.textContent='&#128268; Reconnect laser';
-      btn.style.background='';btn.style.color='';btn.style.borderColor='';
-      status.innerHTML='Laser disconnected. Tap <strong>Reconnect laser</strong> to reconnect.';
-    });
-  }catch(err){
-    if(err.name==='NotFoundError'){
-      status.innerHTML='No Bosch device found. Make sure the laser is <strong>on</strong> and Bluetooth is enabled on your iPad.';
-    } else {
-      status.innerHTML='Could not connect: '+err.message;
-    }
-    btn.textContent='&#128268; Connect laser';
-  }
-}
-
-function onLaserMeasurement(event){
-  const data = event.target.value;
-  if(data.byteLength < 11) return;
-  const meters = data.getFloat32(7, true);
-  if(meters <= 0 || meters > 200) return; // sanity check
-  const feet = Math.round(meters * 3.28084 * 10) / 10; // convert to feet, 1 decimal
-  receiveLaserReading(feet);
-}
-
-function receiveLaserReading(feet){
-  const feetDisplay = feet.toFixed(1);
-  if(activeLaserField==='length'){
-    laserLength=feet;
-    document.getElementById('lf-length-val').textContent=feetDisplay+" ft";
-    document.getElementById('lf-length').classList.remove('active');
-    document.getElementById('lf-length').classList.add('filled');
-    document.getElementById('lf-length-icon').textContent='✓';
-    setActiveLaserField('height');
-    if(navigator.vibrate)navigator.vibrate(50);
-  } else {
-    laserHeight=feet;
-    document.getElementById('lf-height-val').textContent=feetDisplay+" ft";
-    document.getElementById('lf-height').classList.remove('active');
-    document.getElementById('lf-height').classList.add('filled');
-    document.getElementById('lf-height-icon').textContent='✓';
-    if(navigator.vibrate)navigator.vibrate(50);
-    if(laserLength!==null){
-      const t=SURF_TYPES.find(s=>s.v===laserSurf)||{unit:'sf'};
-      const sqft=Math.round(laserLength*laserHeight);
-      const result=document.getElementById('laser-calc-result');
-      document.getElementById('laser-calc-text').innerHTML=
-        '<strong>'+laserRoom+'</strong> — '+laserLength.toFixed(1)+' × '+laserHeight.toFixed(1)+' = <strong>'+sqft+' sq ft</strong>';
-      result.style.display='block';
-      document.getElementById('laser-action-btns').style.display='block';
-      document.getElementById('laser-fields-label').textContent='Ready — add surface or measure again';
-    }
-  }
-}
-
-function setActiveLaserField(field){
-  activeLaserField=field;
-  ['length','height'].forEach(f=>{
-    const el=document.getElementById('lf-'+f);
-    if(!el)return;
-    if(el.classList.contains('filled'))return; // don't override filled state
-    el.classList.toggle('active', f===field);
-  });
-  const label=document.getElementById('laser-fields-label');
-  if(label)label.textContent=field==='length'?'Point laser at wall, press button':'Point laser at ceiling, press button';
-}
-
-function setRoomName(el, name){
-  laserRoom=name;
-  const inp=document.getElementById('laser-room-name');
-  if(inp){inp.value=name;onRoomNameInput(inp);}
-}
-function selectRoomChip(el,room){setRoomName(el,room);}
-function setCustomRoom(val){if(val)laserRoom=val;}
-
-function onRoomNameInput(input){
-  laserRoom=input.value.trim();
-  if(laserRoom){
-    input.style.borderColor='var(--green)';
-    input.style.background='var(--green-lt)';
-  } else {
-    input.style.borderColor='#A32D2D';
-    input.style.background='var(--red-lt)';
-  }
-}
-
-let laserJobType='interior';
-function setJobType(type){
-  laserJobType=type;
-  const isInt=type==='interior';
-  const intBtn=document.getElementById('job-type-int');
-  const extBtn=document.getElementById('job-type-ext');
-  if(intBtn){intBtn.style.borderColor=isInt?'var(--blue)':'var(--border2)';intBtn.style.background=isInt?'var(--blue)':'var(--bg2)';intBtn.style.color=isInt?'#fff':'var(--text2)';}
-  if(extBtn){extBtn.style.borderColor=isInt?'var(--border2)':'#D85A30';extBtn.style.background=isInt?'var(--bg2)':'#D85A30';extBtn.style.color=isInt?'var(--text2)':'#fff';}
-  const intSurfs=['st-walls','st-ceiling','st-trim','st-doors','st-windows','st-cabinets'];
-  const extSurfs=['st-ext_walls','st-ext_trim','st-deck'];
-  intSurfs.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=isInt?'':'none';});
-  extSurfs.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=isInt?'none':'';});
-  const defaultSurf=isInt?'walls':'ext_walls';
-  const defaultBtn=document.getElementById('st-'+defaultSurf);
-  if(defaultBtn)setLaserSurf(defaultSurf,defaultBtn);
-  const rn=document.getElementById('laser-room-name');
-  if(rn){
-    rn.placeholder=isInt?'e.g. Living room, Master bedroom...':'e.g. Front siding, Back wall, Deck...';
-    rn.value='';
-    laserRoom='';
-    rn.focus();
-  }
-  resetLaserFields();
-}
-
-let doorOpt='trim', winOpt='trim', cabOpt='uppers', itemCount=1;
-
-function setLaserSurf(type, btn){
-  laserSurf=type;
-  document.querySelectorAll('.surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));
-  if(btn)btn.classList.add('active-surf-btn');
-  const isCount=['doors','windows','cabinets'].includes(type);
-  const measurePanel=document.getElementById('laser-measure-panel');
-  const countPanel=document.getElementById('laser-count-panel');
-  if(measurePanel)measurePanel.style.display=isCount?'none':'block';
-  if(countPanel)countPanel.style.display=isCount?'block':'none';
-  if(isCount){
-    ['door-options','window-options','cabinet-options'].forEach(id=>{
-      const el=document.getElementById(id);if(el)el.style.display='none';
-    });
-    const optId=type==='doors'?'door-options':type==='windows'?'window-options':'cabinet-options';
-    const optEl=document.getElementById(optId);if(optEl)optEl.style.display='block';
-    const cl=document.getElementById('count-label');
-    const cu=document.getElementById('count-unit');
-    if(cl)cl.textContent=type==='doors'?'How many doors?':type==='windows'?'How many windows?':'Linear feet of cabinets?';
-    if(cu)cu.textContent=type==='doors'?'doors':type==='windows'?'windows':'lin ft';
-    itemCount=1;
-    const cd=document.getElementById('count-display');if(cd)cd.textContent='1';
-    const ab=document.getElementById('laser-action-btns');if(ab)ab.style.display='block';
-    const cr=document.getElementById('laser-calc-result');if(cr)cr.style.display='none';
-  } else {
-    const needsHeight=['walls','ceiling','ext_walls','deck'].includes(type);
-    const hField=document.getElementById('lf-height');
-    if(hField)hField.style.display=needsHeight?'':'none';
-    const lenLabel=document.getElementById('lf-length-label');
-    if(lenLabel)lenLabel.textContent=type==='trim'?'Linear feet (along wall)':'Length (ft)';
-    resetLaserFields();
-  }
-}
-
-function adjustCount(delta){
-  itemCount=Math.max(1, itemCount+delta);
-  const cd=document.getElementById('count-display');if(cd)cd.textContent=itemCount;
-}
-function setDoorOpt(opt,btn){
-  doorOpt=opt;
-  ['door-opt-trim','door-opt-face1','door-opt-face2','door-opt-faceonly'].forEach(id=>{
-    const el=document.getElementById(id);if(el)el.classList.remove('active-surf-btn');
-  });
-  if(btn)btn.classList.add('active-surf-btn');
-}
-function setWinOpt(opt,btn){
-  winOpt=opt;
-  ['win-opt-trim','win-opt-full'].forEach(id=>{
-    const el=document.getElementById(id);if(el)el.classList.remove('active-surf-btn');
-  });
-  if(btn)btn.classList.add('active-surf-btn');
-}
-function setCabOpt(opt,btn){
-  cabOpt=opt;
-  ['cab-opt-uppers','cab-opt-lowers','cab-opt-both','cab-opt-island'].forEach(id=>{
-    const el=document.getElementById(id);if(el)el.classList.remove('active-surf-btn');
-  });
-  if(btn)btn.classList.add('active-surf-btn');
-}
-
-function selectColorSwatch(el, colorName){
-  document.querySelectorAll('.color-chip').forEach(c=>c.classList.remove('active'));
-  el.classList.add('active');
-  document.getElementById('laser-color-name').value=colorName;
-  laserColor=colorName;
-}
-
-function resetLaserFields(){
-  laserLength=null;laserHeight=null;
-  ['length','height'].forEach(f=>{
-    const el=document.getElementById('lf-'+f);if(!el)return;
-    el.classList.remove('filled','active');
-    const val=document.getElementById('lf-'+f+'-val');if(val)val.textContent='—';
-    const icon=document.getElementById('lf-'+f+'-icon');if(icon)icon.textContent=f==='length'?'→':'↕';
-  });
-  const ll=document.getElementById('lf-length');if(ll)ll.classList.add('active');
-  const cr=document.getElementById('laser-calc-result');if(cr)cr.style.display='none';
-  const ab=document.getElementById('laser-action-btns');if(ab)ab.style.display='none';
-  activeLaserField='length';
-  const fl=document.getElementById('laser-fields-label');if(fl)fl.textContent='Point laser at wall, press button';
-}
-
-function addSurfaceToRoom(){
-  if(!laserRoom||!laserRoom.trim()){
-    const inp=document.getElementById('laser-room-name');
-    if(inp){inp.focus();inp.style.borderColor='#A32D2D';inp.style.background='var(--red-lt)';}
-    return;
-  }
-  const isCount=['doors','windows','cabinets'].includes(laserSurf);
-  let qty=0, surfType=laserSurf, roomLabel='';
-  const colorNote=laserColor?' — '+laserColor:'';
-  const prefix=(laserJobType==='exterior'?'[Ext] ':'');
-
-  if(isCount){
-    qty=itemCount;
-    if(laserSurf==='doors'){
-      const optLabel={trim:'trim only',face1:'trim + 1 face',face2:'trim + both faces',faceonly:'face only'}[doorOpt]||'';
-      roomLabel=prefix+laserRoom+' doors ('+optLabel+')'+colorNote;
-      if(doorOpt==='face1'||doorOpt==='face2'||doorOpt==='faceonly'){
-        const faceSf=Math.round(6.67*2.83); // standard 80"x34" door = ~18.9 sf
-        const faces=doorOpt==='face2'?2:1;
-        const doorFaceSf=itemCount*faceSf*faces;
-        if(doorOpt!=='faceonly'){
-          estSurfaces.push({id:++estSurfId,type:'doors',qty:itemCount,room:prefix+laserRoom+' door trim'+colorNote,lxhOpen:false});
-        }
-        estSurfaces.push({id:++estSurfId,type:'walls',qty:doorFaceSf,room:prefix+laserRoom+' door faces ('+itemCount+' × '+faces+' side)'+colorNote,lxhOpen:false});
-        renderEstSurfs();renderEstRunning();saveSurfDraft();renderLaserRoomsLogged();resetLaserFields();
-        return;
-      }
-    } else if(laserSurf==='windows'){
-      const optLabel={trim:'trim only',full:'trim + sill'}[winOpt]||'';
-      roomLabel=prefix+laserRoom+' windows ('+optLabel+')'+colorNote;
-    } else {
-      const optLabel={uppers:'uppers',lowers:'lowers',both:'uppers + lowers',island:'+ island'}[cabOpt]||'';
-      roomLabel=prefix+laserRoom+' cabinets ('+optLabel+')'+colorNote;
-    }
-  } else {
-    const needsHeight=['walls','ceiling','ext_walls','deck'].includes(laserSurf);
-    if(needsHeight&&laserLength&&laserHeight) qty=Math.round(laserLength*laserHeight);
-    else if(laserLength) qty=Math.round(laserLength);
-    if(!qty)return;
-    roomLabel=prefix+laserRoom+colorNote;
-  }
-
-  estSurfaces.push({id:++estSurfId,type:surfType,qty,room:roomLabel,lxhOpen:false});
-  renderEstSurfs();renderEstRunning();saveSurfDraft();
-  renderLaserRoomsLogged();
-  resetLaserFields();
-  const rcl=document.getElementById('laser-room-count-label');
-  if(rcl){const uc=Object.keys(estSurfaces.reduce((a,s)=>{a[s.room.split(' — ')[0].replace('[Ext] ','').trim()]=1;return a;},{})).length;rcl.textContent=uc+' room'+(uc>1?'s':'')+' added';}
-  const btns=document.getElementById('laser-action-btns');
-  if(btns){btns.style.display='none';}
-}
-
-function finishRoomAndAddAnother(){
-  const rn=document.getElementById('laser-room-name');
-  if(rn){
-    rn.value='';
-    rn.style.borderColor='#A32D2D';
-    rn.style.background='var(--red-lt)';
-    rn.focus();
-  }
-  laserRoom='';
-  document.getElementById('laser-color-name').value='';
-  laserColor='';
-  resetLaserFields();
-  document.getElementById('laser-room-name').scrollIntoView({behavior:'smooth',block:'center'});
-}
-
-function addLaserMeasurement(){addSurfaceToRoom();}
-
-function renderLaserRoomsLogged(){
-  const el=document.getElementById('laser-rooms-logged');if(!el)return;
-  const roomMap={};
-  estSurfaces.forEach((s,i)=>{
-    const baseRoom=(s.room||'Unknown').split(' — ')[0].replace('[Ext] ','').trim();
-    if(!roomMap[baseRoom])roomMap[baseRoom]=[];
-    const t=SURF_TYPES.find(x=>x.v===s.type)||{l:s.type,unit:''};
-    roomMap[baseRoom].push({label:t.l,qty:s.qty,unit:t.unit,idx:i,room:s.room});
-  });
-  const roomKeys=Object.keys(roomMap);
-  if(!roomKeys.length){
-    el.innerHTML='<div style="background:var(--bg2);border-radius:var(--r);padding:10px 14px;margin-bottom:8px;text-align:center;font-size:12px;color:var(--text3)">No rooms added yet — fill in the room below</div>';
-    return;
-  }
-  el.innerHTML=
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
-      '<div style="font-size:11px;font-weight:700;color:var(--text2)">'+roomKeys.length+' room'+(roomKeys.length>1?'s':'')+' added</div>'+
-      '<span style="font-size:10px;color:var(--text3)">'+estSurfaces.length+' surface'+(estSurfaces.length>1?'s':'')+' total</span>'+
-    '</div>'+
-    roomKeys.map((room,idx)=>{
-      const surfs=roomMap[room];
-      const summary=surfs.map(s=>s.label+': '+s.qty.toLocaleString()+(s.unit?' '+s.unit:'')).join(' · ');
-      return '<div style="background:var(--bg);border:1px solid var(--border);border-left:3px solid var(--green);border-radius:var(--r);padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px">'+
-        '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:13px;font-weight:700">'+room+'</div>'+
-          '<div style="font-size:11px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+summary+'</div>'+
-        '</div>'+
-        '<button class="btn-del" onclick="removeRoomByIdx('+idx+')" style="font-size:11px;padding:4px 8px;flex-shrink:0">Remove</button>'+
-      '</div>';
-    }).join('');
-}
-
-function removeRoomByIdx(idx){
-  const rooms=Object.keys(estSurfaces.reduce((acc,s)=>{acc[s.room||'Unknown']=1;return acc;},{}));
-  const room=rooms[idx];
-  if(!room)return;
-  removeLastRoomSurfaces(room);
-}
-function removeLastRoomSurfaces(room){
-  estSurfaces=estSurfaces.filter(s=>s.room!==room);
-  estSurfId=estSurfaces.length?Math.max(...estSurfaces.map(s=>s.id)):0;
-  renderEstSurfs();renderEstRunning();saveSurfDraft();renderLaserRoomsLogged();
-}
-
-let manualJobType='interior', manualSurf='walls', manualColor='';
-let manualDoorOpt='trim', manualWinOpt='trim', manualCabOpt='uppers', manualCount=1;
-let manualRoom='';
-
-function onManualRoomNameInput(input){
-  manualRoom=input.value.trim();
-  input.style.borderColor=manualRoom?'var(--green)':'#A32D2D';
-  input.style.background=manualRoom?'var(--green-lt)':'var(--red-lt)';
-}
-function selectManualColor(el,name){
-  manualColor=name;
-  document.querySelectorAll('#manual-mode-panel .color-chip').forEach(c=>c.classList.remove('active'));
-  el.classList.add('active');
-  document.getElementById('manual-color-name').value=name;
-}
-function setManualJobType(type){
-  manualJobType=type;
-  const isInt=type==='interior';
-  const ib=document.getElementById('manual-type-int');
-  const eb=document.getElementById('manual-type-ext');
-  if(ib){ib.style.borderColor=isInt?'var(--blue)':'var(--border2)';ib.style.background=isInt?'var(--blue)':'var(--bg2)';ib.style.color=isInt?'#fff':'var(--text2)';}
-  if(eb){eb.style.borderColor=isInt?'var(--border2)':'#D85A30';eb.style.background=isInt?'var(--bg2)':'#D85A30';eb.style.color=isInt?'var(--text2)':'#fff';}
-  const intSurfs=['mst-walls','mst-ceiling','mst-trim','mst-doors','mst-windows','mst-cabinets'];
-  const extSurfs=['mst-ext_walls','mst-ext_trim','mst-deck'];
-  intSurfs.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=isInt?'':'none';});
-  extSurfs.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=isInt?'none':'';});
-  const def=isInt?'walls':'ext_walls';
-  const defBtn=document.getElementById('mst-'+def);
-  if(defBtn)setManualSurf(def,defBtn);
-  const rn=document.getElementById('manual-room-name');
-  if(rn){rn.value='';rn.style.borderColor='#A32D2D';rn.style.background='var(--red-lt)';rn.placeholder=isInt?'Type room name to continue...':'Type area name to continue...';}
-  manualRoom='';
-}
-function setManualSurf(type,btn){
-  manualSurf=type;
-  document.querySelectorAll('#manual-surf-type-chips .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));
-  if(btn)btn.classList.add('active-surf-btn');
-  const isCount=['doors','windows','cabinets'].includes(type);
-  const mp=document.getElementById('manual-measure-panel');
-  const cp=document.getElementById('manual-count-panel');
-  if(mp)mp.style.display=isCount?'none':'block';
-  if(cp)cp.style.display=isCount?'block':'none';
-  if(isCount){
-    ['manual-door-options','manual-window-options','manual-cabinet-options'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
-    const optId=type==='doors'?'manual-door-options':type==='windows'?'manual-window-options':'manual-cabinet-options';
-    const optEl=document.getElementById(optId);if(optEl)optEl.style.display='block';
-    const cl=document.getElementById('manual-count-label');const cu=document.getElementById('manual-count-unit');
-    if(cl)cl.textContent=type==='doors'?'How many doors?':type==='windows'?'How many windows?':'Linear feet of cabinets?';
-    if(cu)cu.textContent=type==='doors'?'doors':type==='windows'?'windows':'lin ft';
-    manualCount=1;const cd=document.getElementById('manual-count-display');if(cd)cd.textContent='1';
-  } else {
-    const needsH=['walls','ceiling','ext_walls','deck'].includes(type);
-    const hw=document.getElementById('manual-height-wrap');if(hw)hw.style.display=needsH?'':'none';
-    const ll=document.getElementById('manual-length-label');
-    if(ll)ll.textContent=type==='trim'?'Linear feet (along wall)':'Length (ft)';
-    const fl=document.getElementById('manual-fields-label');
-    if(fl)fl.textContent=needsH?'Enter length and height':'Enter measurement';
-    ['manual-length','manual-height'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-    const cr=document.getElementById('manual-calc-result');if(cr)cr.style.display='none';
-  }
-}
-function adjustManualCount(d){
-  manualCount=Math.max(1,manualCount+d);
-  const cd=document.getElementById('manual-count-display');if(cd)cd.textContent=manualCount;
-}
-function setManualDoorOpt(opt,btn){manualDoorOpt=opt;document.querySelectorAll('[id^=mdoor-opt-]').forEach(b=>b.classList.remove('active-surf-btn'));if(btn)btn.classList.add('active-surf-btn');}
-function setManualWinOpt(opt,btn){manualWinOpt=opt;document.querySelectorAll('[id^=mwin-opt-]').forEach(b=>b.classList.remove('active-surf-btn'));if(btn)btn.classList.add('active-surf-btn');}
-function setManualCabOpt(opt,btn){manualCabOpt=opt;document.querySelectorAll('[id^=mcab-opt-]').forEach(b=>b.classList.remove('active-surf-btn'));if(btn)btn.classList.add('active-surf-btn');}
-function updateManualCalc(){
-  const l=parseFloat(document.getElementById('manual-length').value)||0;
-  const h=parseFloat(document.getElementById('manual-height').value)||0;
-  const needsH=['walls','ceiling','ext_walls','deck'].includes(manualSurf);
-  const cr=document.getElementById('manual-calc-result');
-  const ct=document.getElementById('manual-calc-text');
-  if(!l){if(cr)cr.style.display='none';return;}
-  if(needsH&&!h){if(cr)cr.style.display='none';return;}
-  const qty=needsH?Math.round(l*h):Math.round(l);
-  if(cr)cr.style.display='block';
-  if(ct)ct.innerHTML='<strong>'+manualRoom+'</strong> — '+l+(needsH?' × '+h+' = <strong>'+qty+' sq ft</strong>':' <strong>lin ft</strong>');
-}
-function addManualSurface(){
-  if(!manualRoom||!manualRoom.trim()){
-    const inp=document.getElementById('manual-room-name');
-    if(inp){inp.focus();inp.style.borderColor='#A32D2D';inp.style.background='var(--red-lt)';}
-    return;
-  }
-  const isCount=['doors','windows','cabinets'].includes(manualSurf);
-  const colorNote=manualColor?' — '+manualColor:'';
-  const prefix=manualJobType==='exterior'?'[Ext] ':'';
-  let qty=0,roomLabel='';
-  if(isCount){
-    qty=manualCount;
-    if(manualSurf==='doors'){
-      const optLabel={trim:'trim only',face1:'trim + 1 face',face2:'trim + both faces',faceonly:'face only'}[manualDoorOpt]||'';
-      if(manualDoorOpt==='face1'||manualDoorOpt==='face2'||manualDoorOpt==='faceonly'){
-        const faceSf=Math.round(6.67*2.83);const faces=manualDoorOpt==='face2'?2:1;const doorFaceSf=manualCount*faceSf*faces;
-        if(manualDoorOpt!=='faceonly')estSurfaces.push({id:++estSurfId,type:'doors',qty:manualCount,room:prefix+manualRoom+' door trim'+colorNote,lxhOpen:false});
-        estSurfaces.push({id:++estSurfId,type:'walls',qty:doorFaceSf,room:prefix+manualRoom+' door faces ('+manualCount+' × '+faces+' side)'+colorNote,lxhOpen:false});
-        finishManualAdd();return;
-      }
-      roomLabel=prefix+manualRoom+' doors ('+optLabel+')'+colorNote;
-    } else if(manualSurf==='windows'){
-      roomLabel=prefix+manualRoom+' windows ({'+(manualWinOpt==='full'?'trim + sill':'trim only')+'})'+ colorNote;
-    } else {
-      roomLabel=prefix+manualRoom+' cabinets ({'+(manualCabOpt)+'})'+ colorNote;
-    }
-  } else {
-    const l=parseFloat(document.getElementById('manual-length').value)||0;
-    const h=parseFloat(document.getElementById('manual-height').value)||0;
-    const needsH=['walls','ceiling','ext_walls','deck'].includes(manualSurf);
-    qty=needsH?Math.round(l*h):Math.round(l);
-    if(!qty)return;
-    roomLabel=prefix+manualRoom+colorNote;
-  }
-  estSurfaces.push({id:++estSurfId,type:manualSurf,qty,room:roomLabel,lxhOpen:false});
-  finishManualAdd();
-}
-function finishManualAdd(){
-  renderEstSurfs();renderEstRunning();saveSurfDraft();renderManualRoomsLogged();
-  ['manual-length','manual-height'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  const cr=document.getElementById('manual-calc-result');if(cr)cr.style.display='none';
-  manualCount=1;const cd=document.getElementById('manual-count-display');if(cd)cd.textContent='1';
-  const rcl=document.getElementById('manual-room-count-label');
-  if(rcl){const uc=Object.keys(estSurfaces.reduce((a,s)=>{a[s.room.split(' — ')[0].replace('[Ext] ','').trim()]=1;return a;},{})).length;rcl.textContent=uc+' room'+(uc>1?'s':'')+' added';}
-}
-function finishManualRoomAndNext(){
-  addManualSurface();
-  const rn=document.getElementById('manual-room-name');
-  if(rn){rn.value='';rn.style.borderColor='#A32D2D';rn.style.background='var(--red-lt)';rn.focus();}
-  manualRoom='';manualColor='';
-  const mc=document.getElementById('manual-color-name');if(mc)mc.value='';
-  document.querySelectorAll('#manual-mode-panel .color-chip').forEach(c=>c.classList.remove('active'));
-}
-function renderManualRoomsLogged(){
-  const el=document.getElementById('manual-rooms-logged');if(!el)return;
-  const roomMap={};
-  estSurfaces.forEach((s,i)=>{
-    const baseRoom=(s.room||'Unknown').split(' — ')[0].replace('[Ext] ','').trim();
-    if(!roomMap[baseRoom])roomMap[baseRoom]=[];
-    const t=SURF_TYPES.find(x=>x.v===s.type)||{l:s.type,unit:''};
-    roomMap[baseRoom].push(t.l+': '+s.qty.toLocaleString()+(t.unit?' '+t.unit:''));
-  });
-  const keys=Object.keys(roomMap);
-  if(!keys.length){el.innerHTML='<div style="background:var(--bg2);border-radius:var(--r);padding:10px 14px;margin-bottom:8px;text-align:center;font-size:12px;color:var(--text3)">No rooms added yet</div>';return;}
-  el.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><div style="font-size:11px;font-weight:700;color:var(--text2)">'+keys.length+' room'+(keys.length>1?'s':'')+' added</div><span style="font-size:10px;color:var(--text3)">'+estSurfaces.length+' surfaces</span></div>'+
-    keys.map((room,idx)=>'<div style="background:var(--bg);border:1px solid var(--border);border-left:3px solid var(--green);border-radius:var(--r);padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px">'+
-      '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:700">'+room+'</div>'+
-      '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+roomMap[room].join(' · ')+'</div></div>'+
-      '<button class="btn-del" onclick="removeRoomByIdx('+idx+')" style="font-size:11px;padding:4px 8px;flex-shrink:0">Remove</button>'+
-    '</div>').join('');
-}
-
-function switchToManualMode(){
-  document.getElementById('laser-mode-panel').style.display='none';
-  document.getElementById('manual-mode-panel').style.display='block';
-  renderManualRoomsLogged();
-}
-function switchToLaserMode(){
-  document.getElementById('laser-mode-panel').style.display='block';
-  document.getElementById('manual-mode-panel').style.display='none';
-  renderLaserRoomsLogged();
-}
-
 let lastSurfType='walls';
-
-function presetInterior(){
-  const preset=[
-    {type:'walls',room:'Walls',qty:0},
-    {type:'ceiling',room:'Ceiling',qty:0},
-    {type:'trim',room:'Trim / baseboard',qty:0},
-    {type:'doors',room:'Doors',qty:0},
-  ];
-  preset.forEach(p=>estSurfaces.push({id:++estSurfId,type:p.type,qty:p.qty,room:p.room,lxhOpen:false}));
-  renderEstSurfs();
-  setTimeout(()=>{const el=document.getElementById('sqft-'+estSurfaces[0]?.id);if(el){el.focus();el.select();}},60);
-  saveSurfDraft();
-}
-
-function presetExterior(){
-  const preset=[
-    {type:'ext_walls',room:'Exterior walls',qty:0},
-    {type:'ext_trim',room:'Exterior trim',qty:0},
-    {type:'doors',room:'Doors',qty:0},
-    {type:'windows',room:'Windows',qty:0},
-  ];
-  preset.forEach(p=>estSurfaces.push({id:++estSurfId,type:p.type,qty:p.qty,room:p.room,lxhOpen:false}));
-  renderEstSurfs();
-  setTimeout(()=>{const el=document.getElementById('sqft-'+estSurfaces[0]?.id);if(el){el.focus();el.select();}},60);
-  saveSurfDraft();
-}
-
-function addEstSurf(){
-  estSurfaces.push({id:++estSurfId,type:lastSurfType,qty:0,room:'',lxhOpen:false});
-  renderEstSurfs();
-  setTimeout(()=>{
-    const el=document.getElementById('room-'+estSurfId);
-    if(el){el.focus();}
-  },50);
-  saveSurfDraft();
-}
-
 function removeEstSurf(id){
   estSurfaces=estSurfaces.filter(s=>s.id!==id);
   renderEstSurfs();renderEstRunning();saveSurfDraft();
@@ -9330,14 +8499,6 @@ function removeEstSurf(id){
     if(estSurfaces.length>0){btn.disabled=false;btn.style.background='var(--blue)';btn.style.color='#fff';btn.style.borderColor='var(--blue)';btn.style.cursor='pointer';}
     else{btn.disabled=true;btn.style.background='var(--bg2)';btn.style.color='var(--text3)';btn.style.borderColor='var(--border)';btn.style.cursor='not-allowed';}
   }
-}
-
-function updateEstSurf(id,key,val){
-  const s=estSurfaces.find(x=>x.id===id);if(!s)return;
-  if(key==='qty'){s.qty=parseFloat(val)||0;renderEstRunning();}
-  else if(key==='room'){s.room=val;}
-  else{s.type=val;lastSurfType=val;renderEstSurfs();renderEstRunning();}
-  saveSurfDraft();
 }
 function updateEstSurfType(id,val){
   const s=estSurfaces.find(x=>x.id===id);if(!s)return;
@@ -9463,36 +8624,6 @@ function clearSurfDraftAndReset(){
   });
 }
 function clearSurfDraft(){try{localStorage.removeItem('zp3_surf_draft');}catch(e){}}
-
-function selectCond(val, btn){
-  document.querySelectorAll('[id^=cond-]').forEach(b=>b.classList.remove('active-surf-btn'));
-  if(btn)btn.classList.add('active-surf-btn');
-  const el=document.getElementById('e-cond');if(el)el.value=val;
-
-  const card=document.getElementById('cond-picker-card');if(card)card.style.border='';
-  checkStep2Ready();saveEstFullDraft();
-}
-function selectPaint(key,btn){
-  setPaintSupply(key==='customer'?'customer':'zach');
-}
-function onPaintSupplyChange(val){
-  const isCustomer=val==='customer';
-  const paintEl=document.getElementById('e-paint');
-  if(paintEl)paintEl.value=isCustomer?'customer':val;
-  const custEl=document.getElementById('e-customer-paint');
-  if(custEl)custEl.value=isCustomer?'1':'';
-  const note=document.getElementById('paint-supply-note');
-  if(note)note.style.display=isCustomer?'block':'none';
-  checkStep1Ready();renderEstRunning();renderEstReview();saveEstFullDraft();
-}
-function onCustomerPaintChange(){
-  // Legacy checkbox handler — not used with new dropdown but kept for safety
-  const checked=document.getElementById('e-customer-paint')?.value==='1';
-  const paintEl=document.getElementById('e-paint');
-  if(paintEl&&checked&&!paintEl.value)paintEl.value='customer';
-  renderEstRunning();renderEstReview();
-}
-
 function validateJobSettings(){
   const el=document.getElementById('e-days');if(!el)return;
   const v=parseInt(el.value)||0;
@@ -9504,20 +8635,6 @@ function validateJobSettings(){
 }
 
 // ── Guided step navigation — validates before any forward jump ───────────
-function safeGoEstStep(n){
-  if(n<=estStep){goEstStep(n);return;}
-  if(estStep<2&&n>=2){if(!runStep1Validation())return;}
-  if(estStep<3&&n>=3){if(!runStep2Validation())return;}
-  if(estStep<4&&n>=4){
-    if(!estSurfaces.length){
-      // Show brief inline notice in the surfaces panel
-      const tip=document.getElementById('surf-tip');
-      if(tip){tip.innerHTML='<span style="color:#A32D2D;font-weight:700">Add at least one surface before reviewing.</span>';tip.style.display='block';}
-      goEstStep(3);return;
-    }
-  }
-  goEstStep(n);
-}
 function runStep1Validation(){
   const checks=[{id:'e-cname',label:'Client name'},{id:'e-cphone',label:'Phone number'},{id:'e-caddr',label:'Property address'}];
   let firstBad=null;
@@ -10329,11 +9446,6 @@ async function shortenUrl(url){
   // TODO: swap baseUrl to Cloudflare Pages domain (zjspainting.pages.dev) tomorrow
   return url;
 }
-function saveBitlyKey(){
-  const key=(document.getElementById('set-bitly-key')?.value||'').trim();
-  S.bitlyKey=key;saveAll();
-  showToast(key?'Bitly key saved — links will use bit.ly':'Bitly key cleared — links will use is.gd','🔗');
-}
 async function sendProposalLink(){
   const proposal=document.getElementById('est-proposal');
   if(!proposal||!proposal.innerHTML.trim()){zAlert('Generate the proposal first.',{title:'Nothing to print'});return;}
@@ -10883,74 +9995,12 @@ function initEstNotesCanvas(){
   c.onmousemove=c.ontouchmove=e=>{e.preventDefault();if(!dn)return;const p=pt(e);ctx.lineTo(p.x,p.y);ctx.stroke();};
   c.onmouseup=c.ontouchend=()=>dn=false;
 }
-function clearEstNotesCanvas(){
-  const c=document.getElementById('est-notes-canvas');if(!c)return;
-  const ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);
-}
 function clearSig(){if(sigCtx&&sigCanvas){const d=window.devicePixelRatio||1;sigCtx.clearRect(0,0,sigCanvas.width/d,sigCanvas.height/d);checkConfirmReady();}}
-function setSigMode(mode){
-  const drawPanel=document.getElementById('sig-draw-panel');
-  const typePanel=document.getElementById('sig-type-panel');
-  const drawBtn=document.getElementById('sig-mode-draw');
-  const typeBtn=document.getElementById('sig-mode-type');
-  if(mode==='draw'){
-    drawPanel.style.display='';typePanel.style.display='none';
-    drawBtn.classList.add('active');typeBtn.classList.remove('active');
-  } else {
-    drawPanel.style.display='none';typePanel.style.display='';
-    typeBtn.classList.add('active');drawBtn.classList.remove('active');
-  }
-  checkConfirmReady();
-}
 function updateTypedSig(){
   const val=document.getElementById('sig-typed')?.value||'';
   const prev=document.getElementById('sig-typed-preview');
   if(prev)prev.textContent=val;
   checkConfirmReady();
-}
-function getSigMode(){
-  const tp=document.getElementById('sig-type-panel');
-  return(tp&&tp.style.display!=='none')?'type':'draw';
-}
-function sendEstimateEmail(){
-  // Auto-save bid first if not yet saved
-  const{final}=calcEst();
-  const cname=v('e-cname')||'Client';
-  const caddr=v('e-caddr')||'';
-  if(!lastCreatedBidId&&estLinkedClientId){
-    const c=getClientById(estLinkedClientId);
-    const days=parseInt(v('e-days'))||2;
-    const ss={};SCOPE_ITEMS.forEach(s=>{ss[s.id]=!!scopeOn(s.id);});
-    const newBid={id:_newBidId(),client_id:estLinkedClientId,client_name:c?c.name:cname,name:cname,phone:v('e-cphone'),addr:caddr,bid_date:todayKey(),followup:addDays(todayKey(),7),amount:final,type:getBidIncomeLabel({surfaces:estSurfaces}),days,status:'Pending',notes:v('e-cnotes'),completion_date:'',collStage:'none',collHistory:[],scope:ss,surfaces:[...estSurfaces],cond:v('e-cond'),paint:v('e-paint'),colors:v('e-colors')};
-    bids.unshift(newBid);lastCreatedBidId=newBid.id;
-  }
-  if(lastCreatedBidId){
-    const b=bids.find(x=>x.id===lastCreatedBidId);
-    if(b){b.sentAt=new Date().toISOString();b.estStatus='sent';if(b.status==='Pending'&&!b.followup)b.followup=addDays(todayKey(),7);}
-  }
-  saveAll();
-
-  // Build proposal HTML (same as step 5)
-  buildProposal();
-  const proposalHTML=document.getElementById('est-proposal')?.innerHTML||'';
-
-  // Screenshot mode overlay — hides everything, shows only proposal
-  const overlay=document.createElement('div');
-  overlay.id='est-share-overlay';
-  overlay.style.cssText='position:fixed;inset:0;z-index:9999;background:var(--bg);overflow-y:auto;display:flex;flex-direction:column';
-  overlay.innerHTML=`
-    <div id="est-share-toolbar" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0">
-      <div style="font-size:12px;color:var(--text3);font-weight:600">📷 Screenshot below &amp; send to client</div>
-      <div style="display:flex;gap:8px">
-        <button onclick="(()=>{const t=document.getElementById('est-share-toolbar');const a=document.getElementById('est-share-actions');t.style.display='none';a.style.display='none';const r=document.createElement('button');r.textContent='Restore UI';r.style.cssText='position:fixed;bottom:16px;right:16px;z-index:99999;padding:8px 14px;background:#222;color:#fff;border:none;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;opacity:.7';r.onclick=()=>{t.style.display='';a.style.display='';r.remove();};document.body.appendChild(r);})()" style="background:var(--blue-lt);color:var(--blue-dk);border:1px solid var(--blue);border-radius:var(--r);padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Hide UI for screenshot</button>
-        <button onclick="document.getElementById('est-share-overlay').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--text3);line-height:1">×</button>
-      </div>
-    </div>
-    <div style="flex:1;padding:0 0 16px">${proposalHTML}</div>
-    <div id="est-share-actions" style="padding:12px 14px;border-top:1px solid var(--border);background:var(--bg);flex-shrink:0">
-      <button onclick="document.getElementById('est-share-overlay').remove();markEstSigned()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">✓ Client approved — mark as signed</button>
-    </div>`;
-  document.body.appendChild(overlay);
 }
 function markEstSigned(){
   const bidId=lastCreatedBidId||editingBidId;
@@ -11214,14 +10264,6 @@ function newEstimate(){
   prefillEstimateRates();
   goEstStep(1);
 }
-function adjRate(id,delta){
-  const el=document.getElementById(id);if(!el)return;
-  const cur=parseFloat(el.value)||0;
-  const next=Math.round((cur+delta)*100)/100;
-  if(next<0)return;
-  el.value=next;
-  if(typeof renderEstRunning==='function')renderEstRunning();
-}
 function adjRateAdv(advId,delta){
   const el=document.getElementById(advId);if(!el)return;
   const cur=parseFloat(el.value)||0;
@@ -11361,10 +10403,6 @@ function validateAndGoStep5(){
   box.querySelector('#pre-prop-back').onclick=()=>overlay.remove();
   box.querySelector('#pre-prop-go').onclick=()=>{overlay.remove();goEstStep(5);};
 }
-function validateAndGoStep3(){
-  if(!runStep2Validation())return;
-  goEstStep(3);
-}
 function validateAndGoStep2(){
   if(!runStep1Validation())return;
   goEstStep(3); // Step 2 (tier) is now merged into step 3
@@ -11480,20 +10518,6 @@ function requestLocationPermission(onGranted, onDenied){
 }
 
 // Call on every calendar open to get live location for weather
-async function refreshLocationAndWeather(){
-  if(S.locationDenied)return;
-  if(!('geolocation' in navigator))return;
-  navigator.geolocation.getCurrentPosition(pos=>{
-    const newLat=Math.round(pos.coords.latitude*10000)/10000;
-    const newLon=Math.round(pos.coords.longitude*10000)/10000;
-    // Only invalidate cache if moved more than ~0.5 miles
-    if(Math.abs(newLat-(S.weatherLat||0))>0.007||Math.abs(newLon-(S.weatherLon||0))>0.007){
-      _weatherCache=null;
-    }
-    S.weatherLat=newLat;S.weatherLon=newLon;saveAll();
-  },()=>{},{enableHighAccuracy:false,timeout:5000,maximumAge:300000});
-}
-
 async function renderCalGrid(){
   const{booked,buf}=getBookedDays();const DNAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
   let html=DNAMES.map(d=>`<div class="cal-dh">${d}</div>`).join('');
@@ -11650,7 +10674,6 @@ function expandCalDay(key){
   '';
   el.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
-function goAddClient(){goPg('pg-clients');setTimeout(openNewClient,50);}
 function goToVehicleSettings(){
   window._scrollToVehicles=true;
   goPg('pg-settings');
@@ -11732,11 +10755,6 @@ function showKpiChart(type){
   document.getElementById('kpi-chart-close').onclick=()=>overlay.remove();
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
 }
-
-function showPipelineAndClients(){
-  goPg('pg-clients');
-  setTimeout(()=>setCF('follow_up',document.getElementById('cft-follow_up')),50);
-}
 function markFUWon(bidId,cid){
   zConfirm('Mark as won and schedule the job?',()=>{
     const b=bids.find(x=>x.id===bidId);
@@ -11789,16 +10807,7 @@ function goToExpenses(){
     }
   },150);
 }
-function goToPending(){leadFilter='pending';goPg('pg-leads');setTimeout(()=>setLeadFilter('pending',document.getElementById('lft-pending')),50);}
-function markBidNoResponseFromDash(bidId){
-  const b=bids.find(x=>x.id===bidId);if(!b)return;
-  zConfirm('Mark "'+( (b.client_name||b.name||'Client'))+'" as no response and archive this bid?',()=>{
-    b.status='Abandoned';saveAll();renderDash();
-  },{title:'No response?',yes:'Archive it',danger:false});
-}
-
-function connectLaserFromSurf(){zAlert("Laser integration not available.");}
-function closeTopModal(){const o=document.querySelector('.zmodal-overlay');if(o&&typeof o.remove==='function')o.remove();else if(o&&o.parentNode)o.parentNode.removeChild(o);}
+unction closeTopModal(){const o=document.querySelector('.zmodal-overlay');if(o&&typeof o.remove==='function')o.remove();else if(o&&o.parentNode)o.parentNode.removeChild(o);}
 function showWorkflowGate(msg,btnLabel,btnAction){
   const o=document.createElement('div');o.className='zmodal-overlay';
   o.innerHTML='<div class="zmodal" style="text-align:center">'+
@@ -12280,33 +11289,6 @@ function executeQuickAction(actionType,clientId,bidId,jobId){
     else{openClientDetail(clientId);}
   }
 }
-
-function startQuickDrive(clientId){
-  if(gps.active){
-    zConfirm('A drive is already running for '+((getClientById(gps.clientId)||{}).name||'a client')+'. End it first before starting a new one.',()=>{
-      showEndDrive();
-    },{title:'Drive already active',yes:'End current trip'});
-    return;
-  }
-  const vehicle=document.getElementById('qd-vehicle')?.value||'';
-  const purpose=document.getElementById('qd-purpose')?.value||'';
-  if(!purpose){zAlert('Select a trip purpose.',{title:'Required'});return;}
-  if(!vehicle){zAlert('Add a vehicle in Settings first.',{title:'No vehicle'});return;}
-  gps.active=true;
-  gps.vehicle=vehicle;
-  gps.purpose=purpose;
-  gps.clientId=clientId;
-  gps.startTime=Date.now();
-  clearInterval(gps.timerInt);
-  gps.timerInt=setInterval(updateDriveTimer,1000);
-  closeTopModal();
-  if(document.body&&document.body.classList)document.body.classList.add('drive-active');
-  showDriveBanner();
-  saveAll();
-  zAlert('Drive started — miles logging automatically.',{title:'On your way to '+getClientById(clientId)?.name?.split(' ')[0]+'! 🚗'});
-  renderDash();
-}
-
 function showQuickExpenseModal(clientId,bidId){
   const c=getClientById(clientId);
   const bid=bidId?bids.find(b=>b.id===bidId):bids.find(b=>b.client_id===clientId&&b.status==='Closed Won');
@@ -12426,14 +11408,6 @@ saveClient=function(){
     setTimeout(()=>executeQuickAction(action,currentClientId,null,null),200);
   }
 };
-
-function setDashActionTab(tab,btn){
-  document.getElementById('dash-fu').style.display=tab==='estimates'?'':'none';
-  document.getElementById('dash-collect').style.display=tab==='payments'?'':'none';
-  document.querySelectorAll('#dash-action-card .fb').forEach(b=>b.classList.remove('active'));
-  if(btn)btn.classList.add('active');
-}
-
 function scrollToDashFU(){
   const el=document.getElementById('dash-fu');
   if(el){
@@ -12731,7 +11705,6 @@ function renderTrackerTab(){
   populateTrackerYearSel();
   setTrTab(trackerTab,document.getElementById('tr-t-'+trackerTab));
 }
-function addIncome(){const a=parseFloat(v('inc-amount'));if(!a)return zAlert('Enter an amount.');const cid=parseInt(v('inc-client-sel'))||null;const c=cid?getClientById(cid):null;income.unshift({id:Date.now(),date:v('inc-date'),client_id:cid,client_name:c?c.name:'',type:v('inc-type'),amount:a,pay:v('inc-pay'),inv:v('inc-inv'),notes:v('inc-notes')});saveAll();renderIncome();['inc-amount','inc-inv','inc-notes'].forEach(id=>document.getElementById(id).value='');}
 function renderMonthlyPL(){
   const el=document.getElementById('monthly-pl-list');if(!el)return;
   const months={};
@@ -12898,10 +11871,6 @@ async function fetchStateInfo(state){
     // Falls back gracefully if function doesn't handle this yet
   }catch(e){console.warn('fetchStateInfo:',e);}
 }
-
-function getStateInfo(){return S.stateInfo||null;}
-
-
 function openExportPanel(){
   const yr=trackerYear||S.taxYear||new Date().getFullYear();
   const years=[...new Set([
@@ -13145,9 +12114,6 @@ function exportFullBackup(){
   downloadFile(biz+'_TradeDesk_Backup_'+ts+'.json',JSON.stringify(backup,null,2),'application/json');
   showToast('Full backup downloaded — keep this safe','💾');
 }
-
-function exportTaxReport(){openExportPanel();}
-
 function exportReceiptImages(){
   const yr=document.getElementById('exp-panel-year')?.value||new Date().getFullYear();
   const filtered=expenses.filter(e=>e.receipt_img&&(yr==='all'||String(new Date(e.date).getFullYear())===String(yr)))
@@ -13211,9 +12177,6 @@ ${pages}
 </body></html>`);
   win.document.close();
 }
-function showTaxReportModal(){openExportPanel();}
-
-
 function renderJobsHistory(){
   const yearSel=document.getElementById('tr-jobs-year');
   const el=document.getElementById('tr-jobs-list');
@@ -13428,7 +12391,6 @@ function renderIncome(){
       '</tr>';
     }).join('')+'</tbody></table></div>';
 }
-function delIncome(id){zAlert('Income records cannot be deleted — they are your official financial records. If there is an error, contact your accountant.',{title:'Cannot delete income'});}
 function triggerReceiptScan(){
   document.getElementById('receipt-file-input').click();
 }
@@ -13481,34 +12443,6 @@ function populateExpJobSel(){
   const wonJobs=bids.filter(b=>b.status==='Closed Won');
   sel.innerHTML='<option value="">— Not job-specific —</option>'+
     wonJobs.map(b=>'<option value="'+b.id+'">'+(b.client_name||b.name)+(b.addr?' · '+b.addr:'')+'</option>').join('');
-}
-
-function addExpense(){
-  if(_submitting)return;
-  const vn=v('exp-vendor'),a=parseFloat(v('exp-amount'));
-  if(!vn)return zAlert('Enter a vendor.');
-  if(!a)return zAlert('Enter an amount.');
-  _submitting=true;setTimeout(()=>{_submitting=false;},1500);
-  const jobId=parseInt(v('exp-job-sel'))||null;
-  const job=jobId?bids.find(b=>b.id===jobId):null;
-  expenses.unshift({
-    id:Date.now(),
-    date:v('exp-date'),
-    cat:v('exp-cat'),
-    vendor:vn,
-    amount:a,
-    pay:v('exp-pay'),
-    receipt:v('exp-receipt'),
-    notes:v('exp-notes'),
-    job_id:jobId,
-    job_name:job?job.client_name||job.name:'',
-    client_id:job?job.client_id:null
-  });
-  expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
-  saveAll();renderExpenses();
-  ['exp-vendor','exp-amount','exp-notes'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('scan-result').style.display='none';
-  document.getElementById('scan-tip').textContent='Take a photo of any receipt — AI reads the vendor, amount, date and category automatically.';
 }
 function renderExpenses(){
   const el=document.getElementById('exp-table');if(!el)return;
@@ -13646,10 +12580,6 @@ async function _valhallaRoute(fromCoords,toCoords){
   // Last resort: straight-line × 1.3 road factor
   const straight=_haversineMiles(fromCoords,toCoords);
   return{miles:Math.round(straight*1.3*10)/10,mins:Math.round(straight*1.3/55*60)};
-}
-async function calcTripRoute(fromAddr,toAddr){
-  const [from,to]=await Promise.all([_photonGeocode(fromAddr),_photonGeocode(toAddr)]);
-  return _valhallaRoute(from,to);
 }
 function startDriveToClient(){
   const c=getClientById(currentClientId);if(!c)return;
@@ -13875,7 +12805,6 @@ function saveLoggedTrip(){
   if(document.getElementById('mil-table'))renderAllMileage();
   if(document.getElementById('cd-mile-list')&&currentClientId)renderCDMileage();
 }
-function addMileage(){const veh=v('mil-vehicle');if(!veh)return zAlert('Enter vehicle name.');const s=parseFloat(v('mil-start'))||0,e=parseFloat(v('mil-end'))||0;if((s||e)&&e<=s)return zAlert('End odometer must be greater than start.');const cid=parseInt(v('mil-client-sel'))||null;const c=cid?getClientById(cid):null;mileage.unshift({id:Date.now(),date:v('mil-date'),vehicle:veh,from:v('mil-from'),to:v('mil-to'),start:s,end:e,miles:e-s||0,purpose:v('mil-purpose'),client_id:cid,client_name:c?c.name:''});saveAll();renderAllMileage();['mil-from','mil-to','mil-start','mil-end'].forEach(id=>document.getElementById(id).value='');}
 function renderAllMileage(){
   const yr=String(trackerYear||new Date().getFullYear());
   const filtered=mileage.filter(m=>m.date&&m.date.startsWith(yr));
@@ -14055,16 +12984,6 @@ function calcTax(){
 }
 
 // ── More menu toggle ──────────────────────────────────────────────────────
-function toggleMoreMenu(){
-  const m=document.getElementById('more-menu');if(!m)return;
-  m.style.display=m.style.display==='none'?'block':'none';
-  document.addEventListener('click',function h(e){
-    if(!m.contains(e.target)&&!document.getElementById('nb-more').contains(e.target)){
-      m.style.display='none';document.removeEventListener('click',h);
-    }
-  });
-}
-
 // ── Leads page ────────────────────────────────────────────────────────────
 let leadFilter='all';
 function setLeadFilter(f,btn){
@@ -14758,8 +13677,6 @@ function _submitCOSign(bidId,clientId){
 }
 
 // legacy alias kept so any old calls still work
-function confirmChangeOrder(bidId,clientId){_reviewCO(bidId,clientId);}
-
 // ── Money page ────────────────────────────────────────────────────────────
 let moneyFilter='all';
 function setMoneyFilter(f,btn){
@@ -14862,24 +13779,6 @@ function renderMoneyPage(){
     '</div>';
   }).join('');
 }
-function markMoneyPaidFull(bidId,btn){
-  const b=bids.find(x=>x.id===bidId);if(!b)return;
-  const balance=getBidBalance(b);
-  if(balance<=0.01){renderMoneyPage();return;}
-  zConfirm('Mark '+fmt(b.amount)+' as paid in full?',()=>{
-    // Set completion date if not already set
-    if(!b.completion_date)b.completion_date=todayKey();
-    payments.push({id:Date.now(),bid_id:bidId,client_id:b.client_id,client_name:b.client_name,
-      date:todayKey(),type:'Final payment — paid in full',amount:balance,method:'Cash',ref:''});
-    // NOTE: do NOT auto-log to income — payments array already records this payment.
-    // Auto-logging caused revenue to double on the dashboard.
-    saveAll();
-    renderMoneyPage();
-    renderJobsPage();
-    renderDash();
-  },{title:'Confirm payment',yes:'Mark paid',danger:false});
-}
-
 // ── Lightweight nav badge update (called from renderDash when other pages aren't active) ──
 function _updateNavBadges(){
   clients.forEach(c=>{
@@ -14977,162 +13876,7 @@ function toggleDarkMode(on){
   S.darkMode = on;
   saveAll();
 }
-
-function toggleEmailSection(){
-  const el=document.getElementById('est-email-section');
-  el.style.display=el.style.display==='none'?'block':'none';
-  if(el.style.display==='block'){
-    const cid=estLinkedClientId;
-    const c=cid?getClientById(cid):null;
-    if(c&&c.email)document.getElementById('est-email-addr').value=c.email;
-    if(S.bemail)document.getElementById('est-email-reply').value=S.bemail;
-    el.scrollIntoView({behavior:'smooth',block:'nearest'});
-  }
-}
-
-function generateEsignPage(){
-  const toEmail=document.getElementById('est-email-addr').value.trim();
-  const{final,lines,scopeFlats,colorAdd,travel,adj}=calcEst();
-  const cname=v('e-cname')||'Client';
-  const caddr=v('e-caddr')||'';
-  const bname=v('e-bname')||S.bname||"ZJ's Painting & Special Coatings";
-  const bphone=v('e-bphone')||S.bphone||'';
-  const today=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
-  const valid=v('e-bvalid')||'30';
-  const expD=new Date(Date.now()+(parseInt(valid)||30)*86400000).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
-  const paintL=({std:'Standard',prem:'Sherwin-Williams Premium',ultra:'SW Emerald Ultra'})[v('e-paint')]||'Premium';
-  const activeScope=SCOPE_ITEMS.filter(s=>scopeOn(s.id)).map(s=>s.label).join(', ');
-  const adjReason=v('adj-reason-hidden');
-
-  const lineRows=lines.map(l=>'<tr><td style="padding:10px;border-bottom:1px solid #f0eeec">'+l.label+' <span style="font-size:11px;color:#999">('+l.qty.toLocaleString()+' '+l.unit+')</span></td><td style="padding:10px;border-bottom:1px solid #f0eeec;text-align:right;font-weight:600">'+fmt(l.sub)+'</td></tr>').join('')+
-    scopeFlats.map(f=>'<tr><td style="padding:10px;border-bottom:1px solid #f0eeec;color:#666">'+f.label+'</td><td style="padding:10px;border-bottom:1px solid #f0eeec;text-align:right">'+fmt(f.amt)+'</td></tr>').join('')+
-
-    (adj?'<tr><td style="padding:10px;border-bottom:1px solid #f0eeec;color:#666">'+(adjReason||'Adjustment')+'</td><td style="padding:10px;border-bottom:1px solid #f0eeec;text-align:right">'+(adj>0?'+':'')+fmt(adj)+'</td></tr>':'');
-
-  const html=`<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Estimate — ${cname}</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--text);background:#f5f5f3;min-height:100vh}
-.wrap{max-width:640px;margin:0 auto;padding:20px}
-.hdr{background:#185FA5;color:#fff;padding:20px 24px;border-radius:12px 12px 0 0}
-.co{font-size:22px;font-weight:800}.co-sub{font-size:12px;opacity:.8;margin-top:3px}
-.body{background:#fff;padding:24px;border-radius:0 0 12px 12px;margin-bottom:20px}
-.section{margin-bottom:24px;padding-bottom:24px;border-bottom:1px solid #f0eeec}
-.section:last-child{border:none;margin-bottom:0;padding-bottom:0}
-.lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#999;margin-bottom:6px}
-table{width:100%;border-collapse:collapse}
-th{background:#f5f5f3;padding:10px;text-align:left;font-size:10px;font-weight:800;text-transform:uppercase;color:#666}
-.total-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0eeec;font-size:14px}
-.grand{font-size:20px;font-weight:800;border-top:2px solid #1a1a18;border-bottom:none;padding-top:12px;margin-top:4px}
-.sig-box{border:2px dashed #ccc;border-radius:8px;background:#fafafa;position:relative;margin-top:8px;cursor:crosshair}
-#sig-canvas-email{display:block;width:100%;touch-action:none}
-.sig-name{font-size:18px;font-weight:700;border:none;border-bottom:2px solid #185FA5;padding:8px 0;width:100%;background:transparent;outline:none;margin-top:8px}
-.sign-btn{width:100%;padding:16px;background:#185FA5;color:#fff;border:none;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer;margin-top:16px;font-family:inherit}
-.sign-btn:disabled{background:#ccc;cursor:not-allowed}
-.success{background:#F0FBF0;border:2px solid #63B841;border-radius:8px;padding:20px;text-align:center;display:none}
-</style>
-</head><body>
-<div class="wrap">
-  <div class="hdr">
-    <div class="co">${bname}</div>
-    <div class="co-sub">${bphone}</div>
-  </div>
-  <div class="body">
-    <div class="section">
-      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px">
-        <div><div class="lbl">Prepared for</div><div style="font-size:18px;font-weight:700">${cname}</div><div style="font-size:13px;color:#666;margin-top:3px">${caddr}</div></div>
-        <div style="text-align:right"><div class="lbl">Date</div><div style="font-size:13px">${today}</div><div class="lbl" style="margin-top:8px">Valid until</div><div style="font-size:13px">${expD}</div></div>
-      </div>
-    </div>
-    <div class="section">
-      <div class="lbl">Scope of work</div>
-      <div style="font-size:13px;color:#444;line-height:1.7;margin-top:4px">${activeScope}</div>
-      <div style="font-size:12px;color:#666;margin-top:8px;line-height:1.6">Paint: <strong>${paintL}</strong>. Every surface sanded before painting. All nail holes and imperfections spackled for a lasting finish.</div>
-    </div>
-    <div class="section">
-      <div class="lbl">Pricing</div>
-      <table style="margin-top:8px"><thead><tr><th>Item</th><th style="text-align:right">Amount</th></tr></thead><tbody>${lineRows}</tbody></table>
-      <div style="margin-top:12px">
-        <div class="total-row"><span>25% deposit to start</span><span>${fmt(Math.round(final*.25*100)/100)}</span></div>
-        <div class="total-row"><span>Balance due on completion</span><span>${fmt(Math.round(final*.75*100)/100)}</span></div>
-        <div class="total-row grand"><span>Total estimate</span><span style="color:#185FA5">${fmt(final)}</span></div>
-      </div>
-    </div>
-    <div class="section">
-      <div class="lbl">Sign to accept</div>
-      <p style="font-size:12px;color:#666;margin:8px 0 12px">By signing below, you agree to the proposal total and payment terms. This constitutes a binding agreement under the Kansas Uniform Electronic Transactions Act (UETA).</p>
-      <div>
-        <input class="sig-name" id="esign-name" placeholder="Type your full name" oninput="checkEsign()">
-        <div class="lbl" style="margin-top:16px;margin-bottom:4px">Draw your signature</div>
-        <div class="sig-box" id="esign-box">
-          <canvas id="sig-canvas-email" height="140"></canvas>
-          <div id="esign-placeholder" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#ccc;font-size:14px;pointer-events:none">Sign here</div>
-        </div>
-        <div style="display:flex;justify-content:flex-end;margin-top:6px">
-          <button onclick="clearEsign()" style="border:none;background:none;color:#999;font-size:12px;cursor:pointer;font-family:inherit">Clear signature</button>
-        </div>
-      </div>
-      <button class="sign-btn" id="esign-btn" disabled onclick="submitEsign()">Sign &amp; Accept Estimate</button>
-    </div>
-    <div class="success" id="esign-success">
-      <div style="font-size:40px;margin-bottom:10px">✓</div>
-      <div style="font-size:20px;font-weight:800;color:#3B8C2A;margin-bottom:8px">Signed!</div>
-      <div style="font-size:14px;color:#555" id="esign-confirm-text"></div>
-    </div>
-  </div>
-</div>
-let esignCanvas,esignCtx,esignDrawing=false,esignHasInk=false;
-window.onload=function(){
-  esignCanvas=document.getElementById('sig-canvas-email');
-  const wrap=esignCanvas.parentElement;
-  const dpr=window.devicePixelRatio||1;
-  const w=wrap.offsetWidth||340;
-  esignCanvas.width=w*dpr;esignCanvas.height=140*dpr;
-  esignCanvas.style.width=w+'px';esignCanvas.style.height='140px';
-  esignCtx=esignCanvas.getContext('2d');
-  esignCtx.scale(dpr,dpr);esignCtx.lineCap='round';esignCtx.lineJoin='round';esignCtx.lineWidth=2.5;esignCtx.strokeStyle='#1a1a18';
-  const gp=e=>{const r=esignCanvas.getBoundingClientRect();const src=e.touches?e.touches[0]:e;return{x:(src.clientX-r.left),y:(src.clientY-r.top)};};
-  esignCanvas.onmousedown=esignCanvas.ontouchstart=e=>{e.preventDefault();esignDrawing=true;const p=gp(e);esignCtx.beginPath();esignCtx.moveTo(p.x,p.y);};
-  esignCanvas.onmousemove=esignCanvas.ontouchmove=e=>{e.preventDefault();if(!esignDrawing)return;const p=gp(e);esignCtx.lineTo(p.x,p.y);esignCtx.stroke();if(!esignHasInk){esignHasInk=true;document.getElementById('esign-placeholder').style.display='none';checkEsign();}};
-  esignCanvas.onmouseup=esignCanvas.ontouchend=()=>{esignDrawing=false;};
-};
-function clearEsign(){esignCtx&&esignCtx.clearRect(0,0,esignCanvas.width,esignCanvas.height);esignHasInk=false;document.getElementById('esign-placeholder').style.display='';checkEsign();}
-function checkEsign(){const name=document.getElementById('esign-name').value.trim();document.getElementById('esign-btn').disabled=!(name&&esignHasInk);}
-function submitEsign(){
-  const name=document.getElementById('esign-name').value.trim();
-  if(!name||!esignHasInk)return;
-  const ts=new Date().toLocaleString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-  document.getElementById('esign-confirm-text').innerHTML='Signed by <strong>'+name+'</strong><br>'+ts+'<br><br>${bname} will be in touch to schedule your start date.';
-  document.querySelectorAll('.section').forEach(s=>s.style.display='none');
-  document.getElementById('esign-success').style.display='block';
-  try{const sig=esignCanvas.toDataURL('image/png').slice(0,50);console.log('Signed:',name,ts);}catch(e){}
-}
-<\/script>
-</body></html>`;
-
-  const win=window.open('','_blank');
-  if(win){
-    win.document.write(html);
-    win.document.close();
-    if(estLinkedClientId){
-      const c=getClientById(estLinkedClientId);
-      const days=parseInt(v('e-days'))||2;
-      const exists=bids.find(b=>b.client_id===estLinkedClientId&&Math.abs(b.amount-final)<0.01&&b.bid_date===todayKey());
-      if(!exists){
-        const se={}; SCOPE_ITEMS.forEach(s=>{se[s.id]=!!scopeOn(s.id);}); bids.unshift({id:Date.now(),client_id:estLinkedClientId,client_name:c?c.name:'',name:cname,phone:v('e-cphone'),addr:v('e-caddr'),bid_date:todayKey(),followup:addDays(todayKey(),7),amount:final,type:'Painting job',days,status:'Pending',notes:'E-sign page generated '+todayKey(),completion_date:'',scope:se,surfaces:[...estSurfaces],cond:v('e-cond'),paint:v('e-paint'),colors:v('e-colors')});
-        saveAll();
-      }
-    }
-    zAlert('E-sign page opened!\n\nShare it with the client by:\n• AirDrop\n• Copy the URL and text it\n• Screenshot and email it\n\nOnce they sign, the estimate is accepted.');
-  } else {
-    zAlert('Allow pop-ups to generate the e-sign page. In Safari: tap AA in address bar → Allow pop-ups.');
-  }
-}
-
-
-// ── Notes canvas — tied to active bid, infinite scroll ───────────────
+/ ── Notes canvas — tied to active bid, infinite scroll ───────────────
 let _notesBidId=null;         // which bid these notes belong to
 let _notesCtx=null;           // canvas 2d context
 let _notesDpr=1;              // device pixel ratio
@@ -15145,11 +13889,6 @@ function openBidNotes(bidId){
   showNotesFab();
   toggleNotesPanel();
 }
-function viewBidClient(clientId){
-  goPg('pg-clients');
-  setTimeout(()=>openClientDetail(clientId),200);
-}
-
 function showNotesFab(){
   // Called when entering pg-est with a bid in progress
   const fab=document.getElementById('notes-fab');
@@ -16326,25 +15065,6 @@ const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
-
-function showWelcomeScreen(){
-  if(document.getElementById('welcome-overlay'))return;
-  const ov=document.createElement('div');
-  ov.id='welcome-overlay';
-  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:#0D1117;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;';
-  ov.innerHTML=
-    '<div style="max-width:400px;width:100%;text-align:center">'+
-      '<div style="width:56px;height:56px;border-radius:14px;background:#185FA5;display:flex;align-items:center;justify-content:center;margin:0 auto 20px">'+
-        '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>'+
-      '</div>'+
-      '<div style="font-size:32px;font-weight:800;color:#fff;letter-spacing:-.5px;margin-bottom:10px">TradeDesk</div>'+
-      '<div style="font-size:15px;color:rgba(255,255,255,.45);line-height:1.6;margin-bottom:48px">The all-in-one business suite for contractors</div>'+
-      '<button onclick="showOnboarding()" style="width:100%;padding:14px;border-radius:10px;border:none;background:#185FA5;color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:12px;box-shadow:0 4px 20px rgba(24,95,165,.4)">Get started</button>'+
-      '<button onclick="document.getElementById(\'welcome-overlay\').remove();supaShowLogin();" style="width:100%;padding:14px;border-radius:10px;border:1.5px solid rgba(255,255,255,.15);background:transparent;color:rgba(255,255,255,.7);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">I already have an account</button>'+
-    '</div>';
-  document.body.appendChild(ov);
-}
-
 async function supaInit(){
   if(!supaEnabled())return;
   try{
@@ -16751,19 +15471,6 @@ async function supaSignIn(){
   const{error}=await _supa.auth.signInWithPassword({email,password:pass});
   if(error&&err)err.textContent=error.message;
 }
-
-async function supaSignUp(){
-  const email=document.getElementById('supa-email')?.value?.trim();
-  const pass=document.getElementById('supa-pass')?.value;
-  const err=document.getElementById('supa-login-err');
-  if(!email||!pass){if(err)err.textContent='Enter email and password.';return;}
-  if(pass.length<6){if(err)err.textContent='Password must be at least 6 characters.';return;}
-  if(err)err.textContent='Creating account...';
-  const{error}=await _supa.auth.signUp({email,password:pass});
-  if(error){if(err)err.textContent=error.message;}
-  else{if(err)err.textContent='Check your email to confirm, then sign in.';}
-}
-
 async function supaForgotPassword(){
   const email=document.getElementById('supa-email')?.value?.trim();
   const err=document.getElementById('supa-login-err');
@@ -16915,9 +15622,6 @@ function deferScheduleAlert(){
     if(q.length>1)showToast(q.length+' clients waiting to schedule','📋');
     setTimeout(showScheduleAlerts,400);
   }
-}
-function scheduleFromAlert(clientId,bidId){
-  showScheduleSuggestion(clientId,bidId);
 }
 function showScheduleSuggestion(clientId,bidId,clientNameFallback){
   const bid=bidId?bids.find(b=>b.id===bidId):null;
