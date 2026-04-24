@@ -478,7 +478,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 <body>
 <div id="app">
 <div class="pg active" id="pg-dash">
-  <div class="tbar"><div><div class="tbar-title" id="dash-greet">Good Morning, Zach</div><div class="tbar-sub" id="dash-date"></div></div><div style="display:flex;align-items:center;gap:5px"><span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Year</span><select id="dash-year-sel" onchange="setDashYear(this.value)" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)"></select></div></select></div>
+  <div class="tbar"><div><div class="tbar-title" id="dash-greet"></div><div class="tbar-sub" id="dash-date"></div></div><div style="display:flex;align-items:center;gap:5px"><span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Year</span><select id="dash-year-sel" onchange="setDashYear(this.value)" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)"></select></div></select></div>
   
   <div id="dash-kpi" style="margin-bottom:10px"></div>
 
@@ -1687,7 +1687,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <div id="set-logo-preview" style="height:60px;min-width:120px;background:linear-gradient(135deg,#1a365d,#2a4a7f);border-radius:6px;display:flex;align-items:center;justify-content:center;padding:0 10px;box-sizing:border-box;flex-shrink:0"></div>
             <div style="flex:1;min-width:160px">
-              <input type="file" id="set-logo-file" accept="image/*" style="display:none" onchange="handleLogoUpload(this)">
+              <input type="file" id="set-logo-file" accept="image/png" style="display:none" onchange="handleLogoUpload(this)">
               <button class="btn btn-sm" onclick="document.getElementById('set-logo-file').click()">Upload image</button>
               <button class="btn btn-sm" onclick="clearLogoSetting()" style="margin-left:6px">Remove</button>
               <div style="font-size:10px;color:var(--text3);margin-top:5px">PNG, JPG, or SVG. Shown on every proposal header.</div>
@@ -2256,12 +2256,9 @@ const _ZJ_LOGO_SVG='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 198 78"
 // Returns logo <img> for branded accounts, plain text for others
 // Priority: 1) S.logoData (user-uploaded), 2) ZJ auto-embed, 3) plain text
 function _proposalBizHeader(bname,bphone,blic){
-  const customLogo=S.logoData||'';
-  const isZJ=!customLogo&&(S.bname||'').toLowerCase().includes("zj's painting");
-  const logoSrc=customLogo||(isZJ?('data:image/svg+xml;charset=utf-8,'+encodeURIComponent(_ZJ_LOGO_SVG)):'');
-  const logoHtml=logoSrc
-    ?'<img src="'+logoSrc+'" style="height:72px;max-width:220px;object-fit:contain;display:block" alt="'+escHtml(bname)+'">'
-    :'<div style="font-size:21px;font-weight:800;line-height:1.1">'+escHtml(bname)+'</div>';
+  const logoSrc=S.logoData||'';
+  const logoInner=logoSrc?'<img src="'+logoSrc+'" style="height:72px;max-width:220px;object-fit:contain;display:block" alt="'+escHtml(bname)+'">':'<div style="font-size:21px;font-weight:800;line-height:1.1">'+escHtml(bname)+'</div>';
+  const logoHtml='<div class="brand-logo-slot">'+logoInner+'</div>';
   return '<div>'+logoHtml+
     (bphone?'<div style="font-size:12px;margin-top:4px;opacity:.85">P '+escHtml(bphone)+'</div>':'')+
     (blic?'<div style="font-size:11px;margin-top:2px;opacity:.75">'+escHtml(blic)+'</div>':'')+
@@ -2552,7 +2549,7 @@ function saveSettings(){
 }
 function _renderLogoPreview(){
   const el=document.getElementById('set-logo-preview');if(!el)return;
-  const src=S.logoData||(_proposalBizHeader&&(S.bname||'').toLowerCase().includes("zj's painting")?('data:image/svg+xml;charset=utf-8,'+encodeURIComponent(_ZJ_LOGO_SVG)):'');
+  const src=S.logoData||'';
   el.innerHTML=src
     ?'<img src="'+src+'" style="height:48px;max-width:180px;object-fit:contain;display:block" alt="Logo preview">'
     :'<span style="font-size:11px;color:rgba(255,255,255,.5)">No logo</span>';
@@ -2568,6 +2565,7 @@ function applyBrandLogo(){
 }
 function handleLogoUpload(input){
   const file=input.files&&input.files[0];if(!file)return;
+  if(!file.type.includes('png')){zAlert('Please upload a PNG file only. PNG works best for logos with transparency.');input.value='';return;}
   const reader=new FileReader();
   reader.onload=e=>{
     S.logoData=e.target.result;saveAll();_renderLogoPreview();applyBrandLogo();
@@ -9320,7 +9318,7 @@ function showAdjReasonSheet(pct){
   sheet.id='adj-reason-sheet';
   sheet.style.cssText='display:flex;flex-direction:column;align-items:center;justify-content:flex-end;position:fixed;inset:0;z-index:900;background:rgba(0,0,0,.45)';
   const inner=document.createElement('div');
-  inner.style.cssText='width:100%;max-width:480px;border-radius:18px 18px 0 0;background:var(--bg);padding:20px 16px 36px;box-sizing:border-box;max-height:75vh;overflow-y:auto';
+  inner.style.cssText='width:100%;max-width:480px;margin-left:auto;margin-right:auto;border-radius:18px 18px 0 0;background:var(--bg);padding:20px 16px 36px;box-sizing:border-box;max-height:75vh;overflow-y:auto';
   inner.innerHTML=
     '<div style="width:40px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 16px"></div>'+
     '<div style="font-size:16px;font-weight:800;margin-bottom:4px">'+(isNeg?'Why the discount?':'Why the increase?')+'</div>'+
@@ -14576,7 +14574,7 @@ function renderObStep(){
           '<div style="width:36px;height:36px;background:rgba(255,255,255,.15);border-radius:9px;display:flex;align-items:center;justify-content:center">'+
             '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>'+
           '</div>'+
-          '<span style="font-size:18px;font-weight:800;color:#fff;letter-spacing:-.02em">TradeDesk</span>'+
+          '<span class="brand-logo-slot" style="font-size:18px;font-weight:800;color:#fff;letter-spacing:-.02em">TradeDesk</span>'+
         '</div>'+
         // Step list
         '<div style="display:flex;flex-direction:column;gap:4px">'+
@@ -14605,7 +14603,7 @@ function renderObStep(){
           '<div style="width:28px;height:28px;background:var(--blue);border-radius:7px;display:flex;align-items:center;justify-content:center">'+
             '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>'+
           '</div>'+
-          '<span style="font-size:15px;font-weight:800;color:var(--text)">TradeDesk</span>'+
+          '<span class="brand-logo-slot" style="font-size:15px;font-weight:800;color:var(--text)">TradeDesk</span>'+
         '</div>'+
         '<span style="font-size:12px;color:var(--text3);font-weight:600">'+_ob.step+' of 9</span>'+
       '</div>'+
@@ -14784,14 +14782,13 @@ function obStepBrand(el){
   el.innerHTML=
     '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">🖼️</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Your brand</div><div style="font-size:14px;color:var(--text3)">Add a logo to appear on every proposal</div></div>'+
     '<div style="margin-bottom:20px">'+
-      '<div style="width:120px;height:120px;border:2px dashed var(--border2);border-radius:var(--rl);display:flex;align-items:center;justify-content:center;margin-bottom:10px;background:var(--bg2);cursor:pointer" onclick="document.getElementById(\'ob-logo-file\').click()" id="ob-logo-preview">'+
+      '<div style="width:120px;height:120px;border:2px dashed var(--border2);border-radius:var(--rl);display:flex;align-items:center;justify-content:center;margin-bottom:10px;background:var(--bg2);cursor:pointer" onclick="document.getElementById(\'set-logo-file\').click()" id="set-logo-preview">'+
         (S.logoData?'<img src="'+S.logoData+'" style="max-width:100%;max-height:100%;object-fit:contain">':'<span style="font-size:32px">🖼️</span>')+
       '</div>'+
-      '<input type="file" id="ob-logo-file" accept="image/*" style="display:none" onchange="obHandleLogo(this)">'+
-      '<button onclick="document.getElementById(\'ob-logo-file\').click()" style="padding:9px 16px;border-radius:8px;border:1.5px solid var(--border2);background:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;margin-right:8px">Upload logo</button>'+
-      (S.logoData?'<button onclick="S.logoData=\'\';saveAll();applyBrandLogo();document.getElementById(\'ob-logo-preview\').innerHTML=\'<span style=\\"font-size:32px\\">🖼️</span>\'" style="padding:9px 16px;border-radius:8px;border:1.5px solid var(--border2);background:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text3)">Remove</button>':'')+
+      '<button onclick="document.getElementById(\'set-logo-file\').click()" style="padding:9px 16px;border-radius:8px;border:1.5px solid var(--border2);background:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;margin-right:8px">Upload PNG logo</button>'+
+      (S.logoData?'<button onclick="S.logoData=\'\';saveAll();applyBrandLogo();_renderLogoPreview();" style="padding:9px 16px;border-radius:8px;border:1.5px solid var(--border2);background:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text3)">Remove</button>':'')+
     '</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:24px">PNG, JPG, or SVG recommended. Appears on all proposals and the app header. You can change this later in Settings.</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:24px">PNG only. Appears on all proposals and the app header. You can change this later in Settings.</div>'+
     obBtn('Continue','_ob.step=6;renderObStep()')+
     obBtn('Skip for now','_ob.step=6;renderObStep()',true)+
     obBtn('Back','_ob.step=4;renderObStep()',true);
@@ -15792,8 +15789,8 @@ async function supaLoadFromCloud(){
     renderClientList&&renderClientList();
     renderJobsPage&&renderJobsPage();
     renderMoneyPage&&renderMoneyPage();
-    // Check for new signatures on load + poll every 90s while app is open
-    setTimeout(()=>checkNewSignatures(),2000);
+    // Check for new signatures then schedule alerts — sequential to avoid race
+    setTimeout(async()=>{ await checkNewSignatures(); if(!window._showingScheduleAlert) showScheduleAlerts(); },2000);
     setInterval(()=>checkNewSignatures(),30000);
     // Realtime subscription — fires immediately on new INSERT to signed_proposals
     if(_supa&&_supaUser){
@@ -15806,11 +15803,7 @@ async function supaLoadFromCloud(){
     }
     // Also check when user returns to the app (e.g., after sending SMS to client)
     document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkNewSignatures();});
-    // Re-surface any schedule alerts deferred from a prior session (stored in localStorage)
-    setTimeout(()=>{
-      const _deferred=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
-      if(_deferred.length&&!window._showingScheduleAlert)showScheduleAlerts();
-    },5000);
+
     setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
   }catch(e){
     console.warn('Cloud load failed:',e);
@@ -16192,7 +16185,7 @@ if(supaEnabled()){
     const ov=document.createElement('div');
     ov.id='supa-boot-overlay';
     ov.style.cssText='position:fixed;inset:0;z-index:9998;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px';
-    ov.innerHTML='<div style="font-size:28px;font-weight:800">TradeDesk</div>'+
+    ov.innerHTML='<div class="brand-logo-slot" style="font-size:28px;font-weight:800">TradeDesk</div>'+
       '<div style="font-size:13px;color:var(--text3)">🔄 Loading your data...</div>';
     document.body.appendChild(ov);
   })();
