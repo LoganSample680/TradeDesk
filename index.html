@@ -6679,6 +6679,12 @@ function setTripPurpose(purpose, btn){
 }
 
 
+function selectDriveVehicle(idx){
+  const vehs=getVehicles();
+  gps.vehicle=vehs[idx]?vehs[idx].name:'';
+  renderDriveVehicleChips();
+  checkTripReady();
+}
 function renderDriveVehicleChips(){
   // Now uses dropdown — this just populates the select
   const sel=document.getElementById('cd-vehicle-sel');
@@ -8500,6 +8506,13 @@ function removeEstSurf(id){
     else{btn.disabled=true;btn.style.background='var(--bg2)';btn.style.color='var(--text3)';btn.style.borderColor='var(--border)';btn.style.cursor='not-allowed';}
   }
 }
+function updateEstSurf(id,key,val){
+  const s=estSurfaces.find(x=>x.id===id);if(!s)return;
+  if(key==='qty'){s.qty=parseFloat(val)||0;renderEstRunning();}
+  else if(key==='room'){s.room=val;}
+  else{s.type=val;lastSurfType=val;renderEstSurfs();renderEstRunning();}
+  saveSurfDraft();
+}
 function updateEstSurfType(id,val){
   const s=estSurfaces.find(x=>x.id===id);if(!s)return;
   s.type=val;lastSurfType=val;renderEstSurfs();renderEstRunning();saveSurfDraft();
@@ -10264,6 +10277,14 @@ function newEstimate(){
   prefillEstimateRates();
   goEstStep(1);
 }
+function adjRate(id,delta){
+  const el=document.getElementById(id);if(!el)return;
+  const cur=parseFloat(el.value)||0;
+  const next=Math.round((cur+delta)*100)/100;
+  if(next<0)return;
+  el.value=next;
+  if(typeof renderEstRunning==='function')renderEstRunning();
+}
 function adjRateAdv(advId,delta){
   const el=document.getElementById(advId);if(!el)return;
   const cur=parseFloat(el.value)||0;
@@ -10807,7 +10828,7 @@ function goToExpenses(){
     }
   },150);
 }
-unction closeTopModal(){const o=document.querySelector('.zmodal-overlay');if(o&&typeof o.remove==='function')o.remove();else if(o&&o.parentNode)o.parentNode.removeChild(o);}
+function closeTopModal(){const o=document.querySelector('.zmodal-overlay');if(o&&typeof o.remove==='function')o.remove();else if(o&&o.parentNode)o.parentNode.removeChild(o);}
 function showWorkflowGate(msg,btnLabel,btnAction){
   const o=document.createElement('div');o.className='zmodal-overlay';
   o.innerHTML='<div class="zmodal" style="text-align:center">'+
