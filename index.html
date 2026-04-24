@@ -1184,32 +1184,6 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
     <div id="est-s4" style="display:none">
     <div class="card"><div class="card-hd">Bid breakdown</div><div id="est-review"></div></div>
     <div class="card" id="adj-portfolio-card"><div class="card-hd">Price adjustment</div>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:14px;font-weight:700">Portfolio Showcase</div>
-          <div style="font-size:11px;color:var(--text3);margin-top:2px">Offer a discount in exchange for portfolio photos</div>
-        </div>
-        <label style="position:relative;display:inline-block;width:44px;height:26px;flex-shrink:0;cursor:pointer">
-          <input type="checkbox" id="portfolio-toggle" onchange="togglePortfolioShowcase()" style="opacity:0;position:absolute;width:100%;height:100%;margin:0;cursor:pointer;z-index:1">
-          <span id="portfolio-track" style="position:absolute;inset:0;background:var(--border2);border-radius:13px;transition:background .2s"></span>
-          <span id="portfolio-thumb" style="position:absolute;top:3px;left:3px;width:20px;height:20px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .2s"></span>
-        </label>
-      </div>
-      <div id="portfolio-details" style="display:none;margin-bottom:14px">
-        <div class="fg fg2" style="margin-bottom:10px">
-          <div class="f">
-            <label>Discount % <span style="font-size:10px;font-weight:400;color:var(--text3)">(5–25)</span></label>
-            <input type="number" id="portfolio-pct" value="15" min="5" max="25" oninput="onPortfolioPctChange()">
-          </div>
-          <div class="f">
-            <label>Showcase homes target</label>
-            <input type="number" id="portfolio-target" value="5" min="1" max="50" oninput="updatePortfolioPreview()">
-          </div>
-        </div>
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">Proposal pitch preview</div>
-        <div id="portfolio-preview" style="background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 12px;font-size:11px;color:var(--text2);line-height:1.6"></div>
-      </div>
-      <div style="height:1px;background:var(--border2);margin:0 -16px 14px"></div>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
         <label style="font-size:11px;color:var(--text2);min-width:80px">Adjust price</label>
         <input type="range" id="est-adj" min="-40" max="40" step="1" value="0" oninput="syncAdj()" onchange="onAdjSliderRelease()" style="flex:1;accent-color:var(--navy,#0D1117);height:6px;cursor:pointer">
@@ -9323,7 +9297,7 @@ function onAdjSliderRelease(){
 function showAdjReasonSheet(pct){
   const existing=document.getElementById('adj-reason-sheet');if(existing)existing.remove();
   const isNeg=pct<0;
-  const pills=isNeg?['Portfolio Showcase','Repeat customer','Competitive bid','Other']:['Difficult access','Rush job','Extra prep needed','Other'];
+  const pills=isNeg?['Repeat customer','Competitive bid','Loyalty discount','Other']:['Difficult access','Rush job','Extra prep needed','Other'];
   const sheet=document.createElement('div');
   sheet.id='adj-reason-sheet';
   sheet.style.cssText='position:fixed;inset:0;z-index:900;background:rgba(0,0,0,.45);display:flex;align-items:flex-end';
@@ -9333,7 +9307,7 @@ function showAdjReasonSheet(pct){
     '<div style="width:40px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 16px"></div>'+
     '<div style="font-size:16px;font-weight:800;margin-bottom:4px">'+(isNeg?'Why the discount?':'Why the increase?')+'</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Pick a reason, or tap outside to cancel.</div>'+
-    '<div id="adj-reason-pills" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">'+
+    '<div id="adj-reason-pills" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;justify-content:center">'+
       pills.map(p=>'<button onclick="adjReasonPillTap(\''+p.replace(/'/g,"\\'")+'\')" style="padding:10px 14px;border-radius:24px;border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">'+p+'</button>').join('')+
     '</div>'+
     '<div id="adj-reason-detail-wrap" style="display:none">'+
@@ -9347,12 +9321,6 @@ function showAdjReasonSheet(pct){
   window._adjSheetSelected='';
 }
 function adjReasonPillTap(label){
-  if(label==='Portfolio Showcase'){
-    const sheet=document.getElementById('adj-reason-sheet');if(sheet)sheet.remove();
-    const tog=document.getElementById('portfolio-toggle');
-    if(tog){tog.checked=true;togglePortfolioShowcase();}
-    return;
-  }
   window._adjSheetSelected=label;
   const isOther=label==='Other';
   document.querySelectorAll('#adj-reason-pills button').forEach(b=>{
