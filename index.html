@@ -1092,14 +1092,14 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
           <div style="padding:8px 12px;border-bottom:1px solid var(--border2)" id="sw-finish-row">
             <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:5px">Finish <span style="font-weight:400;text-transform:none;font-size:9px">(pick first)</span></div>
             <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin-bottom:3px" id="sw-finish-grid">
-              <button type="button" class="sw-finish-btn" data-finish="Flat" onclick="swSelectFinish(this)" style="padding:6px 2px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Flat</button>
-              <button type="button" class="sw-finish-btn" data-finish="Matte" onclick="swSelectFinish(this)" style="padding:6px 2px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Matte</button>
-              <button type="button" class="sw-finish-btn" data-finish="Eggshell" onclick="swSelectFinish(this)" style="padding:6px 2px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Eggshell</button>
-              <button type="button" class="sw-finish-btn" data-finish="Satin" onclick="swSelectFinish(this)" style="padding:6px 2px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Satin</button>
-              <button type="button" class="sw-finish-btn" data-finish="Semi-Gloss" onclick="swSelectFinish(this)" style="padding:6px 2px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Semi-Gloss</button>
-              <button type="button" class="sw-finish-btn" data-finish="Gloss" onclick="swSelectFinish(this)" style="padding:6px 2px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Gloss</button>
-              <button type="button" class="sw-finish-btn" data-finish="Semi-Trans Stain" onclick="swSelectFinish(this);swShowFamily('stain','Deck Stain')" style="padding:6px 2px;border-radius:var(--r);border:1px solid #8B6340;background:#FFF8F0;font-size:9.5px;font-weight:600;cursor:pointer;font-family:inherit;color:#7B4E2A">Semi-Trans Stain</button>
-              <button type="button" class="sw-finish-btn" data-finish="Solid Stain" onclick="swSelectFinish(this);swShowFamily('stain','Deck Stain')" style="padding:6px 2px;border-radius:var(--r);border:1px solid #8B6340;background:#FFF8F0;font-size:9.5px;font-weight:600;cursor:pointer;font-family:inherit;color:#7B4E2A">Solid Stain</button>
+              <button type="button" class="sw-finish-btn" data-finish="Flat" onclick="swSelectFinish(this)" style="padding:10px 6px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Flat<span onclick="event.stopPropagation();showFinishTip('Flat',event)" style="font-size:10px;margin-left:3px;opacity:.5;cursor:pointer">ⓘ</span></button>
+              <button type="button" class="sw-finish-btn" data-finish="Matte" onclick="swSelectFinish(this)" style="padding:10px 6px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Matte<span onclick="event.stopPropagation();showFinishTip('Matte',event)" style="font-size:10px;margin-left:3px;opacity:.5;cursor:pointer">ⓘ</span></button>
+              <button type="button" class="sw-finish-btn" data-finish="Eggshell" onclick="swSelectFinish(this)" style="padding:10px 6px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Eggshell<span onclick="event.stopPropagation();showFinishTip('Eggshell',event)" style="font-size:10px;margin-left:3px;opacity:.5;cursor:pointer">ⓘ</span></button>
+              <button type="button" class="sw-finish-btn" data-finish="Satin" onclick="swSelectFinish(this)" style="padding:10px 6px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Satin<span onclick="event.stopPropagation();showFinishTip('Satin',event)" style="font-size:10px;margin-left:3px;opacity:.5;cursor:pointer">ⓘ</span></button>
+              <button type="button" class="sw-finish-btn" data-finish="Semi-Gloss" onclick="swSelectFinish(this)" style="padding:10px 6px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Semi-Gloss<span onclick="event.stopPropagation();showFinishTip('Semi-Gloss',event)" style="font-size:10px;margin-left:3px;opacity:.5;cursor:pointer">ⓘ</span></button>
+              <button type="button" class="sw-finish-btn" data-finish="Gloss" onclick="swSelectFinish(this)" style="padding:10px 6px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Gloss<span onclick="event.stopPropagation();showFinishTip('Gloss',event)" style="font-size:10px;margin-left:3px;opacity:.5;cursor:pointer">ⓘ</span></button>
+              <button type="button" class="sw-finish-btn" data-finish="Semi-Trans Stain" onclick="swSelectFinish(this);swShowFamily('stain','Deck Stain')" style="padding:10px 6px;border-radius:var(--r);border:1px solid #8B6340;background:#FFF8F0;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:#7B4E2A">Semi-Trans Stain<span onclick="event.stopPropagation();showFinishTip('Semi-Trans Stain',event)" style="font-size:10px;margin-left:3px;opacity:.5;cursor:pointer">ⓘ</span></button>
+              <button type="button" class="sw-finish-btn" data-finish="Solid Stain" onclick="swSelectFinish(this);swShowFamily('stain','Deck Stain')" style="padding:10px 6px;border-radius:var(--r);border:1px solid #8B6340;background:#FFF8F0;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:#7B4E2A">Solid Stain<span onclick="event.stopPropagation();showFinishTip('Solid Stain',event)" style="font-size:10px;margin-left:3px;opacity:.5;cursor:pointer">ⓘ</span></button>
             </div>
           </div>
           <!-- State 1: search first, then family tiles -->
@@ -3946,7 +3946,11 @@ function renderTodayFeed(){
   });
 
   // TIER 6 — Estimates in progress (built but not yet sent)
-  const draft=loadEstFullDraft();
+  let draft=loadEstFullDraft();
+  if(draft&&draft.cname){
+    const alreadyWon=bids.some(b=>b.status==='Closed Won'&&(b.client_name||b.name||'').toLowerCase().trim()===(draft.cname||'').toLowerCase().trim());
+    if(alreadyWon){clearEstFullDraft();draft=null;}
+  }
   const _activeDraftBidId=draft?.lastBidId||null;
   if(draft&&draft.cname){
     items.push({priority:6,html:
@@ -3979,14 +3983,14 @@ function renderTodayFeed(){
       '</div>'});
   });
 
-  // TIER 7 — New leads needing estimate
-  const newLeads=clients.filter(c=>{const s=getClientStage(c.id).stage;return s==='new'||s==='est_scheduled';});
+  // TIER 7 — New leads ready for an estimate
+  const newLeads=clients.filter(c=>{const s=getClientStage(c.id).stage;return s==='new';});
   if(newLeads.length){
     items.push({priority:7,html:
       '<div class="tf-card">'+
         '<div class="tf-icon">🙋</div>'+
         '<div class="tf-body">'+
-          '<div class="tf-name">'+newLeads.length+' new lead'+(newLeads.length!==1?'s':'')+' need an estimate</div>'+
+          '<div class="tf-name">'+newLeads.length+' new lead'+(newLeads.length!==1?'s':'')+' ready for an estimate</div>'+
           '<div class="tf-sub" style="color:var(--blue)">Go build estimates to move them forward</div>'+
         '</div>'+
         '<div class="tf-acts">'+
@@ -6540,7 +6544,7 @@ function deleteBid(bidId){
     bids=bids.filter(x=>x.id!==bidId);
     payments=payments.filter(p=>p.bid_id!==bidId);
     liens=liens.filter(l=>l.bid_id!==bidId);
-    saveAll();renderClientDetail();
+    clearEstFullDraft();saveAll();renderClientDetail();
   },{title:'Delete bid',yes:'Delete permanently',danger:true});
 }
 function saveLien(){
@@ -7274,6 +7278,19 @@ function _swResetColorUI(){
 function swClearColor(){
   _swResetColorUI();
   swInitFamilyGrid();
+}
+const _FINISH_TIPS={'Flat':'Ceilings and low traffic areas, hides imperfections.','Matte':'Similar to flat with slightly more durability.','Eggshell':'Most popular for living rooms and bedrooms, easy to clean.','Satin':'Kitchens, bathrooms and trim, moisture resistant and washable.','Semi-Gloss':'Doors, trim and cabinets, very durable and easy to wipe down.','Gloss':'Highest durability for doors and trim, very shiny.','Semi-Trans Stain':'Decks and fences, lets wood grain show through.','Solid Stain':'Decks and siding, full coverage like paint but breathes better.'};
+function showFinishTip(label,e){
+  document.querySelectorAll('.finish-tip-popup').forEach(el=>el.remove());
+  const tip=document.createElement('div');
+  tip.className='finish-tip-popup';
+  tip.style.cssText='position:fixed;z-index:9999;background:#222;color:#fff;font-size:12px;padding:8px 11px;border-radius:8px;max-width:220px;line-height:1.5;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+  tip.textContent=_FINISH_TIPS[label]||'';
+  document.body.appendChild(tip);
+  const r=e.target.getBoundingClientRect();
+  tip.style.left=Math.min(r.left,window.innerWidth-230)+'px';
+  tip.style.top=(r.top-tip.offsetHeight-8)+'px';
+  setTimeout(()=>tip.remove(),2800);
 }
 function swSelectFinish(btn){
   document.querySelectorAll('#surf-step-b .sw-finish-btn').forEach(b=>{
@@ -9320,9 +9337,9 @@ function showAdjReasonSheet(pct){
   const pills=isNeg?['Portfolio Showcase','Repeat customer','Competitive bid','Other']:['Difficult access','Rush job','Extra prep needed','Other'];
   const sheet=document.createElement('div');
   sheet.id='adj-reason-sheet';
-  sheet.style.cssText='position:fixed;inset:0;z-index:900;background:rgba(0,0,0,.45);display:flex;align-items:flex-end';
+  sheet.style.cssText='position:fixed;inset:0;z-index:900;background:rgba(0,0,0,.45)';
   const inner=document.createElement('div');
-  inner.style.cssText='background:var(--bg);border-radius:18px 18px 0 0;padding:20px 16px 36px;width:100%;box-sizing:border-box;max-height:75vh;overflow-y:auto';
+  inner.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:0;width:100%;max-width:480px;background:var(--bg);border-radius:18px 18px 0 0;padding:20px 16px 36px;box-sizing:border-box;max-height:75vh;overflow-y:auto;z-index:901';
   inner.innerHTML=
     '<div style="width:40px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 16px"></div>'+
     '<div style="font-size:16px;font-weight:800;margin-bottom:4px">'+(isNeg?'Why the discount?':'Why the increase?')+'</div>'+
@@ -9366,8 +9383,8 @@ function confirmAdjReasonFromSheet(){
   const label=window._adjSheetSelected||'';
   if(!label){zAlert('Pick a reason first.',{title:'Select a reason'});return;}
   const detail=(document.getElementById('adj-reason-detail-input')?.value||'').trim();
-  if(label==='Other'&&detail.split(/\s+/).filter(Boolean).length<3){
-    zAlert('Please add at least a few words.',{title:'More detail needed'});return;
+  if(label==='Other'&&detail.split(/\s+/).filter(Boolean).length<1){
+    zAlert('Please add at least one word.',{title:'More detail needed'});return;
   }
   const pct=parseInt(v('est-adj')||0);
   const reasonText=detail?label+' — '+detail:label;
@@ -15711,7 +15728,7 @@ function quickScheduleJob(bidId,startKey,clientId){
 function discardInProgressBid(bidId){
   if(!confirm('Discard this estimate?'))return;
   const idx=bids.findIndex(b=>b.id===bidId);
-  if(idx>-1){bids.splice(idx,1);saveAll();renderDash();}
+  if(idx>-1){bids.splice(idx,1);clearEstFullDraft();saveAll();renderDash();}
 }
 function resendProposalLink(bidId){
   const b=bids.find(x=>x.id===bidId);
