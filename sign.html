@@ -463,14 +463,15 @@ async function submitCash(){
       portfolio_accepted:window._portfolioAccepted||false,
       portfolio_pct:window._portfolioAccepted?(_prop.portfolioPct||null):null,
     });
-    // Second write: set notified_at so UPDATE event fires on the realtime channel
-    await _supa.from('signed_proposals').update({notified_at:new Date().toISOString()}).eq('bid_id',String(_prop.id));
     showDone('cash');
   }catch(e){
     console.error(e);
     document.getElementById('pay-err').textContent='Something went wrong. Try again.';
     btn.disabled=false;btn.textContent="Confirm — I'll pay cash in person";
+    return;
   }
+  // Non-critical: fire-and-forget notified_at to trigger realtime UPDATE event on contractor's app
+  _supa.from('signed_proposals').update({notified_at:new Date().toISOString()}).eq('bid_id',String(_prop.id)).catch(e=>console.warn('notified_at:',e));
 }
 
 function showDone(method){
