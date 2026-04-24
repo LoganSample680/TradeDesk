@@ -1021,7 +1021,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
       </div>
 
       
-      <div id="surf-step-b" style="display:none">
+      <div id="surf-step-b" style="display:none;position:fixed;inset:0;z-index:800;background:var(--bg);overflow-y:auto;padding:16px 16px 80px;box-sizing:border-box">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
           <button onclick="goSurfStepA()" style="border:none;background:none;cursor:pointer;font-size:18px;color:var(--text3);padding:0">&#8592;</button>
           <div>
@@ -1187,25 +1187,8 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 
     <div id="est-s4" style="display:none">
     <div class="card"><div class="card-hd">Bid breakdown</div><div id="est-review"></div></div>
-    <div class="card"><div class="card-hd">Price adjustment</div>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-        <label style="font-size:11px;color:var(--text2);min-width:80px">Adjust price</label>
-        <input type="range" id="est-adj" min="-40" max="40" step="1" value="0" oninput="syncAdj()" style="flex:1;accent-color:var(--navy,#0D1117);height:6px;cursor:pointer">
-        <span id="est-adj-val" style="font-size:12px;font-weight:700;min-width:55px;text-align:right;color:var(--blue)">0%</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:10px;padding:0 2px">
-        <span>-40%</span><span>0</span><span>+40%</span>
-      </div>
-      <div class="f"><label>Reason (optional)</label><input type="text" id="est-adj-reason" placeholder="Repeat customer discount, difficult access..."></div>
-      <div style="display:flex;align-items:center;gap:12px;margin-top:10px">
-        <span style="font-size:13px;color:var(--text2)">Final bid:</span>
-        <span id="est-final-disp" style="font-size:24px;font-weight:700;color:var(--blue)"></span>
-      </div>
-    </div>
-      <input type="hidden" id="e-paint" value="">
-      <input type="hidden" id="e-customer-paint">
-    <div class="card" id="portfolio-showcase-card">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <div class="card" id="adj-portfolio-card"><div class="card-hd">Price adjustment</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px">
         <div style="flex:1;min-width:0">
           <div style="font-size:14px;font-weight:700">Portfolio Showcase</div>
           <div style="font-size:11px;color:var(--text3);margin-top:2px">Offer a discount in exchange for portfolio photos</div>
@@ -1216,7 +1199,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
           <span id="portfolio-thumb" style="position:absolute;top:3px;left:3px;width:20px;height:20px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .2s"></span>
         </label>
       </div>
-      <div id="portfolio-details" style="display:none;margin-top:12px">
+      <div id="portfolio-details" style="display:none;margin-bottom:14px">
         <div class="fg fg2" style="margin-bottom:10px">
           <div class="f">
             <label>Discount % <span style="font-size:10px;font-weight:400;color:var(--text3)">(5–25)</span></label>
@@ -1230,7 +1213,28 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">Proposal pitch preview</div>
         <div id="portfolio-preview" style="background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 12px;font-size:11px;color:var(--text2);line-height:1.6"></div>
       </div>
+      <div style="height:1px;background:var(--border2);margin:0 -16px 14px"></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <label style="font-size:11px;color:var(--text2);min-width:80px">Adjust price</label>
+        <input type="range" id="est-adj" min="-40" max="40" step="1" value="0" oninput="syncAdj()" onchange="onAdjSliderRelease()" style="flex:1;accent-color:var(--navy,#0D1117);height:6px;cursor:pointer">
+        <span id="est-adj-val" style="font-size:12px;font-weight:700;min-width:55px;text-align:right;color:var(--blue)">0%</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:10px;padding:0 2px">
+        <span>-40%</span><span>0</span><span>+40%</span>
+      </div>
+      <div id="adj-reason-summary" style="display:none;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;padding:8px 10px;background:var(--bg2);border-radius:var(--r)">
+        <span id="adj-reason-summary-text" style="font-size:12px;color:var(--text2);flex:1;min-width:0"></span>
+        <button onclick="clearAdjReason()" style="font-size:12px;color:var(--text3);background:none;border:none;cursor:pointer;padding:2px 4px;line-height:1;flex-shrink:0">✕</button>
+      </div>
+      <input type="hidden" id="adj-type-hidden" value="">
+      <input type="hidden" id="adj-reason-hidden" value="">
+      <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
+        <span style="font-size:13px;color:var(--text2)">Final bid:</span>
+        <span id="est-final-disp" style="font-size:24px;font-weight:700;color:var(--blue)"></span>
+      </div>
     </div>
+      <input type="hidden" id="e-paint" value="">
+      <input type="hidden" id="e-customer-paint">
     <div class="card">
       <div class="f">
         <label>Est. days to complete <span style="color:#A32D2D">*</span></label>
@@ -2872,7 +2876,8 @@ function _doOpenEstimate(c,_overrideAddr,_forceTrade){
     if(linked)linked.innerHTML='<span class="conn-tag">'+c.name+'</span>';
     const adj=document.getElementById('est-adj');if(adj)adj.value=0;
     const adjv=document.getElementById('est-adj-val');if(adjv)adjv.textContent='0%';
-    ['est-adj-reason','inc-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    ['adj-type-hidden','adj-reason-hidden','inc-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+    const _ars=document.getElementById('adj-reason-summary');if(_ars)_ars.style.display='none';
     scopeActiveMap={};scopeHrsStore={};roomScopeMap={};estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};
   SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
     const epEl=document.getElementById('e-paint');if(epEl)epEl.value='interior';const custEl2=document.getElementById('e-customer-paint');if(custEl2)custEl2.value='';
@@ -7888,7 +7893,7 @@ function goSurfStepB(){
   surfBIdx=0;
   surfBMeasurements={};
   document.getElementById('surf-step-a').style.display='none';
-  document.getElementById('surf-step-b').style.display='';
+  const _stepBEl=document.getElementById('surf-step-b');_stepBEl.style.display='';_stepBEl.scrollTop=0;
   document.getElementById('surf-b-roomname').textContent=surfRoom;
   // Show scope-first state
   const scopeFirst=document.getElementById('surf-scope-first');
@@ -9559,7 +9564,8 @@ function saveEstFullDraft(){
       rDeck:document.getElementById('e-r-deck')?.value||'',
       paintRate:document.getElementById('e-paint-rate')?.value||'',
       adj:document.getElementById('est-adj')?.value||'0',
-      adjReason:document.getElementById('est-adj-reason')?.value||'',
+      adjType:document.getElementById('adj-type-hidden')?.value||'',
+      adjReason:document.getElementById('adj-reason-hidden')?.value||'',
       isPortfolio:document.getElementById('portfolio-toggle')?.checked||false,
       portfolioPct:parseInt(document.getElementById('portfolio-pct')?.value)||15,
       portfolioTarget:parseInt(document.getElementById('portfolio-target')?.value)||5,
@@ -9596,7 +9602,9 @@ function restoreEstFullDraft(d){
   const set=(id,val)=>{const el=document.getElementById(id);if(el&&val!=null)el.value=val;};
   set('e-cname',d.cname);set('e-cphone',d.cphone);set('e-caddr',d.caddr);
   set('e-cprop',d.cprop);set('e-cnotes',d.cnotes);set('e-days',d.days);
-  set('est-adj',d.adj);set('est-adj-reason',d.adjReason);
+  set('est-adj',d.adj);set('adj-type-hidden',d.adjType||'');set('adj-reason-hidden',d.adjReason||'');
+  if(d.adjReason&&d.adj&&parseInt(d.adj)!==0){const s=document.getElementById('adj-reason-summary');const st=document.getElementById('adj-reason-summary-text');if(s)s.style.display='flex';if(st)st.textContent=d.adjReason+' ('+d.adj+'%)';}
+  else{const s=document.getElementById('adj-reason-summary');if(s)s.style.display='none';}
   if(d.portfolioPct!=null){const el=document.getElementById('portfolio-pct');if(el)el.value=d.portfolioPct;}
   if(d.portfolioTarget!=null){const el=document.getElementById('portfolio-target');if(el)el.value=d.portfolioTarget;}
   const _ptog=document.getElementById('portfolio-toggle');
@@ -10167,6 +10175,101 @@ async function sendPaymentLink(bidId){
   }
 }
 function syncAdj(){const pct=parseInt(v('est-adj')||0);document.getElementById('est-adj-val').textContent=(pct>0?'+':'')+pct+'%';renderEstReview();}
+function onAdjSliderRelease(){
+  const pct=parseInt(v('est-adj')||0);
+  if(pct===0){clearAdjReason();return;}
+  const isPortfolioOn=document.getElementById('portfolio-toggle')?.checked||false;
+  if(isPortfolioOn)return;
+  showAdjReasonSheet(pct);
+}
+function showAdjReasonSheet(pct){
+  const existing=document.getElementById('adj-reason-sheet');if(existing)existing.remove();
+  const isNeg=pct<0;
+  const pills=isNeg?['Portfolio Showcase','Repeat customer','Competitive bid','Other']:['Difficult access','Rush job','Extra prep needed','Other'];
+  const sheet=document.createElement('div');
+  sheet.id='adj-reason-sheet';
+  sheet.style.cssText='position:fixed;inset:0;z-index:900;background:rgba(0,0,0,.45);display:flex;align-items:flex-end';
+  const inner=document.createElement('div');
+  inner.style.cssText='background:var(--bg);border-radius:18px 18px 0 0;padding:20px 16px 36px;width:100%;box-sizing:border-box;max-height:75vh;overflow-y:auto';
+  inner.innerHTML=
+    '<div style="width:40px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 16px"></div>'+
+    '<div style="font-size:16px;font-weight:800;margin-bottom:4px">'+(isNeg?'Why the discount?':'Why the increase?')+'</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Pick a reason, or tap outside to cancel.</div>'+
+    '<div id="adj-reason-pills" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">'+
+      pills.map(p=>'<button onclick="adjReasonPillTap(\''+p.replace(/'/g,"\\'")+'\')" style="padding:10px 14px;border-radius:24px;border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">'+p+'</button>').join('')+
+    '</div>'+
+    '<div id="adj-reason-detail-wrap" style="display:none">'+
+      '<label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px" id="adj-reason-detail-label">Add a note</label>'+
+      '<input type="text" id="adj-reason-detail-input" placeholder="Brief note..." style="font-size:13px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit;margin-bottom:10px">'+
+      '<button onclick="confirmAdjReasonFromSheet()" class="btn btn-p" style="width:100%;font-size:15px;padding:12px">Confirm reason &#8594;</button>'+
+    '</div>';
+  sheet.appendChild(inner);
+  sheet.onclick=(e)=>{if(e.target===sheet)closeAdjSheetSnap();};
+  document.body.appendChild(sheet);
+  window._adjSheetSelected='';
+}
+function adjReasonPillTap(label){
+  if(label==='Portfolio Showcase'){
+    const sheet=document.getElementById('adj-reason-sheet');if(sheet)sheet.remove();
+    const tog=document.getElementById('portfolio-toggle');
+    if(tog){tog.checked=true;togglePortfolioShowcase();}
+    return;
+  }
+  window._adjSheetSelected=label;
+  const isOther=label==='Other';
+  document.querySelectorAll('#adj-reason-pills button').forEach(b=>{
+    const active=b.textContent.trim()===label;
+    b.style.background=active?'var(--blue)':'var(--bg2)';
+    b.style.color=active?'#fff':'var(--text)';
+    b.style.borderColor=active?'var(--blue)':'var(--border2)';
+  });
+  const wrap=document.getElementById('adj-reason-detail-wrap');
+  const lbl=document.getElementById('adj-reason-detail-label');
+  const inp=document.getElementById('adj-reason-detail-input');
+  if(wrap){wrap.style.display='block';}
+  if(lbl){lbl.textContent=isOther?'Describe the reason (required)':'Add a note (optional)';}
+  if(inp){inp.placeholder=isOther?'A few words about the reason...':'Optional detail...';if(isOther)inp.focus();}
+}
+function confirmAdjReasonFromSheet(){
+  const label=window._adjSheetSelected||'';
+  if(!label){zAlert('Pick a reason first.',{title:'Select a reason'});return;}
+  const detail=(document.getElementById('adj-reason-detail-input')?.value||'').trim();
+  if(label==='Other'&&detail.split(/\s+/).filter(Boolean).length<3){
+    zAlert('Please add at least a few words.',{title:'More detail needed'});return;
+  }
+  const pct=parseInt(v('est-adj')||0);
+  const reasonText=detail?label+' — '+detail:label;
+  const typeKey=label.toLowerCase().replace(/\s+/g,'_');
+  const sheet=document.getElementById('adj-reason-sheet');if(sheet)sheet.remove();
+  confirmAdjReason(typeKey,reasonText,pct);
+}
+function confirmAdjReason(type,reasonText,pct){
+  const typeHidden=document.getElementById('adj-type-hidden');
+  const reasonHidden=document.getElementById('adj-reason-hidden');
+  if(typeHidden)typeHidden.value=type;
+  if(reasonHidden)reasonHidden.value=reasonText;
+  const summary=document.getElementById('adj-reason-summary');
+  const summaryText=document.getElementById('adj-reason-summary-text');
+  if(summary)summary.style.display='flex';
+  if(summaryText)summaryText.textContent=reasonText+(pct&&pct!==0?' ('+pct+'%)':'');
+  saveEstFullDraft();
+}
+function clearAdjReason(){
+  const typeHidden=document.getElementById('adj-type-hidden');
+  const reasonHidden=document.getElementById('adj-reason-hidden');
+  if(typeHidden)typeHidden.value='';
+  if(reasonHidden)reasonHidden.value='';
+  const summary=document.getElementById('adj-reason-summary');
+  if(summary)summary.style.display='none';
+  const tog=document.getElementById('portfolio-toggle');
+  if(!tog?.checked){const adj=document.getElementById('est-adj');if(adj){adj.value=0;syncAdj();}}
+  saveEstFullDraft();
+}
+function closeAdjSheetSnap(){
+  const sheet=document.getElementById('adj-reason-sheet');if(sheet)sheet.remove();
+  const tog=document.getElementById('portfolio-toggle');
+  if(!tog?.checked){const adj=document.getElementById('est-adj');if(adj){adj.value=0;syncAdj();}}
+}
 function togglePortfolioShowcase(){
   const on=document.getElementById('portfolio-toggle')?.checked||false;
   const details=document.getElementById('portfolio-details');
@@ -10177,14 +10280,20 @@ function togglePortfolioShowcase(){
   if(thumb)thumb.style.transform=on?'translateX(18px)':'translateX(0)';
   const pct=parseInt(document.getElementById('portfolio-pct')?.value)||15;
   const adj=document.getElementById('est-adj');
-  const reason=document.getElementById('est-adj-reason');
   if(on){
     if(adj){adj.value=-pct;syncAdj();}
-    if(reason)reason.value='Portfolio showcase discount ('+pct+'% off)';
+    confirmAdjReason('portfolio','Portfolio showcase discount ('+pct+'% off)',-pct);
     updatePortfolioPreview();
   } else {
     if(adj){adj.value=0;syncAdj();}
-    if(reason)reason.value='';
+    const typeHidden=document.getElementById('adj-type-hidden');
+    if((typeHidden?.value||'')==='portfolio'){
+      if(typeHidden)typeHidden.value='';
+      const reasonHidden=document.getElementById('adj-reason-hidden');
+      if(reasonHidden)reasonHidden.value='';
+      const summary=document.getElementById('adj-reason-summary');
+      if(summary)summary.style.display='none';
+    }
   }
   saveEstFullDraft();
 }
@@ -10194,8 +10303,7 @@ function onPortfolioPctChange(){
   const pct=Math.min(25,Math.max(5,parseInt(document.getElementById('portfolio-pct')?.value)||15));
   const adj=document.getElementById('est-adj');
   if(adj){adj.value=-pct;syncAdj();}
-  const reason=document.getElementById('est-adj-reason');
-  if(reason)reason.value='Portfolio showcase discount ('+pct+'% off)';
+  confirmAdjReason('portfolio','Portfolio showcase discount ('+pct+'% off)',-pct);
   updatePortfolioPreview();
   saveEstFullDraft();
 }
@@ -10289,6 +10397,9 @@ async function sendProposalLink(){
       portfolioOwnerName:getOwnerName()||'',
       fullPrice:_propFinal,
       discountedPrice:Math.round(_propFinal*(1-(parseInt(document.getElementById('portfolio-pct')?.value)||15)/100)*100)/100,
+      adjustmentType:v('adj-type-hidden')||'',
+      adjustmentReason:v('adj-reason-hidden')||'',
+      adjustmentPct:parseInt(v('est-adj'))||0,
     };
     // Upload with 8s timeout — never let storage hang in the field
     const uploadPromise=_supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true});
@@ -10493,7 +10604,7 @@ function buildDescription(){
 }
 function buildProposal(){
   const{final,adj,laborTotal,matTotal,flatAdd,paintLines,coats}=calcEst();
-  const adjReason=v('est-adj-reason');
+  const adjReason=v('adj-reason-hidden');
   const bname=v('e-bname')||S.bname||"ZJ's Painting & Special Coatings";
   const bphone=v('e-bphone')||S.bphone||'';
   const blic=v('e-blic')||S.blic||'';
@@ -10918,6 +11029,7 @@ if(!hasSignature()&&typedSig.length<=2){zAlert('Please type your name or draw yo
         b.allowWeekend=document.getElementById('e-allow-weekend')?.checked||false;
         b.isPortfolio=document.getElementById('portfolio-toggle')?.checked||false;
         b.portfolioPct=parseInt(document.getElementById('portfolio-pct')?.value)||15;
+        b.adjustmentType=v('adj-type-hidden')||'';b.adjustmentReason=v('adj-reason-hidden')||'';b.adjustmentPct=parseInt(v('est-adj'))||0;
       }
       editingBidId=null;
     } else {
@@ -10934,6 +11046,7 @@ if(!hasSignature()&&typedSig.length<=2){zAlert('Please type your name or draw yo
         draft.allowWeekend=document.getElementById('e-allow-weekend')?.checked||false;
         draft.isPortfolio=document.getElementById('portfolio-toggle')?.checked||false;
         draft.portfolioPct=parseInt(document.getElementById('portfolio-pct')?.value)||15;
+        draft.adjustmentType=v('adj-type-hidden')||'';draft.adjustmentReason=v('adj-reason-hidden')||'';draft.adjustmentPct=parseInt(v('est-adj'))||0;
       } else {
         // Fallback: no draft found, create fresh
         const exists=bids.find(b=>b.client_id===estLinkedClientId&&Math.abs(b.amount-final)<0.01&&b.bid_date===todayKey()&&b.status==='Pending');
@@ -10995,7 +11108,8 @@ function clearEstimatorForm(){
   const rnEl=document.getElementById('surf-room-name');
   if(rnEl){rnEl.value='';rnEl.style.borderColor='#A32D2D';rnEl.style.background='var(--red-lt)';}
   clearSurfDraft();clearEstFullDraft();
-  ['e-cname','e-cphone','e-caddr','e-cnotes','est-adj-reason'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['e-cname','e-cphone','e-caddr','e-cnotes','adj-type-hidden','adj-reason-hidden'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const _arsEl=document.getElementById('adj-reason-summary');if(_arsEl)_arsEl.style.display='none';
   const adj=document.getElementById('est-adj');if(adj)adj.value=0;
   const adjV=document.getElementById('est-adj-val');if(adjV)adjV.textContent='0%';
   const _ptogClear=document.getElementById('portfolio-toggle');
@@ -14880,7 +14994,7 @@ function generateEsignPage(){
   const expD=new Date(Date.now()+(parseInt(valid)||30)*86400000).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
   const paintL=({std:'Standard',prem:'Sherwin-Williams Premium',ultra:'SW Emerald Ultra'})[v('e-paint')]||'Premium';
   const activeScope=SCOPE_ITEMS.filter(s=>scopeOn(s.id)).map(s=>s.label).join(', ');
-  const adjReason=v('est-adj-reason');
+  const adjReason=v('adj-reason-hidden');
 
   const lineRows=lines.map(l=>'<tr><td style="padding:10px;border-bottom:1px solid #f0eeec">'+l.label+' <span style="font-size:11px;color:#999">('+l.qty.toLocaleString()+' '+l.unit+')</span></td><td style="padding:10px;border-bottom:1px solid #f0eeec;text-align:right;font-weight:600">'+fmt(l.sub)+'</td></tr>').join('')+
     scopeFlats.map(f=>'<tr><td style="padding:10px;border-bottom:1px solid #f0eeec;color:#666">'+f.label+'</td><td style="padding:10px;border-bottom:1px solid #f0eeec;text-align:right">'+fmt(f.amt)+'</td></tr>').join('')+
