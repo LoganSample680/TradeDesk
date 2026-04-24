@@ -4455,9 +4455,46 @@ function renderPipeline(){
           ' &nbsp;·&nbsp; at 60% close rate = ~'+expectedCloses+' job'+(expectedCloses!==1?'s':'')+' expected'+
         '</div>':'')+
       (action?'<div style="font-size:12px;color:var(--text2);line-height:1.6">'+action+'</div>':'')+
+      (()=>{
+        const sentBids=bids.filter(b=>b.status==='Pending'&&b.signingToken).sort((a,b)=>(a.bid_date||'').localeCompare(b.bid_date||''));
+        if(!sentBids.length)return '';
+        const rows=sentBids.map(b=>{
+          const c=getClientById(b.client_id);
+          const firstName=(c?c.name:b.client_name||b.name||'Client').split(/[\s,&]+/)[0];
+          const days=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
+          const daysColor=days>30?'#A32D2D':days>14?'var(--amber)':'var(--text3)';
+          const daysLabel=days>30?days+'d — <strong>Follow up now</strong>':days+'d ago';
+          const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+          const viewUrl=baseUrl+'sign.html?t='+b.signingToken+'&u='+(window._supaUser?.id||'')+'&b='+b.id;
+          return '<div onclick="openClientDetail('+b.client_id+')" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
+            '<div style="flex:1;min-width:0">'+
+              '<div style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(firstName)+'</div>'+
+              '<div style="font-size:11px;color:'+daysColor+';margin-top:1px">'+fmt(b.amount)+' · '+daysLabel+'</div>'+
+            '</div>'+
+            '<button onclick="event.stopPropagation();pipelineResendSms(\''+b.id+'\')" style="padding:6px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text);flex-shrink:0">Resend</button>'+
+            '<a href="'+viewUrl+'" target="_blank" onclick="event.stopPropagation()" style="padding:6px 10px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--blue-dk);text-decoration:none;flex-shrink:0">View</a>'+
+          '</div>';
+        }).join('');
+        return '<div style="margin-top:12px">'+
+          '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px">Sent proposals</div>'+
+          rows+
+        '</div>';
+      })()+
     '</div>';
 }
 
+function pipelineResendSms(bidId){
+  const b=bids.find(x=>x.id===bidId);
+  if(!b||!b.signingToken)return;
+  const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  const url=baseUrl+'sign.html?t='+b.signingToken+'&u='+(window._supaUser?.id||'')+'&b='+bidId;
+  const c=getClientById(b.client_id);
+  const firstName=(c?c.name:b.client_name||b.name||'Client').split(/[\s,&]+/)[0];
+  const bname=S.bname||"ZJ's Painting & Special Coatings";
+  const phone=(c?.phone||b.phone||'').replace(/\D/g,'');
+  const msg='Hey '+firstName+'!\n\nJust following up — your painting proposal is still ready to go. Tap the link below to review and sign when you\'re ready:\n\n'+url+'\n\nAny questions at all, just reply. Talk soon!\n\n— '+bname;
+  window.location.href='sms:'+phone+'?body='+encodeURIComponent(msg);
+}
 function onClientSearch(inp){
   const q=inp.value.trim();
   if(q){
@@ -16765,7 +16802,10 @@ async function supaForgotPassword(){
   if(error){if(err){err.style.color='#A32D2D';err.textContent=error.message;}}
   else{if(err){err.style.color='#1a7340';err.textContent='Reset link sent — check your email.';}}
 }
-async function supaSignOut(){if(_supa)await _supa.auth.signOut();}
+async function supaSignOut(){
+  if(window._sigChannel&&_supa){try{await _supa.removeChannel(window._sigChannel);}catch(e){}window._sigChannel=null;}
+  if(_supa)await _supa.auth.signOut();
+}
 
 function supaSaveDebounced(){
   if(!supaEnabled()||!_supaUser)return;
@@ -17047,7 +17087,15 @@ async function supaLoadFromCloud(){
     renderMoneyPage&&renderMoneyPage();
     // Check for new signatures on load + poll every 90s while app is open
     setTimeout(()=>checkNewSignatures(),2000);
-    setInterval(()=>checkNewSignatures(),90000);
+    setInterval(()=>checkNewSignatures(),30000);
+    // Realtime subscription — fires immediately on new INSERT to signed_proposals
+    if(_supa&&_supaUser){
+      try{
+        window._sigChannel=_supa.channel('signed_proposals_'+_supaUser.id)
+          .on('postgres_changes',{event:'INSERT',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>checkNewSignatures())
+          .subscribe();
+      }catch(e){console.warn('realtime subscribe:',e);}
+    }
     // Also check when user returns to the app (e.g., after sending SMS to client)
     document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkNewSignatures();});
     // Re-surface any schedule alerts deferred from a prior session (stored in localStorage)
