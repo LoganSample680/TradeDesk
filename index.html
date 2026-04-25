@@ -12704,9 +12704,14 @@ function openLogTripModal(opts){
       '<div id="lm-miles-display" style="font-size:32px;font-weight:800;color:var(--blue-dk)"></div>'+
       '<div id="lm-time-display" style="font-size:13px;color:var(--text2);margin-top:4px"></div>'+
     '</div>'+
-    '<div style="display:flex;gap:8px;margin-bottom:12px">'+
-      '<button type="button" onclick="openTripInMaps(\'apple\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:44px"> Apple Maps ↗</button>'+
-      '<button type="button" onclick="openTripInMaps(\'google\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:44px"> Google Maps ↗</button>'+
+    '<input type="hidden" id="lm-map-app" value="">'+
+    '<div class="f" style="margin-bottom:14px">'+
+      '<label style="margin-bottom:6px;display:block">Open in maps after saving <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>'+
+      '<div style="display:flex;gap:8px">'+
+        '<button type="button" id="lm-map-apple" onclick="_selectTripMapApp(\'apple\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:42px"> Apple Maps</button>'+
+        '<button type="button" id="lm-map-google" onclick="_selectTripMapApp(\'google\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:42px"> Google Maps</button>'+
+        '<button type="button" id="lm-map-none" onclick="_selectTripMapApp(\'\')" class="btn" style="flex:1;font-size:13px;min-height:42px;color:var(--text3)">None</button>'+
+      '</div>'+
     '</div>'+
     '<div class="f" style="margin-bottom:14px"><label>Notes <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>'+
       '<input id="lm-notes" placeholder="e.g. Supply stop at Sherwin-Williams"></div>'+
@@ -12752,16 +12757,24 @@ async function calculateAndShowRoute(){
     zAlert(e.message+'\n\nTip: Try typing the city and state, or pick from the search suggestions.',{title:'Could not calculate route'});
   }finally{if(btn){btn.disabled=false;btn.textContent='🗺 Calculate miles';}}
 }
-function openTripInMaps(which){
-  const from=(document.getElementById('lm-from')?.value||'').trim();
-  const to=(document.getElementById('lm-to')?.value||'').trim();
-  if(!to){zAlert('Enter a destination first.');return;}
+function openTripInMaps(which,from,to){
+  if(!to||!which)return;
   const enc=s=>encodeURIComponent(s);
   if(which==='apple'){
     window.open('https://maps.apple.com/?'+(from?'saddr='+enc(from)+'&':'')+'daddr='+enc(to)+'&dirflg=d','_blank');
-  } else {
+  } else if(which==='google'){
     window.open('https://www.google.com/maps/dir/?api=1'+(from?'&origin='+enc(from):'')+'&destination='+enc(to)+'&travelmode=driving','_blank');
   }
+}
+function _selectTripMapApp(which){
+  ['apple','google','none'].forEach(k=>{
+    const btn=document.getElementById('lm-map-'+k);if(!btn)return;
+    const active=(which===k)||(which===''&&k==='none');
+    btn.style.background=active?'var(--blue)':'';
+    btn.style.color=active?'#fff':'';
+    btn.style.borderColor=active?'var(--blue)':'';
+  });
+  const inp=document.getElementById('lm-map-app');if(inp)inp.value=which;
 }
 function saveLoggedTrip(){
   const miles=parseFloat(document.getElementById('lm-miles-val')?.value)||0;
@@ -12774,6 +12787,7 @@ function saveLoggedTrip(){
   const from=document.getElementById('lm-from')?.value||'';
   const to=document.getElementById('lm-to')?.value||'';
   const notes=document.getElementById('lm-notes')?.value||'';
+  const mapApp=document.getElementById('lm-map-app')?.value||'';
   const finalMiles=Math.round(miles*10)/10;
   mileage.unshift({id:Date.now(),date,vehicle,from,to,start:0,end:0,miles:finalMiles,purpose,client_id:cid,client_name:c?c.name:'',notes,calc_method:'address'});
   if(cid)autoLogContact(cid,'drive');
@@ -12781,6 +12795,7 @@ function saveLoggedTrip(){
   saveAll();
   closeTopModal();
   showToast(finalMiles.toFixed(1)+' mi logged · '+fmt(finalMiles*IRS())+' deduction','🚗');
+  if(mapApp&&to)openTripInMaps(mapApp,from,to);
   renderDash();
   if(document.getElementById('mil-table'))renderAllMileage();
   if(document.getElementById('cd-mile-list')&&currentClientId)renderCDMileage();
