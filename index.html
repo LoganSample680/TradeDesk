@@ -15516,33 +15516,45 @@ async function supaSaveToCloud(){
 }
 
 async function checkNewSignatures(){
-  if(!_supa||!_supaUser){console.log('[sig] skipped — no supa or user');return;}
+  if(!_supa||!_supaUser)return;
   try{
-    console.log('[sig] querying signed_proposals for contractor',_supaUser.id);
     const{data,error}=await _supa.from('signed_proposals')
-      .select('bid_id,client_name,payment_method,payment_status,signed_at,client_signed_name')
+      .select('bid_id,client_name,payment_method,payment_status,signed_at,client_signed_name,amount,storage_key')
       .eq('contractor_user_id',_supaUser.id)
       .order('signed_at',{ascending:false})
       .limit(100);
-    console.log('[sig] result — rows:',data?.length??0,'error:',error?.message??null);
-    if(data?.length)console.log('[sig] rows:',JSON.stringify(data));
     if(error)throw error;
     if(data&&data.length){
-      let changed=false;
-      const alerts=[];
-      data.forEach(s=>{
-        const bid=bids.find(b=>String(b.id)===String(s.bid_id));
-        console.log('[sig] bid_id',s.bid_id,'→ local bid found:',!!bid,'status:',bid?.status);
+      let changed=false;const alerts=[];
+      for(const s of data){
+        let bid=bids.find(b=>String(b.id)===String(s.bid_id));
+        if(!bid&&s.storage_key){
+          // Bid missing locally (cleared storage, different device, etc.) — recover from proposal file
+          try{
+            const{data:sd}=await _supa.storage.from('proposals').download(s.storage_key);
+            if(sd){
+              const prop=JSON.parse(await sd.text());
+              const matchedClient=clients.find(c=>c.name===prop.clientName);
+              bid={id:s.bid_id,client_id:matchedClient?.id||null,
+                client_name:prop.clientName||s.client_name,
+                name:prop.clientName||s.client_name,
+                phone:matchedClient?.phone||'',addr:matchedClient?.addr||prop.clientAddr||'',
+                amount:prop.amount||s.amount||0,status:'Pending',draft:false,
+                bid_date:new Date(s.signed_at).toISOString().split('T')[0],
+                followup:'',completion_date:'',collStage:'none',collHistory:[]};
+              bids.unshift(bid);
+            }
+          }catch(e){console.warn('sig recovery:',e);}
+        }
         if(bid&&bid.status!=='Closed Won'){
-          bid.status='Closed Won';
-          bid.draft=false;
+          bid.status='Closed Won';bid.draft=false;
           bid.signedAt=s.signed_at;
           bid.signedName=s.client_signed_name||s.client_name;
           bid.paymentMethod=s.payment_method;
           changed=true;
           alerts.push({name:s.client_name||'Client',bidId:bid.id,clientId:bid.client_id,isPaid:s.payment_status==='paid'});
         }
-      });
+      }
       if(changed){
         saveAll();
         const existing=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
@@ -15551,7 +15563,7 @@ async function checkNewSignatures(){
         if(!window._showingScheduleAlert)setTimeout(showScheduleAlerts,400);
       }
     }
-  }catch(e){console.warn('[sig] checkNewSignatures error:',e);}
+  }catch(e){console.warn('checkNewSignatures:',e);}
 }
 function showScheduleAlerts(){
   const alerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');

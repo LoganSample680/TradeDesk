@@ -477,7 +477,7 @@ async function submitCash(){
     return;
   }
   // Non-critical: fire-and-forget notified_at to trigger realtime UPDATE event on contractor's app
-  _supa.from('signed_proposals').update({notified_at:new Date().toISOString()}).eq('bid_id',String(_prop.id)).catch(e=>console.warn('notified_at:',e));
+  _supa.from('signed_proposals').update({notified_at:new Date().toISOString()}).eq('bid_id',String(_prop.id)).then(null,e=>console.warn('notified_at:',e));
 }
 
 function showDone(method){
