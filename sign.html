@@ -356,7 +356,8 @@ function updateTypedSigPreview(){
     sigCtx.clearRect(0,0,sigCanvas.width,sigCanvas.height);
     sigCtx.font='bold '+(56*dpr)+'px Dancing Script, cursive';
     sigCtx.fillStyle='#1a1a18';
-    sigCtx.fillText(val,16*dpr,90*dpr);
+    sigCtx.textAlign='center';
+    sigCtx.fillText(val,sigCanvas.width/(2*dpr),90*dpr);
     hasInk=false;
     document.getElementById('sig-ph').style.display='none';
   }
