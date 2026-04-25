@@ -2776,8 +2776,10 @@ function _doOpenEstimate(c,_overrideAddr,_forceTrade){
   _resetNotesForNewEstimate();
   // Full state wipe — prevents ANY bleed from a prior estimate session
   _pendingSignToken=null;
+  const _plbD=document.getElementById('proposal-link-bar');if(_plbD){_plbD.style.display='none';_plbD.dataset.signingUrl='';}
+  const _sBtnD=document.getElementById('send-proposal-btn');if(_sBtnD){_sBtnD.textContent='🔗 Send to client';_sBtnD.disabled=false;}
   _swLastProductByCategory={};
-  estSurfaces=[];estSurfId=0;
+  estSurfaces=[];estSurfId=0;clearSurfDraft();
   scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
   estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200',products:{interior:'pm200',exterior:'spe',trim:'pm200t'}};
   surfRoom='';surfColor='';surfJobType='interior';surfWhatSelected=[];surfBQueue=[];surfBIdx=0;surfBMeasurements={};_swLastProductByCategory={};
@@ -8596,6 +8598,7 @@ function validateJobSettings(){
   const filled=el.value&&el.value!=='';
   el.style.borderColor=filled?'var(--border2)':'#A32D2D';
   el.style.background=filled?'var(--bg2)':'var(--red-lt)';
+  checkStep1Ready();
 }
 
 // ── Guided step navigation — validates before any forward jump ───────────
@@ -12701,6 +12704,10 @@ function openLogTripModal(opts){
       '<div id="lm-miles-display" style="font-size:32px;font-weight:800;color:var(--blue-dk)"></div>'+
       '<div id="lm-time-display" style="font-size:13px;color:var(--text2);margin-top:4px"></div>'+
     '</div>'+
+    '<div style="display:flex;gap:8px;margin-bottom:12px">'+
+      '<button type="button" onclick="openTripInMaps(\'apple\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:44px"> Apple Maps ↗</button>'+
+      '<button type="button" onclick="openTripInMaps(\'google\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:44px"> Google Maps ↗</button>'+
+    '</div>'+
     '<div class="f" style="margin-bottom:14px"><label>Notes <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>'+
       '<input id="lm-notes" placeholder="e.g. Supply stop at Sherwin-Williams"></div>'+
     '<div style="display:flex;gap:8px">'+
@@ -12744,6 +12751,17 @@ async function calculateAndShowRoute(){
   }catch(e){
     zAlert(e.message+'\n\nTip: Try typing the city and state, or pick from the search suggestions.',{title:'Could not calculate route'});
   }finally{if(btn){btn.disabled=false;btn.textContent='🗺 Calculate miles';}}
+}
+function openTripInMaps(which){
+  const from=(document.getElementById('lm-from')?.value||'').trim();
+  const to=(document.getElementById('lm-to')?.value||'').trim();
+  if(!to){zAlert('Enter a destination first.');return;}
+  const enc=s=>encodeURIComponent(s);
+  if(which==='apple'){
+    window.open('https://maps.apple.com/?'+(from?'saddr='+enc(from)+'&':'')+'daddr='+enc(to)+'&dirflg=d','_blank');
+  } else {
+    window.open('https://www.google.com/maps/dir/?api=1'+(from?'&origin='+enc(from):'')+'&destination='+enc(to)+'&travelmode=driving','_blank');
+  }
 }
 function saveLoggedTrip(){
   const miles=parseFloat(document.getElementById('lm-miles-val')?.value)||0;
