@@ -15516,20 +15516,23 @@ async function supaSaveToCloud(){
 }
 
 async function checkNewSignatures(){
-  if(!_supa||!_supaUser)return;
+  if(!_supa||!_supaUser){console.log('[sig] skipped — no supa or user');return;}
   try{
-    // Query ALL signed rows for this contractor — no bid_id filter so nothing is missed even if local state desyncs
+    console.log('[sig] querying signed_proposals for contractor',_supaUser.id);
     const{data,error}=await _supa.from('signed_proposals')
       .select('bid_id,client_name,payment_method,payment_status,signed_at,client_signed_name')
       .eq('contractor_user_id',_supaUser.id)
       .order('signed_at',{ascending:false})
       .limit(100);
+    console.log('[sig] result — rows:',data?.length??0,'error:',error?.message??null);
+    if(data?.length)console.log('[sig] rows:',JSON.stringify(data));
     if(error)throw error;
     if(data&&data.length){
       let changed=false;
       const alerts=[];
       data.forEach(s=>{
         const bid=bids.find(b=>String(b.id)===String(s.bid_id));
+        console.log('[sig] bid_id',s.bid_id,'→ local bid found:',!!bid,'status:',bid?.status);
         if(bid&&bid.status!=='Closed Won'){
           bid.status='Closed Won';
           bid.draft=false;
@@ -15545,11 +15548,10 @@ async function checkNewSignatures(){
         const existing=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
         localStorage.setItem('zp3_schedule_alerts',JSON.stringify([...existing,...alerts]));
         renderDash();
-        // Guard: don't fire a second popup if one is already showing
         if(!window._showingScheduleAlert)setTimeout(showScheduleAlerts,400);
       }
     }
-  }catch(e){console.warn('checkNewSignatures:',e);}
+  }catch(e){console.warn('[sig] checkNewSignatures error:',e);}
 }
 function showScheduleAlerts(){
   const alerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
