@@ -15518,18 +15518,20 @@ async function supaSaveToCloud(){
 async function checkNewSignatures(){
   if(!_supa||!_supaUser)return;
   try{
+    // Only fetch rows the contractor hasn't acknowledged yet
     const{data,error}=await _supa.from('signed_proposals')
       .select('bid_id,client_name,payment_method,payment_status,signed_at,client_signed_name,amount,storage_key')
       .eq('contractor_user_id',_supaUser.id)
+      .is('contractor_seen_at',null)
       .order('signed_at',{ascending:false})
       .limit(100);
     if(error)throw error;
     if(data&&data.length){
-      let changed=false;const alerts=[];
+      let changed=false;const alerts=[];const seenIds=[];
       for(const s of data){
         let bid=bids.find(b=>String(b.id)===String(s.bid_id));
         if(!bid&&s.storage_key){
-          // Bid missing locally (cleared storage, different device, etc.) — recover from proposal file
+          // Bid missing locally — recover from proposal storage file
           try{
             const{data:sd}=await _supa.storage.from('proposals').download(s.storage_key);
             if(sd){
@@ -15554,6 +15556,15 @@ async function checkNewSignatures(){
           changed=true;
           alerts.push({name:s.client_name||'Client',bidId:bid.id,clientId:bid.client_id,isPaid:s.payment_status==='paid'});
         }
+        seenIds.push(String(s.bid_id));
+      }
+      // Mark all fetched rows as seen so they never resurface
+      if(seenIds.length){
+        _supa.from('signed_proposals')
+          .update({contractor_seen_at:new Date().toISOString()})
+          .eq('contractor_user_id',_supaUser.id)
+          .in('bid_id',seenIds)
+          .then(null,e=>console.warn('contractor_seen_at update:',e));
       }
       if(changed){
         saveAll();
