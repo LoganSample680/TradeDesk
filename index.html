@@ -2704,9 +2704,9 @@ function openEstimateForClient(){
   _checkMultiPropertyThenOpen(c);
 }
 function _checkMultiPropertyThenOpen(c){
-  // If client already has a non-empty bid in progress, ask whether this is a different property
-  const activeBids=bids.filter(b=>b.client_id===c.id&&(
-    b.status==='Pending'||
+  // If client already has any in-progress bid (Pending+draft or any sent), ask if different property
+  const activeBids=bids.filter(b=>b.client_id===c.id&&!b.signingToken&&(
+    (b.status==='Pending'&&b.draft===true)||
     (b.draft===true&&b.surfaces&&b.surfaces.length>0)
   ));
   if(activeBids.length>0){
@@ -3954,7 +3954,7 @@ function renderTodayFeed(){
           '<div class="tf-sub" style="color:var(--text3)">'+fmt(b.amount)+' · built '+(days===0?'today':days+'d ago')+' · not sent yet</div>'+
         '</div>'+
         '<div class="tf-acts">'+
-          '<button onclick="openEditBid('+b.id+',1)" class="btn btn-sm btn-p" style="font-size:11px">Resume →</button>'+
+          '<button onclick="openEditBid('+b.id+','+(b.lastStep||1)+')" class="btn btn-sm btn-p" style="font-size:11px">Resume →</button>'+
           '<button onclick="discardInProgressBid('+b.id+')" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Discard</button>'+
         '</div>'+
       '</div>'});
@@ -3963,7 +3963,7 @@ function renderTodayFeed(){
   // TIER 7 — New leads ready for an estimate (zero bids, zero scheduled estimate jobs)
   const newLeads=clients.filter(c=>{
     if(getClientStage(c.id).stage!=='new')return false;
-    if(getClientBids(c.id).length)return false;
+    if(bids.some(b=>b.client_id===c.id&&b.status!=='opportunity'))return false;
     if(jobs.some(j=>j.client_id===c.id&&j.eventType==='estimate'))return false;
     return true;
   });
@@ -6473,7 +6473,7 @@ function openEditBid(bidId,startStep){
   buildScopeGrid();
   setTimeout(()=>{
     const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val||'';};
-    const _ebn=getBusinessName();if(_ebn&&_ebn!=='TradeDesk')sf('e-bname',_ebn);
+    const _ebn=getBusinessName();if(_ebn&&_ebn!=='TradeDesk'&&!_ebn.includes('@'))sf('e-bname',_ebn);
     if(S.bphone)sf('e-bphone',S.bphone);
     if(S.blic)sf('e-blic',S.blic);
     sf('e-labor-rate',S.laborRate||45);
@@ -6496,8 +6496,10 @@ function openEditBid(bidId,startStep){
     scopeActiveMap={};scopeHrsStore={};roomScopeMap={};estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};
   SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
     roomScopeMap=b.roomScopeMap?JSON.parse(JSON.stringify(b.roomScopeMap)):{};
-    if(b.scope&&Object.keys(b.scope).length){Object.entries(b.scope).forEach(([id,val])=>toggleScope(id,!!val));}
-    else{['sand','spackle'].forEach(id=>toggleScope(id,true));}
+    if(b.scope&&Object.keys(b.scope).length){
+      Object.entries(b.scope).forEach(([id,val])=>toggleScope(id,!!val));
+      if(!Object.values(b.scope).some(Boolean))applyDefaultScope();
+    } else{applyDefaultScope();}
     if(b.surfaces&&b.surfaces.length){estSurfaces=[...b.surfaces];estSurfId=Math.max(...b.surfaces.map(s=>s.id||0),0);}
     if(b.cond){
       const el=document.getElementById('e-cond');if(el)el.value=b.cond;
@@ -9126,7 +9128,7 @@ function downloadProposalPDF(){
     zAlert('Generate the proposal first.',{title:'Nothing to print'});return;
   }
   const cname=(document.getElementById('e-cname')?.value||'Estimate').replace(/[^a-z0-9]/gi,'_');
-  const bname=document.getElementById('e-bname')?.value||'TradeDesk';
+  const bname=document.getElementById('e-bname')?.value||'No Business Name Entered';
   const html=`<!DOCTYPE html><html><head>
 <meta charset="utf-8">
 <title>${bname} — Estimate for ${cname.replace(/_/g,' ')}</title>
@@ -9459,7 +9461,8 @@ async function sendProposalLink(){
   if(btn){btn.textContent='⏳ Saving...';btn.disabled=true;}
   try{
     const cname=document.getElementById('e-cname')?.value||'Client';
-    const bname=document.getElementById('e-bname')?.value||S.bname||'TradeDesk';
+    const _rawBname=document.getElementById('e-bname')?.value||getBusinessName()||'';
+    const bname=(_rawBname&&!_rawBname.includes('@'))?_rawBname:'No Business Name Entered';
     // Resolve bid ID — if the current bid was already sent (has a signingToken),
     // create a fresh bid so each proposal gets its own unique link and record.
     let bidId=editingBidId||lastCreatedBidId;
@@ -10214,7 +10217,7 @@ function saveAndExitEstimate(){
     if(b){
       b.amount=final;
       b.status=b.status==='Closed Won'?'Closed Won':'Pending';
-      b.draft=true;
+      b.draft=true;b.lastStep=estStep;
       if(!b.followup)b.followup=addDays(todayKey(),3);
       if(clientId&&!b.client_id)b.client_id=clientId;
       b.surfaces=[...estSurfaces];
@@ -10235,7 +10238,7 @@ function saveAndExitEstimate(){
       bid_date:todayKey(),followup,
       amount:final,
       type:getBidIncomeLabel({surfaces:estSurfaces}),
-      days,status:'Pending',draft:true,
+      days,status:'Pending',draft:true,lastStep:estStep,
       notes:document.getElementById('e-cnotes')?.value||'',
       completion_date:'',collStage:'none',collHistory:[],
       scope:ss,surfaces:[...estSurfaces],
@@ -10323,7 +10326,7 @@ function selectPropertyTier(key){
 }
 function prefillEstimateRates(){
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
-  const _pbn=getBusinessName();if(_pbn&&_pbn!=='TradeDesk')sf('e-bname',_pbn);
+  const _pbn=getBusinessName();if(_pbn&&_pbn!=='TradeDesk'&&!_pbn.includes('@'))sf('e-bname',_pbn);
   if(S.bphone)sf('e-bphone',S.bphone);
   if(S.blic)sf('e-blic',S.blic);
   sf('e-r-walls',S.rWalls||1.30);sf('e-r-ceil',S.rCeil||1.00);sf('e-r-trim',S.rTrim||3.25);sf('e-r-walls-adv',S.rWalls||1.30);sf('e-r-ceil-adv',S.rCeil||1.00);sf('e-r-trim-adv',S.rTrim||3.25);sf('e-r-door',S.rDoor||95);sf('e-r-door-adv',S.rDoor||95);sf('e-r-win',S.rWin||50);sf('e-r-ext',S.rExt||1.10);sf('e-r-deck',S.rDeck||1.00);
@@ -15735,8 +15738,17 @@ function cancelProposalLink(bidId){
 }
 function editSentBid(bidId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
+  // Void the old proposal in storage so the old link stops working
+  if(b.signingKey&&_supa){
+    _supa.storage.from('proposals').download(b.signingKey).then(({data})=>{
+      if(!data)return;
+      data.text().then(txt=>{
+        try{const p=JSON.parse(txt);_supa.storage.from('proposals').upload(b.signingKey,JSON.stringify({...p,status:'voided'}),{contentType:'application/json',upsert:true});}catch(e){}
+      });
+    });
+  }
   delete b.signingToken;delete b.signingKey;b.draft=true;
-  saveAll();openEditBid(bidId,1);
+  saveAll();openEditBid(bidId,b.lastStep||1);
 }
 function resendProposalLink(bidId){
   const b=bids.find(x=>x.id===bidId);

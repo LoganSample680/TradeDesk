@@ -272,6 +272,11 @@ async function init(){
     const{data,error}=await _supa.storage.from('proposals').download(key);
     if(error||!data)throw error;
     _prop=JSON.parse(await data.text());
+    if(_prop.status==='voided'){
+      document.querySelector('#pg-err h2').textContent='Proposal Updated';
+      document.querySelector('#pg-err p').textContent='Your contractor has updated this proposal. Please request the new link to review and sign.';
+      show('pg-err');return;
+    }
     // Hide card and ACH options if contractor hasn't connected Stripe
     if(!_prop.stripeConnectEnabled){
       const optCard=document.getElementById('opt-card');
