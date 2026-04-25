@@ -859,7 +859,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   <div id="est-s1">
     <div class="card"><div class="card-hd">Your business</div>
       <div class="fg fg2">
-        <div class="f"><label>Business name</label><input id="e-bname" placeholder="ZJ's Painting &amp; Special Coatings"></div>
+        <div class="f"><label>Business name</label><input id="e-bname" placeholder="Your business name"></div>
         <div class="f"><label>Phone</label><input id="e-bphone" type="tel" maxlength="12" oninput="fmtPhone(this)"></div>
         <div class="f"><label>License / insured</label><input id="e-blic" placeholder="Licensed &amp; insured in KS"></div>
         <div class="f"><label>Estimate valid</label><select id="e-bvalid"><option>7 days</option><option>14 days</option><option selected>30 days</option><option>60 days</option></select></div>
@@ -1196,10 +1196,6 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
           <div class="f">
             <label>Discount % <span style="font-size:10px;font-weight:400;color:var(--text3)">(5–25)</span></label>
             <input type="number" id="portfolio-pct" value="15" min="5" max="25" oninput="onPortfolioPctChange()">
-          </div>
-          <div class="f">
-            <label>Showcase homes target</label>
-            <input type="number" id="portfolio-target" value="5" min="1" max="50" oninput="updatePortfolioPreview()">
           </div>
         </div>
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">Proposal pitch preview</div>
@@ -1678,10 +1674,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
     </div>
     <div class="acc-body">
       <div class="fg fg2" style="margin-top:8px">
-        <div class="f"><label>Your name</label><input id="set-owner-name" placeholder="Zach Johnson"></div>
+        <div class="f"><label>Your name</label><input id="set-owner-name" placeholder="Your name"></div>
         <div class="f"><label>Business name</label><input id="set-bname"></div>
         <div class="f"><label>Phone</label><input id="set-bphone" type="tel" maxlength="12" oninput="fmtPhone(this)"></div>
-        <div class="f"><label>Reply-to email</label><input type="email" id="set-bemail" placeholder="zach@yourpainting.com"></div>
+        <div class="f"><label>Reply-to email</label><input type="email" id="set-bemail" placeholder="you@yourcompany.com"></div>
         <div class="f"><label>License / insured</label><input id="set-blic"></div>
         <div class="f"><label>Years of experience</label><input type="number" id="set-byears" min="1" max="50" placeholder="e.g. 12"></div>
         <div class="f"><label>Google review link <span style="font-size:10px;font-weight:400;color:var(--text3)">(sent after job completion)</span></label><input type="url" id="set-review-url" placeholder="https://g.page/r/..."></div>
@@ -2251,7 +2247,7 @@ const CHECKS=[
 ];
 const CAT_CFG={urgent:{label:'Do right away',color:'#A32D2D'},biz:{label:'Business setup in Kansas',color:'#185FA5'},tax:{label:'Tax & accounting',color:'#854F0B'},ks:{label:'Kansas market & marketing',color:'#27500A'}};
 
-let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:"ZJ's Painting & Special Coatings",bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,timeOff:[],employees:[],devices:[],logoData:''};
+let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,timeOff:[],employees:[],devices:[],logoData:''};
 
 // ZJ's logo — SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
 // Only shown for ZJ's Painting account — other accounts see plain business name text.
@@ -2290,7 +2286,7 @@ const BUSINESS_CONFIGS={
 function getRole(){return _user?.role||'owner';}
 function isOwner(){return getRole()==='owner';}
 function canSeeTaxes(){return isOwner();}
-function getBusinessName(){return _account?.business_name||S.bname||"ZJ's Painting & Special Coatings";}
+function getBusinessName(){return _account?.business_name||S.bname||'TradeDesk';}
 function getUserName(){return _user?.name||'';}
 function getOwnerName(){
   // Check localStorage first (device-specific, fast)
@@ -2601,7 +2597,7 @@ function clearMileageOnly(){
   },{title:'Clear mileage',yes:'Delete mileage',danger:true});
 }
 
-function resetSettings(){zConfirm('Reset all settings to defaults?',()=>{S={irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:"ZJ's Painting & Special Coatings",bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:83,p2:65,p3:95,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00};applySettings();loadSettingsForm();},{title:'Reset settings',yes:'Reset',danger:false});}
+function resetSettings(){zConfirm('Reset all settings to defaults?',()=>{S={irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:83,p2:65,p3:95,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00};applySettings();loadSettingsForm();},{title:'Reset settings',yes:'Reset',danger:false});}
 function resetLocationPermission(){
   // Clear stored location so modal re-prompts
   delete S.weatherLat;delete S.weatherLon;S.locationDenied=false;
@@ -3165,7 +3161,7 @@ function collSendSMS(bid,stageKey){
   const c=getClientById(bid.client_id);
   if(!c||!c.phone)return zAlert('No phone number on file for this client. Add one in their profile first.',{title:'No phone'});
   const fn=COLL_SMS[stageKey];if(!fn)return;
-  const biz=S.bname||"ZJ's Painting";
+  const biz=S.bname||'TradeDesk';
   const bal=getBidBalance(bid);
   const msg=fn(c.name,bal,bid.addr||c.addr||'the property',biz);
   const phone=c.phone.replace(/\D/g,'');
@@ -3586,7 +3582,7 @@ function checkUnpaidOnLoad(){
   const {b,days,stage}=unpaid[0];
   const c=getClientById(b.client_id);if(!c)return;
   const bal=getBidBalance(b);
-  const biz=S.bname||"ZJ's Painting";
+  const biz=S.bname||'TradeDesk';
   const next=getNextCollAction(stage);
   const isFileable=stage==='intent'||stage==='lien_ready';
   const lienFiled=stage==='lien_filed';
@@ -3627,7 +3623,7 @@ function printKansasLien(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   const lien=getBidLien(bidId);if(!lien)return;
   const c=getClientById(bid.client_id);if(!c)return;
-  const bname=S.bname||"ZJ's Painting & Special Coatings";
+  const bname=S.bname||'TradeDesk';
   const bphone=S.bphone||'';
   const blic=S.blic||'';
   const owner=getOwnerName()||'';
@@ -3918,6 +3914,9 @@ function renderTodayFeed(){
         '<div class="tf-acts">'+
           (b.proposalHtml?'<button onclick="viewSavedProposal('+b.id+')" class="btn btn-sm" style="font-size:11px">View</button>':'')+
           '<button onclick="resendProposalLink('+b.id+')" class="btn btn-sm" style="font-size:11px">Resend</button>'+
+          '<button onclick="editSentBid('+b.id+')" class="btn btn-sm" style="font-size:11px">Edit</button>'+
+          '<button onclick="cancelProposalLink('+b.id+')" class="btn btn-sm" style="font-size:11px;color:var(--amber)">Cancel link</button>'+
+          '<button onclick="discardInProgressBid('+b.id+')" class="btn btn-sm" style="font-size:11px;color:#A32D2D">Delete</button>'+
         '</div>'+
       '</div>'});
   });
@@ -3954,7 +3953,7 @@ function renderTodayFeed(){
           '<div class="tf-sub" style="color:var(--text3)">'+fmt(b.amount)+' · built '+(days===0?'today':days+'d ago')+' · not sent yet</div>'+
         '</div>'+
         '<div class="tf-acts">'+
-          '<button onclick="openEditBid('+b.id+',2)" class="btn btn-sm btn-p" style="font-size:11px">Send →</button>'+
+          '<button onclick="openEditBid('+b.id+','+(b.draft?'1':'2')+')" class="btn btn-sm btn-p" style="font-size:11px">'+(b.draft?'Resume →':'Send →')+'</button>'+
           '<button onclick="discardInProgressBid('+b.id+')" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Discard</button>'+
         '</div>'+
       '</div>'});
@@ -4374,7 +4373,7 @@ function pipelineResendSms(bidId){
   const url=baseUrl+'sign.html?t='+b.signingToken+'&u='+(window._supaUser?.id||'')+'&b='+bidId;
   const c=getClientById(b.client_id);
   const firstName=(c?c.name:b.client_name||b.name||'Client').split(/[\s,&]+/)[0];
-  const bname=S.bname||"ZJ's Painting & Special Coatings";
+  const bname=S.bname||'TradeDesk';
   const phone=(c?.phone||b.phone||'').replace(/\D/g,'');
   const msg='Hey '+firstName+'!\n\nJust following up — your painting proposal is still ready to go. Tap the link below to review and sign when you\'re ready:\n\n'+url+'\n\nAny questions at all, just reply. Talk soon!\n\n— '+bname;
   window.location.href='sms:'+phone+'?body='+encodeURIComponent(msg);
@@ -5912,7 +5911,7 @@ function sendBidEmail(bidId){
   const c=b.client_id?getClientById(b.client_id):null;
   const toEmail=c&&c.email?c.email:'';
   const firstName=(b.client_name||b.name||'').split(' ')[0]||'there';
-  const bname=S.bname||"ZJ's Painting & Special Coatings";
+  const bname=S.bname||'TradeDesk';
   const bphone=S.bphone||'';
   const today=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
   const expD=b.bid_date?new Date(new Date(b.bid_date+'T12:00:00').getTime()+30*86400000).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'30 days from now';
@@ -5987,7 +5986,7 @@ function printInvoice(bidId){
   const paid=getBidPaid(bidId);
   const balance=getBidBalance(b);
   const bPmts=payments.filter(p=>p.bid_id===bidId);
-  const bname=S.bname||"ZJ's Painting & Special Coatings";
+  const bname=S.bname||'TradeDesk';
   const bphone=S.bphone||'';
   const blic=S.blic||'';
   const today=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
@@ -6234,7 +6233,7 @@ function _crCalc(){
   const mat=parseFloat(inp.value)||0;
   const refund=Math.max(0,Math.round((paid-mat)*100)/100);
   if(mat>=paid){
-    res.innerHTML='<span style="color:#A32D2D;font-weight:700">Materials cost equals or exceeds deposit — no refund owed.</span><br><span style="font-size:11px">Zach keeps the deposit to cover materials.</span>';
+    res.innerHTML='<span style="color:#A32D2D;font-weight:700">Materials cost equals or exceeds deposit — no refund owed.</span><br><span style="font-size:11px">The deposit covers materials.</span>';
     res.style.background='#FEF2F2';
     if(submit)submit.textContent='Cancel job (no refund)';
   } else {
@@ -6546,7 +6545,7 @@ function releaseLien(bidId){
     renderMoneyPage();try{renderCDBids();}catch(e){}
     // Offer to send release confirmation text to client
     if(c&&c.phone){
-      const biz=S.bname||"ZJ's Painting";
+      const biz=S.bname||'TradeDesk';
       const msg=`Hi ${c.name}, this is ${biz}. We're writing to confirm that your balance has been received and the mechanic's lien on your property has been released. Thank you for resolving this — we appreciate your business.`;
       const phone=c.phone.replace(/\D/g,'');
       setTimeout(()=>{
@@ -6754,7 +6753,7 @@ function confirmStartDrive(){
   gps.timerInt=setInterval(updateDriveTimer,1000);
   if(c&&c.phone){
     const phone=c.phone.replace(/\D/g,'');
-    const msg='Hi '+c.name.split(' ')[0]+', this is '+(S.bname||"ZJ's Painting & Special Coatings")+' — I\'m on my way! I\'ll be there shortly.';
+    const msg='Hi '+c.name.split(' ')[0]+', this is '+(S.bname||'TradeDesk')+' — I\'m on my way! I\'ll be there shortly.';
     const smsLink='sms:'+phone+'&body='+encodeURIComponent(msg);
     window.location.href=smsLink;
   }
@@ -6859,7 +6858,7 @@ function sendReminderSMS(cid){
   const est=getClientJobs(cid).find(j=>j.eventType==='estimate'&&j.start>=todayKey()&&j.status!=='canceled');
   const timeStr=est&&est.time?est.time:'today';
   const firstName=c.name.split(' ')[0];
-  const bname=S.bname||"ZJ's Painting";
+  const bname=S.bname||'TradeDesk';
   const bphone=S.bphone||'';
   const msg='Hi '+firstName+'! This is '+bname+' reminding you of your painting proposal '+timeStr+'. Looking forward to seeing you. See you soon! '+(bphone?'— '+bphone:'');
   const phone=c.phone.replace(/\D/g,'');
@@ -9126,7 +9125,7 @@ function downloadProposalPDF(){
     zAlert('Generate the proposal first.',{title:'Nothing to print'});return;
   }
   const cname=(document.getElementById('e-cname')?.value||'Estimate').replace(/[^a-z0-9]/gi,'_');
-  const bname=document.getElementById('e-bname')?.value||"ZJ's Painting";
+  const bname=document.getElementById('e-bname')?.value||'TradeDesk';
   const html=`<!DOCTYPE html><html><head>
 <meta charset="utf-8">
 <title>${bname} — Estimate for ${cname.replace(/_/g,' ')}</title>
@@ -9319,11 +9318,10 @@ function showAdjReasonSheet(pct){
   const pills=isNeg?['Portfolio Showcase','Repeat customer','Competitive bid','Other']:['Difficult access','Rush job','Extra prep needed','Other'];
   const sheet=document.createElement('div');
   sheet.id='adj-reason-sheet';
-  sheet.style.cssText='display:flex;flex-direction:column;align-items:center;justify-content:flex-end;position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,.45)';
+  sheet.style.cssText='display:flex;flex-direction:column;align-items:center;justify-content:center;position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,.45)';
   const inner=document.createElement('div');
-  inner.style.cssText='width:100%;max-width:480px;margin-left:auto;margin-right:auto;border-radius:18px 18px 0 0;background:var(--bg);padding:20px 16px 36px;box-sizing:border-box;max-height:75vh;overflow-y:auto';
+  inner.style.cssText='width:calc(100% - 32px);max-width:480px;border-radius:18px;background:var(--bg);padding:24px 16px;box-sizing:border-box;max-height:85vh;overflow-y:auto';
   inner.innerHTML=
-    '<div style="width:40px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 16px"></div>'+
     '<div style="font-size:16px;font-weight:800;margin-bottom:4px">'+(isNeg?'Why the discount?':'Why the increase?')+'</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Pick a reason, or tap outside to cancel.</div>'+
     '<div id="adj-reason-pills" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;justify-content:center">'+
@@ -9460,7 +9458,7 @@ async function sendProposalLink(){
   if(btn){btn.textContent='⏳ Saving...';btn.disabled=true;}
   try{
     const cname=document.getElementById('e-cname')?.value||'Client';
-    const bname=document.getElementById('e-bname')?.value||S.bname||"ZJ's Painting & Special Coatings";
+    const bname=document.getElementById('e-bname')?.value||S.bname||'TradeDesk';
     // Resolve bid ID — if the current bid was already sent (has a signingToken),
     // create a fresh bid so each proposal gets its own unique link and record.
     let bidId=editingBidId||lastCreatedBidId;
@@ -9595,7 +9593,7 @@ function copyProposalLink(){
 }
 function _proposalShareData(){
   const bar=document.getElementById('proposal-link-bar');
-  const defBname=S.bname||"ZJ's Painting & Special Coatings";
+  const defBname=S.bname||'TradeDesk';
   return bar?{url:bar.dataset.signingUrl||'',cname:bar.dataset.cname||'Client',bname:bar.dataset.bname||defBname,cphone:bar.dataset.cphone||'',cemail:bar.dataset.cemail||''}:{url:'',cname:'Client',bname:defBname,cphone:'',cemail:''};
 }
 // Called when user actually taps SMS or Email — THIS is when the bid moves to "Sent proposals"
@@ -9731,7 +9729,7 @@ function buildDescription(){
 function buildProposal(){
   const{final,adj,laborTotal,matTotal,flatAdd,paintLines,coats}=calcEst();
   const adjReason=v('adj-reason-hidden');
-  const bname=v('e-bname')||S.bname||"ZJ's Painting & Special Coatings";
+  const bname=v('e-bname')||S.bname||'TradeDesk';
   const bphone=v('e-bphone')||S.bphone||'';
   const blic=v('e-blic')||S.blic||'';
   const cname=v('e-cname')||'Client';
@@ -10161,7 +10159,7 @@ function clearEstimatorForm(){
   // Delete any unfinished Draft bid BEFORE nulling lastCreatedBidId
   // (saveAndExitEstimate already removes b.draft before calling this, so saved bids are safe)
   if(lastCreatedBidId){
-    const orphanIdx=bids.findIndex(b=>b.id===lastCreatedBidId&&b.draft===true);
+    const orphanIdx=bids.findIndex(b=>b.id===lastCreatedBidId&&b.draft===true&&b.status!=='Pending');
     if(orphanIdx>-1){bids.splice(orphanIdx,1);saveAll();}
   }
   estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;lastCreatedBidId=null;
@@ -10215,7 +10213,7 @@ function saveAndExitEstimate(){
     if(b){
       b.amount=final;
       b.status=b.status==='Closed Won'?'Closed Won':'Pending';
-      delete b.draft;
+      b.draft=true;
       if(!b.followup)b.followup=addDays(todayKey(),3);
       if(clientId&&!b.client_id)b.client_id=clientId;
       b.surfaces=[...estSurfaces];
@@ -10236,7 +10234,7 @@ function saveAndExitEstimate(){
       bid_date:todayKey(),followup,
       amount:final,
       type:getBidIncomeLabel({surfaces:estSurfaces}),
-      days,status:'Pending',
+      days,status:'Pending',draft:true,
       notes:document.getElementById('e-cnotes')?.value||'',
       completion_date:'',collStage:'none',collHistory:[],
       scope:ss,surfaces:[...estSurfaces],
@@ -10249,12 +10247,8 @@ function saveAndExitEstimate(){
   saveAll();
   localStorage.removeItem('zp3_est_full_draft');
   clearEstimatorForm(); // wipe in-memory state so next newEstimate() starts clean
-  showToast('Bid saved — follow-up reminder set for 3 days','✓');
-  // Navigate to leads page filtered to pending so Zach sees it immediately
-  goPg('pg-leads');
-  setTimeout(()=>{
-    setLeadFilter('pending',document.getElementById('lft-pending'));
-  },150);
+  showToast('Estimate saved — resume it under Make Money Today','✓');
+  goPg('pg-dash');
 }
 
 function newEstimate(){
@@ -11938,7 +11932,7 @@ function downloadFile(filename,content,type){
 
 function exportExpensesCSV(){
   const yr=getExportYear();
-  const biz=S.bname||"ZJ's Painting";
+  const biz=S.bname||'TradeDesk';
   const filtered=(yr==='all'?expenses:expenses.filter(e=>e.date?.startsWith(yr)))
     .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const header=['Date','Vendor','IRS Category','Schedule C Line','Amount','Deductible','Job','Receipt'];
@@ -11956,7 +11950,7 @@ function exportExpensesCSV(){
 
 function exportMileageCSV(){
   const yr=getExportYear();
-  const biz=S.bname||"ZJ's Painting";
+  const biz=S.bname||'TradeDesk';
   const rate=IRS();
   const filtered=(yr==='all'?mileage:mileage.filter(m=>m.date?.startsWith(yr)))
     .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
@@ -11971,7 +11965,7 @@ function exportMileageCSV(){
 
 function exportTaxPDF(){
   const yr=getExportYear()==='all'?String(new Date().getFullYear()):getExportYear();
-  const biz=S.bname||"ZJ's Painting & Special Coatings";
+  const biz=S.bname||'TradeDesk';
   const status=S.txStatus||'single';
   const yrIncome=income.filter(r=>r.date&&r.date.startsWith(yr)).sort((a,b)=>a.date.localeCompare(b.date));
   const yrExp=expenses.filter(r=>r.date&&r.date.startsWith(yr)).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
@@ -12123,7 +12117,7 @@ function exportReceiptImages(){
   const filtered=expenses.filter(e=>e.receipt_img&&(yr==='all'||String(new Date(e.date).getFullYear())===String(yr)))
     .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   if(!filtered.length){zAlert('No stored receipt photos for '+yr+'.',{title:'No receipts'});return;}
-  const bname=S.bname||"ZJ's Painting & Special Coatings";
+  const bname=S.bname||'TradeDesk';
   const pages=filtered.map((e,i)=>{
     const cat=e.catLabel||e.cat||'';
     const d=e.date?new Date(e.date+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):e.date||'';
@@ -13427,7 +13421,7 @@ function sendOMWText(clientId){
   const c=getClientById(clientId);
   if(!c||!c.phone)return;
   const firstName=c.name.split(' ')[0];
-  const biz=S.bname||"ZJ's Painting & Special Coatings";
+  const biz=S.bname||'TradeDesk';
   const msg='Hi '+firstName+', this is '+biz+' — I\'m on my way! I\'ll be there shortly.';
   window.location.href='sms:'+c.phone.replace(/\D/g,'')+'&body='+encodeURIComponent(msg);
 }
@@ -13559,7 +13553,7 @@ function _reviewCO(bidId,clientId){
 
 function _showCOSignDocument(b,c,coData,clientId){
   const {desc,type,amount,delta,originalAmount,newAmount,coNum}=coData;
-  const biz=S.bname||"ZJ's Painting & Special Coatings";
+  const biz=S.bname||'TradeDesk';
   const dateStr=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
   // Build scope summary from original bid
   const surfLines=(b.surfaces||[]).filter(s=>s.qty>0).map(s=>{
@@ -15663,7 +15657,7 @@ function showScheduleSuggestion(clientId,bidId,clientNameFallback){
   const phone=(c?.phone||bid?.phone||'').replace(/\D/g,'');
   const days=bid?.days||2;
   const allowWknd=!!(bid?.allowWeekend);
-  const bname=S.bname||"ZJ's Painting & Special Coatings";
+  const bname=S.bname||'TradeDesk';
 
   const startKey=getNextAvailForBid(bid);
   const endKey=_jobEndDate(startKey,days,allowWknd);
@@ -15730,6 +15724,19 @@ function discardInProgressBid(bidId){
   const idx=bids.findIndex(b=>b.id===bidId);
   if(idx>-1){bids.splice(idx,1);clearEstFullDraft();saveAll();renderDash();}
 }
+function cancelProposalLink(bidId){
+  zConfirm('Cancel this proposal link? The client\'s link will stop working.',()=>{
+    const b=bids.find(x=>x.id===bidId);
+    if(!b)return;
+    delete b.signingToken;delete b.signingKey;b.draft=true;
+    saveAll();renderDash();showToast('Proposal link cancelled','✓');
+  },{title:'Cancel proposal?',yes:'Cancel link',danger:true});
+}
+function editSentBid(bidId){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  delete b.signingToken;delete b.signingKey;b.draft=true;
+  saveAll();openEditBid(bidId,1);
+}
 function resendProposalLink(bidId){
   const b=bids.find(x=>x.id===bidId);
   if(!b||!b.signingToken)return;
@@ -15739,7 +15746,7 @@ function resendProposalLink(bidId){
   if(bar){
     bar.dataset.signingUrl=url;
     bar.dataset.cname=b.client_name||b.name||'Client';
-    bar.dataset.bname=S.bname||"ZJ's Painting & Special Coatings";
+    bar.dataset.bname=S.bname||'TradeDesk';
     const c=getClientById(b.client_id);
     bar.dataset.cphone=(c?.phone||'').replace(/\D/g,'');
     bar.dataset.cemail=c?.email||'';
@@ -15972,7 +15979,7 @@ function showDailyBriefing(){
     .filter(x=>x.days>0).sort((a,b)=>b.days-a.days);
   const totalOwed=unpaid.reduce((s,x)=>s+getBidBalance(x.b),0);
   // Overdue follow-ups
-  const dueFollowups=bids.filter(b=>b.status==='Pending'&&b.followup&&b.followup<=tk);
+  const dueFollowups=bids.filter(b=>b.status==='Pending'&&!b.signingToken&&b.followup&&b.followup<=tk);
   // Past-due jobs
   const pastDue=getPastDueJobs();
   // Seasonal outreach
