@@ -15518,23 +15518,21 @@ async function supaSaveToCloud(){
 async function checkNewSignatures(){
   if(!_supa||!_supaUser)return;
   try{
-    // localStorage cache of already-handled bid_ids — survives even if DB update fails
+    // Use localStorage as the seen-list — no DB column dependency
     const seenCache=new Set(JSON.parse(localStorage.getItem('zp3_seen_sigs')||'[]'));
     const{data,error}=await _supa.from('signed_proposals')
       .select('bid_id,client_name,payment_method,payment_status,signed_at,client_signed_name')
       .eq('contractor_user_id',_supaUser.id)
-      .is('contractor_seen_at',null)
       .order('signed_at',{ascending:false})
       .limit(100);
     if(error)throw error;
     if(data&&data.length){
-      let changed=false;const alerts=[];const seenIds=[];
+      let changed=false;const alerts=[];const newSeen=[];
       for(const s of data){
         const key=String(s.bid_id);
-        seenIds.push(key);
-        if(seenCache.has(key))continue; // already handled locally, skip
+        if(seenCache.has(key))continue; // already handled, skip forever
         const bid=bids.find(b=>String(b.id)===key);
-        if(!bid)continue; // bid deleted or from another device — mark seen, no popup
+        if(!bid){newSeen.push(key);continue;} // deleted/orphaned — mark seen, no popup
         if(bid.status!=='Closed Won'){
           bid.status='Closed Won';bid.draft=false;
           bid.signedAt=s.signed_at;
@@ -15543,16 +15541,11 @@ async function checkNewSignatures(){
           changed=true;
           alerts.push({name:s.client_name||'Client',bidId:bid.id,clientId:bid.client_id,isPaid:s.payment_status==='paid'});
         }
+        newSeen.push(key);
       }
-      // Persist seen list locally (keep last 500) and attempt DB mark
-      if(seenIds.length){
-        seenIds.forEach(id=>seenCache.add(id));
+      if(newSeen.length){
+        newSeen.forEach(id=>seenCache.add(id));
         localStorage.setItem('zp3_seen_sigs',JSON.stringify([...seenCache].slice(-500)));
-        if(_supa)_supa.from('signed_proposals')
-          .update({contractor_seen_at:new Date().toISOString()})
-          .eq('contractor_user_id',_supaUser.id)
-          .in('bid_id',seenIds)
-          .then(null,()=>{});
       }
       if(changed){
         saveAll();
