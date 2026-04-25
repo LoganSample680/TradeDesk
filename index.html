@@ -3839,14 +3839,15 @@ function renderTodayFeed(){
   // TIER 2 — Won bid, no job scheduled yet (lock it in)
   bids.filter(b=>b.status==='Closed Won'&&!b.completion_date).forEach(b=>{
     if(jobs.some(j=>j.bid_id===b.id&&j.eventType!=='estimate'))return; // already has a job
-    const c=getClientById(b.client_id);if(!c)return;
+    const c=getClientById(b.client_id);
+    const cDisp=c?c.name:b.client_name||b.name||'Client';
     const depositPaid=getBidPaid(b.id)>0;
     const daysAgo=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
     items.push({priority:3,html:
       '<div class="tf-card">'+
         '<div class="tf-icon">🗓️</div>'+
         '<div class="tf-body">'+
-          '<div class="tf-name">'+escHtml(c.name)+'</div>'+
+          '<div class="tf-name">'+escHtml(cDisp)+'</div>'+
           '<div class="tf-sub" style="color:var(--blue)">Approved '+fmt(b.amount)+' · '+(!depositPaid?'no deposit · ':'deposit paid · ')+'not scheduled</div>'+
         '</div>'+
         '<div class="tf-acts">'+
@@ -3857,7 +3858,7 @@ function renderTodayFeed(){
   });
 
   // TIER 3 — Second follow-up (noResponseCount >= 1, still Pending, NOT awaiting signature)
-  bids.filter(b=>b.status==='Pending'&&!b.signingToken&&(b.noResponseCount||0)>=1).forEach(b=>{
+  bids.filter(b=>b.status==='Pending'&&!b.signingToken&&!b.draft&&(b.noResponseCount||0)>=1).forEach(b=>{
     const c=getClientById(b.client_id);if(!c)return;
     const fn=c.name.split(' ')[0];
     const smsBody=encodeURIComponent('Hey '+fn+', just wanted to see if this is still something you\'re wanting to move forward with?');
@@ -3878,7 +3879,7 @@ function renderTodayFeed(){
   });
 
   // TIER 4 — Follow-up overdue (Pending, followup date passed, no noResponseCount yet, NOT awaiting signature)
-  bids.filter(b=>b.status==='Pending'&&!b.signingToken&&b.followup&&b.followup<=tk&&!(b.noResponseCount>=1)).forEach(b=>{
+  bids.filter(b=>b.status==='Pending'&&!b.signingToken&&!b.draft&&b.followup&&b.followup<=tk&&!(b.noResponseCount>=1)).forEach(b=>{
     const c=getClientById(b.client_id);if(!c)return;
     const fn=c.name.split(' ')[0];
     const daysOut=Math.floor((new Date(tk+'T12:00')-new Date(b.followup+'T12:00'))/86400000);
@@ -3953,7 +3954,7 @@ function renderTodayFeed(){
           '<div class="tf-sub" style="color:var(--text3)">'+fmt(b.amount)+' · built '+(days===0?'today':days+'d ago')+' · not sent yet</div>'+
         '</div>'+
         '<div class="tf-acts">'+
-          '<button onclick="openEditBid('+b.id+','+(b.draft?'1':'2')+')" class="btn btn-sm btn-p" style="font-size:11px">'+(b.draft?'Resume →':'Send →')+'</button>'+
+          '<button onclick="openEditBid('+b.id+',1)" class="btn btn-sm btn-p" style="font-size:11px">Resume →</button>'+
           '<button onclick="discardInProgressBid('+b.id+')" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Discard</button>'+
         '</div>'+
       '</div>'});
@@ -4260,8 +4261,8 @@ function renderPipeline(){
   const w3paint=paintDaysInWeek(weekAfterMonday);
 
   const totalWorkDays=5;
-  const pendingCount=bids.filter(b=>b.status==='Pending'&&!b.signingToken).length;
-  const pendingValue=bids.filter(b=>b.status==='Pending'&&!b.signingToken).reduce((s,b)=>s+b.amount,0);
+  const pendingCount=bids.filter(b=>b.status==='Pending'&&!b.signingToken&&!b.draft).length;
+  const pendingValue=bids.filter(b=>b.status==='Pending'&&!b.signingToken&&!b.draft).reduce((s,b)=>s+b.amount,0);
   const expectedCloses=Math.round(pendingCount*CLOSE_RATE);
 
   const openDaysAhead=(totalWorkDays-w2paint)+(totalWorkDays-w3paint);
@@ -4297,7 +4298,7 @@ function renderPipeline(){
     healthColor='#A32D2D';
     healthMsg='Pipeline is thin — book estimates now.';
     // Show actual pending client names when pipeline is thin
-    const pendingBids=bids.filter(b=>b.status==='Pending'&&!b.signingToken).sort((a,b)=>b.amount-a.amount);
+    const pendingBids=bids.filter(b=>b.status==='Pending'&&!b.signingToken&&!b.draft).sort((a,b)=>b.amount-a.amount);
     if(pendingBids.length>0){
       const nameList=pendingBids.slice(0,3).map(b=>{
         const c=getClientById(b.client_id);
@@ -6472,7 +6473,7 @@ function openEditBid(bidId,startStep){
   buildScopeGrid();
   setTimeout(()=>{
     const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val||'';};
-    if(S.bname)sf('e-bname',S.bname);
+    const _ebn=getBusinessName();if(_ebn&&_ebn!=='TradeDesk')sf('e-bname',_ebn);
     if(S.bphone)sf('e-bphone',S.bphone);
     if(S.blic)sf('e-blic',S.blic);
     sf('e-labor-rate',S.laborRate||45);
@@ -9516,7 +9517,7 @@ async function sendProposalLink(){
       notifyEmail:_supaUser.email,stripeConnectEnabled:!!(_stripeConnectStatus?.charges_enabled),
       isPortfolio:document.getElementById('portfolio-toggle')?.checked||false,
       portfolioPct:parseInt(document.getElementById('portfolio-pct')?.value)||15,
-      portfolioTarget:parseInt(document.getElementById('portfolio-target')?.value)||5,
+      portfolioTarget:5,
       portfolioYears:S.byears||0,
       portfolioOwnerName:getOwnerName()||'',
       fullPrice:_propFinal,
@@ -10322,7 +10323,7 @@ function selectPropertyTier(key){
 }
 function prefillEstimateRates(){
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
-  if(S.bname)sf('e-bname',S.bname);
+  const _pbn=getBusinessName();if(_pbn&&_pbn!=='TradeDesk')sf('e-bname',_pbn);
   if(S.bphone)sf('e-bphone',S.bphone);
   if(S.blic)sf('e-blic',S.blic);
   sf('e-r-walls',S.rWalls||1.30);sf('e-r-ceil',S.rCeil||1.00);sf('e-r-trim',S.rTrim||3.25);sf('e-r-walls-adv',S.rWalls||1.30);sf('e-r-ceil-adv',S.rCeil||1.00);sf('e-r-trim-adv',S.rTrim||3.25);sf('e-r-door',S.rDoor||95);sf('e-r-door-adv',S.rDoor||95);sf('e-r-win',S.rWin||50);sf('e-r-ext',S.rExt||1.10);sf('e-r-deck',S.rDeck||1.00);
