@@ -841,7 +841,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   </div>
 </div>
 <div class="pg" id="pg-est">
-  <div style="padding:20px 24px 24px;max-width:600px;margin:0 auto;box-sizing:border-box;width:100%">
+  <div style="padding:20px 16px 24px;max-width:900px;margin:0 auto;box-sizing:border-box;width:100%">
   <div class="tbar"><div class="tbar-title">Estimate builder</div><button onclick="saveAndExitEstimate()" style="font-size:12px;padding:6px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text3);cursor:pointer;font-family:inherit;font-weight:600;flex-shrink:0">💾 Save &amp; exit</button></div>
   <div class="steps" id="est-steps">
     <div class="step active" id="est-st-1" onclick="goEstStep(1)"><div class="snum">1</div><span class="slbl">Client</span></div>
@@ -3068,7 +3068,6 @@ function renderDashToday(){
 
   if(!todayJobs.length){
     const dow=new Date().getDay();
-    const pendingCount=bids.filter(b=>b.status==='Pending').length;
     const msgs=[
       'Nothing Sunday — recharge for the week.',
       'Open Monday. Book an estimate today.',
@@ -3082,7 +3081,7 @@ function renderDashToday(){
       '<div style="text-align:center;padding:12px 0">'+
         '<div style="font-size:22px;margin-bottom:6px">'+(dow===0||dow===6?'🛋️':'🎯')+'</div>'+
         '<div style="font-size:13px;font-weight:700;margin-bottom:4px">'+msgs[dow]+'</div>'+
-        (pendingCount?'<div style="font-size:11px;color:var(--text3);margin-top:4px">'+pendingCount+' pending bid'+(pendingCount>1?'s':'')+' awaiting response</div>':'')+
+        '<div style="font-size:11px;color:var(--text3);margin-top:4px">Open day — check Make Money Today</div>'+
       '</div>';
     return;
   }
@@ -3915,7 +3914,6 @@ function renderTodayFeed(){
         '<div class="tf-acts">'+
           (b.proposalHtml?'<button onclick="viewSavedProposal('+b.id+')" class="btn btn-sm" style="font-size:11px">View</button>':'')+
           '<button onclick="resendProposalLink('+b.id+')" class="btn btn-sm" style="font-size:11px">Resend</button>'+
-          '<button onclick="editSentBid('+b.id+')" class="btn btn-sm" style="font-size:11px">Edit</button>'+
           '<button onclick="cancelProposalLink('+b.id+')" class="btn btn-sm" style="font-size:11px;color:var(--amber)">Cancel link</button>'+
           '<button onclick="discardInProgressBid('+b.id+')" class="btn btn-sm" style="font-size:11px;color:#A32D2D">Delete</button>'+
         '</div>'+
@@ -4261,18 +4259,12 @@ function renderPipeline(){
   const w3paint=paintDaysInWeek(weekAfterMonday);
 
   const totalWorkDays=5;
-  const pendingCount=bids.filter(b=>b.status==='Pending'&&!b.signingToken&&!b.draft).length;
-  const pendingValue=bids.filter(b=>b.status==='Pending'&&!b.signingToken&&!b.draft).reduce((s,b)=>s+b.amount,0);
-  const expectedCloses=Math.round(pendingCount*CLOSE_RATE);
-
   const openDaysAhead=(totalWorkDays-w2paint)+(totalWorkDays-w3paint);
   const avgJobDays=3;
   const estimatesNeeded=Math.ceil(openDaysAhead/avgJobDays/CLOSE_RATE);
-  const estStillNeeded=Math.max(0,estimatesNeeded-pendingCount);
 
   function weekBar(booked,total,color){
-    const pct=Math.round(booked/total*100);
-    const filled=Math.round(booked/total*5); // out of 5 blocks
+    const filled=Math.round(booked/total*5);
     let bar='';
     for(let i=0;i<5;i++)bar+='<div style="flex:1;height:10px;border-radius:2px;background:'+(i<filled?color:'var(--border)')+';margin:0 1px"></div>';
     return '<div style="display:flex;gap:0;margin-bottom:3px">'+bar+'</div>';
@@ -4289,27 +4281,15 @@ function renderPipeline(){
   let healthColor,healthMsg,action='';
   if(w2paint>=4&&w3paint>=4){
     healthColor='var(--green-mid)';
-    healthMsg='Pipeline is full. Focus on the work.';
-  } else if(w2paint>=2||pendingCount>=2){
+    healthMsg='Pipeline full — focus on the work.';
+  } else if(w2paint>=2||w3paint>=2){
     healthColor='var(--amber)';
     healthMsg='Pipeline needs attention.';
-    action=estStillNeeded>0?'Run <strong>'+estStillNeeded+' estimate'+(estStillNeeded>1?'s':'')+' this week</strong> to stay booked.':'Close '+Math.max(0,estimatesNeeded-pendingCount)+' of your '+pendingCount+' pending bid'+(pendingCount>1?'s':'')+' to fill the schedule.';
+    action=estimatesNeeded>0?'Run <strong>'+estimatesNeeded+' estimate'+(estimatesNeeded>1?'s':'')+' this week</strong> to fill open days.':'';
   } else {
     healthColor='#A32D2D';
     healthMsg='Pipeline is thin — book estimates now.';
-    // Show actual pending client names when pipeline is thin
-    const pendingBids=bids.filter(b=>b.status==='Pending'&&!b.signingToken&&!b.draft).sort((a,b)=>b.amount-a.amount);
-    if(pendingBids.length>0){
-      const nameList=pendingBids.slice(0,3).map(b=>{
-        const c=getClientById(b.client_id);
-        const nm=c?c.name.split(' ')[0]:(b.client_name||'Client').split(' ')[0];
-        return escHtml(nm)+' ('+fmt(b.amount)+')';
-      }).join(', ');
-      const more=pendingBids.length>3?' +'+( pendingBids.length-3)+' more':'';
-      action='Call to close: <strong>'+nameList+more+'</strong>. Also run <strong>'+estStillNeeded+' new estimate'+(estStillNeeded>1?'s':'')+' this week</strong>.';
-    } else {
-      action='No pending bids. You need <strong>'+estStillNeeded+' estimate'+(estStillNeeded>1?'s':'')+' this week</strong>. Best days: Tuesday + Thursday evening.';
-    }
+    action='You need <strong>'+estimatesNeeded+' estimate'+(estimatesNeeded>1?'s':'')+' this week</strong> to stay booked. Best days: Tuesday + Thursday evening.';
   }
 
   const w1label=parseD(thisMonday).toLocaleDateString('en-US',{month:'short',day:'numeric'});
@@ -4333,37 +4313,7 @@ function renderPipeline(){
         '<div>'+weekBar(w3paint,5,w3s.c)+'</div>'+
         '<div style="font-size:10px;font-weight:700;color:'+w3s.c+';white-space:nowrap">'+w3paint+'/5 days</div>'+
       '</div>'+
-      (pendingCount>0?
-        '<div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px;font-size:11px;color:var(--text2);margin-bottom:8px">'+
-          '<strong>'+pendingCount+' pending bid'+(pendingCount>1?'s':'')+' · '+fmt(pendingValue)+'</strong>'+
-          ' &nbsp;·&nbsp; at 60% close rate = ~'+expectedCloses+' job'+(expectedCloses!==1?'s':'')+' expected'+
-        '</div>':'')+
       (action?'<div style="font-size:12px;color:var(--text2);line-height:1.6">'+action+'</div>':'')+
-      (()=>{
-        const sentBids=bids.filter(b=>b.status==='Pending'&&b.signingToken).sort((a,b)=>(a.bid_date||'').localeCompare(b.bid_date||''));
-        if(!sentBids.length)return '';
-        const rows=sentBids.map(b=>{
-          const c=getClientById(b.client_id);
-          const firstName=(c?c.name:b.client_name||b.name||'Client').split(/[\s,&]+/)[0];
-          const days=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
-          const daysColor=days>30?'#A32D2D':days>14?'var(--amber)':'var(--text3)';
-          const daysLabel=days>30?days+'d — <strong>Follow up now</strong>':days+'d ago';
-          const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
-          const viewUrl=baseUrl+'sign.html?t='+b.signingToken+'&u='+(window._supaUser?.id||'')+'&b='+b.id;
-          return '<div onclick="openClientDetail('+b.client_id+')" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
-            '<div style="flex:1;min-width:0">'+
-              '<div style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(firstName)+'</div>'+
-              '<div style="font-size:11px;color:'+daysColor+';margin-top:1px">'+fmt(b.amount)+' · '+daysLabel+'</div>'+
-            '</div>'+
-            '<button onclick="event.stopPropagation();pipelineResendSms(\''+b.id+'\')" style="padding:6px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text);flex-shrink:0">Resend</button>'+
-            '<a href="'+viewUrl+'" target="_blank" onclick="event.stopPropagation()" style="padding:6px 10px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--blue-dk);text-decoration:none;flex-shrink:0">View</a>'+
-          '</div>';
-        }).join('');
-        return '<div style="margin-top:12px">'+
-          '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px">Sent proposals</div>'+
-          rows+
-        '</div>';
-      })()+
     '</div>';
 }
 
@@ -6469,6 +6419,9 @@ function openEditBid(bidId,startStep){
   estLinkedClientId=b.client_id||currentClientId;
   estSurfaces=[];estSurfId=0;
   clearEstFullDraft(); // editing existing bid — never offer to resume a new estimate
+  const _plbE=document.getElementById('proposal-link-bar');if(_plbE){_plbE.style.display='none';_plbE.dataset.signingUrl='';}
+  const _pliE=document.getElementById('proposal-link-input');if(_pliE)_pliE.value='';
+  const _sBtnE=document.getElementById('send-proposal-btn');if(_sBtnE){_sBtnE.textContent='🔗 Send to client';_sBtnE.disabled=false;}
   goPg('pg-est');
   buildScopeGrid();
   setTimeout(()=>{
@@ -6495,6 +6448,9 @@ function openEditBid(bidId,startStep){
     if(linked)linked.innerHTML='<span class="conn-tag">'+(c?c.name:'linked')+' — editing existing bid</span>';
     scopeActiveMap={};scopeHrsStore={};roomScopeMap={};estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};
   SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
+    const _ptogE=document.getElementById('portfolio-toggle');
+    if(_ptogE){_ptogE.checked=!!b.isPortfolio;togglePortfolioShowcase();}
+    const _ppctE=document.getElementById('portfolio-pct');if(_ppctE)_ppctE.value=b.portfolioPct||15;
     roomScopeMap=b.roomScopeMap?JSON.parse(JSON.stringify(b.roomScopeMap)):{};
     if(b.scope&&Object.keys(b.scope).length){
       Object.entries(b.scope).forEach(([id,val])=>toggleScope(id,!!val));
@@ -10180,6 +10136,10 @@ function clearEstimatorForm(){
   const adjV=document.getElementById('est-adj-val');if(adjV)adjV.textContent='0%';
   const _ptogClear=document.getElementById('portfolio-toggle');
   if(_ptogClear){_ptogClear.checked=false;togglePortfolioShowcase();}
+  const _pPct=document.getElementById('portfolio-pct');if(_pPct)_pPct.value=15;
+  const _plb=document.getElementById('proposal-link-bar');if(_plb){_plb.style.display='none';_plb.dataset.signingUrl='';}
+  const _pli=document.getElementById('proposal-link-input');if(_pli)_pli.value='';
+  const _sendBtn=document.getElementById('send-proposal-btn');if(_sendBtn){_sendBtn.textContent='🔗 Send to client';_sendBtn.disabled=false;}
   scopeActiveMap={};scopeHrsStore={};roomScopeMap={};estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};
   SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
   const ep2=document.getElementById('e-paint');if(ep2)ep2.value='';
@@ -15558,14 +15518,12 @@ async function supaSaveToCloud(){
 async function checkNewSignatures(){
   if(!_supa||!_supaUser)return;
   try{
-    // Query all non-closed bids — catches signatures even when signingToken wasn't saved locally
-    const pendingBids=bids.filter(b=>b.status==='Pending');
-    if(!pendingBids.length)return;
-    const bidIds=pendingBids.map(b=>String(b.id));
+    // Query ALL signed rows for this contractor — no bid_id filter so nothing is missed even if local state desyncs
     const{data,error}=await _supa.from('signed_proposals')
       .select('bid_id,client_name,payment_method,payment_status,signed_at,client_signed_name')
       .eq('contractor_user_id',_supaUser.id)
-      .in('bid_id',bidIds);
+      .order('signed_at',{ascending:false})
+      .limit(100);
     if(error)throw error;
     if(data&&data.length){
       let changed=false;
