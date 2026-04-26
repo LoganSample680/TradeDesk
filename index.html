@@ -2228,6 +2228,12 @@ const SCOPE_ITEMS=[
    hint:'Exterior only — wash before painting. ~250 sf/hr. Must dry 48 hrs before paint.',
    ratePerSqFt:0.26, flatRate:0,
    clientDesc:'Exterior surfaces pressure washed. Minimum 48-hr dry time before paint.'},
+  {id:'supply_run',label:'Supply run',      icon:'🏪',
+   hint:'Time driving to and from the store for paint, supplies, or materials.',
+   ratePerSqFt:0, flatRate:0, clientDesc:''},
+  {id:'collect_cash',label:'Collect payment',icon:'💵',
+   hint:'Time collecting cash deposit or payment from client.',
+   ratePerSqFt:0, flatRate:0, clientDesc:''},
 ];
 const SURF_TYPES=[
   {v:'walls',l:'Walls',unit:'sq ft',rate:1.25,mf:1},
@@ -5268,11 +5274,12 @@ function renderCDJobs(){
         const _el2=Math.floor((Date.now()-_activeTimer.startTime)/1000);
         const _h2=Math.floor(_el2/3600),_m2=Math.floor((_el2%3600)/60),_s2=_el2%60;
         const _ts2=(_h2?_h2+'h ':'')+_m2+':'+((_s2<10?'0':'')+_s2);
-        clockBtnCD='<button class="btn btn-sm" onclick="clockOut()" style="border-color:#E97B00;color:#E97B00;background:#FFF3E0">⏹ '+_ts2+'</button>';
+        const _sl2=_activeTimer.scopeLabel?_activeTimer.scopeLabel+' ':'';
+        clockBtnCD='<button class="btn btn-sm" onclick="clockOut()" style="border-color:#E97B00;color:#E97B00;background:#FFF3E0">⏹ '+_sl2+_ts2+'</button>';
       }else{
         const logged=getJobClockTotal(j.id);
-        const loggedLabel=logged>0?(Math.floor(logged/60)?Math.floor(logged/60)+'h ':'')+(logged%60?logged%60+'m ':'')+'logged · ':'';
-        clockBtnCD='<button class="btn btn-sm" onclick="clockIn('+j.id+')" style="border-color:var(--border2);color:var(--text2)">▶ '+(logged>0?loggedLabel:'')+'Clock in</button>';
+        const loggedLabel=logged>0?_fmtMin(logged)+' logged · ':'';
+        clockBtnCD='<button class="btn btn-sm" onclick="openClockInSheet('+j.id+')" style="border-color:var(--border2);color:var(--text2)">▶ '+(logged>0?loggedLabel:'')+'Clock in</button>';
       }
     }
     return '<div class="card" style="margin-bottom:8px;border-left:3px solid '+(j.color||'var(--blue)')+'">'+
@@ -5347,6 +5354,21 @@ function showJobScorecard(jobId,collectBidId){
       (revenue>0?'<div style="text-align:right;font-size:22px;font-weight:800;color:'+marginColor+';margin-top:2px">'+margin+'% margin</div>':'')+
       (estDays>0&&actualHrs>0?'<div style="font-size:11px;color:var(--text3);text-align:right;margin-top:4px">'+actualHrs+' actual hrs · '+estDays+' day estimate</div>':'')+
     '</div>'+
+    (()=>{
+      const bd=getJobScopeBreakdown(jobId);
+      const scopeRows=Object.entries(bd).filter(([,m])=>m>0).map(([sid,m])=>{
+        const si=sid==='__other'?{icon:'➕',label:'Other'}:(SCOPE_ITEMS.find(x=>x.id===sid)||{icon:'⏱',label:sid});
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0">'+
+          '<span style="font-size:12px;color:var(--text2)">'+si.icon+' '+si.label+'</span>'+
+          '<span style="font-size:12px;font-weight:600;color:var(--text)">'+_fmtMin(m)+'</span>'+
+        '</div>';
+      }).join('');
+      return scopeRows?
+        '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 14px;margin-bottom:14px">'+
+          '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">Time by task</div>'+
+          scopeRows+
+        '</div>':'';
+    })()+
     '<div style="display:grid;grid-template-columns:1fr'+(balance>0.01?' 1.5fr':'')+';gap:8px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+j.client_id+')" '+
         'style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Close</button>'+
@@ -6894,37 +6916,136 @@ function hideDriveBanner(){
 }
 
 // ── Active time tracking ─────────────────────────────────────────────────────
-function clockIn(jobId){
+const _CLOCK_DEFAULT_SCOPES=['movefurn','sand','spackle','tape','caulk','prime','twocoat','cleanup','supply_run','collect_cash'];
+
+function getJobScopes(jobId){
+  const j=jobs.find(x=>x.id===jobId);
+  const bid=j&&j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+  if(bid&&bid.roomScopeMap){
+    const activeIds=new Set();
+    Object.values(bid.roomScopeMap).forEach(room=>Object.entries(room).forEach(([sid,sv])=>{if(sv&&sv.active)activeIds.add(sid);}));
+    const ordered=SCOPE_ITEMS.filter(s=>activeIds.has(s.id));
+    if(ordered.length)return ordered;
+  }
+  return SCOPE_ITEMS.filter(s=>_CLOCK_DEFAULT_SCOPES.includes(s.id));
+}
+
+function getJobScopeBreakdown(jobId){
+  const out={};
+  timeEntries.filter(e=>e.job_id===jobId).forEach(e=>{
+    if(e.scope_id){out[e.scope_id]=(out[e.scope_id]||0)+(e.minutes||0);}
+    else{out['__other']=(out['__other']||0)+(e.minutes||0);}
+  });
+  return out;
+}
+
+function getJobClockTotal(jobId){
+  return timeEntries.filter(e=>e.job_id===jobId).reduce((s,e)=>s+(e.minutes||0),0);
+}
+
+function _fmtMin(m){
+  const h=Math.floor(m/60),rem=m%60;
+  return (h?h+'h ':'')+(rem?rem+'m':'');
+}
+
+function openClockInSheet(jobId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  // If already clocked in to this exact job + scope, don't show sheet — just show toast
+  const scopes=getJobScopes(jobId);
+  const breakdown=getJobScopeBreakdown(jobId);
+  const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+  const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
+  const clientName=c?c.name:j.name;
+
+  const ov=document.createElement('div');
+  ov.className='zmodal-overlay';
+  ov.style.cssText='align-items:flex-end;padding:0';
+  const sheet=document.createElement('div');
+  sheet.style.cssText='background:var(--bg);border-radius:20px 20px 0 0;width:100%;max-width:560px;margin:0 auto;padding-bottom:env(safe-area-inset-bottom,0px);max-height:85vh;overflow-y:auto';
+
+  const rows=scopes.map(s=>{
+    const logged=breakdown[s.id]||0;
+    const isCurrent=_activeTimer&&_activeTimer.jobId===jobId&&_activeTimer.scopeId===s.id;
+    const loggedTxt=logged>0?'<span style="font-size:11px;color:var(--text3);margin-left:auto">'+_fmtMin(logged)+' logged</span>':'';
+    const activeDot=isCurrent?'<span style="width:8px;height:8px;border-radius:50%;background:#E97B00;display:inline-block;flex-shrink:0;margin-right:6px"></span>':'';
+    return '<button onclick="clockIn('+jobId+',\''+s.id+'\',\''+s.label.replace(/'/g,"\\'")+'\')" '+
+      'style="display:flex;align-items:center;gap:10px;width:100%;padding:13px 20px;border:none;background:none;text-align:left;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border);font-size:14px;color:var(--text)">'+
+      activeDot+
+      '<span style="font-size:18px;flex-shrink:0">'+s.icon+'</span>'+
+      '<span style="font-weight:600">'+s.label+'</span>'+
+      loggedTxt+
+    '</button>';
+  }).join('');
+
+  const otherLogged=breakdown['__other']||0;
+  const otherRow='<button onclick="clockIn('+jobId+',null,\'Other\')" '+
+    'style="display:flex;align-items:center;gap:10px;width:100%;padding:13px 20px;border:none;background:none;text-align:left;font-family:inherit;cursor:pointer;font-size:14px;color:var(--text2)">'+
+    '<span style="font-size:18px;flex-shrink:0">➕</span>'+
+    '<span style="font-weight:600">Other</span>'+
+    (otherLogged>0?'<span style="font-size:11px;color:var(--text3);margin-left:auto">'+_fmtMin(otherLogged)+' logged</span>':'')+
+  '</button>';
+
+  sheet.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px 12px;border-bottom:1px solid var(--border)">'+
+      '<div>'+
+        '<div style="font-size:16px;font-weight:800">Clock in to task</div>'+
+        '<div style="font-size:12px;color:var(--text3);margin-top:2px">'+clientName+' · '+j.name+'</div>'+
+      '</div>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:var(--bg2);border:none;color:var(--text2);font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-family:inherit">✕</button>'+
+    '</div>'+
+    rows+otherRow;
+
+  ov.appendChild(sheet);
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  // close sheet after clockIn call (clockIn sets _activeTimer before returning)
+  sheet.addEventListener('click',e=>{
+    if(e.target.closest('button[onclick^="clockIn"]'))setTimeout(()=>ov.remove(),60);
+  });
+}
+
+function clockIn(jobId,scopeId,scopeLabel){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   if(_activeTimer){
-    if(_activeTimer.jobId===jobId){showToast('Already clocked in to this job','⏱');return;}
-    zConfirm('You\'re clocked in to '+_activeTimer.jobName+'. Save that time and switch?',()=>{
-      clockOut(true,true);setTimeout(()=>clockIn(jobId),100);
-    },{title:'Switch job',yes:'Save & switch',danger:false});
-    return;
+    if(_activeTimer.jobId===jobId&&_activeTimer.scopeId===(scopeId||null)){
+      showToast('Already tracking '+(scopeLabel||'this task'),'⏱');return;
+    }
+    // Switching task on same job: save silently, no confirm needed
+    if(_activeTimer.jobId===jobId){
+      clockOut(true,true);
+    } else {
+      // Different job: ask first
+      zConfirm('You\'re clocked in to '+_activeTimer.jobName+'. Save that time and switch?',()=>{
+        clockOut(true,true);setTimeout(()=>clockIn(jobId,scopeId,scopeLabel),100);
+      },{title:'Switch job',yes:'Save & switch',danger:false});
+      return;
+    }
   }
   const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
   const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
-  _activeTimer={jobId,jobName:j.name,clientName:c?c.name:j.name,startTime:Date.now(),timerInterval:null};
+  _activeTimer={jobId,jobName:j.name,clientName:c?c.name:j.name,scopeId:scopeId||null,scopeLabel:scopeLabel||null,startTime:Date.now(),timerInterval:null};
   _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
   showClockBanner();
   renderJobsPage&&renderJobsPage();
-  showToast('Clocked in · '+(c?c.name:j.name),'⏱');
+  showToast('Clocked in · '+(scopeLabel||j.name),'⏱');
 }
+
 function clockOut(saveEntry,silent){
   if(!_activeTimer)return;
   clearInterval(_activeTimer.timerInterval);
   const minutes=Math.max(1,Math.round((Date.now()-_activeTimer.startTime)/60000));
   const jobId=_activeTimer.jobId;
   const jobName=_activeTimer.jobName;
+  const scopeId=_activeTimer.scopeId;
+  const scopeLabel=_activeTimer.scopeLabel;
   if(saveEntry!==false){
-    timeEntries.push({id:Date.now(),job_id:jobId,date:todayKey(),start_time:new Date(_activeTimer.startTime).toISOString(),end_time:new Date().toISOString(),minutes});
+    timeEntries.push({id:Date.now(),job_id:jobId,date:todayKey(),start_time:new Date(_activeTimer.startTime).toISOString(),end_time:new Date().toISOString(),minutes,scope_id:scopeId,scope_label:scopeLabel});
     const j=jobs.find(x=>x.id===jobId);
     if(j)j.actualHours=Math.round(((j.actualHours||0)+minutes/60)*10)/10;
     saveAll();
     if(!silent){
-      const h=Math.floor(minutes/60),m=minutes%60;
-      showToast((h?h+'h ':'')+(m+'m logged to '+jobName),'⏱');
+      const label=scopeLabel?scopeLabel+' — '+jobName:jobName;
+      showToast(_fmtMin(minutes)+' logged · '+label,'⏱');
     }
   }
   _activeTimer=null;
@@ -6932,29 +7053,32 @@ function clockOut(saveEntry,silent){
   renderJobsPage&&renderJobsPage();
   renderDash&&setTimeout(renderDash,300);
 }
+
 function updateClockTimer(){
   if(!_activeTimer)return;
   const elapsed=Math.floor((Date.now()-_activeTimer.startTime)/1000);
   const h=Math.floor(elapsed/3600);
   const m=Math.floor((elapsed%3600)/60);
   const s=elapsed%60;
-  const ts=(h?h+'h ':'')+m+':'+(s<10?'0':'')+s;
+  const timeStr=m+':'+(s<10?'0':'')+s;
+  const full=(h?h+'h ':'')+timeStr;
   const el=document.getElementById('clock-banner-time');
-  if(el)el.textContent=ts;
+  if(el)el.textContent=(_activeTimer.scopeLabel?_activeTimer.scopeLabel+' · ':'')+full;
 }
+
 function showClockBanner(){
   const b=document.getElementById('clock-banner');if(!b)return;
   const jn=document.getElementById('clock-banner-job');
   if(jn)jn.textContent=_activeTimer?_activeTimer.clientName:'';
+  const bt=document.getElementById('clock-banner-time');
+  if(bt)bt.textContent=(_activeTimer&&_activeTimer.scopeLabel?_activeTimer.scopeLabel+' · ':'')+'0:00';
   b.style.display='flex';
   if(document.body)document.body.classList.add('clock-active');
 }
+
 function hideClockBanner(){
   const b=document.getElementById('clock-banner');if(b)b.style.display='none';
   if(document.body)document.body.classList.remove('clock-active');
-}
-function getJobClockTotal(jobId){
-  return timeEntries.filter(e=>e.job_id===jobId).reduce((s,e)=>s+(e.minutes||0),0);
 }
 
 function sendReminderSMS(cid){
@@ -7917,6 +8041,17 @@ function showJobDebrief(jobId){
     </div>`;
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov){ov.remove();confirmMarkComplete(jobId);}});
+  // Pre-fill hours from clock entries
+  const breakdown=getJobScopeBreakdown(jobId);
+  if(Object.keys(breakdown).length){
+    box.querySelectorAll('input[data-scope]').forEach(inp=>{
+      const sid=inp.dataset.scope;
+      const mins=breakdown[sid]||0;
+      if(mins>0&&!inp.value){
+        inp.value=Math.round(mins/60*4)/4; // round to nearest 0.25
+      }
+    });
+  }
 }
 
 function saveDebriefAndComplete(jobId,btn){
@@ -13327,9 +13462,10 @@ function renderJobsPage(){
         const _el=Math.floor((Date.now()-_activeTimer.startTime)/1000);
         const _h=Math.floor(_el/3600),_m=Math.floor((_el%3600)/60),_s=_el%60;
         const _ts=(_h?_h+'h ':'')+_m+':'+((_s<10?'0':'')+_s);
-        clockBtn='<button onclick="clockOut();event.stopPropagation()" style="padding:5px 12px;border-radius:20px;border:1px solid #E97B00;background:#FFF3E0;color:#E97B00;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">⏹ '+_ts+'</button>';
+        const _scopeLbl=_activeTimer.scopeLabel?_activeTimer.scopeLabel+' ':'';
+        clockBtn='<button onclick="clockOut();event.stopPropagation()" style="padding:5px 12px;border-radius:20px;border:1px solid #E97B00;background:#FFF3E0;color:#E97B00;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">⏹ '+_scopeLbl+_ts+'</button>';
       }else{
-        clockBtn='<button onclick="clockIn('+nextJobId+');event.stopPropagation()" style="padding:5px 12px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">▶ Clock in</button>';
+        clockBtn='<button onclick="openClockInSheet('+nextJobId+');event.stopPropagation()" style="padding:5px 12px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">▶ Clock in</button>';
       }
     }
     // Right side: amount + balance state
@@ -15766,6 +15902,7 @@ async function supaSaveToCloud(){
       liens:JSON.stringify(liens),
       settings:JSON.stringify(S),
       receipt_images:JSON.stringify(receiptImages),
+      time_entries:JSON.stringify(timeEntries.slice(-500)),
       updated_at:new Date().toISOString()
     };
     const{error}=await _supa.from('zj_data').upsert(payload,{onConflict:'user_id'});
@@ -16039,6 +16176,7 @@ async function supaLoadFromCloud(){
     expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
     mileage=parse(data.mileage,mileage);
     liens=parse(data.liens,liens);
+    timeEntries=parse(data.time_entries,timeEntries);
     if(data.settings){const ss=parse(data.settings,null);if(ss){S={...S,...ss};applySettings();
       // Restore owner name to this device's localStorage so nav shows correctly
       if(ss.ownerName&&_supaUser?.id){localStorage.setItem('zp3_uname_'+_supaUser.id,ss.ownerName);if(_user)_user.name=ss.ownerName;}
