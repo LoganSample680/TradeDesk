@@ -6188,6 +6188,18 @@ function openPayPanel(bidId, autoType){
       '</div>'
     :'';
   const showFinalOnly = autoType==='final';
+  const stripeBtn=_stripeConnectStatus?.charges_enabled&&balance>0.50
+    ?'<button type="button" data-ptype="stripe" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:12px 14px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
+        '<div><div style="font-size:14px;font-weight:700;color:#635BFF">&#128179; Send Stripe payment link</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Client pays by card — auto-logs when paid</div></div>'+
+        '<div style="font-size:13px;font-weight:700;color:#635BFF">'+fmt(balance)+'</div>'+
+      '</button>'
+    :'';
+  const depositBtn=rawPaid<0.01
+    ?'<button type="button" id="mpay-btn-deposit" data-ptype="deposit" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:12px 14px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
+        '<div><div style="font-size:14px;font-weight:700">Deposit — 25%</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Due before work starts</div></div>'+
+        '<div style="font-size:16px;font-weight:800;color:var(--blue)">'+fmt(deposit25)+'</div>'+
+      '</button>'
+    :'';
   const typeButtons = showFinalOnly
     ? '<button type="button" id="mpay-btn-final" data-ptype="final" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:14px 16px;border-radius:var(--r);border:2px solid var(--blue);background:var(--blue-lt);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
         '<div><div style="font-size:15px;font-weight:700;color:var(--blue-dk)">Pay in full</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Final balance due</div></div>'+
@@ -6196,11 +6208,8 @@ function openPayPanel(bidId, autoType){
       '<button type="button" data-ptype="custom" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:12px 14px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
         '<div><div style="font-size:13px;font-weight:700">Custom amount</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Enter partial payment</div></div>'+
         '<div style="font-size:12px;color:var(--text3)">manual</div>'+
-      '</button>'+refundBtn
-    : '<button type="button" id="mpay-btn-deposit" data-ptype="deposit" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:12px 14px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
-        '<div><div style="font-size:14px;font-weight:700">Deposit — 25%</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Due before work starts</div></div>'+
-        '<div style="font-size:16px;font-weight:800;color:var(--blue)">'+fmt(deposit25)+'</div>'+
-      '</button>'+
+      '</button>'+stripeBtn+refundBtn
+    : depositBtn+
       '<button type="button" data-ptype="final" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:12px 14px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
         '<div><div style="font-size:14px;font-weight:700">Pay in full</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Full remaining balance</div></div>'+
         '<div style="font-size:16px;font-weight:800;color:var(--green)">'+fmt(balance)+'</div>'+
@@ -6208,7 +6217,7 @@ function openPayPanel(bidId, autoType){
       '<button type="button" data-ptype="custom" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:12px 14px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
         '<div><div style="font-size:14px;font-weight:700">Custom amount</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Enter exact amount received</div></div>'+
         '<div style="font-size:13px;color:var(--text3)">manual</div>'+
-      '</button>'+refundBtn+cancelRefundBtn;
+      '</button>'+stripeBtn+refundBtn+cancelRefundBtn;
 
   overlay.innerHTML=
     '<div class="zmodal">'+
@@ -6350,6 +6359,11 @@ function selectPayType(btn, bidId){
     if(amtEl){amtEl.readOnly=true;amtEl.style.background='var(--bg2)';amtEl.style.color='var(--text3)';}
     if(submitBtn){submitBtn.textContent='Record payment';submitBtn.style.background='var(--green)';}
     if(dateLabel)dateLabel.textContent='Date received';
+  } else if(ptype==='stripe'){
+    if(amtRow)amtRow.style.display='none';
+    if(hint)hint.textContent='';
+    if(submitBtn){submitBtn.textContent='Send Stripe payment link →';submitBtn.style.background='#635BFF';}
+    if(dateLabel)dateLabel.textContent='';
   } else if(ptype==='refund'){
     const rawBidPaid=getBidPaid(bidId);
     const rawBidTotal=(bids.find(b=>b.id==bidId)||{}).amount||0;
@@ -6379,6 +6393,7 @@ function logPayment(){
   const errEl=document.getElementById('mpay-err');if(errEl){errEl.style.display='none';}
   const type=v('mpay-type')||v('pay-type');
   if(!type){_mpayErr('Select a payment type above.');return;}
+  if(type==='stripe'){const _bid=activePayBidId;closePayPanel();sendPaymentLink(_bid);return;}
   const a=parseFloat(v('mpay-amount')||v('pay-amount'));
   if(!a||a<=0){
     const amtEl=document.getElementById('mpay-amount');
@@ -6438,9 +6453,6 @@ function logPayment(){
 
   const newBalance=getBidBalance(bid);
   if(newBalance<=0.01){
-    // Auto-mark job complete when fully paid
-    if(!bid.completion_date)bid.completion_date=todayKey();
-    jobs.filter(j=>j.client_id===bid.client_id&&j.eventType!=='estimate'&&j.status!=='done').forEach(j=>{j.status='done';if(!j.completion_date)j.completion_date=todayKey();});
     saveAll();
     renderClientDetail();
     const banner=document.createElement('div');
