@@ -12720,7 +12720,7 @@ function renderExpenses(){
   const filtered=yr==='all'?expenses:expenses.filter(e=>e.date&&e.date.startsWith(yr));
   const total=filtered.reduce((s,e)=>s+e.amount,0);
   const deductible=filtered.filter(e=>e.deductible!==false).reduce((s,e)=>s+(e.meals_50?e.amount*0.5:e.amount),0);
-  const noReceipt=filtered.filter(e=>!e.receipt||e.receipt.includes('No'));
+  const noReceipt=filtered.filter(e=>!e.receipt||e.receipt.includes('No')).filter(e=>e.cat!=='fees'&&!e.autoLogged);
   const today=todayKey();
   const purgeable=expenses.filter(e=>e.expires_at&&e.expires_at<today&&e.receipt_img);
   let html='';
