@@ -3513,7 +3513,8 @@ function getNextCollAction(stage){
 
 function emitEvent(type,clientId,extra){if(!events)events=[];events.push({id:Date.now()+'_'+Math.random().toString(36).slice(2,6),type,ts:new Date().toISOString(),client_id:clientId,...(extra||{})});if(events.length>600)events=events.slice(-600);}
 function autoLogContact(clientId,note){const c=getClientById(clientId);if(!c)return;c.last_contact_date=todayKey();const pb=bids.find(b=>b.client_id===clientId&&b.status==='Pending');if(pb){pb.last_followup_date=todayKey();if(!pb.followup||pb.followup<=todayKey())pb.followup=addDays(todayKey(),7);}emitEvent(note||'contact',clientId);try{saveAll();}catch(e){}}
-function markFollowupSent(bidId){const b=bids.find(x=>x.id===bidId);if(!b)return;b.last_followup_date=todayKey();b.followup=addDays(todayKey(),7);b.noResponseCount=(b.noResponseCount||0)+1;saveAll();setTimeout(renderDash,600);}
+function markFollowupSent(bidId){const b=bids.find(x=>x.id===bidId);if(!b)return;b.last_followup_date=todayKey();b.followupStage=(b.followupStage||1)+1;const nextDays=b.followupStage>=3?14:7;b.followup=addDays(todayKey(),nextDays);b.noResponseCount=(b.noResponseCount||0)+1;saveAll();setTimeout(renderDash,600);}
+function _snoozeFollowup(bidId,days){const b=bids.find(x=>x.id===bidId);if(!b)return;b.followup=addDays(todayKey(),days||2);saveAll();setTimeout(renderDash,300);showToast('Follow-up snoozed '+days+' days','⏰');}
 function openExpenseForJob(jobId,clientId){const j=jobs.find(x=>x.id===jobId);goPg('pg-tracker');setTimeout(()=>{const sel=document.getElementById('exp-job');if(sel){for(let i=0;i<sel.options.length;i++){if(sel.options[i].value==jobId){sel.selectedIndex=i;break;}}}const expSec=document.getElementById('add-exp-form')||document.getElementById('exp-add-section');if(expSec)expSec.scrollIntoView({behavior:'smooth'});},200);}
 function renderDashCollect(){
   const el=document.getElementById('dash-collect');if(!el)return;
@@ -3873,7 +3874,8 @@ function renderTodayFeed(){
         '</div>'+
         '<div class="tf-acts">'+
           (c.phone?'<a href="tel:'+c.phone.replace(/\D/g,'')+'" onclick="autoLogContact('+c.id+',\'call\')" class="btn btn-sm" style="font-size:11px">Call</a>':'')+
-          (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+smsBody+'" onclick="autoLogContact('+c.id+',\'second_followup\');markFollowupSent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">Text</a>':'')+
+          (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+smsBody+'" onclick="autoLogContact('+c.id+',\'second_followup\');markFollowupSent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">📱 Send</a>':'')+
+          '<button onclick="_snoozeFollowup('+b.id+',2)" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Snooze 2d</button>'+
           '<button onclick="markFUWon('+b.id+','+b.client_id+')" class="btn btn-sm btn-g" style="font-size:11px">Won ✓</button>'+
         '</div>'+
       '</div>'});
@@ -3883,18 +3885,21 @@ function renderTodayFeed(){
   bids.filter(b=>b.status==='Pending'&&!b.signingToken&&!b.draft&&b.followup&&b.followup<=tk&&!(b.noResponseCount>=1)).forEach(b=>{
     const c=getClientById(b.client_id);if(!c)return;
     const fn=c.name.split(' ')[0];
+    const stage=b.followupStage||1;
+    const msgs=['Hey '+fn+', just checking in — did you get a chance to look over the proposal? Happy to answer any questions.','Hi '+fn+', wanted to follow up on the estimate I sent over. Let me know if you\'d like to move forward or have any questions.','Hey '+fn+', I have an opening coming up that might work great for your project. Would love to get it scheduled — let me know!'];
+    const smsBody=encodeURIComponent(msgs[Math.min(stage-1,msgs.length-1)]);
     const daysOut=Math.floor((new Date(tk+'T12:00')-new Date(b.followup+'T12:00'))/86400000);
-    const smsBody=encodeURIComponent('Hey '+fn+', just checking in on the estimate I sent over — any questions or thoughts?');
     items.push({priority:5,html:
       '<div class="tf-card">'+
         '<div class="tf-icon">⏰</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(c.name)+'</div>'+
-          '<div class="tf-sub" style="color:var(--amber)">'+(daysOut>0?daysOut+'d overdue':'Due today')+' · '+fmt(b.amount)+' estimate</div>'+
+          '<div class="tf-sub" style="color:var(--amber)">Follow-up #'+stage+' · '+(daysOut>0?daysOut+'d overdue':'due today')+' · '+fmt(b.amount)+'</div>'+
         '</div>'+
         '<div class="tf-acts">'+
+          (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+smsBody+'" onclick="autoLogContact('+c.id+',\'followup_sent\');markFollowupSent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">📱 Send</a>':'')+
           (c.phone?'<a href="tel:'+c.phone.replace(/\D/g,'')+'" onclick="autoLogContact('+c.id+',\'call\')" class="btn btn-sm" style="font-size:11px">Call</a>':'')+
-          (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+smsBody+'" onclick="autoLogContact('+c.id+',\'followup_sent\');markFollowupSent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">Text</a>':'')+
+          '<button onclick="_snoozeFollowup('+b.id+',2)" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Snooze 2d</button>'+
           '<button onclick="markFUWon('+b.id+','+b.client_id+')" class="btn btn-sm btn-g" style="font-size:11px">Won ✓</button>'+
         '</div>'+
       '</div>'});
@@ -5268,6 +5273,58 @@ function deleteJob(jobId){
   },{title:'Remove '+label,yes:'Remove',danger:true});
 }
 
+function showJobScorecard(jobId,collectBidId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+  const revenue=bid?bid.amount||0:0;
+  const matSpend=expenses.filter(e=>e.job_id===jobId||e.job_id===j.bid_id).reduce((s,e)=>s+(e.amount||0),0);
+  const laborRate=S.laborRate||45;
+  const actualHrs=j.actualHours||0;
+  const laborCost=Math.round(actualHrs*laborRate*100)/100;
+  const netProfit=revenue-matSpend-laborCost;
+  const margin=revenue>0?Math.round(netProfit/revenue*100):0;
+  const marginColor=margin>=50?'var(--green-mid)':margin>=30?'var(--yellow,#f59e0b)':'#A32D2D';
+  const estDays=bid?.days||j.days||0;
+  const clientName=j.name||(bid?bid.client_name:'');
+  const collectBid=collectBidId?bids.find(b=>b.id===collectBidId):null;
+  const balance=collectBid?getBidBalance(collectBid):0;
+  const ov=document.createElement('div');ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="text-align:center;margin-bottom:4px;font-size:28px">🎉</div>'+
+    '<div style="font-size:18px;font-weight:800;text-align:center;margin-bottom:2px">Job Complete</div>'+
+    '<div style="font-size:12px;color:var(--text3);text-align:center;margin-bottom:18px">'+escHtml(clientName)+'</div>'+
+    '<div style="background:var(--bg2);border-radius:var(--r);padding:14px;margin-bottom:14px">'+
+      '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)">'+
+        '<span style="font-size:13px;color:var(--text2)">Revenue</span>'+
+        '<span style="font-size:13px;font-weight:700">'+fmt(revenue)+'</span>'+
+      '</div>'+
+      (matSpend>0?
+        '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)">'+
+          '<span style="font-size:13px;color:var(--text2)">Materials</span>'+
+          '<span style="font-size:13px;font-weight:600;color:#A32D2D">−'+fmt(matSpend)+'</span>'+
+        '</div>':'')+
+      (actualHrs>0?
+        '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)">'+
+          '<span style="font-size:13px;color:var(--text2)">Labor ('+actualHrs+' hrs @ $'+laborRate+')</span>'+
+          '<span style="font-size:13px;font-weight:600;color:#A32D2D">−'+fmt(laborCost)+'</span>'+
+        '</div>':'')+
+      '<div style="display:flex;justify-content:space-between;padding:10px 0 4px">'+
+        '<span style="font-size:14px;font-weight:700">Net profit</span>'+
+        '<span style="font-size:16px;font-weight:800;color:var(--green-mid)">'+fmt(netProfit)+'</span>'+
+      '</div>'+
+      (revenue>0?'<div style="text-align:right;font-size:22px;font-weight:800;color:'+marginColor+';margin-top:2px">'+margin+'% margin</div>':'')+
+      (estDays>0&&actualHrs>0?'<div style="font-size:11px;color:var(--text3);text-align:right;margin-top:4px">'+actualHrs+' actual hrs · '+estDays+' day estimate</div>':'')+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr'+(balance>0.01?' 1.5fr':'')+';gap:8px">'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+j.client_id+')" '+
+        'style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Close</button>'+
+      (balance>0.01?'<button onclick="this.closest(\'.zmodal-overlay\').remove();openPayPanel('+collectBidId+',\'final\')" '+
+        'style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">💳 Collect '+fmt(balance)+' →</button>':'')+
+    '</div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov){ov.remove();if(balance>0.01)openPayPanel(collectBidId,'final');}});
+}
 function markJobDone(jobId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
@@ -5396,23 +5453,14 @@ function confirmJobDone(jobId){
   renderDash();
   renderJobsPage();
   renderMoneyPage();
-  // Route to collect — find the linked bid or best matching unpaid bid for this client
+  // Find collect bid — passed to scorecard which owns final navigation
   let collectBid=j.bid_id?bids.find(x=>x.id===j.bid_id):null;
   if(!collectBid){
-    // Try to find any unpaid Closed Won bid for this client
     const candidates=bids.filter(x=>x.client_id===j.client_id&&x.status==='Closed Won'&&getBidBalance(x)>0.01)
       .sort((a,b)=>(b.bid_date||'').localeCompare(a.bid_date||''));
     if(candidates.length)collectBid=candidates[0];
   }
-  if(collectBid&&getBidBalance(collectBid)>0.01){
-    setTimeout(()=>openPayPanel(collectBid.id,'final'),100);
-  } else {
-    // No unpaid bid found — go to client record so Zach can log payment manually
-    setTimeout(()=>{
-      openClientDetail(j.client_id);
-      setTimeout(()=>setCDTab('bids',document.getElementById('cdt-bids')),200);
-    },100);
-  }
+  setTimeout(()=>showJobScorecard(jobId,collectBid?.id||null),200);
   // Expense prompt — give payment panel time to open first
   const _jid=jobId,_cid=j.client_id;
   setTimeout(()=>{
@@ -7779,17 +7827,19 @@ function showJobDebrief(jobId){
 function saveDebriefAndComplete(jobId,btn){
   const box=btn.closest('.zmodal');
   const inputs=box.querySelectorAll('input[data-room][data-scope]');
+  let totalActualHrs=0;
   inputs.forEach(inp=>{
     const room=decodeURIComponent(inp.dataset.room);
     const scopeId=inp.dataset.scope;
     const hrs=parseFloat(inp.value)||0;
     if(!hrs)return;
+    totalActualHrs+=hrs;
     if(!S.scopeHistory)S.scopeHistory={};
     if(!S.scopeHistory[scopeId])S.scopeHistory[scopeId]=[];
     S.scopeHistory[scopeId].push({hrs,ts:Date.now()});
-    // Keep last 20 entries per scope item
     if(S.scopeHistory[scopeId].length>20)S.scopeHistory[scopeId]=S.scopeHistory[scopeId].slice(-20);
   });
+  if(totalActualHrs>0){const j=jobs.find(x=>x.id===jobId);if(j)j.actualHours=Math.round(totalActualHrs*10)/10;}
   saveAll();
   btn.closest('.zmodal-overlay').remove();
   confirmMarkComplete(jobId);
@@ -9568,7 +9618,9 @@ function _commitProposalSent(){
     bid.signingToken=token;bid.signingKey=proposalKey;
     if(bid.status==='Draft'||!bid.status)bid.status='Pending';
     bid.draft=false;
-    if(!bid.followup)bid.followup=addDays(todayKey(),7);
+    bid.proposalSentDate=todayKey();
+    if(!bid.followupStage)bid.followupStage=1;
+    bid.followup=addDays(todayKey(),3);
     // Snapshot the exact proposal HTML the client will sign — required for legal record
     const proposalEl=document.getElementById('est-proposal');
     if(proposalEl&&proposalEl.innerHTML.trim())bid.proposalHtml=proposalEl.innerHTML;
@@ -15675,15 +15727,23 @@ function showScheduleAlerts(){
 
   const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_sched-alert-overlay';
   const box=document.createElement('div');box.className='zmodal';
+  const _alertBid=bids.find(b=>String(b.id)===String(a.bidId));
+  const _depositAlready=_alertBid?getBidPaid(_alertBid.id)>0:false;
+  const _stripeReady=_stripeConnectStatus?.charges_enabled;
+  const _depositAmt=_alertBid?Math.round((_alertBid.amount||0)*0.25*100)/100:0;
   box.innerHTML=
     '<div style="text-align:center;font-size:32px;margin-bottom:6px">'+(a.isPaid?'💰':'🎉')+'</div>'+
     '<div style="font-size:18px;font-weight:800;text-align:center;margin-bottom:4px">New signature!'+moreNote+'</div>'+
     '<div style="font-size:14px;color:var(--text3);text-align:center;margin-bottom:20px">'+
       escHtml(a.name)+' signed their painting proposal'+payLine+'.'+
     '</div>'+
-    '<button id="_sched-alert-yes" style="width:100%;padding:16px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:16px">'+
+    '<button id="_sched-alert-yes" style="width:100%;padding:16px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:'+((!_depositAlready&&_stripeReady&&_depositAmt>0)?'8px':'16px')+'">'+
       'Schedule now →'+
     '</button>'+
+    ((!_depositAlready&&_stripeReady&&_depositAmt>0)?
+      '<button id="_sched-alert-deposit" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:#635BFF;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:16px">'+
+        '💳 Collect '+fmt(_depositAmt)+' deposit now'+
+      '</button>':'')+
     '<div style="text-align:center">'+
       '<button id="_sched-alert-later" style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit;padding:4px 8px;text-decoration:underline;text-underline-offset:2px">'+
         'Later'+(remaining.length?' · '+remaining.length+' more':'')+
@@ -15695,6 +15755,11 @@ function showScheduleAlerts(){
     ov.remove();
     window._showingScheduleAlert=false;
     showScheduleSuggestion(a.clientId,a.bidId,a.name);
+  });
+  document.getElementById('_sched-alert-deposit')?.addEventListener('click',()=>{
+    ov.remove();
+    window._showingScheduleAlert=false;
+    if(a.bidId)openPayPanel(a.bidId,'deposit');
   });
   document.getElementById('_sched-alert-later').addEventListener('click',()=>{
     ov.remove();
