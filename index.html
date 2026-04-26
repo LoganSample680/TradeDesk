@@ -12576,6 +12576,57 @@ function openDriveModal(opts){
 
 let _lmCoords={from:null,to:null};
 let _tripSearchTimers={};
+let _tripDestTimer=null;
+function _tripDestSearch(val){
+  clearTimeout(_tripDestTimer);
+  const box=document.getElementById('lm-to-sugg');if(!box)return;
+  const chip=document.getElementById('lm-to-chip');if(chip)chip.style.display='none';
+  _lmCoords.to=null;
+  if(!val||val.length<2){box.style.display='none';return;}
+  // Client name matches (immediate, no debounce needed)
+  const matches=clients.filter(c=>c.name&&c.name.toLowerCase().includes(val.toLowerCase())&&c.addr).slice(0,4);
+  _tripDestTimer=setTimeout(async()=>{
+    let html='';
+    matches.forEach(c=>{
+      html+='<div onclick="_selectTripClient('+c.id+')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
+        '<div style="font-size:13px;font-weight:700;color:var(--text)">👤 '+escHtml(c.name)+'</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(c.addr||'')+'</div>'+
+      '</div>';
+    });
+    try{
+      const bias=(S.weatherLat&&S.weatherLon)?'&lat='+S.weatherLat+'&lon='+S.weatherLon:'&lat=37.6922&lon=-97.3375';
+      const r=await fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit=5'+bias+'&lang=en');
+      const d=await r.json();
+      (d.features||[]).forEach(f=>{
+        const p=f.properties||{};
+        const name=p.name||'';const num=p.housenumber||'';const street=p.street||'';
+        const city=p.city||p.town||p.village||'';const state=p.state||'';
+        const line1=name||(num?num+' '+street:street)||city;
+        const streetPart=(name&&(num||street))?(num?num+' '+street:street):'';
+        const line2=[streetPart,city,state].filter(Boolean).join(', ');
+        const[lon,lat]=f.geometry.coordinates;
+        const safeL1=line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const safeL2=line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        html+='<div onclick="selectTripPlace(\'lm-to\',\'lm-to-sugg\',\'to\',\''+safeL1+'\',\''+safeL2+'\','+lat+','+lon+')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
+          '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(line1)+'</div>'+
+          (line2?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(line2)+'</div>':'')+
+        '</div>';
+      });
+    }catch(e){}
+    if(html){box.innerHTML=html;box.style.display='block';}else{box.style.display='none';}
+  },200);
+}
+function _selectTripClient(clientId){
+  const c=clients.find(x=>x.id===clientId);if(!c)return;
+  const inp=document.getElementById('lm-to');if(inp)inp.value=c.addr||'';
+  const box=document.getElementById('lm-to-sugg');if(box)box.style.display='none';
+  _lmCoords.to=null;
+  const chip=document.getElementById('lm-to-chip');const chipTxt=document.getElementById('lm-to-chip-txt');
+  if(chip&&chipTxt){chipTxt.textContent=c.name+(c.addr?' · '+c.addr:'');chip.style.display='inline-flex';}
+  const h=document.getElementById('lm-client');if(h)h.value=c.id;
+  const mv=document.getElementById('lm-miles-val');if(mv)mv.value='0';
+  const rr=document.getElementById('lm-route-result');if(rr)rr.style.display='none';
+}
 function tripPlaceSearch(fieldId,suggId,val){
   clearTimeout(_tripSearchTimers[fieldId]);
   const box=document.getElementById(suggId);if(!box)return;
@@ -12632,8 +12683,7 @@ function fillTripSuggestion(clientId,addr,purpose){
   }
   if(purpose){
     document.getElementById('lm-purpose').value=purpose;
-    const row=document.querySelector('[data-lm-chip-row]');
-    if(row)row.querySelectorAll('button').forEach(b=>{b.classList.toggle('active-surf-btn',b.textContent.trim()===purpose);});
+    const sel=document.getElementById('lm-trip-type-sel');if(sel)sel.value=purpose;
   }
   const mv=document.getElementById('lm-miles-val');if(mv)mv.value='0';
   const rr=document.getElementById('lm-route-result');if(rr)rr.style.display='none';
@@ -12649,7 +12699,7 @@ function openLogTripModal(opts){
   const clientOpts='<option value="">— None —</option>'+clients.map(c=>'<option value="'+c.id+'">'+c.name+'</option>').join('');
   const PURPOSES=['Estimate','Job site','Supply run','Other'];
   const prefill=opts.purpose||'Estimate';
-  const purposeChips=PURPOSES.map(p=>'<button type="button" onclick="this.parentElement.querySelectorAll(\'button\').forEach(b=>b.classList.remove(\'active-surf-btn\'));this.classList.add(\'active-surf-btn\');document.getElementById(\'lm-purpose\').value=\''+p+'\'" class="surf-type-btn'+(p===prefill?' active-surf-btn':'')+'" style="flex:1;text-align:center;padding:8px 4px;font-size:12px">'+p+'</button>').join('');
+  const purposeOpts=PURPOSES.map(p=>'<option value="'+p+'"'+(p===prefill?' selected':'')+'>'+p+'</option>').join('');
   // Optional quick-select chips for today's scheduled jobs/estimates
   const suggList=opts.suggestions&&opts.suggestions.length?opts.suggestions:[];
   const suggHtml=suggList.length
@@ -12682,10 +12732,9 @@ function openLogTripModal(opts){
       '<div class="f" style="margin:0"><label>Vehicle</label><select id="lm-vehicle" style="width:100%">'+vehOpts+'</select></div>'+
     '</div>'+
     '<div class="f" style="margin-bottom:12px"><label>Trip type</label>'+
-      '<div data-lm-chip-row style="display:flex;gap:6px;margin-top:6px">'+purposeChips+'</div>'+
+      '<select id="lm-trip-type-sel" style="width:100%" onchange="document.getElementById(\'lm-purpose\').value=this.value">'+purposeOpts+'</select>'+
     '</div>'+
-    '<div class="f" style="margin-bottom:12px"><label>Client <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>'+
-      '<select id="lm-client" style="width:100%">'+clientOpts+'</select></div>'+
+    '<input type="hidden" id="lm-client" value="">'+
     '<div class="f" style="margin-bottom:12px"><label>Starting from</label>'+
       '<div style="display:flex;gap:8px">'+
         '<input id="lm-from" placeholder="Your address or last job" style="flex:1" value="'+(opts.fromAddress||'')+'" oninput="tripPlaceSearch(\'lm-from\',\'lm-from-sugg\',this.value)" autocomplete="off">'+
@@ -12694,8 +12743,8 @@ function openLogTripModal(opts){
       '<div id="lm-from-sugg" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);margin-top:2px;overflow:hidden;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>'+
       '<div id="lm-from-chip" style="display:none;margin-top:5px;font-size:11px;color:var(--green-mid);background:var(--green-lt);border:1px solid var(--green-mid);border-radius:20px;padding:3px 10px;align-items:center;gap:4px"><span>📍</span><span id="lm-from-chip-txt"></span><span style="color:var(--green-mid);font-weight:700">✓</span></div>'+
       '</div>'+
-    '<div class="f" style="margin-bottom:4px"><label>Driving to <span style="font-size:10px;font-weight:400;color:var(--text3)">— type a name or address</span></label>'+
-      '<input id="lm-to" placeholder="e.g. Sherwin-Williams Topeka or 123 Main St" value="'+(opts.toAddress||'')+'" oninput="tripPlaceSearch(\'lm-to\',\'lm-to-sugg\',this.value)" autocomplete="off">'+
+    '<div class="f" style="margin-bottom:4px"><label>Driving to — client name or address</label>'+
+      '<input id="lm-to" placeholder="Type client name or any address" value="'+(opts.toAddress||'')+'" oninput="_tripDestSearch(this.value)" autocomplete="off">'+
       '<div id="lm-to-sugg" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);margin-top:2px;overflow:hidden;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>'+
       '<div id="lm-to-chip" style="display:none;margin-top:5px;font-size:11px;color:var(--green-mid);background:var(--green-lt);border:1px solid var(--green-mid);border-radius:20px;padding:3px 10px;align-items:center;gap:4px"><span>📍</span><span id="lm-to-chip-txt"></span><span style="color:var(--green-mid);font-weight:700">✓</span></div>'+
       '</div>'+
@@ -12721,11 +12770,10 @@ function openLogTripModal(opts){
     '</div>'+
   '</div>';
   document.body.appendChild(overlay);
+  // Auto-grab GPS for starting location if not pre-filled
+  if(!opts.fromAddress)setTimeout(grabMyLocation,300);
   // Pre-link client if provided
-  if(opts.clientName){setTimeout(()=>{
-    const sel=document.getElementById('lm-client');
-    if(sel){const c=clients.find(x=>x.name===opts.clientName);if(c)sel.value=c.id;}
-  },50);}
+  if(opts.clientName){const c=clients.find(x=>x.name===opts.clientName);if(c){const h=document.getElementById('lm-client');if(h)h.value=c.id;}}
 }
 async function grabMyLocation(){
   const btn=document.getElementById('lm-gps-btn');
