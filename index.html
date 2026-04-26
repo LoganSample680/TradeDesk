@@ -9417,24 +9417,28 @@ ${proposal.innerHTML}
 // ── Stripe Connect ─────────────────────────────────────────────────────────
 let _stripeConnectStatus=null; // cached: {connected, charges_enabled, details_submitted, stripe_account_id}
 
-async function loadStripeConnectStatus(){
-  const el=document.getElementById('stripe-connect-status-ui');if(!el)return;
-  if(!supaEnabled()||!_supaUser){
-    el.innerHTML='<div style="font-size:12px;color:var(--text3)">Sign in to connect Stripe.</div>';return;
-  }
+async function _fetchStripeConnectStatus(){
+  if(!supaEnabled()||!_supaUser)return null;
   try{
     const session=await _supa.auth.getSession();
     const token=session?.data?.session?.access_token;
-    if(!token){el.innerHTML='<div style="font-size:12px;color:var(--text3)">Sign in to connect Stripe.</div>';return;}
+    if(!token)return null;
     const res=await fetch(SUPA_URL+'/functions/v1/stripe-connect-status',{
       method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}'
     });
     const data=await res.json();
     _stripeConnectStatus=data;
-    _renderStripeConnectUI(el,data);
-  }catch(e){
-    el.innerHTML='<div style="font-size:12px;color:var(--red)">Could not check Stripe status.</div>';
+    return data;
+  }catch(e){return null;}
+}
+async function loadStripeConnectStatus(){
+  const el=document.getElementById('stripe-connect-status-ui');
+  if(!supaEnabled()||!_supaUser){
+    if(el)el.innerHTML='<div style="font-size:12px;color:var(--text3)">Sign in to connect Stripe.</div>';return;
   }
+  const data=await _fetchStripeConnectStatus();
+  if(!data){if(el)el.innerHTML='<div style="font-size:12px;color:var(--red)">Could not check Stripe status.</div>';return;}
+  if(el)_renderStripeConnectUI(el,data);
 }
 
 function _renderStripeConnectUI(el,data){
@@ -16208,6 +16212,8 @@ async function supaLoadFromCloud(){
     // Check for new signatures then schedule alerts — sequential to avoid race
     setTimeout(async()=>{ await checkNewSignatures(); if(!window._showingScheduleAlert) showScheduleAlerts(); },2000);
     setInterval(()=>checkNewSignatures(),30000);
+    // Pre-load Stripe connect status so sendPaymentLink works without visiting Settings first
+    setTimeout(()=>_fetchStripeConnectStatus(),3000);
     // Realtime subscription — fires immediately on new INSERT to signed_proposals
     if(_supa&&_supaUser){
       try{
