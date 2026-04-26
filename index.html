@@ -12836,7 +12836,13 @@ function _selectTripMapApp(which){
 }
 function saveLoggedTrip(){
   const miles=parseFloat(document.getElementById('lm-miles-val')?.value)||0;
-  if(!miles){zAlert('Tap "Calculate miles" first to get the distance.');return;}
+  if(!miles){
+    const _fv=(document.getElementById('lm-from')?.value||'').trim();
+    const _tv=(document.getElementById('lm-to')?.value||'').trim();
+    if(_fv&&_tv){calculateAndShowRoute();showToast('Calculating distance — tap Save trip again once it appears','🗺');}
+    else{zAlert('Enter a destination first.',{title:'Distance needed'});}
+    return;
+  }
   const date=document.getElementById('lm-date')?.value||todayKey();
   const vehicle=document.getElementById('lm-vehicle')?.value||'';
   const purpose=document.getElementById('lm-purpose')?.value||'';
