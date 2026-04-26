@@ -2307,6 +2307,7 @@ const BUSINESS_CONFIGS={
 function getRole(){return _user?.role||'owner';}
 function isOwner(){return getRole()==='owner';}
 function canSeeTaxes(){return isOwner();}
+function isLifetimeAccount(){return !!_account?.is_lifetime;}
 function getBusinessName(){return _account?.business_name||S.bname||'TradeDesk';}
 function getUserName(){return _user?.name||'';}
 function getOwnerName(){
@@ -14804,6 +14805,7 @@ function renderSettingsTrades(){
   const allTrades=Object.keys(TRADE_META);
   const available=allTrades.filter(t=>!lines.includes(t));
   el.innerHTML=
+    (isLifetimeAccount()?'<div style="display:inline-flex;align-items:center;gap:6px;background:#D1FAE5;border:1px solid var(--green-mid);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700;color:var(--green-mid);margin-bottom:12px">⭐ Lifetime access — no subscription ever</div><br>':'')+
     '<div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5">Your active trade lines. Each gets its own estimate form and pipeline view.</div>'+
     '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">'+
     lines.map(t=>{
