@@ -12698,8 +12698,9 @@ function openLogTripModal(opts){
     :'<option value="">— Add vehicle in Settings —</option>';
   const clientOpts='<option value="">— None —</option>'+clients.map(c=>'<option value="'+c.id+'">'+c.name+'</option>').join('');
   const PURPOSES=['Estimate','Job site','Supply run','Other'];
-  const prefill=opts.purpose||'Estimate';
-  const purposeOpts=PURPOSES.map(p=>'<option value="'+p+'"'+(p===prefill?' selected':'')+'>'+p+'</option>').join('');
+  const prefill=opts.purpose||'';
+  const purposeOpts='<option value="" disabled'+(prefill?'':' selected')+'>— Select type —</option>'+
+    PURPOSES.map(p=>'<option value="'+p+'"'+(p===prefill?' selected':'')+'>'+p+'</option>').join('');
   // Optional quick-select chips for today's scheduled jobs/estimates
   const suggList=opts.suggestions&&opts.suggestions.length?opts.suggestions:[];
   const suggHtml=suggList.length
@@ -12770,6 +12771,10 @@ function openLogTripModal(opts){
     '</div>'+
   '</div>';
   document.body.appendChild(overlay);
+  // Auto-select map app based on device
+  const _ua=navigator.userAgent||'';
+  const _defMap=/iPhone|iPad|iPod/i.test(_ua)?'apple':/Android/i.test(_ua)?'google':'';
+  if(_defMap)setTimeout(()=>_selectTripMapApp(_defMap),50);
   // Auto-grab GPS for starting location if not pre-filled
   if(!opts.fromAddress)setTimeout(grabMyLocation,300);
   // Pre-link client if provided
@@ -12829,7 +12834,8 @@ function saveLoggedTrip(){
   if(!miles){zAlert('Tap "Calculate miles" first to get the distance.');return;}
   const date=document.getElementById('lm-date')?.value||todayKey();
   const vehicle=document.getElementById('lm-vehicle')?.value||'';
-  const purpose=document.getElementById('lm-purpose')?.value||'Other';
+  const purpose=document.getElementById('lm-purpose')?.value||'';
+  if(!purpose){const sel=document.getElementById('lm-trip-type-sel');if(sel){sel.style.borderColor='#A32D2D';sel.style.background='var(--red-lt)';sel.focus();}zAlert('Select a trip type.',{title:'Required'});return;}
   const cid=parseInt(document.getElementById('lm-client')?.value)||null;
   const c=cid?getClientById(cid):null;
   const from=document.getElementById('lm-from')?.value||'';
