@@ -110,6 +110,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   .pg{padding:14px 16px 20px}
   #pg-leads,#pg-jobs,#pg-money{padding-top:8px}
   .drive-active .pg{padding-top:60px}
+  .clock-active .pg{padding-top:60px}
+  .drive-active.clock-active .pg{padding-top:110px}
+  .drive-active #clock-banner{top:42px}
   .tbar-title{font-size:19px}
   .card{padding:14px}
   .f label{font-size:11px}
@@ -141,7 +144,9 @@ input[type=range]{-webkit-appearance:none;appearance:none;background:transparent
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:22px;height:22px;border-radius:50%;background:#0D1117;cursor:pointer;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3);margin-top:-8px;}
 input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:#0D1117;cursor:pointer;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transform:translateY(0);}
 input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(to right,var(--blue-lt),var(--blue));}
-.pg{display:none;padding:20px 24px 24px}.drive-active .pg{padding-top:70px}
+.pg{display:none;padding:20px 24px 24px}.drive-active .pg{padding-top:70px}.clock-active .pg{padding-top:70px}.drive-active.clock-active .pg{padding-top:112px}
+#clock-banner{position:fixed;top:0;left:var(--nav-w);right:0;background:#7C3D0A;color:#fff;z-index:998;padding:8px 14px;display:none;align-items:center;justify-content:space-between;gap:10px}
+@media(max-width:767px){#clock-banner{left:0}}
 #pg-leads,#pg-jobs,#pg-money{padding-top:8px}
 .pg.active{display:block}
 #pg-est.active{position:fixed;inset:0;z-index:1100;overflow-y:auto;padding:0;background:var(--bg)}
@@ -1955,7 +1960,16 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   <button onclick="showEndDrive()" style="background:#A32D2D;color:#fff;border:none;border-radius:var(--r);padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0">End trip</button>
 </div>
 
-
+<div id="clock-banner">
+  <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+    <span style="font-size:16px;flex-shrink:0">⏱</span>
+    <div style="min-width:0">
+      <div style="font-size:11px;font-weight:700;color:#FFA94D;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="clock-banner-job"></div>
+      <div style="font-size:10px;color:rgba(255,255,255,.75)" id="clock-banner-time">0:00:00</div>
+    </div>
+  </div>
+  <button onclick="clockOut()" style="background:#A32D2D;color:#fff;border:none;border-radius:var(--r);padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0">⏹ Clock out</button>
+</div>
 
 
 <button id="notes-fab" onclick="toggleNotesPanel()" style="display:none;position:fixed;bottom:88px;right:14px;z-index:500;width:50px;height:50px;border-radius:50%;background:var(--blue);color:#fff;border:none;align-items:center;justify-content:center;font-size:22px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.3);font-family:inherit" title="Notes & Sketches">✏️</button>
@@ -2083,7 +2097,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 <script>
 // ── Submit guard — prevents double-tap on any button ─────────────────────
 let _submitting=false;
-let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[],events=[];
+let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[],events=[],timeEntries=[];
 // Collision-resistant bid ID: milliseconds * 1000 + random 0-998 = 13-16 digit unique number
 function _newBidId(){return Date.now()*1000+Math.floor(Math.random()*999);}
 let currentClientId=null,editClientId=null,clientFilter='new';
@@ -2155,6 +2169,7 @@ calYear=now.getFullYear();calMonth=now.getMonth();
 availYear=now.getFullYear();availMonth=now.getMonth();
 
 let gps={active:false,startCoords:null,endCoords:null,startTime:null,clientId:null,timerInt:null};
+let _activeTimer=null; // {jobId,jobName,clientName,startTime,timerInterval}
 
 const JOB_COLORS=['#185FA5','#1D9E75','#D85A30','#D4537E','#7F77DD','#BA7517','#E24B4A','#444441'];
 // ── Scope item auto-pricing ──────────────────────────────────────────────────
@@ -2309,8 +2324,8 @@ let STD_DED={single:14600,mfj:29200,mfs:14600,hoh:21900};
 let KS_BRACKETS={single:[],mfj:[],mfs:[],hoh:[]};
 let KS_STD={single:3500,mfj:8000,mfs:4000,hoh:6000};
 
-function saveAll(){try{const lp=(k,d)=>localStorage.setItem(k,JSON.stringify(d));lp('zp3_clients',clients);lp('zp3_bids',bids);lp('zp3_jobs',jobs);lp('zp3_inc',income);lp('zp3_exp',expenses);lp('zp3_mil',mileage);lp('zp3_chk',checksState);lp('zp3_S',S);lp('zp3_pay',payments);lp('zp3_lien',liens);lp('zp3_ev',events.slice(-600));}catch(e){}supaSaveDebounced();}
-function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s?JSON.parse(s):d;};clients=lp('zp3_clients',[]);bids=lp('zp3_bids',[]);jobs=lp('zp3_jobs',[]);income=lp('zp3_inc',[]);expenses=lp('zp3_exp',[]);mileage=lp('zp3_mil',[]);checksState=lp('zp3_chk',{});payments=lp('zp3_pay',[]);liens=lp('zp3_lien',[]);events=lp('zp3_ev',[]);const ss=lp('zp3_S',null);if(ss)S={...S,...ss};}catch(e){}
+function saveAll(){try{const lp=(k,d)=>localStorage.setItem(k,JSON.stringify(d));lp('zp3_clients',clients);lp('zp3_bids',bids);lp('zp3_jobs',jobs);lp('zp3_inc',income);lp('zp3_exp',expenses);lp('zp3_mil',mileage);lp('zp3_chk',checksState);lp('zp3_S',S);lp('zp3_pay',payments);lp('zp3_lien',liens);lp('zp3_ev',events.slice(-600));lp('zp3_te',timeEntries.slice(-500));}catch(e){}supaSaveDebounced();}
+function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s?JSON.parse(s):d;};clients=lp('zp3_clients',[]);bids=lp('zp3_bids',[]);jobs=lp('zp3_jobs',[]);income=lp('zp3_inc',[]);expenses=lp('zp3_exp',[]);mileage=lp('zp3_mil',[]);checksState=lp('zp3_chk',{});payments=lp('zp3_pay',[]);liens=lp('zp3_lien',[]);events=lp('zp3_ev',[]);timeEntries=lp('zp3_te',[]);const ss=lp('zp3_S',null);if(ss)S={...S,...ss};}catch(e){}
   // One-time orphan cleanup: remove truly empty Draft bids (no surfaces, no amount) that have
   // no business being in Estimates in Progress — these were created by navigating away at step 1
   // before the _doOpenEstimate dedup fix. Safe to remove: they have zero data.
@@ -2579,10 +2594,11 @@ function clearLogoSetting(){
 function clearAllData(){
   zConfirm('This will permanently delete ALL clients, bids, jobs, income, expenses, and mileage. This cannot be undone.',()=>{
     zConfirm('Last chance — are you absolutely sure you want to delete everything?',()=>{
-      clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];payments=[];liens=[];
+      clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];payments=[];liens=[];timeEntries=[];
       S.employees=[];S.vehicles=[];
       estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;
       gps={active:false,startCoords:null,startTime:null,clientId:null,clientName:'',timerInt:null,vehicle:'',purpose:''};
+      if(_activeTimer){clearInterval(_activeTimer.timerInterval);_activeTimer=null;hideClockBanner();}
       hideDriveBanner();clearSurfDraft();saveAll();renderDash();
       zAlert('All data cleared. Starting fresh!',{title:'Done'});
       goPg('pg-dash');
@@ -5244,6 +5260,21 @@ function renderCDJobs(){
     if(isDone&&j.completion_date){
       doneBtn='<span style="font-size:11px;color:var(--text3)">Completed '+j.completion_date+'</span>';
     }
+    // Clock in/out for active or upcoming jobs
+    let clockBtnCD='';
+    if(!isDone){
+      const isClockedHere=_activeTimer&&_activeTimer.jobId===j.id;
+      if(isClockedHere){
+        const _el2=Math.floor((Date.now()-_activeTimer.startTime)/1000);
+        const _h2=Math.floor(_el2/3600),_m2=Math.floor((_el2%3600)/60),_s2=_el2%60;
+        const _ts2=(_h2?_h2+'h ':'')+_m2+':'+((_s2<10?'0':'')+_s2);
+        clockBtnCD='<button class="btn btn-sm" onclick="clockOut()" style="border-color:#E97B00;color:#E97B00;background:#FFF3E0">⏹ '+_ts2+'</button>';
+      }else{
+        const logged=getJobClockTotal(j.id);
+        const loggedLabel=logged>0?(Math.floor(logged/60)?Math.floor(logged/60)+'h ':'')+(logged%60?logged%60+'m ':'')+'logged · ':'';
+        clockBtnCD='<button class="btn btn-sm" onclick="clockIn('+j.id+')" style="border-color:var(--border2);color:var(--text2)">▶ '+(logged>0?loggedLabel:'')+'Clock in</button>';
+      }
+    }
     return '<div class="card" style="margin-bottom:8px;border-left:3px solid '+(j.color||'var(--blue)')+'">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
         '<div style="flex:1;min-width:0">'+
@@ -5257,7 +5288,7 @@ function renderCDJobs(){
         '</div>'+
       '</div>'+
       '<div class="brow" style="margin-top:8px">'+
-        (doneBtn?doneBtn:'')+'<button class="btn-del" onclick="deleteJob('+j.id+')" style="font-size:11px;padding:5px 8px;color:#A32D2D">Remove</button>'+
+        (doneBtn?doneBtn:'')+clockBtnCD+'<button class="btn-del" onclick="deleteJob('+j.id+')" style="font-size:11px;padding:5px 8px;color:#A32D2D">Remove</button>'+
       '</div>'+
     '</div>';
   }).join('');
@@ -6860,6 +6891,70 @@ function hideDriveBanner(){
   const banner=document.getElementById('drive-banner');
   if(banner)banner.style.display='none';
   if(document.body&&document.body.classList)document.body.classList.remove('drive-active');
+}
+
+// ── Active time tracking ─────────────────────────────────────────────────────
+function clockIn(jobId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  if(_activeTimer){
+    if(_activeTimer.jobId===jobId){showToast('Already clocked in to this job','⏱');return;}
+    zConfirm('You\'re clocked in to '+_activeTimer.jobName+'. Save that time and switch?',()=>{
+      clockOut(true,true);setTimeout(()=>clockIn(jobId),100);
+    },{title:'Switch job',yes:'Save & switch',danger:false});
+    return;
+  }
+  const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+  const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
+  _activeTimer={jobId,jobName:j.name,clientName:c?c.name:j.name,startTime:Date.now(),timerInterval:null};
+  _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
+  showClockBanner();
+  renderJobsPage&&renderJobsPage();
+  showToast('Clocked in · '+(c?c.name:j.name),'⏱');
+}
+function clockOut(saveEntry,silent){
+  if(!_activeTimer)return;
+  clearInterval(_activeTimer.timerInterval);
+  const minutes=Math.max(1,Math.round((Date.now()-_activeTimer.startTime)/60000));
+  const jobId=_activeTimer.jobId;
+  const jobName=_activeTimer.jobName;
+  if(saveEntry!==false){
+    timeEntries.push({id:Date.now(),job_id:jobId,date:todayKey(),start_time:new Date(_activeTimer.startTime).toISOString(),end_time:new Date().toISOString(),minutes});
+    const j=jobs.find(x=>x.id===jobId);
+    if(j)j.actualHours=Math.round(((j.actualHours||0)+minutes/60)*10)/10;
+    saveAll();
+    if(!silent){
+      const h=Math.floor(minutes/60),m=minutes%60;
+      showToast((h?h+'h ':'')+(m+'m logged to '+jobName),'⏱');
+    }
+  }
+  _activeTimer=null;
+  hideClockBanner();
+  renderJobsPage&&renderJobsPage();
+  renderDash&&setTimeout(renderDash,300);
+}
+function updateClockTimer(){
+  if(!_activeTimer)return;
+  const elapsed=Math.floor((Date.now()-_activeTimer.startTime)/1000);
+  const h=Math.floor(elapsed/3600);
+  const m=Math.floor((elapsed%3600)/60);
+  const s=elapsed%60;
+  const ts=(h?h+'h ':'')+m+':'+(s<10?'0':'')+s;
+  const el=document.getElementById('clock-banner-time');
+  if(el)el.textContent=ts;
+}
+function showClockBanner(){
+  const b=document.getElementById('clock-banner');if(!b)return;
+  const jn=document.getElementById('clock-banner-job');
+  if(jn)jn.textContent=_activeTimer?_activeTimer.clientName:'';
+  b.style.display='flex';
+  if(document.body)document.body.classList.add('clock-active');
+}
+function hideClockBanner(){
+  const b=document.getElementById('clock-banner');if(b)b.style.display='none';
+  if(document.body)document.body.classList.remove('clock-active');
+}
+function getJobClockTotal(jobId){
+  return timeEntries.filter(e=>e.job_id===jobId).reduce((s,e)=>s+(e.minutes||0),0);
 }
 
 function sendReminderSMS(cid){
@@ -13224,10 +13319,24 @@ function renderJobsPage(){
     } else if(st.stage==='signed'){
       primaryBtn='<button onclick="schedFromBid('+b.id+')" style="padding:5px 14px;border-radius:20px;border:none;background:var(--blue);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Schedule →</button>';
     }
+    // Clock in/out button for active/scheduled jobs with a next job
+    let clockBtn='';
+    if(nextJobId&&!nextJob.completion_date&&(st.stage==='active'||st.stage==='scheduled')){
+      const isClockedHere=_activeTimer&&_activeTimer.jobId===nextJobId;
+      if(isClockedHere){
+        const _el=Math.floor((Date.now()-_activeTimer.startTime)/1000);
+        const _h=Math.floor(_el/3600),_m=Math.floor((_el%3600)/60),_s=_el%60;
+        const _ts=(_h?_h+'h ':'')+_m+':'+((_s<10?'0':'')+_s);
+        clockBtn='<button onclick="clockOut();event.stopPropagation()" style="padding:5px 12px;border-radius:20px;border:1px solid #E97B00;background:#FFF3E0;color:#E97B00;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">⏹ '+_ts+'</button>';
+      }else{
+        clockBtn='<button onclick="clockIn('+nextJobId+');event.stopPropagation()" style="padding:5px 12px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">▶ Clock in</button>';
+      }
+    }
     // Right side: amount + balance state
     const amtColor=balance>0.01?'#A32D2D':paid>0?'var(--green-mid)':'var(--text)';
     const amtSub=balance>0.01?'<div style="font-size:10px;font-weight:700;color:#A32D2D;margin-top:1px">'+fmt(balance)+' due</div>':
                  paid>0?'<div style="font-size:10px;font-weight:600;color:var(--green-mid);margin-top:1px">Paid ✓</div>':'';
+    const btnRow=(primaryBtn||clockBtn)?'<div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap" onclick="event.stopPropagation()">'+(primaryBtn||'')+(clockBtn||'')+'</div>':'';
     return '<div onclick="openJobSheet('+c.id+')" style="display:flex;align-items:stretch;border-bottom:1px solid var(--border);cursor:pointer;min-height:60px">'+
       '<div style="width:4px;background:'+typeColor+';border-radius:3px 0 0 3px;flex-shrink:0"></div>'+
       '<div style="flex:1;min-width:0;padding:11px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px">'+
@@ -13236,7 +13345,7 @@ function renderJobsPage(){
           '<div style="font-size:11px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+
             escHtml(propAddr)+(nextStart?' · '+nextStart:'')+
           '</div>'+
-          (primaryBtn?'<div style="margin-top:7px" onclick="event.stopPropagation()">'+primaryBtn+'</div>':'')+
+          btnRow+
         '</div>'+
         '<div style="text-align:right;flex-shrink:0;padding-left:4px">'+
           '<div style="font-size:14px;font-weight:800;color:'+amtColor+'">'+fmt(b.amount)+'</div>'+
