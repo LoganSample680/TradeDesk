@@ -12626,6 +12626,7 @@ function _selectTripClient(clientId){
   const h=document.getElementById('lm-client');if(h)h.value=c.id;
   const mv=document.getElementById('lm-miles-val');if(mv)mv.value='0';
   const rr=document.getElementById('lm-route-result');if(rr)rr.style.display='none';
+  if((document.getElementById('lm-from')?.value||'').trim())setTimeout(calculateAndShowRoute,100);
 }
 function tripPlaceSearch(fieldId,suggId,val){
   clearTimeout(_tripSearchTimers[fieldId]);
@@ -12673,6 +12674,7 @@ function selectTripPlace(fieldId,suggId,coordKey,line1,line2,lat,lng){
   const chip=document.getElementById(chipId);
   const chipTxt=document.getElementById(chipId+'-txt');
   if(chip&&chipTxt){chipTxt.textContent=full;chip.style.display='inline-flex';}
+  if(coordKey==='to'&&(document.getElementById('lm-from')?.value||'').trim())setTimeout(calculateAndShowRoute,100);
 }
 function fillTripSuggestion(clientId,addr,purpose){
   const toInp=document.getElementById('lm-to');
@@ -12749,10 +12751,12 @@ function openLogTripModal(opts){
       '<div id="lm-to-sugg" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);margin-top:2px;overflow:hidden;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>'+
       '<div id="lm-to-chip" style="display:none;margin-top:5px;font-size:11px;color:var(--green-mid);background:var(--green-lt);border:1px solid var(--green-mid);border-radius:20px;padding:3px 10px;align-items:center;gap:4px"><span>📍</span><span id="lm-to-chip-txt"></span><span style="color:var(--green-mid);font-weight:700">✓</span></div>'+
       '</div>'+
-    '<button type="button" onclick="calculateAndShowRoute()" class="btn btn-p" style="width:100%;margin-bottom:10px;min-height:48px;font-size:15px" id="lm-calc-btn">🗺 Calculate miles</button>'+
-    '<div id="lm-route-result" style="display:none;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:14px;margin-bottom:14px;text-align:center">'+
+    '<div id="lm-route-result" style="display:none;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:14px;margin-bottom:6px;text-align:center">'+
       '<div id="lm-miles-display" style="font-size:32px;font-weight:800;color:var(--blue-dk)"></div>'+
       '<div id="lm-time-display" style="font-size:13px;color:var(--text2);margin-top:4px"></div>'+
+    '</div>'+
+    '<div id="lm-recalc-row" style="display:none;text-align:right;margin-bottom:12px">'+
+      '<button type="button" onclick="calculateAndShowRoute()" style="background:none;border:none;color:var(--blue);font-size:12px;font-weight:600;cursor:pointer;padding:0">↺ Recalculate</button>'+
     '</div>'+
     '<input type="hidden" id="lm-map-app" value="">'+
     '<div class="f" style="margin-bottom:14px">'+
@@ -12806,6 +12810,7 @@ async function calculateAndShowRoute(){
     document.getElementById('lm-miles-display').textContent=miles.toFixed(1)+' miles';
     document.getElementById('lm-time-display').textContent='~'+mins+' min drive · IRS deduction: '+fmt(miles*IRS());
     document.getElementById('lm-route-result').style.display='block';
+    const _rcr=document.getElementById('lm-recalc-row');if(_rcr)_rcr.style.display='block';
   }catch(e){
     zAlert(e.message+'\n\nTip: Try typing the city and state, or pick from the search suggestions.',{title:'Could not calculate route'});
   }finally{if(btn){btn.disabled=false;btn.textContent='🗺 Calculate miles';}}
