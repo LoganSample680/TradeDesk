@@ -151,10 +151,32 @@ async function init(){
     const{data,error}=await _supa.storage.from('proposals').download(key);
     if(error||!data){showState('err');return;}
     _hub=JSON.parse(await data.text());
+    // Real-time signed status: override stale snapshot with live Supabase data
+    const bidIds=_hub.bids.map(b=>String(b.id));
+    if(u&&bidIds.length){
+      try{
+        const{data:sigs}=await _supa.from('signed_proposals')
+          .select('bid_id,payment_status,payment_method,signed_at')
+          .eq('contractor_user_id',u).in('bid_id',bidIds);
+        if(sigs)sigs.forEach(sp=>{
+          const bid=_hub.bids.find(b=>String(b.id)===sp.bid_id);
+          if(bid&&bid.status==='Pending'){
+            bid.status='Closed Won';
+            bid.signedAt=sp.signed_at;
+            bid.paymentStatus=sp.payment_status;
+            if(sp.payment_status==='paid')bid.balance=Math.max(0,(bid.balance||0)-(bid.deposit||0));
+          }
+        });
+      }catch(e){console.warn('sig check:',e);}
+    }
     applyBranding(_hub);
     renderAll();
     showState('hub');
-    if(location.hash.startsWith('#invoice-')){
+    if(location.hash.startsWith('#paid-')){
+      const bidId=parseInt(location.hash.replace('#paid-',''));
+      if(bidId)setTimeout(()=>showPaymentSuccess(bidId),300);
+      history.replaceState(null,'',location.pathname+location.search);
+    } else if(location.hash.startsWith('#invoice-')){
       const bidId=parseInt(location.hash.replace('#invoice-',''));
       if(bidId)setTimeout(()=>openInvoice(bidId),300);
     }
@@ -214,7 +236,9 @@ function renderHome(){
   html+='</div><div style="text-align:right"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.35);margin-bottom:4px">Updated</div>';
   html+='<div style="font-size:12px;color:rgba(255,255,255,.5)">'+fmtDate((h.generatedAt||'').slice(0,10))+'</div></div></div></div>';
   if(totalBalance>0.01){
+    const payableBid=wonBids.find(b=>(b.balance||0)>0.01);
     html+='<div class="balance-box"><div class="balance-lbl">Balance due</div><div class="balance-amt">'+fmt(totalBalance)+'</div>';
+    if(h.stripeEnabled&&payableBid)html+='<button id="pay-btn-'+payableBid.id+'" onclick="payBalance('+payableBid.id+')" class="btn" style="background:#635BFF;margin-bottom:8px">💳 Pay with card</button>';
     if(h.contractorPhone)html+='<a href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" class="btn btn-green" style="margin-bottom:8px">📞 Call to pay — '+esc(h.contractorPhone)+'</a>';
     if(h.contractorPhone)html+='<a href="sms:'+h.contractorPhone.replace(/\D/g,'')+'" class="btn btn-sec">💬 Text to request payment link</a>';
     html+='</div>';
@@ -282,6 +306,7 @@ function renderInvoices(){
     html+='<div style="font-size:12px;color:var(--text3);margin-top:2px">'+(job&&job.completion_date?'Completed '+fmtDate(job.completion_date):b.bid_date?'Job from '+fmtDate(b.bid_date):'')+'</div></div>';
     html+='<div style="font-size:18px;font-weight:800;flex-shrink:0;margin-left:10px;color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">'+fmt(b.amount)+'</div></div>';
     html+='<div style="margin-bottom:10px"><span class="badge" style="background:'+(isPaid?'var(--green-lt)':'var(--red-lt)')+';color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">'+( isPaid?'Paid in full':'Balance: '+fmt(b.balance))+'</span></div>';
+    if(!isPaid&&h.stripeEnabled)html+='<button id="pay-btn-'+b.id+'" onclick="payBalance('+b.id+')" class="btn" style="background:#635BFF;margin-bottom:8px">💳 Pay balance with card</button>';
     html+='<button onclick="openInvoice('+b.id+')" class="btn btn-sec">📄 Download Invoice</button></div>';
   });
   document.getElementById('view-invoices').innerHTML=html;
@@ -317,6 +342,36 @@ function renderPhotos(){
   });
   html+='</div>';
   document.getElementById('view-photos').innerHTML=html;
+}
+async function payBalance(bidId){
+  const bid=_hub.bids.find(b=>b.id===bidId);if(!bid)return;
+  const amount=Math.round((bid.balance||0)*100);
+  if(amount<50){alert('No balance outstanding.');return;}
+  const btn=document.getElementById('pay-btn-'+bidId);
+  if(btn){btn.textContent='Setting up…';btn.disabled=true;}
+  try{
+    const hubBase=location.href.split('#')[0];
+    const res=await fetch('https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/create-checkout',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({amount,currency:'usd',paymentMethod:'card',
+        proposalKey:bid.proposalKey||null,clientName:_hub.clientName,
+        businessName:_hub.contractorName,bidId:String(bid.id),
+        contractorUserId:_hub.contractorUserId,notifyEmail:_hub.notifyEmail,
+        successUrl:hubBase+'#paid-'+bid.id,cancelUrl:hubBase})
+    });
+    const d=await res.json();
+    if(d.url){window.location.href=d.url;}
+    else{if(btn){btn.textContent='Pay with card';btn.disabled=false;}alert('Could not create payment link. Please contact your contractor.');}
+  }catch(e){if(btn){btn.textContent='Pay with card';btn.disabled=false;}}
+}
+function showPaymentSuccess(bidId){
+  const bid=_hub.bids.find(b=>b.id===bidId);
+  const banner=document.createElement('div');
+  banner.style.cssText='position:fixed;top:60px;left:0;right:0;z-index:300;background:#16a34a;color:#fff;padding:14px 20px;text-align:center;font-size:14px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.2)';
+  banner.textContent='✅ Payment received — thank you! Your contractor will be in touch.';
+  document.body.appendChild(banner);
+  setTimeout(()=>banner.remove(),6000);
+  if(bid){bid.paymentStatus='paid';bid.balance=0;renderAll();}
 }
 function openInvoice(bidId){
   const h=_hub;

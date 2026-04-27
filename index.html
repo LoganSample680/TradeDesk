@@ -4377,12 +4377,15 @@ function pipelineResendSms(bidId){
   const b=bids.find(x=>x.id===bidId);
   if(!b||!b.signingToken)return;
   const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
-  const url=baseUrl+'sign.html?t='+b.signingToken+'&u='+(window._supaUser?.id||'')+'&b='+bidId;
   const c=getClientById(b.client_id);
   const firstName=(c?c.name:b.client_name||b.name||'Client').split(/[\s,&]+/)[0];
   const bname=S.bname||'TradeDesk';
   const phone=(c?.phone||b.phone||'').replace(/\D/g,'');
-  const msg='Hey '+firstName+'!\n\nJust following up — your painting proposal is still ready to go. Tap the link below to review and sign when you\'re ready:\n\n'+url+'\n\nAny questions at all, just reply. Talk soon!\n\n— '+bname;
+  const hubUrl=c?.clientToken?baseUrl+'client.html?t='+c.clientToken+'&u='+(_supaUser?.id||'')+'&c='+c.id:null;
+  const url=hubUrl||(baseUrl+'sign.html?t='+b.signingToken+'&u='+(_supaUser?.id||'')+'&b='+bidId);
+  const msg=hubUrl
+    ?'Hey '+firstName+'!\n\nJust following up — your proposal from '+bname+' is ready to review and sign. Open your project hub here:\n\n'+url+'\n\nAny questions at all, just reply. Talk soon!\n\n— '+bname
+    :'Hey '+firstName+'!\n\nJust following up — your painting proposal is still ready to go. Tap the link below to review and sign when you\'re ready:\n\n'+url+'\n\nAny questions at all, just reply. Talk soon!\n\n— '+bname;
   window.location.href='sms:'+phone+'?body='+encodeURIComponent(msg);
 }
 function onClientSearch(inp){
@@ -9732,8 +9735,8 @@ function _buildClientHubSnapshot(clientId){
     const paid=getBidPaid(b.id);
     const balance=getBidBalance(b);
     const signBase=b.signingToken?baseUrl+'sign.html?t='+b.signingToken+'&u='+(_supaUser?.id||'')+'&b='+b.id:null;
-    return {id:b.id,amount:b.amount||0,status:b.status,type:b.type||'Painting',bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,
-      signingToken:b.signingToken||null,
+    return {id:b.id,amount:b.amount||0,deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:b.type||'Painting',bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,
+      proposalKey:b.proposalKey||null,signingToken:b.signingToken||null,
       signHubUrl:signBase?(signBase+(hubUrl?'&hub='+encodeURIComponent(hubUrl):'')):null};
   });
   const snapshotJobs=cjobs.map(j=>({id:j.id,bid_id:j.bid_id||null,name:j.name||'Job',start:j.start||'',days:j.days||0,status:j.status||'scheduled',completion_date:j.completion_date||''}));
@@ -9743,6 +9746,8 @@ function _buildClientHubSnapshot(clientId){
     clientId,clientName:c.name,clientPhone:c.phone||'',clientAddr:c.addr||'',
     contractorName:S.bname||'TradeDesk',contractorPhone:S.bphone||'',
     brandColor:S.brandColor||'',logoData:S.logoData||'',bwebsite:S.bwebsite||'',
+    contractorUserId:_supaUser?.id||'',notifyEmail:S.bemail||_supaUser?.email||'',
+    stripeEnabled:!!(_stripeConnectStatus?.charges_enabled),
     hubUrl,token:c.clientToken||'',generatedAt:new Date().toISOString(),
     bids:snapshotBids,payments:snapshotPayments,jobs:snapshotJobs,photos:jobPhotos
   };
@@ -10029,7 +10034,13 @@ async function sendProposalLink(){
     const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
     const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
     const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-    const shortUrl=await shortenUrl(signingUrl);
+    // Upload hub snapshot so it includes the new bid's signHubUrl, then use hub URL as the share link
+    const _clientForHub=getClientById(estLinkedClientId);
+    let hubUrl=null;
+    if(_clientForHub?.clientToken){
+      try{hubUrl=await _uploadClientHub(estLinkedClientId);}catch(e){console.warn('hub upload:',e);}
+    }
+    const shareUrl=hubUrl||(await shortenUrl(signingUrl));
     const bar=document.getElementById('proposal-link-bar');
     const input=document.getElementById('proposal-link-input');
     const labelEl=document.getElementById('proposal-link-label');
@@ -10037,22 +10048,22 @@ async function sendProposalLink(){
     const shorturlEl=document.getElementById('proposal-link-shorturl');
     if(bar){
       bar.style.display='block';
-      bar.dataset.signingUrl=shortUrl;
+      bar.dataset.signingUrl=shareUrl;
       bar.dataset.cname=cname;
       bar.dataset.bname=bname;
-      const c=getClientById(estLinkedClientId);
+      const c=_clientForHub||getClientById(estLinkedClientId);
       bar.dataset.cphone=(document.getElementById('e-cphone')?.value||c?.phone||'').replace(/\D/g,'');
       bar.dataset.cemail=c?.email||'';
     }
-    if(input)input.value=shortUrl;
+    if(input)input.value=shareUrl;
     if(labelEl)labelEl.textContent=cname+"'s Painting Proposal";
     if(sublabelEl){
       const _sb2=bids.find(b=>b.id===bidId);
       const rounded=_sb2?.amount||(()=>{const est=calcEst();const tot=Math.max(0,est.laborTotal+est.matTotal);return Math.round(tot/25)*25||tot;})();
       sublabelEl.textContent=bname+' · '+fmt(rounded)+' · '+dateStr;
     }
-    if(shorturlEl)shorturlEl.textContent=shortUrl.replace(/^https?:\/\//,'');
-    const anchorEl=document.getElementById('proposal-link-anchor');if(anchorEl)anchorEl.href=shortUrl;
+    if(shorturlEl)shorturlEl.textContent=shareUrl.replace(/^https?:\/\//,'');
+    const anchorEl=document.getElementById('proposal-link-anchor');if(anchorEl)anchorEl.href=shareUrl;
     // Store token in memory only — bid is NOT marked as sent yet.
     // It moves to "Sent proposals" only when the user actually taps SMS or Email.
     _pendingSignToken={bidId,token,proposalKey};
@@ -15034,11 +15045,14 @@ async function sendGenericProposal(){
   if(b){b.signingToken=token;b.proposalKey=proposalKey;saveAll();}
   const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
   const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
-  const shortUrl=await shortenUrl(signingUrl);
+  const _gc=b?getClientById(b.client_id):null;
+  let _gShare=signingUrl;
+  if(_gc?.clientToken){try{_gShare=(await _uploadClientHub(_gc.id))||signingUrl;}catch(e){_gShare=await shortenUrl(signingUrl)||signingUrl;}}
+  else{_gShare=await shortenUrl(signingUrl)||signingUrl;}
   const bar=document.getElementById('proposal-link-bar');
   const input=document.getElementById('proposal-link-input');
-  if(bar)bar.style.display='flex';
-  if(input)input.value=shortUrl||signingUrl;
+  if(bar){bar.style.display='flex';bar.dataset.signingUrl=_gShare;if(_gc){bar.dataset.cphone=(_gc.phone||'').replace(/\D/g,'');bar.dataset.cemail=_gc.email||'';}}
+  if(input)input.value=_gShare;
   showToast('Proposal link ready','🔗');
   goPg('pg-clients');
 }
