@@ -1948,6 +1948,24 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   </div>
   <div id="money-list"></div>
 </div>
+
+<div class="pg" id="pg-gallery">
+  <div class="tbar">
+    <div><div class="tbar-title">Gallery</div><div class="tbar-sub" id="gallery-count-sub"></div></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-sm btn-p" onclick="openGalleryUpload()">+ Add photos</button>
+    </div>
+  </div>
+  <div style="padding:0 0 12px">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 0 10px">
+      <button class="fb active" id="gf-all" onclick="setGalleryFilter('all',this)">All</button>
+      <button class="fb" id="gf-before" onclick="setGalleryFilter('before',this)">Before</button>
+      <button class="fb" id="gf-after" onclick="setGalleryFilter('after',this)">After</button>
+      <button class="fb" id="gf-progress" onclick="setGalleryFilter('progress',this)">Progress</button>
+    </div>
+    <div id="gallery-grid"></div>
+  </div>
+</div>
 </div>
 <div id="drive-banner" style="display:none;position:fixed;top:0;left:0;right:0;background:#1A4A0A;color:#fff;z-index:999;padding:8px 14px;display:none;align-items:center;justify-content:space-between;gap:10px">
   <div onclick="jumpToDriveClient()" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer">
@@ -2028,6 +2046,9 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   <button class="nb" id="nb-tracker" onclick="goPg('pg-tracker')">
     <div class="bx"><svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div><span>Books</span>
   </button>
+  <button class="nb" id="nb-gallery" onclick="goPg('pg-gallery')">
+    <div class="bx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div><span>Gallery</span>
+  </button>
   <div id="nav-trade-switcher" style="display:none;padding:6px 10px 4px;border-top:1px solid var(--nav-border)">
     <div style="font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.25);padding:0 4px 5px">Active trade</div>
     <div id="nav-trade-pills" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 2px 4px"></div>
@@ -2097,7 +2118,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 <script>
 // ── Submit guard — prevents double-tap on any button ─────────────────────
 let _submitting=false;
-let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[],events=[],timeEntries=[];
+let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[];
 // Collision-resistant bid ID: milliseconds * 1000 + random 0-998 = 13-16 digit unique number
 function _newBidId(){return Date.now()*1000+Math.floor(Math.random()*999);}
 let currentClientId=null,editClientId=null,clientFilter='new';
@@ -2331,8 +2352,8 @@ let STD_DED={single:14600,mfj:29200,mfs:14600,hoh:21900};
 let KS_BRACKETS={single:[],mfj:[],mfs:[],hoh:[]};
 let KS_STD={single:3500,mfj:8000,mfs:4000,hoh:6000};
 
-function saveAll(){try{const lp=(k,d)=>localStorage.setItem(k,JSON.stringify(d));lp('zp3_clients',clients);lp('zp3_bids',bids);lp('zp3_jobs',jobs);lp('zp3_inc',income);lp('zp3_exp',expenses);lp('zp3_mil',mileage);lp('zp3_chk',checksState);lp('zp3_S',S);lp('zp3_pay',payments);lp('zp3_lien',liens);lp('zp3_ev',events.slice(-600));lp('zp3_te',timeEntries.slice(-500));}catch(e){}supaSaveDebounced();}
-function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s?JSON.parse(s):d;};clients=lp('zp3_clients',[]);bids=lp('zp3_bids',[]);jobs=lp('zp3_jobs',[]);income=lp('zp3_inc',[]);expenses=lp('zp3_exp',[]);mileage=lp('zp3_mil',[]);checksState=lp('zp3_chk',{});payments=lp('zp3_pay',[]);liens=lp('zp3_lien',[]);events=lp('zp3_ev',[]);timeEntries=lp('zp3_te',[]);const ss=lp('zp3_S',null);if(ss)S={...S,...ss};}catch(e){}
+function saveAll(){try{const lp=(k,d)=>localStorage.setItem(k,JSON.stringify(d));lp('zp3_clients',clients);lp('zp3_bids',bids);lp('zp3_jobs',jobs);lp('zp3_inc',income);lp('zp3_exp',expenses);lp('zp3_mil',mileage);lp('zp3_chk',checksState);lp('zp3_S',S);lp('zp3_pay',payments);lp('zp3_lien',liens);lp('zp3_ev',events.slice(-600));lp('zp3_te',timeEntries.slice(-500));lp('zp3_photos',photos.slice(-300));}catch(e){}supaSaveDebounced();}
+function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s?JSON.parse(s):d;};clients=lp('zp3_clients',[]);bids=lp('zp3_bids',[]);jobs=lp('zp3_jobs',[]);income=lp('zp3_inc',[]);expenses=lp('zp3_exp',[]);mileage=lp('zp3_mil',[]);checksState=lp('zp3_chk',{});payments=lp('zp3_pay',[]);liens=lp('zp3_lien',[]);events=lp('zp3_ev',[]);timeEntries=lp('zp3_te',[]);photos=lp('zp3_photos',[]);const ss=lp('zp3_S',null);if(ss)S={...S,...ss};}catch(e){}
   // One-time orphan cleanup: remove truly empty Draft bids (no surfaces, no amount) that have
   // no business being in Estimates in Progress — these were created by navigating away at step 1
   // before the _doOpenEstimate dedup fix. Safe to remove: they have zero data.
@@ -2654,7 +2675,7 @@ function goPg(id){
   const nb=document.getElementById({
     'pg-leads':'nb-leads','pg-jobs':'nb-jobs','pg-money':'nb-money',
     'pg-schedule':'nb-jobs',
-    'pg-clients':'nb-clients','pg-cal':'nb-cal','pg-tracker':'nb-tracker',
+    'pg-clients':'nb-clients','pg-cal':'nb-cal','pg-tracker':'nb-tracker','pg-gallery':'nb-gallery',
     'pg-team':'nb-team',
     'pg-taxes':'nb-taxes','pg-settings':'nb-settings','pg-checklist':'nb-settings'
   }[id]||('nb-'+id.replace('pg-','')));if(nb)nb.classList.add('active');
@@ -4724,6 +4745,7 @@ function renderClientDetail(){
     '<div style="display:flex;gap:8px">'+
       (c.phone?'<button class="btn" onclick="callClient()" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex:1">&#128222; Call '+c.phone+'</button>':'')+
       '<button class="btn" onclick="openMapsDir()" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex:1">&#128205; Directions</button>'+
+      '<button class="btn" onclick="sendClientHubLink('+c.id+')" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex-shrink:0" title="Share client portal">&#128279; Hub</button>'+
     '</div>';
   if(gps.active&&gps.clientId===currentClientId){
     document.getElementById('cd-drive-idle').style.display='none';
@@ -5502,6 +5524,7 @@ function confirmJobDone(jobId){
   const jobMiles=getClientMileage(j.client_id).filter(m=>m.date>=j.start&&m.date<=addDays(dateStr,3));
   jobMiles.forEach(m=>{m.job_id=jobId;m.job_name=j.name;});
   saveAll();
+  _refreshClientHub(j.client_id);
   emitEvent('job_completed',j.client_id,{job_id:j.id,bid_id:j.bid_id});
   renderClientDetail();
   renderDash();
@@ -6482,6 +6505,7 @@ function logPayment(){
     setTimeout(()=>banner.remove(),4000);
   }
   renderCDBids();renderDash();renderMoneyPage();refreshCollectLabel();
+  _refreshClientHub(bid.client_id);
   // After payment — if no job scheduled yet, offer to schedule
   if(_savedBidId){
     const _pb=bids.find(b=>b.id===_savedBidId);
@@ -9568,6 +9592,197 @@ async function sendPaymentLink(bidId){
     zAlert('Could not create payment link: '+e.message);
   }
 }
+// ── Gallery ──────────────────────────────────────────────────────────────────
+let _galleryFilter='all';
+function setGalleryFilter(f,btn){
+  _galleryFilter=f;
+  document.querySelectorAll('#pg-gallery .fb').forEach(b=>{b.classList.remove('active');});
+  if(btn)btn.classList.add('active');
+  renderGallery();
+}
+function renderGallery(){
+  const el=document.getElementById('gallery-grid');if(!el)return;
+  const sub=document.getElementById('gallery-count-sub');
+  const filtered=photos.filter(p=>_galleryFilter==='all'||p.type===_galleryFilter);
+  if(sub)sub.textContent=filtered.length+' photo'+(filtered.length!==1?'s':'');
+  if(!filtered.length){
+    el.innerHTML='<div class="empty-state"><div class="empty-state-icon">📷</div><h3>No photos yet</h3><p>Tap "+ Add photos" to upload before/after shots of your jobs. Photos will appear in client proposals and portals.</p></div>';
+    return;
+  }
+  // Group by client
+  const byClient={};
+  filtered.forEach(p=>{
+    const key=p.client_name||'Unlinked';
+    if(!byClient[key])byClient[key]=[];
+    byClient[key].push(p);
+  });
+  let html='';
+  Object.entries(byClient).forEach(([name,ps])=>{
+    html+='<div style="margin-bottom:20px">'+
+      '<div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;padding:0 2px">'+name+'</div>'+
+      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px">'+
+      ps.map(p=>'<div onclick="openPhotoViewer(\''+p.id+'\')" style="position:relative;aspect-ratio:1;border-radius:var(--r);overflow:hidden;cursor:pointer;background:var(--bg2);border:1px solid var(--border)">'+
+        '<img src="'+p.url+'" style="width:100%;height:100%;object-fit:cover" loading="lazy" onerror="this.style.display=\'none\'">'+
+        '<div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.6));padding:4px 6px">'+
+          '<span style="font-size:9px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:.04em">'+p.type+'</span>'+
+        '</div>'+
+        '<button onclick="event.stopPropagation();deletePhoto(\''+p.id+'\')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);border:none;color:#fff;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center">✕</button>'+
+      '</div>').join('')+
+      '</div></div>';
+  });
+  el.innerHTML=html;
+}
+function openPhotoViewer(photoId){
+  const p=photos.find(x=>x.id===photoId);if(!p)return;
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML=
+    '<button onclick="this.closest(\'div\').remove()" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;line-height:1">✕</button>'+
+    '<img src="'+p.url+'" style="max-width:100%;max-height:80vh;border-radius:var(--r);object-fit:contain">'+
+    '<div style="margin-top:12px;text-align:center">'+
+      '<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.06em">'+p.type+'</div>'+
+      (p.caption?'<div style="font-size:13px;color:#fff;margin-top:4px">'+p.caption+'</div>':'')+
+      '<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:4px">'+(p.client_name||'')+(p.job_name?' · '+p.job_name:'')+'</div>'+
+    '</div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function deletePhoto(photoId){
+  zConfirm('Delete this photo?',()=>{photos=photos.filter(p=>p.id!==photoId);saveAll();renderGallery();},{title:'Delete photo',yes:'Delete',danger:true});
+}
+function openGalleryUpload(jobId,clientId){
+  const job=jobId?jobs.find(j=>j.id===jobId):null;
+  const client=clientId?clients.find(c=>c.id===clientId):(job?clients.find(c=>c.id===job.client_id):null);
+  const ov=document.createElement('div');ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  const jobOptions=jobs.filter(j=>j.status==='done'||j.status==='active').slice(0,30)
+    .map(j=>'<option value="'+j.id+'"'+(jobId===j.id?' selected':'')+'>'+j.name+' — '+(clients.find(c=>c.id===j.client_id)?.name||'')+'</option>').join('');
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">📷 Add photo</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">Upload a job photo to your gallery</div>'+
+    '<div class="f" style="margin-bottom:12px"><label>Photo type</label>'+
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">'+
+        ['before','after','progress'].map(t=>'<label style="display:flex;align-items:center;justify-content:center;gap:4px;padding:10px;border:2px solid var(--border2);border-radius:var(--r);cursor:pointer;font-size:13px;font-weight:600">'+
+          '<input type="radio" name="photo-type" value="'+t+'" style="display:none" onchange="this.closest(\'label\').closest(\'div\').querySelectorAll(\'label\').forEach(l=>l.style.borderColor=\'var(--border2)\');this.closest(\'label\').style.borderColor=\'var(--blue)\'">'+
+          {before:'📸 Before',after:'✅ After',progress:'🔨 Progress'}[t]+'</label>').join('')+
+      '</div>'+
+    '</div>'+
+    (jobOptions?'<div class="f" style="margin-bottom:12px"><label>Job <span style="font-weight:400;color:var(--text3)">(optional)</span></label><select id="gup-job" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;color:var(--text);font-family:inherit"><option value="">— No job selected —</option>'+jobOptions+'</select></div>':'')+
+    '<div class="f" style="margin-bottom:12px"><label>Caption <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input id="gup-caption" placeholder="e.g. Living room accent wall" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;color:var(--text);font-family:inherit"></div>'+
+    '<input type="file" id="gup-file" accept="image/*" multiple style="display:none" onchange="processGalleryUpload(this)">'+
+    '<button onclick="document.getElementById(\'gup-file\').click()" style="width:100%;padding:14px;border-radius:var(--r);border:2px dashed var(--border2);background:var(--bg);color:var(--text2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">📂 Choose photos</button>'+
+    '<div id="gup-status" style="font-size:12px;color:var(--text3);text-align:center;min-height:16px;margin-bottom:8px"></div>'+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+async function processGalleryUpload(input){
+  const files=Array.from(input.files);if(!files.length)return;
+  const typeEl=document.querySelector('input[name="photo-type"]:checked');
+  const ptype=typeEl?typeEl.value:'after';
+  const jobSel=document.getElementById('gup-job');
+  const selectedJobId=jobSel?parseInt(jobSel.value)||null:null;
+  const caption=(document.getElementById('gup-caption')?.value||'').trim();
+  const status=document.getElementById('gup-status');
+  const job=selectedJobId?jobs.find(j=>j.id===selectedJobId):null;
+  const c=job?clients.find(cl=>cl.id===job.client_id):null;
+  if(status)status.textContent='Uploading '+files.length+' photo'+(files.length>1?'s':'')+'…';
+  let uploaded=0;
+  for(const file of files){
+    try{
+      let url='';
+      if(supaEnabled()&&_supaUser){
+        const ext=file.name.split('.').pop()||'jpg';
+        const path='gallery/'+_supaUser.id+'/'+Date.now()+'_'+Math.random().toString(36).slice(2)+'.'+ext;
+        const{error}=await _supa.storage.from('gallery').upload(path,file,{contentType:file.type,upsert:false});
+        if(!error){
+          const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
+          url=urlData?.publicUrl||'';
+        }
+      }
+      if(!url){
+        // Fallback: base64 for offline (large but works)
+        url=await new Promise(res=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.readAsDataURL(file);});
+      }
+      photos.push({id:Date.now()+Math.random(),url,type:ptype,caption,job_id:selectedJobId,job_name:job?.name||'',client_id:c?.id||null,client_name:c?.name||'',uploadedAt:new Date().toISOString()});
+      uploaded++;
+      if(status)status.textContent='Uploaded '+uploaded+'/'+files.length;
+    }catch(e){console.warn('photo upload:',e);}
+  }
+  saveAll();renderGallery();
+  if(status)status.textContent='✓ '+uploaded+' photo'+(uploaded!==1?'s':'')+' added';
+  showToast(uploaded+' photo'+(uploaded!==1?'s':'')+' added to gallery','📷');
+}
+
+// ── Client Hub ──────────────────────────────────────────────────────────────
+function _buildClientHubSnapshot(clientId){
+  const c=clients.find(x=>x.id===clientId);if(!c)return null;
+  const cbids=bids.filter(b=>b.client_id===clientId);
+  const cjobs=jobs.filter(j=>j.client_id===clientId&&j.eventType!=='estimate');
+  const cpayments=payments.filter(p=>p.client_id===clientId);
+  const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  const snapshotBids=cbids.map(b=>{
+    const paid=getBidPaid(b.id);
+    const balance=getBidBalance(b);
+    return {id:b.id,amount:b.amount||0,status:b.status,type:b.type||'Painting',bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,
+      signingToken:b.signingToken||null,
+      signHubUrl:b.signingToken?baseUrl+'sign.html?t='+b.signingToken+'&u='+(_supaUser?.id||'')+'&b='+b.id:null};
+  });
+  const snapshotJobs=cjobs.map(j=>({id:j.id,bid_id:j.bid_id||null,name:j.name||'Job',start:j.start||'',days:j.days||0,status:j.status||'scheduled',completion_date:j.completion_date||''}));
+  const snapshotPayments=cpayments.map(p=>({date:p.date||'',type:p.type||'',amount:p.amount||0,ref:p.ref||'',method:p.method||''}));
+  const jobPhotos=photos.filter(p=>p.client_id===clientId).map(p=>({url:p.url,type:p.type,caption:p.caption||'',job_name:p.job_name||''}));
+  return {
+    clientId,clientName:c.name,clientPhone:c.phone||'',clientAddr:c.addr||'',
+    contractorName:S.bname||'TradeDesk',contractorPhone:S.bphone||'',
+    token:c.clientToken||'',generatedAt:new Date().toISOString(),
+    bids:snapshotBids,payments:snapshotPayments,jobs:snapshotJobs,photos:jobPhotos
+  };
+}
+async function _uploadClientHub(clientId){
+  if(!supaEnabled()||!_supaUser)return null;
+  const c=clients.find(x=>x.id===clientId);if(!c)return null;
+  if(!c.clientToken){
+    c.clientToken=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }
+  const snapshot=_buildClientHubSnapshot(clientId);
+  if(!snapshot)return null;
+  snapshot.token=c.clientToken;
+  const key='client-hub/'+_supaUser.id+'/'+clientId+'_'+c.clientToken+'.json';
+  const{error}=await _supa.storage.from('proposals').upload(key,JSON.stringify(snapshot),{contentType:'application/json',upsert:true});
+  if(error)throw error;
+  c.clientHubKey=key;
+  saveAll();
+  const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  return baseUrl+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+}
+async function sendClientHubLink(clientId){
+  showToast('Generating hub…','⏳');
+  try{
+    const url=await _uploadClientHub(clientId);
+    if(!url){zAlert('Could not create hub link. Make sure you\'re signed in.');return;}
+    const c=clients.find(x=>x.id===clientId);
+    const firstName=c?.name?.split(' ')[0]||'there';
+    const biz=S.bname||'us';
+    const ov=document.createElement('div');ov.className='zmodal-overlay';
+    const box=document.createElement('div');box.className='zmodal';
+    box.innerHTML=
+      '<div style="font-size:17px;font-weight:800;margin-bottom:4px">📋 Client Hub ready</div>'+
+      '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+(c?.name||'Client')+' · view proposals, pay balance, download invoices</div>'+
+      '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:11px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+url+'</div>'+
+      '<button onclick="navigator.clipboard.writeText(\''+url+'\').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">📋 Copy link</button>'+
+      (c?.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+firstName+', here\\\'s your project hub from '+biz+' — view your proposals, pay your balance, and download invoices anytime: '+url+'\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">📱 Send via Messages</button>':'')+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
+    ov.appendChild(box);document.body.appendChild(ov);
+    ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+    navigator.clipboard.writeText(url).catch(()=>{});
+  }catch(e){zAlert('Error creating hub: '+e.message);}
+}
+async function _refreshClientHub(clientId){
+  const c=clients.find(x=>x.id===clientId);
+  if(!c?.clientToken)return;
+  try{await _uploadClientHub(clientId);}catch(e){console.warn('hub refresh:',e);}
+}
+
 function syncAdj(){const pct=parseInt(v('est-adj')||0);document.getElementById('est-adj-val').textContent=(pct>0?'+':'')+pct+'%';renderEstReview();}
 function onAdjSliderRelease(){
   const pct=parseInt(v('est-adj')||0);
@@ -15968,6 +16183,7 @@ async function checkNewSignatures(){
       }
       if(changed){
         saveAll();
+        [...new Set(alerts.map(a=>a.clientId))].forEach(cid=>_refreshClientHub(cid));
         const existing=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
         localStorage.setItem('zp3_schedule_alerts',JSON.stringify([...existing,...alerts]));
         renderDash();
