@@ -1698,6 +1698,8 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
             </div>
           </div>
         </div>
+        <div class="f"><label>Hub accent color <span style="font-size:10px;font-weight:400;color:var(--text3)">(buttons &amp; links in client hub)</span></label><input type="color" id="set-brandcolor" value="#185FA5"></div>
+        <div class="f"><label>Website URL <span style="font-size:10px;font-weight:400;color:var(--text3)">(shown in client hub footer)</span></label><input type="url" id="set-bwebsite" placeholder="https://yourwebsite.com"></div>
         <div class="f" style="grid-column:1/-1" id="settings-vehicles-section">
           <label>Vehicles <span style="font-size:10px;color:var(--text3);font-weight:400">(IRS log requires vehicle description per trip)</span></label>
           <div id="set-vehicles-list" style="margin-bottom:8px"></div>
@@ -2289,7 +2291,7 @@ const CHECKS=[
 ];
 const CAT_CFG={urgent:{label:'Do right away',color:'#A32D2D'},biz:{label:'Business setup in Kansas',color:'#185FA5'},tax:{label:'Tax & accounting',color:'#854F0B'},ks:{label:'Kansas market & marketing',color:'#27500A'}};
 
-let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,timeOff:[],employees:[],devices:[],logoData:''};
+let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,timeOff:[],employees:[],devices:[],logoData:'',brandColor:'',bwebsite:''};
 
 // ZJ's logo — SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
 // Only shown for ZJ's Painting account — other accounts see plain business name text.
@@ -2360,6 +2362,7 @@ function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s
   const _before=bids.length;
   bids=bids.filter(b=>!(b.draft===true&&b.status==='Draft'&&(!b.surfaces||!b.surfaces.length)&&!b.signingToken&&!b.amount));
   if(bids.length!==_before)try{localStorage.setItem('zp3_bids',JSON.stringify(bids));}catch(e){}
+  clients.forEach(c=>{if(!c.clientToken)_ensureClientToken(c.id);});
 }
 
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -2582,10 +2585,12 @@ function loadSettingsForm(){
   if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-bitly-key',S.bitlyKey||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-byears',S.byears||'');sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
   sf('set-margin',S.margin);sf('set-cov',S.cov);sf('set-mm',S.mm);sf('set-r-walls',S.rWalls||1.30);sf('set-r-ceil',S.rCeil||1.00);sf('set-r-trim',S.rTrim||4.00);sf('set-r-door',S.rDoor||95);sf('set-r-win',S.rWin||50);sf('set-r-ext',S.rExt||1.10);sf('set-r-deck',S.rDeck||1.00);
   sf('set-review-url',S.reviewUrl||'');
+  sf('set-brandcolor',S.brandColor||'#185FA5');
+  sf('set-bwebsite',S.bwebsite||'');
 }
 function saveSettings(){
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
-  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||''};
+  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||''};
   applySettings();saveAll();
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
 }
@@ -4666,9 +4671,9 @@ function saveClient(){
   const occupation=v('cf-occupation')||'';
   const tier=v('cf-tier')||'';
   const _existingClient=editClientId?clients.find(x=>x.id===editClientId):null;
-  const c={id:editClientId||Date.now(),name,phone:v('cf-phone'),email:v('cf-email'),addr:v('cf-addr'),ptype:v('cf-ptype'),source,ref,notes:v('cf-notes'),created:todayKey(),extraAddresses:_existingClient?.extraAddresses||[]};
+  const c={id:editClientId||Date.now(),name,phone:v('cf-phone'),email:v('cf-email'),addr:v('cf-addr'),ptype:v('cf-ptype'),source,ref,notes:v('cf-notes'),created:todayKey(),extraAddresses:_existingClient?.extraAddresses||[],clientToken:_existingClient?.clientToken||'',clientHubKey:_existingClient?.clientHubKey||''};
   if(editClientId){const i=clients.findIndex(x=>x.id===editClientId);if(i>=0)clients[i]=c;}
-  else clients.push(c);
+  else{clients.push(c);_ensureClientToken(c.id);}
   saveAll();
   if(isNew){
     closeClientForm();
@@ -4746,7 +4751,8 @@ function renderClientDetail(){
       (c.phone?'<button class="btn" onclick="callClient()" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex:1">&#128222; Call '+c.phone+'</button>':'')+
       '<button class="btn" onclick="openMapsDir()" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex:1">&#128205; Directions</button>'+
       '<button class="btn" onclick="sendClientHubLink('+c.id+')" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex-shrink:0" title="Share client portal">&#128279; Hub</button>'+
-    '</div>';
+    '</div>'+
+    (c.clientToken&&_supaUser?(()=>{const _hu=(window.location.origin+window.location.pathname.split('index.html')[0])+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+c.id;return '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 12px;background:rgba(0,0,0,.2);border-radius:var(--r);font-size:11px;overflow:hidden">'+'<span style="color:rgba(255,255,255,.6);white-space:nowrap;flex-shrink:0">Hub:</span>'+'<span style="flex:1;color:rgba(255,255,255,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+_hu+'</span>'+'<button onclick="copyHubLink(\''+_hu+'\')" style="padding:3px 8px;font-size:11px;background:rgba(255,255,255,.15);border:none;border-radius:4px;color:#fff;cursor:pointer;flex-shrink:0">Copy</button>'+'</div>'})():'');
   if(gps.active&&gps.clientId===currentClientId){
     document.getElementById('cd-drive-idle').style.display='none';
     document.getElementById('cd-drive-start').style.display='none';
@@ -9721,12 +9727,14 @@ function _buildClientHubSnapshot(clientId){
   const cjobs=jobs.filter(j=>j.client_id===clientId&&j.eventType!=='estimate');
   const cpayments=payments.filter(p=>p.client_id===clientId);
   const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  const hubUrl=c.clientToken?baseUrl+'client.html?t='+c.clientToken+'&u='+(_supaUser?.id||'')+'&c='+clientId:'';
   const snapshotBids=cbids.map(b=>{
     const paid=getBidPaid(b.id);
     const balance=getBidBalance(b);
+    const signBase=b.signingToken?baseUrl+'sign.html?t='+b.signingToken+'&u='+(_supaUser?.id||'')+'&b='+b.id:null;
     return {id:b.id,amount:b.amount||0,status:b.status,type:b.type||'Painting',bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,
       signingToken:b.signingToken||null,
-      signHubUrl:b.signingToken?baseUrl+'sign.html?t='+b.signingToken+'&u='+(_supaUser?.id||'')+'&b='+b.id:null};
+      signHubUrl:signBase?(signBase+(hubUrl?'&hub='+encodeURIComponent(hubUrl):'')):null};
   });
   const snapshotJobs=cjobs.map(j=>({id:j.id,bid_id:j.bid_id||null,name:j.name||'Job',start:j.start||'',days:j.days||0,status:j.status||'scheduled',completion_date:j.completion_date||''}));
   const snapshotPayments=cpayments.map(p=>({date:p.date||'',type:p.type||'',amount:p.amount||0,ref:p.ref||'',method:p.method||''}));
@@ -9734,9 +9742,15 @@ function _buildClientHubSnapshot(clientId){
   return {
     clientId,clientName:c.name,clientPhone:c.phone||'',clientAddr:c.addr||'',
     contractorName:S.bname||'TradeDesk',contractorPhone:S.bphone||'',
-    token:c.clientToken||'',generatedAt:new Date().toISOString(),
+    brandColor:S.brandColor||'',logoData:S.logoData||'',bwebsite:S.bwebsite||'',
+    hubUrl,token:c.clientToken||'',generatedAt:new Date().toISOString(),
     bids:snapshotBids,payments:snapshotPayments,jobs:snapshotJobs,photos:jobPhotos
   };
+}
+function _ensureClientToken(clientId){
+  const c=clients.find(x=>x.id===clientId);
+  if(!c||c.clientToken)return;
+  c.clientToken=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 async function _uploadClientHub(clientId){
   if(!supaEnabled()||!_supaUser)return null;
@@ -9782,6 +9796,7 @@ async function _refreshClientHub(clientId){
   if(!c?.clientToken)return;
   try{await _uploadClientHub(clientId);}catch(e){console.warn('hub refresh:',e);}
 }
+function copyHubLink(url){navigator.clipboard.writeText(url).then(()=>showToast('Hub link copied','📋')).catch(()=>showToast('Could not copy — tap the URL above','⚠️'));}
 
 function syncAdj(){const pct=parseInt(v('est-adj')||0);document.getElementById('est-adj-val').textContent=(pct>0?'+':'')+pct+'%';renderEstReview();}
 function onAdjSliderRelease(){
@@ -16369,23 +16384,21 @@ function editSentBid(bidId){
 }
 function resendProposalLink(bidId){
   const b=bids.find(x=>x.id===bidId);
-  if(!b||!b.signingToken)return;
+  if(!b)return;
   const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
-  const url=baseUrl+'sign.html?t='+b.signingToken+'&u='+(_supaUser?.id||'')+'&b='+bidId;
-  const bar=document.getElementById('proposal-link-bar');
-  if(bar){
-    bar.dataset.signingUrl=url;
-    bar.dataset.cname=b.client_name||b.name||'Client';
-    bar.dataset.bname=S.bname||'TradeDesk';
-    const c=getClientById(b.client_id);
-    bar.dataset.cphone=(c?.phone||'').replace(/\D/g,'');
-    bar.dataset.cemail=c?.email||'';
+  const c=getClientById(b.client_id);
+  const hubUrl=c?.clientToken?baseUrl+'client.html?t='+c.clientToken+'&u='+(_supaUser?.id||'')+'&c='+c.id:null;
+  if(hubUrl&&c?.phone){
+    const firstName=(c.name||b.client_name||'there').split(' ')[0];
+    const biz=S.bname||'your contractor';
+    const msg='Hi '+firstName+', '+biz+' sent you a proposal to review and sign. Open your project hub here: '+hubUrl;
+    window.location.href='sms:'+c.phone.replace(/\D/g,'')+'?body='+encodeURIComponent(msg);
+  } else if(hubUrl){
+    navigator.clipboard.writeText(hubUrl).then(()=>showToast('Hub link copied','📋')).catch(()=>{});
+  } else if(b.signingToken){
+    const sigUrl=baseUrl+'sign.html?t='+b.signingToken+'&u='+(_supaUser?.id||'')+'&b='+bidId;
+    navigator.clipboard.writeText(sigUrl).then(()=>showToast('Proposal link copied','🔗')).catch(()=>{});
   }
-  const input=document.getElementById('proposal-link-input');
-  if(input)input.value=url;
-  // Open share options — navigate to estimate step 5 if possible, else copy + toast
-  navigator.clipboard.writeText(url).then(()=>showToast('Link copied — send it to '+( b.client_name||'client'),'📋')).catch(()=>{});
-  showToast('Proposal link copied for '+(b.client_name||'client'),'🔗');
 }
 async function supaLoadFromCloud(){
   if(!_supa||!_supaUser)return;

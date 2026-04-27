@@ -8,15 +8,36 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-:root{--blue:#185FA5;--blue-lt:#EBF2FB;--blue-dk:#0D3B6E;--green:#16a34a;--green-mid:#3B6D11;--green-lt:#EAF3DE;--green-border:#97C459;--border:#e0dfd8;--border2:#cccbc4;--text:#1a1a18;--text2:#5f5e5a;--text3:#9a9890;--bg:#f7f7f5;--bg2:#fff;--r:10px;--rl:14px;--navy:#0D1117;--red:#A32D2D;--red-lt:#FFF0F0;}
+:root{--accent:#185FA5;--accent-dk:#0D3B6E;--green:#16a34a;--green-mid:#3B6D11;--green-lt:#EAF3DE;--green-border:#97C459;--border:#e0dfd8;--border2:#cccbc4;--text:#1a1a18;--text2:#5f5e5a;--text3:#9a9890;--bg:#f7f7f5;--bg2:#fff;--r:10px;--rl:14px;--navy:#0D1117;--red:#A32D2D;--red-lt:#FFF0F0;}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
-.topbar{background:var(--navy);padding:14px 20px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:100}
-.topbar-logo{width:28px;height:28px;border-radius:7px;background:var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0}
-.topbar-name{font-size:15px;font-weight:800;color:#fff;letter-spacing:-.3px}
-.wrap{max-width:680px;margin:0 auto;padding:20px 16px 48px}
+.topbar{position:fixed;top:0;left:0;right:0;height:52px;background:var(--navy);display:flex;align-items:center;padding:0 16px;gap:10px;z-index:100}
+.hamburger{background:none;border:none;color:#fff;font-size:20px;cursor:pointer;padding:4px 6px;border-radius:6px;display:flex;align-items:center;flex-shrink:0;line-height:1}
+.topbar-logo-img{height:28px;max-width:100px;object-fit:contain;display:none;border-radius:4px}
+.topbar-name{font-size:15px;font-weight:800;color:#fff;letter-spacing:-.3px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nav-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:90;display:none}
+.left-nav{position:fixed;top:52px;left:0;bottom:0;width:220px;background:var(--bg2);border-right:1px solid var(--border);z-index:95;overflow-y:auto;transform:translateX(-100%);transition:transform .25s ease;display:flex;flex-direction:column}
+.left-nav.open{transform:translateX(0)}
+.nav-client{padding:14px 18px 10px;border-bottom:1px solid var(--border);margin-bottom:4px}
+.nav-client-name{font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nav-client-addr{font-size:11px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nav-item{display:flex;align-items:center;gap:10px;padding:13px 18px;font-size:14px;font-weight:600;color:var(--text2);cursor:pointer;border-left:3px solid transparent;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--bg);color:var(--text)}
+.nav-item.active{background:var(--bg);color:var(--accent);border-left-color:var(--accent)}
+.nav-icon{font-size:16px;width:22px;text-align:center;flex-shrink:0}
+.nav-footer{margin-top:auto;padding:14px 18px;font-size:10px;color:var(--text3)}
+.body-wrap{padding-top:52px;min-height:100vh}
+.main-content{max-width:700px;margin:0 auto;padding:20px 16px 60px}
+@media(min-width:640px){
+  .hamburger{display:none!important}
+  .nav-backdrop{display:none!important}
+  .left-nav{transform:translateX(0);position:sticky;top:52px;height:calc(100vh - 52px)}
+  .body-wrap{display:flex;align-items:flex-start}
+  .main-content{flex:1;min-width:0}
+}
 .card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:20px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.section-hdr{font-size:15px;font-weight:800;margin-bottom:14px;display:flex;align-items:center;gap:8px}
 .lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px;display:block}
-.btn{display:block;width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--navy);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center;text-decoration:none;transition:opacity .15s}
+.btn{display:block;width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--accent);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center;text-decoration:none;transition:opacity .15s}
 .btn:active{opacity:.85}
 .btn-green{background:var(--green)}
 .btn-sec{background:var(--bg2);color:var(--text2);border:1.5px solid var(--border2);font-size:13px;padding:11px}
@@ -31,7 +52,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .hero-card{background:linear-gradient(135deg,#0D1117 0%,#1a365d 100%);border-radius:var(--rl);padding:22px 20px 20px;margin-bottom:18px;position:relative;overflow:hidden}
 .hero-card::before{content:'';position:absolute;right:-40px;top:-40px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.04)}
 .hero-biz{font-size:21px;font-weight:800;color:#fff;letter-spacing:-.4px;margin-bottom:3px}
-.hero-phone{font-size:13px;color:rgba(255,255,255,.5)}
 .hero-sub{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.35);margin-bottom:6px}
 .hero-client{font-size:16px;font-weight:700;color:#fff}
 .hero-meta{margin-top:18px;padding-top:16px;border-top:1px solid rgba(255,255,255,.1);display:flex;justify-content:space-between;align-items:flex-end}
@@ -39,13 +59,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .balance-lbl{font-size:11px;font-weight:800;text-transform:uppercase;color:var(--red);margin-bottom:6px}
 .balance-amt{font-size:34px;font-weight:800;color:var(--red);letter-spacing:-.5px;margin-bottom:14px}
 .paid-box{background:var(--green-lt);border:1px solid var(--green-border);border-radius:var(--rl);padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px}
-.section-hdr{font-size:15px;font-weight:800;margin-bottom:14px;display:flex;align-items:center;gap:8px}
-.empty{color:var(--text3);font-size:13px;text-align:center;padding:20px 0}
 .bid-row{background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:16px;margin-bottom:10px}
 .bid-row:last-child{margin-bottom:0}
 .job-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)}
 .job-row:last-child{border-bottom:none}
-.photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
+.photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .photo-thumb{aspect-ratio:1;border-radius:var(--r);overflow:hidden;background:var(--bg);cursor:pointer;position:relative}
 .photo-thumb img{width:100%;height:100%;object-fit:cover}
 .photo-tag{position:absolute;bottom:4px;left:4px;background:rgba(0,0,0,.6);color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em}
@@ -53,7 +71,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .pg-status-icon{font-size:64px;margin-bottom:16px}
 .pg-status h2{font-size:24px;font-weight:800;margin-bottom:10px}
 .pg-status p{font-size:14px;color:var(--text2);line-height:1.7;max-width:380px;margin:0 auto}
-/* Invoice overlay */
+.empty{color:var(--text3);font-size:13px;text-align:center;padding:20px 0}
+.view-title{font-size:20px;font-weight:800;letter-spacing:-.3px;margin-bottom:18px}
+.ql-row{display:flex;gap:10px;margin-bottom:14px}
+.ql-btn{flex:1;padding:14px 8px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;font-size:12px;font-weight:700;color:var(--text2);text-align:center}
+.ql-btn:active{background:var(--bg)}
+.ql-icon{font-size:22px}
 #inv-overlay{position:fixed;inset:0;background:#fff;z-index:500;overflow-y:auto;display:none}
 .inv-wrap{max-width:680px;margin:0 auto;padding:32px 24px 60px}
 .inv-topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;padding-bottom:20px;border-bottom:3px solid var(--navy)}
@@ -73,286 +96,273 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .inv-total-row:last-child{border-bottom:none;font-size:17px;font-weight:800;color:var(--navy);padding-top:14px}
 .inv-stamp{display:inline-block;border:3px solid var(--green-mid);color:var(--green-mid);font-size:18px;font-weight:900;padding:6px 18px;border-radius:4px;transform:rotate(-10deg);margin-top:20px;letter-spacing:.1em}
 .inv-close{position:fixed;top:16px;right:16px;background:var(--navy);color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit;z-index:10}
-@media print{
-  .topbar,.inv-close,.no-print{display:none!important}
-  #inv-overlay{position:static!important}
-  .inv-wrap{padding:16px}
-  body{background:#fff}
-}
+@media print{.topbar,.left-nav,.nav-backdrop,.inv-close,.no-print{display:none!important}#inv-overlay{position:static!important}.inv-wrap{padding:16px}body{background:#fff}}
 </style>
 </head>
 <body>
 <div class="topbar">
-  <div class="topbar-logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>
-  <span class="topbar-name">TradeDesk</span>
-  <span style="font-size:10px;color:rgba(255,255,255,.3);margin-left:auto">Project Hub</span>
+  <button class="hamburger" id="hamburger" onclick="toggleNav()" aria-label="Menu">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="2" y="4" width="16" height="2" rx="1" fill="white"/><rect x="2" y="9" width="16" height="2" rx="1" fill="white"/><rect x="2" y="14" width="16" height="2" rx="1" fill="white"/></svg>
+  </button>
+  <img id="topbar-logo-img" class="topbar-logo-img" alt="Logo">
+  <span id="topbar-name" class="topbar-name"></span>
 </div>
-
-<div class="wrap" id="main-wrap">
-  <div class="pg-status" id="pg-load">
-    <div class="pg-status-icon">⏳</div>
-    <h2>Loading your hub…</h2>
-    <p>Just a moment.</p>
+<div class="nav-backdrop" id="nav-backdrop" onclick="closeNav()"></div>
+<div class="body-wrap">
+  <nav class="left-nav" id="left-nav">
+    <div class="nav-client" id="nav-client-info"></div>
+    <div class="nav-item active" id="ni-home" onclick="switchView('home')"><span class="nav-icon">🏠</span>Home</div>
+    <div class="nav-item" id="ni-estimates" onclick="switchView('estimates')"><span class="nav-icon">📋</span>Estimates</div>
+    <div class="nav-item" id="ni-invoices" onclick="switchView('invoices')"><span class="nav-icon">📄</span>Invoices</div>
+    <div class="nav-item" id="ni-payments" onclick="switchView('payments')"><span class="nav-icon">💳</span>Payments</div>
+    <div class="nav-item" id="ni-photos" onclick="switchView('photos')"><span class="nav-icon">📷</span>Photos</div>
+    <div class="nav-footer" id="nav-footer">Powered by TradeDesk</div>
+  </nav>
+  <div class="main-content">
+    <div class="pg-status" id="pg-load"><div class="pg-status-icon">⏳</div><h2>Loading your hub…</h2><p>Just a moment.</p></div>
+    <div class="pg-status" id="pg-err" style="display:none"><div class="pg-status-icon">🔗</div><h2>Hub not found</h2><p>This link may have expired. Contact your contractor for a new link.</p></div>
+    <div id="pg-hub" style="display:none">
+      <div id="view-home"></div>
+      <div id="view-estimates" style="display:none"></div>
+      <div id="view-invoices" style="display:none"></div>
+      <div id="view-payments" style="display:none"></div>
+      <div id="view-photos" style="display:none"></div>
+    </div>
   </div>
-  <div class="pg-status" id="pg-err" style="display:none">
-    <div class="pg-status-icon">🔗</div>
-    <h2>Hub not found</h2>
-    <p>This link may have expired. Contact your contractor for a new link.</p>
-  </div>
-  <div id="pg-hub" style="display:none"></div>
 </div>
-
-<!-- Invoice overlay -->
 <div id="inv-overlay">
   <button class="inv-close no-print" onclick="closeInvoice()">✕</button>
   <div class="inv-wrap" id="inv-content"></div>
 </div>
-
 <script>
 const SUPA_URL='https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
 const _supa=supabase.createClient(SUPA_URL,SUPA_KEY);
-let _hub=null;
+let _hub=null,_activeView='home';
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtDate=s=>{if(!s)return'';try{return new Date(s+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return s;}};
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-
 async function init(){
   const p=new URLSearchParams(location.search);
   const t=p.get('t'),u=p.get('u'),c=p.get('c');
-  if(!t||!u||!c){show('err');return;}
+  if(!t||!u||!c){showState('err');return;}
   try{
     const key='client-hub/'+u+'/'+c+'_'+t+'.json';
     const{data,error}=await _supa.storage.from('proposals').download(key);
-    if(error||!data){show('err');return;}
+    if(error||!data){showState('err');return;}
     _hub=JSON.parse(await data.text());
-    render();
-  }catch(e){console.error(e);show('err');}
+    applyBranding(_hub);
+    renderAll();
+    showState('hub');
+    if(location.hash.startsWith('#invoice-')){
+      const bidId=parseInt(location.hash.replace('#invoice-',''));
+      if(bidId)setTimeout(()=>openInvoice(bidId),300);
+    }
+  }catch(e){console.error(e);showState('err');}
 }
-
-function show(state){
-  document.getElementById('pg-load').style.display=state==='load'?'block':'none';
-  document.getElementById('pg-err').style.display=state==='err'?'block':'none';
-  document.getElementById('pg-hub').style.display=state==='hub'?'block':'none';
+function showState(s){
+  document.getElementById('pg-load').style.display=s==='load'?'block':'none';
+  document.getElementById('pg-err').style.display=s==='err'?'block':'none';
+  document.getElementById('pg-hub').style.display=s==='hub'?'block':'none';
 }
-
-function render(){
-  if(!_hub){show('err');return;}
+function applyBranding(h){
+  if(h.brandColor)document.documentElement.style.setProperty('--accent',h.brandColor);
+  document.title=(h.contractorName||'Project Hub')+' — Your Hub';
+  const logoEl=document.getElementById('topbar-logo-img');
+  const nameEl=document.getElementById('topbar-name');
+  if(h.logoData){logoEl.src=h.logoData;logoEl.style.display='block';nameEl.style.display='none';}
+  else{nameEl.textContent=h.contractorName||'Project Hub';logoEl.style.display='none';}
+  const nci=document.getElementById('nav-client-info');
+  if(nci)nci.innerHTML='<div class="nav-client-name">'+esc(h.clientName||'')+'</div>'+(h.clientAddr?'<div class="nav-client-addr">'+esc(h.clientAddr)+'</div>':'');
+  const nf=document.getElementById('nav-footer');
+  if(nf&&h.bwebsite)nf.innerHTML='<a href="'+esc(h.bwebsite)+'" target="_blank" style="color:inherit;text-decoration:none">'+esc(h.bwebsite.replace(/^https?:\/\//,''))+'</a>';
+}
+function renderAll(){renderHome();renderEstimates();renderInvoices();renderPayments();renderPhotos();}
+function switchView(key){
+  _activeView=key;
+  ['home','estimates','invoices','payments','photos'].forEach(v=>{
+    document.getElementById('view-'+v).style.display=v===key?'block':'none';
+    const ni=document.getElementById('ni-'+v);
+    if(ni)ni.className='nav-item'+(v===key?' active':'');
+  });
+  closeNav();window.scrollTo(0,0);
+}
+function toggleNav(){
+  const nav=document.getElementById('left-nav');
+  const bd=document.getElementById('nav-backdrop');
+  const open=nav.classList.toggle('open');
+  bd.style.display=open?'block':'none';
+}
+function closeNav(){
+  document.getElementById('left-nav').classList.remove('open');
+  document.getElementById('nav-backdrop').style.display='none';
+}
+function renderHome(){
+  if(!_hub)return;
   const h=_hub;
   const pendingBids=h.bids.filter(b=>b.status==='Pending'&&b.signHubUrl);
   const wonBids=h.bids.filter(b=>b.status==='Closed Won');
   const totalBalance=wonBids.reduce((s,b)=>s+(b.balance||0),0);
   const totalPaid=wonBids.reduce((s,b)=>s+(b.paid||0),0);
   const activeJobs=h.jobs.filter(j=>j.status!=='done');
-  const doneJobs=h.jobs.filter(j=>j.status==='done');
-  const photos=h.photos||[];
-
   let html='';
-
-  // ── Hero card ──
-  html+=`<div class="hero-card">
-    <div class="hero-biz">${esc(h.contractorName)}</div>
-    ${h.contractorPhone?`<div class="hero-phone">${esc(h.contractorPhone)}</div>`:''}
-    <div class="hero-meta">
-      <div>
-        <div class="hero-sub">Your project hub</div>
-        <div class="hero-client">${esc(h.clientName)}</div>
-        ${h.clientAddr?`<div style="font-size:12px;color:rgba(255,255,255,.4);margin-top:3px">${esc(h.clientAddr)}</div>`:''}
-      </div>
-      <div style="text-align:right">
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.35);margin-bottom:4px">Updated</div>
-        <div style="font-size:12px;color:rgba(255,255,255,.5)">${fmtDate(h.generatedAt?.slice(0,10))}</div>
-      </div>
-    </div>
-  </div>`;
-
-  // ── Balance / paid status ──
+  html+='<div class="hero-card">';
+  html+='<div class="hero-biz">'+esc(h.contractorName)+'</div>';
+  if(h.contractorPhone)html+='<a href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" style="color:rgba(255,255,255,.5);font-size:13px;text-decoration:none;display:block">'+esc(h.contractorPhone)+'</a>';
+  html+='<div class="hero-meta"><div><div class="hero-sub">Your project hub</div><div class="hero-client">'+esc(h.clientName)+'</div>';
+  if(h.clientAddr)html+='<div style="font-size:12px;color:rgba(255,255,255,.4);margin-top:3px">'+esc(h.clientAddr)+'</div>';
+  html+='</div><div style="text-align:right"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.35);margin-bottom:4px">Updated</div>';
+  html+='<div style="font-size:12px;color:rgba(255,255,255,.5)">'+fmtDate((h.generatedAt||'').slice(0,10))+'</div></div></div></div>';
   if(totalBalance>0.01){
-    html+=`<div class="balance-box">
-      <div class="balance-lbl">Balance due</div>
-      <div class="balance-amt">${fmt(totalBalance)}</div>
-      ${h.contractorPhone?`<a href="tel:${h.contractorPhone.replace(/\D/g,'')}" class="btn btn-green" style="margin-bottom:8px">📞 Call to pay — ${esc(h.contractorPhone)}</a>`:''}
-      ${h.contractorPhone?`<a href="sms:${h.contractorPhone.replace(/\D/g,'')}?body=${encodeURIComponent('Hi, I\'d like to pay my balance of '+fmt(totalBalance)+'. Can you send me a payment link?')}" class="btn btn-sec">💬 Text to request payment link</a>`:''}
-    </div>`;
-  } else if(totalPaid>0.01){
-    html+=`<div class="paid-box">
-      <div style="font-size:28px">✅</div>
-      <div><div style="font-size:14px;font-weight:800;color:var(--green-mid)">Paid in full</div><div style="font-size:13px;color:var(--green-mid);margin-top:2px">${fmt(totalPaid)} received — thank you!</div></div>
-    </div>`;
+    html+='<div class="balance-box"><div class="balance-lbl">Balance due</div><div class="balance-amt">'+fmt(totalBalance)+'</div>';
+    if(h.contractorPhone)html+='<a href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" class="btn btn-green" style="margin-bottom:8px">📞 Call to pay — '+esc(h.contractorPhone)+'</a>';
+    if(h.contractorPhone)html+='<a href="sms:'+h.contractorPhone.replace(/\D/g,'')+'" class="btn btn-sec">💬 Text to request payment link</a>';
+    html+='</div>';
+  }else if(totalPaid>0.01){
+    html+='<div class="paid-box"><div style="font-size:28px">✅</div><div><div style="font-size:14px;font-weight:800;color:var(--green-mid)">Paid in full</div><div style="font-size:13px;color:var(--green-mid);margin-top:2px">'+fmt(totalPaid)+' received — thank you!</div></div></div>';
   }
-
-  // ── Pending proposals ──
   if(pendingBids.length){
-    html+=`<div class="card">
-      <div class="section-hdr">📋 Review &amp; sign <span class="badge badge-pending">${pendingBids.length} pending</span></div>`;
-    pendingBids.forEach(b=>{
-      html+=`<div class="bid-row">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
-          <div>
-            <div style="font-size:15px;font-weight:700">${esc(b.type||'Proposal')}</div>
-            <div style="font-size:12px;color:var(--text3);margin-top:2px">Sent ${fmtDate(b.bid_date)}</div>
-          </div>
-          <div style="font-size:20px;font-weight:800;color:var(--blue-dk)">${fmt(b.amount)}</div>
-        </div>
-        <a href="${esc(b.signHubUrl)}" class="btn btn-green">Review &amp; Sign →</a>
-      </div>`;
+    html+='<div class="card"><div class="section-hdr">📋 Pending proposals <span class="badge badge-pending">'+pendingBids.length+'</span></div>';
+    pendingBids.slice(0,2).forEach(b=>{
+      html+='<div class="bid-row"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px"><div><div style="font-size:15px;font-weight:700">'+esc(b.type||'Proposal')+'</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Sent '+fmtDate(b.bid_date)+'</div></div>';
+      html+='<div style="font-size:20px;font-weight:800;color:var(--accent)">'+fmt(b.amount)+'</div></div>';
+      html+='<a href="'+esc(b.signHubUrl)+'" class="btn btn-green">Review &amp; Sign →</a></div>';
     });
+    if(pendingBids.length>2)html+='<div class="empty" onclick="switchView(\'estimates\')" style="cursor:pointer;color:var(--accent)">'+(pendingBids.length-2)+' more — view all estimates →</div>';
     html+='</div>';
   }
-
-  // ── Active / upcoming jobs ──
   if(activeJobs.length){
-    html+=`<div class="card"><div class="section-hdr">🔨 Active work</div>`;
+    html+='<div class="card"><div class="section-hdr">🔨 Active work</div>';
     activeJobs.forEach(j=>{
       const bidAmt=h.bids.find(b=>b.id===j.bid_id)?.amount;
-      html+=`<div class="job-row">
-        <div>
-          <div style="font-size:14px;font-weight:700">${esc(j.name)}</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:2px">${j.start?'Starts '+fmtDate(j.start):''}${j.days?' · '+j.days+(j.days===1?' day':' days'):''}</div>
-        </div>
-        <div style="text-align:right;flex-shrink:0;margin-left:12px">
-          ${bidAmt?`<div style="font-size:14px;font-weight:700">${fmt(bidAmt)}</div>`:''}
-          <span class="badge badge-active">In progress</span>
-        </div>
-      </div>`;
+      html+='<div class="job-row"><div><div style="font-size:14px;font-weight:700">'+esc(j.name)+'</div><div style="font-size:12px;color:var(--text3);margin-top:2px">'+(j.start?'Starts '+fmtDate(j.start):'')+(j.days?' · '+j.days+(j.days===1?' day':' days'):'')+'</div></div>';
+      html+='<div style="text-align:right;flex-shrink:0;margin-left:12px">'+(bidAmt?'<div style="font-size:14px;font-weight:700">'+fmt(bidAmt)+'</div>':'')+'<span class="badge badge-active">In progress</span></div></div>';
     });
     html+='</div>';
   }
-
-  // ── Completed jobs ──
-  if(doneJobs.length){
-    html+=`<div class="card"><div class="section-hdr">✅ Completed work</div>`;
-    doneJobs.forEach(j=>{
-      const bid=h.bids.find(b=>b.id===j.bid_id);
-      html+=`<div class="job-row">
-        <div>
-          <div style="font-size:14px;font-weight:700">${esc(j.name)}</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:2px">${j.completion_date?'Completed '+fmtDate(j.completion_date):''}</div>
-        </div>
-        <div style="text-align:right;flex-shrink:0;margin-left:12px;display:flex;flex-direction:column;align-items:flex-end;gap:6px">
-          ${bid?`<div style="font-size:14px;font-weight:700">${fmt(bid.amount)}</div>`:''}
-          ${bid?`<button onclick="openInvoice(${bid.id})" style="background:var(--blue-lt);border:1px solid var(--blue);color:var(--blue-dk);font-size:11px;font-weight:700;padding:5px 10px;border-radius:6px;cursor:pointer;font-family:inherit">⬇ Invoice</button>`:''}
-        </div>
-      </div>`;
-    });
-    html+='</div>';
-  }
-
-  // ── Payment history ──
-  if(h.payments&&h.payments.length){
-    const pmts=h.payments.filter(p=>p.amount>0).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-    html+=`<div class="card">
-      <span class="lbl">Payment history</span>`;
-    pmts.forEach(p=>{
-      const typeLabel={deposit:'Deposit',final:'Final payment',stripe:'Online payment',card:'Card payment',check:'Check',cash:'Cash',ach:'Bank transfer'}[p.type]||p.type||'Payment';
-      html+=`<div class="row"><span class="rl">${fmtDate(p.date)} · ${esc(typeLabel)}</span><span class="rv" style="color:var(--green-mid)">${fmt(p.amount)}</span></div>`;
-    });
-    html+='</div>';
-  }
-
-  // ── Photos ──
-  if(photos.length){
-    html+=`<div class="card"><span class="lbl">Project photos</span><div class="photo-grid">`;
-    photos.forEach(p=>{
-      const tag=p.type==='before'?'Before':p.type==='after'?'After':p.type==='progress'?'Progress':'';
-      html+=`<div class="photo-thumb" onclick="openPhoto('${esc(p.url)}','${esc(p.caption||'')}')">
-        <img src="${esc(p.url)}" alt="${esc(p.caption||'Project photo')}" loading="lazy" onerror="this.parentElement.style.display='none'">
-        ${tag?`<div class="photo-tag">${tag}</div>`:''}
-      </div>`;
-    });
-    html+='</div></div>';
-  }
-
-  // ── Footer ──
-  html+=`<div style="text-align:center;font-size:11px;color:var(--text3);padding:8px 0 4px">Powered by TradeDesk</div>`;
-
-  document.getElementById('pg-hub').innerHTML=html;
-  show('hub');
-
-  // Handle hash-based invoice deep link
-  if(location.hash.startsWith('#invoice-')){
-    const bidId=parseInt(location.hash.replace('#invoice-',''));
-    if(bidId)setTimeout(()=>openInvoice(bidId),300);
-  }
+  html+='<div class="ql-row"><div class="ql-btn" onclick="switchView(\'invoices\')"><div class="ql-icon">📄</div>Invoices</div><div class="ql-btn" onclick="switchView(\'payments\')"><div class="ql-icon">💳</div>Payments</div><div class="ql-btn" onclick="switchView(\'photos\')"><div class="ql-icon">📷</div>Photos</div></div>';
+  document.getElementById('view-home').innerHTML=html;
 }
-
+function renderEstimates(){
+  if(!_hub)return;
+  const h=_hub;
+  const allBids=h.bids.slice().sort((a,b)=>(b.bid_date||'').localeCompare(a.bid_date||''));
+  let html='<div class="view-title">Estimates</div>';
+  if(!allBids.length){html+='<div class="empty">No estimates yet.</div>';document.getElementById('view-estimates').innerHTML=html;return;}
+  allBids.forEach(b=>{
+    const isPending=b.status==='Pending'&&b.signHubUrl;
+    const isWon=b.status==='Closed Won';
+    let badge='';
+    if(b.status==='Pending')badge='<span class="badge badge-pending">Pending signature</span>';
+    else if(b.status==='Closed Won')badge='<span class="badge badge-won">Signed</span>';
+    else badge='<span class="badge" style="background:var(--bg);color:var(--text3);border:1px solid var(--border)">'+(b.status||'Draft')+'</span>';
+    html+='<div class="bid-row">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">';
+    html+='<div><div style="font-size:15px;font-weight:700">'+esc(b.type||'Proposal')+'</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Sent '+fmtDate(b.bid_date)+'</div></div>';
+    html+='<div style="font-size:18px;font-weight:800;color:var(--accent);flex-shrink:0;margin-left:10px">'+fmt(b.amount)+'</div></div>';
+    html+='<div style="margin-bottom:10px">'+badge+'</div>';
+    if(isPending)html+='<a href="'+esc(b.signHubUrl)+'" class="btn btn-green" style="margin-top:4px">Review &amp; Sign →</a>';
+    if(isWon)html+='<button onclick="openInvoice('+b.id+')" class="btn btn-sec" style="margin-top:4px">📄 View Invoice</button>';
+    html+='</div>';
+  });
+  document.getElementById('view-estimates').innerHTML=html;
+}
+function renderInvoices(){
+  if(!_hub)return;
+  const h=_hub;
+  const wonBids=h.bids.filter(b=>b.status==='Closed Won');
+  let html='<div class="view-title">Invoices</div>';
+  if(!wonBids.length){html+='<div class="empty">No invoices yet.</div>';document.getElementById('view-invoices').innerHTML=html;return;}
+  wonBids.forEach(b=>{
+    const job=h.jobs.find(j=>j.bid_id===b.id);
+    const isPaid=(b.balance||0)<0.01;
+    html+='<div class="bid-row">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">';
+    html+='<div><div style="font-size:15px;font-weight:700">'+esc(b.type||'Painting services')+'</div>';
+    html+='<div style="font-size:12px;color:var(--text3);margin-top:2px">'+(job&&job.completion_date?'Completed '+fmtDate(job.completion_date):b.bid_date?'Job from '+fmtDate(b.bid_date):'')+'</div></div>';
+    html+='<div style="font-size:18px;font-weight:800;flex-shrink:0;margin-left:10px;color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">'+fmt(b.amount)+'</div></div>';
+    html+='<div style="margin-bottom:10px"><span class="badge" style="background:'+(isPaid?'var(--green-lt)':'var(--red-lt)')+';color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">'+( isPaid?'Paid in full':'Balance: '+fmt(b.balance))+'</span></div>';
+    html+='<button onclick="openInvoice('+b.id+')" class="btn btn-sec">📄 Download Invoice</button></div>';
+  });
+  document.getElementById('view-invoices').innerHTML=html;
+}
+function renderPayments(){
+  if(!_hub)return;
+  const pmts=((_hub.payments)||[]).filter(p=>p.amount>0).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  let html='<div class="view-title">Payments</div>';
+  if(!pmts.length){html+='<div class="empty">No payments recorded yet.</div>';document.getElementById('view-payments').innerHTML=html;return;}
+  const total=pmts.reduce((s,p)=>s+p.amount,0);
+  html+='<div class="card" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-size:13px;color:var(--text3)">Total paid</div><div style="font-size:22px;font-weight:800;color:var(--green-mid)">'+fmt(total)+'</div></div>';
+  html+='<div class="card">';
+  const typeLabel={deposit:'Deposit',final:'Final payment',stripe:'Online payment',card:'Card payment',check:'Check',cash:'Cash',ach:'Bank transfer'};
+  pmts.forEach(p=>{
+    const lbl=typeLabel[p.type]||p.type||'Payment';
+    html+='<div class="row"><span class="rl">'+fmtDate(p.date)+'<br><span style="font-size:12px">'+esc(lbl)+'</span></span><span class="rv" style="color:var(--green-mid)">'+fmt(p.amount)+'</span></div>';
+  });
+  html+='</div>';
+  document.getElementById('view-payments').innerHTML=html;
+}
+function renderPhotos(){
+  if(!_hub)return;
+  const photos=_hub.photos||[];
+  let html='<div class="view-title">Project Photos</div>';
+  if(!photos.length){html+='<div class="empty">No photos yet.</div>';document.getElementById('view-photos').innerHTML=html;return;}
+  html+='<div class="photo-grid">';
+  photos.forEach(p=>{
+    const tag=p.type==='before'?'Before':p.type==='after'?'After':p.type==='progress'?'Progress':'';
+    html+='<div class="photo-thumb" onclick="openPhoto(\''+esc(p.url)+'\',\''+esc(p.caption||'')+'\')">';
+    html+='<img src="'+esc(p.url)+'" alt="'+esc(p.caption||'Project photo')+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+    if(tag)html+='<div class="photo-tag">'+tag+'</div>';
+    html+='</div>';
+  });
+  html+='</div>';
+  document.getElementById('view-photos').innerHTML=html;
+}
 function openInvoice(bidId){
   const h=_hub;
-  const bid=h.bids.find(b=>b.id===bidId);
-  if(!bid)return;
+  const bid=h.bids.find(b=>b.id===bidId);if(!bid)return;
   const job=h.jobs.find(j=>j.bid_id===bidId);
   const bidPayments=h.payments.filter(p=>p.bid_id===bidId||(!p.bid_id&&h.bids.length===1));
   const totalPaid=bidPayments.filter(p=>p.amount>0).reduce((s,p)=>s+p.amount,0);
   const balance=Math.max(0,(bid.amount||0)-totalPaid);
   const invNum='INV-'+String(bidId).slice(-6).toUpperCase();
   const today=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
-
-  let html=`<div class="inv-topbar">
-    <div>
-      <div class="inv-title">INVOICE</div>
-      <div class="inv-num">${invNum} &nbsp;·&nbsp; ${today}</div>
-    </div>
-    <div>
-      <div class="inv-biz-name">${esc(h.contractorName)}</div>
-      ${h.contractorPhone?`<div class="inv-biz-sub">${esc(h.contractorPhone)}</div>`:''}
-    </div>
-  </div>
-
-  <div class="inv-bill">
-    <div class="inv-bill-lbl">Bill to</div>
-    <div class="inv-bill-name">${esc(h.clientName)}</div>
-    ${h.clientAddr?`<div class="inv-bill-addr">${esc(h.clientAddr)}</div>`:''}
-    ${h.clientPhone?`<div class="inv-bill-addr">${esc(h.clientPhone)}</div>`:''}
-  </div>
-
-  <div class="inv-line-hdr"><span>Description</span><span>Amount</span></div>
-  <div class="inv-line">
-    <span style="font-weight:600">${esc(bid.type||'Painting services')}</span>
-    <span style="font-weight:700">${fmt(bid.amount)}</span>
-  </div>
-  ${job&&job.start?`<div style="font-size:12px;color:var(--text3);padding:6px 0 0">Service dates: ${fmtDate(job.start)}${job.completion_date?' – '+fmtDate(job.completion_date):''}</div>`:''}
-
-  <div class="inv-totals">
-    <div class="inv-total-row"><span>Subtotal</span><span>${fmt(bid.amount)}</span></div>`;
-
-  if(bidPayments.length){
-    bidPayments.filter(p=>p.amount>0).forEach(p=>{
-      const lbl={deposit:'Deposit',final:'Final payment',stripe:'Online payment',card:'Card payment',check:'Check',cash:'Cash',ach:'Bank transfer'}[p.type]||p.type||'Payment';
-      html+=`<div class="inv-total-row" style="color:var(--green-mid)"><span>Payment — ${lbl}${p.date?' ('+fmtDate(p.date)+')':''}</span><span>−${fmt(p.amount)}</span></div>`;
-    });
-  }
-
-  html+=`<div class="inv-total-row"><span>Balance due</span><span style="color:${balance<0.01?'var(--green-mid)':'var(--red)'}">${fmt(balance)}</span></div>
-  </div>`;
-
-  if(balance<0.01){
-    html+=`<div style="text-align:center;margin-top:8px"><div class="inv-stamp">PAID IN FULL</div></div>`;
-  }
-
-  html+=`<div style="margin-top:40px;padding-top:20px;border-top:1px solid var(--border);display:flex;gap:10px" class="no-print">
-    <button onclick="window.print()" class="btn" style="width:auto;flex:1;padding:12px">⬇ Download PDF</button>
-    <button onclick="closeInvoice()" class="btn btn-sec" style="width:auto;flex:1">Close</button>
-  </div>`;
-
+  const typeLabel={deposit:'Deposit',final:'Final payment',stripe:'Online payment',card:'Card payment',check:'Check',cash:'Cash',ach:'Bank transfer'};
+  let html='<div class="inv-topbar"><div><div class="inv-title">INVOICE</div><div class="inv-num">'+invNum+' &nbsp;·&nbsp; '+today+'</div></div>';
+  html+='<div><div class="inv-biz-name">'+esc(h.contractorName)+'</div>'+(h.contractorPhone?'<div class="inv-biz-sub">'+esc(h.contractorPhone)+'</div>':'')+'</div></div>';
+  html+='<div class="inv-bill"><div class="inv-bill-lbl">Bill to</div><div class="inv-bill-name">'+esc(h.clientName)+'</div>';
+  if(h.clientAddr)html+='<div class="inv-bill-addr">'+esc(h.clientAddr)+'</div>';
+  if(h.clientPhone)html+='<div class="inv-bill-addr">'+esc(h.clientPhone)+'</div>';
+  html+='</div>';
+  html+='<div class="inv-line-hdr"><span>Description</span><span>Amount</span></div>';
+  html+='<div class="inv-line"><span style="font-weight:600">'+esc(bid.type||'Painting services')+'</span><span style="font-weight:700">'+fmt(bid.amount)+'</span></div>';
+  if(job&&job.start)html+='<div style="font-size:12px;color:var(--text3);padding:6px 0 0">Service dates: '+fmtDate(job.start)+(job.completion_date?' – '+fmtDate(job.completion_date):'')+'</div>';
+  html+='<div class="inv-totals"><div class="inv-total-row"><span>Subtotal</span><span>'+fmt(bid.amount)+'</span></div>';
+  bidPayments.filter(p=>p.amount>0).forEach(p=>{
+    const lbl=typeLabel[p.type]||p.type||'Payment';
+    html+='<div class="inv-total-row" style="color:var(--green-mid)"><span>Payment — '+lbl+(p.date?' ('+fmtDate(p.date)+')':'')+'</span><span>−'+fmt(p.amount)+'</span></div>';
+  });
+  html+='<div class="inv-total-row"><span>Balance due</span><span style="color:'+(balance<0.01?'var(--green-mid)':'var(--red)')+'">'+fmt(balance)+'</span></div></div>';
+  if(balance<0.01)html+='<div style="text-align:center;margin-top:8px"><div class="inv-stamp">PAID IN FULL</div></div>';
+  html+='<div style="margin-top:40px;padding-top:20px;border-top:1px solid var(--border);display:flex;gap:10px" class="no-print">';
+  html+='<button onclick="window.print()" class="btn" style="width:auto;flex:1;padding:12px">⬇ Download PDF</button>';
+  html+='<button onclick="closeInvoice()" class="btn btn-sec" style="width:auto;flex:1">Close</button></div>';
   document.getElementById('inv-content').innerHTML=html;
   document.getElementById('inv-overlay').style.display='block';
   history.replaceState(null,'','#invoice-'+bidId);
   scrollTo(0,0);
 }
-
 function closeInvoice(){
   document.getElementById('inv-overlay').style.display='none';
   history.replaceState(null,'',''+location.pathname+location.search);
 }
-
 function openPhoto(url,caption){
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:600;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;cursor:pointer';
-  ov.innerHTML=`<img src="${esc(url)}" style="max-width:100%;max-height:80vh;border-radius:8px;object-fit:contain">${caption?`<div style="color:#fff;font-size:13px;margin-top:12px;text-align:center">${esc(caption)}</div>`:''}`;
+  ov.innerHTML='<img src="'+esc(url)+'" style="max-width:100%;max-height:80vh;border-radius:8px;object-fit:contain">'+(caption?'<div style="color:#fff;font-size:13px;margin-top:12px;text-align:center">'+esc(caption)+'</div>':'');
   ov.onclick=()=>ov.remove();
   document.body.appendChild(ov);
 }
-
 init();
 </script>
 </body>

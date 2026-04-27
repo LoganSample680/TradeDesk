@@ -91,6 +91,7 @@ input[type=text]:focus{border-color:var(--blue)}
 
   <!-- Review + Sign -->
   <div id="pg-sign" style="display:none">
+    <a id="back-to-hub" href="#" style="display:none;align-items:center;gap:6px;font-size:13px;color:var(--text3);text-decoration:none;margin-bottom:14px;padding:8px 0">← Back to project hub</a>
     <!-- Hero branding card -->
     <div class="hero-card">
       <div class="hero-biz" id="hero-biz-name"></div>
@@ -229,6 +230,7 @@ input[type=text]:focus{border-color:var(--blue)}
       <h2 id="done-title">You're all set!</h2>
       <p id="done-msg">Your proposal has been signed. The contractor will be in touch to confirm your start date.</p>
       <div class="done-box"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--green-mid);margin-bottom:10px">Confirmation</div><div id="done-rows"></div></div>
+      <a id="done-hub-cta" href="#" style="display:none;margin-top:20px;padding:14px;background:#f0f4ff;border:1.5px solid #c7d7f5;border-radius:12px;font-size:14px;font-weight:700;color:#185FA5;text-align:center;text-decoration:none">View your project hub →</a>
     </div>
   </div>
 
@@ -316,6 +318,11 @@ function portfolioDecline(){
 }
 async function init(){
   const params=new URLSearchParams(location.search);
+  const _hubReturnUrl=params.get('hub')||'';
+  if(_hubReturnUrl){
+    const backEl=document.getElementById('back-to-hub');
+    if(backEl){backEl.href=_hubReturnUrl;backEl.style.display='inline-flex';}
+  }
   // Support both short token (?t=token&u=uid&b=bidId) and full key (?key=...)
   let key=params.get('key');
   if(!key){
@@ -560,6 +567,9 @@ function showDone(method){
     '<div class="row"><span class="rl">Total</span><span class="rv">'+fmt(_prop?.amount)+'</span></div>'+
     '<div class="row"><span class="rl">Deposit</span><span class="rv">'+fmt(_prop?.deposit)+'</span></div>'+
     '<div class="row"><span class="rl">Payment</span><span class="rv">'+(isCard?'💳 Card charged':isAch?'🏦 Bank transfer':'💵 Cash on arrival')+'</span></div>';
+  const hubUrl=new URLSearchParams(location.search).get('hub')||'';
+  const hubCta=document.getElementById('done-hub-cta');
+  if(hubCta&&hubUrl){hubCta.href=hubUrl;hubCta.style.display='block';}
   show('pg-done');scrollTo(0,0);
 }
 
