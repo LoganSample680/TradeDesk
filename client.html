@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Your Project Hub</title>
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{--blue:#185FA5;--blue-lt:#EBF2FB;--blue-dk:#0D3B6E;--green:#16a34a;--green-mid:#3B6D11;--green-lt:#EAF3DE;--green-border:#97C459;--border:#e0dfd8;--border2:#cccbc4;--text:#1a1a18;--text2:#5f5e5a;--text3:#9a9890;--bg:#f7f7f5;--bg2:#fff;--r:10px;--rl:14px;--navy:#0D1117;--red:#A32D2D;--red-lt:#FFF0F0;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
+.topbar{background:var(--navy);padding:14px 20px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:100}
+.topbar-logo{width:28px;height:28px;border-radius:7px;background:var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.topbar-name{font-size:15px;font-weight:800;color:#fff;letter-spacing:-.3px}
+.wrap{max-width:680px;margin:0 auto;padding:20px 16px 48px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:20px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px;display:block}
+.btn{display:block;width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--navy);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center;text-decoration:none;transition:opacity .15s}
+.btn:active{opacity:.85}
+.btn-green{background:var(--green)}
+.btn-sec{background:var(--bg2);color:var(--text2);border:1.5px solid var(--border2);font-size:13px;padding:11px}
+.row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px}
+.row:last-child{border-bottom:none;padding-bottom:0}
+.rl{color:var(--text3)}.rv{font-weight:600;text-align:right}
+.badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.02em}
+.badge-pending{background:#FEF3C7;color:#92400E}
+.badge-won{background:var(--green-lt);color:var(--green-mid)}
+.badge-done{background:#E0F2FE;color:#0369A1}
+.badge-active{background:#EEF2FF;color:#4338CA}
+.hero-card{background:linear-gradient(135deg,#0D1117 0%,#1a365d 100%);border-radius:var(--rl);padding:22px 20px 20px;margin-bottom:18px;position:relative;overflow:hidden}
+.hero-card::before{content:'';position:absolute;right:-40px;top:-40px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.04)}
+.hero-biz{font-size:21px;font-weight:800;color:#fff;letter-spacing:-.4px;margin-bottom:3px}
+.hero-phone{font-size:13px;color:rgba(255,255,255,.5)}
+.hero-sub{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.35);margin-bottom:6px}
+.hero-client{font-size:16px;font-weight:700;color:#fff}
+.hero-meta{margin-top:18px;padding-top:16px;border-top:1px solid rgba(255,255,255,.1);display:flex;justify-content:space-between;align-items:flex-end}
+.balance-box{background:var(--red-lt);border:2px solid var(--red);border-radius:var(--rl);padding:18px;margin-bottom:14px}
+.balance-lbl{font-size:11px;font-weight:800;text-transform:uppercase;color:var(--red);margin-bottom:6px}
+.balance-amt{font-size:34px;font-weight:800;color:var(--red);letter-spacing:-.5px;margin-bottom:14px}
+.paid-box{background:var(--green-lt);border:1px solid var(--green-border);border-radius:var(--rl);padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;gap:12px}
+.section-hdr{font-size:15px;font-weight:800;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.empty{color:var(--text3);font-size:13px;text-align:center;padding:20px 0}
+.bid-row{background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:16px;margin-bottom:10px}
+.bid-row:last-child{margin-bottom:0}
+.job-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)}
+.job-row:last-child{border-bottom:none}
+.photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
+.photo-thumb{aspect-ratio:1;border-radius:var(--r);overflow:hidden;background:var(--bg);cursor:pointer;position:relative}
+.photo-thumb img{width:100%;height:100%;object-fit:cover}
+.photo-tag{position:absolute;bottom:4px;left:4px;background:rgba(0,0,0,.6);color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em}
+.pg-status{text-align:center;padding:80px 20px}
+.pg-status-icon{font-size:64px;margin-bottom:16px}
+.pg-status h2{font-size:24px;font-weight:800;margin-bottom:10px}
+.pg-status p{font-size:14px;color:var(--text2);line-height:1.7;max-width:380px;margin:0 auto}
+/* Invoice overlay */
+#inv-overlay{position:fixed;inset:0;background:#fff;z-index:500;overflow-y:auto;display:none}
+.inv-wrap{max-width:680px;margin:0 auto;padding:32px 24px 60px}
+.inv-topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px;padding-bottom:20px;border-bottom:3px solid var(--navy)}
+.inv-title{font-size:26px;font-weight:900;color:var(--navy);letter-spacing:-.5px}
+.inv-num{font-size:12px;color:var(--text3);margin-top:3px}
+.inv-biz-name{font-size:16px;font-weight:800;color:var(--navy);text-align:right}
+.inv-biz-sub{font-size:12px;color:var(--text3);text-align:right;margin-top:2px}
+.inv-bill{margin-bottom:24px;padding:14px 16px;background:var(--bg);border-radius:var(--r)}
+.inv-bill-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px}
+.inv-bill-name{font-size:16px;font-weight:700}
+.inv-bill-addr{font-size:13px;color:var(--text2);margin-top:2px}
+.inv-line-hdr{display:flex;justify-content:space-between;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);padding:8px 0;border-bottom:2px solid var(--border)}
+.inv-line{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);font-size:14px}
+.inv-line:last-child{border-bottom:none}
+.inv-totals{margin-top:4px;border-top:2px solid var(--border)}
+.inv-total-row{display:flex;justify-content:space-between;padding:10px 0;font-size:14px;border-bottom:1px solid var(--border)}
+.inv-total-row:last-child{border-bottom:none;font-size:17px;font-weight:800;color:var(--navy);padding-top:14px}
+.inv-stamp{display:inline-block;border:3px solid var(--green-mid);color:var(--green-mid);font-size:18px;font-weight:900;padding:6px 18px;border-radius:4px;transform:rotate(-10deg);margin-top:20px;letter-spacing:.1em}
+.inv-close{position:fixed;top:16px;right:16px;background:var(--navy);color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit;z-index:10}
+@media print{
+  .topbar,.inv-close,.no-print{display:none!important}
+  #inv-overlay{position:static!important}
+  .inv-wrap{padding:16px}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="topbar-logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>
+  <span class="topbar-name">TradeDesk</span>
+  <span style="font-size:10px;color:rgba(255,255,255,.3);margin-left:auto">Project Hub</span>
+</div>
+
+<div class="wrap" id="main-wrap">
+  <div class="pg-status" id="pg-load">
+    <div class="pg-status-icon">⏳</div>
+    <h2>Loading your hub…</h2>
+    <p>Just a moment.</p>
+  </div>
+  <div class="pg-status" id="pg-err" style="display:none">
+    <div class="pg-status-icon">🔗</div>
+    <h2>Hub not found</h2>
+    <p>This link may have expired. Contact your contractor for a new link.</p>
+  </div>
+  <div id="pg-hub" style="display:none"></div>
+</div>
+
+<!-- Invoice overlay -->
+<div id="inv-overlay">
+  <button class="inv-close no-print" onclick="closeInvoice()">✕</button>
+  <div class="inv-wrap" id="inv-content"></div>
+</div>
+
+<script>
+const SUPA_URL='https://mwtsmctajhrrybblgorf.supabase.co';
+const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
+const _supa=supabase.createClient(SUPA_URL,SUPA_KEY);
+let _hub=null;
+const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtDate=s=>{if(!s)return'';try{return new Date(s+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return s;}};
+const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+async function init(){
+  const p=new URLSearchParams(location.search);
+  const t=p.get('t'),u=p.get('u'),c=p.get('c');
+  if(!t||!u||!c){show('err');return;}
+  try{
+    const key='client-hub/'+u+'/'+c+'_'+t+'.json';
+    const{data,error}=await _supa.storage.from('proposals').download(key);
+    if(error||!data){show('err');return;}
+    _hub=JSON.parse(await data.text());
+    render();
+  }catch(e){console.error(e);show('err');}
+}
+
+function show(state){
+  document.getElementById('pg-load').style.display=state==='load'?'block':'none';
+  document.getElementById('pg-err').style.display=state==='err'?'block':'none';
+  document.getElementById('pg-hub').style.display=state==='hub'?'block':'none';
+}
+
+function render(){
+  if(!_hub){show('err');return;}
+  const h=_hub;
+  const pendingBids=h.bids.filter(b=>b.status==='Pending'&&b.signHubUrl);
+  const wonBids=h.bids.filter(b=>b.status==='Closed Won');
+  const totalBalance=wonBids.reduce((s,b)=>s+(b.balance||0),0);
+  const totalPaid=wonBids.reduce((s,b)=>s+(b.paid||0),0);
+  const activeJobs=h.jobs.filter(j=>j.status!=='done');
+  const doneJobs=h.jobs.filter(j=>j.status==='done');
+  const photos=h.photos||[];
+
+  let html='';
+
+  // ── Hero card ──
+  html+=`<div class="hero-card">
+    <div class="hero-biz">${esc(h.contractorName)}</div>
+    ${h.contractorPhone?`<div class="hero-phone">${esc(h.contractorPhone)}</div>`:''}
+    <div class="hero-meta">
+      <div>
+        <div class="hero-sub">Your project hub</div>
+        <div class="hero-client">${esc(h.clientName)}</div>
+        ${h.clientAddr?`<div style="font-size:12px;color:rgba(255,255,255,.4);margin-top:3px">${esc(h.clientAddr)}</div>`:''}
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.35);margin-bottom:4px">Updated</div>
+        <div style="font-size:12px;color:rgba(255,255,255,.5)">${fmtDate(h.generatedAt?.slice(0,10))}</div>
+      </div>
+    </div>
+  </div>`;
+
+  // ── Balance / paid status ──
+  if(totalBalance>0.01){
+    html+=`<div class="balance-box">
+      <div class="balance-lbl">Balance due</div>
+      <div class="balance-amt">${fmt(totalBalance)}</div>
+      ${h.contractorPhone?`<a href="tel:${h.contractorPhone.replace(/\D/g,'')}" class="btn btn-green" style="margin-bottom:8px">📞 Call to pay — ${esc(h.contractorPhone)}</a>`:''}
+      ${h.contractorPhone?`<a href="sms:${h.contractorPhone.replace(/\D/g,'')}?body=${encodeURIComponent('Hi, I\'d like to pay my balance of '+fmt(totalBalance)+'. Can you send me a payment link?')}" class="btn btn-sec">💬 Text to request payment link</a>`:''}
+    </div>`;
+  } else if(totalPaid>0.01){
+    html+=`<div class="paid-box">
+      <div style="font-size:28px">✅</div>
+      <div><div style="font-size:14px;font-weight:800;color:var(--green-mid)">Paid in full</div><div style="font-size:13px;color:var(--green-mid);margin-top:2px">${fmt(totalPaid)} received — thank you!</div></div>
+    </div>`;
+  }
+
+  // ── Pending proposals ──
+  if(pendingBids.length){
+    html+=`<div class="card">
+      <div class="section-hdr">📋 Review &amp; sign <span class="badge badge-pending">${pendingBids.length} pending</span></div>`;
+    pendingBids.forEach(b=>{
+      html+=`<div class="bid-row">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+          <div>
+            <div style="font-size:15px;font-weight:700">${esc(b.type||'Proposal')}</div>
+            <div style="font-size:12px;color:var(--text3);margin-top:2px">Sent ${fmtDate(b.bid_date)}</div>
+          </div>
+          <div style="font-size:20px;font-weight:800;color:var(--blue-dk)">${fmt(b.amount)}</div>
+        </div>
+        <a href="${esc(b.signHubUrl)}" class="btn btn-green">Review &amp; Sign →</a>
+      </div>`;
+    });
+    html+='</div>';
+  }
+
+  // ── Active / upcoming jobs ──
+  if(activeJobs.length){
+    html+=`<div class="card"><div class="section-hdr">🔨 Active work</div>`;
+    activeJobs.forEach(j=>{
+      const bidAmt=h.bids.find(b=>b.id===j.bid_id)?.amount;
+      html+=`<div class="job-row">
+        <div>
+          <div style="font-size:14px;font-weight:700">${esc(j.name)}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px">${j.start?'Starts '+fmtDate(j.start):''}${j.days?' · '+j.days+(j.days===1?' day':' days'):''}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;margin-left:12px">
+          ${bidAmt?`<div style="font-size:14px;font-weight:700">${fmt(bidAmt)}</div>`:''}
+          <span class="badge badge-active">In progress</span>
+        </div>
+      </div>`;
+    });
+    html+='</div>';
+  }
+
+  // ── Completed jobs ──
+  if(doneJobs.length){
+    html+=`<div class="card"><div class="section-hdr">✅ Completed work</div>`;
+    doneJobs.forEach(j=>{
+      const bid=h.bids.find(b=>b.id===j.bid_id);
+      html+=`<div class="job-row">
+        <div>
+          <div style="font-size:14px;font-weight:700">${esc(j.name)}</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px">${j.completion_date?'Completed '+fmtDate(j.completion_date):''}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;margin-left:12px;display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+          ${bid?`<div style="font-size:14px;font-weight:700">${fmt(bid.amount)}</div>`:''}
+          ${bid?`<button onclick="openInvoice(${bid.id})" style="background:var(--blue-lt);border:1px solid var(--blue);color:var(--blue-dk);font-size:11px;font-weight:700;padding:5px 10px;border-radius:6px;cursor:pointer;font-family:inherit">⬇ Invoice</button>`:''}
+        </div>
+      </div>`;
+    });
+    html+='</div>';
+  }
+
+  // ── Payment history ──
+  if(h.payments&&h.payments.length){
+    const pmts=h.payments.filter(p=>p.amount>0).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+    html+=`<div class="card">
+      <span class="lbl">Payment history</span>`;
+    pmts.forEach(p=>{
+      const typeLabel={deposit:'Deposit',final:'Final payment',stripe:'Online payment',card:'Card payment',check:'Check',cash:'Cash',ach:'Bank transfer'}[p.type]||p.type||'Payment';
+      html+=`<div class="row"><span class="rl">${fmtDate(p.date)} · ${esc(typeLabel)}</span><span class="rv" style="color:var(--green-mid)">${fmt(p.amount)}</span></div>`;
+    });
+    html+='</div>';
+  }
+
+  // ── Photos ──
+  if(photos.length){
+    html+=`<div class="card"><span class="lbl">Project photos</span><div class="photo-grid">`;
+    photos.forEach(p=>{
+      const tag=p.type==='before'?'Before':p.type==='after'?'After':p.type==='progress'?'Progress':'';
+      html+=`<div class="photo-thumb" onclick="openPhoto('${esc(p.url)}','${esc(p.caption||'')}')">
+        <img src="${esc(p.url)}" alt="${esc(p.caption||'Project photo')}" loading="lazy" onerror="this.parentElement.style.display='none'">
+        ${tag?`<div class="photo-tag">${tag}</div>`:''}
+      </div>`;
+    });
+    html+='</div></div>';
+  }
+
+  // ── Footer ──
+  html+=`<div style="text-align:center;font-size:11px;color:var(--text3);padding:8px 0 4px">Powered by TradeDesk</div>`;
+
+  document.getElementById('pg-hub').innerHTML=html;
+  show('hub');
+
+  // Handle hash-based invoice deep link
+  if(location.hash.startsWith('#invoice-')){
+    const bidId=parseInt(location.hash.replace('#invoice-',''));
+    if(bidId)setTimeout(()=>openInvoice(bidId),300);
+  }
+}
+
+function openInvoice(bidId){
+  const h=_hub;
+  const bid=h.bids.find(b=>b.id===bidId);
+  if(!bid)return;
+  const job=h.jobs.find(j=>j.bid_id===bidId);
+  const bidPayments=h.payments.filter(p=>p.bid_id===bidId||(!p.bid_id&&h.bids.length===1));
+  const totalPaid=bidPayments.filter(p=>p.amount>0).reduce((s,p)=>s+p.amount,0);
+  const balance=Math.max(0,(bid.amount||0)-totalPaid);
+  const invNum='INV-'+String(bidId).slice(-6).toUpperCase();
+  const today=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+
+  let html=`<div class="inv-topbar">
+    <div>
+      <div class="inv-title">INVOICE</div>
+      <div class="inv-num">${invNum} &nbsp;·&nbsp; ${today}</div>
+    </div>
+    <div>
+      <div class="inv-biz-name">${esc(h.contractorName)}</div>
+      ${h.contractorPhone?`<div class="inv-biz-sub">${esc(h.contractorPhone)}</div>`:''}
+    </div>
+  </div>
+
+  <div class="inv-bill">
+    <div class="inv-bill-lbl">Bill to</div>
+    <div class="inv-bill-name">${esc(h.clientName)}</div>
+    ${h.clientAddr?`<div class="inv-bill-addr">${esc(h.clientAddr)}</div>`:''}
+    ${h.clientPhone?`<div class="inv-bill-addr">${esc(h.clientPhone)}</div>`:''}
+  </div>
+
+  <div class="inv-line-hdr"><span>Description</span><span>Amount</span></div>
+  <div class="inv-line">
+    <span style="font-weight:600">${esc(bid.type||'Painting services')}</span>
+    <span style="font-weight:700">${fmt(bid.amount)}</span>
+  </div>
+  ${job&&job.start?`<div style="font-size:12px;color:var(--text3);padding:6px 0 0">Service dates: ${fmtDate(job.start)}${job.completion_date?' – '+fmtDate(job.completion_date):''}</div>`:''}
+
+  <div class="inv-totals">
+    <div class="inv-total-row"><span>Subtotal</span><span>${fmt(bid.amount)}</span></div>`;
+
+  if(bidPayments.length){
+    bidPayments.filter(p=>p.amount>0).forEach(p=>{
+      const lbl={deposit:'Deposit',final:'Final payment',stripe:'Online payment',card:'Card payment',check:'Check',cash:'Cash',ach:'Bank transfer'}[p.type]||p.type||'Payment';
+      html+=`<div class="inv-total-row" style="color:var(--green-mid)"><span>Payment — ${lbl}${p.date?' ('+fmtDate(p.date)+')':''}</span><span>−${fmt(p.amount)}</span></div>`;
+    });
+  }
+
+  html+=`<div class="inv-total-row"><span>Balance due</span><span style="color:${balance<0.01?'var(--green-mid)':'var(--red)'}">${fmt(balance)}</span></div>
+  </div>`;
+
+  if(balance<0.01){
+    html+=`<div style="text-align:center;margin-top:8px"><div class="inv-stamp">PAID IN FULL</div></div>`;
+  }
+
+  html+=`<div style="margin-top:40px;padding-top:20px;border-top:1px solid var(--border);display:flex;gap:10px" class="no-print">
+    <button onclick="window.print()" class="btn" style="width:auto;flex:1;padding:12px">⬇ Download PDF</button>
+    <button onclick="closeInvoice()" class="btn btn-sec" style="width:auto;flex:1">Close</button>
+  </div>`;
+
+  document.getElementById('inv-content').innerHTML=html;
+  document.getElementById('inv-overlay').style.display='block';
+  history.replaceState(null,'','#invoice-'+bidId);
+  scrollTo(0,0);
+}
+
+function closeInvoice(){
+  document.getElementById('inv-overlay').style.display='none';
+  history.replaceState(null,'',''+location.pathname+location.search);
+}
+
+function openPhoto(url,caption){
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:600;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;cursor:pointer';
+  ov.innerHTML=`<img src="${esc(url)}" style="max-width:100%;max-height:80vh;border-radius:8px;object-fit:contain">${caption?`<div style="color:#fff;font-size:13px;margin-top:12px;text-align:center">${esc(caption)}</div>`:''}`;
+  ov.onclick=()=>ov.remove();
+  document.body.appendChild(ov);
+}
+
+init();
+</script>
+</body>
+</html>
