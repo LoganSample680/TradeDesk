@@ -9732,17 +9732,19 @@ function _buildClientHubSnapshot(clientId){
     const paid=getBidPaid(b.id);
     const balance=getBidBalance(b);
     const signBase=b.signingToken?baseUrl+'sign.html?t='+b.signingToken+'&u='+(_supaUser?.id||'')+'&b='+b.id:null;
-    return {id:b.id,amount:b.amount||0,status:b.status,type:b.type||'Painting',bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,
-      signingToken:b.signingToken||null,
+    return {id:b.id,amount:b.amount||0,deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:b.type||'Painting',bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,
+      proposalKey:b.proposalKey||b.signingKey||null,signingToken:b.signingToken||null,
       signHubUrl:signBase?(signBase+(hubUrl?'&hub='+encodeURIComponent(hubUrl):'')):null};
   });
   const snapshotJobs=cjobs.map(j=>({id:j.id,bid_id:j.bid_id||null,name:j.name||'Job',start:j.start||'',days:j.days||0,status:j.status||'scheduled',completion_date:j.completion_date||''}));
-  const snapshotPayments=cpayments.map(p=>({date:p.date||'',type:p.type||'',amount:p.amount||0,ref:p.ref||'',method:p.method||''}));
+  const snapshotPayments=cpayments.map(p=>({date:p.date||'',type:p.type||'',amount:p.amount||0,bid_id:p.bid_id||null,ref:p.ref||'',method:p.method||''}));
   const jobPhotos=photos.filter(p=>p.client_id===clientId).map(p=>({url:p.url,type:p.type,caption:p.caption||'',job_name:p.job_name||''}));
   return {
     clientId,clientName:c.name,clientPhone:c.phone||'',clientAddr:c.addr||'',
     contractorName:S.bname||'TradeDesk',contractorPhone:S.bphone||'',
     brandColor:S.brandColor||'',logoData:S.logoData||'',bwebsite:S.bwebsite||'',
+    contractorUserId:_supaUser?.id||'',notifyEmail:S.bemail||_supaUser?.email||'',
+    stripeEnabled:!!(_stripeConnectStatus?.charges_enabled),
     hubUrl,token:c.clientToken||'',generatedAt:new Date().toISOString(),
     bids:snapshotBids,payments:snapshotPayments,jobs:snapshotJobs,photos:jobPhotos
   };
@@ -9758,6 +9760,7 @@ async function _uploadClientHub(clientId){
   if(!c.clientToken){
     c.clientToken=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
   }
+  if(_stripeConnectStatus===null)await _fetchStripeConnectStatus();
   const snapshot=_buildClientHubSnapshot(clientId);
   if(!snapshot)return null;
   snapshot.token=c.clientToken;
