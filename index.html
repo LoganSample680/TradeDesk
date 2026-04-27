@@ -110,6 +110,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   .pg{padding:14px 16px 20px}
   #pg-leads,#pg-jobs,#pg-money{padding-top:8px}
   .drive-active .pg{padding-top:60px}
+  .clock-active .pg{padding-top:60px}
+  .drive-active.clock-active .pg{padding-top:110px}
+  .drive-active #clock-banner{top:42px}
   .tbar-title{font-size:19px}
   .card{padding:14px}
   .f label{font-size:11px}
@@ -141,7 +144,9 @@ input[type=range]{-webkit-appearance:none;appearance:none;background:transparent
 input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:22px;height:22px;border-radius:50%;background:#0D1117;cursor:pointer;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3);margin-top:-8px;}
 input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:#0D1117;cursor:pointer;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3);transform:translateY(0);}
 input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(to right,var(--blue-lt),var(--blue));}
-.pg{display:none;padding:20px 24px 24px}.drive-active .pg{padding-top:70px}
+.pg{display:none;padding:20px 24px 24px}.drive-active .pg{padding-top:70px}.clock-active .pg{padding-top:70px}.drive-active.clock-active .pg{padding-top:112px}
+#clock-banner{position:fixed;top:0;left:var(--nav-w);right:0;background:#7C3D0A;color:#fff;z-index:998;padding:8px 14px;display:none;align-items:center;justify-content:space-between;gap:10px}
+@media(max-width:767px){#clock-banner{left:0}}
 #pg-leads,#pg-jobs,#pg-money{padding-top:8px}
 .pg.active{display:block}
 #pg-est.active{position:fixed;inset:0;z-index:1100;overflow-y:auto;padding:0;background:var(--bg)}
@@ -841,7 +846,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   </div>
 </div>
 <div class="pg" id="pg-est">
-  <div style="padding:20px 24px 24px;max-width:600px;margin:0 auto;box-sizing:border-box;width:100%">
+  <div style="padding:20px 16px 24px;max-width:900px;margin:0 auto;box-sizing:border-box;width:100%">
   <div class="tbar"><div class="tbar-title">Estimate builder</div><button onclick="saveAndExitEstimate()" style="font-size:12px;padding:6px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text3);cursor:pointer;font-family:inherit;font-weight:600;flex-shrink:0">💾 Save &amp; exit</button></div>
   <div class="steps" id="est-steps">
     <div class="step active" id="est-st-1" onclick="goEstStep(1)"><div class="snum">1</div><span class="slbl">Client</span></div>
@@ -1693,6 +1698,8 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
             </div>
           </div>
         </div>
+        <div class="f"><label>Hub accent color <span style="font-size:10px;font-weight:400;color:var(--text3)">(buttons &amp; links in client hub)</span></label><input type="color" id="set-brandcolor" value="#185FA5"></div>
+        <div class="f"><label>Website URL <span style="font-size:10px;font-weight:400;color:var(--text3)">(shown in client hub footer)</span></label><input type="url" id="set-bwebsite" placeholder="https://yourwebsite.com"></div>
         <div class="f" style="grid-column:1/-1" id="settings-vehicles-section">
           <label>Vehicles <span style="font-size:10px;color:var(--text3);font-weight:400">(IRS log requires vehicle description per trip)</span></label>
           <div id="set-vehicles-list" style="margin-bottom:8px"></div>
@@ -1943,6 +1950,24 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   </div>
   <div id="money-list"></div>
 </div>
+
+<div class="pg" id="pg-gallery">
+  <div class="tbar">
+    <div><div class="tbar-title">Gallery</div><div class="tbar-sub" id="gallery-count-sub"></div></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-sm btn-p" onclick="openGalleryUpload()">+ Add photos</button>
+    </div>
+  </div>
+  <div style="padding:0 0 12px">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 0 10px">
+      <button class="fb active" id="gf-all" onclick="setGalleryFilter('all',this)">All</button>
+      <button class="fb" id="gf-before" onclick="setGalleryFilter('before',this)">Before</button>
+      <button class="fb" id="gf-after" onclick="setGalleryFilter('after',this)">After</button>
+      <button class="fb" id="gf-progress" onclick="setGalleryFilter('progress',this)">Progress</button>
+    </div>
+    <div id="gallery-grid"></div>
+  </div>
+</div>
 </div>
 <div id="drive-banner" style="display:none;position:fixed;top:0;left:0;right:0;background:#1A4A0A;color:#fff;z-index:999;padding:8px 14px;display:none;align-items:center;justify-content:space-between;gap:10px">
   <div onclick="jumpToDriveClient()" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer">
@@ -1955,7 +1980,16 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   <button onclick="showEndDrive()" style="background:#A32D2D;color:#fff;border:none;border-radius:var(--r);padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0">End trip</button>
 </div>
 
-
+<div id="clock-banner">
+  <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+    <span style="font-size:16px;flex-shrink:0">⏱</span>
+    <div style="min-width:0">
+      <div style="font-size:11px;font-weight:700;color:#FFA94D;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="clock-banner-job"></div>
+      <div style="font-size:10px;color:rgba(255,255,255,.75)" id="clock-banner-time">0:00:00</div>
+    </div>
+  </div>
+  <button onclick="clockOut()" style="background:#A32D2D;color:#fff;border:none;border-radius:var(--r);padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0">⏹ Clock out</button>
+</div>
 
 
 <button id="notes-fab" onclick="toggleNotesPanel()" style="display:none;position:fixed;bottom:88px;right:14px;z-index:500;width:50px;height:50px;border-radius:50%;background:var(--blue);color:#fff;border:none;align-items:center;justify-content:center;font-size:22px;cursor:pointer;box-shadow:0 3px 10px rgba(0,0,0,.3);font-family:inherit" title="Notes & Sketches">✏️</button>
@@ -2013,6 +2047,9 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   </button>
   <button class="nb" id="nb-tracker" onclick="goPg('pg-tracker')">
     <div class="bx"><svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div><span>Books</span>
+  </button>
+  <button class="nb" id="nb-gallery" onclick="goPg('pg-gallery')">
+    <div class="bx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div><span>Gallery</span>
   </button>
   <div id="nav-trade-switcher" style="display:none;padding:6px 10px 4px;border-top:1px solid var(--nav-border)">
     <div style="font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.25);padding:0 4px 5px">Active trade</div>
@@ -2083,7 +2120,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 <script>
 // ── Submit guard — prevents double-tap on any button ─────────────────────
 let _submitting=false;
-let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[],events=[];
+let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[];
 // Collision-resistant bid ID: milliseconds * 1000 + random 0-998 = 13-16 digit unique number
 function _newBidId(){return Date.now()*1000+Math.floor(Math.random()*999);}
 let currentClientId=null,editClientId=null,clientFilter='new';
@@ -2155,6 +2192,7 @@ calYear=now.getFullYear();calMonth=now.getMonth();
 availYear=now.getFullYear();availMonth=now.getMonth();
 
 let gps={active:false,startCoords:null,endCoords:null,startTime:null,clientId:null,timerInt:null};
+let _activeTimer=null; // {jobId,jobName,clientName,startTime,timerInterval}
 
 const JOB_COLORS=['#185FA5','#1D9E75','#D85A30','#D4537E','#7F77DD','#BA7517','#E24B4A','#444441'];
 // ── Scope item auto-pricing ──────────────────────────────────────────────────
@@ -2213,6 +2251,12 @@ const SCOPE_ITEMS=[
    hint:'Exterior only — wash before painting. ~250 sf/hr. Must dry 48 hrs before paint.',
    ratePerSqFt:0.26, flatRate:0,
    clientDesc:'Exterior surfaces pressure washed. Minimum 48-hr dry time before paint.'},
+  {id:'supply_run',label:'Supply run',      icon:'🏪',
+   hint:'Time driving to and from the store for paint, supplies, or materials.',
+   ratePerSqFt:0, flatRate:0, clientDesc:''},
+  {id:'collect_cash',label:'Collect payment',icon:'💵',
+   hint:'Time collecting cash deposit or payment from client.',
+   ratePerSqFt:0, flatRate:0, clientDesc:''},
 ];
 const SURF_TYPES=[
   {v:'walls',l:'Walls',unit:'sq ft',rate:1.25,mf:1},
@@ -2247,7 +2291,7 @@ const CHECKS=[
 ];
 const CAT_CFG={urgent:{label:'Do right away',color:'#A32D2D'},biz:{label:'Business setup in Kansas',color:'#185FA5'},tax:{label:'Tax & accounting',color:'#854F0B'},ks:{label:'Kansas market & marketing',color:'#27500A'}};
 
-let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,timeOff:[],employees:[],devices:[],logoData:''};
+let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,timeOff:[],employees:[],devices:[],logoData:'',brandColor:'',bwebsite:''};
 
 // ZJ's logo — SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
 // Only shown for ZJ's Painting account — other accounts see plain business name text.
@@ -2286,6 +2330,7 @@ const BUSINESS_CONFIGS={
 function getRole(){return _user?.role||'owner';}
 function isOwner(){return getRole()==='owner';}
 function canSeeTaxes(){return isOwner();}
+function isLifetimeAccount(){return !!_account?.is_lifetime;}
 function getBusinessName(){return _account?.business_name||S.bname||'TradeDesk';}
 function getUserName(){return _user?.name||'';}
 function getOwnerName(){
@@ -2309,14 +2354,15 @@ let STD_DED={single:14600,mfj:29200,mfs:14600,hoh:21900};
 let KS_BRACKETS={single:[],mfj:[],mfs:[],hoh:[]};
 let KS_STD={single:3500,mfj:8000,mfs:4000,hoh:6000};
 
-function saveAll(){try{const lp=(k,d)=>localStorage.setItem(k,JSON.stringify(d));lp('zp3_clients',clients);lp('zp3_bids',bids);lp('zp3_jobs',jobs);lp('zp3_inc',income);lp('zp3_exp',expenses);lp('zp3_mil',mileage);lp('zp3_chk',checksState);lp('zp3_S',S);lp('zp3_pay',payments);lp('zp3_lien',liens);lp('zp3_ev',events.slice(-600));}catch(e){}supaSaveDebounced();}
-function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s?JSON.parse(s):d;};clients=lp('zp3_clients',[]);bids=lp('zp3_bids',[]);jobs=lp('zp3_jobs',[]);income=lp('zp3_inc',[]);expenses=lp('zp3_exp',[]);mileage=lp('zp3_mil',[]);checksState=lp('zp3_chk',{});payments=lp('zp3_pay',[]);liens=lp('zp3_lien',[]);events=lp('zp3_ev',[]);const ss=lp('zp3_S',null);if(ss)S={...S,...ss};}catch(e){}
+function saveAll(){try{const lp=(k,d)=>localStorage.setItem(k,JSON.stringify(d));lp('zp3_clients',clients);lp('zp3_bids',bids);lp('zp3_jobs',jobs);lp('zp3_inc',income);lp('zp3_exp',expenses);lp('zp3_mil',mileage);lp('zp3_chk',checksState);lp('zp3_S',S);lp('zp3_pay',payments);lp('zp3_lien',liens);lp('zp3_ev',events.slice(-600));lp('zp3_te',timeEntries.slice(-500));lp('zp3_photos',photos.slice(-300));}catch(e){}supaSaveDebounced();}
+function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s?JSON.parse(s):d;};clients=lp('zp3_clients',[]);bids=lp('zp3_bids',[]);jobs=lp('zp3_jobs',[]);income=lp('zp3_inc',[]);expenses=lp('zp3_exp',[]);mileage=lp('zp3_mil',[]);checksState=lp('zp3_chk',{});payments=lp('zp3_pay',[]);liens=lp('zp3_lien',[]);events=lp('zp3_ev',[]);timeEntries=lp('zp3_te',[]);photos=lp('zp3_photos',[]);const ss=lp('zp3_S',null);if(ss)S={...S,...ss};}catch(e){}
   // One-time orphan cleanup: remove truly empty Draft bids (no surfaces, no amount) that have
   // no business being in Estimates in Progress — these were created by navigating away at step 1
   // before the _doOpenEstimate dedup fix. Safe to remove: they have zero data.
   const _before=bids.length;
   bids=bids.filter(b=>!(b.draft===true&&b.status==='Draft'&&(!b.surfaces||!b.surfaces.length)&&!b.signingToken&&!b.amount));
   if(bids.length!==_before)try{localStorage.setItem('zp3_bids',JSON.stringify(bids));}catch(e){}
+  clients.forEach(c=>{if(!c.clientToken)_ensureClientToken(c.id);});
 }
 
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -2539,10 +2585,12 @@ function loadSettingsForm(){
   if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-bitly-key',S.bitlyKey||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-byears',S.byears||'');sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
   sf('set-margin',S.margin);sf('set-cov',S.cov);sf('set-mm',S.mm);sf('set-r-walls',S.rWalls||1.30);sf('set-r-ceil',S.rCeil||1.00);sf('set-r-trim',S.rTrim||4.00);sf('set-r-door',S.rDoor||95);sf('set-r-win',S.rWin||50);sf('set-r-ext',S.rExt||1.10);sf('set-r-deck',S.rDeck||1.00);
   sf('set-review-url',S.reviewUrl||'');
+  sf('set-brandcolor',S.brandColor||'#185FA5');
+  sf('set-bwebsite',S.bwebsite||'');
 }
 function saveSettings(){
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
-  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||''};
+  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||''};
   applySettings();saveAll();
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
 }
@@ -2579,10 +2627,11 @@ function clearLogoSetting(){
 function clearAllData(){
   zConfirm('This will permanently delete ALL clients, bids, jobs, income, expenses, and mileage. This cannot be undone.',()=>{
     zConfirm('Last chance — are you absolutely sure you want to delete everything?',()=>{
-      clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];payments=[];liens=[];
+      clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];payments=[];liens=[];timeEntries=[];
       S.employees=[];S.vehicles=[];
       estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;
       gps={active:false,startCoords:null,startTime:null,clientId:null,clientName:'',timerInt:null,vehicle:'',purpose:''};
+      if(_activeTimer){clearInterval(_activeTimer.timerInterval);_activeTimer=null;hideClockBanner();}
       hideDriveBanner();clearSurfDraft();saveAll();renderDash();
       zAlert('All data cleared. Starting fresh!',{title:'Done'});
       goPg('pg-dash');
@@ -2631,7 +2680,7 @@ function goPg(id){
   const nb=document.getElementById({
     'pg-leads':'nb-leads','pg-jobs':'nb-jobs','pg-money':'nb-money',
     'pg-schedule':'nb-jobs',
-    'pg-clients':'nb-clients','pg-cal':'nb-cal','pg-tracker':'nb-tracker',
+    'pg-clients':'nb-clients','pg-cal':'nb-cal','pg-tracker':'nb-tracker','pg-gallery':'nb-gallery',
     'pg-team':'nb-team',
     'pg-taxes':'nb-taxes','pg-settings':'nb-settings','pg-checklist':'nb-settings'
   }[id]||('nb-'+id.replace('pg-','')));if(nb)nb.classList.add('active');
@@ -2704,9 +2753,9 @@ function openEstimateForClient(){
   _checkMultiPropertyThenOpen(c);
 }
 function _checkMultiPropertyThenOpen(c){
-  // If client already has a non-empty bid in progress, ask whether this is a different property
-  const activeBids=bids.filter(b=>b.client_id===c.id&&(
-    b.status==='Pending'||
+  // If client already has any in-progress bid (Pending+draft or any sent), ask if different property
+  const activeBids=bids.filter(b=>b.client_id===c.id&&!b.signingToken&&(
+    (b.status==='Pending'&&b.draft===true)||
     (b.draft===true&&b.surfaces&&b.surfaces.length>0)
   ));
   if(activeBids.length>0){
@@ -3070,7 +3119,6 @@ function renderDashToday(){
 
   if(!todayJobs.length){
     const dow=new Date().getDay();
-    const pendingCount=bids.filter(b=>b.status==='Pending').length;
     const msgs=[
       'Nothing Sunday — recharge for the week.',
       'Open Monday. Book an estimate today.',
@@ -3084,7 +3132,7 @@ function renderDashToday(){
       '<div style="text-align:center;padding:12px 0">'+
         '<div style="font-size:22px;margin-bottom:6px">'+(dow===0||dow===6?'🛋️':'🎯')+'</div>'+
         '<div style="font-size:13px;font-weight:700;margin-bottom:4px">'+msgs[dow]+'</div>'+
-        (pendingCount?'<div style="font-size:11px;color:var(--text3);margin-top:4px">'+pendingCount+' pending bid'+(pendingCount>1?'s':'')+' awaiting response</div>':'')+
+        '<div style="font-size:11px;color:var(--text3);margin-top:4px">Open day — check Make Money Today</div>'+
       '</div>';
     return;
   }
@@ -3514,7 +3562,8 @@ function getNextCollAction(stage){
 
 function emitEvent(type,clientId,extra){if(!events)events=[];events.push({id:Date.now()+'_'+Math.random().toString(36).slice(2,6),type,ts:new Date().toISOString(),client_id:clientId,...(extra||{})});if(events.length>600)events=events.slice(-600);}
 function autoLogContact(clientId,note){const c=getClientById(clientId);if(!c)return;c.last_contact_date=todayKey();const pb=bids.find(b=>b.client_id===clientId&&b.status==='Pending');if(pb){pb.last_followup_date=todayKey();if(!pb.followup||pb.followup<=todayKey())pb.followup=addDays(todayKey(),7);}emitEvent(note||'contact',clientId);try{saveAll();}catch(e){}}
-function markFollowupSent(bidId){const b=bids.find(x=>x.id===bidId);if(!b)return;b.last_followup_date=todayKey();b.followup=addDays(todayKey(),7);b.noResponseCount=(b.noResponseCount||0)+1;saveAll();setTimeout(renderDash,600);}
+function markFollowupSent(bidId){const b=bids.find(x=>x.id===bidId);if(!b)return;b.last_followup_date=todayKey();b.followupStage=(b.followupStage||1)+1;const nextDays=b.followupStage>=3?14:7;b.followup=addDays(todayKey(),nextDays);b.noResponseCount=(b.noResponseCount||0)+1;saveAll();setTimeout(renderDash,600);}
+function _snoozeFollowup(bidId,days){const b=bids.find(x=>x.id===bidId);if(!b)return;b.followup=addDays(todayKey(),days||2);saveAll();setTimeout(renderDash,300);showToast('Follow-up snoozed '+days+' days','⏰');}
 function openExpenseForJob(jobId,clientId){const j=jobs.find(x=>x.id===jobId);goPg('pg-tracker');setTimeout(()=>{const sel=document.getElementById('exp-job');if(sel){for(let i=0;i<sel.options.length;i++){if(sel.options[i].value==jobId){sel.selectedIndex=i;break;}}}const expSec=document.getElementById('add-exp-form')||document.getElementById('exp-add-section');if(expSec)expSec.scrollIntoView({behavior:'smooth'});},200);}
 function renderDashCollect(){
   const el=document.getElementById('dash-collect');if(!el)return;
@@ -3841,14 +3890,15 @@ function renderTodayFeed(){
   // TIER 2 — Won bid, no job scheduled yet (lock it in)
   bids.filter(b=>b.status==='Closed Won'&&!b.completion_date).forEach(b=>{
     if(jobs.some(j=>j.bid_id===b.id&&j.eventType!=='estimate'))return; // already has a job
-    const c=getClientById(b.client_id);if(!c)return;
+    const c=getClientById(b.client_id);
+    const cDisp=c?c.name:b.client_name||b.name||'Client';
     const depositPaid=getBidPaid(b.id)>0;
     const daysAgo=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
     items.push({priority:3,html:
       '<div class="tf-card">'+
         '<div class="tf-icon">🗓️</div>'+
         '<div class="tf-body">'+
-          '<div class="tf-name">'+escHtml(c.name)+'</div>'+
+          '<div class="tf-name">'+escHtml(cDisp)+'</div>'+
           '<div class="tf-sub" style="color:var(--blue)">Approved '+fmt(b.amount)+' · '+(!depositPaid?'no deposit · ':'deposit paid · ')+'not scheduled</div>'+
         '</div>'+
         '<div class="tf-acts">'+
@@ -3859,7 +3909,7 @@ function renderTodayFeed(){
   });
 
   // TIER 3 — Second follow-up (noResponseCount >= 1, still Pending, NOT awaiting signature)
-  bids.filter(b=>b.status==='Pending'&&!b.signingToken&&(b.noResponseCount||0)>=1).forEach(b=>{
+  bids.filter(b=>b.status==='Pending'&&!b.signingToken&&!b.draft&&(b.noResponseCount||0)>=1).forEach(b=>{
     const c=getClientById(b.client_id);if(!c)return;
     const fn=c.name.split(' ')[0];
     const smsBody=encodeURIComponent('Hey '+fn+', just wanted to see if this is still something you\'re wanting to move forward with?');
@@ -3873,28 +3923,32 @@ function renderTodayFeed(){
         '</div>'+
         '<div class="tf-acts">'+
           (c.phone?'<a href="tel:'+c.phone.replace(/\D/g,'')+'" onclick="autoLogContact('+c.id+',\'call\')" class="btn btn-sm" style="font-size:11px">Call</a>':'')+
-          (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+smsBody+'" onclick="autoLogContact('+c.id+',\'second_followup\');markFollowupSent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">Text</a>':'')+
+          (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+smsBody+'" onclick="autoLogContact('+c.id+',\'second_followup\');markFollowupSent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">📱 Send</a>':'')+
+          '<button onclick="_snoozeFollowup('+b.id+',2)" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Snooze 2d</button>'+
           '<button onclick="markFUWon('+b.id+','+b.client_id+')" class="btn btn-sm btn-g" style="font-size:11px">Won ✓</button>'+
         '</div>'+
       '</div>'});
   });
 
   // TIER 4 — Follow-up overdue (Pending, followup date passed, no noResponseCount yet, NOT awaiting signature)
-  bids.filter(b=>b.status==='Pending'&&!b.signingToken&&b.followup&&b.followup<=tk&&!(b.noResponseCount>=1)).forEach(b=>{
+  bids.filter(b=>b.status==='Pending'&&!b.signingToken&&!b.draft&&b.followup&&b.followup<=tk&&!(b.noResponseCount>=1)).forEach(b=>{
     const c=getClientById(b.client_id);if(!c)return;
     const fn=c.name.split(' ')[0];
+    const stage=b.followupStage||1;
+    const msgs=['Hey '+fn+', just checking in — did you get a chance to look over the proposal? Happy to answer any questions.','Hi '+fn+', wanted to follow up on the estimate I sent over. Let me know if you\'d like to move forward or have any questions.','Hey '+fn+', I have an opening coming up that might work great for your project. Would love to get it scheduled — let me know!'];
+    const smsBody=encodeURIComponent(msgs[Math.min(stage-1,msgs.length-1)]);
     const daysOut=Math.floor((new Date(tk+'T12:00')-new Date(b.followup+'T12:00'))/86400000);
-    const smsBody=encodeURIComponent('Hey '+fn+', just checking in on the estimate I sent over — any questions or thoughts?');
     items.push({priority:5,html:
       '<div class="tf-card">'+
         '<div class="tf-icon">⏰</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(c.name)+'</div>'+
-          '<div class="tf-sub" style="color:var(--amber)">'+(daysOut>0?daysOut+'d overdue':'Due today')+' · '+fmt(b.amount)+' estimate</div>'+
+          '<div class="tf-sub" style="color:var(--amber)">Follow-up #'+stage+' · '+(daysOut>0?daysOut+'d overdue':'due today')+' · '+fmt(b.amount)+'</div>'+
         '</div>'+
         '<div class="tf-acts">'+
+          (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+smsBody+'" onclick="autoLogContact('+c.id+',\'followup_sent\');markFollowupSent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">📱 Send</a>':'')+
           (c.phone?'<a href="tel:'+c.phone.replace(/\D/g,'')+'" onclick="autoLogContact('+c.id+',\'call\')" class="btn btn-sm" style="font-size:11px">Call</a>':'')+
-          (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+smsBody+'" onclick="autoLogContact('+c.id+',\'followup_sent\');markFollowupSent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">Text</a>':'')+
+          '<button onclick="_snoozeFollowup('+b.id+',2)" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Snooze 2d</button>'+
           '<button onclick="markFUWon('+b.id+','+b.client_id+')" class="btn btn-sm btn-g" style="font-size:11px">Won ✓</button>'+
         '</div>'+
       '</div>'});
@@ -3916,7 +3970,6 @@ function renderTodayFeed(){
         '<div class="tf-acts">'+
           (b.proposalHtml?'<button onclick="viewSavedProposal('+b.id+')" class="btn btn-sm" style="font-size:11px">View</button>':'')+
           '<button onclick="resendProposalLink('+b.id+')" class="btn btn-sm" style="font-size:11px">Resend</button>'+
-          '<button onclick="editSentBid('+b.id+')" class="btn btn-sm" style="font-size:11px">Edit</button>'+
           '<button onclick="cancelProposalLink('+b.id+')" class="btn btn-sm" style="font-size:11px;color:var(--amber)">Cancel link</button>'+
           '<button onclick="discardInProgressBid('+b.id+')" class="btn btn-sm" style="font-size:11px;color:#A32D2D">Delete</button>'+
         '</div>'+
@@ -3955,7 +4008,7 @@ function renderTodayFeed(){
           '<div class="tf-sub" style="color:var(--text3)">'+fmt(b.amount)+' · built '+(days===0?'today':days+'d ago')+' · not sent yet</div>'+
         '</div>'+
         '<div class="tf-acts">'+
-          '<button onclick="openEditBid('+b.id+','+(b.draft?'1':'2')+')" class="btn btn-sm btn-p" style="font-size:11px">'+(b.draft?'Resume →':'Send →')+'</button>'+
+          '<button onclick="openEditBid('+b.id+','+(b.lastStep||1)+')" class="btn btn-sm btn-p" style="font-size:11px">Resume →</button>'+
           '<button onclick="discardInProgressBid('+b.id+')" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Discard</button>'+
         '</div>'+
       '</div>'});
@@ -3964,7 +4017,7 @@ function renderTodayFeed(){
   // TIER 7 — New leads ready for an estimate (zero bids, zero scheduled estimate jobs)
   const newLeads=clients.filter(c=>{
     if(getClientStage(c.id).stage!=='new')return false;
-    if(getClientBids(c.id).length)return false;
+    if(bids.some(b=>b.client_id===c.id&&b.status!=='opportunity'))return false;
     if(jobs.some(j=>j.client_id===c.id&&j.eventType==='estimate'))return false;
     return true;
   });
@@ -4262,18 +4315,12 @@ function renderPipeline(){
   const w3paint=paintDaysInWeek(weekAfterMonday);
 
   const totalWorkDays=5;
-  const pendingCount=bids.filter(b=>b.status==='Pending'&&!b.signingToken).length;
-  const pendingValue=bids.filter(b=>b.status==='Pending'&&!b.signingToken).reduce((s,b)=>s+b.amount,0);
-  const expectedCloses=Math.round(pendingCount*CLOSE_RATE);
-
   const openDaysAhead=(totalWorkDays-w2paint)+(totalWorkDays-w3paint);
   const avgJobDays=3;
   const estimatesNeeded=Math.ceil(openDaysAhead/avgJobDays/CLOSE_RATE);
-  const estStillNeeded=Math.max(0,estimatesNeeded-pendingCount);
 
   function weekBar(booked,total,color){
-    const pct=Math.round(booked/total*100);
-    const filled=Math.round(booked/total*5); // out of 5 blocks
+    const filled=Math.round(booked/total*5);
     let bar='';
     for(let i=0;i<5;i++)bar+='<div style="flex:1;height:10px;border-radius:2px;background:'+(i<filled?color:'var(--border)')+';margin:0 1px"></div>';
     return '<div style="display:flex;gap:0;margin-bottom:3px">'+bar+'</div>';
@@ -4290,27 +4337,15 @@ function renderPipeline(){
   let healthColor,healthMsg,action='';
   if(w2paint>=4&&w3paint>=4){
     healthColor='var(--green-mid)';
-    healthMsg='Pipeline is full. Focus on the work.';
-  } else if(w2paint>=2||pendingCount>=2){
+    healthMsg='Pipeline full — focus on the work.';
+  } else if(w2paint>=2||w3paint>=2){
     healthColor='var(--amber)';
     healthMsg='Pipeline needs attention.';
-    action=estStillNeeded>0?'Run <strong>'+estStillNeeded+' estimate'+(estStillNeeded>1?'s':'')+' this week</strong> to stay booked.':'Close '+Math.max(0,estimatesNeeded-pendingCount)+' of your '+pendingCount+' pending bid'+(pendingCount>1?'s':'')+' to fill the schedule.';
+    action=estimatesNeeded>0?'Run <strong>'+estimatesNeeded+' estimate'+(estimatesNeeded>1?'s':'')+' this week</strong> to fill open days.':'';
   } else {
     healthColor='#A32D2D';
     healthMsg='Pipeline is thin — book estimates now.';
-    // Show actual pending client names when pipeline is thin
-    const pendingBids=bids.filter(b=>b.status==='Pending'&&!b.signingToken).sort((a,b)=>b.amount-a.amount);
-    if(pendingBids.length>0){
-      const nameList=pendingBids.slice(0,3).map(b=>{
-        const c=getClientById(b.client_id);
-        const nm=c?c.name.split(' ')[0]:(b.client_name||'Client').split(' ')[0];
-        return escHtml(nm)+' ('+fmt(b.amount)+')';
-      }).join(', ');
-      const more=pendingBids.length>3?' +'+( pendingBids.length-3)+' more':'';
-      action='Call to close: <strong>'+nameList+more+'</strong>. Also run <strong>'+estStillNeeded+' new estimate'+(estStillNeeded>1?'s':'')+' this week</strong>.';
-    } else {
-      action='No pending bids. You need <strong>'+estStillNeeded+' estimate'+(estStillNeeded>1?'s':'')+' this week</strong>. Best days: Tuesday + Thursday evening.';
-    }
+    action='You need <strong>'+estimatesNeeded+' estimate'+(estimatesNeeded>1?'s':'')+' this week</strong> to stay booked. Best days: Tuesday + Thursday evening.';
   }
 
   const w1label=parseD(thisMonday).toLocaleDateString('en-US',{month:'short',day:'numeric'});
@@ -4334,37 +4369,7 @@ function renderPipeline(){
         '<div>'+weekBar(w3paint,5,w3s.c)+'</div>'+
         '<div style="font-size:10px;font-weight:700;color:'+w3s.c+';white-space:nowrap">'+w3paint+'/5 days</div>'+
       '</div>'+
-      (pendingCount>0?
-        '<div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px;font-size:11px;color:var(--text2);margin-bottom:8px">'+
-          '<strong>'+pendingCount+' pending bid'+(pendingCount>1?'s':'')+' · '+fmt(pendingValue)+'</strong>'+
-          ' &nbsp;·&nbsp; at 60% close rate = ~'+expectedCloses+' job'+(expectedCloses!==1?'s':'')+' expected'+
-        '</div>':'')+
       (action?'<div style="font-size:12px;color:var(--text2);line-height:1.6">'+action+'</div>':'')+
-      (()=>{
-        const sentBids=bids.filter(b=>b.status==='Pending'&&b.signingToken).sort((a,b)=>(a.bid_date||'').localeCompare(b.bid_date||''));
-        if(!sentBids.length)return '';
-        const rows=sentBids.map(b=>{
-          const c=getClientById(b.client_id);
-          const firstName=(c?c.name:b.client_name||b.name||'Client').split(/[\s,&]+/)[0];
-          const days=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
-          const daysColor=days>30?'#A32D2D':days>14?'var(--amber)':'var(--text3)';
-          const daysLabel=days>30?days+'d — <strong>Follow up now</strong>':days+'d ago';
-          const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
-          const viewUrl=baseUrl+'sign.html?t='+b.signingToken+'&u='+(window._supaUser?.id||'')+'&b='+b.id;
-          return '<div onclick="openClientDetail('+b.client_id+')" style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
-            '<div style="flex:1;min-width:0">'+
-              '<div style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(firstName)+'</div>'+
-              '<div style="font-size:11px;color:'+daysColor+';margin-top:1px">'+fmt(b.amount)+' · '+daysLabel+'</div>'+
-            '</div>'+
-            '<button onclick="event.stopPropagation();pipelineResendSms(\''+b.id+'\')" style="padding:6px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text);flex-shrink:0">Resend</button>'+
-            '<a href="'+viewUrl+'" target="_blank" onclick="event.stopPropagation()" style="padding:6px 10px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--blue-dk);text-decoration:none;flex-shrink:0">View</a>'+
-          '</div>';
-        }).join('');
-        return '<div style="margin-top:12px">'+
-          '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px">Sent proposals</div>'+
-          rows+
-        '</div>';
-      })()+
     '</div>';
 }
 
@@ -4666,9 +4671,9 @@ function saveClient(){
   const occupation=v('cf-occupation')||'';
   const tier=v('cf-tier')||'';
   const _existingClient=editClientId?clients.find(x=>x.id===editClientId):null;
-  const c={id:editClientId||Date.now(),name,phone:v('cf-phone'),email:v('cf-email'),addr:v('cf-addr'),ptype:v('cf-ptype'),source,ref,notes:v('cf-notes'),created:todayKey(),extraAddresses:_existingClient?.extraAddresses||[]};
+  const c={id:editClientId||Date.now(),name,phone:v('cf-phone'),email:v('cf-email'),addr:v('cf-addr'),ptype:v('cf-ptype'),source,ref,notes:v('cf-notes'),created:todayKey(),extraAddresses:_existingClient?.extraAddresses||[],clientToken:_existingClient?.clientToken||'',clientHubKey:_existingClient?.clientHubKey||''};
   if(editClientId){const i=clients.findIndex(x=>x.id===editClientId);if(i>=0)clients[i]=c;}
-  else clients.push(c);
+  else{clients.push(c);_ensureClientToken(c.id);}
   saveAll();
   if(isNew){
     closeClientForm();
@@ -4745,7 +4750,9 @@ function renderClientDetail(){
     '<div style="display:flex;gap:8px">'+
       (c.phone?'<button class="btn" onclick="callClient()" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex:1">&#128222; Call '+c.phone+'</button>':'')+
       '<button class="btn" onclick="openMapsDir()" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex:1">&#128205; Directions</button>'+
-    '</div>';
+      '<button class="btn" onclick="sendClientHubLink('+c.id+')" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex-shrink:0" title="Share client portal">&#128279; Hub</button>'+
+    '</div>'+
+    (c.clientToken&&_supaUser?(()=>{const _hu=(window.location.origin+window.location.pathname.split('index.html')[0])+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+c.id;return '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 12px;background:rgba(0,0,0,.2);border-radius:var(--r);font-size:11px;overflow:hidden">'+'<span style="color:rgba(255,255,255,.6);white-space:nowrap;flex-shrink:0">Hub:</span>'+'<span style="flex:1;color:rgba(255,255,255,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+_hu+'</span>'+'<button onclick="copyHubLink(\''+_hu+'\')" style="padding:3px 8px;font-size:11px;background:rgba(255,255,255,.15);border:none;border-radius:4px;color:#fff;cursor:pointer;flex-shrink:0">Copy</button>'+'</div>'})():'');
   if(gps.active&&gps.clientId===currentClientId){
     document.getElementById('cd-drive-idle').style.display='none';
     document.getElementById('cd-drive-start').style.display='none';
@@ -5288,6 +5295,22 @@ function renderCDJobs(){
     if(isDone&&j.completion_date){
       doneBtn='<span style="font-size:11px;color:var(--text3)">Completed '+j.completion_date+'</span>';
     }
+    // Clock in/out for active or upcoming jobs
+    let clockBtnCD='';
+    if(!isDone){
+      const isClockedHere=_activeTimer&&_activeTimer.jobId===j.id;
+      if(isClockedHere){
+        const _el2=Math.floor((Date.now()-_activeTimer.startTime)/1000);
+        const _h2=Math.floor(_el2/3600),_m2=Math.floor((_el2%3600)/60),_s2=_el2%60;
+        const _ts2=(_h2?_h2+'h ':'')+_m2+':'+((_s2<10?'0':'')+_s2);
+        const _sl2=_activeTimer.scopeLabel?_activeTimer.scopeLabel+' ':'';
+        clockBtnCD='<button class="btn btn-sm" onclick="clockOut()" style="border-color:#E97B00;color:#E97B00;background:#FFF3E0">⏹ '+_sl2+_ts2+'</button>';
+      }else{
+        const logged=getJobClockTotal(j.id);
+        const loggedLabel=logged>0?_fmtMin(logged)+' logged · ':'';
+        clockBtnCD='<button class="btn btn-sm" onclick="openClockInSheet('+j.id+')" style="border-color:var(--border2);color:var(--text2)">▶ '+(logged>0?loggedLabel:'')+'Clock in</button>';
+      }
+    }
     return '<div class="card" style="margin-bottom:8px;border-left:3px solid '+(j.color||'var(--blue)')+'">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
         '<div style="flex:1;min-width:0">'+
@@ -5301,7 +5324,7 @@ function renderCDJobs(){
         '</div>'+
       '</div>'+
       '<div class="brow" style="margin-top:8px">'+
-        (doneBtn?doneBtn:'')+'<button class="btn-del" onclick="deleteJob('+j.id+')" style="font-size:11px;padding:5px 8px;color:#A32D2D">Remove</button>'+
+        (doneBtn?doneBtn:'')+clockBtnCD+'<button class="btn-del" onclick="deleteJob('+j.id+')" style="font-size:11px;padding:5px 8px;color:#A32D2D">Remove</button>'+
       '</div>'+
     '</div>';
   }).join('');
@@ -5317,6 +5340,73 @@ function deleteJob(jobId){
   },{title:'Remove '+label,yes:'Remove',danger:true});
 }
 
+function showJobScorecard(jobId,collectBidId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+  const revenue=bid?bid.amount||0:0;
+  const matSpend=expenses.filter(e=>e.job_id===jobId||e.job_id===j.bid_id).reduce((s,e)=>s+(e.amount||0),0);
+  const laborRate=S.laborRate||45;
+  const actualHrs=j.actualHours||0;
+  const laborCost=Math.round(actualHrs*laborRate*100)/100;
+  const netProfit=revenue-matSpend-laborCost;
+  const margin=revenue>0?Math.round(netProfit/revenue*100):0;
+  const marginColor=margin>=50?'var(--green-mid)':margin>=30?'var(--yellow,#f59e0b)':'#A32D2D';
+  const estDays=bid?.days||j.days||0;
+  const clientName=j.name||(bid?bid.client_name:'');
+  const collectBid=collectBidId?bids.find(b=>b.id===collectBidId):null;
+  const balance=collectBid?getBidBalance(collectBid):0;
+  const ov=document.createElement('div');ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="text-align:center;margin-bottom:4px;font-size:28px">🎉</div>'+
+    '<div style="font-size:18px;font-weight:800;text-align:center;margin-bottom:2px">Job Complete</div>'+
+    '<div style="font-size:12px;color:var(--text3);text-align:center;margin-bottom:18px">'+escHtml(clientName)+'</div>'+
+    '<div style="background:var(--bg2);border-radius:var(--r);padding:14px;margin-bottom:14px">'+
+      '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)">'+
+        '<span style="font-size:13px;color:var(--text2)">Revenue</span>'+
+        '<span style="font-size:13px;font-weight:700">'+fmt(revenue)+'</span>'+
+      '</div>'+
+      (matSpend>0?
+        '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)">'+
+          '<span style="font-size:13px;color:var(--text2)">Materials</span>'+
+          '<span style="font-size:13px;font-weight:600;color:#A32D2D">−'+fmt(matSpend)+'</span>'+
+        '</div>':'')+
+      (actualHrs>0?
+        '<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)">'+
+          '<span style="font-size:13px;color:var(--text2)">Labor ('+actualHrs+' hrs @ $'+laborRate+')</span>'+
+          '<span style="font-size:13px;font-weight:600;color:#A32D2D">−'+fmt(laborCost)+'</span>'+
+        '</div>':'')+
+      '<div style="display:flex;justify-content:space-between;padding:10px 0 4px">'+
+        '<span style="font-size:14px;font-weight:700">Net profit</span>'+
+        '<span style="font-size:16px;font-weight:800;color:var(--green-mid)">'+fmt(netProfit)+'</span>'+
+      '</div>'+
+      (revenue>0?'<div style="text-align:right;font-size:22px;font-weight:800;color:'+marginColor+';margin-top:2px">'+margin+'% margin</div>':'')+
+      (estDays>0&&actualHrs>0?'<div style="font-size:11px;color:var(--text3);text-align:right;margin-top:4px">'+actualHrs+' actual hrs · '+estDays+' day estimate</div>':'')+
+    '</div>'+
+    (()=>{
+      const bd=getJobScopeBreakdown(jobId);
+      const scopeRows=Object.entries(bd).filter(([,m])=>m>0).map(([sid,m])=>{
+        const si=sid==='__other'?{icon:'➕',label:'Other'}:(SCOPE_ITEMS.find(x=>x.id===sid)||{icon:'⏱',label:sid});
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0">'+
+          '<span style="font-size:12px;color:var(--text2)">'+si.icon+' '+si.label+'</span>'+
+          '<span style="font-size:12px;font-weight:600;color:var(--text)">'+_fmtMin(m)+'</span>'+
+        '</div>';
+      }).join('');
+      return scopeRows?
+        '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 14px;margin-bottom:14px">'+
+          '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">Time by task</div>'+
+          scopeRows+
+        '</div>':'';
+    })()+
+    '<div style="display:grid;grid-template-columns:1fr'+(balance>0.01?' 1.5fr':'')+';gap:8px">'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+j.client_id+')" '+
+        'style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Close</button>'+
+      (balance>0.01?'<button onclick="this.closest(\'.zmodal-overlay\').remove();openPayPanel('+collectBidId+',\'final\')" '+
+        'style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">💳 Collect '+fmt(balance)+' →</button>':'')+
+    '</div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov){ov.remove();if(balance>0.01)openPayPanel(collectBidId,'final');}});
+}
 function markJobDone(jobId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
@@ -5440,28 +5530,20 @@ function confirmJobDone(jobId){
   const jobMiles=getClientMileage(j.client_id).filter(m=>m.date>=j.start&&m.date<=addDays(dateStr,3));
   jobMiles.forEach(m=>{m.job_id=jobId;m.job_name=j.name;});
   saveAll();
+  _refreshClientHub(j.client_id);
   emitEvent('job_completed',j.client_id,{job_id:j.id,bid_id:j.bid_id});
   renderClientDetail();
   renderDash();
   renderJobsPage();
   renderMoneyPage();
-  // Route to collect — find the linked bid or best matching unpaid bid for this client
+  // Find collect bid — passed to scorecard which owns final navigation
   let collectBid=j.bid_id?bids.find(x=>x.id===j.bid_id):null;
   if(!collectBid){
-    // Try to find any unpaid Closed Won bid for this client
     const candidates=bids.filter(x=>x.client_id===j.client_id&&x.status==='Closed Won'&&getBidBalance(x)>0.01)
       .sort((a,b)=>(b.bid_date||'').localeCompare(a.bid_date||''));
     if(candidates.length)collectBid=candidates[0];
   }
-  if(collectBid&&getBidBalance(collectBid)>0.01){
-    setTimeout(()=>openPayPanel(collectBid.id,'final'),100);
-  } else {
-    // No unpaid bid found — go to client record so Zach can log payment manually
-    setTimeout(()=>{
-      openClientDetail(j.client_id);
-      setTimeout(()=>setCDTab('bids',document.getElementById('cdt-bids')),200);
-    },100);
-  }
+  setTimeout(()=>showJobScorecard(jobId,collectBid?.id||null),200);
   // Expense prompt — give payment panel time to open first
   const _jid=jobId,_cid=j.client_id;
   setTimeout(()=>{
@@ -6429,6 +6511,7 @@ function logPayment(){
     setTimeout(()=>banner.remove(),4000);
   }
   renderCDBids();renderDash();renderMoneyPage();refreshCollectLabel();
+  _refreshClientHub(bid.client_id);
   // After payment — if no job scheduled yet, offer to schedule
   if(_savedBidId){
     const _pb=bids.find(b=>b.id===_savedBidId);
@@ -6482,11 +6565,14 @@ function openEditBid(bidId,startStep){
   estLinkedClientId=b.client_id||currentClientId;
   estSurfaces=[];estSurfId=0;
   clearEstFullDraft(); // editing existing bid — never offer to resume a new estimate
+  const _plbE=document.getElementById('proposal-link-bar');if(_plbE){_plbE.style.display='none';_plbE.dataset.signingUrl='';}
+  const _pliE=document.getElementById('proposal-link-input');if(_pliE)_pliE.value='';
+  const _sBtnE=document.getElementById('send-proposal-btn');if(_sBtnE){_sBtnE.textContent='🔗 Send to client';_sBtnE.disabled=false;}
   goPg('pg-est');
   buildScopeGrid();
   setTimeout(()=>{
     const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val||'';};
-    if(S.bname)sf('e-bname',S.bname);
+    const _ebn=getBusinessName();if(_ebn&&_ebn!=='TradeDesk'&&!_ebn.includes('@'))sf('e-bname',_ebn);
     if(S.bphone)sf('e-bphone',S.bphone);
     if(S.blic)sf('e-blic',S.blic);
     sf('e-labor-rate',S.laborRate||45);
@@ -6508,9 +6594,14 @@ function openEditBid(bidId,startStep){
     if(linked)linked.innerHTML='<span class="conn-tag">'+(c?c.name:'linked')+' — editing existing bid</span>';
     scopeActiveMap={};scopeHrsStore={};roomScopeMap={};estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};
   SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
+    const _ptogE=document.getElementById('portfolio-toggle');
+    if(_ptogE){_ptogE.checked=!!b.isPortfolio;togglePortfolioShowcase();}
+    const _ppctE=document.getElementById('portfolio-pct');if(_ppctE)_ppctE.value=b.portfolioPct||15;
     roomScopeMap=b.roomScopeMap?JSON.parse(JSON.stringify(b.roomScopeMap)):{};
-    if(b.scope&&Object.keys(b.scope).length){Object.entries(b.scope).forEach(([id,val])=>toggleScope(id,!!val));}
-    else{['sand','spackle'].forEach(id=>toggleScope(id,true));}
+    if(b.scope&&Object.keys(b.scope).length){
+      Object.entries(b.scope).forEach(([id,val])=>toggleScope(id,!!val));
+      if(!Object.values(b.scope).some(Boolean))applyDefaultScope();
+    } else{applyDefaultScope();}
     if(b.surfaces&&b.surfaces.length){estSurfaces=[...b.surfaces];estSurfId=Math.max(...b.surfaces.map(s=>s.id||0),0);}
     if(b.cond){
       const el=document.getElementById('e-cond');if(el)el.value=b.cond;
@@ -6865,6 +6956,172 @@ function hideDriveBanner(){
   const banner=document.getElementById('drive-banner');
   if(banner)banner.style.display='none';
   if(document.body&&document.body.classList)document.body.classList.remove('drive-active');
+}
+
+// ── Active time tracking ─────────────────────────────────────────────────────
+const _CLOCK_DEFAULT_SCOPES=['movefurn','sand','spackle','tape','caulk','prime','twocoat','cleanup','supply_run','collect_cash'];
+
+function getJobScopes(jobId){
+  const j=jobs.find(x=>x.id===jobId);
+  const bid=j&&j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+  if(bid&&bid.roomScopeMap){
+    const activeIds=new Set();
+    Object.values(bid.roomScopeMap).forEach(room=>Object.entries(room).forEach(([sid,sv])=>{if(sv&&sv.active)activeIds.add(sid);}));
+    const ordered=SCOPE_ITEMS.filter(s=>activeIds.has(s.id));
+    if(ordered.length)return ordered;
+  }
+  return SCOPE_ITEMS.filter(s=>_CLOCK_DEFAULT_SCOPES.includes(s.id));
+}
+
+function getJobScopeBreakdown(jobId){
+  const out={};
+  timeEntries.filter(e=>e.job_id===jobId).forEach(e=>{
+    if(e.scope_id){out[e.scope_id]=(out[e.scope_id]||0)+(e.minutes||0);}
+    else{out['__other']=(out['__other']||0)+(e.minutes||0);}
+  });
+  return out;
+}
+
+function getJobClockTotal(jobId){
+  return timeEntries.filter(e=>e.job_id===jobId).reduce((s,e)=>s+(e.minutes||0),0);
+}
+
+function _fmtMin(m){
+  const h=Math.floor(m/60),rem=m%60;
+  return (h?h+'h ':'')+(rem?rem+'m':'');
+}
+
+function openClockInSheet(jobId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  // If already clocked in to this exact job + scope, don't show sheet — just show toast
+  const scopes=getJobScopes(jobId);
+  const breakdown=getJobScopeBreakdown(jobId);
+  const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+  const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
+  const clientName=c?c.name:j.name;
+
+  const ov=document.createElement('div');
+  ov.className='zmodal-overlay';
+  ov.style.cssText='align-items:flex-end;padding:0';
+  const sheet=document.createElement('div');
+  sheet.style.cssText='background:var(--bg);border-radius:20px 20px 0 0;width:100%;max-width:560px;margin:0 auto;padding-bottom:env(safe-area-inset-bottom,0px);max-height:85vh;overflow-y:auto';
+
+  const rows=scopes.map(s=>{
+    const logged=breakdown[s.id]||0;
+    const isCurrent=_activeTimer&&_activeTimer.jobId===jobId&&_activeTimer.scopeId===s.id;
+    const loggedTxt=logged>0?'<span style="font-size:11px;color:var(--text3);margin-left:auto">'+_fmtMin(logged)+' logged</span>':'';
+    const activeDot=isCurrent?'<span style="width:8px;height:8px;border-radius:50%;background:#E97B00;display:inline-block;flex-shrink:0;margin-right:6px"></span>':'';
+    return '<button onclick="clockIn('+jobId+',\''+s.id+'\',\''+s.label.replace(/'/g,"\\'")+'\')" '+
+      'style="display:flex;align-items:center;gap:10px;width:100%;padding:13px 20px;border:none;background:none;text-align:left;font-family:inherit;cursor:pointer;border-bottom:1px solid var(--border);font-size:14px;color:var(--text)">'+
+      activeDot+
+      '<span style="font-size:18px;flex-shrink:0">'+s.icon+'</span>'+
+      '<span style="font-weight:600">'+s.label+'</span>'+
+      loggedTxt+
+    '</button>';
+  }).join('');
+
+  const otherLogged=breakdown['__other']||0;
+  const otherRow='<button onclick="clockIn('+jobId+',null,\'Other\')" '+
+    'style="display:flex;align-items:center;gap:10px;width:100%;padding:13px 20px;border:none;background:none;text-align:left;font-family:inherit;cursor:pointer;font-size:14px;color:var(--text2)">'+
+    '<span style="font-size:18px;flex-shrink:0">➕</span>'+
+    '<span style="font-weight:600">Other</span>'+
+    (otherLogged>0?'<span style="font-size:11px;color:var(--text3);margin-left:auto">'+_fmtMin(otherLogged)+' logged</span>':'')+
+  '</button>';
+
+  sheet.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px 12px;border-bottom:1px solid var(--border)">'+
+      '<div>'+
+        '<div style="font-size:16px;font-weight:800">Clock in to task</div>'+
+        '<div style="font-size:12px;color:var(--text3);margin-top:2px">'+clientName+' · '+j.name+'</div>'+
+      '</div>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:var(--bg2);border:none;color:var(--text2);font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-family:inherit">✕</button>'+
+    '</div>'+
+    rows+otherRow;
+
+  ov.appendChild(sheet);
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  // close sheet after clockIn call (clockIn sets _activeTimer before returning)
+  sheet.addEventListener('click',e=>{
+    if(e.target.closest('button[onclick^="clockIn"]'))setTimeout(()=>ov.remove(),60);
+  });
+}
+
+function clockIn(jobId,scopeId,scopeLabel){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  if(_activeTimer){
+    if(_activeTimer.jobId===jobId&&_activeTimer.scopeId===(scopeId||null)){
+      showToast('Already tracking '+(scopeLabel||'this task'),'⏱');return;
+    }
+    // Switching task on same job: save silently, no confirm needed
+    if(_activeTimer.jobId===jobId){
+      clockOut(true,true);
+    } else {
+      // Different job: ask first
+      zConfirm('You\'re clocked in to '+_activeTimer.jobName+'. Save that time and switch?',()=>{
+        clockOut(true,true);setTimeout(()=>clockIn(jobId,scopeId,scopeLabel),100);
+      },{title:'Switch job',yes:'Save & switch',danger:false});
+      return;
+    }
+  }
+  const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+  const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
+  _activeTimer={jobId,jobName:j.name,clientName:c?c.name:j.name,scopeId:scopeId||null,scopeLabel:scopeLabel||null,startTime:Date.now(),timerInterval:null};
+  _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
+  showClockBanner();
+  renderJobsPage&&renderJobsPage();
+  showToast('Clocked in · '+(scopeLabel||j.name),'⏱');
+}
+
+function clockOut(saveEntry,silent){
+  if(!_activeTimer)return;
+  clearInterval(_activeTimer.timerInterval);
+  const minutes=Math.max(1,Math.round((Date.now()-_activeTimer.startTime)/60000));
+  const jobId=_activeTimer.jobId;
+  const jobName=_activeTimer.jobName;
+  const scopeId=_activeTimer.scopeId;
+  const scopeLabel=_activeTimer.scopeLabel;
+  if(saveEntry!==false){
+    timeEntries.push({id:Date.now(),job_id:jobId,date:todayKey(),start_time:new Date(_activeTimer.startTime).toISOString(),end_time:new Date().toISOString(),minutes,scope_id:scopeId,scope_label:scopeLabel});
+    const j=jobs.find(x=>x.id===jobId);
+    if(j)j.actualHours=Math.round(((j.actualHours||0)+minutes/60)*10)/10;
+    saveAll();
+    if(!silent){
+      const label=scopeLabel?scopeLabel+' — '+jobName:jobName;
+      showToast(_fmtMin(minutes)+' logged · '+label,'⏱');
+    }
+  }
+  _activeTimer=null;
+  hideClockBanner();
+  renderJobsPage&&renderJobsPage();
+  renderDash&&setTimeout(renderDash,300);
+}
+
+function updateClockTimer(){
+  if(!_activeTimer)return;
+  const elapsed=Math.floor((Date.now()-_activeTimer.startTime)/1000);
+  const h=Math.floor(elapsed/3600);
+  const m=Math.floor((elapsed%3600)/60);
+  const s=elapsed%60;
+  const timeStr=m+':'+(s<10?'0':'')+s;
+  const full=(h?h+'h ':'')+timeStr;
+  const el=document.getElementById('clock-banner-time');
+  if(el)el.textContent=(_activeTimer.scopeLabel?_activeTimer.scopeLabel+' · ':'')+full;
+}
+
+function showClockBanner(){
+  const b=document.getElementById('clock-banner');if(!b)return;
+  const jn=document.getElementById('clock-banner-job');
+  if(jn)jn.textContent=_activeTimer?_activeTimer.clientName:'';
+  const bt=document.getElementById('clock-banner-time');
+  if(bt)bt.textContent=(_activeTimer&&_activeTimer.scopeLabel?_activeTimer.scopeLabel+' · ':'')+'0:00';
+  b.style.display='flex';
+  if(document.body)document.body.classList.add('clock-active');
+}
+
+function hideClockBanner(){
+  const b=document.getElementById('clock-banner');if(b)b.style.display='none';
+  if(document.body)document.body.classList.remove('clock-active');
 }
 
 function sendReminderSMS(cid){
@@ -7827,22 +8084,35 @@ function showJobDebrief(jobId){
     </div>`;
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov){ov.remove();confirmMarkComplete(jobId);}});
+  // Pre-fill hours from clock entries
+  const breakdown=getJobScopeBreakdown(jobId);
+  if(Object.keys(breakdown).length){
+    box.querySelectorAll('input[data-scope]').forEach(inp=>{
+      const sid=inp.dataset.scope;
+      const mins=breakdown[sid]||0;
+      if(mins>0&&!inp.value){
+        inp.value=Math.round(mins/60*4)/4; // round to nearest 0.25
+      }
+    });
+  }
 }
 
 function saveDebriefAndComplete(jobId,btn){
   const box=btn.closest('.zmodal');
   const inputs=box.querySelectorAll('input[data-room][data-scope]');
+  let totalActualHrs=0;
   inputs.forEach(inp=>{
     const room=decodeURIComponent(inp.dataset.room);
     const scopeId=inp.dataset.scope;
     const hrs=parseFloat(inp.value)||0;
     if(!hrs)return;
+    totalActualHrs+=hrs;
     if(!S.scopeHistory)S.scopeHistory={};
     if(!S.scopeHistory[scopeId])S.scopeHistory[scopeId]=[];
     S.scopeHistory[scopeId].push({hrs,ts:Date.now()});
-    // Keep last 20 entries per scope item
     if(S.scopeHistory[scopeId].length>20)S.scopeHistory[scopeId]=S.scopeHistory[scopeId].slice(-20);
   });
+  if(totalActualHrs>0){const j=jobs.find(x=>x.id===jobId);if(j)j.actualHours=Math.round(totalActualHrs*10)/10;}
   saveAll();
   btn.closest('.zmodal-overlay').remove();
   confirmMarkComplete(jobId);
@@ -9140,7 +9410,7 @@ function downloadProposalPDF(){
     zAlert('Generate the proposal first.',{title:'Nothing to print'});return;
   }
   const cname=(document.getElementById('e-cname')?.value||'Estimate').replace(/[^a-z0-9]/gi,'_');
-  const bname=document.getElementById('e-bname')?.value||'TradeDesk';
+  const bname=document.getElementById('e-bname')?.value||'No Business Name Entered';
   const html=`<!DOCTYPE html><html><head>
 <meta charset="utf-8">
 <title>${bname} — Estimate for ${cname.replace(/_/g,' ')}</title>
@@ -9177,24 +9447,28 @@ ${proposal.innerHTML}
 // ── Stripe Connect ─────────────────────────────────────────────────────────
 let _stripeConnectStatus=null; // cached: {connected, charges_enabled, details_submitted, stripe_account_id}
 
-async function loadStripeConnectStatus(){
-  const el=document.getElementById('stripe-connect-status-ui');if(!el)return;
-  if(!supaEnabled()||!_supaUser){
-    el.innerHTML='<div style="font-size:12px;color:var(--text3)">Sign in to connect Stripe.</div>';return;
-  }
+async function _fetchStripeConnectStatus(){
+  if(!supaEnabled()||!_supaUser)return null;
   try{
     const session=await _supa.auth.getSession();
     const token=session?.data?.session?.access_token;
-    if(!token){el.innerHTML='<div style="font-size:12px;color:var(--text3)">Sign in to connect Stripe.</div>';return;}
+    if(!token)return null;
     const res=await fetch(SUPA_URL+'/functions/v1/stripe-connect-status',{
       method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}'
     });
     const data=await res.json();
     _stripeConnectStatus=data;
-    _renderStripeConnectUI(el,data);
-  }catch(e){
-    el.innerHTML='<div style="font-size:12px;color:var(--red)">Could not check Stripe status.</div>';
+    return data;
+  }catch(e){return null;}
+}
+async function loadStripeConnectStatus(){
+  const el=document.getElementById('stripe-connect-status-ui');
+  if(!supaEnabled()||!_supaUser){
+    if(el)el.innerHTML='<div style="font-size:12px;color:var(--text3)">Sign in to connect Stripe.</div>';return;
   }
+  const data=await _fetchStripeConnectStatus();
+  if(!data){if(el)el.innerHTML='<div style="font-size:12px;color:var(--red)">Could not check Stripe status.</div>';return;}
+  if(el)_renderStripeConnectUI(el,data);
 }
 
 function _renderStripeConnectUI(el,data){
@@ -9303,22 +9577,227 @@ async function sendPaymentLink(bidId){
     });
     const data=await res.json();
     if(data.error){zAlert('Error: '+data.error);return;}
-    // Open SMS with the pay link
-    if(c.phone){
-      const msg=encodeURIComponent(
-        'Hi '+c.name.split(' ')[0]+', here\'s your payment link for '+fmt(balance)+' owed to '+(S.bname||'us')+': '+data.url+' — Thank you!'
-      );
-      window.open('sms:'+c.phone.replace(/\D/g,'')+'&body='+msg,'_self');
-    } else {
-      // No phone — copy to clipboard
-      navigator.clipboard.writeText(data.url).then(()=>showToast('Pay link copied to clipboard!','📋')).catch(()=>{});
-      zAlert('Payment link: '+data.url,'Copy this and send it to your client.',{title:'Payment link ready'});
-    }
+    // Show link modal (copy fallback) then attempt SMS
+    const _showPayLinkModal=(url)=>{
+      const ov=document.createElement('div');ov.className='zmodal-overlay';
+      const box=document.createElement('div');box.className='zmodal';
+      box.innerHTML=
+        '<div style="font-size:17px;font-weight:800;margin-bottom:4px">💳 Payment link ready</div>'+
+        '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+c.name+' · '+fmt(balance)+' due</div>'+
+        '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:12px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+url+'</div>'+
+        '<button onclick="navigator.clipboard.writeText(\''+url+'\').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">📋 Copy link</button>'+
+        (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+c.name.split(' ')[0]+', here\\\'s your payment link for '+fmt(balance)+' owed to '+(S.bname||'us')+': '+url+' — Thank you!\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">📱 Open in Messages</button>':'')+
+        '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
+      ov.appendChild(box);document.body.appendChild(ov);
+      ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+      navigator.clipboard.writeText(url).catch(()=>{});
+    };
+    _showPayLinkModal(data.url);
     autoLogContact(bid.client_id,'payment_link_sent');
   }catch(e){
     zAlert('Could not create payment link: '+e.message);
   }
 }
+// ── Gallery ──────────────────────────────────────────────────────────────────
+let _galleryFilter='all';
+function setGalleryFilter(f,btn){
+  _galleryFilter=f;
+  document.querySelectorAll('#pg-gallery .fb').forEach(b=>{b.classList.remove('active');});
+  if(btn)btn.classList.add('active');
+  renderGallery();
+}
+function renderGallery(){
+  const el=document.getElementById('gallery-grid');if(!el)return;
+  const sub=document.getElementById('gallery-count-sub');
+  const filtered=photos.filter(p=>_galleryFilter==='all'||p.type===_galleryFilter);
+  if(sub)sub.textContent=filtered.length+' photo'+(filtered.length!==1?'s':'');
+  if(!filtered.length){
+    el.innerHTML='<div class="empty-state"><div class="empty-state-icon">📷</div><h3>No photos yet</h3><p>Tap "+ Add photos" to upload before/after shots of your jobs. Photos will appear in client proposals and portals.</p></div>';
+    return;
+  }
+  // Group by client
+  const byClient={};
+  filtered.forEach(p=>{
+    const key=p.client_name||'Unlinked';
+    if(!byClient[key])byClient[key]=[];
+    byClient[key].push(p);
+  });
+  let html='';
+  Object.entries(byClient).forEach(([name,ps])=>{
+    html+='<div style="margin-bottom:20px">'+
+      '<div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;padding:0 2px">'+name+'</div>'+
+      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px">'+
+      ps.map(p=>'<div onclick="openPhotoViewer(\''+p.id+'\')" style="position:relative;aspect-ratio:1;border-radius:var(--r);overflow:hidden;cursor:pointer;background:var(--bg2);border:1px solid var(--border)">'+
+        '<img src="'+p.url+'" style="width:100%;height:100%;object-fit:cover" loading="lazy" onerror="this.style.display=\'none\'">'+
+        '<div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.6));padding:4px 6px">'+
+          '<span style="font-size:9px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:.04em">'+p.type+'</span>'+
+        '</div>'+
+        '<button onclick="event.stopPropagation();deletePhoto(\''+p.id+'\')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);border:none;color:#fff;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center">✕</button>'+
+      '</div>').join('')+
+      '</div></div>';
+  });
+  el.innerHTML=html;
+}
+function openPhotoViewer(photoId){
+  const p=photos.find(x=>x.id===photoId);if(!p)return;
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
+  ov.innerHTML=
+    '<button onclick="this.closest(\'div\').remove()" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;line-height:1">✕</button>'+
+    '<img src="'+p.url+'" style="max-width:100%;max-height:80vh;border-radius:var(--r);object-fit:contain">'+
+    '<div style="margin-top:12px;text-align:center">'+
+      '<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.06em">'+p.type+'</div>'+
+      (p.caption?'<div style="font-size:13px;color:#fff;margin-top:4px">'+p.caption+'</div>':'')+
+      '<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:4px">'+(p.client_name||'')+(p.job_name?' · '+p.job_name:'')+'</div>'+
+    '</div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function deletePhoto(photoId){
+  zConfirm('Delete this photo?',()=>{photos=photos.filter(p=>p.id!==photoId);saveAll();renderGallery();},{title:'Delete photo',yes:'Delete',danger:true});
+}
+function openGalleryUpload(jobId,clientId){
+  const job=jobId?jobs.find(j=>j.id===jobId):null;
+  const client=clientId?clients.find(c=>c.id===clientId):(job?clients.find(c=>c.id===job.client_id):null);
+  const ov=document.createElement('div');ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  const jobOptions=jobs.filter(j=>j.status==='done'||j.status==='active').slice(0,30)
+    .map(j=>'<option value="'+j.id+'"'+(jobId===j.id?' selected':'')+'>'+j.name+' — '+(clients.find(c=>c.id===j.client_id)?.name||'')+'</option>').join('');
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">📷 Add photo</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">Upload a job photo to your gallery</div>'+
+    '<div class="f" style="margin-bottom:12px"><label>Photo type</label>'+
+      '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">'+
+        ['before','after','progress'].map(t=>'<label style="display:flex;align-items:center;justify-content:center;gap:4px;padding:10px;border:2px solid var(--border2);border-radius:var(--r);cursor:pointer;font-size:13px;font-weight:600">'+
+          '<input type="radio" name="photo-type" value="'+t+'" style="display:none" onchange="this.closest(\'label\').closest(\'div\').querySelectorAll(\'label\').forEach(l=>l.style.borderColor=\'var(--border2)\');this.closest(\'label\').style.borderColor=\'var(--blue)\'">'+
+          {before:'📸 Before',after:'✅ After',progress:'🔨 Progress'}[t]+'</label>').join('')+
+      '</div>'+
+    '</div>'+
+    (jobOptions?'<div class="f" style="margin-bottom:12px"><label>Job <span style="font-weight:400;color:var(--text3)">(optional)</span></label><select id="gup-job" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;color:var(--text);font-family:inherit"><option value="">— No job selected —</option>'+jobOptions+'</select></div>':'')+
+    '<div class="f" style="margin-bottom:12px"><label>Caption <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input id="gup-caption" placeholder="e.g. Living room accent wall" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;color:var(--text);font-family:inherit"></div>'+
+    '<input type="file" id="gup-file" accept="image/*" multiple style="display:none" onchange="processGalleryUpload(this)">'+
+    '<button onclick="document.getElementById(\'gup-file\').click()" style="width:100%;padding:14px;border-radius:var(--r);border:2px dashed var(--border2);background:var(--bg);color:var(--text2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">📂 Choose photos</button>'+
+    '<div id="gup-status" style="font-size:12px;color:var(--text3);text-align:center;min-height:16px;margin-bottom:8px"></div>'+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+async function processGalleryUpload(input){
+  const files=Array.from(input.files);if(!files.length)return;
+  const typeEl=document.querySelector('input[name="photo-type"]:checked');
+  const ptype=typeEl?typeEl.value:'after';
+  const jobSel=document.getElementById('gup-job');
+  const selectedJobId=jobSel?parseInt(jobSel.value)||null:null;
+  const caption=(document.getElementById('gup-caption')?.value||'').trim();
+  const status=document.getElementById('gup-status');
+  const job=selectedJobId?jobs.find(j=>j.id===selectedJobId):null;
+  const c=job?clients.find(cl=>cl.id===job.client_id):null;
+  if(status)status.textContent='Uploading '+files.length+' photo'+(files.length>1?'s':'')+'…';
+  let uploaded=0;
+  for(const file of files){
+    try{
+      let url='';
+      if(supaEnabled()&&_supaUser){
+        const ext=file.name.split('.').pop()||'jpg';
+        const path='gallery/'+_supaUser.id+'/'+Date.now()+'_'+Math.random().toString(36).slice(2)+'.'+ext;
+        const{error}=await _supa.storage.from('gallery').upload(path,file,{contentType:file.type,upsert:false});
+        if(!error){
+          const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
+          url=urlData?.publicUrl||'';
+        }
+      }
+      if(!url){
+        // Fallback: base64 for offline (large but works)
+        url=await new Promise(res=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.readAsDataURL(file);});
+      }
+      photos.push({id:Date.now()+Math.random(),url,type:ptype,caption,job_id:selectedJobId,job_name:job?.name||'',client_id:c?.id||null,client_name:c?.name||'',uploadedAt:new Date().toISOString()});
+      uploaded++;
+      if(status)status.textContent='Uploaded '+uploaded+'/'+files.length;
+    }catch(e){console.warn('photo upload:',e);}
+  }
+  saveAll();renderGallery();
+  if(status)status.textContent='✓ '+uploaded+' photo'+(uploaded!==1?'s':'')+' added';
+  showToast(uploaded+' photo'+(uploaded!==1?'s':'')+' added to gallery','📷');
+}
+
+// ── Client Hub ──────────────────────────────────────────────────────────────
+function _buildClientHubSnapshot(clientId){
+  const c=clients.find(x=>x.id===clientId);if(!c)return null;
+  const cbids=bids.filter(b=>b.client_id===clientId);
+  const cjobs=jobs.filter(j=>j.client_id===clientId&&j.eventType!=='estimate');
+  const cpayments=payments.filter(p=>p.client_id===clientId);
+  const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  const hubUrl=c.clientToken?baseUrl+'client.html?t='+c.clientToken+'&u='+(_supaUser?.id||'')+'&c='+clientId:'';
+  const snapshotBids=cbids.map(b=>{
+    const paid=getBidPaid(b.id);
+    const balance=getBidBalance(b);
+    const signBase=b.signingToken?baseUrl+'sign.html?t='+b.signingToken+'&u='+(_supaUser?.id||'')+'&b='+b.id:null;
+    return {id:b.id,amount:b.amount||0,status:b.status,type:b.type||'Painting',bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,
+      signingToken:b.signingToken||null,
+      signHubUrl:signBase?(signBase+(hubUrl?'&hub='+encodeURIComponent(hubUrl):'')):null};
+  });
+  const snapshotJobs=cjobs.map(j=>({id:j.id,bid_id:j.bid_id||null,name:j.name||'Job',start:j.start||'',days:j.days||0,status:j.status||'scheduled',completion_date:j.completion_date||''}));
+  const snapshotPayments=cpayments.map(p=>({date:p.date||'',type:p.type||'',amount:p.amount||0,ref:p.ref||'',method:p.method||''}));
+  const jobPhotos=photos.filter(p=>p.client_id===clientId).map(p=>({url:p.url,type:p.type,caption:p.caption||'',job_name:p.job_name||''}));
+  return {
+    clientId,clientName:c.name,clientPhone:c.phone||'',clientAddr:c.addr||'',
+    contractorName:S.bname||'TradeDesk',contractorPhone:S.bphone||'',
+    brandColor:S.brandColor||'',logoData:S.logoData||'',bwebsite:S.bwebsite||'',
+    hubUrl,token:c.clientToken||'',generatedAt:new Date().toISOString(),
+    bids:snapshotBids,payments:snapshotPayments,jobs:snapshotJobs,photos:jobPhotos
+  };
+}
+function _ensureClientToken(clientId){
+  const c=clients.find(x=>x.id===clientId);
+  if(!c||c.clientToken)return;
+  c.clientToken=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function _uploadClientHub(clientId){
+  if(!supaEnabled()||!_supaUser)return null;
+  const c=clients.find(x=>x.id===clientId);if(!c)return null;
+  if(!c.clientToken){
+    c.clientToken=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }
+  const snapshot=_buildClientHubSnapshot(clientId);
+  if(!snapshot)return null;
+  snapshot.token=c.clientToken;
+  const key='client-hub/'+_supaUser.id+'/'+clientId+'_'+c.clientToken+'.json';
+  const{error}=await _supa.storage.from('proposals').upload(key,JSON.stringify(snapshot),{contentType:'application/json',upsert:true});
+  if(error)throw error;
+  c.clientHubKey=key;
+  saveAll();
+  const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  return baseUrl+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+}
+async function sendClientHubLink(clientId){
+  showToast('Generating hub…','⏳');
+  try{
+    const url=await _uploadClientHub(clientId);
+    if(!url){zAlert('Could not create hub link. Make sure you\'re signed in.');return;}
+    const c=clients.find(x=>x.id===clientId);
+    const firstName=c?.name?.split(' ')[0]||'there';
+    const biz=S.bname||'us';
+    const ov=document.createElement('div');ov.className='zmodal-overlay';
+    const box=document.createElement('div');box.className='zmodal';
+    box.innerHTML=
+      '<div style="font-size:17px;font-weight:800;margin-bottom:4px">📋 Client Hub ready</div>'+
+      '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+(c?.name||'Client')+' · view proposals, pay balance, download invoices</div>'+
+      '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:11px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+url+'</div>'+
+      '<button onclick="navigator.clipboard.writeText(\''+url+'\').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">📋 Copy link</button>'+
+      (c?.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+firstName+', here\\\'s your project hub from '+biz+' — view your proposals, pay your balance, and download invoices anytime: '+url+'\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">📱 Send via Messages</button>':'')+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
+    ov.appendChild(box);document.body.appendChild(ov);
+    ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+    navigator.clipboard.writeText(url).catch(()=>{});
+  }catch(e){zAlert('Error creating hub: '+e.message);}
+}
+async function _refreshClientHub(clientId){
+  const c=clients.find(x=>x.id===clientId);
+  if(!c?.clientToken)return;
+  try{await _uploadClientHub(clientId);}catch(e){console.warn('hub refresh:',e);}
+}
+function copyHubLink(url){navigator.clipboard.writeText(url).then(()=>showToast('Hub link copied','📋')).catch(()=>showToast('Could not copy — tap the URL above','⚠️'));}
+
 function syncAdj(){const pct=parseInt(v('est-adj')||0);document.getElementById('est-adj-val').textContent=(pct>0?'+':'')+pct+'%';renderEstReview();}
 function onAdjSliderRelease(){
   const pct=parseInt(v('est-adj')||0);
@@ -9473,7 +9952,8 @@ async function sendProposalLink(){
   if(btn){btn.textContent='⏳ Saving...';btn.disabled=true;}
   try{
     const cname=document.getElementById('e-cname')?.value||'Client';
-    const bname=document.getElementById('e-bname')?.value||S.bname||'TradeDesk';
+    const _rawBname=document.getElementById('e-bname')?.value||getBusinessName()||'';
+    const bname=(_rawBname&&!_rawBname.includes('@'))?_rawBname:'No Business Name Entered';
     // Resolve bid ID — if the current bid was already sent (has a signingToken),
     // create a fresh bid so each proposal gets its own unique link and record.
     let bidId=editingBidId||lastCreatedBidId;
@@ -9528,10 +10008,10 @@ async function sendProposalLink(){
       amount:_propFinal,
       deposit:Math.round(_propFinal*0.25*100)/100,
       createdAt:new Date().toISOString(),status:'pending',
-      notifyEmail:_supaUser.email,stripeConnectEnabled:!!(_stripeConnectStatus?.charges_enabled),
+      notifyEmail:_supaUser.email,businessPhone:S.bphone||'',stripeConnectEnabled:!!(_stripeConnectStatus?.charges_enabled),
       isPortfolio:document.getElementById('portfolio-toggle')?.checked||false,
       portfolioPct:parseInt(document.getElementById('portfolio-pct')?.value)||15,
-      portfolioTarget:parseInt(document.getElementById('portfolio-target')?.value)||5,
+      portfolioTarget:5,
       portfolioYears:S.byears||0,
       portfolioOwnerName:getOwnerName()||'',
       fullPrice:_propFinal,
@@ -9620,7 +10100,9 @@ function _commitProposalSent(){
     bid.signingToken=token;bid.signingKey=proposalKey;
     if(bid.status==='Draft'||!bid.status)bid.status='Pending';
     bid.draft=false;
-    if(!bid.followup)bid.followup=addDays(todayKey(),7);
+    bid.proposalSentDate=todayKey();
+    if(!bid.followupStage)bid.followupStage=1;
+    bid.followup=addDays(todayKey(),3);
     // Snapshot the exact proposal HTML the client will sign — required for legal record
     const proposalEl=document.getElementById('est-proposal');
     if(proposalEl&&proposalEl.innerHTML.trim())bid.proposalHtml=proposalEl.innerHTML;
@@ -10191,6 +10673,10 @@ function clearEstimatorForm(){
   const adjV=document.getElementById('est-adj-val');if(adjV)adjV.textContent='0%';
   const _ptogClear=document.getElementById('portfolio-toggle');
   if(_ptogClear){_ptogClear.checked=false;togglePortfolioShowcase();}
+  const _pPct=document.getElementById('portfolio-pct');if(_pPct)_pPct.value=15;
+  const _plb=document.getElementById('proposal-link-bar');if(_plb){_plb.style.display='none';_plb.dataset.signingUrl='';}
+  const _pli=document.getElementById('proposal-link-input');if(_pli)_pli.value='';
+  const _sendBtn=document.getElementById('send-proposal-btn');if(_sendBtn){_sendBtn.textContent='🔗 Send to client';_sendBtn.disabled=false;}
   scopeActiveMap={};scopeHrsStore={};roomScopeMap={};estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};
   SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
   const ep2=document.getElementById('e-paint');if(ep2)ep2.value='';
@@ -10228,7 +10714,7 @@ function saveAndExitEstimate(){
     if(b){
       b.amount=final;
       b.status=b.status==='Closed Won'?'Closed Won':'Pending';
-      b.draft=true;
+      b.draft=true;b.lastStep=estStep;
       if(!b.followup)b.followup=addDays(todayKey(),3);
       if(clientId&&!b.client_id)b.client_id=clientId;
       b.surfaces=[...estSurfaces];
@@ -10249,7 +10735,7 @@ function saveAndExitEstimate(){
       bid_date:todayKey(),followup,
       amount:final,
       type:getBidIncomeLabel({surfaces:estSurfaces}),
-      days,status:'Pending',draft:true,
+      days,status:'Pending',draft:true,lastStep:estStep,
       notes:document.getElementById('e-cnotes')?.value||'',
       completion_date:'',collStage:'none',collHistory:[],
       scope:ss,surfaces:[...estSurfaces],
@@ -10337,7 +10823,7 @@ function selectPropertyTier(key){
 }
 function prefillEstimateRates(){
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
-  if(S.bname)sf('e-bname',S.bname);
+  const _pbn=getBusinessName();if(_pbn&&_pbn!=='TradeDesk'&&!_pbn.includes('@'))sf('e-bname',_pbn);
   if(S.bphone)sf('e-bphone',S.bphone);
   if(S.blic)sf('e-blic',S.blic);
   sf('e-r-walls',S.rWalls||1.30);sf('e-r-ceil',S.rCeil||1.00);sf('e-r-trim',S.rTrim||3.25);sf('e-r-walls-adv',S.rWalls||1.30);sf('e-r-ceil-adv',S.rCeil||1.00);sf('e-r-trim-adv',S.rTrim||3.25);sf('e-r-door',S.rDoor||95);sf('e-r-door-adv',S.rDoor||95);sf('e-r-win',S.rWin||50);sf('e-r-ext',S.rExt||1.10);sf('e-r-deck',S.rDeck||1.00);
@@ -12464,7 +12950,7 @@ function renderExpenses(){
   const filtered=yr==='all'?expenses:expenses.filter(e=>e.date&&e.date.startsWith(yr));
   const total=filtered.reduce((s,e)=>s+e.amount,0);
   const deductible=filtered.filter(e=>e.deductible!==false).reduce((s,e)=>s+(e.meals_50?e.amount*0.5:e.amount),0);
-  const noReceipt=filtered.filter(e=>!e.receipt||e.receipt.includes('No'));
+  const noReceipt=filtered.filter(e=>!e.receipt||e.receipt.includes('No')).filter(e=>e.cat!=='fees'&&!e.autoLogged);
   const today=todayKey();
   const purgeable=expenses.filter(e=>e.expires_at&&e.expires_at<today&&e.receipt_img);
   let html='';
@@ -12624,6 +13110,58 @@ function openDriveModal(opts){
 
 let _lmCoords={from:null,to:null};
 let _tripSearchTimers={};
+let _tripDestTimer=null;
+function _tripDestSearch(val){
+  clearTimeout(_tripDestTimer);
+  const box=document.getElementById('lm-to-sugg');if(!box)return;
+  const chip=document.getElementById('lm-to-chip');if(chip)chip.style.display='none';
+  _lmCoords.to=null;
+  if(!val||val.length<2){box.style.display='none';return;}
+  // Client name matches (immediate, no debounce needed)
+  const matches=clients.filter(c=>c.name&&c.name.toLowerCase().includes(val.toLowerCase())&&c.addr).slice(0,4);
+  _tripDestTimer=setTimeout(async()=>{
+    let html='';
+    matches.forEach(c=>{
+      html+='<div onclick="_selectTripClient('+c.id+')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
+        '<div style="font-size:13px;font-weight:700;color:var(--text)">👤 '+escHtml(c.name)+'</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(c.addr||'')+'</div>'+
+      '</div>';
+    });
+    try{
+      const bias=(S.weatherLat&&S.weatherLon)?'&lat='+S.weatherLat+'&lon='+S.weatherLon:'&lat=37.6922&lon=-97.3375';
+      const r=await fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit=5'+bias+'&lang=en');
+      const d=await r.json();
+      (d.features||[]).forEach(f=>{
+        const p=f.properties||{};
+        const name=p.name||'';const num=p.housenumber||'';const street=p.street||'';
+        const city=p.city||p.town||p.village||'';const state=p.state||'';
+        const line1=name||(num?num+' '+street:street)||city;
+        const streetPart=(name&&(num||street))?(num?num+' '+street:street):'';
+        const line2=[streetPart,city,state].filter(Boolean).join(', ');
+        const[lon,lat]=f.geometry.coordinates;
+        const safeL1=line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const safeL2=line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        html+='<div onclick="selectTripPlace(\'lm-to\',\'lm-to-sugg\',\'to\',\''+safeL1+'\',\''+safeL2+'\','+lat+','+lon+')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
+          '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(line1)+'</div>'+
+          (line2?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(line2)+'</div>':'')+
+        '</div>';
+      });
+    }catch(e){}
+    if(html){box.innerHTML=html;box.style.display='block';}else{box.style.display='none';}
+  },200);
+}
+function _selectTripClient(clientId){
+  const c=clients.find(x=>x.id===clientId);if(!c)return;
+  const inp=document.getElementById('lm-to');if(inp)inp.value=c.addr||'';
+  const box=document.getElementById('lm-to-sugg');if(box)box.style.display='none';
+  _lmCoords.to=null;
+  const chip=document.getElementById('lm-to-chip');const chipTxt=document.getElementById('lm-to-chip-txt');
+  if(chip&&chipTxt){chipTxt.textContent=c.name+(c.addr?' · '+c.addr:'');chip.style.display='inline-flex';}
+  const h=document.getElementById('lm-client');if(h)h.value=c.id;
+  const mv=document.getElementById('lm-miles-val');if(mv)mv.value='0';
+  const rr=document.getElementById('lm-route-result');if(rr)rr.style.display='none';
+  if((document.getElementById('lm-from')?.value||'').trim())setTimeout(calculateAndShowRoute,100);
+}
 function tripPlaceSearch(fieldId,suggId,val){
   clearTimeout(_tripSearchTimers[fieldId]);
   const box=document.getElementById(suggId);if(!box)return;
@@ -12670,6 +13208,7 @@ function selectTripPlace(fieldId,suggId,coordKey,line1,line2,lat,lng){
   const chip=document.getElementById(chipId);
   const chipTxt=document.getElementById(chipId+'-txt');
   if(chip&&chipTxt){chipTxt.textContent=full;chip.style.display='inline-flex';}
+  if(coordKey==='to'&&(document.getElementById('lm-from')?.value||'').trim())setTimeout(calculateAndShowRoute,100);
 }
 function fillTripSuggestion(clientId,addr,purpose){
   const toInp=document.getElementById('lm-to');
@@ -12680,8 +13219,7 @@ function fillTripSuggestion(clientId,addr,purpose){
   }
   if(purpose){
     document.getElementById('lm-purpose').value=purpose;
-    const row=document.querySelector('[data-lm-chip-row]');
-    if(row)row.querySelectorAll('button').forEach(b=>{b.classList.toggle('active-surf-btn',b.textContent.trim()===purpose);});
+    const sel=document.getElementById('lm-trip-type-sel');if(sel)sel.value=purpose;
   }
   const mv=document.getElementById('lm-miles-val');if(mv)mv.value='0';
   const rr=document.getElementById('lm-route-result');if(rr)rr.style.display='none';
@@ -12696,8 +13234,9 @@ function openLogTripModal(opts){
     :'<option value="">— Add vehicle in Settings —</option>';
   const clientOpts='<option value="">— None —</option>'+clients.map(c=>'<option value="'+c.id+'">'+c.name+'</option>').join('');
   const PURPOSES=['Estimate','Job site','Supply run','Other'];
-  const prefill=opts.purpose||'Estimate';
-  const purposeChips=PURPOSES.map(p=>'<button type="button" onclick="this.parentElement.querySelectorAll(\'button\').forEach(b=>b.classList.remove(\'active-surf-btn\'));this.classList.add(\'active-surf-btn\');document.getElementById(\'lm-purpose\').value=\''+p+'\'" class="surf-type-btn'+(p===prefill?' active-surf-btn':'')+'" style="flex:1;text-align:center;padding:8px 4px;font-size:12px">'+p+'</button>').join('');
+  const prefill=opts.purpose||'';
+  const purposeOpts='<option value="" disabled'+(prefill?'':' selected')+'>— Select type —</option>'+
+    PURPOSES.map(p=>'<option value="'+p+'"'+(p===prefill?' selected':'')+'>'+p+'</option>').join('');
   // Optional quick-select chips for today's scheduled jobs/estimates
   const suggList=opts.suggestions&&opts.suggestions.length?opts.suggestions:[];
   const suggHtml=suggList.length
@@ -12730,10 +13269,9 @@ function openLogTripModal(opts){
       '<div class="f" style="margin:0"><label>Vehicle</label><select id="lm-vehicle" style="width:100%">'+vehOpts+'</select></div>'+
     '</div>'+
     '<div class="f" style="margin-bottom:12px"><label>Trip type</label>'+
-      '<div data-lm-chip-row style="display:flex;gap:6px;margin-top:6px">'+purposeChips+'</div>'+
+      '<select id="lm-trip-type-sel" style="width:100%" onchange="document.getElementById(\'lm-purpose\').value=this.value">'+purposeOpts+'</select>'+
     '</div>'+
-    '<div class="f" style="margin-bottom:12px"><label>Client <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>'+
-      '<select id="lm-client" style="width:100%">'+clientOpts+'</select></div>'+
+    '<input type="hidden" id="lm-client" value="">'+
     '<div class="f" style="margin-bottom:12px"><label>Starting from</label>'+
       '<div style="display:flex;gap:8px">'+
         '<input id="lm-from" placeholder="Your address or last job" style="flex:1" value="'+(opts.fromAddress||'')+'" oninput="tripPlaceSearch(\'lm-from\',\'lm-from-sugg\',this.value)" autocomplete="off">'+
@@ -12742,19 +13280,26 @@ function openLogTripModal(opts){
       '<div id="lm-from-sugg" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);margin-top:2px;overflow:hidden;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>'+
       '<div id="lm-from-chip" style="display:none;margin-top:5px;font-size:11px;color:var(--green-mid);background:var(--green-lt);border:1px solid var(--green-mid);border-radius:20px;padding:3px 10px;align-items:center;gap:4px"><span>📍</span><span id="lm-from-chip-txt"></span><span style="color:var(--green-mid);font-weight:700">✓</span></div>'+
       '</div>'+
-    '<div class="f" style="margin-bottom:4px"><label>Driving to <span style="font-size:10px;font-weight:400;color:var(--text3)">— type a name or address</span></label>'+
-      '<input id="lm-to" placeholder="e.g. Sherwin-Williams Topeka or 123 Main St" value="'+(opts.toAddress||'')+'" oninput="tripPlaceSearch(\'lm-to\',\'lm-to-sugg\',this.value)" autocomplete="off">'+
+    '<div class="f" style="margin-bottom:4px"><label>Driving to — client name or address</label>'+
+      '<input id="lm-to" placeholder="Type client name or any address" value="'+(opts.toAddress||'')+'" oninput="_tripDestSearch(this.value)" autocomplete="off">'+
       '<div id="lm-to-sugg" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);margin-top:2px;overflow:hidden;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>'+
       '<div id="lm-to-chip" style="display:none;margin-top:5px;font-size:11px;color:var(--green-mid);background:var(--green-lt);border:1px solid var(--green-mid);border-radius:20px;padding:3px 10px;align-items:center;gap:4px"><span>📍</span><span id="lm-to-chip-txt"></span><span style="color:var(--green-mid);font-weight:700">✓</span></div>'+
       '</div>'+
-    '<button type="button" onclick="calculateAndShowRoute()" class="btn btn-p" style="width:100%;margin-bottom:10px;min-height:48px;font-size:15px" id="lm-calc-btn">🗺 Calculate miles</button>'+
-    '<div id="lm-route-result" style="display:none;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:14px;margin-bottom:14px;text-align:center">'+
+    '<div id="lm-route-result" style="display:none;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:14px;margin-bottom:6px;text-align:center">'+
       '<div id="lm-miles-display" style="font-size:32px;font-weight:800;color:var(--blue-dk)"></div>'+
       '<div id="lm-time-display" style="font-size:13px;color:var(--text2);margin-top:4px"></div>'+
     '</div>'+
-    '<div style="display:flex;gap:8px;margin-bottom:12px">'+
-      '<button type="button" onclick="openTripInMaps(\'apple\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:44px"> Apple Maps ↗</button>'+
-      '<button type="button" onclick="openTripInMaps(\'google\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:44px"> Google Maps ↗</button>'+
+    '<div id="lm-recalc-row" style="display:none;text-align:right;margin-bottom:12px">'+
+      '<button type="button" onclick="calculateAndShowRoute()" style="background:none;border:none;color:var(--blue);font-size:12px;font-weight:600;cursor:pointer;padding:0">↺ Recalculate</button>'+
+    '</div>'+
+    '<input type="hidden" id="lm-map-app" value="">'+
+    '<div class="f" style="margin-bottom:14px">'+
+      '<label style="margin-bottom:6px;display:block">Open in maps after saving <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>'+
+      '<div style="display:flex;gap:8px">'+
+        '<button type="button" id="lm-map-apple" onclick="_selectTripMapApp(\'apple\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:42px"> Apple Maps</button>'+
+        '<button type="button" id="lm-map-google" onclick="_selectTripMapApp(\'google\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:42px"> Google Maps</button>'+
+        '<button type="button" id="lm-map-none" onclick="_selectTripMapApp(\'\')" class="btn" style="flex:1;font-size:13px;min-height:42px;color:var(--text3)">None</button>'+
+      '</div>'+
     '</div>'+
     '<div class="f" style="margin-bottom:14px"><label>Notes <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>'+
       '<input id="lm-notes" placeholder="e.g. Supply stop at Sherwin-Williams"></div>'+
@@ -12764,11 +13309,14 @@ function openLogTripModal(opts){
     '</div>'+
   '</div>';
   document.body.appendChild(overlay);
+  // Auto-select map app based on device
+  const _ua=navigator.userAgent||'';
+  const _defMap=/iPhone|iPad|iPod/i.test(_ua)?'apple':/Android/i.test(_ua)?'google':'';
+  if(_defMap)setTimeout(()=>_selectTripMapApp(_defMap),50);
+  // Auto-grab GPS for starting location if not pre-filled
+  if(!opts.fromAddress)setTimeout(grabMyLocation,300);
   // Pre-link client if provided
-  if(opts.clientName){setTimeout(()=>{
-    const sel=document.getElementById('lm-client');
-    if(sel){const c=clients.find(x=>x.name===opts.clientName);if(c)sel.value=c.id;}
-  },50);}
+  if(opts.clientName){const c=clients.find(x=>x.name===opts.clientName);if(c){const h=document.getElementById('lm-client');if(h)h.value=c.id;}}
 }
 async function grabMyLocation(){
   const btn=document.getElementById('lm-gps-btn');
@@ -12796,32 +13344,49 @@ async function calculateAndShowRoute(){
     document.getElementById('lm-miles-display').textContent=miles.toFixed(1)+' miles';
     document.getElementById('lm-time-display').textContent='~'+mins+' min drive · IRS deduction: '+fmt(miles*IRS());
     document.getElementById('lm-route-result').style.display='block';
+    const _rcr=document.getElementById('lm-recalc-row');if(_rcr)_rcr.style.display='block';
   }catch(e){
     zAlert(e.message+'\n\nTip: Try typing the city and state, or pick from the search suggestions.',{title:'Could not calculate route'});
   }finally{if(btn){btn.disabled=false;btn.textContent='🗺 Calculate miles';}}
 }
-function openTripInMaps(which){
-  const from=(document.getElementById('lm-from')?.value||'').trim();
-  const to=(document.getElementById('lm-to')?.value||'').trim();
-  if(!to){zAlert('Enter a destination first.');return;}
+function openTripInMaps(which,from,to){
+  if(!to||!which)return;
   const enc=s=>encodeURIComponent(s);
   if(which==='apple'){
     window.open('https://maps.apple.com/?'+(from?'saddr='+enc(from)+'&':'')+'daddr='+enc(to)+'&dirflg=d','_blank');
-  } else {
+  } else if(which==='google'){
     window.open('https://www.google.com/maps/dir/?api=1'+(from?'&origin='+enc(from):'')+'&destination='+enc(to)+'&travelmode=driving','_blank');
   }
 }
+function _selectTripMapApp(which){
+  ['apple','google','none'].forEach(k=>{
+    const btn=document.getElementById('lm-map-'+k);if(!btn)return;
+    const active=(which===k)||(which===''&&k==='none');
+    btn.style.background=active?'var(--blue)':'';
+    btn.style.color=active?'#fff':'';
+    btn.style.borderColor=active?'var(--blue)':'';
+  });
+  const inp=document.getElementById('lm-map-app');if(inp)inp.value=which;
+}
 function saveLoggedTrip(){
   const miles=parseFloat(document.getElementById('lm-miles-val')?.value)||0;
-  if(!miles){zAlert('Tap "Calculate miles" first to get the distance.');return;}
+  if(!miles){
+    const _fv=(document.getElementById('lm-from')?.value||'').trim();
+    const _tv=(document.getElementById('lm-to')?.value||'').trim();
+    if(_fv&&_tv){calculateAndShowRoute();showToast('Calculating distance — tap Save trip again once it appears','🗺');}
+    else{zAlert('Enter a destination first.',{title:'Distance needed'});}
+    return;
+  }
   const date=document.getElementById('lm-date')?.value||todayKey();
   const vehicle=document.getElementById('lm-vehicle')?.value||'';
-  const purpose=document.getElementById('lm-purpose')?.value||'Other';
+  const purpose=document.getElementById('lm-purpose')?.value||'';
+  if(!purpose){const sel=document.getElementById('lm-trip-type-sel');if(sel){sel.style.borderColor='#A32D2D';sel.style.background='var(--red-lt)';sel.focus();}zAlert('Select a trip type.',{title:'Required'});return;}
   const cid=parseInt(document.getElementById('lm-client')?.value)||null;
   const c=cid?getClientById(cid):null;
   const from=document.getElementById('lm-from')?.value||'';
   const to=document.getElementById('lm-to')?.value||'';
   const notes=document.getElementById('lm-notes')?.value||'';
+  const mapApp=document.getElementById('lm-map-app')?.value||'';
   const finalMiles=Math.round(miles*10)/10;
   mileage.unshift({id:Date.now(),date,vehicle,from,to,start:0,end:0,miles:finalMiles,purpose,client_id:cid,client_name:c?c.name:'',notes,calc_method:'address'});
   if(cid)autoLogContact(cid,'drive');
@@ -12829,6 +13394,7 @@ function saveLoggedTrip(){
   saveAll();
   closeTopModal();
   showToast(finalMiles.toFixed(1)+' mi logged · '+fmt(finalMiles*IRS())+' deduction','🚗');
+  if(mapApp&&to)openTripInMaps(mapApp,from,to);
   renderDash();
   if(document.getElementById('mil-table'))renderAllMileage();
   if(document.getElementById('cd-mile-list')&&currentClientId)renderCDMileage();
@@ -13140,10 +13706,25 @@ function renderJobsPage(){
     } else if(st.stage==='signed'){
       primaryBtn='<button onclick="schedFromBid('+b.id+')" style="padding:5px 14px;border-radius:20px;border:none;background:var(--blue);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Schedule →</button>';
     }
+    // Clock in/out button for active/scheduled jobs with a next job
+    let clockBtn='';
+    if(nextJobId&&!nextJob.completion_date&&(st.stage==='active'||st.stage==='scheduled')){
+      const isClockedHere=_activeTimer&&_activeTimer.jobId===nextJobId;
+      if(isClockedHere){
+        const _el=Math.floor((Date.now()-_activeTimer.startTime)/1000);
+        const _h=Math.floor(_el/3600),_m=Math.floor((_el%3600)/60),_s=_el%60;
+        const _ts=(_h?_h+'h ':'')+_m+':'+((_s<10?'0':'')+_s);
+        const _scopeLbl=_activeTimer.scopeLabel?_activeTimer.scopeLabel+' ':'';
+        clockBtn='<button onclick="clockOut();event.stopPropagation()" style="padding:5px 12px;border-radius:20px;border:1px solid #E97B00;background:#FFF3E0;color:#E97B00;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">⏹ '+_scopeLbl+_ts+'</button>';
+      }else{
+        clockBtn='<button onclick="openClockInSheet('+nextJobId+');event.stopPropagation()" style="padding:5px 12px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">▶ Clock in</button>';
+      }
+    }
     // Right side: amount + balance state
     const amtColor=balance>0.01?'#A32D2D':paid>0?'var(--green-mid)':'var(--text)';
     const amtSub=balance>0.01?'<div style="font-size:10px;font-weight:700;color:#A32D2D;margin-top:1px">'+fmt(balance)+' due</div>':
                  paid>0?'<div style="font-size:10px;font-weight:600;color:var(--green-mid);margin-top:1px">Paid ✓</div>':'';
+    const btnRow=(primaryBtn||clockBtn)?'<div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap" onclick="event.stopPropagation()">'+(primaryBtn||'')+(clockBtn||'')+'</div>':'';
     return '<div onclick="openJobSheet('+c.id+')" style="display:flex;align-items:stretch;border-bottom:1px solid var(--border);cursor:pointer;min-height:60px">'+
       '<div style="width:4px;background:'+typeColor+';border-radius:3px 0 0 3px;flex-shrink:0"></div>'+
       '<div style="flex:1;min-width:0;padding:11px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px">'+
@@ -13152,7 +13733,7 @@ function renderJobsPage(){
           '<div style="font-size:11px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+
             escHtml(propAddr)+(nextStart?' · '+nextStart:'')+
           '</div>'+
-          (primaryBtn?'<div style="margin-top:7px" onclick="event.stopPropagation()">'+primaryBtn+'</div>':'')+
+          btnRow+
         '</div>'+
         '<div style="text-align:right;flex-shrink:0;padding-left:4px">'+
           '<div style="font-size:14px;font-weight:800;color:'+amtColor+'">'+fmt(b.amount)+'</div>'+
@@ -14444,7 +15025,7 @@ async function sendGenericProposal(){
     proposalHtml,clientAddr:v('gei-addr'),
     amount:total,deposit:Math.round(total*0.25*100)/100,
     createdAt:new Date().toISOString(),status:'pending',
-    notifyEmail:_supaUser.email,
+    notifyEmail:_supaUser.email,businessPhone:S.bphone||'',
     stripeConnectEnabled:!!(_stripeConnectStatus?.charges_enabled),
     trade_type:trade,
   };
@@ -14475,6 +15056,7 @@ function renderSettingsTrades(){
   const allTrades=Object.keys(TRADE_META);
   const available=allTrades.filter(t=>!lines.includes(t));
   el.innerHTML=
+    (isLifetimeAccount()?'<div style="display:inline-flex;align-items:center;gap:6px;background:#D1FAE5;border:1px solid var(--green-mid);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700;color:var(--green-mid);margin-bottom:12px">⭐ Lifetime access — no subscription ever</div><br>':'')+
     '<div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5">Your active trade lines. Each gets its own estimate form and pipeline view.</div>'+
     '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">'+
     lines.map(t=>{
@@ -15573,6 +16155,7 @@ async function supaSaveToCloud(){
       liens:JSON.stringify(liens),
       settings:JSON.stringify(S),
       receipt_images:JSON.stringify(receiptImages),
+      time_entries:JSON.stringify(timeEntries.slice(-500)),
       updated_at:new Date().toISOString()
     };
     const{error}=await _supa.from('zj_data').upsert(payload,{onConflict:'user_id'});
@@ -15584,43 +16167,51 @@ async function supaSaveToCloud(){
 async function checkNewSignatures(){
   if(!_supa||!_supaUser)return;
   try{
-    // Query all non-closed bids — catches signatures even when signingToken wasn't saved locally
-    const pendingBids=bids.filter(b=>b.status==='Pending');
-    if(!pendingBids.length)return;
-    const bidIds=pendingBids.map(b=>String(b.id));
+    // Use localStorage as the seen-list — no DB column dependency
+    const seenCache=new Set(JSON.parse(localStorage.getItem('zp3_seen_sigs')||'[]'));
     const{data,error}=await _supa.from('signed_proposals')
       .select('bid_id,client_name,payment_method,payment_status,signed_at,client_signed_name')
       .eq('contractor_user_id',_supaUser.id)
-      .in('bid_id',bidIds);
+      .order('signed_at',{ascending:false})
+      .limit(100);
     if(error)throw error;
     if(data&&data.length){
-      let changed=false;
-      const alerts=[];
-      data.forEach(s=>{
-        const bid=bids.find(b=>String(b.id)===String(s.bid_id));
-        if(bid&&bid.status!=='Closed Won'){
-          bid.status='Closed Won';
-          bid.draft=false;
+      let changed=false;const alerts=[];const newSeen=[];
+      for(const s of data){
+        const key=String(s.bid_id);
+        if(seenCache.has(key))continue; // already handled, skip forever
+        const bid=bids.find(b=>String(b.id)===key);
+        if(!bid){newSeen.push(key);continue;} // deleted/orphaned — mark seen, no popup
+        if(bid.status!=='Closed Won'){
+          bid.status='Closed Won';bid.draft=false;
           bid.signedAt=s.signed_at;
           bid.signedName=s.client_signed_name||s.client_name;
           bid.paymentMethod=s.payment_method;
           changed=true;
           alerts.push({name:s.client_name||'Client',bidId:bid.id,clientId:bid.client_id,isPaid:s.payment_status==='paid'});
         }
-      });
+        newSeen.push(key);
+      }
+      if(newSeen.length){
+        newSeen.forEach(id=>seenCache.add(id));
+        localStorage.setItem('zp3_seen_sigs',JSON.stringify([...seenCache].slice(-500)));
+      }
       if(changed){
         saveAll();
+        [...new Set(alerts.map(a=>a.clientId))].forEach(cid=>_refreshClientHub(cid));
         const existing=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
         localStorage.setItem('zp3_schedule_alerts',JSON.stringify([...existing,...alerts]));
         renderDash();
-        // Guard: don't fire a second popup if one is already showing
         if(!window._showingScheduleAlert)setTimeout(showScheduleAlerts,400);
       }
     }
   }catch(e){console.warn('checkNewSignatures:',e);}
 }
 function showScheduleAlerts(){
-  const alerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
+  let alerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
+  // Discard any alerts whose bid no longer exists locally — they can't be scheduled
+  alerts=alerts.filter(a=>bids.find(b=>String(b.id)===String(a.bidId)));
+  localStorage.setItem('zp3_schedule_alerts',JSON.stringify(alerts));
   if(!alerts.length){window._showingScheduleAlert=false;return;}
   window._showingScheduleAlert=true;
   const a=alerts[0];
@@ -15636,15 +16227,23 @@ function showScheduleAlerts(){
 
   const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_sched-alert-overlay';
   const box=document.createElement('div');box.className='zmodal';
+  const _alertBid=bids.find(b=>String(b.id)===String(a.bidId));
+  const _depositAlready=_alertBid?getBidPaid(_alertBid.id)>0:false;
+  const _stripeReady=_stripeConnectStatus?.charges_enabled;
+  const _depositAmt=_alertBid?Math.round((_alertBid.amount||0)*0.25*100)/100:0;
   box.innerHTML=
     '<div style="text-align:center;font-size:32px;margin-bottom:6px">'+(a.isPaid?'💰':'🎉')+'</div>'+
     '<div style="font-size:18px;font-weight:800;text-align:center;margin-bottom:4px">New signature!'+moreNote+'</div>'+
     '<div style="font-size:14px;color:var(--text3);text-align:center;margin-bottom:20px">'+
       escHtml(a.name)+' signed their painting proposal'+payLine+'.'+
     '</div>'+
-    '<button id="_sched-alert-yes" style="width:100%;padding:16px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:16px">'+
+    '<button id="_sched-alert-yes" style="width:100%;padding:16px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:'+((!_depositAlready&&_stripeReady&&_depositAmt>0)?'8px':'16px')+'">'+
       'Schedule now →'+
     '</button>'+
+    ((!_depositAlready&&_stripeReady&&_depositAmt>0)?
+      '<button id="_sched-alert-deposit" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:#635BFF;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:16px">'+
+        '💳 Collect '+fmt(_depositAmt)+' deposit now'+
+      '</button>':'')+
     '<div style="text-align:center">'+
       '<button id="_sched-alert-later" style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit;padding:4px 8px;text-decoration:underline;text-underline-offset:2px">'+
         'Later'+(remaining.length?' · '+remaining.length+' more':'')+
@@ -15657,11 +16256,18 @@ function showScheduleAlerts(){
     window._showingScheduleAlert=false;
     showScheduleSuggestion(a.clientId,a.bidId,a.name);
   });
+  document.getElementById('_sched-alert-deposit')?.addEventListener('click',()=>{
+    ov.remove();
+    window._showingScheduleAlert=false;
+    if(a.bidId)openPayPanel(a.bidId,'deposit');
+  });
   document.getElementById('_sched-alert-later').addEventListener('click',()=>{
     ov.remove();
     const q=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
-    const hasMore=q.length>0; // check BEFORE pushing — prevents infinite loop
-    if(window._currentScheduleAlert)q.push(window._currentScheduleAlert);
+    const hasMore=q.length>0;
+    // Only re-queue if bid still exists — orphaned alerts die here
+    const bidStillExists=window._currentScheduleAlert&&bids.find(b=>String(b.id)===String(window._currentScheduleAlert.bidId));
+    if(bidStillExists)q.push(window._currentScheduleAlert);
     window._currentScheduleAlert=null;
     localStorage.setItem('zp3_schedule_alerts',JSON.stringify(q));
     window._showingScheduleAlert=false;
@@ -15764,28 +16370,35 @@ function cancelProposalLink(bidId){
 }
 function editSentBid(bidId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
+  // Void the old proposal in storage so the old link stops working
+  if(b.signingKey&&_supa){
+    _supa.storage.from('proposals').download(b.signingKey).then(({data})=>{
+      if(!data)return;
+      data.text().then(txt=>{
+        try{const p=JSON.parse(txt);_supa.storage.from('proposals').upload(b.signingKey,JSON.stringify({...p,status:'voided'}),{contentType:'application/json',upsert:true});}catch(e){}
+      });
+    });
+  }
   delete b.signingToken;delete b.signingKey;b.draft=true;
-  saveAll();openEditBid(bidId,1);
+  saveAll();openEditBid(bidId,b.lastStep||1);
 }
 function resendProposalLink(bidId){
   const b=bids.find(x=>x.id===bidId);
-  if(!b||!b.signingToken)return;
+  if(!b)return;
   const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
-  const url=baseUrl+'sign.html?t='+b.signingToken+'&u='+(_supaUser?.id||'')+'&b='+bidId;
-  const bar=document.getElementById('proposal-link-bar');
-  if(bar){
-    bar.dataset.signingUrl=url;
-    bar.dataset.cname=b.client_name||b.name||'Client';
-    bar.dataset.bname=S.bname||'TradeDesk';
-    const c=getClientById(b.client_id);
-    bar.dataset.cphone=(c?.phone||'').replace(/\D/g,'');
-    bar.dataset.cemail=c?.email||'';
+  const c=getClientById(b.client_id);
+  const hubUrl=c?.clientToken?baseUrl+'client.html?t='+c.clientToken+'&u='+(_supaUser?.id||'')+'&c='+c.id:null;
+  if(hubUrl&&c?.phone){
+    const firstName=(c.name||b.client_name||'there').split(' ')[0];
+    const biz=S.bname||'your contractor';
+    const msg='Hi '+firstName+', '+biz+' sent you a proposal to review and sign. Open your project hub here: '+hubUrl;
+    window.location.href='sms:'+c.phone.replace(/\D/g,'')+'?body='+encodeURIComponent(msg);
+  } else if(hubUrl){
+    navigator.clipboard.writeText(hubUrl).then(()=>showToast('Hub link copied','📋')).catch(()=>{});
+  } else if(b.signingToken){
+    const sigUrl=baseUrl+'sign.html?t='+b.signingToken+'&u='+(_supaUser?.id||'')+'&b='+bidId;
+    navigator.clipboard.writeText(sigUrl).then(()=>showToast('Proposal link copied','🔗')).catch(()=>{});
   }
-  const input=document.getElementById('proposal-link-input');
-  if(input)input.value=url;
-  // Open share options — navigate to estimate step 5 if possible, else copy + toast
-  navigator.clipboard.writeText(url).then(()=>showToast('Link copied — send it to '+( b.client_name||'client'),'📋')).catch(()=>{});
-  showToast('Proposal link copied for '+(b.client_name||'client'),'🔗');
 }
 async function supaLoadFromCloud(){
   if(!_supa||!_supaUser)return;
@@ -15815,6 +16428,7 @@ async function supaLoadFromCloud(){
     expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
     mileage=parse(data.mileage,mileage);
     liens=parse(data.liens,liens);
+    timeEntries=parse(data.time_entries,timeEntries);
     if(data.settings){const ss=parse(data.settings,null);if(ss){S={...S,...ss};applySettings();
       // Restore owner name to this device's localStorage so nav shows correctly
       if(ss.ownerName&&_supaUser?.id){localStorage.setItem('zp3_uname_'+_supaUser.id,ss.ownerName);if(_user)_user.name=ss.ownerName;}
@@ -15832,6 +16446,8 @@ async function supaLoadFromCloud(){
     // Check for new signatures then schedule alerts — sequential to avoid race
     setTimeout(async()=>{ await checkNewSignatures(); if(!window._showingScheduleAlert) showScheduleAlerts(); },2000);
     setInterval(()=>checkNewSignatures(),30000);
+    // Pre-load Stripe connect status so sendPaymentLink works without visiting Settings first
+    setTimeout(()=>_fetchStripeConnectStatus(),3000);
     // Realtime subscription — fires immediately on new INSERT to signed_proposals
     if(_supa&&_supaUser){
       try{
