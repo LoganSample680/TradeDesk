@@ -6636,7 +6636,7 @@ function deleteBid(bidId){
     payments=payments.filter(p=>p.bid_id!==bidId);
     liens=liens.filter(l=>l.bid_id!==bidId);
     clearEstFullDraft();saveAll();renderClientDetail();
-    if(_cid)_uploadClientHub(_cid).catch(()=>{});
+    if(_cid)_uploadClientHub(_cid).catch(e=>console.error('[hub upload]',e));
   },{title:'Delete bid',yes:'Delete permanently',danger:true});
 }
 function saveLien(){
@@ -16390,7 +16390,7 @@ function discardInProgressBid(bidId){
   const _cid=_db?.client_id;
   const idx=bids.findIndex(b=>b.id===bidId);
   if(idx>-1){bids.splice(idx,1);clearEstFullDraft();saveAll();renderDash();
-    if(_cid)_uploadClientHub(_cid).catch(()=>{});}
+    if(_cid)_uploadClientHub(_cid).catch(e=>console.error('[hub upload]',e));}
 }
 function cancelProposalLink(bidId){
   zConfirm('Cancel this proposal link? The client\'s link will stop working.',()=>{
