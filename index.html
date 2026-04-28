@@ -10039,13 +10039,15 @@ async function sendProposalLink(){
     const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
     const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     const shortUrl=await shortenUrl(signingUrl);
-    // Set proposalKey on bid now so hub snapshot includes it
+    // Set proposalKey on bid and _pendingSignToken BEFORE hub upload so snapshot includes signHubUrl
     const _bidForHub=bids.find(b=>b.id===bidId);
     if(_bidForHub)_bidForHub.signingKey=proposalKey;
+    _pendingSignToken={bidId,token,proposalKey};
     // Upload hub and use hub URL as the share link if client has a token
     let shareUrl=shortUrl;
-    if(estLinkedClientId){
-      try{const _hu=await _uploadClientHub(estLinkedClientId);if(_hu)shareUrl=_hu;}catch(e){console.warn('Hub upload failed, falling back to direct link');}
+    const _hubClientId=estLinkedClientId||bids.find(b=>b.id===bidId)?.client_id;
+    if(_hubClientId){
+      try{const _hu=await _uploadClientHub(_hubClientId);if(_hu)shareUrl=_hu;}catch(e){console.warn('Hub upload failed, falling back to direct link');}
     }
     const bar=document.getElementById('proposal-link-bar');
     const input=document.getElementById('proposal-link-input');
@@ -10070,9 +10072,7 @@ async function sendProposalLink(){
     }
     if(shorturlEl)shorturlEl.textContent=shareUrl.replace(/^https?:\/\//,'');
     const anchorEl=document.getElementById('proposal-link-anchor');if(anchorEl)anchorEl.href=shareUrl;
-    // Store token in memory only — bid is NOT marked as sent yet.
-    // It moves to "Sent proposals" only when the user actually taps SMS or Email.
-    _pendingSignToken={bidId,token,proposalKey};
+    // (_pendingSignToken was set before hub upload above — bid goes to "Sent" only when SMS/email is tapped)
     // Save followup date update (don't touch signingToken yet)
     const bid=bids.find(b=>b.id===bidId);
     if(bid&&!bid.followup)bid.followup=addDays(todayKey(),7);
