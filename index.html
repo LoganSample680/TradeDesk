@@ -10421,13 +10421,13 @@ function buildProposal(){
       :'';
     const _roomCustPaint=roomCosts[room]&&(roomScopeMap[room]?._customerPaint===true);
     const custPaintBadge=_roomCustPaint?'<span style="display:inline-block;font-size:10px;background:#FEF3C7;color:#856404;border:1px solid #D97706;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700;vertical-align:middle">Client supplies paint</span>':'';
-    const descContent='<div style="font-size:14px;font-weight:800;color:#1a365d;line-height:1.2;margin-bottom:2px">'+room+custPaintBadge+'</div>'+
+    const descContent='<div style="font-size:13px;font-weight:800;color:#1a365d;line-height:1.2;margin-bottom:3px">'+room+custPaintBadge+'</div>'+
       paintSpecHtml+
       scopeHtml;
     const rowBg=roomIdx%2===0?'#ffffff':'#f8fafc';
     return `<tr style="border-bottom:1px solid #e2e8f0;background:${rowBg}">
-      <td style="padding:10px 12px;line-height:1.5;color:#2d3748;font-size:12px">${descContent}</td>
-      <td style="padding:10px 4px 10px 4px;text-align:right;font-weight:700;vertical-align:top;color:#1a365d;white-space:nowrap">${fmt(r.total)}</td>
+      <td style="padding:11px 18px 11px 14px;line-height:1.5;color:#2d3748;font-size:12px;border-left:3px solid #2a4a7f">${descContent}</td>
+      <td style="padding:11px 18px 11px 4px;text-align:right;font-weight:700;vertical-align:top;color:#1a365d;white-space:nowrap">${fmt(r.total)}</td>
     </tr>`;
   }).join('');
 
@@ -10436,48 +10436,52 @@ function buildProposal(){
   <div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start">
     ${_proposalBizHeader(bname,bphone,blic)}
     <div style="text-align:right">
-      <div style="font-size:16px;font-weight:800">Paint Proposal</div>
-      <div style="font-size:11px;margin-top:4px;opacity:.85"># ${estNum}</div>
-      <div style="font-size:11px;opacity:.85">DATE: ${ds}</div>
+      <div style="display:inline-block;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);border-radius:20px;padding:3px 13px;font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;margin-bottom:10px">Paint Proposal</div>
+      <div style="font-size:11px;opacity:.75;margin-bottom:2px"># ${estNum}</div>
+      <div style="font-size:11px;opacity:.75">DATE: ${ds}</div>
     </div>
   </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--border)">
-    <div style="padding:12px 16px;border-right:1px solid var(--border)">
-      <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:4px">Customer</div>
-      <div style="font-size:14px;font-weight:700">${cname}</div>
-      ${caddr?`<div style="font-size:11px;color:var(--text2);margin-top:2px">ADDRESS</div><div style="font-size:12px">${caddr}</div>`:''}
-      ${cphone?`<div style="font-size:11px;color:var(--text2);margin-top:4px">PHONE</div><div style="font-size:12px">${cphone}</div>`:''}
+  <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0">
+    <div style="padding:14px 18px;border-right:1px solid #e2e8f0">
+      <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div>
+      <div style="font-size:14px;font-weight:700;color:#1a365d">${cname}</div>
+      ${caddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${caddr}</div>`:''}
+      ${cphone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${cphone}</div>`:''}
     </div>
-    <div style="padding:12px 16px">
-      <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:4px">Project</div>
-      <div style="font-size:12px">${cprop||'House'}</div>
-      <div style="font-size:11px;color:var(--text3);margin-top:4px">Est. duration: ${estDays} day${estDays!==1?'s':''}</div>
-      ${allowWeekend?'<div style="font-size:11px;color:var(--text3);margin-top:2px">⚬ Weekends available</div>':''}
-      <div style="font-size:11px;color:var(--text3);margin-top:4px">Valid until: ${expD}</div>
+    <div style="padding:14px 18px">
+      <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div>
+      <div style="font-size:13px;font-weight:600;color:#1a365d">${cprop||'House'}</div>
+      <div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${estDays} day${estDays!==1?'s':''}</div>
+      ${allowWeekend?'<div style="font-size:11px;color:#718096;margin-top:3px">⚬ Weekends available</div>':''}
+      <div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${expD}</div>
     </div>
   </div>
   <table style="width:100%;border-collapse:collapse;font-size:12px">
     <thead>
-      <tr style="background:var(--bg2);border-bottom:2px solid var(--border)">
-        <th style="padding:8px 16px;text-align:left;font-weight:800;text-transform:uppercase;color:var(--text3);font-size:10px">DESCRIPTION</th>
-        <th style="padding:8px 8px 8px 4px;text-align:right;font-weight:800;text-transform:uppercase;color:var(--text3);width:80px;font-size:10px;white-space:nowrap">AMOUNT</th>
+      <tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0">
+        <th style="padding:9px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th>
+        <th style="padding:9px 18px 9px 4px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;width:90px;font-size:9px;letter-spacing:.08em;white-space:nowrap">Amount</th>
       </tr>
     </thead>
     <tbody>
       ${roomRows}
-      <tr style="border-bottom:1px solid var(--border)">
-        <td style="padding:10px 16px;font-size:12px;color:#1a1a1a">
+      <tr style="border-bottom:1px solid #e2e8f0;background:#fafbfc">
+        <td style="padding:11px 18px;font-size:12px;color:#2d3748">
           <strong>${anyRoomCustomerPaint?'Paint, Primer &amp; Materials (partial)':(customerPaint?'Prep &amp; Application Supplies':'Paint, Primer &amp; Materials')}</strong><br>
-          <span style="font-size:11px;color:#666">${anyRoomCustomerPaint?'Includes all paint, primer, and supplies for contractor-painted rooms. For rooms where client supplies paint: all prep supplies and application labor included. No warranty on finish quality for client-supplied paint.':customerPaint?'All prep supplies, tape, plastic sheeting, rollers, brushes, and drop cloths included. Paint to be supplied by client prior to start date. No warranty on finish quality.':'Includes paint, primer, tape, plastic sheeting, rollers, brushes, drop cloths and all supplies needed to complete the job.'}</span>
+          <span style="font-size:11px;color:#718096">${anyRoomCustomerPaint?'Includes all paint, primer, and supplies for contractor-painted rooms. For rooms where client supplies paint: all prep supplies and application labor included. No warranty on finish quality for client-supplied paint.':customerPaint?'All prep supplies, tape, plastic sheeting, rollers, brushes, and drop cloths included. Paint to be supplied by client prior to start date. No warranty on finish quality.':'Includes paint, primer, tape, plastic sheeting, rollers, brushes, drop cloths and all supplies needed to complete the job.'}</span>
         </td>
-        <td style="padding:10px 8px 10px 4px;text-align:right;font-weight:700;vertical-align:top;white-space:nowrap">${fmt(scaledMatLine)}</td>
+        <td style="padding:11px 18px 11px 4px;text-align:right;font-weight:700;vertical-align:top;white-space:nowrap;color:#2d3748">${fmt(scaledMatLine)}</td>
       </tr>
-      ${adj?`<tr style="border-bottom:1px solid var(--border)"><td style="padding:8px 16px;color:var(--text2)">${adjReason||'Price adjustment'}</td><td style="padding:8px 16px;text-align:right">${adj>0?'+':''}${fmt(adj)}</td></tr>`:''}
+      ${adj?`<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 18px;color:#718096;font-style:italic">${adjReason||'Price adjustment'}</td><td style="padding:9px 18px;text-align:right;color:#718096">${adj>0?'+':''}${fmt(adj)}</td></tr>`:''}
     </tbody>
     <tfoot>
-      <tr style="background:var(--blue);color:#fff;border-top:2px solid var(--border)">
-        <td style="padding:12px 16px;text-align:left;font-weight:800;font-size:15px">TOTAL</td>
-        <td style="padding:12px 16px;text-align:right;font-weight:800;font-size:15px">${fmt(proposalTotal)}</td>
+      <tr style="background:#1a365d;color:#fff">
+        <td style="padding:13px 18px;text-align:left;font-weight:800;font-size:15px;letter-spacing:.02em">TOTAL</td>
+        <td style="padding:13px 18px;text-align:right;font-weight:800;font-size:15px">${fmt(proposalTotal)}</td>
+      </tr>
+      <tr style="background:#2a4a7f;color:rgba(255,255,255,.88)">
+        <td style="padding:7px 18px;font-size:11px;font-weight:600">25% Deposit Due Before Work Begins</td>
+        <td style="padding:7px 18px;text-align:right;font-size:12px;font-weight:700">${fmt(Math.round(proposalTotal*0.25*100)/100)}</td>
       </tr>
     </tfoot>
   </table>
@@ -10485,27 +10489,27 @@ function buildProposal(){
     <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#92400E;margin-bottom:4px">⚠ Weather Notice — Exterior Work</div>
     <div style="font-size:11px;color:#92400E;line-height:1.7">Exterior painting is weather-dependent. Start dates and completion timelines may shift based on temperature, rain, or high winds. Paint will not be applied to wet or damp surfaces. If surfaces were pressure washed, a minimum 48-hour dry time is required before painting begins. ${getBusinessName()} will communicate any weather-related delays promptly and reschedule at the earliest suitable date at no additional charge.</div>
   </div>`:''}
-  <div style="padding:20px 24px;display:grid;grid-template-columns:1fr 1fr;gap:20px;border-top:3px solid #1a365d;background:#f8fafc">
+  <div style="padding:20px 24px;display:grid;grid-template-columns:1fr 1fr;gap:24px;border-top:3px solid #1a365d;background:#f8fafc">
     <div>
-      <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1a365d;margin-bottom:10px">Payment Terms</div>
-      <div style="font-size:11.5px;color:#2d3748;line-height:2.1">
+      <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Payment Terms</div>
+      <div style="font-size:11.5px;color:#2d3748;line-height:2">
         <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">1.</span><span><strong>Deposit:</strong> 25% due before work begins.</span></div>
         <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">2.</span><span><strong>Balance:</strong> Remainder due upon completion.</span></div>
         <div style="display:flex;align-items:baseline;gap:8px"><span style="color:#1a365d;font-weight:700;min-width:16px">3.</span><span><strong>Warranty:</strong> All workmanship warranted for 1 year.</span></div>
       </div>
-      <div style="margin-top:10px;font-size:10px;color:#718096;line-height:1.5">Full terms &amp; conditions — including cancellation, lien rights, and liability — are on the signing page.</div>
+      <div style="margin-top:10px;font-size:10px;color:#94a3b8;line-height:1.5">Full terms &amp; conditions — including cancellation, lien rights, and liability — are on the signing page.</div>
     </div>
     <div>
-      <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1a365d;margin-bottom:10px">Authorized by Contractor</div>
-      <div style="border:1.5px solid #cbd5e0;border-radius:6px;background:#fff;padding:10px 14px;min-height:48px;display:flex;align-items:flex-end">
-        <div style="width:100%;border-top:1px solid #cbd5e0;padding-top:6px">
-          <div style="display:flex;justify-content:space-between;font-size:10px;color:#718096;padding:0 2px">
-            <div>${bname}</div><div>${ds}</div>
+      <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Authorized by Contractor</div>
+      <div style="border:1.5px solid #cbd5e0;border-radius:8px;background:#fff;padding:12px 14px;min-height:56px;display:flex;flex-direction:column;justify-content:flex-end">
+        <div style="width:100%;border-top:1px solid #cbd5e0;padding-top:8px">
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:#718096">
+            <div style="font-weight:600">${bname}</div><div>${ds}</div>
           </div>
         </div>
       </div>
       <canvas id="proposal-notes-canvas" style="display:none"></canvas>
-      <div style="margin-top:10px;font-size:10px;color:#718096;font-style:italic;line-height:1.5">Client's electronic signature on the signing page constitutes full acceptance of this proposal and is binding under Kansas UETA (K.S.A. 16-1601 et seq.).</div>
+      <div style="margin-top:8px;font-size:10px;color:#94a3b8;font-style:italic;line-height:1.5">Client's electronic signature on the signing page constitutes full acceptance of this proposal and is binding under Kansas UETA (K.S.A. 16-1601 et seq.).</div>
     </div>
   </div>
   ${_portfolioOn?`<div style="margin:0 0 0;border-top:3px solid #16a34a;background:#f0fdf4;padding:18px 24px">
