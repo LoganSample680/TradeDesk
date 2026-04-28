@@ -339,8 +339,8 @@ async function init(){
       document.querySelector('#pg-err p').textContent='Your contractor has updated this proposal. Please request the new link to review and sign.';
       show('pg-err');return;
     }
-    // Hide card and ACH options if contractor hasn't connected Stripe
-    if(!_prop.stripeConnectEnabled){
+    // Hide card and ACH only when Stripe is explicitly disabled (=== false); undefined/missing = show options
+    if(_prop.stripeConnectEnabled===false){
       const optCard=document.getElementById('opt-card');
       const optAch=document.getElementById('opt-ach');
       if(optCard)optCard.style.display='none';
@@ -467,15 +467,17 @@ function selPay(opt){
 }
 
 async function payCard(){
-  if(!_prop.stripeConnectEnabled){selPay('cash');return;}
+  if(_prop.stripeConnectEnabled===false){selPay('cash');return;}
   const btn=document.getElementById('card-btn');
   btn.disabled=true;btn.textContent='Connecting to Stripe...';
   try{
     const _payAmt=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round(_prop.deposit*100);
+    const _p2=new URLSearchParams(location.search);let _propKey=_p2.get('key');
+    if(!_propKey){const t=_p2.get('t'),u=_p2.get('u'),b=_p2.get('b');if(t&&u&&b)_propKey=`proposals/${u}/${b}_${t}.json`;}
     const{data,error}=await _supa.functions.invoke('create-checkout',{
       body:{
         amount:_payAmt,currency:'usd',
-        proposalKey:new URLSearchParams(location.search).get('key'),
+        proposalKey:_propKey,
         clientName:_prop.clientName,businessName:_prop.businessName,
         bidId:String(_prop.id),contractorUserId:_prop.contractorUserId,
         notifyEmail:_prop.notifyEmail,signatureDataUrl:_sigData,
@@ -494,16 +496,18 @@ async function payCard(){
 }
 
 async function payACH(){
-  if(!_prop.stripeConnectEnabled){selPay('cash');return;}
+  if(_prop.stripeConnectEnabled===false){selPay('cash');return;}
   const btn=document.getElementById('ach-btn');
   btn.disabled=true;btn.textContent='Connecting...';
   try{
     const _payAmtAch=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round(_prop.deposit*100);
+    const _p3=new URLSearchParams(location.search);let _propKeyAch=_p3.get('key');
+    if(!_propKeyAch){const t=_p3.get('t'),u=_p3.get('u'),b=_p3.get('b');if(t&&u&&b)_propKeyAch=`proposals/${u}/${b}_${t}.json`;}
     const{data,error}=await _supa.functions.invoke('create-checkout',{
       body:{
         amount:_payAmtAch,currency:'usd',
         paymentMethod:'us_bank_account',
-        proposalKey:new URLSearchParams(location.search).get('key'),
+        proposalKey:_propKeyAch,
         clientName:_prop.clientName,businessName:_prop.businessName,
         bidId:String(_prop.id),contractorUserId:_prop.contractorUserId,
         notifyEmail:_prop.notifyEmail,signatureDataUrl:_sigData,

@@ -6631,10 +6631,12 @@ function openEditBid(bidId,startStep){
 function deleteBid(bidId){
   const b=bids.find(x=>x.id===bidId);
   zConfirm('Delete this bid'+(b?' ('+fmt(b.amount)+')':'')+' permanently? Payment records and any lien will also be removed.',()=>{
+    const _cid=b?.client_id;
     bids=bids.filter(x=>x.id!==bidId);
     payments=payments.filter(p=>p.bid_id!==bidId);
     liens=liens.filter(l=>l.bid_id!==bidId);
     clearEstFullDraft();saveAll();renderClientDetail();
+    if(_cid)_uploadClientHub(_cid).catch(()=>{});
   },{title:'Delete bid',yes:'Delete permanently',danger:true});
 }
 function saveLien(){
@@ -15032,6 +15034,7 @@ async function sendGenericProposal(){
   saveGenericEstimate(false);
   // Build minimal proposal for sign.html
   if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.');return;}
+  if(_stripeConnectStatus===null)await _fetchStripeConnectStatus();
   const v=id=>document.getElementById(id)?.value||'';
   const{total}=calcGeiTotal();
   const trade=_geiTrade||getActiveTrade();
@@ -16383,8 +16386,11 @@ function quickScheduleJob(bidId,startKey,clientId){
 }
 function discardInProgressBid(bidId){
   if(!confirm('Discard this estimate?'))return;
+  const _db=bids.find(b=>b.id===bidId);
+  const _cid=_db?.client_id;
   const idx=bids.findIndex(b=>b.id===bidId);
-  if(idx>-1){bids.splice(idx,1);clearEstFullDraft();saveAll();renderDash();}
+  if(idx>-1){bids.splice(idx,1);clearEstFullDraft();saveAll();renderDash();
+    if(_cid)_uploadClientHub(_cid).catch(()=>{});}
 }
 function cancelProposalLink(bidId){
   zConfirm('Cancel this proposal link? The client\'s link will stop working.',()=>{
