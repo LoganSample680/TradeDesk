@@ -2593,6 +2593,8 @@ function saveSettings(){
   setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||''};
   applySettings();saveAll();
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
+  // Propagate branding/settings to all live client hubs in the background
+  if(supaEnabled()&&_supaUser)clients.filter(c=>c.clientToken).forEach(c=>{_uploadClientHub(c.id).catch(()=>{});});
 }
 function _renderLogoPreview(){
   const el=document.getElementById('set-logo-preview');if(!el)return;
@@ -4377,8 +4379,10 @@ function pipelineResendSms(bidId){
   const b=bids.find(x=>x.id===bidId);
   if(!b||!b.signingToken)return;
   const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
-  const url=baseUrl+'sign.html?t='+b.signingToken+'&u='+(window._supaUser?.id||'')+'&b='+bidId;
+  const signUrl=baseUrl+'sign.html?t='+b.signingToken+'&u='+(window._supaUser?.id||'')+'&b='+bidId;
   const c=getClientById(b.client_id);
+  const hubUrl=c?.clientToken?baseUrl+'client.html?t='+c.clientToken+'&u='+(_supaUser?.id||'')+'&c='+c.id:null;
+  const url=hubUrl||signUrl;
   const firstName=(c?c.name:b.client_name||b.name||'Client').split(/[\s,&]+/)[0];
   const bname=S.bname||'TradeDesk';
   const phone=(c?.phone||b.phone||'').replace(/\D/g,'');
@@ -10033,6 +10037,14 @@ async function sendProposalLink(){
     const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
     const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     const shortUrl=await shortenUrl(signingUrl);
+    // Set proposalKey on bid now so hub snapshot includes it
+    const _bidForHub=bids.find(b=>b.id===bidId);
+    if(_bidForHub)_bidForHub.signingKey=proposalKey;
+    // Upload hub and use hub URL as the share link if client has a token
+    let shareUrl=shortUrl;
+    if(estLinkedClientId){
+      try{const _hu=await _uploadClientHub(estLinkedClientId);if(_hu)shareUrl=_hu;}catch(e){console.warn('Hub upload failed, falling back to direct link');}
+    }
     const bar=document.getElementById('proposal-link-bar');
     const input=document.getElementById('proposal-link-input');
     const labelEl=document.getElementById('proposal-link-label');
@@ -10040,22 +10052,22 @@ async function sendProposalLink(){
     const shorturlEl=document.getElementById('proposal-link-shorturl');
     if(bar){
       bar.style.display='block';
-      bar.dataset.signingUrl=shortUrl;
+      bar.dataset.signingUrl=shareUrl;
       bar.dataset.cname=cname;
       bar.dataset.bname=bname;
       const c=getClientById(estLinkedClientId);
       bar.dataset.cphone=(document.getElementById('e-cphone')?.value||c?.phone||'').replace(/\D/g,'');
       bar.dataset.cemail=c?.email||'';
     }
-    if(input)input.value=shortUrl;
+    if(input)input.value=shareUrl;
     if(labelEl)labelEl.textContent=cname+"'s Painting Proposal";
     if(sublabelEl){
       const _sb2=bids.find(b=>b.id===bidId);
       const rounded=_sb2?.amount||(()=>{const est=calcEst();const tot=Math.max(0,est.laborTotal+est.matTotal);return Math.round(tot/25)*25||tot;})();
       sublabelEl.textContent=bname+' · '+fmt(rounded)+' · '+dateStr;
     }
-    if(shorturlEl)shorturlEl.textContent=shortUrl.replace(/^https?:\/\//,'');
-    const anchorEl=document.getElementById('proposal-link-anchor');if(anchorEl)anchorEl.href=shortUrl;
+    if(shorturlEl)shorturlEl.textContent=shareUrl.replace(/^https?:\/\//,'');
+    const anchorEl=document.getElementById('proposal-link-anchor');if(anchorEl)anchorEl.href=shareUrl;
     // Store token in memory only — bid is NOT marked as sent yet.
     // It moves to "Sent proposals" only when the user actually taps SMS or Email.
     _pendingSignToken={bidId,token,proposalKey};
@@ -15038,10 +15050,14 @@ async function sendGenericProposal(){
   const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
   const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
   const shortUrl=await shortenUrl(signingUrl);
+  let shareUrl=shortUrl||signingUrl;
+  if(b?.client_id){
+    try{const _hu=await _uploadClientHub(b.client_id);if(_hu)shareUrl=_hu;}catch(e){}
+  }
   const bar=document.getElementById('proposal-link-bar');
   const input=document.getElementById('proposal-link-input');
   if(bar)bar.style.display='flex';
-  if(input)input.value=shortUrl||signingUrl;
+  if(input)input.value=shareUrl;
   showToast('Proposal link ready','🔗');
   goPg('pg-clients');
 }

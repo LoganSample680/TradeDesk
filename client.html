@@ -102,7 +102,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="nav-client" id="nav-client-info"></div>
     <div class="nav-item active" id="ni-home" onclick="switchView('home')"><span class="nav-icon">🏠</span>Home</div>
     <div class="nav-item" id="ni-proposals" onclick="switchView('proposals')"><span class="nav-icon">📋</span>Proposals</div>
-    <div class="nav-item" id="ni-invoices" onclick="switchView('invoices')"><span class="nav-icon">📄</span>Invoices</div>
     <div class="nav-item" id="ni-payments" onclick="switchView('payments')"><span class="nav-icon">💳</span>Payments</div>
     <div class="nav-item" id="ni-photos" onclick="switchView('photos')"><span class="nav-icon">📷</span>Photos</div>
     <div class="nav-footer" id="nav-footer">Powered by TradeDesk</div>
@@ -113,7 +112,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div id="pg-hub" style="display:none">
       <div id="view-home"></div>
       <div id="view-proposals" style="display:none"></div>
-      <div id="view-invoices" style="display:none"></div>
       <div id="view-payments" style="display:none"></div>
       <div id="view-photos" style="display:none"></div>
     </div>
@@ -122,7 +120,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <nav class="bottom-nav" id="bottom-nav">
   <button class="bn-item active" id="bni-home" onclick="switchView('home')"><span class="bn-icon">🏠</span>Home</button>
   <button class="bn-item" id="bni-proposals" onclick="switchView('proposals')"><span class="bn-icon">📋</span>Proposals</button>
-  <button class="bn-item" id="bni-invoices" onclick="switchView('invoices')"><span class="bn-icon">📄</span>Invoices</button>
+  <button class="bn-item" id="bni-payments" onclick="switchView('payments')"><span class="bn-icon">💳</span>Payments</button>
   <button class="bn-item" id="bni-photos" onclick="switchView('photos')"><span class="bn-icon">📷</span>Photos</button>
 </nav>
 <div id="inv-overlay">
@@ -192,9 +190,9 @@ function applyBranding(h){
   const nf=document.getElementById('nav-footer');
   if(nf&&h.bwebsite)nf.innerHTML='<a href="'+esc(h.bwebsite)+'" target="_blank" style="color:inherit;text-decoration:none">'+esc(h.bwebsite.replace(/^https?:\/\//,''))+'</a>';
 }
-function renderAll(){renderHome();renderProposals();renderInvoices();renderPayments();renderPhotos();}
-const _VIEWS=['home','proposals','invoices','payments','photos'];
-const _BN=['home','proposals','invoices','photos'];
+function renderAll(){renderHome();renderProposals();renderPayments();renderPhotos();}
+const _VIEWS=['home','proposals','payments','photos'];
+const _BN=['home','proposals','payments','photos'];
 function switchView(key){
   _activeView=key;
   _VIEWS.forEach(v=>{
@@ -256,23 +254,39 @@ function renderHome(){
 }
 function renderProposals(){
   if(!_hub)return;
-  const allBids=_hub.bids.slice().sort((a,b)=>(b.bid_date||'').localeCompare(a.bid_date||''));
+  const h=_hub;
+  const allBids=h.bids.slice().sort((a,b)=>(b.bid_date||'').localeCompare(a.bid_date||''));
   let html='<div class="view-title">Proposals</div>';
   if(!allBids.length){html+='<div class="empty">No proposals yet.</div>';document.getElementById('view-proposals').innerHTML=html;return;}
   allBids.forEach(b=>{
     const isPending=b.status==='Pending'&&b.signHubUrl,isWon=b.status==='Closed Won';
+    const bidPmts=h.payments.filter(p=>p.bid_id===b.id||(!p.bid_id&&h.bids.length===1));
+    const totalPaid=bidPmts.reduce((s,p)=>s+(p.amount||0),0);
+    const balance=Math.max(0,(b.amount||0)-totalPaid);
+    const isPaid=balance<0.01;
     let badge='';
-    if(b.status==='Pending')badge='<span class="badge badge-pending">Pending signature</span>';
+    if(isPending)badge='<span class="badge badge-pending">Pending signature</span>';
+    else if(isWon&&isPaid)badge='<span class="badge badge-won">Signed · Paid ✓</span>';
     else if(isWon)badge='<span class="badge badge-won">Signed ✓</span>';
     else badge='<span class="badge" style="background:var(--bg);color:var(--text3);border:1px solid var(--border)">'+(b.status||'Draft')+'</span>';
-    html+='<div class="bid-row"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">';
+    html+='<div class="bid-row">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">';
     html+='<div><div style="font-size:15px;font-weight:700">'+esc(b.type||'Proposal')+'</div><div style="font-size:12px;color:var(--text3);margin-top:2px">'+fmtDate(b.bid_date)+'</div></div>';
     html+='<div style="font-size:18px;font-weight:800;color:var(--accent);flex-shrink:0;margin-left:10px">'+fmt(b.amount)+'</div></div>';
-    html+='<div style="margin-bottom:10px">'+badge+'</div>';
-    if(isPending)html+='<a href="'+esc(b.signHubUrl)+'" class="btn btn-green" style="margin-top:4px">Review &amp; Sign →</a>';
+    html+='<div style="margin-bottom:12px">'+badge+'</div>';
+    if(isPending){
+      html+='<a href="'+esc(b.signHubUrl)+'" class="btn btn-green">Review &amp; Sign →</a>';
+    }
     if(isWon){
-      if(b.proposalKey)html+='<button onclick="openProposal('+b.id+')" class="btn btn-sec" style="margin-top:4px;margin-bottom:6px">📋 View Proposal</button>';
-      html+='<button onclick="openInvoice('+b.id+')" class="btn btn-sec" style="margin-top:'+(b.proposalKey?'0':'4px')+'">📄 View Invoice</button>';
+      // Invoice summary inline
+      html+='<div style="background:var(--bg);border-radius:var(--r);padding:12px;margin-bottom:12px">';
+      html+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span style="color:var(--text3)">Total</span><span style="font-weight:600">'+fmt(b.amount)+'</span></div>';
+      if(totalPaid>0)html+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span style="color:var(--green-mid)">Paid</span><span style="font-weight:600;color:var(--green-mid)">'+fmt(totalPaid)+'</span></div>';
+      html+='<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:6px 0;border-top:1px solid var(--border);margin-top:4px"><span style="color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">Balance due</span><span style="color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">'+fmt(balance)+'</span></div>';
+      html+='</div>';
+      if(!isPaid&&h.stripeEnabled)html+='<button id="pay-btn-'+b.id+'" onclick="payBalance('+b.id+')" class="btn" style="background:#635BFF;margin-bottom:8px">💳 Pay balance with card</button>';
+      if(b.proposalKey)html+='<button onclick="openProposal('+b.id+')" class="btn btn-sec" style="margin-bottom:6px">📋 View Signed Proposal</button>';
+      html+='<button onclick="openInvoice('+b.id+')" class="btn btn-sec">📄 Download Invoice</button>';
     }
     html+='</div>';
   });
