@@ -10412,15 +10412,13 @@ function buildProposal(){
         }).join('')+
         '</div>'
       :'';
-    // Scope of Work — cap at 3 items, show count if more
-    const _scopeShow=roomScopeItems.slice(0,3);
-    const _scopeExtra=roomScopeItems.length-3;
+    // Scope of Work — numbered list, all items
     const scopeHtml=roomScopeItems.length
-      ?'<div style="margin-top:5px;font-size:11px;color:#4a5568;line-height:1.5">'+
-        '<span style="font-weight:700;color:#718096;font-size:10px;text-transform:uppercase;letter-spacing:.4px">Includes: </span>'+
-        _scopeShow.map(sc=>sc.clientDesc).join(' &middot; ')+
-        (_scopeExtra>0?' <span style="color:#94a3b8;font-style:italic">+'+_scopeExtra+' more included</span>':'')+
-        '</div>'
+      ?'<div style="margin-top:7px">'+
+        '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:4px">Scope of Work</div>'+
+        '<ol style="margin:0;padding-left:18px;font-size:11px;color:#4a5568;line-height:1.7">'+
+        roomScopeItems.map(sc=>'<li>'+sc.clientDesc+'</li>').join('')+
+        '</ol></div>'
       :'';
     const _roomCustPaint=roomCosts[room]&&(roomScopeMap[room]?._customerPaint===true);
     const custPaintBadge=_roomCustPaint?'<span style="display:inline-block;font-size:10px;background:#FEF3C7;color:#856404;border:1px solid #D97706;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700;vertical-align:middle">Client supplies paint</span>':'';
