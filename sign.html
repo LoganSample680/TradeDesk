@@ -474,8 +474,10 @@ async function payCard(){
     const _payAmt=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round(_prop.deposit*100);
     const _p2=new URLSearchParams(location.search);let _propKey=_p2.get('key');
     if(!_propKey){const t=_p2.get('t'),u=_p2.get('u'),b=_p2.get('b');if(t&&u&&b)_propKey=`proposals/${u}/${b}_${t}.json`;}
-    const{data,error}=await _supa.functions.invoke('create-checkout',{
-      body:{
+    const res=await fetch(SUPA_URL+'/functions/v1/create-checkout',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
+      body:JSON.stringify({
         amount:_payAmt,currency:'usd',
         proposalKey:_propKey,
         clientName:_prop.clientName,businessName:_prop.businessName,
@@ -483,9 +485,10 @@ async function payCard(){
         notifyEmail:_prop.notifyEmail,signatureDataUrl:_sigData,
         signerName:document.getElementById('sig-name').value.trim(),
         successUrl:location.href+'&payment=success',cancelUrl:location.href,
-      }
+      })
     });
-    if(error)throw error;
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const data=await res.json();
     if(data?.url)location.href=data.url;
     else throw new Error('No checkout URL');
   }catch(e){
@@ -503,8 +506,10 @@ async function payACH(){
     const _payAmtAch=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round(_prop.deposit*100);
     const _p3=new URLSearchParams(location.search);let _propKeyAch=_p3.get('key');
     if(!_propKeyAch){const t=_p3.get('t'),u=_p3.get('u'),b=_p3.get('b');if(t&&u&&b)_propKeyAch=`proposals/${u}/${b}_${t}.json`;}
-    const{data,error}=await _supa.functions.invoke('create-checkout',{
-      body:{
+    const res=await fetch(SUPA_URL+'/functions/v1/create-checkout',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
+      body:JSON.stringify({
         amount:_payAmtAch,currency:'usd',
         paymentMethod:'us_bank_account',
         proposalKey:_propKeyAch,
@@ -514,9 +519,10 @@ async function payACH(){
         signerName:document.getElementById('sig-name').value.trim(),
         successUrl:location.href+'&payment=success&method=ach',
         cancelUrl:location.href,
-      }
+      })
     });
-    if(error)throw error;
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const data=await res.json();
     if(data?.url)location.href=data.url;
     else throw new Error('No checkout URL');
   }catch(e){
