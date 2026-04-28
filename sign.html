@@ -161,7 +161,7 @@ input[type=text]:focus{border-color:var(--blue)}
       <div style="margin-bottom:14px">
         <label style="display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-bottom:6px">Full name *</label>
         <input type="text" id="sig-name" placeholder="Type your full name" oninput="updateTypedSigPreview();checkReady()">
-        <div id="sig-typed-preview" style="font-family:'Dancing Script',cursive;font-size:36px;color:#185FA5;min-height:52px;display:flex;align-items:center;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r);margin-top:6px;background:#fff"></div>
+        <div id="sig-typed-preview" style="font-family:'Dancing Script',cursive;font-size:36px;color:#185FA5;min-height:52px;display:flex;align-items:center;justify-content:center;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r);margin-top:6px;background:#fff"></div>
       </div>
       <label style="display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-bottom:6px;margin-top:14px">Draw signature <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text3)">(optional if name typed above)</span></label>
       <div class="sig-wrap"><canvas id="sig-canvas"></canvas><div class="sig-ph" id="sig-ph">✍️ Draw over your name or sign here</div></div>
@@ -428,11 +428,13 @@ function updateTypedSigPreview(){
   if(prev)prev.textContent=val;
   if(sigCtx&&val.length>2){
     const dpr=window.devicePixelRatio||1;
-    sigCtx.clearRect(0,0,sigCanvas.width,sigCanvas.height);
-    sigCtx.font='bold '+(56*dpr)+'px Dancing Script, cursive';
+    const logW=sigCanvas.width/dpr;  // logical width after DPR scale
+    sigCtx.clearRect(0,0,logW,160);
+    sigCtx.font='bold 52px Dancing Script, cursive';  // logical px in already-scaled context
     sigCtx.fillStyle='#1a1a18';
     sigCtx.textAlign='center';
-    sigCtx.fillText(val,sigCanvas.width/(2*dpr),90*dpr);
+    sigCtx.textBaseline='middle';
+    sigCtx.fillText(val,logW/2,80);  // center of 160px-tall canvas
     hasInk=false;
     document.getElementById('sig-ph').style.display='none';
   }

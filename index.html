@@ -9960,6 +9960,7 @@ async function sendProposalLink(){
   const btn=document.getElementById('send-proposal-btn');
   if(btn){btn.textContent='⏳ Saving...';btn.disabled=true;}
   try{
+    if(_stripeConnectStatus===null)await _fetchStripeConnectStatus();
     const cname=document.getElementById('e-cname')?.value||'Client';
     const _rawBname=document.getElementById('e-bname')?.value||getBusinessName()||'';
     const bname=(_rawBname&&!_rawBname.includes('@'))?_rawBname:'No Business Name Entered';
@@ -10362,48 +10363,43 @@ function buildProposal(){
     }
     // Build per-surface paint spec — hierarchical: "Paint" header → each surface on its own row
     const paintSpecHtml=r.paintSpecs&&r.paintSpecs.length
-      ?'<div style="margin-top:10px">'+
-        '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#1a365d;border-bottom:1px solid #e2e8f0;padding-bottom:3px;margin-bottom:6px">Paint</div>'+
+      ?'<div style="margin-top:4px">'+
         r.paintSpecs.map(ps=>{
           const swMatch=ps.spec.match(/SW[\s-]?\d+/i);
           const swHex=swMatch&&_swColors?(_swColors.find(c=>c.sw.toLowerCase()===swMatch[0].toLowerCase().replace(/[\s-]/g,''))?.hex||''):'';
-          const swatch=swHex?'<span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:'+swHex+';border:1px solid rgba(0,0,0,.18);margin-right:5px;vertical-align:middle;flex-shrink:0;position:relative;top:-1px"></span>':'';
+          const swatch=swHex?'<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:'+swHex+';border:1px solid rgba(0,0,0,.18);margin-right:3px;vertical-align:middle;position:relative;top:-1px"></span>':'';
           const parts=ps.spec.split(' \xb7 ');
           const product=parts[0]||'';
           const colorFinish=parts.slice(1).join(' \xb7 ')||ps.spec;
           const finishMatch=colorFinish.match(/\[([^\]]+)\]$/);
           const finish=finishMatch?finishMatch[1]:'';
           const colorOnly=colorFinish.replace(/\s*\[[^\]]+\]$/,'').trim();
-          return '<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;padding-left:6px">'+
-            '<span style="font-size:11px;font-weight:700;color:#2d3748;min-width:54px;flex-shrink:0">'+ps.surfLabel+'</span>'+
-            '<span style="display:flex;align-items:center;flex-wrap:wrap;gap:2px;font-size:11px;color:#4a5568;line-height:1.5">'+
-              swatch+
-              (product?'<span>'+product+'</span>':'')+
-              (colorOnly?'<span style="color:#a0aec0;margin:0 1px">&middot;</span><span>'+colorOnly+'</span>':'')+
-              (finish?'<span style="color:#a0aec0;margin:0 1px">&middot;</span><span style="color:#2b6cb0;font-weight:600">'+finish+'</span>':'')+
-            '</span>'+
-          '</div>';
+          return '<div style="font-size:11px;color:#4a5568;line-height:1.35;margin-bottom:1px">'+
+            '<span style="font-weight:700;color:#2d3748">'+ps.surfLabel+'</span> '+
+            swatch+
+            (product?product:'')+
+            (colorOnly?' \xb7 '+colorOnly:'')+
+            (finish?' \xb7 <span style="color:#2b6cb0;font-weight:600">'+finish+'</span>':'')+
+            '</div>';
         }).join('')+
         '</div>'
       :'';
     // Scope of Work — numbered list with client-facing descriptions only (no label prefix)
     const scopeHtml=roomScopeItems.length
-      ?'<div style="margin-top:10px">'+
-        '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#1a365d;border-bottom:1px solid #e2e8f0;padding-bottom:3px;margin-bottom:6px">Scope of Work</div>'+
-        '<ol style="margin:0;padding-left:18px;font-size:11px;color:#4a5568;line-height:1.9">'+
-        roomScopeItems.map(sc=>'<li style="padding:0">'+sc.clientDesc+'</li>').join('')+
-        '</ol>'+
+      ?'<div style="margin-top:5px;font-size:11px;color:#4a5568;line-height:1.45">'+
+        '<span style="font-weight:700;color:#718096;font-size:10px;text-transform:uppercase;letter-spacing:.4px">Includes: </span>'+
+        roomScopeItems.map(sc=>sc.clientDesc).join(' &middot; ')+
         '</div>'
       :'';
     const _roomCustPaint=roomCosts[room]&&(roomScopeMap[room]?._customerPaint===true);
     const custPaintBadge=_roomCustPaint?'<span style="display:inline-block;font-size:10px;background:#FEF3C7;color:#856404;border:1px solid #D97706;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700;vertical-align:middle">Client supplies paint</span>':'';
-    const descContent='<div style="font-size:15px;font-weight:800;color:#1a365d;line-height:1.3;margin-bottom:4px">'+room+custPaintBadge+'</div>'+
+    const descContent='<div style="font-size:14px;font-weight:800;color:#1a365d;line-height:1.2;margin-bottom:2px">'+room+custPaintBadge+'</div>'+
       paintSpecHtml+
       scopeHtml;
     const rowBg=roomIdx%2===0?'#ffffff':'#f8fafc';
     return `<tr style="border-bottom:1px solid #e2e8f0;background:${rowBg}">
-      <td style="padding:14px 16px;line-height:1.7;color:#2d3748;font-size:12px">${descContent}</td>
-      <td style="padding:14px 8px 14px 4px;text-align:right;font-weight:700;vertical-align:top;color:#1a365d;white-space:nowrap">${fmt(r.total)}</td>
+      <td style="padding:10px 12px;line-height:1.5;color:#2d3748;font-size:12px">${descContent}</td>
+      <td style="padding:10px 4px 10px 4px;text-align:right;font-weight:700;vertical-align:top;color:#1a365d;white-space:nowrap">${fmt(r.total)}</td>
     </tr>`;
   }).join('');
 
