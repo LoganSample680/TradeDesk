@@ -10412,11 +10412,14 @@ function buildProposal(){
         }).join('')+
         '</div>'
       :'';
-    // Scope of Work — numbered list with client-facing descriptions only (no label prefix)
+    // Scope of Work — cap at 3 items, show count if more
+    const _scopeShow=roomScopeItems.slice(0,3);
+    const _scopeExtra=roomScopeItems.length-3;
     const scopeHtml=roomScopeItems.length
-      ?'<div style="margin-top:5px;font-size:11px;color:#4a5568;line-height:1.45">'+
+      ?'<div style="margin-top:5px;font-size:11px;color:#4a5568;line-height:1.5">'+
         '<span style="font-weight:700;color:#718096;font-size:10px;text-transform:uppercase;letter-spacing:.4px">Includes: </span>'+
-        roomScopeItems.map(sc=>sc.clientDesc).join(' &middot; ')+
+        _scopeShow.map(sc=>sc.clientDesc).join(' &middot; ')+
+        (_scopeExtra>0?' <span style="color:#94a3b8;font-style:italic">+'+_scopeExtra+' more included</span>':'')+
         '</div>'
       :'';
     const _roomCustPaint=roomCosts[room]&&(roomScopeMap[room]?._customerPaint===true);
@@ -10433,12 +10436,12 @@ function buildProposal(){
 
   document.getElementById('est-proposal').innerHTML=`
 <div class="proposal" style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)">
-  <div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start">
+  <div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">
     ${_proposalBizHeader(bname,bphone,blic)}
-    <div style="text-align:right">
-      <div style="display:inline-block;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);border-radius:20px;padding:3px 13px;font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;margin-bottom:10px">Paint Proposal</div>
-      <div style="font-size:11px;opacity:.75;margin-bottom:2px"># ${estNum}</div>
-      <div style="font-size:11px;opacity:.75">DATE: ${ds}</div>
+    <div style="text-align:right;padding-top:4px">
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">Paint Proposal</div>
+      <div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div>
+      <div style="font-size:11px;opacity:.6">Date: ${ds}</div>
     </div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0">
