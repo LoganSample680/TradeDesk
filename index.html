@@ -9975,6 +9975,13 @@ async function sendProposalLink(){
     const _resolvedBid=bidId?bids.find(b=>b.id===bidId):null;
     if(!bidId||(_resolvedBid&&_resolvedBid.signingToken)){
       // Already sent once, or no bid at all — mint a new bid for this proposal
+      // Recover estLinkedClientId from existing client records (handles dashboard flow where it's null)
+      if(!estLinkedClientId){
+        const _cph=(document.getElementById('e-cphone')?.value||'').replace(/\D/g,'');
+        const _cnm=(document.getElementById('e-cname')?.value||'').trim().toLowerCase();
+        const _mc=clients.find(c=>(_cph&&c.phone?.replace(/\D/g,'')===_cph)||(!_cph&&_cnm&&c.name?.trim().toLowerCase()===_cnm));
+        if(_mc)estLinkedClientId=_mc.id;
+      }
       const{final}=calcEst();
       const _caddr=document.getElementById('e-caddr')?.value||'';
       const _days=parseInt(document.getElementById('e-days')?.value)||2;
