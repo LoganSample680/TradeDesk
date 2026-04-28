@@ -4754,7 +4754,7 @@ function renderClientDetail(){
     '<div style="display:flex;gap:8px">'+
       (c.phone?'<button class="btn" onclick="callClient()" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex:1">&#128222; Call '+c.phone+'</button>':'')+
       '<button class="btn" onclick="openMapsDir()" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex:1">&#128205; Directions</button>'+
-      '<button class="btn" onclick="sendClientHubLink('+c.id+')" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex-shrink:0" title="Share client portal">&#128279; Hub</button>'+
+      '<button class="btn" onclick="showHubMenu('+c.id+')" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex-shrink:0" title="Share client portal">&#128279; Hub</button>'+
     '</div>'+
     (c.clientToken&&_supaUser?(()=>{const _hu=(window.location.origin+window.location.pathname.split('index.html')[0])+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+c.id;return '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 12px;background:rgba(0,0,0,.2);border-radius:var(--r);font-size:11px;overflow:hidden">'+'<span style="color:rgba(255,255,255,.6);white-space:nowrap;flex-shrink:0">Hub:</span>'+'<span style="flex:1;color:rgba(255,255,255,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+_hu+'</span>'+'<button onclick="copyHubLink(\''+_hu+'\')" style="padding:3px 8px;font-size:11px;background:rgba(255,255,255,.15);border:none;border-radius:4px;color:#fff;cursor:pointer;flex-shrink:0">Copy</button>'+'</div>'})():'');
   if(gps.active&&gps.clientId===currentClientId){
@@ -7766,6 +7766,7 @@ function swShowProductInfo(id){
 }
 
 function swSelectProduct(p,btn){
+  const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
   document.querySelectorAll('#sw-product-grid button').forEach(b=>{
     b.style.border='1px solid var(--border2)';b.style.background='var(--bg)';
   });
@@ -9808,6 +9809,31 @@ async function _refreshClientHub(clientId){
   try{await _uploadClientHub(clientId);}catch(e){console.warn('hub refresh:',e);}
 }
 function copyHubLink(url){navigator.clipboard.writeText(url).then(()=>showToast('Hub link copied','📋')).catch(()=>showToast('Could not copy — tap the URL above','⚠️'));}
+function showHubMenu(clientId){
+  const c=clients.find(x=>x.id===clientId);
+  if(!c?.clientToken||!_supaUser){sendClientHubLink(clientId);return;}
+  const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  const hubUrl=baseUrl+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+  const existing=document.getElementById('_hub-menu-ov');if(existing)existing.remove();
+  const ov=document.createElement('div');
+  ov.id='_hub-menu-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;justify-content:flex-end;background:rgba(0,0,0,.45)';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const sheet=document.createElement('div');
+  sheet.style.cssText='background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px 32px;display:flex;flex-direction:column;gap:10px';
+  const hdr=document.createElement('div');
+  hdr.style.cssText='text-align:center;padding-bottom:4px';
+  hdr.innerHTML='<div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 12px"></div>'
+    +'<div style="font-size:14px;font-weight:700;color:var(--text2)">Client Hub</div>'
+    +'<div style="font-size:11px;color:var(--text3);word-break:break-all;margin-top:4px">'+hubUrl+'</div>';
+  const mkBtn=(label,bg,color,fn)=>{const b=document.createElement('button');b.textContent=label;b.style.cssText='padding:14px;border:none;border-radius:var(--r);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;background:'+bg+';color:'+color;b.onclick=fn;return b;};
+  sheet.appendChild(hdr);
+  sheet.appendChild(mkBtn('📋  Copy link','var(--blue)','#fff',()=>{navigator.clipboard.writeText(hubUrl).then(()=>showToast('Hub link copied','📋')).catch(()=>showToast('Copy failed','⚠️'));ov.remove();}));
+  sheet.appendChild(mkBtn('🔗  Open hub','var(--blue-lt)','var(--blue)',()=>{window.open(hubUrl,'_blank');ov.remove();}));
+  sheet.appendChild(mkBtn('← Back','var(--bg2)','var(--text2)',()=>ov.remove()));
+  ov.appendChild(sheet);
+  document.body.appendChild(ov);
+}
 
 function syncAdj(){const pct=parseInt(v('est-adj')||0);document.getElementById('est-adj-val').textContent=(pct>0?'+':'')+pct+'%';renderEstReview();}
 function onAdjSliderRelease(){
