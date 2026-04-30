@@ -7343,33 +7343,36 @@ let _swColors=null,_swFinish='',_swCurrentFamily=null;
 function _swHslFamily(hex){
   if(!hex||hex.length<7)return'gray';
   const r=parseInt(hex.slice(1,3),16)/255,g=parseInt(hex.slice(3,5),16)/255,b=parseInt(hex.slice(5,7),16)/255;
-  // sRGB → linear → XYZ (D65)
   const lin=v=>v>0.04045?Math.pow((v+0.055)/1.055,2.4):v/12.92;
   const R=lin(r),G=lin(g),B=lin(b);
   const X=0.4124*R+0.3576*G+0.1805*B,Y=0.2126*R+0.7152*G+0.0722*B,Z=0.0193*R+0.1192*G+0.9505*B;
-  // XYZ → CIELAB (D65 white point)
   const f=t=>t>0.008856?Math.cbrt(t):7.787*t+16/116;
   const fx=f(X/0.95047),fy=f(Y),fz=f(Z/1.08883);
   const L=116*fy-16,a=500*(fx-fy),bb=200*(fy-fz);
-  // LCh polar form: C = chroma (perceptual saturation), H = hue angle
   const C=Math.sqrt(a*a+bb*bb),H=(Math.atan2(bb,a)*180/Math.PI+360)%360;
-  // CIELAB hue angles differ from HSL: red≈40°, orange≈65°, yellow≈90°,
-  // green≈140°, teal≈195°, blue≈250°, purple≈300°, pink≈330°
+  // Verified CIELAB hue angles for sRGB primaries/secondaries:
+  // R≈40°  Y≈103°  G≈136°  C≈196°  B≈306°  M≈328°
+  // SW Munsell families map to these ranges accordingly.
   if(L<8)return'black';
-  if(C<5)return L>85?'white':L>20?'gray':'black';
-  if(C<18){
-    if(L>85)return'white';
-    if(H>=55&&H<120&&L>35)return'beige';
-    if(H>=55&&H<120)return'brown';
-    return L>20?'gray':'black';
+  if(C<6)return L>85?'white':L>20?'gray':'black';
+  if(L>90&&C<20)return'white';
+  // Red/pink wrap: H 335–360 and 0–50
+  if(H>=335||H<50)return(L>55||C<35)?'pink':'red';
+  // Orange/brown zone H 50–75
+  if(H<75){
+    if(L<42)return'brown';
+    if(C<15)return L>55?'beige':'gray';
+    return C>25?'orange':'beige';
   }
-  if(L>90&&C<28)return'white';
-  if(H>=330||H<50)return(L>55||C<40)?'pink':'red';
-  if(H<75)return L<42?'brown':C>30?'orange':'beige';
-  if(H<110)return L<42?'brown':C<22?'beige':'yellow';
-  if(H<165)return'green';
-  if(H<225)return'teal';
-  if(H<275)return'blue';
+  // Yellow zone H 75–115
+  if(H<115){
+    if(L<42)return'brown';
+    if(C<15)return L>55?'beige':'gray';
+    return'yellow';
+  }
+  if(H<170)return'green';
+  if(H<230)return'teal';
+  if(H<310)return'blue';   // extended: sRGB blue sits at H≈306° in CIELAB
   return(L>50||C<30)?'pink':'purple';
 }
 
