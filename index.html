@@ -1019,7 +1019,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 
         <button class="btn btn-p btn-full" onclick="goSurfStepB()" id="surf-next-to-dims"
           style="background:var(--border2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>
-          Enter dimensions &#8594;
+          Scope of Work &#8594;
         </button>
       </div>
 
@@ -1057,7 +1057,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
             </div>
           </div>
           <button class="btn btn-p btn-full" onclick="goSurfScopeToMeasure()" style="font-size:15px;padding:14px;margin-top:12px">
-            Scope of Work &#8594;
+            Measurements &#8594;
           </button>
         </div>
 
@@ -7343,41 +7343,34 @@ let _swColors=null,_swFinish='',_swCurrentFamily=null;
 function _swHslFamily(hex){
   if(!hex||hex.length<7)return'gray';
   const r=parseInt(hex.slice(1,3),16)/255,g=parseInt(hex.slice(3,5),16)/255,b=parseInt(hex.slice(5,7),16)/255;
-  // LRV — perceptual luminance, matches SW's published Light Reflectance Value
-  const rl=r>0.04045?Math.pow((r+0.055)/1.055,2.4):r/12.92;
-  const gl=g>0.04045?Math.pow((g+0.055)/1.055,2.4):g/12.92;
-  const bl=b>0.04045?Math.pow((b+0.055)/1.055,2.4):b/12.92;
-  const LRV=(0.2126*rl+0.7152*gl+0.0722*bl)*100;
-  // Hue & saturation
-  const max=Math.max(r,g,b),min=Math.min(r,g,b),d=max-min,l=(max+min)/2;
-  let h=0,s=0;
-  if(d>0.001){
-    s=d/(l<0.5?max+min:2-max-min);
-    if(max===r)h=((g-b)/d+(g<b?6:0))/6;
-    else if(max===g)h=((b-r)/d+2)/6;
-    else h=((r-g)/d+4)/6;
+  // sRGB → linear → XYZ (D65)
+  const lin=v=>v>0.04045?Math.pow((v+0.055)/1.055,2.4):v/12.92;
+  const R=lin(r),G=lin(g),B=lin(b);
+  const X=0.4124*R+0.3576*G+0.1805*B,Y=0.2126*R+0.7152*G+0.0722*B,Z=0.0193*R+0.1192*G+0.9505*B;
+  // XYZ → CIELAB (D65 white point)
+  const f=t=>t>0.008856?Math.cbrt(t):7.787*t+16/116;
+  const fx=f(X/0.95047),fy=f(Y),fz=f(Z/1.08883);
+  const L=116*fy-16,a=500*(fx-fy),bb=200*(fy-fz);
+  // LCh polar form: C = chroma (perceptual saturation), H = hue angle
+  const C=Math.sqrt(a*a+bb*bb),H=(Math.atan2(bb,a)*180/Math.PI+360)%360;
+  // CIELAB hue angles differ from HSL: red≈40°, orange≈65°, yellow≈90°,
+  // green≈140°, teal≈195°, blue≈250°, purple≈300°, pink≈330°
+  if(L<8)return'black';
+  if(C<5)return L>85?'white':L>20?'gray':'black';
+  if(C<18){
+    if(L>85)return'white';
+    if(H>=55&&H<120&&L>35)return'beige';
+    if(H>=55&&H<120)return'brown';
+    return L>20?'gray':'black';
   }
-  const H=h*360,S=s*100;
-  // Achromatic: classify by lightness only
-  if(S<12)return LRV>=70?'white':LRV>=12?'gray':'black';
-  if(LRV<2)return'black';
-  // Hue-based (runs before any white check so light blues/yellows stay in their families)
-  if(H>=345||H<15)return(LRV>40||S<45)?'pink':'red';
-  if(H>=300)return(LRV>45||S<45)?'pink':'purple';
-  if(H>=255)return'purple';
-  if(H>=195)return'blue';
-  if(H>=155)return'teal';
-  if(H>=68)return'green';
-  // Yellow zone — white only if very light AND low chroma
-  if(H>=38){
-    if(LRV>=77&&S<35)return'white';
-    return LRV>=55?'yellow':'beige';
-  }
-  // Warm zone (H 15–38): orange/brown/beige/white
-  if(LRV>=77&&S<45)return'white';
-  if(LRV<22)return'brown';
-  if(S>40&&LRV<65)return'orange';
-  return LRV>=50?'beige':'brown';
+  if(L>90&&C<28)return'white';
+  if(H>=330||H<50)return(L>55||C<40)?'pink':'red';
+  if(H<75)return L<42?'brown':C>30?'orange':'beige';
+  if(H<110)return L<42?'brown':C<22?'beige':'yellow';
+  if(H<165)return'green';
+  if(H<225)return'teal';
+  if(H<275)return'blue';
+  return(L>50||C<30)?'pink':'purple';
 }
 
 const SW_FAMILIES=[
