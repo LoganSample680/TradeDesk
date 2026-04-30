@@ -7350,30 +7350,28 @@ function _swHslFamily(hex){
   const fx=f(X/0.95047),fy=f(Y),fz=f(Z/1.08883);
   const L=116*fy-16,a=500*(fx-fy),bb=200*(fy-fz);
   const C=Math.sqrt(a*a+bb*bb),H=(Math.atan2(bb,a)*180/Math.PI+360)%360;
-  // Verified CIELAB hue angles for sRGB primaries/secondaries:
-  // R≈40°  Y≈103°  G≈136°  C≈196°  B≈306°  M≈328°
-  // SW Munsell families map to these ranges accordingly.
+  // Neutrals first
   if(L<8)return'black';
   if(C<6)return L>85?'white':L>20?'gray':'black';
   if(L>90&&C<20)return'white';
-  // Red/pink wrap: H 335–360 and 0–50
-  if(H>=335||H<50)return(L>55||C<35)?'pink':'red';
-  // Orange/brown zone H 50–75
-  if(H<75){
+  // Hue boundaries from Munsell renotation data mapped to CIELAB hue angle:
+  // R/YR≈40  YR/Y≈70  Y/GY≈105  GY+G/BG≈170  BG/B≈215  B/PB≈255  PB/P≈290  P/RP≈325  RP/R≈345
+  if(H<40||H>=345)return(L>55||C<35)?'pink':'red';   // Munsell R
+  if(H>=325)return(L>50||C<28)?'pink':'purple';        // Munsell P (325–344)
+  if(H<70){                                             // Munsell YR → orange/brown
     if(L<42)return'brown';
     if(C<15)return L>55?'beige':'gray';
-    return C>25?'orange':'beige';
+    return C>22?'orange':'beige';
   }
-  // Yellow zone H 75–115
-  if(H<115){
+  if(H<105){                                            // Munsell Y → yellow/beige
     if(L<42)return'brown';
     if(C<15)return L>55?'beige':'gray';
     return'yellow';
   }
-  if(H<170)return'green';
-  if(H<230)return'teal';
-  if(H<310)return'blue';   // extended: sRGB blue sits at H≈306° in CIELAB
-  return(L>50||C<30)?'pink':'purple';
+  if(H<170)return'green';                              // Munsell GY + G
+  if(H<215)return'teal';                               // Munsell BG
+  if(H<290)return'blue';                               // Munsell B + PB
+  return(L>50||C<28)?'pink':'purple';                  // Munsell P (290–324)
 }
 
 const SW_FAMILIES=[
