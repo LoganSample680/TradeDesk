@@ -210,6 +210,10 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .zmodal-msg{font-size:14px;color:var(--text2);line-height:1.5;margin-bottom:18px}
 .zmodal-btns{display:flex;gap:8px;justify-content:flex-end}
 @keyframes fadein{from{opacity:0}to{opacity:1}}
+@keyframes sf-fwd{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
+@keyframes sf-back{from{opacity:0;transform:translateX(-24px)}to{opacity:1;transform:none}}
+.sf-enter{animation:sf-fwd .22s cubic-bezier(0.4,0,0.2,1) both}
+.sf-enter-back{animation:sf-back .22s cubic-bezier(0.4,0,0.2,1) both}
 .surf-type-btn{padding:10px 6px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .1s}
 .surf-type-btn.active-surf-btn{border-color:var(--blue);background:var(--blue);color:#fff}
 .pay-bar{height:8px;background:var(--bg2);border-radius:4px;overflow:hidden;margin:6px 0}
@@ -7953,9 +7957,13 @@ function cleanRoomName(room){
 }
 const SURF_LABELS={walls:'Walls',ceiling:'Ceiling',trim:'Trim',doors:'Doors',windows:'Windows',cabinets:'Cabinets',ext_walls:'Siding',ext_trim:'Ext trim',deck:'Deck'};
 
+function _sfShow(el,back){if(!el)return;el.classList.remove('sf-enter','sf-enter-back');void el.offsetWidth;el.classList.add(back?'sf-enter-back':'sf-enter');}
+
 function goSurfStepA(){
-  document.getElementById('surf-step-a').style.display='';
+  const a=document.getElementById('surf-step-a');
   document.getElementById('surf-step-b').style.display='none';
+  a.style.display='';
+  _sfShow(a,true);
 }
 
 function goSurfStepB(){
@@ -7972,12 +7980,12 @@ function goSurfStepB(){
   surfBIdx=0;
   surfBMeasurements={};
   document.getElementById('surf-step-a').style.display='none';
-  const _stepBEl=document.getElementById('surf-step-b');_stepBEl.style.display='';_stepBEl.scrollTop=0;
+  const _stepBEl=document.getElementById('surf-step-b');_stepBEl.style.display='';_stepBEl.scrollTop=0;_sfShow(_stepBEl);
   document.getElementById('surf-b-roomname').textContent=surfRoom;
   // Show scope-first state
   const scopeFirst=document.getElementById('surf-scope-first');
   const measureWrap=document.getElementById('surf-measure-color-wrap');
-  if(scopeFirst)scopeFirst.style.display='';
+  if(scopeFirst){scopeFirst.style.display='';_sfShow(scopeFirst);}
   if(measureWrap)measureWrap.style.display='none';
   // Read THIS room's stored paint supply — default to Zach (false)
   const _isc=roomScopeMap[surfRoom]?._customerPaint===true;
@@ -8037,7 +8045,7 @@ function goSurfScopeToMeasure(){
   const scopeFirst=document.getElementById('surf-scope-first');
   const measureWrap=document.getElementById('surf-measure-color-wrap');
   if(scopeFirst)scopeFirst.style.display='none';
-  if(measureWrap)measureWrap.style.display='';
+  if(measureWrap){measureWrap.style.display='';_sfShow(measureWrap);}
   const isCustomer=document.getElementById('e-customer-paint')?.value==='1';
   // Hide/show the entire product and color wrapper cards
   ['sw-product-wrap','sw-color-wrap'].forEach(id=>{
@@ -8660,7 +8668,7 @@ function addAnotherRoom(){
   document.querySelectorAll('.surf-what-btn').forEach(b=>{
     b.style.borderColor='';b.style.background='';b.style.color='';
   });
-  document.getElementById('surf-step-a').style.display='';
+  const _sa=document.getElementById('surf-step-a');_sa.style.display='';_sfShow(_sa,true);
   const nextBtn=document.getElementById('surf-next-to-dims');
   if(nextBtn){nextBtn.disabled=true;nextBtn.style.background='var(--border2)';nextBtn.style.color='var(--text3)';nextBtn.style.borderColor='var(--border2)';nextBtn.style.cursor='not-allowed';}
   document.getElementById('surf-card-title').textContent='New room';
@@ -8727,7 +8735,7 @@ function editRoom(roomName){
   surfRoom=roomName;
   // Hide done div, show step A with a Cancel button
   const doneDiv=document.getElementById('surf-room-done');if(doneDiv)doneDiv.style.display='none';
-  document.getElementById('surf-step-a').style.display='';
+  const _sa=document.getElementById('surf-step-a');_sa.style.display='';_sfShow(_sa,true);
   document.getElementById('surf-step-b').style.display='none';
   // Inject Cancel button near room name input so Zach can bail out safely
   const existingCancel=document.getElementById('_edit-room-cancel');
@@ -8805,7 +8813,7 @@ function editRoomSurfs(roomBase){
   // Hide saved state
   const doneDiv=document.getElementById('surf-room-done');
   if(doneDiv)doneDiv.style.display='none';
-  document.getElementById('surf-step-a').style.display='';
+  const _sa=document.getElementById('surf-step-a');_sa.style.display='';_sfShow(_sa,true);
   document.getElementById('surf-step-b').style.display='none';
   // Pre-fill room name
   const rn=document.getElementById('surf-room-name');
@@ -11061,7 +11069,7 @@ function goEstStep(n){
   }
   if(n===5){const d=document.getElementById('est-desc-text');if(d&&!d.value.trim())d.value=buildDescription();buildProposal();setTimeout(initEstNotesCanvas,100);}
   if(n===6)buildProposal();
-  estStep=n;for(let i=1;i<=7;i++){const sc=document.getElementById('est-s'+i),st=document.getElementById('est-st-'+i);if(sc)sc.style.display=i===n?'block':'none';if(st){st.classList.remove('active','done');if(i===n)st.classList.add('active');else if(i<n)st.classList.add('done');}}
+  const _goBack=n<estStep;estStep=n;for(let i=1;i<=7;i++){const sc=document.getElementById('est-s'+i),st=document.getElementById('est-st-'+i);if(sc){if(i===n){sc.style.display='block';_sfShow(sc,_goBack);}else sc.style.display='none';}if(st){st.classList.remove('active','done');if(i===n)st.classList.add('active');else if(i<n)st.classList.add('done');}}
   // Defer scroll until after the browser reflows the shown/hidden est-s* divs
   requestAnimationFrame(()=>{
     try{window.scrollTo({top:0,left:0,behavior:'instant'});}catch(e){window.scrollTo(0,0);}
