@@ -7358,18 +7358,26 @@ function _swHslFamily(hex){
     else h=((r-g)/d+4)/6;
   }
   const H=h*360,S=s*100;
-  if(S<8)return LRV>=70?'white':LRV>=12?'gray':'black';
-  if(LRV>=77)return'white';
+  // Achromatic: classify by lightness only
+  if(S<12)return LRV>=70?'white':LRV>=12?'gray':'black';
   if(LRV<2)return'black';
-  if(H>=345||H<15)return LRV>35?'pink':'red';
+  // Hue-based (runs before any white check so light blues/yellows stay in their families)
+  if(H>=345||H<15)return(LRV>40||S<45)?'pink':'red';
+  if(H>=300)return(LRV>45||S<45)?'pink':'purple';
   if(H>=255)return'purple';
   if(H>=195)return'blue';
   if(H>=155)return'teal';
   if(H>=68)return'green';
-  if(H>=38)return LRV>=65?'yellow':'beige';
+  // Yellow zone — white only if very light AND low chroma
+  if(H>=38){
+    if(LRV>=77&&S<35)return'white';
+    return LRV>=55?'yellow':'beige';
+  }
+  // Warm zone (H 15–38): orange/brown/beige/white
+  if(LRV>=77&&S<45)return'white';
   if(LRV<22)return'brown';
-  if(LRV<50)return'orange';
-  return'beige';
+  if(S>40&&LRV<65)return'orange';
+  return LRV>=50?'beige':'brown';
 }
 
 const SW_FAMILIES=[
