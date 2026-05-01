@@ -456,6 +456,8 @@ body.dark .fbar .fb.active{background:var(--blue);color:#fff;border-color:var(--
 /* ── Notifications toast ── */
 .toast{position:fixed;bottom:24px;right:24px;background:#0D1117;color:#fff;border-radius:12px;padding:14px 18px;font-size:13px;font-weight:600;box-shadow:0 8px 32px rgba(0,0,0,.3);z-index:9997;display:flex;align-items:center;gap:10px;max-width:320px;animation:toast-in .25s ease;transform-origin:bottom right}
 @keyframes toast-in{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}
+@keyframes td-spin{to{transform:rotate(360deg)}}
+#supa-boot-overlay.td-fadeout{opacity:0;transition:opacity .3s ease}
 .toast-icon{font-size:18px;flex-shrink:0}
 .toast-close{background:none;border:none;color:rgba(255,255,255,.5);cursor:pointer;font-size:16px;margin-left:8px;padding:0;line-height:1}
 .tbl{width:100%;border-collapse:collapse;font-size:12px}
@@ -666,20 +668,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   <div class="detail-hdr" id="cd-hdr"></div>
 
   
-  <div id="cd-estimate-actions" style="margin-bottom:10px">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      <button onclick="schedForClient()" style="padding:12px;border-radius:var(--rl);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px">
-        <span style="font-size:18px">📅</span>
-        <span>Schedule estimate</span>
-        <span style="font-size:10px;color:var(--text3);font-weight:400">Pick a date &amp; time</span>
-      </button>
-      <button onclick="openEstimateForClient()" style="padding:12px;border-radius:var(--rl);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px">
-        <span style="font-size:18px">📋</span>
-        <span>Start estimate now</span>
-        <span style="font-size:10px;color:var(--blue);font-weight:400">I'm already here</span>
-      </button>
-    </div>
-  </div>
+  <div id="cd-estimate-actions" style="margin-bottom:10px"></div>
 
   
   <div id="cd-drive-section">
@@ -1915,7 +1904,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   <div style="margin-bottom:12px">
     <div style="display:flex;gap:6px;flex-wrap:wrap;padding-bottom:4px">
       <button type="button" class="fb active" id="lft-all"        onclick="setLeadFilter('all',this)">All</button>
-      <button type="button" class="fb"        id="lft-incomplete" onclick="setLeadFilter('incomplete',this)">Needs address</button>
+      <button type="button" class="fb"        id="lft-incomplete" onclick="setLeadFilter('incomplete',this)">Needs onboarding</button>
       <button type="button" class="fb"        id="lft-new"        onclick="setLeadFilter('new',this)">Ready</button>
       <button type="button" class="fb"        id="lft-estimate"   onclick="setLeadFilter('estimate',this)">Estimate</button>
       <button type="button" class="fb"        id="lft-follow_up"  onclick="setLeadFilter('follow_up',this)">Follow-up</button>
@@ -4505,7 +4494,7 @@ function getClientStage(cid){
   if(hasAnyBid&&!hasActiveBid)return{stage:'abandoned',label:'Abandoned',color:'#999',priority:9};
 
   const _c=clients.find(x=>x.id===cid);
-  if(!_c||!(_c.addr||'').trim())return{stage:'incomplete',label:'Needs address',color:'var(--amber)',priority:11};
+  if(!_c||!(_c.addr||'').trim())return{stage:'incomplete',label:'Needs onboarding',color:'var(--amber)',priority:11};
   return{stage:'new',label:'New lead',color:'var(--text3)',priority:10};
 }
 
@@ -4840,6 +4829,32 @@ function renderClientDetail(){
     <div class="met"><div class="met-l">Miles</div><div class="met-v">${totalMiles.toFixed(1)}</div><div class="met-s">${fmt(totalMiles*IRS())}</div></div>
     <div class="met"><div class="met-l">Job profit</div><div class="met-v" style="color:${jobProfit<0?'#A32D2D':'var(--green-mid)'}">${fmt(jobProfit)}</div><div class="met-s">After exp+miles</div></div>
   </div>`;
+  // Estimate action buttons — context-aware based on pipeline stage
+  const _cdStage=getClientStage(currentClientId).stage;
+  const _cdActions=document.getElementById('cd-estimate-actions');
+  if(_cdActions){
+    if(_cdStage==='incomplete'){
+      const _onbSent=c.onboardingSentAt?'Link sent '+_relTime(c.onboardingSentAt):'';
+      _cdActions.innerHTML=
+        '<div style="background:var(--amber-lt);border:1.5px solid var(--amber);border-radius:var(--rl);padding:14px 16px;margin-bottom:4px">'+
+          '<div style="font-size:12px;font-weight:700;color:#856404;margin-bottom:10px">📋 Needs onboarding — send link so they can fill in their address &amp; project details</div>'+
+          '<button onclick="sendOnboardingLink('+c.id+')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--amber);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">📲 Send onboarding link</button>'+
+          (_onbSent?'<div style="font-size:11px;color:#856404;margin-top:8px;text-align:center">'+_onbSent+'</div>':'')+
+        '</div>';
+    }else{
+      _cdActions.innerHTML=
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+          '<button onclick="schedForClient()" style="padding:12px;border-radius:var(--rl);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px">'+
+            '<span style="font-size:18px">📅</span><span>Schedule estimate</span>'+
+            '<span style="font-size:10px;color:var(--text3);font-weight:400">Pick a date &amp; time</span>'+
+          '</button>'+
+          '<button onclick="openEstimateForClient()" style="padding:12px;border-radius:var(--rl);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px">'+
+            '<span style="font-size:18px">📋</span><span>Start estimate now</span>'+
+            '<span style="font-size:10px;color:var(--blue);font-weight:400">I\'m already here</span>'+
+          '</button>'+
+        '</div>';
+    }
+  }
   renderCDTimeline();
   renderClientNotes();
   renderCDRisk();
@@ -9860,6 +9875,32 @@ async function _uploadClientHub(clientId){
   const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
   return baseUrl+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
 }
+function _relTime(ts){if(!ts)return'';try{const d=Math.round((Date.now()-new Date(ts).getTime())/60000);if(d<2)return'just now';if(d<60)return d+'m ago';if(d<1440)return Math.round(d/60)+'h ago';return Math.round(d/1440)+'d ago';}catch(e){return '';}}
+function sendOnboardingLink(clientId){
+  const c=getClientById(clientId);if(!c)return;
+  if(!_supaUser){zAlert('Sign in to send the onboarding link.');return;}
+  const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  const url=baseUrl+'client.html?mode=onboard&t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+  const firstName=c.name?.split(' ')[0]||'there';
+  const biz=S.bname||'your contractor';
+  const msg='Hi '+firstName+'! This is '+biz+'. Tap this link to share your address and project details so I can prepare your free quote — takes about 2 minutes: '+url;
+  // Save sent timestamp
+  const idx=clients.findIndex(x=>x.id===clientId);
+  if(idx>=0){clients[idx].onboardingSentAt=new Date().toISOString();saveAll();}
+  if(c.phone){
+    window.location.href='sms:'+c.phone.replace(/\D/g,'')+'?body='+encodeURIComponent(msg);
+  }else{
+    // No phone — show the link to copy
+    const ov=document.createElement('div');ov.className='zmodal-overlay';ov.style.cssText='align-items:center;padding:20px';
+    const box=document.createElement('div');box.className='zmodal';
+    box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">Onboarding link</div>'+
+      '<div style="font-size:13px;color:var(--text2);margin-bottom:12px">No phone on file — copy this link and send manually</div>'+
+      '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:12px;word-break:break-all;color:var(--text2);margin-bottom:12px">'+url+'</div>'+
+      '<button onclick="navigator.clipboard.writeText(\''+url.replace(/'/g,"\\'")+'\')||true;showToast(\'Copied\',\'📋\')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Copy link</button>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
+    ov.appendChild(box);document.body.appendChild(ov);
+  }
+}
 async function sendClientHubLink(clientId){
   showToast('Generating hub…','⏳');
   try{
@@ -13762,8 +13803,8 @@ function renderLeadsPage(){
     const fu=allLeadClients.filter(c=>{const s=getClientStage(c.id);return s.stage==='follow_up'||s.stage==='bid_urgent';});
     badge.textContent=fu.length||'';badge.style.display=fu.length?'':'none';
   }
-  if(!filtered.length){el.innerHTML='<div class="empty">No '+(leadFilter==='all'?'active leads':leadFilter.replace('_',' '))+' right now.</div>';return;}
-  el.innerHTML=filtered.map(c=>{
+  if(!filtered.length){el.innerHTML=_inboundReviewHTML()+'<div class="empty">No '+(leadFilter==='all'?'active leads':leadFilter.replace('_',' '))+' right now.</div>';return;}
+  el.innerHTML=_inboundReviewHTML()+filtered.map(c=>{
     const st=getClientStage(c.id);
     const pendBids=getClientBids(c.id).filter(b=>b.status==='Pending');
     const bidAmtDisplay=pendBids.length>1?pendBids.length+' bids out':pendBids.length===1?fmtShort(pendBids[0].amount):'';
@@ -15306,7 +15347,7 @@ async function devSwitchTrade(type){
 let _ob={step:1,name:'',email:'',password:'',businessType:'',tradeLines:[],businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:''};
 
 async function showOnboarding(){
-  document.getElementById('supa-boot-overlay')?.remove();
+  _removeBootOverlay();
   const ov=document.createElement('div');
   ov.id='onboarding-overlay';
   ov.style.cssText='position:fixed;inset:0;z-index:9999;background:var(--bg);overflow-y:auto;padding:0';
@@ -15859,6 +15900,7 @@ const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
+function _removeBootOverlay(){const o=document.getElementById('supa-boot-overlay');if(!o)return;o.classList.add('td-fadeout');setTimeout(()=>o.remove(),320);}
 async function supaInit(){
   if(!supaEnabled())return;
   try{
@@ -15874,13 +15916,13 @@ async function supaInit(){
         _supaCloudLoaded=true;
       } else {
         // Signed in but no data at all — go to app, let them use it
-        document.getElementById('supa-boot-overlay')?.remove();
+        _removeBootOverlay();
         renderDash();buildScopeGrid();
         supaSetStatus('cloud');
       }
     } else {
       // Not signed in — show login screen
-      document.getElementById('supa-boot-overlay')?.remove();
+      _removeBootOverlay();
       renderDash();buildScopeGrid();
       supaSetStatus('local');
       supaShowLogin();
@@ -15900,7 +15942,7 @@ async function supaInit(){
           await supaLoadFromCloud();
           goPg('pg-dash');
         } else {
-          document.getElementById('supa-boot-overlay')?.remove();
+          _removeBootOverlay();
           renderDash();buildScopeGrid();
           supaSetStatus('cloud');
           goPg('pg-dash');
@@ -15921,7 +15963,7 @@ async function supaInit(){
     });
   }catch(e){
     console.warn('Supabase init failed:',e);
-    document.getElementById('supa-boot-overlay')?.remove();
+    _removeBootOverlay();
     renderDash();buildScopeGrid();
     supaSetStatus('local');
   }
@@ -16249,7 +16291,7 @@ function supaShowLogin(){
     '<button onclick="supaSignIn()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Sign in</button>'+
     '<div style="text-align:right;margin-bottom:10px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:13px;cursor:pointer;font-family:inherit;padding:0;text-decoration:underline">Forgot password?</button></div>'+
     '<button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:16px">Create account</button>'+
-    '<button onclick="document.getElementById(\'supa-login-overlay\').remove();document.getElementById(\'supa-boot-overlay\')?.remove();renderDash();buildScopeGrid();" style="width:100%;padding:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Use offline (data stays on this device only)</button>'+
+    '<button onclick="document.getElementById(\'supa-login-overlay\').remove();_removeBootOverlay();renderDash();buildScopeGrid();" style="width:100%;padding:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Use offline (data stays on this device only)</button>'+
     '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:10px;text-align:center;min-height:16px"></div>'+
     '</div>';
   document.body.appendChild(overlay);
@@ -16275,7 +16317,6 @@ async function supaForgotPassword(){
   else{if(err){err.style.color='#1a7340';err.textContent='Reset link sent — check your email.';}}
 }
 async function supaSignOut(){
-  if(window._sigChannel&&_supa){try{await _supa.removeChannel(window._sigChannel);}catch(e){}window._sigChannel=null;}
   if(_supa)await _supa.auth.signOut();
 }
 
@@ -16568,7 +16609,7 @@ async function supaLoadFromCloud(){
       // Clear any localStorage data from a previous user on this device.
       clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
       saveAll();
-      document.getElementById('supa-boot-overlay')?.remove();
+      _removeBootOverlay();
       renderDash();buildScopeGrid();
       supaSetStatus('synced');
       return;
@@ -16596,7 +16637,7 @@ async function supaLoadFromCloud(){
     _supaCloudLoaded=true;
     supaSetStatus('synced');
     // Dismiss loading screen and render with cloud data
-    document.getElementById('supa-boot-overlay')?.remove();
+    _removeBootOverlay();
     renderDash();buildScopeGrid();
     goPg('pg-dash');
     renderClientList&&renderClientList();
@@ -16605,27 +16646,101 @@ async function supaLoadFromCloud(){
     // Check for new signatures then schedule alerts — sequential to avoid race
     setTimeout(async()=>{ await checkNewSignatures(); if(!window._showingScheduleAlert) showScheduleAlerts(); },2000);
     setInterval(()=>checkNewSignatures(),30000);
+    setInterval(()=>_loadPendingInbound(),30000);
     // Pre-load Stripe connect status so sendPaymentLink works without visiting Settings first
     setTimeout(()=>_fetchStripeConnectStatus(),3000);
-    // Realtime subscription — fires immediately on new INSERT to signed_proposals
-    if(_supa&&_supaUser){
-      try{
-        window._sigChannel=_supa.channel('signed_proposals_'+_supaUser.id)
-          .on('postgres_changes',{event:'INSERT',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>checkNewSignatures())
-          .on('postgres_changes',{event:'UPDATE',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>checkNewSignatures())
-          .subscribe(status=>console.log('realtime:',status));
-      }catch(e){console.warn('realtime subscribe:',e);}
-    }
+    // Load any pending inbound leads on boot
+    setTimeout(()=>_loadPendingInbound(),2000);
     // Also check when user returns to the app (e.g., after sending SMS to client)
-    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkNewSignatures();});
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){checkNewSignatures();if(_supaUser)_loadPendingInbound();}});
 
     setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
   }catch(e){
     console.warn('Cloud load failed:',e);
-    document.getElementById('supa-boot-overlay')?.remove();
+    _removeBootOverlay();
     renderDash();buildScopeGrid();
     supaSetStatus('error');
   }
+}
+
+// ── Inbound leads (onboarding form + QR intake) ───────────────────────────
+let _pendingInbound=[];
+async function _loadPendingInbound(){
+  if(!_supa||!_supaUser)return;
+  try{
+    const{data}=await _supa.from('inbound_leads').select('*').eq('account_id',_supaUser.id).eq('status','pending').order('created_at',{ascending:false});
+    if(data){_pendingInbound=data;_updateInboundBadge();}
+  }catch(e){}
+}
+function _onNewInboundLead(row){
+  // Auto-apply if we can match by client_id (onboarding link submission)
+  if(row.client_id){
+    const c=clients.find(x=>x.id===Number(row.client_id));
+    if(c){
+      if(row.addr&&!c.addr){c.addr=row.addr;}
+      if(row.notes){c.notes=(c.notes?c.notes+'\n':'')+row.notes;}
+      if(row.call_time){c.callTime=row.call_time;}
+      saveAll();
+      // Mark as applied
+      _supa.from('inbound_leads').update({status:'applied'}).eq('id',row.id).then(()=>{});
+      showToast((c.name||'Lead')+' completed their onboarding ✓','📋');
+      if(_activePg==='pg-leads')renderLeadsPage();
+      if(_activePg==='pg-client-detail'&&currentClientId===Number(row.client_id))renderClientDetail();
+      return;
+    }
+  }
+  // Unknown lead (QR form) — queue for review
+  _pendingInbound.unshift(row);
+  _updateInboundBadge();
+  showToast('New lead from '+(row.source==='qr_form'?'QR form':'intake form')+' — tap to review','🆕');
+  if(_activePg==='pg-leads')renderLeadsPage();
+}
+function _updateInboundBadge(){
+  const n=_pendingInbound.filter(x=>x.status==='pending').length;
+  const b=document.getElementById('nb-leads-badge');
+  if(b){b.textContent=n||'';b.style.display=n?'':'none';}
+  const mb=document.getElementById('mtb-leads-dot');
+  if(mb)mb.style.display=n?'':'none';
+}
+function _inboundReviewHTML(){
+  const pending=_pendingInbound.filter(x=>x.status==='pending');
+  if(!pending.length)return'';
+  return'<div style="margin-bottom:14px">'+
+    '<div style="font-size:13px;font-weight:700;margin-bottom:8px;display:flex;align-items:center;gap:6px">'+
+      '<span style="background:var(--blue);color:#fff;border-radius:50%;width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;font-size:11px">'+pending.length+'</span>'+
+      'New leads waiting</div>'+
+    pending.map(row=>'<div style="background:var(--bg2);border:1.5px solid var(--blue);border-radius:var(--rl);padding:14px;margin-bottom:8px">'+
+      '<div style="font-size:14px;font-weight:700;margin-bottom:2px">'+(row.name||'Unknown')+'</div>'+
+      (row.phone?'<div style="font-size:12px;color:var(--text3);margin-bottom:2px">'+row.phone+'</div>':'')+
+      (row.addr?'<div style="font-size:12px;color:var(--text2);margin-bottom:2px">'+row.addr+'</div>':'')+
+      (row.notes?'<div style="font-size:12px;color:var(--text3);margin-bottom:8px;font-style:italic">"'+row.notes+'"</div>':'<div style="margin-bottom:8px"></div>')+
+      '<div style="display:flex;gap:8px">'+
+        '<button onclick="_promoteInbound(\''+row.id+'\')" style="flex:1;padding:10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Add to pipeline</button>'+
+        '<button onclick="_dismissInbound(\''+row.id+'\')" style="padding:10px 14px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Dismiss</button>'+
+      '</div>'+
+    '</div>').join('')+
+  '</div>';
+}
+async function _promoteInbound(id){
+  const row=_pendingInbound.find(x=>x.id===id);if(!row)return;
+  // Create client record
+  const newClient={id:Date.now(),name:row.name||'Unknown',phone:row.phone||'',email:'',addr:row.addr||'',ptype:'Single family home',source:'QR form',ref:'',notes:row.notes||'',created:todayKey(),extraAddresses:[],clientToken:'',clientHubKey:''};
+  clients.push(newClient);_ensureClientToken(newClient.id);
+  saveAll();
+  // Mark inbound as applied
+  _pendingInbound=_pendingInbound.filter(x=>x.id!==id);
+  _updateInboundBadge();
+  try{await _supa.from('inbound_leads').update({status:'applied'}).eq('id',id);}catch(e){}
+  renderLeadsPage();
+  // Open the new client detail
+  currentClientId=newClient.id;renderClientDetail();goPg('pg-client-detail');
+  showToast(row.name+' added to pipeline','✓');
+}
+async function _dismissInbound(id){
+  _pendingInbound=_pendingInbound.filter(x=>x.id!==id);
+  _updateInboundBadge();
+  try{await _supa.from('inbound_leads').update({status:'dismissed'}).eq('id',id);}catch(e){}
+  if(_activePg==='pg-leads')renderLeadsPage();
 }
 
 function supaSetStatus(s){
@@ -16997,11 +17112,18 @@ setTimeout(checkStripeConnectReturn,800);
 if(supaEnabled()){
   // Show loading overlay — don't render local data, wait for cloud
   (function showLoadingScreen(){
+    const logo=S.logoData||'';
+    const name=S.bname||'TradeDesk';
+    const color=S.brandColor||'#185FA5';
+    const logoHTML=logo
+      ?'<img src="'+logo+'" style="max-height:96px;max-width:200px;object-fit:contain;filter:drop-shadow(0 2px 12px rgba(0,0,0,.5))">'
+      :'<div style="font-size:26px;font-weight:800;color:#fff;letter-spacing:-.5px">'+name+'</div>';
     const ov=document.createElement('div');
     ov.id='supa-boot-overlay';
-    ov.style.cssText='position:fixed;inset:0;z-index:9998;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px';
-    ov.innerHTML='<div class="brand-logo-slot" style="font-size:28px;font-weight:800">TradeDesk</div>'+
-      '<div style="font-size:13px;color:var(--text3)">🔄 Loading your data...</div>';
+    ov.style.cssText='position:fixed;inset:0;z-index:9998;background:#0D1117;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px';
+    ov.innerHTML=logoHTML
+      +'<div style="width:36px;height:36px;border-radius:50%;border:3px solid rgba(255,255,255,.12);border-top-color:'+color+';animation:td-spin .9s linear infinite"></div>'
+      +'<div style="font-size:12px;color:rgba(255,255,255,.4);letter-spacing:.04em">Getting things ready…</div>';
     document.body.appendChild(ov);
   })();
   supaInit();

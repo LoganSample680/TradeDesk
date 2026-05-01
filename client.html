@@ -141,7 +141,8 @@ const fmtDate=s=>{if(!s)return'';try{return new Date(s+'T12:00:00').toLocaleDate
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 async function init(){
   const p=new URLSearchParams(location.search);
-  const t=p.get('t'),u=p.get('u'),c=p.get('c');
+  const t=p.get('t'),u=p.get('u'),c=p.get('c'),mode=p.get('mode');
+  if(mode==='onboard'){initOnboard(t,u,c);return;}
   if(!t||!u||!c){showState('err');return;}
   try{
     const key='client-hub/'+u+'/'+c+'_'+t+'.json';
@@ -173,6 +174,112 @@ async function init(){
       if(bidId)setTimeout(()=>openInvoice(bidId),300);
     }
   }catch(e){console.error(e);showState('err');}
+}
+async function initOnboard(t,u,c){
+  if(!t||!u||!c){showState('err');return;}
+  // Load hub data for branding + client name
+  try{
+    const key='client-hub/'+u+'/'+c+'_'+t+'.json';
+    const{data,error}=await _supa.storage.from('proposals').download(key);
+    if(!error&&data){_hub=JSON.parse(await data.text());}
+  }catch(e){}
+  // Apply branding if hub loaded, else minimal topbar
+  if(_hub){
+    applyBranding(_hub);
+    document.title=(_hub.contractorName||'Your Contractor')+' — Get a Quote';
+  }else{
+    document.getElementById('topbar-name').textContent='Get a Quote';
+  }
+  // Hide hub nav, show onboarding form
+  document.getElementById('left-nav').style.display='none';
+  document.getElementById('bottom-nav').style.display='none';
+  document.getElementById('pg-hub').style.display='none';
+  document.getElementById('pg-load').style.display='none';
+  // Check if already completed (hub has an address)
+  if(_hub&&_hub.clientAddr){
+    document.getElementById('pg-hub').innerHTML=
+      '<div class="pg-status" style="display:block"><div class="pg-status-icon">✅</div>'+
+      '<h2>You\'re all set!</h2>'+
+      '<p>'+esc(_hub.contractorName||'Your contractor')+' already has your project details and will be in touch soon.</p>'+
+      (_hub.contractorPhone?'<a href="tel:'+_hub.contractorPhone.replace(/\D/g,'')+'" style="display:inline-block;margin-top:20px;background:var(--accent);color:#fff;padding:14px 28px;border-radius:var(--r);font-weight:700;text-decoration:none;font-size:15px">Call '+esc(_hub.contractorPhone)+'</a>':'')+
+      '</div>';
+    document.getElementById('pg-hub').style.display='block';
+    return;
+  }
+  const firstName=_hub?.clientName?.split(' ')[0]||'';
+  const contractorName=_hub?.contractorName||'Your contractor';
+  const formHtml=
+    '<div class="main-content" style="padding-top:72px;padding-bottom:40px;max-width:480px">'+
+    '<div style="text-align:center;margin-bottom:28px">'+
+      '<div style="font-size:36px;margin-bottom:8px">📋</div>'+
+      '<div style="font-size:22px;font-weight:800;letter-spacing:-.3px;margin-bottom:6px">'+(firstName?'Hi '+esc(firstName)+'!':'Get your free quote')+'</div>'+
+      '<div style="font-size:14px;color:var(--text2);line-height:1.6">'+esc(contractorName)+' needs a couple details to prepare your quote — takes about 2 minutes.</div>'+
+    '</div>'+
+    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:20px">'+
+      '<div style="margin-bottom:16px">'+
+        '<label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:6px">Property address</label>'+
+        '<input id="onb-addr" type="text" placeholder="123 Main St, City, State" autocomplete="street-address" style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
+        '<div id="onb-addr-err" style="display:none;font-size:12px;color:var(--red);margin-top:4px">Please enter the property address.</div>'+
+      '</div>'+
+      '<div style="margin-bottom:16px">'+
+        '<label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:6px">What are you looking to get painted?</label>'+
+        '<textarea id="onb-notes" rows="3" placeholder="Interior walls, exterior trim, garage, deck..." style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);resize:none"></textarea>'+
+      '</div>'+
+      '<div style="margin-bottom:20px">'+
+        '<label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:8px">Best time to call you?</label>'+
+        '<div style="display:flex;gap:8px" id="onb-time-btns">'+
+          '<button type="button" onclick="onbTime(this,\'Morning\')" style="flex:1;padding:11px 6px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Morning</button>'+
+          '<button type="button" onclick="onbTime(this,\'Afternoon\')" style="flex:1;padding:11px 6px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Afternoon</button>'+
+          '<button type="button" onclick="onbTime(this,\'Evening\')" style="flex:1;padding:11px 6px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Evening</button>'+
+        '</div>'+
+      '</div>'+
+      '<button id="onb-submit" onclick="submitOnboard(\''+u+'\','+c+')" style="width:100%;padding:15px;border-radius:var(--r);border:none;background:var(--accent);color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit">Get my quote →</button>'+
+    '</div>'+
+    '<div style="text-align:center;margin-top:20px;font-size:12px;color:var(--text3)">'+esc(contractorName)+'</div>'+
+    '</div>';
+  // Replace body-wrap content
+  document.querySelector('.body-wrap').innerHTML=document.querySelector('.body-wrap').innerHTML;
+  document.querySelector('.body-wrap').outerHTML='<div class="body-wrap" style="padding-top:52px">'+formHtml+'</div>';
+  window._onbCallTime='';
+}
+function onbTime(btn,val){
+  window._onbCallTime=val;
+  document.querySelectorAll('#onb-time-btns button').forEach(b=>{
+    b.style.background='var(--bg)';b.style.borderColor='var(--border2)';b.style.color='var(--text)';
+  });
+  btn.style.background='var(--accent)';btn.style.borderColor='var(--accent)';btn.style.color='#fff';
+}
+async function submitOnboard(userId,clientId){
+  const addr=(document.getElementById('onb-addr')?.value||'').trim();
+  const notes=(document.getElementById('onb-notes')?.value||'').trim();
+  const callTime=window._onbCallTime||'';
+  const errEl=document.getElementById('onb-addr-err');
+  if(!addr){if(errEl){errEl.style.display='block';document.getElementById('onb-addr')?.focus();}return;}
+  if(errEl)errEl.style.display='none';
+  const btn=document.getElementById('onb-submit');
+  if(btn){btn.textContent='Sending…';btn.disabled=true;}
+  try{
+    await _supa.from('inbound_leads').insert({
+      source:'onboard_link',
+      account_id:userId,
+      client_id:clientId,
+      addr,
+      notes,
+      call_time:callTime,
+      status:'pending'
+    });
+    // Show confirmation
+    document.querySelector('.body-wrap').innerHTML=
+      '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px 20px;text-align:center">'+
+      '<div style="font-size:64px;margin-bottom:20px">✅</div>'+
+      '<div style="font-size:24px;font-weight:800;margin-bottom:10px">You\'re all set!</div>'+
+      '<div style="font-size:15px;color:var(--text2);line-height:1.7;max-width:340px">'+esc(_hub?.contractorName||'Your contractor')+' will be in touch soon.'+
+      (_hub?.contractorPhone?'<br><br><a href="tel:'+_hub.contractorPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700">'+esc(_hub.contractorPhone)+'</a>':'')+
+      '</div></div>';
+  }catch(e){
+    if(btn){btn.textContent='Get my quote →';btn.disabled=false;}
+    alert('Something went wrong — please try again or contact your contractor directly.');
+  }
 }
 function showState(s){
   document.getElementById('pg-load').style.display=s==='load'?'block':'none';
