@@ -11090,11 +11090,33 @@ function renderCalendar(){renderCalMonthLabel();renderCalGrid();renderCalAvail()
 function renderCalMonthLabel(){const M=['January','February','March','April','May','June','July','August','September','October','November','December'];document.getElementById('cal-month-lbl').textContent=M[calMonth]+' '+calYear;}
 function getJobsOnDay(key){const res=[];jobs.forEach(job=>{if(job.status==='canceled')return;const workDays=getJobWorkDays(job);if(workDays.includes(key)){res.push({job,isBuf:false});return;}const lastDay=workDays.length?workDays[workDays.length-1]:job.start;const b=parseInt(job.buffer)||0;for(let i=1;i<=b;i++){if(addDays(lastDay,i)===key){res.push({job,isBuf:true});return;}}});return res;}
 function requestLocationPermission(onGranted, onDenied){
-  // If already have coords, just call granted
   if(S.weatherLat&&S.weatherLon){if(onGranted)onGranted();return;}
-  // If already denied, call denied
   if(S.locationDenied){if(onDenied)onDenied();return;}
-  // Show permission modal
+  // Check OS-level permission first — avoids showing our modal to users who already said yes
+  // (handles iOS PWA clearing localStorage between sessions)
+  if(navigator.permissions&&navigator.permissions.query){
+    navigator.permissions.query({name:'geolocation'}).then(p=>{
+      if(p.status==='granted'){
+        _grabLocCoords(onGranted,onDenied);
+      }else if(p.status==='denied'){
+        S.locationDenied=true;saveAll();if(onDenied)onDenied();
+      }else{
+        _showLocModal(onGranted,onDenied);
+      }
+    }).catch(()=>_showLocModal(onGranted,onDenied));
+  }else{
+    _showLocModal(onGranted,onDenied);
+  }
+}
+function _grabLocCoords(onGranted,onDenied){
+  navigator.geolocation.getCurrentPosition(pos=>{
+    S.weatherLat=Math.round(pos.coords.latitude*10000)/10000;
+    S.weatherLon=Math.round(pos.coords.longitude*10000)/10000;
+    S.locationDenied=false;saveAll();
+    if(onGranted)onGranted();
+  },()=>{S.locationDenied=true;saveAll();if(onDenied)onDenied();},{enableHighAccuracy:false,timeout:10000});
+}
+function _showLocModal(onGranted,onDenied){
   const overlay=document.createElement('div');
   overlay.className='zmodal-overlay';
   overlay.style.cssText='align-items:center;padding:20px';
@@ -11115,16 +11137,10 @@ function requestLocationPermission(onGranted, onDenied){
   document.body.appendChild(overlay);
   box.querySelector('#loc-allow-btn').onclick=()=>{
     overlay.remove();
-    navigator.geolocation.getCurrentPosition(pos=>{
-      S.weatherLat=Math.round(pos.coords.latitude*10000)/10000;
-      S.weatherLon=Math.round(pos.coords.longitude*10000)/10000;
-      S.locationDenied=false;
-      saveAll();
-      if(onGranted)onGranted();
-    },err=>{
-      S.locationDenied=true;saveAll();
+    _grabLocCoords(onGranted,()=>{
+      // OS denied after user tapped allow — show gentle follow-up
       if(onDenied)onDenied();
-    },{enableHighAccuracy:true,timeout:10000});
+    });
   };
   box.querySelector('#loc-deny-btn').onclick=()=>{
     overlay.remove();
