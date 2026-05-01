@@ -565,10 +565,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
           <div id="cf-dupe-warn" style="display:none;font-size:11px;color:#A32D2D;margin-top:4px;background:#FEE8E8;border-radius:var(--r);padding:6px 8px"></div>
           <div id="err-cf-name" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
         </div>
-        <div class="f"><label>Phone</label><input id="cf-phone" type="tel" placeholder="XXX-XXX-XXXX" maxlength="12" oninput="fmtPhone(this);clearFErr('cf-phone')">
+        <div class="f"><label>Phone</label><input id="cf-phone" type="tel" placeholder="XXX-XXX-XXXX" maxlength="12" oninput="fmtPhone(this);clearFErr('cf-phone');_allowPhoneDupe=false;">
           <div id="err-cf-phone" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
         </div>
-        <div class="f" style="grid-column:1/-1"><label>Property address</label><input id="cf-addr" placeholder="1234 Maple St, Wichita KS 67201" oninput="clearFErr('cf-addr')">
+        <div class="f" style="grid-column:1/-1"><label>Property address <span style="font-weight:400;color:var(--text3)">(optional — add from profile later)</span></label><input id="cf-addr" placeholder="1234 Maple St, Wichita KS 67201" oninput="clearFErr('cf-addr')">
           <div id="err-cf-addr" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
         </div>
         <div class="f"><label>Property type</label><select id="cf-ptype"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>
@@ -2118,7 +2118,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 </div>
 <script>
 // ── Submit guard — prevents double-tap on any button ─────────────────────
-let _submitting=false;
+let _submitting=false,_allowPhoneDupe=false;
 let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[];
 // Collision-resistant bid ID: milliseconds * 1000 + random 0-998 = 13-16 digit unique number
 function _newBidId(){return Date.now()*1000+Math.floor(Math.random()*999);}
@@ -4635,29 +4635,44 @@ function saveClient(){
   // Clear all field errors first
   ['cf-name','cf-phone','cf-addr','cf-source'].forEach(clearFErr);
   const name=v('cf-name').trim();
-  if(!name){_submitting=false;showFErr('cf-name','err-cf-name','Enter the client\'s name.');return;}
+  if(!name){_submitting=false;showFErr('cf-name','err-cf-name','Enter a name.');return;}
   const phone=v('cf-phone').trim();
   if(!phone){_submitting=false;showFErr('cf-phone','err-cf-phone','Enter a phone number.');return;}
   if(phone.replace(/\D/g,'').length<10){_submitting=false;showFErr('cf-phone','err-cf-phone','Enter a valid 10-digit phone number.');return;}
+  // Address is optional — leads often come in without one; add it later from their profile
   const addr=v('cf-addr').trim();
-  if(!addr){_submitting=false;showFErr('cf-addr','err-cf-addr','Enter the property address.');return;}
   const source=v('cf-source')||'';
   if(!source){_submitting=false;showFErr('cf-source','err-cf-source','Select a lead source — this tracks what\'s working.');return;}
   const isNew=!editClientId;
   if(isNew){
-    const ph=v('cf-phone').replace(/\D/g,'');
+    const ph=phone.replace(/\D/g,'');
     const nameLow=name.toLowerCase().replace(/\s+/g,' ');
-    const dupe=clients.find(x=>{
-      const xn=x.name.toLowerCase().replace(/\s+/g,' ');
-      const sameName=xn===nameLow;
-      // Only block on phone if it's a real unique number (not all same digits like 1111111111)
-      const xph=x.phone?x.phone.replace(/\D/g,''):'';
-      const realPhone=ph.length===10&&!/^(\d)\1+$/.test(ph);
-      const samePhone=realPhone&&xph===ph;
-      return sameName||samePhone;
-    });
-    if(dupe){_submitting=false;showFErr('cf-name','err-cf-name',dupe.name+' is already in your clients.');return;}
+    const realPhone=ph.length===10&&!/^(\d)\1+$/.test(ph);
+    // Name match = hard block (almost certainly a re-entry of the same person)
+    const nameDupe=clients.find(x=>x.id!==editClientId&&x.name.toLowerCase().replace(/\s+/g,' ')===nameLow);
+    if(nameDupe){_submitting=false;showFErr('cf-name','err-cf-name',nameDupe.name+' is already in your list. Is this a different person with the same name?');return;}
+    // Phone match = soft warning — two people can share a number (family), allow override
+    const phoneDupe=realPhone?clients.find(x=>x.id!==editClientId&&(x.phone||'').replace(/\D/g,'')===ph):null;
+    if(phoneDupe&&!_allowPhoneDupe){
+      _submitting=false;
+      const errEl=document.getElementById('err-cf-phone');
+      if(errEl){
+        errEl.innerHTML='This number is already on file for <strong>'+phoneDupe.name+'</strong>. Same person? If not, <button onclick="_allowPhoneDupe=true;saveClient()" style="background:none;border:none;color:var(--blue);font-weight:700;cursor:pointer;padding:0;font-size:inherit;font-family:inherit">save anyway →</button>';
+        errEl.style.display='block';
+      }
+      return;
+    }
+    // Address match = info only — landlords and shared addresses are valid
+    if(addr){
+      const addrNorm=addr.toLowerCase().replace(/\s+/g,' ');
+      const addrDupe=clients.find(x=>x.id!==editClientId&&x.addr&&x.addr.toLowerCase().replace(/\s+/g,' ')===addrNorm);
+      if(addrDupe){
+        const errEl=document.getElementById('err-cf-addr');
+        if(errEl){errEl.textContent='Note: this address is already on file for '+addrDupe.name+'.';errEl.style.color='var(--text3)';errEl.style.display='block';}
+      }
+    }
   }
+  _allowPhoneDupe=false;
   const ref=v('cf-ref')||'';
   const occupation=v('cf-occupation')||'';
   const tier=v('cf-tier')||'';
