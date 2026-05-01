@@ -536,7 +536,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 
 </div>
 <div class="pg" id="pg-clients">
-  <div class="tbar"><div class="tbar-title" id="clients-page-title">Clients</div><button class="btn btn-p btn-sm" id="clients-new-btn" onclick="openNewClient()">+ New</button></div>
+  <div class="tbar"><div class="tbar-title" id="clients-page-title">Clients</div><button class="btn btn-sm" id="clients-new-btn" onclick="goPg('pg-leads')" style="font-size:12px">+ New lead →</button></div>
   <div id="cf-search-wrap" style="margin-bottom:8px">
     <input id="cf-search" placeholder="&#128269; Search by name, address, phone..."
       oninput="onClientSearch(this)"
@@ -546,15 +546,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   <div style="margin-bottom:8px">
     <div style="display:flex;gap:6px;flex-wrap:wrap;padding-bottom:2px">
       <button type="button" class="fb active" id="cft-all"       onclick="setCF('all',this)">All</button>
-      <button type="button" class="fb"        id="cft-new"       onclick="setCF('new',this)">New</button>
-      <button type="button" class="fb"        id="cft-estimate"  onclick="setCF('estimate',this)">Estimate</button>
-      <button type="button" class="fb"        id="cft-pending"   onclick="setCF('pending',this)">Pending</button>
-      <button type="button" class="fb"        id="cft-follow_up" onclick="setCF('follow_up',this)">Follow up</button>
       <button type="button" class="fb"        id="cft-won"       onclick="setCF('won',this)">Won</button>
       <button type="button" class="fb"        id="cft-active"    onclick="setCF('active',this)">Active</button>
       <button type="button" class="fb"        id="cft-collect"   onclick="setCF('collect',this)">Collect</button>
       <button type="button" class="fb"        id="cft-closed"    onclick="setCF('closed',this)">Closed</button>
-      <button type="button" class="fb"        id="cft-refarm"    onclick="setCF('refarm',this)">Cold leads</button>
     </div>
   </div>
   <div id="cf-tab-counts" style="font-size:11px;color:var(--text3);margin-bottom:8px"></div>
@@ -2127,7 +2122,7 @@ let _submitting=false;
 let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[];
 // Collision-resistant bid ID: milliseconds * 1000 + random 0-998 = 13-16 digit unique number
 function _newBidId(){return Date.now()*1000+Math.floor(Math.random()*999);}
-let currentClientId=null,editClientId=null,clientFilter='new';
+let currentClientId=null,editClientId=null,clientFilter='all';
 let estSurfaces=[],estSurfId=0,estStep=1,estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
 let _pendingSignToken=null; // {bidId,token,proposalKey} — committed to bid only when SMS/email is actually sent
 let _estAddrOptions=[];
@@ -2702,16 +2697,8 @@ function goPg(id){
   window.scrollTo({top:0,left:0,behavior:"instant"});document.body.scrollTop=0;document.documentElement.scrollTop=0;
   if(id==='pg-dash')renderDash();
   if(id==='pg-clients'){
-    let cf=clientFilter||'new';
-    if(cf==='new'){
-      const hasNew=clients.some(c=>!getClientBids(c.id).length);
-      const hasFollowUp=bids.some(b=>b.status==='Pending'&&b.followup&&b.followup<=todayKey());
-      const hasCollect=bids.some(b=>b.status==='Closed Won'&&getBidBalance(b)>0.01&&b.completion_date);
-      const hasActive=bids.some(b=>b.status==='Closed Won');
-      if(!hasNew&&hasFollowUp)cf='follow_up';
-      else if(!hasNew&&hasCollect)cf='collect';
-      else if(!hasNew&&hasActive)cf='active';
-    }
+    const CLIENT_FILTER_TABS=['all','won','active','collect','closed'];
+    const cf=CLIENT_FILTER_TABS.includes(clientFilter)?clientFilter:'all';
     setCF(cf,document.getElementById('cft-'+cf));
   }
   if(id==='pg-cal')renderCalendar();
@@ -4498,42 +4485,38 @@ function renderClientList(){
   const tk=todayKey();
   const el=document.getElementById('client-list');
 
+  // Clients page only shows contacts who have signed an estimate (or beyond)
+  const CLIENT_STAGES=['signed','scheduled','active','balance_due','paid'];
   const STAGE_BUCKETS={
-    new:       c=>getClientStage(c.id).stage==='new',
-    estimate:  c=>getClientStage(c.id).stage==='est_scheduled',
-    pending:   c=>['est_ready','bid_out','bid_urgent'].includes(getClientStage(c.id).stage),
-    follow_up: c=>getClientStage(c.id).stage==='bid_urgent',
-    won:       c=>['signed','scheduled'].includes(getClientStage(c.id).stage),
-    active:    c=>getClientStage(c.id).stage==='active',
-    collect:   c=>getClientStage(c.id).stage==='balance_due',
-    closed:    c=>getClientStage(c.id).stage==='paid',
-    refarm:    c=>getClientStage(c.id).stage==='abandoned'||getClientBids(c.id).some(b=>b.status==='Abandoned'),
+    won:    c=>['signed','scheduled'].includes(getClientStage(c.id).stage),
+    active: c=>getClientStage(c.id).stage==='active',
+    collect:c=>getClientStage(c.id).stage==='balance_due',
+    closed: c=>getClientStage(c.id).stage==='paid',
   };
 
   const countEl=document.getElementById('cf-tab-counts');
   if(countEl){
     const counts={};
     Object.keys(STAGE_BUCKETS).forEach(k=>{counts[k]=clients.filter(STAGE_BUCKETS[k]).length;});
+    const labels={won:'Won',active:'Active',collect:'Collect',closed:'Closed'};
     Object.keys(counts).forEach(k=>{
       const btn=document.getElementById('cft-'+k);
-      if(btn)btn.textContent={new:'New',estimate:'Estimate',pending:'Pending',follow_up:'Follow up',won:'Won',active:'Active',collect:'Collect',closed:'Closed',refarm:'Cold leads'}[k]+(counts[k]?' ('+counts[k]+')':'');
+      if(btn)btn.textContent=labels[k]+(counts[k]?' ('+counts[k]+')':'');
     });
+    const allTotal=clients.filter(c=>CLIENT_STAGES.includes(getClientStage(c.id).stage)).length;
     const allBtn=document.getElementById('cft-all');
-    if(allBtn)allBtn.textContent='All ('+clients.length+')';
+    if(allBtn)allBtn.textContent='All'+(allTotal?' ('+allTotal+')':'');
   }
 
-  let filtered=clients;
-  if(clientFilter!=='all'&&STAGE_BUCKETS[clientFilter]){
-    filtered=clients.filter(STAGE_BUCKETS[clientFilter]);
-  }
+  let filtered=clientFilter==='all'
+    ?clients.filter(c=>CLIENT_STAGES.includes(getClientStage(c.id).stage))
+    :(STAGE_BUCKETS[clientFilter]?clients.filter(STAGE_BUCKETS[clientFilter]):clients.filter(c=>CLIENT_STAGES.includes(getClientStage(c.id).stage)));
 
   if(!filtered.length){
     const emptyMsgs={
-      new:'No new leads.',estimate:'No estimates scheduled or pending.',
-      pending:'No pending bids.',follow_up:'No follow-ups needed — nice work.',
-      won:'No jobs won waiting to schedule.',active:'No active jobs today.',
+      won:'No signed jobs waiting to schedule.',active:'No active jobs today.',
       collect:'No outstanding balances.',closed:'No closed jobs yet.',
-      refarm:'No cold leads yet.',all:'No clients yet.'
+      all:'No clients yet — contacts become clients once they sign an estimate.'
     };
     el.innerHTML='<div class="empty">'+(emptyMsgs[clientFilter]||'No clients here.')+'</div>';
     return;
