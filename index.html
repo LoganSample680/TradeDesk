@@ -1914,11 +1914,12 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   <div class="tbar"><div class="tbar-title">Leads</div><button class="btn btn-p btn-sm" onclick="openNewClient()">+ New lead</button></div>
   <div style="margin-bottom:12px">
     <div style="display:flex;gap:6px;flex-wrap:wrap;padding-bottom:4px">
-      <button type="button" class="fb active" id="lft-all"      onclick="setLeadFilter('all',this)">All</button>
-      <button type="button" class="fb"        id="lft-new"      onclick="setLeadFilter('new',this)">New</button>
-      <button type="button" class="fb"        id="lft-estimate" onclick="setLeadFilter('estimate',this)">Estimate</button>
-      <button type="button" class="fb"        id="lft-follow_up" onclick="setLeadFilter('follow_up',this)">Follow-up</button>
-      <button type="button" class="fb"        id="lft-pending"  onclick="setLeadFilter('pending',this)">Pending bid</button>
+      <button type="button" class="fb active" id="lft-all"        onclick="setLeadFilter('all',this)">All</button>
+      <button type="button" class="fb"        id="lft-incomplete" onclick="setLeadFilter('incomplete',this)">Needs address</button>
+      <button type="button" class="fb"        id="lft-new"        onclick="setLeadFilter('new',this)">Ready</button>
+      <button type="button" class="fb"        id="lft-estimate"   onclick="setLeadFilter('estimate',this)">Estimate</button>
+      <button type="button" class="fb"        id="lft-follow_up"  onclick="setLeadFilter('follow_up',this)">Follow-up</button>
+      <button type="button" class="fb"        id="lft-pending"    onclick="setLeadFilter('pending',this)">Pending bid</button>
     </div>
   </div>
   <div id="leads-list"></div>
@@ -2740,7 +2741,33 @@ function openEstimateForClient(){
   if(r==='blacklisted'){zAlert('This client is blacklisted. Estimates are blocked.',{title:'🚫 Blocked'});return;}
   if(r==='high_risk'){
     zConfirm('⚠️ This client previously required a lien for payment. Continue with estimate?',
-      ()=>_checkMultiPropertyThenOpen(c),{title:'High risk client',yes:'Proceed',danger:true});
+      ()=>_gateAddressThenEstimate(c),{title:'High risk client',yes:'Proceed',danger:true});
+    return;
+  }
+  _gateAddressThenEstimate(c);
+}
+function _gateAddressThenEstimate(c){
+  if(!(c.addr||'').trim()){
+    // Lead has no address — must collect before building an estimate
+    const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_addr-gate-overlay';
+    const box=document.createElement('div');box.className='zmodal';
+    box.innerHTML=
+      '<div style="font-size:18px;margin-bottom:6px">📍 Address required</div>'+
+      '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">Add '+c.name+'\'s property address before starting an estimate. You can\'t measure or quote without it.</div>'+
+      '<input id="_addr-gate-inp" type="text" placeholder="123 Main St, City, ST" autocomplete="street-address" '+
+        'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);margin-bottom:14px">'+
+      '<button id="_addr-gate-ok" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Save &amp; start estimate</button>'+
+      '<button onclick="document.getElementById(\'_addr-gate-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
+    ov.appendChild(box);document.body.appendChild(ov);
+    setTimeout(()=>document.getElementById('_addr-gate-inp')?.focus(),100);
+    document.getElementById('_addr-gate-ok').onclick=()=>{
+      const addr=(document.getElementById('_addr-gate-inp')?.value||'').trim();
+      if(!addr){const inp=document.getElementById('_addr-gate-inp');if(inp){inp.style.borderColor='#A32D2D';inp.placeholder='Enter address to continue';}return;}
+      const idx=clients.findIndex(x=>x.id===c.id);
+      if(idx>=0){clients[idx].addr=addr;saveAll();}
+      ov.remove();
+      _checkMultiPropertyThenOpen(clients.find(x=>x.id===c.id)||c);
+    };
     return;
   }
   _checkMultiPropertyThenOpen(c);
@@ -3054,7 +3081,7 @@ function renderDash(){
   }
 
   // Simple summary cards: Leads + Collections
-  const LEAD_STAGES_DASH=['new','est_scheduled','bid_out','bid_urgent','abandoned'];
+  const LEAD_STAGES_DASH=['incomplete','new','est_scheduled','bid_out','bid_urgent','abandoned'];
   const leadCount=clients.filter(c=>LEAD_STAGES_DASH.includes(getClientStage(c.id).stage)).length;
   const urgentLeads=clients.filter(c=>{const s=getClientStage(c.id).stage;return s==='bid_urgent'||s==='abandoned';}).length;
   const subLeads=leadCount===0?'No active leads':(urgentLeads?urgentLeads+' need follow-up · '+leadCount+' total':leadCount+' active lead'+(leadCount!==1?'s':''));
@@ -4477,6 +4504,8 @@ function getClientStage(cid){
   const hasActiveBid=cbids.some(b=>b.status==='Pending'||b.status==='Closed Won');
   if(hasAnyBid&&!hasActiveBid)return{stage:'abandoned',label:'Abandoned',color:'#999',priority:9};
 
+  const _c=clients.find(x=>x.id===cid);
+  if(!_c||!(_c.addr||'').trim())return{stage:'incomplete',label:'Needs address',color:'var(--amber)',priority:11};
   return{stage:'new',label:'New lead',color:'var(--text3)',priority:10};
 }
 
@@ -4583,7 +4612,7 @@ function checkClientDupe(val){
 function openNewClient(){
   editClientId=null;
   const srch=document.getElementById('cf-search');if(srch)srch.value='';
-  document.getElementById('cf-title').textContent='New client';
+  document.getElementById('cf-title').textContent='New lead';
   document.getElementById('cf-del').style.display='none';
   ['cf-name','cf-phone','cf-addr','cf-ref','cf-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const dw=document.getElementById('cf-dupe-warn');if(dw)dw.style.display='none';;
@@ -13709,11 +13738,10 @@ function setLeadFilter(f,btn){
 }
 function renderLeadsPage(){
   const el=document.getElementById('leads-list');if(!el)return;
-  const LEAD_STAGES=['new','est_scheduled','est_ready','bid_out','bid_urgent','abandoned'];
-  const stageMap={new:'new',estimate:'estimate',follow_up:'follow_up',
-    pending:'pending',bid_urgent:'follow_up',bid_out:'pending',est_ready:'pending',abandoned:'follow_up'};
+  const LEAD_STAGES=['incomplete','new','est_scheduled','est_ready','bid_out','bid_urgent','abandoned'];
   const filterToStages={
     all:LEAD_STAGES,
+    incomplete:['incomplete'],
     new:['new'],
     estimate:['est_scheduled'],
     follow_up:['bid_urgent','abandoned'],
@@ -13739,10 +13767,12 @@ function renderLeadsPage(){
     const st=getClientStage(c.id);
     const pendBids=getClientBids(c.id).filter(b=>b.status==='Pending');
     const bidAmtDisplay=pendBids.length>1?pendBids.length+' bids out':pendBids.length===1?fmtShort(pendBids[0].amount):'';
+    const addrLine=c.addr?c.addr.split(',')[0]:'No address yet — tap to add';
+    const addrColor=c.addr?'var(--text3)':'var(--amber)';
     return '<div onclick="openClientDetail('+c.id+')" style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
       '<div style="min-width:0;flex:1">'+
         '<div style="font-size:14px;font-weight:700">'+c.name+'</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+(c.addr||'').split(',')[0]+'</div>'+
+        '<div style="font-size:11px;color:'+addrColor+';margin-top:1px">'+addrLine+'</div>'+
       '</div>'+
       '<div style="text-align:right;flex-shrink:0;margin-left:10px">'+
         '<div style="font-size:11px;font-weight:700;color:'+st.color+'">'+st.label+'</div>'+
