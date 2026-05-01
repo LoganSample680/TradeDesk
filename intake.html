@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Get a Free Quote</title>
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{--accent:#185FA5;--accent-dk:#0D3B6E;--green:#16a34a;--green-lt:#EAF3DE;--border:#e0dfd8;--border2:#cccbc4;--text:#1a1a18;--text2:#5f5e5a;--text3:#9a9890;--bg:#f7f7f5;--bg2:#fff;--r:10px;--rl:14px;--navy:#0D1117;--amber:#d97706;--amber-lt:#fffbeb;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:env(safe-area-inset-bottom,0px)}
+.topbar{position:fixed;top:0;left:0;right:0;height:52px;background:var(--navy);display:flex;align-items:center;padding:0 16px;gap:10px;z-index:100}
+.topbar-name{font-size:15px;font-weight:800;color:#fff;letter-spacing:-.3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topbar-logo-img{height:28px;max-width:100px;object-fit:contain;display:none;border-radius:4px}
+.wrap{padding-top:52px;max-width:480px;margin:0 auto;padding-left:16px;padding-right:16px;padding-bottom:40px}
+.hero{background:linear-gradient(135deg,var(--navy) 0%,#1a365d 100%);border-radius:var(--rl);padding:22px 20px 20px;margin:20px 0 18px;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;right:-40px;top:-40px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.04)}
+.hero-biz{font-size:22px;font-weight:800;color:#fff;letter-spacing:-.4px;margin-bottom:4px}
+.hero-tag{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.4)}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:20px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.field-label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px}
+.field-label .req{color:var(--amber)}
+.input{display:block;width:100%;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;color:var(--text);background:var(--bg);outline:none;transition:border-color .15s;-webkit-appearance:none}
+.input:focus{border-color:var(--accent)}
+.input::placeholder{color:var(--text3)}
+textarea.input{resize:vertical;min-height:90px}
+.field{margin-bottom:18px}
+.time-grid{display:flex;gap:8px;flex-wrap:wrap}
+.time-btn{flex:1;min-width:80px;padding:11px 8px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-weight:600;color:var(--text2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center;transition:all .15s;-webkit-tap-highlight-color:transparent}
+.time-btn.sel{border-color:var(--accent);background:var(--accent);color:#fff}
+.btn{display:block;width:100%;padding:16px;border-radius:var(--r);border:none;background:var(--accent);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center;transition:opacity .15s;margin-top:8px}
+.btn:active{opacity:.85}
+.btn:disabled{opacity:.5;cursor:default}
+.err{color:#A32D2D;font-size:13px;margin-top:6px;font-weight:600}
+.confirm-wrap{text-align:center;padding:40px 20px}
+.confirm-icon{font-size:54px;margin-bottom:16px}
+.confirm-hdr{font-size:22px;font-weight:800;margin-bottom:10px}
+.confirm-msg{font-size:15px;color:var(--text2);line-height:1.6;margin-bottom:24px}
+.confirm-cta{display:inline-block;padding:14px 28px;background:var(--accent);color:#fff;border-radius:var(--r);font-weight:700;text-decoration:none;font-size:15px}
+.state-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;padding:24px}
+.state-icon{font-size:48px;margin-bottom:16px}
+.state-hdr{font-size:20px;font-weight:800;margin-bottom:8px}
+.state-msg{font-size:14px;color:var(--text2);line-height:1.6}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <img id="topbar-logo" class="topbar-logo-img" alt="Logo">
+  <span id="topbar-name" class="topbar-name">Get a Free Quote</span>
+</div>
+
+<div class="wrap">
+  <div id="pg-load" class="state-wrap">
+    <div class="state-icon">⏳</div>
+    <div class="state-hdr">Loading…</div>
+  </div>
+
+  <div id="pg-form" style="display:none">
+    <div class="hero" id="hero-card">
+      <div class="hero-tag">Free quote from</div>
+      <div class="hero-biz" id="hero-biz">Your Contractor</div>
+    </div>
+
+    <div class="card">
+      <div class="field">
+        <div class="field-label">Your name <span class="req">*</span></div>
+        <input id="f-name" class="input" type="text" placeholder="First and last name" autocomplete="name">
+      </div>
+      <div class="field">
+        <div class="field-label">Phone number <span class="req">*</span></div>
+        <input id="f-phone" class="input" type="tel" placeholder="(555) 555-5555" autocomplete="tel">
+      </div>
+      <div class="field">
+        <div class="field-label">Property address <span class="req">*</span></div>
+        <input id="f-addr" class="input" type="text" placeholder="123 Main St, City, State">
+      </div>
+      <div class="field">
+        <div class="field-label">What are you looking to get done?</div>
+        <textarea id="f-notes" class="input" placeholder="Interior walls, exterior trim, garage, deck…"></textarea>
+      </div>
+      <div class="field" style="margin-bottom:4px">
+        <div class="field-label">Best time to call you</div>
+        <div class="time-grid">
+          <button class="time-btn" onclick="selTime(this,'Morning')">Morning</button>
+          <button class="time-btn" onclick="selTime(this,'Afternoon')">Afternoon</button>
+          <button class="time-btn" onclick="selTime(this,'Evening')">Evening</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="form-err" class="err" style="display:none;margin-bottom:12px"></div>
+    <button class="btn" id="submit-btn" onclick="submitForm()">Get my quote →</button>
+  </div>
+
+  <div id="pg-confirm" style="display:none">
+    <div class="confirm-wrap">
+      <div class="confirm-icon">✅</div>
+      <div class="confirm-hdr">You're all set!</div>
+      <div class="confirm-msg" id="confirm-msg">We got your info and will be in touch soon.</div>
+      <div id="confirm-phone-wrap" style="display:none;margin-top:16px">
+        <a id="confirm-phone-link" class="confirm-cta" href="#">Prefer to call? Tap to call</a>
+      </div>
+    </div>
+  </div>
+
+  <div id="pg-err" style="display:none">
+    <div class="state-wrap">
+      <div class="state-icon">⚠️</div>
+      <div class="state-hdr" id="pg-err-hdr">Something went wrong</div>
+      <div class="state-msg" id="pg-err-msg">This link may be invalid or expired.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPA_URL='https://mwtsmctajhrrybblgorf.supabase.co';
+const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
+const _supa=supabase.createClient(SUPA_URL,SUPA_KEY);
+
+const params=new URLSearchParams(location.search);
+const ACCOUNT_ID=params.get('a')||'';
+
+let _acct=null;
+let _callTime='';
+let _submitting=false;
+
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function v(id){return(document.getElementById(id)||{}).value||''}
+function show(id){document.getElementById(id).style.display=''}
+function hide(id){document.getElementById(id).style.display='none'}
+
+function selTime(btn,val){
+  document.querySelectorAll('.time-btn').forEach(b=>b.classList.remove('sel'));
+  btn.classList.add('sel');
+  _callTime=val;
+}
+
+async function init(){
+  if(!ACCOUNT_ID){
+    showErr('Invalid link','No contractor account found. Please scan the QR code again.');
+    return;
+  }
+  try{
+    const{data,error}=await _supa.from('accounts').select('id,business_name,phone').eq('id',ACCOUNT_ID).maybeSingle();
+    if(error||!data){
+      showErr('Contractor not found','This link may be invalid or expired.');
+      return;
+    }
+    _acct=data;
+    applyBranding();
+    hide('pg-load');
+    show('pg-form');
+  }catch(e){
+    showErr('Connection error','Could not load contractor info. Please try again.');
+  }
+}
+
+function applyBranding(){
+  const name=_acct.business_name||'Your Contractor';
+  document.getElementById('hero-biz').textContent=name;
+  document.getElementById('topbar-name').textContent=name+' — Free Quote';
+  document.title=name+' — Get a Free Quote';
+}
+
+function showErr(hdr,msg){
+  hide('pg-load');hide('pg-form');hide('pg-confirm');
+  document.getElementById('pg-err-hdr').textContent=hdr;
+  document.getElementById('pg-err-msg').textContent=msg;
+  show('pg-err');
+}
+
+async function submitForm(){
+  if(_submitting)return;
+  const name=v('f-name').trim();
+  const phone=v('f-phone').trim();
+  const addr=v('f-addr').trim();
+  const notes=v('f-notes').trim();
+  const errEl=document.getElementById('form-err');
+
+  if(!name){errEl.textContent='Please enter your name.';show('form-err');document.getElementById('f-name').focus();return;}
+  if(!phone){errEl.textContent='Please enter your phone number.';show('form-err');document.getElementById('f-phone').focus();return;}
+  if(!addr){errEl.textContent='Please enter the property address.';show('form-err');document.getElementById('f-addr').focus();return;}
+  hide('form-err');
+
+  _submitting=true;
+  const btn=document.getElementById('submit-btn');
+  btn.disabled=true;
+  btn.textContent='Sending…';
+
+  try{
+    const{error}=await _supa.from('inbound_leads').insert({
+      source:'qr_form',
+      account_id:ACCOUNT_ID,
+      name:name,
+      phone:phone,
+      addr:addr,
+      notes:notes||null,
+      call_time:_callTime||null,
+      status:'pending'
+    });
+    if(error)throw error;
+    showConfirm(name);
+  }catch(e){
+    _submitting=false;
+    btn.disabled=false;
+    btn.textContent='Get my quote →';
+    errEl.textContent='Something went wrong — please try again.';
+    show('form-err');
+  }
+}
+
+function showConfirm(name){
+  hide('pg-form');
+  const firstName=name.split(' ')[0];
+  const biz=_acct?.business_name||'your contractor';
+  document.getElementById('confirm-msg').textContent=
+    'Thanks '+firstName+'! '+biz+' received your info and will be in touch within 24 hours.';
+  if(_acct?.phone){
+    const ph=_acct.phone;
+    const link=document.getElementById('confirm-phone-link');
+    link.href='tel:'+ph.replace(/\D/g,'');
+    link.textContent='Prefer to call? '+ph;
+    show('confirm-phone-wrap');
+  }
+  show('pg-confirm');
+}
+
+init();
+</script>
+</body>
+</html>
