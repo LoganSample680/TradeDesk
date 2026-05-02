@@ -4699,7 +4699,12 @@ function saveClient(){
   const _existingClient=editClientId?clients.find(x=>x.id===editClientId):null;
   const c={id:editClientId||Date.now(),name,phone:v('cf-phone'),email:v('cf-email'),addr:v('cf-addr'),ptype:v('cf-ptype'),source,ref,notes:v('cf-notes'),created:todayKey(),extraAddresses:_existingClient?.extraAddresses||[],clientToken:_existingClient?.clientToken||'',clientHubKey:_existingClient?.clientHubKey||''};
   if(editClientId){const i=clients.findIndex(x=>x.id===editClientId);if(i>=0)clients[i]=c;}
-  else{clients.push(c);_ensureClientToken(c.id);}
+  else{
+    clients.push(c);
+    _ensureClientToken(c.id);
+    // Auto-generate hub immediately so onboarding link works on first send
+    if(supaEnabled()&&_supaUser)_uploadClientHub(c.id).catch(()=>{});
+  }
   saveAll();
   if(isNew){
     closeClientForm();
@@ -16693,9 +16698,12 @@ function _onNewInboundLead(row){
       saveAll();
       // Mark as applied
       _supa.from('inbound_leads').update({status:'applied'}).eq('id',row.id).then(()=>{});
-      showToast((c.name||'Lead')+' completed their onboarding ✓','📋');
-      if(_activePg==='pg-leads')renderLeadsPage();
-      if(_activePg==='pg-client-detail'&&currentClientId===Number(row.client_id))renderClientDetail();
+      // Re-upload hub with new address so client.html shows updated info
+      _uploadClientHub(Number(row.client_id)).catch(()=>{});
+      showToast((c.name||'Lead')+' completed their onboarding — tap to view','📋');
+      // Navigate directly to the client: avoids lead "disappearing" from whatever filter tab is active
+      openClientDetail(Number(row.client_id));
+      goPg('pg-client-detail');
       return;
     }
   }
