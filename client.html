@@ -147,7 +147,13 @@ async function init(){
   try{
     const key='client-hub/'+u+'/'+c+'_'+t+'.json';
     const{data,error}=await _supa.storage.from('proposals').download(key);
-    if(error||!data){showState('err');return;}
+    if(error||!data){
+      // Hub JSON not ready yet — check if they completed onboarding on this device
+      const p2=new URLSearchParams(location.search);
+      const cid=p2.get('c');
+      if(cid&&localStorage.getItem('td_onb_done_'+cid)){showQuoteInProgress(null);return;}
+      showState('err');return;
+    }
     _hub=JSON.parse(await data.text());
     const bidIds=_hub.bids.map(b=>String(b.id));
     if(u&&bidIds.length){
@@ -197,13 +203,7 @@ async function initOnboard(t,u,c){
   document.getElementById('pg-load').style.display='none';
   // Check if already completed — hub address OR localStorage flag (set on this device after submit)
   if((_hub&&_hub.clientAddr)||localStorage.getItem('td_onb_done_'+c)){
-    document.getElementById('pg-hub').innerHTML=
-      '<div class="pg-status" style="display:block"><div class="pg-status-icon">✅</div>'+
-      '<h2>You\'re all set!</h2>'+
-      '<p>'+esc(_hub.contractorName||'Your contractor')+' already has your project details and will be in touch soon.</p>'+
-      (_hub.contractorPhone?'<a href="tel:'+_hub.contractorPhone.replace(/\D/g,'')+'" style="display:inline-block;margin-top:20px;background:var(--accent);color:#fff;padding:14px 28px;border-radius:var(--r);font-weight:700;text-decoration:none;font-size:15px">Call '+esc(_hub.contractorPhone)+'</a>':'')+
-      '</div>';
-    document.getElementById('pg-hub').style.display='block';
+    showQuoteInProgress(_hub);
     return;
   }
   const firstName=_hub?.clientName?.split(' ')[0]||'';
@@ -270,18 +270,33 @@ async function submitOnboard(userId,clientId){
     });
     // Remember on this device so form doesn't re-appear
     try{localStorage.setItem('td_onb_done_'+clientId,'1');}catch(e){}
-    // Show confirmation
+    // Show brief confirmation then transition to hub (or quote-in-progress)
     document.querySelector('.body-wrap').innerHTML=
       '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px 20px;text-align:center">'+
       '<div style="font-size:64px;margin-bottom:20px">✅</div>'+
-      '<div style="font-size:24px;font-weight:800;margin-bottom:10px">You\'re all set!</div>'+
-      '<div style="font-size:15px;color:var(--text2);line-height:1.7;max-width:340px">'+esc(_hub?.contractorName||'Your contractor')+' will be in touch soon.'+
-      (_hub?.contractorPhone?'<br><br><a href="tel:'+_hub.contractorPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700">'+esc(_hub.contractorPhone)+'</a>':'')+
-      '</div></div>';
+      '<div style="font-size:24px;font-weight:800;margin-bottom:10px">Got it!</div>'+
+      '<div style="font-size:15px;color:var(--text2);line-height:1.7;max-width:340px">'+esc(_hub?.contractorName||'Your contractor')+' is preparing your quote.</div>'+
+      '</div>';
+    // Redirect to hub view after short delay
+    const hubUrl=new URL(location.href);hubUrl.searchParams.delete('mode');
+    setTimeout(()=>{location.href=hubUrl.toString();},2000);
   }catch(e){
     if(btn){btn.textContent='Send my details →';btn.disabled=false;}
     alert('Something went wrong — please try again or contact your contractor directly.');
   }
+}
+function showQuoteInProgress(h){
+  const name=h?.contractorName||'Your contractor';
+  const phone=h?.contractorPhone||'';
+  document.getElementById('pg-hub').innerHTML=
+    '<div class="pg-status" style="display:block">'+
+    '<div class="pg-status-icon">📋</div>'+
+    '<h2>Quote in progress</h2>'+
+    '<p>'+esc(name)+' has your details and is preparing your free quote.</p>'+
+    (phone?'<a href="tel:'+phone.replace(/\D/g,'')+'" style="display:inline-block;margin-top:20px;background:var(--accent);color:#fff;padding:14px 28px;border-radius:var(--r);font-weight:700;text-decoration:none;font-size:15px">Call '+esc(phone)+'</a>':'')+
+    '</div>';
+  document.getElementById('pg-load').style.display='none';
+  document.getElementById('pg-hub').style.display='block';
 }
 function showState(s){
   document.getElementById('pg-load').style.display=s==='load'?'block':'none';

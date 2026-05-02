@@ -457,8 +457,9 @@ body.dark .fbar .fb.active{background:var(--blue);color:#fff;border-color:var(--
 .toast{position:fixed;bottom:24px;right:24px;background:#0D1117;color:#fff;border-radius:12px;padding:14px 18px;font-size:13px;font-weight:600;box-shadow:0 8px 32px rgba(0,0,0,.3);z-index:9997;display:flex;align-items:center;gap:10px;max-width:320px;animation:toast-in .25s ease;transform-origin:bottom right}
 @keyframes toast-in{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}
 @keyframes td-spin{to{transform:rotate(360deg)}}
-@keyframes td-logoin{from{opacity:0;transform:scale(.88)}to{opacity:1;transform:scale(1)}}
-#supa-boot-overlay.td-fadeout{opacity:0;transition:opacity .3s ease}
+@keyframes td-logoin{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}
+@keyframes td-bar{from{width:0}to{width:68%}}
+#supa-boot-overlay.td-fadeout{opacity:0;transition:opacity .35s ease}
 .toast-icon{font-size:18px;flex-shrink:0}
 .toast-close{background:none;border:none;color:rgba(255,255,255,.5);cursor:pointer;font-size:16px;margin-left:8px;padding:0;line-height:1}
 .tbl{width:100%;border-collapse:collapse;font-size:12px}
@@ -16672,14 +16673,13 @@ async function _loadPendingInbound(){
   try{
     const{data}=await _supa.from('inbound_leads').select('*').eq('account_id',_supaUser.id).eq('status','pending').order('created_at',{ascending:false});
     if(!data)return;
-    // Auto-merge any onboarding link submissions (have client_id) immediately
-    const toReview=[];
-    for(const row of data){
-      if(row.client_id){_onNewInboundLead(row);}
-      else{toReview.push(row);}
-    }
+    // Split: onboard_link rows (have client_id) auto-merge; QR rows go to review queue
+    const toMerge=data.filter(r=>!!r.client_id);
+    const toReview=data.filter(r=>!r.client_id);
+    // Update _pendingInbound BEFORE rendering so _inboundReviewHTML has correct state
     _pendingInbound=toReview;
     _updateInboundBadge();
+    for(const row of toMerge){_onNewInboundLead(row);}
   }catch(e){}
 }
 function _onNewInboundLead(row){
@@ -17124,22 +17124,30 @@ if(supaEnabled()){
   (function showLoadingScreen(){
     const logo=S.logoData||'';
     const name=S.bname||'TradeDesk';
-    const color=S.brandColor||'';
-    // If brand color set: use it as background so any logo looks great on it
-    // If not: dark navy with a subtle diagonal tint
-    const bg=color
-      ?'linear-gradient(150deg,'+color+' 0%,'+color+'cc 100%)'
-      :'#0D1117';
-    const spinColor=color||'#185FA5';
-    const textColor=color?'rgba(0,0,0,0.45)':'rgba(255,255,255,0.4)';
+    const color=S.brandColor||'#185FA5';
+    const hasBrand=!!S.brandColor;
+    // Solid opaque background — brand color if set, dark navy if not
+    const bg=hasBrand?color:'#0D1117';
+    // On brand-color bg text/bar contrast; on dark bg use white
+    const onColor=hasBrand?'rgba(0,0,0,0.55)':'rgba(255,255,255,0.45)';
+    const barFg=hasBrand?'rgba(0,0,0,0.35)':color;
+    const barBg=hasBrand?'rgba(0,0,0,0.2)':'rgba(255,255,255,0.08)';
     const logoBlock=logo
-      ?'<img src="'+logo+'" style="max-height:260px;max-width:88vw;width:auto;object-fit:contain;display:block;animation:td-logoin .5s cubic-bezier(.34,1.56,.64,1) forwards">'
-      :'<div style="font-size:42px;font-weight:900;color:'+(color?'#fff':'#fff')+';letter-spacing:-1.5px;animation:td-logoin .4s ease forwards">'+name+'</div>';
+      ?'<img src="'+logo+'" style="max-height:260px;max-width:86vw;width:auto;object-fit:contain;display:block;animation:td-logoin .55s cubic-bezier(.22,1,.36,1) both">'
+      :'<div style="font-size:44px;font-weight:900;color:#fff;letter-spacing:-2px;animation:td-logoin .4s ease both">'+name+'</div>';
     const ov=document.createElement('div');
     ov.id='supa-boot-overlay';
-    ov.style.cssText='position:fixed;inset:0;z-index:9998;background:'+bg+';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:36px';
-    ov.innerHTML=logoBlock
-      +'<div style="width:28px;height:28px;border-radius:50%;border:2.5px solid rgba(0,0,0,.15);border-top-color:'+spinColor+';animation:td-spin .9s linear infinite"></div>';
+    ov.style.cssText='position:fixed;inset:0;z-index:9998;background:'+bg+';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0';
+    ov.innerHTML=
+      '<div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;padding:0 24px">'+
+        logoBlock+
+        (name!=='TradeDesk'&&logo?'<div style="font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:'+onColor+'">'+name+'</div>':'')+
+      '</div>'+
+      '<div style="width:100%;padding:0 0 52px">'+
+        '<div style="height:3px;background:'+barBg+';border-radius:99px;margin:0 32px;overflow:hidden">'+
+          '<div style="height:100%;background:'+barFg+';border-radius:99px;animation:td-bar 2.8s cubic-bezier(.4,0,.2,1) forwards"></div>'+
+        '</div>'+
+      '</div>';
     document.body.appendChild(ov);
   })();
   supaInit();
