@@ -9883,7 +9883,8 @@ function sendOnboardingLink(clientId){
   const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
   const url=baseUrl+'client.html?mode=onboard&t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
   const firstName=c.name?.split(' ')[0]||'there';
-  const biz=(_account?.business_name||S.bname||getOwnerName()||'').trim()||'your contractor';
+  const rawBiz=getBusinessName();
+  const biz=(rawBiz&&!rawBiz.includes('@')&&rawBiz!=='TradeDesk')?rawBiz:(getOwnerName()||'your contractor');
   const msg='Hi '+firstName+'! This is '+biz+'. Tap this link to share your address and project details so I can prepare your free quote — takes about 2 minutes: '+url;
   // Save sent timestamp
   const idx=clients.findIndex(x=>x.id===clientId);
@@ -16670,7 +16671,15 @@ async function _loadPendingInbound(){
   if(!_supa||!_supaUser)return;
   try{
     const{data}=await _supa.from('inbound_leads').select('*').eq('account_id',_supaUser.id).eq('status','pending').order('created_at',{ascending:false});
-    if(data){_pendingInbound=data;_updateInboundBadge();}
+    if(!data)return;
+    // Auto-merge any onboarding link submissions (have client_id) immediately
+    const toReview=[];
+    for(const row of data){
+      if(row.client_id){_onNewInboundLead(row);}
+      else{toReview.push(row);}
+    }
+    _pendingInbound=toReview;
+    _updateInboundBadge();
   }catch(e){}
 }
 function _onNewInboundLead(row){
@@ -17115,19 +17124,22 @@ if(supaEnabled()){
   (function showLoadingScreen(){
     const logo=S.logoData||'';
     const name=S.bname||'TradeDesk';
-    const color=S.brandColor||'#185FA5';
-    // Radial glow using brand color behind the logo
-    const glowBg='radial-gradient(ellipse 60% 50% at 50% 42%,'+color+'26 0%,transparent 70%)';
+    const color=S.brandColor||'';
+    // If brand color set: use it as background so any logo looks great on it
+    // If not: dark navy with a subtle diagonal tint
+    const bg=color
+      ?'linear-gradient(150deg,'+color+' 0%,'+color+'cc 100%)'
+      :'#0D1117';
+    const spinColor=color||'#185FA5';
+    const textColor=color?'rgba(0,0,0,0.45)':'rgba(255,255,255,0.4)';
     const logoBlock=logo
-      ?'<div style="background:#fff;border-radius:20px;padding:22px 28px;animation:td-logoin .5s cubic-bezier(.34,1.56,.64,1) forwards"><img src="'+logo+'" style="max-height:180px;max-width:72vw;width:auto;object-fit:contain;display:block"></div>'
-      :'<div style="font-size:32px;font-weight:800;color:#fff;letter-spacing:-.8px;animation:td-logoin .4s ease forwards">'+name+'</div>';
+      ?'<img src="'+logo+'" style="max-height:260px;max-width:88vw;width:auto;object-fit:contain;display:block;animation:td-logoin .5s cubic-bezier(.34,1.56,.64,1) forwards">'
+      :'<div style="font-size:42px;font-weight:900;color:'+(color?'#fff':'#fff')+';letter-spacing:-1.5px;animation:td-logoin .4s ease forwards">'+name+'</div>';
     const ov=document.createElement('div');
     ov.id='supa-boot-overlay';
-    ov.style.cssText='position:fixed;inset:0;z-index:9998;background:#0D1117;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px';
-    ov.innerHTML='<div style="position:absolute;inset:0;background:'+glowBg+';pointer-events:none"></div>'
-      +logoBlock
-      +(logo&&name!=='TradeDesk'?'<div style="font-size:14px;font-weight:700;color:rgba(255,255,255,.5);letter-spacing:.04em;text-transform:uppercase">'+name+'</div>':'')
-      +'<div style="width:32px;height:32px;border-radius:50%;border:2.5px solid rgba(255,255,255,.1);border-top-color:'+color+';animation:td-spin .9s linear infinite"></div>';
+    ov.style.cssText='position:fixed;inset:0;z-index:9998;background:'+bg+';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:36px';
+    ov.innerHTML=logoBlock
+      +'<div style="width:28px;height:28px;border-radius:50%;border:2.5px solid rgba(0,0,0,.15);border-top-color:'+spinColor+';animation:td-spin .9s linear infinite"></div>';
     document.body.appendChild(ov);
   })();
   supaInit();

@@ -195,8 +195,8 @@ async function initOnboard(t,u,c){
   document.getElementById('bottom-nav').style.display='none';
   document.getElementById('pg-hub').style.display='none';
   document.getElementById('pg-load').style.display='none';
-  // Check if already completed (hub has an address)
-  if(_hub&&_hub.clientAddr){
+  // Check if already completed — hub address OR localStorage flag (set on this device after submit)
+  if((_hub&&_hub.clientAddr)||localStorage.getItem('td_onb_done_'+c)){
     document.getElementById('pg-hub').innerHTML=
       '<div class="pg-status" style="display:block"><div class="pg-status-icon">✅</div>'+
       '<h2>You\'re all set!</h2>'+
@@ -268,6 +268,8 @@ async function submitOnboard(userId,clientId){
       call_time:callTime,
       status:'pending'
     });
+    // Remember on this device so form doesn't re-appear
+    try{localStorage.setItem('td_onb_done_'+clientId,'1');}catch(e){}
     // Show confirmation
     document.querySelector('.body-wrap').innerHTML=
       '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px 20px;text-align:center">'+
