@@ -233,7 +233,7 @@ async function initOnboard(t,u,c){
           '<button type="button" onclick="onbTime(this,\'Evening\')" style="flex:1;padding:11px 6px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Evening</button>'+
         '</div>'+
       '</div>'+
-      '<button id="onb-submit" onclick="submitOnboard(\''+u+'\','+c+')" style="width:100%;padding:15px;border-radius:var(--r);border:none;background:var(--accent);color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit">Get my quote →</button>'+
+      '<button id="onb-submit" onclick="submitOnboard(\''+u+'\','+c+')" style="width:100%;padding:15px;border-radius:var(--r);border:none;background:var(--accent);color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit">Send my details →</button>'+
     '</div>'+
     '<div style="text-align:center;margin-top:20px;font-size:12px;color:var(--text3)">'+esc(contractorName)+'</div>'+
     '</div>';
@@ -277,7 +277,7 @@ async function submitOnboard(userId,clientId){
       (_hub?.contractorPhone?'<br><br><a href="tel:'+_hub.contractorPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700">'+esc(_hub.contractorPhone)+'</a>':'')+
       '</div></div>';
   }catch(e){
-    if(btn){btn.textContent='Get my quote →';btn.disabled=false;}
+    if(btn){btn.textContent='Send my details →';btn.disabled=false;}
     alert('Something went wrong — please try again or contact your contractor directly.');
   }
 }

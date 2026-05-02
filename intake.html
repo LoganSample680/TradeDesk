@@ -91,7 +91,7 @@ textarea.input{resize:vertical;min-height:90px}
     </div>
 
     <div id="form-err" class="err" style="display:none;margin-bottom:12px"></div>
-    <button class="btn" id="submit-btn" onclick="submitForm()">Get my quote →</button>
+    <button class="btn" id="submit-btn" onclick="submitForm()">Send my details →</button>
   </div>
 
   <div id="pg-confirm" style="display:none">
@@ -205,7 +205,7 @@ async function submitForm(){
   }catch(e){
     _submitting=false;
     btn.disabled=false;
-    btn.textContent='Get my quote →';
+    btn.textContent='Send my details →';
     errEl.textContent='Something went wrong — please try again.';
     show('form-err');
   }
