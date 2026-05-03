@@ -9960,26 +9960,31 @@ function sendOnboardingLink(clientId){
     ov.appendChild(box);document.body.appendChild(ov);
   }
 }
-async function sendClientHubLink(clientId){
-  try{
-    const url=await _uploadClientHub(clientId);
-    if(!url){zAlert('Could not create hub link. Make sure you\'re signed in.');return;}
-    const c=clients.find(x=>x.id===clientId);
-    const firstName=c?.name?.split(' ')[0]||'there';
-    const biz=S.bname||'us';
-    const ov=document.createElement('div');ov.className='zmodal-overlay';
-    const box=document.createElement('div');box.className='zmodal';
-    box.innerHTML=
-      '<div style="font-size:17px;font-weight:800;margin-bottom:4px">📋 Client Hub ready</div>'+
-      '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+(c?.name||'Client')+' · view proposals, pay balance, download invoices</div>'+
-      '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:11px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+url+'</div>'+
-      '<button onclick="navigator.clipboard.writeText(\''+url+'\').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">📋 Copy link</button>'+
-      (c?.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+firstName+', here\\\'s your project hub from '+biz+' — view your proposals, pay your balance, and download invoices anytime: '+url+'\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">📱 Send via Messages</button>':'')+
-      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
-    ov.appendChild(box);document.body.appendChild(ov);
-    ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-    navigator.clipboard.writeText(url).catch(()=>{});
-  }catch(e){zAlert('Error creating hub: '+e.message);}
+function sendClientHubLink(clientId){
+  const c=clients.find(x=>x.id===clientId);
+  if(!c||!supaEnabled()||!_supaUser){zAlert('Could not create hub link. Make sure you\'re signed in.');return;}
+  if(!c.clientToken){
+    c.clientToken=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
+    saveAll();
+  }
+  const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  const url=baseUrl+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+  // Refresh hub content silently in background — never blocks the share sheet
+  _uploadClientHub(clientId).catch(()=>{});
+  const firstName=c.name?.split(' ')[0]||'there';
+  const biz=S.bname||'us';
+  const ov=document.createElement('div');ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">📋 Client Hub ready</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+(c.name||'Client')+' · view proposals, pay balance, download invoices</div>'+
+    '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:11px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+url+'</div>'+
+    '<button onclick="navigator.clipboard.writeText(\''+url+'\').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">📋 Copy link</button>'+
+    (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+firstName+', here\\\'s your project hub from '+biz+' — view your proposals, pay your balance, and download invoices anytime: '+url+'\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">📱 Send via Messages</button>':'')+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  navigator.clipboard.writeText(url).catch(()=>{});
 }
 async function _refreshClientHub(clientId){
   const c=clients.find(x=>x.id===clientId);
