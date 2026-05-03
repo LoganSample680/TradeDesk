@@ -572,10 +572,17 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         <div class="f"><label>Phone</label><input id="cf-phone" type="tel" placeholder="XXX-XXX-XXXX" maxlength="12" oninput="fmtPhone(this);clearFErr('cf-phone');_allowPhoneDupe=false;">
           <div id="err-cf-phone" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
         </div>
-        <div class="f" style="grid-column:1/-1"><label>Property address <span style="font-weight:400;color:var(--text3)">(optional — add from profile later)</span></label><input id="cf-addr" placeholder="1234 Maple St, Wichita KS 67201" oninput="clearFErr('cf-addr')">
+        <div class="f" style="grid-column:1/-1"><label>Property address <span style="font-weight:400;color:var(--text3)">(optional — add from profile later)</span></label><input id="cf-addr" placeholder="1234 Maple St, Wichita KS 67201" oninput="clearFErr('cf-addr');updateYearLookupBtn()">
           <div id="err-cf-addr" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
         </div>
         <div class="f"><label>Property type</label><select id="cf-ptype"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>
+        <div class="f" id="cf-year-built-wrap"><label>Year built <span style="font-weight:400;color:var(--text3);font-size:10px">Pre-1978 requires EPA disclosure</span></label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="cf-year-built" type="number" min="1800" max="2030" placeholder="e.g. 1965" oninput="checkYearBuilt()" style="flex:1">
+            <button type="button" class="btn btn-sm btn-g" id="cf-year-lookup" onclick="lookupYearBuilt()" style="display:none;white-space:nowrap">&#128269; Look up</button>
+          </div>
+          <div id="cf-year-warn" style="display:none;font-size:12px;color:var(--amber);font-weight:700;margin-top:4px">⚠️ Pre-1978 — Lead paint pamphlet required</div>
+        </div>
         <div class="f"><label>Email</label><input type="email" id="cf-email" placeholder="client@email.com"></div>
         <div class="f">
           <label>Lead source <span style="color:#A32D2D">*</span></label>
@@ -664,7 +671,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   </div>
 </div>
 <div class="pg" id="pg-client-detail">
-  <button class="btn btn-sm" onclick="window._fromDash?goPg('pg-dash'):goPg('pg-clients')" style="margin-bottom:10px" id="cd-back-btn">&#8592; Back</button>
+  <button class="btn btn-sm" onclick="goPg(window._clientDetailOrigin==='dash'?'pg-dash':window._clientDetailOrigin==='leads'?'pg-leads':'pg-clients')" style="margin-bottom:10px" id="cd-back-btn">&#8592; Back</button>
 
   
   <div class="detail-hdr" id="cd-hdr"></div>
@@ -1514,7 +1521,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
     <input type="hidden" id="inc-type"><input type="hidden" id="inc-amount">
     <input type="hidden" id="inc-pay"><input type="hidden" id="inc-inv">
     <input type="hidden" id="inc-notes">
-    <div class="card"><div class="card-hd">Income log</div><div id="inc-table"></div></div>
+    <div class="card"><div class="card-hd">Income log<span><button class="btn btn-sm btn-p" onclick="openManualIncomeModal()">+ Log income</button></span></div><div id="inc-table"></div></div>
   </div>
   <div id="tr-expenses" style="display:none">
     <div class="card">
@@ -2716,13 +2723,15 @@ function goPg(id){
   if(id==='pg-money')renderMoneyPage();
   if(id==='pg-est'){buildScopeGrid();showNotesFab();}
 }
-function openClientDetail(cid,fromDash){
+function openClientDetail(cid,origin){
   currentClientId=cid;
-  if(fromDash)window._fromDash=true;
+  // origin: 'dash' | 'leads' | 'clients' | true (legacy dash compat)
+  window._clientDetailOrigin=(origin===true||origin==='dash')?'dash':(origin==='leads'?'leads':'clients');
+  window._fromDash=(window._clientDetailOrigin==='dash');
   renderClientDetail();
   goPg('pg-client-detail');
   const bb=document.getElementById('cd-back-btn');
-  if(bb)bb.textContent=window._fromDash?'← Home':'← All clients';
+  if(bb)bb.textContent=window._clientDetailOrigin==='dash'?'← Home':window._clientDetailOrigin==='leads'?'← Leads':'← All clients';
 }
 
 function openEstimateForClient(){
@@ -4617,6 +4626,20 @@ function openNewClient(){
   window.scrollTo(0,0);
   setTimeout(()=>{const n=document.getElementById('cf-name');if(n)n.focus();},100);
 }
+function checkYearBuilt(){
+  const yr=parseInt(document.getElementById('cf-year-built')?.value||'');
+  const warn=document.getElementById('cf-year-warn');
+  if(warn)warn.style.display=(yr&&yr<1978)?'block':'none';
+}
+function updateYearLookupBtn(){
+  const addr=(document.getElementById('cf-addr')?.value||'').trim();
+  const btn=document.getElementById('cf-year-lookup');
+  if(btn)btn.style.display=addr?'inline-block':'none';
+}
+function lookupYearBuilt(){
+  const addr=(document.getElementById('cf-addr')?.value||'').trim();
+  if(addr)window.open('https://www.google.com/search?q=year+built+'+encodeURIComponent(addr),'_blank');
+}
 function openEditClient(){
   const c=getClientById(currentClientId);if(!c)return;
   editClientId=currentClientId;
@@ -4633,6 +4656,8 @@ function openEditClient(){
   const ctier=document.getElementById('cf-tier');if(ctier)ctier.value=c.tier||'';
   const crw2=document.getElementById('cf-ref-wrap');if(crw2)crw2.style.display=c.source==='Referral'?'block':'none';
   document.getElementById('cf-notes').value=c.notes||'';
+  const cyb=document.getElementById('cf-year-built');if(cyb)cyb.value=c.yearBuilt||'';
+  checkYearBuilt();updateYearLookupBtn();
   goPg('pg-clients');
   setTimeout(()=>{document.getElementById('client-form-wrap').style.display='block';document.getElementById('client-form-wrap').scrollIntoView({behavior:'smooth',block:'nearest'});},50);
 }
@@ -4697,7 +4722,8 @@ function saveClient(){
   const occupation=v('cf-occupation')||'';
   const tier=v('cf-tier')||'';
   const _existingClient=editClientId?clients.find(x=>x.id===editClientId):null;
-  const c={id:editClientId||Date.now(),name,phone:v('cf-phone'),email:v('cf-email'),addr:v('cf-addr'),ptype:v('cf-ptype'),source,ref,notes:v('cf-notes'),created:todayKey(),extraAddresses:_existingClient?.extraAddresses||[],clientToken:_existingClient?.clientToken||'',clientHubKey:_existingClient?.clientHubKey||''};
+  const _ybRaw=parseInt(document.getElementById('cf-year-built')?.value||'');
+  const c={id:editClientId||Date.now(),name,phone:v('cf-phone'),email:v('cf-email'),addr:v('cf-addr'),ptype:v('cf-ptype'),source,ref,notes:v('cf-notes'),created:todayKey(),yearBuilt:_ybRaw||_existingClient?.yearBuilt||null,extraAddresses:_existingClient?.extraAddresses||[],clientToken:_existingClient?.clientToken||'',clientHubKey:_existingClient?.clientHubKey||''};
   if(editClientId){const i=clients.findIndex(x=>x.id===editClientId);if(i>=0)clients[i]=c;}
   else{
     clients.push(c);
@@ -4783,7 +4809,7 @@ function renderClientDetail(){
       '<button class="btn" onclick="openMapsDir()" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex:1">&#128205; Directions</button>'+
       '<button class="btn" onclick="showHubMenu('+c.id+')" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex-shrink:0" title="Share client portal">&#128279; Hub</button>'+
     '</div>'+
-    (c.clientToken&&_supaUser?(()=>{const _hu=(window.location.origin+window.location.pathname.split('index.html')[0])+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+c.id;return '<div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 12px;background:rgba(0,0,0,.2);border-radius:var(--r);font-size:11px;overflow:hidden">'+'<span style="color:rgba(255,255,255,.6);white-space:nowrap;flex-shrink:0">Hub:</span>'+'<span style="flex:1;color:rgba(255,255,255,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+_hu+'</span>'+'<button onclick="copyHubLink(\''+_hu+'\')" style="padding:3px 8px;font-size:11px;background:rgba(255,255,255,.15);border:none;border-radius:4px;color:#fff;cursor:pointer;flex-shrink:0">Copy</button>'+'</div>'})():'');
+    '';
   if(gps.active&&gps.clientId===currentClientId){
     document.getElementById('cd-drive-idle').style.display='none';
     document.getElementById('cd-drive-start').style.display='none';
@@ -4830,12 +4856,14 @@ function renderClientDetail(){
   const cexpenses=getClientExpenses(currentClientId);
   const totalExpenses=cexpenses.reduce((s,e)=>s+e.amount,0);
   const jobProfit=totalIncome-totalExpenses-(totalMiles*IRS());
+  const intakeInfoHTML=(c.callTime||c.notes)?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📞 Best time to call:</span> ${c.callTime}</div>`:''}${c.notes?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📋 Intake notes:</span> ${c.notes}</div>`:''}</div>`:'';
+  const epaHTML=(c.yearBuilt&&c.yearBuilt<1978&&getActiveTrade()==='painting')?`<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 12px;margin-top:10px;font-size:12px;font-weight:700;color:#856404">⚠️ Pre-1978 home — Lead paint disclosure required before work begins</div>`:'';
   document.getElementById('cd-client-mets').innerHTML=balanceHTML+`<div class="mets" style="margin-bottom:0">
     <div class="met"><div class="met-l">Revenue</div><div class="met-v" style="color:var(--green-mid)">${fmt(totalIncome)}</div></div>
     <div class="met" style="cursor:pointer" onclick="setCDTab('expenses',document.getElementById('cdt-expenses'))"><div class="met-l">Expenses</div><div class="met-v" style="color:#A32D2D">${fmt(totalExpenses)}</div><div class="met-s">${cexpenses.length} items</div></div>
     <div class="met"><div class="met-l">Miles</div><div class="met-v">${totalMiles.toFixed(1)}</div><div class="met-s">${fmt(totalMiles*IRS())}</div></div>
     <div class="met"><div class="met-l">Job profit</div><div class="met-v" style="color:${jobProfit<0?'#A32D2D':'var(--green-mid)'}">${fmt(jobProfit)}</div><div class="met-s">After exp+miles</div></div>
-  </div>`;
+  </div>`+intakeInfoHTML+epaHTML;
   // Estimate action buttons — context-aware based on pipeline stage
   const _cdStage=getClientStage(currentClientId).stage;
   const _cdActions=document.getElementById('cd-estimate-actions');
@@ -9855,6 +9883,10 @@ function _buildClientHubSnapshot(clientId){
     brandColor:S.brandColor||'',logoData:S.logoData||'',bwebsite:S.bwebsite||'',
     contractorUserId:_supaUser?.id||'',notifyEmail:S.bemail||_supaUser?.email||'',
     stripeEnabled:!!(_stripeConnectStatus?.charges_enabled),
+    yearBuilt:c.yearBuilt||null,
+    epaRequired:!!(c.yearBuilt&&c.yearBuilt<1978&&getActiveTrade()==='painting'),
+    epaAck:c.epaAck||false,
+    trade:getActiveTrade(),
     hubUrl,token:c.clientToken||'',generatedAt:new Date().toISOString(),
     bids:snapshotBids,payments:snapshotPayments,jobs:snapshotJobs,photos:jobPhotos
   };
@@ -10192,6 +10224,9 @@ async function sendProposalLink(){
       adjustmentType:v('adj-type-hidden')||'',
       adjustmentReason:v('adj-reason-hidden')||'',
       adjustmentPct:parseInt(v('est-adj'))||0,
+      yearBuilt:(()=>{const cl=_bidForProp?clients.find(c=>c.id===_bidForProp.client_id):null;return cl?.yearBuilt||null;})(),
+      epaRequired:(()=>{const cl=_bidForProp?clients.find(c=>c.id===_bidForProp.client_id):null;return !!(cl?.yearBuilt&&cl.yearBuilt<1978&&getActiveTrade()==='painting');})(),
+      trade:getActiveTrade(),
     };
     // Upload with 8s timeout — never let storage hang in the field
     const uploadPromise=_supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true});
@@ -13064,6 +13099,65 @@ function renderJobSummary(){
     '</div>';
 }
 
+function openManualIncomeModal(){
+  const today=new Date().toISOString().slice(0,10);
+  const clientOpts=clients.map(c=>'<option value="'+c.id+'">'+escHtml(c.name)+'</option>').join('');
+  const ov=document.createElement('div');ov.id='_inc-ov';ov.style.cssText='position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.5);display:flex;align-items:flex-end';
+  const sheet=document.createElement('div');sheet.style.cssText='background:var(--bg2);border-radius:16px 16px 0 0;width:100%;padding:20px 16px 32px;box-sizing:border-box';
+  sheet.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'+
+      '<div style="font-size:17px;font-weight:800">Log Income</div>'+
+      '<button onclick="document.getElementById(\'_inc-ov\').remove()" style="background:none;border:none;font-size:20px;color:var(--text3);cursor:pointer">✕</button>'+
+    '</div>'+
+    '<div style="display:grid;gap:12px">'+
+      '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Date <span style="color:#A32D2D">*</span></label>'+
+        '<input id="_inc-date" type="date" value="'+today+'" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box"></div>'+
+      '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Amount <span style="color:#A32D2D">*</span></label>'+
+        '<input id="_inc-amt" type="number" min="0" step="0.01" placeholder="0.00" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box"></div>'+
+      '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Client</label>'+
+        '<select id="_inc-client" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box"><option value="">No client / other</option>'+clientOpts+'</select></div>'+
+      '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Type</label>'+
+        '<select id="_inc-type" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box">'+
+          '<option value="Job payment">Job payment</option><option value="Deposit">Deposit</option><option value="Final payment">Final payment</option><option value="Cash">Cash</option><option value="Other">Other</option>'+
+        '</select></div>'+
+      '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Payment method</label>'+
+        '<select id="_inc-method" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box">'+
+          '<option value="Cash">Cash</option><option value="Check">Check</option><option value="Card">Card</option><option value="Zelle">Zelle</option><option value="Venmo">Venmo</option><option value="Other">Other</option>'+
+        '</select></div>'+
+      '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Notes</label>'+
+        '<input id="_inc-notes" type="text" placeholder="Optional note" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box"></div>'+
+    '</div>'+
+    '<div id="_inc-err" style="display:none;color:#A32D2D;font-size:12px;font-weight:600;margin:8px 0"></div>'+
+    '<button onclick="saveManualIncome()" style="margin-top:14px;width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--accent,var(--blue));color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Save income</button>';
+  ov.appendChild(sheet);document.body.appendChild(ov);
+  setTimeout(()=>document.getElementById('_inc-amt')?.focus(),150);
+}
+function saveManualIncome(){
+  const date=document.getElementById('_inc-date')?.value||'';
+  const amtRaw=parseFloat(document.getElementById('_inc-amt')?.value||'');
+  const errEl=document.getElementById('_inc-err');
+  if(!date){errEl.textContent='Please select a date.';errEl.style.display='block';return;}
+  if(!amtRaw||amtRaw<=0){errEl.textContent='Please enter an amount greater than 0.';errEl.style.display='block';return;}
+  errEl.style.display='none';
+  const clientId=document.getElementById('_inc-client')?.value||'';
+  const client=clientId?clients.find(c=>String(c.id)===clientId):null;
+  const type=document.getElementById('_inc-type')?.value||'Job payment';
+  const method=document.getElementById('_inc-method')?.value||'';
+  const notes=document.getElementById('_inc-notes')?.value||'';
+  const entry={id:Date.now(),bid_id:null,client_id:client?client.id:null,client_name:client?client.name:(notes||'Other'),date:date.replace(/-/g,'').slice(0,8),type,amount:amtRaw,method,notes};
+  income.push(entry);
+  saveAll();
+  document.getElementById('_inc-ov')?.remove();
+  const entryYear=parseInt(date.slice(0,4));
+  if(entryYear!==trackerYear){
+    setTrackerYear(entryYear);
+    const sel=document.getElementById('tracker-year-sel');if(sel)sel.value=entryYear;
+    showToast('Income logged for '+entryYear,'📅');
+  } else {
+    renderIncome();
+    showToast('Income logged','✅');
+  }
+}
 function renderIncome(){
   const el=document.getElementById('inc-table');
   const yr=String(trackerYear||new Date().getFullYear());
@@ -13818,17 +13912,26 @@ function renderLeadsPage(){
     const bidAmtDisplay=pendBids.length>1?pendBids.length+' bids out':pendBids.length===1?fmtShort(pendBids[0].amount):'';
     const addrLine=c.addr?c.addr.split(',')[0]:'No address yet — tap to add';
     const addrColor=c.addr?'var(--text3)':'var(--amber)';
-    return '<div onclick="openClientDetail('+c.id+')" style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
-      '<div style="min-width:0;flex:1">'+
+    return '<div class="_lead-row" data-cid="'+c.id+'" style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
+      '<div style="min-width:0;flex:1;pointer-events:none">'+
         '<div style="font-size:14px;font-weight:700">'+c.name+'</div>'+
         '<div style="font-size:11px;color:'+addrColor+';margin-top:1px">'+addrLine+'</div>'+
       '</div>'+
-      '<div style="text-align:right;flex-shrink:0;margin-left:10px">'+
+      '<div style="text-align:right;flex-shrink:0;margin-left:10px;pointer-events:none">'+
         '<div style="font-size:11px;font-weight:700;color:'+st.color+'">'+st.label+'</div>'+
         (bidAmtDisplay?'<div style="font-size:11px;color:var(--text3)">'+bidAmtDisplay+'</div>':'')+
       '</div>'+
     '</div>';
   }).join('');
+  // Attach once — event delegation handles all taps including after re-render
+  if(!el._leadDelegated){
+    el._leadDelegated=true;
+    el.addEventListener('click',function(e){
+      const row=e.target.closest('._lead-row');
+      if(!row)return;
+      openClientDetail(Number(row.dataset.cid),'leads');
+    });
+  }
 }
 
 // ── Jobs page ─────────────────────────────────────────────────────────────
@@ -13924,7 +14027,9 @@ function renderJobsPage(){
     const amtColor=balance>0.01?'#A32D2D':paid>0?'var(--green-mid)':'var(--text)';
     const amtSub=balance>0.01?'<div style="font-size:10px;font-weight:700;color:#A32D2D;margin-top:1px">'+fmt(balance)+' due</div>':
                  paid>0?'<div style="font-size:10px;font-weight:600;color:var(--green-mid);margin-top:1px">Paid ✓</div>':'';
-    const btnRow=(primaryBtn||clockBtn)?'<div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap" onclick="event.stopPropagation()">'+(primaryBtn||'')+(clockBtn||'')+'</div>':'';
+    const hasTasks=b.roomScopeMap&&Object.values(b.roomScopeMap).some(r=>Object.values(r).some(v=>v&&v.active));
+    const checklistBtn=hasTasks?'<button onclick="openJobChecklist('+b.id+');event.stopPropagation()" style="padding:5px 12px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">📋 Checklist</button>':'';
+    const btnRow=(primaryBtn||clockBtn||checklistBtn)?'<div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap" onclick="event.stopPropagation()">'+(primaryBtn||'')+(clockBtn||'')+(checklistBtn||'')+'</div>':'';
     return '<div onclick="openJobSheet('+c.id+')" style="display:flex;align-items:stretch;border-bottom:1px solid var(--border);cursor:pointer;min-height:60px">'+
       '<div style="width:4px;background:'+typeColor+';border-radius:3px 0 0 3px;flex-shrink:0"></div>'+
       '<div style="flex:1;min-width:0;padding:11px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px">'+
@@ -13944,6 +14049,61 @@ function renderJobsPage(){
   }).join('');
 }
 
+function openJobChecklist(bidId){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  const scope=b.roomScopeMap||{};
+  const prog=b.taskProgress||{};
+  // Build flat ordered task list: SCOPE_ITEMS order, grouped by room
+  const tasks=[];
+  const rooms=Object.keys(scope);
+  SCOPE_ITEMS.forEach(si=>{
+    rooms.forEach(room=>{
+      const rv=scope[room]||{};
+      if(rv[si.id]&&rv[si.id].active)tasks.push({key:room+'::'+si.id,room,id:si.id,label:si.label,icon:si.icon});
+    });
+  });
+  const done=tasks.filter(t=>prog[t.key]).length;
+  const ov=document.createElement('div');
+  ov.id='_checklist-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.5);display:flex;align-items:flex-end';
+  const sheet=document.createElement('div');
+  sheet.style.cssText='background:var(--bg2);border-radius:16px 16px 0 0;width:100%;max-height:85vh;overflow-y:auto;padding:20px 16px 32px';
+  const hdr='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
+    '<div style="font-size:17px;font-weight:800">📋 Job Checklist</div>'+
+    '<button onclick="closeJobChecklist()" style="background:none;border:none;font-size:20px;color:var(--text3);cursor:pointer;padding:4px">✕</button>'+
+  '</div>'+
+  '<div id="_cl-prog" style="font-size:13px;color:var(--text3);margin-bottom:12px">'+done+' of '+tasks.length+' tasks done</div>'+
+  '<div id="_cl-bar" style="height:4px;background:var(--border);border-radius:2px;margin-bottom:16px"><div style="height:100%;border-radius:2px;background:var(--green-mid);width:'+(tasks.length?Math.round(done/tasks.length*100):0)+'%;transition:width .2s"></div></div>';
+  const rows=tasks.map(t=>{
+    const isDone=!!prog[t.key];
+    return '<div onclick="toggleJobTask('+bidId+',\''+t.key+'\')" style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
+      '<div style="width:24px;height:24px;border-radius:50%;border:2px solid '+(isDone?'var(--green-mid)':'var(--border2)')+';background:'+(isDone?'var(--green-mid)':'transparent')+';display:flex;align-items:center;justify-content:center;flex-shrink:0">'+
+        (isDone?'<svg width="12" height="10" viewBox="0 0 12 10"><polyline points="1,5 4,8 11,1" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>':'')+
+      '</div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:14px;font-weight:600;color:var(--text);'+(isDone?'text-decoration:line-through;opacity:.5':'')+'">'+t.icon+' '+t.label+'</div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+t.room+'</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  const allDone=tasks.length&&done===tasks.length;
+  sheet.innerHTML=hdr+rows+(tasks.length?'':'<div style="text-align:center;padding:24px;color:var(--text3)">No scope items found for this job.</div>')+
+    '<button id="_cl-close-btn" onclick="closeJobChecklist()" style="margin-top:16px;width:100%;padding:14px;border-radius:var(--r);border:none;background:'+(allDone?'var(--green-mid)':'var(--bg)');'color:'+(allDone?'#fff':'var(--text3)')+';font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">'+(allDone?'✓ All done!':'Complete tasks above to finish')+' </button>';
+  ov.appendChild(sheet);
+  document.body.appendChild(ov);
+}
+function toggleJobTask(bidId,key){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  if(!b.taskProgress)b.taskProgress={};
+  b.taskProgress[key]=!b.taskProgress[key];
+  saveAll();
+  // Re-render the checklist sheet in place
+  closeJobChecklist();
+  openJobChecklist(bidId);
+}
+function closeJobChecklist(){
+  document.getElementById('_checklist-ov')?.remove();
+}
 function openJobSheet(clientId){
   const c=getClientById(clientId);if(!c)return;
   const tk=todayKey();
@@ -16706,8 +16866,7 @@ function _onNewInboundLead(row){
       _uploadClientHub(Number(row.client_id)).catch(()=>{});
       showToast((c.name||'Lead')+' completed their onboarding — tap to view','📋');
       // Navigate directly to the client: avoids lead "disappearing" from whatever filter tab is active
-      openClientDetail(Number(row.client_id));
-      goPg('pg-client-detail');
+      openClientDetail(Number(row.client_id),'leads');
       return;
     }
   }

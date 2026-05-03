@@ -171,6 +171,16 @@ input[type=text]:focus{border-color:var(--blue)}
       <div class="sig-wrap"><canvas id="sig-canvas"></canvas><div class="sig-ph" id="sig-ph">✍️ Draw over your name or sign here</div></div>
       <button class="btn btn-sec" onclick="clearSig()" style="margin-bottom:14px">Clear drawing</button>
       <div class="terms">By signing, you agree to the total price, scope of work, and all terms above. This is a binding agreement under the Uniform Electronic Transactions Act (UETA). A 25% deposit is due before work begins; remaining balance due on completion.</div>
+      <!-- EPA Lead Paint Disclosure — shown only for pre-1978 painting jobs -->
+      <div id="epa-section" style="display:none;background:var(--amber-lt);border:1.5px solid var(--amber);border-radius:var(--r);padding:14px;margin-bottom:14px">
+        <div style="font-size:13px;font-weight:800;color:#78350f;margin-bottom:8px">⚠️ EPA Lead Paint Disclosure — Required by Federal Law</div>
+        <p style="font-size:13px;color:#78350f;line-height:1.55;margin-bottom:12px">This property was built before 1978. Before renovation work begins, your contractor is required to provide you with the EPA pamphlet <em>Renovate Right: Important Lead Hazard Information for Families, Child Care Facilities and Schools</em>. <a href="https://www.epa.gov/sites/default/files/2020-04/documents/renovaterightbrochure.pdf" target="_blank" rel="noopener" style="color:var(--amber)">View pamphlet →</a></p>
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+          <input type="checkbox" id="epa-ack" onchange="checkReady()" style="margin-top:2px;width:18px;height:18px;min-width:18px;accent-color:var(--amber)">
+          <span style="font-size:13px;color:#78350f;line-height:1.5">I confirm that I have received or reviewed the <em>Renovate Right</em> pamphlet and understand the lead paint safety information.</span>
+        </label>
+        <div id="epa-err" style="display:none;color:#A32D2D;font-size:12px;margin-top:6px;font-weight:600">Please confirm receipt of the EPA pamphlet before signing.</div>
+      </div>
       <button class="btn" id="sign-btn" disabled onclick="goToPayment()">Continue to payment →</button>
       <div id="sign-err" style="color:#A32D2D;font-size:12px;text-align:center;min-height:16px"></div>
     </div>
@@ -403,6 +413,11 @@ async function init(){
     document.getElementById('sum-rows').innerHTML=
       (_days?'<div class="row"><span class="rl">Est. duration</span><span class="rv">'+_days+' day'+(_days!==1?'s':'')+'</span></div>':'');
     document.getElementById('prop-html').innerHTML=_prop.proposalHtml||'';
+    // Show EPA section for pre-1978 painting proposals
+    if(_prop.epaRequired&&_prop.trade==='painting'){
+      const epaSec=document.getElementById('epa-section');
+      if(epaSec)epaSec.style.display='block';
+    }
     show('pg-sign');
     if(_prop.isPortfolio)_showPortfolioOffer();
     initCanvas();
@@ -454,14 +469,22 @@ function approveAndSign(){
   if(btn){btn.textContent='✎ Sign below to continue';btn.style.background='#185FA5';}
 }
 
+function _epaRequired(){return _prop?.epaRequired&&_prop?.trade==='painting';}
 function checkReady(){
   const typedOk=document.getElementById('sig-name')?.value.trim().length>2;
-  document.getElementById('sign-btn').disabled=!(typedOk||hasInk);
+  const epaOk=!_epaRequired()||document.getElementById('epa-ack')?.checked;
+  document.getElementById('sign-btn').disabled=!(typedOk||hasInk)||!epaOk;
 }
 
 function goToPayment(){
   const typedOk=document.getElementById('sig-name')?.value.trim().length>2;
   if(!typedOk&&!hasInk){document.getElementById('sign-err').textContent='Type your full name or draw your signature above.';return;}
+  if(_epaRequired()&&!document.getElementById('epa-ack')?.checked){
+    document.getElementById('epa-err').style.display='block';
+    document.getElementById('epa-section').scrollIntoView({behavior:'smooth',block:'center'});
+    return;
+  }
+  if(_epaRequired())document.getElementById('epa-err').style.display='none';
   _sigData=sigCanvas.toDataURL('image/png');
   show('pg-pay');scrollTo(0,0);
 }

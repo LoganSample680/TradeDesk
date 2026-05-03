@@ -104,6 +104,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="nav-item" id="ni-proposals" onclick="switchView('proposals')"><span class="nav-icon">📋</span>Proposals</div>
     <div class="nav-item" id="ni-payments" onclick="switchView('payments')"><span class="nav-icon">💳</span>Payments</div>
     <div class="nav-item" id="ni-photos" onclick="switchView('photos')"><span class="nav-icon">📷</span>Photos</div>
+    <div class="nav-item" id="ni-resources" onclick="switchView('resources')" style="display:none"><span class="nav-icon">📁</span>Resources</div>
     <div class="nav-footer" id="nav-footer">Powered by TradeDesk</div>
   </nav>
   <div class="main-content">
@@ -114,6 +115,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div id="view-proposals" style="display:none"></div>
       <div id="view-payments" style="display:none"></div>
       <div id="view-photos" style="display:none"></div>
+      <div id="view-resources" style="display:none"></div>
     </div>
   </div>
 </div>
@@ -122,6 +124,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <button class="bn-item" id="bni-proposals" onclick="switchView('proposals')"><span class="bn-icon">📋</span>Proposals</button>
   <button class="bn-item" id="bni-payments" onclick="switchView('payments')"><span class="bn-icon">💳</span>Payments</button>
   <button class="bn-item" id="bni-photos" onclick="switchView('photos')"><span class="bn-icon">📷</span>Photos</button>
+  <button class="bn-item" id="bni-resources" onclick="switchView('resources')" style="display:none"><span class="bn-icon">📁</span>Resources</button>
 </nav>
 <div id="inv-overlay">
   <button class="inv-close no-print" onclick="closeInvoice()">✕</button>
@@ -314,9 +317,17 @@ function applyBranding(h){
   const nf=document.getElementById('nav-footer');
   if(nf&&h.bwebsite)nf.innerHTML='<a href="'+esc(h.bwebsite)+'" target="_blank" style="color:inherit;text-decoration:none">'+esc(h.bwebsite.replace(/^https?:\/\//,''))+'</a>';
 }
-function renderAll(){renderHome();renderProposals();renderPayments();renderPhotos();}
-const _VIEWS=['home','proposals','payments','photos'];
-const _BN=['home','proposals','payments','photos'];
+function renderAll(){
+  renderHome();renderProposals();renderPayments();renderPhotos();renderResources();
+  // Show Resources tab only for pre-1978 EPA homes
+  if(_hub&&_hub.epaRequired){
+    const ni=document.getElementById('ni-resources'),bni=document.getElementById('bni-resources');
+    if(ni)ni.style.display='flex';
+    if(bni)bni.style.display='flex';
+  }
+}
+const _VIEWS=['home','proposals','payments','photos','resources'];
+const _BN=['home','proposals','payments','photos','resources'];
 function switchView(key){
   _activeView=key;
   _VIEWS.forEach(v=>{
@@ -555,6 +566,28 @@ async function openProposal(bidId){
   }
 }
 function closeProp(){document.getElementById('prop-overlay').style.display='none';}
+function renderResources(){
+  if(!_hub||!_hub.epaRequired){document.getElementById('view-resources').innerHTML='';return;}
+  const ackLine=_hub.epaAck
+    ?'<div style="margin-top:12px;padding:10px 12px;background:#f0fbf0;border:1px solid #97C459;border-radius:var(--r);font-size:12px;color:var(--green-mid);font-weight:600">✅ Acknowledged during proposal signing</div>'
+    :'<div style="margin-top:12px;font-size:12px;color:var(--text3)">Acknowledgment will appear here after signing a proposal.</div>';
+  document.getElementById('view-resources').innerHTML=
+    '<div class="view-title">Resources</div>'+
+    '<div class="card" style="border-left:3px solid #d97706">'+
+      '<div class="section-hdr" style="color:#92400e">⚠️ EPA Lead Paint Disclosure</div>'+
+      '<p style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:16px">'+
+        'This home was built before 1978. Federal law requires your contractor to provide you with the '+
+        '<em>Renovate Right</em> pamphlet before renovation work begins. This document is permanently '+
+        'stored in your hub as a legal record.'+
+      '</p>'+
+      '<a href="https://www.epa.gov/sites/default/files/2020-04/documents/renovaterightbrochure.pdf" target="_blank" rel="noopener" '+
+         'style="display:flex;align-items:center;gap:10px;padding:14px 16px;background:#fffbeb;border:1.5px solid #d97706;border-radius:var(--r);text-decoration:none;color:#92400e;font-weight:700;font-size:14px">'+
+        '<span style="font-size:22px">📄</span>'+
+        '<div><div>Download Renovate Right (EPA)</div><div style="font-size:11px;font-weight:400;color:#b45309;margin-top:2px">Official EPA pamphlet — Renovate Right</div></div>'+
+      '</a>'+
+      ackLine+
+    '</div>';
+}
 function openPhoto(url,caption){
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:600;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;cursor:pointer';
