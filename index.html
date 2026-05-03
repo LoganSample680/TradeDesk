@@ -541,7 +541,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 
 </div>
 <div class="pg" id="pg-clients">
-  <div class="tbar"><div class="tbar-title" id="clients-page-title">Clients</div><button class="btn btn-sm" id="clients-new-btn" onclick="goPg('pg-leads')" style="font-size:12px">+ New lead →</button></div>
+  <div class="tbar"><div class="tbar-title" id="clients-page-title">Clients</div></div>
   <div id="cf-search-wrap" style="margin-bottom:8px">
     <input id="cf-search" placeholder="&#128269; Search by name, address, phone..."
       oninput="onClientSearch(this)"
@@ -1910,7 +1910,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 
 
 <div class="pg" id="pg-leads">
-  <div class="tbar"><div class="tbar-title">Leads</div><button class="btn btn-p btn-sm" onclick="openNewClient()">+ New lead</button></div>
+  <div class="tbar"><div class="tbar-title">Leads</div></div>
   <div style="margin-bottom:12px">
     <div style="display:flex;gap:6px;flex-wrap:wrap;padding-bottom:4px">
       <button type="button" class="fb active" id="lft-all"        onclick="setLeadFilter('all',this)">All</button>
@@ -4281,9 +4281,8 @@ function renderLeadSources(){
           const pct=Math.round(d.leads/totalLeads*100);
           return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
             <div style="width:8px;height:8px;border-radius:50%;background:${d.color};flex-shrink:0"></div>
-            <div style="font-size:11px;font-weight:600;color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ICONS[src]||'📋'} ${src}</div>
-            <div style="font-size:11px;font-weight:800;color:${d.color}">${pct}%</div>
-            ${d.revenue>0?`<div style="font-size:10px;color:var(--green-mid);font-weight:700">${fmt(d.revenue)}</div>`:''}
+            <div style="font-size:11px;font-weight:600;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ICONS[src]||'📋'} ${src}</div>
+            <div style="font-size:11px;font-weight:800;color:${d.color};flex-shrink:0">${pct}%</div>
           </div>`;
         }).join('')}
         ${rows.length>4?`<div style="font-size:10px;color:var(--text3);margin-top:4px">+${rows.length-4} more sources</div>`:''}
