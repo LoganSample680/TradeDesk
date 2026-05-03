@@ -4279,10 +4279,12 @@ function renderLeadSources(){
         <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Top sources</div>
         ${rows.slice(0,4).map(([src,d])=>{
           const pct=Math.round(d.leads/totalLeads*100);
-          return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
-            <div style="width:8px;height:8px;border-radius:50%;background:${d.color};flex-shrink:0"></div>
-            <div style="font-size:11px;font-weight:600;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ICONS[src]||'📋'} ${src}</div>
-            <div style="font-size:11px;font-weight:800;color:${d.color};flex-shrink:0">${pct}%</div>
+          return `<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:5px">
+            <div style="width:8px;height:8px;border-radius:50%;background:${d.color};flex-shrink:0;margin-top:3px"></div>
+            <div style="flex:1;min-width:0;font-size:11px;line-height:1.4">
+              <span style="font-weight:600;color:var(--text)">${ICONS[src]||'📋'} ${src}</span>
+              <span style="font-weight:800;color:${d.color};margin-left:4px">${pct}%</span>
+            </div>
           </div>`;
         }).join('')}
         ${rows.length>4?`<div style="font-size:10px;color:var(--text3);margin-top:4px">+${rows.length-4} more sources</div>`:''}
