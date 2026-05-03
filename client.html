@@ -394,7 +394,7 @@ function renderProposals(){
   let html='<div class="view-title">Proposals</div>';
   if(!allBids.length){html+='<div class="empty">No proposals yet.</div>';document.getElementById('view-proposals').innerHTML=html;return;}
   allBids.forEach(b=>{
-    const isPending=b.status==='Pending'&&b.signHubUrl,isWon=b.status==='Closed Won';
+    const isPending=b.status==='Pending',isWon=b.status==='Closed Won';
     const bidPmts=h.payments.filter(p=>p.bid_id===b.id||(!p.bid_id&&h.bids.length===1));
     const totalPaid=bidPmts.reduce((s,p)=>s+(p.amount||0),0);
     const balance=Math.max(0,(b.amount||0)-totalPaid);
@@ -410,7 +410,7 @@ function renderProposals(){
     html+='<div style="font-size:18px;font-weight:800;color:var(--accent);flex-shrink:0;margin-left:10px">'+fmt(b.amount)+'</div></div>';
     html+='<div style="margin-bottom:12px">'+badge+'</div>';
     if(isPending){
-      html+='<a href="'+esc(b.signHubUrl)+'" class="btn btn-green">Review &amp; Sign →</a>';
+      html+=b.signHubUrl?'<a href="'+esc(b.signHubUrl)+'" class="btn btn-green">Review &amp; Sign →</a>':'<div style="font-size:12px;color:var(--text3);margin-top:4px">Sign link on the way — check back soon</div>';
     }
     if(isWon){
       // Invoice summary inline

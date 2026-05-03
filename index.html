@@ -9909,20 +9909,29 @@ function _ensureClientToken(clientId){
 async function _uploadClientHub(clientId){
   if(!supaEnabled()||!_supaUser)return null;
   const c=clients.find(x=>x.id===clientId);if(!c)return null;
+  const isNew=!c.clientToken;
   if(!c.clientToken){
     c.clientToken=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
   }
   if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});
-  const snapshot=_buildClientHubSnapshot(clientId);
-  if(!snapshot)return null;
-  snapshot.token=c.clientToken;
-  const key='client-hub/'+_supaUser.id+'/'+clientId+'_'+c.clientToken+'.json';
-  const{error}=await _supa.storage.from('proposals').upload(key,JSON.stringify(snapshot),{contentType:'application/json',upsert:true});
-  if(error)throw error;
-  c.clientHubKey=key;
-  saveAll();
   const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
-  return baseUrl+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+  const url=baseUrl+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+  const doUpload=async()=>{
+    const snapshot=_buildClientHubSnapshot(clientId);
+    if(!snapshot)return;
+    snapshot.token=c.clientToken;
+    const key='client-hub/'+_supaUser.id+'/'+clientId+'_'+c.clientToken+'.json';
+    const{error}=await _supa.storage.from('proposals').upload(key,JSON.stringify(snapshot),{contentType:'application/json',upsert:true});
+    if(error)throw error;
+    c.clientHubKey=key;
+    saveAll();
+  };
+  if(isNew){
+    await doUpload(); // first time — must wait so the file exists before client opens link
+  }else{
+    doUpload().catch(e=>console.warn('hub refresh:',e)); // file exists — return instantly, refresh in background
+  }
+  return url;
 }
 function _relTime(ts){if(!ts)return'';try{const d=Math.round((Date.now()-new Date(ts).getTime())/60000);if(d<2)return'just now';if(d<60)return d+'m ago';if(d<1440)return Math.round(d/60)+'h ago';return Math.round(d/1440)+'d ago';}catch(e){return '';}}
 function sendOnboardingLink(clientId){
@@ -9952,7 +9961,6 @@ function sendOnboardingLink(clientId){
   }
 }
 async function sendClientHubLink(clientId){
-  showToast('Generating hub…','⏳');
   try{
     const url=await _uploadClientHub(clientId);
     if(!url){zAlert('Could not create hub link. Make sure you\'re signed in.');return;}
