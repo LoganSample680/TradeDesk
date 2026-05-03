@@ -525,6 +525,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
     </div>
   </div>
   <div id="dash-resume" style="margin-bottom:10px;display:none"></div>
+  <div id="dash-nearby" style="margin-bottom:10px;display:none"></div>
   <div id="dash-goal" style="margin-bottom:10px"></div>
   <div id="dash-pipeline"></div>
   <div class="card"><div class="card-hd">Today on the calendar</div><div id="dash-today"></div></div>
@@ -1979,14 +1980,18 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 </div>
 
 <div id="clock-banner">
-  <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
-    <span style="font-size:16px;flex-shrink:0">⏱</span>
+  <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+    <span style="font-size:15px;flex-shrink:0" id="clock-banner-icon">⏱</span>
     <div style="min-width:0">
       <div style="font-size:11px;font-weight:700;color:#FFA94D;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" id="clock-banner-job"></div>
       <div style="font-size:10px;color:rgba(255,255,255,.75)" id="clock-banner-time">0:00:00</div>
     </div>
   </div>
-  <button onclick="clockOut()" style="background:#A32D2D;color:#fff;border:none;border-radius:var(--r);padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0">⏹ Clock out</button>
+  <div style="display:flex;gap:5px;flex-shrink:0">
+    <button onclick="nextClockTask()" style="background:#1E4D2B;color:#6EE7A0;border:1px solid #2D7A44;border-radius:var(--r);padding:5px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">→ Next</button>
+    <button onclick="doneForDay()" style="background:#1A3A5A;color:#7EC8E3;border:1px solid #2A5A8A;border-radius:var(--r);padding:5px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">✓ Done</button>
+    <button onclick="clockOut()" style="background:rgba(163,45,45,.7);color:#fff;border:none;border-radius:var(--r);padding:5px 8px;font-size:14px;cursor:pointer;font-family:inherit;flex-shrink:0" title="Clock out">⏹</button>
+  </div>
 </div>
 
 
@@ -2205,6 +2210,10 @@ const SCOPE_ITEMS=[
    hint:'Move and cover furniture before, replace after. ~30 min per furnished room.',
    ratePerSqFt:0, flatRate:35,
    clientDesc:'Furniture moved from walls before painting, replaced after.'},
+  {id:'protect', label:'Protect floors & furniture', icon:'🛡️',
+   hint:'Lay drop cloths, plastic sheeting on floors and remaining furniture. ~20 min per room.',
+   ratePerSqFt:0, flatRate:20,
+   clientDesc:'Floors and furniture protected with drop cloths and plastic sheeting.'},
   {id:'sand',    label:'Sanding',          icon:'🪚',
    hint:'Light scuff-sand walls/trim to help paint grab. About 100 sf/hr.',
    ratePerSqFt:0.10, flatRate:0,
@@ -3107,6 +3116,17 @@ function renderDash(){
   renderDashToday();
   renderDashCollect();
   renderTodayFeed();
+  const _nearbyEl=document.getElementById('dash-nearby');
+  if(_nearbyEl){
+    if(_nearbyJob&&!_activeTimer){
+      _nearbyEl.style.display='block';
+      _nearbyEl.innerHTML='<div style="background:linear-gradient(135deg,#1E4D2B,#2D7A44);border-radius:var(--r);padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="openClockInSheet('+_nearbyJob.jobId+')">'+
+        '<span style="font-size:24px">🔨</span>'+
+        '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800;color:#fff">You\'re at '+escHtml(_nearbyJob.clientName)+'\'s</div>'+
+        '<div style="font-size:12px;color:rgba(255,255,255,.75)">'+escHtml(_nearbyJob.addr)+' · Tap to clock in</div></div>'+
+        '<span style="font-size:20px;color:rgba(255,255,255,.6)">▶</span></div>';
+    }else{_nearbyEl.style.display='none';}
+  }
   // Update new nav badges
   const _owing=bids.filter(b=>b.status==='Closed Won'&&getBidBalance(b)>0.01);
   const _cl=document.getElementById('qa-collect-label');
@@ -7049,7 +7069,7 @@ function hideDriveBanner(){
 }
 
 // ── Active time tracking ─────────────────────────────────────────────────────
-const _CLOCK_DEFAULT_SCOPES=['movefurn','sand','spackle','tape','caulk','prime','twocoat','cleanup','supply_run','collect_cash'];
+const _CLOCK_DEFAULT_SCOPES=['movefurn','protect','tape','sand','spackle','caulk','prime','twocoat','cleanup','supply_run','collect_cash'];
 
 function getJobScopes(jobId){
   const j=jobs.find(x=>x.id===jobId);
@@ -7212,6 +7232,72 @@ function showClockBanner(){
 function hideClockBanner(){
   const b=document.getElementById('clock-banner');if(b)b.style.display='none';
   if(document.body)document.body.classList.remove('clock-active');
+}
+
+function nextClockTask(){
+  if(!_activeTimer)return;
+  const jobId=_activeTimer.jobId;
+  clockOut(true,true);
+  setTimeout(()=>openClockInSheet(jobId),80);
+}
+
+function doneForDay(){
+  if(!_activeTimer)return;
+  const jobId=_activeTimer.jobId;
+  const jobName=_activeTimer.jobName;
+  clockOut(true,false);
+  // Show today's task summary for this job
+  setTimeout(()=>{
+    const todayEntries=timeEntries.filter(e=>e.job_id===jobId&&e.date===todayKey());
+    const totalMin=todayEntries.reduce((s,e)=>s+(e.minutes||0),0);
+    if(!todayEntries.length)return;
+    const rows=todayEntries.map(e=>{
+      const sc=SCOPE_ITEMS.find(x=>x.id===e.scope_id)||{icon:'⏱',label:e.scope_label||'Other'};
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">'+
+        '<div style="font-size:13px"><span style="margin-right:6px">'+sc.icon+'</span>'+sc.label+'</div>'+
+        '<div style="font-size:13px;font-weight:700;color:var(--text2)">'+_fmtMin(e.minutes)+'</div></div>';
+    }).join('');
+    const ov=document.createElement('div');ov.className='zmodal-overlay';ov.style.cssText='align-items:flex-end;padding:0';
+    const box=document.createElement('div');box.className='zmodal';
+    box.style.cssText='border-radius:20px 20px 0 0;max-width:560px;width:100%;margin:0 auto;padding-bottom:env(safe-area-inset-bottom,20px)';
+    box.innerHTML=
+      '<div style="font-size:17px;font-weight:800;margin-bottom:2px">Day wrapped up 🎉</div>'+
+      '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">'+jobName+' · '+_fmtMin(totalMin)+' total today</div>'+
+      rows+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="margin-top:16px;width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Done</button>';
+    ov.appendChild(box);document.body.appendChild(ov);
+    ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  },150);
+}
+
+// ── Nearby job detection (home-page smart clock-in) ──────────────────────────
+let _nearbyJob=null;
+function _haversineKm(lat1,lon1,lat2,lon2){
+  const R=6371,dLat=(lat2-lat1)*Math.PI/180,dLon=(lon2-lon1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function _geocodeAddr(addr){
+  return fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(addr),{headers:{'User-Agent':'TradeDesk/1.0'}})
+    .then(r=>r.json()).then(d=>d[0]?{lat:parseFloat(d[0].lat),lon:parseFloat(d[0].lon)}:null).catch(()=>null);
+}
+async function checkNearbyJob(){
+  if(!navigator.geolocation||!_supaUser)return;
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    const{latitude:myLat,longitude:myLon}=pos.coords;
+    const activeJobs=jobs.filter(j=>!j.completion_date&&j.status!=='done'&&j.status!=='canceled');
+    for(const j of activeJobs){
+      const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+      if(bid&&bid.status!=='Closed Won')continue;
+      const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
+      if(!c?.addr)continue;
+      const coords=await _geocodeAddr(c.addr);
+      if(!coords)continue;
+      const km=_haversineKm(myLat,myLon,coords.lat,coords.lon);
+      if(km<0.5){_nearbyJob={jobId:j.id,jobName:j.name,clientName:c.name,addr:c.addr.split(',')[0]};renderDash&&renderDash();return;}
+    }
+    if(_nearbyJob){_nearbyJob=null;renderDash&&renderDash();}
+  },()=>{},{maximumAge:60000,timeout:8000});
 }
 
 function sendReminderSMS(cid){
@@ -13912,26 +13998,17 @@ function renderLeadsPage(){
     const bidAmtDisplay=pendBids.length>1?pendBids.length+' bids out':pendBids.length===1?fmtShort(pendBids[0].amount):'';
     const addrLine=c.addr?c.addr.split(',')[0]:'No address yet — tap to add';
     const addrColor=c.addr?'var(--text3)':'var(--amber)';
-    return '<div class="_lead-row" data-cid="'+c.id+'" style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
-      '<div style="min-width:0;flex:1;pointer-events:none">'+
+    return '<div onclick="openClientDetail('+c.id+',\'leads\')" style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
+      '<div style="min-width:0;flex:1">'+
         '<div style="font-size:14px;font-weight:700">'+c.name+'</div>'+
         '<div style="font-size:11px;color:'+addrColor+';margin-top:1px">'+addrLine+'</div>'+
       '</div>'+
-      '<div style="text-align:right;flex-shrink:0;margin-left:10px;pointer-events:none">'+
+      '<div style="text-align:right;flex-shrink:0;margin-left:10px">'+
         '<div style="font-size:11px;font-weight:700;color:'+st.color+'">'+st.label+'</div>'+
         (bidAmtDisplay?'<div style="font-size:11px;color:var(--text3)">'+bidAmtDisplay+'</div>':'')+
       '</div>'+
     '</div>';
   }).join('');
-  // Attach once — event delegation handles all taps including after re-render
-  if(!el._leadDelegated){
-    el._leadDelegated=true;
-    el.addEventListener('click',function(e){
-      const row=e.target.closest('._lead-row');
-      if(!row)return;
-      openClientDetail(Number(row.dataset.cid),'leads');
-    });
-  }
 }
 
 // ── Jobs page ─────────────────────────────────────────────────────────────
@@ -16824,9 +16901,10 @@ async function supaLoadFromCloud(){
     // Load any pending inbound leads on boot
     setTimeout(()=>_loadPendingInbound(),2000);
     // Also check when user returns to the app (e.g., after sending SMS to client)
-    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){checkNewSignatures();if(_supaUser)_loadPendingInbound();}});
+    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){checkNewSignatures();if(_supaUser)_loadPendingInbound();checkNearbyJob();}});
 
     setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
+    setTimeout(()=>checkNearbyJob(),4000);
   }catch(e){
     console.warn('Cloud load failed:',e);
     _removeBootOverlay();
@@ -16837,6 +16915,7 @@ async function supaLoadFromCloud(){
 
 // ── Inbound leads (onboarding form + QR intake) ───────────────────────────
 let _pendingInbound=[];
+const _processedInboundIds=new Set();
 async function _loadPendingInbound(){
   if(!_supa||!_supaUser)return;
   try{
@@ -16856,6 +16935,10 @@ function _onNewInboundLead(row){
   if(row.client_id){
     const c=clients.find(x=>x.id===Number(row.client_id));
     if(c){
+      // Guard: don't process the same row twice in one session (prevents forced
+      // navigation mid-tap when the 30s poll fires before Supabase update commits)
+      if(_processedInboundIds.has(row.id))return;
+      _processedInboundIds.add(row.id);
       if(row.addr&&!c.addr){c.addr=row.addr;}
       if(row.notes){c.notes=(c.notes?c.notes+'\n':'')+row.notes;}
       if(row.call_time){c.callTime=row.call_time;}
