@@ -9604,7 +9604,6 @@ async function _fetchStripeConnectStatus(){
     const data=await res.json();
     _stripeConnectStatus=data;
     try{localStorage.setItem(_cacheKey,JSON.stringify({ts:Date.now(),data}));}catch(e){}
-    if(data?.charges_enabled&&_supaUser)setTimeout(()=>{clients.filter(c=>c.clientToken).forEach(c=>{_uploadClientHub(c.id).catch(()=>{});});},0);
     return data;
   }catch(e){return null;}
 }
@@ -10239,26 +10238,22 @@ async function sendProposalLink(){
       epaRequired:(()=>{const cl=_bidForProp?clients.find(c=>c.id===_bidForProp.client_id):null;return !!(cl?.yearBuilt&&cl.yearBuilt<1978&&getActiveTrade()==='painting');})(),
       trade:getActiveTrade(),
     };
-    // Upload with 8s timeout — never let storage hang in the field
-    const uploadPromise=_supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true});
-    const timeoutPromise=new Promise((_,rej)=>setTimeout(()=>rej(new Error('Upload timed out')),8000));
-    const uploadResult=await Promise.race([uploadPromise,timeoutPromise]).catch(e=>({error:e}));
-    if(uploadResult.error)console.warn('Storage upload issue (link may still work):',uploadResult.error.message);
-    // Always show the link — structure is valid whether upload succeeded or not
+    // Set signing info BEFORE hub upload so snapshot captures correct signHubUrl
+    const _bidForHub=bids.find(b=>b.id===bidId);
+    if(_bidForHub)_bidForHub.signingKey=proposalKey;
+    _pendingSignToken={bidId,token,proposalKey};
     const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
     const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
     const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     const shortUrl=await shortenUrl(signingUrl);
-    // Set proposalKey on bid and _pendingSignToken BEFORE hub upload so snapshot includes signHubUrl
-    const _bidForHub=bids.find(b=>b.id===bidId);
-    if(_bidForHub)_bidForHub.signingKey=proposalKey;
-    _pendingSignToken={bidId,token,proposalKey};
-    // Upload hub and use hub URL as the share link if client has a token
-    let shareUrl=shortUrl;
+    // Run proposal and hub uploads in parallel, each capped at 6s
     const _hubClientId=estLinkedClientId||bids.find(b=>b.id===bidId)?.client_id;
-    if(_hubClientId){
-      try{const _hu=await _uploadClientHub(_hubClientId);if(_hu)shareUrl=_hu;}catch(e){console.warn('Hub upload failed, falling back to direct link');}
-    }
+    const[uploadResult,_hu]=await Promise.all([
+      Promise.race([_supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true}),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timed out')),6000))]).catch(e=>({error:e})),
+      _hubClientId?Promise.race([_uploadClientHub(_hubClientId),new Promise(r=>setTimeout(r,6000,null))]).catch(()=>null):Promise.resolve(null)
+    ]);
+    if(uploadResult?.error)console.warn('Storage upload issue (link may still work):',uploadResult.error?.message);
+    let shareUrl=_hu||shortUrl;
     const bar=document.getElementById('proposal-link-bar');
     const input=document.getElementById('proposal-link-input');
     const labelEl=document.getElementById('proposal-link-label');
