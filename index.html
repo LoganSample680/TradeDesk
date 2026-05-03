@@ -9604,6 +9604,7 @@ async function _fetchStripeConnectStatus(){
     const data=await res.json();
     _stripeConnectStatus=data;
     try{localStorage.setItem(_cacheKey,JSON.stringify({ts:Date.now(),data}));}catch(e){}
+    if(data?.charges_enabled&&_supaUser)setTimeout(()=>{clients.filter(c=>c.clientToken).forEach(c=>{_uploadClientHub(c.id).catch(()=>{});});},0);
     return data;
   }catch(e){return null;}
 }
@@ -9912,7 +9913,7 @@ async function _uploadClientHub(clientId){
   if(!c.clientToken){
     c.clientToken=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
   }
-  if(_stripeConnectStatus===null)await _fetchStripeConnectStatus();
+  if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});
   const snapshot=_buildClientHubSnapshot(clientId);
   if(!snapshot)return null;
   snapshot.token=c.clientToken;
@@ -10158,7 +10159,7 @@ async function sendProposalLink(){
   const btn=document.getElementById('send-proposal-btn');
   if(btn){btn.textContent='⏳ Saving...';btn.disabled=true;}
   try{
-    if(_stripeConnectStatus===null)await _fetchStripeConnectStatus();
+    if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});
     const cname=document.getElementById('e-cname')?.value||'Client';
     const _rawBname=document.getElementById('e-bname')?.value||getBusinessName()||'';
     const bname=(_rawBname&&!_rawBname.includes('@'))?_rawBname:'No Business Name Entered';
@@ -15380,7 +15381,7 @@ async function sendGenericProposal(){
   saveGenericEstimate(false);
   // Build minimal proposal for sign.html
   if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.');return;}
-  if(_stripeConnectStatus===null)await _fetchStripeConnectStatus();
+  if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});
   const v=id=>document.getElementById(id)?.value||'';
   const{total}=calcGeiTotal();
   const trade=_geiTrade||getActiveTrade();
