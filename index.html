@@ -9586,6 +9586,14 @@ let _stripeConnectStatus=null; // cached: {connected, charges_enabled, details_s
 
 async function _fetchStripeConnectStatus(){
   if(!supaEnabled()||!_supaUser)return null;
+  // Serve from localStorage cache (1-hour TTL) so hub sharing is instant after first load
+  const _cacheKey='td_stripe_status_'+(_supaUser?.id||'');
+  try{
+    const _cached=JSON.parse(localStorage.getItem(_cacheKey)||'null');
+    if(_cached&&_cached.ts&&(Date.now()-_cached.ts)<3600000){
+      _stripeConnectStatus=_cached.data;return _cached.data;
+    }
+  }catch(e){}
   try{
     const session=await _supa.auth.getSession();
     const token=session?.data?.session?.access_token;
@@ -9595,6 +9603,7 @@ async function _fetchStripeConnectStatus(){
     });
     const data=await res.json();
     _stripeConnectStatus=data;
+    try{localStorage.setItem(_cacheKey,JSON.stringify({ts:Date.now(),data}));}catch(e){}
     return data;
   }catch(e){return null;}
 }
@@ -16805,6 +16814,8 @@ async function supaLoadFromCloud(){
     saveAll(); // persist cloud data to localStorage as cache
     _supaCloudLoaded=true;
     supaSetStatus('synced');
+    // Prefetch Stripe status in background so hub-share is instant (no 46s wait)
+    setTimeout(()=>{if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});},500);
     // Dismiss loading screen and render with cloud data
     _removeBootOverlay();
     renderDash();buildScopeGrid();

@@ -109,7 +109,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </nav>
   <div class="main-content">
     <div class="pg-status" id="pg-load"><div class="pg-status-icon">⏳</div><h2>Loading your hub…</h2><p>Just a moment.</p></div>
-    <div class="pg-status" id="pg-err" style="display:none"><div class="pg-status-icon">🔗</div><h2>Hub not found</h2><p>This link may have expired. Contact your contractor for a new link.</p></div>
+    <div class="pg-status" id="pg-err" style="display:none"><div class="pg-status-icon">🔗</div><h2>Hub not found</h2><p>This link may have expired. Contact us for a new link.</p></div>
     <div id="pg-hub" style="display:none">
       <div id="view-home"></div>
       <div id="view-proposals" style="display:none"></div>
@@ -285,7 +285,7 @@ async function submitOnboard(userId,clientId){
     setTimeout(()=>{location.href=hubUrl.toString();},2000);
   }catch(e){
     if(btn){btn.textContent='Send my details →';btn.disabled=false;}
-    alert('Something went wrong — please try again or contact your contractor directly.');
+    alert('Something went wrong — please try again or contact us directly.');
   }
 }
 function showQuoteInProgress(h){
@@ -340,7 +340,7 @@ function switchView(key){
 function renderHome(){
   if(!_hub)return;
   const h=_hub;
-  const pendingBids=h.bids.filter(b=>b.status==='Pending'&&b.signHubUrl);
+  const pendingBids=h.bids.filter(b=>b.status==='Pending');
   const wonBids=h.bids.filter(b=>b.status==='Closed Won');
   const totalBalance=wonBids.reduce((s,b)=>s+(b.balance||0),0);
   const totalPaid=wonBids.reduce((s,b)=>s+(b.paid||0),0);
@@ -360,7 +360,7 @@ function renderHome(){
       html+='<a href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" class="btn btn-green" style="margin-bottom:8px">📞 Call to pay — '+esc(h.contractorPhone)+'</a>';
       html+='<a href="sms:'+h.contractorPhone.replace(/\D/g,'')+'" class="btn btn-sec">💬 Text us</a>';
     }else if(!h.stripeEnabled){
-      html+='<div style="font-size:13px;color:var(--red);margin-top:4px">Contact your contractor to arrange payment.</div>';
+      html+='<div style="font-size:13px;color:var(--red);margin-top:4px">Contact us to arrange payment.</div>';
     }
     html+='</div>';
   }else if(totalPaid>0.01){
@@ -371,7 +371,7 @@ function renderHome(){
     pendingBids.slice(0,2).forEach(b=>{
       html+='<div class="bid-row"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px"><div><div style="font-size:15px;font-weight:700">'+esc(b.type||'Proposal')+'</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Sent '+fmtDate(b.bid_date)+'</div></div>';
       html+='<div style="font-size:20px;font-weight:800;color:var(--accent)">'+fmt(b.amount)+'</div></div>';
-      html+='<a href="'+esc(b.signHubUrl)+'" class="btn btn-green">Review &amp; Sign →</a></div>';
+      html+=(b.signHubUrl?'<a href="'+esc(b.signHubUrl)+'" class="btn btn-green">Review &amp; Sign →</a>':'<div style="font-size:12px;color:var(--text3);margin-top:4px">Sign link on the way — check back soon</div>')+'</div>';
     });
     if(pendingBids.length>2)html+='<div class="empty" onclick="switchView(\'proposals\')" style="cursor:pointer;color:var(--accent)">'+(pendingBids.length-2)+' more — view all proposals →</div>';
     html+='</div>';
@@ -490,14 +490,14 @@ async function payBalance(bidId){
     });
     const d=await res.json();
     if(d.url){window.location.href=d.url;}
-    else{if(btn){btn.textContent='Pay with card';btn.disabled=false;}alert('Could not create payment link. Please contact your contractor.');}
+    else{if(btn){btn.textContent='Pay with card';btn.disabled=false;}alert('Could not create payment link. Please contact us directly.');}
   }catch(e){if(btn){btn.textContent='Pay with card';btn.disabled=false;}}
 }
 function showPaymentSuccess(bidId){
   const bid=_hub.bids.find(b=>b.id===bidId);
   const banner=document.createElement('div');
   banner.style.cssText='position:fixed;top:60px;left:0;right:0;z-index:300;background:#16a34a;color:#fff;padding:14px 20px;text-align:center;font-size:14px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.2)';
-  banner.textContent='✅ Payment received — thank you! Your contractor will be in touch.';
+  banner.textContent='✅ Payment received — thank you! We\'ll be in touch.';
   document.body.appendChild(banner);setTimeout(()=>banner.remove(),6000);
   if(bid){bid.paymentStatus='paid';bid.balance=0;renderAll();}
 }
@@ -549,7 +549,7 @@ function closeInvoice(){
 }
 async function openProposal(bidId){
   const bid=_hub.bids.find(b=>b.id===bidId);
-  if(!bid||!bid.proposalKey){alert('Proposal document not available. Contact your contractor.');return;}
+  if(!bid||!bid.proposalKey){alert('Proposal document not available. Please contact us.');return;}
   const ov=document.getElementById('prop-overlay'),ct=document.getElementById('prop-content');
   ct.innerHTML='<div style="text-align:center;padding:60px 20px;color:#999;font-size:16px">Loading proposal…</div>';
   ov.style.display='block';scrollTo(0,0);
@@ -561,7 +561,7 @@ async function openProposal(bidId){
       '<div style="margin-top:40px;padding-top:20px;border-top:1px solid #e0e0dc;display:flex;gap:10px" class="no-print">'+
       '<button onclick="closeProp()" class="btn btn-sec" style="width:auto;padding:12px 24px">← Back to hub</button></div>';
   }catch(e){
-    ct.innerHTML='<p style="color:#A32D2D;padding:20px;font-size:14px">Could not load proposal. Please contact your contractor.</p>'+
+    ct.innerHTML='<p style="color:#A32D2D;padding:20px;font-size:14px">Could not load proposal. Please contact us.</p>'+
       '<button onclick="closeProp()" class="btn btn-sec" style="margin:0 20px 20px;width:auto;padding:12px 24px">← Back</button>';
   }
 }
@@ -576,14 +576,14 @@ function renderResources(){
     '<div class="card" style="border-left:3px solid #d97706">'+
       '<div class="section-hdr" style="color:#92400e">⚠️ EPA Lead Paint Disclosure</div>'+
       '<p style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:16px">'+
-        'This home was built before 1978. Federal law requires your contractor to provide you with the '+
+        'This home was built before 1978. Federal law requires us to provide you with the '+
         '<em>Renovate Right</em> pamphlet before renovation work begins. This document is permanently '+
         'stored in your hub as a legal record.'+
       '</p>'+
-      '<a href="https://www.epa.gov/sites/default/files/2020-04/documents/renovaterightbrochure.pdf" target="_blank" rel="noopener" '+
+      '<a href="https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-facilities-and-schools" target="_blank" rel="noopener" '+
          'style="display:flex;align-items:center;gap:10px;padding:14px 16px;background:#fffbeb;border:1.5px solid #d97706;border-radius:var(--r);text-decoration:none;color:#92400e;font-weight:700;font-size:14px">'+
         '<span style="font-size:22px">📄</span>'+
-        '<div><div>Download Renovate Right (EPA)</div><div style="font-size:11px;font-weight:400;color:#b45309;margin-top:2px">Official EPA pamphlet — Renovate Right</div></div>'+
+        '<div><div>Renovate Right — EPA Lead Paint Info</div><div style="font-size:11px;font-weight:400;color:#b45309;margin-top:2px">View official EPA pamphlet (epa.gov)</div></div>'+
       '</a>'+
       ackLine+
     '</div>';
