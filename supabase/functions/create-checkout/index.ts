@@ -81,6 +81,7 @@ Deno.serve(async (req) => {
     // Route payment to contractor's connected account if available
     if (stripeAccountId) {
       sessionParams.payment_intent_data = {
+        application_fee_amount: 0,
         transfer_data: { destination: stripeAccountId },
       };
     }
