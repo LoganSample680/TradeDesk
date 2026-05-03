@@ -4951,7 +4951,7 @@ function renderCDRisk(){
 function renderClientNotes(){
   const c=getClientById(currentClientId);if(!c)return;
   const el=document.getElementById('cd-notes-list');if(!el)return;
-  const notes=(c.notes||[]).slice().sort((a,b)=>a.ts.localeCompare(b.ts));
+  const notes=(Array.isArray(c.notes)?c.notes:[]).slice().sort((a,b)=>(a.ts||'').localeCompare(b.ts||''));
   if(!notes.length){el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:4px 0">No notes yet.</div>';return;}
   el.innerHTML=notes.map(n=>{
     const dt=new Date(n.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
