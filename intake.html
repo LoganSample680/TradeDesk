@@ -74,7 +74,12 @@ textarea.input{resize:vertical;min-height:90px}
       </div>
       <div class="field">
         <div class="field-label">Property address <span class="req">*</span></div>
-        <input id="f-addr" class="input" type="text" placeholder="123 Main St, City, State">
+        <input id="f-street" class="input" type="text" placeholder="1234 Maple St" autocomplete="address-line1" style="margin-bottom:8px">
+        <div style="display:grid;grid-template-columns:1fr 56px 90px;gap:8px">
+          <input id="f-city" class="input" type="text" placeholder="City" autocomplete="address-level2">
+          <input id="f-state" class="input" type="text" placeholder="ST" maxlength="2" autocomplete="address-level1" style="text-align:center;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+          <input id="f-zip" class="input" type="text" placeholder="Zip" maxlength="10" autocomplete="postal-code">
+        </div>
       </div>
       <div class="field">
         <div class="field-label">What are you looking to get done?</div>
@@ -175,13 +180,17 @@ async function submitForm(){
   if(_submitting)return;
   const name=v('f-name').trim();
   const phone=v('f-phone').trim();
-  const addr=v('f-addr').trim();
+  const street=v('f-street').trim();
+  const city=v('f-city').trim();
+  const state=v('f-state').trim().toUpperCase();
+  const zip=v('f-zip').trim();
+  const addr=[street,city,[state,zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   const notes=v('f-notes').trim();
   const errEl=document.getElementById('form-err');
 
   if(!name){errEl.textContent='Please enter your name.';show('form-err');document.getElementById('f-name').focus();return;}
   if(!phone){errEl.textContent='Please enter your phone number.';show('form-err');document.getElementById('f-phone').focus();return;}
-  if(!addr){errEl.textContent='Please enter the property address.';show('form-err');document.getElementById('f-addr').focus();return;}
+  if(!street||!city){errEl.textContent='Please enter the street address and city.';show('form-err');document.getElementById('f-street').focus();return;}
   hide('form-err');
 
   _submitting=true;
@@ -196,6 +205,10 @@ async function submitForm(){
       name:name,
       phone:phone,
       addr:addr,
+      street:street,
+      city:city,
+      state:state,
+      zip:zip,
       notes:notes||null,
       call_time:_callTime||null,
       status:'pending'

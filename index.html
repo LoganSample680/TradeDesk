@@ -573,8 +573,13 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         <div class="f"><label>Phone</label><input id="cf-phone" type="tel" placeholder="XXX-XXX-XXXX" maxlength="12" oninput="fmtPhone(this);clearFErr('cf-phone');_allowPhoneDupe=false;">
           <div id="err-cf-phone" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
         </div>
-        <div class="f" style="grid-column:1/-1"><label>Property address <span style="font-weight:400;color:var(--text3)">(optional — add from profile later)</span></label><input id="cf-addr" placeholder="1234 Maple St, Wichita KS 67201" oninput="clearFErr('cf-addr');updateYearLookupBtn()">
+        <div class="f" style="grid-column:1/-1"><label>Street address <span style="font-weight:400;color:var(--text3)">(optional — add later)</span></label><input id="cf-street" placeholder="1234 Maple St" autocomplete="address-line1" oninput="clearFErr('cf-street');_updateAddrComputed()">
           <div id="err-cf-addr" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
+        </div>
+        <div class="f"><label>City</label><input id="cf-city" placeholder="Denver" autocomplete="address-level2" oninput="_updateAddrComputed()"></div>
+        <div class="f" style="display:grid;grid-template-columns:1fr 80px;gap:8px">
+          <div><label>State</label><input id="cf-state" placeholder="CO" maxlength="2" autocomplete="address-level1" oninput="this.value=this.value.toUpperCase();_updateAddrComputed()"></div>
+          <div><label>Zip</label><input id="cf-zip" placeholder="80203" maxlength="10" autocomplete="postal-code" oninput="_updateAddrComputed()"></div>
         </div>
         <div class="f"><label>Property type</label><select id="cf-ptype"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>
         <div class="f" id="cf-year-built-wrap"><label>Year built <span style="font-weight:400;color:var(--text3);font-size:10px">Pre-1978 requires EPA disclosure</span></label>
@@ -4635,7 +4640,7 @@ function openNewClient(){
   const srch=document.getElementById('cf-search');if(srch)srch.value='';
   document.getElementById('cf-title').textContent='New lead';
   document.getElementById('cf-del').style.display='none';
-  ['cf-name','cf-phone','cf-addr','cf-ref','cf-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['cf-name','cf-phone','cf-street','cf-city','cf-state','cf-zip','cf-ref','cf-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const dw=document.getElementById('cf-dupe-warn');if(dw)dw.style.display='none';;
   const csrc=document.getElementById('cf-source');if(csrc)csrc.value='';
   const crw=document.getElementById('cf-ref-wrap');if(crw)crw.style.display='none';
@@ -4652,14 +4657,23 @@ function checkYearBuilt(){
   const warn=document.getElementById('cf-year-warn');
   if(warn)warn.style.display=(yr&&yr<1978)?'block':'none';
 }
-function updateYearLookupBtn(){
-  const addr=(document.getElementById('cf-addr')?.value||'').trim();
+function _updateAddrComputed(){
+  const street=(document.getElementById('cf-street')?.value||'').trim();
+  const city=(document.getElementById('cf-city')?.value||'').trim();
   const btn=document.getElementById('cf-year-lookup');
-  if(btn)btn.style.display=addr?'inline-block':'none';
+  if(btn)btn.style.display=(street&&city)?'inline-block':'none';
 }
+function updateYearLookupBtn(){_updateAddrComputed();}
 function lookupYearBuilt(){
-  const addr=(document.getElementById('cf-addr')?.value||'').trim();
+  const street=(document.getElementById('cf-street')?.value||'').trim();
+  const city=(document.getElementById('cf-city')?.value||'').trim();
+  const state=(document.getElementById('cf-state')?.value||'').trim();
+  const addr=[street,city,state].filter(Boolean).join(', ');
   if(addr)window.open('https://www.google.com/search?q=year+built+'+encodeURIComponent(addr),'_blank');
+}
+function _parseAddrParts(addr){
+  const m=(addr||'').match(/^(.+?),\s*(.+?),?\s*([A-Z]{2})\s*(\d{5}(?:-\d{4})?)?$/i);
+  return m?{street:m[1].trim(),city:m[2].trim(),state:m[3].toUpperCase(),zip:(m[4]||'').trim()}:{street:(addr||'').trim(),city:'',state:'',zip:''};
 }
 function openEditClient(){
   const c=getClientById(currentClientId);if(!c)return;
@@ -4668,7 +4682,11 @@ function openEditClient(){
   document.getElementById('cf-del').style.display='inline-block';
   document.getElementById('cf-name').value=c.name||'';
   document.getElementById('cf-phone').value=formatPhoneDisplay(c.phone||'');
-  document.getElementById('cf-addr').value=c.addr||'';
+  const _ep=_parseAddrParts(c.addr||'');
+  document.getElementById('cf-street').value=c.street||_ep.street||'';
+  document.getElementById('cf-city').value=c.city||_ep.city||'';
+  document.getElementById('cf-state').value=c.state||_ep.state||'';
+  document.getElementById('cf-zip').value=c.zip||_ep.zip||'';
   document.getElementById('cf-ptype').value=c.ptype||'Single family home';
   document.getElementById('cf-email').value=c.email||'';
   document.getElementById('cf-ref').value=c.ref||'';
@@ -4699,14 +4717,18 @@ function saveClient(){
   if(_submitting)return;
   _submitting=true;setTimeout(()=>{_submitting=false;},1500);
   // Clear all field errors first
-  ['cf-name','cf-phone','cf-addr','cf-source'].forEach(clearFErr);
+  ['cf-name','cf-phone','cf-street','cf-source'].forEach(clearFErr);
   const name=v('cf-name').trim();
   if(!name){_submitting=false;showFErr('cf-name','err-cf-name','Enter a name.');return;}
   const phone=v('cf-phone').trim();
   if(!phone){_submitting=false;showFErr('cf-phone','err-cf-phone','Enter a phone number.');return;}
   if(phone.replace(/\D/g,'').length<10){_submitting=false;showFErr('cf-phone','err-cf-phone','Enter a valid 10-digit phone number.');return;}
-  // Address is optional — leads often come in without one; add it later from their profile
-  const addr=v('cf-addr').trim();
+  // Address is optional — leads often come in without one; add later from profile
+  const street=v('cf-street').trim();
+  const city=v('cf-city').trim();
+  const state=v('cf-state').trim().toUpperCase();
+  const zip=v('cf-zip').trim();
+  const addr=[street,city,[state,zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   const source=v('cf-source')||'';
   if(!source){_submitting=false;showFErr('cf-source','err-cf-source','Select a lead source — this tracks what\'s working.');return;}
   const isNew=!editClientId;
@@ -4729,7 +4751,7 @@ function saveClient(){
       return;
     }
     // Address match = info only — landlords and shared addresses are valid
-    if(addr){
+    if(street&&city){
       const addrNorm=addr.toLowerCase().replace(/\s+/g,' ');
       const addrDupe=clients.find(x=>x.id!==editClientId&&x.addr&&x.addr.toLowerCase().replace(/\s+/g,' ')===addrNorm);
       if(addrDupe){
@@ -4744,7 +4766,20 @@ function saveClient(){
   const tier=v('cf-tier')||'';
   const _existingClient=editClientId?clients.find(x=>x.id===editClientId):null;
   const _ybRaw=parseInt(document.getElementById('cf-year-built')?.value||'');
-  const c={id:editClientId||Date.now(),name,phone:v('cf-phone'),email:v('cf-email'),addr:v('cf-addr'),ptype:v('cf-ptype'),source,ref,notes:v('cf-notes'),created:todayKey(),yearBuilt:_ybRaw||_existingClient?.yearBuilt||null,extraAddresses:_existingClient?.extraAddresses||[],clientToken:_existingClient?.clientToken||'',clientHubKey:_existingClient?.clientHubKey||''};
+  const c={id:editClientId||Date.now(),name,phone:v('cf-phone'),email:v('cf-email'),
+    addr,street,city,state,zip,
+    ptype:v('cf-ptype'),source,ref,notes:v('cf-notes'),created:todayKey(),
+    yearBuilt:_ybRaw||_existingClient?.yearBuilt||null,
+    sqft:_existingClient?.sqft||null,estimatedValue:_existingClient?.estimatedValue||null,
+    propertyType:_existingClient?.propertyType||null,stories:_existingClient?.stories||null,
+    exteriorMaterial:_existingClient?.exteriorMaterial||null,lastSaleDate:_existingClient?.lastSaleDate||null,
+    lastSalePrice:_existingClient?.lastSalePrice||null,lotSize:_existingClient?.lotSize||null,
+    roofType:_existingClient?.roofType||null,garage:_existingClient?.garage||null,
+    bedrooms:_existingClient?.bedrooms||null,bathrooms:_existingClient?.bathrooms||null,
+    isRental:_existingClient?.isRental||null,assessorUrl:_existingClient?.assessorUrl||null,
+    propDataSource:_existingClient?.propDataSource||null,propDataExact:_existingClient?.propDataExact??null,
+    propDataFetchedAt:_existingClient?.propDataFetchedAt||null,
+    extraAddresses:_existingClient?.extraAddresses||[],clientToken:_existingClient?.clientToken||'',clientHubKey:_existingClient?.clientHubKey||''};
   if(editClientId){const i=clients.findIndex(x=>x.id===editClientId);if(i>=0)clients[i]=c;}
   else{
     clients.push(c);
@@ -4753,6 +4788,9 @@ function saveClient(){
     if(supaEnabled()&&_supaUser)_uploadClientHub(c.id).catch(()=>{});
   }
   saveAll();
+  // Trigger property lookup if address is new or changed
+  const _prevAddr=_existingClient?.addr||'';
+  if(street&&city&&addr!==_prevAddr)_lookupPropertyData(c.id,{street,city,state,zip});
   if(isNew){
     closeClientForm();
     currentClientId=c.id;
@@ -4880,12 +4918,37 @@ function renderClientDetail(){
   const jobProfit=totalIncome-totalExpenses-(totalMiles*IRS());
   const intakeInfoHTML=(c.callTime||c.notes)?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📞 Best time to call:</span> ${c.callTime}</div>`:''}${c.notes?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📋 Intake notes:</span> ${c.notes}</div>`:''}</div>`:'';
   const epaHTML=(c.yearBuilt&&c.yearBuilt<1978&&getActiveTrade()==='painting')?`<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 12px;margin-top:10px;font-size:12px;font-weight:700;color:#856404">⚠️ Pre-1978 home — Lead paint disclosure required before work begins</div>`:'';
+  const hasPropData=c.sqft||c.estimatedValue||c.stories||c.exteriorMaterial||c.lastSaleDate||c.lotSize||c.bedrooms||c.roofType;
+  const propCard=hasPropData?`
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-top:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Property${c.propDataExact===false?' <span style="font-weight:400;color:var(--amber);text-transform:none">(area avg)</span>':''}</div>
+      ${c.assessorUrl?`<a href="${escHtml(c.assessorUrl)}" target="_blank" style="font-size:11px;color:var(--blue)">County record →</a>`:''}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:10px;margin-bottom:${c.exteriorMaterial||c.roofType||c.garage||c.isRental?'10px':'0'}">
+      ${c.yearBuilt?`<div><div style="font-size:16px;font-weight:800">${c.yearBuilt}${c.yearBuilt<1978?' 🚨':''}</div><div style="font-size:10px;color:var(--text3)">Year built</div></div>`:''}
+      ${c.sqft?`<div><div style="font-size:16px;font-weight:800">${Number(c.sqft).toLocaleString()}</div><div style="font-size:10px;color:var(--text3)">Sq ft</div></div>`:''}
+      ${c.estimatedValue?`<div><div style="font-size:16px;font-weight:800">${fmt(c.estimatedValue)}</div><div style="font-size:10px;color:var(--text3)">Est. value</div></div>`:''}
+      ${c.stories?`<div><div style="font-size:16px;font-weight:800">${c.stories}</div><div style="font-size:10px;color:var(--text3)">Stories</div></div>`:''}
+      ${c.bedrooms?`<div><div style="font-size:16px;font-weight:800">${c.bedrooms}</div><div style="font-size:10px;color:var(--text3)">Beds</div></div>`:''}
+      ${c.bathrooms?`<div><div style="font-size:16px;font-weight:800">${c.bathrooms}</div><div style="font-size:10px;color:var(--text3)">Baths</div></div>`:''}
+      ${c.lotSize?`<div><div style="font-size:16px;font-weight:800">${escHtml(String(c.lotSize))}</div><div style="font-size:10px;color:var(--text3)">Lot size</div></div>`:''}
+    </div>
+    ${c.exteriorMaterial||c.roofType||c.garage||c.isRental?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:${c.lastSaleDate||c.lastSalePrice?'10px':'0'}">
+      ${c.exteriorMaterial?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🏠 ${escHtml(String(c.exteriorMaterial))}</span>`:''}
+      ${c.roofType?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🏚️ ${escHtml(String(c.roofType))}</span>`:''}
+      ${c.garage?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🚗 ${escHtml(String(c.garage))}</span>`:''}
+      ${c.isRental?`<span style="font-size:11px;background:rgba(233,123,0,.15);border:1px solid rgba(233,123,0,.3);border-radius:20px;padding:3px 8px;color:#E97B00;font-weight:700">🔑 Rental/investment</span>`:''}
+    </div>`:''}
+    ${c.lastSaleDate||c.lastSalePrice?`<div style="font-size:12px;color:var(--text3);padding-top:8px;border-top:1px solid var(--border)">Last sold ${c.lastSaleDate?new Date(c.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${c.lastSalePrice?' · <strong style="color:var(--text)">'+fmt(c.lastSalePrice)+'</strong>':''}</div>`:''}
+  </div>`
+  :(c.street&&c.city?`<div style="margin-top:8px"><button onclick="_lookupPropertyData(${c.id},{street:'${escHtml(c.street||'')}',city:'${escHtml(c.city||'')}',state:'${escHtml(c.state||'')}',zip:'${escHtml(c.zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:12px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit">🏠 Look up property data</button></div>`:'');
   document.getElementById('cd-client-mets').innerHTML=balanceHTML+`<div class="mets" style="margin-bottom:0">
     <div class="met"><div class="met-l">Revenue</div><div class="met-v" style="color:var(--green-mid)">${fmt(totalIncome)}</div></div>
     <div class="met" style="cursor:pointer" onclick="setCDTab('expenses',document.getElementById('cdt-expenses'))"><div class="met-l">Expenses</div><div class="met-v" style="color:#A32D2D">${fmt(totalExpenses)}</div><div class="met-s">${cexpenses.length} items</div></div>
     <div class="met"><div class="met-l">Miles</div><div class="met-v">${totalMiles.toFixed(1)}</div><div class="met-s">${fmt(totalMiles*IRS())}</div></div>
     <div class="met"><div class="met-l">Job profit</div><div class="met-v" style="color:${jobProfit<0?'#A32D2D':'var(--green-mid)'}">${fmt(jobProfit)}</div><div class="met-s">After exp+miles</div></div>
-  </div>`+intakeInfoHTML+epaHTML;
+  </div>`+intakeInfoHTML+epaHTML+propCard;
   // Estimate action buttons — context-aware based on pipeline stage
   const _cdStage=getClientStage(currentClientId).stage;
   const _cdActions=document.getElementById('cd-estimate-actions');
@@ -9735,6 +9798,32 @@ ${proposal.innerHTML}
   a.click();
   document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url),10000);
+}
+
+// ── Property data auto-lookup ───────────────────────────────────────────────
+async function _lookupPropertyData(clientId,addrParts){
+  if(!supaEnabled()||!_supaUser)return;
+  try{
+    const{data:{session}}=await _supa.auth.getSession();
+    if(!session)return;
+    const res=await fetch(_supaFnUrl('property-lookup'),{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
+      body:JSON.stringify(addrParts)
+    });
+    if(!res.ok)return;
+    const d=await res.json();
+    if(d.error)return;
+    const c=clients.find(x=>x.id===clientId);if(!c)return;
+    if(d.yearBuilt&&!c.yearBuilt)c.yearBuilt=d.yearBuilt;
+    ['sqft','estimatedValue','propertyType','stories','exteriorMaterial',
+     'lastSaleDate','lastSalePrice','lotSize','roofType','garage',
+     'bedrooms','bathrooms','isRental','assessorUrl',
+     'propDataSource','propDataExact'].forEach(k=>{if(d[k]!=null)c[k]=d[k];});
+    c.propDataFetchedAt=new Date().toISOString();
+    saveAll();
+    if(currentClientId===clientId)renderClientDetail();
+  }catch(e){console.warn('Property lookup failed:',e);}
 }
 
 // ── Stripe Connect ─────────────────────────────────────────────────────────
