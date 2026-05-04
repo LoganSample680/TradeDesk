@@ -221,8 +221,13 @@ async function initOnboard(t,u,c){
     '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:20px">'+
       '<div style="margin-bottom:16px">'+
         '<label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:6px">Property address</label>'+
-        '<input id="onb-addr" type="text" placeholder="123 Main St, City, State" autocomplete="street-address" style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
-        '<div id="onb-addr-err" style="display:none;font-size:12px;color:var(--red);margin-top:4px">Please enter the property address.</div>'+
+        '<input id="onb-street" type="text" placeholder="1234 Maple St" autocomplete="address-line1" style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg2);color:var(--text);margin-bottom:8px">'+
+        '<div style="display:grid;grid-template-columns:1fr 56px 90px;gap:8px;margin-bottom:0">'+
+          '<input id="onb-city" type="text" placeholder="City" autocomplete="address-level2" style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
+          '<input id="onb-state" type="text" placeholder="ST" maxlength="2" autocomplete="address-level1" style="width:100%;box-sizing:border-box;padding:13px 10px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg2);color:var(--text);text-align:center;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">'+
+          '<input id="onb-zip" type="text" placeholder="Zip" maxlength="10" autocomplete="postal-code" style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
+        '</div>'+
+        '<div id="onb-addr-err" style="display:none;font-size:12px;color:var(--red);margin-top:4px">Please enter the street address and city.</div>'+
       '</div>'+
       '<div style="margin-bottom:16px">'+
         '<label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:6px">What are you looking to get painted?</label>'+
@@ -253,11 +258,15 @@ function onbTime(btn,val){
   btn.style.background='var(--accent)';btn.style.borderColor='var(--accent)';btn.style.color='#fff';
 }
 async function submitOnboard(userId,clientId){
-  const addr=(document.getElementById('onb-addr')?.value||'').trim();
+  const street=(document.getElementById('onb-street')?.value||'').trim();
+  const city=(document.getElementById('onb-city')?.value||'').trim();
+  const state=(document.getElementById('onb-state')?.value||'').trim().toUpperCase();
+  const zip=(document.getElementById('onb-zip')?.value||'').trim();
+  const addr=[street,city,[state,zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   const notes=(document.getElementById('onb-notes')?.value||'').trim();
   const callTime=window._onbCallTime||'';
   const errEl=document.getElementById('onb-addr-err');
-  if(!addr){if(errEl){errEl.style.display='block';document.getElementById('onb-addr')?.focus();}return;}
+  if(!street||!city){if(errEl){errEl.style.display='block';document.getElementById('onb-street')?.focus();}return;}
   if(errEl)errEl.style.display='none';
   const btn=document.getElementById('onb-submit');
   if(btn){btn.textContent='Sending…';btn.disabled=true;}
@@ -267,6 +276,10 @@ async function submitOnboard(userId,clientId){
       account_id:userId,
       client_id:clientId,
       addr,
+      street,
+      city,
+      state,
+      zip,
       notes,
       call_time:callTime,
       status:'pending'
