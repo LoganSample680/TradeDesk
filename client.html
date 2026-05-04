@@ -221,7 +221,10 @@ async function initOnboard(t,u,c){
     '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:20px">'+
       '<div style="margin-bottom:16px">'+
         '<label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:6px">Property address</label>'+
-        '<input id="onb-street" type="text" placeholder="1234 Maple St" autocomplete="address-line1" style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg2);color:var(--text);margin-bottom:8px">'+
+        '<div style="position:relative;margin-bottom:8px">'+
+          '<input id="onb-street" type="text" placeholder="Start typing address…" autocomplete="off" style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg2);color:var(--text)" oninput="_onbAddrSearch(this.value)" onblur="setTimeout(()=>{const b=document.getElementById(\'onb-addr-sugg\');if(b)b.style.display=\'none\'},150)">'+
+          '<div id="onb-addr-sugg" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r);box-shadow:0 6px 20px rgba(0,0,0,.15);z-index:200;max-height:240px;overflow-y:auto"></div>'+
+        '</div>'+
         '<div style="display:grid;grid-template-columns:1fr 56px 90px;gap:8px;margin-bottom:0">'+
           '<input id="onb-city" type="text" placeholder="City" autocomplete="address-level2" style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
           '<input id="onb-state" type="text" placeholder="ST" maxlength="2" autocomplete="address-level1" style="width:100%;box-sizing:border-box;padding:13px 10px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg2);color:var(--text);text-align:center;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">'+
@@ -249,6 +252,38 @@ async function initOnboard(t,u,c){
   document.querySelector('.body-wrap').innerHTML=document.querySelector('.body-wrap').innerHTML;
   document.querySelector('.body-wrap').outerHTML='<div class="body-wrap" style="padding-top:52px">'+formHtml+'</div>';
   window._onbCallTime='';
+}
+const _ONB_STATE_ABBR={'Alabama':'AL','Alaska':'AK','Arizona':'AZ','Arkansas':'AR','California':'CA','Colorado':'CO','Connecticut':'CT','Delaware':'DE','Florida':'FL','Georgia':'GA','Hawaii':'HI','Idaho':'ID','Illinois':'IL','Indiana':'IN','Iowa':'IA','Kansas':'KS','Kentucky':'KY','Louisiana':'LA','Maine':'ME','Maryland':'MD','Massachusetts':'MA','Michigan':'MI','Minnesota':'MN','Mississippi':'MS','Missouri':'MO','Montana':'MT','Nebraska':'NE','Nevada':'NV','New Hampshire':'NH','New Jersey':'NJ','New Mexico':'NM','New York':'NY','North Carolina':'NC','North Dakota':'ND','Ohio':'OH','Oklahoma':'OK','Oregon':'OR','Pennsylvania':'PA','Rhode Island':'RI','South Carolina':'SC','South Dakota':'SD','Tennessee':'TN','Texas':'TX','Utah':'UT','Vermont':'VT','Virginia':'VA','Washington':'WA','West Virginia':'WV','Wisconsin':'WI','Wyoming':'WY','District of Columbia':'DC'};
+let _onbAddrTimer=null;
+function _onbAddrSearch(val){
+  clearTimeout(_onbAddrTimer);
+  const box=document.getElementById('onb-addr-sugg');if(!box)return;
+  if(val.length<3){box.style.display='none';return;}
+  _onbAddrTimer=setTimeout(async()=>{
+    try{
+      const r=await fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit=6&lang=en');
+      const d=await r.json();
+      if(!d?.features?.length){box.style.display='none';return;}
+      box.innerHTML=d.features.filter(f=>{const p=f.properties||{};return p.housenumber&&p.street&&(p.city||p.town||p.village);}).slice(0,5).map(f=>{
+        const p=f.properties||{};
+        const streetLine=(p.housenumber?p.housenumber+' ':'')+p.street;
+        const city=p.city||p.town||p.village||'';
+        const state=_ONB_STATE_ABBR[p.state]||p.state||'';
+        const zip=p.postcode||'';
+        const s1=streetLine.replace(/'/g,"\\'");const s2=city.replace(/'/g,"\\'");const s3=state.replace(/'/g,"\\'");const s4=zip.replace(/'/g,"\\'");
+        return '<div onmousedown="event.preventDefault()" onclick="_onbAddrSelect(\''+s1+'\',\''+s2+'\',\''+s3+'\',\''+s4+'\')" style="padding:11px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
+          '<div style="font-size:14px;font-weight:600">'+streetLine.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>'+
+          '<div style="font-size:12px;color:#888;margin-top:1px">'+[city,state,zip].filter(Boolean).join(' ').replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>'+
+        '</div>';
+      }).join('');
+      box.style.display=box.innerHTML?'block':'none';
+    }catch(e){if(box)box.style.display='none';}
+  },220);
+}
+function _onbAddrSelect(street,city,state,zip){
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v;};
+  set('onb-street',street);set('onb-city',city);set('onb-state',state);set('onb-zip',zip);
+  const box=document.getElementById('onb-addr-sugg');if(box)box.style.display='none';
 }
 function onbTime(btn,val){
   window._onbCallTime=val;

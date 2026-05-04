@@ -74,7 +74,10 @@ textarea.input{resize:vertical;min-height:90px}
       </div>
       <div class="field">
         <div class="field-label">Property address <span class="req">*</span></div>
-        <input id="f-street" class="input" type="text" placeholder="1234 Maple St" autocomplete="address-line1" style="margin-bottom:8px">
+        <div style="position:relative;margin-bottom:8px">
+          <input id="f-street" class="input" type="text" placeholder="Start typing address…" autocomplete="off" oninput="_intakeAddrSearch(this.value)" onblur="setTimeout(()=>{const b=document.getElementById('f-addr-sugg');if(b)b.style.display='none'},150)">
+          <div id="f-addr-sugg" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1.5px solid #ccc;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:200;max-height:240px;overflow-y:auto"></div>
+        </div>
         <div style="display:grid;grid-template-columns:1fr 56px 90px;gap:8px">
           <input id="f-city" class="input" type="text" placeholder="City" autocomplete="address-level2">
           <input id="f-state" class="input" type="text" placeholder="ST" maxlength="2" autocomplete="address-level1" style="text-align:center;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
@@ -135,6 +138,39 @@ function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace
 function v(id){return(document.getElementById(id)||{}).value||''}
 function show(id){document.getElementById(id).style.display=''}
 function hide(id){document.getElementById(id).style.display='none'}
+
+const _INTAKE_STATE_ABBR={'Alabama':'AL','Alaska':'AK','Arizona':'AZ','Arkansas':'AR','California':'CA','Colorado':'CO','Connecticut':'CT','Delaware':'DE','Florida':'FL','Georgia':'GA','Hawaii':'HI','Idaho':'ID','Illinois':'IL','Indiana':'IN','Iowa':'IA','Kansas':'KS','Kentucky':'KY','Louisiana':'LA','Maine':'ME','Maryland':'MD','Massachusetts':'MA','Michigan':'MI','Minnesota':'MN','Mississippi':'MS','Missouri':'MO','Montana':'MT','Nebraska':'NE','Nevada':'NV','New Hampshire':'NH','New Jersey':'NJ','New Mexico':'NM','New York':'NY','North Carolina':'NC','North Dakota':'ND','Ohio':'OH','Oklahoma':'OK','Oregon':'OR','Pennsylvania':'PA','Rhode Island':'RI','South Carolina':'SC','South Dakota':'SD','Tennessee':'TN','Texas':'TX','Utah':'UT','Vermont':'VT','Virginia':'VA','Washington':'WA','West Virginia':'WV','Wisconsin':'WI','Wyoming':'WY','District of Columbia':'DC'};
+let _intakeAddrTimer=null;
+function _intakeAddrSearch(val){
+  clearTimeout(_intakeAddrTimer);
+  const box=document.getElementById('f-addr-sugg');if(!box)return;
+  if(val.length<3){box.style.display='none';return;}
+  _intakeAddrTimer=setTimeout(async()=>{
+    try{
+      const r=await fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit=6&lang=en');
+      const d=await r.json();
+      if(!d?.features?.length){box.style.display='none';return;}
+      box.innerHTML=d.features.filter(f=>{const p=f.properties||{};return p.housenumber&&p.street&&(p.city||p.town||p.village);}).slice(0,5).map(f=>{
+        const p=f.properties||{};
+        const streetLine=(p.housenumber?p.housenumber+' ':'')+p.street;
+        const city=p.city||p.town||p.village||'';
+        const state=_INTAKE_STATE_ABBR[p.state]||p.state||'';
+        const zip=p.postcode||'';
+        const s1=streetLine.replace(/'/g,"\\'");const s2=city.replace(/'/g,"\\'");const s3=state.replace(/'/g,"\\'");const s4=zip.replace(/'/g,"\\'");
+        return '<div onmousedown="event.preventDefault()" onclick="_intakeAddrSelect(\''+s1+'\',\''+s2+'\',\''+s3+'\',\''+s4+'\')" style="padding:11px 14px;border-bottom:1px solid #eee;cursor:pointer;font-family:inherit">'+
+          '<div style="font-size:14px;font-weight:600;color:#1a1a18">'+streetLine.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>'+
+          '<div style="font-size:12px;color:#888;margin-top:1px">'+[city,state,zip].filter(Boolean).join(' ').replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>'+
+        '</div>';
+      }).join('');
+      box.style.display=box.innerHTML?'block':'none';
+    }catch(e){if(box)box.style.display='none';}
+  },220);
+}
+function _intakeAddrSelect(street,city,state,zip){
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v;};
+  set('f-street',street);set('f-city',city);set('f-state',state);set('f-zip',zip);
+  const box=document.getElementById('f-addr-sugg');if(box)box.style.display='none';
+}
 
 function selTime(btn,val){
   document.querySelectorAll('.time-btn').forEach(b=>b.classList.remove('sel'));
