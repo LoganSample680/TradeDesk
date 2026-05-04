@@ -4919,37 +4919,12 @@ function renderClientDetail(){
   const jobProfit=totalIncome-totalExpenses-(totalMiles*IRS());
   const intakeInfoHTML=(c.callTime||c.notes)?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📞 Best time to call:</span> ${c.callTime}</div>`:''}${c.notes?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📋 Intake notes:</span> ${c.notes}</div>`:''}</div>`:'';
   const epaHTML=(c.yearBuilt&&c.yearBuilt<1978&&getActiveTrade()==='painting')?`<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 12px;margin-top:10px;font-size:12px;font-weight:700;color:#856404">⚠️ Pre-1978 home — Lead paint disclosure required before work begins</div>`:'';
-  const hasPropData=c.sqft||c.estimatedValue||c.stories||c.exteriorMaterial||c.lastSaleDate||c.lotSize||c.bedrooms||c.roofType;
-  const propCard=hasPropData?`
-  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-top:10px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Property${c.propDataExact===false?' <span style="font-weight:400;color:var(--amber);text-transform:none">(area avg)</span>':''}</div>
-      ${c.assessorUrl?`<a href="${escHtml(c.assessorUrl)}" target="_blank" style="font-size:11px;color:var(--blue)">County record →</a>`:''}
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:10px;margin-bottom:${c.exteriorMaterial||c.roofType||c.garage||c.isRental?'10px':'0'}">
-      ${c.yearBuilt?`<div><div style="font-size:16px;font-weight:800">${c.yearBuilt}${c.yearBuilt<1978?' 🚨':''}</div><div style="font-size:10px;color:var(--text3)">Year built</div></div>`:''}
-      ${c.sqft?`<div><div style="font-size:16px;font-weight:800">${Number(c.sqft).toLocaleString()}</div><div style="font-size:10px;color:var(--text3)">Sq ft</div></div>`:''}
-      ${c.estimatedValue?`<div><div style="font-size:16px;font-weight:800">${fmt(c.estimatedValue)}</div><div style="font-size:10px;color:var(--text3)">Est. value</div></div>`:''}
-      ${c.stories?`<div><div style="font-size:16px;font-weight:800">${c.stories}</div><div style="font-size:10px;color:var(--text3)">Stories</div></div>`:''}
-      ${c.bedrooms?`<div><div style="font-size:16px;font-weight:800">${c.bedrooms}</div><div style="font-size:10px;color:var(--text3)">Beds</div></div>`:''}
-      ${c.bathrooms?`<div><div style="font-size:16px;font-weight:800">${c.bathrooms}</div><div style="font-size:10px;color:var(--text3)">Baths</div></div>`:''}
-      ${c.lotSize?`<div><div style="font-size:16px;font-weight:800">${escHtml(String(c.lotSize))}</div><div style="font-size:10px;color:var(--text3)">Lot size</div></div>`:''}
-    </div>
-    ${c.exteriorMaterial||c.roofType||c.garage||c.isRental?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:${c.lastSaleDate||c.lastSalePrice?'10px':'0'}">
-      ${c.exteriorMaterial?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🏠 ${escHtml(String(c.exteriorMaterial))}</span>`:''}
-      ${c.roofType?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🏚️ ${escHtml(String(c.roofType))}</span>`:''}
-      ${c.garage?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🚗 ${escHtml(String(c.garage))}</span>`:''}
-      ${c.isRental?`<span style="font-size:11px;background:rgba(233,123,0,.15);border:1px solid rgba(233,123,0,.3);border-radius:20px;padding:3px 8px;color:#E97B00;font-weight:700">🔑 Rental/investment</span>`:''}
-    </div>`:''}
-    ${c.lastSaleDate||c.lastSalePrice?`<div style="font-size:12px;color:var(--text3);padding-top:8px;border-top:1px solid var(--border)">Last sold ${c.lastSaleDate?new Date(c.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${c.lastSalePrice?' · <strong style="color:var(--text)">'+fmt(c.lastSalePrice)+'</strong>':''}</div>`:''}
-  </div>`
-  :(c.street&&c.city?`<div style="margin-top:8px"><button onclick="_lookupPropertyData(${c.id},{street:'${escHtml(c.street||'')}',city:'${escHtml(c.city||'')}',state:'${escHtml(c.state||'')}',zip:'${escHtml(c.zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:12px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit">🏠 Look up property data</button></div>`:'');
   document.getElementById('cd-client-mets').innerHTML=balanceHTML+`<div class="mets" style="margin-bottom:0">
     <div class="met"><div class="met-l">Revenue</div><div class="met-v" style="color:var(--green-mid)">${fmt(totalIncome)}</div></div>
     <div class="met" style="cursor:pointer" onclick="setCDTab('expenses',document.getElementById('cdt-expenses'))"><div class="met-l">Expenses</div><div class="met-v" style="color:#A32D2D">${fmt(totalExpenses)}</div><div class="met-s">${cexpenses.length} items</div></div>
     <div class="met"><div class="met-l">Miles</div><div class="met-v">${totalMiles.toFixed(1)}</div><div class="met-s">${fmt(totalMiles*IRS())}</div></div>
     <div class="met"><div class="met-l">Job profit</div><div class="met-v" style="color:${jobProfit<0?'#A32D2D':'var(--green-mid)'}">${fmt(jobProfit)}</div><div class="met-s">After exp+miles</div></div>
-  </div>`+intakeInfoHTML+epaHTML+propCard;
+  </div>`+intakeInfoHTML+epaHTML;
   // Estimate action buttons — context-aware based on pipeline stage
   const _cdStage=getClientStage(currentClientId).stage;
   const _cdActions=document.getElementById('cd-estimate-actions');
@@ -6078,18 +6053,61 @@ function renderCDAddresses(){
   const c=getClientById(currentClientId);if(!c)return;
   const extras=(c.extraAddresses||[]);
   _cdAddrList=[c.addr,...extras.map(a=>a.addr)];
-  let html='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border)">'+
-    '<div><div style="font-size:12px;font-weight:700">Primary</div><div style="font-size:13px;color:var(--text2);margin-top:2px">'+escHtml(c.addr||'No address')+'</div></div>'+
-    '<button onclick="_cdMapAddr(0)" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text3)">Map</button></div>';
+  const openKey='_cdpropOpen_'+currentClientId;
+  const isOpen=!!window[openKey];
+  const hasProp=!!(c.yearBuilt||c.sqft||c.estimatedValue||c.stories||c.bedrooms||c.bathrooms||c.exteriorMaterial||c.roofType||c.garage||c.lotSize||c.lastSaleDate||c.isRental);
+
+  // Inline badges always visible in the header row
+  const pre78Badge=c.yearBuilt&&c.yearBuilt<1978?`<span style="font-size:10px;background:rgba(163,45,45,.12);color:#A32D2D;border-radius:4px;padding:2px 5px;font-weight:700;margin-left:5px">⚠️ Pre-1978</span>`:'';
+  const srcBadge=c.propDataFetchedAt
+    ?(c.propDataExact===false?`<span style="font-size:10px;color:var(--text3);margin-left:4px">(area avg)</span>`:'')
+    :(c.street&&c.city?`<button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_lookupPropertyData(${c.id},{street:'${escHtml(c.street||'')}',city:'${escHtml(c.city||'')}',state:'${escHtml(c.state||'')}',zip:'${escHtml(c.zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:11px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;margin-left:6px">🏠 Look up</button>`:'');
+  const chevron=hasProp?`<span style="font-size:9px;color:var(--text3);display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s;margin-right:2px">▶</span>`:'';
+
+  // Expanded property data panel
+  const propPanel=hasProp&&isOpen?`<div style="padding:10px 0 4px;border-top:1px solid var(--border);margin-top:8px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:8px${c.exteriorMaterial||c.roofType||c.garage||c.isRental||c.lastSaleDate||c.lastSalePrice||c.assessorUrl?';margin-bottom:8px':''}">
+      ${c.yearBuilt?`<div><div style="font-size:15px;font-weight:800">${c.yearBuilt}</div><div style="font-size:10px;color:var(--text3)">📅 Year built</div></div>`:''}
+      ${c.sqft?`<div><div style="font-size:15px;font-weight:800">${Number(c.sqft).toLocaleString()}</div><div style="font-size:10px;color:var(--text3)">📐 Sq ft</div></div>`:''}
+      ${c.estimatedValue?`<div><div style="font-size:15px;font-weight:800">${fmt(c.estimatedValue)}</div><div style="font-size:10px;color:var(--text3)">💰 Est. value</div></div>`:''}
+      ${c.stories?`<div><div style="font-size:15px;font-weight:800">${c.stories}</div><div style="font-size:10px;color:var(--text3)">🏢 Stories</div></div>`:''}
+      ${c.bedrooms?`<div><div style="font-size:15px;font-weight:800">${c.bedrooms}</div><div style="font-size:10px;color:var(--text3)">🛏 Beds</div></div>`:''}
+      ${c.bathrooms?`<div><div style="font-size:15px;font-weight:800">${c.bathrooms}</div><div style="font-size:10px;color:var(--text3)">🛁 Baths</div></div>`:''}
+      ${c.lotSize?`<div><div style="font-size:15px;font-weight:800">${escHtml(String(c.lotSize))}</div><div style="font-size:10px;color:var(--text3)">🌳 Lot</div></div>`:''}
+    </div>
+    ${c.exteriorMaterial||c.roofType||c.garage||c.isRental?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:${c.lastSaleDate||c.lastSalePrice||c.assessorUrl?'8px':'0'}">
+      ${c.exteriorMaterial?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🏠 ${escHtml(String(c.exteriorMaterial))}</span>`:''}
+      ${c.roofType?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🏗️ ${escHtml(String(c.roofType))}</span>`:''}
+      ${c.garage?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🚗 ${escHtml(String(c.garage))}</span>`:''}
+      ${c.isRental?`<span style="font-size:11px;background:rgba(233,123,0,.12);border:1px solid rgba(233,123,0,.3);border-radius:20px;padding:3px 8px;color:#E97B00;font-weight:700">🔑 Rental</span>`:''}
+    </div>`:''}
+    ${c.lastSaleDate||c.lastSalePrice?`<div style="font-size:12px;color:var(--text3);padding-top:6px;border-top:1px solid var(--border);margin-bottom:${c.assessorUrl?'6px':'0'}">Last sold ${c.lastSaleDate?new Date(c.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${c.lastSalePrice?' · <strong style="color:var(--text)">'+fmt(c.lastSalePrice)+'</strong>':''}</div>`:''}
+    ${c.assessorUrl?`<a href="${escHtml(c.assessorUrl)}" target="_blank" style="font-size:11px;color:var(--blue)">County record →</a>`:''}
+  </div>`:''
+
+  let html=`<div style="padding:9px 0${extras.length?';border-bottom:1px solid var(--border)':''}">
+    <div onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()" style="display:flex;justify-content:space-between;align-items:flex-start;cursor:${hasProp?'pointer':'default'}">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:700;display:flex;align-items:center;flex-wrap:wrap;gap:2px">Primary${pre78Badge}${srcBadge}</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:2px">${escHtml(c.addr||'No address')}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:8px;margin-top:2px">
+        ${chevron}
+        <button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_cdMapAddr(0)" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text3)">Map</button>
+      </div>
+    </div>
+    ${propPanel}
+  </div>`;
+
   extras.forEach((a,i)=>{
-    html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border)">'+
-      '<div><div style="font-size:12px;font-weight:700;color:var(--text3)">'+escHtml(a.label||'Property '+(i+2))+'</div><div style="font-size:13px;color:var(--text2);margin-top:2px">'+escHtml(a.addr)+'</div></div>'+
-      '<div style="display:flex;gap:6px;flex-shrink:0">'+
-        '<button onclick="_cdMapAddr('+(i+1)+')" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text3)">Map</button>'+
-        '<button onclick="removeClientAddress('+i+')" style="background:none;border:1px solid #A32D2D;border-radius:var(--r);padding:5px 8px;font-size:11px;cursor:pointer;font-family:inherit;color:#A32D2D">✕</button>'+
-      '</div></div>';
+    html+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0${i<extras.length-1?';border-bottom:1px solid var(--border)':''}">
+      <div><div style="font-size:12px;font-weight:700;color:var(--text3)">${escHtml(a.label||'Property '+(i+2))}</div><div style="font-size:13px;color:var(--text2);margin-top:2px">${escHtml(a.addr)}</div></div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button onclick="_cdMapAddr(${i+1})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text3)">Map</button>
+        <button onclick="removeClientAddress(${i})" style="background:none;border:1px solid #A32D2D;border-radius:var(--r);padding:5px 8px;font-size:11px;cursor:pointer;font-family:inherit;color:#A32D2D">✕</button>
+      </div></div>`;
   });
-  if(extras.length===0)html+='<div style="font-size:12px;color:var(--text3);padding:6px 0 2px">No additional properties — tap + Add address to add one.</div>';
+  if(!c.addr&&extras.length===0)html+='<div style="font-size:12px;color:var(--text3);padding:6px 0 2px">No address — edit client to add one.</div>';
   el.innerHTML=html;
 }
 function openAddAddressModal(){
