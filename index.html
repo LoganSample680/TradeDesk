@@ -9807,7 +9807,7 @@ async function _lookupPropertyData(clientId,addrParts){
   try{
     const{data:{session}}=await _supa.auth.getSession();
     if(!session)return;
-    const res=await fetch(_supaFnUrl('property-lookup'),{
+    const res=await fetch(SUPA_URL+'/functions/v1/property-lookup',{
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
       body:JSON.stringify(addrParts)
