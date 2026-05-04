@@ -78,6 +78,12 @@ async function discoverCounty(county: string, state: string, stateCode: string, 
 
   if (!html) return null;
 
+  // Only call Claude if the HTML has real property search content — not a JS shell
+  const looksReal = html.length > 4000
+    && /<(form|input|table)/i.test(html)
+    && /(parcel|assessor|property|address|search)/i.test(html);
+  if (!looksReal) return null;
+
   const msg = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 1024,
