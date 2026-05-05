@@ -845,6 +845,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
     <input type="hidden" id="e-r-trim"><input type="hidden" id="e-r-door">
     <input type="hidden" id="e-r-win"><input type="hidden" id="e-r-ext">
     <input type="hidden" id="e-r-deck"><input type="hidden" id="e-paint-rate">
+    <input type="hidden" id="e-supplies-rate">
     <input type="hidden" id="e-cond" value="1.0">
   </div>
   <div id="est-s3" style="display:none">
@@ -1710,7 +1711,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         <div class="f"><label>Profit margin target (%)</label><input type="number" id="set-margin"></div>
         <div class="f"><label>Paint coverage (sq ft/gal)</label><input type="number" id="set-cov"></div>
         <div class="f"><label>Materials markup (%)</label><input type="number" id="set-mm"></div>
-        <div class="f"><label>Supplies rate ($/sq ft)</label><input type="number" id="set-supplies-rate" step="0.01" placeholder="0.12"></div>
+        <div class="f"><label>Supplies rate ($/sq ft)</label><input type="number" id="set-supplies-rate" step="0.01" placeholder="0.40"></div>
       </div>
     </div>
   </div>
@@ -2257,7 +2258,7 @@ const CHECKS=[
 ];
 const CAT_CFG={urgent:{label:'Do right away',color:'#A32D2D'},biz:{label:'Business setup in Kansas',color:'#185FA5'},tax:{label:'Tax & accounting',color:'#854F0B'},ks:{label:'Kansas market & marketing',color:'#27500A'}};
 
-let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.12,timeOff:[],employees:[],devices:[],logoData:'',brandColor:'',bwebsite:''};
+let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],logoData:'',brandColor:'',bwebsite:''};
 
 // ZJ's logo — SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
 // Only shown for ZJ's Painting account — other accounts see plain business name text.
@@ -2556,7 +2557,7 @@ function loadSettingsForm(){
 }
 function saveSettings(){
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
-  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.12,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||''};
+  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.40,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||''};
   applySettings();saveAll();
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
   // Propagate branding/settings to all live client hubs in the background
@@ -5973,7 +5974,41 @@ function supplyUncheckAll(btn){
 
 function confirmMarkComplete(jobId){confirmJobDone(jobId);}
 function callClient(){const c=getClientById(currentClientId);if(c&&c.phone)window.location.href='tel:'+c.phone.replace(/\D/g,'');}
-function textClient(){const c=getClientById(currentClientId);if(c&&c.phone)window.location.href='sms:'+c.phone.replace(/\D/g,'');}
+function textClient(){
+  const c=getClientById(currentClientId);if(!c?.phone)return;
+  const phone=c.phone.replace(/\D/g,'');
+  const existing=document.getElementById('_text-compose-ov');if(existing)existing.remove();
+  const ov=document.createElement('div');
+  ov.id='_text-compose-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;justify-content:flex-end;background:rgba(0,0,0,.45)';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const sheet=document.createElement('div');
+  sheet.style.cssText='background:var(--bg);border-radius:16px 16px 0 0;padding:16px 16px 32px;display:flex;flex-direction:column;gap:10px';
+  const sendBtn=document.createElement('button');
+  sendBtn.textContent='Open in Messages →';
+  sendBtn.style.cssText='padding:14px;border:none;border-radius:var(--r);background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit';
+  sendBtn.onclick=()=>{
+    const body=document.getElementById('_text-compose-body')?.value.trim()||'';
+    const sep=/iphone|ipad/i.test(navigator.userAgent)?'&':'?';
+    window.location.href='sms:'+phone+sep+'body='+encodeURIComponent(body);
+    ov.remove();
+  };
+  const cancelBtn=document.createElement('button');
+  cancelBtn.textContent='Cancel';
+  cancelBtn.style.cssText='padding:10px;border:1px solid var(--border2);border-radius:var(--r);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit';
+  cancelBtn.onclick=()=>ov.remove();
+  const grip=document.createElement('div');
+  grip.style.cssText='width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 4px';
+  const title=document.createElement('div');
+  title.style.cssText='font-size:14px;font-weight:700;color:var(--text2)';
+  title.textContent='Text '+c.name;
+  const ta=document.createElement('textarea');
+  ta.id='_text-compose-body';ta.rows=4;ta.placeholder='Type your message...';
+  ta.style.cssText='font-size:15px;padding:10px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:none;width:100%;box-sizing:border-box';
+  [grip,title,ta,sendBtn,cancelBtn].forEach(el=>sheet.appendChild(el));
+  ov.appendChild(sheet);document.body.appendChild(ov);
+  setTimeout(()=>ta.focus(),100);
+}
 function emailClient(){const c=getClientById(currentClientId);if(c&&c.email)window.open('mailto:'+c.email);}
 let _mapsPickerAddrs=[];
 function openMapsDir(){
@@ -9567,7 +9602,7 @@ function calcEst(){
     paintLines.push({color:key,spec:od.spec,sqFt:Math.round(od.sqFt),gals,wholeCans,cost,customerPaint:isRoomCustomer,cov:od.cov});
   });
   // Add supplies cost (tape, plastic, drop cloths, primer, ram board) per sq ft
-  const suppliesRate=S.suppliesRate||0.12;
+  const suppliesRate=gR('e-supplies-rate')||S.suppliesRate||0.40;
   const suppliesCost=Math.round(totalPaintSqFt*suppliesRate*100)/100;
   if(suppliesCost>0)matTotal+=suppliesCost;
   const flatAdd=0;const scopeFlats=[];
@@ -9578,7 +9613,7 @@ function calcEst(){
   const base=Math.round((laborTotal+matTotal)*tierMult*100)/100;
   const adj=Math.round(base*(adjPct/100)*100)/100;
   const final=Math.max(0,Math.round((base+adj)*100)/100);
-  return{lines,laborTotal,matTotal,customerPaint,flatAdd,scopeFlats,colorAdd:0,travel:0,base,bid:final,adj,final,
+  return{lines,laborTotal,matTotal,suppliesCost,customerPaint,flatAdd,scopeFlats,colorAdd:0,travel:0,base,bid:final,adj,final,
     profit:0,margin:0,paintLines,totalPaintSqFt,coats,totalLaborHours,laborRate:R.walls,paintCostPerGal,R};
 }
 function renderEstRunning(){
@@ -9612,7 +9647,7 @@ function renderEstRunning(){
   el.innerHTML=html;
 }
 function renderEstReview(){
-  const{lines,base,adj,final,laborTotal,matTotal,totalLaborHours,laborRate,paintCostPerGal,paintLines,totalPaintSqFt,coats,customerPaint}=calcEst();
+  const{lines,base,adj,final,laborTotal,matTotal,suppliesCost,totalLaborHours,laborRate,paintCostPerGal,paintLines,totalPaintSqFt,coats,customerPaint}=calcEst();
   const el=document.getElementById('est-review');if(!el)return;
   if(!estSurfaces.length&&!lines.length){el.innerHTML='<div class="empty">No surfaces added yet.</div>';return;}
 
@@ -9711,6 +9746,8 @@ function renderEstReview(){
     '<div class="met"><div class="met-l">Labor hours</div><div class="met-v">'+totalLaborHours.toFixed(1)+'h</div></div>'+
     '<div class="met"><div class="met-l">Labor</div><div class="met-v" style="color:var(--blue)">'+fmtShort(laborTotal)+'</div></div>'+
     '<div class="met"><div class="met-l">Materials</div><div class="met-v" style="color:var(--blue)">'+fmtShort(matTotal)+'</div></div>'+
+    ((matTotal-suppliesCost)>0?'<div class="met" style="padding-left:12px"><div class="met-l" style="color:var(--text3);font-size:11px">Paint</div><div class="met-v" style="color:var(--text3);font-size:11px">'+fmtShort(matTotal-suppliesCost)+'</div></div>':'')+
+    (suppliesCost>0?'<div class="met" style="padding-left:12px"><div class="met-l" style="color:var(--text3);font-size:11px">Supplies</div><div class="met-v" style="color:var(--text3);font-size:11px">'+fmtShort(suppliesCost)+'</div></div>':'')+
     (_tierPremium>0?'<div class="met"><div class="met-l" style="color:var(--amber)">'+(estPropertyTier?.label||'Tier')+' +'+_tierPct+'%</div><div class="met-v" style="color:var(--amber)">+'+fmtShort(_tierPremium)+'</div></div>':'')+
     '<div class="met"><div class="met-l">Total</div><div class="met-v" style="color:var(--green-mid);font-size:18px">'+fmtShort(final)+'</div></div>'+
   '</div>';
@@ -9719,9 +9756,9 @@ function renderEstReview(){
   if(final>0&&totalLaborHours>0){
     const effRate=final/totalLaborHours;
     const matPct=Math.round(matTotal/final*100);
-    const isHealthy=effRate>=55&&matPct<=35;
+    const isHealthy=effRate>=55;
     const isTight=effRate>=40&&effRate<55;
-    const isLow=effRate<40||matPct>45;
+    const isLow=effRate<40;
     const color=isLow?'#A32D2D':isTight?'#856404':'var(--green-mid)';
     const bg=isLow?'#FEF0F0':isTight?'#FFFBF0':'#F0FBF0';
     const border=isLow?'#E24B4A':isTight?'var(--amber)':'#97C459';
