@@ -1640,6 +1640,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         <div class="f"><label>License / insured</label><input id="set-blic"></div>
         <div class="f"><label>Years of experience</label><input type="number" id="set-byears" min="1" max="50" placeholder="e.g. 12"></div>
         <div class="f"><label>Google review link <span style="font-size:10px;font-weight:400;color:var(--text3)">(sent after job completion)</span></label><input type="url" id="set-review-url" placeholder="https://g.page/r/..."></div>
+        <div class="f" style="grid-column:1/-1"><label>Mapbox API key <span style="font-size:10px;font-weight:400;color:var(--text3)">(address autocomplete — free account at mapbox.com)</span></label><input id="set-mapbox-key" placeholder="pk.ey..." autocomplete="off" style="font-family:monospace;font-size:12px"></div>
         <div class="f" style="grid-column:1/-1">
           <label>Proposal logo <span style="font-size:10px;font-weight:400;color:var(--text3)">(replaces business name text on proposals)</span></label>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -2258,7 +2259,7 @@ const CHECKS=[
 ];
 const CAT_CFG={urgent:{label:'Do right away',color:'#A32D2D'},biz:{label:'Business setup in Kansas',color:'#185FA5'},tax:{label:'Tax & accounting',color:'#854F0B'},ks:{label:'Kansas market & marketing',color:'#27500A'}};
 
-let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],logoData:'',brandColor:'',bwebsite:''};
+let S={bitlyKey:'',mapboxKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],logoData:'',brandColor:'',bwebsite:''};
 
 // ZJ's logo — SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
 // Only shown for ZJ's Painting account — other accounts see plain business name text.
@@ -2549,7 +2550,7 @@ function loadSettingsForm(){
   sf('set-goal-monthly',S.goalMonthly||'');
   sf('set-labor-rate',S.laborRate||45);sf('set-owner-name',getOwnerName()||'');sf('set-bname',S.bname);sf('set-state',S.state||'KS');
   _renderLogoPreview();
-  if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-bitly-key',S.bitlyKey||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-byears',S.byears||'');sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
+  if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-bitly-key',S.bitlyKey||'');sf('set-mapbox-key',S.mapboxKey||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-byears',S.byears||'');sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
   sf('set-margin',S.margin);sf('set-cov',S.cov);sf('set-mm',S.mm);sf('set-supplies-rate',S.suppliesRate||0.12);sf('set-r-walls',S.rWalls||1.30);sf('set-r-ceil',S.rCeil||1.00);sf('set-r-trim',S.rTrim||4.00);sf('set-r-door',S.rDoor||95);sf('set-r-win',S.rWin||50);sf('set-r-ext',S.rExt||1.10);sf('set-r-deck',S.rDeck||1.00);
   sf('set-review-url',S.reviewUrl||'');
   sf('set-brandcolor',S.brandColor||'#185FA5');
@@ -2557,7 +2558,7 @@ function loadSettingsForm(){
 }
 function saveSettings(){
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
-  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.40,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||''};
+  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',mapboxKey:gs('set-mapbox-key')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.40,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||''};
   applySettings();saveAll();
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
   // Propagate branding/settings to all live client hubs in the background
@@ -13690,6 +13691,48 @@ let _lmCoords={from:null,to:null};
 let _tripSearchTimers={};
 let _tripDestTimer=null;
 
+// ── Shared geocoding — Mapbox (with key) or Photon+Census parallel ───────────
+async function _geocodeAddress(val,limit){
+  limit=limit||5;
+  if(S.mapboxKey){
+    const r=await fetch('https://api.mapbox.com/geocoding/v5/mapbox.places/'+encodeURIComponent(val)+'.json?access_token='+S.mapboxKey+'&country=US&types=address&limit='+limit+'&proximity=ip');
+    const d=await r.json();
+    return(d.features||[]).map(f=>{
+      const ctx=f.context||[];
+      const zip=(ctx.find(c=>c.id.startsWith('postcode'))||{}).text||'';
+      const city=(ctx.find(c=>c.id.startsWith('place'))||{}).text||'';
+      const stateRaw=(ctx.find(c=>c.id.startsWith('region'))||{}).short_code||'';
+      const state=stateRaw.replace('US-','');
+      const street=(f.address?f.address+' ':'')+f.text;
+      const[lon,lat]=f.center;
+      return{line1:street,line2:[city,state,zip].filter(Boolean).join(', '),street,city,state,zip,lat,lon};
+    });
+  }
+  // No Mapbox key — Photon + Census in parallel
+  const bias=(S?.weatherLat&&S?.weatherLon)?'&lat='+S.weatherLat+'&lon='+S.weatherLon:'&lat=37.6922&lon=-97.3375';
+  const photonP=fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit='+(limit+1)+bias+'&lang=en').then(r=>r.json()).catch(()=>null);
+  const censusP=fetch('https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address='+encodeURIComponent(val)+'&benchmark=Public_AR_Current&format=json').then(r=>r.json()).catch(()=>null);
+  const pd=await photonP;
+  const pf=(pd?.features||[]).filter(f=>{const p=f.properties||{};return p.street&&(p.city||p.town||p.village);}).slice(0,limit);
+  if(pf.length>0){
+    return pf.map(f=>{
+      const p=f.properties||{};
+      const street=(p.housenumber?p.housenumber+' ':'')+p.street;
+      const city=p.city||p.town||p.village||'';
+      const state=_STATE_ABBR[p.state]||p.state||'';
+      const zip=p.postcode||'';
+      const[lon,lat]=f.geometry.coordinates;
+      return{line1:street,line2:[city,state,zip].filter(Boolean).join(', '),street,city,state,zip,lat,lon};
+    });
+  }
+  const cd=await censusP;
+  return(cd?.result?.addressMatches||[]).slice(0,limit).map(m=>{
+    const parts=(m.matchedAddress||'').split(', ');
+    return{line1:parts[0]||'',line2:[parts[1],parts[2],parts[3]].filter(Boolean).join(' '),
+      street:parts[0]||'',city:parts[1]||'',state:parts[2]||'',zip:parts[3]||'',
+      lat:m.coordinates?.y||0,lon:m.coordinates?.x||0};
+  });
+}
 // ── Shared address autocomplete (Photon) ─────────────────────────────────────
 const _STATE_ABBR={'Alabama':'AL','Alaska':'AK','Arizona':'AZ','Arkansas':'AR','California':'CA','Colorado':'CO','Connecticut':'CT','Delaware':'DE','Florida':'FL','Georgia':'GA','Hawaii':'HI','Idaho':'ID','Illinois':'IL','Indiana':'IN','Iowa':'IA','Kansas':'KS','Kentucky':'KY','Louisiana':'LA','Maine':'ME','Maryland':'MD','Massachusetts':'MA','Michigan':'MI','Minnesota':'MN','Mississippi':'MS','Missouri':'MO','Montana':'MT','Nebraska':'NE','Nevada':'NV','New Hampshire':'NH','New Jersey':'NJ','New Mexico':'NM','New York':'NY','North Carolina':'NC','North Dakota':'ND','Ohio':'OH','Oklahoma':'OK','Oregon':'OR','Pennsylvania':'PA','Rhode Island':'RI','South Carolina':'SC','South Dakota':'SD','Tennessee':'TN','Texas':'TX','Utah':'UT','Vermont':'VT','Virginia':'VA','Washington':'WA','West Virginia':'WV','Wisconsin':'WI','Wyoming':'WY','District of Columbia':'DC'};
 let _addrSugTimer=null;let _addrSugGen=0;
@@ -13700,51 +13743,20 @@ function _addrSugSearch(val,suggId,streetId,cityId,stateId,zipId){
   _addrSugTimer=setTimeout(async()=>{
     const gen=++_addrSugGen;
     try{
-      const bias=(S?.weatherLat&&S?.weatherLon)?'&lat='+S.weatherLat+'&lon='+S.weatherLon:'&lat=37.6922&lon=-97.3375';
-      // Fire both APIs in parallel — Photon is fast, Census covers every US address
-      const photonP=fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit=6'+bias+'&lang=en').then(r=>r.json()).catch(()=>null);
-      const censusP=fetch('https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address='+encodeURIComponent(val)+'&benchmark=Public_AR_Current&format=json').then(r=>r.json()).catch(()=>null);
-      // Photon first — usually wins in ~150ms
-      const pd=await photonP;
+      const results=await _geocodeAddress(val,5);
       if(gen!==_addrSugGen)return;
-      const pf=(pd?.features||[]).filter(f=>{const p=f.properties||{};return p.street&&(p.city||p.town||p.village);}).slice(0,5);
-      if(pf.length>0){
-        box.innerHTML=pf.map(f=>{
-          const p=f.properties||{};
-          const streetLine=(p.housenumber?p.housenumber+' ':'')+p.street;
-          const city=p.city||p.town||p.village||'';
-          const stateAbbr=_STATE_ABBR[p.state]||p.state||'';
-          const zip=p.postcode||'';
-          const line2=[city,stateAbbr,zip].filter(Boolean).join(' ');
-          const s1=streetLine.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-          const s2=city.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-          const s3=stateAbbr.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-          const s4=zip.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-          return '<div onmousedown="event.preventDefault()" onclick="_addrSugSelect(\''+suggId+'\',\''+streetId+'\',\''+cityId+'\',\''+stateId+'\',\''+zipId+'\',\''+s1+'\',\''+s2+'\',\''+s3+'\',\''+s4+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
-            '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(streetLine)+'</div>'+
-            '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(line2)+'</div>'+
-          '</div>';
-        }).join('');
-        box.style.display='block';return;
-      }
-      // Photon had nothing — Census is already in-flight, just await it
-      const cd=await censusP;
-      if(gen!==_addrSugGen)return;
-      const matches=(cd?.result?.addressMatches||[]).slice(0,5);
-      if(matches.length>0){
-        box.innerHTML=matches.map(m=>{
-          const parts=(m.matchedAddress||'').split(', ');
-          const street=(parts[0]||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-          const city=(parts[1]||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-          const state=(parts[2]||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-          const zip=(parts[3]||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-          return '<div onmousedown="event.preventDefault()" onclick="_addrSugSelect(\''+suggId+'\',\''+streetId+'\',\''+cityId+'\',\''+stateId+'\',\''+zipId+'\',\''+street+'\',\''+city+'\',\''+state+'\',\''+zip+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
-            '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(parts[0]||'')+'</div>'+
-            '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml([parts[1],parts[2],parts[3]].filter(Boolean).join(' '))+'</div>'+
-          '</div>';
-        }).join('');
-        box.style.display='block';
-      }else{box.style.display='none';}
+      if(!results.length){box.style.display='none';return;}
+      box.innerHTML=results.map(res=>{
+        const s1=res.street.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const s2=res.city.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const s3=res.state.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const s4=res.zip.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        return '<div onmousedown="event.preventDefault()" onclick="_addrSugSelect(\''+suggId+'\',\''+streetId+'\',\''+cityId+'\',\''+stateId+'\',\''+zipId+'\',\''+s1+'\',\''+s2+'\',\''+s3+'\',\''+s4+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
+          '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(res.line1)+'</div>'+
+          '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(res.line2)+'</div>'+
+        '</div>';
+      }).join('');
+      box.style.display='block';
     }catch(e){if(box)box.style.display='none';}
   },220);
 }
@@ -13762,33 +13774,20 @@ function _tripDestSearch(val){
   const chip=document.getElementById('lm-to-chip');if(chip)chip.style.display='none';
   _lmCoords.to=null;
   if(!val||val.length<2){box.style.display='none';return;}
-  // Client name matches (immediate, no debounce needed)
-  const matches=clients.filter(c=>c.name&&c.name.toLowerCase().includes(val.toLowerCase())&&c.addr).slice(0,4);
+  const clientMatches=clients.filter(c=>c.name&&c.name.toLowerCase().includes(val.toLowerCase())&&c.addr).slice(0,4);
   _tripDestTimer=setTimeout(async()=>{
-    let html='';
-    matches.forEach(c=>{
-      html+='<div onclick="_selectTripClient('+c.id+')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
-        '<div style="font-size:13px;font-weight:700;color:var(--text)">👤 '+escHtml(c.name)+'</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(c.addr||'')+'</div>'+
-      '</div>';
-    });
+    let html=clientMatches.map(c=>'<div onclick="_selectTripClient('+c.id+')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
+      '<div style="font-size:13px;font-weight:700;color:var(--text)">👤 '+escHtml(c.name)+'</div>'+
+      '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(c.addr||'')+'</div>'+
+    '</div>').join('');
     try{
-      const bias=(S.weatherLat&&S.weatherLon)?'&lat='+S.weatherLat+'&lon='+S.weatherLon:'&lat=37.6922&lon=-97.3375';
-      const r=await fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit=5'+bias+'&lang=en');
-      const d=await r.json();
-      (d.features||[]).forEach(f=>{
-        const p=f.properties||{};
-        const name=p.name||'';const num=p.housenumber||'';const street=p.street||'';
-        const city=p.city||p.town||p.village||'';const state=p.state||'';
-        const line1=name||(num?num+' '+street:street)||city;
-        const streetPart=(name&&(num||street))?(num?num+' '+street:street):'';
-        const line2=[streetPart,city,state].filter(Boolean).join(', ');
-        const[lon,lat]=f.geometry.coordinates;
-        const safeL1=line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const safeL2=line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        html+='<div onclick="selectTripPlace(\'lm-to\',\'lm-to-sugg\',\'to\',\''+safeL1+'\',\''+safeL2+'\','+lat+','+lon+')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
-          '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(line1)+'</div>'+
-          (line2?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(line2)+'</div>':'')+
+      const results=await _geocodeAddress(val,5);
+      results.forEach(res=>{
+        const safeL1=res.line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const safeL2=res.line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        html+='<div onclick="selectTripPlace(\'lm-to\',\'lm-to-sugg\',\'to\',\''+safeL1+'\',\''+safeL2+'\','+res.lat+','+res.lon+')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
+          '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(res.line1)+'</div>'+
+          (res.line2?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(res.line2)+'</div>':'')+
         '</div>';
       });
     }catch(e){}
@@ -13810,31 +13809,21 @@ function _selectTripClient(clientId){
 function tripPlaceSearch(fieldId,suggId,val){
   clearTimeout(_tripSearchTimers[fieldId]);
   const box=document.getElementById(suggId);if(!box)return;
-  // Clear verified chip when user edits the field
   const chipId=fieldId==='lm-from'?'lm-from-chip':'lm-to-chip';
   const chip=document.getElementById(chipId);if(chip)chip.style.display='none';
   const ckey=fieldId==='lm-from'?'from':'to';_lmCoords[ckey]=null;
   if(val.length<2){box.style.display='none';return;}
   _tripSearchTimers[fieldId]=setTimeout(async()=>{
     try{
-      const bias=(S.weatherLat&&S.weatherLon)?'&lat='+S.weatherLat+'&lon='+S.weatherLon:'&lat=37.6922&lon=-97.3375';
-      const r=await fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit=6'+bias+'&lang=en');
-      const d=await r.json();
-      if(!d||!d.features||!d.features.length){box.style.display='none';return;}
       const whichKey=fieldId==='lm-from'?'from':'to';
-      box.innerHTML=d.features.map(f=>{
-        const p=f.properties||{};
-        const name=p.name||'';const num=p.housenumber||'';const street=p.street||'';
-        const city=p.city||p.town||p.village||'';const state=p.state||'';
-        const line1=name||(num?num+' '+street:street)||city;
-        const streetPart=(name&&(num||street))?(num?num+' '+street:street):'';
-        const line2=[streetPart,city,state].filter(Boolean).join(', ');
-        const[lon,lat]=f.geometry.coordinates;
-        const safeL1=line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const safeL2=line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        return '<div onclick="selectTripPlace(\''+fieldId+'\',\''+suggId+'\',\''+whichKey+'\',\''+safeL1+'\',\''+safeL2+'\','+lat+','+lon+')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
-          '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(line1)+'</div>'+
-          (line2?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(line2)+'</div>':'')+
+      const results=await _geocodeAddress(val,6);
+      if(!results.length){box.style.display='none';return;}
+      box.innerHTML=results.map(res=>{
+        const safeL1=res.line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const safeL2=res.line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        return '<div onclick="selectTripPlace(\''+fieldId+'\',\''+suggId+'\',\''+whichKey+'\',\''+safeL1+'\',\''+safeL2+'\','+res.lat+','+res.lon+')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
+          '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(res.line1)+'</div>'+
+          (res.line2?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(res.line2)+'</div>':'')+
         '</div>';
       }).join('');
       box.style.display='block';
