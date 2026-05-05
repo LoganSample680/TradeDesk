@@ -3052,32 +3052,26 @@ function renderDash(){
       '<div class="met" style="cursor:pointer" data-chart="revenue" onclick="showKpiChart(this.dataset.chart)">'+
         '<div class="met-l">Revenue</div>'+
         '<div class="met-v" style="color:var(--blue)">'+fmtShort(tInc)+'</div>'+
-        '<div class="met-s">All payments received</div>'+
       '</div>'+
       '<div class="met" style="cursor:pointer" onclick="goToExpenses()">'+
         '<div class="met-l">Expenses</div>'+
         '<div class="met-v" style="color:#A32D2D">'+fmtShort(tExp)+'</div>'+
-        '<div class="met-s">Cash spent only</div>'+
       '</div>'+
       '<div class="met" style="cursor:pointer" data-pg="pg-tracker" onclick="goPg(this.dataset.pg)">'+
         '<div class="met-l">Mileage</div>'+
         '<div class="met-v">'+Math.round(tMi).toLocaleString()+'<span style="font-size:11px;font-weight:400;color:var(--text3)"> mi</span></div>'+
-        '<div class="met-s">'+fmtShort(mileDed)+' deduction</div>'+
       '</div>'+
       '<div class="met" style="cursor:pointer" data-pg="pg-taxes" onclick="goPg(this.dataset.pg)">'+
         '<div class="met-l">Taxes</div>'+
         '<div class="met-v" style="color:var(--amber)">'+fmtShort(ytdTaxEst)+'</div>'+
-        '<div class="met-s">Estimated — set aside</div>'+
       '</div>'+
       '<div class="met" style="cursor:pointer" data-chart="profit" onclick="showKpiChart(this.dataset.chart)">'+
         '<div class="met-l">Profit</div>'+
         '<div class="met-v" style="color:'+(ytdTrueProfit<0?'#A32D2D':'var(--green-mid)')+'">'+fmtShort(ytdTrueProfit)+'</div>'+
-        '<div class="met-s">Rev − exp − miles − tax</div>'+
       '</div>'+
       '<div class="met">'+
         '<div class="met-l">Avg job</div>'+
         '<div class="met-v" style="color:var(--text)">'+(avgJobVal!==null?fmtShort(avgJobVal):'—')+'</div>'+
-        '<div class="met-s">'+(avgJobVal!==null?wonBidAmts.length+' won bid'+(wonBidAmts.length!==1?'s':''):'No won bids')+'</div>'+
       '</div>'+
     '</div>';
   }
@@ -17193,6 +17187,10 @@ function _onNewInboundLead(row){
       if(_processedInboundIds.has(row.id))return;
       _processedInboundIds.add(row.id);
       if(row.addr&&!c.addr){c.addr=row.addr;}
+      if(row.street&&!c.street){c.street=row.street;}
+      if(row.city&&!c.city){c.city=row.city;}
+      if(row.state&&!c.state){c.state=row.state;}
+      if(row.zip&&!c.zip){c.zip=row.zip;}
       if(row.notes){c.notes=(c.notes?c.notes+'\n':'')+row.notes;}
       if(row.call_time){c.callTime=row.call_time;}
       saveAll();
@@ -17200,6 +17198,8 @@ function _onNewInboundLead(row){
       _supa.from('inbound_leads').update({status:'applied'}).eq('id',row.id).then(()=>{});
       // Re-upload hub with new address so client.html shows updated info
       _uploadClientHub(Number(row.client_id)).catch(()=>{});
+      // Trigger property lookup now that we have the address
+      if(row.street&&row.city)_lookupPropertyData(Number(row.client_id),{street:row.street,city:row.city,state:row.state||'',zip:row.zip||''});
       showToast((c.name||'Lead')+' completed their onboarding — tap to view','📋');
       // Navigate directly to the client: avoids lead "disappearing" from whatever filter tab is active
       openClientDetail(Number(row.client_id),'leads');
