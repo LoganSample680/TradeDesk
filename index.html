@@ -210,8 +210,8 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .zmodal-msg{font-size:14px;color:var(--text2);line-height:1.5;margin-bottom:18px}
 .zmodal-btns{display:flex;gap:8px;justify-content:flex-end}
 @keyframes fadein{from{opacity:0}to{opacity:1}}
-@keyframes sf-fwd{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
-@keyframes sf-back{from{opacity:0;transform:translateX(-24px)}to{opacity:1;transform:none}}
+@keyframes sf-fwd{from{opacity:0}to{opacity:1}}
+@keyframes sf-back{from{opacity:0}to{opacity:1}}
 .sf-enter{animation:sf-fwd .22s cubic-bezier(0.4,0,0.2,1) both}
 .sf-enter-back{animation:sf-back .22s cubic-bezier(0.4,0,0.2,1) both}
 .surf-type-btn{padding:10px 6px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .1s}
@@ -919,19 +919,12 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
       <div id="surf-step-a">
         <div style="font-size:13px;font-weight:800;color:var(--blue);margin-bottom:10px" id="surf-card-title">New room</div>
 
-        <div style="display:grid;grid-template-columns:1fr 100px;gap:10px;margin-bottom:12px;align-items:end">
-          <div>
-            <label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Room name <span style="color:#A32D2D">*</span></label>
-            <input id="surf-room-name" placeholder="Living room, Master bedroom..."
-              style="font-size:16px;font-weight:700;padding:10px 12px;width:100%;border:1.5px solid var(--border2);background:var(--bg2);border-radius:var(--r);outline:none;box-sizing:border-box;color:var(--text)"
-              oninput="onSurfRoomName(this)">
-          </div>
-          <div>
-            <label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Sq ft <span style="color:#A32D2D">*</span></label>
-            <input id="surf-room-sqft" type="number" min="0" step="1" placeholder="0" inputmode="decimal"
-              style="font-size:20px;font-weight:800;padding:10px 8px;width:100%;border:1px solid var(--border2);background:var(--bg2);border-radius:var(--r);outline:none;box-sizing:border-box;color:var(--text);text-align:center"
-              oninput="updateSurfWhatUI()">
-          </div>
+        <div style="margin-bottom:12px">
+          <label id="surf-room-name-label" style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Room name <span style="color:#A32D2D">*</span></label>
+          <input id="surf-room-name" placeholder="Living room, Master bedroom..."
+            style="font-size:16px;font-weight:700;padding:10px 12px;width:100%;border:1.5px solid var(--border2);background:var(--bg2);border-radius:var(--r);outline:none;box-sizing:border-box;color:var(--text)"
+            oninput="onSurfRoomName(this)">
+          <input id="surf-room-sqft" type="hidden" value="0">
         </div>
 
         <input type="hidden" id="surf-color" class="surf-color-entry" value="">
@@ -968,6 +961,12 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
             <button onclick="toggleSurfWhat('deck',this)" class="surf-what-btn" id="swhat-deck"
               style="display:none;padding:12px 6px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">
               <div style="font-size:20px;margin-bottom:3px">&#127795;</div>Deck</button>
+            <button onclick="toggleSurfWhat('fence',this)" class="surf-what-btn" id="swhat-fence"
+              style="display:none;padding:12px 6px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">
+              <div style="font-size:20px;margin-bottom:3px">&#127828;</div>Fence</button>
+            <button onclick="toggleSurfWhat('epoxy',this)" class="surf-what-btn" id="swhat-epoxy"
+              style="padding:12px 6px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">
+              <div style="font-size:20px;margin-bottom:3px">&#127963;</div>Epoxy floor</button>
           </div>
         </div>
 
@@ -1711,6 +1710,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         <div class="f"><label>Profit margin target (%)</label><input type="number" id="set-margin"></div>
         <div class="f"><label>Paint coverage (sq ft/gal)</label><input type="number" id="set-cov"></div>
         <div class="f"><label>Materials markup (%)</label><input type="number" id="set-mm"></div>
+        <div class="f"><label>Supplies rate ($/sq ft)</label><input type="number" id="set-supplies-rate" step="0.01" placeholder="0.12"></div>
       </div>
     </div>
   </div>
@@ -2231,6 +2231,8 @@ const SURF_TYPES=[
   {v:'ext_walls',l:'Exterior walls',unit:'sq ft',rate:1.35,mf:1},
   {v:'ext_trim',l:'Exterior trim',unit:'lin ft',rate:1.75,mf:.4},
   {v:'deck',l:'Deck/fence',unit:'sq ft',rate:1.10,mf:1},
+  {v:'fence',l:'Fence staining',unit:'sq ft',rate:1.25,mf:1},
+  {v:'epoxy',l:'Epoxy/garage floor',unit:'sq ft',rate:1.75,mf:1},
 ];
 const CHECKS=[
   {cat:'urgent',title:'Notify Montana Dept of Revenue of address change',desc:'File a final MT state tax return for the year you move. Close any MT business accounts.'},
@@ -2254,7 +2256,7 @@ const CHECKS=[
 ];
 const CAT_CFG={urgent:{label:'Do right away',color:'#A32D2D'},biz:{label:'Business setup in Kansas',color:'#185FA5'},tax:{label:'Tax & accounting',color:'#854F0B'},ks:{label:'Kansas market & marketing',color:'#27500A'}};
 
-let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,timeOff:[],employees:[],devices:[],logoData:'',brandColor:'',bwebsite:''};
+let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.12,timeOff:[],employees:[],devices:[],logoData:'',brandColor:'',bwebsite:''};
 
 // ZJ's logo — SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
 // Only shown for ZJ's Painting account — other accounts see plain business name text.
@@ -2356,7 +2358,7 @@ function fmtTime(t){if(!t)return'';const[h,m]=t.split(':').map(Number);const amp
 const COVERAGE=()=>S.cov||350;
 const MARGIN=()=>(S.margin||25)/100;
 const MATMARK=()=>1+((S.mm||20)/100);
-const LABOR_RATES=()=>({walls:S.rWalls||1.30,ceiling:S.rCeil||1.00,trim:S.rTrim||4.00,doors:S.rDoor||95,windows:S.rWin||50,cabinets:S.rCabinets||38,ext_walls:S.rExt||1.10,ext_trim:S.rTrim||4.00,deck:S.rDeck||1.00});
+const LABOR_RATES=()=>({walls:S.rWalls||1.30,ceiling:S.rCeil||1.00,trim:S.rTrim||4.00,doors:S.rDoor||95,windows:S.rWin||50,cabinets:S.rCabinets||38,ext_walls:S.rExt||1.10,ext_trim:S.rTrim||4.00,deck:S.rDeck||1.00,fence:S.rFence||1.25,epoxy:S.rEpoxy||1.75});
 function initials(name){const p=(name||'?').trim().split(' ');return p.length>=2?(p[0][0]+p[p.length-1][0]).toUpperCase():(name||'?').substring(0,2).toUpperCase();}
 function stageAvatar(stage){
   const m={
@@ -2546,14 +2548,14 @@ function loadSettingsForm(){
   sf('set-labor-rate',S.laborRate||45);sf('set-owner-name',getOwnerName()||'');sf('set-bname',S.bname);sf('set-state',S.state||'KS');
   _renderLogoPreview();
   if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-bitly-key',S.bitlyKey||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-byears',S.byears||'');sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
-  sf('set-margin',S.margin);sf('set-cov',S.cov);sf('set-mm',S.mm);sf('set-r-walls',S.rWalls||1.30);sf('set-r-ceil',S.rCeil||1.00);sf('set-r-trim',S.rTrim||4.00);sf('set-r-door',S.rDoor||95);sf('set-r-win',S.rWin||50);sf('set-r-ext',S.rExt||1.10);sf('set-r-deck',S.rDeck||1.00);
+  sf('set-margin',S.margin);sf('set-cov',S.cov);sf('set-mm',S.mm);sf('set-supplies-rate',S.suppliesRate||0.12);sf('set-r-walls',S.rWalls||1.30);sf('set-r-ceil',S.rCeil||1.00);sf('set-r-trim',S.rTrim||4.00);sf('set-r-door',S.rDoor||95);sf('set-r-win',S.rWin||50);sf('set-r-ext',S.rExt||1.10);sf('set-r-deck',S.rDeck||1.00);
   sf('set-review-url',S.reviewUrl||'');
   sf('set-brandcolor',S.brandColor||'#185FA5');
   sf('set-bwebsite',S.bwebsite||'');
 }
 function saveSettings(){
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
-  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||''};
+  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.12,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||''};
   applySettings();saveAll();
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
   // Propagate branding/settings to all live client hubs in the background
@@ -4811,11 +4813,13 @@ function renderClientDetail(){
       '</div>'+
       '<button class="btn btn-sm" onclick="openEditClient()" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.25);color:#fff;flex-shrink:0;margin-left:8px">Edit</button>'+
     '</div>'+
-    '<div style="display:flex;gap:8px">'+
-      (c.phone?'<button class="btn" onclick="callClient()" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex:1">&#128222; Call '+c.phone+'</button>':'')+
-      '<button class="btn" onclick="openMapsDir()" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex:1">&#128205; Directions</button>'+
-      (!gps.active?'<button class="btn" onclick="startDriveToClient()" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex-shrink:0" title="Log a drive to this client">&#128663; Drive</button>':'')+
-      '<button class="btn" onclick="showHubMenu('+c.id+')" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex-shrink:0" title="Share client portal">&#128279; Hub</button>'+
+    '<div style="display:flex;gap:8px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px">'+
+      (c.phone?'<button onclick="callClient()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#128222;</span><span>Call</span></button>':'')+
+      (c.phone?'<button onclick="textClient()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#128172;</span><span>Text</span></button>':'')+
+      (c.email?'<button onclick="emailClient()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#9993;&#65039;</span><span>Email</span></button>':'')+
+      '<button onclick="openMapsDir()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#128205;</span><span>Directions</span></button>'+
+      (!gps.active?'<button onclick="startDriveToClient()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#128663;</span><span>Drive</span></button>':'')+
+      '<button onclick="showHubMenu('+c.id+')" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#128279;</span><span>Hub</span></button>'+
     '</div>'+
     '';
   if(gps.active&&gps.clientId===currentClientId){
@@ -5969,6 +5973,8 @@ function supplyUncheckAll(btn){
 
 function confirmMarkComplete(jobId){confirmJobDone(jobId);}
 function callClient(){const c=getClientById(currentClientId);if(c&&c.phone)window.location.href='tel:'+c.phone.replace(/\D/g,'');}
+function textClient(){const c=getClientById(currentClientId);if(c&&c.phone)window.open('sms:'+c.phone.replace(/\D/g,''));}
+function emailClient(){const c=getClientById(currentClientId);if(c&&c.email)window.open('mailto:'+c.email);}
 let _mapsPickerAddrs=[];
 function openMapsDir(){
   const c=getClientById(currentClientId);if(!c||!c.addr)return zAlert('No address on file for this client.');
@@ -6173,7 +6179,7 @@ function toggleBidSummary(bidId){
   const COND={'1.0':'Good','1.2':'Fair','1.5':'Poor'};
   const surfs=b.surfaces||[];
   const scope=b.scope?Object.entries(b.scope).filter(([k,v])=>v).map(([k])=>k).join(', '):'';
-  const SURF_LABELS={walls:'Walls',ceiling:'Ceiling',trim:'Trim',doors:'Doors',windows:'Windows',cabinets:'Cabinets',ext_walls:'Siding',ext_trim:'Ext trim',deck:'Deck'};
+  const SURF_LABELS={walls:'Walls',ceiling:'Ceiling',trim:'Trim',doors:'Doors',windows:'Windows',cabinets:'Cabinets',ext_walls:'Siding',ext_trim:'Ext trim',deck:'Deck',fence:'Fence staining',epoxy:'Epoxy floor'};
   panel=document.createElement('div');
   panel.id='bid-summary-'+bidId;
   panel.style.cssText='background:var(--bg2);border-radius:var(--r);padding:12px;margin-top:10px;border-top:1px solid var(--border)';
@@ -8153,12 +8159,21 @@ function setSurfJobType(type){
   const eb=document.getElementById('surf-type-ext');
   if(ib){ib.style.borderColor=isInt?'var(--blue)':'var(--border2)';ib.style.background=isInt?'var(--blue)':'var(--bg2)';ib.style.color=isInt?'#fff':'var(--text2)';}
   if(eb){eb.style.borderColor=!isInt?'#D85A30':'var(--border2)';eb.style.background=!isInt?'#D85A30':'var(--bg2)';eb.style.color=!isInt?'#fff':'var(--text2)';}
-  const intSurfs=['walls','ceiling','trim','doors','windows','cabinets'];
-  const extSurfs=['ext_walls','ext_trim','deck'];
+  const intSurfs=['walls','ceiling','trim','doors','windows','cabinets','epoxy'];
+  const extSurfs=['ext_walls','ext_trim','deck','fence'];
   intSurfs.forEach(id=>{const b=document.getElementById('swhat-'+id);if(b)b.style.display=isInt?'':'none';});
   extSurfs.forEach(id=>{const b=document.getElementById('swhat-'+id);if(b)b.style.display=!isInt?'':'none';});
   surfWhatSelected=surfWhatSelected.filter(s=>isInt?intSurfs.includes(s):extSurfs.includes(s));
   updateSurfWhatUI();
+  const nameLabel=document.getElementById('surf-room-name-label');
+  const nameInput=document.getElementById('surf-room-name');
+  if(isInt){
+    if(nameLabel)nameLabel.textContent='Room name *';
+    if(nameInput)nameInput.placeholder='Living room, Master bedroom...';
+  }else{
+    if(nameLabel)nameLabel.textContent='Location *';
+    if(nameInput)nameInput.placeholder='Front of house, Back, Left side...';
+  }
 }
 
 function toggleSurfWhat(type, btn){
@@ -8169,7 +8184,7 @@ function toggleSurfWhat(type, btn){
 }
 
 function updateSurfWhatUI(){
-  ['walls','ceiling','trim','doors','windows','cabinets','ext_walls','ext_trim','deck'].forEach(type=>{
+  ['walls','ceiling','trim','doors','windows','cabinets','epoxy','ext_walls','ext_trim','deck','fence'].forEach(type=>{
     const btn=document.getElementById('swhat-'+type);
     if(!btn)return;
     const on=surfWhatSelected.includes(type);
@@ -8197,7 +8212,7 @@ function onSurfRoomName(input){
   updateSurfWhatUI();
 }
 
-const SURF_ORDER=['walls','ceiling','trim','ext_walls','ext_trim','deck','doors','windows','cabinets'];
+const SURF_ORDER=['walls','ceiling','trim','epoxy','ext_walls','ext_trim','deck','fence','doors','windows','cabinets'];
 const SURF_NEEDS_H=['walls','ceiling','ext_walls','deck'];
 const SURF_IS_COUNT=['doors','windows','cabinets'];
 // Strip legacy surface-type suffixes from room names (e.g. "Dining doors" -> "Dining")
@@ -8207,7 +8222,7 @@ function cleanRoomName(room){
   for(const t of types){if(raw.endsWith(' '+t))return raw.slice(0,-(t.length+1)).trim();}
   return raw;
 }
-const SURF_LABELS={walls:'Walls',ceiling:'Ceiling',trim:'Trim',doors:'Doors',windows:'Windows',cabinets:'Cabinets',ext_walls:'Siding',ext_trim:'Ext trim',deck:'Deck'};
+const SURF_LABELS={walls:'Walls',ceiling:'Ceiling',trim:'Trim',doors:'Doors',windows:'Windows',cabinets:'Cabinets',ext_walls:'Siding',ext_trim:'Ext trim',deck:'Deck',fence:'Fence staining',epoxy:'Epoxy floor'};
 
 function _sfShow(el,back){if(!el)return;el.classList.remove('sf-enter','sf-enter-back');void el.offsetWidth;el.classList.add(back?'sf-enter-back':'sf-enter');}
 
@@ -8642,12 +8657,38 @@ function renderSurfBCurrent(){
     return;
   }
 
-  if(type==='ceiling'||type==='deck'){
+  if(type==='fence'){
+    const m=surfBMeasurements[type]||{sqft:''};
+    dims.innerHTML=
+      '<div style="display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;gap:8px;margin-bottom:10px">'+
+        '<div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Fence length (ft)</label>'+
+        '<input type="number" id="surf-b-len" value="'+(m.len||'')+'" min="0" step="1" placeholder="0" inputmode="decimal"'+
+          ' style="font-size:24px;font-weight:700;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
+          ' oninput="updateFenceSqft()"></div>'+
+        '<div style="font-size:20px;color:var(--text3);padding-top:18px">×</div>'+
+        '<div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Fence height (ft)</label>'+
+        '<input type="number" id="surf-b-hgt" value="'+(m.hgt||6)+'" min="0" step="0.5" placeholder="6" inputmode="decimal"'+
+          ' style="font-size:24px;font-weight:700;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
+          ' oninput="updateFenceSqft()"></div>'+
+        '<div style="font-size:20px;color:var(--text3);padding-top:18px">=</div>'+
+        '<div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Sq ft</label>'+
+        '<input type="number" id="surf-b-sqft" value="'+(m.sqft||'')+'" min="0" step="1" placeholder="0" inputmode="decimal"'+
+          ' style="font-size:24px;font-weight:700;padding:10px;border-radius:var(--r);border:2px solid var(--blue);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
+          ' oninput="updateFenceSqft(true)"></div>'+
+      '</div>'+
+      '<div id="surf-b-sqftcalc" style="font-size:12px;color:var(--text3);text-align:center">Enter fence length × height</div>';
+    setTimeout(()=>{const el=document.getElementById('surf-b-len');if(el){el.focus();}},80);
+    if(m.len&&m.hgt)setTimeout(updateFenceSqft,50);
+    return;
+  }
+
+  if(type==='ceiling'||type==='deck'||type==='epoxy'){
     const m=surfBMeasurements[type]||{sqft:''};
     // Auto-fill ceiling from walls sqft
     const wallsSqft=surfBMeasurements.walls?.sqft||surfBMeasurements.ext_walls?.sqft||0;
     const autoFillSqft=(type==='ceiling'&&!m.sqft&&wallsSqft)?wallsSqft:null;
     if(autoFillSqft)m.sqft=autoFillSqft;
+    const dim2Label=type==='epoxy'?'Width (ft)':'Width (ft)';
     dims.innerHTML=
       (autoFillSqft?'<div style="font-size:11px;color:var(--green-mid);font-weight:700;margin-bottom:8px;text-align:center">✓ Auto-filled from room dimensions — edit if different</div>':'')+
       '<div style="display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:center;gap:8px;margin-bottom:10px">'+
@@ -8656,7 +8697,7 @@ function renderSurfBCurrent(){
           ' style="font-size:24px;font-weight:700;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
           ' oninput="updateSqftCalc()"></div>'+
         '<div style="font-size:20px;color:var(--text3);padding-top:18px">×</div>'+
-        '<div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Width (ft)</label>'+
+        '<div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">'+dim2Label+'</label>'+
         '<input type="number" id="surf-b-wid" value="" min="0" step="1" placeholder="0" inputmode="decimal"'+
           ' style="font-size:24px;font-weight:700;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
           ' oninput="updateSqftCalc()"></div>'+
@@ -8705,6 +8746,21 @@ function renderSurfBCurrent(){
     setTimeout(()=>{const el=document.getElementById('surf-b-len');if(el)el.focus();},100);
     updateSurfBCalc();
   }
+}
+function updateFenceSqft(manual){
+  const lenEl=document.getElementById('surf-b-len');
+  const hgtEl=document.getElementById('surf-b-hgt');
+  const sqEl=document.getElementById('surf-b-sqft');
+  const calc=document.getElementById('surf-b-sqftcalc');
+  if(!sqEl)return;
+  if(!manual&&lenEl&&hgtEl){
+    const l=parseFloat(lenEl.value)||0;
+    const h=parseFloat(hgtEl.value)||0;
+    if(l>0&&h>0){sqEl.value=Math.round(l*h);sqEl.style.borderColor='var(--green)';}
+    else{sqEl.style.borderColor='var(--blue)';}
+  }
+  const val=parseFloat(sqEl.value)||0;
+  if(calc){calc.textContent=val>0?val.toLocaleString()+' sq ft':'Enter fence length × height';calc.style.color=val>0?'var(--green-mid)':'var(--text3)';}
 }
 function updateWallSqft(manual){
   const sqEl=document.getElementById('surf-b-sqft');
@@ -8806,7 +8862,7 @@ function saveSurfBAndNext(){
     return;
   }
 
-  if(type==='walls'||type==='ceiling'||type==='deck'){
+  if(type==='walls'||type==='ceiling'||type==='deck'||type==='fence'||type==='epoxy'){
     const sqEl=document.getElementById('surf-b-sqft');
     const sqft=Math.round(parseFloat(sqEl?sqEl.value:0)||0);
     if(!sqft){zAlert('Enter the square footage.',{title:'Measurements needed'});return;}
@@ -8852,7 +8908,7 @@ function finishRoom(){
   saveSurfDraft();renderSurfRoomsLogged();
   const btn=document.getElementById('est-s3-next-btn');
   if(btn){btn.disabled=false;btn.style.background='var(--blue)';btn.style.color='#fff';btn.style.borderColor='var(--blue)';btn.style.cursor='pointer';}
-  surfWhatSelected=[];surfBQueue=[];surfBIdx=0;surfBMeasurements={};surfColor='';surfRoom='';_swResetColorUI();_swLastProductByCategory={};
+  surfWhatSelected=[];surfBQueue=[];surfBIdx=0;surfBMeasurements={};surfColor='';surfRoom='';_swResetColorUI();
   _editRoomBackup=null; // room saved — cancel is no longer meaningful
   document.getElementById('_edit-room-cancel')?.remove();
   updateSurfWhatUI();
@@ -8894,7 +8950,7 @@ function showRoomSavedState(roomCount){
         const recentRoom=estSurfaces.length>0?(estSurfaces[estSurfaces.length-1].room||'').split(' — ')[0].replace('[Ext] ','').trim():'';
         const recentSurfs=estSurfaces.filter(s=>cleanRoomName(s.room)===recentRoom);
         if(!recentSurfs.length)return '';
-        const SURF_LABELS2={walls:'Walls',ceiling:'Ceiling',trim:'Trim',doors:'Doors',windows:'Windows',cabinets:'Cabinets',ext_walls:'Siding',ext_trim:'Ext trim',deck:'Deck'};
+        const SURF_LABELS2={walls:'Walls',ceiling:'Ceiling',trim:'Trim',doors:'Doors',windows:'Windows',cabinets:'Cabinets',ext_walls:'Siding',ext_trim:'Ext trim',deck:'Deck',fence:'Fence staining',epoxy:'Epoxy floor'};
         // Show color swatch if color was selected
         const roomColor=(recentSurfs[0]?.room||'').split(' — ')[1]?.replace(/\s*\[.*\]/,'').trim()||'';
         return '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin-bottom:10px">'+
@@ -8917,9 +8973,13 @@ function addAnotherRoom(){
   if(rn){rn.value='';rn.style.borderColor='#A32D2D';rn.style.background='var(--red-lt)';}
   const sc=document.getElementById('surf-color');if(sc)sc.value='';
   _swResetColorUI();
+  surfWhatSelected=[];surfRoom='';surfColor='';surfBQueue=[];surfBIdx=0;surfBMeasurements={};
   document.querySelectorAll('.surf-what-btn').forEach(b=>{
     b.style.borderColor='';b.style.background='';b.style.color='';
   });
+  // Clear any lingering scope checkboxes
+  document.querySelectorAll('[id^="est-sc-"]').forEach(cb=>{cb.checked=false;});
+  document.querySelectorAll('[id^="est-st-"]').forEach(el=>{el.classList.remove('on');});
   const _sa=document.getElementById('surf-step-a');_sa.style.display='';_sfShow(_sa,true);
   const nextBtn=document.getElementById('surf-next-to-dims');
   if(nextBtn){nextBtn.disabled=true;nextBtn.style.background='var(--border2)';nextBtn.style.color='var(--text3)';nextBtn.style.borderColor='var(--border2)';nextBtn.style.cursor='not-allowed';}
@@ -9420,7 +9480,7 @@ function calcEst(){
   let laborTotal=0,totalLaborHours=0;const lines=[];
   estSurfaces.forEach(s=>{
     if(!s.qty)return;const t=SURF_TYPES.find(x=>x.v===s.type);if(!t)return;
-    const rate=R[s.type]||0;
+    const rate=R[s.type]||t.rate||0;
     // Walls/ext_walls: use actual wall sqft (perimeter×height) — industry standard for labor pricing.
     // Ceiling/deck/trim: use qty as entered. Coats not in labor — twocoat scope handles it.
     const laborQty=(s.type==='walls'||s.type==='ext_walls')?(s.wallSqft||s.qty):s.qty;
@@ -9503,6 +9563,10 @@ function calcEst(){
     matTotal+=cost;
     paintLines.push({color:key,spec:od.spec,sqFt:Math.round(od.sqFt),gals,wholeCans,cost,customerPaint:isRoomCustomer,cov:od.cov});
   });
+  // Add supplies cost (tape, plastic, drop cloths, primer, ram board) per sq ft
+  const suppliesRate=S.suppliesRate||0.12;
+  const suppliesCost=Math.round(totalPaintSqFt*suppliesRate*100)/100;
+  if(suppliesCost>0)matTotal+=suppliesCost;
   const flatAdd=0;const scopeFlats=[];
   const adjPct=parseInt(v('est-adj'))||0;
   // 7% contingency baked silently into labor (industry standard callback buffer)
@@ -10439,7 +10503,7 @@ async function sendProposalLink(){
     const proposalData={
       id:bidId,token,clientName:cname,businessName:bname,
       contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
-      proposalHtml:proposal.innerHTML,
+      proposalHtml:proposal.innerHTML+(document.getElementById('est-terms')?'<div style="margin-top:16px;padding:16px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;font-size:11px;color:#4a5568;line-height:1.8">'+document.getElementById('est-terms').innerHTML+'</div>':''),
       clientAddr:document.getElementById('e-caddr')?.value||_bidForProp?.addr||'',
       estDays:parseInt(document.getElementById('e-days')?.value)||_bidForProp?.days||2,
       amount:_propFinal,
@@ -10549,7 +10613,7 @@ function _commitProposalSent(){
     bid.followup=addDays(todayKey(),3);
     // Snapshot the exact proposal HTML the client will sign — required for legal record
     const proposalEl=document.getElementById('est-proposal');
-    if(proposalEl&&proposalEl.innerHTML.trim())bid.proposalHtml=proposalEl.innerHTML;
+    if(proposalEl&&proposalEl.innerHTML.trim())bid.proposalHtml=proposalEl.innerHTML+(document.getElementById('est-terms')?'<div style="margin-top:16px;padding:16px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;font-size:11px;color:#4a5568;line-height:1.8">'+document.getElementById('est-terms').innerHTML+'</div>':'');
     saveAll();
     // Re-upload hub now that signingToken is committed — snapshot gets correct signHubUrl
     if(bid.client_id)_uploadClientHub(bid.client_id).catch(()=>{});
@@ -10881,28 +10945,15 @@ function buildProposal(){
     <div style="font-size:10px;font-weight:800;text-transform:uppercase;color:#92400E;margin-bottom:4px">⚠ Weather Notice — Exterior Work</div>
     <div style="font-size:11px;color:#92400E;line-height:1.7">Exterior painting is weather-dependent. Start dates and completion timelines may shift based on temperature, rain, or high winds. Paint will not be applied to wet or damp surfaces. If surfaces were pressure washed, a minimum 48-hour dry time is required before painting begins. ${getBusinessName()} will communicate any weather-related delays promptly and reschedule at the earliest suitable date at no additional charge.</div>
   </div>`:''}
-  <div style="padding:20px 24px;display:grid;grid-template-columns:1fr 1fr;gap:24px;border-top:3px solid #1a365d;background:#f8fafc">
-    <div>
-      <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Payment Terms</div>
-      <div style="font-size:11.5px;color:#2d3748;line-height:2">
-        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">1.</span><span><strong>Deposit:</strong> 25% due before work begins.</span></div>
-        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">2.</span><span><strong>Balance:</strong> Remainder due upon completion.</span></div>
-        <div style="display:flex;align-items:baseline;gap:8px"><span style="color:#1a365d;font-weight:700;min-width:16px">3.</span><span><strong>Warranty:</strong> All workmanship warranted for 1 year.</span></div>
-      </div>
-      <div style="margin-top:10px;font-size:10px;color:#94a3b8;line-height:1.5">Full terms &amp; conditions — including cancellation, lien rights, and liability — are on the signing page.</div>
+  <div style="padding:20px 24px;border-top:3px solid #1a365d;background:#f8fafc">
+    <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Payment Terms</div>
+    <div style="font-size:11.5px;color:#2d3748;line-height:2">
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">1.</span><span><strong>Deposit:</strong> 25% due before work begins.</span></div>
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">2.</span><span><strong>Balance:</strong> Remainder due upon completion.</span></div>
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="color:#1a365d;font-weight:700;min-width:16px">3.</span><span><strong>Warranty:</strong> All workmanship warranted for 1 year.</span></div>
     </div>
-    <div>
-      <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Authorized by Contractor</div>
-      <div style="border:1.5px solid #cbd5e0;border-radius:8px;background:#fff;padding:12px 14px;min-height:56px;display:flex;flex-direction:column;justify-content:flex-end">
-        <div style="width:100%;border-top:1px solid #cbd5e0;padding-top:8px">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:10px;color:#718096">
-            <div style="font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${bname}</div><div style="flex-shrink:0;white-space:nowrap">${ds}</div>
-          </div>
-        </div>
-      </div>
-      <canvas id="proposal-notes-canvas" style="display:none"></canvas>
-      <div style="margin-top:8px;font-size:10px;color:#94a3b8;font-style:italic;line-height:1.5">Client's electronic signature on the signing page constitutes full acceptance of this proposal and is binding under Kansas UETA (K.S.A. 16-1601 et seq.).</div>
-    </div>
+    <div style="margin-top:10px;font-size:10px;color:#94a3b8;line-height:1.5">Full terms &amp; conditions — including cancellation, lien rights, and liability — are on the signing page.</div>
+    <canvas id="proposal-notes-canvas" style="display:none"></canvas>
   </div>
   ${_portfolioOn?`<div style="margin:0 0 0;border-top:3px solid #16a34a;background:#f0fdf4;padding:18px 24px">
     <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#16a34a;margin-bottom:8px">Portfolio Showcase Offer</div>
@@ -11237,15 +11288,15 @@ function syncAdvRate(advId,hiddenId){
   if(typeof renderEstRunning==='function')renderEstRunning();
 }
 const PROP_TIERS={
-  rental: {key:'rental',mult:0.82,paint:'ProMar 700',label:'Rental / Fixer',hint:'Basic finish — ProMar 700. Price reflects straightforward prep on a budget property.',
+  rental: {key:'rental',mult:0.82,paint:'ProMar 700',label:'Rental / Fixer',hint:'Budget finish · ProMar 700',
     products:{interior:'pm700',exterior:'a100',trim:'pm200t'}},
-  avg:    {key:'avg',   mult:1.00,paint:'ProMar 200',label:'Average Home',  hint:'Standard job — ProMar 200. Solid work, everyday homeowner.',
+  avg:    {key:'avg',   mult:1.00,paint:'ProMar 200',label:'Average Home',  hint:'Standard finish · ProMar 200',
     products:{interior:'pm200',exterior:'spe',trim:'pm200t'}},
-  nice:   {key:'nice',  mult:1.22,paint:'SuperPaint', label:'Well-Maintained',hint:'Owner takes pride — SuperPaint or Cashmere. Extra care, better finish.',
+  nice:   {key:'nice',  mult:1.22,paint:'SuperPaint', label:'Well-Maintained',hint:'Quality finish · SuperPaint',
     products:{interior:'sp',exterior:'spe',trim:'pclassw'}},
-  premium:{key:'premium',mult:1.50,paint:'Duration Home',label:'High-End / Premium',hint:'Demanding client or luxury home — Duration or Emerald. Top quality throughout.',
+  premium:{key:'premium',mult:1.50,paint:'Duration Home',label:'High-End / Premium',hint:'Premium finish · Duration',
     products:{interior:'dur',exterior:'dure',ceiling:'emceil',trim:'pclassw'}},
-  commercial:{key:'commercial',mult:1.65,paint:'Duration',label:'Commercial',hint:'Commercial building — accounts for equipment (genie lifts, scaffolding), extended setup time, and Duration paint throughout.',
+  commercial:{key:'commercial',mult:1.65,paint:'Duration',label:'Commercial',hint:'Commercial · equipment & setup',
     products:{interior:'dur',exterior:'dure',ceiling:'emceil',trim:'pclassw'}},
 };
 function selectPropertyTier(key){
@@ -11323,40 +11374,7 @@ function validateAndGoStep5(){
     if(el){el.style.borderColor='#A32D2D';el.style.background='var(--red-lt)';el.focus();}
     zAlert('Enter estimated days to complete.',{title:'Required'});return;
   }
-  // Pre-proposal confirmation — verify numbers before sending to client
-  const{final}=calcEst();
-  const cname=document.getElementById('e-cname')?.value||'Client';
-  const deposit=Math.round(final*.25*100)/100;
-  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
-  const box=document.createElement('div');box.className='zmodal';
-  box.innerHTML=
-    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Review before sending</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Double-check before this goes to the client</div>'+
-    '<div style="background:var(--bg2);border-radius:var(--r);padding:14px;margin-bottom:14px">'+
-      '<div style="display:flex;justify-content:space-between;margin-bottom:8px">'+
-        '<span style="font-size:13px;color:var(--text2)">Client</span>'+
-        '<span style="font-size:13px;font-weight:700">'+cname+'</span>'+
-      '</div>'+
-      '<div style="display:flex;justify-content:space-between;margin-bottom:8px">'+
-        '<span style="font-size:13px;color:var(--text2)">Total estimate</span>'+
-        '<span style="font-size:18px;font-weight:800;color:var(--blue)">'+fmt(final)+'</span>'+
-      '</div>'+
-      '<div style="display:flex;justify-content:space-between">'+
-        '<span style="font-size:13px;color:var(--text2)">Deposit due (25%)</span>'+
-        '<span style="font-size:13px;font-weight:700;color:var(--green-mid)">'+fmt(deposit)+'</span>'+
-      '</div>'+
-    '</div>'+
-    '<div style="font-size:11px;color:var(--text3);background:var(--blue-lt);border-radius:var(--r);padding:8px 10px;margin-bottom:14px">'+
-      'Once sent, the client can sign and this becomes a binding agreement. Make sure the total is correct.'+
-    '</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
-      '<button id="pre-prop-back" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Go back</button>'+
-      '<button id="pre-prop-go" style="padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Looks good ✓</button>'+
-    '</div>';
-  overlay.appendChild(box);document.body.appendChild(overlay);
-  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
-  box.querySelector('#pre-prop-back').onclick=()=>overlay.remove();
-  box.querySelector('#pre-prop-go').onclick=()=>{overlay.remove();goEstStep(5);};
+  goEstStep(5);
 }
 function validateAndGoStep2(){
   if(!runStep1Validation())return;
@@ -13237,7 +13255,7 @@ function openBidHistoryDetail(bidId){
   const scope=b.scope?Object.entries(b.scope).filter(([k,v])=>v).map(([k])=>{
     const item=SCOPE_ITEMS.find(s=>s.id===k);return item?item.label:k;
   }):[];
-  const SURF_LABELS={walls:'Walls',ceiling:'Ceiling',trim:'Trim',doors:'Doors',windows:'Windows',cabinets:'Cabinets',ext_walls:'Siding',ext_trim:'Ext trim',deck:'Deck'};
+  const SURF_LABELS={walls:'Walls',ceiling:'Ceiling',trim:'Trim',doors:'Doors',windows:'Windows',cabinets:'Cabinets',ext_walls:'Siding',ext_trim:'Ext trim',deck:'Deck',fence:'Fence staining',epoxy:'Epoxy floor'};
   const pays=getBidPayments(bidId);
   const totalPaid=getBidPaid(bidId);
 
