@@ -13692,37 +13692,59 @@ let _tripDestTimer=null;
 
 // ── Shared address autocomplete (Photon) ─────────────────────────────────────
 const _STATE_ABBR={'Alabama':'AL','Alaska':'AK','Arizona':'AZ','Arkansas':'AR','California':'CA','Colorado':'CO','Connecticut':'CT','Delaware':'DE','Florida':'FL','Georgia':'GA','Hawaii':'HI','Idaho':'ID','Illinois':'IL','Indiana':'IN','Iowa':'IA','Kansas':'KS','Kentucky':'KY','Louisiana':'LA','Maine':'ME','Maryland':'MD','Massachusetts':'MA','Michigan':'MI','Minnesota':'MN','Mississippi':'MS','Missouri':'MO','Montana':'MT','Nebraska':'NE','Nevada':'NV','New Hampshire':'NH','New Jersey':'NJ','New Mexico':'NM','New York':'NY','North Carolina':'NC','North Dakota':'ND','Ohio':'OH','Oklahoma':'OK','Oregon':'OR','Pennsylvania':'PA','Rhode Island':'RI','South Carolina':'SC','South Dakota':'SD','Tennessee':'TN','Texas':'TX','Utah':'UT','Vermont':'VT','Virginia':'VA','Washington':'WA','West Virginia':'WV','Wisconsin':'WI','Wyoming':'WY','District of Columbia':'DC'};
-let _addrSugTimer=null;
+let _addrSugTimer=null;let _addrSugGen=0;
 function _addrSugSearch(val,suggId,streetId,cityId,stateId,zipId){
   clearTimeout(_addrSugTimer);
   const box=document.getElementById(suggId);if(!box)return;
   if(val.length<3){box.style.display='none';return;}
   _addrSugTimer=setTimeout(async()=>{
+    const gen=++_addrSugGen;
     try{
       const bias=(S?.weatherLat&&S?.weatherLon)?'&lat='+S.weatherLat+'&lon='+S.weatherLon:'&lat=37.6922&lon=-97.3375';
-      const r=await fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit=6'+bias+'&lang=en');
-      const d=await r.json();
-      if(!d?.features?.length){box.style.display='none';return;}
-      box.innerHTML=d.features.filter(f=>{
-        const p=f.properties||{};
-        return p.street&&(p.city||p.town||p.village);
-      }).slice(0,5).map(f=>{
-        const p=f.properties||{};
-        const streetLine=(p.housenumber?p.housenumber+' ':'')+p.street;
-        const city=p.city||p.town||p.village||'';
-        const stateAbbr=_STATE_ABBR[p.state]||p.state||'';
-        const zip=p.postcode||'';
-        const line2=[city,stateAbbr,zip].filter(Boolean).join(' ');
-        const s1=streetLine.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const s2=city.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const s3=stateAbbr.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        const s4=zip.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        return '<div onmousedown="event.preventDefault()" onclick="_addrSugSelect(\''+suggId+'\',\''+streetId+'\',\''+cityId+'\',\''+stateId+'\',\''+zipId+'\',\''+s1+'\',\''+s2+'\',\''+s3+'\',\''+s4+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
-          '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(streetLine)+'</div>'+
-          '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(line2)+'</div>'+
-        '</div>';
-      }).join('');
-      box.style.display=box.innerHTML?'block':'none';
+      // Fire both APIs in parallel — Photon is fast, Census covers every US address
+      const photonP=fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit=6'+bias+'&lang=en').then(r=>r.json()).catch(()=>null);
+      const censusP=fetch('https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address='+encodeURIComponent(val)+'&benchmark=Public_AR_Current&format=json').then(r=>r.json()).catch(()=>null);
+      // Photon first — usually wins in ~150ms
+      const pd=await photonP;
+      if(gen!==_addrSugGen)return;
+      const pf=(pd?.features||[]).filter(f=>{const p=f.properties||{};return p.street&&(p.city||p.town||p.village);}).slice(0,5);
+      if(pf.length>0){
+        box.innerHTML=pf.map(f=>{
+          const p=f.properties||{};
+          const streetLine=(p.housenumber?p.housenumber+' ':'')+p.street;
+          const city=p.city||p.town||p.village||'';
+          const stateAbbr=_STATE_ABBR[p.state]||p.state||'';
+          const zip=p.postcode||'';
+          const line2=[city,stateAbbr,zip].filter(Boolean).join(' ');
+          const s1=streetLine.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+          const s2=city.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+          const s3=stateAbbr.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+          const s4=zip.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+          return '<div onmousedown="event.preventDefault()" onclick="_addrSugSelect(\''+suggId+'\',\''+streetId+'\',\''+cityId+'\',\''+stateId+'\',\''+zipId+'\',\''+s1+'\',\''+s2+'\',\''+s3+'\',\''+s4+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
+            '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(streetLine)+'</div>'+
+            '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(line2)+'</div>'+
+          '</div>';
+        }).join('');
+        box.style.display='block';return;
+      }
+      // Photon had nothing — Census is already in-flight, just await it
+      const cd=await censusP;
+      if(gen!==_addrSugGen)return;
+      const matches=(cd?.result?.addressMatches||[]).slice(0,5);
+      if(matches.length>0){
+        box.innerHTML=matches.map(m=>{
+          const parts=(m.matchedAddress||'').split(', ');
+          const street=(parts[0]||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+          const city=(parts[1]||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+          const state=(parts[2]||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+          const zip=(parts[3]||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+          return '<div onmousedown="event.preventDefault()" onclick="_addrSugSelect(\''+suggId+'\',\''+streetId+'\',\''+cityId+'\',\''+stateId+'\',\''+zipId+'\',\''+street+'\',\''+city+'\',\''+state+'\',\''+zip+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
+            '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(parts[0]||'')+'</div>'+
+            '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml([parts[1],parts[2],parts[3]].filter(Boolean).join(' '))+'</div>'+
+          '</div>';
+        }).join('');
+        box.style.display='block';
+      }else{box.style.display='none';}
     }catch(e){if(box)box.style.display='none';}
   },220);
 }
