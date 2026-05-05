@@ -10610,7 +10610,7 @@ async function sendProposalLink(){
     // Reset sig-check window so any missed signatures get caught
     const _lastCheck=localStorage.getItem('zp3_last_sig_check');
     if(!_lastCheck)localStorage.setItem('zp3_last_sig_check',new Date(Date.now()-86400000*7).toISOString());
-    if(btn){btn.textContent='✓ Link ready — tap SMS or Email below';btn.disabled=false;}
+    if(btn){btn.textContent='✓ Link ready';btn.disabled=false;}
     showToast('Link ready — tap SMS or Email to send','🔗');
   }catch(e){
     console.error('sendProposalLink failed:',e);
@@ -13976,7 +13976,7 @@ function openTripInMaps(which,from,to){
   if(!to||!which)return;
   const enc=s=>encodeURIComponent(s);
   if(which==='apple'){
-    window.open('https://maps.apple.com/?'+(from?'saddr='+enc(from)+'&':'')+'daddr='+enc(to)+'&dirflg=d','_blank');
+    window.location.href='maps://?daddr='+enc(to)+'&dirflg=d';
   } else if(which==='google'){
     window.open('https://www.google.com/maps/dir/?api=1'+(from?'&origin='+enc(from):'')+'&destination='+enc(to)+'&travelmode=driving','_blank');
   }
