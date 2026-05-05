@@ -13635,28 +13635,18 @@ function _haversineMiles(c1,c2){
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 async function _valhallaRoute(fromCoords,toCoords){
-  // Try Valhalla first
-  try{
-    const body={locations:[{lon:fromCoords.lng,lat:fromCoords.lat},{lon:toCoords.lng,lat:toCoords.lat}],costing:'auto',costing_options:{auto:{max_distance:8046720}},directions_options:{units:'miles'}};
-    const r=await fetch('https://valhalla1.openstreetmap.de/route',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(5000)});
-    const d=await r.json();
-    if(d&&d.trip)return{miles:Math.round(d.trip.summary.length*10)/10,mins:Math.round(d.trip.summary.time/60)};
-    // Fall through to OSRM on any API-level error
-  }catch(e){
-    // Fall through to OSRM on timeout, connection error, or any other failure
-  }
-  // Fall back to OSRM for long routes
-  try{
-    const url=`https://router.project-osrm.org/route/v1/driving/${fromCoords.lng},${fromCoords.lat};${toCoords.lng},${toCoords.lat}?overview=false`;
-    const r=await fetch(url);
-    const d=await r.json();
-    if(d&&d.code==='Ok'&&d.routes&&d.routes[0]){
-      return{miles:Math.round(d.routes[0].distance/1609.344*10)/10,mins:Math.round(d.routes[0].duration/60)};
-    }
-  }catch(e2){}
-  // Last resort: straight-line × 1.3 road factor
-  const straight=_haversineMiles(fromCoords,toCoords);
-  return{miles:Math.round(straight*1.3*10)/10,mins:Math.round(straight*1.3/55*60)};
+  const body={locations:[{lon:fromCoords.lng,lat:fromCoords.lat},{lon:toCoords.lng,lat:toCoords.lat}],costing:'auto',directions_options:{units:'miles'}};
+  const valhallaP=fetch('https://valhalla1.openstreetmap.de/route',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)})
+    .then(r=>r.json()).then(d=>{
+      if(d?.trip)return{miles:Math.round(d.trip.summary.length*10)/10,mins:Math.round(d.trip.summary.time/60)};
+      throw new Error('valhalla');
+    });
+  const osrmP=fetch(`https://router.project-osrm.org/route/v1/driving/${fromCoords.lng},${fromCoords.lat};${toCoords.lng},${toCoords.lat}?overview=false`,{signal:AbortSignal.timeout(10000)})
+    .then(r=>r.json()).then(d=>{
+      if(d?.code==='Ok'&&d.routes?.[0])return{miles:Math.round(d.routes[0].distance/1609.344*10)/10,mins:Math.round(d.routes[0].duration/60)};
+      throw new Error('osrm');
+    });
+  return Promise.any([valhallaP,osrmP]);
 }
 function startDriveToClient(){
   const c=getClientById(currentClientId);if(!c)return;
@@ -13992,35 +13982,45 @@ function _selectTripMapApp(which){
   const inp=document.getElementById('lm-map-app');if(inp)inp.value=which;
 }
 function saveLoggedTrip(){
-  const miles=parseFloat(document.getElementById('lm-miles-val')?.value)||0;
-  if(!miles){
-    const _fv=(document.getElementById('lm-from')?.value||'').trim();
-    const _tv=(document.getElementById('lm-to')?.value||'').trim();
-    if(_fv&&_tv){calculateAndShowRoute();showToast('Calculating distance — tap Save trip again once it appears','🗺');}
-    else{zAlert('Enter a destination first.',{title:'Distance needed'});}
-    return;
-  }
-  const date=document.getElementById('lm-date')?.value||todayKey();
-  const vehicle=document.getElementById('lm-vehicle')?.value||'';
+  const to=(document.getElementById('lm-to')?.value||'').trim();
+  if(!to){zAlert('Enter a destination first.',{title:'Destination needed'});return;}
   const purpose=document.getElementById('lm-purpose')?.value||'';
   if(!purpose){const sel=document.getElementById('lm-trip-type-sel');if(sel){sel.style.borderColor='#A32D2D';sel.style.background='var(--red-lt)';sel.focus();}zAlert('Select a trip type.',{title:'Required'});return;}
-  const cid=parseInt(document.getElementById('lm-client')?.value)||null;
-  const c=cid?getClientById(cid):null;
+  const date=document.getElementById('lm-date')?.value||todayKey();
+  const vehicle=document.getElementById('lm-vehicle')?.value||'';
   const from=document.getElementById('lm-from')?.value||'';
-  const to=document.getElementById('lm-to')?.value||'';
   const notes=document.getElementById('lm-notes')?.value||'';
   const mapApp=document.getElementById('lm-map-app')?.value||'';
-  const finalMiles=Math.round(miles*10)/10;
-  mileage.unshift({id:Date.now(),date,vehicle,from,to,start:0,end:0,miles:finalMiles,purpose,client_id:cid,client_name:c?c.name:'',notes,calc_method:'address'});
+  const cid=parseInt(document.getElementById('lm-client')?.value)||null;
+  const c=cid?getClientById(cid):null;
+  // Save immediately with 0 miles — background route calc will update
+  const rec={id:Date.now(),date,vehicle,from,to,start:0,end:0,miles:0,purpose,client_id:cid,client_name:c?c.name:'',notes,calc_method:'pending'};
+  mileage.unshift(rec);
   if(cid)autoLogContact(cid,'drive');
-  emitEvent('drive_logged',cid,{to,miles:finalMiles,purpose});
+  emitEvent('drive_logged',cid,{to,miles:0,purpose});
   saveAll();
   closeTopModal();
-  showToast(finalMiles.toFixed(1)+' mi logged · '+fmt(finalMiles*IRS())+' deduction','🚗');
+  showToast('Trip saved — calculating mileage…','🚗');
   if(mapApp&&to)openTripInMaps(mapApp,from,to);
   renderDash();
   if(document.getElementById('mil-table'))renderAllMileage();
   if(document.getElementById('cd-mile-list')&&currentClientId)renderCDMileage();
+  // Background: geocode if needed, get real route, update record
+  (async()=>{
+    try{
+      const fc=_lmCoords.from||(from?await _photonGeocode(from):null);
+      const tc=_lmCoords.to||(to?await _photonGeocode(to):null);
+      if(!fc||!tc)return;
+      const{miles}=await _valhallaRoute(fc,tc);
+      const saved=mileage.find(m=>m.id===rec.id);
+      if(!saved)return;
+      saved.miles=Math.round(miles*10)/10;saved.calc_method='address';
+      saveAll();renderDash();
+      if(document.getElementById('mil-table'))renderAllMileage();
+      if(document.getElementById('cd-mile-list')&&currentClientId)renderCDMileage();
+      showToast(saved.miles.toFixed(1)+' mi logged · '+fmt(saved.miles*IRS())+' deduction','✅');
+    }catch(e){}
+  })();
 }
 function renderAllMileage(){
   const yr=String(trackerYear||new Date().getFullYear());
