@@ -7017,7 +7017,7 @@ function confirmStartDrive(){
   gps.active=true;
   gps.clientId=currentClientId;
   // Capture GPS coords at trip start
-  if(!S.locationDenied&&navigator.geolocation){navigator.geolocation.getCurrentPosition(p=>{gps.startCoords={lat:p.coords.latitude,lon:p.coords.longitude};},()=>{},{enableHighAccuracy:true,timeout:8000});}
+  if(!S.locationDenied&&navigator.geolocation){navigator.geolocation.getCurrentPosition(p=>{gps.startCoords={lat:p.coords.latitude,lon:p.coords.longitude};},()=>{},{enableHighAccuracy:false,timeout:5000,maximumAge:30000});}
   const c=getClientById(currentClientId);
   gps.clientName=c?c.name:'Client';
   gps.startTime=Date.now();
