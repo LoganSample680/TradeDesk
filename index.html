@@ -963,10 +963,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
               <div style="font-size:20px;margin-bottom:3px">&#127795;</div>Deck</button>
             <button onclick="toggleSurfWhat('fence',this)" class="surf-what-btn" id="swhat-fence"
               style="display:none;padding:12px 6px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">
-              <div style="font-size:20px;margin-bottom:3px">&#127828;</div>Fence</button>
+              <div style="font-size:20px;margin-bottom:3px">&#129717;</div>Fence</button>
             <button onclick="toggleSurfWhat('epoxy',this)" class="surf-what-btn" id="swhat-epoxy"
               style="padding:12px 6px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">
-              <div style="font-size:20px;margin-bottom:3px">&#127963;</div>Epoxy floor</button>
+              <div style="font-size:20px;margin-bottom:3px">&#129699;</div>Epoxy floor</button>
           </div>
         </div>
 
@@ -4815,9 +4815,8 @@ function renderClientDetail(){
     '</div>'+
     '<div style="display:flex;gap:8px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px">'+
       (c.phone?'<button onclick="callClient()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#128222;</span><span>Call</span></button>':'')+
-      (c.phone?'<button onclick="textClient()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#128172;</span><span>Text</span></button>':'')+
+      (c.phone?'<button onclick="textClient();event.stopPropagation()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#128172;</span><span>Text</span></button>':'')+
       (c.email?'<button onclick="emailClient()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#9993;&#65039;</span><span>Email</span></button>':'')+
-      '<button onclick="openMapsDir()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#128205;</span><span>Directions</span></button>'+
       (!gps.active?'<button onclick="startDriveToClient()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#128663;</span><span>Drive</span></button>':'')+
       '<button onclick="showHubMenu('+c.id+')" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#128279;</span><span>Hub</span></button>'+
     '</div>'+
@@ -5973,7 +5972,7 @@ function supplyUncheckAll(btn){
 
 function confirmMarkComplete(jobId){confirmJobDone(jobId);}
 function callClient(){const c=getClientById(currentClientId);if(c&&c.phone)window.location.href='tel:'+c.phone.replace(/\D/g,'');}
-function textClient(){const c=getClientById(currentClientId);if(c&&c.phone)window.open('sms:'+c.phone.replace(/\D/g,''));}
+function textClient(){const c=getClientById(currentClientId);if(c&&c.phone)window.location.href='sms:'+c.phone.replace(/\D/g,'');}
 function emailClient(){const c=getClientById(currentClientId);if(c&&c.email)window.open('mailto:'+c.email);}
 let _mapsPickerAddrs=[];
 function openMapsDir(){
@@ -8314,12 +8313,14 @@ function goSurfScopeToMeasure(){
   if(scopeFirst)scopeFirst.style.display='none';
   if(measureWrap){measureWrap.style.display='';_sfShow(measureWrap);}
   const isCustomer=document.getElementById('e-customer-paint')?.value==='1';
-  // Hide/show the entire product and color wrapper cards
+  const curType=surfBQueue[surfBIdx];
+  const noProduct=isCustomer||curType==='epoxy'||curType==='fence';
+  // Hide product/color pickers for non-paint surfaces and customer-supplied paint
   ['sw-product-wrap','sw-color-wrap'].forEach(id=>{
     const el=document.getElementById(id);
-    if(el)el.style.display=isCustomer?'none':'';
+    if(el)el.style.display=noProduct?'none':'';
   });
-  if(!isCustomer){swInitFamilyGrid();}
+  if(!noProduct){swInitFamilyGrid();}
   renderSurfBCurrent();
 }
 
@@ -8598,8 +8599,9 @@ function renderSurfBCurrent(){
   swResetProduct();
   const roomSqftVal=parseFloat(document.getElementById('surf-room-sqft')?.value)||0;
   const type=surfBQueue[surfBIdx];
-  // Render product grid filtered for this surface type
-  swRenderProductGrid(type);
+  // Render product grid filtered for this surface type (skip for non-paint surfaces)
+  if(type!=='epoxy'&&type!=='fence'){swRenderProductGrid(type);}
+  else{['sw-product-wrap','sw-color-wrap'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});}
   const label=SURF_LABELS[type]||type;
   const total=surfBQueue.length;
   const prog=document.getElementById('surf-b-progress');
@@ -10280,8 +10282,7 @@ function showHubMenu(clientId){
   const hdr=document.createElement('div');
   hdr.style.cssText='text-align:center;padding-bottom:4px';
   hdr.innerHTML='<div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 12px"></div>'
-    +'<div style="font-size:14px;font-weight:700;color:var(--text2)">Client Hub</div>'
-    +'<div style="font-size:11px;color:var(--text3);word-break:break-all;margin-top:4px">'+hubUrl+'</div>';
+    +'<div style="font-size:14px;font-weight:700;color:var(--text2)">Client Hub</div>';
   const mkBtn=(label,bg,color,fn)=>{const b=document.createElement('button');b.textContent=label;b.style.cssText='padding:14px;border:none;border-radius:var(--r);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;background:'+bg+';color:'+color;b.onclick=fn;return b;};
   sheet.appendChild(hdr);
   sheet.appendChild(mkBtn('📋  Copy link','var(--blue)','#fff',()=>{navigator.clipboard.writeText(hubUrl).then(()=>showToast('Hub link copied','📋')).catch(()=>showToast('Copy failed','⚠️'));ov.remove();}));
@@ -10960,6 +10961,19 @@ function buildProposal(){
     <div style="font-size:12px;color:#166534;line-height:1.7">We are currently selecting a limited number of showcase homes to feature across our Social Media. Your home has been selected. In exchange for permission to photograph your home before and after completion and feature it across our platforms, we are offering ${_portfolioPct}% off this project. No personal information is shared without your explicit permission.</div>
     <div style="margin-top:8px;font-size:11px;color:#16a34a;font-weight:700">Portfolio discount applied: ${_portfolioPct}% · You save ${fmt(Math.round(final*_portfolioPct/(100-_portfolioPct)))}</div>
   </div>`:''}
+  <div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc">
+    <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div>
+    <div style="font-size:10.5px;color:#4a5568;line-height:1.85">
+      <p style="margin:0 0 7px"><strong>1. Payment:</strong> A non-refundable 25% deposit is required before any work begins. The remaining balance is due upon completion of work.</p>
+      <p style="margin:0 0 7px"><strong>2. Cancellation:</strong> If client cancels after materials have been purchased, contractor will make all purchased paint and materials available for client pickup and refund the deposit minus the documented cost of those materials. No additional cancellation fee will be charged beyond the materials cost.</p>
+      <p style="margin:0 0 7px"><strong>3. Change Orders:</strong> This proposal covers only the scope described herein. Any additional work, surfaces, or materials not listed require a written change order signed by both parties and may be billed at the current rate.</p>
+      <p style="margin:0 0 7px"><strong>4. Warranty:</strong> All workmanship is warranted for one (1) year from the date of completion. This warranty covers labor defects and application failures. It does not cover pre-existing surface conditions, substrate failure, moisture damage, or damage caused by events outside the contractor's control.</p>
+      <p style="margin:0 0 7px"><strong>5. Limitation of Liability:</strong> Contractor is not responsible for damage to surfaces, structures, or contents that existed prior to the start of work, or for conditions not disclosed at the time of walkthrough. Client assumes all risk associated with pressure washing services on their property.</p>
+      <p style="margin:0 0 7px"><strong>6. Materials &amp; Sales Tax:</strong> Contractor purchases all materials and pays applicable sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.</p>
+      <p style="margin:0 0 7px"><strong>7. Mechanic's Lien Notice:</strong> Under Kansas law (K.S.A. 60-1101 et seq.), contractor has the right to file a mechanic's lien against this property for any amounts unpaid under this agreement. Client is hereby notified of this right.</p>
+      <p style="margin:0">By signing, client acknowledges full agreement with all scope, pricing, and terms stated in this proposal. This constitutes a legally binding agreement pursuant to the Kansas Uniform Electronic Transactions Act (K.S.A. 16-1601 et seq.).</p>
+    </div>
+  </div>
 </div>`;
   document.getElementById('est-sig-sum').innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><div style="font-size:15px;font-weight:700">${cname}</div><div style="font-size:12px;color:var(--text2)">${caddr}</div></div><div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--blue)">${fmt(proposalTotal)}</div><div style="font-size:11px;color:var(--text3)">${estNum}</div></div></div>`;
   document.getElementById('est-terms').innerHTML='<strong style="color:#1a365d">Terms &amp; Conditions</strong><br><br>1. <strong>Payment:</strong> A non-refundable 25% deposit is required before any work begins. The remaining balance is due upon completion of work.<br><br>2. <strong>Cancellation:</strong> If client cancels after materials have been purchased, contractor will make all purchased paint and materials available for client pickup and refund the deposit minus the documented cost of those materials. No additional cancellation fee will be charged beyond the materials cost.<br><br>3. <strong>Change Orders:</strong> This proposal covers only the scope described herein. Any additional work, surfaces, or materials not listed require a written change order signed by both parties and may be billed at the current rate.<br><br>4. <strong>Warranty:</strong> All workmanship is warranted for one (1) year from the date of completion. This warranty covers labor defects and application failures. It does not cover pre-existing surface conditions, substrate failure, moisture damage, or damage caused by events outside the contractor\'s control.<br><br>5. <strong>Limitation of Liability:</strong> Contractor is not responsible for damage to surfaces, structures, or contents that existed prior to the start of work, or for conditions not disclosed at the time of walkthrough. Client assumes all risk associated with pressure washing services on their property.<br><br>6. <strong>Materials &amp; Sales Tax:</strong> Contractor purchases all materials and pays applicable Kansas sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.<br><br>7. <strong>Mechanic\'s Lien Notice:</strong> Under Kansas law (K.S.A. 60-1101 et seq.), contractor has the right to file a mechanic\'s lien against this property for any amounts unpaid under this agreement. Client is hereby notified of this right. Contractor will pursue all available legal remedies for non-payment, including lien filing.<br><br>By signing below, client acknowledges full agreement with all scope, pricing, and terms stated in this proposal. This document constitutes a legally binding agreement pursuant to the Kansas Uniform Electronic Transactions Act (K.S.A. 16-1601 et seq.).';
