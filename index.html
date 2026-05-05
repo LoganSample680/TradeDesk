@@ -13705,7 +13705,7 @@ function _addrSugSearch(val,suggId,streetId,cityId,stateId,zipId){
       if(!d?.features?.length){box.style.display='none';return;}
       box.innerHTML=d.features.filter(f=>{
         const p=f.properties||{};
-        return p.housenumber&&p.street&&(p.city||p.town||p.village);
+        return p.street&&(p.city||p.town||p.village);
       }).slice(0,5).map(f=>{
         const p=f.properties||{};
         const streetLine=(p.housenumber?p.housenumber+' ':'')+p.street;
