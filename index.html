@@ -2697,10 +2697,12 @@ function goPg(id){
     'pg-schedule':'nb-jobs',
     'pg-clients':'nb-clients','pg-cal':'nb-cal','pg-tracker':'nb-tracker','pg-gallery':'nb-gallery',
     'pg-team':'nb-team',
-    'pg-taxes':'nb-taxes','pg-settings':'nb-settings','pg-checklist':'nb-settings'
+    'pg-taxes':'nb-taxes','pg-settings':'nb-settings','pg-checklist':'nb-settings',
+    'pg-client-detail':window._clientDetailOrigin==='leads'?'nb-leads':'nb-clients'
   }[id]||('nb-'+id.replace('pg-','')));if(nb)nb.classList.add('active');
   // Sync mobile bottom tab bar
-  const _mtbMap={'pg-dash':'mtb-dash','pg-leads':'mtb-leads','pg-clients':'mtb-clients','pg-jobs':'mtb-jobs'};
+  const _mtbMap={'pg-dash':'mtb-dash','pg-leads':'mtb-leads','pg-clients':'mtb-clients','pg-jobs':'mtb-jobs',
+    'pg-client-detail':window._clientDetailOrigin==='leads'?'mtb-leads':'mtb-clients'};
   document.querySelectorAll('.mtb').forEach(b=>b.classList.remove('active'));
   const _mtb=document.getElementById(_mtbMap[id]||'');
   if(_mtb)_mtb.classList.add('active');
@@ -13639,12 +13641,9 @@ async function _valhallaRoute(fromCoords,toCoords){
     const r=await fetch('https://valhalla1.openstreetmap.de/route',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json();
     if(d&&d.trip)return{miles:Math.round(d.trip.summary.length*10)/10,mins:Math.round(d.trip.summary.time/60)};
-    // If it's not a distance error, throw original message
-    const isDistErr=d&&d.error&&/distance/i.test(d.error);
-    if(!isDistErr)throw new Error(d&&d.error?d.error:'No route found');
-    // Distance limit hit — fall through to OSRM
+    // Fall through to OSRM on any API-level error
   }catch(e){
-    if(!/distance/i.test(e.message||''))throw e; // re-throw non-distance errors
+    // Fall through to OSRM on timeout, connection error, or any other failure
   }
   // Fall back to OSRM for long routes
   try{
