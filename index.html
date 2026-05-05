@@ -13638,7 +13638,7 @@ async function _valhallaRoute(fromCoords,toCoords){
   // Try Valhalla first
   try{
     const body={locations:[{lon:fromCoords.lng,lat:fromCoords.lat},{lon:toCoords.lng,lat:toCoords.lat}],costing:'auto',costing_options:{auto:{max_distance:8046720}},directions_options:{units:'miles'}};
-    const r=await fetch('https://valhalla1.openstreetmap.de/route',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const r=await fetch('https://valhalla1.openstreetmap.de/route',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(5000)});
     const d=await r.json();
     if(d&&d.trip)return{miles:Math.round(d.trip.summary.length*10)/10,mins:Math.round(d.trip.summary.time/60)};
     // Fall through to OSRM on any API-level error
