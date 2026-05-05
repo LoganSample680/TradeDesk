@@ -542,29 +542,20 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 </div>
 <div class="pg" id="pg-clients">
   <div class="tbar"><div class="tbar-title" id="clients-page-title">Clients</div></div>
-  <div id="cf-search-wrap" style="margin-bottom:8px">
-    <input id="cf-search" placeholder="&#128269; Search by name, address, phone..."
+  <div style="margin-bottom:12px">
+    <input id="cf-search" placeholder="&#128269; Search clients by name, address, phone..."
       oninput="onClientSearch(this)"
-      style="width:100%;font-size:14px;padding:10px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);box-sizing:border-box">
+      style="width:100%;font-size:14px;padding:11px 14px;border-radius:var(--rl);border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);box-sizing:border-box">
   </div>
-  
-  <div style="margin-bottom:8px">
-    <div style="display:flex;gap:6px;flex-wrap:wrap;padding-bottom:2px">
-      <button type="button" class="fb active" id="cft-all"       onclick="setCF('all',this)">All</button>
-      <button type="button" class="fb"        id="cft-won"       onclick="setCF('won',this)">Won</button>
-      <button type="button" class="fb"        id="cft-active"    onclick="setCF('active',this)">Active</button>
-      <button type="button" class="fb"        id="cft-collect"   onclick="setCF('collect',this)">Collect</button>
-      <button type="button" class="fb"        id="cft-closed"    onclick="setCF('closed',this)">Closed</button>
-    </div>
-  </div>
-  <div id="cf-tab-counts" style="font-size:11px;color:var(--text3);margin-bottom:8px"></div>
   <div id="client-list"></div>
   <div id="client-form-wrap" style="display:none">
     <div class="iform">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)">
-        <span style="font-size:13px;font-weight:700" id="cf-title">New client</span>
-        <button class="btn-del" id="cf-del" style="display:none" onclick="deleteClient()">Delete client</button>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+        <span style="font-size:16px;font-weight:800" id="cf-title">New client</span>
+        <button class="btn-del" id="cf-del" style="display:none" onclick="deleteClient()">Delete</button>
       </div>
+
+      <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:10px">Required</div>
       <div class="fg fg2">
         <div class="f"><label>Full name</label><input id="cf-name" placeholder="John &amp; Sarah Smith" oninput="checkClientDupe(this.value);clearFErr('cf-name')">
           <div id="cf-dupe-warn" style="display:none;font-size:11px;color:#A32D2D;margin-top:4px;background:#FEE8E8;border-radius:var(--r);padding:6px 8px"></div>
@@ -573,28 +564,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         <div class="f"><label>Phone</label><input id="cf-phone" type="tel" placeholder="XXX-XXX-XXXX" maxlength="12" oninput="fmtPhone(this);clearFErr('cf-phone');_allowPhoneDupe=false;">
           <div id="err-cf-phone" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
         </div>
-        <div class="f" style="grid-column:1/-1;position:relative"><label>Street address <span style="font-weight:400;color:var(--text3)">(optional — add later)</span></label><input id="cf-street" placeholder="1234 Maple St" autocomplete="off" oninput="clearFErr('cf-street');_updateAddrComputed();_addrSugSearch(this.value,'cf-addr-sugg','cf-street','cf-city','cf-state','cf-zip')" onblur="setTimeout(()=>{const b=document.getElementById('cf-addr-sugg');if(b)b.style.display='none'},150)">
-          <div id="cf-addr-sugg" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:200;max-height:240px;overflow-y:auto"></div>
-          <div id="err-cf-addr" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
-        </div>
-        <div class="f"><label>City</label><input id="cf-city" placeholder="Denver" autocomplete="address-level2" oninput="_updateAddrComputed()"></div>
-        <div class="f" style="display:grid;grid-template-columns:1fr 80px;gap:8px">
-          <div><label>State</label><input id="cf-state" placeholder="CO" maxlength="2" autocomplete="address-level1" oninput="this.value=this.value.toUpperCase();_updateAddrComputed()"></div>
-          <div><label>Zip</label><input id="cf-zip" placeholder="80203" maxlength="10" autocomplete="postal-code" oninput="_updateAddrComputed()"></div>
-        </div>
-        <div class="f"><label>Property type</label><select id="cf-ptype"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>
-        <div class="f" id="cf-year-built-wrap"><label>Year built <span style="font-weight:400;color:var(--text3);font-size:10px">Pre-1978 requires EPA disclosure</span></label>
-          <div style="display:flex;gap:8px;align-items:center">
-            <input id="cf-year-built" type="number" min="1800" max="2030" placeholder="e.g. 1965" oninput="checkYearBuilt()" style="flex:1">
-            <button type="button" class="btn btn-sm btn-g" id="cf-year-lookup" onclick="lookupYearBuilt()" style="display:none;white-space:nowrap">&#128269; Look up</button>
-          </div>
-          <div id="cf-year-warn" style="display:none;font-size:12px;color:var(--amber);font-weight:700;margin-top:4px">⚠️ Pre-1978 — Lead paint pamphlet required</div>
-        </div>
-        <div class="f"><label>Email</label><input type="email" id="cf-email" placeholder="client@email.com"></div>
-        <div class="f">
-          <label>Lead source <span style="color:#A32D2D">*</span></label>
+        <div class="f" style="grid-column:1/-1">
+          <label>Lead source</label>
           <select id="cf-source" onchange="toggleRefField(this)">
-            <option value="">— Select one —</option>
+            <option value="">— How did they find you? —</option>
             <option value="Unknown">Unknown</option>
             <optgroup label="Direct outreach">
               <option value="Door to door">Door to door</option>
@@ -625,52 +598,75 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
           </select>
           <div id="err-cf-source" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
         </div>
-        <div class="f" id="cf-ref-wrap" style="display:none">
-          <label>Referred by (name)</label>
+        <div class="f" id="cf-ref-wrap" style="display:none;grid-column:1/-1">
+          <label>Referred by</label>
           <input id="cf-ref" placeholder="Who sent them?">
         </div>
       </div>
-      <div class="fg fg2" style="margin-top:8px">
-        <div class="f">
-          <label>Client occupation <span style="font-size:10px;font-weight:400;color:var(--text3)">(helps prioritize)</span></label>
-          <select id="cf-occupation">
-            <option value="">— Unknown —</option>
-            <optgroup label="High-value (A-tier)">
-              <option value="Realtor / Real estate agent">Realtor / Real estate agent</option>
-              <option value="Property manager">Property manager</option>
-              <option value="Doctor / physician">Doctor / physician</option>
-              <option value="Attorney / lawyer">Attorney / lawyer</option>
-              <option value="Executive / business owner">Executive / business owner</option>
-              <option value="Contractor / builder">Contractor / builder</option>
-              <option value="Landlord / investor">Landlord / investor</option>
-            </optgroup>
-            <optgroup label="Mid-value (B-tier)">
-              <option value="Engineer / tech">Engineer / tech</option>
-              <option value="Nurse / healthcare">Nurse / healthcare</option>
-              <option value="Teacher / educator">Teacher / educator</option>
-              <option value="Government / military">Government / military</option>
-              <option value="Sales professional">Sales professional</option>
-            </optgroup>
-            <optgroup label="Standard (C-tier)">
-              <option value="Retired">Retired</option>
-              <option value="Trades / labor">Trades / labor</option>
-              <option value="Service industry">Service industry</option>
-              <option value="Other">Other</option>
-            </optgroup>
-          </select>
-        </div>
-        <div class="f">
-          <label>Client tier <span style="font-size:10px;font-weight:400;color:var(--text3)">(A=high value, C=standard)</span></label>
-          <select id="cf-tier">
-            <option value="">— Auto —</option>
-            <option value="A">A — High value (referral source, repeat, premium)</option>
-            <option value="B">B — Solid mid-tier</option>
-            <option value="C">C — Standard job</option>
-          </select>
+
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:10px">Optional — add anytime</div>
+        <div class="fg fg2">
+          <div class="f" style="grid-column:1/-1;position:relative"><label>Street address</label><input id="cf-street" placeholder="1234 Maple St" autocomplete="off" oninput="clearFErr('cf-street');_updateAddrComputed();_addrSugSearch(this.value,'cf-addr-sugg','cf-street','cf-city','cf-state','cf-zip')" onblur="setTimeout(()=>{const b=document.getElementById('cf-addr-sugg');if(b)b.style.display='none'},150)">
+            <div id="cf-addr-sugg" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:200;max-height:240px;overflow-y:auto"></div>
+            <div id="err-cf-addr" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
+          </div>
+          <div class="f"><label>City</label><input id="cf-city" placeholder="Denver" autocomplete="address-level2" oninput="_updateAddrComputed()"></div>
+          <div class="f" style="display:grid;grid-template-columns:1fr 80px;gap:8px">
+            <div><label>State</label><input id="cf-state" placeholder="CO" maxlength="2" autocomplete="address-level1" oninput="this.value=this.value.toUpperCase();_updateAddrComputed()"></div>
+            <div><label>Zip</label><input id="cf-zip" placeholder="80203" maxlength="10" autocomplete="postal-code" oninput="_updateAddrComputed()"></div>
+          </div>
+          <div class="f"><label>Email</label><input type="email" id="cf-email" placeholder="client@email.com"></div>
+          <div class="f"><label>Property type</label><select id="cf-ptype"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>
+          <div class="f" id="cf-year-built-wrap"><label>Year built <span style="font-weight:400;color:var(--text3);font-size:10px">Pre-1978 = EPA disclosure</span></label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input id="cf-year-built" type="number" min="1800" max="2030" placeholder="e.g. 1965" oninput="checkYearBuilt()" style="flex:1">
+              <button type="button" class="btn btn-sm btn-g" id="cf-year-lookup" onclick="lookupYearBuilt()" style="display:none;white-space:nowrap">&#128269; Look up</button>
+            </div>
+            <div id="cf-year-warn" style="display:none;font-size:12px;color:var(--amber);font-weight:700;margin-top:4px">⚠️ Pre-1978 — Lead paint pamphlet required</div>
+          </div>
+          <div class="f">
+            <label>Occupation</label>
+            <select id="cf-occupation">
+              <option value="">— Unknown —</option>
+              <optgroup label="High-value (A-tier)">
+                <option value="Realtor / Real estate agent">Realtor / Real estate agent</option>
+                <option value="Property manager">Property manager</option>
+                <option value="Doctor / physician">Doctor / physician</option>
+                <option value="Attorney / lawyer">Attorney / lawyer</option>
+                <option value="Executive / business owner">Executive / business owner</option>
+                <option value="Contractor / builder">Contractor / builder</option>
+                <option value="Landlord / investor">Landlord / investor</option>
+              </optgroup>
+              <optgroup label="Mid-value (B-tier)">
+                <option value="Engineer / tech">Engineer / tech</option>
+                <option value="Nurse / healthcare">Nurse / healthcare</option>
+                <option value="Teacher / educator">Teacher / educator</option>
+                <option value="Government / military">Government / military</option>
+                <option value="Sales professional">Sales professional</option>
+              </optgroup>
+              <optgroup label="Standard (C-tier)">
+                <option value="Retired">Retired</option>
+                <option value="Trades / labor">Trades / labor</option>
+                <option value="Service industry">Service industry</option>
+                <option value="Other">Other</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="f">
+            <label>Client tier</label>
+            <select id="cf-tier">
+              <option value="">— Auto —</option>
+              <option value="A">A — High value</option>
+              <option value="B">B — Mid-tier</option>
+              <option value="C">C — Standard</option>
+            </select>
+          </div>
+          <div class="f" style="grid-column:1/-1"><label>Notes</label><textarea id="cf-notes" placeholder="Anything useful from first contact..."></textarea></div>
         </div>
       </div>
-      <div class="f" style="margin-bottom:10px"><label>Notes</label><textarea id="cf-notes" placeholder="Anything useful from first contact..."></textarea></div>
-      <div class="brow">
+
+      <div class="brow" style="margin-top:16px">
         <button class="btn btn-p" onclick="saveClient()">Save client</button>
         <button class="btn" onclick="closeClientForm()">Cancel</button>
       </div>
@@ -688,53 +684,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 
   
   <div id="cd-drive-section">
-    
-    <div id="cd-drive-idle">
-      <button class="drive-btn" id="cd-drive-btn" onclick="startDriveToClient()">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/></svg>
-        <span>Start driving</span>
-      </button>
-    </div>
-    
-    <div id="cd-drive-start" style="display:none">
-      <div class="card">
-        <div class="card-hd">Start trip</div>
-
-        
-        <div style="margin-bottom:16px">
-          <label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:6px">Vehicle <span style="color:#A32D2D">*</span></label>
-          <select id="cd-vehicle-sel" onchange="selectDriveVehicleByName(this.value)" style="width:100%;font-size:16px;font-weight:600;padding:12px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit">
-            <option value="">— Select vehicle —</option>
-          </select>
-          <div id="cd-no-vehicles" style="display:none;background:#FFF0F0;border:1px solid #A32D2D;border-radius:var(--r);padding:12px;font-size:12px;color:#A32D2D;margin-top:6px">
-            No vehicles added — go to Settings to add one first.
-            <button class="btn btn-sm btn-p" onclick="goToVehicleSettings()" style="margin-top:6px;display:block;width:100%">Go to Settings → Add vehicle</button>
-          </div>
-          <div id="cd-vehicle-chips" style="display:none"></div>
-        </div>
-
-        
-        <div style="margin-bottom:16px">
-          <label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:8px">Trip purpose <span style="color:#A32D2D">*</span></label>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px" id="cd-purpose-chips">
-            <button onclick="setTripPurpose('Estimate visit',this)" class="surf-type-btn" id="tp-estimate" style="font-size:12px;padding:10px">🏠 Estimate visit</button>
-            <button onclick="setTripPurpose('Work drive',this)" class="surf-type-btn" id="tp-work" style="font-size:12px;padding:10px">🔨 Work drive</button>
-            <button onclick="setTripPurpose('Supply run',this)" class="surf-type-btn" id="tp-supply" style="font-size:12px;padding:10px">🛒 Supply run</button>
-            <button onclick="setTripPurpose('Follow-up visit',this)" class="surf-type-btn" id="tp-followup" style="font-size:12px;padding:10px">📋 Follow-up</button>
-            <button onclick="setTripPurpose('Equipment pickup',this)" class="surf-type-btn" id="tp-equipment" style="font-size:12px;padding:10px">📦 Equipment</button>
-            
-          </div>
-        </div>
-        <div id="cd-supply-job-picker" style="display:none;margin-bottom:16px"></div>
-
-        
-        <div class="brow">
-          <button class="btn btn-full" id="cd-start-trip-btn" onclick="confirmStartDrive()" style="font-size:15px;padding:14px;background:var(--border2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>Start trip</button>
-          <button class="btn" onclick="cancelStartDrive()">Cancel</button>
-        </div>
-      </div>
-    </div>
-    
+    <div id="cd-drive-idle" style="display:none"></div>
     <div id="cd-drive-active" style="display:none">
       <div class="gps-status">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--green)">Trip in progress</div>
@@ -4864,12 +4814,12 @@ function renderClientDetail(){
     '<div style="display:flex;gap:8px">'+
       (c.phone?'<button class="btn" onclick="callClient()" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex:1">&#128222; Call '+c.phone+'</button>':'')+
       '<button class="btn" onclick="openMapsDir()" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex:1">&#128205; Directions</button>'+
+      (!gps.active?'<button class="btn" onclick="startDriveToClient()" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex-shrink:0" title="Log a drive to this client">&#128663; Drive</button>':'')+
       '<button class="btn" onclick="showHubMenu('+c.id+')" style="background:rgba(255,255,255,.2);border-color:rgba(255,255,255,.3);color:#fff;font-size:12px;padding:7px 14px;flex-shrink:0" title="Share client portal">&#128279; Hub</button>'+
     '</div>'+
     '';
   if(gps.active&&gps.clientId===currentClientId){
     document.getElementById('cd-drive-idle').style.display='none';
-    document.getElementById('cd-drive-start').style.display='none';
     document.getElementById('cd-drive-end').style.display='none';
     document.getElementById('cd-drive-active').style.display='block';
     const ap=document.getElementById('cd-active-purpose');
@@ -4880,16 +4830,13 @@ function renderClientDetail(){
     resetDriveUI();
     const idle=document.getElementById('cd-drive-idle');
     if(idle){
-      const note=document.createElement('div');
-      note.style.cssText='font-size:11px;color:var(--amber);margin-top:6px;text-align:center';
-      note.textContent='Drive in progress for another client';
-      idle.appendChild(note);
+      idle.style.display='block';
+      idle.innerHTML='<div style="font-size:11px;color:var(--amber);text-align:center;padding:4px 0">Drive in progress for another client</div>';
     }
   } else {
     resetDriveUI();
   }
-  const cbids=getClientBids(currentClientId),cjobs=getClientJobs(currentClientId),cmiles=getClientMileage(currentClientId),cinc=getClientIncome(currentClientId);
-  const totalMiles=cmiles.reduce((s,m)=>s+(m.miles||0),0),totalIncome=cinc.reduce((s,i)=>s+i.amount,0);
+  const cbids=getClientBids(currentClientId),cjobs=getClientJobs(currentClientId);
   const wonBids=cbids.filter(b=>b.status==='Closed Won');
   const totalOwed=wonBids.reduce((sum,b)=>sum+getBidBalance(b),0);
   const totalPaidAll=wonBids.reduce((sum,b)=>sum+getBidPaid(b.id),0);
@@ -4910,17 +4857,12 @@ function renderClientDetail(){
       <div style="font-size:12px;font-weight:700;color:var(--green-mid)">✓ Paid in full</div>
       <div style="font-size:14px;font-weight:700;color:var(--green-mid)">${fmt(totalPaidAll)}</div>
     </div>`:'';
-  const cexpenses=getClientExpenses(currentClientId);
-  const totalExpenses=cexpenses.reduce((s,e)=>s+e.amount,0);
-  const jobProfit=totalIncome-totalExpenses-(totalMiles*IRS());
-  const intakeInfoHTML=(c.callTime||c.notes)?`<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📞 Best time to call:</span> ${c.callTime}</div>`:''}${c.notes?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📋 Intake notes:</span> ${c.notes}</div>`:''}</div>`:'';
-  const epaHTML=(c.yearBuilt&&c.yearBuilt<1978&&getActiveTrade()==='painting')?`<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 12px;margin-top:10px;font-size:12px;font-weight:700;color:#856404">⚠️ Pre-1978 home — Lead paint disclosure required before work begins</div>`:'';
-  document.getElementById('cd-client-mets').innerHTML=balanceHTML+`<div class="mets" style="margin-bottom:0">
-    <div class="met"><div class="met-l">Revenue</div><div class="met-v" style="color:var(--green-mid)">${fmt(totalIncome)}</div></div>
-    <div class="met" style="cursor:pointer" onclick="setCDTab('expenses',document.getElementById('cdt-expenses'))"><div class="met-l">Expenses</div><div class="met-v" style="color:#A32D2D">${fmt(totalExpenses)}</div><div class="met-s">${cexpenses.length} items</div></div>
-    <div class="met"><div class="met-l">Miles</div><div class="met-v">${totalMiles.toFixed(1)}</div><div class="met-s">${fmt(totalMiles*IRS())}</div></div>
-    <div class="met"><div class="met-l">Job profit</div><div class="met-v" style="color:${jobProfit<0?'#A32D2D':'var(--green-mid)'}">${fmt(jobProfit)}</div><div class="met-s">After exp+miles</div></div>
-  </div>`+intakeInfoHTML+epaHTML;
+  const intakeInfoHTML=(c.callTime||c.notes)?`<div style="padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📞 Best time to call:</span> ${c.callTime}</div>`:''}${c.notes?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📋 Intake notes:</span> ${c.notes}</div>`:''}</div>`:'';
+  const epaHTML=(c.yearBuilt&&c.yearBuilt<1978&&getActiveTrade()==='painting')?`<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 12px;${balanceHTML||intakeInfoHTML?'margin-top:10px;':''}font-size:12px;font-weight:700;color:#856404">⚠️ Pre-1978 home — Lead paint disclosure required before work begins</div>`:'';
+  const _metsContent=balanceHTML+intakeInfoHTML+epaHTML;
+  const _metsEl=document.getElementById('cd-client-mets');
+  _metsEl.innerHTML=_metsContent;
+  _metsEl.style.display=_metsContent?'':'none';
   // Estimate action buttons — context-aware based on pipeline stage
   const _cdStage=getClientStage(currentClientId).stage;
   const _cdActions=document.getElementById('cd-estimate-actions');
@@ -7005,14 +6947,12 @@ function checkTripReady(){
 }
 
 function resetDriveUI(){
-  document.getElementById('cd-drive-idle').style.display='block';
-  document.getElementById('cd-drive-start').style.display='none';
+  document.getElementById('cd-drive-idle').style.display='none';
   document.getElementById('cd-drive-active').style.display='none';
   document.getElementById('cd-drive-end').style.display='none';
 }
 function cancelStartDrive(){
-  document.getElementById('cd-drive-start').style.display='none';
-  document.getElementById('cd-drive-idle').style.display='block';
+  document.getElementById('cd-drive-idle').style.display='none';
   gps.vehicle='';gps.purpose='';
   document.querySelectorAll('#cd-purpose-chips .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));
   checkTripReady();
@@ -7040,7 +6980,7 @@ function confirmStartDrive(){
   const c=getClientById(currentClientId);
   gps.clientName=c?c.name:'Client';
   gps.startTime=Date.now();
-  document.getElementById('cd-drive-start').style.display='none';
+  const _ds=document.getElementById('cd-drive-start');if(_ds)_ds.style.display='none';
   document.getElementById('cd-drive-active').style.display='block';
   const ap=document.getElementById('cd-active-purpose');if(ap)ap.textContent=gps.purpose||'Work drive';
   const av=document.getElementById('cd-active-vehicle');if(av)av.textContent=gps.vehicle||'';
