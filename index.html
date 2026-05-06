@@ -8133,8 +8133,9 @@ function swSelectProduct(p,btn){
 
 async function autoRefreshRates(){
   if(!_supa||!_supaUser)return;
-  const RATE_KEY='zp3_rate_check';
-  if(Date.now()-(+localStorage.getItem(RATE_KEY)||0)<7*86400000)return;
+  const YEAR_KEY='zp3_rate_year';
+  const thisYear=new Date().getFullYear();
+  if(+localStorage.getItem(YEAR_KEY)===thisYear&&S.irsRate)return;
   try{
     const{data:{session}}=await _supa.auth.getSession();
     if(!session)return;
@@ -8151,7 +8152,7 @@ async function autoRefreshRates(){
       showToast('IRS mileage rate updated to $'+(+d.irsRate).toFixed(3)+'/mi for '+d.year);
       const el=document.getElementById('set-irs');if(el)el.value=d.irsRate;
     }
-    localStorage.setItem(RATE_KEY,Date.now().toString());
+    localStorage.setItem(YEAR_KEY,String(thisYear));
   }catch(e){}
 }
 
