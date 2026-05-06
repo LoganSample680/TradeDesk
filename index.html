@@ -8657,6 +8657,7 @@ function removeExtItem(kind,idx){
   renderExtWallForm();
 }
 function renderSurfBCurrent(){
+  const _stepBEl=document.getElementById('surf-step-b');if(_stepBEl)_stepBEl.scrollTop=0;
   // Reset color+finish for each new surface type
   _swResetColorUI();
   swResetProduct();
@@ -9588,6 +9589,7 @@ function calcEst(){
       }
     }
   });
+  totalLaborHours=Math.round(laborTotal/(S.laborRate||45)*10)/10;
   // ── Per-product paint quantity calc ─────────────────────────
   // Helper: get coverage rate from product name stored in room string
   const _allSwProds=Object.values(SW_PRODUCTS).flat();
@@ -10603,7 +10605,11 @@ async function sendProposalLink(){
     };
     // Set signing info BEFORE hub upload so snapshot captures correct signHubUrl
     const _bidForHub=bids.find(b=>b.id===bidId);
-    if(_bidForHub)_bidForHub.signingKey=proposalKey;
+    if(_bidForHub){
+      _bidForHub.signingKey=proposalKey;
+      // Promote draft → Pending immediately so clearEstFullDraft() won't delete it before client signs
+      if(_bidForHub.draft){_bidForHub.draft=false;_bidForHub.status='Pending';if(!_bidForHub.followup)_bidForHub.followup=addDays(todayKey(),7);}
+    }
     _pendingSignToken={bidId,token,proposalKey};
     const baseUrl=_clientBaseUrl();
     const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
@@ -10927,20 +10933,21 @@ function buildProposal(){
         r.paintSpecs.map(ps=>{
           const swMatch=ps.spec.match(/SW[\s-]?\d+/i);
           const swHex=swMatch&&_swColors?(_swColors.find(c=>c.sw.toLowerCase()===swMatch[0].toLowerCase().replace(/[\s-]/g,''))?.hex||''):'';
-          const swatch=swHex?'<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:'+swHex+';border:1px solid rgba(0,0,0,.18);margin-right:3px;vertical-align:middle;position:relative;top:-1px"></span>':'';
+          const swatch=swHex?'<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+swHex+';border:1px solid rgba(0,0,0,.18);flex-shrink:0;margin-top:2px"></span>':'';
           const parts=ps.spec.split(' \xb7 ');
           const product=parts[0]||'';
           const colorFinish=parts.slice(1).join(' \xb7 ')||ps.spec;
           const finishMatch=colorFinish.match(/\[([^\]]+)\]$/);
           const finish=finishMatch?finishMatch[1]:'';
           const colorOnly=colorFinish.replace(/\s*\[[^\]]+\]$/,'').trim();
-          return '<div style="font-size:11px;color:#4a5568;line-height:1.35;margin-bottom:1px">'+
-            '<span style="font-weight:700;color:#2d3748">'+ps.surfLabel+'</span> '+
-            swatch+
-            (product?product:'')+
-            (colorOnly?' \xb7 '+colorOnly:'')+
-            (finish?' \xb7 <span style="color:#2b6cb0;font-weight:600">'+finish+'</span>':'')+
-            '</div>';
+          const colorLine=[colorOnly,finish].filter(Boolean).join(', ');
+          return '<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:3px">'+
+            (swatch||'<span style="flex-shrink:0;width:10px"></span>')+
+            '<div>'+
+            '<span style="font-size:11px;font-weight:700;color:#2d3748">'+ps.surfLabel+'</span>'+
+            (colorLine?'<span style="font-size:11px;color:#4a5568;font-weight:400"> — '+colorLine+'</span>':'')+
+            (product?'<div style="font-size:10px;color:#94a3b8;line-height:1.2">'+product+'</div>':'')+
+            '</div></div>';
         }).join('')+
         '</div>'
       :'';

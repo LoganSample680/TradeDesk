@@ -228,7 +228,7 @@ input[type=text]:focus{border-color:var(--blue)}
       </div>
       <div id="sec-cash" style="display:none">
         <div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:12px;margin-bottom:14px;font-size:13px;color:#92400E;line-height:1.6">
-          <strong>Cash selected.</strong> Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.
+          <strong>Cash selected.</strong><span id="cash-confirm-msg"> Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.</span>
         </div>
         <button class="btn" onclick="submitCash()">Confirm — I'll pay cash in person</button>
       </div>
@@ -405,6 +405,11 @@ async function init(){
     const fc=document.getElementById('float-call');
     if(fc&&_prop.businessPhone){fc.href='tel:'+_prop.businessPhone.replace(/\D/g,'');fc.dataset.hasPhone='1';}
     document.getElementById('amt-total').textContent=fmt(_prop.amount);
+    // Update cash section with actual business name
+    const _cashPaySub=document.querySelector('#opt-cash .pay-opt-sub');
+    if(_cashPaySub)_cashPaySub.textContent="I'll pay "+_biz+' directly in person';
+    const _cashMsg=document.getElementById('cash-confirm-msg');
+    if(_cashMsg)_cashMsg.textContent=' Your proposal is signed and your spot is reserved. '+_biz+' will collect the deposit when they arrive.';
     document.getElementById('amt-dep').textContent='Deposit to start: '+fmt(_prop.deposit);
     document.getElementById('amt-bal').textContent='Balance on completion: '+fmt(_prop.amount-_prop.deposit);
     document.getElementById('pay-amt').textContent=fmt(_prop.deposit);
