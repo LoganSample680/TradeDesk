@@ -491,6 +491,8 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 .tf-acts{display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding-top:6px;width:100%;padding-left:38px}</style>
 </head>
 <body>
+<!-- Static boot cover — blocks flash of dashboard before JS overlay renders -->
+<div id="supa-boot-overlay" style="position:fixed;inset:0;z-index:9998;background:#0D1117;display:flex;flex-direction:column;align-items:center;justify-content:center"></div>
 <div id="app">
 <div class="pg active" id="pg-dash">
   <div class="tbar"><div><div class="tbar-title" id="dash-greet"></div><div class="tbar-sub" id="dash-date"></div></div><div style="display:flex;align-items:center;gap:5px"><span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Year</span><select id="dash-year-sel" onchange="setDashYear(this.value)" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)"></select></div></select></div>
@@ -14414,7 +14416,7 @@ function openLogTripModal(opts){
     '<div class="f" style="margin-bottom:12px"><label>Starting from</label>'+
       '<div style="display:flex;gap:8px">'+
         '<input id="lm-from" placeholder="Your address or last job" style="flex:1" value="'+(opts.fromAddress||'')+'" oninput="tripPlaceSearch(\'lm-from\',\'lm-from-sugg\',this.value)" autocomplete="off">'+
-        '<button type="button" onclick="grabMyLocation()" class="btn btn-sm" id="lm-gps-btn" style="white-space:nowrap;flex-shrink:0;min-height:44px">📍 GPS</button>'+
+        '<button type="button" onclick="grabMyLocation(true)" class="btn btn-sm" id="lm-gps-btn" style="white-space:nowrap;flex-shrink:0;min-height:44px">📍 GPS</button>'+
       '</div>'+
       '<div id="lm-from-sugg" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);margin-top:2px;overflow:hidden;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>'+
       '<div id="lm-from-chip" style="display:none;margin-top:5px;font-size:11px;color:var(--green-mid);background:var(--green-lt);border:1px solid var(--green-mid);border-radius:20px;padding:3px 10px;align-items:center;gap:4px"><span>📍</span><span id="lm-from-chip-txt"></span><span style="color:var(--green-mid);font-weight:700">✓</span></div>'+
@@ -14453,18 +14455,18 @@ function openLogTripModal(opts){
   const _defMap=/iPhone|iPad|iPod/i.test(_ua)?'apple':/Android/i.test(_ua)?'google':'';
   if(_defMap)setTimeout(()=>_selectTripMapApp(_defMap),50);
   // Auto-grab GPS for starting location if not pre-filled
-  if(!opts.fromAddress)setTimeout(grabMyLocation,300);
+  if(!opts.fromAddress)setTimeout(()=>grabMyLocation(false),300);
   // Pre-link client if provided
   if(opts.clientName){const c=clients.find(x=>x.name===opts.clientName);if(c){const h=document.getElementById('lm-client');if(h)h.value=c.id;}}
 }
-async function grabMyLocation(){
+async function grabMyLocation(showErr){
   const btn=document.getElementById('lm-gps-btn');
   if(btn){btn.disabled=true;btn.textContent='Locating...';}
   try{
     const addr=await getCurrentLocAddress();
     const inp=document.getElementById('lm-from');if(inp)inp.value=addr;
   }catch(e){
-    zAlert('Could not get your location. Check that location access is enabled for Safari.',{title:'GPS unavailable'});
+    if(showErr)zAlert('Could not get your location. Check that location access is enabled for Safari.',{title:'GPS unavailable'});
   }finally{if(btn){btn.disabled=false;btn.textContent='📍 GPS';}}
 }
 async function calculateAndShowRoute(){
@@ -18184,7 +18186,7 @@ if(supaEnabled()){
     const logoBlock=logo
       ?'<img src="'+logo+'" style="max-height:260px;max-width:86vw;width:auto;object-fit:contain;display:block;animation:td-logoin .55s cubic-bezier(.22,1,.36,1) both">'
       :'<div style="font-size:44px;font-weight:900;color:#fff;letter-spacing:-2px;animation:td-logoin .4s ease both">'+name+'</div>';
-    const ov=document.createElement('div');
+    const ov=document.getElementById('supa-boot-overlay')||document.createElement('div');
     ov.id='supa-boot-overlay';
     ov.style.cssText='position:fixed;inset:0;z-index:9998;background:'+bg+';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0';
     ov.innerHTML=
@@ -18197,7 +18199,7 @@ if(supaEnabled()){
           '<div style="height:100%;background:'+barFg+';border-radius:99px;animation:td-bar 2.8s cubic-bezier(.4,0,.2,1) forwards"></div>'+
         '</div>'+
       '</div>';
-    document.body.appendChild(ov);
+    if(!ov.parentNode)document.body.appendChild(ov);
   })();
   supaInit();
   // Cmd+K / Ctrl+K global search
