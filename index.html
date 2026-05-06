@@ -3007,15 +3007,15 @@ function renderDash(){
   if(kpiEl){
     const pBids=bids.filter(b=>b.status==='Pending');
     kpiEl.innerHTML='<div class="mets" id="dash-mets-inner">'+
-      '<div class="met" style="cursor:pointer" data-chart="revenue" onclick="showKpiChart(this.dataset.chart)">'+
+      '<div class="met" style="cursor:pointer" onclick="goToTrackerTab(\'income\')">'+
         '<div class="met-l">Revenue</div>'+
         '<div class="met-v" style="color:var(--blue)">'+fmtShort(tInc)+'</div>'+
       '</div>'+
-      '<div class="met" style="cursor:pointer" onclick="goToExpenses()">'+
+      '<div class="met" style="cursor:pointer" onclick="goToTrackerTab(\'expenses\')">'+
         '<div class="met-l">Expenses</div>'+
         '<div class="met-v" style="color:#A32D2D">'+fmtShort(tExp)+'</div>'+
       '</div>'+
-      '<div class="met" style="cursor:pointer" data-pg="pg-tracker" onclick="goPg(this.dataset.pg)">'+
+      '<div class="met" style="cursor:pointer" onclick="goToTrackerTab(\'mileage\')">'+
         '<div class="met-l">Mileage</div>'+
         '<div class="met-v">'+Math.round(tMi).toLocaleString()+'<span style="font-size:11px;font-weight:400;color:var(--text3)"> mi</span></div>'+
       '</div>'+
@@ -11843,17 +11843,11 @@ function markFUAbandoned(bidId,cid){
     zAlert('Got it. Follow-up reset — check back in 7 days.',{title:'Snoozed 7 days'});
   }
 }
-function goToExpenses(){
+function goToTrackerTab(tab){
   goPg('pg-tracker');
-  setTimeout(()=>{
-    const el=document.getElementById('tracker-exp-section');
-    if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
-    else{// fallback — click expenses tab if it exists
-      const tab=document.querySelector('[onclick*="showTrackTab"][onclick*="exp"]');
-      if(tab)tab.click();
-    }
-  },150);
+  setTimeout(()=>setTrTab(tab,document.getElementById('tr-t-'+tab)),150);
 }
+function goToExpenses(){goToTrackerTab('expenses');}
 function closeTopModal(){const o=document.querySelector('.zmodal-overlay');if(o&&typeof o.remove==='function')o.remove();else if(o&&o.parentNode)o.parentNode.removeChild(o);}
 function showWorkflowGate(msg,btnLabel,btnAction){
   const o=document.createElement('div');o.className='zmodal-overlay';
