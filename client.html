@@ -6,6 +6,7 @@
 <title>Your Project Hub</title>
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://js.stripe.com/v3/"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{--accent:#185FA5;--accent-dk:#0D3B6E;--green:#16a34a;--green-mid:#3B6D11;--green-lt:#EAF3DE;--green-border:#97C459;--border:#e0dfd8;--border2:#cccbc4;--text:#1a1a18;--text2:#5f5e5a;--text3:#9a9890;--bg:#f7f7f5;--bg2:#fff;--r:10px;--rl:14px;--navy:#0D1117;--red:#A32D2D;--red-lt:#FFF0F0;}
@@ -93,6 +94,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 </head>
 <body>
+<!-- Stripe embedded checkout modal -->
+<div id="stripe-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;overflow-y:auto;padding:16px">
+  <div style="background:#fff;border-radius:16px;max-width:500px;margin:20px auto;padding:0;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+    <div style="background:var(--navy);padding:16px 18px;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div id="stripe-modal-biz" style="font-size:15px;font-weight:800;color:#fff"></div>
+        <div id="stripe-modal-amt" style="font-size:12px;color:rgba(255,255,255,.6);margin-top:2px"></div>
+      </div>
+      <button onclick="closePaymentModal()" style="background:rgba(255,255,255,.12);border:none;color:#fff;font-size:18px;line-height:1;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center">✕</button>
+    </div>
+    <div id="checkout-embed-container" style="padding:4px 0"></div>
+  </div>
+</div>
 <div class="topbar">
   <img id="topbar-logo-img" class="topbar-logo-img" alt="Logo">
   <span id="topbar-name" class="topbar-name"></span>
@@ -523,6 +537,7 @@ function renderPhotos(){
   html+='</div>';
   document.getElementById('view-photos').innerHTML=html;
 }
+let _stripeCheckoutInstance=null;
 async function _launchCheckout(bidId,amount,label){
   const bid=_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const btn=document.getElementById('pay-btn-'+bidId)||document.getElementById('pay-inv-btn-'+bidId);
@@ -535,12 +550,33 @@ async function _launchCheckout(bidId,amount,label){
         proposalKey:bid.proposalKey||null,clientName:_hub.clientName,
         businessName:_hub.contractorName,bidId:String(bid.id),
         contractorUserId:_hub.contractorUserId,notifyEmail:_hub.notifyEmail,
-        successUrl:hubBase+'#paid-'+bid.id,cancelUrl:hubBase})
+        successUrl:hubBase+'#paid-'+bid.id,cancelUrl:hubBase,
+        embedded:true})
     });
     const d=await res.json();
-    if(d.url){window.location.href=d.url;}
-    else{if(btn){btn.textContent=label;btn.disabled=false;}alert('Could not create payment link. Please contact us directly.');}
+    if(btn){btn.textContent=label;btn.disabled=false;}
+    if(d.clientSecret&&d.publishableKey){
+      document.getElementById('stripe-modal-biz').textContent=_hub.contractorName||'Secure Payment';
+      document.getElementById('stripe-modal-amt').textContent='Amount: '+fmt(amount/100)+' · Secured by Stripe';
+      document.getElementById('checkout-embed-container').innerHTML='';
+      document.getElementById('stripe-overlay').style.display='block';
+      document.body.style.overflow='hidden';
+      const stripe=Stripe(d.publishableKey);
+      _stripeCheckoutInstance=await stripe.initEmbeddedCheckout({
+        clientSecret:d.clientSecret,
+        onComplete:()=>{closePaymentModal();showPaymentSuccess(bidId);}
+      });
+      _stripeCheckoutInstance.mount('#checkout-embed-container');
+    }else{
+      alert('Could not set up payment. Please contact us directly.');
+    }
   }catch(e){if(btn){btn.textContent=label;btn.disabled=false;}}
+}
+function closePaymentModal(){
+  if(_stripeCheckoutInstance){_stripeCheckoutInstance.destroy();_stripeCheckoutInstance=null;}
+  const ov=document.getElementById('stripe-overlay');
+  if(ov)ov.style.display='none';
+  document.body.style.overflow='';
 }
 async function payBalance(bidId){
   const bid=_hub.bids.find(b=>b.id===bidId);if(!bid)return;
