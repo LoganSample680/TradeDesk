@@ -4016,7 +4016,7 @@ function renderTodayFeed(){
   // TIER 7 — New leads ready for an estimate (zero bids, zero scheduled estimate jobs)
   const newLeads=clients.filter(c=>{
     if(getClientStage(c.id).stage!=='new')return false;
-    if(bids.some(b=>b.client_id===c.id&&b.status!=='opportunity'))return false;
+    if(bids.some(b=>b.client_id===c.id&&b.status!=='opportunity'&&!b.draft))return false;
     if(jobs.some(j=>j.client_id===c.id&&j.eventType==='estimate'))return false;
     return true;
   });
