@@ -13723,17 +13723,20 @@ async function _geocodeAddress(val,limit){
   // MapKit JS — Apple Maps database, every US address (primary)
   if(_mapkitReady){
     return new Promise(resolve=>{
-      const search=new mapkit.Search({language:'en-US'});
+      const search=new mapkit.Search({
+        language:'en-US',
+        region:new mapkit.CoordinateRegion(new mapkit.Coordinate(39.5,-98.35),new mapkit.CoordinateSpan(25,60))
+      });
       search.search(val,(err,data)=>{
-        console.log('[MapKit search]',val,'err:',err,'data:',JSON.stringify(data));
         if(err||!data||!data.places){resolve([]);return;}
-        resolve(data.places.slice(0,limit).map(p=>({
-          line1:p.displayLines?.[0]||'',
-          line2:p.displayLines?.[1]||'',
-          street:[p.subThoroughfare,p.thoroughfare].filter(Boolean).join(' '),
+        const us=data.places.filter(p=>p.countryCode==='US');
+        resolve(us.slice(0,limit).map(p=>({
+          line1:p.fullThoroughfare||[p.subThoroughfare,p.thoroughfare].filter(Boolean).join(' ')||p.name||'',
+          line2:[p.locality,p.administrativeAreaCode,p.postCode].filter(Boolean).join(', '),
+          street:p.fullThoroughfare||[p.subThoroughfare,p.thoroughfare].filter(Boolean).join(' ')||'',
           city:p.locality||'',
-          state:p.administrativeAreaCode?.replace(/^.+-/,'')||'',
-          zip:p.postalCode||'',
+          state:p.administrativeAreaCode||'',
+          zip:p.postCode||'',
           lat:p.coordinate?.latitude||0,
           lon:p.coordinate?.longitude||0
         })));
