@@ -13723,7 +13723,7 @@ async function _geocodeAddress(val,limit){
   // MapKit JS — Apple Maps database, every US address (primary)
   if(_mapkitReady){
     return new Promise(resolve=>{
-      const search=new mapkit.Search({language:'en-US',getsUserLocation:true});
+      const search=new mapkit.Search({language:'en-US'});
       search.search(val,(err,data)=>{
         if(err||!data||!data.places){resolve([]);return;}
         resolve(data.places.slice(0,limit).map(p=>({
