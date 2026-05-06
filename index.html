@@ -2411,36 +2411,113 @@ function getClientIncome(cid){return income.filter(i=>i.client_id===cid);}
 // ── Licensing & Compliance ──────────────────────────────────────────────────
 const LIC_TYPES=[
   // Business
-  {id:'llc_report',  cat:'business',   label:'LLC Annual Report',          trade:'all', holder:'company', noNum:true},
-  {id:'biz_license', cat:'business',   label:'Business License',           trade:'all', holder:'company'},
-  {id:'contractor_reg',cat:'business', label:'Contractor Registration',    trade:'all', holder:'company'},
+  {id:'llc_report',     cat:'business',    label:'LLC Annual Report',                    trade:'all', holder:'company', noNum:true},
+  {id:'biz_license',    cat:'business',    label:'Business License',                     trade:'all', holder:'company'},
+  {id:'contractor_reg', cat:'business',    label:'Contractor Registration',              trade:'all', holder:'company'},
+  {id:'dba_reg',        cat:'business',    label:'DBA / Fictitious Name Registration',   trade:'all', holder:'company'},
+  {id:'sales_tax',      cat:'business',    label:'Sales Tax Permit',                     trade:'all', holder:'company'},
+  {id:'osha10',         cat:'business',    label:'OSHA 10-Hour Card',                    trade:'all', holder:'employee'},
+  {id:'osha30',         cat:'business',    label:'OSHA 30-Hour Card',                    trade:'all', holder:'employee'},
+  {id:'first_aid',      cat:'business',    label:'First Aid / CPR Certification',        trade:'all', holder:'employee'},
   // Insurance
-  {id:'gl_ins',      cat:'insurance',  label:'General Liability Insurance',trade:'all', holder:'company'},
-  {id:'wc_ins',      cat:'insurance',  label:'Workers Comp Insurance',     trade:'all', holder:'company'},
-  {id:'auto_ins',    cat:'insurance',  label:'Commercial Auto Insurance',  trade:'all', holder:'company'},
-  {id:'bond',        cat:'insurance',  label:'Contractor Bond',            trade:'all', holder:'company'},
-  {id:'eo_ins',      cat:'insurance',  label:'Professional Liability (E&O)',trade:'all',holder:'company'},
-  // EPA / RRP (painting)
-  {id:'epa_firm',    cat:'epa',        label:'EPA Certified Renovation Firm',   trade:'painting', holder:'company'},
-  {id:'epa_renovator',cat:'epa',       label:'EPA Certified Renovator',          trade:'painting', holder:'employee'},
-  {id:'epa_inspector',cat:'epa',       label:'EPA Lead Inspector / Risk Assessor',trade:'painting',holder:'employee'},
-  {id:'epa_abate_con',cat:'epa',       label:'EPA Lead Abatement Contractor',    trade:'painting', holder:'company'},
-  {id:'epa_abate_sup',cat:'epa',       label:'EPA Lead Abatement Supervisor',    trade:'painting', holder:'employee'},
-  {id:'epa_abate_wkr',cat:'epa',       label:'EPA Lead Abatement Worker',        trade:'painting', holder:'employee'},
-  {id:'hepa_vacuum', cat:'epa',        label:'HEPA Vacuum',                      trade:'painting', holder:'equipment', isEquip:true},
+  {id:'gl_ins',         cat:'insurance',   label:'General Liability Insurance',          trade:'all', holder:'company'},
+  {id:'wc_ins',         cat:'insurance',   label:'Workers Comp Insurance',               trade:'all', holder:'company'},
+  {id:'auto_ins',       cat:'insurance',   label:'Commercial Auto Insurance',            trade:'all', holder:'company'},
+  {id:'bond',           cat:'insurance',   label:'Contractor Bond',                      trade:'all', holder:'company'},
+  {id:'eo_ins',         cat:'insurance',   label:'Professional Liability (E&O)',         trade:'all', holder:'company'},
+  {id:'umbrella_ins',   cat:'insurance',   label:'Umbrella / Excess Liability',          trade:'all', holder:'company'},
+  {id:'tools_ins',      cat:'insurance',   label:'Tools & Equipment Insurance',          trade:'all', holder:'company'},
+  // EPA / Lead / Hazmat
+  {id:'epa_firm',       cat:'epa',         label:'EPA Certified Renovation Firm (RRP)',  trade:'painting', holder:'company'},
+  {id:'epa_renovator',  cat:'epa',         label:'EPA Certified Renovator',              trade:'painting', holder:'employee'},
+  {id:'epa_inspector',  cat:'epa',         label:'EPA Lead Inspector / Risk Assessor',   trade:'painting', holder:'employee'},
+  {id:'epa_abate_con',  cat:'epa',         label:'EPA Lead Abatement Contractor',        trade:'painting', holder:'company'},
+  {id:'epa_abate_sup',  cat:'epa',         label:'EPA Lead Abatement Supervisor',        trade:'painting', holder:'employee'},
+  {id:'epa_abate_wkr',  cat:'epa',         label:'EPA Lead Abatement Worker',            trade:'painting', holder:'employee'},
+  {id:'hepa_vacuum',    cat:'epa',         label:'HEPA Vacuum',                          trade:'all',      holder:'equipment', isEquip:true},
+  {id:'asbestos_con',   cat:'epa',         label:'Asbestos Abatement Contractor',        trade:'asbestos', holder:'company'},
+  {id:'asbestos_sup',   cat:'epa',         label:'AHERA Asbestos Abatement Supervisor',  trade:'asbestos', holder:'employee'},
+  {id:'asbestos_wkr',   cat:'epa',         label:'AHERA Asbestos Abatement Worker',      trade:'asbestos', holder:'employee'},
+  {id:'asbestos_insp',  cat:'epa',         label:'AHERA Building Inspector',             trade:'asbestos', holder:'employee'},
+  {id:'asbestos_mgmt',  cat:'epa',         label:'Asbestos Management Planner',          trade:'asbestos', holder:'employee'},
+  {id:'asbestos_design',cat:'epa',         label:'Asbestos Project Designer',            trade:'asbestos', holder:'employee'},
+  {id:'hazmat_40hr',    cat:'epa',         label:'HAZWOPER 40-Hour Training',            trade:'all',      holder:'employee'},
+  {id:'hazmat_8hr',     cat:'epa',         label:'HAZWOPER 8-Hour Annual Refresher',     trade:'all',      holder:'employee'},
   // Electrical
-  {id:'master_elec', cat:'electrical', label:'Master Electrician License',  trade:'electrical', holder:'employee'},
-  {id:'journeyman_elec',cat:'electrical',label:'Journeyman Electrician License',trade:'electrical',holder:'employee'},
-  {id:'elec_contractor',cat:'electrical',label:'Electrical Contractor License',trade:'electrical',holder:'company'},
-  {id:'elec_inspector', cat:'electrical',label:'Electrical Inspector License',  trade:'electrical',holder:'employee'},
+  {id:'master_elec',    cat:'electrical',  label:'Master Electrician License',           trade:'electrical', holder:'employee'},
+  {id:'journeyman_elec',cat:'electrical',  label:'Journeyman Electrician License',       trade:'electrical', holder:'employee'},
+  {id:'elec_apprentice',cat:'electrical',  label:'Electrical Apprentice Registration',   trade:'electrical', holder:'employee'},
+  {id:'elec_contractor',cat:'electrical',  label:'Electrical Contractor License',        trade:'electrical', holder:'company'},
+  {id:'elec_inspector', cat:'electrical',  label:'Electrical Inspector License',         trade:'electrical', holder:'employee'},
+  {id:'low_voltage',    cat:'electrical',  label:'Low Voltage Technician License',       trade:'electrical', holder:'employee'},
+  {id:'solar_elec',     cat:'electrical',  label:'Solar PV Installer Certification (NABCEP)', trade:'electrical', holder:'employee'},
   // General Contractor
-  {id:'gc_license',  cat:'gc',         label:'General Contractor License',  trade:'gc', holder:'company'},
-  {id:'home_imp',    cat:'gc',         label:'Home Improvement Registration',trade:'gc',holder:'company'},
-  {id:'gc_inspector',cat:'gc',         label:'Building Inspector License',  trade:'gc', holder:'employee'},
+  {id:'gc_license',     cat:'gc',          label:'General Contractor License',           trade:'gc', holder:'company'},
+  {id:'home_imp',       cat:'gc',          label:'Home Improvement Registration',        trade:'gc', holder:'company'},
+  {id:'gc_inspector',   cat:'gc',          label:'Building Inspector License',           trade:'gc', holder:'employee'},
+  {id:'project_mgr',    cat:'gc',          label:'Project Manager Certification (PMP)',  trade:'gc', holder:'employee'},
+  // HVAC
+  {id:'hvac_contractor',cat:'hvac',        label:'HVAC Contractor License',              trade:'hvac', holder:'company'},
+  {id:'hvac_tech',      cat:'hvac',        label:'HVAC Technician License',              trade:'hvac', holder:'employee'},
+  {id:'epa608_univ',    cat:'hvac',        label:'EPA Section 608 — Universal',          trade:'hvac', holder:'employee'},
+  {id:'epa608_t1',      cat:'hvac',        label:'EPA Section 608 — Type I (small appliances)', trade:'hvac', holder:'employee'},
+  {id:'epa608_t2',      cat:'hvac',        label:'EPA Section 608 — Type II (high-pressure)',   trade:'hvac', holder:'employee'},
+  {id:'epa608_t3',      cat:'hvac',        label:'EPA Section 608 — Type III (low-pressure)',   trade:'hvac', holder:'employee'},
+  {id:'nate_cert',      cat:'hvac',        label:'NATE Certification',                   trade:'hvac', holder:'employee'},
+  {id:'gas_fitter',     cat:'hvac',        label:'Gas Fitter License',                   trade:'hvac', holder:'employee'},
+  {id:'sheet_metal',    cat:'hvac',        label:'Sheet Metal Worker License',           trade:'hvac', holder:'employee'},
+  // Plumbing
+  {id:'master_plumber', cat:'plumbing',    label:'Master Plumber License',               trade:'plumbing', holder:'employee'},
+  {id:'journeyman_plmb',cat:'plumbing',    label:'Journeyman Plumber License',           trade:'plumbing', holder:'employee'},
+  {id:'plmb_apprentice',cat:'plumbing',    label:'Plumbing Apprentice Registration',     trade:'plumbing', holder:'employee'},
+  {id:'plmb_contractor',cat:'plumbing',    label:'Plumbing Contractor License',          trade:'plumbing', holder:'company'},
+  {id:'backflow_cert',  cat:'plumbing',    label:'Backflow Prevention Certification',    trade:'plumbing', holder:'employee'},
+  {id:'med_gas',        cat:'plumbing',    label:'Medical Gas Installer Certification',  trade:'plumbing', holder:'employee'},
+  {id:'plmb_inspector', cat:'plumbing',    label:'Plumbing Inspector License',           trade:'plumbing', holder:'employee'},
+  // Roofing
+  {id:'roofing_con',    cat:'roofing',     label:'Roofing Contractor License',           trade:'roofing', holder:'company'},
+  {id:'gaf_elite',      cat:'roofing',     label:'GAF Master Elite Contractor',          trade:'roofing', holder:'company'},
+  {id:'certainteed_sm', cat:'roofing',     label:'CertainTeed SELECT ShingleMaster',     trade:'roofing', holder:'company'},
+  {id:'owens_preferred',cat:'roofing',     label:'Owens Corning Preferred Contractor',   trade:'roofing', holder:'company'},
+  {id:'icc_roofing',    cat:'roofing',     label:'ICC Roofing Inspector Certification',  trade:'roofing', holder:'employee'},
+  {id:'nrca_member',    cat:'roofing',     label:'NRCA Membership',                      trade:'roofing', holder:'company', noNum:true},
+  // Concrete & Masonry
+  {id:'concrete_con',   cat:'concrete',    label:'Concrete Contractor License',          trade:'concrete', holder:'company'},
+  {id:'mason_con',      cat:'concrete',    label:'Masonry Contractor License',           trade:'concrete', holder:'company'},
+  {id:'aci_field',      cat:'concrete',    label:'ACI Concrete Field Testing Technician',trade:'concrete', holder:'employee'},
+  {id:'aci_strength',   cat:'concrete',    label:'ACI Strength Testing Technician',      trade:'concrete', holder:'employee'},
+  {id:'aci_flatwork',   cat:'concrete',    label:'ACI Flatwork Finisher Certification',  trade:'concrete', holder:'employee'},
+  // Flooring & Tile
+  {id:'floor_con',      cat:'flooring',    label:'Flooring Contractor License',          trade:'flooring', holder:'company'},
+  {id:'ctef_installer', cat:'flooring',    label:'Certified Tile Installer (CTEF)',      trade:'flooring', holder:'employee'},
+  {id:'nwfa_installer', cat:'flooring',    label:'NWFA Certified Wood Floor Installer',  trade:'flooring', holder:'employee'},
+  {id:'nwfa_inspector', cat:'flooring',    label:'NWFA Certified Wood Floor Inspector',  trade:'flooring', holder:'employee'},
+  {id:'carpet_cert',    cat:'flooring',    label:'Carpet & Rug Institute Certification', trade:'flooring', holder:'employee'},
+  // Drywall & Plastering
+  {id:'drywall_con',    cat:'drywall',     label:'Drywall Contractor License',           trade:'drywall', holder:'company'},
+  {id:'plasterer_lic',  cat:'drywall',     label:'Plasterer License',                    trade:'drywall', holder:'employee'},
+  {id:'awci_cert',      cat:'drywall',     label:'AWCI Certified Inspector',             trade:'drywall', holder:'employee'},
+  // Landscaping & Irrigation
+  {id:'landscape_con',  cat:'landscaping', label:'Landscape Contractor License',         trade:'landscaping', holder:'company'},
+  {id:'irrigation_con', cat:'landscaping', label:'Irrigation Contractor License',        trade:'landscaping', holder:'company'},
+  {id:'irrigation_cert',cat:'landscaping', label:'Certified Irrigation Contractor (CIC)',trade:'landscaping', holder:'employee'},
+  {id:'pesticide_app',  cat:'landscaping', label:'Pesticide Applicator License',         trade:'landscaping', holder:'employee'},
+  {id:'arborist_cert',  cat:'landscaping', label:'ISA Certified Arborist',               trade:'landscaping', holder:'employee'},
+  {id:'landscape_arch', cat:'landscaping', label:'Landscape Architect License',          trade:'landscaping', holder:'employee'},
+  // Demolition
+  {id:'demo_con',       cat:'demolition',  label:'Demolition Contractor License',        trade:'demolition', holder:'company'},
+  {id:'demo_permit',    cat:'demolition',  label:'Demolition Permit (project-based)',     trade:'demolition', holder:'company', noNum:true},
+  {id:'blasting_cert',  cat:'demolition',  label:'Blasting / Explosives License',        trade:'demolition', holder:'employee'},
 ];
 
-const LIC_CAT_LABELS={business:'Business',insurance:'Insurance',epa:'EPA / RRP',electrical:'Electrical',gc:'General Contractor'};
-const LIC_CAT_ORDER=['business','insurance','epa','electrical','gc'];
+const LIC_CAT_LABELS={
+  business:'Business',insurance:'Insurance',epa:'EPA / Lead / Hazmat',
+  electrical:'Electrical',gc:'General Contractor',hvac:'HVAC',
+  plumbing:'Plumbing',roofing:'Roofing',concrete:'Concrete & Masonry',
+  flooring:'Flooring & Tile',drywall:'Drywall & Plastering',
+  landscaping:'Landscaping & Irrigation',demolition:'Demolition'
+};
+const LIC_CAT_ORDER=['business','insurance','epa','electrical','gc','hvac','plumbing','roofing','concrete','flooring','drywall','landscaping','demolition'];
 
 function _licDaysUntil(lic){
   if(!lic.expiryDate)return null;
