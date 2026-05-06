@@ -13723,9 +13723,10 @@ async function _geocodeAddress(val,limit){
   // MapKit JS — Apple Maps database, every US address (primary)
   if(_mapkitReady){
     return new Promise(resolve=>{
+      const _mkLat=S.weatherLat||39.5,_mkLon=S.weatherLon||-98.35;
       const search=new mapkit.Search({
         language:'en-US',
-        region:new mapkit.CoordinateRegion(new mapkit.Coordinate(39.5,-98.35),new mapkit.CoordinateSpan(25,60))
+        region:new mapkit.CoordinateRegion(new mapkit.Coordinate(_mkLat,_mkLon),new mapkit.CoordinateSpan(S.weatherLat?4:25,S.weatherLat?6:60))
       });
       search.search(val,(err,data)=>{
         if(err||!data||!data.places){resolve([]);return;}
