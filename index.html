@@ -2270,7 +2270,7 @@ const CHECKS=[
 ];
 const CAT_CFG={urgent:{label:'Do right away',color:'#A32D2D'},biz:{label:'Business setup in Kansas',color:'#185FA5'},tax:{label:'Tax & accounting',color:'#854F0B'},ks:{label:'Kansas market & marketing',color:'#27500A'}};
 
-let S={bitlyKey:'',mapboxKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],logoData:'',brandColor:'',bwebsite:'',subdomain:''};
+let S={bitlyKey:'',mapboxKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],logoData:'',brandColor:'',bwebsite:'',subdomain:''};
 
 // ZJ's logo — SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
 // Only shown for ZJ's Painting account — other accounts see plain business name text.
@@ -3830,6 +3830,52 @@ const LIEN_RULES={
 
 // ── County filing info ─────────────────────────────────────────────────────
 const COUNTY_INFO={
+  MO:{
+    'Jackson County':{
+      filing_office:'Jackson County Recorder of Deeds',
+      address:'415 E 12th St, Kansas City, MO 64106',
+      phone:'(816) 881-3232',
+      notes:['Bring 2 printed, signed, and notarized copies','Filing fee: $24 first page + $3 per additional page','Deadline: 6 months (180 days) from last day of work (§429.080 RSMo)','Retain stamped copy for your records']
+    },
+    'Clay County':{
+      filing_office:'Clay County Recorder of Deeds',
+      address:'1 Courthouse Square, Liberty, MO 64068',
+      phone:'(816) 407-3580',
+      notes:['Bring 2 printed, signed, and notarized copies','Call ahead to confirm filing fee','Deadline: 6 months (180 days) from last day of work (§429.080 RSMo)']
+    },
+    'St. Louis County':{
+      filing_office:'St. Louis County Recorder of Deeds',
+      address:'41 S Central Ave, Clayton, MO 63105',
+      phone:'(314) 615-2500',
+      notes:['Bring 2 printed, signed, and notarized copies','Filing fee varies — call ahead','Deadline: 6 months (180 days) from last day of work (§429.080 RSMo)']
+    },
+    default:{
+      filing_office:'County Recorder of Deeds',
+      address:'Contact your county courthouse',
+      phone:'',
+      notes:['Bring 2 printed, signed, and notarized copies','Deadline: 6 months (180 days) from last day of work (§429.080 RSMo)','Retain stamped copy for your records']
+    }
+  },
+  TX:{
+    'Tarrant County':{
+      filing_office:'Tarrant County Clerk — Real Property',
+      address:'100 W Weatherford St, Fort Worth, TX 76196',
+      phone:'(817) 884-1195',
+      notes:['File Affidavit Claiming Mechanic\'s Lien (Tex. Prop. Code §53.052)','Notice must be sent to owner & GC by 2nd month after unpaid work','Deadline: 100 days from last day of work (15th of the 4th month)','Filing fee: ~$25 first page + $4 per additional page']
+    },
+    'Dallas County':{
+      filing_office:'Dallas County Clerk — Real Property',
+      address:'509 Main St, Suite 200, Dallas, TX 75202',
+      phone:'(214) 653-7099',
+      notes:['File Affidavit Claiming Mechanic\'s Lien (Tex. Prop. Code §53.052)','Notice must be sent to owner & GC by 2nd month after unpaid work','Deadline: 100 days from last day of work','Filing fee varies — call ahead']
+    },
+    default:{
+      filing_office:'County Clerk — Real Property Records',
+      address:'Contact your county courthouse',
+      phone:'',
+      notes:['File Affidavit Claiming Mechanic\'s Lien (Tex. Prop. Code §53.052)','Send required notices to owner and GC within 2nd month after unpaid work','Deadline: 100 days from last day of work (by the 15th of the 4th month)','Retain a copy of all notices and the filed lien for your records']
+    }
+  },
   KS:{
     'Sedgwick County':{
       filing_office:'Sedgwick County Register of Deeds',
@@ -8536,11 +8582,13 @@ function swSelectProduct(p,btn){
 
 
 
+let _rateRefreshInProgress=false;
 async function autoRefreshRates(){
-  if(!_supa||!_supaUser)return;
+  if(!_supa||!_supaUser||_rateRefreshInProgress)return;
   const YEAR_KEY='zp3_rate_year';
   const thisYear=new Date().getFullYear();
   if(+localStorage.getItem(YEAR_KEY)===thisYear&&S.irsRate)return;
+  _rateRefreshInProgress=true;
   try{
     const{data:{session}}=await _supa.auth.getSession();
     if(!session)return;
@@ -8551,14 +8599,51 @@ async function autoRefreshRates(){
     });
     if(!resp.ok)return;
     const d=await resp.json();
-    if(d.irsRate&&Math.abs(d.irsRate-(S.irsRate||0))>0.0005){
-      S.irsRate=d.irsRate;
-      saveAll();
+    // Sanity bounds — IRS rate must be realistic (never below 50¢ or above $1.00/mi)
+    if(!d.irsRate||d.irsRate<0.50||d.irsRate>1.00)return;
+    if(Math.abs(d.irsRate-(S.irsRate||0))>0.0005){
+      S.irsRate=d.irsRate;saveAll();
       showToast('IRS mileage rate updated to $'+(+d.irsRate).toFixed(3)+'/mi for '+d.year);
       const el=document.getElementById('set-irs');if(el)el.value=d.irsRate;
     }
     localStorage.setItem(YEAR_KEY,String(thisYear));
-  }catch(e){}
+  }catch(e){}finally{_rateRefreshInProgress=false;}
+}
+
+let _bracketRefreshInProgress=false;
+async function autoRefreshTaxBrackets(){
+  if(!_supa||!_supaUser||_bracketRefreshInProgress)return;
+  const KEY='zp3_tax_year';
+  const thisYear=new Date().getFullYear();
+  if(+localStorage.getItem(KEY)===thisYear)return;
+  _bracketRefreshInProgress=true;
+  try{
+    const{data:{session}}=await _supa.auth.getSession();
+    if(!session)return;
+    const resp=await fetch(SUPA_URL+'/functions/v1/get-rates',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
+      body:JSON.stringify({type:'taxBrackets'})
+    });
+    if(!resp.ok)return;
+    const d=await resp.json();
+    if(d.error)return;
+    // Strict bounds — each threshold must be within ±15% of 2025 IRS baseline
+    const base={fedSingle:15000,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350};
+    const fields=Object.keys(base);
+    const valid=fields.every(k=>typeof d[k]==='number'&&d[k]>base[k]*0.85&&d[k]<base[k]*1.15);
+    const inc=[d.b10,d.b12,d.b22,d.b24,d.b32,d.b35].every((v,i,a)=>i===0||v>a[i-1]);
+    if(!valid||!inc)return;
+    const changed=fields.some(k=>Math.abs(d[k]-(S[k]||base[k]))>50);
+    if(changed){
+      fields.forEach(k=>{if(d[k])S[k]=d[k];});
+      if(d.fedMFJ&&d.fedMFJ>25000&&d.fedMFJ<40000)S.fedMFJ=d.fedMFJ;
+      if(d.fedHOH&&d.fedHOH>18000&&d.fedHOH<30000)S.fedHOH=d.fedHOH;
+      applySettings();saveAll();
+      showToast('Federal tax brackets updated for '+(d.year||thisYear),'📊');
+    }
+    localStorage.setItem(KEY,String(thisYear));
+  }catch(e){}finally{_bracketRefreshInProgress=false;}
 }
 
 async function swRefreshPrices(){
@@ -17694,6 +17779,7 @@ async function supaLoadFromCloud(){
     setTimeout(()=>{
       if(_supaUser)clients.filter(c=>c.clientToken).forEach(c=>{_uploadClientHub(c.id).catch(()=>{});});
       autoRefreshRates();
+      autoRefreshTaxBrackets();
     },4000);
     // Check for new signatures then schedule alerts — sequential to avoid race
     setTimeout(async()=>{ await checkNewSignatures(); if(!window._showingScheduleAlert) showScheduleAlerts(); },2000);
