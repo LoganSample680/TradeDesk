@@ -1641,6 +1641,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         <div class="f"><label>Years of experience</label><input type="number" id="set-byears" min="1" max="50" placeholder="e.g. 12"></div>
         <div class="f"><label>Google review link <span style="font-size:10px;font-weight:400;color:var(--text3)">(sent after job completion)</span></label><input type="url" id="set-review-url" placeholder="https://g.page/r/..."></div>
         <div class="f" style="grid-column:1/-1"><label>Mapbox API key <span style="font-size:10px;font-weight:400;color:var(--text3)">(address autocomplete — free account at mapbox.com)</span></label><input id="set-mapbox-key" placeholder="pk.ey..." autocomplete="off" style="font-family:monospace;font-size:12px"></div>
+        <div class="f" style="grid-column:1/-1"><label>Your client hub subdomain <span style="font-size:10px;font-weight:400;color:var(--text3)">(e.g. "loganspainting" → loganspainting.tradedeskpro.app)</span></label><input id="set-subdomain" placeholder="loganspainting" autocomplete="off" style="font-family:monospace;font-size:12px"></div>
         <div class="f" style="grid-column:1/-1">
           <label>Proposal logo <span style="font-size:10px;font-weight:400;color:var(--text3)">(replaces business name text on proposals)</span></label>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -2259,7 +2260,7 @@ const CHECKS=[
 ];
 const CAT_CFG={urgent:{label:'Do right away',color:'#A32D2D'},biz:{label:'Business setup in Kansas',color:'#185FA5'},tax:{label:'Tax & accounting',color:'#854F0B'},ks:{label:'Kansas market & marketing',color:'#27500A'}};
 
-let S={bitlyKey:'',mapboxKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],logoData:'',brandColor:'',bwebsite:''};
+let S={bitlyKey:'',mapboxKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],logoData:'',brandColor:'',bwebsite:'',subdomain:''};
 
 // ZJ's logo — SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
 // Only shown for ZJ's Painting account — other accounts see plain business name text.
@@ -2550,7 +2551,7 @@ function loadSettingsForm(){
   sf('set-goal-monthly',S.goalMonthly||'');
   sf('set-labor-rate',S.laborRate||45);sf('set-owner-name',getOwnerName()||'');sf('set-bname',S.bname);sf('set-state',S.state||'KS');
   _renderLogoPreview();
-  if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-bitly-key',S.bitlyKey||'');sf('set-mapbox-key',S.mapboxKey||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-byears',S.byears||'');sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
+  if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-bitly-key',S.bitlyKey||'');sf('set-mapbox-key',S.mapboxKey||'');sf('set-subdomain',S.subdomain||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-byears',S.byears||'');sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
   sf('set-margin',S.margin);sf('set-cov',S.cov);sf('set-mm',S.mm);sf('set-supplies-rate',S.suppliesRate||0.12);sf('set-r-walls',S.rWalls||1.30);sf('set-r-ceil',S.rCeil||1.00);sf('set-r-trim',S.rTrim||4.00);sf('set-r-door',S.rDoor||95);sf('set-r-win',S.rWin||50);sf('set-r-ext',S.rExt||1.10);sf('set-r-deck',S.rDeck||1.00);
   sf('set-review-url',S.reviewUrl||'');
   sf('set-brandcolor',S.brandColor||'#185FA5');
@@ -2558,7 +2559,7 @@ function loadSettingsForm(){
 }
 function saveSettings(){
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
-  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',mapboxKey:gs('set-mapbox-key')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.40,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||''};
+  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',mapboxKey:gs('set-mapbox-key')||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.40,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||''};
   applySettings();saveAll();
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
   // Propagate branding/settings to all live client hubs in the background
@@ -4371,10 +4372,14 @@ function renderPipeline(){
     '</div>';
 }
 
+function _clientBaseUrl(){
+  if(S.subdomain)return 'https://'+S.subdomain+'.tradedeskpro.app/';
+  return window.location.origin+window.location.pathname.split('index.html')[0];
+}
 function pipelineResendSms(bidId){
   const b=bids.find(x=>x.id===bidId);
   if(!b||!b.signingToken)return;
-  const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  const baseUrl=_clientBaseUrl();
   const signUrl=baseUrl+'sign.html?t='+b.signingToken+'&u='+(window._supaUser?.id||'')+'&b='+bidId;
   const c=getClientById(b.client_id);
   const hubUrl=c?.clientToken?baseUrl+'client.html?t='+c.clientToken+'&u='+(_supaUser?.id||'')+'&c='+c.id:null;
@@ -10177,7 +10182,7 @@ function _buildClientHubSnapshot(clientId){
   const cbids=bids.filter(b=>b.client_id===clientId);
   const cjobs=jobs.filter(j=>j.client_id===clientId&&j.eventType!=='estimate');
   const cpayments=payments.filter(p=>p.client_id===clientId);
-  const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  const baseUrl=_clientBaseUrl();
   const hubUrl=c.clientToken?baseUrl+'client.html?t='+c.clientToken+'&u='+(_supaUser?.id||'')+'&c='+clientId:'';
   const snapshotBids=cbids.map(b=>{
     const paid=getBidPaid(b.id);
@@ -10219,7 +10224,7 @@ async function _uploadClientHub(clientId){
     c.clientToken=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
   }
   if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});
-  const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  const baseUrl=_clientBaseUrl();
   const url=baseUrl+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
   const doUpload=async()=>{
     const snapshot=_buildClientHubSnapshot(clientId);
@@ -10242,7 +10247,7 @@ function _relTime(ts){if(!ts)return'';try{const d=Math.round((Date.now()-new Dat
 function sendOnboardingLink(clientId){
   const c=getClientById(clientId);if(!c)return;
   if(!_supaUser){zAlert('Sign in to send the onboarding link.');return;}
-  const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  const baseUrl=_clientBaseUrl();
   const url=baseUrl+'client.html?mode=onboard&t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
   const firstName=c.name?.split(' ')[0]||'there';
   const rawBiz=getBusinessName();
@@ -10272,7 +10277,7 @@ function sendClientHubLink(clientId){
     c.clientToken=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
     saveAll();
   }
-  const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  const baseUrl=_clientBaseUrl();
   const url=baseUrl+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
   // Refresh hub content silently in background — never blocks the share sheet
   _uploadClientHub(clientId).catch(()=>{});
@@ -10309,7 +10314,7 @@ function copyHubLink(url){navigator.clipboard.writeText(url).then(()=>showToast(
 function showHubMenu(clientId){
   const c=clients.find(x=>x.id===clientId);
   if(!c?.clientToken||!_supaUser){sendClientHubLink(clientId);return;}
-  const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  const baseUrl=_clientBaseUrl();
   const hubUrl=baseUrl+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
   const existing=document.getElementById('_hub-menu-ov');if(existing)existing.remove();
   const ov=document.createElement('div');
@@ -10568,7 +10573,7 @@ async function sendProposalLink(){
     const _bidForHub=bids.find(b=>b.id===bidId);
     if(_bidForHub)_bidForHub.signingKey=proposalKey;
     _pendingSignToken={bidId,token,proposalKey};
-    const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+    const baseUrl=_clientBaseUrl();
     const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
     const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     const shortUrl=await shortenUrl(signingUrl);
@@ -15735,7 +15740,7 @@ async function sendGenericProposal(){
   await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true}).catch(()=>{});
   const b=bids.find(x=>x.id===bidId);
   if(b){b.signingToken=token;b.proposalKey=proposalKey;saveAll();}
-  const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  const baseUrl=_clientBaseUrl();
   const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
   const shortUrl=await shortenUrl(signingUrl);
   let shareUrl=shortUrl||signingUrl;
@@ -17095,7 +17100,7 @@ function editSentBid(bidId){
 function resendProposalLink(bidId){
   const b=bids.find(x=>x.id===bidId);
   if(!b)return;
-  const baseUrl=window.location.origin+window.location.pathname.split('index.html')[0];
+  const baseUrl=_clientBaseUrl();
   const c=getClientById(b.client_id);
   const hubUrl=c?.clientToken?baseUrl+'client.html?t='+c.clientToken+'&u='+(_supaUser?.id||'')+'&c='+c.id:null;
   if(hubUrl&&c?.phone){
