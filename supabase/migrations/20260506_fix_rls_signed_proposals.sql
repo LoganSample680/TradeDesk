@@ -5,7 +5,7 @@
 
 ALTER TABLE public.signed_proposals ENABLE ROW LEVEL SECURITY;
 
--- Drop all conflicting/duplicate policies (created via dashboard over time)
+-- Drop all policies — both old conflicting names and new names (safe to re-run)
 DROP POLICY IF EXISTS "allow_anon_insert" ON public.signed_proposals;
 DROP POLICY IF EXISTS "allow_anon_update" ON public.signed_proposals;
 DROP POLICY IF EXISTS "allow_auth_select" ON public.signed_proposals;
@@ -16,6 +16,11 @@ DROP POLICY IF EXISTS "contractor_read_signed_proposals" ON public.signed_propos
 DROP POLICY IF EXISTS "Contractor reads own signed proposals" ON public.signed_proposals;
 DROP POLICY IF EXISTS "Anyone can submit signature" ON public.signed_proposals;
 DROP POLICY IF EXISTS "Contractor updates own records" ON public.signed_proposals;
+DROP POLICY IF EXISTS "anon_select" ON public.signed_proposals;
+DROP POLICY IF EXISTS "anon_insert" ON public.signed_proposals;
+DROP POLICY IF EXISTS "anon_update" ON public.signed_proposals;
+DROP POLICY IF EXISTS "auth_select_own" ON public.signed_proposals;
+DROP POLICY IF EXISTS "auth_update_own" ON public.signed_proposals;
 
 -- Anon (client): sign.html needs SELECT (check if signed), INSERT (submit sig), UPDATE (notified_at)
 CREATE POLICY "anon_select" ON public.signed_proposals

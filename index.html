@@ -14167,9 +14167,13 @@ function renderAllMileage(){
     [...filtered].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(r=>{
       const fromAddr=r.from||'';
       const toAddr=r.to||(r.client_name?getClientById(r.client_id)?.addr||'':'');
-      const routeLine=(fromAddr||toAddr)?
-        '<tr><td colspan="6" style="padding:2px 8px 8px;font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0">'+
-          (fromAddr||'Start')+' → '+(toAddr||'Destination')+
+      const hasAddr=!!(fromAddr||toAddr);
+      const addrRow=hasAddr?
+        '<tr id="mile-addr-'+r.id+'" style="display:none"><td colspan="6" style="padding:0 12px 10px;background:var(--bg2)">'+
+          '<div style="font-size:11px;line-height:2;padding-top:4px">'+
+            (fromAddr?'<div><span style="color:var(--text3);font-weight:600;margin-right:6px">From</span><span style="user-select:all;cursor:text;color:var(--text2)">'+escHtml(fromAddr)+'</span></div>':'')+
+            (toAddr?'<div><span style="color:var(--text3);font-weight:600;margin-right:6px">To</span><span style="user-select:all;cursor:text;color:var(--text2)">'+escHtml(toAddr)+'</span></div>':'')+
+          '</div>'+
         '</td></tr>':'';
       return '<tr>'+
         '<td class="mute">'+r.date+'</td>'+
@@ -14177,11 +14181,22 @@ function renderAllMileage(){
         '<td style="font-size:11px;color:var(--text2)">'+(r.purpose||'Trip')+'</td>'+
         '<td class="bold">'+(r.miles?(+r.miles).toFixed(1)+' mi':'—')+'</td>'+
         '<td style="color:var(--green-mid)">'+(r.miles?fmt((+r.miles)*IRS()):'—')+'</td>'+
-        '<td><button class="btn-del" onclick="delMileage('+r.id+')">&#10005;</button></td>'+
-      '</tr>'+routeLine;
+        '<td style="white-space:nowrap">'+
+          (hasAddr?'<button class="btn-del" id="mile-chevron-'+r.id+'" onclick="toggleMileAddr('+r.id+')" title="Show addresses" style="opacity:.55;margin-right:4px;font-size:10px">▼</button>':'')+
+          '<button class="btn-del" onclick="delMileage('+r.id+')">&#10005;</button>'+
+        '</td>'+
+      '</tr>'+addrRow;
     }).join('')+'</tbody></table></div>';
 }
 function delMileage(id){mileage=mileage.filter(x=>x.id!==id);saveAll();if(currentClientId){const el=document.getElementById('cd-mile-list');if(el)renderCDMileage();}renderAllMileage();}
+function toggleMileAddr(id){
+  const row=document.getElementById('mile-addr-'+id);
+  const btn=document.getElementById('mile-chevron-'+id);
+  if(!row)return;
+  const open=row.style.display!=='none';
+  row.style.display=open?'none':'';
+  if(btn)btn.textContent=open?'▼':'▲';
+}
 function renderSummary(){
   const yr=String(trackerYear||new Date().getFullYear());
   const yInc=income.filter(r=>r.date&&r.date.startsWith(yr));
