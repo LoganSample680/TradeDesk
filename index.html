@@ -14301,7 +14301,7 @@ function _tripDestSearch(val){
     if(html){box.innerHTML=html;box.style.display='block';}else{box.style.display='none';}
   },200);
 }
-function _selectTripClient(clientId){
+async function _selectTripClient(clientId){
   const c=clients.find(x=>x.id===clientId);if(!c)return;
   const inp=document.getElementById('lm-to');if(inp)inp.value=c.addr||'';
   const box=document.getElementById('lm-to-sugg');if(box)box.style.display='none';
@@ -14311,6 +14311,13 @@ function _selectTripClient(clientId){
   const h=document.getElementById('lm-client');if(h)h.value=c.id;
   const mv=document.getElementById('lm-miles-val');if(mv)mv.value='0';
   const rr=document.getElementById('lm-route-result');if(rr)rr.style.display='none';
+  // Geocode address now so calculateAndShowRoute has coordinates ready
+  if(c.addr){
+    try{
+      const results=await _geocodeAddress(c.addr,1);
+      if(results.length)_lmCoords.to={lat:results[0].lat,lng:results[0].lon};
+    }catch(e){}
+  }
   if((document.getElementById('lm-from')?.value||'').trim())setTimeout(calculateAndShowRoute,100);
 }
 function tripPlaceSearch(fieldId,suggId,val){
