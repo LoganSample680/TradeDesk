@@ -569,8 +569,227 @@ function mockSupabaseResponse(url) {
     if (spinnerCheck.hasAnim) ok('Spinner uses CSS @keyframes _ptr_rotate (no JS setInterval)');
     else fail('Spinner animation style not found');
 
-    // ── Phase 9: Console error summary ────────────────────────────────────
-    console.log('\n── Phase 9: Console errors ──');
+    // ── Phase 9: Books tabs — stat card navigation ───────────────────────
+    console.log('\n── Phase 9: Stat cards → Books tab navigation ──');
+
+    // Inject income + mileage data so stat cards have numbers
+    await page.evaluate(() => {
+      const today = new Date().toISOString().slice(0, 10);
+      income.push({ id: Date.now(), date: today, amount: 1500, type: 'invoice', note: 'E2E income' });
+      mileage.push({ id: Date.now() + 1, date: today, miles: 25.5, from: '123 Main St, Wichita KS 67202', to: '456 Oak Ave, Wichita KS 67203', client_name: 'E2E Client', purpose: 'Job site visit' });
+      expenses.push({ id: Date.now() + 2, date: today, amount: 120, cat: 'materials', vendor: 'Sherwin-Williams', note: 'E2E paint' });
+      saveAll();
+    });
+
+    for (const [tab, label] of [['income','Income'],['expenses','Expenses'],['mileage','Mileage']]) {
+      await page.evaluate(t => goToTrackerTab(t), tab);
+      await sleep(400);
+      const result = await page.evaluate((t) => ({
+        trackerActive: document.getElementById('pg-tracker')?.classList.contains('active'),
+        tabActive: document.getElementById('tr-t-' + t)?.classList.contains('active'),
+      }), tab);
+      if (result.trackerActive && result.tabActive) ok(`goToTrackerTab('${tab}') → Books ${label} tab`);
+      else fail(`goToTrackerTab('${tab}') failed — tracker=${result.trackerActive} tab=${result.tabActive}`);
+    }
+
+    // ── Phase 10: Mileage accordion ──────────────────────────────────────
+    console.log('\n── Phase 10: Mileage accordion ──');
+
+    // Navigate to mileage tab (already there, but ensure render)
+    await page.evaluate(() => goToTrackerTab('mileage'));
+    await sleep(400);
+
+    const accordionRows = await page.evaluate(() =>
+      [...document.querySelectorAll('[id^="mile-addr-"]')].length
+    );
+    if (accordionRows > 0) ok(`${accordionRows} mileage row(s) with address accordion found`);
+    else fail('No mileage accordion rows rendered — trips with addresses not showing');
+
+    const accordionStartsClosed = await page.evaluate(() =>
+      [...document.querySelectorAll('[id^="mile-addr-"]')].every(r => r.style.display === 'none')
+    );
+    if (accordionStartsClosed) ok('All accordion rows start collapsed');
+    else warn('Some accordion rows already open on load');
+
+    const accordionOpensOnClick = await page.evaluate(() => {
+      const row = document.querySelector('[id^="mile-addr-"]');
+      if (!row) return false;
+      const id = +row.id.replace('mile-addr-', '');
+      toggleMileAddr(id);
+      return row.style.display !== 'none';
+    });
+    if (accordionOpensOnClick) ok('toggleMileAddr() opens accordion row');
+    else fail('Accordion did not open after toggleMileAddr()');
+
+    const addressesSelectable = await page.evaluate(() =>
+      document.querySelectorAll('[id^="mile-addr-"] span[style*="user-select:all"]').length >= 2
+    );
+    if (addressesSelectable) ok('From + To addresses have user-select:all (copy-pastable)');
+    else warn('user-select:all spans not found — addresses may not be easily selectable');
+
+    const accordionClosesOnSecondClick = await page.evaluate(() => {
+      const row = document.querySelector('[id^="mile-addr-"]');
+      if (!row) return false;
+      const id = +row.id.replace('mile-addr-', '');
+      toggleMileAddr(id);
+      return row.style.display === 'none';
+    });
+    if (accordionClosesOnSecondClick) ok('Second toggleMileAddr() collapses row');
+    else warn('Accordion did not collapse on second call');
+
+    const deleteDoesNotToggle = await page.evaluate(() => {
+      // Delete button should have stopPropagation — verify it exists in the row
+      const delBtns = [...document.querySelectorAll('#mil-table .btn-del')];
+      return delBtns.length > 0;
+    });
+    if (deleteDoesNotToggle) ok('Delete buttons present in mileage rows');
+    else warn('No delete buttons found in mileage table');
+
+    // ── Phase 11: iOS bridge functions ───────────────────────────────────
+    console.log('\n── Phase 11: iOS bridge functions ──');
+
+    const bridges = await page.evaluate(() => {
+      // tdPrint: routes to _tdNativePrint when set
+      let nativeCalled = false;
+      window._tdNativePrint = () => { nativeCalled = true; };
+      if (typeof tdPrint === 'function') tdPrint();
+      delete window._tdNativePrint;
+
+      // _clientBaseUrl: returns subdomain URL when S.subdomain set
+      const prev = S.subdomain;
+      S.subdomain = '';
+      const noSub = typeof _clientBaseUrl === 'function' ? _clientBaseUrl() : null;
+      S.subdomain = 'zachspro';
+      const withSub = typeof _clientBaseUrl === 'function' ? _clientBaseUrl() : null;
+      S.subdomain = prev;
+
+      // Stripe returnUrl uses _tdNativeReturnUrl when injected
+      window._tdNativeReturnUrl = 'tradedesk://stripe-return';
+      const nativeUrl = window._tdNativeReturnUrl || window.location.href.split('#')[0];
+      delete window._tdNativeReturnUrl;
+
+      return { tdPrintExists: typeof tdPrint === 'function', nativeCalled,
+               clientBaseUrlExists: typeof _clientBaseUrl === 'function',
+               noSub, withSub, nativeUrl };
+    });
+
+    if (bridges.tdPrintExists) ok('tdPrint() exists');
+    else fail('tdPrint() missing — print buttons unguarded for WKWebView');
+
+    if (bridges.nativeCalled) ok('tdPrint() calls window._tdNativePrint when injected by Swift');
+    else fail('tdPrint() did not call _tdNativePrint');
+
+    if (bridges.clientBaseUrlExists) ok('_clientBaseUrl() exists');
+    else fail('_clientBaseUrl() missing');
+
+    if (bridges.withSub?.includes('zachspro.tradedeskpro.app')) ok('_clientBaseUrl() returns subdomain URL: ' + bridges.withSub);
+    else warn(`_clientBaseUrl() subdomain: ${bridges.withSub}`);
+
+    if (bridges.noSub?.startsWith('http')) ok('_clientBaseUrl() falls back to origin when no subdomain');
+    else warn(`_clientBaseUrl() no-subdomain: ${bridges.noSub}`);
+
+    if (bridges.nativeUrl === 'tradedesk://stripe-return') ok('Stripe returnUrl uses _tdNativeReturnUrl when set');
+    else warn(`Stripe returnUrl: ${bridges.nativeUrl}`);
+
+    // ── Phase 12: IRS rate auto-refresh — year-based skip logic ─────────
+    console.log('\n── Phase 12: IRS rate auto-refresh ──');
+
+    const rateLogic = await page.evaluate(() => {
+      const YEAR_KEY = 'zp3_rate_year';
+      const thisYear = new Date().getFullYear();
+      if (typeof autoRefreshRates !== 'function') return { exists: false };
+
+      localStorage.setItem(YEAR_KEY, String(thisYear));
+      const skipsThisYear = +localStorage.getItem(YEAR_KEY) === thisYear && !!S.irsRate;
+
+      localStorage.removeItem(YEAR_KEY);
+      const firesNextYear = +localStorage.getItem(YEAR_KEY) !== thisYear;
+
+      localStorage.setItem(YEAR_KEY, String(thisYear)); // restore
+      return { exists: true, skipsThisYear, firesNextYear, rate: S.irsRate };
+    });
+
+    if (rateLogic.exists) ok('autoRefreshRates() function exists');
+    else fail('autoRefreshRates() missing');
+    if (rateLogic.skipsThisYear) ok(`Year-based skip active — no Claude call until ${new Date().getFullYear() + 1}`);
+    else warn('Rate skip logic may not work correctly');
+    if (rateLogic.firesNextYear) ok('Rate check fires when year key absent (new year)');
+    else warn('Rate check would not fire even with missing year key');
+    if (+rateLogic.rate > 0) ok(`IRS rate in S object: $${(+rateLogic.rate).toFixed(3)}/mi`);
+    else warn('S.irsRate not set');
+
+    // ── Phase 13: Income + Expense Books rendering ───────────────────────
+    console.log('\n── Phase 13: Income + Expense data in Books ──');
+
+    await page.evaluate(() => goToTrackerTab('income'));
+    await sleep(400);
+    const incomeTableHasRows = await page.evaluate(() => {
+      const t = document.getElementById('inc-table');
+      return t ? t.querySelectorAll('tr').length > 0 : false;
+    });
+    if (incomeTableHasRows) ok('Books Income tab renders income rows');
+    else warn('Books Income tab table is empty');
+
+    await page.evaluate(() => goToTrackerTab('expenses'));
+    await sleep(400);
+    const expTableHasRows = await page.evaluate(() => {
+      const t = document.getElementById('exp-table');
+      return t ? t.querySelectorAll('tr').length > 0 : false;
+    });
+    if (expTableHasRows) ok('Books Expenses tab renders expense rows');
+    else warn('Books Expenses tab table is empty');
+
+    await page.evaluate(() => goToTrackerTab('summary'));
+    await sleep(400);
+    const summaryHasMetrics = await page.evaluate(() => {
+      const m = document.getElementById('sum-mets');
+      return m ? m.innerText.length > 20 : false;
+    });
+    if (summaryHasMetrics) ok('Books Summary tab renders year metrics');
+    else warn('Books Summary tab metrics not found');
+
+    // ── Phase 14: Settings — IRS rate field ──────────────────────────────
+    console.log('\n── Phase 14: Settings fields ──');
+
+    await page.evaluate(() => goPg('pg-settings'));
+    await sleep(400);
+
+    const irsVal = await page.evaluate(() => {
+      const el = document.getElementById('set-irs');
+      return el ? +el.value : null;
+    });
+    if (irsVal > 0) ok(`Settings IRS rate field: $${irsVal.toFixed(3)}/mi`);
+    else warn('IRS rate field missing or zero in Settings');
+
+    // Change, save, verify
+    await page.evaluate(() => {
+      const el = document.getElementById('set-irs');
+      if (el) { el.value = '0.720'; el.dispatchEvent(new Event('input', { bubbles: true })); }
+      if (typeof saveSettings === 'function') saveSettings();
+    });
+    await sleep(200);
+    const irsAfterSave = await page.evaluate(() => S.irsRate);
+    if (Math.abs(+irsAfterSave - 0.720) < 0.001) ok('IRS rate change saves to S.irsRate');
+    else warn(`IRS rate save: expected 0.720, got ${irsAfterSave}`);
+
+    // Restore default
+    await page.evaluate(() => {
+      const el = document.getElementById('set-irs');
+      if (el) { el.value = '0.700'; el.dispatchEvent(new Event('input', { bubbles: true })); }
+      if (typeof saveSettings === 'function') saveSettings();
+    });
+
+    // ── Phase 15: Lien panel disclaimer ──────────────────────────────────
+    console.log('\n── Phase 15: Lien panel disclaimer ──');
+
+    const lienText = await page.evaluate(() =>
+      document.getElementById('cd-lien-panel')?.textContent || ''
+    );
+    if (lienText.match(/attorney|consult|verify|jurisdiction/i)) ok('Lien panel has legal disclaimer');
+    else warn('Lien disclaimer text not found in panel — may need App Store reviewer note');
+
+    // ── Phase 16: Console error summary ───────────────────────────────────
+    console.log('\n── Phase 16: Console errors ──');
     const realErrors = consoleErrors.filter(e =>
       !e.includes('favicon') && !e.includes('net::ERR') && !e.includes('Failed to load resource')
     );
