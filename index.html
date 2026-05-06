@@ -10,6 +10,7 @@
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <title>TradeDesk</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.core.js" crossorigin async onload="_initMapKit()"></script>
 <style>@import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=swap');*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
 :root{
 --blue:#185FA5;--blue-dk:#0C447C;--blue-lt:#E6F1FB;
@@ -13691,8 +13692,34 @@ let _tripSearchTimers={};
 let _tripDestTimer=null;
 
 // ── Shared geocoding — Mapbox (with key) or Photon+Census parallel ───────────
+const _MAPKIT_TOKEN='eyJhbGciOiJFUzI1NiIsImtpZCI6IjU1TjkyUTVQWkQiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzc4MDc2NTgxLCJleHAiOjE4NDExNDg1ODF9.PgQ2btzlf0EH-QJg_fX8dcsw2eR1yyx-o0K7Kckvn3D_bzdEI2hUMuz3iH2c9t2DtUY2fTtP08r7aEQCsYvQ3w';
+let _mapkitReady=false;
+function _initMapKit(){
+  if(typeof mapkit==='undefined')return;
+  mapkit.init({authorizationCallback:done=>done(_MAPKIT_TOKEN),language:'en-US'});
+  _mapkitReady=true;
+}
 async function _geocodeAddress(val,limit){
   limit=limit||5;
+  // MapKit JS — Apple Maps database, every US address (primary)
+  if(_mapkitReady){
+    return new Promise(resolve=>{
+      const search=new mapkit.Search({language:'en-US',getsUserLocation:true});
+      search.search(val,(err,data)=>{
+        if(err||!data||!data.places){resolve([]);return;}
+        resolve(data.places.slice(0,limit).map(p=>({
+          line1:p.displayLines?.[0]||'',
+          line2:p.displayLines?.[1]||'',
+          street:[p.subThoroughfare,p.thoroughfare].filter(Boolean).join(' '),
+          city:p.locality||'',
+          state:p.administrativeAreaCode?.replace(/^.+-/,'')||'',
+          zip:p.postalCode||'',
+          lat:p.coordinate?.latitude||0,
+          lon:p.coordinate?.longitude||0
+        })));
+      });
+    });
+  }
   if(S.mapboxKey){
     const r=await fetch('https://api.mapbox.com/geocoding/v5/mapbox.places/'+encodeURIComponent(val)+'.json?access_token='+S.mapboxKey+'&country=US&types=address&limit='+limit+'&proximity=ip');
     const d=await r.json();
