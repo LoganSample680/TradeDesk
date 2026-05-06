@@ -30,8 +30,8 @@ async function waitFor(page, sel, timeout = 5000) {
 
 // ── Mock Supabase REST responses ─────────────────────────────────────────────
 // bid IDs we'll inject during the test
-const FAKE_BID_ID_1 = 'e2e-bid-alice';
-const FAKE_BID_ID_2 = 'e2e-bid-bob';
+const FAKE_BID_ID_1 = 900001;
+const FAKE_BID_ID_2 = 900002;
 const FAKE_USER_ID  = 'e2e-user-0000-0000-0000-000000000001';
 
 function mockSupabaseResponse(url) {
@@ -398,8 +398,8 @@ function mockSupabaseResponse(url) {
       // Manually inject them for the chaining test
       await page.evaluate((id1, id2) => {
         const alerts = [
-          { name: 'Alice Smith', bidId: id1, clientId: 'cl-alice', isPaid: false },
-          { name: 'Bob Garcia',  bidId: id2, clientId: 'cl-bob',   isPaid: true  },
+          { name: 'Alice Smith', bidId: id1, clientId: 901, isPaid: false },
+          { name: 'Bob Garcia',  bidId: id2, clientId: 902, isPaid: true  },
         ];
         localStorage.setItem('zp3_schedule_alerts', JSON.stringify(alerts));
       }, FAKE_BID_ID_1, FAKE_BID_ID_2);
