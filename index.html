@@ -2533,6 +2533,8 @@ function fmtDateShort(d){if(!d)return'';try{const dt=new Date(d+'T12:00');return
 
 function setLicFilter(cat){_licFilter=cat;renderLicensing();}
 
+function _licDateDisp(iso){if(!iso)return'';try{const[y,m,d]=iso.split('-');return m+'/'+d+'/'+y;}catch(e){return iso;}}
+function _licDateParse(s){if(!s||!s.trim())return'';const t=s.trim();if(/^\d{4}-\d{2}-\d{2}$/.test(t))return t;const m1=t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);if(m1)return m1[3]+'-'+m1[1].padStart(2,'0')+'-'+m1[2].padStart(2,'0');const m2=t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);if(m2)return(parseInt(m2[3])>50?'19':'20')+m2[3]+'-'+m2[1].padStart(2,'0')+'-'+m2[2].padStart(2,'0');return'';}
 let _editingLicId=null;
 function openAddLicense(){_editingLicId=null;_showLicModal(null);}
 function openEditLicense(id){_editingLicId=id;_showLicModal(licenses.find(l=>l.id===id));}
@@ -2564,10 +2566,8 @@ function _showLicModal(lic){
       '<div class="f"><label>Serial Number</label><input id="_lic-serial" value="'+escHtml(lic?.serial||'')+'" placeholder="Optional"></div>'+
     '</div>'+
     '<div id="_lic-date-fields" style="display:'+(isEquip?'none':'block')+'">'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
-        '<div class="f"><label>Issue date</label><input type="date" id="_lic-issue" value="'+(lic?.issueDate||'')+'"></div>'+
-        '<div class="f"><label>Expiry date</label><input type="date" id="_lic-expiry" value="'+(lic?.expiryDate||'')+'"></div>'+
-      '</div>'+
+      '<div class="f"><label>Issue date</label><input id="_lic-issue" placeholder="MM/DD/YYYY" value="'+_licDateDisp(lic?.issueDate||'')+'"></div>'+
+      '<div class="f"><label>Expiry date</label><input id="_lic-expiry" placeholder="MM/DD/YYYY" value="'+_licDateDisp(lic?.expiryDate||'')+'"></div>'+
     '</div>'+
     '<div class="f"><label>Notes</label><input id="_lic-notes" value="'+escHtml(lic?.notes||'')+'" placeholder="Optional"></div>'+
     '<button class="btn btn-p btn-full" style="margin-top:6px" onclick="saveLicenseModal()">Save</button>'+
@@ -2597,14 +2597,19 @@ function saveLicenseModal(){
   const t=LIC_TYPES.find(x=>x.id===typeId);
   const holderRaw=document.getElementById('_lic-holder-sel')?.value||'';
   const holderName=holderRaw||(S.bname||getBusinessName()||'Company');
+  const _issueRaw=_licDateParse(document.getElementById('_lic-issue')?.value||'');
+  const _expiryRaw=_licDateParse(document.getElementById('_lic-expiry')?.value||'');
+  if(_issueRaw&&document.getElementById('_lic-issue')?.value&&!_issueRaw){zAlert('Issue date format not recognized. Use MM/DD/YYYY.');return;}
+  if(_expiryRaw&&document.getElementById('_lic-expiry')?.value&&!_expiryRaw){zAlert('Expiry date format not recognized. Use MM/DD/YYYY.');return;}
+  if(_issueRaw&&_expiryRaw&&_issueRaw>=_expiryRaw){zAlert('Issue date must be before expiry date.',{title:'Invalid dates'});return;}
   const rec={
     id:_editingLicId||(Date.now()*1000+Math.floor(Math.random()*999)),
     typeId,cat:t?.cat||'business',label:t?.label||typeId,
     holderName:t?.holder==='employee'?holderName:(S.bname||getBusinessName()||'Company'),
     holderId:null,
     licenseNumber:(document.getElementById('_lic-num')?.value||'').trim(),
-    issueDate:document.getElementById('_lic-issue')?.value||'',
-    expiryDate:document.getElementById('_lic-expiry')?.value||'',
+    issueDate:_issueRaw,
+    expiryDate:_expiryRaw,
     notes:(document.getElementById('_lic-notes')?.value||'').trim(),
     make:(document.getElementById('_lic-make')?.value||'').trim(),
     model:(document.getElementById('_lic-model')?.value||'').trim(),
@@ -2653,7 +2658,7 @@ function openHepaLog(id){
       '</select>'+
       '<input id="_hepa-who" placeholder="Who (optional)" style="width:100%;margin-bottom:8px;padding:8px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px;box-sizing:border-box">'+
       '<input id="_hepa-notes" placeholder="Notes (optional)" style="width:100%;margin-bottom:10px;padding:8px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px;box-sizing:border-box">'+
-      '<input type="date" id="_hepa-date" value="'+todayKey()+'" style="width:100%;margin-bottom:10px;padding:8px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px;box-sizing:border-box">'+
+      '<input id="_hepa-date" placeholder="MM/DD/YYYY" value="'+_licDateDisp(todayKey())+'" style="width:100%;margin-bottom:10px;padding:8px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px;box-sizing:border-box">'+
       '<button class="btn btn-p btn-full" onclick="_addHepaEntry('+id+')">+ Add Entry</button>'+
     '</div>'+
     '<button class="btn btn-sec btn-full" style="margin-top:10px" onclick="document.getElementById(\'_hepa-modal-ov\').remove()">Close</button>';
@@ -2664,7 +2669,7 @@ function _addHepaEntry(licId){
   if(!lic.equipmentLog)lic.equipmentLog=[];
   lic.equipmentLog.push({
     id:Date.now().toString(36),
-    date:document.getElementById('_hepa-date')?.value||todayKey(),
+    date:_licDateParse(document.getElementById('_hepa-date')?.value||'')||todayKey(),
     type:document.getElementById('_hepa-type-sel')?.value||'Filter Change',
     who:(document.getElementById('_hepa-who')?.value||'').trim(),
     notes:(document.getElementById('_hepa-notes')?.value||'').trim()
