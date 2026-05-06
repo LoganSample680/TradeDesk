@@ -13614,8 +13614,29 @@ async function getCurrentLocAddress(){
   return new Promise((resolve,reject)=>{
     if(!navigator.geolocation){reject(new Error('GPS not available'));return;}
     navigator.geolocation.getCurrentPosition(async pos=>{
+      const{latitude:lat,longitude:lon}=pos.coords;
+      // MapKit reverse geocode (fast, Apple data)
+      if(_mapkitReady){
+        const gc=new mapkit.Geocoder({language:'en-US'});
+        gc.reverseLookup(new mapkit.Coordinate(lat,lon),(err,data)=>{
+          if(!err&&data?.results?.[0]){
+            const p=data.results[0];
+            const parts=[];
+            if(p.fullThoroughfare)parts.push(p.fullThoroughfare);
+            else if(p.thoroughfare)parts.push([p.subThoroughfare,p.thoroughfare].filter(Boolean).join(' '));
+            if(p.locality)parts.push(p.locality);
+            if(p.administrativeAreaCode)parts.push(p.administrativeAreaCode);
+            if(p.postCode)parts.push(p.postCode);
+            resolve(parts.join(', ')||p.formattedAddress||'');
+          } else {
+            resolve(lat.toFixed(4)+', '+lon.toFixed(4));
+          }
+        });
+        return;
+      }
+      // Nominatim fallback
       try{
-        const r=await fetch('https://nominatim.openstreetmap.org/reverse?lat='+pos.coords.latitude+'&lon='+pos.coords.longitude+'&format=json',{headers:{'Accept-Language':'en-US','User-Agent':'TradeDesk/1.0'}});
+        const r=await fetch('https://nominatim.openstreetmap.org/reverse?lat='+lat+'&lon='+lon+'&format=json',{headers:{'Accept-Language':'en-US','User-Agent':'TradeDesk/1.0'}});
         const d=await r.json();
         const a=d.address||{};
         const parts=[];
@@ -13625,8 +13646,8 @@ async function getCurrentLocAddress(){
         if(a.state)parts.push(a.state);
         if(a.postcode)parts.push(a.postcode);
         resolve(parts.join(', ')||d.display_name||'');
-      }catch(e){resolve(pos.coords.latitude.toFixed(4)+', '+pos.coords.longitude.toFixed(4));}
-    },err=>reject(err),{timeout:10000,enableHighAccuracy:false,maximumAge:60000});
+      }catch(e){resolve(lat.toFixed(4)+', '+lon.toFixed(4));}
+    },err=>reject(err),{timeout:8000,enableHighAccuracy:false,maximumAge:300000});
   });
 }
 function _photonGeocode(addr){
