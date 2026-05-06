@@ -3672,7 +3672,8 @@ function showFileLienDirect(bidId){
   const {rules,daysUnpaid,daysUntilDeadline}=getLienTimeline(bid);
   const addr=bid.addr||c.addr||'';
   const {stateCode,county}=getCountyForBid(bid);
-  const filingInfo=getCountyFilingInfo(stateCode,county);
+  const filingInfo=getCountyFilingInfo(stateCode);
+  const mapsUrl=_lienMapsUrl(county,stateCode);
 
   const warningHtml=daysUntilDeadline<=0?
     '<div style="background:#3D0000;color:#FFB3B3;border-radius:var(--r);padding:10px 12px;margin-bottom:14px;font-size:12px">⚠️ Lien window may be expired — consult an attorney before filing.</div>':
@@ -3703,15 +3704,14 @@ function showFileLienDirect(bidId){
     '<div style="font-size:12px;color:var(--text2);margin-bottom:4px"><strong>Client:</strong> '+escHtml(c.name)+'</div>'+
     '<div style="font-size:12px;color:var(--text2);margin-bottom:4px"><strong>Property:</strong> '+escHtml(addr||'—')+'</div>'+
     '<div style="font-size:12px;color:var(--text2);margin-bottom:14px"><strong>Completion:</strong> '+escHtml(bid.completion_date||'—')+'</div>'+
-    // Filing instructions section
     '<div style="background:var(--blue-lt);border-radius:var(--r);padding:12px 14px;margin-bottom:14px">'+
-      '<div style="font-size:12px;font-weight:800;color:var(--blue);margin-bottom:8px">📍 Filing Instructions — '+escHtml(county)+'</div>'+
-      '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:2px">'+escHtml(filingInfo.filing_office)+'</div>'+
-      '<div style="font-size:11px;color:var(--text2);margin-bottom:'+(filingInfo.phone?'2':'8')+'px">'+escHtml(filingInfo.address)+'</div>'+
-      (filingInfo.phone?'<div style="font-size:11px;color:var(--text2);margin-bottom:8px">'+escHtml(filingInfo.phone)+'</div>':'')+
+      '<div style="font-size:12px;font-weight:800;color:var(--blue);margin-bottom:6px">📍 Filing Instructions — '+escHtml(stateCode)+'</div>'+
+      '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:2px">'+escHtml(filingInfo.office)+'</div>'+
+      '<div style="font-size:10px;color:var(--text3);margin-bottom:8px">'+escHtml(filingInfo.cite)+'</div>'+
+      '<a href="'+mapsUrl+'" target="_blank" style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--blue);font-weight:600;text-decoration:none;margin-bottom:10px">📍 Find '+escHtml(filingInfo.office)+' in Maps →</a>'+
       '<div style="font-size:11px;color:var(--text2);line-height:1.7">'+notesHtml+'</div>'+
     '</div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">Document will be pre-filled with your business info, client details, and proposal. Print, sign, notarize, then file.</div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">Deadlines shown are for general guidance. Verify requirements with your county recorder before filing.</div>'+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:13px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
       '<button onclick="_confirmFileLien('+bidId+',\''+escHtml(county)+'\');this.closest(\'.zmodal-overlay\').remove()" style="flex:2;padding:13px;border-radius:var(--r);border:none;background:#3D0000;color:#FFB3B3;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Generate & Print Lien →</button>'+
@@ -3810,105 +3810,117 @@ function renderDashActiveLiens(){
 }
 
 // ── State-based lien timing rules ─────────────────────────────────────────
-// notice_days: days after completion before pre-lien notice is appropriate
-// filing_deadline_days: days after last work when lien MUST be filed
+// notice_days: days after last work to send demand/notice (statutory where req'd, else 10)
+// filing_deadline_days: days from last day of work to file lien
 const LIEN_RULES={
+  AL:{notice_days:10,filing_deadline_days:120},  // Ala. Code §35-11-215
+  AK:{notice_days:10,filing_deadline_days:120},  // AS §34.35.070
+  AZ:{notice_days:20,filing_deadline_days:120},  // A.R.S. §33-993 (20d prelim notice subs)
+  AR:{notice_days:10,filing_deadline_days:120},  // Ark. Code §18-44-117
+  CA:{notice_days:20,filing_deadline_days:90},   // Civ. Code §8412 (20d prelim notice req'd)
+  CO:{notice_days:10,filing_deadline_days:120},  // C.R.S. §38-22-109
+  CT:{notice_days:10,filing_deadline_days:90},   // Conn. Gen. Stat. §49-34
+  DC:{notice_days:10,filing_deadline_days:90},   // D.C. Code §40-303.13
+  DE:{notice_days:10,filing_deadline_days:180},  // Del. Code §27-2712
+  FL:{notice_days:45,filing_deadline_days:90},   // Fla. Stat. §713.08 (45d notice to owner)
+  GA:{notice_days:10,filing_deadline_days:90},   // Ga. Code §44-14-361
+  HI:{notice_days:10,filing_deadline_days:45},   // H.R.S. §507-42
+  ID:{notice_days:10,filing_deadline_days:90},   // Idaho Code §45-507
+  IL:{notice_days:10,filing_deadline_days:120},  // 770 ILCS 60/7
+  IN:{notice_days:10,filing_deadline_days:90},   // Ind. Code §32-28-3-3
+  IA:{notice_days:10,filing_deadline_days:90},   // Iowa Code §572.8
   KS:{notice_days:10,filing_deadline_days:120},  // K.S.A. 60-1105
-  MO:{notice_days:10,filing_deadline_days:180},
-  OK:{notice_days:10,filing_deadline_days:90},
-  TX:{notice_days:15,filing_deadline_days:100},
-  CO:{notice_days:10,filing_deadline_days:120},
-  NE:{notice_days:10,filing_deadline_days:120},
-  AR:{notice_days:10,filing_deadline_days:120},
+  KY:{notice_days:10,filing_deadline_days:180},  // KRS §376.080
+  LA:{notice_days:10,filing_deadline_days:60},   // La. R.S. §9:4822
+  ME:{notice_days:10,filing_deadline_days:90},   // Me. Rev. Stat. §38-3251
+  MD:{notice_days:10,filing_deadline_days:180},  // Md. Code §9-102
+  MA:{notice_days:10,filing_deadline_days:90},   // Mass. Gen. Laws §254-2
+  MI:{notice_days:10,filing_deadline_days:90},   // MCL §570.1111
+  MN:{notice_days:10,filing_deadline_days:120},  // Minn. Stat. §514.08
+  MS:{notice_days:10,filing_deadline_days:365},  // Miss. Code §85-7-131
+  MO:{notice_days:10,filing_deadline_days:180},  // §429.080 RSMo
+  MT:{notice_days:10,filing_deadline_days:90},   // Mont. Code §71-3-535
+  NE:{notice_days:10,filing_deadline_days:120},  // Neb. Rev. Stat. §52-137
+  NV:{notice_days:10,filing_deadline_days:90},   // NRS §108.226
+  NH:{notice_days:10,filing_deadline_days:120},  // RSA §447:9
+  NJ:{notice_days:10,filing_deadline_days:90},   // N.J.S.A. §2A:44A-6
+  NM:{notice_days:10,filing_deadline_days:120},  // NMSA §48-2-7
+  NY:{notice_days:10,filing_deadline_days:240},  // NY Lien Law §10 (8 months)
+  NC:{notice_days:10,filing_deadline_days:120},  // N.C.G.S. §44A-12
+  ND:{notice_days:10,filing_deadline_days:90},   // N.D.C.C. §35-27-02
+  OH:{notice_days:10,filing_deadline_days:75},   // ORC §1311.06
+  OK:{notice_days:10,filing_deadline_days:90},   // Okla. Stat. §42-142
+  OR:{notice_days:10,filing_deadline_days:75},   // ORS §87.035
+  PA:{notice_days:10,filing_deadline_days:180},  // 49 Pa. Stat. §1501
+  RI:{notice_days:10,filing_deadline_days:200},  // R.I. Gen. Laws §34-28-4 (from FIRST furnishing)
+  SC:{notice_days:10,filing_deadline_days:90},   // S.C. Code §29-5-90
+  SD:{notice_days:10,filing_deadline_days:120},  // SDCL §44-9-14
+  TN:{notice_days:10,filing_deadline_days:90},   // Tenn. Code §66-11-112
+  TX:{notice_days:15,filing_deadline_days:100},  // Tex. Prop. Code §53.052 (15th of 4th month)
+  UT:{notice_days:20,filing_deadline_days:90},   // Utah Code §38-1a-501 (20d prelim notice)
+  VT:{notice_days:10,filing_deadline_days:180},  // 12 V.S.A. §9-3253
+  VA:{notice_days:10,filing_deadline_days:90},   // Va. Code §43-4
+  WA:{notice_days:60,filing_deadline_days:90},   // RCW §60.04.091 (60d prelim notice req'd)
+  WV:{notice_days:10,filing_deadline_days:100},  // W. Va. Code §38-2-7
+  WI:{notice_days:10,filing_deadline_days:180},  // Wis. Stat. §779.06
+  WY:{notice_days:10,filing_deadline_days:150},  // Wyo. Stat. §29-1-202
   default:{notice_days:10,filing_deadline_days:90}
 };
 
-// ── County filing info ─────────────────────────────────────────────────────
-const COUNTY_INFO={
-  MO:{
-    'Jackson County':{
-      filing_office:'Jackson County Recorder of Deeds',
-      address:'415 E 12th St, Kansas City, MO 64106',
-      phone:'(816) 881-3232',
-      notes:['Bring 2 printed, signed, and notarized copies','Filing fee: $24 first page + $3 per additional page','Deadline: 6 months (180 days) from last day of work (§429.080 RSMo)','Retain stamped copy for your records']
-    },
-    'Clay County':{
-      filing_office:'Clay County Recorder of Deeds',
-      address:'1 Courthouse Square, Liberty, MO 64068',
-      phone:'(816) 407-3580',
-      notes:['Bring 2 printed, signed, and notarized copies','Call ahead to confirm filing fee','Deadline: 6 months (180 days) from last day of work (§429.080 RSMo)']
-    },
-    'St. Louis County':{
-      filing_office:'St. Louis County Recorder of Deeds',
-      address:'41 S Central Ave, Clayton, MO 63105',
-      phone:'(314) 615-2500',
-      notes:['Bring 2 printed, signed, and notarized copies','Filing fee varies — call ahead','Deadline: 6 months (180 days) from last day of work (§429.080 RSMo)']
-    },
-    default:{
-      filing_office:'County Recorder of Deeds',
-      address:'Contact your county courthouse',
-      phone:'',
-      notes:['Bring 2 printed, signed, and notarized copies','Deadline: 6 months (180 days) from last day of work (§429.080 RSMo)','Retain stamped copy for your records']
-    }
-  },
-  TX:{
-    'Tarrant County':{
-      filing_office:'Tarrant County Clerk — Real Property',
-      address:'100 W Weatherford St, Fort Worth, TX 76196',
-      phone:'(817) 884-1195',
-      notes:['File Affidavit Claiming Mechanic\'s Lien (Tex. Prop. Code §53.052)','Notice must be sent to owner & GC by 2nd month after unpaid work','Deadline: 100 days from last day of work (15th of the 4th month)','Filing fee: ~$25 first page + $4 per additional page']
-    },
-    'Dallas County':{
-      filing_office:'Dallas County Clerk — Real Property',
-      address:'509 Main St, Suite 200, Dallas, TX 75202',
-      phone:'(214) 653-7099',
-      notes:['File Affidavit Claiming Mechanic\'s Lien (Tex. Prop. Code §53.052)','Notice must be sent to owner & GC by 2nd month after unpaid work','Deadline: 100 days from last day of work','Filing fee varies — call ahead']
-    },
-    default:{
-      filing_office:'County Clerk — Real Property Records',
-      address:'Contact your county courthouse',
-      phone:'',
-      notes:['File Affidavit Claiming Mechanic\'s Lien (Tex. Prop. Code §53.052)','Send required notices to owner and GC within 2nd month after unpaid work','Deadline: 100 days from last day of work (by the 15th of the 4th month)','Retain a copy of all notices and the filed lien for your records']
-    }
-  },
-  KS:{
-    'Sedgwick County':{
-      filing_office:'Sedgwick County Register of Deeds',
-      address:'525 N Main St, Room 227, Wichita, KS 67203',
-      phone:'(316) 660-9400',
-      notes:['Bring 2 printed, signed, and notarized copies','Filing fee: ~$21 for first page + $4 per additional page','Retain the stamped copy for your records','Deadline: 120 days from last day of work (K.S.A. 60-1105)']
-    },
-    'Shawnee County':{
-      filing_office:'Shawnee County Register of Deeds',
-      address:'200 SE 7th St, Room 108, Topeka, KS 66603',
-      phone:'(785) 251-4020',
-      notes:['Bring 2 printed, signed, and notarized copies','Filing fee: ~$21 for first page + $4 per additional page','Retain the stamped copy for your records','Deadline: 120 days from last day of work (K.S.A. 60-1105)']
-    },
-    'Douglas County':{
-      filing_office:'Douglas County Register of Deeds',
-      address:'1100 Massachusetts St, Lawrence, KS 66044',
-      phone:'(785) 832-5145',
-      notes:['Bring 2 printed, signed, and notarized copies','Filing fee varies — call ahead to confirm','Deadline: 120 days from last day of work (K.S.A. 60-1105)']
-    },
-    'Johnson County':{
-      filing_office:'Johnson County Register of Deeds',
-      address:'111 S Cherry St, Suite 1200, Olathe, KS 66061',
-      phone:'(913) 715-0775',
-      notes:['Bring 2 printed, signed, and notarized copies','Filing fee varies — call ahead','Deadline: 120 days from last day of work (K.S.A. 60-1105)']
-    },
-    'Wyandotte County':{
-      filing_office:'Wyandotte County Register of Deeds',
-      address:'710 N 7th St, Kansas City, KS 66101',
-      phone:'(913) 573-2841',
-      notes:['Bring 2 printed, signed, and notarized copies','Filing fee varies — call ahead','Deadline: 120 days from last day of work']
-    },
-    default:{
-      filing_office:'County Register of Deeds',
-      address:'Contact your county courthouse',
-      phone:'',
-      notes:['Bring 2 printed, signed, and notarized copies','Confirm filing fee with clerk','Deadline: 120 days from last day of work (K.S.A. 60-1105)','Retain the stamped copy for your records']
-    }
-  }
+// ── State-level filing info (county recorder name varies; use Maps link to find exact office) ──
+const STATE_FILING_INFO={
+  AL:{office:'Probate Judge\'s Office',cite:'Ala. Code §35-11-215',notes:['File verified statement with Probate Judge','Deadline: 4 months (120 days) from last day of work','Have document notarized before filing']},
+  AK:{office:'District Recorder\'s Office',cite:'AS §34.35.070',notes:['File with District Recorder in the district where work was performed','Deadline: 120 days from last day of work']},
+  AZ:{office:'County Recorder',cite:'A.R.S. §33-993',notes:['Subcontractors must serve 20-Day Preliminary Notice before filing','File with County Recorder','Deadline: 120 days from last day of work']},
+  AR:{office:'Circuit Clerk\'s Office',cite:'Ark. Code §18-44-117',notes:['File with Circuit Clerk in county where work was performed','Deadline: 120 days from last day of work']},
+  CA:{office:'County Recorder',cite:'Civ. Code §8412',notes:['20-Day Preliminary Notice required for all contractors & subs','File Mechanic\'s Lien with County Recorder','Deadline: 90 days from Notice of Completion (or 90 days from project completion if no notice filed)']},
+  CO:{office:'County Clerk & Recorder',cite:'C.R.S. §38-22-109',notes:['File with County Clerk & Recorder','Deadline: 4 months (120 days) from last day of work','Have document notarized before filing']},
+  CT:{office:'Town Clerk',cite:'Conn. Gen. Stat. §49-34',notes:['File Certificate of Lien with Town Clerk where property is located','Deadline: 90 days from last day of work','Notarization required']},
+  DC:{office:'Recorder of Deeds',cite:'D.C. Code §40-303.13',notes:['File with D.C. Recorder of Deeds','Deadline: 90 days from last day of work']},
+  DE:{office:'Prothonotary of Superior Court',cite:'Del. Code §27-2712',notes:['File Statement of Claim with Prothonotary','Deadline: 180 days from last day of work']},
+  FL:{office:'Clerk of Circuit Court',cite:'Fla. Stat. §713.08',notes:['45-Day Notice to Owner required before filing','File Claim of Lien with Clerk of Circuit Court','Deadline: 90 days from last day of work','Have document notarized before filing']},
+  GA:{office:'Superior Court Clerk',cite:'Ga. Code §44-14-361',notes:['File with Clerk of Superior Court in county where property is located','Deadline: 90 days from last day of work','Notarization required']},
+  HI:{office:'Land Court / Bureau of Conveyances',cite:'H.R.S. §507-42',notes:['File with Land Court or Bureau of Conveyances','Deadline: 45 days from completion of contract — one of the shortest deadlines','Notarization required']},
+  ID:{office:'County Recorder',cite:'Idaho Code §45-507',notes:['File with County Recorder','Deadline: 90 days from last day of work','Notarization required']},
+  IL:{office:'Circuit Court Clerk',cite:'770 ILCS 60/7',notes:['File with Circuit Court Clerk in county where property is located','Deadline: 4 months (120 days) from last day of work','Serve copy on owner within 90 days of filing']},
+  IN:{office:'Circuit / Superior Court Clerk',cite:'Ind. Code §32-28-3-3',notes:['File with Clerk of Circuit or Superior Court','Deadline: 90 days from last day of work']},
+  IA:{office:'District Court Clerk',cite:'Iowa Code §572.8',notes:['File with Clerk of District Court','Deadline: 90 days from last day of work']},
+  KS:{office:'Register of Deeds',cite:'K.S.A. 60-1105',notes:['Serve notice on property owner','File with County Register of Deeds','Deadline: 120 days from last day of work','Bring 2 notarized copies — retain stamped copy']},
+  KY:{office:'Circuit Court Clerk',cite:'KRS §376.080',notes:['File with Clerk of Circuit Court','Deadline: 6 months (180 days) from last day of work','Notarization required']},
+  LA:{office:'Parish Clerk of Court',cite:'La. R.S. §9:4822',notes:['File with Parish Clerk of Court','Deadline: 60 days from last day of work — one of the shortest in the US','Notarization required — act quickly']},
+  ME:{office:'Registry of Deeds',cite:'Me. Rev. Stat. §38-3251',notes:['File True Statement with Registry of Deeds in county where property is located','Deadline: 90 days from last day of work','Notarization required']},
+  MD:{office:'Circuit Court Clerk',cite:'Md. Code §9-102',notes:['File with Clerk of Circuit Court','Deadline: 180 days from last day of work','Notarization required']},
+  MA:{office:'Registry of Deeds',cite:'Mass. Gen. Laws §254-2',notes:['File with Registry of Deeds in county where property is located','Deadline: 90 days from last day of work','Notarization required']},
+  MI:{office:'Register of Deeds',cite:'MCL §570.1111',notes:['File with County Register of Deeds','Deadline: 90 days from last day of work','Sworn/notarized statement required']},
+  MN:{office:'County Recorder / Registrar of Titles',cite:'Minn. Stat. §514.08',notes:['File with County Recorder or Registrar of Titles','Deadline: 120 days from last day of work']},
+  MS:{office:'Circuit Court Clerk',cite:'Miss. Code §85-7-131',notes:['File with Clerk of Circuit Court','Deadline: 12 months from last day of work']},
+  MO:{office:'Recorder of Deeds',cite:'§429.080 RSMo',notes:['Serve notice on property owner','File with County Recorder of Deeds','Deadline: 6 months (180 days) from last day of work','Bring 2 notarized copies — retain stamped copy']},
+  MT:{office:'County Clerk',cite:'Mont. Code §71-3-535',notes:['File with County Clerk in county where work was performed','Deadline: 90 days from completion of contract']},
+  NE:{office:'Register of Deeds',cite:'Neb. Rev. Stat. §52-137',notes:['Serve notice on property owner','File with County Register of Deeds','Deadline: 120 days from last day of work']},
+  NV:{office:'County Recorder',cite:'NRS §108.226',notes:['File Notice of Lien with County Recorder','Deadline: 90 days from last day of work','Notarization required']},
+  NH:{office:'Register of Deeds',cite:'RSA §447:9',notes:['File with County Register of Deeds','Deadline: 120 days from last day of work']},
+  NJ:{office:'County Clerk',cite:'N.J.S.A. §2A:44A-6',notes:['File with County Clerk in county where property is located','Deadline: 90 days from last day of work','Notarization required']},
+  NM:{office:'County Clerk',cite:'NMSA §48-2-7',notes:['File with County Clerk','Deadline: 120 days from last day of work','Notarization required']},
+  NY:{office:'County Clerk',cite:'NY Lien Law §10',notes:['File with County Clerk in county where property is located','Deadline: 8 months (240 days) from last day of work','Notice of Pendency must be filed within 30 days of lien']},
+  NC:{office:'Clerk of Superior Court',cite:'N.C.G.S. §44A-12',notes:['File with Clerk of Superior Court in county where property is located','Deadline: 120 days from last day of work']},
+  ND:{office:'County Recorder',cite:'N.D.C.C. §35-27-02',notes:['File with County Recorder','Deadline: 90 days from last day of work']},
+  OH:{office:'County Recorder',cite:'ORC §1311.06',notes:['File with County Recorder','Deadline: 75 days from last day of work — act fast, short deadline','Sworn/notarized affidavit required']},
+  OK:{office:'County Clerk',cite:'Okla. Stat. §42-142',notes:['Serve notice on property owner','File Statement of Lien with County Clerk','Deadline: 90 days from last day of work']},
+  OR:{office:'County Clerk',cite:'ORS §87.035',notes:['File with County Clerk','Deadline: 75 days from last day of work — act fast, short deadline','Claim must be verified/notarized']},
+  PA:{office:'Prothonotary of Court of Common Pleas',cite:'49 Pa. Stat. §1501',notes:['File with Prothonotary of Court of Common Pleas in county where property is located','Deadline: 6 months (180 days) from last day of work','Serve copy of claim on owner within 1 month of filing']},
+  RI:{office:'Town/City Clerk — Land Evidence Records',cite:'R.I. Gen. Laws §34-28-4',notes:['File with Town/City Land Evidence Records','Deadline: 200 days from FIRST day of furnishing (not last day) — verify carefully','Notarization required']},
+  SC:{office:'Clerk of Court',cite:'S.C. Code §29-5-90',notes:['File with Clerk of Court in county where property is located','Deadline: 90 days from last day of work','Notarization required']},
+  SD:{office:'Register of Deeds',cite:'SDCL §44-9-14',notes:['File with County Register of Deeds','Deadline: 120 days from last day of work']},
+  TN:{office:'Register of Deeds',cite:'Tenn. Code §66-11-112',notes:['File with County Register of Deeds','Deadline: 90 days from last day of work']},
+  TX:{office:'County Clerk — Real Property',cite:'Tex. Prop. Code §53.052',notes:['Monthly notices required — send to owner & GC by 15th of 2nd month after unpaid work','File Affidavit with County Clerk by 15th of 4th month after last work (~100 days)','TX has strict notice requirements — consult an attorney for first-time TX liens']},
+  UT:{office:'County Recorder',cite:'Utah Code §38-1a-501',notes:['20-Day Preliminary Notice required for subs & material suppliers','File with County Recorder','Deadline: 90 days from last day of work']},
+  VT:{office:'Town Clerk',cite:'12 V.S.A. §9-3253',notes:['File with Town Clerk where property is located','Deadline: 180 days from last day of work','Notarization required']},
+  VA:{office:'Circuit Court Clerk',cite:'Va. Code §43-4',notes:['File with Clerk of Circuit Court in county/city where property is located','Deadline: 90 days from last day of work']},
+  WA:{office:'County Auditor',cite:'RCW §60.04.091',notes:['60-Day Preliminary Notice of Right to Lien required before filing','File with County Auditor','Deadline: 90 days from last day of work']},
+  WV:{office:'Circuit Court Clerk',cite:'W. Va. Code §38-2-7',notes:['File with Clerk of Circuit Court in county where property is located','Deadline: 100 days from last day of work']},
+  WI:{office:'Register of Deeds',cite:'Wis. Stat. §779.06',notes:['File with County Register of Deeds','Deadline: 6 months (180 days) from last day of work']},
+  WY:{office:'County Clerk',cite:'Wyo. Stat. §29-1-202',notes:['File with County Clerk','Deadline: 150 days from last day of work']},
+  default:{office:'County Clerk / Recorder of Deeds',cite:'',notes:['Verify filing requirements with your county office before filing','Deadline and notice requirements vary by state — consult a local attorney']}
 };
 
 // City → county map for KS cities
@@ -3928,20 +3940,24 @@ const KS_CITY_COUNTY={
 function getCountyForBid(bid){
   const c=getClientById(bid.client_id);
   const addr=(bid.addr||c?.addr||'').toUpperCase();
-  const stateM=addr.match(/\b(KS|MO|OK|TX|CO|NE|AR)\b/);
+  const stateM=addr.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
   const stateCode=stateM?stateM[1]:'KS';
-  // Try to find county by city name from address
   let county=null;
   for(const city of Object.keys(KS_CITY_COUNTY)){
     if(addr.includes(city)){county=KS_CITY_COUNTY[city];break;}
   }
-  if(!county)county='Sedgwick County'; // default for this business
+  if(!county)county='your county';
   return{stateCode,county};
 }
 
-function getCountyFilingInfo(stateCode,county){
-  const stateInfo=COUNTY_INFO[stateCode]||COUNTY_INFO.KS;
-  return stateInfo[county]||stateInfo.default||COUNTY_INFO.KS.default;
+function getCountyFilingInfo(stateCode){
+  return STATE_FILING_INFO[stateCode]||STATE_FILING_INFO.default;
+}
+
+function _lienMapsUrl(county,stateCode){
+  const info=STATE_FILING_INFO[stateCode]||STATE_FILING_INFO.default;
+  const q=(county&&county!=='your county')?county+' '+info.office:info.office+' '+stateCode;
+  return 'https://maps.apple.com/?q='+encodeURIComponent(q);
 }
 
 function getLienRulesForBid(bid){
@@ -4108,9 +4124,9 @@ function printKansasLien(bidId){
   const addr=bid.addr||c.addr||'';
   // Auto-detect county if not already set on the lien record
   const {stateCode:detectedState,county:detectedCounty}=getCountyForBid(bid);
-  const county=lien.county||(detectedCounty+', Kansas');
-  const countyShort=county.replace(/, Kansas$/,'');
-  const filingInfo=getCountyFilingInfo(detectedState,detectedCounty);
+  const county=lien.county||(detectedCounty+', '+detectedState);
+  const countyShort=county.replace(/,\s*[A-Z]{2}$/,'');
+  const filingInfo=getCountyFilingInfo(detectedState);
   const filedDate=lien.date||todayKey();
   const lastWorkDate=bid.completion_date||filedDate;
   // Derive first-work date from job start or bid date
@@ -4253,10 +4269,10 @@ ${lien.notes?'<div class="section"><div class="label">Notes / Case Reference</di
     </div>
   </div>
   <div style="margin-top:12px;font-size:10pt">
-    <strong>File with:</strong> ${escHtml(filingInfo.filing_office)}<br>
-    ${escHtml(filingInfo.address)}<br>
-    ${filingInfo.phone?escHtml(filingInfo.phone)+'<br>':''}
-    ${filingInfo.notes.map(n=>'→ '+n).join('<br>')}
+    <strong>File with:</strong> ${escHtml(filingInfo.office)} — ${escHtml(countyShort)}, ${escHtml(detectedState)}<br>
+    Search Apple Maps for "${escHtml(countyShort)} ${escHtml(filingInfo.office)}" to find the exact office address.<br>
+    <strong>Statute:</strong> ${escHtml(filingInfo.cite)}<br>
+    ${filingInfo.notes.map(n=>'→ '+escHtml(n)).join('<br>')}
   </div>
 </div>
 
@@ -8639,6 +8655,43 @@ async function autoRefreshTaxBrackets(){
     }
     localStorage.setItem(KEY,String(thisYear));
   }catch(e){}finally{_bracketRefreshInProgress=false;}
+}
+
+let _lienRefreshInProgress=false;
+async function autoRefreshLienRules(){
+  if(!_supa||!_supaUser||_lienRefreshInProgress)return;
+  const KEY='zp3_lien_year';
+  const thisYear=new Date().getFullYear();
+  if(+localStorage.getItem(KEY)===thisYear)return;
+  _lienRefreshInProgress=true;
+  try{
+    const{data:{session}}=await _supa.auth.getSession();
+    if(!session)return;
+    // Send current values so Claude can compare and return only changed states
+    const current={};
+    Object.keys(LIEN_RULES).forEach(k=>{if(k!=='default')current[k]=LIEN_RULES[k].filing_deadline_days;});
+    const resp=await fetch(SUPA_URL+'/functions/v1/get-rates',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
+      body:JSON.stringify({type:'lienRules',current})
+    });
+    if(!resp.ok)return;
+    const d=await resp.json();
+    if(d.error||!d.changes)return;
+    const changes=d.changes;
+    const changedStates=Object.keys(changes).filter(state=>{
+      const v=changes[state];
+      // Validate: must be a number between 30 and 400 days, and different from current
+      return typeof v==='number'&&v>=30&&v<=400&&v!==LIEN_RULES[state]?.filing_deadline_days;
+    });
+    if(changedStates.length){
+      changedStates.forEach(state=>{
+        if(LIEN_RULES[state])LIEN_RULES[state].filing_deadline_days=changes[state];
+      });
+      showToast('Lien deadline change detected for '+changedStates.join(', ')+' — verify before next filing','⚖️');
+    }
+    localStorage.setItem(KEY,String(thisYear));
+  }catch(e){}finally{_lienRefreshInProgress=false;}
 }
 
 async function swRefreshPrices(){
@@ -17775,6 +17828,7 @@ async function supaLoadFromCloud(){
       if(_supaUser)clients.filter(c=>c.clientToken).forEach(c=>{_uploadClientHub(c.id).catch(()=>{});});
       autoRefreshRates();
       autoRefreshTaxBrackets();
+      autoRefreshLienRules();
     },4000);
     // Check for new signatures then schedule alerts — sequential to avoid race
     setTimeout(async()=>{ await checkNewSignatures(); if(!window._showingScheduleAlert) showScheduleAlerts(); },2000);
