@@ -8063,14 +8063,15 @@ function swRenderProductGrid(surfType){
   // Primary products for this surface
   products.forEach(p=>grid.appendChild(makeBtn(p,prevProductId===p.id,!prevProductId&&p.id===tierProductId)));
 
-  // Auto-select tier recommendation if no previous pick (user can still override)
-  if(tierProductId&&!prevProductId){
-    const allProducts=[...products,...(altProducts||[])];
-    const recP=allProducts.find(p=>p.id===tierProductId);
-    if(recP){
+  // Auto-select the previously used product for this category, or the tier recommendation
+  const _autoId=prevProductId||tierProductId;
+  if(_autoId){
+    const allProds=[...products,...(altProducts||[])];
+    const autoP=allProds.find(p=>p.id===_autoId);
+    if(autoP){
       setTimeout(()=>{
-        const recBtn=grid.querySelector('[data-id="'+tierProductId+'"]');
-        if(recBtn)swSelectProduct(recP,recBtn);
+        const autoBtn=grid.querySelector('[data-id="'+_autoId+'"]');
+        if(autoBtn)swSelectProduct(autoP,autoBtn);
       },0);
     }
   }
