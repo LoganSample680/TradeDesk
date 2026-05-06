@@ -402,8 +402,11 @@ function renderHome(){
   html+='<div style="font-size:12px;color:rgba(255,255,255,.5)">'+fmtDate((h.generatedAt||'').slice(0,10))+'</div></div></div></div>';
   if(totalBalance>0.01){
     const payableBid=wonBids.find(b=>(b.balance||0)>0.01);
-    html+='<div class="balance-box"><div class="balance-lbl">Balance due</div><div class="balance-amt">'+fmt(totalBalance)+'</div>';
-    if(h.stripeEnabled&&payableBid)html+='<button id="pay-btn-'+payableBid.id+'" onclick="payBalance('+payableBid.id+')" class="btn" style="background:#635BFF;margin-bottom:8px">💳 Pay with card</button>';
+    const _depPaid=payableBid?(payableBid.paid||0)>=(payableBid.deposit||0)-0.01:true;
+    const _boxLabel=(!_depPaid)?'Deposit due':'Balance due';
+    const _boxAmt=(!_depPaid&&payableBid)?(payableBid.deposit||0):totalBalance;
+    html+='<div class="balance-box"><div class="balance-lbl">'+_boxLabel+'</div><div class="balance-amt">'+fmt(_boxAmt)+'</div>';
+    if(payableBid)html+=_payBtn(payableBid,h);
     if(h.contractorPhone){
       html+='<a href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" class="btn btn-green" style="margin-bottom:8px">📞 Call to pay — '+esc(h.contractorPhone)+'</a>';
       html+='<a href="sms:'+h.contractorPhone.replace(/\D/g,'')+'" class="btn btn-sec">💬 Text us</a>';
@@ -467,7 +470,7 @@ function renderProposals(){
       if(totalPaid>0)html+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span style="color:var(--green-mid)">Paid</span><span style="font-weight:600;color:var(--green-mid)">'+fmt(totalPaid)+'</span></div>';
       html+='<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:6px 0;border-top:1px solid var(--border);margin-top:4px"><span style="color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">Balance due</span><span style="color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">'+fmt(balance)+'</span></div>';
       html+='</div>';
-      if(!isPaid&&h.stripeEnabled)html+='<button id="pay-btn-'+b.id+'" onclick="payBalance('+b.id+')" class="btn" style="background:#635BFF;margin-bottom:8px">💳 Pay balance with card</button>';
+      if(!isPaid)html+=_payBtn(b,h);
       if(b.proposalKey)html+='<button onclick="openProposal('+b.id+')" class="btn btn-sec" style="margin-bottom:6px">📋 View Signed Proposal</button>';
       html+='<button onclick="openInvoice('+b.id+')" class="btn btn-sec">📄 Download Invoice</button>';
     }
@@ -487,7 +490,7 @@ function renderInvoices(){
     html+='<div style="font-size:12px;color:var(--text3);margin-top:2px">'+(job&&job.completion_date?'Completed '+fmtDate(job.completion_date):b.bid_date?'Job from '+fmtDate(b.bid_date):'')+'</div></div>';
     html+='<div style="font-size:18px;font-weight:800;flex-shrink:0;margin-left:10px;color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">'+fmt(b.amount)+'</div></div>';
     html+='<div style="margin-bottom:10px"><span class="badge" style="background:'+(isPaid?'var(--green-lt)':'var(--red-lt)')+';color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">'+( isPaid?'Paid in full':'Balance: '+fmt(b.balance))+'</span></div>';
-    if(!isPaid&&_hub.stripeEnabled)html+='<button id="pay-btn-'+b.id+'" onclick="payBalance('+b.id+')" class="btn" style="background:#635BFF;margin-bottom:8px">💳 Pay balance with card</button>';
+    if(!isPaid)html+=_payBtn(b,_hub);
     html+='<button onclick="openInvoice('+b.id+')" class="btn btn-sec">📄 View Invoice</button></div>';
   });
   document.getElementById('view-invoices').innerHTML=html;
@@ -520,10 +523,8 @@ function renderPhotos(){
   html+='</div>';
   document.getElementById('view-photos').innerHTML=html;
 }
-async function payBalance(bidId){
+async function _launchCheckout(bidId,amount,label){
   const bid=_hub.bids.find(b=>b.id===bidId);if(!bid)return;
-  const amount=Math.round((bid.balance||0)*100);
-  if(amount<50){alert('No balance outstanding.');return;}
   const btn=document.getElementById('pay-btn-'+bidId)||document.getElementById('pay-inv-btn-'+bidId);
   if(btn){btn.textContent='Setting up…';btn.disabled=true;}
   try{
@@ -538,8 +539,27 @@ async function payBalance(bidId){
     });
     const d=await res.json();
     if(d.url){window.location.href=d.url;}
-    else{if(btn){btn.textContent='Pay with card';btn.disabled=false;}alert('Could not create payment link. Please contact us directly.');}
-  }catch(e){if(btn){btn.textContent='Pay with card';btn.disabled=false;}}
+    else{if(btn){btn.textContent=label;btn.disabled=false;}alert('Could not create payment link. Please contact us directly.');}
+  }catch(e){if(btn){btn.textContent=label;btn.disabled=false;}}
+}
+async function payBalance(bidId){
+  const bid=_hub.bids.find(b=>b.id===bidId);if(!bid)return;
+  const amount=Math.round((bid.balance||0)*100);
+  if(amount<50){alert('No balance outstanding.');return;}
+  await _launchCheckout(bidId,amount,'Pay balance');
+}
+async function payDeposit(bidId){
+  const bid=_hub.bids.find(b=>b.id===bidId);if(!bid)return;
+  const amount=Math.round((bid.deposit||0)*100);
+  if(amount<50){alert('No deposit amount found.');return;}
+  await _launchCheckout(bidId,amount,'Pay deposit');
+}
+function _payBtn(bid,h){
+  if(!h.stripeEnabled||(bid.balance||0)<0.01)return '';
+  const depositPaid=(bid.paid||0)>=(bid.deposit||0)-0.01;
+  if(!depositPaid&&(bid.deposit||0)>0.01)
+    return '<button id="pay-btn-'+bid.id+'" onclick="payDeposit('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:8px">💳 Pay '+fmt(bid.deposit)+' deposit</button>';
+  return '<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:8px">💳 Pay '+fmt(bid.balance)+' balance</button>';
 }
 function showPaymentSuccess(bidId){
   const bid=_hub.bids.find(b=>b.id===bidId);
