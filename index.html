@@ -14146,14 +14146,22 @@ function renderAllMileage(){
   if(!filtered.length){el.innerHTML='<div class="empty">No trips in '+yr+'.</div>';return;}
   el.innerHTML='<div style="overflow-x:auto"><table class="tbl"><thead><tr>'+
     ['Date','Client','Purpose','Miles','Deduction'].map(h=>'<th>'+h+'</th>').join('')+'<th></th></tr></thead><tbody>'+
-    [...filtered].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(r=>'<tr>'+
-      '<td class="mute">'+r.date+'</td>'+
-      '<td class="mute">'+(r.client_name||r.vehicle||'—')+(r.vehicle?'<br><span style="font-size:10px;color:var(--text3)">'+r.vehicle+'</span>':'')+' </td>'+
-      '<td style="font-size:11px;color:var(--text2)">'+(r.purpose||'Trip')+'</td>'+
-      '<td class="bold">'+(r.miles?(+r.miles).toFixed(1)+' mi':'—')+'</td>'+
-      '<td style="color:var(--green-mid)">'+(r.miles?fmt((+r.miles)*IRS()):'—')+'</td>'+
-      '<td><button class="btn-del" onclick="delMileage('+r.id+')">&#10005;</button></td>'+
-    '</tr>').join('')+'</tbody></table></div>';
+    [...filtered].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(r=>{
+      const fromAddr=r.from||'';
+      const toAddr=r.to||(r.client_name?getClientById(r.client_id)?.addr||'':'');
+      const routeLine=(fromAddr||toAddr)?
+        '<tr><td colspan="6" style="padding:2px 8px 8px;font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:0">'+
+          (fromAddr||'Start')+' → '+(toAddr||'Destination')+
+        '</td></tr>':'';
+      return '<tr>'+
+        '<td class="mute">'+r.date+'</td>'+
+        '<td class="mute">'+(r.client_name||r.vehicle||'—')+(r.vehicle?'<br><span style="font-size:10px;color:var(--text3)">'+r.vehicle+'</span>':'')+' </td>'+
+        '<td style="font-size:11px;color:var(--text2)">'+(r.purpose||'Trip')+'</td>'+
+        '<td class="bold">'+(r.miles?(+r.miles).toFixed(1)+' mi':'—')+'</td>'+
+        '<td style="color:var(--green-mid)">'+(r.miles?fmt((+r.miles)*IRS()):'—')+'</td>'+
+        '<td><button class="btn-del" onclick="delMileage('+r.id+')">&#10005;</button></td>'+
+      '</tr>'+routeLine;
+    }).join('')+'</tbody></table></div>';
 }
 function delMileage(id){mileage=mileage.filter(x=>x.id!==id);saveAll();if(currentClientId){const el=document.getElementById('cd-mile-list');if(el)renderCDMileage();}renderAllMileage();}
 function renderSummary(){
