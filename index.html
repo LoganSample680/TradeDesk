@@ -765,7 +765,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
     <div id="cd-lien-panel" style="display:none">
       <div class="card" style="border:2px solid #A32D2D">
         <div class="card-hd" style="color:#A32D2D">Mechanic's lien record</div>
-        <div class="tip tip-d">A mechanic's lien claims the property for unpaid work. In Kansas, you generally have <strong>4 months</strong> from last day of work to file. <strong>Consult a KS attorney before filing.</strong></div>
+        <div class="tip tip-d">A mechanic's lien claims the property for unpaid work. Deadlines vary by state — general guidance only. <strong>Consult an attorney in your jurisdiction before filing.</strong></div>
         <div class="fg fg2">
           <div class="f"><label>Lien status</label>
             <select id="lien-status">
@@ -3717,7 +3717,7 @@ function printKansasLien(bidId){
 </style></head><body>
 <div class="no-print" style="background:#185FA5;color:#fff;padding:12px 16px;margin:-40px -40px 30px;display:flex;justify-content:space-between;align-items:center">
   <span style="font-size:15px;font-weight:700">Kansas Mechanic's Lien — Ready to print</span>
-  <button onclick="window.print()" style="padding:8px 20px;border-radius:6px;border:none;background:#fff;color:#185FA5;font-size:13px;font-weight:700;cursor:pointer">🖨️ Print</button>
+  <button onclick="tdPrint()" style="padding:8px 20px;border-radius:6px;border:none;background:#fff;color:#185FA5;font-size:13px;font-weight:700;cursor:pointer">🖨️ Print</button>
 </div>
 
 <h1>Mechanic's Lien Statement</h1>
@@ -8131,42 +8131,58 @@ function swSelectProduct(p,btn){
 
 
 
+async function autoRefreshRates(){
+  if(!_supa||!_supaUser)return;
+  const RATE_KEY='zp3_rate_check';
+  if(Date.now()-(+localStorage.getItem(RATE_KEY)||0)<7*86400000)return;
+  try{
+    const{data:{session}}=await _supa.auth.getSession();
+    if(!session)return;
+    const resp=await fetch(SUPA_URL+'/functions/v1/get-rates',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
+      body:JSON.stringify({})
+    });
+    if(!resp.ok)return;
+    const d=await resp.json();
+    if(d.irsRate&&Math.abs(d.irsRate-(S.irsRate||0))>0.0005){
+      S.irsRate=d.irsRate;
+      saveAll();
+      showToast('IRS mileage rate updated to $'+(+d.irsRate).toFixed(3)+'/mi for '+d.year);
+      const el=document.getElementById('set-irs');if(el)el.value=d.irsRate;
+    }
+    localStorage.setItem(RATE_KEY,Date.now().toString());
+  }catch(e){}
+}
+
 async function swRefreshPrices(){
   const btn=document.getElementById('sw-price-refresh-btn');
   const status=document.getElementById('sw-price-refresh-status');
   if(btn){btn.disabled=true;btn.textContent='Researching current prices...';}
   if(status){status.style.display='block';status.textContent='Asking AI for current SW contractor prices...';}
   try{
-    const month=new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'});
-    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+    const{data:{session}}=await _supa.auth.getSession();
+    if(!session)throw new Error('not signed in');
+    const resp=await fetch(SUPA_URL+'/functions/v1/get-rates',{
       method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:800,
-        messages:[{role:'user',content:'Provide estimated current Sherwin-Williams contractor (PRO+ account, ~35% off retail) prices per gallon for Topeka Kansas as of '+month+'. Return ONLY valid JSON, no other text, using this structure: {"pm700":{"c":20,"r":55},"pm200":{"c":32,"r":83},"sp":{"c":37,"r":65},"cash":{"c":40,"r":60},"dur":{"c":46,"r":70},"em":{"c":52,"r":74},"emde":{"c":62,"r":95},"spe":{"c":38,"r":63},"dure":{"c":48,"r":81},"eme":{"c":54,"r":86},"emure":{"c":58,"r":95}} where c=contractor price, r=retail price'}]
-      })
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
+      body:JSON.stringify({type:'sw'})
     });
-    const data=await resp.json();
-    const text=data.content?.[0]?.text||'';
-    const m=text.match(/\{[\s\S]*\}/);
-    if(m){
-      const prices=JSON.parse(m[0]);
-      let updated=0;
-      Object.values(SW_PRODUCTS).flat().forEach(p=>{
-        const pd=prices[p.id];
-        if(pd){p.contractor=pd.c||pd.contractor;p.retail=pd.r||pd.retail;updated++;}
-      });
-      ['pm700','pm200','sp','cash','dur','em','spe','dure','emure'].forEach(id=>{
-        const el=document.getElementById('spp-'+id);
-        const pd=prices[id];
-        if(el&&pd)el.textContent='$'+(pd.c||pd.contractor)+'/gal';
-      });
-      const now=new Date().toLocaleDateString('en-US',{month:'short',year:'numeric'});
-      S.swPricesUpdated=now;S.swPrices=prices;saveAll();
-      const upd=document.getElementById('sw-price-updated');if(upd)upd.textContent='Last updated: '+now;
-      if(status)status.textContent='Updated '+updated+' prices as of '+now;
-    } else {throw new Error('No JSON in response');}
+    if(!resp.ok)throw new Error('HTTP '+resp.status);
+    const prices=await resp.json();
+    let updated=0;
+    Object.values(SW_PRODUCTS).flat().forEach(p=>{
+      const pd=prices[p.id];
+      if(pd){p.contractor=pd.c||pd.contractor;p.retail=pd.r||pd.retail;updated++;}
+    });
+    ['pm700','pm200','sp','cash','dur','em','spe','dure','emure'].forEach(id=>{
+      const el=document.getElementById('spp-'+id);const pd=prices[id];
+      if(el&&pd)el.textContent='$'+(pd.c||pd.contractor)+'/gal';
+    });
+    const now=new Date().toLocaleDateString('en-US',{month:'short',year:'numeric'});
+    S.swPricesUpdated=now;S.swPrices=prices;saveAll();
+    const upd=document.getElementById('sw-price-updated');if(upd)upd.textContent='Last updated: '+now;
+    if(status)status.textContent='Updated '+updated+' prices as of '+now;
   }catch(e){
     if(status)status.textContent='Could not refresh — using cached prices. Try again later.';
     console.warn('swRefreshPrices:',e);
@@ -9848,10 +9864,10 @@ ol{padding-left:18px;line-height:2}
 </head><body>
 <div class="no-print" style="background:#185FA5;color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center">
   <span style="font-weight:700">TradeDesk — Proposal PDF</span>
-  <button onclick="window.print()" style="background:#fff;color:#185FA5;border:none;padding:8px 18px;border-radius:6px;font-weight:700;font-size:14px;cursor:pointer">⬇ Save as PDF</button>
+  <button onclick="tdPrint()" style="background:#fff;color:#185FA5;border:none;padding:8px 18px;border-radius:6px;font-weight:700;font-size:14px;cursor:pointer">⬇ Save as PDF</button>
 </div>
 ${proposal.innerHTML}
-<scr"+"ipt>setTimeout(()=>window.print(),600)</scr"+"ipt>
+<scr"+"ipt>setTimeout(()=>tdPrint(),600)</scr"+"ipt>
 </body></html>`;
   // Use blob URL — no popup permission needed
   const blob=new Blob([html],{type:'text/html'});
@@ -9968,7 +9984,7 @@ async function startStripeConnect(){
     const res=await fetch(SUPA_URL+'/functions/v1/stripe-connect-onboard',{
       method:'POST',
       headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-      body:JSON.stringify({returnUrl:window.location.href.split('#')[0]})
+      body:JSON.stringify({returnUrl:(window._tdNativeReturnUrl||window.location.href.split('#')[0])})
     });
     const data=await res.json();
     if(data.error){zAlert('Stripe error: '+data.error);if(btn){btn.disabled=false;btn.textContent='⚡ Connect Stripe Account';}return;}
@@ -11844,6 +11860,7 @@ function markFUAbandoned(bidId,cid){
     zAlert('Got it. Follow-up reset — check back in 7 days.',{title:'Snoozed 7 days'});
   }
 }
+function tdPrint(){if(window._tdNativePrint){window._tdNativePrint();return;}window.print();}
 function goToTrackerTab(tab){
   goPg('pg-tracker');
   setTimeout(()=>setTrTab(tab,document.getElementById('tr-t-'+tab)),150);
@@ -13203,7 +13220,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </head><body>
 <div class="no-print">
   <span><strong>${bname}</strong> — ${filtered.length} receipt${filtered.length>1?'s':''} · ${yr}</span>
-  <button onclick="window.print()">🖨 Print / Save PDF</button>
+  <button onclick="tdPrint()">🖨 Print / Save PDF</button>
 </div>
 ${pages}
 </body></html>`);
@@ -17237,6 +17254,7 @@ async function supaLoadFromCloud(){
     // Backfill hubs for any leads/clients that don't have one yet (background, non-blocking)
     setTimeout(()=>{
       if(_supaUser)clients.filter(c=>c.clientToken).forEach(c=>{_uploadClientHub(c.id).catch(()=>{});});
+      autoRefreshRates();
     },4000);
     // Check for new signatures then schedule alerts — sequential to avoid race
     setTimeout(async()=>{ await checkNewSignatures(); if(!window._showingScheduleAlert) showScheduleAlerts(); },2000);
