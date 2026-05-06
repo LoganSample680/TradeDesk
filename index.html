@@ -13725,6 +13725,7 @@ async function _geocodeAddress(val,limit){
     return new Promise(resolve=>{
       const search=new mapkit.Search({language:'en-US'});
       search.search(val,(err,data)=>{
+        console.log('[MapKit search]',val,'err:',err,'data:',JSON.stringify(data));
         if(err||!data||!data.places){resolve([]);return;}
         resolve(data.places.slice(0,limit).map(p=>({
           line1:p.displayLines?.[0]||'',
