@@ -8902,11 +8902,8 @@ function saveSurfBAndNext(){
     const _productVal=(document.getElementById('sw-selected-product')?.value||'').trim();
     const _colorVal=(document.getElementById('surf-color-b')?.value||'').trim();
     const _finishVal=(document.getElementById('sw-selected-finish')?.value||'').trim();
-    const _curType=surfBQueue[surfBIdx];
-    const _isCount=SURF_IS_COUNT.includes(_curType);
     if(!_productVal){zAlert('Select a paint product for this surface.',{title:'Product required'});return;}
-    // Color optional for doors/windows/cabinets — they're counted not measured per-color
-    if(!_colorVal&&!_isCount){
+    if(!_colorVal){
       const el=document.getElementById('sw-search-input');
       if(el){el.style.borderColor='#A32D2D';el.style.background='var(--red-lt)';el.focus();}
       zAlert('Select a color for this surface.',{title:'Color required'});return;
