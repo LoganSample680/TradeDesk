@@ -23,6 +23,7 @@ Deno.serve(async (req) => {
       bidId, contractorUserId, notifyEmail,
       signatureDataUrl, signerName,
       successUrl, cancelUrl,
+      embedded,
     } = body;
 
     // Look up contractor's connected Stripe account (if any)
@@ -51,32 +52,44 @@ Deno.serve(async (req) => {
       ? ['us_bank_account']
       : ['card'];
 
-    const sessionParams: Stripe.Checkout.SessionCreateParams = {
-      mode: 'payment',
-      payment_method_types: paymentMethodTypes as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
-      line_items: [{
-        price_data: {
-          currency: currency || 'usd',
-          product_data: {
-            name: `${businessName} — Deposit`,
-            description: `25% deposit for ${clientName}`,
-          },
-          unit_amount: amount,
+    const lineItems = [{
+      price_data: {
+        currency: currency || 'usd',
+        product_data: {
+          name: `${businessName} — Payment`,
+          description: `Payment for ${clientName}`,
         },
-        quantity: 1,
-      }],
-      metadata: {
-        proposalKey,
-        bidId,
-        contractorUserId,
-        notifyEmail,
-        signerName,
-        clientName,
-        businessName,
+        unit_amount: amount,
       },
-      success_url: successUrl,
-      cancel_url: cancelUrl,
+      quantity: 1,
+    }];
+
+    const metadata = {
+      proposalKey, bidId, contractorUserId,
+      notifyEmail, signerName, clientName, businessName,
     };
+
+    let sessionParams: Stripe.Checkout.SessionCreateParams;
+
+    if (embedded) {
+      sessionParams = {
+        mode: 'payment',
+        payment_method_types: paymentMethodTypes as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
+        line_items: lineItems,
+        metadata,
+        ui_mode: 'embedded',
+        return_url: successUrl,
+      };
+    } else {
+      sessionParams = {
+        mode: 'payment',
+        payment_method_types: paymentMethodTypes as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
+        line_items: lineItems,
+        metadata,
+        success_url: successUrl,
+        cancel_url: cancelUrl,
+      };
+    }
 
     // Route payment to contractor's connected account if available
     if (stripeAccountId) {
@@ -108,6 +121,17 @@ Deno.serve(async (req) => {
           );
         }
       } catch (e) { console.warn('Signature save failed:', e); }
+    }
+
+    if (embedded) {
+      return new Response(
+        JSON.stringify({
+          clientSecret: session.client_secret,
+          publishableKey: Deno.env.get('STRIPE_PUBLISHABLE_KEY')!,
+          connect_enabled: !!stripeAccountId,
+        }),
+        { headers: { ...CORS, 'Content-Type': 'application/json' } }
+      );
     }
 
     return new Response(
