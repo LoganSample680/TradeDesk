@@ -8904,9 +8904,14 @@ function saveSurfBAndNext(){
     const _finishVal=(document.getElementById('sw-selected-finish')?.value||'').trim();
     if(!_productVal){zAlert('Select a paint product for this surface.',{title:'Product required'});return;}
     if(!_colorVal){
+      const wrap=document.getElementById('sw-color-wrap');
+      if(wrap)wrap.scrollIntoView({behavior:'smooth',block:'start'});
       const el=document.getElementById('sw-search-input');
-      if(el){el.style.borderColor='#A32D2D';el.style.background='var(--red-lt)';el.focus();}
-      zAlert('Select a color for this surface.',{title:'Color required'});return;
+      setTimeout(()=>{
+        if(wrap){wrap.style.outline='2px solid #A32D2D';wrap.style.borderRadius='var(--rl)';setTimeout(()=>{if(wrap)wrap.style.outline='';},2000);}
+        if(el){el.style.borderColor='#A32D2D';el.style.background='var(--red-lt)';}
+      },400);
+      zAlert('Search or browse to pick a color for this surface.',{title:'Color required'});return;
     }
     if(!_finishVal){zAlert('Select a finish for this surface.',{title:'Finish required'});return;}
   }
