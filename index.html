@@ -550,6 +550,13 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
       oninput="onClientSearch(this)"
       style="width:100%;font-size:14px;padding:11px 14px;border-radius:var(--rl);border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);box-sizing:border-box">
   </div>
+  <div id="cf-tab-counts" class="fbar" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px;-webkit-overflow-scrolling:touch;scrollbar-width:none">
+    <button type="button" class="fb active" id="cft-all"     onclick="setCF('all',this)">All</button>
+    <button type="button" class="fb"        id="cft-won"     onclick="setCF('won',this)">Won</button>
+    <button type="button" class="fb"        id="cft-active"  onclick="setCF('active',this)">Active</button>
+    <button type="button" class="fb"        id="cft-collect" onclick="setCF('collect',this)">Collect</button>
+    <button type="button" class="fb"        id="cft-closed"  onclick="setCF('closed',this)">Closed</button>
+  </div>
   <div id="client-list"></div>
   <div id="client-form-wrap" style="display:none">
     <div class="iform">
@@ -2644,8 +2651,8 @@ function _showLicModal(lic){
     '</div>'+
     '<div id="_lic-date-fields" style="display:'+(isEquip?'none':'block')+'">'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
-        '<div class="f"><label>Issue date</label><input type="date" id="_lic-issue" value="'+(lic?.issueDate||'')+'"></div>'+
-        '<div class="f"><label>Expiry date</label><input type="date" id="_lic-expiry" value="'+(lic?.expiryDate||'')+'"></div>'+
+        '<div class="f"><label>Issue date</label><input type="text" id="_lic-issue" placeholder="MM/DD/YYYY" maxlength="10" oninput="_fmtExpDate(this)" value="'+_ymdToMdY(lic?.issueDate||'')+'"></div>'+
+        '<div class="f"><label>Expiry date</label><input type="text" id="_lic-expiry" placeholder="MM/DD/YYYY" maxlength="10" oninput="_fmtExpDate(this)" value="'+_ymdToMdY(lic?.expiryDate||'')+'"></div>'+
       '</div>'+
     '</div>'+
     '<div class="f"><label>Notes</label><input id="_lic-notes" value="'+escHtml(lic?.notes||'')+'" placeholder="Optional"></div>'+
@@ -2682,8 +2689,8 @@ function saveLicenseModal(){
     holderName:t?.holder==='employee'?holderName:(S.bname||getBusinessName()||'Company'),
     holderId:null,
     licenseNumber:(document.getElementById('_lic-num')?.value||'').trim(),
-    issueDate:document.getElementById('_lic-issue')?.value||'',
-    expiryDate:document.getElementById('_lic-expiry')?.value||'',
+    issueDate:_mdYToYmd(document.getElementById('_lic-issue')?.value||''),
+    expiryDate:_mdYToYmd(document.getElementById('_lic-expiry')?.value||''),
     notes:(document.getElementById('_lic-notes')?.value||'').trim(),
     make:(document.getElementById('_lic-make')?.value||'').trim(),
     model:(document.getElementById('_lic-model')?.value||'').trim(),
@@ -12510,6 +12517,16 @@ function _fmtExpDate(el){
   if(v.length>2)v=v.slice(0,2)+'/'+v.slice(2);
   if(v.length>5)v=v.slice(0,5)+'/'+v.slice(5,9);
   el.value=v;
+}
+function _ymdToMdY(s){
+  if(!s||!s.includes('-'))return s||'';
+  const[y,m,d]=s.split('-');return m+'/'+d+'/'+y;
+}
+function _mdYToYmd(s){
+  if(!s||!s.includes('/'))return s||'';
+  const p=s.split('/');
+  if(p.length!==3||p[2].length!==4)return '';
+  return p[2]+'-'+p[0].padStart(2,'0')+'-'+p[1].padStart(2,'0');
 }
 function expTriggerScan(){document.getElementById('exp-file-inp')?.click();}
 
