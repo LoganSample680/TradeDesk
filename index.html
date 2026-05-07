@@ -8597,86 +8597,152 @@ const SURF_PRODUCT_TYPE={
   ext_walls:'exterior',ext_trim:'exterior',deck:'deck',
   trim:'trim',doors:'trim',windows:'trim',cabinets:'trim',
 };
-// Trade job templates — curated flat-rate bundles per trade
-// labor = typical labor rate, mat = typical material cost, custom = prompts for qty
+// Trade job templates — scope:'resi'|'commercial'|'both', gasLic=requires gas license
 const TRADE_JOBS={
   plumbing:[
-    {id:'faucet',name:'Faucet replacement',labor:125,mat:80,matDesc:'Faucet',hrs:1.5,unit:'ea'},
-    {id:'toilet',name:'Toilet replacement',labor:175,mat:220,matDesc:'Toilet',hrs:2,unit:'ea'},
-    {id:'wh40',name:'Water heater (40gal)',labor:350,mat:500,matDesc:'WH 40gal gas',hrs:3,unit:'ea'},
-    {id:'wh50',name:'Water heater (50gal)',labor:350,mat:600,matDesc:'WH 50gal gas',hrs:3.5,unit:'ea'},
-    {id:'drain',name:'Drain cleaning',labor:150,mat:0,hrs:1,unit:'ea'},
-    {id:'leak',name:'Leak repair — supply',labor:100,mat:25,matDesc:'Fittings',hrs:1,unit:'ea'},
-    {id:'valve',name:'Shut-off valve',labor:125,mat:35,matDesc:'Ball valve',hrs:1.5,unit:'ea'},
-    {id:'disp',name:'Garbage disposal',labor:175,mat:150,matDesc:'Disposal unit',hrs:2,unit:'ea'},
-    {id:'sump',name:'Sump pump replace',labor:200,mat:180,matDesc:'Sump pump',hrs:2,unit:'ea'},
-    {id:'hose',name:'Hose bib replace',labor:95,mat:25,matDesc:'Hose bib',hrs:1,unit:'ea'},
-    {id:'pipe',name:'Pipe repair — copper',labor:150,mat:45,matDesc:'Copper fittings',hrs:2,unit:'ea'},
+    // ── Residential ────────────────────────────────────────────────────────────
+    {id:'faucet',      name:'Faucet replacement',          scope:'resi', labor:125, mat:80,  matDesc:'Faucet',              hrs:1.5,unit:'ea'},
+    {id:'toilet',      name:'Toilet replacement',          scope:'resi', labor:175, mat:220, matDesc:'Toilet',              hrs:2,  unit:'ea'},
+    {id:'wh40',        name:'Water heater (40gal gas)',     scope:'resi', labor:350, mat:500, matDesc:'WH 40gal gas',        hrs:3,  unit:'ea'},
+    {id:'wh50',        name:'Water heater (50gal gas)',     scope:'resi', labor:350, mat:600, matDesc:'WH 50gal gas',        hrs:3.5,unit:'ea'},
+    {id:'wh_elec',     name:'Water heater (electric)',      scope:'resi', labor:300, mat:550, matDesc:'WH electric',         hrs:3,  unit:'ea'},
+    {id:'tankless_g',  name:'Tankless WH (gas)',            scope:'resi', labor:450, mat:900, matDesc:'Navien/Rinnai unit',  hrs:5,  unit:'ea',gasLic:true},
+    {id:'tankless_e',  name:'Tankless WH (electric)',       scope:'resi', labor:350, mat:650, matDesc:'Tankless electric',   hrs:4,  unit:'ea'},
+    {id:'boiler',      name:'Boiler replacement',           scope:'resi', labor:800, mat:2500,matDesc:'Gas boiler',          hrs:8,  unit:'ea',gasLic:true},
+    {id:'drain',       name:'Drain cleaning',               scope:'both', labor:150, mat:0,                                  hrs:1,  unit:'ea'},
+    {id:'hydro_jet',   name:'Hydro-jetting',                scope:'both', labor:350, mat:0,                                  hrs:2,  unit:'ea'},
+    {id:'leak',        name:'Leak repair — supply line',    scope:'both', labor:100, mat:25,  matDesc:'Fittings',            hrs:1,  unit:'ea'},
+    {id:'valve',       name:'Shut-off valve',               scope:'both', labor:125, mat:35,  matDesc:'Ball valve',          hrs:1.5,unit:'ea'},
+    {id:'disp',        name:'Garbage disposal',             scope:'resi', labor:175, mat:150, matDesc:'Disposal unit',       hrs:2,  unit:'ea'},
+    {id:'sump',        name:'Sump pump replace',            scope:'resi', labor:200, mat:180, matDesc:'Sump pump',           hrs:2,  unit:'ea'},
+    {id:'hose',        name:'Hose bib replace',             scope:'both', labor:95,  mat:25,  matDesc:'Hose bib',            hrs:1,  unit:'ea'},
+    {id:'pipe_cu',     name:'Pipe repair — copper',         scope:'both', labor:150, mat:45,  matDesc:'Copper fittings',     hrs:2,  unit:'ea'},
+    {id:'pipe_pvc',    name:'Pipe repair — PVC',            scope:'both', labor:120, mat:30,  matDesc:'PVC fittings',        hrs:1.5,unit:'ea'},
+    {id:'gas_repair',  name:'Gas line repair',              scope:'both', labor:200, mat:50,  matDesc:'Gas fittings',        hrs:2,  unit:'ea',gasLic:true},
+    {id:'gas_run',     name:'Gas line new run',             scope:'both', labor:25,  mat:8,   matDesc:'Gas pipe',            hrs:0,  unit:'lin ft',custom:true,gasLic:true},
+    {id:'gas_conn',    name:'Gas appliance hookup',         scope:'both', labor:150, mat:30,  matDesc:'Gas connector',       hrs:1.5,unit:'ea',gasLic:true},
+    // ── Commercial ─────────────────────────────────────────────────────────────
+    {id:'c_wh_comm',   name:'Commercial water heater',      scope:'commercial',labor:600, mat:1500,matDesc:'Commercial WH', hrs:6,  unit:'ea'},
+    {id:'c_tankless',  name:'Commercial tankless system',   scope:'commercial',labor:800, mat:1800,matDesc:'Comm tankless', hrs:8,  unit:'ea',gasLic:true},
+    {id:'c_backflow',  name:'Backflow preventer',           scope:'commercial',labor:350, mat:280, matDesc:'RPZ backflow',   hrs:3,  unit:'ea'},
+    {id:'c_grease',    name:'Grease trap service',          scope:'commercial',labor:200, mat:0,                             hrs:2,  unit:'ea'},
+    {id:'c_booster',   name:'Booster pump system',         scope:'commercial',labor:800, mat:1200,matDesc:'Booster pump',   hrs:8,  unit:'ea'},
+    {id:'c_drain_comm',name:'Floor drain install',          scope:'commercial',labor:250, mat:120, matDesc:'Floor drain',    hrs:3,  unit:'ea'},
+    {id:'c_gas_main',  name:'Gas main service line',        scope:'commercial',labor:600, mat:200, matDesc:'Gas pipe + reg', hrs:6,  unit:'ea',gasLic:true},
   ],
   electrical:[
-    {id:'outlet',name:'Outlet addition',labor:150,mat:45,matDesc:'Outlet + box + wire',hrs:2,unit:'ea'},
-    {id:'breaker',name:'Breaker replacement',labor:125,mat:35,matDesc:'Breaker',hrs:1,unit:'ea'},
-    {id:'light',name:'Light fixture install',labor:95,mat:0,hrs:1,unit:'ea'},
-    {id:'fan',name:'Ceiling fan install',labor:150,mat:0,hrs:1.5,unit:'ea'},
-    {id:'gfci',name:'GFCI outlet',labor:85,mat:18,matDesc:'GFCI outlet',hrs:.75,unit:'ea'},
-    {id:'switch',name:'Switch replace/add',labor:75,mat:15,matDesc:'Switch + cover',hrs:.75,unit:'ea'},
-    {id:'smoke',name:'Smoke detector',labor:45,mat:25,matDesc:'Smoke/CO detector',hrs:.5,unit:'ea'},
-    {id:'ev',name:'EV charger (240V)',labor:450,mat:120,matDesc:'NEMA 14-50 outlet',hrs:4,unit:'ea'},
-    {id:'panel',name:'Panel upgrade (100A)',labor:800,mat:400,matDesc:'Panel + breakers',hrs:8,unit:'ea'},
-    {id:'exhaust',name:'Bath exhaust fan',labor:175,mat:55,matDesc:'Exhaust fan',hrs:2,unit:'ea'},
-    {id:'exterior',name:'Exterior outlet',labor:175,mat:45,matDesc:'Weatherproof outlet',hrs:2,unit:'ea'},
+    // ── Residential ────────────────────────────────────────────────────────────
+    {id:'outlet',      name:'Outlet addition',              scope:'resi', labor:150, mat:45,  matDesc:'Outlet + box + wire', hrs:2,  unit:'ea'},
+    {id:'breaker',     name:'Breaker replacement',          scope:'both', labor:125, mat:35,  matDesc:'Breaker',             hrs:1,  unit:'ea'},
+    {id:'light',       name:'Light fixture install',        scope:'both', labor:95,  mat:0,                                  hrs:1,  unit:'ea'},
+    {id:'fan',         name:'Ceiling fan install',          scope:'resi', labor:150, mat:0,                                  hrs:1.5,unit:'ea'},
+    {id:'gfci',        name:'GFCI outlet',                  scope:'both', labor:85,  mat:18,  matDesc:'GFCI outlet',         hrs:.75,unit:'ea'},
+    {id:'switch',      name:'Switch replace/add',           scope:'both', labor:75,  mat:15,  matDesc:'Switch + cover',      hrs:.75,unit:'ea'},
+    {id:'smoke',       name:'Smoke/CO detector',            scope:'both', labor:45,  mat:25,  matDesc:'Smoke/CO detector',   hrs:.5, unit:'ea'},
+    {id:'ev_resi',     name:'EV charger — NEMA 14-50',      scope:'resi', labor:450, mat:120, matDesc:'NEMA 14-50 outlet',   hrs:4,  unit:'ea'},
+    {id:'panel_100',   name:'Panel upgrade (100A)',         scope:'resi', labor:800, mat:400, matDesc:'Panel + breakers',    hrs:8,  unit:'ea'},
+    {id:'panel_200',   name:'Panel upgrade (200A)',         scope:'resi', labor:1200,mat:600, matDesc:'200A panel + breakers',hrs:10,unit:'ea'},
+    {id:'exhaust',     name:'Bath exhaust fan',             scope:'resi', labor:175, mat:55,  matDesc:'Exhaust fan',         hrs:2,  unit:'ea'},
+    {id:'exterior',    name:'Exterior outlet (WP)',         scope:'both', labor:175, mat:45,  matDesc:'Weatherproof outlet', hrs:2,  unit:'ea'},
+    {id:'xfer_man',    name:'Transfer switch (manual)',     scope:'both', labor:250, mat:180, matDesc:'Manual transfer sw',  hrs:3,  unit:'ea'},
+    {id:'xfer_auto',   name:'Transfer switch (auto)',       scope:'both', labor:450, mat:650, matDesc:'Auto transfer sw',   hrs:5,  unit:'ea'},
+    {id:'gen_hookup',  name:'Generator hookup',             scope:'both', labor:350, mat:120, matDesc:'Inlet + interlock',   hrs:4,  unit:'ea'},
+    // ── Solar & Off-Grid ───────────────────────────────────────────────────────
+    {id:'solar_kw',    name:'Solar install (per kW)',       scope:'both', labor:400, mat:900, matDesc:'Panels + racking',    hrs:0,  unit:'kW',custom:true},
+    {id:'eg4_inv',     name:'EG4 6000XP inverter',         scope:'both', labor:800, mat:2800,matDesc:'EG4 6000XP inverter', hrs:8,  unit:'ea'},
+    {id:'eg4_18k',     name:'EG4 18kPV inverter',          scope:'both', labor:1000,mat:4200,matDesc:'EG4 18kPV inverter',  hrs:10, unit:'ea'},
+    {id:'solark_12k',  name:'Sol-Ark 12k inverter',        scope:'both', labor:900, mat:3800,matDesc:'Sol-Ark 12k',         hrs:10, unit:'ea'},
+    {id:'solark_15k',  name:'Sol-Ark 15k inverter',        scope:'both', labor:1000,mat:4800,matDesc:'Sol-Ark 15k',         hrs:12, unit:'ea'},
+    {id:'bat_eg4',     name:'EG4 LifePower4 (51.2V 100Ah)',scope:'both', labor:200, mat:1100,matDesc:'EG4 LFP battery',     hrs:2,  unit:'ea'},
+    {id:'bat_kwh',     name:'Battery bank (per kWh)',      scope:'both', labor:150, mat:450, matDesc:'LFP battery cells',   hrs:0,  unit:'kWh',custom:true},
+    {id:'offgrid_design',name:'Off-grid system design',    scope:'both', labor:500, mat:0,                                  hrs:6,  unit:'ea'},
+    // ── Commercial ─────────────────────────────────────────────────────────────
+    {id:'c_3phase',    name:'3-phase panel install',       scope:'commercial',labor:1200,mat:800, matDesc:'3-phase panel',  hrs:10, unit:'ea'},
+    {id:'c_lighting',  name:'Commercial lighting (per fix)',scope:'commercial',labor:150, mat:80, matDesc:'LED fixture',    hrs:0,  unit:'fixture',custom:true},
+    {id:'c_ev_comm',   name:'EV charging station (comm)',  scope:'commercial',labor:800, mat:1200,matDesc:'Level 2 EVSE',   hrs:8,  unit:'ea'},
+    {id:'c_panel_comm',name:'Commercial panel (400A)',     scope:'commercial',labor:2000,mat:1400,matDesc:'400A panel',     hrs:16, unit:'ea'},
+    {id:'c_solar_comm',name:'Commercial solar (per kW)',   scope:'commercial',labor:500, mat:1100,matDesc:'Comm panels',    hrs:0,  unit:'kW',custom:true},
+    {id:'c_emerg_light',name:'Emergency lighting',        scope:'commercial',labor:95,  mat:65,  matDesc:'Exit/emerg light',hrs:1,  unit:'ea'},
   ],
   hvac:[
-    {id:'tuneup',name:'AC/furnace tune-up',labor:120,mat:0,hrs:1.5,unit:'ea'},
-    {id:'filter',name:'Filter replacement',labor:45,mat:20,matDesc:'Filter',hrs:.5,unit:'ea'},
-    {id:'cap',name:'Capacitor replacement',labor:175,mat:55,matDesc:'Run capacitor',hrs:1,unit:'ea'},
-    {id:'refrig',name:'Refrigerant recharge',labor:250,mat:120,matDesc:'R-410A refrigerant',hrs:2,unit:'ea'},
-    {id:'therm',name:'Thermostat install',labor:125,mat:0,hrs:1,unit:'ea'},
-    {id:'motor',name:'Condenser fan motor',labor:225,mat:175,matDesc:'Fan motor',hrs:2,unit:'ea'},
-    {id:'coil',name:'Evaporator coil clean',labor:175,mat:0,hrs:1.5,unit:'ea'},
-    {id:'duct',name:'Duct sealing',labor:350,mat:80,matDesc:'Mastic + foil tape',hrs:3,unit:'zone'},
-    {id:'ac2t',name:'AC replacement (2-ton)',labor:1200,mat:2800,matDesc:'2-ton AC unit',hrs:8,unit:'ea'},
-    {id:'ac3t',name:'AC replacement (3-ton)',labor:1400,mat:3400,matDesc:'3-ton AC unit',hrs:10,unit:'ea'},
-    {id:'furnace',name:'Furnace replacement',labor:800,mat:1500,matDesc:'80k BTU furnace',hrs:8,unit:'ea'},
+    // ── Residential ────────────────────────────────────────────────────────────
+    {id:'tuneup',      name:'AC/furnace tune-up',          scope:'both', labor:120, mat:0,                                  hrs:1.5,unit:'ea'},
+    {id:'filter',      name:'Filter replacement',          scope:'both', labor:45,  mat:20,  matDesc:'Filter',              hrs:.5, unit:'ea'},
+    {id:'cap',         name:'Capacitor replacement',       scope:'both', labor:175, mat:55,  matDesc:'Run capacitor',       hrs:1,  unit:'ea'},
+    {id:'refrig',      name:'Refrigerant recharge',        scope:'both', labor:250, mat:120, matDesc:'R-410A',              hrs:2,  unit:'ea'},
+    {id:'refrig_454b', name:'Refrigerant — R-454B',       scope:'both', labor:275, mat:150, matDesc:'R-454B (new systems)', hrs:2,  unit:'ea'},
+    {id:'therm',       name:'Thermostat install',          scope:'both', labor:125, mat:0,                                  hrs:1,  unit:'ea'},
+    {id:'motor',       name:'Condenser fan motor',         scope:'both', labor:225, mat:175, matDesc:'Fan motor',           hrs:2,  unit:'ea'},
+    {id:'coil_clean',  name:'Evaporator coil clean',       scope:'both', labor:175, mat:0,                                  hrs:1.5,unit:'ea'},
+    {id:'duct',        name:'Duct sealing',                scope:'both', labor:350, mat:80,  matDesc:'Mastic + foil tape',  hrs:3,  unit:'zone'},
+    {id:'duct_sqft',   name:'Duct sealing — per sqft',     scope:'both', labor:.85, mat:.40, matDesc:'Mastic',              hrs:0,  unit:'sqft',custom:true},
+    {id:'ac2t',        name:'AC replacement (2-ton)',      scope:'resi', labor:1200,mat:2800,matDesc:'2-ton AC unit',       hrs:8,  unit:'ea'},
+    {id:'ac3t',        name:'AC replacement (3-ton)',      scope:'resi', labor:1400,mat:3400,matDesc:'3-ton AC unit',       hrs:10, unit:'ea'},
+    {id:'ac4t',        name:'AC replacement (4-ton)',      scope:'resi', labor:1600,mat:4200,matDesc:'4-ton AC unit',       hrs:12, unit:'ea'},
+    {id:'furnace_80',  name:'Furnace (80k BTU)',           scope:'resi', labor:800, mat:1500,matDesc:'80k BTU furnace',     hrs:8,  unit:'ea'},
+    {id:'furnace_100', name:'Furnace (100k BTU)',          scope:'resi', labor:900, mat:1800,matDesc:'100k BTU furnace',    hrs:9,  unit:'ea'},
+    {id:'mini_1z',     name:'Mini-split — 1 zone',        scope:'both', labor:800, mat:1200,matDesc:'1-zone mini-split',   hrs:6,  unit:'ea'},
+    {id:'mini_2z',     name:'Mini-split — 2 zone',        scope:'both', labor:1200,mat:2400,matDesc:'2-zone multi-split',  hrs:10, unit:'ea'},
+    {id:'mini_3z',     name:'Mini-split — 3 zone',        scope:'both', labor:1600,mat:3600,matDesc:'3-zone multi-split',  hrs:14, unit:'ea'},
+    {id:'mini_head',   name:'Mini-split add\'l head',      scope:'both', labor:400, mat:800, matDesc:'Additional head',     hrs:4,  unit:'ea'},
+    {id:'hrv',         name:'HRV install',                 scope:'resi', labor:600, mat:1200,matDesc:'HRV unit + ducting',  hrs:6,  unit:'ea'},
+    {id:'erv',         name:'ERV install',                 scope:'resi', labor:600, mat:1400,matDesc:'ERV unit + ducting',  hrs:6,  unit:'ea'},
+    // ── Commercial ─────────────────────────────────────────────────────────────
+    {id:'c_rtu_3t',    name:'Commercial RTU (3-ton)',      scope:'commercial',labor:1800,mat:5500,matDesc:'3-ton RTU',      hrs:12, unit:'ea'},
+    {id:'c_rtu_5t',    name:'Commercial RTU (5-ton)',      scope:'commercial',labor:2200,mat:8000,matDesc:'5-ton RTU',      hrs:16, unit:'ea'},
+    {id:'c_rtu_10t',   name:'Commercial RTU (10-ton)',     scope:'commercial',labor:3500,mat:14000,matDesc:'10-ton RTU',    hrs:24, unit:'ea'},
+    {id:'c_vrf_zone',  name:'VRF system (per zone)',       scope:'commercial',labor:1500,mat:3500,matDesc:'VRF zone kit',   hrs:12, unit:'zone'},
+    {id:'c_exhaust',   name:'Commercial exhaust system',   scope:'commercial',labor:800, mat:600, matDesc:'Exhaust fan+duct',hrs:8,  unit:'ea'},
+    {id:'c_hood',      name:'Kitchen hood ventilation',    scope:'commercial',labor:600, mat:400, matDesc:'Hood + fan',     hrs:6,  unit:'ea'},
+    {id:'c_chiller',   name:'Chiller service',             scope:'commercial',labor:500, mat:0,                             hrs:4,  unit:'ea'},
+    {id:'c_btu_meter', name:'BTU meter install',           scope:'commercial',labor:350, mat:280, matDesc:'BTU meter',      hrs:3,  unit:'ea'},
   ],
   roofing:[
-    {id:'shingle_sm',name:'Shingle ~1,000 sqft',labor:1500,mat:2500,matDesc:'3-tab shingles + felt',hrs:10,unit:'job'},
-    {id:'shingle_md',name:'Shingle ~1,500 sqft',labor:2250,mat:3750,matDesc:'3-tab shingles + felt',hrs:15,unit:'job'},
-    {id:'shingle_lg',name:'Shingle ~2,000 sqft',labor:3000,mat:5000,matDesc:'Arch shingles + felt',hrs:20,unit:'job'},
-    {id:'arch_md',name:'Arch shingle ~1,500 sqft',labor:2500,mat:4500,matDesc:'Arch shingles + felt',hrs:15,unit:'job'},
-    {id:'sqft',name:'Shingle — enter sqft',labor:1.50,mat:2.50,matDesc:'Shingles + felt',hrs:0,unit:'sqft',custom:true},
-    {id:'flat',name:'Flat/TPO — enter sqft',labor:1.20,mat:1.80,matDesc:'TPO membrane',hrs:0,unit:'sqft',custom:true},
-    {id:'gutters',name:'Gutters — enter lin ft',labor:8,mat:5,matDesc:'Aluminum gutter',hrs:0,unit:'lin ft',custom:true},
-    {id:'fascia',name:'Fascia — enter lin ft',labor:6,mat:4,matDesc:'Fascia board',hrs:0,unit:'lin ft',custom:true},
-    {id:'repair',name:'Patch / repair',labor:250,mat:80,matDesc:'Flashing + materials',hrs:2,unit:'ea'},
+    {id:'shingle_sm',  name:'Shingle ~1,000 sqft',        scope:'both', labor:1500,mat:2500,matDesc:'3-tab shingles + felt',hrs:10,unit:'job'},
+    {id:'shingle_md',  name:'Shingle ~1,500 sqft',        scope:'both', labor:2250,mat:3750,matDesc:'3-tab shingles + felt',hrs:15,unit:'job'},
+    {id:'shingle_lg',  name:'Shingle ~2,000 sqft',        scope:'both', labor:3000,mat:5000,matDesc:'Arch shingles + felt', hrs:20,unit:'job'},
+    {id:'arch_md',     name:'Arch shingle ~1,500 sqft',   scope:'both', labor:2500,mat:4500,matDesc:'Arch shingles + felt', hrs:15,unit:'job'},
+    {id:'sqft',        name:'Shingle — enter sqft',        scope:'both', labor:1.50,mat:2.50,matDesc:'Shingles + felt',     hrs:0, unit:'sqft',custom:true},
+    {id:'flat_tpo',    name:'Flat/TPO — enter sqft',       scope:'both', labor:1.20,mat:1.80,matDesc:'TPO membrane',        hrs:0, unit:'sqft',custom:true},
+    {id:'epdm',        name:'EPDM — enter sqft',           scope:'commercial',labor:1.10,mat:1.60,matDesc:'EPDM membrane',  hrs:0, unit:'sqft',custom:true},
+    {id:'metal_sqft',  name:'Metal roofing — per sqft',    scope:'both', labor:2.50,mat:3.50,matDesc:'Standing seam metal', hrs:0, unit:'sqft',custom:true},
+    {id:'gutters',     name:'Gutters — enter lin ft',      scope:'both', labor:8,   mat:5,   matDesc:'Aluminum gutter',     hrs:0, unit:'lin ft',custom:true},
+    {id:'fascia',      name:'Fascia — enter lin ft',       scope:'both', labor:6,   mat:4,   matDesc:'Fascia board',        hrs:0, unit:'lin ft',custom:true},
+    {id:'repair',      name:'Patch / repair',              scope:'both', labor:250, mat:80,  matDesc:'Flashing + materials', hrs:2, unit:'ea'},
+    {id:'skylight',    name:'Skylight install',            scope:'both', labor:600, mat:800, matDesc:'Skylight unit',        hrs:6, unit:'ea'},
   ],
   landscaping:[
-    {id:'mow_sm',name:'Mowing — small lot',labor:45,mat:0,hrs:.75,unit:'visit'},
-    {id:'mow_md',name:'Mowing — medium lot',labor:65,mat:0,hrs:1,unit:'visit'},
-    {id:'mow_lg',name:'Mowing — large lot',labor:95,mat:0,hrs:1.5,unit:'visit'},
-    {id:'mulch',name:'Mulch install',labor:35,mat:35,matDesc:'Mulch (per cu yd)',hrs:.5,unit:'cu yd'},
-    {id:'sod',name:'Sod installation',labor:65,mat:80,matDesc:'Sod (per 100 sqft)',hrs:1,unit:'100 sqft'},
-    {id:'tree_sm',name:'Tree trimming — small',labor:150,mat:0,hrs:2,unit:'ea'},
-    {id:'tree_lg',name:'Tree trimming — large',labor:350,mat:0,hrs:4,unit:'ea'},
-    {id:'removal',name:'Tree/shrub removal',labor:300,mat:0,hrs:4,unit:'ea'},
-    {id:'cleanup',name:'Cleanup / haul-away',labor:95,mat:0,hrs:1.5,unit:'load'},
-    {id:'fert',name:'Fertilization treatment',labor:75,mat:45,matDesc:'Fertilizer',hrs:1,unit:'visit'},
-    {id:'plant',name:'Plant / shrub install',labor:65,mat:0,hrs:1,unit:'ea'},
-    {id:'irrig',name:'Irrigation repair',labor:95,mat:35,matDesc:'Heads + fittings',hrs:1,unit:'ea'},
+    {id:'mow_sm',      name:'Mowing — small lot',          scope:'resi', labor:45,  mat:0,                                  hrs:.75,unit:'visit'},
+    {id:'mow_md',      name:'Mowing — medium lot',         scope:'resi', labor:65,  mat:0,                                  hrs:1,  unit:'visit'},
+    {id:'mow_lg',      name:'Mowing — large lot',          scope:'resi', labor:95,  mat:0,                                  hrs:1.5,unit:'visit'},
+    {id:'mow_comm',    name:'Mowing — commercial',         scope:'commercial',labor:150,mat:0,                              hrs:2,  unit:'visit'},
+    {id:'mulch',       name:'Mulch install',               scope:'both', labor:35,  mat:35,  matDesc:'Mulch (per cu yd)',   hrs:.5, unit:'cu yd'},
+    {id:'sod',         name:'Sod installation',            scope:'both', labor:65,  mat:80,  matDesc:'Sod (per 100 sqft)', hrs:1,  unit:'100 sqft'},
+    {id:'tree_sm',     name:'Tree trimming — small',       scope:'both', labor:150, mat:0,                                  hrs:2,  unit:'ea'},
+    {id:'tree_lg',     name:'Tree trimming — large',       scope:'both', labor:350, mat:0,                                  hrs:4,  unit:'ea'},
+    {id:'removal',     name:'Tree/shrub removal',          scope:'both', labor:300, mat:0,                                  hrs:4,  unit:'ea'},
+    {id:'cleanup',     name:'Cleanup / haul-away',         scope:'both', labor:95,  mat:0,                                  hrs:1.5,unit:'load'},
+    {id:'fert',        name:'Fertilization',               scope:'both', labor:75,  mat:45,  matDesc:'Fertilizer',          hrs:1,  unit:'visit'},
+    {id:'plant',       name:'Plant / shrub install',       scope:'both', labor:65,  mat:0,                                  hrs:1,  unit:'ea'},
+    {id:'irrig',       name:'Irrigation repair',           scope:'both', labor:95,  mat:35,  matDesc:'Heads + fittings',    hrs:1,  unit:'ea'},
+    {id:'irrig_zone',  name:'Irrigation zone add',         scope:'both', labor:350, mat:180, matDesc:'Valve + heads + pipe',hrs:3,  unit:'zone'},
+    {id:'snow',        name:'Snow removal',                scope:'both', labor:75,  mat:0,                                  hrs:1,  unit:'visit'},
+    {id:'aerate',      name:'Core aeration',               scope:'resi', labor:95,  mat:0,                                  hrs:1,  unit:'visit'},
   ],
   general:[
-    {id:'demo',name:'Demo / haul-away',labor:95,mat:0,hrs:2,unit:'load'},
-    {id:'drywall',name:'Drywall patch',labor:85,mat:25,matDesc:'Drywall + mud',hrs:1.5,unit:'ea'},
-    {id:'caulk',name:'Caulking',labor:65,mat:12,matDesc:'Caulk tubes',hrs:1,unit:'ea'},
-    {id:'handyman',name:'Handyman — hourly',labor:75,mat:0,hrs:1,unit:'hr'},
-    {id:'assembly',name:'Furniture assembly',labor:65,mat:0,hrs:1,unit:'ea'},
-    {id:'power_wash',name:'Power washing',labor:150,mat:0,hrs:2,unit:'ea'},
-    {id:'gutter_clean',name:'Gutter cleaning',labor:125,mat:0,hrs:1.5,unit:'ea'},
+    {id:'demo',        name:'Demo / haul-away',            scope:'both', labor:95,  mat:0,                                  hrs:2,  unit:'load'},
+    {id:'drywall',     name:'Drywall patch',               scope:'both', labor:85,  mat:25,  matDesc:'Drywall + mud',       hrs:1.5,unit:'ea'},
+    {id:'caulk',       name:'Caulking',                    scope:'both', labor:65,  mat:12,  matDesc:'Caulk tubes',         hrs:1,  unit:'ea'},
+    {id:'handyman',    name:'Handyman — hourly',           scope:'both', labor:75,  mat:0,                                  hrs:1,  unit:'hr'},
+    {id:'power_wash',  name:'Power washing',               scope:'both', labor:150, mat:0,                                  hrs:2,  unit:'ea'},
+    {id:'gutter_clean',name:'Gutter cleaning',             scope:'resi', labor:125, mat:0,                                  hrs:1.5,unit:'ea'},
+    {id:'insulation',  name:'Attic insulation (per sqft)', scope:'resi', labor:.35, mat:.65, matDesc:'Blown-in insulation',  hrs:0,  unit:'sqft',custom:true},
+    {id:'c_janitorial',name:'Post-construction cleanup',   scope:'commercial',labor:150,mat:0,                              hrs:2,  unit:'hr'},
   ],
   other:[
-    {id:'consult',name:'Consultation / estimate',labor:0,mat:0,hrs:.5,unit:'ea'},
-    {id:'hourly',name:'Hourly labor',labor:75,mat:0,hrs:1,unit:'hr'},
-    {id:'service',name:'Flat-rate service call',labor:150,mat:0,hrs:2,unit:'ea'},
+    {id:'consult',     name:'Consultation / site visit',   scope:'both', labor:0,   mat:0,                                  hrs:.5, unit:'ea'},
+    {id:'hourly',      name:'Hourly labor',                scope:'both', labor:75,  mat:0,                                  hrs:1,  unit:'hr'},
+    {id:'service',     name:'Flat-rate service call',      scope:'both', labor:150, mat:0,                                  hrs:2,  unit:'ea'},
   ],
 };
 
@@ -16550,12 +16616,12 @@ function _renderNavTradeSwitcher(){
 }
 
 // ── Generic estimate (non-painting trades) ────────────────────────────
-let _geiClientId=null,_geiEditBidId=null,_geiLines=[],_geiTrade=null;
+let _geiClientId=null,_geiEditBidId=null,_geiLines=[],_geiTrade=null,_geiIsCommercial=false,_geiEmergency=false;
 
 function openGenericEstimate(c,bidId,_tradePick){
   _geiClientId=c?.id||null;
   _geiEditBidId=bidId||null;
-  _geiLines=[];
+  _geiLines=[];_geiIsCommercial=false;_geiEmergency=false;
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
   const trade=_geiTrade;
@@ -16584,33 +16650,66 @@ function openGenericEstimate(c,bidId,_tradePick){
 function _geiRenderTemplates(){
   const el=document.getElementById('gei-templates');if(!el)return;
   const trade=_geiTrade||'general';
-  const jobs=TRADE_JOBS[trade]||TRADE_JOBS.general;
+  const allJobs=TRADE_JOBS[trade]||TRADE_JOBS.general;
+  const scope=_geiIsCommercial?'commercial':'resi';
+  const jobs=allJobs.filter(j=>!j.scope||j.scope==='both'||j.scope===scope);
   const book=(S.priceBook&&S.priceBook[trade])||[];
-  let html='';
+
+  // Scope + emergency toggles
+  const btnBase='display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:var(--r);border:1.5px solid;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s';
+  const resiActive=!_geiIsCommercial;
+  const commActive=_geiIsCommercial;
+  let html=`<div style="display:flex;flex-wrap:wrap;gap:6px;width:100%;margin-bottom:10px">
+    <button onclick="_geiSetScope(false)" style="${btnBase};border-color:${resiActive?'var(--blue)':'var(--border2)'};background:${resiActive?'var(--blue-lt)':'var(--bg2)'};color:${resiActive?'var(--blue-dk)':'var(--text2)'}">🏠 Residential</button>
+    <button onclick="_geiSetScope(true)" style="${btnBase};border-color:${commActive?'var(--blue)':'var(--border2)'};background:${commActive?'var(--blue-lt)':'var(--bg2)'};color:${commActive?'var(--blue-dk)':'var(--text2)'}">🏢 Commercial</button>
+    <button onclick="_geiToggleEmergency()" style="${btnBase};border-color:${_geiEmergency?'#dc2626':'var(--border2)'};background:${_geiEmergency?'#fef2f2':'var(--bg2)'};color:${_geiEmergency?'#dc2626':'var(--text2)'}">🚨 Emergency${_geiEmergency?' ON':''}</button>
+  </div>`;
+  if(_geiEmergency)html+=`<div style="width:100%;background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:7px 10px;font-size:11px;color:#b91c1c;margin-bottom:8px;font-weight:600">🚨 Emergency mode — labor rates ×1.5 · after-hours surcharge will be added</div>`;
+
   if(book.length){
     html+='<div style="font-size:10px;font-weight:700;color:var(--blue-dk);width:100%;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">⭐ My price book</div>';
     html+=book.map((item,i)=>`<button onclick="_geiAddFromBook(${i})" style="display:inline-flex;flex-direction:column;align-items:flex-start;padding:7px 11px;border-radius:var(--r);border:1.5px solid var(--blue-lt);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left"><span style="font-size:12px;font-weight:700;color:var(--blue-dk)">${escHtml(item.desc)}</span><span style="font-size:10px;color:var(--text3)">$${item.rate}/${item.unit||'ea'}</span></button>`).join('');
     html+='<div style="width:100%;height:1px;background:var(--border);margin:8px 0"></div>';
   }
+
   html+=jobs.map(job=>{
-    const total=(job.mat||0)+job.labor;
-    const priceStr=job.custom?`$${total}/${job.unit}`:job.mat>0?`$${total.toLocaleString()}`:`$${job.labor}`;
+    const effLabor=_geiEmergency?Math.round(job.labor*1.5):job.labor;
+    const total=(job.mat||0)+effLabor;
+    const priceStr=job.custom?`$${total}/${job.unit}`:job.mat>0?`$${total.toLocaleString()}`:`$${effLabor}`;
+    const gasTag=job.gasLic?'<span style="font-size:9px;background:#fef3c7;color:#92400e;border-radius:3px;padding:1px 4px;margin-top:2px">GAS LIC</span>':'';
     const safeJob=escHtml(JSON.stringify(job));
-    return `<button onclick="_geiAddTemplate(JSON.parse(this.dataset.job))" data-job="${safeJob}" style="display:inline-flex;flex-direction:column;align-items:flex-start;padding:7px 11px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;max-width:150px"><span style="font-size:12px;font-weight:700;color:var(--text)">${escHtml(job.name)}</span><span style="font-size:10px;color:var(--text3)">${priceStr}${job.mat>0?' (L+M)':''}</span></button>`;
+    const border=_geiEmergency?'border:1.5px solid #fca5a5':'border:1.5px solid var(--border2)';
+    return `<button onclick="_geiAddTemplate(JSON.parse(this.dataset.job))" data-job="${safeJob}" style="display:inline-flex;flex-direction:column;align-items:flex-start;padding:7px 11px;border-radius:var(--r);${border};background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;max-width:155px"><span style="font-size:12px;font-weight:700;color:var(--text)">${escHtml(job.name)}</span><span style="font-size:10px;color:${_geiEmergency?'#dc2626':'var(--text3)'}">${priceStr}${job.mat>0?' (L+M)':''}</span>${gasTag}</button>`;
   }).join('');
   el.innerHTML=html;
 }
 
+function _geiSetScope(commercial){
+  _geiIsCommercial=!!commercial;
+  _geiRenderTemplates();
+}
+
+function _geiToggleEmergency(){
+  _geiEmergency=!_geiEmergency;
+  if(_geiEmergency&&!_geiLines.some(l=>l.desc&&l.desc.includes('Emergency'))){
+    _geiLines.unshift({desc:'Emergency / after-hours service call',qty:1,unit:'ea',rate:125,total:125});
+    renderGeiLines();calcGeiTotal();
+  }
+  _geiRenderTemplates();
+}
+
 function _geiAddTemplate(job){
+  const laborRate=_geiEmergency?Math.round(job.labor*1.5):job.labor;
+  if(job.gasLic){showToast('Gas line work — verify you\'re licensed for gas in your state','⚠️');}
   if(job.custom){
-    const label=job.unit==='sqft'?'square footage':job.unit==='lin ft'?'linear feet':job.unit==='square'?'squares (100 sqft each)':'quantity';
-    const raw=prompt('Enter '+label+' for: '+job.name);
+    const unitLabel={sqft:'square footage','lin ft':'linear feet',kW:'kilowatts',kWh:'kilowatt-hours',fixture:'number of fixtures'}[job.unit]||job.unit;
+    const raw=prompt('Enter '+unitLabel+' for: '+job.name);
     if(!raw)return;
     const qty=parseFloat(raw);if(!qty||isNaN(qty))return;
-    _geiLines.push({desc:job.name+' — labor',qty,unit:job.unit,rate:job.labor,total:qty*job.labor});
+    if(laborRate>0)_geiLines.push({desc:job.name+' — labor',qty,unit:job.unit,rate:laborRate,total:qty*laborRate});
     if(job.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty,unit:job.unit,rate:job.mat,total:qty*job.mat});
   } else {
-    _geiLines.push({desc:job.name+' — labor',qty:1,unit:job.unit,rate:job.labor,total:job.labor});
+    if(laborRate>0)_geiLines.push({desc:job.name+' — labor',qty:1,unit:job.unit,rate:laborRate,total:laborRate});
     if(job.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty:1,unit:job.unit,rate:job.mat,total:job.mat});
   }
   renderGeiLines();calcGeiTotal();
