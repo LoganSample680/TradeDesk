@@ -25,7 +25,7 @@ async function apifyZillowLookup(street: string, city: string, state: string, zi
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ startUrls: [{ url: zillowUrl }], maxItems: 1 }),
+        body: JSON.stringify({ startUrls: [{ url: zillowUrl }] }),
         signal: AbortSignal.timeout(90000),
       }
     );
