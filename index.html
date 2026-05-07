@@ -8743,6 +8743,46 @@ const TRADE_JOBS={
   ],
 };
 
+const TRADE_JOB_CATS={
+  plumbing:{
+    '🚿 Fixtures':['faucet','toilet','disp','hose'],
+    '🌡️ Water Heaters':['wh40','wh50','wh_elec','tankless_g','tankless_e','boiler'],
+    '🔧 Drains & Pipes':['drain','hydro_jet','leak','pipe_cu','pipe_pvc'],
+    '🔩 Valves & Pumps':['valve','sump'],
+    '🔥 Gas Work':['gas_repair','gas_run','gas_conn'],
+    '🏢 Commercial':['c_wh_comm','c_tankless','c_backflow','c_grease','c_booster','c_drain_comm','c_gas_main'],
+  },
+  electrical:{
+    '🔌 Wiring':['outlet','switch','exterior','breaker'],
+    '💡 Fixtures':['light','fan','exhaust','smoke'],
+    '🛡️ Safety':['gfci'],
+    '⚡ Panels':['panel_100','panel_200'],
+    '🔋 Backup & EV':['xfer_man','xfer_auto','gen_hookup','ev_resi'],
+    '☀️ Solar & Storage':['solar_kw','inverter','battery','bat_kwh','offgrid_design'],
+    '🏢 Commercial':['c_3phase','c_lighting','c_ev_comm','c_panel_comm','c_emerg_light','c_solar_comm'],
+  },
+  hvac:{
+    '🔧 Service':['tuneup','filter','cap','refrig','refrig_454b','therm','motor','coil_clean'],
+    '🌬️ Ductwork':['duct','duct_sqft'],
+    '❄️ AC Systems':['ac2t','ac3t','ac4t'],
+    '🔥 Heating':['furnace_80','furnace_100'],
+    '🌀 Mini-Splits':['mini_1z','mini_2z','mini_3z','mini_head'],
+    '💨 Ventilation':['hrv','erv'],
+    '🏢 Commercial':['c_rtu_3t','c_rtu_5t','c_rtu_10t','c_vrf_zone','c_exhaust','c_hood','c_chiller','c_btu_meter'],
+  },
+  roofing:{
+    '📐 Preset sizes':['shingle_sm','shingle_md','shingle_lg','arch_md'],
+    '📏 By measurement':['sqft','flat_tpo','epdm','metal_sqft'],
+    '🔧 Components':['gutters','fascia','repair','skylight'],
+  },
+  landscaping:{
+    '🌿 Mowing':['mow_sm','mow_md','mow_lg','mow_comm'],
+    '🌱 Planting & Sod':['mulch','sod','plant','irrig','irrig_zone'],
+    '🌳 Trees':['tree_sm','tree_lg','removal'],
+    '🧹 Maintenance':['cleanup','fert','aerate','snow'],
+  },
+};
+
 let _swProduct=null;
 let _swLastProductByCategory={}; // remembers last picked product per category within a room
 
@@ -16669,15 +16709,36 @@ function _geiRenderTemplates(){
     html+='<div style="width:100%;height:1px;background:var(--border);margin:8px 0"></div>';
   }
 
-  html+=jobs.map(job=>{
+  const makeChip=job=>{
     const effLabor=_geiEmergency?Math.round(job.labor*1.5):job.labor;
     const total=(job.mat||0)+effLabor;
     const priceStr=job.custom?`$${total}/${job.unit}`:job.mat>0?`$${total.toLocaleString()}`:`$${effLabor}`;
-    const gasTag=job.gasLic?'<span style="font-size:9px;background:#fef3c7;color:#92400e;border-radius:3px;padding:1px 4px;margin-top:2px">GAS LIC</span>':'';
+    const gasTag=job.gasLic?'<span style="font-size:9px;background:#fef3c7;color:#92400e;border-radius:3px;padding:1px 4px;margin-top:2px;display:block">GAS LIC</span>':'';
     const safeJob=escHtml(JSON.stringify(job));
-    const border=_geiEmergency?'border:1.5px solid #fca5a5':'border:1.5px solid var(--border2)';
-    return `<button onclick="_geiAddTemplate(JSON.parse(this.dataset.job))" data-job="${safeJob}" style="display:inline-flex;flex-direction:column;align-items:flex-start;padding:7px 11px;border-radius:var(--r);${border};background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;max-width:155px"><span style="font-size:12px;font-weight:700;color:var(--text)">${escHtml(job.name)}</span><span style="font-size:10px;color:${_geiEmergency?'#dc2626':'var(--text3)'}">${priceStr}${job.mat>0?' (L+M)':''}</span>${gasTag}</button>`;
-  }).join('');
+    const border=_geiEmergency?'1.5px solid #fca5a5':'1.5px solid var(--border2)';
+    return `<button onclick="_geiAddTemplate(JSON.parse(this.dataset.job))" data-job="${safeJob}" style="display:inline-flex;flex-direction:column;align-items:flex-start;padding:7px 11px;border-radius:var(--r);border:${border};background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;min-width:100px;max-width:160px"><span style="font-size:12px;font-weight:700;color:var(--text)">${escHtml(job.name)}</span><span style="font-size:10px;color:${_geiEmergency?'#dc2626':'var(--text3)'}">${priceStr}${job.mat>0?' (L+M)':''}</span>${gasTag}</button>`;
+  };
+
+  const cats=TRADE_JOB_CATS[trade];
+  if(cats){
+    const jobById=Object.fromEntries(jobs.map(j=>[j.id,j]));
+    const rendered=new Set();
+    for(const [catLabel,ids] of Object.entries(cats)){
+      const catJobs=ids.map(id=>jobById[id]).filter(Boolean);
+      if(!catJobs.length)continue;
+      html+=`<div style="font-size:10px;font-weight:700;color:var(--text3);width:100%;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.05em">${catLabel}</div>`;
+      html+=`<div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">`;
+      html+=catJobs.map(j=>{rendered.add(j.id);return makeChip(j);}).join('');
+      html+=`</div>`;
+    }
+    const extra=jobs.filter(j=>!rendered.has(j.id));
+    if(extra.length){
+      html+=`<div style="font-size:10px;font-weight:700;color:var(--text3);width:100%;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.05em">Other</div>`;
+      html+=`<div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">${extra.map(makeChip).join('')}</div>`;
+    }
+  } else {
+    html+=`<div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">${jobs.map(makeChip).join('')}</div>`;
+  }
   el.innerHTML=html;
 }
 
