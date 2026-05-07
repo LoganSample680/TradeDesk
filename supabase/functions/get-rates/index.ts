@@ -46,6 +46,9 @@ Deno.serve(async (req) => {
       prompt = 'Provide estimated current Sherwin-Williams contractor (PRO+ account, ~35% off retail) prices per gallon for Topeka Kansas as of ' + month + '. Return ONLY valid JSON, no other text: {"pm700":{"c":20,"r":55},"pm200":{"c":32,"r":83},"sp":{"c":37,"r":65},"cash":{"c":40,"r":60},"dur":{"c":46,"r":70},"em":{"c":52,"r":74},"emde":{"c":62,"r":95},"spe":{"c":38,"r":63},"dure":{"c":48,"r":81},"eme":{"c":54,"r":86},"emure":{"c":58,"r":95}} where c=contractor price, r=retail price';
     } else if (type === 'taxBrackets') {
       prompt = `Per IRS Revenue Procedure for tax year ${year}, what are the federal income tax bracket thresholds for single filers and the standard deductions? Return ONLY valid JSON with no other text: {"year":${year},"fedSingle":15000,"fedMFJ":30000,"fedHOH":22500,"b10":11925,"b12":48475,"b22":103350,"b24":197300,"b32":250525,"b35":626350}`;
+    } else if (type === 'lienRules') {
+      const current = JSON.stringify(body.current || {});
+      prompt = `You are reviewing mechanic's lien filing deadlines (days from last day of work) for all US states. The app currently uses these values: ${current}. Based on current statutes as of ${year}, identify any states where the filing deadline has changed from the listed value. Return ONLY valid JSON with no other text: {"changes":{"XX":90}} where XX is the 2-letter state code and the number is the correct filing_deadline_days. If nothing has changed, return {"changes":{}}.`;
     } else {
       prompt = `What is the current IRS standard mileage rate for business driving in ${year}? Return ONLY valid JSON with no explanation: {"irsRate":0.700,"year":${year},"effective":"January 1, ${year}"}`;
     }
@@ -76,6 +79,25 @@ Deno.serve(async (req) => {
     const text = data.content?.find((c: any) => c.type === 'text')?.text || '{}';
     const m = text.match(/\{[\s\S]*\}/);
     const parsed = m ? JSON.parse(m[0]) : {};
+
+    // Server-side validation for lien rules — reject any out-of-range deadlines
+    if (type === 'lienRules') {
+      const changes = parsed.changes;
+      if (!changes || typeof changes !== 'object') {
+        return new Response(JSON.stringify({ changes: {} }), {
+          headers: { 'Content-Type': 'application/json', ...CORS }
+        });
+      }
+      const validated: Record<string, number> = {};
+      for (const [state, days] of Object.entries(changes)) {
+        if (/^[A-Z]{2}$/.test(state) && typeof days === 'number' && days >= 30 && days <= 400) {
+          validated[state] = days;
+        }
+      }
+      return new Response(JSON.stringify({ changes: validated }), {
+        headers: { 'Content-Type': 'application/json', ...CORS }
+      });
+    }
 
     // Server-side validation for tax brackets — reject hallucinated values
     if (type === 'taxBrackets') {

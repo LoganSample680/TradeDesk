@@ -6,6 +6,7 @@
 <title>Review & Sign Your Proposal</title>
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://js.stripe.com/v3/"></script>
 <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -512,67 +513,29 @@ function selPay(opt){
 async function payCard(){
   if(_prop.stripeConnectEnabled===false){selPay('cash');return;}
   const btn=document.getElementById('card-btn');
-  btn.disabled=true;btn.textContent='Connecting to Stripe...';
+  btn.disabled=true;btn.textContent='Setting up payment...';
   try{
-    const _payAmt=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round(_prop.deposit*100);
-    const _p2=new URLSearchParams(location.search);let _propKey=_p2.get('key');
-    if(!_propKey){const t=_p2.get('t'),u=_p2.get('u'),b=_p2.get('b');if(t&&u&&b)_propKey=`proposals/${u}/${b}_${t}.json`;}
-    const res=await fetch(SUPA_URL+'/functions/v1/create-checkout',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
-      body:JSON.stringify({
-        amount:_payAmt,currency:'usd',
-        proposalKey:_propKey,
-        clientName:_prop.clientName,businessName:_prop.businessName,
-        bidId:String(_prop.id),contractorUserId:_prop.contractorUserId,
-        notifyEmail:_prop.notifyEmail,signatureDataUrl:_sigData,
-        signerName:document.getElementById('sig-name').value.trim(),
-        successUrl:location.href+'&payment=success',cancelUrl:location.href,
-      })
-    });
-    if(!res.ok)throw new Error('HTTP '+res.status);
-    const data=await res.json();
-    if(data?.url)location.href=data.url;
-    else throw new Error('No checkout URL');
+    const amt=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round(_prop.deposit*100);
+    await _launchEmbedded(amt,'card');
   }catch(e){
     console.error(e);
     document.getElementById('pay-err').textContent='Card payment unavailable. Please pay cash or contact us directly.';
-    btn.disabled=false;btn.textContent='Pay deposit by card';
   }
+  btn.disabled=false;btn.textContent='Pay deposit by card';
 }
 
 async function payACH(){
   if(_prop.stripeConnectEnabled===false){selPay('cash');return;}
   const btn=document.getElementById('ach-btn');
-  btn.disabled=true;btn.textContent='Connecting...';
+  btn.disabled=true;btn.textContent='Setting up bank transfer...';
   try{
-    const _payAmtAch=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round(_prop.deposit*100);
-    const _p3=new URLSearchParams(location.search);let _propKeyAch=_p3.get('key');
-    if(!_propKeyAch){const t=_p3.get('t'),u=_p3.get('u'),b=_p3.get('b');if(t&&u&&b)_propKeyAch=`proposals/${u}/${b}_${t}.json`;}
-    const res=await fetch(SUPA_URL+'/functions/v1/create-checkout',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
-      body:JSON.stringify({
-        amount:_payAmtAch,currency:'usd',
-        paymentMethod:'us_bank_account',
-        proposalKey:_propKeyAch,
-        clientName:_prop.clientName,businessName:_prop.businessName,
-        bidId:String(_prop.id),contractorUserId:_prop.contractorUserId,
-        notifyEmail:_prop.notifyEmail,signatureDataUrl:_sigData,
-        signerName:document.getElementById('sig-name').value.trim(),
-        successUrl:location.href+'&payment=success&method=ach',
-        cancelUrl:location.href,
-      })
-    });
-    if(!res.ok)throw new Error('HTTP '+res.status);
-    const data=await res.json();
-    if(data?.url)location.href=data.url;
-    else throw new Error('No checkout URL');
+    const amt=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round(_prop.deposit*100);
+    await _launchEmbedded(amt,'us_bank_account');
   }catch(e){
     console.error(e);
     document.getElementById('pay-err').textContent='Bank transfer unavailable. Please select card or cash.';
-    btn.disabled=false;btn.textContent='Pay by bank transfer (ACH)';
   }
+  btn.disabled=false;btn.textContent='Pay by bank transfer (ACH)';
 }
 
 async function submitCash(){
@@ -633,6 +596,58 @@ document.getElementById('sec-card').style.display='block';
 document.getElementById('sec-ach').style.display='none';
 document.getElementById('sec-cash').style.display='none';
 init();
+
+let _stripeInst=null;
+function _closeStripeModal(){
+  if(_stripeInst){_stripeInst.destroy();_stripeInst=null;}
+  document.getElementById('sign-stripe-overlay').style.display='none';
+  document.body.style.overflow='';
+}
+async function _launchEmbedded(amount,paymentMethod){
+  const _p=new URLSearchParams(location.search);
+  let propKey=_p.get('key');
+  if(!propKey){const t=_p.get('t'),u=_p.get('u'),b=_p.get('b');if(t&&u&&b)propKey=`proposals/${u}/${b}_${t}.json`;}
+  const res=await fetch(SUPA_URL+'/functions/v1/create-checkout',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
+    body:JSON.stringify({
+      amount,currency:'usd',paymentMethod,
+      proposalKey:propKey,clientName:_prop.clientName,businessName:_prop.businessName,
+      bidId:String(_prop.id),contractorUserId:_prop.contractorUserId,
+      notifyEmail:_prop.notifyEmail,signatureDataUrl:_sigData,
+      signerName:document.getElementById('sig-name').value.trim(),
+      successUrl:location.href+'&payment=success',cancelUrl:location.href,
+      embedded:true,
+    })
+  });
+  if(!res.ok)throw new Error('HTTP '+res.status);
+  const d=await res.json();
+  if(!d.clientSecret||!d.publishableKey)throw new Error(d.error||'No client secret');
+  document.getElementById('sign-stripe-biz').textContent=_prop.businessName||'Secure Payment';
+  document.getElementById('sign-stripe-amt').textContent='Deposit: '+fmt(amount/100)+' · Secured by Stripe';
+  document.getElementById('sign-embed-container').innerHTML='';
+  document.getElementById('sign-stripe-overlay').style.display='flex';
+  document.body.style.overflow='hidden';
+  const stripe=Stripe(d.publishableKey);
+  _stripeInst=await stripe.initEmbeddedCheckout({
+    clientSecret:d.clientSecret,
+    onComplete:()=>{_closeStripeModal();showDone(paymentMethod==='card'?'card':paymentMethod==='us_bank_account'?'ach':'cash');}
+  });
+  _stripeInst.mount('#sign-embed-container');
+}
 </script>
+
+<div id="sign-stripe-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:14px;width:min(480px,96vw);max-height:90vh;display:flex;flex-direction:column;overflow:hidden">
+    <div style="padding:16px 18px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div id="sign-stripe-biz" style="font-weight:700;font-size:15px"></div>
+        <div id="sign-stripe-amt" style="font-size:12px;color:#6b7280;margin-top:2px"></div>
+      </div>
+      <button onclick="_closeStripeModal()" style="border:none;background:none;font-size:22px;cursor:pointer;color:#6b7280;padding:4px 8px">×</button>
+    </div>
+    <div id="sign-embed-container" style="overflow-y:auto;padding:4px"></div>
+  </div>
+</div>
 </body>
 </html>
