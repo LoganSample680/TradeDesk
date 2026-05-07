@@ -2357,6 +2357,7 @@ function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s
   if(S.b32===243725)S.b32=250525;
   if(S.b35===609350)S.b35=626350;
   if(S.irsRate===0.67||S.irsRate===0.670)S.irsRate=0.700;
+  try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(e){}
   }catch(e){}
   // One-time orphan cleanup: remove truly empty Draft bids (no surfaces, no amount) that have
   // no business being in Estimates in Progress — these were created by navigating away at step 1
