@@ -48,10 +48,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    const paymentMethodTypes = paymentMethod === 'us_bank_account'
-      ? ['us_bank_account']
-      : ['card'];
-
     const lineItems = [{
       price_data: {
         currency: currency || 'usd',
@@ -74,13 +70,16 @@ Deno.serve(async (req) => {
     if (embedded) {
       sessionParams = {
         mode: 'payment',
-        payment_method_types: paymentMethodTypes as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
+        automatic_payment_methods: { enabled: true },
         line_items: lineItems,
         metadata,
         ui_mode: 'embedded',
         return_url: successUrl,
       };
     } else {
+      const paymentMethodTypes = paymentMethod === 'us_bank_account'
+        ? ['us_bank_account']
+        : ['card'];
       sessionParams = {
         mode: 'payment',
         payment_method_types: paymentMethodTypes as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
