@@ -10807,7 +10807,8 @@ async function _lookupPropertyData(clientId,addrParts){
     ['sqft','estimatedValue','propertyType','stories','exteriorMaterial',
      'lastSaleDate','lastSalePrice','lotSize','roofType','garage',
      'bedrooms','bathrooms','isRental','assessorUrl',
-     'propDataSource','propDataExact'].forEach(k=>{if(d[k]!=null)c[k]=d[k];});
+     'propDataSource','propDataExact',
+     'zestimate','rentZestimate','zipMedian','propertyTier'].forEach(k=>{if(d[k]!=null)c[k]=d[k];});
     c.propDataFetchedAt=new Date().toISOString();
     saveAll();
     if(currentClientId===clientId)renderClientDetail();
@@ -16748,6 +16749,27 @@ function _geiSyncScopeButtons(){
   if(emrg){emrg.style.border=`2px solid ${_geiEmergency?'#dc2626':'var(--border2)'}`;emrg.style.background=_geiEmergency?'#fef2f2':'var(--bg2)';emrg.style.color=_geiEmergency?'#dc2626':'var(--text2)';}
 }
 
+function _geiPriceMult(){
+  // Apply property tier multiplier to default job prices
+  const c=clients.find(x=>x.id===_geiClientId);
+  const tier=c?.propertyTier||'standard';
+  if(tier==='premium')return 1.25;
+  if(tier==='basic')return 0.85;
+  return 1.0;
+}
+
+function _geiTierBadge(){
+  const c=clients.find(x=>x.id===_geiClientId);
+  if(!c?.propertyTier||c.propertyTier==='standard')return'';
+  const tier=c.propertyTier;
+  const cfg={
+    premium:{label:'Premium property',bg:'#fef3c7',color:'#92400e'},
+    basic:  {label:'Rental / budget',bg:'#fee2e2',color:'#991b1b'},
+  }[tier]||null;
+  if(!cfg)return'';
+  return `<div style="font-size:11px;font-weight:700;background:${cfg.bg};color:${cfg.color};border-radius:20px;padding:3px 10px;display:inline-block;margin-bottom:12px">${cfg.label} · prices adjusted</div>`;
+}
+
 function _geiOpenCatSheet(catLabel){
   const trade=_geiTrade||'general';
   const allJobs=TRADE_JOBS[trade]||TRADE_JOBS.general;
@@ -16756,6 +16778,7 @@ function _geiOpenCatSheet(catLabel){
   const ids=(TRADE_JOB_CATS[trade]||{})[catLabel]||[];
   const jobById=Object.fromEntries(jobs.map(j=>[j.id,j]));
   const catJobs=ids.map(id=>jobById[id]).filter(Boolean);
+  const mult=_geiPriceMult();
 
   const ov=document.createElement('div');
   ov.id='_gei-cat-ov';
@@ -16767,12 +16790,15 @@ function _geiOpenCatSheet(catLabel){
 
   const rows=catJobs.map(job=>{
     const effLabor=_geiEmergency?Math.round(job.labor*1.5):job.labor;
-    const total=(job.mat||0)+effLabor;
-    const priceStr=job.custom?`$${total}/${job.unit}`:job.mat>0?`$${total.toLocaleString()}`:`$${effLabor}`;
+    const baseTotal=(job.mat||0)+effLabor;
+    const adjTotal=Math.round(baseTotal*mult);
+    const priceStr=job.custom?`$${adjTotal}/${job.unit}`:job.mat>0?`$${adjTotal.toLocaleString()}`:`$${adjTotal}`;
     const lmTag=job.mat>0?`<span style="font-size:10px;color:var(--text3);font-weight:400"> L+M</span>`:'';
     const gasTag=job.gasLic?`<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:3px;padding:1px 5px;margin-left:6px">GAS LIC</span>`:'';
     const priceColor=_geiEmergency?'#dc2626':'var(--blue)';
-    const safeJob=escHtml(JSON.stringify(job));
+    // Store the adjusted rate in the job object so cart picks up the right price
+    const adjJob={...job,labor:Math.round(effLabor*mult),mat:Math.round((job.mat||0)*mult)};
+    const safeJob=escHtml(JSON.stringify(adjJob));
     return `<button onclick="_geiAddTemplate(JSON.parse(this.dataset.job));document.getElementById('_gei-cat-ov')?.remove();_geiRenderCartBar()"
       data-job="${safeJob}"
       style="display:flex;justify-content:space-between;align-items:center;width:100%;padding:13px 14px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:7px;text-align:left;box-sizing:border-box">
@@ -16782,10 +16808,11 @@ function _geiOpenCatSheet(catLabel){
   }).join('');
 
   sheet.innerHTML=`
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <div style="font-size:16px;font-weight:800;color:var(--text)">${catLabel}</div>
       <button onclick="document.getElementById('_gei-cat-ov')?.remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);padding:0;line-height:1">×</button>
     </div>
+    ${_geiTierBadge()}
     ${rows||'<div style="font-size:13px;color:var(--text3);text-align:center;padding:20px 0">No services in this category for current scope.</div>'}`;
   ov.appendChild(sheet);
   document.body.appendChild(ov);
