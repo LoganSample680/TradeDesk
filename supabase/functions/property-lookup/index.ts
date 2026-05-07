@@ -19,11 +19,11 @@ async function apifyZillowLookup(street: string, city: string, state: string, zi
 
   try {
     const res = await fetch(
-      `https://api.apify.com/v2/acts/one-api~zillow-scrape-address-url-zpid/run-sync-get-dataset-items?token=${apifyToken}&timeout=60`,
+      `https://api.apify.com/v2/acts/maxcopell~zillow-detail-scraper/run-sync-get-dataset-items?token=${apifyToken}&timeout=60&maxItems=1`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ multiple_input_box: address }),
+        body: JSON.stringify({ startUrls: [{ url: `https://www.zillow.com/homes/${[street, city, state, zip].filter(Boolean).join('-').replace(/\s+/g, '-').replace(/,/g, '')}_rb/` }] }),
         signal: AbortSignal.timeout(90000),
       }
     );
