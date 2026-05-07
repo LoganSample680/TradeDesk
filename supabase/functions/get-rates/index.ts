@@ -13,6 +13,12 @@ const BRACKET_BASE = {
   fedMFJ: 30000, fedHOH: 22500,
 };
 
+const TRADE_LABELS: Record<string, string> = {
+  plumbing: 'Plumbing', electrical: 'Electrical', hvac: 'HVAC',
+  roofing: 'Roofing', landscaping: 'Landscaping',
+  general: 'General contracting', other: 'General contracting',
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
@@ -57,9 +63,21 @@ Deno.serve(async (req) => {
         });
       }
       prompt = `What are the ${state} state individual income tax rates for tax year ${year}? Provide the bracket structure for single filers. Return ONLY valid JSON with no other text: {"state":"${state}","noTax":false,"stdS":3500,"stdM":8000,"brackets":[{"top":15000,"rate":3.1},{"top":9999999,"rate":5.7}]} where top is the income ceiling of each bracket in dollars (use 9999999 for the top bracket), rate is the percentage, stdS is the standard deduction for single filers, stdM for married filing jointly. If the state has no income tax, return {"state":"${state}","noTax":true,"stdS":0,"stdM":0,"brackets":[]}.`;
+    } else if (type === 'estimate') {
+      const trade = (body.trade as string) || 'general';
+      const description = (body.description as string) || '';
+      if (!description) {
+        return new Response(JSON.stringify({ lines: [] }), {
+          headers: { 'Content-Type': 'application/json', ...CORS }
+        });
+      }
+      const tradeLabel = TRADE_LABELS[trade] || 'General contracting';
+      prompt = `You are a ${tradeLabel} contractor building a client estimate. Job description: "${description}". Break this into professional invoice line items with realistic pricing for the Midwest US (Kansas/Missouri area). Return ONLY valid JSON with no other text: {"lines":[{"desc":"Water heater replacement — labor","qty":1,"unit":"ea","rate":350},{"desc":"40gal gas water heater","qty":1,"unit":"ea","rate":500}]}. Separate labor from materials when applicable. Use realistic contractor rates. Maximum 10 line items.`;
     } else {
       prompt = `What is the current IRS standard mileage rate for business driving in ${year}? Return ONLY valid JSON with no explanation: {"irsRate":0.700,"year":${year},"effective":"January 1, ${year}"}`;
     }
+
+    const maxTokens = type === 'stateBrackets' ? 600 : type === 'estimate' ? 800 : 400;
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -70,7 +88,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: type === 'stateBrackets' ? 600 : 400,
+        max_tokens: maxTokens,
         messages: [{ role: 'user', content: prompt }]
       })
     });
@@ -125,10 +143,10 @@ Deno.serve(async (req) => {
       }
     }
 
-    // stateBrackets: return parsed JSON directly — no additional strict validation
+    // stateBrackets: return parsed JSON directly
     if (type === 'stateBrackets') {
       const st = body.state as string;
-      if (parsed.state !== st) parsed.state = st; // ensure state field is correct
+      if (parsed.state !== st) parsed.state = st;
       return new Response(JSON.stringify(parsed), {
         headers: { 'Content-Type': 'application/json', ...CORS }
       });
