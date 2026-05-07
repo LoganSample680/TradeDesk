@@ -1290,38 +1290,51 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 </div>
 <div class="pg" id="pg-est-generic">
   <div class="tbar">
-    <button class="btn btn-sm" onclick="goPg('pg-clients')" style="padding:6px 10px">← Back</button>
+    <button class="btn btn-sm" onclick="_geiBack()" style="padding:6px 10px">← Back</button>
     <div class="tbar-title" id="gei-trade-title">Estimate</div>
     <button class="btn btn-p btn-sm" id="gei-save-btn" onclick="saveGenericEstimate()">Save</button>
   </div>
-  <div style="padding:14px 14px 80px">
-    <!-- Client + job info -->
+  <!-- Step progress bar -->
+  <div id="gei-step-bar" style="padding:12px 16px 0"></div>
+
+  <!-- Step 1: Job Info -->
+  <div id="gei-s1" style="padding:10px 14px 80px">
     <div class="card" style="margin-bottom:12px">
+      <!-- Scope toggles -->
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <button id="gei-resi-btn" onclick="_geiSetScope(false)" class="btn" style="flex:1;padding:10px 6px;font-size:13px;font-weight:700;border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)">🏠 Residential</button>
+        <button id="gei-comm-btn" onclick="_geiSetScope(true)" class="btn" style="flex:1;padding:10px 6px;font-size:13px;font-weight:700;border:2px solid var(--border2);background:var(--bg2);color:var(--text2)">🏢 Commercial</button>
+        <button id="gei-emrg-btn" onclick="_geiToggleEmergency()" class="btn" style="flex:1;padding:10px 6px;font-size:13px;font-weight:700;border:2px solid var(--border2);background:var(--bg2);color:var(--text2)">🚨 Emergency</button>
+      </div>
+      <div class="f" style="margin-bottom:8px"><label>Client name</label><input type="text" id="gei-client" placeholder="Client name"></div>
+      <div class="f" style="margin-bottom:8px"><label>Job address</label><input type="text" id="gei-addr" placeholder="123 Main St"></div>
+      <div class="f" style="margin-bottom:8px"><label>Describe the job</label><input type="text" id="gei-desc" placeholder="e.g. Replace water heater, install shutoff valve"></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
-        <div class="f" style="grid-column:1/-1"><label>Client name</label><input type="text" id="gei-client" placeholder="Client name"></div>
-        <div class="f" style="grid-column:1/-1"><label>Job address</label><input type="text" id="gei-addr" placeholder="123 Main St"></div>
-        <div class="f" style="grid-column:1/-1"><label>Job description</label><input type="text" id="gei-desc" placeholder="e.g. Replace water heater, install shutoff valve"></div>
         <div class="f"><label>Est. duration</label><input type="text" id="gei-duration" placeholder="e.g. 4 hrs, 2 days"></div>
         <div class="f"><label>Date</label><input type="date" id="gei-date"></div>
       </div>
     </div>
-    <!-- Quick-add templates -->
-    <div class="card" style="margin-bottom:12px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Quick add</div>
-        <button id="gei-ai-btn" onclick="_geiAiAssist()" style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none;border-radius:var(--r);padding:6px 13px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✨ AI assist</button>
-      </div>
-      <div id="gei-templates" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    <button class="btn btn-p" onclick="goGeiStep(2)" style="margin-bottom:8px">Next: Build estimate →</button>
+  </div>
+
+  <!-- Step 2: Build -->
+  <div id="gei-s2" style="display:none;padding:10px 14px 120px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Add services</div>
+      <button id="gei-ai-btn" onclick="_geiAiAssist()" style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none;border-radius:var(--r);padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✨ AI assist</button>
     </div>
-    <!-- Line items -->
+    <div id="gei-templates"></div>
+  </div>
+
+  <!-- Step 3: Review & Send -->
+  <div id="gei-s3" style="display:none;padding:10px 14px 80px">
     <div class="card" style="margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Line items</div>
-        <button class="btn btn-sm" onclick="addGeiLine()" style="width:auto;padding:5px 12px;font-size:12px">+ Custom line</button>
+        <button class="btn btn-sm" onclick="addGeiLine()" style="width:auto;padding:5px 12px;font-size:12px">+ Add line</button>
       </div>
       <div id="gei-lines"></div>
     </div>
-    <!-- Totals -->
     <div class="card" style="margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <span style="font-size:13px;color:var(--text2)">Subtotal</span>
@@ -1340,11 +1353,9 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         <span id="gei-total" style="font-size:22px;font-weight:800;color:var(--blue)">$0.00</span>
       </div>
     </div>
-    <!-- Notes -->
     <div class="card" style="margin-bottom:12px">
       <div class="f"><label>Notes / scope details</label><textarea id="gei-notes" rows="3" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical" placeholder="Scope, exclusions, warranty, payment terms..."></textarea></div>
     </div>
-    <!-- Panel schedule (electrical only) -->
     <div id="gei-panel-section" style="margin-bottom:12px"></div>
     <button class="btn btn-p" onclick="sendGenericProposal()" style="margin-bottom:8px">🔗 Save &amp; get client link</button>
     <button class="btn" onclick="saveGenericEstimate(true)" style="font-size:13px;color:var(--text2)">Save as draft</button>
@@ -16655,13 +16666,14 @@ function _renderNavTradeSwitcher(){
 }
 
 // ── Generic estimate (non-painting trades) ────────────────────────────
-let _geiClientId=null,_geiEditBidId=null,_geiLines=[],_geiTrade=null,_geiIsCommercial=false,_geiEmergency=false;
+let _geiClientId=null,_geiEditBidId=null,_geiLines=[],_geiTrade=null,_geiIsCommercial=false,_geiEmergency=false,_geiStep=1;
 let _panelSched=null; // null = not active, obj = panel schedule data
 
 function openGenericEstimate(c,bidId,_tradePick){
   _geiClientId=c?.id||null;
   _geiEditBidId=bidId||null;
-  _geiLines=[];_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;
+  _geiLines=[];_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;
+  document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
   const trade=_geiTrade;
@@ -16683,10 +16695,116 @@ function openGenericEstimate(c,bidId,_tradePick){
       if(b.panelSched)_panelSched=JSON.parse(JSON.stringify(b.panelSched));
     }
   }
-  _geiRenderTemplates();
-  renderGeiLines();calcGeiTotal();
-  _panelRenderSection();
   goPg('pg-est-generic');
+  goGeiStep(1);
+}
+
+function goGeiStep(n){
+  _geiStep=n;
+  [1,2,3].forEach(i=>{const el=document.getElementById('gei-s'+i);if(el)el.style.display=(i===n)?'':'none';});
+  window.scrollTo({top:0,behavior:'instant'});
+  _geiRenderStepBar();
+  _geiSyncScopeButtons();
+  const bar=document.getElementById('gei-cart-bar');
+  if(bar)bar.style.display=(n===2&&_geiLines.length)?'flex':'none';
+  if(n===2){_geiRenderTemplates();_geiRenderCartBar();}
+  if(n===3){renderGeiLines();calcGeiTotal();_panelRenderSection();}
+}
+
+function _geiBack(){
+  if(_geiStep>1)goGeiStep(_geiStep-1);
+  else{document.getElementById('gei-cart-bar')?.remove();goPg('pg-clients');}
+}
+
+function _geiRenderStepBar(){
+  const el=document.getElementById('gei-step-bar');if(!el)return;
+  const steps=['Job info','Build','Review'];
+  const dotStyle=(i)=>{
+    const done=i<_geiStep,active=i===_geiStep;
+    const bg=active?'var(--blue)':done?'#94a3b8':'var(--bg2)';
+    const border=active?'var(--blue)':done?'#94a3b8':'var(--border2)';
+    return `width:10px;height:10px;border-radius:50%;background:${bg};border:2px solid ${border};flex-shrink:0`;
+  };
+  const labelStyle=(i)=>{
+    const active=i===_geiStep;
+    return `font-size:10px;font-weight:${active?'700':'400'};color:${active?'var(--blue)':'var(--text3)'};white-space:nowrap`;
+  };
+  el.innerHTML=`<div style="display:flex;align-items:center;gap:0;margin-bottom:12px">`
+    +steps.map((s,i)=>`
+      <div style="display:flex;flex-direction:column;align-items:center;flex:1;position:relative">
+        <div style="${dotStyle(i+1)}"></div>
+        <div style="${labelStyle(i+1)};margin-top:4px">${s}</div>
+        ${i<steps.length-1?`<div style="position:absolute;top:5px;left:calc(50% + 7px);right:calc(-50% + 7px);height:2px;background:${_geiStep>i+1?'#94a3b8':'var(--border2)'}"></div>`:''}
+      </div>`).join('')
+    +`</div>`;
+}
+
+function _geiSyncScopeButtons(){
+  const resi=document.getElementById('gei-resi-btn');
+  const comm=document.getElementById('gei-comm-btn');
+  const emrg=document.getElementById('gei-emrg-btn');
+  if(resi){resi.style.border=`2px solid ${!_geiIsCommercial?'var(--blue)':'var(--border2)'}`;resi.style.background=!_geiIsCommercial?'var(--blue-lt)':'var(--bg2)';resi.style.color=!_geiIsCommercial?'var(--blue-dk)':'var(--text2)';}
+  if(comm){comm.style.border=`2px solid ${_geiIsCommercial?'var(--blue)':'var(--border2)'}`;comm.style.background=_geiIsCommercial?'var(--blue-lt)':'var(--bg2)';comm.style.color=_geiIsCommercial?'var(--blue-dk)':'var(--text2)';}
+  if(emrg){emrg.style.border=`2px solid ${_geiEmergency?'#dc2626':'var(--border2)'}`;emrg.style.background=_geiEmergency?'#fef2f2':'var(--bg2)';emrg.style.color=_geiEmergency?'#dc2626':'var(--text2)';}
+}
+
+function _geiOpenCatSheet(catLabel){
+  const trade=_geiTrade||'general';
+  const allJobs=TRADE_JOBS[trade]||TRADE_JOBS.general;
+  const scope=_geiIsCommercial?'commercial':'resi';
+  const jobs=allJobs.filter(j=>!j.scope||j.scope==='both'||j.scope===scope);
+  const ids=(TRADE_JOB_CATS[trade]||{})[catLabel]||[];
+  const jobById=Object.fromEntries(jobs.map(j=>[j.id,j]));
+  const catJobs=ids.map(id=>jobById[id]).filter(Boolean);
+
+  const ov=document.createElement('div');
+  ov.id='_gei-cat-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:flex;align-items:flex-end;justify-content:center';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+
+  const sheet=document.createElement('div');
+  sheet.style.cssText='background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;width:100%;max-width:480px;padding:16px 16px 36px;max-height:75vh;overflow-y:auto;box-sizing:border-box';
+
+  const rows=catJobs.map(job=>{
+    const effLabor=_geiEmergency?Math.round(job.labor*1.5):job.labor;
+    const total=(job.mat||0)+effLabor;
+    const priceStr=job.custom?`$${total}/${job.unit}`:job.mat>0?`$${total.toLocaleString()}`:`$${effLabor}`;
+    const lmTag=job.mat>0?`<span style="font-size:10px;color:var(--text3);font-weight:400"> L+M</span>`:'';
+    const gasTag=job.gasLic?`<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:3px;padding:1px 5px;margin-left:6px">GAS LIC</span>`:'';
+    const priceColor=_geiEmergency?'#dc2626':'var(--blue)';
+    const safeJob=escHtml(JSON.stringify(job));
+    return `<button onclick="_geiAddTemplate(JSON.parse(this.dataset.job));document.getElementById('_gei-cat-ov')?.remove();_geiRenderCartBar()"
+      data-job="${safeJob}"
+      style="display:flex;justify-content:space-between;align-items:center;width:100%;padding:13px 14px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:7px;text-align:left;box-sizing:border-box">
+      <div style="font-size:13px;font-weight:700;color:var(--text)">${escHtml(job.name)}${gasTag}</div>
+      <div style="font-size:14px;font-weight:800;color:${priceColor};white-space:nowrap;margin-left:12px">${priceStr}${lmTag}</div>
+    </button>`;
+  }).join('');
+
+  sheet.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="font-size:16px;font-weight:800;color:var(--text)">${catLabel}</div>
+      <button onclick="document.getElementById('_gei-cat-ov')?.remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);padding:0;line-height:1">×</button>
+    </div>
+    ${rows||'<div style="font-size:13px;color:var(--text3);text-align:center;padding:20px 0">No services in this category for current scope.</div>'}`;
+  ov.appendChild(sheet);
+  document.body.appendChild(ov);
+}
+
+function _geiRenderCartBar(){
+  const bar=document.getElementById('gei-cart-bar')||(()=>{
+    const b=document.createElement('div');
+    b.id='gei-cart-bar';
+    b.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:8000;background:var(--blue);padding:13px 20px 30px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;box-shadow:0 -2px 16px rgba(0,0,0,.15)';
+    b.onclick=()=>goGeiStep(3);
+    document.body.appendChild(b);
+    return b;
+  })();
+  const{sub}=calcGeiTotal();
+  const n=_geiLines.length;
+  if(!n||_geiStep!==2){bar.style.display='none';return;}
+  bar.style.display='flex';
+  bar.innerHTML=`<span style="color:#fff;font-size:13px;font-weight:600">${n} item${n!==1?'s':''} added</span><span style="color:#fff;font-size:16px;font-weight:800">$${sub.toLocaleString('en-US',{maximumFractionDigits:0})} · Review →</span>`;
 }
 
 function _geiRenderTemplates(){
@@ -16697,68 +16815,66 @@ function _geiRenderTemplates(){
   const jobs=allJobs.filter(j=>!j.scope||j.scope==='both'||j.scope===scope);
   const book=(S.priceBook&&S.priceBook[trade])||[];
 
-  // Scope + emergency toggles
-  const btnBase='display:inline-flex;align-items:center;gap:5px;padding:7px 13px;border-radius:var(--r);border:1.5px solid;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s';
-  const resiActive=!_geiIsCommercial;
-  const commActive=_geiIsCommercial;
-  let html=`<div style="display:flex;flex-wrap:wrap;gap:6px;width:100%;margin-bottom:10px">
-    <button onclick="_geiSetScope(false)" style="${btnBase};border-color:${resiActive?'var(--blue)':'var(--border2)'};background:${resiActive?'var(--blue-lt)':'var(--bg2)'};color:${resiActive?'var(--blue-dk)':'var(--text2)'}">🏠 Residential</button>
-    <button onclick="_geiSetScope(true)" style="${btnBase};border-color:${commActive?'var(--blue)':'var(--border2)'};background:${commActive?'var(--blue-lt)':'var(--bg2)'};color:${commActive?'var(--blue-dk)':'var(--text2)'}">🏢 Commercial</button>
-    <button onclick="_geiToggleEmergency()" style="${btnBase};border-color:${_geiEmergency?'#dc2626':'var(--border2)'};background:${_geiEmergency?'#fef2f2':'var(--bg2)'};color:${_geiEmergency?'#dc2626':'var(--text2)'}">🚨 Emergency${_geiEmergency?' ON':''}</button>
-  </div>`;
-  if(_geiEmergency)html+=`<div style="width:100%;background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:7px 10px;font-size:11px;color:#b91c1c;margin-bottom:8px;font-weight:600">🚨 Emergency mode — labor rates ×1.5 · after-hours surcharge will be added</div>`;
+  let html='';
+  if(_geiEmergency)html+=`<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:9px 12px;font-size:12px;color:#b91c1c;margin-bottom:12px;font-weight:600">🚨 Emergency mode — labor rates ×1.5 · after-hours surcharge added</div>`;
 
+  // Price book
   if(book.length){
-    html+='<div style="font-size:10px;font-weight:700;color:var(--blue-dk);width:100%;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">⭐ My price book</div>';
-    html+=book.map((item,i)=>`<button onclick="_geiAddFromBook(${i})" style="display:inline-flex;flex-direction:column;align-items:flex-start;padding:7px 11px;border-radius:var(--r);border:1.5px solid var(--blue-lt);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left"><span style="font-size:12px;font-weight:700;color:var(--blue-dk)">${escHtml(item.desc)}</span><span style="font-size:10px;color:var(--text3)">$${item.rate}/${item.unit||'ea'}</span></button>`).join('');
-    html+='<div style="width:100%;height:1px;background:var(--border);margin:8px 0"></div>';
+    html+=`<div style="font-size:10px;font-weight:700;color:var(--blue-dk);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">⭐ My price book</div>`;
+    html+=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">`
+      +book.map((item,i)=>`<button onclick="_geiAddFromBook(${i});_geiRenderCartBar()" style="display:inline-flex;flex-direction:column;align-items:flex-start;padding:8px 12px;border-radius:var(--r);border:1.5px solid var(--blue-lt);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left"><span style="font-size:12px;font-weight:700;color:var(--blue-dk)">${escHtml(item.desc)}</span><span style="font-size:10px;color:var(--text3)">$${item.rate}/${item.unit||'ea'}</span></button>`).join('')
+      +`</div><div style="height:1px;background:var(--border);margin-bottom:14px"></div>`;
   }
 
-  const makeChip=job=>{
-    const effLabor=_geiEmergency?Math.round(job.labor*1.5):job.labor;
-    const total=(job.mat||0)+effLabor;
-    const priceStr=job.custom?`$${total}/${job.unit}`:job.mat>0?`$${total.toLocaleString()}`:`$${effLabor}`;
-    const gasTag=job.gasLic?'<span style="font-size:9px;background:#fef3c7;color:#92400e;border-radius:3px;padding:1px 4px;margin-top:2px;display:block">GAS LIC</span>':'';
-    const safeJob=escHtml(JSON.stringify(job));
-    const border=_geiEmergency?'1.5px solid #fca5a5':'1.5px solid var(--border2)';
-    return `<button onclick="_geiAddTemplate(JSON.parse(this.dataset.job))" data-job="${safeJob}" style="display:inline-flex;flex-direction:column;align-items:flex-start;padding:7px 11px;border-radius:var(--r);border:${border};background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;min-width:100px;max-width:160px"><span style="font-size:12px;font-weight:700;color:var(--text)">${escHtml(job.name)}</span><span style="font-size:10px;color:${_geiEmergency?'#dc2626':'var(--text3)'}">${priceStr}${job.mat>0?' (L+M)':''}</span>${gasTag}</button>`;
-  };
-
+  // Category tile grid for trades with categories
   const cats=TRADE_JOB_CATS[trade];
   if(cats){
     const jobById=Object.fromEntries(jobs.map(j=>[j.id,j]));
-    const rendered=new Set();
+    html+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">`;
     for(const [catLabel,ids] of Object.entries(cats)){
       const catJobs=ids.map(id=>jobById[id]).filter(Boolean);
       if(!catJobs.length)continue;
-      html+=`<div style="font-size:10px;font-weight:700;color:var(--text3);width:100%;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.05em">${catLabel}</div>`;
-      html+=`<div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">`;
-      html+=catJobs.map(j=>{rendered.add(j.id);return makeChip(j);}).join('');
-      html+=`</div>`;
+      const parts=catLabel.split(' ');
+      const emoji=parts[0];
+      const name=parts.slice(1).join(' ');
+      const safeLabel=escHtml(catLabel);
+      html+=`<button onclick="_geiOpenCatSheet(${JSON.stringify(catLabel)})"
+        style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px 8px;border-radius:var(--rl);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;gap:5px;min-height:85px;text-align:center">
+        <span style="font-size:28px;line-height:1">${emoji}</span>
+        <span style="font-size:12px;font-weight:700;color:var(--text)">${escHtml(name)}</span>
+        <span style="font-size:10px;color:var(--text3)">${catJobs.length} service${catJobs.length!==1?'s':''}</span>
+      </button>`;
     }
-    const extra=jobs.filter(j=>!rendered.has(j.id));
-    if(extra.length){
-      html+=`<div style="font-size:10px;font-weight:700;color:var(--text3);width:100%;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.05em">Other</div>`;
-      html+=`<div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">${extra.map(makeChip).join('')}</div>`;
-    }
+    html+=`</div>`;
   } else {
-    html+=`<div style="display:flex;flex-wrap:wrap;gap:6px;width:100%">${jobs.map(makeChip).join('')}</div>`;
+    // Flat chip fallback for general/other
+    const makeChip=job=>{
+      const effLabor=_geiEmergency?Math.round(job.labor*1.5):job.labor;
+      const total=(job.mat||0)+effLabor;
+      const priceStr=job.custom?`$${total}/${job.unit}`:job.mat>0?`$${total.toLocaleString()}`:`$${effLabor}`;
+      const safeJob=escHtml(JSON.stringify(job));
+      return `<button onclick="_geiAddTemplate(JSON.parse(this.dataset.job));_geiRenderCartBar()" data-job="${safeJob}" style="display:inline-flex;flex-direction:column;align-items:flex-start;padding:8px 12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left"><span style="font-size:12px;font-weight:700;color:var(--text)">${escHtml(job.name)}</span><span style="font-size:10px;color:var(--text3)">${priceStr}</span></button>`;
+    };
+    html+=`<div style="display:flex;flex-wrap:wrap;gap:6px">${jobs.map(makeChip).join('')}</div>`;
   }
   el.innerHTML=html;
 }
 
 function _geiSetScope(commercial){
   _geiIsCommercial=!!commercial;
-  _geiRenderTemplates();
+  _geiSyncScopeButtons();
+  if(_geiStep===2)_geiRenderTemplates();
 }
 
 function _geiToggleEmergency(){
   _geiEmergency=!_geiEmergency;
+  _geiSyncScopeButtons();
   if(_geiEmergency&&!_geiLines.some(l=>l.desc&&l.desc.includes('Emergency'))){
     _geiLines.unshift({desc:'Emergency / after-hours service call',qty:1,unit:'ea',rate:125,total:125});
-    renderGeiLines();calcGeiTotal();
+    if(_geiStep===3){renderGeiLines();calcGeiTotal();}
+    _geiRenderCartBar();
   }
-  _geiRenderTemplates();
+  if(_geiStep===2)_geiRenderTemplates();
 }
 
 function _geiAddTemplate(job){
@@ -16870,20 +16986,29 @@ async function _geiAiAssist(){
 function renderGeiLines(){
   const el=document.getElementById('gei-lines');if(!el)return;
   if(!_geiLines.length){
-    el.innerHTML='<div style="font-size:13px;color:var(--text3);text-align:center;padding:16px 0">Tap a job above to add it, or + Custom line</div>';
+    el.innerHTML='<div style="font-size:13px;color:var(--text3);text-align:center;padding:24px 0">Go back to Build and tap jobs to add them, or use + Custom line below</div>';
     return;
   }
-  el.innerHTML=_geiLines.map((l,i)=>`
-    <div style="display:grid;grid-template-columns:1fr 46px 58px 70px 64px 20px 20px;gap:4px;align-items:center;margin-bottom:6px">
-      <input type="text" value="${escHtml(l.desc||'')}" oninput="_geiLines[${i}].desc=this.value" placeholder="Description" style="padding:7px 8px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">
-      <input type="number" value="${l.qty||1}" min="1" step="any" oninput="_geiLines[${i}].qty=parseFloat(this.value)||1;calcGeiTotal()" placeholder="Qty" style="padding:7px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;text-align:center;background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">
-      <input type="text" value="${escHtml(l.unit||'')}" oninput="_geiLines[${i}].unit=this.value" placeholder="unit" style="padding:7px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:11px;text-align:center;background:var(--bg2);color:var(--text3);width:100%;box-sizing:border-box">
-      <input type="number" value="${l.rate||''}" min="0" step="any" oninput="_geiLines[${i}].rate=parseFloat(this.value)||0;calcGeiTotal()" placeholder="Rate $" style="padding:7px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;text-align:right;background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">
-      <div style="font-size:12px;font-weight:700;text-align:right;color:var(--text2)">$${((l.qty||1)*(l.rate||0)).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})}</div>
-      <button onclick="_geiSaveToPriceBook(${i})" title="Save to price book" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;padding:0;line-height:1">🔖</button>
-      <button onclick="_geiLines.splice(${i},1);renderGeiLines();calcGeiTotal()" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:16px;padding:0;line-height:1">×</button>
-    </div>
-  `).join('');
+  el.innerHTML=_geiLines.map((l,i)=>{
+    const total=((l.qty||1)*(l.rate||0));
+    const totalFmt='$'+total.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
+    return `<div style="background:var(--bg2);border-radius:var(--rl);border:1px solid var(--border2);padding:12px 14px;margin-bottom:10px">
+      <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:10px">
+        <input type="text" value="${escHtml(l.desc||'')}" oninput="_geiLines[${i}].desc=this.value" placeholder="Item description" style="flex:1;background:transparent;border:none;border-bottom:1px solid var(--border2);font-size:14px;font-weight:600;font-family:inherit;color:var(--text);padding:2px 0 6px;outline:none">
+        <button onclick="_geiLines.splice(${i},1);renderGeiLines();calcGeiTotal();_geiRenderCartBar()" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:20px;padding:0;line-height:1;margin-top:-2px">×</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <input type="number" value="${l.qty||1}" min="0" step="any" oninput="_geiLines[${i}].qty=parseFloat(this.value)||1;calcGeiTotal();document.getElementById('gei-line-total-${i}').textContent='$'+((parseFloat(this.value)||1)*(${l.rate||0})).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})" placeholder="Qty" style="width:52px;padding:6px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;text-align:center;background:var(--bg);color:var(--text);font-family:inherit">
+        <input type="text" value="${escHtml(l.unit||'ea')}" oninput="_geiLines[${i}].unit=this.value" placeholder="unit" style="width:52px;padding:6px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;text-align:center;background:var(--bg);color:var(--text3);font-family:inherit">
+        <span style="font-size:12px;color:var(--text3)">@</span>
+        <span style="font-size:12px;color:var(--text3)">$</span>
+        <input type="number" value="${l.rate||''}" min="0" step="any" oninput="_geiLines[${i}].rate=parseFloat(this.value)||0;calcGeiTotal();document.getElementById('gei-line-total-${i}').textContent='$'+((${l.qty||1})*(parseFloat(this.value)||0)).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})" placeholder="Rate" style="width:72px;padding:6px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;text-align:right;background:var(--bg);color:var(--text);font-family:inherit">
+        <span style="font-size:12px;color:var(--text3)">=</span>
+        <div id="gei-line-total-${i}" style="font-size:15px;font-weight:700;color:var(--blue);flex:1;text-align:right">${totalFmt}</div>
+        <button onclick="_geiSaveToPriceBook(${i})" title="Save to price book" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:15px;padding:4px;line-height:1">🔖</button>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function addGeiLine(){_geiLines.push({desc:'',qty:1,unit:'ea',rate:'',total:0});renderGeiLines();calcGeiTotal();}
