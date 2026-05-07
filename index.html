@@ -1742,41 +1742,44 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
       <span class="acc-hd-arrow">▼</span>
     </div>
     <div class="acc-body">
-      <div class="tip" style="margin-top:8px"><strong>Update every January.</strong> IRS rate: <a href="https://www.irs.gov/tax-professionals/standard-mileage-rates" style="color:var(--blue-dk)">irs.gov</a> &nbsp;·&nbsp; KS taxes: <a href="https://ksrevenue.gov" style="color:var(--blue-dk)">ksrevenue.gov</a></div>
+      <div class="tip" style="margin-top:8px"><strong>Auto-updated each January</strong> via IRS data. IRS ref: <a href="https://www.irs.gov/tax-professionals/standard-mileage-rates" style="color:var(--blue-dk)">irs.gov</a> &nbsp;·&nbsp; KS ref: <a href="https://ksrevenue.gov" style="color:var(--blue-dk)">ksrevenue.gov</a></div>
+      <input type="hidden" id="set-fs"><input type="hidden" id="set-fm"><input type="hidden" id="set-fms"><input type="hidden" id="set-fh">
+      <input type="hidden" id="set-b10"><input type="hidden" id="set-b12"><input type="hidden" id="set-b22"><input type="hidden" id="set-b24"><input type="hidden" id="set-b32"><input type="hidden" id="set-b35">
       <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 8px">Mileage &amp; year</div>
       <div class="fg fg2">
-        <div class="f"><label>IRS mileage rate ($/mile)</label><input type="number" id="set-irs" step="0.001"><div style="font-size:10px;color:var(--text3);margin-top:3px">2025 = $0.700 · 2026 = TBD (update Jan)</div></div>
+        <div class="f"><label>IRS mileage rate ($/mile)</label><input type="number" id="set-irs" step="0.001"><div style="font-size:10px;color:var(--text3);margin-top:3px">Auto-updated each January · Override manually if needed</div></div>
         <div class="f"><label>Tax year</label><select id="set-year"><option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option></select></div>
       </div>
-      <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 8px">Federal standard deductions</div>
-      <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
-        <div class="f"><label>Single ($)</label><input type="number" id="set-fs"></div>
-        <div class="f"><label>Married filing jointly ($)</label><input type="number" id="set-fm"></div>
-        <div class="f"><label>Married filing separately ($)</label><input type="number" id="set-fms"></div>
-        <div class="f"><label>Head of household ($)</label><input type="number" id="set-fh"></div>
+      <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 6px">Federal standard deductions <span style="font-size:10px;font-weight:400;color:var(--text3)">· IRS published · auto-updated</span></div>
+      <div style="background:var(--bg2);border-radius:var(--r);padding:10px 14px;margin-bottom:10px;display:grid;grid-template-columns:1fr 1fr;gap:4px 20px">
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Single</span><span id="set-fs-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Married jointly</span><span id="set-fm-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Married separately</span><span id="set-fms-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Head of household</span><span id="set-fh-disp" style="font-weight:700"></span></div>
       </div>
-      <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 8px">Federal bracket tops (single) <span style="font-size:10px;font-weight:400;color:var(--text3)">MFJ auto-doubles</span></div>
-      <div class="fg fg3">
-        <div class="f"><label>10% top ($)</label><input type="number" id="set-b10"></div>
-        <div class="f"><label>12% top ($)</label><input type="number" id="set-b12"></div>
-        <div class="f"><label>22% top ($)</label><input type="number" id="set-b22"></div>
-        <div class="f"><label>24% top ($)</label><input type="number" id="set-b24"></div>
-        <div class="f"><label>32% top ($)</label><input type="number" id="set-b32"></div>
-        <div class="f"><label>35% top ($)</label><input type="number" id="set-b35"></div>
+      <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 6px">Federal bracket tops <span style="font-size:10px;font-weight:400;color:var(--text3)">· single filer · MFJ auto-doubles</span></div>
+      <div style="background:var(--bg2);border-radius:var(--r);padding:10px 14px;margin-bottom:10px;display:grid;grid-template-columns:repeat(3,1fr);gap:4px 12px">
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">10%</span><span id="set-b10-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">12%</span><span id="set-b12-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">22%</span><span id="set-b22-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">24%</span><span id="set-b24-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">32%</span><span id="set-b32-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">35%</span><span id="set-b35-disp" style="font-weight:700"></span></div>
       </div>
       <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 8px">
         <span id="set-state-label">State tax rates</span>
         <select id="set-state" onchange="onStateChange(this.value)" style="font-size:12px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);margin-left:8px;font-weight:400"><option value="">— Select state —</option><option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS">KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option></select>
       </div>
       <div id="set-state-info" style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.5;display:none"></div>
-      <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
-        <div class="f"><label>Lower rate (%)</label><input type="number" id="set-ksl" step="0.001"></div>
-        <div class="f"><label>Upper rate (%)</label><input type="number" id="set-ksh" step="0.001"></div>
-        <div class="f"><label>Lower bracket top — single ($)</label><input type="number" id="set-kst"></div>
-        <div class="f"><label>Std deduction — single ($)</label><input type="number" id="set-kss"></div>
-        <div class="f"><label>Std deduction — MFJ ($)</label><input type="number" id="set-ksm"></div>
+      <input type="hidden" id="set-ksl"><input type="hidden" id="set-ksh"><input type="hidden" id="set-kst"><input type="hidden" id="set-kss"><input type="hidden" id="set-ksm">
+      <div style="background:var(--bg2);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:grid;grid-template-columns:1fr 1fr;gap:4px 20px">
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Lower rate</span><span id="set-ksl-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Upper rate</span><span id="set-ksh-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Bracket top (single)</span><span id="set-kst-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Std deduction — single</span><span id="set-kss-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Std deduction — MFJ</span><span id="set-ksm-disp" style="font-weight:700"></span></div>
       </div>
-      <div style="font-size:10px;color:var(--text3);margin-top:8px">Rates auto-fill when you select a state. You can override any value manually.</div>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px">Auto-updated annually from IRS &amp; state data. Rates auto-fill when you select a state.</div>
     </div>
   </div>
 
@@ -2977,9 +2980,15 @@ function applySettings(){
 }
 function loadSettingsForm(){
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
+  const sd=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val;};
+  const fmt$=n=>'$'+(n||0).toLocaleString();
   sf('set-irs',S.irsRate);sf('set-year',S.taxYear);sf('set-fs',S.fedSingle);sf('set-fm',S.fedMFJ);sf('set-fms',S.fedMFS);sf('set-fh',S.fedHOH);
   sf('set-b10',S.b10);sf('set-b12',S.b12);sf('set-b22',S.b22);sf('set-b24',S.b24);sf('set-b32',S.b32);sf('set-b35',S.b35);
   sf('set-ksl',S.ksLow);sf('set-kst',S.ksTop);sf('set-ksh',S.ksHigh);sf('set-kss',S.ksStdS);sf('set-ksm',S.ksStdM);
+  // Display-only bracket spans
+  sd('set-fs-disp',fmt$(S.fedSingle||15000));sd('set-fm-disp',fmt$(S.fedMFJ||30000));sd('set-fms-disp',fmt$(S.fedMFS||15000));sd('set-fh-disp',fmt$(S.fedHOH||22500));
+  sd('set-b10-disp',fmt$(S.b10||11925));sd('set-b12-disp',fmt$(S.b12||48475));sd('set-b22-disp',fmt$(S.b22||103350));sd('set-b24-disp',fmt$(S.b24||197300));sd('set-b32-disp',fmt$(S.b32||250525));sd('set-b35-disp',fmt$(S.b35||626350));
+  sd('set-ksl-disp',(S.ksLow||3.1)+'%');sd('set-ksh-disp',(S.ksHigh||5.7)+'%');sd('set-kst-disp',fmt$(S.ksTop||33000));sd('set-kss-disp',fmt$(S.ksStdS||3500));sd('set-ksm-disp',fmt$(S.ksStdM||8000));
   sf('set-goal-monthly',S.goalMonthly||'');
   sf('set-labor-rate',S.laborRate||45);sf('set-owner-name',getOwnerName()||'');sf('set-bname',S.bname);sf('set-state',S.state||'KS');
   _renderLogoPreview();
@@ -8709,6 +8718,14 @@ async function autoRefreshTaxBrackets(){
       applySettings();saveAll();
       showToast('Federal tax brackets updated for '+(d.year||thisYear),'📊');
     }
+    // Update KS rates if returned (loose bounds — KS rates vary more)
+    if(typeof d.ksLow==='number'&&d.ksLow>0&&d.ksLow<15)S.ksLow=d.ksLow;
+    if(typeof d.ksHigh==='number'&&d.ksHigh>0&&d.ksHigh<15)S.ksHigh=d.ksHigh;
+    if(typeof d.ksTop==='number'&&d.ksTop>5000&&d.ksTop<100000)S.ksTop=d.ksTop;
+    if(typeof d.ksStdS==='number'&&d.ksStdS>1000&&d.ksStdS<15000)S.ksStdS=d.ksStdS;
+    if(typeof d.ksStdM==='number'&&d.ksStdM>1000&&d.ksStdM<20000)S.ksStdM=d.ksStdM;
+    saveAll();
+    loadSettingsForm(); // refresh display spans if Settings is open
     localStorage.setItem(KEY,String(thisYear));
   }catch(e){}finally{_bracketRefreshInProgress=false;}
 }
