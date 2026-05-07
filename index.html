@@ -2322,7 +2322,7 @@ const CHECKS=[
 ];
 const CAT_CFG={urgent:{label:'Do right away',color:'#A32D2D'},biz:{label:'Business setup in Kansas',color:'#185FA5'},tax:{label:'Tax & accounting',color:'#854F0B'},ks:{label:'Kansas market & marketing',color:'#27500A'}};
 
-let S={bitlyKey:'',mapboxKey:'',goalMonthly:0,laborRate:45,irsRate:.725,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{}};
+let S={bitlyKey:'',mapboxKey:'',goalMonthly:0,laborRate:45,irsRate:.725,irsRateYear:2026,bracketYear:0,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{}};
 
 // ZJ's logo — SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
 // Only shown for ZJ's Painting account — other accounts see plain business name text.
@@ -2439,7 +2439,7 @@ function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s
   if(S.b32===243725)S.b32=250525;
   if(S.b35===609350)S.b35=626350;
   if(S.irsRate===0.67||S.irsRate===0.670)S.irsRate=0.700;
-  if(new Date().getFullYear()>=2026&&S.irsRate<0.725){S.irsRate=0.725;localStorage.setItem('zp3_rate_year',String(new Date().getFullYear()));}
+  if(new Date().getFullYear()>=2026&&S.irsRate<0.725){S.irsRate=0.725;S.irsRateYear=new Date().getFullYear();}
   try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(e){}
   }catch(e){}
   // One-time orphan cleanup: remove truly empty Draft bids (no surfaces, no amount) that have
@@ -8911,9 +8911,9 @@ function swSelectProduct(p,btn){
 let _rateRefreshInProgress=false;
 async function autoRefreshRates(){
   if(!_supa||!_supaUser||_rateRefreshInProgress)return;
-  const YEAR_KEY='zp3_rate_year';
   const thisYear=new Date().getFullYear();
-  if(+localStorage.getItem(YEAR_KEY)===thisYear&&S.irsRate)return;
+  // S.irsRateYear syncs to Supabase — once ANY device sets it for this year, all devices skip the fetch
+  if(S.irsRateYear===thisYear&&S.irsRate)return;
   _rateRefreshInProgress=true;
   try{
     const{data:{session}}=await _supa.auth.getSession();
@@ -8928,20 +8928,19 @@ async function autoRefreshRates(){
     // Sanity bounds — IRS rate must be realistic (never below 50¢ or above $1.00/mi)
     if(!d.irsRate||d.irsRate<0.50||d.irsRate>1.00)return;
     if(Math.abs(d.irsRate-(S.irsRate||0))>0.0005){
-      S.irsRate=d.irsRate;saveAll();
       showToast('IRS mileage rate updated to $'+(+d.irsRate).toFixed(3)+'/mi for '+d.year);
       const el=document.getElementById('set-irs');if(el)el.value=d.irsRate;
     }
-    localStorage.setItem(YEAR_KEY,String(thisYear));
+    S.irsRate=d.irsRate;S.irsRateYear=thisYear;saveAll();
   }catch(e){}finally{_rateRefreshInProgress=false;}
 }
 
 let _bracketRefreshInProgress=false;
 async function autoRefreshTaxBrackets(){
   if(!_supa||!_supaUser||_bracketRefreshInProgress)return;
-  const KEY='zp3_tax_year';
   const thisYear=new Date().getFullYear();
-  if(+localStorage.getItem(KEY)===thisYear)return;
+  // S.bracketYear syncs to Supabase — once ANY device fetches for this year, all devices skip it
+  if(S.bracketYear===thisYear)return;
   _bracketRefreshInProgress=true;
   try{
     const{data:{session}}=await _supa.auth.getSession();
@@ -8974,10 +8973,9 @@ async function autoRefreshTaxBrackets(){
     if(typeof d.ksTop==='number'&&d.ksTop>5000&&d.ksTop<100000)S.ksTop=d.ksTop;
     if(typeof d.ksStdS==='number'&&d.ksStdS>1000&&d.ksStdS<15000)S.ksStdS=d.ksStdS;
     if(typeof d.ksStdM==='number'&&d.ksStdM>1000&&d.ksStdM<20000)S.ksStdM=d.ksStdM;
-    saveAll();
+    S.bracketYear=thisYear;saveAll();
     loadSettingsForm(); // refresh display spans if Settings is open
     if(S.state)fetchStateBrackets(S.state);
-    localStorage.setItem(KEY,String(thisYear));
   }catch(e){}finally{_bracketRefreshInProgress=false;}
 }
 
@@ -18559,7 +18557,7 @@ async function supaLoadFromCloud(){
       if(S.b32===243725)S.b32=250525;
       if(S.b35===609350)S.b35=626350;
       if(S.irsRate===0.67||S.irsRate===0.670)S.irsRate=0.700;
-      if(new Date().getFullYear()>=2026&&S.irsRate<0.725)S.irsRate=0.725;
+      if(new Date().getFullYear()>=2026&&S.irsRate<0.725){S.irsRate=0.725;S.irsRateYear=new Date().getFullYear();}
       applySettings();
       loadSettingsForm();
       // Restore owner name to this device's localStorage so nav shows correctly
