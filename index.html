@@ -2028,6 +2028,9 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   <button class="nb" id="nb-gallery" onclick="goPg('pg-gallery')">
     <div class="bx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div><span>Gallery</span>
   </button>
+  <button class="nb" id="nb-licensing" onclick="goPg('pg-licensing')">
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><span>Licensing</span>
+  </button>
   <div id="nav-trade-switcher" style="display:none;padding:6px 10px 4px;border-top:1px solid var(--nav-border)">
     <div style="font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.25);padding:0 4px 5px">Active trade</div>
     <div id="nav-trade-pills" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 2px 4px"></div>
@@ -3045,7 +3048,7 @@ function goPg(id){
     'pg-leads':'nb-leads','pg-jobs':'nb-jobs','pg-money':'nb-money',
     'pg-schedule':'nb-jobs',
     'pg-clients':'nb-clients','pg-cal':'nb-cal','pg-tracker':'nb-tracker','pg-gallery':'nb-gallery',
-    'pg-team':'nb-team',
+    'pg-team':'nb-team','pg-licensing':'nb-licensing',
     'pg-taxes':'nb-taxes','pg-settings':'nb-settings','pg-checklist':'nb-settings',
     'pg-client-detail':window._clientDetailOrigin==='leads'?'nb-leads':'nb-clients'
   }[id]||('nb-'+id.replace('pg-','')));if(nb)nb.classList.add('active');
@@ -4345,7 +4348,7 @@ function renderTodayFeed(){
 
   // TIER 2 — Won bid, no job scheduled yet (lock it in)
   bids.filter(b=>b.status==='Closed Won'&&!b.completion_date).forEach(b=>{
-    if(jobs.some(j=>j.bid_id===b.id&&j.eventType!=='estimate'))return; // already has a job
+    if(jobs.some(j=>(j.bid_id===b.id||(j.client_id===b.client_id&&!j.bid_id))&&j.eventType!=='estimate'))return;
     const c=getClientById(b.client_id);
     const cDisp=c?c.name:b.client_name||b.name||'Client';
     const depositPaid=getBidPaid(b.id)>0;
@@ -4489,7 +4492,7 @@ function renderTodayFeed(){
   // TIER 7 — New leads ready for an estimate (zero bids, zero scheduled estimate jobs)
   const newLeads=clients.filter(c=>{
     if(getClientStage(c.id).stage!=='new')return false;
-    if(bids.some(b=>b.client_id===c.id&&!b.draft))return false;
+    if(bids.some(b=>b.client_id===c.id))return false;
     if(jobs.some(j=>j.client_id===c.id&&j.eventType==='estimate'))return false;
     return true;
   });
@@ -5128,6 +5131,7 @@ function openEditClient(){
   document.getElementById('cf-notes').value=c.notes||'';
   const cyb=document.getElementById('cf-year-built');if(cyb)cyb.value=c.yearBuilt||'';
   checkYearBuilt();updateYearLookupBtn();
+  window._editClientOrigin=window._clientDetailOrigin||'clients';
   goPg('pg-clients');
   setTimeout(()=>{document.getElementById('client-form-wrap').style.display='block';document.getElementById('client-form-wrap').scrollIntoView({behavior:'smooth',block:'nearest'});},50);
 }
@@ -5230,6 +5234,7 @@ function saveClient(){
   } else {
     closeClientForm();
     renderClientList();
+    if(window._editClientOrigin==='leads')goPg('pg-leads');
   }
 }
 function deleteClient(){
