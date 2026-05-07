@@ -8992,6 +8992,8 @@ async function autoRefreshTaxBrackets(){
 
 async function fetchStateBrackets(state){
   if(!_supa||!_supaUser||!state)return;
+  const thisYear=new Date().getFullYear();
+  if(S.stateRates?.[state]?.year===thisYear)return;
   try{
     const{data:{session}}=await _supa.auth.getSession();
     if(!session)return;
@@ -9004,10 +9006,13 @@ async function fetchStateBrackets(state){
     const d=await resp.json();
     if(d.error||d.state!==state)return;
     if(!S.stateRates)S.stateRates={};
+    const prev=S.stateRates[state];
+    const changed=!prev||JSON.stringify(prev.brackets)!==JSON.stringify(d.brackets)||prev.stdS!==d.stdS;
+    d.year=thisYear;
     S.stateRates[state]=d;
     applySettings();saveAll();
     loadSettingsForm();
-    showToast((d.noTax?state+' has no income tax':state+' tax rates updated'),'📊');
+    if(changed)showToast((d.noTax?state+' has no income tax':state+' tax rates updated'),'📊');
   }catch(e){}
 }
 
