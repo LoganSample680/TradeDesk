@@ -2342,6 +2342,28 @@ let FED_BRACKETS={single:[],mfj:[],mfs:[],hoh:[]};
 let STD_DED={single:14600,mfj:29200,mfs:14600,hoh:21900};
 let KS_BRACKETS={single:[],mfj:[],mfs:[],hoh:[]};
 let KS_STD={single:3500,mfj:8000,mfs:4000,hoh:6000};
+// IRS published values — 7-year rolling history for historical tax reports
+const TAX_HISTORY={
+  2019:{fedSingle:12200,fedMFJ:24400,fedMFS:12200,fedHOH:18350,b10:9700,b12:39475,b22:84200,b24:160725,b32:204100,b35:510300,irsRate:.580},
+  2020:{fedSingle:12400,fedMFJ:24800,fedMFS:12400,fedHOH:18650,b10:9875,b12:40125,b22:85525,b24:163300,b32:207350,b35:518400,irsRate:.575},
+  2021:{fedSingle:12550,fedMFJ:25100,fedMFS:12550,fedHOH:18800,b10:9950,b12:40525,b22:86375,b24:164925,b32:209425,b35:523600,irsRate:.560},
+  2022:{fedSingle:12950,fedMFJ:25900,fedMFS:12950,fedHOH:19400,b10:10275,b12:41775,b22:89075,b24:170050,b32:215950,b35:539900,irsRate:.585},
+  2023:{fedSingle:13850,fedMFJ:27700,fedMFS:13850,fedHOH:20800,b10:11000,b12:44725,b22:95375,b24:182050,b32:231250,b35:578125,irsRate:.655},
+  2024:{fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,irsRate:.670},
+  2025:{fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,irsRate:.700},
+};
+function _getBracketsForYear(yr){
+  const n=parseInt(yr);
+  const thisYear=new Date().getFullYear();
+  if(n===thisYear)return{fedSingle:S.fedSingle||15000,fedMFJ:S.fedMFJ||30000,fedMFS:S.fedMFS||15000,fedHOH:S.fedHOH||22500,b10:S.b10||11925,b12:S.b12||48475,b22:S.b22||103350,b24:S.b24||197300,b32:S.b32||250525,b35:S.b35||626350,irsRate:S.irsRate||.700};
+  return TAX_HISTORY[n]||TAX_HISTORY[2025];
+}
+function _getFedBracketsForYear(yr){
+  const b=_getBracketsForYear(yr);
+  return{single:[[b.b10,.10],[b.b12,.12],[b.b22,.22],[b.b24,.24],[b.b32,.32],[b.b35,.35],[Infinity,.37]],mfj:[[b.b10*2,.10],[b.b12*2,.12],[b.b22*2,.22],[b.b24*2,.24],[b.b32*2,.32],[b.b35*2,.35],[Infinity,.37]],mfs:[[b.b10,.10],[b.b12,.12],[b.b22,.22],[b.b24,.24],[b.b32,.32],[b.b35*.6,.35],[Infinity,.37]],hoh:[[16550,.10],[63100,.12],[b.b22,.22],[b.b24,.24],[b.b32,.32],[b.b35,.35],[Infinity,.37]]};
+}
+function _getStdDedForYear(yr,status){const b=_getBracketsForYear(yr);return{single:b.fedSingle,mfj:b.fedMFJ,mfs:b.fedMFS,hoh:b.fedHOH}[status]||b.fedSingle;}
+function _getIrsRateForYear(yr){return _getBracketsForYear(yr).irsRate||S.irsRate||.700;}
 
 function saveAll(){try{const lp=(k,d)=>localStorage.setItem(k,JSON.stringify(d));lp('zp3_clients',clients);lp('zp3_bids',bids);lp('zp3_jobs',jobs);lp('zp3_inc',income);lp('zp3_exp',expenses);lp('zp3_mil',mileage);lp('zp3_chk',checksState);lp('zp3_S',S);lp('zp3_pay',payments);lp('zp3_lien',liens);lp('zp3_ev',events.slice(-600));lp('zp3_te',timeEntries.slice(-500));lp('zp3_photos',photos.slice(-300));lp('zp3_lic',licenses);}catch(e){}supaSaveDebounced();}
 function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s?JSON.parse(s):d;};clients=lp('zp3_clients',[]);bids=lp('zp3_bids',[]);jobs=lp('zp3_jobs',[]);income=lp('zp3_inc',[]);expenses=lp('zp3_exp',[]);mileage=lp('zp3_mil',[]);checksState=lp('zp3_chk',{});payments=lp('zp3_pay',[]);liens=lp('zp3_lien',[]);events=lp('zp3_ev',[]);timeEntries=lp('zp3_te',[]);photos=lp('zp3_photos',[]);licenses=lp('zp3_lic',[]);const ss=lp('zp3_S',null);if(ss)S={...S,...ss};
@@ -3364,16 +3386,17 @@ function setDashYear(yr){
   renderDash();
 }
 
-function estimateTax(netSelf){
+function estimateTax(netSelf,yr){
   if(netSelf<=0)return 0;
   const status=S.txStatus||'single';
   const seBase=netSelf*.9235;
   const seTax=Math.ceil(seBase*.153);
   const seDed=seTax/2;
-  const stdDed=STD_DED[status]||14600;
+  const bkts=yr?_getFedBracketsForYear(yr):FED_BRACKETS;
+  const stdDed=yr?_getStdDedForYear(yr,status):(STD_DED[status]||14600);
   const agi=netSelf-seDed;
   const fedTaxable=Math.max(0,agi-stdDed);
-  const fedTax=Math.ceil(calcBrackets(fedTaxable,FED_BRACKETS[status]||FED_BRACKETS.single));
+  const fedTax=Math.ceil(calcBrackets(fedTaxable,bkts[status]||bkts.single));
   const ksTaxable=Math.max(0,agi-(KS_STD[status]||3500));
   const ksTax=Math.ceil(calcBrackets(ksTaxable,KS_BRACKETS[status]||KS_BRACKETS.single));
   return seTax+fedTax+ksTax;
@@ -13624,15 +13647,17 @@ function exportTaxPDF(){
   const tInc=yrIncome.reduce((s,r)=>s+r.amount,0);
   const tExp=yrExp.reduce((s,r)=>s+r.amount,0);
   const tMiles=yrMiles.reduce((s,r)=>s+(r.miles||0),0);
-  const mileDed=tMiles*IRS();
+  const irsRateYr=_getIrsRateForYear(yr);
+  const mileDed=tMiles*irsRateYr;
   const net=Math.max(0,tInc-tExp-mileDed);
   const seBase=net*0.9235;
   const seTax=Math.ceil(seBase*0.153);
   const seDed=seTax/2;
-  const stdDed=STD_DED[status]||14600;
+  const stdDed=_getStdDedForYear(yr,status);
   const agi=net-seDed;
   const fedTaxable=Math.max(0,agi-stdDed);
-  const fedTax=Math.ceil(calcBrackets(fedTaxable,FED_BRACKETS[status]||FED_BRACKETS.single));
+  const fedBkts=_getFedBracketsForYear(yr);
+  const fedTax=Math.ceil(calcBrackets(fedTaxable,fedBkts[status]||fedBkts.single));
   const ksTaxable=Math.max(0,agi-(KS_STD[status]||3500));
   const ksTax=Math.ceil(calcBrackets(ksTaxable,KS_BRACKETS[status]||KS_BRACKETS.single));
   const totalTax=seTax+fedTax+ksTax;
@@ -14804,15 +14829,16 @@ function renderSummary(){
   const tIn=yInc.reduce((s,r)=>s+r.amount,0);
   const tEx=yExp.reduce((s,r)=>s+r.amount,0);
   const tMi=yMi.reduce((s,r)=>s+(r.miles||0),0);
-  const net=Math.max(0,tIn-tEx-(tMi*IRS()));
-  const tax=estimateTax(net);
+  const irsRateYr=_getIrsRateForYear(yr);
+  const net=Math.max(0,tIn-tEx-(tMi*irsRateYr));
+  const tax=estimateTax(net,yr);
   const profit=tIn-tEx-(tMi*IRS())-tax;
   document.getElementById('sum-mets').innerHTML=
     '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">'+yr+' summary</div>'+
     '<div class="mets">'+
     '<div class="met"><div class="met-l">Income</div><div class="met-v" style="color:var(--green-mid)">'+fmt(tIn)+'</div></div>'+
     '<div class="met"><div class="met-l">Expenses</div><div class="met-v" style="color:#A32D2D">'+fmt(tEx)+'</div></div>'+
-    '<div class="met"><div class="met-l">Mile deduction</div><div class="met-v">'+fmt(tMi*IRS())+'</div><div class="met-s">'+tMi.toFixed(0)+' mi</div></div>'+
+    '<div class="met"><div class="met-l">Mile deduction</div><div class="met-v">'+fmt(tMi*irsRateYr)+'</div><div class="met-s">'+tMi.toFixed(0)+' mi · $'+irsRateYr.toFixed(3)+'/mi</div></div>'+
     '<div class="met"><div class="met-l">Est. tax</div><div class="met-v" style="color:var(--amber)">'+fmt(tax)+'</div></div>'+
     '<div class="met" style="grid-column:1/-1"><div class="met-l">Net profit</div><div class="met-v" style="color:'+(profit>=0?'var(--green-mid)':'#A32D2D')+'">'+fmt(profit)+'</div><div class="met-s">After tax &amp; deductions</div></div>'+
     '</div>';
@@ -14821,7 +14847,7 @@ function renderSummary(){
   document.getElementById('sum-inc').innerHTML=!tIn?'<div class="empty">No income in '+yr+'.</div>':Object.entries(byType).sort((a,b)=>b[1]-a[1]).map(([k,vl])=>barChart(k,vl,tIn,'#185FA5')).join('');
   document.getElementById('sum-exp').innerHTML=!tEx?'<div class="empty">No expenses in '+yr+'.</div>':Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,vl])=>barChart(k,vl,tEx,'#E24B4A')).join('');
   const byClient={};yMi.forEach(m=>{const k=m.client_name||'Unlinked';byClient[k]=(byClient[k]||0)+(m.miles||0);});
-  document.getElementById('sum-mile').innerHTML=!tMi?'<div class="empty">No mileage in '+yr+'.</div>':Object.entries(byClient).sort((a,b)=>b[1]-a[1]).map(([k,mi])=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span>'+k+'</span><span style="font-weight:700">'+mi.toFixed(1)+' mi · '+fmt(mi*IRS())+'</span></div>').join('');
+  document.getElementById('sum-mile').innerHTML=!tMi?'<div class="empty">No mileage in '+yr+'.</div>':Object.entries(byClient).sort((a,b)=>b[1]-a[1]).map(([k,mi])=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span>'+k+'</span><span style="font-weight:700">'+mi.toFixed(1)+' mi · '+fmt(mi*irsRateYr)+'</span></div>').join('');
 }
 
 function setTaxTab(tab,btn){
