@@ -1760,9 +1760,9 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
       <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 8px">Mileage &amp; year</div>
       <div class="fg fg2">
         <div class="f"><label>IRS mileage rate ($/mile)</label><input type="number" id="set-irs" step="0.001"><div style="font-size:10px;color:var(--text3);margin-top:3px">Auto-updated each January · Override manually if needed</div></div>
-        <div class="f"><label>Tax year</label><select id="set-year"><option value="2024">2024</option><option value="2025">2025</option><option value="2026">2026</option></select></div>
+        <input type="hidden" id="set-year">
       </div>
-      <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 6px">Federal standard deductions <span style="font-size:10px;font-weight:400;color:var(--text3)">· IRS published · auto-updated</span></div>
+      <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 6px">Federal standard deductions <span id="set-bracket-yr-note" style="font-size:10px;font-weight:400;color:var(--text3)">· IRS published · auto-updated</span></div>
       <div style="background:var(--bg2);border-radius:var(--r);padding:10px 14px;margin-bottom:10px;display:grid;grid-template-columns:1fr 1fr;gap:4px 20px">
         <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Single</span><span id="set-fs-disp" style="font-weight:700"></span></div>
         <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Married jointly</span><span id="set-fm-disp" style="font-weight:700"></span></div>
@@ -3014,9 +3014,11 @@ function loadSettingsForm(){
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
   const sd=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val;};
   const fmt$=n=>'$'+(n||0).toLocaleString();
-  sf('set-irs',S.irsRate);sf('set-year',S.taxYear);sf('set-fs',S.fedSingle);sf('set-fm',S.fedMFJ);sf('set-fms',S.fedMFS);sf('set-fh',S.fedHOH);
+  sf('set-irs',S.irsRate);sf('set-year',new Date().getFullYear());sf('set-fs',S.fedSingle);sf('set-fm',S.fedMFJ);sf('set-fms',S.fedMFS);sf('set-fh',S.fedHOH);
   sf('set-b10',S.b10);sf('set-b12',S.b12);sf('set-b22',S.b22);sf('set-b24',S.b24);sf('set-b32',S.b32);sf('set-b35',S.b35);
   sf('set-ksl',S.ksLow);sf('set-kst',S.ksTop);sf('set-ksh',S.ksHigh);sf('set-kss',S.ksStdS);sf('set-ksm',S.ksStdM);
+  // Stamp current year into header note
+  const _byn=document.getElementById('set-bracket-yr-note');if(_byn)_byn.textContent='· '+(S.taxYear||new Date().getFullYear())+' IRS values · auto-updated each January';
   // Display-only bracket spans
   sd('set-fs-disp',fmt$(S.fedSingle||15000));sd('set-fm-disp',fmt$(S.fedMFJ||30000));sd('set-fms-disp',fmt$(S.fedMFS||15000));sd('set-fh-disp',fmt$(S.fedHOH||22500));
   sd('set-b10-disp',fmt$(S.b10||11925));sd('set-b12-disp',fmt$(S.b12||48475));sd('set-b22-disp',fmt$(S.b22||103350));sd('set-b24-disp',fmt$(S.b24||197300));sd('set-b32-disp',fmt$(S.b32||250525));sd('set-b35-disp',fmt$(S.b35||626350));
