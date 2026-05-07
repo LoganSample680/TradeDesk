@@ -141,6 +141,8 @@ Deno.serve(async (req) => {
     const { street, city, state, zip } = await req.json();
     if (!street || !city) return new Response(JSON.stringify({ error: 'street and city required' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
+    const apifyToken = Deno.env.get('APIFY_TOKEN');
+
     // Zillow via Apify + Census zip median in parallel
     const [result, zipMedian] = await Promise.all([
       apifyZillowLookup(street, city, state, zip),
@@ -149,6 +151,7 @@ Deno.serve(async (req) => {
 
     // Census tract fallback if Apify returned nothing
     let finalResult: any = result;
+    const _debug = { hasToken: !!apifyToken, apifyResult: !!result };
     if (!finalResult) {
       const fullAddr = [street, city, state, zip].filter(Boolean).join(', ');
       const geo = await geocodeAddress(fullAddr).catch(() => null);
@@ -170,6 +173,7 @@ Deno.serve(async (req) => {
       propertyTier,
       propDataSource: finalResult.source,
       propDataExact:  finalResult.isExact ?? false,
+      _debug,
     }), { headers: { ...CORS, 'Content-Type': 'application/json' } });
 
   } catch (err: any) {
