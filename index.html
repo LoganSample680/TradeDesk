@@ -2344,7 +2344,20 @@ let KS_BRACKETS={single:[],mfj:[],mfs:[],hoh:[]};
 let KS_STD={single:3500,mfj:8000,mfs:4000,hoh:6000};
 
 function saveAll(){try{const lp=(k,d)=>localStorage.setItem(k,JSON.stringify(d));lp('zp3_clients',clients);lp('zp3_bids',bids);lp('zp3_jobs',jobs);lp('zp3_inc',income);lp('zp3_exp',expenses);lp('zp3_mil',mileage);lp('zp3_chk',checksState);lp('zp3_S',S);lp('zp3_pay',payments);lp('zp3_lien',liens);lp('zp3_ev',events.slice(-600));lp('zp3_te',timeEntries.slice(-500));lp('zp3_photos',photos.slice(-300));lp('zp3_lic',licenses);}catch(e){}supaSaveDebounced();}
-function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s?JSON.parse(s):d;};clients=lp('zp3_clients',[]);bids=lp('zp3_bids',[]);jobs=lp('zp3_jobs',[]);income=lp('zp3_inc',[]);expenses=lp('zp3_exp',[]);mileage=lp('zp3_mil',[]);checksState=lp('zp3_chk',{});payments=lp('zp3_pay',[]);liens=lp('zp3_lien',[]);events=lp('zp3_ev',[]);timeEntries=lp('zp3_te',[]);photos=lp('zp3_photos',[]);licenses=lp('zp3_lic',[]);const ss=lp('zp3_S',null);if(ss)S={...S,...ss};}catch(e){}
+function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s?JSON.parse(s):d;};clients=lp('zp3_clients',[]);bids=lp('zp3_bids',[]);jobs=lp('zp3_jobs',[]);income=lp('zp3_inc',[]);expenses=lp('zp3_exp',[]);mileage=lp('zp3_mil',[]);checksState=lp('zp3_chk',{});payments=lp('zp3_pay',[]);liens=lp('zp3_lien',[]);events=lp('zp3_ev',[]);timeEntries=lp('zp3_te',[]);photos=lp('zp3_photos',[]);licenses=lp('zp3_lic',[]);const ss=lp('zp3_S',null);if(ss)S={...S,...ss};
+  // One-time migration: correct stale 2024 tax values in localStorage
+  if(S.fedMFS===14600)S.fedMFS=15000;
+  if(S.fedSingle===14600)S.fedSingle=15000;
+  if(S.fedMFJ===29200)S.fedMFJ=30000;
+  if(S.fedHOH===21900)S.fedHOH=22500;
+  if(S.b10===11600)S.b10=11925;
+  if(S.b12===47150)S.b12=48475;
+  if(S.b22===100525)S.b22=103350;
+  if(S.b24===191950)S.b24=197300;
+  if(S.b32===243725)S.b32=250525;
+  if(S.b35===609350)S.b35=626350;
+  if(S.irsRate===0.67||S.irsRate===0.670)S.irsRate=0.700;
+  }catch(e){}
   // One-time orphan cleanup: remove truly empty Draft bids (no surfaces, no amount) that have
   // no business being in Estimates in Progress — these were created by navigating away at step 1
   // before the _doOpenEstimate dedup fix. Safe to remove: they have zero data.
@@ -2932,7 +2945,7 @@ function applySettings(){
   FED_BRACKETS.mfj=[[S.b10*2,.10],[S.b12*2,.12],[S.b22*2,.22],[S.b24*2,.24],[S.b32*2,.32],[S.b35*2,.35],[Infinity,.37]];
   FED_BRACKETS.mfs=[[S.b10,.10],[S.b12,.12],[S.b22,.22],[S.b24,.24],[S.b32,.32],[S.b35*.6,.35],[Infinity,.37]];
   FED_BRACKETS.hoh=[[16550,.10],[63100,.12],[S.b22,.22],[S.b24,.24],[S.b32,.32],[S.b35,.35],[Infinity,.37]];
-  STD_DED={single:S.fedSingle||14600,mfj:S.fedMFJ||29200,mfs:S.fedMFS||14600,hoh:S.fedHOH||21900};
+  STD_DED={single:S.fedSingle||15000,mfj:S.fedMFJ||30000,mfs:S.fedMFS||15000,hoh:S.fedHOH||22500};
   KS_BRACKETS.single=[[S.ksStdS,0],[S.ksTop,S.ksLow/100],[Infinity,S.ksHigh/100]];
   KS_BRACKETS.mfj=[[S.ksStdM,0],[S.ksTop*2,S.ksLow/100],[Infinity,S.ksHigh/100]];
   KS_BRACKETS.mfs=[[S.ksStdS,0],[S.ksTop*.9,S.ksLow/100],[Infinity,S.ksHigh/100]];
@@ -2955,7 +2968,7 @@ function loadSettingsForm(){
 }
 function saveSettings(){
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
-  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.670,taxYear:parseInt(v('set-year'))||2024,fedSingle:gf('set-fs')||14600,fedMFJ:gf('set-fm')||29200,fedMFS:gf('set-fms')||14600,fedHOH:gf('set-fh')||21900,b10:gf('set-b10')||11600,b12:gf('set-b12')||47150,b22:gf('set-b22')||100525,b24:gf('set-b24')||191950,b32:gf('set-b32')||243725,b35:gf('set-b35')||609350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',mapboxKey:gs('set-mapbox-key')||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.40,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||''};
+  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',mapboxKey:gs('set-mapbox-key')||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.40,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||''};
   applySettings();saveAll();
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
   // Propagate branding/settings to all live client hubs in the background
@@ -3013,7 +3026,7 @@ function clearMileageOnly(){
   },{title:'Clear mileage',yes:'Delete mileage',danger:true});
 }
 
-function resetSettings(){zConfirm('Reset all settings to defaults?',()=>{S={irsRate:.700,taxYear:2026,fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:83,p2:65,p3:95,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00};applySettings();loadSettingsForm();},{title:'Reset settings',yes:'Reset',danger:false});}
+function resetSettings(){zConfirm('Reset all settings to defaults?',()=>{S={irsRate:.700,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:83,p2:65,p3:95,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00};applySettings();loadSettingsForm();},{title:'Reset settings',yes:'Reset',danger:false});}
 function resetLocationPermission(){
   // Clear stored location so modal re-prompts
   delete S.weatherLat;delete S.weatherLon;S.locationDenied=false;
