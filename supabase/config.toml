@@ -1,0 +1,5 @@
+[functions.get-rates]
+verify_jwt = false
+
+[functions.property-lookup]
+verify_jwt = false
