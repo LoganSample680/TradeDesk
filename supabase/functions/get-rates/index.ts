@@ -49,6 +49,14 @@ Deno.serve(async (req) => {
     } else if (type === 'lienRules') {
       const current = JSON.stringify(body.current || {});
       prompt = `You are reviewing mechanic's lien filing deadlines (days from last day of work) for all US states. The app currently uses these values: ${current}. Based on current statutes as of ${year}, identify any states where the filing deadline has changed from the listed value. Return ONLY valid JSON with no other text: {"changes":{"XX":90}} where XX is the 2-letter state code and the number is the correct filing_deadline_days. If nothing has changed, return {"changes":{}}.`;
+    } else if (type === 'stateBrackets') {
+      const state = body.state as string;
+      if (!state || !/^[A-Z]{2}$/.test(state)) {
+        return new Response(JSON.stringify({ error: 'Invalid state' }), {
+          status: 400, headers: { 'Content-Type': 'application/json', ...CORS }
+        });
+      }
+      prompt = `What are the ${state} state individual income tax rates for tax year ${year}? Provide the bracket structure for single filers. Return ONLY valid JSON with no other text: {"state":"${state}","noTax":false,"stdS":3500,"stdM":8000,"brackets":[{"top":15000,"rate":3.1},{"top":9999999,"rate":5.7}]} where top is the income ceiling of each bracket in dollars (use 9999999 for the top bracket), rate is the percentage, stdS is the standard deduction for single filers, stdM for married filing jointly. If the state has no income tax, return {"state":"${state}","noTax":true,"stdS":0,"stdM":0,"brackets":[]}.`;
     } else {
       prompt = `What is the current IRS standard mileage rate for business driving in ${year}? Return ONLY valid JSON with no explanation: {"irsRate":0.700,"year":${year},"effective":"January 1, ${year}"}`;
     }
@@ -62,7 +70,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 400,
+        max_tokens: type === 'stateBrackets' ? 600 : 400,
         messages: [{ role: 'user', content: prompt }]
       })
     });
@@ -115,6 +123,15 @@ Deno.serve(async (req) => {
           status: 422, headers: { 'Content-Type': 'application/json', ...CORS }
         });
       }
+    }
+
+    // stateBrackets: return parsed JSON directly — no additional strict validation
+    if (type === 'stateBrackets') {
+      const st = body.state as string;
+      if (parsed.state !== st) parsed.state = st; // ensure state field is correct
+      return new Response(JSON.stringify(parsed), {
+        headers: { 'Content-Type': 'application/json', ...CORS }
+      });
     }
 
     return new Response(JSON.stringify(parsed), {
