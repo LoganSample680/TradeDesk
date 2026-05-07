@@ -8190,7 +8190,7 @@ async function swLoadColors(){
     const loaded=await r.json();
     // Merge stain colors in (they're not in the SW catalog file)
     const _merged=[...loaded,...STAIN_COLORS.filter(s=>!loaded.find(c=>c.sw===s.sw))];
-    _swColors=_merged.map(c=>c.family==='stain'?c:{...c,family:_swHslFamily(c.hex)});
+    _swColors=_merged.map(c=>c.family?c:{...c,family:_swHslFamily(c.hex)});
   }
   catch(e){_swColors=[
     {sw:'SW 7008',name:'Alabaster',hex:'#EDE9DD',family:'white'},
