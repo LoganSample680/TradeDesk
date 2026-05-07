@@ -10,82 +10,50 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 );
 
-const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'application/json, text/plain, */*',
-  'Accept-Language': 'en-US,en;q=0.9',
-  'Cache-Control': 'no-cache',
-};
+// ── Apify Zillow detail scraper ───────────────────────────────────────────────
+async function apifyZillowLookup(street: string, city: string, state: string, zip: string) {
+  const apifyToken = Deno.env.get('APIFY_TOKEN');
+  if (!apifyToken) return null;
 
-function stripRF(text: string) {
-  return text.replace(/^\{\}&&/, '');
-}
+  // Build Zillow search URL — spaces→hyphens, commas stay
+  const slug = [street, city, state, zip].filter(Boolean).join(', ').replace(/\s+/g, '-');
+  const zillowUrl = `https://www.zillow.com/homes/${slug}_rb/`;
 
-// ── Redfin stingray API ───────────────────────────────────────────────────────
-async function redfinLookup(street: string, city: string, state: string, zip: string) {
-  const address = [street, city, state, zip].filter(Boolean).join(', ');
   try {
-    // Step 1: autocomplete → property path
-    const acText = await fetch(
-      `https://www.redfin.com/stingray/do/location-autocomplete?location=${encodeURIComponent(address)}&v=2`,
-      { headers: { ...HEADERS, 'Referer': 'https://www.redfin.com/' }, signal: AbortSignal.timeout(8000) }
-    ).then(r => r.ok ? r.text() : null).catch(() => null);
-    if (!acText) return null;
+    const res = await fetch(
+      `https://api.apify.com/v2/acts/maxcopell~zillow-detail-scraper/run-sync-get-dataset-items?token=${apifyToken}&timeout=60`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startUrls: [{ url: zillowUrl }], maxItems: 1 }),
+        signal: AbortSignal.timeout(90000),
+      }
+    );
+    if (!res.ok) return null;
 
-    const ac = JSON.parse(stripRF(acText));
-    const rows: any[] = (ac?.payload?.sections ?? []).flatMap((s: any) => s.rows ?? []);
-    // type 2 = exact property match, type 1 = street-level
-    const match = rows.find(r => r.type === 2) ?? rows.find(r => r.type === 1);
-    if (!match?.url) return null;
+    const items: any[] = await res.json();
+    if (!items?.length) return null;
+    const p = items[0];
 
-    // Step 2: initialInfo → propertyId
-    const infoText = await fetch(
-      `https://www.redfin.com/stingray/api/home/details/initialInfo?path=${encodeURIComponent(match.url)}&accessLevel=1`,
-      { headers: { ...HEADERS, 'Referer': `https://www.redfin.com${match.url}` }, signal: AbortSignal.timeout(8000) }
-    ).then(r => r.ok ? r.text() : null).catch(() => null);
-    if (!infoText) return null;
-
-    const info = JSON.parse(stripRF(infoText));
-    const propertyId = info?.payload?.propertyId;
-    const listingId  = info?.payload?.listingId;
-    if (!propertyId) return null;
-
-    // Step 3: belowTheFold → public records (year built, sqft, assessed value)
-    const detText = await fetch(
-      `https://www.redfin.com/stingray/api/home/details/belowTheFold?propertyId=${propertyId}&accessLevel=1${listingId ? '&listingId=' + listingId : ''}`,
-      { headers: { ...HEADERS, 'Referer': `https://www.redfin.com${match.url}` }, signal: AbortSignal.timeout(10000) }
-    ).then(r => r.ok ? r.text() : null).catch(() => null);
-    if (!detText) return null;
-
-    const det  = JSON.parse(stripRF(detText));
-    const pr   = det?.payload?.publicRecordsInfo?.basicInfo ?? {};
-    const atf  = det?.payload?.mainHouseInfo?.homeDetails   ?? {};
-
-    const yearBuilt = pr.yearBuilt        ?? atf.yearBuilt      ?? null;
-    const sqft      = pr.totalSquareFeet  ?? pr.finishedSquareFeet ?? atf.sqFt ?? null;
-    if (!yearBuilt && !sqft) return null;
-
-    const lastSale = (det?.payload?.publicRecordsInfo?.priceHistoryInfo ?? [])
-      .find((h: any) => h.isListing === false);
-
-    // Redfin propertyType strings: SingleFamily, MultiFamily, Condo, etc.
-    const propType: string = pr.propertyType ?? atf.propertyType ?? '';
-    const isRental = /multi.?family|apartment/i.test(propType);
+    const isRental = /multi.?family|apartment/i.test(p.homeType ?? '');
+    const sqft = p.livingArea ?? p.lotAreaValue ?? null;
+    const lotSize = p.lotAreaValue ? `${p.lotAreaValue} ${p.lotAreaUnit ?? 'sqft'}` : null;
 
     return {
-      estimatedValue: pr.assessedValue   ?? atf.priceInfo?.amount ?? null,
-      yearBuilt:      yearBuilt ? parseInt(yearBuilt)             : null,
-      sqft:           sqft      ? Math.round(parseFloat(sqft))    : null,
-      bedrooms:       pr.beds   ?? atf.beds                       ?? null,
-      bathrooms:      pr.baths  ?? atf.baths                      ?? null,
-      lotSize:        pr.lotSqFt ? `${pr.lotSqFt} sqft`          : null,
-      propertyType:   propType  || null,
-      stories:        pr.numStories                               ?? null,
+      estimatedValue: p.zestimate    ?? p.price         ?? null,
+      zestimate:      p.zestimate                        ?? null,
+      rentZestimate:  p.rentZestimate                    ?? null,
+      yearBuilt:      p.yearBuilt    ? parseInt(p.yearBuilt) : null,
+      sqft:           sqft           ? Math.round(parseFloat(sqft)) : null,
+      bedrooms:       p.bedrooms                         ?? null,
+      bathrooms:      p.bathrooms                        ?? null,
+      lotSize,
+      propertyType:   p.homeType                         ?? null,
+      lastSaleDate:   p.lastSoldDate                     ?? null,
+      lastSalePrice:  p.lastSoldPrice                    ?? null,
+      assessorUrl:    p.url          ?? zillowUrl,
       isRental,
-      lastSaleDate:   lastSale?.date                              ?? null,
-      lastSalePrice:  lastSale?.amount                            ?? null,
-      assessorUrl:    `https://www.redfin.com${match.url}`,
-      source:         'redfin',
+      source:         'zillow',
       isExact:        true,
     };
   } catch { return null; }
@@ -138,7 +106,7 @@ async function censusTractFallback(lat: number, lon: number) {
   } catch { return null; }
 }
 
-// ── Pricing tier: assessed value vs zip median ────────────────────────────────
+// ── Pricing tier: zestimate vs zip median ─────────────────────────────────────
 function calcPricingTier(
   estimatedValue: number | null,
   zipMedian: number | null,
@@ -173,13 +141,13 @@ Deno.serve(async (req) => {
     const { street, city, state, zip } = await req.json();
     if (!street || !city) return new Response(JSON.stringify({ error: 'street and city required' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
-    // Redfin + Census zip median in parallel
+    // Zillow via Apify + Census zip median in parallel
     const [result, zipMedian] = await Promise.all([
-      redfinLookup(street, city, state, zip),
+      apifyZillowLookup(street, city, state, zip),
       censusZipMedian(zip),
     ]);
 
-    // Census tract fallback if Redfin returned nothing
+    // Census tract fallback if Apify returned nothing
     let finalResult: any = result;
     if (!finalResult) {
       const fullAddr = [street, city, state, zip].filter(Boolean).join(', ');
