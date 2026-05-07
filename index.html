@@ -2322,7 +2322,7 @@ const CHECKS=[
 ];
 const CAT_CFG={urgent:{label:'Do right away',color:'#A32D2D'},biz:{label:'Business setup in Kansas',color:'#185FA5'},tax:{label:'Tax & accounting',color:'#854F0B'},ks:{label:'Kansas market & marketing',color:'#27500A'}};
 
-let S={bitlyKey:'',mapboxKey:'',goalMonthly:0,laborRate:45,irsRate:.700,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{}};
+let S={bitlyKey:'',mapboxKey:'',goalMonthly:0,laborRate:45,irsRate:.725,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{}};
 
 // ZJ's logo — SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
 // Only shown for ZJ's Painting account — other accounts see plain business name text.
@@ -2393,11 +2393,12 @@ const TAX_HISTORY={
   2023:{fedSingle:13850,fedMFJ:27700,fedMFS:13850,fedHOH:20800,b10:11000,b12:44725,b22:95375,b24:182050,b32:231250,b35:578125,irsRate:.655},
   2024:{fedSingle:14600,fedMFJ:29200,fedMFS:14600,fedHOH:21900,b10:11600,b12:47150,b22:100525,b24:191950,b32:243725,b35:609350,irsRate:.670},
   2025:{fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,irsRate:.700},
+  2026:{fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,irsRate:.725},
 };
 function _getBracketsForYear(yr){
   const n=parseInt(yr);
   const thisYear=new Date().getFullYear();
-  if(n===thisYear)return{fedSingle:S.fedSingle||15000,fedMFJ:S.fedMFJ||30000,fedMFS:S.fedMFS||15000,fedHOH:S.fedHOH||22500,b10:S.b10||11925,b12:S.b12||48475,b22:S.b22||103350,b24:S.b24||197300,b32:S.b32||250525,b35:S.b35||626350,irsRate:S.irsRate||.700};
+  if(n===thisYear)return{fedSingle:S.fedSingle||15000,fedMFJ:S.fedMFJ||30000,fedMFS:S.fedMFS||15000,fedHOH:S.fedHOH||22500,b10:S.b10||11925,b12:S.b12||48475,b22:S.b22||103350,b24:S.b24||197300,b32:S.b32||250525,b35:S.b35||626350,irsRate:S.irsRate||.725};
   return TAX_HISTORY[n]||TAX_HISTORY[2025];
 }
 function _getFedBracketsForYear(yr){
@@ -2406,7 +2407,7 @@ function _getFedBracketsForYear(yr){
   return{single:[[b.b10,.10],[b.b12,.12],[b.b22,.22],[b.b24,.24],[b.b32,.32],[b.b35,.35],[Infinity,.37]],mfj:mfjBkts,mfs:[[b.b10,.10],[b.b12,.12],[b.b22,.22],[b.b24,.24],[b.b32,.32],[b.b35*.6,.35],[Infinity,.37]],hoh:[[16550,.10],[63100,.12],[b.b22,.22],[b.b24,.24],[b.b32,.32],[b.b35,.35],[Infinity,.37]],qss:mfjBkts};
 }
 function _getStdDedForYear(yr,status){const b=_getBracketsForYear(yr);return{single:b.fedSingle,mfj:b.fedMFJ,mfs:b.fedMFS,hoh:b.fedHOH,qss:b.fedMFJ}[status]||b.fedSingle;}
-function _getIrsRateForYear(yr){return _getBracketsForYear(yr).irsRate||S.irsRate||.700;}
+function _getIrsRateForYear(yr){return _getBracketsForYear(yr).irsRate||S.irsRate||.725;}
 function _getActiveStateData(){
   if(S.stateRates&&S.state&&S.stateRates[S.state])return S.stateRates[S.state];
   return{noTax:!S.ksLow&&!S.ksHigh,low:S.ksLow||0,high:S.ksHigh||0,top:S.ksTop||0,stdS:S.ksStdS||0,stdM:S.ksStdM||0};
@@ -2438,6 +2439,7 @@ function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s
   if(S.b32===243725)S.b32=250525;
   if(S.b35===609350)S.b35=626350;
   if(S.irsRate===0.67||S.irsRate===0.670)S.irsRate=0.700;
+  if(new Date().getFullYear()>=2026&&S.irsRate<0.725){S.irsRate=0.725;localStorage.removeItem('zp3_rate_year');}
   try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(e){}
   }catch(e){}
   // One-time orphan cleanup: remove truly empty Draft bids (no surfaces, no amount) that have
@@ -2472,7 +2474,7 @@ const parseD=s=>new Date(s+'T12:00:00');
 const addDays=(s,n)=>{const d=parseD(s);d.setDate(d.getDate()+n);return dateKey(d);};
 const v=id=>(document.getElementById(id)||{}).value||'';
 const nv=id=>parseFloat(v(id))||0;
-const IRS=()=>S.irsRate||.670;
+const IRS=()=>S.irsRate||.725;
 function fmtTime(t){if(!t)return'';const[h,m]=t.split(':').map(Number);const ampm=h>=12?'PM':'AM';const h12=h%12||12;return h12+':'+(m<10?'0':'')+m+' '+ampm;}
 const COVERAGE=()=>S.cov||350;
 const MARGIN=()=>(S.margin||25)/100;
@@ -8923,8 +8925,10 @@ async function autoRefreshRates(){
     });
     if(!resp.ok)return;
     const d=await resp.json();
-    // Sanity bounds — IRS rate must be realistic (never below 50¢ or above $1.00/mi)
+    // Sanity bounds — must be realistic and never roll back below what's already stored
+    const _currentRate=S.irsRate||0.50;
     if(!d.irsRate||d.irsRate<0.50||d.irsRate>1.00)return;
+    if(d.irsRate<_currentRate-0.005)return; // reject if AI returned a stale/lower rate
     if(Math.abs(d.irsRate-(S.irsRate||0))>0.0005){
       S.irsRate=d.irsRate;saveAll();
       showToast('IRS mileage rate updated to $'+(+d.irsRate).toFixed(3)+'/mi for '+d.year);
@@ -18557,6 +18561,7 @@ async function supaLoadFromCloud(){
       if(S.b32===243725)S.b32=250525;
       if(S.b35===609350)S.b35=626350;
       if(S.irsRate===0.67||S.irsRate===0.670)S.irsRate=0.700;
+      if(new Date().getFullYear()>=2026&&S.irsRate<0.725)S.irsRate=0.725;
       applySettings();
       loadSettingsForm();
       // Restore owner name to this device's localStorage so nav shows correctly
