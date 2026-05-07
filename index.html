@@ -17655,6 +17655,8 @@ async function supaSaveToCloud(){
       }
       return e;
     });
+    // Strip stateRates from cloud settings — can be re-fetched from Claude, no need to sync
+    const {stateRates:_sr,...sForCloud}=S;
     const payload={
       user_id:_supaUser.id,
       clients:JSON.stringify(clients),
@@ -17665,7 +17667,7 @@ async function supaSaveToCloud(){
       expenses:JSON.stringify(expensesForSync),
       mileage:JSON.stringify(mileage),
       liens:JSON.stringify(liens),
-      settings:JSON.stringify(S),
+      settings:JSON.stringify(sForCloud),
       receipt_images:JSON.stringify(receiptImages),
       time_entries:JSON.stringify(timeEntries.slice(-500)),
       updated_at:new Date().toISOString()
