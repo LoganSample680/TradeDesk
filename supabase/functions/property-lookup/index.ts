@@ -10,62 +10,86 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 );
 
-const BROWSER_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-  'Accept-Language': 'en-US,en;q=0.5',
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept': 'application/json, text/plain, */*',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Cache-Control': 'no-cache',
 };
 
-// ── Bing search → Zillow property page → __NEXT_DATA__ ───────────────────────
-async function zillowDirectLookup(street: string, city: string, state: string, zip: string) {
+function stripRF(text: string) {
+  // Redfin API responses are prefixed with {}&& to prevent JSON hijacking
+  return text.replace(/^\{\}&&/, '');
+}
+
+// ── Redfin stingray API ───────────────────────────────────────────────────────
+async function redfinLookup(street: string, city: string, state: string, zip: string) {
   const address = [street, city, state, zip].filter(Boolean).join(', ');
+  try {
+    // Step 1: Autocomplete → get property path
+    const acText = await fetch(
+      `https://www.redfin.com/stingray/do/location-autocomplete?location=${encodeURIComponent(address)}&v=2`,
+      { headers: { ...HEADERS, 'Referer': 'https://www.redfin.com/' }, signal: AbortSignal.timeout(8000) }
+    ).then(r => r.ok ? r.text() : null).catch(() => null);
+    if (!acText) return null;
 
-  // Step 1: Bing search → find Zillow property URL
-  const searchHtml = await fetch(
-    `https://www.bing.com/search?q=${encodeURIComponent('zillow ' + address)}`,
-    { headers: BROWSER_HEADERS, signal: AbortSignal.timeout(8000) }
-  ).then(r => r.ok ? r.text() : null).catch(() => null);
-  if (!searchHtml) return null;
+    const ac = JSON.parse(stripRF(acText));
+    const rows: any[] = (ac?.payload?.sections ?? []).flatMap((s: any) => s.rows ?? []);
+    // type 2 = exact property address match
+    const match = rows.find(r => r.type === 2) ?? rows.find(r => r.type === 1);
+    if (!match?.url) return null;
 
-  const zillowUrl = searchHtml.match(/href="(https?:\/\/(?:www\.)?zillow\.com\/homedetails\/[^"]+)"/i)?.[1];
-  if (!zillowUrl) return null;
+    // Step 2: Get propertyId from initialInfo
+    const infoText = await fetch(
+      `https://www.redfin.com/stingray/api/home/details/initialInfo?path=${encodeURIComponent(match.url)}&accessLevel=1`,
+      { headers: { ...HEADERS, 'Referer': `https://www.redfin.com${match.url}` }, signal: AbortSignal.timeout(8000) }
+    ).then(r => r.ok ? r.text() : null).catch(() => null);
+    if (!infoText) return null;
 
-  // Step 2: Fetch Zillow property page
-  const pageHtml = await fetch(zillowUrl, {
-    headers: { ...BROWSER_HEADERS, 'Referer': 'https://www.bing.com/' },
-    signal: AbortSignal.timeout(10000),
-  }).then(r => r.ok ? r.text() : null).catch(() => null);
-  if (!pageHtml) return null;
+    const info = JSON.parse(stripRF(infoText));
+    const propertyId = info?.payload?.propertyId;
+    const listingId  = info?.payload?.listingId;
+    if (!propertyId) return null;
 
-  // Step 3: Extract __NEXT_DATA__ JSON (Zillow uses Next.js SSR)
-  const raw = pageHtml.match(/<script id="__NEXT_DATA__" type="application\/json">(.+?)<\/script>/s)?.[1];
-  if (!raw) return null;
+    // Step 3: Get full detail from belowTheFold (has public records)
+    const detUrl = `https://www.redfin.com/stingray/api/home/details/belowTheFold?propertyId=${propertyId}&accessLevel=1${listingId ? '&listingId=' + listingId : ''}`;
+    const detText = await fetch(
+      detUrl,
+      { headers: { ...HEADERS, 'Referer': `https://www.redfin.com${match.url}` }, signal: AbortSignal.timeout(10000) }
+    ).then(r => r.ok ? r.text() : null).catch(() => null);
+    if (!detText) return null;
 
-  let nextData: any;
-  try { nextData = JSON.parse(raw); } catch { return null; }
+    const det = JSON.parse(stripRF(detText));
 
-  // Zillow stores property data in gdpClientCache keyed by zpid; try both known paths
-  const cache = nextData?.props?.pageProps?.componentProps?.gdpClientCache
-             ?? nextData?.props?.pageProps?.gdpClientCache;
-  const p = cache ? (Object.values(cache)[0] as any)?.property : null;
-  if (!p) return null;
+    // Public records are the most reliable source for year built / sqft
+    const pr  = det?.payload?.publicRecordsInfo?.basicInfo ?? {};
+    const atf = det?.payload?.mainHouseInfo?.homeDetails    ?? {};
 
-  const lastSale = (p.priceHistory as any[])?.find(h => h.event === 'Sold');
-  return {
-    yearBuilt:      p.yearBuilt     ?? null,
-    sqft:           p.livingArea    ? Math.round(p.livingArea) : null,
-    estimatedValue: p.zestimate     ?? p.price ?? null,
-    bedrooms:       p.bedrooms      ?? null,
-    bathrooms:      p.bathrooms     ?? null,
-    lotSize:        p.lotAreaValue  ? `${p.lotAreaValue} ${p.lotAreaUnits ?? 'sqft'}` : null,
-    propertyType:   p.homeType      ?? null,
-    stories:        p.stories       ?? null,
-    lastSaleDate:   lastSale?.date  ?? null,
-    lastSalePrice:  lastSale?.price ?? null,
-    assessorUrl:    zillowUrl,
-    source:         'zillow',
-    isExact:        true,
-  };
+    const yearBuilt = pr.yearBuilt      ?? atf.yearBuilt      ?? null;
+    const sqft      = pr.totalSquareFeet ?? pr.finishedSquareFeet ?? atf.sqFt ?? null;
+
+    if (!yearBuilt && !sqft) return null;
+
+    const lastSale = (det?.payload?.publicRecordsInfo?.priceHistoryInfo ?? [])
+      .find((h: any) => h.isListing === false);
+
+    return {
+      yearBuilt:      yearBuilt ? parseInt(yearBuilt)  : null,
+      sqft:           sqft      ? Math.round(parseFloat(sqft)) : null,
+      estimatedValue: pr.assessedValue  ?? atf.priceInfo?.amount ?? null,
+      bedrooms:       pr.beds           ?? atf.beds    ?? null,
+      bathrooms:      pr.baths          ?? atf.baths   ?? null,
+      lotSize:        pr.lotSqFt        ? `${pr.lotSqFt} sqft` : null,
+      propertyType:   pr.propertyType   ?? atf.propertyType ?? null,
+      stories:        pr.numStories     ?? null,
+      lastSaleDate:   lastSale?.date    ?? null,
+      lastSalePrice:  lastSale?.amount  ?? null,
+      assessorUrl:    `https://www.redfin.com${match.url}`,
+      source:         'redfin',
+      isExact:        true,
+    };
+  } catch { return null; }
 }
 
 // ── Nominatim geocode → lat/lon (for Census fallback only) ───────────────────
@@ -112,10 +136,10 @@ Deno.serve(async (req) => {
     const { street, city, state, zip } = await req.json();
     if (!street || !city) return new Response(JSON.stringify({ error: 'street and city required' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
-    // Try Zillow first
-    let result: any = await zillowDirectLookup(street, city, state, zip);
+    // Try Redfin first (stingray API, less blocked than Zillow from data centers)
+    let result: any = await redfinLookup(street, city, state, zip);
 
-    // Census fallback if Zillow blocked or no result
+    // Census tract fallback if Redfin blocked or no result
     if (!result) {
       const fullAddr = [street, city, state, zip].filter(Boolean).join(', ');
       const geo = await geocodeAddress(fullAddr).catch(() => null);
