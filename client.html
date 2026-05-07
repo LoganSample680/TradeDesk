@@ -545,7 +545,7 @@ async function _launchCheckout(bidId,amount,label){
   try{
     const hubBase=location.href.split('#')[0];
     const res=await fetch(SUPA_URL+'/functions/v1/create-checkout',{
-      method:'POST',headers:{'Content-Type':'application/json'},
+      method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
       body:JSON.stringify({amount,currency:'usd',paymentMethod:'card',
         proposalKey:bid.proposalKey||null,clientName:_hub.clientName,
         businessName:_hub.contractorName,bidId:String(bid.id),
