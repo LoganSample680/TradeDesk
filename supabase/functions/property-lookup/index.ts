@@ -15,17 +15,15 @@ async function apifyZillowLookup(street: string, city: string, state: string, zi
   const apifyToken = Deno.env.get('APIFY_TOKEN');
   if (!apifyToken) return null;
 
-  // Build Zillow search URL — spaces→hyphens, commas stay
-  const slug = [street, city, state, zip].filter(Boolean).join(', ').replace(/\s+/g, '-');
-  const zillowUrl = `https://www.zillow.com/homes/${slug}_rb/`;
+  const address = [street, city, state, zip].filter(Boolean).join(', ');
 
   try {
     const res = await fetch(
-      `https://api.apify.com/v2/acts/maxcopell~zillow-detail-scraper/run-sync-get-dataset-items?token=${apifyToken}&timeout=60`,
+      `https://api.apify.com/v2/acts/one-api~zillow-scrape-address-url-zpid/run-sync-get-dataset-items?token=${apifyToken}&timeout=60`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ searchUrls: [{ url: zillowUrl }] }),
+        body: JSON.stringify({ addresses: [address] }),
         signal: AbortSignal.timeout(90000),
       }
     );
@@ -51,7 +49,7 @@ async function apifyZillowLookup(street: string, city: string, state: string, zi
       propertyType:   p.homeType                         ?? null,
       lastSaleDate:   p.lastSoldDate                     ?? null,
       lastSalePrice:  p.lastSoldPrice                    ?? null,
-      assessorUrl:    p.url          ?? zillowUrl,
+      assessorUrl:    p.url          ?? p.hdpUrl ?? null,
       isRental,
       source:         'zillow',
       isExact:        true,
