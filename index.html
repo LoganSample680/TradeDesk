@@ -17850,7 +17850,20 @@ async function supaLoadFromCloud(){
     mileage=parse(data.mileage,mileage);
     liens=parse(data.liens,liens);
     timeEntries=parse(data.time_entries,timeEntries);
-    if(data.settings){const ss=parse(data.settings,null);if(ss){S={...S,...ss};applySettings();
+    if(data.settings){const ss=parse(data.settings,null);if(ss){S={...S,...ss};
+      // Migrate stale 2024 IRS/bracket values that may be stored in cloud
+      if(S.fedMFS===14600)S.fedMFS=15000;
+      if(S.fedSingle===14600)S.fedSingle=15000;
+      if(S.fedMFJ===29200)S.fedMFJ=30000;
+      if(S.fedHOH===21900)S.fedHOH=22500;
+      if(S.b10===11600)S.b10=11925;
+      if(S.b12===47150)S.b12=48475;
+      if(S.b22===100525)S.b22=103350;
+      if(S.b24===191950)S.b24=197300;
+      if(S.b32===243725)S.b32=250525;
+      if(S.b35===609350)S.b35=626350;
+      if(S.irsRate===0.67||S.irsRate===0.670)S.irsRate=0.700;
+      applySettings();
       // Restore owner name to this device's localStorage so nav shows correctly
       if(ss.ownerName&&_supaUser?.id){localStorage.setItem('zp3_uname_'+_supaUser.id,ss.ownerName);if(_user)_user.name=ss.ownerName;}
     }}
