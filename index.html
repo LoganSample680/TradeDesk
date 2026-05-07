@@ -17688,7 +17688,18 @@ async function supaSaveToCloud(){
       updated_at:new Date().toISOString()
     };
     const{error}=await _supa.from('zj_data').upsert(payload,{onConflict:'user_id'});
-    if(error)throw error;
+    if(error){
+      // 57014 = statement timeout — retry once with trimmed history arrays
+      if(error.code==='57014'){
+        const slim={...payload,
+          mileage:JSON.stringify(mileage.slice(-300)),
+          time_entries:JSON.stringify(timeEntries.slice(-200)),
+          receipt_images:JSON.stringify({})
+        };
+        const{error:e2}=await _supa.from('zj_data').upsert(slim,{onConflict:'user_id'});
+        if(e2)throw e2;
+      }else throw error;
+    }
     supaSetStatus('synced');
   }catch(e){console.warn('Cloud save failed:',e);supaSetStatus('error');}
 }
