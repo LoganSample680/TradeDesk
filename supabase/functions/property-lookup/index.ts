@@ -29,10 +29,10 @@ async function apifyZillowLookup(street: string, city: string, state: string, zi
         signal: AbortSignal.timeout(90000),
       }
     );
-    if (!res.ok) return null;
+    if (!res.ok) return { _apifyError: `HTTP ${res.status}` } as any;
 
     const items: any[] = await res.json();
-    if (!items?.length) return null;
+    if (!items?.length) return { _apifyError: 'empty results' } as any;
     const p = items[0];
 
     const isRental = /multi.?family|apartment/i.test(p.homeType ?? '');
@@ -56,7 +56,7 @@ async function apifyZillowLookup(street: string, city: string, state: string, zi
       source:         'zillow',
       isExact:        true,
     };
-  } catch { return null; }
+  } catch (e: any) { return { _apifyError: e?.message ?? String(e) } as any; }
 }
 
 // ── Census zip median home value ──────────────────────────────────────────────
@@ -151,7 +151,7 @@ Deno.serve(async (req) => {
 
     // Census tract fallback if Apify returned nothing
     let finalResult: any = result;
-    const _debug = { hasToken: !!apifyToken, apifyResult: !!result };
+    const _debug = { hasToken: !!apifyToken, apifyResult: !!result, apifyError: (result as any)?._apifyError ?? null };
     if (!finalResult) {
       const fullAddr = [street, city, state, zip].filter(Boolean).join(', ');
       const geo = await geocodeAddress(fullAddr).catch(() => null);
