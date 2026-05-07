@@ -8606,9 +8606,9 @@ const TRADE_JOBS={
     {id:'wh40',        name:'Water heater (40gal gas)',     scope:'resi', labor:350, mat:500, matDesc:'WH 40gal gas',        hrs:3,  unit:'ea'},
     {id:'wh50',        name:'Water heater (50gal gas)',     scope:'resi', labor:350, mat:600, matDesc:'WH 50gal gas',        hrs:3.5,unit:'ea'},
     {id:'wh_elec',     name:'Water heater (electric)',      scope:'resi', labor:300, mat:550, matDesc:'WH electric',         hrs:3,  unit:'ea'},
-    {id:'tankless_g',  name:'Tankless WH (gas)',            scope:'resi', labor:450, mat:900, matDesc:'Navien/Rinnai unit',  hrs:5,  unit:'ea',gasLic:true},
-    {id:'tankless_e',  name:'Tankless WH (electric)',       scope:'resi', labor:350, mat:650, matDesc:'Tankless electric',   hrs:4,  unit:'ea'},
-    {id:'boiler',      name:'Boiler replacement',           scope:'resi', labor:800, mat:2500,matDesc:'Gas boiler',          hrs:8,  unit:'ea',gasLic:true},
+    {id:'tankless_g',  name:'Tankless WH (gas)',            scope:'resi', labor:450, mat:900, matDesc:'Tankless WH',        hrs:5,  unit:'ea',gasLic:true,freeForm:true,freeFormLabel:'Brand/model (e.g. Navien NPE-240S)'},
+    {id:'tankless_e',  name:'Tankless WH (electric)',       scope:'resi', labor:350, mat:650, matDesc:'Tankless WH',        hrs:4,  unit:'ea',           freeForm:true,freeFormLabel:'Brand/model (e.g. Stiebel Eltron DHC-E)'},
+    {id:'boiler',      name:'Boiler replacement',           scope:'resi', labor:800, mat:2500,matDesc:'Boiler',             hrs:8,  unit:'ea',gasLic:true,freeForm:true,freeFormLabel:'Brand/model (e.g. Weil-McLain, Burnham)'},
     {id:'drain',       name:'Drain cleaning',               scope:'both', labor:150, mat:0,                                  hrs:1,  unit:'ea'},
     {id:'hydro_jet',   name:'Hydro-jetting',                scope:'both', labor:350, mat:0,                                  hrs:2,  unit:'ea'},
     {id:'leak',        name:'Leak repair — supply line',    scope:'both', labor:100, mat:25,  matDesc:'Fittings',            hrs:1,  unit:'ea'},
@@ -8622,8 +8622,8 @@ const TRADE_JOBS={
     {id:'gas_run',     name:'Gas line new run',             scope:'both', labor:25,  mat:8,   matDesc:'Gas pipe',            hrs:0,  unit:'lin ft',custom:true,gasLic:true},
     {id:'gas_conn',    name:'Gas appliance hookup',         scope:'both', labor:150, mat:30,  matDesc:'Gas connector',       hrs:1.5,unit:'ea',gasLic:true},
     // ── Commercial ─────────────────────────────────────────────────────────────
-    {id:'c_wh_comm',   name:'Commercial water heater',      scope:'commercial',labor:600, mat:1500,matDesc:'Commercial WH', hrs:6,  unit:'ea'},
-    {id:'c_tankless',  name:'Commercial tankless system',   scope:'commercial',labor:800, mat:1800,matDesc:'Comm tankless', hrs:8,  unit:'ea',gasLic:true},
+    {id:'c_wh_comm',   name:'Commercial water heater',      scope:'commercial',labor:600, mat:1500,matDesc:'Commercial WH',hrs:6,  unit:'ea',freeForm:true,freeFormLabel:'Brand/model'},
+    {id:'c_tankless',  name:'Commercial tankless system',   scope:'commercial',labor:800, mat:1800,matDesc:'Comm tankless',hrs:8,  unit:'ea',gasLic:true,freeForm:true,freeFormLabel:'Brand/model'},
     {id:'c_backflow',  name:'Backflow preventer',           scope:'commercial',labor:350, mat:280, matDesc:'RPZ backflow',   hrs:3,  unit:'ea'},
     {id:'c_grease',    name:'Grease trap service',          scope:'commercial',labor:200, mat:0,                             hrs:2,  unit:'ea'},
     {id:'c_booster',   name:'Booster pump system',         scope:'commercial',labor:800, mat:1200,matDesc:'Booster pump',   hrs:8,  unit:'ea'},
@@ -8648,20 +8648,17 @@ const TRADE_JOBS={
     {id:'xfer_auto',   name:'Transfer switch (auto)',       scope:'both', labor:450, mat:650, matDesc:'Auto transfer sw',   hrs:5,  unit:'ea'},
     {id:'gen_hookup',  name:'Generator hookup',             scope:'both', labor:350, mat:120, matDesc:'Inlet + interlock',   hrs:4,  unit:'ea'},
     // ── Solar & Off-Grid ───────────────────────────────────────────────────────
-    {id:'solar_kw',    name:'Solar install (per kW)',       scope:'both', labor:400, mat:900, matDesc:'Panels + racking',    hrs:0,  unit:'kW',custom:true},
-    {id:'eg4_inv',     name:'EG4 6000XP inverter',         scope:'both', labor:800, mat:2800,matDesc:'EG4 6000XP inverter', hrs:8,  unit:'ea'},
-    {id:'eg4_18k',     name:'EG4 18kPV inverter',          scope:'both', labor:1000,mat:4200,matDesc:'EG4 18kPV inverter',  hrs:10, unit:'ea'},
-    {id:'solark_12k',  name:'Sol-Ark 12k inverter',        scope:'both', labor:900, mat:3800,matDesc:'Sol-Ark 12k',         hrs:10, unit:'ea'},
-    {id:'solark_15k',  name:'Sol-Ark 15k inverter',        scope:'both', labor:1000,mat:4800,matDesc:'Sol-Ark 15k',         hrs:12, unit:'ea'},
-    {id:'bat_eg4',     name:'EG4 LifePower4 (51.2V 100Ah)',scope:'both', labor:200, mat:1100,matDesc:'EG4 LFP battery',     hrs:2,  unit:'ea'},
-    {id:'bat_kwh',     name:'Battery bank (per kWh)',      scope:'both', labor:150, mat:450, matDesc:'LFP battery cells',   hrs:0,  unit:'kWh',custom:true},
+    {id:'solar_kw',    name:'Solar install (per kW)',        scope:'both', labor:400, mat:900, matDesc:'Solar panels',        hrs:0,  unit:'kW', custom:true, freeForm:true,freeFormLabel:'Panel brand (e.g. REC, Silfab, Hanwha)'},
+    {id:'inverter',    name:'Inverter install',             scope:'both', labor:900, mat:3800,matDesc:'Inverter',            hrs:10, unit:'ea', freeForm:true,freeFormLabel:'Inverter model (e.g. Sol-Ark 15k, EG4 18kPV)'},
+    {id:'battery',     name:'Battery install',              scope:'both', labor:200, mat:1100,matDesc:'Battery',             hrs:2,  unit:'ea', freeForm:true,freeFormLabel:'Battery model (e.g. EG4 LifePower4, Fortress eVault)'},
+    {id:'bat_kwh',     name:'Battery bank (per kWh)',       scope:'both', labor:150, mat:450, matDesc:'Battery bank',        hrs:0,  unit:'kWh',custom:true, freeForm:true,freeFormLabel:'Battery brand/chemistry'},
     {id:'offgrid_design',name:'Off-grid system design',    scope:'both', labor:500, mat:0,                                  hrs:6,  unit:'ea'},
+    {id:'c_solar_comm',name:'Commercial solar (per kW)',   scope:'commercial',labor:500,mat:1100,matDesc:'Comm solar panels',hrs:0,  unit:'kW', custom:true,freeForm:true,freeFormLabel:'Panel brand'},
     // ── Commercial ─────────────────────────────────────────────────────────────
     {id:'c_3phase',    name:'3-phase panel install',       scope:'commercial',labor:1200,mat:800, matDesc:'3-phase panel',  hrs:10, unit:'ea'},
     {id:'c_lighting',  name:'Commercial lighting (per fix)',scope:'commercial',labor:150, mat:80, matDesc:'LED fixture',    hrs:0,  unit:'fixture',custom:true},
     {id:'c_ev_comm',   name:'EV charging station (comm)',  scope:'commercial',labor:800, mat:1200,matDesc:'Level 2 EVSE',   hrs:8,  unit:'ea'},
     {id:'c_panel_comm',name:'Commercial panel (400A)',     scope:'commercial',labor:2000,mat:1400,matDesc:'400A panel',     hrs:16, unit:'ea'},
-    {id:'c_solar_comm',name:'Commercial solar (per kW)',   scope:'commercial',labor:500, mat:1100,matDesc:'Comm panels',    hrs:0,  unit:'kW',custom:true},
     {id:'c_emerg_light',name:'Emergency lighting',        scope:'commercial',labor:95,  mat:65,  matDesc:'Exit/emerg light',hrs:1,  unit:'ea'},
   ],
   hvac:[
@@ -8681,17 +8678,17 @@ const TRADE_JOBS={
     {id:'ac4t',        name:'AC replacement (4-ton)',      scope:'resi', labor:1600,mat:4200,matDesc:'4-ton AC unit',       hrs:12, unit:'ea'},
     {id:'furnace_80',  name:'Furnace (80k BTU)',           scope:'resi', labor:800, mat:1500,matDesc:'80k BTU furnace',     hrs:8,  unit:'ea'},
     {id:'furnace_100', name:'Furnace (100k BTU)',          scope:'resi', labor:900, mat:1800,matDesc:'100k BTU furnace',    hrs:9,  unit:'ea'},
-    {id:'mini_1z',     name:'Mini-split — 1 zone',        scope:'both', labor:800, mat:1200,matDesc:'1-zone mini-split',   hrs:6,  unit:'ea'},
-    {id:'mini_2z',     name:'Mini-split — 2 zone',        scope:'both', labor:1200,mat:2400,matDesc:'2-zone multi-split',  hrs:10, unit:'ea'},
-    {id:'mini_3z',     name:'Mini-split — 3 zone',        scope:'both', labor:1600,mat:3600,matDesc:'3-zone multi-split',  hrs:14, unit:'ea'},
-    {id:'mini_head',   name:'Mini-split add\'l head',      scope:'both', labor:400, mat:800, matDesc:'Additional head',     hrs:4,  unit:'ea'},
-    {id:'hrv',         name:'HRV install',                 scope:'resi', labor:600, mat:1200,matDesc:'HRV unit + ducting',  hrs:6,  unit:'ea'},
-    {id:'erv',         name:'ERV install',                 scope:'resi', labor:600, mat:1400,matDesc:'ERV unit + ducting',  hrs:6,  unit:'ea'},
+    {id:'mini_1z',     name:'Mini-split — 1 zone',        scope:'both', labor:800, mat:1200,matDesc:'Mini-split',           hrs:6,  unit:'ea',freeForm:true,freeFormLabel:'Brand/model (e.g. Mitsubishi MSZ-GL, Daikin, LG)'},
+    {id:'mini_2z',     name:'Mini-split — 2 zone',        scope:'both', labor:1200,mat:2400,matDesc:'Multi-split system',  hrs:10, unit:'ea',freeForm:true,freeFormLabel:'Brand/model (e.g. Mitsubishi MXZ-2C, Daikin)'},
+    {id:'mini_3z',     name:'Mini-split — 3 zone',        scope:'both', labor:1600,mat:3600,matDesc:'Multi-split system',  hrs:14, unit:'ea',freeForm:true,freeFormLabel:'Brand/model + zones'},
+    {id:'mini_head',   name:'Mini-split add\'l head',      scope:'both', labor:400, mat:800, matDesc:'Indoor head unit',    hrs:4,  unit:'ea',freeForm:true,freeFormLabel:'Head model (e.g. MSZ-GL09NA)'},
+    {id:'hrv',         name:'HRV install',                 scope:'resi', labor:600, mat:1200,matDesc:'HRV unit',            hrs:6,  unit:'ea',freeForm:true,freeFormLabel:'Brand/model (e.g. Broan HRV90, Fantech)'},
+    {id:'erv',         name:'ERV install',                 scope:'resi', labor:600, mat:1400,matDesc:'ERV unit',            hrs:6,  unit:'ea',freeForm:true,freeFormLabel:'Brand/model (e.g. Broan ERV90, Renewaire)'},
     // ── Commercial ─────────────────────────────────────────────────────────────
-    {id:'c_rtu_3t',    name:'Commercial RTU (3-ton)',      scope:'commercial',labor:1800,mat:5500,matDesc:'3-ton RTU',      hrs:12, unit:'ea'},
-    {id:'c_rtu_5t',    name:'Commercial RTU (5-ton)',      scope:'commercial',labor:2200,mat:8000,matDesc:'5-ton RTU',      hrs:16, unit:'ea'},
-    {id:'c_rtu_10t',   name:'Commercial RTU (10-ton)',     scope:'commercial',labor:3500,mat:14000,matDesc:'10-ton RTU',    hrs:24, unit:'ea'},
-    {id:'c_vrf_zone',  name:'VRF system (per zone)',       scope:'commercial',labor:1500,mat:3500,matDesc:'VRF zone kit',   hrs:12, unit:'zone'},
+    {id:'c_rtu_3t',    name:'Commercial RTU (3-ton)',      scope:'commercial',labor:1800,mat:5500, matDesc:'3-ton RTU',    hrs:12, unit:'ea',freeForm:true,freeFormLabel:'Brand/model (e.g. Carrier, Trane, Lennox)'},
+    {id:'c_rtu_5t',    name:'Commercial RTU (5-ton)',      scope:'commercial',labor:2200,mat:8000, matDesc:'5-ton RTU',    hrs:16, unit:'ea',freeForm:true,freeFormLabel:'Brand/model'},
+    {id:'c_rtu_10t',   name:'Commercial RTU (10-ton)',     scope:'commercial',labor:3500,mat:14000,matDesc:'10-ton RTU',   hrs:24, unit:'ea',freeForm:true,freeFormLabel:'Brand/model'},
+    {id:'c_vrf_zone',  name:'VRF system (per zone)',       scope:'commercial',labor:1500,mat:3500, matDesc:'VRF system',   hrs:12, unit:'zone',freeForm:true,freeFormLabel:'Brand/model (e.g. Mitsubishi CITY MULTI)'},
     {id:'c_exhaust',   name:'Commercial exhaust system',   scope:'commercial',labor:800, mat:600, matDesc:'Exhaust fan+duct',hrs:8,  unit:'ea'},
     {id:'c_hood',      name:'Kitchen hood ventilation',    scope:'commercial',labor:600, mat:400, matDesc:'Hood + fan',     hrs:6,  unit:'ea'},
     {id:'c_chiller',   name:'Chiller service',             scope:'commercial',labor:500, mat:0,                             hrs:4,  unit:'ea'},
@@ -16699,8 +16696,9 @@ function _geiToggleEmergency(){
 }
 
 function _geiAddTemplate(job){
+  if(job.gasLic)showToast('Gas work — verify you\'re licensed for gas in your state','⚠️');
+  if(job.freeForm){_geiShowFreeFormModal(job);return;}
   const laborRate=_geiEmergency?Math.round(job.labor*1.5):job.labor;
-  if(job.gasLic){showToast('Gas line work — verify you\'re licensed for gas in your state','⚠️');}
   if(job.custom){
     const unitLabel={sqft:'square footage','lin ft':'linear feet',kW:'kilowatts',kWh:'kilowatt-hours',fixture:'number of fixtures'}[job.unit]||job.unit;
     const raw=prompt('Enter '+unitLabel+' for: '+job.name);
@@ -16712,6 +16710,47 @@ function _geiAddTemplate(job){
     if(laborRate>0)_geiLines.push({desc:job.name+' — labor',qty:1,unit:job.unit,rate:laborRate,total:laborRate});
     if(job.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty:1,unit:job.unit,rate:job.mat,total:job.mat});
   }
+  renderGeiLines();calcGeiTotal();
+}
+
+function _geiShowFreeFormModal(job){
+  const laborRate=_geiEmergency?Math.round(job.labor*1.5):job.labor;
+  const isCustomQty=!!job.custom;
+  const unitLabel={sqft:'sqft','lin ft':'lin ft',kW:'kW',kWh:'kWh',fixture:'fixtures'}[job.unit]||job.unit;
+  const ov=document.createElement('div');
+  ov.id='_gei-ff-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
+  ov.innerHTML=`
+    <div style="background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;padding:20px 18px 32px;width:100%;max-width:480px;box-sizing:border-box">
+      <div style="font-size:14px;font-weight:800;color:var(--text);margin-bottom:4px">${escHtml(job.name)}</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:14px">${escHtml(job.freeFormLabel||'Specify brand/model')}</div>
+      <div class="f" style="margin-bottom:10px"><label>Brand / model</label>
+        <input id="_ff-model" type="text" placeholder="${escHtml(job.freeFormLabel||'e.g. Mitsubishi MSZ-GL09NA')}" style="font-size:14px" autocomplete="off">
+      </div>
+      ${isCustomQty?`<div class="fg fg2" style="margin-bottom:10px">
+        <div class="f"><label>Quantity (${unitLabel})</label><input id="_ff-qty" type="number" value="1" min="0.1" step="any" style="font-size:14px"></div>
+        <div></div>
+      </div>`:''}
+      <div class="fg fg2" style="margin-bottom:14px">
+        <div class="f"><label>Labor rate ($/${job.unit})</label><input id="_ff-labor" type="number" value="${laborRate}" min="0" step="any" style="font-size:14px"></div>
+        ${job.mat>0?`<div class="f"><label>Material cost ($/${job.unit})</label><input id="_ff-mat" type="number" value="${job.mat}" min="0" step="any" style="font-size:14px"></div>`:'<div></div>'}
+      </div>
+      <button class="btn btn-p" onclick="_geiConfirmFreeForm(${JSON.stringify(job).replace(/"/g,'&quot;')})" style="margin-bottom:8px">Add to estimate</button>
+      <button class="btn" onclick="document.getElementById('_gei-ff-ov')?.remove()" style="color:var(--text2);font-size:13px">Cancel</button>
+    </div>`;
+  document.body.appendChild(ov);
+  setTimeout(()=>document.getElementById('_ff-model')?.focus(),100);
+}
+
+function _geiConfirmFreeForm(job){
+  const model=(document.getElementById('_ff-model')?.value||'').trim();
+  const laborRate=parseFloat(document.getElementById('_ff-labor')?.value)||0;
+  const matRate=parseFloat(document.getElementById('_ff-mat')?.value)||0;
+  const qty=parseFloat(document.getElementById('_ff-qty')?.value)||1;
+  document.getElementById('_gei-ff-ov')?.remove();
+  const modelTag=model?' — '+model:'';
+  if(laborRate>0)_geiLines.push({desc:job.name+modelTag+' — labor',qty,unit:job.unit,rate:laborRate,total:qty*laborRate});
+  if(matRate>0)_geiLines.push({desc:(model||job.matDesc||'Materials')+modelTag,qty,unit:job.unit,rate:matRate,total:qty*matRate});
   renderGeiLines();calcGeiTotal();
 }
 
