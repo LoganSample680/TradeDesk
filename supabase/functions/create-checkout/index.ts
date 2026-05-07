@@ -67,19 +67,20 @@ Deno.serve(async (req) => {
 
     let sessionParams: Stripe.Checkout.SessionCreateParams;
 
+    const paymentMethodTypes = paymentMethod === 'us_bank_account'
+      ? ['us_bank_account']
+      : ['card'];
+
     if (embedded) {
       sessionParams = {
         mode: 'payment',
-        automatic_payment_methods: { enabled: true },
+        payment_method_types: paymentMethodTypes as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
         line_items: lineItems,
         metadata,
         ui_mode: 'embedded',
         return_url: successUrl,
       };
     } else {
-      const paymentMethodTypes = paymentMethod === 'us_bank_account'
-        ? ['us_bank_account']
-        : ['card'];
       sessionParams = {
         mode: 'payment',
         payment_method_types: paymentMethodTypes as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
@@ -139,6 +140,7 @@ Deno.serve(async (req) => {
     );
 
   } catch (err) {
+    console.error('create-checkout error:', err.message);
     return new Response(JSON.stringify({ error: err.message }), {
       status: 400, headers: { ...CORS, 'Content-Type': 'application/json' },
     });

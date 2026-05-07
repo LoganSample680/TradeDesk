@@ -620,8 +620,8 @@ async function _launchEmbedded(amount,paymentMethod){
       embedded:true,
     })
   });
-  if(!res.ok)throw new Error('HTTP '+res.status);
   const d=await res.json();
+  if(!res.ok)throw new Error(d.error||'HTTP '+res.status);
   if(!d.clientSecret||!d.publishableKey)throw new Error(d.error||'No client secret');
   document.getElementById('sign-stripe-biz').textContent=_prop.businessName||'Secure Payment';
   document.getElementById('sign-stripe-amt').textContent='Deposit: '+fmt(amount/100)+' · Secured by Stripe';
