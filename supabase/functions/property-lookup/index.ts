@@ -161,8 +161,14 @@ Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get('authorization');
     if (!authHeader) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...CORS, 'Content-Type': 'application/json' } });
-    const { data: { user }, error: authErr } = await supabase.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (authErr || !user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...CORS, 'Content-Type': 'application/json' } });
+    const token = authHeader.replace('Bearer ', '');
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    let authorized = token === serviceKey;
+    if (!authorized) {
+      const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+      authorized = !authErr && !!user;
+    }
+    if (!authorized) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...CORS, 'Content-Type': 'application/json' } });
 
     const { street, city, state, zip } = await req.json();
     if (!street || !city) return new Response(JSON.stringify({ error: 'street and city required' }), { status: 400, headers: { ...CORS, 'Content-Type': 'application/json' } });
