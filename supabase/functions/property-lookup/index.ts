@@ -23,7 +23,7 @@ async function apifyZillowLookup(street: string, city: string, state: string, zi
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ addresses: [address] }),
+        body: JSON.stringify({ multiple_input_box: address }),
         signal: AbortSignal.timeout(90000),
       }
     );
