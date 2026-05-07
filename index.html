@@ -1319,10 +1319,6 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 
   <!-- Step 2: Build -->
   <div id="gei-s2" style="display:none;padding:10px 14px 120px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Add services</div>
-      <button id="gei-ai-btn" onclick="_geiAiAssist()" style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border:none;border-radius:var(--r);padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✨ AI assist</button>
-    </div>
     <div id="gei-templates"></div>
   </div>
 
@@ -8670,11 +8666,32 @@ const TRADE_JOBS={
     {id:'offgrid_design',name:'Off-grid system design',    scope:'both', labor:500, mat:0,                                  hrs:6,  unit:'ea'},
     {id:'c_solar_comm',name:'Commercial solar (per kW)',   scope:'commercial',labor:500,mat:1100,matDesc:'Comm solar panels',hrs:0,  unit:'kW', custom:true,freeForm:true,freeFormLabel:'Panel brand'},
     // ── Commercial ─────────────────────────────────────────────────────────────
-    {id:'c_3phase',    name:'3-phase panel install',       scope:'commercial',labor:1200,mat:800, matDesc:'3-phase panel',  hrs:10, unit:'ea'},
-    {id:'c_lighting',  name:'Commercial lighting (per fix)',scope:'commercial',labor:150, mat:80, matDesc:'LED fixture',    hrs:0,  unit:'fixture',custom:true},
-    {id:'c_ev_comm',   name:'EV charging station (comm)',  scope:'commercial',labor:800, mat:1200,matDesc:'Level 2 EVSE',   hrs:8,  unit:'ea'},
-    {id:'c_panel_comm',name:'Commercial panel (400A)',     scope:'commercial',labor:2000,mat:1400,matDesc:'400A panel',     hrs:16, unit:'ea'},
-    {id:'c_emerg_light',name:'Emergency lighting',        scope:'commercial',labor:95,  mat:65,  matDesc:'Exit/emerg light',hrs:1,  unit:'ea'},
+    // ── Circuits & Sub-panels ──────────────────────────────────────────────────
+    {id:'ded_120',     name:'Dedicated 120V circuit',      scope:'resi', labor:225, mat:55,  matDesc:'Wire + breaker',        hrs:2.5,unit:'ea'},
+    {id:'ded_240',     name:'Dedicated 240V circuit',      scope:'resi', labor:375, mat:90,  matDesc:'Wire + 2-pole breaker',  hrs:4,  unit:'ea'},
+    {id:'sub_panel',   name:'Sub-panel install',            scope:'both', labor:650, mat:450, matDesc:'Subpanel + breakers',    hrs:6,  unit:'ea'},
+    {id:'afci',        name:'AFCI breaker',                 scope:'both', labor:85,  mat:45,  matDesc:'AFCI breaker',           hrs:.75,unit:'ea'},
+    // ── Lighting extras ───────────────────────────────────────────────────────
+    {id:'recessed',    name:'Recessed light (per can)',     scope:'both', labor:75,  mat:35,  matDesc:'LED can + trim',         hrs:.75,unit:'ea'},
+    {id:'dimmer',      name:'Dimmer switch',                scope:'both', labor:65,  mat:20,  matDesc:'Dimmer switch',          hrs:.75,unit:'ea'},
+    {id:'under_cab',   name:'Under-cabinet LED',            scope:'resi', labor:120, mat:45,  matDesc:'LED strip + driver',     hrs:1.5,unit:'ea'},
+    // ── Specialty residential ─────────────────────────────────────────────────
+    {id:'surge',       name:'Whole-house surge protector', scope:'both', labor:125, mat:80,  matDesc:'Whole-house SPD',        hrs:1,  unit:'ea'},
+    {id:'hot_tub',     name:'Hot tub / spa wiring',        scope:'resi', labor:550, mat:180, matDesc:'240V disconnect + wire',  hrs:5,  unit:'ea'},
+    {id:'rewire_room', name:'Rewire — per room',            scope:'resi', labor:650, mat:200, matDesc:'Wire + boxes + covers',   hrs:8,  unit:'room',freeForm:true,freeFormLabel:'Notes (e.g. knob-and-tube, aluminum wiring)'},
+    {id:'conduit_lf',  name:'Conduit run (per lin ft)',     scope:'both', labor:8,   mat:4,   matDesc:'EMT + fittings',         hrs:0,  unit:'lin ft',custom:true},
+    {id:'low_volt',    name:'Low-voltage / Cat6 / coax',   scope:'both', labor:85,  mat:30,  matDesc:'Cable + keystone',       hrs:1,  unit:'drop'},
+    // ── Commercial ────────────────────────────────────────────────────────────
+    {id:'c_3phase',    name:'3-phase panel install',       scope:'commercial',labor:1200,mat:800, matDesc:'3-phase panel',    hrs:10, unit:'ea'},
+    {id:'c_lighting',  name:'Commercial lighting (per fix)',scope:'commercial',labor:150, mat:80,  matDesc:'LED fixture',     hrs:0,  unit:'fixture',custom:true},
+    {id:'c_ev_comm',   name:'EV charging station (comm)',  scope:'commercial',labor:800, mat:1200,matDesc:'Level 2 EVSE',    hrs:8,  unit:'ea'},
+    {id:'c_panel_comm',name:'Commercial panel (400A)',     scope:'commercial',labor:2000,mat:1400,matDesc:'400A panel',      hrs:16, unit:'ea'},
+    {id:'c_emerg_light',name:'Emergency lighting',        scope:'commercial',labor:95,  mat:65,  matDesc:'Exit/emerg light', hrs:1,  unit:'ea'},
+    {id:'c_sub',       name:'Commercial sub-panel',        scope:'commercial',labor:900, mat:650, matDesc:'Subpanel + breakers',hrs:8, unit:'ea'},
+    {id:'c_conduit',   name:'Conduit run — commercial',   scope:'commercial',labor:12,  mat:7,   matDesc:'Rigid/EMT + fittings',hrs:0,unit:'lin ft',custom:true},
+    {id:'c_data',      name:'Data / telecom drop',         scope:'commercial',labor:95,  mat:25,  matDesc:'Cat6 + keystone',  hrs:1,  unit:'drop'},
+    {id:'c_motor_disc',name:'Motor disconnect (HVAC/equip)',scope:'commercial',labor:250,mat:120, matDesc:'Disconnect switch', hrs:2,  unit:'ea'},
+    {id:'c_park_light',name:'Parking lot light',           scope:'commercial',labor:450, mat:350, matDesc:'LED pole light',   hrs:4,  unit:'ea'},
   ],
   hvac:[
     // ── Residential ────────────────────────────────────────────────────────────
@@ -8768,13 +8785,13 @@ const TRADE_JOB_CATS={
     '🏢 Commercial':['c_wh_comm','c_tankless','c_backflow','c_grease','c_booster','c_drain_comm','c_gas_main'],
   },
   electrical:{
-    '🔌 Wiring':['outlet','switch','exterior','breaker'],
-    '💡 Fixtures':['light','fan','exhaust','smoke'],
-    '🛡️ Safety':['gfci'],
-    '⚡ Panels':['panel_100','panel_200'],
-    '🔋 Backup & EV':['xfer_man','xfer_auto','gen_hookup','ev_resi'],
+    '🔌 Outlets & Wiring':['outlet','gfci','switch','exterior','dimmer','afci','conduit_lf','low_volt'],
+    '💡 Lighting':['light','recessed','fan','exhaust','smoke','under_cab'],
+    '⚡ Circuits & Panels':['breaker','ded_120','ded_240','sub_panel','panel_100','panel_200'],
+    '🔋 Backup & EV':['xfer_man','xfer_auto','gen_hookup','ev_resi','surge'],
+    '🌊 Specialty':['hot_tub','rewire_room'],
     '☀️ Solar & Storage':['solar_kw','inverter','battery','bat_kwh','offgrid_design'],
-    '🏢 Commercial':['c_3phase','c_lighting','c_ev_comm','c_panel_comm','c_emerg_light','c_solar_comm'],
+    '🏢 Commercial':['c_3phase','c_lighting','c_ev_comm','c_panel_comm','c_emerg_light','c_solar_comm','c_sub','c_conduit','c_data','c_motor_disc','c_park_light'],
   },
   hvac:{
     '🔧 Service':['tuneup','filter','cap','refrig','refrig_454b','therm','motor','coil_clean'],
@@ -16850,14 +16867,6 @@ function _geiRenderTemplates(){
   let html='';
   if(_geiEmergency)html+=`<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:9px 12px;font-size:12px;color:#b91c1c;margin-bottom:12px;font-weight:600">🚨 Emergency mode — labor rates ×1.5 · after-hours surcharge added</div>`;
 
-  // Price book
-  if(book.length){
-    html+=`<div style="font-size:10px;font-weight:700;color:var(--blue-dk);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">⭐ My price book</div>`;
-    html+=`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">`
-      +book.map((item,i)=>`<button onclick="_geiAddFromBook(${i});_geiRenderCartBar()" style="display:inline-flex;flex-direction:column;align-items:flex-start;padding:8px 12px;border-radius:var(--r);border:1.5px solid var(--blue-lt);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left"><span style="font-size:12px;font-weight:700;color:var(--blue-dk)">${escHtml(item.desc)}</span><span style="font-size:10px;color:var(--text3)">$${item.rate}/${item.unit||'ea'}</span></button>`).join('')
-      +`</div><div style="height:1px;background:var(--border);margin-bottom:14px"></div>`;
-  }
-
   // Category tile grid for trades with categories
   const cats=TRADE_JOB_CATS[trade];
   if(cats){
@@ -16870,7 +16879,7 @@ function _geiRenderTemplates(){
       const emoji=parts[0];
       const name=parts.slice(1).join(' ');
       const safeLabel=escHtml(catLabel);
-      html+=`<button onclick="_geiOpenCatSheet(${JSON.stringify(catLabel)})"
+      html+=`<button data-cat="${escHtml(catLabel)}" onclick="_geiOpenCatSheet(this.dataset.cat)"
         style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px 8px;border-radius:var(--rl);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;gap:5px;min-height:85px;text-align:center">
         <span style="font-size:28px;line-height:1">${emoji}</span>
         <span style="font-size:12px;font-weight:700;color:var(--text)">${escHtml(name)}</span>
@@ -16987,33 +16996,6 @@ function _geiSaveToPriceBook(i){
   _geiRenderTemplates();
 }
 
-async function _geiAiAssist(){
-  const desc=document.getElementById('gei-desc')?.value||'';
-  if(!desc){zAlert('Enter a job description first, then tap AI assist.');return;}
-  if(!_supa||!_supaUser){zAlert('Sign in to use AI assist.');return;}
-  const btn=document.getElementById('gei-ai-btn');
-  if(btn){btn.disabled=true;btn.textContent='✨ Thinking...';}
-  try{
-    const{data:{session}}=await _supa.auth.getSession();
-    if(!session)throw new Error('not signed in');
-    const resp=await fetch(SUPA_URL+'/functions/v1/get-rates',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
-      body:JSON.stringify({type:'estimate',trade:_geiTrade||'general',description:desc})
-    });
-    if(!resp.ok)throw new Error('HTTP '+resp.status);
-    const d=await resp.json();
-    if(!d.lines||!d.lines.length){showToast('No suggestions — add lines manually','⚠️');return;}
-    d.lines.forEach(l=>{_geiLines.push({desc:l.desc||'',qty:+(l.qty)||1,unit:l.unit||'ea',rate:+(l.rate)||0,total:(+(l.qty)||1)*(+(l.rate)||0)});});
-    renderGeiLines();calcGeiTotal();
-    showToast('AI added '+d.lines.length+' line items — review and adjust','✨');
-  }catch(e){
-    console.warn('AI assist:',e);
-    showToast('AI assist unavailable — add lines manually','⚠️');
-  }finally{
-    if(btn){btn.disabled=false;btn.textContent='✨ AI assist';}
-  }
-}
 
 function renderGeiLines(){
   const el=document.getElementById('gei-lines');if(!el)return;
