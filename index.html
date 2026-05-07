@@ -1792,6 +1792,17 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Std deduction — MFJ</span><span id="set-ksm-disp" style="font-weight:700"></span></div>
       </div>
       <div style="font-size:10px;color:var(--text3);margin-top:4px">Auto-updated annually from IRS &amp; state data. Rates auto-fill when you select a state.</div>
+      <div class="fg fg2" style="margin-top:12px">
+        <div class="f"><label>Filing status</label>
+          <select id="set-txstatus" onchange="S.txStatus=this.value;saveAll();applySettings();const s1=document.getElementById('sum-tx-status');if(s1)s1.value=this.value;const s2=document.getElementById('tx-status');if(s2)s2.value=this.value;" style="font-size:13px">
+            <option value="single">Single</option>
+            <option value="mfj">Married filing jointly</option>
+            <option value="mfs">Married filing separately</option>
+            <option value="hoh">Head of household</option>
+            <option value="qss">Qualifying surviving spouse</option>
+          </select>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -3023,6 +3034,7 @@ function loadSettingsForm(){
   sd('set-fs-disp',fmt$(S.fedSingle||15000));sd('set-fm-disp',fmt$(S.fedMFJ||30000));sd('set-fms-disp',fmt$(S.fedMFS||15000));sd('set-fh-disp',fmt$(S.fedHOH||22500));
   sd('set-b10-disp',fmt$(S.b10||11925));sd('set-b12-disp',fmt$(S.b12||48475));sd('set-b22-disp',fmt$(S.b22||103350));sd('set-b24-disp',fmt$(S.b24||197300));sd('set-b32-disp',fmt$(S.b32||250525));sd('set-b35-disp',fmt$(S.b35||626350));
   sd('set-ksl-disp',(S.ksLow||3.1)+'%');sd('set-ksh-disp',(S.ksHigh||5.7)+'%');sd('set-kst-disp',fmt$(S.ksTop||33000));sd('set-kss-disp',fmt$(S.ksStdS||3500));sd('set-ksm-disp',fmt$(S.ksStdM||8000));
+  sf('set-txstatus',S.txStatus||'single');
   sf('set-goal-monthly',S.goalMonthly||'');
   sf('set-labor-rate',S.laborRate||45);sf('set-owner-name',getOwnerName()||'');sf('set-bname',S.bname);sf('set-state',S.state||'KS');
   _renderLogoPreview();
@@ -3034,7 +3046,7 @@ function loadSettingsForm(){
 }
 function saveSettings(){
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
-  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',mapboxKey:gs('set-mapbox-key')||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.40,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||''};
+  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,txStatus:gs('set-txstatus')||'single',goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',mapboxKey:gs('set-mapbox-key')||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.40,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||''};
   applySettings();saveAll();
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
   // Propagate branding/settings to all live client hubs in the background
@@ -17660,7 +17672,6 @@ function supaSaveDebounced(){
 async function supaSaveToCloud(){
   if(!_supa||!_supaUser)return;
   try{
-    // Separate receipt images into their own column to keep main payload lean
     const receiptImages={};
     const expensesForSync=expenses.map(e=>{
       if(e.receipt_img){
@@ -17670,35 +17681,43 @@ async function supaSaveToCloud(){
       }
       return e;
     });
-    // Strip stateRates from cloud settings — can be re-fetched from Claude, no need to sync
     const {stateRates:_sr,...sForCloud}=S;
-    const payload={
-      user_id:_supaUser.id,
+    const uid=_supaUser.id;
+
+    // Part 1 — core business data (small, fast, critical)
+    const {error:e1}=await _supa.from('zj_data').upsert({
+      user_id:uid,
       clients:JSON.stringify(clients),
       bids:JSON.stringify(bids),
       jobs:JSON.stringify(jobs),
       payments:JSON.stringify(payments),
+      liens:JSON.stringify(liens),
+      settings:JSON.stringify(sForCloud),
+      updated_at:new Date().toISOString()
+    },{onConflict:'user_id'});
+    if(e1)throw e1;
+
+    // Part 2 — history data (larger arrays, update-only since row guaranteed by Part 1)
+    const {error:e2}=await _supa.from('zj_data').update({
       income:JSON.stringify(income),
       expenses:JSON.stringify(expensesForSync),
       mileage:JSON.stringify(mileage),
-      liens:JSON.stringify(liens),
-      settings:JSON.stringify(sForCloud),
-      receipt_images:JSON.stringify(receiptImages),
       time_entries:JSON.stringify(timeEntries.slice(-500)),
-      updated_at:new Date().toISOString()
-    };
-    const{error}=await _supa.from('zj_data').upsert(payload,{onConflict:'user_id'});
-    if(error){
-      // 57014 = statement timeout — retry once with trimmed history arrays
-      if(error.code==='57014'){
-        const slim={...payload,
+      receipt_images:JSON.stringify(receiptImages),
+    }).eq('user_id',uid);
+    if(e2){
+      if(e2.code==='57014'){
+        // Retry with trimmed arrays
+        await _supa.from('zj_data').update({
+          income:JSON.stringify(income.slice(-500)),
+          expenses:JSON.stringify(expensesForSync.slice(-300)),
           mileage:JSON.stringify(mileage.slice(-300)),
           time_entries:JSON.stringify(timeEntries.slice(-200)),
-          receipt_images:JSON.stringify({})
-        };
-        const{error:e2}=await _supa.from('zj_data').upsert(slim,{onConflict:'user_id'});
-        if(e2)throw e2;
-      }else throw error;
+          receipt_images:JSON.stringify({}),
+        }).eq('user_id',uid);
+      } else {
+        console.warn('Cloud history save failed:',e2);
+      }
     }
     supaSetStatus('synced');
   }catch(e){console.warn('Cloud save failed:',e);supaSetStatus('error');}
