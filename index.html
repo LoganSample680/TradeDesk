@@ -2458,8 +2458,16 @@ function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s
   // before the _doOpenEstimate dedup fix. Safe to remove: they have zero data.
   const _before=bids.length;
   bids=bids.filter(b=>!(b.draft===true&&b.status==='Draft'&&(!b.surfaces||!b.surfaces.length)&&!b.signingToken&&!b.amount));
-  // Also remove empty Pending GEI bids that have no lines and $0 amount (abandoned estimates)
-  bids=bids.filter(b=>!(b.status==='Pending'&&!b.draft&&b.amount===0&&b.geiLines&&!b.geiLines.length&&!b.signingToken));
+  // Also remove empty Pending/Draft GEI bids ($0, no lines) — duplicates and abandoned estimates
+  // Keep only the most-recent one per client+trade when multiples exist
+  const _geiSeen=new Set();
+  bids=bids.filter(b=>{
+    if(b.geiLines===undefined||b.signingToken||b.amount||(b.geiLines||[]).length)return true;
+    if(b.status!=='Draft'&&b.status!=='Pending')return true;
+    const key=b.client_id+'|'+b.trade_type;
+    if(_geiSeen.has(key))return false;
+    _geiSeen.add(key);return true;
+  });
   if(bids.length!==_before)try{localStorage.setItem('zp3_bids',JSON.stringify(bids));}catch(e){}
   clients.forEach(c=>{if(!c.clientToken)_ensureClientToken(c.id);});
 }
@@ -16829,6 +16837,9 @@ function openGenericEstimate(c,bidId,_tradePick){
       if(_b.geiDuration)sf('gei-duration',_b.geiDuration);
       if(_b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(_b.panelSched)_panelSched=JSON.parse(JSON.stringify(_b.panelSched));
+      // Purge any other empty duplicate GEI bids for this client+trade (leftovers from before dedup fix)
+      bids=bids.filter(b=>b.id===_existingGei.id||!(b.client_id===_geiClientId&&!b.signingToken&&b.trade_type===_geiTrade&&b.geiLines!==undefined&&!b.amount&&!(b.geiLines||[]).length&&(b.status==='Draft'||b.status==='Pending')));
+      saveAll();
     }
   }
   if(!_geiEditBidId){
@@ -17137,7 +17148,7 @@ function showGeiOnboarding(){
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px">
         ${BUNDLE_CARDS.map(b=>{
           const on=selected.has(b.id);
-          return `<button onclick="void 0" data-bid="${b.id}" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px 8px;border-radius:var(--rl);border:2px solid ${on?'var(--blue)':'var(--border2)'};background:${on?'var(--blue-lt)':'var(--bg2)'};cursor:pointer;font-family:inherit;gap:5px;min-height:80px;text-align:center;box-sizing:border-box" onclick="_geiOnboardToggle('${b.id}')">
+          return `<button onclick="_geiOnboardToggle('${b.id}')" data-bid="${b.id}" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px 8px;border-radius:var(--rl);border:2px solid ${on?'var(--blue)':'var(--border2)'};background:${on?'var(--blue-lt)':'var(--bg2)'};cursor:pointer;font-family:inherit;gap:5px;min-height:80px;text-align:center;box-sizing:border-box">
             <span style="font-size:26px;line-height:1">${b.emoji}</span>
             <span style="font-size:11px;font-weight:700;color:${on?'var(--blue-dk)':'var(--text)'};white-space:pre-line;line-height:1.3">${b.label}</span>
             ${on?'<span style="font-size:10px;color:var(--blue);font-weight:700">✓</span>':''}
@@ -19452,7 +19463,11 @@ function showDailyBriefing(){
 loadAll();applySettings();registerDevice();applyBrandLogo();
 setTimeout(showDailyBriefing,1200);
 setTimeout(checkStripeConnectReturn,800);
-setTimeout(()=>{if(!S.myBundles||!S.myBundles.length)showGeiOnboarding();},900);
+setTimeout(()=>{
+  const _lines=_getTradeLines();
+  const _needsGei=_lines.some(t=>t!=='painting'&&t!=='general');
+  if(_needsGei&&(!S.myBundles||!S.myBundles.length))showGeiOnboarding();
+},900);
 
 // Pull-to-refresh: pull down from top → re-sync from cloud
 (function(){
