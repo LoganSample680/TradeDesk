@@ -17730,13 +17730,11 @@ async function _devLoadUserAccount(key){
   if(!u){showToast('Unknown support user','⚠️');return;}
   const{data:zd,error}=await _supa.from('zj_data').select('*').eq('user_id',u.userId).maybeSingle();
   if(error||!zd){showToast('No data found — check Supabase RLS policy','❌');return;}
-  _devSavedState={clients:[...clients],bids:[...bids],payments:[...payments],S:{...S}};
+  _devSavedState={clients:[...clients],bids:[...bids],payments:[...payments]};
   try{
     clients=JSON.parse(zd.clients||'[]');
     bids=JSON.parse(zd.bids||'[]');
     payments=JSON.parse(zd.payments||'[]');
-    const rs=JSON.parse(zd.settings||'{}');
-    S={...S,...rs};
   }catch(e){}
   _devSupportMode=true;_devSupportName=u.name;
   _renderDevTradeCard();renderDash();
@@ -17745,7 +17743,6 @@ async function _devLoadUserAccount(key){
 function _devExitSupportMode(){
   if(!_devSavedState)return;
   clients=_devSavedState.clients;bids=_devSavedState.bids;payments=_devSavedState.payments;
-  S={...S,..._devSavedState.S};
   _devSupportMode=false;_devSupportName='';_devSavedState=null;
   _renderDevTradeCard();renderDash();
   showToast('Back to your account','✓');
@@ -18737,6 +18734,7 @@ async function supaSignOut(){
 
 function supaSaveDebounced(){
   if(!supaEnabled()||!_supaUser)return;
+  if(_devSupportMode)return; // never write to cloud while viewing another account
   clearTimeout(_syncTimer);
   _syncTimer=setTimeout(()=>supaSaveToCloud(),2000);
   supaSetStatus('syncing');
