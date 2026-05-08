@@ -15253,7 +15253,8 @@ function renderAllMileage(){
       const toAddr=r.to||(r.client_id?getClientById(r.client_id)?.addr||'':'');
       const dotG='<div style="width:10px;height:10px;border-radius:50%;background:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.15);flex-shrink:0"></div>';
       const dotR='<div style="width:10px;height:10px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.15);flex-shrink:0"></div>';
-      const purposeBadge='<span style="font-size:11px;font-weight:600;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text2);padding:3px 10px;border-radius:20px;flex-shrink:0">'+(r.purpose||'Other')+'</span>';
+      const purposeColor={'Estimate':'#1d4ed8','Job site':'#15803d','Client Consult':'#7c3aed','Supply run':'#b45309','Home Office':'#0369a1','Payment Collection':'#15803d','Other':'#6b7280'}[r.purpose||'Other']||'#6b7280';
+      const purposeBadge='<span style="font-size:10px;font-weight:700;background:none;color:var(--text3);flex-shrink:0">Trip Reason: <span style="color:'+purposeColor+';font-weight:700">'+(r.purpose||'Other')+'</span></span>';
       // Route always visible — Everlance style. 3-row layout keeps dots perfectly aligned.
       return '<div style="border-bottom:1px solid var(--border);padding:12px 14px">'+
         // From row — miles float right on this row
@@ -15277,10 +15278,11 @@ function renderAllMileage(){
           '<div style="width:10px;flex-shrink:0;display:flex;justify-content:center;padding-top:3px">'+dotR+'</div>'+
           '<div style="flex:1;min-width:0;font-size:13px;color:var(--text);line-height:1.35;user-select:all">'+(toAddr?escHtml(toAddr):'<span style="color:var(--text3);font-style:italic;font-size:12px">End not recorded</span>')+'</div>'+
         '</div>'+
-        // Bottom bar — purpose badge + meta, edit + delete on right
-        '<div style="display:flex;align-items:center;gap:8px;margin-top:10px">'+
+        // Bottom bar — labeled meta, edit + delete on right
+        '<div style="display:flex;align-items:center;gap:12px;margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">'+
           purposeBadge+
-          (r.client_name||r.vehicle?'<span style="font-size:10px;color:var(--text3)">'+(r.client_name?escHtml(r.client_name):''+(r.vehicle?escHtml(r.vehicle):''))+'</span>':'')+
+          (r.vehicle?'<span style="font-size:10px;color:var(--text3);flex-shrink:0">Vehicle: <span style="color:var(--text2);font-weight:600">'+escHtml(r.vehicle)+'</span></span>':'')+
+          (r.client_name?'<span style="font-size:10px;color:var(--text3);flex-shrink:0">'+escHtml(r.client_name)+'</span>':'')+
           '<button onclick="openMileageEdit('+r.id+')" style="margin-left:auto;flex-shrink:0;font-size:11px;font-weight:600;background:none;border:1px solid var(--border2);border-radius:var(--r);padding:3px 8px;cursor:pointer;color:var(--text2)">✏️ Edit</button>'+
           '<button class="btn-del" onclick="delMileage('+r.id+')" style="flex-shrink:0">&#10005;</button>'+
         '</div>'+
