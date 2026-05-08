@@ -17783,7 +17783,7 @@ function _renderDevTradeCard(){
 <div style="padding-top:12px;border-top:1px solid var(--border2)">
   <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:8px">Support View</div>
   <button onclick="_devLoadUserAccount('zach')" style="width:100%;padding:9px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">👁 View Zach's account</button>
-  <button onclick="_devResetMyAccount()" style="width:100%;margin-top:6px;padding:7px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit">🔄 Reset my account to empty</button>
+
   ${_devSupportMode?`<div style="margin-top:8px;padding:8px 10px;background:var(--amber-lt);border-radius:var(--r);font-size:11px;color:#856404;display:flex;justify-content:space-between;align-items:center"><span>👁 Viewing: ${escHtml(_devSupportName)}</span><button onclick="_devExitSupportMode()" style="font-size:10px;padding:3px 8px;border:1px solid #856404;border-radius:4px;background:none;color:#856404;cursor:pointer;font-family:inherit">Exit</button></div>`:''}
 </div>`;
 }
@@ -17812,14 +17812,6 @@ let _devSupportMode=false,_devSupportName='',_devSavedState=null;
 const _DEV_SUPPORT_USERS={
   zach:{name:'Zach',userId:'6201cb8c-c4de-4bf2-bdf7-0376f0577cc4'},
 };
-async function _devResetMyAccount(){
-  zConfirm('This will wipe your dev account back to empty arrays in Supabase. Your settings are kept. Cannot be undone.',async()=>{
-    clients=[];bids=[];jobs=[];payments=[];liens=[];income=[];expenses=[];mileage=[];timeEntries=[];
-    await supaSaveToCloud();
-    renderDash();renderClientList&&renderClientList();
-    showToast('Dev account reset to empty','✓');
-  },{title:'Reset dev account?',yes:'Yes, reset'});
-}
 async function _devLoadUserAccount(key){
   if(!_config?.is_dev)return;
   clearTimeout(_syncTimer); // cancel any pending debounced save before swapping data
