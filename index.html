@@ -1320,6 +1320,9 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 
   <!-- Step 2: Build -->
   <div id="gei-s2" style="display:none;padding:10px 14px 120px">
+    <div style="display:flex;justify-content:flex-end;margin-bottom:4px">
+      <button onclick="showGeiOnboarding({force:true})" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border2);border-radius:var(--r);color:var(--text3);cursor:pointer;font-family:inherit">⚙️ Change services</button>
+    </div>
     <div id="gei-templates"></div>
   </div>
 
@@ -2453,18 +2456,17 @@ function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s
   if(new Date().getFullYear()>=2026&&S.irsRate<0.725){S.irsRate=0.725;S.irsRateYear=new Date().getFullYear();}
   try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(e){}
   }catch(e){}
-  // One-time orphan cleanup: remove truly empty Draft bids (no surfaces, no amount) that have
-  // no business being in Estimates in Progress — these were created by navigating away at step 1
-  // before the _doOpenEstimate dedup fix. Safe to remove: they have zero data.
+  // One-time orphan cleanup: remove truly empty PAINT Draft bids (no surfaces, no amount).
+  // Guard: skip GEI bids (they have geiLines) — they are handled by the GEI dedup below.
   const _before=bids.length;
-  bids=bids.filter(b=>!(b.draft===true&&b.status==='Draft'&&(!b.surfaces||!b.surfaces.length)&&!b.signingToken&&!b.amount));
-  // Also remove empty Pending/Draft GEI bids ($0, no lines) — duplicates and abandoned estimates
-  // Keep only the most-recent one per client+trade when multiples exist
+  bids=bids.filter(b=>!(b.draft===true&&b.status==='Draft'&&b.geiLines===undefined&&(!b.surfaces||!b.surfaces.length)&&!b.signingToken&&!b.amount));
+  // Also remove empty Pending/Draft GEI bids ($0, no lines) — duplicates and abandoned estimates.
+  // Normalize trade_type: undefined/null/'' all collapse to 'general' for dedup key.
   const _geiSeen=new Set();
   bids=bids.filter(b=>{
     if(b.geiLines===undefined||b.signingToken||b.amount||(b.geiLines||[]).length)return true;
     if(b.status!=='Draft'&&b.status!=='Pending')return true;
-    const key=b.client_id+'|'+b.trade_type;
+    const key=b.client_id+'|'+(b.trade_type||'general');
     if(_geiSeen.has(key))return false;
     _geiSeen.add(key);return true;
   });
@@ -4587,15 +4589,17 @@ function renderTodayFeed(){
         '</div>'+
       '</div>'});
   }
-  bids.filter(b=>!b.signingToken&&b.status==='Pending'&&b.id!==_activeDraftBidId).forEach(b=>{
+  bids.filter(b=>!b.signingToken&&(b.status==='Pending'||(b.status==='Draft'&&b.geiLines!==undefined))&&b.id!==_activeDraftBidId).forEach(b=>{
     const c=getClientById(b.client_id);if(!c)return;
     const days=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
+    const isDraft=b.status==='Draft';
+    const subLabel=isDraft?'Draft — finish &amp; send':(fmt(b.amount)+' · built '+(days===0?'today':days+'d ago')+' · not sent yet');
     items.push({priority:6,html:
       '<div class="tf-card">'+
         '<div class="tf-icon">✏️</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(c.name)+'</div>'+
-          '<div class="tf-sub" style="color:var(--text3)">'+fmt(b.amount)+' · built '+(days===0?'today':days+'d ago')+' · not sent yet</div>'+
+          '<div class="tf-sub" style="color:var(--text3)">'+subLabel+'</div>'+
         '</div>'+
         '<div class="tf-acts">'+
           '<button onclick="'+(b.geiLines!==undefined?'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')':'openEditBid('+b.id+','+(b.lastStep||1)+')')+'" class="btn btn-sm btn-p" style="font-size:11px">Resume →</button>'+
@@ -5807,7 +5811,8 @@ function renderCDBids(){
     }
     if(!isWon){
       actBtns.push('<button class="btn btn-sm" onclick="sendBidEmail('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#9993; Send email</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="openEditBid('+b.id+')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">✎ Revise bid</button>');
+      const _reviseFn=b.geiLines!==undefined?'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')':'openEditBid('+b.id+')';
+      actBtns.push('<button class="btn btn-sm" onclick="'+_reviseFn+'" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">✎ Revise bid</button>');
       actBtns.push('<button class="btn btn-sm" onclick="openBidNotes('+b.id+')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">📝 Notes</button>');
       actBtns.push('<button class="btn btn-sm" onclick="markBidHandshake('+b.id+')" style="background:#FFF8E8;color:#856404;border-color:var(--amber);font-size:11px">🤝 Handshake</button>');
       actBtns.push('<button class="btn btn-sm" onclick="markBidAbandoned('+b.id+')" style="background:#FFF8F0;color:#A32D2D;border-color:#A32D2D">No response</button>');
@@ -16826,9 +16831,16 @@ function openGenericEstimate(c,bidId,_tradePick){
     }
   }
   if(!_geiEditBidId){
-    // Reuse any existing GEI draft or unsent bid for this client+trade (prevents duplicates)
-    const _existingGei=bids.find(b=>b.client_id===_geiClientId&&!b.signingToken&&b.trade_type===_geiTrade&&b.geiLines!==undefined&&(b.status==='Draft'||b.status==='Pending'));
+    // Reuse any existing GEI draft or unsent bid for this client+trade (prevents duplicates).
+    // Two-pass: exact trade match first; then heal old bids with undefined trade_type.
+    const _tMatch=b=>b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&(b.status==='Draft'||b.status==='Pending');
+    let _existingGei=bids.find(b=>_tMatch(b)&&b.trade_type===_geiTrade);
+    if(!_existingGei){
+      // Fallback: pick up old bids that predate the trade_type field
+      _existingGei=bids.find(b=>_tMatch(b)&&(b.trade_type===undefined||b.trade_type===null||b.trade_type===''));
+    }
     if(_existingGei){
+      _existingGei.trade_type=_geiTrade; // heal legacy bids
       _geiEditBidId=_existingGei.id;
       const _b=_existingGei;
       sf('gei-desc',_b.type||'');sf('gei-notes',_b.notes||'');
@@ -16837,8 +16849,8 @@ function openGenericEstimate(c,bidId,_tradePick){
       if(_b.geiDuration)sf('gei-duration',_b.geiDuration);
       if(_b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(_b.panelSched)_panelSched=JSON.parse(JSON.stringify(_b.panelSched));
-      // Purge any other empty duplicate GEI bids for this client+trade (leftovers from before dedup fix)
-      bids=bids.filter(b=>b.id===_existingGei.id||!(b.client_id===_geiClientId&&!b.signingToken&&b.trade_type===_geiTrade&&b.geiLines!==undefined&&!b.amount&&!(b.geiLines||[]).length&&(b.status==='Draft'||b.status==='Pending')));
+      // Purge other empty duplicates for this client+trade now that we have the right one
+      bids=bids.filter(b=>b.id===_existingGei.id||!(b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&!b.amount&&!(b.geiLines||[]).length&&(b.status==='Draft'||b.status==='Pending')&&(b.trade_type===_geiTrade||!b.trade_type)));
       saveAll();
     }
   }
@@ -16851,6 +16863,10 @@ function openGenericEstimate(c,bidId,_tradePick){
 }
 
 function goGeiStep(n){
+  // If going to Step 2 and no bundles are set, show the onboarding picker first
+  if(n===2&&_geiTrade==='electrical'&&(!S.myBundles||!S.myBundles.length)){
+    showGeiOnboarding();return;
+  }
   _geiStep=n;
   [1,2,3].forEach(i=>{const el=document.getElementById('gei-s'+i);if(el)el.style.display=(i===n)?'':'none';});
   window.scrollTo({top:0,behavior:'instant'});
@@ -17112,8 +17128,8 @@ function _geiShowAllServices(){
   S.myBundles=['__all'];saveAll();_geiRenderTemplates();showToast('Showing all services','✓');
 }
 
-function showGeiOnboarding(){
-  if(S.myBundles&&S.myBundles.length)return;
+function showGeiOnboarding(opts){
+  if(!opts?.force&&S.myBundles&&S.myBundles.length)return;
   const BUNDLE_CARDS=[
     {id:'residential',   emoji:'🏠', label:'Residential\nService'},
     {id:'panels_circuits',emoji:'⚡',label:'Panels &\nCircuits'},
@@ -18295,10 +18311,15 @@ async function supaInit(){
         return;
       } else if(event==='SIGNED_OUT'){
         _supaUser=null;_user=null;_account=null;_config=null;
-        // Clear all data so next user starts fresh — never bleed data between accounts
-        clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
-        S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],weatherLat:null,weatherLon:null,locationDenied:false};
-        saveAll();
+        // Only wipe local data when the user explicitly clicked sign out.
+        // Supabase also fires SIGNED_OUT on token refresh failures (e.g. during devSwitchTrade)
+        // — in those cases we must NOT wipe data or the user loses everything.
+        if(_deliberateSignOut){
+          clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
+          S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],weatherLat:null,weatherLon:null,locationDenied:false};
+          saveAll();
+          _deliberateSignOut=false;
+        }
         supaSetStatus('local');
         supaShowLogin();
       }
@@ -18658,7 +18679,9 @@ async function supaForgotPassword(){
   if(error){if(err){err.style.color='#A32D2D';err.textContent=error.message;}}
   else{if(err){err.style.color='#1a7340';err.textContent='Reset link sent — check your email.';}}
 }
+let _deliberateSignOut=false;
 async function supaSignOut(){
+  _deliberateSignOut=true;
   if(_supa)await _supa.auth.signOut();
 }
 
