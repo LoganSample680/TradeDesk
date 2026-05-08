@@ -10451,7 +10451,7 @@ function saveEstFullDraft(){
       portfolioTarget:parseInt(document.getElementById('portfolio-target')?.value)||5,
       step:estStep,
       surfaces:estSurfaces,
-      lastBidId:lastCreatedBidId,
+      lastBidId:lastCreatedBidId||editingBidId,
     };
     localStorage.setItem('zp3_est_full_draft',JSON.stringify(draft));
   }catch(e){}
@@ -10469,6 +10469,7 @@ function resumeEstimateDraft(){
   setTimeout(()=>{
     // Restore linked client and bid IDs before anything else
     estLinkedClientId=d.clientId||null;
+    editingBidId=null;
     if(d.lastBidId)lastCreatedBidId=d.lastBidId;
     restoreEstFullDraft(d);
     goEstStep(d.step||1);
