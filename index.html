@@ -14958,12 +14958,40 @@ function _addrSugSelect(suggId,streetId,cityId,stateId,zipId,street,city,state,z
   // For existing clients, fire lookup immediately on address selection
   if(editClientId&&street&&city)_lookupPropertyData(editClientId,{street,city,state,zip});
 }
+function _getRecentDestinations(limit=10){
+  const seen=new Set();const out=[];
+  for(let i=0;i<mileage.length&&out.length<limit;i++){
+    const addr=(mileage[i].to||'').trim();
+    if(addr&&!seen.has(addr.toLowerCase())){seen.add(addr.toLowerCase());out.push({addr,client_name:mileage[i].client_name||''});}
+  }
+  return out;
+}
+function _showRecentDestinations(){
+  const sugg=document.getElementById('lm-to-sugg');if(!sugg)return;
+  const recents=_getRecentDestinations();
+  if(!recents.length){sugg.style.display='none';sugg.innerHTML='';return;}
+  sugg.innerHTML='<div style="padding:4px 10px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Recent</div>'+
+    recents.map(r=>'<div onclick="_selectRecentDest(\''+r.addr.replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\''+')" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)" onmouseenter="this.style.background=\'var(--bg2)\'" onmouseleave="this.style.background=\'\'">'+
+      '<span style="font-size:16px;color:var(--text3)">🕐</span>'+
+      '<div><div style="font-size:13px;color:var(--text)">'+escHtml(r.addr)+'</div>'+(r.client_name?'<div style="font-size:11px;color:var(--text3)">'+escHtml(r.client_name)+'</div>':'')+
+      '</div></div>').join('');
+  sugg.style.display='block';
+}
+function _selectRecentDest(addr){
+  const inp=document.getElementById('lm-to');if(!inp)return;
+  inp.value=addr;_lmCoords.to=null;
+  const sugg=document.getElementById('lm-to-sugg');if(sugg){sugg.innerHTML='';sugg.style.display='none';}
+  const chip=document.getElementById('lm-to-chip');if(chip){chip.textContent=addr;chip.style.display='inline-block';}
+  if(addr)_photonGeocode(addr).then(c=>{if(c)_lmCoords.to=c;}).catch(()=>{});
+  const fromVal=(document.getElementById('lm-from')?.value||'').trim();
+  if(fromVal&&addr)_previewRoute(fromVal,addr);
+}
 function _tripDestSearch(val){
   clearTimeout(_tripDestTimer);
   const box=document.getElementById('lm-to-sugg');if(!box)return;
   const chip=document.getElementById('lm-to-chip');if(chip)chip.style.display='none';
   _lmCoords.to=null;
-  if(!val||val.length<2){box.style.display='none';return;}
+  if(!val||val.length<2){_showRecentDestinations();return;}
   const clientMatches=clients.filter(c=>c.name&&c.name.toLowerCase().includes(val.toLowerCase())&&c.addr).slice(0,4);
   _tripDestTimer=setTimeout(async()=>{
     let html=clientMatches.map(c=>'<div onclick="_selectTripClient('+c.id+')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
@@ -15111,7 +15139,7 @@ function openLogTripModal(opts){
       '<div id="lm-from-chip" style="display:none;margin-top:5px;font-size:11px;color:var(--green-mid);background:var(--green-lt);border:1px solid var(--green-mid);border-radius:20px;padding:3px 10px;align-items:center;gap:4px"><span>📍</span><span id="lm-from-chip-txt"></span><span style="color:var(--green-mid);font-weight:700">✓</span></div>'+
       '</div>'+
     '<div class="f" style="margin-bottom:4px"><label>Driving to — client name or address</label>'+
-      '<input id="lm-to" placeholder="Type client name or any address" value="'+(opts.toAddress||'')+'" oninput="_tripDestSearch(this.value)" autocomplete="off">'+
+      '<input id="lm-to" placeholder="Type client name or any address" value="'+(opts.toAddress||'')+'" onfocus="_showRecentDestinations()" oninput="_tripDestSearch(this.value)" autocomplete="off">'+
       '<div id="lm-to-sugg" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);margin-top:2px;overflow:hidden;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>'+
       '<div id="lm-to-chip" style="display:none;margin-top:5px;font-size:11px;color:var(--green-mid);background:var(--green-lt);border:1px solid var(--green-mid);border-radius:20px;padding:3px 10px;align-items:center;gap:4px"><span>📍</span><span id="lm-to-chip-txt"></span><span style="color:var(--green-mid);font-weight:700">✓</span></div>'+
       '</div>'+
