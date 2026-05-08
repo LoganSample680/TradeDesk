@@ -17801,16 +17801,9 @@ async function devSwitchTrade(type){
 }
 
 // ── Dev Support View ──────────────────────────────────────────────────
-// TODO: APPLE REVIEW — before App Store submission, convert to explicit user opt-in/opt-out:
-//   1. User taps "Allow support access" in Settings with clear disclosure
-//   2. User can revoke anytime via Settings → "Revoke support access"
-//   3. Privacy policy must disclose: "TradeDesk may access your account data for
-//      troubleshooting when you have explicitly granted support access."
-// Current state: dev-only, single beta user (Zach). No opt-in needed yet.
-// Supabase requirement: add RLS policy on zj_data table (one-time, in Supabase dashboard):
-//   CREATE POLICY "dev_support_read" ON zj_data FOR SELECT USING (
-//     auth.uid() = user_id OR auth.uid() = (
-//       SELECT id FROM auth.users WHERE email = 'logansample97@gmail.com' LIMIT 1));
+// Developer access to user data for troubleshooting is disclosed in TradeDesk's
+// Terms of Service accepted at account creation. Supabase RLS policy "dev_support_read"
+// on zj_data grants logansample97 read access for support purposes.
 let _devSupportMode=false,_devSupportName='',_devSavedState=null;
 const _DEV_SUPPORT_USERS={
   zach:{name:'Zach',userId:'6201cb8c-c4de-4bf2-bdf7-0376f0577cc4'},
@@ -17974,6 +17967,7 @@ function obStep2(el){
     obInput('ob-email','Email','you@yourbusiness.com','email',_ob.email)+
     obInput('ob-pass','Password (min 6 chars)','••••••••','password','')+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
+    '<div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:14px;padding:10px 12px;background:var(--bg2);border-radius:var(--r);border:1px solid var(--border)">By creating an account, you agree to TradeDesk\'s <strong>Terms of Service</strong> and <strong>Privacy Policy</strong>. You acknowledge that TradeDesk and its authorized developers may access your account data solely for troubleshooting, technical support, and service improvement purposes.</div>'+
     obBtn('Continue','obNext2()');
 }
 
