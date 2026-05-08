@@ -15323,13 +15323,17 @@ function renderAllMileage(){
           '<div style="flex:1;min-width:0;font-size:13px;color:var(--text);line-height:1.35;user-select:all">'+(toAddr?escHtml(toAddr):'<span style="color:var(--text3);font-style:italic;font-size:12px">End not recorded</span>')+'</div>'+
         '</div>'+
         // Bottom bar — labeled meta, edit + delete on right
-        '<div style="display:flex;align-items:center;gap:12px;margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">'+
-          purposeBadge+
-          (r.vehicle?'<span style="font-size:10px;color:var(--text3);flex-shrink:0">Vehicle: <span style="color:var(--text2);font-weight:600">'+escHtml(r.vehicle)+'</span></span>':'')+
-          (r.client_name?'<span style="font-size:10px;color:var(--text3);flex-shrink:0">'+escHtml(r.client_name)+'</span>':'')+
-          (_hasMultiDriver&&r.logged_by_name?'<span style="font-size:10px;color:var(--text3);flex-shrink:0">Driver: <span style="color:var(--text2);font-weight:600">'+escHtml(r.logged_by_name)+'</span></span>':'')+
-          '<button onclick="openMileageEdit('+r.id+')" style="margin-left:auto;flex-shrink:0;font-size:11px;font-weight:600;background:none;border:1px solid var(--border2);border-radius:var(--r);padding:3px 8px;cursor:pointer;color:var(--text2)">✏️ Edit</button>'+
-          '<button class="btn-del" onclick="delMileage('+r.id+')" style="flex-shrink:0">&#10005;</button>'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">'+
+          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;flex:1">'+
+            purposeBadge+
+            (r.vehicle?'<span style="font-size:10px;color:var(--text3)">Vehicle: <span style="color:var(--text2);font-weight:600">'+escHtml(r.vehicle)+'</span></span>':'')+
+            (r.client_name?'<span style="font-size:10px;color:var(--text3)">'+escHtml(r.client_name)+'</span>':'')+
+            (_hasMultiDriver&&r.logged_by_name?'<span style="font-size:10px;color:var(--text3)">Driver: <span style="color:var(--text2);font-weight:600">'+escHtml(r.logged_by_name)+'</span></span>':'')+
+          '</div>'+
+          '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'+
+            '<button onclick="openMileageEdit('+r.id+')" style="font-size:11px;font-weight:600;background:none;border:1px solid var(--border2);border-radius:var(--r);padding:3px 8px;cursor:pointer;color:var(--text2)">✏️ Edit</button>'+
+            '<button class="btn-del" onclick="delMileage('+r.id+')">&#10005;</button>'+
+          '</div>'+
         '</div>'+
       '</div>';
     }).join('');
