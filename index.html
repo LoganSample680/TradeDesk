@@ -17730,21 +17730,23 @@ async function _devLoadUserAccount(key){
   if(!u){showToast('Unknown support user','⚠️');return;}
   const{data:zd,error}=await _supa.from('zj_data').select('*').eq('user_id',u.userId).maybeSingle();
   if(error||!zd){showToast('No data found — check Supabase RLS policy','❌');return;}
-  _devSavedState={clients:[...clients],bids:[...bids],payments:[...payments]};
-  try{
-    clients=JSON.parse(zd.clients||'[]');
-    bids=JSON.parse(zd.bids||'[]');
-    payments=JSON.parse(zd.payments||'[]');
-  }catch(e){}
+  _devSavedState={clients:[...clients],bids:[...bids],jobs:[...jobs],payments:[...payments],liens:[...liens],income:[...income],expenses:[...expenses],mileage:[...mileage],timeEntries:[...timeEntries]};
+  const p=(s,fb)=>{try{return s?JSON.parse(s):fb}catch{return fb}};
+  clients=p(zd.clients,[]);bids=p(zd.bids,[]);jobs=p(zd.jobs,[]);
+  payments=p(zd.payments,[]);liens=p(zd.liens,[]);
+  income=p(zd.income,[]);expenses=p(zd.expenses,[]);
+  mileage=p(zd.mileage,[]);timeEntries=p(zd.time_entries,[]);
   _devSupportMode=true;_devSupportName=u.name;
   _renderDevTradeCard();renderDash();
+  renderClientList&&renderClientList();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
   showToast('Viewing '+_devSupportName+'\'s account','👁');
 }
 function _devExitSupportMode(){
   if(!_devSavedState)return;
-  clients=_devSavedState.clients;bids=_devSavedState.bids;payments=_devSavedState.payments;
+  ({clients,bids,jobs,payments,liens,income,expenses,mileage,timeEntries}=_devSavedState);
   _devSupportMode=false;_devSupportName='';_devSavedState=null;
   _renderDevTradeCard();renderDash();
+  renderClientList&&renderClientList();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
   showToast('Back to your account','✓');
 }
 
