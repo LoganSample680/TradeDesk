@@ -15226,8 +15226,6 @@ function renderAllMileage(){
   const el=document.getElementById('mil-table');
   if(!mileage.length){el.innerHTML='<div class="empty">No trips yet.<br>Open a client record and tap <strong>Start driving</strong> to log a trip.</div>';return;}
   if(!filtered.length){el.innerHTML='<div class="empty">No trips in '+yr+'.</div>';return;}
-  const pinG='<svg viewBox="0 0 24 24" style="width:15px;height:15px;flex-shrink:0;margin-top:1px"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#16a34a"/><circle cx="12" cy="9" r="2.5" fill="#fff"/></svg>';
-  const pinR='<svg viewBox="0 0 24 24" style="width:15px;height:15px;flex-shrink:0;margin-top:1px"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#dc2626"/><circle cx="12" cy="9" r="2.5" fill="#fff"/></svg>';
   const byDay={};
   [...filtered].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).forEach(r=>{if(!byDay[r.date])byDay[r.date]=[];byDay[r.date].push(r);});
   el.innerHTML=Object.entries(byDay).sort((a,b)=>b[0].localeCompare(a[0])).map(([date,trips])=>{
@@ -15238,19 +15236,33 @@ function renderAllMileage(){
       const fromAddr=r.from||'';
       const toAddr=r.to||(r.client_id?getClientById(r.client_id)?.addr||'':'');
       const hasAddr=!!(fromAddr||toAddr);
-      const purposeSel='<select onchange="editMilePurpose('+r.id+',this.value)" onclick="event.stopPropagation()" style="font-size:11px;border:1px solid var(--border2);background:var(--bg2);color:var(--text2);cursor:pointer;font-family:inherit;padding:3px 4px;border-radius:6px;max-width:120px">'+
+      const purposeSel='<select onchange="editMilePurpose('+r.id+',this.value)" onclick="event.stopPropagation()" style="font-size:11px;font-weight:600;border:1.5px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;font-family:inherit;padding:4px 8px;border-radius:20px;max-width:130px">'+
         MILE_PURPOSES.map(p=>'<option value="'+p+'"'+((r.purpose||'Other')===p?' selected':'')+'>'+p+'</option>').join('')+'</select>';
+      // 3-row layout: each pin has its own flex row so text length never shifts pin position
+      const dotG='<div style="width:10px;height:10px;border-radius:50%;background:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.15);flex-shrink:0"></div>';
+      const dotR='<div style="width:10px;height:10px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.15);flex-shrink:0"></div>';
       const addrDrawer=hasAddr?
-        '<div id="mile-det-'+r.id+'" style="display:none;padding:10px 12px 12px;border-top:1px solid var(--border);background:var(--bg2)">'+
-          '<div style="display:flex;gap:10px">'+
-            '<div style="display:flex;flex-direction:column;align-items:center;padding-top:2px">'+
-              pinG+
-              '<div style="width:2px;flex:1;min-height:14px;background:repeating-linear-gradient(to bottom,var(--border2) 0,var(--border2) 4px,transparent 4px,transparent 8px);margin:3px 0"></div>'+
-              pinR+
-            '</div>'+
+        '<div id="mile-det-'+r.id+'" style="display:none;padding:12px 14px 14px;border-top:1px solid var(--border)">'+
+          // From row
+          '<div style="display:flex;align-items:flex-start;gap:11px">'+
+            '<div style="width:10px;flex-shrink:0;display:flex;justify-content:center;padding-top:3px">'+dotG+'</div>'+
             '<div style="flex:1;min-width:0">'+
-              (fromAddr?'<div style="font-size:12px;color:var(--text2);padding-bottom:8px;user-select:all;word-break:break-word">'+escHtml(fromAddr)+'</div>':'<div style="font-size:11px;color:var(--text3);padding-bottom:8px">No start address</div>')+
-              (toAddr?'<div style="font-size:12px;color:var(--text2);user-select:all;word-break:break-word">'+escHtml(toAddr)+'</div>':'<div style="font-size:11px;color:var(--text3)">No end address</div>')+
+              '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:2px">Start</div>'+
+              '<div style="font-size:13px;color:var(--text);line-height:1.35;user-select:all">'+(fromAddr?escHtml(fromAddr):'<span style="color:var(--text3);font-style:italic">Not recorded</span>')+'</div>'+
+            '</div>'+
+          '</div>'+
+          // Connector — width:10px column keeps it centered under both dots
+          '<div style="display:flex;gap:11px;padding:4px 0">'+
+            '<div style="width:10px;flex-shrink:0;display:flex;justify-content:center">'+
+              '<div style="width:2px;height:18px;background:repeating-linear-gradient(to bottom,var(--border2) 0,var(--border2) 4px,transparent 4px,transparent 8px)"></div>'+
+            '</div>'+
+          '</div>'+
+          // To row
+          '<div style="display:flex;align-items:flex-start;gap:11px">'+
+            '<div style="width:10px;flex-shrink:0;display:flex;justify-content:center;padding-top:3px">'+dotR+'</div>'+
+            '<div style="flex:1;min-width:0">'+
+              '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:2px">End</div>'+
+              '<div style="font-size:13px;color:var(--text);line-height:1.35;user-select:all">'+(toAddr?escHtml(toAddr):'<span style="color:var(--text3);font-style:italic">Not recorded</span>')+'</div>'+
             '</div>'+
           '</div>'+
         '</div>':'';
@@ -15258,10 +15270,10 @@ function renderAllMileage(){
         '<div onclick="_togMileTrip('+r.id+')" style="display:flex;align-items:center;gap:8px;padding:10px 12px;'+(hasAddr?'cursor:pointer':'')+'">'+
           '<div style="flex:1;min-width:0">'+
             purposeSel+
-            (r.client_name?'<div style="font-size:10px;color:var(--text3);margin-top:3px">'+escHtml(r.client_name)+(r.vehicle?' · '+escHtml(r.vehicle):'')+'</div>':
-             r.vehicle?'<div style="font-size:10px;color:var(--text3);margin-top:3px">'+escHtml(r.vehicle)+'</div>':'')+
+            (r.client_name?'<div style="font-size:10px;color:var(--text3);margin-top:4px">'+escHtml(r.client_name)+(r.vehicle?' · '+escHtml(r.vehicle):'')+'</div>':
+             r.vehicle?'<div style="font-size:10px;color:var(--text3);margin-top:4px">'+escHtml(r.vehicle)+'</div>':'')+
           '</div>'+
-          '<div style="text-align:right;flex-shrink:0">'+
+          '<div style="text-align:right;flex-shrink:0;margin-right:4px">'+
             '<div style="font-size:12px;font-weight:700">'+(r.miles?(+r.miles).toFixed(1)+' mi':'—')+'</div>'+
             '<div style="font-size:11px;color:var(--green-mid)">'+(r.miles?fmt((+r.miles)*IRS()):'—')+'</div>'+
           '</div>'+
