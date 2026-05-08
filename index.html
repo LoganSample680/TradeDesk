@@ -2361,6 +2361,9 @@ let _user=null;      // users row
 let _config=null;    // account_config row
 let _accountUsers=[]; // account_users rows
 let _vehicles=[];    // vehicles rows
+let _isEmployee=false;        // true when logged-in user belongs to another contractor
+let _contractorUserId=null;   // contractor's user_id (set when _isEmployee)
+let _employeeRecord=null;     // team_members row for this employee
 
 // Default configs by business type
 const BUSINESS_CONFIGS={
@@ -2375,7 +2378,8 @@ const BUSINESS_CONFIGS={
 };
 
 function getRole(){return _user?.role||'owner';}
-function isOwner(){return getRole()==='owner';}
+function isOwner(){return !_isEmployee&&(getRole()==='owner'||getRole()==='co-owner');}
+function isEmployee(){return _isEmployee;}
 function canSeeTaxes(){return isOwner();}
 function isLifetimeAccount(){return !!_account?.is_lifetime;}
 function getBusinessName(){return _account?.business_name||S.bname||'TradeDesk';}
@@ -2441,7 +2445,7 @@ function _buildStateBrackets(data,status){
   return[[Math.round(top*mult),low],[Infinity,high]];
 }
 
-function saveAll(){if(_devSupportMode){supaSaveDebounced();return;}try{const lp=(k,d)=>localStorage.setItem(k,JSON.stringify(d));lp('zp3_clients',clients);lp('zp3_bids',bids);lp('zp3_jobs',jobs);lp('zp3_inc',income);lp('zp3_exp',expenses);lp('zp3_mil',mileage);lp('zp3_chk',checksState);lp('zp3_S',S);lp('zp3_pay',payments);lp('zp3_lien',liens);lp('zp3_ev',events.slice(-600));lp('zp3_te',timeEntries.slice(-500));lp('zp3_photos',photos.slice(-300));lp('zp3_lic',licenses);}catch(e){}supaSaveDebounced();}
+function saveAll(){if(_devSupportMode){supaSaveDebounced();return;}if(_isEmployee){supaSaveDebounced();return;}try{const lp=(k,d)=>localStorage.setItem(k,JSON.stringify(d));lp('zp3_clients',clients);lp('zp3_bids',bids);lp('zp3_jobs',jobs);lp('zp3_inc',income);lp('zp3_exp',expenses);lp('zp3_mil',mileage);lp('zp3_chk',checksState);lp('zp3_S',S);lp('zp3_pay',payments);lp('zp3_lien',liens);lp('zp3_ev',events.slice(-600));lp('zp3_te',timeEntries.slice(-500));lp('zp3_photos',photos.slice(-300));lp('zp3_lic',licenses);}catch(e){}supaSaveDebounced();}
 function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s?JSON.parse(s):d;};clients=lp('zp3_clients',[]);bids=lp('zp3_bids',[]);jobs=lp('zp3_jobs',[]);income=lp('zp3_inc',[]);expenses=lp('zp3_exp',[]);mileage=lp('zp3_mil',[]);checksState=lp('zp3_chk',{});payments=lp('zp3_pay',[]);liens=lp('zp3_lien',[]);events=lp('zp3_ev',[]);timeEntries=lp('zp3_te',[]);photos=lp('zp3_photos',[]);licenses=lp('zp3_lic',[]);const ss=lp('zp3_S',null);if(ss)S={...S,...ss};
   // One-time migration: correct stale 2024 tax values in localStorage
   if(S.fedMFS===14600)S.fedMFS=15000;
@@ -3172,6 +3176,8 @@ function openMobileMore(){const ov=document.getElementById('mobile-more-ov');if(
 function closeMobileMore(){const ov=document.getElementById('mobile-more-ov');if(ov)ov.style.display='none';}
 function mobileNavTo(pg){closeMobileMore();goPg(pg);}
 function goPg(id){
+  // Redirect employees away from restricted pages
+  if(_isEmployee&&['pg-leads','pg-taxes','pg-tracker','pg-team','pg-settings','pg-checklist'].includes(id))id='pg-dash';
   // Preserve currentClientId across navigation — only clear on explicit new client selection
   if(id==='pg-dash')window._fromDash=false;
   if(id!=='pg-est')hideNotesFab();
@@ -3536,7 +3542,39 @@ function renderDash(){
   const avgJobVal=wonBidAmts.length?Math.round(wonBidAmts.reduce((s,a)=>s+a,0)/wonBidAmts.length):null;
 
   const kpiEl=document.getElementById('dash-kpi');
-  if(kpiEl){
+  if(kpiEl&&_isEmployee){
+    // Employee home: field-focused tiles, no financial data
+    const activeJobs=jobs.filter(j=>!j.completed&&!j.cancelled);
+    const todayJobs=activeJobs.filter(j=>j.date===tk||j.scheduled_date===tk);
+    const myMiles=mileage.filter(m=>m.logged_by_id===_supaUser?.id&&m.date&&m.date.startsWith(yrStr)).reduce((s,m)=>s+(m.miles||0),0);
+    const recentClients=clients.slice(0,3);
+    kpiEl.innerHTML=
+      '<div class="mets" style="margin-bottom:12px">'+
+        '<div class="met" style="cursor:pointer" onclick="goPg(\'pg-jobs\')">'+
+          '<div class="met-l">Active jobs</div>'+
+          '<div class="met-v">'+activeJobs.length+'</div>'+
+        '</div>'+
+        '<div class="met" style="cursor:pointer" onclick="goPg(\'pg-jobs\')">'+
+          '<div class="met-l">Today</div>'+
+          '<div class="met-v" style="color:var(--blue)">'+todayJobs.length+'</div>'+
+        '</div>'+
+        '<div class="met" style="cursor:pointer" onclick="goPg(\'pg-clients\')">'+
+          '<div class="met-l">Clients</div>'+
+          '<div class="met-v">'+clients.length+'</div>'+
+        '</div>'+
+        '<div class="met">'+
+          '<div class="met-l">My miles '+yr+'</div>'+
+          '<div class="met-v">'+Math.round(myMiles).toLocaleString()+' <span style="font-size:11px;font-weight:400;color:var(--text3)">mi</span></div>'+
+        '</div>'+
+      '</div>'+
+      (todayJobs.length?
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Today\'s jobs</div>'+
+        todayJobs.slice(0,3).map(j=>'<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px;cursor:pointer" onclick="goPg(\'pg-jobs\')">'+
+          '<div style="font-size:18px">🔨</div>'+
+          '<div style="min-width:0"><div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(j.clientName||j.title||'Job')+'</div>'+
+          '<div style="font-size:11px;color:var(--text3)">'+escHtml(j.address||j.type||'')+'</div></div>'+
+        '</div>').join(''):'');
+  } else if(kpiEl){
     const pBids=bids.filter(b=>b.status==='Pending');
     kpiEl.innerHTML='<div class="mets" id="dash-mets-inner">'+
       '<div class="met" style="cursor:pointer" onclick="goToTrackerTab(\'income\')">'+
@@ -3567,7 +3605,8 @@ function renderDash(){
   }
 
   const closeTip=document.getElementById('dash-close-tip');
-  if(closeTip){
+  if(_isEmployee){if(closeTip)closeTip.style.display='none';}
+  if(!_isEmployee&&closeTip){
     if(closeRatio!==null&&closeRatio<25&&totalDecided>=3){
       closeTip.style.display='block';
       closeTip.innerHTML='<div style="background:#FFF8F0;border:1px solid var(--amber);border-radius:var(--rl);padding:12px 14px">'+
@@ -3592,7 +3631,8 @@ function renderDash(){
   const csub=document.getElementById('dash-collect-sub');
   if(csub){csub.textContent=subCollect;csub.style.color=collectItems.length?'#A32D2D':'var(--text3)';}
 
-  renderPipeline();
+  if(!_isEmployee)renderPipeline();
+  else{const pe=document.getElementById('dash-pipeline');if(pe)pe.innerHTML='';}
   // Section shared styles
   const _rowStyle='display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px';
   const _nameStyle='font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
@@ -15188,6 +15228,7 @@ function saveLoggedTrip(){
   const c=cid?getClientById(cid):null;
   // Save immediately with 0 miles — background route calc will update
   const rec={id:Date.now(),date,vehicle,from,to,start:0,end:0,miles:0,purpose,client_id:cid,client_name:c?c.name:'',notes,calc_method:'pending'};
+  if(_isEmployee){rec.logged_by_id=_supaUser.id;rec.logged_by_name=_employeeRecord?.name||_supaUser.email;}
   mileage.unshift(rec);
   if(cid)autoLogContact(cid,'drive');
   emitEvent('drive_logged',cid,{to,miles:0,purpose});
@@ -15217,7 +15258,10 @@ function saveLoggedTrip(){
 }
 function renderAllMileage(){
   const yr=String(trackerYear||new Date().getFullYear());
-  const filtered=mileage.filter(m=>m.date&&m.date.startsWith(yr));
+  // Employees see only their own trips; owners see all
+  const _mileSrc=_isEmployee?mileage.filter(m=>!m.logged_by_id||m.logged_by_id===_supaUser?.id):mileage;
+  const filtered=_mileSrc.filter(m=>m.date&&m.date.startsWith(yr));
+  const _hasMultiDriver=!_isEmployee&&mileage.some(m=>m.logged_by_name);
   const tot=filtered.reduce((s,r)=>s+(r.miles||0),0);
   const byPurpose={};
   filtered.forEach(m=>{const p=m.purpose||'Other';byPurpose[p]=(byPurpose[p]||0)+(m.miles||0);});
@@ -15283,6 +15327,7 @@ function renderAllMileage(){
           purposeBadge+
           (r.vehicle?'<span style="font-size:10px;color:var(--text3);flex-shrink:0">Vehicle: <span style="color:var(--text2);font-weight:600">'+escHtml(r.vehicle)+'</span></span>':'')+
           (r.client_name?'<span style="font-size:10px;color:var(--text3);flex-shrink:0">'+escHtml(r.client_name)+'</span>':'')+
+          (_hasMultiDriver&&r.logged_by_name?'<span style="font-size:10px;color:var(--text3);flex-shrink:0">Driver: <span style="color:var(--text2);font-weight:600">'+escHtml(r.logged_by_name)+'</span></span>':'')+
           '<button onclick="openMileageEdit('+r.id+')" style="margin-left:auto;flex-shrink:0;font-size:11px;font-weight:600;background:none;border:1px solid var(--border2);border-radius:var(--r);padding:3px 8px;cursor:pointer;color:var(--text2)">✏️ Edit</button>'+
           '<button class="btn-del" onclick="delMileage('+r.id+')" style="flex-shrink:0">&#10005;</button>'+
         '</div>'+
@@ -16814,6 +16859,22 @@ async function loadAccountData(){
       applyPermissions();
       return true;
     }
+    // Check if this user is a linked employee
+    const{data:empRow}=await _supa.from('team_members').select('*').eq('employee_user_id',_supaUser.id).eq('active',true).maybeSingle();
+    if(empRow){
+      _isEmployee=true;_contractorUserId=empRow.contractor_user_id;_employeeRecord=empRow;
+      _user={id:_supaUser.id,email:_supaUser.email,name:empRow.name,role:empRow.role||'employee',account_id:null};
+      applyPermissions();return true;
+    }
+    // Check for pending invite (email match, not yet linked)
+    const{data:inviteRow}=await _supa.from('team_members').select('*').eq('email',_supaUser.email).is('employee_user_id',null).maybeSingle();
+    if(inviteRow){
+      await _supa.from('team_members').update({employee_user_id:_supaUser.id,active:true,joined_at:new Date().toISOString()}).eq('id',inviteRow.id);
+      _isEmployee=true;_contractorUserId=inviteRow.contractor_user_id;
+      _employeeRecord={...inviteRow,employee_user_id:_supaUser.id,active:true};
+      _user={id:_supaUser.id,email:_supaUser.email,name:inviteRow.name,role:inviteRow.role||'employee',account_id:null};
+      applyPermissions();return true;
+    }
     // No users row — check for pre-schema user via zj_data
     const{data:zd}=await _supa.from('zj_data').select('user_id').eq('user_id',_supaUser.id).maybeSingle();
     if(zd){
@@ -16828,17 +16889,25 @@ async function loadAccountData(){
 function applyPermissions(){
   const taxNav=document.getElementById('nb-taxes');
   if(taxNav)taxNav.style.display=canSeeTaxes()?'':'none';
+  // Hide restricted nav items for employees
+  if(_isEmployee){
+    ['nb-leads','nb-tracker','nb-team','nb-settings',
+     'mtb-leads','mmi-tracker','mmi-taxes','mmi-team','mmi-settings','mmi-money'].forEach(id=>{
+      const el=document.getElementById(id);if(el)el.style.display='none';
+    });
+    // Also hide taxes nav button (already hidden by canSeeTaxes but be explicit)
+    if(taxNav)taxNav.style.display='none';
+  }
   _renderDevTradeCard();
   // Update nav user section
   const nameEl=document.getElementById('nav-user-name');
   const roleEl=document.getElementById('nav-user-role');
   const avatarEl=document.getElementById('nav-user-avatar');
-  // Use stored owner name, Supabase metadata, or clean email prefix
   const _meta=_supaUser?.user_metadata;
   const _metaName=_meta?.full_name||_meta?.name||'';
-  const name=getOwnerName()||_metaName||'My Account';
+  const name=_isEmployee?(_employeeRecord?.name||'Employee'):(getOwnerName()||_metaName||'My Account');
   if(nameEl)nameEl.textContent=name;
-  if(roleEl)roleEl.textContent=getRole().charAt(0).toUpperCase()+getRole().slice(1);
+  if(roleEl)roleEl.textContent=_isEmployee?'Employee':getRole().charAt(0).toUpperCase()+getRole().slice(1);
   if(avatarEl)avatarEl.textContent=name.charAt(0).toUpperCase();
 }
 
@@ -18554,6 +18623,7 @@ function renderTeam(){
           (e.role!=='owner'?'<button onclick="openEditEmployeeModal('+i+')" style="font-size:11px;padding:4px 10px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">Edit</button>':'')+
         '</div>'+
         (e.phone?'<div style="font-size:11px;color:var(--text3);margin-top:4px">📞 '+e.phone+'</div>':'')+
+        (e.email?'<div style="font-size:11px;color:var(--text3);margin-top:3px">📧 '+e.email+' <span style="font-size:9px;font-weight:700;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:6px">Invite sent</span></div>':'')+
         '<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.5">'+perms+'</div>'+
       '</div>';
     }).join('');
@@ -18609,10 +18679,16 @@ function _employeeModalHTML(emp,idx){
       '<div class="f"><label>Full name</label><input id="emp-name" value="'+(e.name||'')+'" placeholder="John Smith" style="font-size:15px;padding:10px"></div>'+
       '<div class="f"><label>Phone</label><input id="emp-phone" type="tel" value="'+(e.phone||'')+'" placeholder="XXX-XXX-XXXX" maxlength="12" oninput="fmtPhone(this)" style="font-size:15px;padding:10px"></div>'+
     '</div>'+
+    '<div class="f" style="margin-bottom:12px"><label>Email (for app access)</label>'+
+      '<input id="emp-email" type="email" value="'+(e.email||'')+'" placeholder="employee@email.com" style="font-size:14px;padding:10px">'+
+      '<div style="font-size:10px;color:var(--text3);margin-top:4px">Enter their email then tap "Send Invite" — they\'ll get a sign-in link and see your jobs, clients, and estimates.</div>'+
+    '</div>'+
     '<div class="f" style="margin-bottom:12px"><label>Role</label>'+
       '<select id="emp-role" style="font-size:14px;padding:10px">'+
-        '<option value="painter"'+(e.role==='painter'?' selected':'')+'>Painter</option>'+
+        '<option value="employee"'+((!e.role||e.role==='employee')?' selected':'')+'>Field employee</option>'+
         '<option value="estimator"'+(e.role==='estimator'?' selected':'')+'>Estimator</option>'+
+        '<option value="foreman"'+(e.role==='foreman'?' selected':'')+'>Foreman</option>'+
+        '<option value="painter"'+(e.role==='painter'?' selected':'')+'>Painter</option>'+
         '<option value="owner"'+(e.role==='owner'?' selected':'')+'>Owner / Co-owner</option>'+
       '</select>'+
     '</div>'+
@@ -18626,7 +18702,7 @@ function _employeeModalHTML(emp,idx){
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       (!isNew?'<button onclick="removeEmployee('+idx+')" style="padding:10px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>':'<div></div>')+
-      '<button onclick="_saveEmployee('+(isNew?'null':idx)+')" style="padding:10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+(isNew?'Add':'Save')+'</button>'+
+      '<button onclick="_saveEmployee('+(isNew?'null':idx)+')" style="padding:10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+(isNew?'Add & Invite':'Save')+'</button>'+
     '</div>'+
     '<button onclick="document.getElementById(\'emp-modal-overlay\').remove()" style="width:100%;padding:8px;border:none;background:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>';
 }
@@ -18646,15 +18722,29 @@ function _openEmpModal(emp,idx){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   setTimeout(()=>document.getElementById('emp-name')?.focus(),100);
 }
-function _saveEmployee(idx){
+async function _saveEmployee(idx){
   const name=document.getElementById('emp-name')?.value?.trim();
   if(!name){zAlert('Enter a name.');return;}
+  const email=(document.getElementById('emp-email')?.value?.trim()||'').toLowerCase();
   const perms={};
   Object.keys(PERM_LABELS).forEach(k=>{perms[k]=!!(document.getElementById('emp-p-'+k)?.checked);});
-  const emp={id:idx!=null?(S.employees[idx]?.id||Date.now()):Date.now(),name,role:document.getElementById('emp-role')?.value||'painter',phone:document.getElementById('emp-phone')?.value?.trim()||'',permissions:perms};
+  const isNew=idx==null;
+  const emp={id:isNew?Date.now():(S.employees[idx]?.id||Date.now()),name,email,role:document.getElementById('emp-role')?.value||'employee',phone:document.getElementById('emp-phone')?.value?.trim()||'',permissions:perms};
   if(!S.employees)S.employees=[];
-  if(idx!=null)S.employees[idx]=emp;else S.employees.push(emp);
+  if(!isNew)S.employees[idx]=emp;else S.employees.push(emp);
   saveSettings();document.getElementById('emp-modal-overlay')?.remove();renderTeam();
+  // Sync to Supabase team_members and send invite if email provided
+  if(email&&_supa&&_supaUser){
+    const tmRow={contractor_user_id:_supaUser.id,email,name,role:emp.role,active:false,invited_at:new Date().toISOString()};
+    const{error}=await _supa.from('team_members').upsert(tmRow,{onConflict:'contractor_user_id,email'});
+    if(error){console.warn('team_members upsert failed:',error);return;}
+    // Send magic-link invite
+    if(isNew){
+      const{error:invErr}=await _supa.auth.signInWithOtp({email,options:{shouldCreateUser:true,emailRedirectTo:window.location.origin}});
+      if(invErr)showToast('Saved — invite email failed: '+invErr.message,'⚠️');
+      else showToast('Invite sent to '+email,'📧');
+    }
+  }
 }
 function removeEmployee(idx){
   if(!S.employees)return;
@@ -18857,10 +18947,10 @@ async function supaSaveToCloud(){
       }
       return e;
     });
-    // In support mode: write to the target user's row, never touch settings
+    // In support/employee mode: write to the target user's row, never touch settings
     const uid=_devSupportMode
       ? Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id
-      : _supaUser.id;
+      : (_isEmployee?_contractorUserId:_supaUser.id);
     const part1={
       user_id:uid,
       clients:JSON.stringify(clients),
@@ -18870,10 +18960,10 @@ async function supaSaveToCloud(){
       liens:JSON.stringify(liens),
       updated_at:new Date().toISOString()
     };
-    if(!_devSupportMode){const {stateRates:_sr,...sForCloud}=S;part1.settings=JSON.stringify(sForCloud);}
+    if(!_devSupportMode&&!_isEmployee){const {stateRates:_sr,...sForCloud}=S;part1.settings=JSON.stringify(sForCloud);}
 
-    // Part 1 — core business data; use update in support mode (row guaranteed, avoids INSERT RLS check)
-    const {error:e1}=_devSupportMode
+    // Part 1 — core business data; use update in support/employee mode (row guaranteed)
+    const {error:e1}=(_devSupportMode||_isEmployee)
       ? await _supa.from('zj_data').update(part1).eq('user_id',uid)
       : await _supa.from('zj_data').upsert(part1,{onConflict:'user_id'});
     if(e1)throw e1;
@@ -19146,7 +19236,8 @@ function resendProposalLink(bidId){
 async function supaLoadFromCloud(){
   if(!_supa||!_supaUser)return;
   try{
-    const{data,error}=await _supa.from('zj_data').select('*').eq('user_id',_supaUser.id).maybeSingle();
+    const _loadUid=_isEmployee?_contractorUserId:_supaUser.id;
+    const{data,error}=await _supa.from('zj_data').select('*').eq('user_id',_loadUid).maybeSingle();
     if(error||!data){
       // First time this user has signed in — no cloud data yet.
       // Clear any localStorage data from a previous user on this device.
@@ -19192,7 +19283,9 @@ async function supaLoadFromCloud(){
       applySettings();
       loadSettingsForm();
       // Restore owner name to this device's localStorage so nav shows correctly
-      if(ss.ownerName&&_supaUser?.id){localStorage.setItem('zp3_uname_'+_supaUser.id,ss.ownerName);if(_user)_user.name=ss.ownerName;}
+      if(!_isEmployee&&ss.ownerName&&_supaUser?.id){localStorage.setItem('zp3_uname_'+_supaUser.id,ss.ownerName);if(_user)_user.name=ss.ownerName;}
+      // For employees, restore their own name (don't let contractor's ownerName overwrite)
+      if(_isEmployee&&_employeeRecord?.name&&_user){_user.name=_employeeRecord.name;}
     }}
     saveAll(); // persist cloud data to localStorage as cache
     _supaCloudLoaded=true;
