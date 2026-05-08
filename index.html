@@ -18738,7 +18738,6 @@ async function supaSignOut(){
 
 function supaSaveDebounced(){
   if(!supaEnabled()||!_supaUser)return;
-  if(_devSupportMode)return; // never write to cloud while viewing another account
   clearTimeout(_syncTimer);
   _syncTimer=setTimeout(()=>supaSaveToCloud(),2000);
   supaSetStatus('syncing');
@@ -18756,20 +18755,23 @@ async function supaSaveToCloud(){
       }
       return e;
     });
-    const {stateRates:_sr,...sForCloud}=S;
-    const uid=_supaUser.id;
-
-    // Part 1 — core business data (small, fast, critical)
-    const {error:e1}=await _supa.from('zj_data').upsert({
+    // In support mode: write to the target user's row, never touch settings
+    const uid=_devSupportMode
+      ? Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id
+      : _supaUser.id;
+    const part1={
       user_id:uid,
       clients:JSON.stringify(clients),
       bids:JSON.stringify(bids),
       jobs:JSON.stringify(jobs),
       payments:JSON.stringify(payments),
       liens:JSON.stringify(liens),
-      settings:JSON.stringify(sForCloud),
       updated_at:new Date().toISOString()
-    },{onConflict:'user_id'});
+    };
+    if(!_devSupportMode){const {stateRates:_sr,...sForCloud}=S;part1.settings=JSON.stringify(sForCloud);}
+
+    // Part 1 — core business data (small, fast, critical)
+    const {error:e1}=await _supa.from('zj_data').upsert(part1,{onConflict:'user_id'});
     if(e1)throw e1;
 
     // Part 2 — history data (larger arrays, update-only since row guaranteed by Part 1)
