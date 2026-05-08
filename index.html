@@ -15019,16 +15019,16 @@ function openLogTripModal(opts){
   opts=opts||{};
   const today=todayKey();
   const vehs=getVehicles();
-  const autoVeh=vehs.length===1?vehs[0].name:'';
+  const selVeh=opts.vehicle||(vehs.length===1?vehs[0].name:'');
   const vehOpts=vehs.length
-    ?vehs.map(v=>'<option value="'+v.name+'"'+(autoVeh===v.name?' selected':'')+'>'+getVehicleFullLabel(v)+'</option>').join('')
+    ?vehs.map(v=>'<option value="'+v.name+'"'+(selVeh===v.name?' selected':'')+'>'+getVehicleFullLabel(v)+'</option>').join('')
     :'<option value="">— Add vehicle in Settings —</option>';
   const clientOpts='<option value="">— None —</option>'+clients.map(c=>'<option value="'+c.id+'">'+c.name+'</option>').join('');
   const prefill=opts.purpose||'';
   const purposeOpts='<option value="" disabled'+(prefill?'':' selected')+'>— Select type —</option>'+
     MILE_PURPOSES.map(p=>'<option value="'+p+'"'+(p===prefill?' selected':'')+'>'+p+'</option>').join('');
-  // Optional quick-select chips for today's scheduled jobs/estimates
-  const suggList=opts.suggestions&&opts.suggestions.length?opts.suggestions:[];
+  // Optional quick-select chips for today's scheduled jobs/estimates (skip in edit mode)
+  const suggList=(!opts.editId&&opts.suggestions&&opts.suggestions.length)?opts.suggestions:[];
   const suggHtml=suggList.length
     ?'<div style="margin-bottom:14px">'+
         '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Scheduled today — tap to fill</div>'+
@@ -15048,14 +15048,14 @@ function openLogTripModal(opts){
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
   overlay.innerHTML='<div style="background:var(--bg);border-radius:var(--rl);padding:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'+
-      '<div style="font-size:17px;font-weight:800">🚗 Log a trip</div>'+
+      '<div style="font-size:17px;font-weight:800">'+(opts.editId?'✏️ Edit trip':'🚗 Log a trip')+'</div>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0 4px;line-height:1">×</button>'+
     '</div>'+
     suggHtml+
     '<input type="hidden" id="lm-purpose" value="'+prefill+'">'+
     '<input type="hidden" id="lm-miles-val" value="0">'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
-      '<div class="f" style="margin:0"><label>Date</label><input type="date" id="lm-date" value="'+today+'"></div>'+
+      '<div class="f" style="margin:0"><label>Date</label><input type="date" id="lm-date" value="'+(opts.date||today)+'"></div>'+
       '<div class="f" style="margin:0"><label>Vehicle</label><select id="lm-vehicle" style="width:100%">'+vehOpts+'</select></div>'+
     '</div>'+
     '<div class="f" style="margin-bottom:12px"><label>Trip type</label>'+
@@ -15092,21 +15092,36 @@ function openLogTripModal(opts){
       '</div>'+
     '</div>'+
     '<div class="f" style="margin-bottom:14px"><label>Notes <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>'+
-      '<input id="lm-notes" placeholder="e.g. Supply stop at Sherwin-Williams"></div>'+
+      '<input id="lm-notes" placeholder="e.g. Supply stop at Sherwin-Williams" value="'+(opts.notes||'')+'"></div>'+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Cancel</button>'+
-      '<button onclick="saveLoggedTrip()" class="btn btn-p" style="flex:2;min-height:48px;font-size:15px;font-weight:700">✓ Save trip</button>'+
+      (opts.editId
+        ? '<button onclick="updateLoggedTrip('+opts.editId+')" class="btn btn-p" style="flex:2;min-height:48px;font-size:15px;font-weight:700">✓ Save changes</button>'
+        : '<button onclick="saveLoggedTrip()" class="btn btn-p" style="flex:2;min-height:48px;font-size:15px;font-weight:700">✓ Save trip</button>')+
     '</div>'+
   '</div>';
   document.body.appendChild(overlay);
-  // Auto-select map app based on device
-  const _ua=navigator.userAgent||'';
-  const _defMap=/iPhone|iPad|iPod/i.test(_ua)?'apple':/Android/i.test(_ua)?'google':'';
-  if(_defMap)setTimeout(()=>_selectTripMapApp(_defMap),50);
-  // Auto-grab GPS for starting location if not pre-filled
-  if(!opts.fromAddress)setTimeout(()=>grabMyLocation(false),300);
+  // Auto-select map app based on device (skip in edit mode)
+  if(!opts.editId){
+    const _ua=navigator.userAgent||'';
+    const _defMap=/iPhone|iPad|iPod/i.test(_ua)?'apple':/Android/i.test(_ua)?'google':'';
+    if(_defMap)setTimeout(()=>_selectTripMapApp(_defMap),50);
+    // Auto-grab GPS for starting location if not pre-filled
+    if(!opts.fromAddress)setTimeout(()=>grabMyLocation(false),300);
+  }
   // Pre-link client if provided
-  if(opts.clientName){const c=clients.find(x=>x.name===opts.clientName);if(c){const h=document.getElementById('lm-client');if(h)h.value=c.id;}}
+  if(opts.clientId){const h=document.getElementById('lm-client');if(h)h.value=opts.clientId;}
+  else if(opts.clientName){const c=clients.find(x=>x.name===opts.clientName);if(c){const h=document.getElementById('lm-client');if(h)h.value=c.id;}}
+  // Show existing miles in edit mode
+  if(opts.editId&&opts.miles>0){
+    setTimeout(()=>{
+      const mv=document.getElementById('lm-miles-val');if(mv)mv.value=opts.miles;
+      const md=document.getElementById('lm-miles-display');if(md)md.textContent=(+opts.miles).toFixed(1)+' miles';
+      const td=document.getElementById('lm-time-display');if(td)td.textContent='IRS deduction: '+fmt((+opts.miles)*IRS());
+      const rr=document.getElementById('lm-route-result');if(rr)rr.style.display='block';
+      const rc=document.getElementById('lm-recalc-row');if(rc)rc.style.display='block';
+    },50);
+  }
 }
 async function grabMyLocation(showErr){
   const btn=document.getElementById('lm-gps-btn');
@@ -15237,8 +15252,7 @@ function renderAllMileage(){
       const toAddr=r.to||(r.client_id?getClientById(r.client_id)?.addr||'':'');
       const dotG='<div style="width:10px;height:10px;border-radius:50%;background:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.15);flex-shrink:0"></div>';
       const dotR='<div style="width:10px;height:10px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.15);flex-shrink:0"></div>';
-      const purposeSel='<select onchange="editMilePurpose('+r.id+',this.value)" onclick="event.stopPropagation()" style="font-size:11px;font-weight:600;border:1.5px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;font-family:inherit;padding:3px 8px;border-radius:20px;max-width:130px">'+
-        MILE_PURPOSES.map(p=>'<option value="'+p+'"'+((r.purpose||'Other')===p?' selected':'')+'>'+p+'</option>').join('')+'</select>';
+      const purposeBadge='<span style="font-size:11px;font-weight:600;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text2);padding:3px 10px;border-radius:20px;flex-shrink:0">'+(r.purpose||'Other')+'</span>';
       // Route always visible — Everlance style. 3-row layout keeps dots perfectly aligned.
       return '<div style="border-bottom:1px solid var(--border);padding:12px 14px">'+
         // From row — miles float right on this row
@@ -15262,11 +15276,12 @@ function renderAllMileage(){
           '<div style="width:10px;flex-shrink:0;display:flex;justify-content:center;padding-top:3px">'+dotR+'</div>'+
           '<div style="flex:1;min-width:0;font-size:13px;color:var(--text);line-height:1.35;user-select:all">'+(toAddr?escHtml(toAddr):'<span style="color:var(--text3);font-style:italic;font-size:12px">End not recorded</span>')+'</div>'+
         '</div>'+
-        // Bottom bar — purpose pill + vehicle, delete on right
+        // Bottom bar — purpose badge + meta, edit + delete on right
         '<div style="display:flex;align-items:center;gap:8px;margin-top:10px">'+
-          purposeSel+
+          purposeBadge+
           (r.client_name||r.vehicle?'<span style="font-size:10px;color:var(--text3)">'+(r.client_name?escHtml(r.client_name):''+(r.vehicle?escHtml(r.vehicle):''))+'</span>':'')+
-          '<button class="btn-del" onclick="delMileage('+r.id+')" style="margin-left:auto;flex-shrink:0">&#10005;</button>'+
+          '<button onclick="openMileageEdit('+r.id+')" style="margin-left:auto;flex-shrink:0;font-size:11px;font-weight:600;background:none;border:1px solid var(--border2);border-radius:var(--r);padding:3px 8px;cursor:pointer;color:var(--text2)">✏️ Edit</button>'+
+          '<button class="btn-del" onclick="delMileage('+r.id+')" style="flex-shrink:0">&#10005;</button>'+
         '</div>'+
       '</div>';
     }).join('');
@@ -15305,6 +15320,30 @@ function _togMileTrip(id){
 function toggleMileAddr(id){_togMileTrip(id);}// legacy alias
 function delMileage(id){mileage=mileage.filter(x=>x.id!==id);saveAll();if(currentClientId){const el=document.getElementById('cd-mile-list');if(el)renderCDMileage();}renderAllMileage();}
 function editMilePurpose(id,val){const m=mileage.find(x=>x.id===id);if(!m)return;m.purpose=val;saveAll();}
+function openMileageEdit(id){
+  const r=mileage.find(x=>x.id===id);if(!r)return;
+  openLogTripModal({editId:id,fromAddress:r.from||'',toAddress:r.to||'',purpose:r.purpose||'',clientId:r.client_id,clientName:r.client_name||'',vehicle:r.vehicle||'',date:r.date||'',notes:r.notes||'',miles:r.miles||0});
+}
+function updateLoggedTrip(id){
+  const r=mileage.find(x=>x.id===id);if(!r)return;
+  const to=(document.getElementById('lm-to')?.value||'').trim();
+  if(!to){zAlert('Enter a destination first.',{title:'Destination needed'});return;}
+  const purpose=document.getElementById('lm-purpose')?.value||'';
+  if(!purpose){const sel=document.getElementById('lm-trip-type-sel');if(sel){sel.style.borderColor='#A32D2D';sel.style.background='var(--red-lt)';sel.focus();}zAlert('Select a trip type.',{title:'Required'});return;}
+  r.date=document.getElementById('lm-date')?.value||r.date;
+  r.vehicle=document.getElementById('lm-vehicle')?.value||'';
+  r.from=(document.getElementById('lm-from')?.value||'').trim();
+  r.to=to;r.purpose=purpose;
+  r.notes=document.getElementById('lm-notes')?.value||'';
+  const miles=parseFloat(document.getElementById('lm-miles-val')?.value)||0;
+  if(miles>0)r.miles=miles;
+  const cid=parseInt(document.getElementById('lm-client')?.value)||null;
+  const c=cid?getClientById(cid):null;
+  r.client_id=cid;if(c)r.client_name=c.name;
+  saveAll();closeTopModal();showToast('Trip updated','✓');
+  if(document.getElementById('mil-table'))renderAllMileage();
+  if(document.getElementById('cd-mile-list')&&currentClientId)renderCDMileage();
+}
 function renderSummary(){
   const yr=String(trackerYear||new Date().getFullYear());
   const sumSel=document.getElementById('sum-tx-status');
