@@ -17746,6 +17746,7 @@ function _devExitSupportMode(){
   if(!_devSavedState)return;
   ({clients,bids,jobs,payments,liens,income,expenses,mileage,timeEntries}=_devSavedState);
   _devSupportMode=false;_devSupportName='';_devSavedState=null;
+  saveAll(); // flush dev's own data back to localStorage (support view may have written Zach's data there)
   _renderDevTradeCard();renderDash();
   renderClientList&&renderClientList();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
   showToast('Back to your account','✓');
