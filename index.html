@@ -17967,7 +17967,19 @@ function obStep2(el){
     obInput('ob-email','Email','you@yourbusiness.com','email',_ob.email)+
     obInput('ob-pass','Password (min 6 chars)','••••••••','password','')+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
-    '<div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:14px;padding:10px 12px;background:var(--bg2);border-radius:var(--r);border:1px solid var(--border)">By creating an account, you agree to TradeDesk\'s <strong>Terms of Service</strong> and <strong>Privacy Policy</strong>. You acknowledge that TradeDesk and its authorized developers may access your account data solely for troubleshooting, technical support, and service improvement purposes.</div>'+
+    '<div style="border:1px solid var(--border);border-radius:var(--r);margin-bottom:14px;overflow:hidden">'+
+      '<div style="padding:8px 12px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text2)">Terms of Service — Please read</div>'+
+      '<div style="padding:10px 12px;max-height:160px;overflow-y:auto;font-size:11px;color:var(--text3);line-height:1.7">'+
+        '<strong style="color:var(--text2)">1. Not a Tax Service.</strong> TradeDesk provides mileage tracking, expense logging, and financial summaries as organizational tools for your own record-keeping. Nothing in this app constitutes tax advice, tax preparation, or accounting services. Consult a qualified tax professional or CPA regarding your tax obligations.<br><br>'+
+        '<strong style="color:var(--text2)">2. Not Legal Advice — Mechanic\'s Liens.</strong> Mechanic\'s lien laws, notice requirements, and deadlines vary significantly by state and project type. The lien tracking and notice features in TradeDesk are organizational tools only and do not constitute legal advice. Filing an improper lien can expose you to liability. Consult a licensed attorney in your state before filing any lien or taking legal action against a client.<br><br>'+
+        '<strong style="color:var(--text2)">3. Not Financial or Insurance Advice.</strong> Estimates, bids, and payment tracking are tools to help run your business. TradeDesk makes no representations about pricing, profitability, or business outcomes. Consult appropriate professionals for financial and insurance guidance.<br><br>'+
+        '<strong style="color:var(--text2)">4. Your Client\'s Data.</strong> You are responsible for ensuring you have appropriate authorization to store information about your clients within TradeDesk. Do not enter sensitive personal information beyond what is necessary to manage your business relationships.<br><br>'+
+        '<strong style="color:var(--text2)">5. Developer & Support Access.</strong> TradeDesk and its authorized developers may access your account data solely for troubleshooting, technical support, and service improvement purposes.<br><br>'+
+        '<strong style="color:var(--text2)">6. Data Storage.</strong> Your business data is stored securely via Supabase. TradeDesk is not liable for data loss due to circumstances outside our control. We recommend keeping your own backups of critical business records.<br><br>'+
+        '<strong style="color:var(--text2)">7. No Warranty.</strong> TradeDesk is provided "as is" without warranty of any kind. We are not liable for any business decisions made based on information displayed in the app.<br><br>'+
+        'By tapping Continue, you confirm you have read and agree to these terms.'+
+      '</div>'+
+    '</div>'+
     obBtn('Continue','obNext2()');
 }
 
