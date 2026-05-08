@@ -17829,12 +17829,15 @@ async function _devLoadUserAccount(key){
   income=p(zd.income,[]);expenses=p(zd.expenses,[]);
   mileage=p(zd.mileage,[]);timeEntries=p(zd.time_entries,[]);
   _devSupportMode=true;_devSupportName=u.name;
+  window._devUnloadGuard=e=>{e.preventDefault();e.returnValue='';};
+  window.addEventListener('beforeunload',window._devUnloadGuard);
   _renderDevTradeCard();renderDash();
   renderClientList&&renderClientList();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
   showToast('Viewing '+_devSupportName+'\'s account','👁');
 }
 function _devExitSupportMode(){
   if(!_devSavedState)return;
+  window.removeEventListener('beforeunload',window._devUnloadGuard);
   ({clients,bids,jobs,payments,liens,income,expenses,mileage,timeEntries}=_devSavedState);
   _devSupportMode=false;_devSupportName='';_devSavedState=null;
   saveAll(); // flush dev's own data back to localStorage (support view may have written Zach's data there)
