@@ -15235,52 +15235,39 @@ function renderAllMileage(){
     const tripRows=trips.map(r=>{
       const fromAddr=r.from||'';
       const toAddr=r.to||(r.client_id?getClientById(r.client_id)?.addr||'':'');
-      const hasAddr=!!(fromAddr||toAddr);
-      const purposeSel='<select onchange="editMilePurpose('+r.id+',this.value)" onclick="event.stopPropagation()" style="font-size:11px;font-weight:600;border:1.5px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;font-family:inherit;padding:4px 8px;border-radius:20px;max-width:130px">'+
-        MILE_PURPOSES.map(p=>'<option value="'+p+'"'+((r.purpose||'Other')===p?' selected':'')+'>'+p+'</option>').join('')+'</select>';
-      // 3-row layout: each pin has its own flex row so text length never shifts pin position
       const dotG='<div style="width:10px;height:10px;border-radius:50%;background:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.15);flex-shrink:0"></div>';
       const dotR='<div style="width:10px;height:10px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.15);flex-shrink:0"></div>';
-      const addrDrawer=hasAddr?
-        '<div id="mile-det-'+r.id+'" style="display:none;padding:12px 14px 14px;border-top:1px solid var(--border)">'+
-          // From row
-          '<div style="display:flex;align-items:flex-start;gap:11px">'+
-            '<div style="width:10px;flex-shrink:0;display:flex;justify-content:center;padding-top:3px">'+dotG+'</div>'+
-            '<div style="flex:1;min-width:0">'+
-              '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:2px">Start</div>'+
-              '<div style="font-size:13px;color:var(--text);line-height:1.35;user-select:all">'+(fromAddr?escHtml(fromAddr):'<span style="color:var(--text3);font-style:italic">Not recorded</span>')+'</div>'+
-            '</div>'+
+      const purposeSel='<select onchange="editMilePurpose('+r.id+',this.value)" onclick="event.stopPropagation()" style="font-size:11px;font-weight:600;border:1.5px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;font-family:inherit;padding:3px 8px;border-radius:20px;max-width:130px">'+
+        MILE_PURPOSES.map(p=>'<option value="'+p+'"'+((r.purpose||'Other')===p?' selected':'')+'>'+p+'</option>').join('')+'</select>';
+      // Route always visible — Everlance style. 3-row layout keeps dots perfectly aligned.
+      return '<div style="border-bottom:1px solid var(--border);padding:12px 14px">'+
+        // From row — miles float right on this row
+        '<div style="display:flex;align-items:flex-start;gap:10px">'+
+          '<div style="width:10px;flex-shrink:0;display:flex;justify-content:center;padding-top:3px">'+dotG+'</div>'+
+          '<div style="flex:1;min-width:0;font-size:13px;color:var(--text);line-height:1.35;user-select:all">'+(fromAddr?escHtml(fromAddr):'<span style="color:var(--text3);font-style:italic;font-size:12px">Start not recorded</span>')+'</div>'+
+          '<div style="text-align:right;flex-shrink:0;padding-left:10px">'+
+            '<div style="font-size:13px;font-weight:700;white-space:nowrap">'+(r.miles?(+r.miles).toFixed(1)+' mi':'—')+'</div>'+
           '</div>'+
-          // Connector — width:10px column keeps it centered under both dots
-          '<div style="display:flex;gap:11px;padding:4px 0">'+
-            '<div style="width:10px;flex-shrink:0;display:flex;justify-content:center">'+
-              '<div style="width:2px;height:18px;background:repeating-linear-gradient(to bottom,var(--border2) 0,var(--border2) 4px,transparent 4px,transparent 8px)"></div>'+
-            '</div>'+
-          '</div>'+
-          // To row
-          '<div style="display:flex;align-items:flex-start;gap:11px">'+
-            '<div style="width:10px;flex-shrink:0;display:flex;justify-content:center;padding-top:3px">'+dotR+'</div>'+
-            '<div style="flex:1;min-width:0">'+
-              '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:2px">End</div>'+
-              '<div style="font-size:13px;color:var(--text);line-height:1.35;user-select:all">'+(toAddr?escHtml(toAddr):'<span style="color:var(--text3);font-style:italic">Not recorded</span>')+'</div>'+
-            '</div>'+
-          '</div>'+
-        '</div>':'';
-      return '<div style="border-bottom:1px solid var(--border)">'+
-        '<div onclick="_togMileTrip('+r.id+')" style="display:flex;align-items:center;gap:8px;padding:10px 12px;'+(hasAddr?'cursor:pointer':'')+'">'+
-          '<div style="flex:1;min-width:0">'+
-            purposeSel+
-            (r.client_name?'<div style="font-size:10px;color:var(--text3);margin-top:4px">'+escHtml(r.client_name)+(r.vehicle?' · '+escHtml(r.vehicle):'')+'</div>':
-             r.vehicle?'<div style="font-size:10px;color:var(--text3);margin-top:4px">'+escHtml(r.vehicle)+'</div>':'')+
-          '</div>'+
-          '<div style="text-align:right;flex-shrink:0;margin-right:4px">'+
-            '<div style="font-size:12px;font-weight:700">'+(r.miles?(+r.miles).toFixed(1)+' mi':'—')+'</div>'+
-            '<div style="font-size:11px;color:var(--green-mid)">'+(r.miles?fmt((+r.miles)*IRS()):'—')+'</div>'+
-          '</div>'+
-          (hasAddr?'<span id="mile-det-chv-'+r.id+'" style="font-size:10px;color:var(--text3);flex-shrink:0;transform:rotate(-90deg);display:inline-block;transition:transform .15s">▼</span>':'')+
-          '<button class="btn-del" onclick="event.stopPropagation();delMileage('+r.id+')" style="flex-shrink:0">&#10005;</button>'+
         '</div>'+
-        addrDrawer+
+        // Connector row — deduction floats right
+        '<div style="display:flex;align-items:center;gap:10px;padding:3px 0">'+
+          '<div style="width:10px;flex-shrink:0;display:flex;justify-content:center">'+
+            '<div style="width:2px;height:14px;background:repeating-linear-gradient(to bottom,var(--border2) 0,var(--border2) 3px,transparent 3px,transparent 6px)"></div>'+
+          '</div>'+
+          '<div style="flex:1"></div>'+
+          '<div style="font-size:11px;color:var(--green-mid);font-weight:600;white-space:nowrap">'+(r.miles?fmt((+r.miles)*IRS()):'')+'</div>'+
+        '</div>'+
+        // To row
+        '<div style="display:flex;align-items:flex-start;gap:10px">'+
+          '<div style="width:10px;flex-shrink:0;display:flex;justify-content:center;padding-top:3px">'+dotR+'</div>'+
+          '<div style="flex:1;min-width:0;font-size:13px;color:var(--text);line-height:1.35;user-select:all">'+(toAddr?escHtml(toAddr):'<span style="color:var(--text3);font-style:italic;font-size:12px">End not recorded</span>')+'</div>'+
+        '</div>'+
+        // Bottom bar — purpose pill + vehicle, delete on right
+        '<div style="display:flex;align-items:center;gap:8px;margin-top:10px">'+
+          purposeSel+
+          (r.client_name||r.vehicle?'<span style="font-size:10px;color:var(--text3)">'+(r.client_name?escHtml(r.client_name):''+(r.vehicle?escHtml(r.vehicle):''))+'</span>':'')+
+          '<button class="btn-del" onclick="delMileage('+r.id+')" style="margin-left:auto;flex-shrink:0">&#10005;</button>'+
+        '</div>'+
       '</div>';
     }).join('');
     return '<div style="border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;margin-bottom:8px">'+
