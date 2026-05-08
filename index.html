@@ -2161,6 +2161,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 // ── Submit guard — prevents double-tap on any button ─────────────────────
 let _submitting=false,_allowPhoneDupe=false;
 let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[];
+const MILE_PURPOSES=['Estimate','Job site','Client Consult','Supply run','Home Office','Payment Collection','Other'];
 // Collision-resistant bid ID: milliseconds * 1000 + random 0-998 = 13-16 digit unique number
 function _newBidId(){return Date.now()*1000+Math.floor(Math.random()*999);}
 let currentClientId=null,editClientId=null,clientFilter='all';
@@ -5727,7 +5728,7 @@ function renderCDMileage(){
     );
   const el=document.getElementById('cd-mile-list');
   if(!cmiles.length){el.innerHTML='<div class="empty">No trips yet.<br>Tap "Drive to this job" above to start tracking.</div>';return;}
-  el.innerHTML=[...cmiles].sort((a,b)=>b.date.localeCompare(a.date)).map(m=>`<div class="mile-row"><div class="mile-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/></svg></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">${m.from||'Start'} → ${m.to||'Destination'}</div><div style="font-size:11px;color:var(--text3)">${m.date} · ${m.purpose||'Trip'}${m.gps?' · <span class="bdg bdg-gps">GPS</span>':''}</div></div><div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:700">${(m.miles||0).toFixed(1)} mi</div><div style="font-size:10px;color:var(--green-mid)">${fmt((m.miles||0)*IRS())}</div></div><button class="btn-del" onclick="delMileage(${m.id})">✕</button></div>`).join('');
+  el.innerHTML=[...cmiles].sort((a,b)=>b.date.localeCompare(a.date)).map(m=>`<div class="mile-row"><div class="mile-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/></svg></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">${m.from||'Start'} → ${m.to||'Destination'}</div><div style="font-size:11px;color:var(--text3)">${m.date} · <select onchange="editMilePurpose(${m.id},this.value)" onclick="event.stopPropagation()" style="font-size:11px;border:none;background:transparent;color:var(--text3);cursor:pointer;font-family:inherit;padding:1px 2px;border-radius:3px">${MILE_PURPOSES.map(p=>`<option value="${p}"${(m.purpose||'Other')===p?' selected':''}>${p}</option>`).join('')}</select>${m.gps?' · <span class="bdg bdg-gps">GPS</span>':''}</div></div><div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:700">${(m.miles||0).toFixed(1)} mi</div><div style="font-size:10px;color:var(--green-mid)">${fmt((m.miles||0)*IRS())}</div></div><button class="btn-del" onclick="delMileage(${m.id})">✕</button></div>`).join('');
 }
 function renderCDBids(){
   const cbids=getClientBids(currentClientId);
@@ -15023,10 +15024,9 @@ function openLogTripModal(opts){
     ?vehs.map(v=>'<option value="'+v.name+'"'+(autoVeh===v.name?' selected':'')+'>'+getVehicleFullLabel(v)+'</option>').join('')
     :'<option value="">— Add vehicle in Settings —</option>';
   const clientOpts='<option value="">— None —</option>'+clients.map(c=>'<option value="'+c.id+'">'+c.name+'</option>').join('');
-  const PURPOSES=['Estimate','Job site','Supply run','Other'];
   const prefill=opts.purpose||'';
   const purposeOpts='<option value="" disabled'+(prefill?'':' selected')+'>— Select type —</option>'+
-    PURPOSES.map(p=>'<option value="'+p+'"'+(p===prefill?' selected':'')+'>'+p+'</option>').join('');
+    MILE_PURPOSES.map(p=>'<option value="'+p+'"'+(p===prefill?' selected':'')+'>'+p+'</option>').join('');
   // Optional quick-select chips for today's scheduled jobs/estimates
   const suggList=opts.suggestions&&opts.suggestions.length?opts.suggestions:[];
   const suggHtml=suggList.length
@@ -15244,8 +15244,8 @@ function renderAllMileage(){
         '</td></tr>':'';
       return (hasAddr?'<tr onclick="toggleMileAddr('+r.id+')" style="cursor:pointer">':'<tr>')+
         '<td class="mute">'+r.date+'</td>'+
-        '<td class="mute">'+(r.client_name||r.vehicle||'—')+(r.vehicle?'<br><span style="font-size:10px;color:var(--text3)">'+r.vehicle+'</span>':'')+' </td>'+
-        '<td style="font-size:11px;color:var(--text2)">'+(r.purpose||'Trip')+'</td>'+
+        '<td class="mute">'+(r.client_name||'—')+(r.vehicle?'<br><span style="font-size:10px;color:var(--text3)">'+r.vehicle+'</span>':'')+' </td>'+
+        '<td><select onchange="editMilePurpose('+r.id+',this.value)" onclick="event.stopPropagation()" style="font-size:11px;border:none;background:transparent;color:var(--text2);cursor:pointer;font-family:inherit;padding:2px;border-radius:4px;max-width:120px">'+MILE_PURPOSES.map(p=>'<option value="'+p+'"'+((r.purpose||'Other')===p?' selected':'')+'>'+p+'</option>').join('')+'</select></td>'+
         '<td class="bold">'+(r.miles?(+r.miles).toFixed(1)+' mi':'—')+'</td>'+
         '<td style="color:var(--green-mid)">'+(r.miles?fmt((+r.miles)*IRS()):'—')+'</td>'+
         '<td><button class="btn-del" onclick="event.stopPropagation();delMileage('+r.id+')">&#10005;</button></td>'+
@@ -15253,6 +15253,7 @@ function renderAllMileage(){
     }).join('')+'</tbody></table></div>';
 }
 function delMileage(id){mileage=mileage.filter(x=>x.id!==id);saveAll();if(currentClientId){const el=document.getElementById('cd-mile-list');if(el)renderCDMileage();}renderAllMileage();}
+function editMilePurpose(id,val){const m=mileage.find(x=>x.id===id);if(!m)return;m.purpose=val;saveAll();}
 function toggleMileAddr(id){
   const row=document.getElementById('mile-addr-'+id);
   if(row)row.style.display=row.style.display!=='none'?'none':'';
