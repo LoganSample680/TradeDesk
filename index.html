@@ -15204,10 +15204,7 @@ function renderAllMileage(){
   const filtered=mileage.filter(m=>m.date&&m.date.startsWith(yr));
   const tot=filtered.reduce((s,r)=>s+(r.miles||0),0);
   const byPurpose={};
-  filtered.forEach(m=>{
-    const p=m.purpose||'Other';
-    byPurpose[p]=(byPurpose[p]||0)+(m.miles||0);
-  });
+  filtered.forEach(m=>{const p=m.purpose||'Other';byPurpose[p]=(byPurpose[p]||0)+(m.miles||0);});
   const purposeRows=Object.entries(byPurpose).sort((a,b)=>b[1]-a[1]);
   const purposeHTML=purposeRows.map(([p,mi])=>
     '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px">'+
@@ -15229,35 +15226,86 @@ function renderAllMileage(){
   const el=document.getElementById('mil-table');
   if(!mileage.length){el.innerHTML='<div class="empty">No trips yet.<br>Open a client record and tap <strong>Start driving</strong> to log a trip.</div>';return;}
   if(!filtered.length){el.innerHTML='<div class="empty">No trips in '+yr+'.</div>';return;}
-  el.innerHTML='<div style="overflow-x:auto"><table class="tbl"><thead><tr>'+
-    ['Date','Client','Purpose','Miles','Deduction'].map(h=>'<th>'+h+'</th>').join('')+'<th></th></tr></thead><tbody>'+
-    [...filtered].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(r=>{
+  const pinG='<svg viewBox="0 0 24 24" style="width:15px;height:15px;flex-shrink:0;margin-top:1px"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#16a34a"/><circle cx="12" cy="9" r="2.5" fill="#fff"/></svg>';
+  const pinR='<svg viewBox="0 0 24 24" style="width:15px;height:15px;flex-shrink:0;margin-top:1px"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#dc2626"/><circle cx="12" cy="9" r="2.5" fill="#fff"/></svg>';
+  const byDay={};
+  [...filtered].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).forEach(r=>{if(!byDay[r.date])byDay[r.date]=[];byDay[r.date].push(r);});
+  el.innerHTML=Object.entries(byDay).sort((a,b)=>b[0].localeCompare(a[0])).map(([date,trips])=>{
+    const dayMi=trips.reduce((s,t)=>s+(t.miles||0),0);
+    const [y,mo,d]=date.split('-').map(Number);
+    const dayLabel=new Date(y,mo-1,d).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+    const tripRows=trips.map(r=>{
       const fromAddr=r.from||'';
-      const toAddr=r.to||(r.client_name?getClientById(r.client_id)?.addr||'':'');
+      const toAddr=r.to||(r.client_id?getClientById(r.client_id)?.addr||'':'');
       const hasAddr=!!(fromAddr||toAddr);
-      const addrRow=hasAddr?
-        '<tr id="mile-addr-'+r.id+'" style="display:none"><td colspan="6" style="padding:0 12px 10px;background:var(--bg2);text-align:left">'+
-          '<div style="font-size:11px;line-height:2;padding-top:4px">'+
-            (fromAddr?'<div><span style="color:var(--text3);font-weight:600;margin-right:6px">From</span><span style="user-select:all;cursor:text;color:var(--text2)">'+escHtml(fromAddr)+'</span></div>':'')+
-            (toAddr?'<div><span style="color:var(--text3);font-weight:600;margin-right:6px">To</span><span style="user-select:all;cursor:text;color:var(--text2)">'+escHtml(toAddr)+'</span></div>':'')+
+      const purposeSel='<select onchange="editMilePurpose('+r.id+',this.value)" onclick="event.stopPropagation()" style="font-size:11px;border:1px solid var(--border2);background:var(--bg2);color:var(--text2);cursor:pointer;font-family:inherit;padding:3px 4px;border-radius:6px;max-width:120px">'+
+        MILE_PURPOSES.map(p=>'<option value="'+p+'"'+((r.purpose||'Other')===p?' selected':'')+'>'+p+'</option>').join('')+'</select>';
+      const addrDrawer=hasAddr?
+        '<div id="mile-det-'+r.id+'" style="display:none;padding:10px 12px 12px;border-top:1px solid var(--border);background:var(--bg2)">'+
+          '<div style="display:flex;gap:10px">'+
+            '<div style="display:flex;flex-direction:column;align-items:center;padding-top:2px">'+
+              pinG+
+              '<div style="width:2px;flex:1;min-height:14px;background:repeating-linear-gradient(to bottom,var(--border2) 0,var(--border2) 4px,transparent 4px,transparent 8px);margin:3px 0"></div>'+
+              pinR+
+            '</div>'+
+            '<div style="flex:1;min-width:0">'+
+              (fromAddr?'<div style="font-size:12px;color:var(--text2);padding-bottom:8px;user-select:all;word-break:break-word">'+escHtml(fromAddr)+'</div>':'<div style="font-size:11px;color:var(--text3);padding-bottom:8px">No start address</div>')+
+              (toAddr?'<div style="font-size:12px;color:var(--text2);user-select:all;word-break:break-word">'+escHtml(toAddr)+'</div>':'<div style="font-size:11px;color:var(--text3)">No end address</div>')+
+            '</div>'+
           '</div>'+
-        '</td></tr>':'';
-      return (hasAddr?'<tr onclick="toggleMileAddr('+r.id+')" style="cursor:pointer">':'<tr>')+
-        '<td class="mute">'+r.date+'</td>'+
-        '<td class="mute">'+(r.client_name||'—')+(r.vehicle?'<br><span style="font-size:10px;color:var(--text3)">'+r.vehicle+'</span>':'')+' </td>'+
-        '<td><select onchange="editMilePurpose('+r.id+',this.value)" onclick="event.stopPropagation()" style="font-size:11px;border:none;background:transparent;color:var(--text2);cursor:pointer;font-family:inherit;padding:2px;border-radius:4px;max-width:120px">'+MILE_PURPOSES.map(p=>'<option value="'+p+'"'+((r.purpose||'Other')===p?' selected':'')+'>'+p+'</option>').join('')+'</select></td>'+
-        '<td class="bold">'+(r.miles?(+r.miles).toFixed(1)+' mi':'—')+'</td>'+
-        '<td style="color:var(--green-mid)">'+(r.miles?fmt((+r.miles)*IRS()):'—')+'</td>'+
-        '<td><button class="btn-del" onclick="event.stopPropagation();delMileage('+r.id+')">&#10005;</button></td>'+
-      '</tr>'+addrRow;
-    }).join('')+'</tbody></table></div>';
+        '</div>':'';
+      return '<div style="border-bottom:1px solid var(--border)">'+
+        '<div onclick="_togMileTrip('+r.id+')" style="display:flex;align-items:center;gap:8px;padding:10px 12px;'+(hasAddr?'cursor:pointer':'')+'">'+
+          '<div style="flex:1;min-width:0">'+
+            purposeSel+
+            (r.client_name?'<div style="font-size:10px;color:var(--text3);margin-top:3px">'+escHtml(r.client_name)+(r.vehicle?' · '+escHtml(r.vehicle):'')+'</div>':
+             r.vehicle?'<div style="font-size:10px;color:var(--text3);margin-top:3px">'+escHtml(r.vehicle)+'</div>':'')+
+          '</div>'+
+          '<div style="text-align:right;flex-shrink:0">'+
+            '<div style="font-size:12px;font-weight:700">'+(r.miles?(+r.miles).toFixed(1)+' mi':'—')+'</div>'+
+            '<div style="font-size:11px;color:var(--green-mid)">'+(r.miles?fmt((+r.miles)*IRS()):'—')+'</div>'+
+          '</div>'+
+          (hasAddr?'<span id="mile-det-chv-'+r.id+'" style="font-size:10px;color:var(--text3);flex-shrink:0;transform:rotate(-90deg);display:inline-block;transition:transform .15s">▼</span>':'')+
+          '<button class="btn-del" onclick="event.stopPropagation();delMileage('+r.id+')" style="flex-shrink:0">&#10005;</button>'+
+        '</div>'+
+        addrDrawer+
+      '</div>';
+    }).join('');
+    return '<div style="border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;margin-bottom:8px">'+
+      '<div onclick="_togMileDay(\''+date+'\')" style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;background:var(--bg2);cursor:pointer;user-select:none">'+
+        '<div style="display:flex;align-items:center;gap:8px">'+
+          '<span style="font-size:13px;font-weight:700">'+dayLabel+'</span>'+
+          '<span style="font-size:11px;color:var(--text3)">'+trips.length+' trip'+(trips.length!==1?'s':'')+'</span>'+
+        '</div>'+
+        '<div style="display:flex;align-items:center;gap:10px">'+
+          '<span style="font-size:12px;font-weight:700">'+dayMi.toFixed(1)+' mi</span>'+
+          '<span style="font-size:12px;color:var(--green-mid)">'+fmt(dayMi*IRS())+'</span>'+
+          '<span id="mile-day-chv-'+date+'" style="font-size:11px;color:var(--text3);display:inline-block;transition:transform .15s">▼</span>'+
+        '</div>'+
+      '</div>'+
+      '<div id="mile-day-body-'+date+'" style="display:none">'+tripRows+'</div>'+
+    '</div>';
+  }).join('');
 }
+function _togMileDay(date){
+  const body=document.getElementById('mile-day-body-'+date);
+  const chv=document.getElementById('mile-day-chv-'+date);
+  if(!body)return;
+  const open=body.style.display!=='none';
+  body.style.display=open?'none':'';
+  if(chv)chv.style.transform=open?'':'rotate(180deg)';
+}
+function _togMileTrip(id){
+  const det=document.getElementById('mile-det-'+id);
+  const chv=document.getElementById('mile-det-chv-'+id);
+  if(!det)return;
+  const open=det.style.display!=='none';
+  det.style.display=open?'none':'';
+  if(chv)chv.style.transform=open?'rotate(-90deg)':'rotate(0deg)';
+}
+function toggleMileAddr(id){_togMileTrip(id);}// legacy alias
 function delMileage(id){mileage=mileage.filter(x=>x.id!==id);saveAll();if(currentClientId){const el=document.getElementById('cd-mile-list');if(el)renderCDMileage();}renderAllMileage();}
 function editMilePurpose(id,val){const m=mileage.find(x=>x.id===id);if(!m)return;m.purpose=val;saveAll();}
-function toggleMileAddr(id){
-  const row=document.getElementById('mile-addr-'+id);
-  if(row)row.style.display=row.style.display!=='none'?'none':'';
-}
 function renderSummary(){
   const yr=String(trackerYear||new Date().getFullYear());
   const sumSel=document.getElementById('sum-tx-status');
