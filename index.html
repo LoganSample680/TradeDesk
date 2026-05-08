@@ -19520,13 +19520,14 @@ function getSeasonalOutreachClients(){
 
 // ── Automation: weekly Friday summary ────────────────────────────────────────
 function checkFridaySummary(){
+  if(!_supaUser)return; // don't show before login
   const now=new Date();
   if(now.getDay()!==5)return; // only on Fridays
   const tk=todayKey();
   // Get Monday of current week
   const dow=now.getDay(); // 5
   const monday=addDays(tk,-(dow-1));
-  const fridayKey='zp3_last_friday_summary';
+  const fridayKey='zp3_last_friday_summary_'+(_supaUser?.id||'anon');
   const lastShown=localStorage.getItem(fridayKey)||'';
   if(lastShown===monday)return; // already shown this week
   localStorage.setItem(fridayKey,monday);
@@ -19576,7 +19577,8 @@ function checkFridaySummary(){
 
 // ── Automation: daily morning briefing ───────────────────────────────────────
 function showDailyBriefing(){
-  const briefingKey='zp3_last_briefing';
+  if(!_supaUser)return; // don't show before login
+  const briefingKey='zp3_last_briefing_'+(_supaUser?.id||'anon');
   const tk=todayKey();
   const lastBriefing=localStorage.getItem(briefingKey)||'';
 
