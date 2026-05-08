@@ -19076,8 +19076,11 @@ async function supaLoadFromCloud(){
       if(S.b24===191950)S.b24=197300;
       if(S.b32===243725)S.b32=250525;
       if(S.b35===609350)S.b35=626350;
-      if(S.irsRate===0.67||S.irsRate===0.670)S.irsRate=0.700;
-      if(new Date().getFullYear()>=2026&&S.irsRate<0.725){S.irsRate=0.725;S.irsRateYear=new Date().getFullYear();}
+      // IRS mileage rate — auto-migrates ALL users each January update.
+      // To update: change the rate and year below. Previous rates auto-upgrade on next load.
+      // 2024: 0.670 | 2025: 0.700 | 2026: 0.725
+      const _IRS_RATE_2026=0.725,_IRS_YEAR=2026;
+      if(new Date().getFullYear()>=_IRS_YEAR&&S.irsRate<_IRS_RATE_2026){S.irsRate=_IRS_RATE_2026;S.irsRateYear=_IRS_YEAR;}
       applySettings();
       loadSettingsForm();
       // Restore owner name to this device's localStorage so nav shows correctly
