@@ -17722,15 +17722,13 @@ async function devSwitchTrade(type){
 //       SELECT id FROM auth.users WHERE email = 'logansample97@gmail.com' LIMIT 1));
 let _devSupportMode=false,_devSupportName='',_devSavedState=null;
 const _DEV_SUPPORT_USERS={
-  zach:'zjspainting406@gmail.com',
+  zach:{name:'Zach',userId:'6201cb8c-c4de-4bf2-bdf7-0376f0577cc4'},
 };
 async function _devLoadUserAccount(key){
   if(!_config?.is_dev)return;
-  const email=_DEV_SUPPORT_USERS[key];
-  if(!email){showToast("Set Zach's email in _DEV_SUPPORT_USERS",'⚠️');return;}
-  const{data:u}=await _supa.from('users').select('id,name,email').eq('email',email).maybeSingle();
-  if(!u){showToast('User not found: '+email,'❌');return;}
-  const{data:zd,error}=await _supa.from('zj_data').select('*').eq('user_id',u.id).maybeSingle();
+  const u=_DEV_SUPPORT_USERS[key];
+  if(!u){showToast('Unknown support user','⚠️');return;}
+  const{data:zd,error}=await _supa.from('zj_data').select('*').eq('user_id',u.userId).maybeSingle();
   if(error||!zd){showToast('No data found — check Supabase RLS policy','❌');return;}
   _devSavedState={clients:[...clients],bids:[...bids],payments:[...payments],S:{...S}};
   try{
@@ -17740,7 +17738,7 @@ async function _devLoadUserAccount(key){
     const rs=JSON.parse(zd.settings||'{}');
     S={...S,...rs};
   }catch(e){}
-  _devSupportMode=true;_devSupportName=u.name||u.email;
+  _devSupportMode=true;_devSupportName=u.name;
   _renderDevTradeCard();renderDash();
   showToast('Viewing '+_devSupportName+'\'s account','👁');
 }
