@@ -1309,10 +1309,11 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
       <div class="f" style="margin-bottom:8px"><label>Client name</label><input type="text" id="gei-client" placeholder="Client name"></div>
       <div class="f" style="margin-bottom:8px"><label>Job address</label><input type="text" id="gei-addr" placeholder="123 Main St"></div>
       <div class="f" style="margin-bottom:8px"><label>Describe the job</label><input type="text" id="gei-desc" placeholder="e.g. Replace water heater, install shutoff valve"></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px">
-        <div class="f"><label>Est. duration</label><input type="text" id="gei-duration" placeholder="e.g. 4 hrs, 2 days"></div>
-        <div class="f"><label>Date</label><input type="date" id="gei-date"></div>
-      </div>
+      <div class="f" style="margin-bottom:8px"><label>Date</label><input type="date" id="gei-date"></div>
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);cursor:pointer;margin-top:2px">
+        <input type="checkbox" id="gei-new-work" style="width:16px;height:16px;accent-color:var(--blue)" onchange="_geiNewWork=this.checked;if(_geiStep===2)_geiRenderTemplates()">
+        New construction <span style="color:var(--text3);font-size:11px">(open walls — lower labor rates)</span>
+      </label>
     </div>
     <button class="btn btn-p" onclick="goGeiStep(2)" style="margin-bottom:8px">Next: Build estimate →</button>
   </div>
@@ -1351,6 +1352,9 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
     </div>
     <div class="card" style="margin-bottom:12px">
       <div class="f"><label>Notes / scope details</label><textarea id="gei-notes" rows="3" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical" placeholder="Scope, exclusions, warranty, payment terms..."></textarea></div>
+    </div>
+    <div class="card" style="margin-bottom:12px">
+      <div class="f"><label>Est. duration</label><input type="text" id="gei-duration" placeholder="e.g. 4 hrs, 2 days"></div>
     </div>
     <div id="gei-panel-section" style="margin-bottom:12px"></div>
     <button class="btn btn-p" onclick="sendGenericProposal()" style="margin-bottom:8px">🔗 Save &amp; get client link</button>
@@ -8643,55 +8647,138 @@ const TRADE_JOBS={
   ],
   electrical:[
     // ── Residential ────────────────────────────────────────────────────────────
-    {id:'outlet',      name:'Outlet addition',              scope:'resi', labor:150, mat:45,  matDesc:'Outlet + box + wire', hrs:2,  unit:'ea'},
-    {id:'breaker',     name:'Breaker replacement',          scope:'both', labor:125, mat:35,  matDesc:'Breaker',             hrs:1,  unit:'ea'},
-    {id:'light',       name:'Light fixture install',        scope:'both', labor:95,  mat:0,                                  hrs:1,  unit:'ea'},
-    {id:'fan',         name:'Ceiling fan install',          scope:'resi', labor:150, mat:0,                                  hrs:1.5,unit:'ea'},
-    {id:'gfci',        name:'GFCI outlet',                  scope:'both', labor:85,  mat:18,  matDesc:'GFCI outlet',         hrs:.75,unit:'ea'},
-    {id:'switch',      name:'Switch replace/add',           scope:'both', labor:75,  mat:15,  matDesc:'Switch + cover',      hrs:.75,unit:'ea'},
-    {id:'smoke',       name:'Smoke/CO detector',            scope:'both', labor:45,  mat:25,  matDesc:'Smoke/CO detector',   hrs:.5, unit:'ea'},
-    {id:'ev_resi',     name:'EV charger — NEMA 14-50',      scope:'resi', labor:450, mat:120, matDesc:'NEMA 14-50 outlet',   hrs:4,  unit:'ea'},
-    {id:'panel_100',   name:'Panel upgrade (100A)',         scope:'resi', labor:800, mat:400, matDesc:'Panel + breakers',    hrs:8,  unit:'ea'},
-    {id:'panel_200',   name:'Panel upgrade (200A)',         scope:'resi', labor:1200,mat:600, matDesc:'200A panel + breakers',hrs:10,unit:'ea'},
-    {id:'exhaust',     name:'Bath exhaust fan',             scope:'resi', labor:175, mat:55,  matDesc:'Exhaust fan',         hrs:2,  unit:'ea'},
-    {id:'exterior',    name:'Exterior outlet (WP)',         scope:'both', labor:175, mat:45,  matDesc:'Weatherproof outlet', hrs:2,  unit:'ea'},
-    {id:'xfer_man',    name:'Transfer switch (manual)',     scope:'both', labor:250, mat:180, matDesc:'Manual transfer sw',  hrs:3,  unit:'ea'},
-    {id:'xfer_auto',   name:'Transfer switch (auto)',       scope:'both', labor:450, mat:650, matDesc:'Auto transfer sw',   hrs:5,  unit:'ea'},
-    {id:'gen_hookup',  name:'Generator hookup',             scope:'both', labor:350, mat:120, matDesc:'Inlet + interlock',   hrs:4,  unit:'ea'},
+    {id:'outlet',      name:'Outlet addition',              scope:'resi', labor:150, mat:45,  matDesc:'Outlet + box + wire', hrs:2,  unit:'ea', nw:0.20},
+    {id:'breaker',     name:'Breaker replacement',          scope:'both', labor:125, mat:35,  matDesc:'Breaker',             hrs:1,  unit:'ea', nw:1.0},
+    {id:'light',       name:'Light fixture install',        scope:'both', labor:95,  mat:0,                                  hrs:1,  unit:'ea', nw:0.28},
+    {id:'fan',         name:'Ceiling fan install',          scope:'resi', labor:150, mat:0,                                  hrs:1.5,unit:'ea', nw:0.30},
+    {id:'gfci',        name:'GFCI outlet',                  scope:'both', labor:85,  mat:18,  matDesc:'GFCI outlet',         hrs:.75,unit:'ea', nw:0.20},
+    {id:'switch',      name:'Switch replace/add',           scope:'both', labor:75,  mat:15,  matDesc:'Switch + cover',      hrs:.75,unit:'ea', nw:0.20},
+    {id:'smoke',       name:'Smoke/CO detector',            scope:'both', labor:45,  mat:25,  matDesc:'Smoke/CO detector',   hrs:.5, unit:'ea', nw:0.22},
+    {id:'ev_resi',     name:'EV charger — NEMA 14-50',      scope:'resi', labor:450, mat:120, matDesc:'NEMA 14-50 outlet',   hrs:4,  unit:'ea', nw:0.60},
+    {id:'panel_100',   name:'Panel upgrade (100A)',         scope:'resi', labor:800, mat:400, matDesc:'Panel + breakers',    hrs:8,  unit:'ea', nw:0.85},
+    {id:'panel_200',   name:'Panel upgrade (200A)',         scope:'resi', labor:1200,mat:600, matDesc:'200A panel + breakers',hrs:10,unit:'ea', nw:0.85},
+    {id:'exhaust',     name:'Bath exhaust fan',             scope:'resi', labor:175, mat:55,  matDesc:'Exhaust fan',         hrs:2,  unit:'ea', nw:0.28},
+    {id:'exterior',    name:'Exterior outlet (WP)',         scope:'both', labor:175, mat:45,  matDesc:'Weatherproof outlet', hrs:2,  unit:'ea', nw:0.28},
+    {id:'xfer_man',    name:'Transfer switch (manual)',     scope:'both', labor:250, mat:180, matDesc:'Manual transfer sw',  hrs:3,  unit:'ea', nw:1.0},
+    {id:'xfer_auto',   name:'Transfer switch (auto)',       scope:'both', labor:450, mat:650, matDesc:'Auto transfer sw',   hrs:5,  unit:'ea', nw:1.0},
+    {id:'gen_hookup',  name:'Generator hookup',             scope:'both', labor:350, mat:120, matDesc:'Inlet + interlock',   hrs:4,  unit:'ea', nw:1.0},
     // ── Solar & Off-Grid ───────────────────────────────────────────────────────
-    {id:'solar_kw',    name:'Solar install (per kW)',        scope:'both', labor:400, mat:900, matDesc:'Solar panels',        hrs:0,  unit:'kW', custom:true, freeForm:true,freeFormLabel:'Panel brand (e.g. REC, Silfab, Hanwha)'},
-    {id:'inverter',    name:'Inverter install',             scope:'both', labor:900, mat:3800,matDesc:'Inverter',            hrs:10, unit:'ea', freeForm:true,freeFormLabel:'Inverter model (e.g. Sol-Ark 15k, EG4 18kPV)'},
-    {id:'battery',     name:'Battery install',              scope:'both', labor:200, mat:1100,matDesc:'Battery',             hrs:2,  unit:'ea', freeForm:true,freeFormLabel:'Battery model (e.g. EG4 LifePower4, Fortress eVault)'},
-    {id:'bat_kwh',     name:'Battery bank (per kWh)',       scope:'both', labor:150, mat:450, matDesc:'Battery bank',        hrs:0,  unit:'kWh',custom:true, freeForm:true,freeFormLabel:'Battery brand/chemistry'},
-    {id:'offgrid_design',name:'Off-grid system design',    scope:'both', labor:500, mat:0,                                  hrs:6,  unit:'ea'},
-    {id:'c_solar_comm',name:'Commercial solar (per kW)',   scope:'commercial',labor:500,mat:1100,matDesc:'Comm solar panels',hrs:0,  unit:'kW', custom:true,freeForm:true,freeFormLabel:'Panel brand'},
-    // ── Commercial ─────────────────────────────────────────────────────────────
+    {id:'solar_kw',    name:'Solar install (per kW)',        scope:'both', labor:400, mat:900, matDesc:'Solar panels',        hrs:0,  unit:'kW', custom:true, freeForm:true,freeFormLabel:'Panel brand (e.g. REC, Silfab, Hanwha)',nw:1.0},
+    {id:'inverter',    name:'Inverter install',             scope:'both', labor:900, mat:3800,matDesc:'Inverter',            hrs:10, unit:'ea', freeForm:true,freeFormLabel:'Inverter model (e.g. Sol-Ark 15k, EG4 18kPV)',nw:1.0},
+    {id:'battery',     name:'Battery install',              scope:'both', labor:200, mat:1100,matDesc:'Battery',             hrs:2,  unit:'ea', freeForm:true,freeFormLabel:'Battery model (e.g. EG4 LifePower4, Fortress eVault)',nw:1.0},
+    {id:'bat_kwh',     name:'Battery bank (per kWh)',       scope:'both', labor:150, mat:450, matDesc:'Battery bank',        hrs:0,  unit:'kWh',custom:true, freeForm:true,freeFormLabel:'Battery brand/chemistry',nw:1.0},
+    {id:'offgrid_design',name:'Off-grid system design',    scope:'both', labor:500, mat:0,                                  hrs:6,  unit:'ea', nw:1.0},
+    {id:'c_solar_comm',name:'Commercial solar (per kW)',   scope:'commercial',labor:500,mat:1100,matDesc:'Comm solar panels',hrs:0,  unit:'kW', custom:true,freeForm:true,freeFormLabel:'Panel brand',nw:1.0},
     // ── Circuits & Sub-panels ──────────────────────────────────────────────────
-    {id:'ded_120',     name:'Dedicated 120V circuit',      scope:'resi', labor:225, mat:55,  matDesc:'Wire + breaker',        hrs:2.5,unit:'ea'},
-    {id:'ded_240',     name:'Dedicated 240V circuit',      scope:'resi', labor:375, mat:90,  matDesc:'Wire + 2-pole breaker',  hrs:4,  unit:'ea'},
-    {id:'sub_panel',   name:'Sub-panel install',            scope:'both', labor:650, mat:450, matDesc:'Subpanel + breakers',    hrs:6,  unit:'ea'},
-    {id:'afci',        name:'AFCI breaker',                 scope:'both', labor:85,  mat:45,  matDesc:'AFCI breaker',           hrs:.75,unit:'ea'},
+    {id:'ded_120',     name:'Dedicated 120V circuit',      scope:'resi', labor:225, mat:55,  matDesc:'Wire + breaker',        hrs:2.5,unit:'ea', nw:0.45},
+    {id:'ded_240',     name:'Dedicated 240V circuit',      scope:'resi', labor:375, mat:90,  matDesc:'Wire + 2-pole breaker',  hrs:4,  unit:'ea', nw:0.45},
+    {id:'sub_panel',   name:'Sub-panel install',            scope:'both', labor:650, mat:450, matDesc:'Subpanel + breakers',    hrs:6,  unit:'ea', nw:0.80},
+    {id:'afci',        name:'AFCI breaker',                 scope:'both', labor:85,  mat:45,  matDesc:'AFCI breaker',           hrs:.75,unit:'ea', nw:1.0},
     // ── Lighting extras ───────────────────────────────────────────────────────
-    {id:'recessed',    name:'Recessed light (per can)',     scope:'both', labor:75,  mat:35,  matDesc:'LED can + trim',         hrs:.75,unit:'ea'},
-    {id:'dimmer',      name:'Dimmer switch',                scope:'both', labor:65,  mat:20,  matDesc:'Dimmer switch',          hrs:.75,unit:'ea'},
-    {id:'under_cab',   name:'Under-cabinet LED',            scope:'resi', labor:120, mat:45,  matDesc:'LED strip + driver',     hrs:1.5,unit:'ea'},
+    {id:'recessed',    name:'Recessed light (per can)',     scope:'both', labor:75,  mat:35,  matDesc:'LED can + trim',         hrs:.75,unit:'ea', nw:0.28},
+    {id:'dimmer',      name:'Dimmer switch',                scope:'both', labor:65,  mat:20,  matDesc:'Dimmer switch',          hrs:.75,unit:'ea', nw:0.20},
+    {id:'under_cab',   name:'Under-cabinet LED',            scope:'resi', labor:120, mat:45,  matDesc:'LED strip + driver',     hrs:1.5,unit:'ea', nw:0.35},
     // ── Specialty residential ─────────────────────────────────────────────────
-    {id:'surge',       name:'Whole-house surge protector', scope:'both', labor:125, mat:80,  matDesc:'Whole-house SPD',        hrs:1,  unit:'ea'},
-    {id:'hot_tub',     name:'Hot tub / spa wiring',        scope:'resi', labor:550, mat:180, matDesc:'240V disconnect + wire',  hrs:5,  unit:'ea'},
-    {id:'rewire_room', name:'Rewire — per room',            scope:'resi', labor:650, mat:200, matDesc:'Wire + boxes + covers',   hrs:8,  unit:'room',freeForm:true,freeFormLabel:'Notes (e.g. knob-and-tube, aluminum wiring)'},
-    {id:'conduit_lf',  name:'Conduit run (per lin ft)',     scope:'both', labor:8,   mat:4,   matDesc:'EMT + fittings',         hrs:0,  unit:'lin ft',custom:true},
-    {id:'low_volt',    name:'Low-voltage / Cat6 / coax',   scope:'both', labor:85,  mat:30,  matDesc:'Cable + keystone',       hrs:1,  unit:'drop'},
+    {id:'surge',       name:'Whole-house surge protector', scope:'both', labor:125, mat:80,  matDesc:'Whole-house SPD',        hrs:1,  unit:'ea', nw:1.0},
+    {id:'hot_tub',     name:'Hot tub / spa wiring',        scope:'resi', labor:550, mat:180, matDesc:'240V disconnect + wire',  hrs:5,  unit:'ea', nw:0.65},
+    {id:'rewire_room', name:'Rewire — per room',            scope:'resi', labor:650, mat:200, matDesc:'Wire + boxes + covers',   hrs:8,  unit:'room',freeForm:true,freeFormLabel:'Notes (e.g. knob-and-tube, aluminum wiring)',nw:1.0},
+    {id:'conduit_lf',  name:'Conduit run (per lin ft)',     scope:'both', labor:8,   mat:4,   matDesc:'EMT + fittings',         hrs:0,  unit:'lin ft',custom:true,nw:0.55},
+    {id:'low_volt',    name:'Low-voltage / Cat6 / coax',   scope:'both', labor:85,  mat:30,  matDesc:'Cable + keystone',       hrs:1,  unit:'drop', nw:0.40},
+    // ── Appliance circuits ────────────────────────────────────────────────────
+    {id:'dryer_30a',   name:'Dryer outlet (30A NEMA 14-30)',scope:'resi', labor:175, mat:50,  matDesc:'30A outlet + wire',      hrs:2,  unit:'ea', nw:0.40},
+    {id:'dryer_50a',   name:'Dryer outlet (50A NEMA 14-50)',scope:'resi', labor:195, mat:55,  matDesc:'50A outlet + wire',      hrs:2,  unit:'ea', nw:0.40},
+    {id:'range_50a',   name:'Range/stove outlet (50A)',     scope:'resi', labor:195, mat:55,  matDesc:'50A outlet + wire',      hrs:2,  unit:'ea', nw:0.40},
+    {id:'dishwasher_ckt',name:'Dishwasher circuit',         scope:'resi', labor:185, mat:45,  matDesc:'Wire + breaker',         hrs:2,  unit:'ea', nw:0.40},
+    {id:'disposal_ckt',name:'Garbage disposal circuit',     scope:'resi', labor:145, mat:35,  matDesc:'Wire + breaker',         hrs:1.5,unit:'ea', nw:0.40},
+    {id:'microwave_ckt',name:'Microwave dedicated circuit', scope:'resi', labor:165, mat:40,  matDesc:'Wire + breaker',         hrs:1.5,unit:'ea', nw:0.40},
+    {id:'fridge_ckt',  name:'Refrigerator dedicated circuit',scope:'resi',labor:155, mat:40,  matDesc:'Wire + breaker',         hrs:1.5,unit:'ea', nw:0.40},
+    {id:'wh_elec_ckt', name:'Electric water heater circuit',scope:'resi', labor:225, mat:65,  matDesc:'Wire + 2-pole breaker',  hrs:2.5,unit:'ea', nw:0.45},
+    {id:'range_hood_ckt',name:'Range hood circuit',         scope:'resi', labor:155, mat:40,  matDesc:'Wire + breaker',         hrs:1.5,unit:'ea', nw:0.40},
+    {id:'ev_hw40',     name:'EV charger — hardwired (40A)', scope:'resi', labor:525, mat:140, matDesc:'40A EVSE + wire',        hrs:5,  unit:'ea', nw:0.65},
+    // ── Service upgrades & grounding ──────────────────────────────────────────
+    {id:'svc_150',     name:'Service upgrade (150A)',        scope:'resi', labor:950, mat:500, matDesc:'150A service entrance',  hrs:8,  unit:'ea', nw:0.90},
+    {id:'svc_400',     name:'Service entrance (400A)',       scope:'resi', labor:1800,mat:900, matDesc:'400A service + meter',   hrs:14, unit:'ea', nw:0.90},
+    {id:'meter_base',  name:'Meter base replacement',        scope:'both', labor:250, mat:180, matDesc:'Meter base',             hrs:2.5,unit:'ea', nw:1.0},
+    {id:'ug_svc',      name:'Overhead to underground service',scope:'both',labor:1200,mat:600, matDesc:'Underground conduit+wire',hrs:10,unit:'ea', nw:1.0},
+    {id:'grounding_rod',name:'Ground rod install (NEC 250)',  scope:'both',labor:150, mat:60,  matDesc:'Ground rod + clamp',     hrs:1.5,unit:'ea', nw:0.60},
+    {id:'bond_verify', name:'Grounding/bonding verification', scope:'both',labor:125, mat:0,                                    hrs:1.5,unit:'ea', nw:1.0},
+    {id:'alum_wire',   name:'Aluminum wiring remediation',   scope:'resi', labor:45,  mat:12,  matDesc:'COPALUM pigtail kit',   hrs:.5, unit:'outlet',nw:1.0},
+    {id:'afci_bkr',    name:'AFCI/GFCI breaker upgrade',     scope:'both', labor:85,  mat:55,  matDesc:'Dual AFCI/GFCI breaker', hrs:.75,unit:'ea', nw:1.0},
+    // ── Fixtures & lighting upgrades ──────────────────────────────────────────
+    {id:'chandelier',  name:'Chandelier install (up to 50 lb)',scope:'resi',labor:195, mat:0,                                   hrs:2.5,unit:'ea', nw:0.28},
+    {id:'track_light', name:'Track lighting system',          scope:'both',labor:175, mat:55,  matDesc:'Track + heads',         hrs:2,  unit:'ea', nw:0.30},
+    {id:'vanity_bar',  name:'Vanity / bath bar lighting',     scope:'resi',labor:110, mat:0,                                   hrs:1.5,unit:'ea', nw:0.28},
+    {id:'pendant',     name:'Pendant light install',          scope:'resi',labor:110, mat:0,                                   hrs:1.5,unit:'ea', nw:0.28},
+    {id:'ballast_swap',name:'Ballast replacement',            scope:'both',labor:95,  mat:35,  matDesc:'Electronic ballast',    hrs:1,  unit:'ea', nw:1.0},
+    {id:'led_retrofit',name:'Fluorescent to LED retrofit',    scope:'both',labor:75,  mat:30,  matDesc:'LED tube + bypass kit', hrs:.75,unit:'fixture',nw:0.35},
+    // ── Outdoor & pool ────────────────────────────────────────────────────────
+    {id:'pool_bond',   name:'Pool/spa bonding & GFCI',       scope:'resi', labor:350, mat:85,  matDesc:'Bonding wire + GFCI',   hrs:4,  unit:'ea', nw:0.70},
+    {id:'pool_pump',   name:'Pool pump wiring (240V)',        scope:'resi', labor:275, mat:75,  matDesc:'Wire + disconnect',     hrs:3,  unit:'ea', nw:0.65},
+    {id:'pool_light',  name:'Underwater pool light (GFCI)',   scope:'resi', labor:250, mat:120, matDesc:'Pool light + GFCI box', hrs:3,  unit:'ea', nw:0.70},
+    {id:'pool_auto',   name:'Pool automation system wiring',  scope:'resi', labor:400, mat:0,                                   hrs:5,  unit:'ea', nw:0.80},
+    {id:'landscape_xfmr',name:'Landscape lighting transformer',scope:'resi',labor:175,mat:80,  matDesc:'Low-volt transformer',  hrs:2,  unit:'ea', nw:0.55},
+    {id:'path_light',  name:'Path / step light (per fixture)',scope:'resi', labor:55,  mat:35,  matDesc:'Fixture + wire',        hrs:.5, unit:'ea', nw:0.40},
+    {id:'deck_light',  name:'Deck / soffit lighting',         scope:'resi', labor:95,  mat:45,  matDesc:'Fixture + box',         hrs:1,  unit:'ea', nw:0.35},
+    {id:'pond_light',  name:'Fountain / pond lighting',       scope:'resi', labor:145, mat:65,  matDesc:'Waterproof fixture',    hrs:1.5,unit:'ea', nw:0.55},
+    {id:'deice_cable', name:'Roof de-icing cable install',    scope:'resi', labor:250, mat:120, matDesc:'Heat cable + thermostat',hrs:3,  unit:'ea', nw:1.0},
+    {id:'xmas_outlet', name:'Roofline weatherproof outlet',   scope:'resi', labor:175, mat:45,  matDesc:'WP outlet + box + wire',hrs:2,  unit:'ea', nw:0.28},
+    // ── Smart home & security ─────────────────────────────────────────────────
+    {id:'doorbell',    name:'Doorbell / smart doorbell wiring',scope:'both',labor:85,  mat:0,                                   hrs:1,  unit:'ea', nw:0.25},
+    {id:'cam_rough',   name:'Security camera rough-in',        scope:'both',labor:75,  mat:20,  matDesc:'Conduit + wire',        hrs:.75,unit:'ea', nw:0.30},
+    {id:'motion_sw',   name:'Motion sensor switch',            scope:'both',labor:75,  mat:25,  matDesc:'Motion switch',         hrs:.75,unit:'ea', nw:0.22},
+    {id:'smart_panel', name:'Smart panel install (Span/Leviton)',scope:'resi',labor:350,mat:0,                                  hrs:4,  unit:'ea', nw:1.0,freeForm:true,freeFormLabel:'Panel model (e.g. Span Panel 200A)'},
+    {id:'home_auto',   name:'Smart home wiring (Lutron/Leviton)',scope:'resi',labor:125,mat:45, matDesc:'Smart switch + hub',    hrs:1.5,unit:'ea', nw:0.30},
+    {id:'intercom',    name:'Intercom / video doorbell system', scope:'both',labor:175, mat:0,                                   hrs:2,  unit:'ea', nw:0.35},
+    {id:'access_ctrl', name:'Access control / door strike',    scope:'both',labor:225, mat:85,  matDesc:'Strike + controller',   hrs:2.5,unit:'ea', nw:0.40},
+    // ── Diagnostics & inspections ─────────────────────────────────────────────
+    {id:'elec_trouble',name:'Electrical troubleshooting (hr)', scope:'both',labor:125, mat:0,                                   hrs:1,  unit:'hr', nw:1.0},
+    {id:'elec_insp',   name:'Home electrical safety inspection',scope:'resi',labor:175, mat:0,                                  hrs:2,  unit:'ea', nw:1.0},
+    {id:'load_analysis',name:'Panel load analysis',            scope:'both',labor:150, mat:0,                                   hrs:1.5,unit:'ea', nw:1.0},
+    {id:'permit_pull', name:'Permit coordination',             scope:'both',labor:125, mat:0,                                   hrs:1,  unit:'ea', nw:1.0},
+    // ── Ag / rural / specialty ────────────────────────────────────────────────
+    {id:'well_pump',   name:'Well pump wiring',                scope:'resi', labor:375, mat:110, matDesc:'Wire + disconnect',    hrs:4,  unit:'ea', nw:0.50},
+    {id:'sump_pump_ckt',name:'Sump pump dedicated circuit',   scope:'resi', labor:165, mat:40,  matDesc:'Wire + breaker',       hrs:1.5,unit:'ea', nw:0.40},
+    {id:'sauna',       name:'Sauna / steam room wiring (240V)',scope:'resi', labor:395, mat:95,  matDesc:'Wire + GFCI breaker',  hrs:4,  unit:'ea', nw:0.55},
+    {id:'attic_fan',   name:'Attic fan wiring',                scope:'resi', labor:175, mat:35,  matDesc:'Wire + switch',        hrs:2,  unit:'ea', nw:0.40},
+    {id:'barn_panel',  name:'Ag / barn sub-panel',             scope:'resi', labor:700, mat:500, matDesc:'100A panel + wire',    hrs:7,  unit:'ea', nw:0.85},
+    {id:'workshop_panel',name:'Workshop / garage sub-panel',   scope:'resi', labor:600, mat:450, matDesc:'60A panel + wire',     hrs:6,  unit:'ea', nw:0.80},
+    {id:'tr_outlet',   name:'Tamper-resistant outlet (per ea)',scope:'resi', labor:55,  mat:12,  matDesc:'TR outlet',            hrs:.5, unit:'ea', nw:0.18},
     // ── Commercial ────────────────────────────────────────────────────────────
-    {id:'c_3phase',    name:'3-phase panel install',       scope:'commercial',labor:1200,mat:800, matDesc:'3-phase panel',    hrs:10, unit:'ea'},
-    {id:'c_lighting',  name:'Commercial lighting (per fix)',scope:'commercial',labor:150, mat:80,  matDesc:'LED fixture',     hrs:0,  unit:'fixture',custom:true},
-    {id:'c_ev_comm',   name:'EV charging station (comm)',  scope:'commercial',labor:800, mat:1200,matDesc:'Level 2 EVSE',    hrs:8,  unit:'ea'},
-    {id:'c_panel_comm',name:'Commercial panel (400A)',     scope:'commercial',labor:2000,mat:1400,matDesc:'400A panel',      hrs:16, unit:'ea'},
-    {id:'c_emerg_light',name:'Emergency lighting',        scope:'commercial',labor:95,  mat:65,  matDesc:'Exit/emerg light', hrs:1,  unit:'ea'},
-    {id:'c_sub',       name:'Commercial sub-panel',        scope:'commercial',labor:900, mat:650, matDesc:'Subpanel + breakers',hrs:8, unit:'ea'},
-    {id:'c_conduit',   name:'Conduit run — commercial',   scope:'commercial',labor:12,  mat:7,   matDesc:'Rigid/EMT + fittings',hrs:0,unit:'lin ft',custom:true},
-    {id:'c_data',      name:'Data / telecom drop',         scope:'commercial',labor:95,  mat:25,  matDesc:'Cat6 + keystone',  hrs:1,  unit:'drop'},
-    {id:'c_motor_disc',name:'Motor disconnect (HVAC/equip)',scope:'commercial',labor:250,mat:120, matDesc:'Disconnect switch', hrs:2,  unit:'ea'},
-    {id:'c_park_light',name:'Parking lot light',           scope:'commercial',labor:450, mat:350, matDesc:'LED pole light',   hrs:4,  unit:'ea'},
+    {id:'c_3phase',    name:'3-phase panel install',           scope:'commercial',labor:1200,mat:800, matDesc:'3-phase panel',  hrs:10, unit:'ea', nw:0.85},
+    {id:'c_lighting',  name:'Commercial lighting (per fixture)',scope:'commercial',labor:150,mat:80,  matDesc:'LED fixture',    hrs:0,  unit:'fixture',custom:true,nw:0.30},
+    {id:'c_ev_comm',   name:'EV charging station Level 2',     scope:'commercial',labor:800,mat:1200, matDesc:'Level 2 EVSE',  hrs:8,  unit:'ea', nw:0.65},
+    {id:'c_panel_comm',name:'Commercial panel (400A)',          scope:'commercial',labor:2000,mat:1400,matDesc:'400A panel',   hrs:16, unit:'ea', nw:0.85},
+    {id:'c_emerg_light',name:'Emergency / exit lighting',      scope:'commercial',labor:95, mat:65,  matDesc:'Exit/emerg light',hrs:1,  unit:'ea', nw:0.30},
+    {id:'c_sub',       name:'Commercial sub-panel',            scope:'commercial',labor:900,mat:650, matDesc:'Subpanel + breakers',hrs:8,unit:'ea', nw:0.80},
+    {id:'c_conduit',   name:'Conduit run — commercial',        scope:'commercial',labor:12, mat:7,   matDesc:'Rigid/EMT + fittings',hrs:0,unit:'lin ft',custom:true,nw:0.50},
+    {id:'c_data',      name:'Data / telecom drop',             scope:'commercial',labor:95, mat:25,  matDesc:'Cat6 + keystone', hrs:1,  unit:'drop',nw:0.35},
+    {id:'c_motor_disc',name:'Motor disconnect (HVAC/equip)',   scope:'commercial',labor:250,mat:120, matDesc:'Disconnect switch',hrs:2,  unit:'ea', nw:0.70},
+    {id:'c_park_light',name:'Parking lot / area light',        scope:'commercial',labor:450,mat:350, matDesc:'LED pole light',  hrs:4,  unit:'ea', nw:0.65},
+    {id:'c_svc_600',   name:'Service upgrade (600A)',           scope:'commercial',labor:3500,mat:2000,matDesc:'600A service',  hrs:20, unit:'ea', nw:0.90},
+    {id:'c_svc_1200',  name:'Service upgrade (1200A)',          scope:'commercial',labor:6000,mat:3500,matDesc:'1200A service', hrs:32, unit:'ea', nw:0.90},
+    {id:'c_fire_rough',name:'Fire alarm rough-in (per device)',scope:'commercial',labor:95, mat:35,  matDesc:'Device + wire',   hrs:1,  unit:'ea', nw:0.35},
+    {id:'c_backup_gen_3ph',name:'Generator hookup — 3-phase + ATS',scope:'commercial',labor:1500,mat:800,matDesc:'3-phase ATS+cable',hrs:12,unit:'ea',nw:1.0},
+    {id:'c_ups_rough', name:'UPS / battery backup rough-in',   scope:'commercial',labor:600,mat:0,                              hrs:6,  unit:'ea', nw:0.80},
+    {id:'c_submeter',  name:'Tenant sub-metering',             scope:'commercial',labor:450,mat:280, matDesc:'Sub-meter + CT',  hrs:5,  unit:'ea', nw:0.75},
+    {id:'c_arc_flash', name:'Arc flash study + NFPA 70E labels',scope:'commercial',labor:800,mat:0,                             hrs:8,  unit:'ea', nw:1.0},
+    {id:'c_vfd',       name:'VFD / soft starter install',      scope:'commercial',labor:600,mat:0,                              hrs:6,  unit:'ea', nw:0.75,freeForm:true,freeFormLabel:'VFD brand/model (e.g. ABB, Yaskawa, Allen-Bradley)'},
+    {id:'c_trans',     name:'Step-down transformer install',   scope:'commercial',labor:700,mat:0,                              hrs:6,  unit:'ea', nw:0.80,freeForm:true,freeFormLabel:'Transformer kVA + voltage (e.g. 75kVA 480V-208V)'},
+    {id:'c_mcc',       name:'Motor control center (MCC) work', scope:'commercial',labor:850,mat:0,                              hrs:8,  unit:'ea', nw:0.80},
+    {id:'c_kitchen_hookup',name:'Commercial kitchen equip hookup',scope:'commercial',labor:350,mat:60,matDesc:'Wire + disconnect',hrs:4, unit:'ea', nw:0.65},
+    {id:'c_medical',   name:'Hospital-grade / isolated-ground outlet',scope:'commercial',labor:145,mat:40,matDesc:'IG outlet',  hrs:1.5,unit:'ea', nw:0.25},
+    {id:'c_temp_power',name:'Temporary power (construction)',  scope:'commercial',labor:450,mat:200, matDesc:'Spider box + cable',hrs:5, unit:'ea', nw:1.0},
+    {id:'c_tenant_imp',name:'Tenant improvement — electrical', scope:'commercial',labor:2,  mat:1,                              hrs:0,  unit:'sqft',custom:true,nw:0.60},
+    {id:'c_lcs',       name:'Lighting control system (Lutron/Wattstopper)',scope:'commercial',labor:1200,mat:0,                  hrs:12, unit:'ea', nw:0.70,freeForm:true,freeFormLabel:'System model + zone count'},
+    {id:'c_sign',      name:'Outdoor sign / marquee wiring',   scope:'commercial',labor:300,mat:80,  matDesc:'Wire + disconnect',hrs:3,  unit:'ea', nw:0.65},
+    {id:'c_ev_l3',     name:'EV DC fast charger (Level 3) rough-in',scope:'commercial',labor:2000,mat:0,                        hrs:16, unit:'ea', nw:0.75},
+    {id:'c_ev_fleet',  name:'Multi-stall EV station + load mgmt',scope:'commercial',labor:2500,mat:0,                           hrs:20, unit:'ea', nw:0.70,freeForm:true,freeFormLabel:'Number of stalls + target kW'},
+    {id:'c_switchgear',name:'Switchgear / MDP install',        scope:'commercial',labor:3500,mat:0,                             hrs:24, unit:'ea', nw:0.85,freeForm:true,freeFormLabel:'Switchgear rating + manufacturer'},
+    {id:'c_pole_light',name:'Outdoor pole light (per pole)',   scope:'commercial',labor:400,mat:300, matDesc:'LED fixture + pole',hrs:4,  unit:'ea', nw:0.65},
+    {id:'c_struct_cable',name:'Structured cabling / Cat6 backbone',scope:'commercial',labor:85,mat:30,matDesc:'Cat6 + keystone',hrs:1,  unit:'drop',nw:0.35},
+    {id:'c_poe',       name:'PoE network drops',               scope:'commercial',labor:75, mat:25,  matDesc:'Cat6 + keystone', hrs:.75,unit:'drop',nw:0.35},
+    {id:'highbay_led', name:'High-bay LED install',            scope:'commercial',labor:175,mat:120, matDesc:'High-bay fixture', hrs:2,  unit:'ea', nw:0.35},
+    {id:'c_thermo_scan',name:'Thermographic scan',             scope:'commercial',labor:350,mat:0,                              hrs:3,  unit:'ea', nw:1.0},
+    {id:'c_solar_comm',name:'Commercial solar (per kW)',       scope:'commercial',labor:500,mat:1100, matDesc:'Comm solar panels',hrs:0, unit:'kW', custom:true,freeForm:true,freeFormLabel:'Panel brand',nw:1.0},
   ],
   hvac:[
     // ── Residential ────────────────────────────────────────────────────────────
@@ -8785,13 +8872,17 @@ const TRADE_JOB_CATS={
     '🏢 Commercial':['c_wh_comm','c_tankless','c_backflow','c_grease','c_booster','c_drain_comm','c_gas_main'],
   },
   electrical:{
-    '🔌 Outlets & Wiring':['outlet','gfci','switch','exterior','dimmer','afci','conduit_lf','low_volt'],
-    '💡 Lighting':['light','recessed','fan','exhaust','smoke','under_cab'],
-    '⚡ Circuits & Panels':['breaker','ded_120','ded_240','sub_panel','panel_100','panel_200'],
-    '🔋 Backup & EV':['xfer_man','xfer_auto','gen_hookup','ev_resi','surge'],
-    '🌊 Specialty':['hot_tub','rewire_room'],
+    '🔌 Outlets & Switches':['outlet','gfci','switch','exterior','dimmer','afci','tr_outlet','doorbell','motion_sw'],
+    '💡 Fixtures & Lighting':['light','recessed','fan','exhaust','smoke','under_cab','chandelier','vanity_bar','pendant','track_light','ballast_swap','led_retrofit'],
+    '⚡ Circuits & Panels':['breaker','ded_120','ded_240','sub_panel','panel_100','panel_200','afci_bkr','conduit_lf','low_volt'],
+    '🔋 Backup & EV':['xfer_man','xfer_auto','gen_hookup','ev_resi','ev_hw40','surge'],
+    '🍳 Appliance Circuits':['dryer_30a','dryer_50a','range_50a','dishwasher_ckt','disposal_ckt','microwave_ckt','fridge_ckt','wh_elec_ckt','range_hood_ckt'],
+    '🔧 Service & Upgrades':['svc_150','svc_400','meter_base','ug_svc','grounding_rod','bond_verify','alum_wire','barn_panel','workshop_panel'],
+    '🏊 Pool & Outdoor':['hot_tub','pool_bond','pool_pump','pool_light','pool_auto','landscape_xfmr','path_light','deck_light','pond_light','deice_cable','xmas_outlet'],
+    '🔒 Smart Home & Security':['home_auto','smart_panel','cam_rough','access_ctrl','intercom'],
+    '🔍 Diagnostics':['elec_trouble','elec_insp','load_analysis','permit_pull','well_pump','sump_pump_ckt','sauna','attic_fan','rewire_room'],
     '☀️ Solar & Storage':['solar_kw','inverter','battery','bat_kwh','offgrid_design'],
-    '🏢 Commercial':['c_3phase','c_lighting','c_ev_comm','c_panel_comm','c_emerg_light','c_solar_comm','c_sub','c_conduit','c_data','c_motor_disc','c_park_light'],
+    '🏢 Commercial':['c_3phase','c_lighting','c_ev_comm','c_panel_comm','c_emerg_light','c_solar_comm','c_sub','c_conduit','c_data','c_motor_disc','c_park_light','c_svc_600','c_svc_1200','c_fire_rough','c_backup_gen_3ph','c_ups_rough','c_submeter','c_arc_flash','c_vfd','c_trans','c_mcc','c_kitchen_hookup','c_medical','c_temp_power','c_tenant_imp','c_lcs','c_sign','c_ev_l3','c_ev_fleet','c_switchgear','c_pole_light','c_struct_cable','c_poe','highbay_led','c_thermo_scan'],
   },
   hvac:{
     '🔧 Service':['tuneup','filter','cap','refrig','refrig_454b','therm','motor','coil_clean'],
@@ -16689,13 +16780,13 @@ function _renderNavTradeSwitcher(){
 }
 
 // ── Generic estimate (non-painting trades) ────────────────────────────
-let _geiClientId=null,_geiEditBidId=null,_geiLines=[],_geiTrade=null,_geiIsCommercial=false,_geiEmergency=false,_geiStep=1;
+let _geiClientId=null,_geiEditBidId=null,_geiLines=[],_geiTrade=null,_geiIsCommercial=false,_geiEmergency=false,_geiStep=1,_geiNewWork=false;
 let _panelSched=null; // null = not active, obj = panel schedule data
 
 function openGenericEstimate(c,bidId,_tradePick){
   _geiClientId=c?.id||null;
   _geiEditBidId=bidId||null;
-  _geiLines=[];_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;
+  _geiLines=[];_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
@@ -16706,7 +16797,12 @@ function openGenericEstimate(c,bidId,_tradePick){
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val||'';};
   sf('gei-client',c?.name||'');
   sf('gei-addr',c?.addr||'');
-  sf('gei-desc','');sf('gei-duration','');sf('gei-notes','');sf('gei-tax-pct','0');
+  const DESC_PH={electrical:'e.g. Panel upgrade, add EV charger in garage',plumbing:'e.g. Replace water heater, install shutoff valves',hvac:'e.g. Replace AC unit, charge refrigerant',roofing:'e.g. Full shingle replacement, fix ridge flashing',landscaping:'e.g. Weekly mowing, spring cleanup, new mulch',general:'e.g. Drywall repair, power washing, handyman'};
+  sf('gei-desc','');sf('gei-notes','');sf('gei-tax-pct','0');sf('gei-duration','');
+  const descEl=document.getElementById('gei-desc');
+  if(descEl)descEl.placeholder=DESC_PH[_geiTrade]||'Describe the job';
+  const nwEl=document.getElementById('gei-new-work');
+  if(nwEl)nwEl.checked=false;
   document.getElementById('gei-date').value=todayKey();
   if(bidId){
     const b=bids.find(x=>x.id===bidId);
@@ -16714,9 +16810,14 @@ function openGenericEstimate(c,bidId,_tradePick){
       sf('gei-desc',b.type||'');sf('gei-notes',b.notes||'');
       if(b.geiLines&&b.geiLines.length)_geiLines=JSON.parse(JSON.stringify(b.geiLines));
       if(b.geiTaxPct)sf('gei-tax-pct',b.geiTaxPct);
-      if(b.days)sf('gei-duration',b.days+' day'+(b.days!==1?'s':''));
+      if(b.geiDuration)sf('gei-duration',b.geiDuration);
+      if(b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(b.panelSched)_panelSched=JSON.parse(JSON.stringify(b.panelSched));
     }
+  }
+  if(!_geiEditBidId){
+    const draftBid={id:_newBidId(),client_id:_geiClientId,client_name:c?.name||'',bid_date:todayKey(),amount:0,deposit:0,type:(TRADE_META[_geiTrade]?.label||'Trade')+' estimate',notes:'',status:'Draft',draft:true,trade_type:_geiTrade,geiLines:[],geiTaxPct:0};
+    bids.unshift(draftBid);_geiEditBidId=draftBid.id;saveAll();
   }
   goPg('pg-est-generic');
   goGeiStep(1);
@@ -16792,6 +16893,70 @@ function _geiTierBadge(){
   return `<div style="font-size:11px;font-weight:700;background:${cfg.bg};color:${cfg.color};border-radius:20px;padding:3px 10px;display:inline-block;margin-bottom:12px">${cfg.label} · prices adjusted</div>`;
 }
 
+const STATE_LABOR_MULT={AL:0.58,AK:1.27,AZ:0.73,AR:0.59,CA:1.11,CO:0.70,CT:1.02,DE:0.84,FL:0.60,GA:0.68,HI:1.19,ID:0.77,IL:0.86,IN:0.79,IA:0.72,KS:0.62,KY:0.70,LA:0.65,ME:0.82,MD:0.82,MA:1.19,MI:0.88,MN:1.11,MS:0.60,MO:0.75,MT:0.91,NE:0.62,NV:1.09,NH:0.95,NJ:1.03,NM:0.67,NY:1.04,NC:0.60,ND:1.15,OH:0.81,OK:0.57,OR:1.40,PA:1.08,RI:0.96,SC:0.60,SD:0.69,TN:0.65,TX:0.65,UT:0.74,VT:1.10,VA:0.77,WA:1.31,WV:0.83,WI:0.94,WY:0.73,DC:1.10};
+
+const GEI_BUNDLES={
+  residential:    ['outlet','gfci','switch','dimmer','afci','ext_outlet','recessed','light','fan','exhaust','smoke','under_cab','chandelier','vanity_bar','pendant','track_light','ballast_swap','led_retrofit','doorbell','motion_sw'],
+  panels_circuits:['breaker','ded_120','ded_240','panel_100','panel_200','sub_panel','afci_bkr','conduit_lf','low_volt'],
+  service_upgrades:['svc_150','svc_400','meter_base','ug_svc','grounding_rod','bond_verify','alum_wire','xfer_man','xfer_auto','gen_hookup'],
+  ev_solar:       ['ev_resi','ev_hw40','surge','hot_tub','xfer_man','xfer_auto','gen_hookup','solar_kw','inverter','battery','bat_kwh','offgrid_design'],
+  outdoor_pool:   ['hot_tub','pool_bond','pool_pump','pool_light','pool_auto','landscape_xfmr','path_light','deck_light','pond_light','deice_cable','xmas_outlet','exterior'],
+  smart_security: ['doorbell','cam_rough','motion_sw','smart_panel','home_auto','intercom','access_ctrl'],
+  appliances:     ['dryer_30a','dryer_50a','range_50a','dishwasher_ckt','disposal_ckt','microwave_ckt','fridge_ckt','wh_elec_ckt','range_hood_ckt'],
+  diagnostics:    ['elec_trouble','elec_insp','load_analysis','permit_pull','gen_hookup','well_pump','sump_pump_ckt','sauna','attic_fan','barn_panel','workshop_panel','tr_outlet'],
+  new_construction:['outlet','gfci','switch','recessed','light','fan','exhaust','smoke','ded_120','ded_240','panel_200','sub_panel','conduit_lf','low_volt','ev_resi','panel_100'],
+  commercial:     ['c_3phase','c_lighting','c_ev_comm','c_panel_comm','c_emerg_light','c_solar_comm','c_sub','c_conduit','c_data','c_motor_disc','c_park_light','c_svc_600','c_svc_1200','c_fire_rough','c_backup_gen_3ph','c_ups_rough','c_submeter','c_arc_flash','c_vfd','c_trans','c_mcc','c_kitchen_hookup','c_medical','c_temp_power','c_tenant_imp','c_lcs','c_sign','c_ev_l3','c_ev_fleet','c_switchgear','c_pole_light','c_struct_cable','c_poe'],
+};
+
+function _geiLocationMult(){return STATE_LABOR_MULT[S.state]||1.0;}
+
+function _geiJobPrice(job){
+  const propMult=_geiPriceMult();
+  const custom=(S.myRates||{})[job.id];
+  if(custom){
+    return{labor:Math.round((custom.labor||0)*propMult),mat:Math.round((custom.mat||0)*propMult),isCustom:true};
+  }
+  const locMult=_geiLocationMult();
+  const emergMult=_geiEmergency?1.5:1.0;
+  const nwMult=(_geiNewWork&&(job.nw??1)<1)?(job.nw??1):1.0;
+  return{labor:Math.round((job.labor||0)*nwMult*locMult*emergMult*propMult),mat:Math.round((job.mat||0)*propMult),isCustom:false};
+}
+
+function _geiAddWithRate(job,inputEl){
+  const entered=parseInt(inputEl?.value)||0;
+  const p=_geiJobPrice(job);
+  const marketTotal=p.labor+(p.mat||0);
+  if(entered!==marketTotal&&entered>0){
+    S.myRates=S.myRates||{};
+    S.myRates[job.id]={labor:entered,mat:0};
+    saveAll();
+    showToast('Rate saved for '+job.name,'💾');
+  }
+  if(job.gasLic)showToast('Gas work — verify you\'re licensed for gas in your state','⚠️');
+  if(job.freeForm){_geiShowFreeFormModal(job);return;}
+  const rate=entered||marketTotal;
+  if(job.custom){
+    const unitLabel={sqft:'square footage','lin ft':'linear feet',kW:'kilowatts',kWh:'kilowatt-hours',fixture:'number of fixtures'}[job.unit]||job.unit;
+    const raw=prompt('Enter '+unitLabel+' for: '+job.name);
+    if(!raw)return;
+    const qty=parseFloat(raw);if(!qty||isNaN(qty))return;
+    _geiLines.push({desc:job.name+' — labor',qty,unit:job.unit,rate:Math.round(p.labor),total:qty*Math.round(p.labor),jobId:job.id});
+    if(p.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty,unit:job.unit,rate:p.mat,total:qty*p.mat});
+  } else {
+    if(p.labor>0)_geiLines.push({desc:job.name+' — labor',qty:1,unit:job.unit,rate:p.labor,total:p.labor,jobId:job.id});
+    if(p.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty:1,unit:job.unit,rate:p.mat,total:p.mat});
+  }
+  renderGeiLines();calcGeiTotal();
+}
+
+function _geiVisibleJobIds(){
+  const bundles=S.myBundles||[];
+  if(!bundles.length||bundles[0]==='__all')return null;
+  const ids=new Set();
+  bundles.forEach(b=>(GEI_BUNDLES[b]||[]).forEach(id=>ids.add(id)));
+  return ids;
+}
+
 function _geiOpenCatSheet(catLabel){
   const trade=_geiTrade||'general';
   const allJobs=TRADE_JOBS[trade]||TRADE_JOBS.general;
@@ -16804,37 +16969,47 @@ function _geiOpenCatSheet(catLabel){
 
   const ov=document.createElement('div');
   ov.id='_gei-cat-ov';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:flex;align-items:flex-end;justify-content:center';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
 
   const sheet=document.createElement('div');
-  sheet.style.cssText='background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;width:100%;max-width:480px;padding:16px 16px 36px;max-height:75vh;overflow-y:auto;box-sizing:border-box';
+  sheet.style.cssText='background:var(--bg);border-radius:var(--rl);width:100%;max-width:460px;padding:16px 16px 24px;max-height:80vh;overflow-y:auto;box-sizing:border-box';
 
   const rows=catJobs.map(job=>{
-    const effLabor=_geiEmergency?Math.round(job.labor*1.5):job.labor;
-    const baseTotal=(job.mat||0)+effLabor;
-    const adjTotal=Math.round(baseTotal*mult);
-    const priceStr=job.custom?`$${adjTotal}/${job.unit}`:job.mat>0?`$${adjTotal.toLocaleString()}`:`$${adjTotal}`;
-    const lmTag=job.mat>0?`<span style="font-size:10px;color:var(--text3);font-weight:400"> L+M</span>`:'';
+    const p=_geiJobPrice(job);
+    const defaultTotal=p.labor+(p.mat||0);
+    const isCustomRate=p.isCustom;
     const gasTag=job.gasLic?`<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:3px;padding:1px 5px;margin-left:6px">GAS LIC</span>`:'';
-    const priceColor=_geiEmergency?'#dc2626':'var(--blue)';
-    // Store the adjusted rate in the job object so cart picks up the right price
-    const adjJob={...job,labor:Math.round(effLabor*mult),mat:Math.round((job.mat||0)*mult)};
-    const safeJob=escHtml(JSON.stringify(adjJob));
-    return `<button onclick="_geiAddTemplate(JSON.parse(this.dataset.job));document.getElementById('_gei-cat-ov')?.remove();_geiRenderCartBar()"
-      data-job="${safeJob}"
-      style="display:flex;justify-content:space-between;align-items:center;width:100%;padding:13px 14px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:7px;text-align:left;box-sizing:border-box">
-      <div style="font-size:13px;font-weight:700;color:var(--text)">${escHtml(job.name)}${gasTag}</div>
-      <div style="font-size:14px;font-weight:800;color:${priceColor};white-space:nowrap;margin-left:12px">${priceStr}${lmTag}</div>
-    </button>`;
+    const rateLabel=isCustomRate
+      ?`<span style="color:#16a34a;font-size:10px;margin-top:2px">✓ your rate</span>`
+      :`<span style="color:var(--text3);font-size:10px;margin-top:2px">📍 ${S.state||'US'} avg${_geiNewWork&&(job.nw||1)<1?' · new work':''}</span>`;
+    const inputBorder=isCustomRate?'border:1.5px solid #16a34a':'border:1.5px solid var(--border2)';
+    const inputColor=isCustomRate?'color:#16a34a':'color:var(--blue)';
+    const inputId='_gei-rate-'+job.id;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:11px 14px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);margin-bottom:7px;box-sizing:border-box">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:700;color:var(--text)">${escHtml(job.name)}${gasTag}</div>
+        ${rateLabel}
+      </div>
+      <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
+        <span style="font-size:12px;color:var(--text3)">$</span>
+        <input type="number" id="${inputId}" value="${defaultTotal}" min="0" step="1"
+          style="width:74px;padding:5px 4px;border-radius:var(--r);${inputBorder};font-size:14px;font-weight:800;${inputColor};text-align:right;background:var(--bg);font-family:inherit"
+          onclick="event.stopPropagation()">
+        <button onclick="_geiAddWithRate(${JSON.stringify(job).replace(/"/g,'&quot;')},document.getElementById('${inputId}'));document.getElementById('_gei-cat-ov')?.remove();_geiRenderCartBar()"
+          style="padding:7px 12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap">+ Add</button>
+      </div>
+    </div>`;
   }).join('');
 
+  const firstTimeBanner=(!S.myRates||!Object.keys(S.myRates).length)?`<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--r);padding:10px 14px;margin-bottom:12px;font-size:12px;color:#1e40af;line-height:1.5">📍 Showing <strong>${S.state||'US'} market averages</strong> (BLS labor data). Edit any price to set your own rate — saves automatically.</div>`:'';
+  const newWorkBadge=_geiNewWork?`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--r);padding:6px 12px;margin-bottom:10px;font-size:12px;color:#15803d;font-weight:600">🏗️ New construction rates active — lower labor</div>`:'';
   sheet.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <div style="font-size:16px;font-weight:800;color:var(--text)">${catLabel}</div>
       <button onclick="document.getElementById('_gei-cat-ov')?.remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--text3);padding:0;line-height:1">×</button>
     </div>
-    ${_geiTierBadge()}
+    ${firstTimeBanner}${newWorkBadge}${_geiTierBadge()}
     ${rows||'<div style="font-size:13px;color:var(--text3);text-align:center;padding:20px 0">No services in this category for current scope.</div>'}`;
   ov.appendChild(sheet);
   document.body.appendChild(ov);
@@ -16862,10 +17037,11 @@ function _geiRenderTemplates(){
   const allJobs=TRADE_JOBS[trade]||TRADE_JOBS.general;
   const scope=_geiIsCommercial?'commercial':'resi';
   const jobs=allJobs.filter(j=>!j.scope||j.scope==='both'||j.scope===scope);
-  const book=(S.priceBook&&S.priceBook[trade])||[];
+  const visibleIds=_geiVisibleJobIds();
 
   let html='';
   if(_geiEmergency)html+=`<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:9px 12px;font-size:12px;color:#b91c1c;margin-bottom:12px;font-weight:600">🚨 Emergency mode — labor rates ×1.5 · after-hours surcharge added</div>`;
+  if(_geiNewWork)html+=`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--r);padding:7px 12px;font-size:12px;color:#15803d;margin-bottom:12px;font-weight:600">🏗️ New construction rates active — lower labor</div>`;
 
   // Category tile grid for trades with categories
   const cats=TRADE_JOB_CATS[trade];
@@ -16873,7 +17049,7 @@ function _geiRenderTemplates(){
     const jobById=Object.fromEntries(jobs.map(j=>[j.id,j]));
     html+=`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">`;
     for(const [catLabel,ids] of Object.entries(cats)){
-      const catJobs=ids.map(id=>jobById[id]).filter(Boolean);
+      const catJobs=ids.map(id=>jobById[id]).filter(Boolean).filter(j=>!visibleIds||visibleIds.has(j.id));
       if(!catJobs.length)continue;
       const parts=catLabel.split(' ');
       const emoji=parts[0];
@@ -16887,18 +17063,94 @@ function _geiRenderTemplates(){
       </button>`;
     }
     html+=`</div>`;
+    if(visibleIds){
+      const totalCount=(TRADE_JOBS[trade]||[]).length;
+      html+=`<button onclick="_geiShowAllServices()" style="width:100%;margin-top:12px;padding:10px;background:none;border:1px dashed var(--border2);border-radius:var(--r);color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit">+ Find unlisted service (search all ${totalCount} services)</button>`;
+    }
   } else {
     // Flat chip fallback for general/other
     const makeChip=job=>{
-      const effLabor=_geiEmergency?Math.round(job.labor*1.5):job.labor;
-      const total=(job.mat||0)+effLabor;
-      const priceStr=job.custom?`$${total}/${job.unit}`:job.mat>0?`$${total.toLocaleString()}`:`$${effLabor}`;
+      const p=_geiJobPrice(job);
+      const total=p.labor+(p.mat||0);
+      const priceStr=job.custom?`$${total}/${job.unit}`:`$${total.toLocaleString()}`;
       const safeJob=escHtml(JSON.stringify(job));
       return `<button onclick="_geiAddTemplate(JSON.parse(this.dataset.job));_geiRenderCartBar()" data-job="${safeJob}" style="display:inline-flex;flex-direction:column;align-items:flex-start;padding:8px 12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left"><span style="font-size:12px;font-weight:700;color:var(--text)">${escHtml(job.name)}</span><span style="font-size:10px;color:var(--text3)">${priceStr}</span></button>`;
     };
     html+=`<div style="display:flex;flex-wrap:wrap;gap:6px">${jobs.map(makeChip).join('')}</div>`;
   }
   el.innerHTML=html;
+}
+
+function _geiShowAllServices(){
+  S.myBundles=['__all'];saveAll();_geiRenderTemplates();showToast('Showing all services','✓');
+}
+
+function showGeiOnboarding(){
+  if(S.myBundles&&S.myBundles.length)return;
+  const BUNDLE_CARDS=[
+    {id:'residential',   emoji:'🏠', label:'Residential\nService'},
+    {id:'panels_circuits',emoji:'⚡',label:'Panels &\nCircuits'},
+    {id:'service_upgrades',emoji:'🔧',label:'Service\nUpgrades'},
+    {id:'ev_solar',      emoji:'☀️', label:'EV & Solar'},
+    {id:'outdoor_pool',  emoji:'🏊', label:'Outdoor\n& Pool'},
+    {id:'smart_security',emoji:'🔒', label:'Smart Home\n& Security'},
+    {id:'appliances',    emoji:'🍳', label:'Appliance\nCircuits'},
+    {id:'diagnostics',   emoji:'🔍', label:'Diagnostics\n& Specialty'},
+    {id:'new_construction',emoji:'🏗️',label:'New\nConstruction'},
+    {id:'commercial',    emoji:'🏢', label:'Commercial'},
+  ];
+  const selected=new Set();
+  const ov=document.createElement('div');
+  ov.id='_gei-onboard-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  function render(){
+    const stateStr=S.state||'US';
+    const mult=STATE_LABOR_MULT[S.state]||1.0;
+    const multNote=mult!==1.0?` (${mult>1?'+':''}${Math.round((mult-1)*100)}% vs national avg)`:'';
+    ov.innerHTML=`<div style="background:var(--bg);border-radius:var(--rl);width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-sizing:border-box;padding:22px 18px 28px">
+      <div style="font-size:20px;font-weight:800;color:var(--text);margin-bottom:4px">⚡ Set up your services</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:14px">Takes about 30 seconds · you can change this anytime</div>
+      <div style="background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--blue-dk)">
+        📍 You're in <strong>${stateStr}</strong> — market rates loaded${multNote}
+        <button onclick="document.getElementById('_gei-state-sel')?.classList.toggle('show')" style="margin-left:8px;background:none;border:none;color:var(--blue);font-size:11px;cursor:pointer;text-decoration:underline;font-family:inherit">Change</button>
+        <select id="_gei-state-sel" class="show" onchange="S.state=this.value;saveAll();showGeiOnboarding()" style="display:block;margin-top:8px;padding:6px 8px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;background:var(--bg);color:var(--text);width:100%">
+          ${['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'].map(st=>`<option value="${st}"${S.state===st?' selected':''}>${st}</option>`).join('')}
+        </select>
+      </div>
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px">What kind of work do you do? <span style="font-weight:400;color:var(--text3)">(tap all that apply)</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px">
+        ${BUNDLE_CARDS.map(b=>{
+          const on=selected.has(b.id);
+          return `<button onclick="void 0" data-bid="${b.id}" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px 8px;border-radius:var(--rl);border:2px solid ${on?'var(--blue)':'var(--border2)'};background:${on?'var(--blue-lt)':'var(--bg2)'};cursor:pointer;font-family:inherit;gap:5px;min-height:80px;text-align:center;box-sizing:border-box" onclick="_geiOnboardToggle('${b.id}')">
+            <span style="font-size:26px;line-height:1">${b.emoji}</span>
+            <span style="font-size:11px;font-weight:700;color:${on?'var(--blue-dk)':'var(--text)'};white-space:pre-line;line-height:1.3">${b.label}</span>
+            ${on?'<span style="font-size:10px;color:var(--blue);font-weight:700">✓</span>':''}
+          </button>`;
+        }).join('')}
+      </div>
+      <button onclick="_geiOnboardFinish()" id="_gei-ob-btn" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:${selected.size?'var(--blue)':'var(--border2)'};color:${selected.size?'#fff':'var(--text3)'};font-weight:800;font-size:15px;cursor:${selected.size?'pointer':'default'};font-family:inherit;margin-bottom:10px">
+        ${selected.size?`Get started → (${selected.size} service type${selected.size!==1?'s':''})`:'Select at least one service type'}
+      </button>
+      <button onclick="_geiOnboardSkip()" style="width:100%;padding:10px;background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit">Skip — show all services</button>
+    </div>`;
+  }
+  window._geiOnboardToggle=function(id){
+    if(selected.has(id))selected.delete(id);else selected.add(id);
+    document.getElementById('_gei-onboard-ov')?.remove();
+    document.body.appendChild(ov);
+    render();
+  };
+  window._geiOnboardFinish=function(){
+    if(!selected.size)return;
+    S.myBundles=[...selected];S.hasOnboarded=true;saveAll();
+    ov.remove();showToast('Services set up — showing '+S.state+' market rates','✓');
+  };
+  window._geiOnboardSkip=function(){
+    S.myBundles=['__all'];S.hasOnboarded=true;saveAll();
+    ov.remove();showToast('Showing all services','✓');
+  };
+  render();
+  document.body.appendChild(ov);
 }
 
 function _geiSetScope(commercial){
@@ -17016,7 +17268,7 @@ function renderGeiLines(){
         <input type="text" value="${escHtml(l.unit||'ea')}" oninput="_geiLines[${i}].unit=this.value" placeholder="unit" style="width:52px;padding:6px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;text-align:center;background:var(--bg);color:var(--text3);font-family:inherit">
         <span style="font-size:12px;color:var(--text3)">@</span>
         <span style="font-size:12px;color:var(--text3)">$</span>
-        <input type="number" value="${l.rate||''}" min="0" step="any" oninput="_geiLines[${i}].rate=parseFloat(this.value)||0;calcGeiTotal();document.getElementById('gei-line-total-${i}').textContent='$'+((${l.qty||1})*(parseFloat(this.value)||0)).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})" placeholder="Rate" style="width:72px;padding:6px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;text-align:right;background:var(--bg);color:var(--text);font-family:inherit">
+        <input type="number" value="${l.rate||''}" min="0" step="any" oninput="_geiLines[${i}].rate=parseFloat(this.value)||0;calcGeiTotal();document.getElementById('gei-line-total-${i}').textContent='$'+((${l.qty||1})*(parseFloat(this.value)||0)).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0})" onblur="_geiRateBlur(${i},this.value)" placeholder="Rate" style="width:72px;padding:6px 4px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;text-align:right;background:var(--bg);color:var(--text);font-family:inherit">
         <span style="font-size:12px;color:var(--text3)">=</span>
         <div id="gei-line-total-${i}" style="font-size:15px;font-weight:700;color:var(--blue);flex:1;text-align:right">${totalFmt}</div>
         <button onclick="_geiSaveToPriceBook(${i})" title="Save to price book" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:15px;padding:4px;line-height:1">🔖</button>
@@ -17026,6 +17278,19 @@ function renderGeiLines(){
 }
 
 function addGeiLine(){_geiLines.push({desc:'',qty:1,unit:'ea',rate:'',total:0});renderGeiLines();calcGeiTotal();}
+
+function _geiRateBlur(i,val){
+  const line=_geiLines[i];if(!line||!line.jobId)return;
+  let job=null;
+  for(const t of Object.values(TRADE_JOBS)){job=(t||[]).find(j=>j.id===line.jobId);if(job)break;}
+  if(!job)return;
+  const p=_geiJobPrice(job);
+  const market=p.labor+(p.mat||0);
+  const entered=parseInt(val)||0;
+  if(entered>0&&entered!==market){
+    S.myRates=S.myRates||{};S.myRates[line.jobId]={labor:entered,mat:0};saveAll();showToast('Rate saved','💾');
+  }
+}
 
 // ─── Panel Schedule Builder ───────────────────────────────────────────────────
 const _PANEL_SLOTS={100:20,150:30,200:40,400:42};
@@ -17205,6 +17470,7 @@ function saveGenericEstimate(draft){
       b.amount=total;b.type=v('gei-desc')||TRADE_META[trade]?.label+' job';
       b.notes=v('gei-notes');b.geiLines=JSON.parse(JSON.stringify(_geiLines));
       b.geiTaxPct=taxPct;b.status=draft?'Draft':'Pending';b.draft=!!draft;
+      b.geiDuration=v('gei-duration')||'';b.geiNewWork=_geiNewWork||false;
       b.trade_type=trade;if(_panelSched)b.panelSched=JSON.parse(JSON.stringify(_panelSched));else delete b.panelSched;
       saveAll();
     }
@@ -17218,6 +17484,7 @@ function saveGenericEstimate(draft){
       type:v('gei-desc')||TRADE_META[trade]?.label+' job',
       notes:v('gei-notes'),status:draft?'Draft':'Pending',draft:!!draft,
       geiLines:JSON.parse(JSON.stringify(_geiLines)),geiTaxPct:taxPct,
+      geiDuration:v('gei-duration')||'',geiNewWork:_geiNewWork||false,
       trade_type:trade,...(_panelSched?{panelSched:JSON.parse(JSON.stringify(_panelSched))}:{}),
     };
     bids.unshift(newBid);_geiEditBidId=newBid.id;saveAll();
@@ -17235,14 +17502,28 @@ async function sendGenericProposal(){
   const{total}=calcGeiTotal();
   const trade=_geiTrade||getActiveTrade();
   const taxPct=parseFloat(v('gei-tax-pct'))||0;
-  const lineHtml=_geiLines.filter(l=>l.desc||l.rate).map(l=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #eee;font-size:13px"><span>${escHtml(l.desc||'')}</span><span>$${((l.qty||1)*(l.rate||0)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>`).join('');
+  const bname=escHtml(S.bname||getBusinessName()||'');
+  const bphone=escHtml(S.bphone||'');const blic=escHtml(S.blic||'');
+  const clientName=escHtml(v('gei-client'));const clientAddr=escHtml(v('gei-addr'));
+  const jobDesc=escHtml(v('gei-desc'));const duration=escHtml(v('gei-duration'));
+  const tradeName=TRADE_META[trade]?.label||'Service';const tradeIcon=TRADE_META[trade]?.icon||'🔧';
+  const estNum=_geiEditBidId?String(_geiEditBidId).slice(-6):'—';
+  const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const totalFmt='$'+total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const depositFmt='$'+(Math.round(total*0.25*100)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const lineRows=_geiLines.filter(l=>l.desc||l.rate).map(l=>{
+    const amt=(l.qty||1)*(l.rate||0);
+    return `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 18px;font-size:12px;color:#2d3748">${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</td><td style="padding:9px 6px;text-align:center;font-size:12px;color:#64748b">${l.qty||1}</td><td style="padding:9px 18px 9px 4px;text-align:right;font-size:12px;font-weight:600;color:#1a365d">$${amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`;
+  }).join('');
+  const taxRow=taxPct?`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td colspan="2" style="padding:8px 18px;font-size:12px;color:#64748b">Tax / markup (${taxPct}%)</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$${(total*(taxPct/(100+taxPct))).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`:'';
+  const notesHtml=v('gei-notes')?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6"><strong style="color:#1a365d">Notes:</strong> ${escHtml(v('gei-notes'))}</div>`:'';
   let _propPanelHtml='';
   if(_panelSched){
     const {l1:_pl1,l2:_pl2,imbalance:_pimb}=_panelCalcBalance();
-    const _pRows=(_panelSched.circuits||[]).map((c,i)=>`<tr><td style="text-align:center;padding:3px 6px;border:1px solid #ccc">${i+1}</td><td style="padding:3px 8px;border:1px solid #ccc">${escHtml(c.desc||'—')}</td><td style="text-align:center;padding:3px 6px;border:1px solid #ccc">${c.amps||''}A</td><td style="text-align:center;padding:3px 6px;border:1px solid #ccc">${c.phase==='2pole'?'2-pole':c.phase}</td><td style="text-align:center;padding:3px 6px;border:1px solid #ccc">${escHtml(c.gauge||'')}</td><td style="text-align:center;padding:3px 6px;border:1px solid #ccc">${c.afci?'✓':''}</td><td style="text-align:center;padding:3px 6px;border:1px solid #ccc">${c.gfci?'✓':''}</td></tr>`).join('');
-    _propPanelHtml=`<div style="margin-top:16px;padding-top:16px;border-top:2px solid #eee"><h3 style="margin:0 0 8px">📋 Panel Schedule — ${_panelSched.panelAmps}A</h3><p style="font-size:12px;color:#555;margin-bottom:8px">L1 leg: ${_pl1}A · L2 leg: ${_pl2}A${_pimb>0.10?' · <strong style="color:#dc2626">⚠️ Rebalance recommended</strong>':' · ✓ Balanced'}</p><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr><th style="background:#1a1a2e;color:#fff;padding:5px 6px;border:1px solid #ccc">#</th><th style="background:#1a1a2e;color:#fff;padding:5px 8px;border:1px solid #ccc;text-align:left">Circuit</th><th style="background:#1a1a2e;color:#fff;padding:5px 6px;border:1px solid #ccc">Amps</th><th style="background:#1a1a2e;color:#fff;padding:5px 6px;border:1px solid #ccc">Phase</th><th style="background:#1a1a2e;color:#fff;padding:5px 6px;border:1px solid #ccc">Wire</th><th style="background:#1a1a2e;color:#fff;padding:5px 6px;border:1px solid #ccc">AFCI</th><th style="background:#1a1a2e;color:#fff;padding:5px 6px;border:1px solid #ccc">GFCI</th></tr></thead><tbody>${_pRows}</tbody></table></div>`;
+    const _pRows=(_panelSched.circuits||[]).map((c,i)=>`<tr><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${i+1}</td><td style="padding:4px 8px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.desc||'—')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.amps||''}A</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.phase==='2pole'?'2-pole':c.phase}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.gauge||'')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.afci?'✓':''}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.gfci?'✓':''}</td></tr>`).join('');
+    _propPanelHtml=`<div style="padding:16px 24px;border-top:2px solid #e2e8f0"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px">📋 Panel Schedule — ${_panelSched.panelAmps}A</div><p style="font-size:11px;color:#64748b;margin:0 0 8px">L1 leg: ${_pl1}A · L2 leg: ${_pl2}A${_pimb>0.10?' · <strong style="color:#dc2626">⚠️ Rebalance recommended</strong>':' · ✓ Balanced'}</p><table style="width:100%;border-collapse:collapse"><thead><tr><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">#</th><th style="background:#1a365d;color:#fff;padding:5px 8px;border:1px solid #cbd5e1;text-align:left;font-size:10px">Circuit</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Amps</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Phase</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Wire</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">AFCI</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">GFCI</th></tr></thead><tbody>${_pRows}</tbody></table></div>`;
   }
-  const proposalHtml=`<h2 style="margin-bottom:12px">${TRADE_META[trade]?.icon||''} ${v('gei-desc')||'Service Estimate'}</h2>${lineHtml}${taxPct?`<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;color:#666"><span>Tax/markup (${taxPct}%)</span><span>$${(total*(taxPct/(100+taxPct))).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>`:''}${v('gei-notes')?`<p style="margin-top:12px;font-size:13px;color:#444">${escHtml(v('gei-notes'))}</p>`:''}${_propPanelHtml}`;
+  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">${tradeIcon} Service Estimate</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#1a365d">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#1a365d">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:5px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid 30 days</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th><th style="padding:8px 6px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:40px">Qty</th><th style="padding:8px 18px 8px 4px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:90px">Amount</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${taxRow}<tr style="background:#1a365d;color:#fff"><td colspan="2" style="padding:12px 18px;font-weight:800;font-size:15px">TOTAL</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:15px">${totalFmt}</td></tr><tr style="background:#2a4a7f;color:rgba(255,255,255,.88)"><td colspan="2" style="padding:6px 18px;font-size:11px;font-weight:600">25% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr></tfoot></table>${notesHtml}${_propPanelHtml}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Payment Terms</div><div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> 25% due before work begins.</div><div>2. <strong>Balance:</strong> Remainder due upon completion.</div><div>3. <strong>Warranty:</strong> All workmanship warranted for 1 year.</div></div></div></div>`;
   const bidId=_geiEditBidId;
   const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
   const proposalKey=`proposals/${_supaUser.id}/${bidId}_${token}.json`;
@@ -19155,6 +19436,7 @@ function showDailyBriefing(){
 loadAll();applySettings();registerDevice();applyBrandLogo();
 setTimeout(showDailyBriefing,1200);
 setTimeout(checkStripeConnectReturn,800);
+setTimeout(()=>{if(!S.myBundles||!S.myBundles.length)showGeiOnboarding();},900);
 
 // Pull-to-refresh: pull down from top → re-sync from cloud
 (function(){
