@@ -841,7 +841,14 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         <div class="f"><label>Phone <span style="color:#A32D2D">*</span></label><input id="e-cphone" type="tel" maxlength="12" style="border:2px solid #A32D2D;background:var(--red-lt)" oninput="fmtPhone(this);markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
         <div class="f" style="grid-column:1/-1"><label>Property address <span style="color:#A32D2D">*</span></label><input id="e-caddr" placeholder="1234 Maple St, Wichita KS 67201" style="border:2px solid #A32D2D;background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
         <div style="grid-column:1/-1"><button type="button" class="btn btn-sm" style="width:100%;background:var(--bg2);border-color:var(--border2);color:var(--text2);font-size:12px" onclick="openLogTripModal({purpose:'Estimate',toAddress:document.getElementById('e-caddr').value,clientName:document.getElementById('e-cname').value})">🚗 Log drive to this estimate</button></div>
-        <div class="f"><label>Property type</label><select id="e-cprop"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>
+        <div class="f"><label>Property type</label><select id="e-cprop" onchange="_onEstPropTypeChange(this)"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>
+        <div id="_est-industrial-banner" style="display:none;grid-column:1/-1;padding:10px 12px;border-radius:var(--r);border:1.5px dashed #ea580c;background:#fff7ed">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:18px;flex-shrink:0">🏗️</span>
+            <div style="flex:1"><div style="font-size:12px;font-weight:700;color:#c2410c">Asphalt plant, tanks, or heavy machinery?</div><div style="font-size:11px;color:#9a3412">Switch to Equipment Coating for auto-calculated crew, schedule &amp; materials</div></div>
+            <button onclick="openIndustrialEquipEstimate(getClientById(currentClientId||estLinkedClientId))" style="padding:7px 12px;border-radius:var(--r);border:none;background:#c2410c;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">Switch →</button>
+          </div>
+        </div>
       </div>
       <div class="f"><label>Walkthrough notes</label><textarea id="e-cnotes" placeholder="What did you see? What does the client want?"></textarea></div>
     </div>
@@ -3292,16 +3299,30 @@ function _gateAddressThenEstimate(c){
   _checkMultiPropertyThenOpen(c);
 }
 function _checkMultiPropertyThenOpen(c){
-  // If client already has any in-progress bid (Pending+draft or any sent), ask if different property
+  // If client already has any in-progress bid (Pending+draft), offer to resume it
   const activeBids=bids.filter(b=>b.client_id===c.id&&!b.signingToken&&(
     (b.status==='Pending'&&b.draft===true)||
     (b.draft===true&&b.surfaces&&b.surfaces.length>0)
   ));
   if(activeBids.length>0){
-    const bidWord=activeBids.length===1?'estimate':'estimates';
-    zConfirm(c.name+' already has '+activeBids.length+' '+bidWord+' in progress. Is this for a different property?',
-      ()=>_askNewPropertyAddress(c),
-      {title:'Different property?',yes:'Yes — new property',no:'No — go back',danger:false});
+    const resumeTarget=activeBids[0];
+    const addrHint=resumeTarget.addr?' ('+resumeTarget.addr+')':'';
+    zConfirm(c.name+' has an estimate in progress'+addrHint+'. Resume it or start one for a different property?',
+      ()=>{
+        if(activeBids.length===1){openEditBid(resumeTarget.id);}
+        else{
+          // Multiple in-progress — show picker
+          const ov=document.createElement('div');ov.className='zmodal-overlay';
+          const box=document.createElement('div');box.className='zmodal';
+          box.innerHTML='<div style="font-size:16px;font-weight:800;margin-bottom:12px">Choose estimate to resume</div>'+
+            activeBids.map(b=>'<button onclick="this.closest(\'.zmodal-overlay\').remove();openEditBid('+b.id+')" style="width:100%;padding:11px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:8px;font-size:13px;color:var(--text)">'+escHtml(b.addr||b.name||'Estimate')+'<span style="font-size:11px;color:var(--text3);display:block;margin-top:2px">'+escHtml(b.bid_date||'')+'</span></button>').join('')+
+            '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Cancel</button>';
+          ov.appendChild(box);document.body.appendChild(ov);
+          ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+        }
+      },
+      {title:'Estimate in progress',yes:'Resume estimate',no:'Different property',danger:false,
+       onNo:()=>_askNewPropertyAddress(c)});
     return;
   }
   _doOpenEstimate(c);
@@ -12325,6 +12346,10 @@ function schedJobFromEstimate(){
   const wonBid=bidId?bids.find(b=>b.id===bidId):null;
   if(wonBid){schedFromBid(wonBid.id);}
   else{openClientDetail(estLinkedClientId,window._fromDash);}
+}
+function _onEstPropTypeChange(sel){
+  const banner=document.getElementById('_est-industrial-banner');
+  if(banner)banner.style.display=(sel.value==='Commercial')?'block':'none';
 }
 function clearEstimatorForm(){
   _pendingSignToken=null; // never let a stale token carry into the next estimate
