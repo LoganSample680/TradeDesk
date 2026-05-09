@@ -3332,12 +3332,23 @@ function _showTradePicker(title,cb){
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">'+
     lines.map(id=>{const m=TRADE_META[id]||{icon:'🔧',label:id};return'<button onclick="_pickTrade(\''+id+'\')" style="padding:14px 10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center"><div style="font-size:22px;margin-bottom:4px">'+m.icon+'</div><div style="font-size:13px;font-weight:700;color:var(--text)">'+m.label+'</div></button>';}).join('')+
     '</div>'+
+    (lines.includes('painting')?
+      '<button onclick="_pickTrade(\'_industrial\')" style="width:100%;padding:11px 14px;border-radius:var(--r);border:1.5px dashed #ea580c;background:#fff7ed;cursor:pointer;font-family:inherit;text-align:left;margin-bottom:10px;display:flex;align-items:center;gap:10px">'+
+        '<span style="font-size:20px;flex-shrink:0">🏗️</span>'+
+        '<div><div style="font-size:13px;font-weight:700;color:#c2410c">Industrial / Equipment Coating</div>'+
+        '<div style="font-size:11px;color:#9a3412;margin-top:1px">Asphalt plants, heavy machinery — crew & schedule auto-calculated</div></div>'+
+      '</button>':'')+
     '<button onclick="document.getElementById(\'_trade-pick-ov\')?.remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 function _pickTrade(id){
   document.getElementById('_trade-pick-ov')?.remove();
+  if(id==='_industrial'){
+    _tradePickCb=null;
+    openIndustrialEquipEstimate(getClientById(currentClientId));
+    return;
+  }
   if(_tradePickCb){_tradePickCb(id);_tradePickCb=null;}
 }
 function _doOpenEstimate(c,_overrideAddr,_forceTrade){
@@ -17789,6 +17800,217 @@ async function sendGenericProposal(){
   showToast('Proposal link ready','🔗');
   goPg('pg-clients');
 }
+
+// ─── Industrial Equipment Estimate ──────────────────────────────────────────
+const IND_EQUIP_TYPES={
+  drum_dryer_sm:{name:'Drum Dryer (small, <6ft dia)',  sqft:2000,prepRatio:.45,lift:false,note:''},
+  drum_dryer_lg:{name:'Drum Dryer (large, 6ft+ dia)', sqft:4000,prepRatio:.45,lift:true, note:'Man-lift needed'},
+  cold_feed_bin:{name:'Cold Feed Bin / Hopper',        sqft:800, prepRatio:.40,lift:false,note:''},
+  conveyor_sm:  {name:'Conveyor Belt (<50ft)',         sqft:500, prepRatio:.35,lift:false,note:''},
+  conveyor_lg:  {name:'Conveyor Belt (50ft+)',         sqft:1200,prepRatio:.40,lift:true, note:'Elevated sections'},
+  hot_mix_silo: {name:'Hot Mix Storage Silo',          sqft:3000,prepRatio:.50,lift:true, note:'Scaffolding needed'},
+  baghouse:     {name:'Baghouse / Dust Collector',     sqft:2500,prepRatio:.48,lift:true, note:''},
+  control_house:{name:'Control House / Operator Booth',sqft:600, prepRatio:.30,lift:false,note:''},
+  scalp_screen: {name:'Scalping Screen',               sqft:700, prepRatio:.40,lift:false,note:''},
+  fuel_tank:    {name:'Fuel / Storage Tank',           sqft:1500,prepRatio:.45,lift:false,note:'Confirm no flammables before hot work'},
+  excavator:    {name:'Excavator',                     sqft:800, prepRatio:.42,lift:false,note:''},
+  loader:       {name:'Loader / Bulldozer',            sqft:700, prepRatio:.42,lift:false,note:''},
+  crane_boom:   {name:'Crane / Boom Arm',              sqft:1200,prepRatio:.50,lift:true, note:'Man-lift or rigging needed'},
+  dump_body:    {name:'Dump Truck / Trailer Body',     sqft:900, prepRatio:.38,lift:false,note:''},
+  flatbed:      {name:'Flatbed Trailer',               sqft:600, prepRatio:.35,lift:false,note:''},
+  tank_sm:      {name:'Tank / Vessel (<500 gal)',      sqft:300, prepRatio:.45,lift:false,note:''},
+  tank_lg:      {name:'Tank / Vessel (500+ gal)',      sqft:1200,prepRatio:.48,lift:false,note:''},
+  struct_steel: {name:'Structural Steel (custom sqft)',sqft:0,   prepRatio:.50,lift:false,note:''},
+  misc:         {name:'Other / Custom (enter sqft)',   sqft:0,   prepRatio:.40,lift:false,note:''},
+};
+const IND_TIERS={
+  appearance:{
+    name:'Appearance',badge:'👁️',
+    desc:'Wire wheel loose rust · DTM rust primer · enamel topcoat',
+    products:'SW Iron Oxide Primer → SW DTM Alkyd Enamel',
+    prepRate:600,paintRate:1800,coats:2,matPerSqft:1.15,laborRate:650,
+  },
+  standard:{
+    name:'Standard',badge:'🛡️',
+    desc:'SP-3 hand tool clean · full prime coat · 2 topcoats',
+    products:'SW Kem Bond HS Primer → SW Urethane Alkyd Enamel (2 coats)',
+    prepRate:400,paintRate:1600,coats:3,matPerSqft:1.75,laborRate:700,
+  },
+  industrial:{
+    name:'Industrial Spec',badge:'⚙️',
+    desc:'Blast SP-6+ · epoxy primer · epoxy/urethane topcoat',
+    products:'SW Macropoxy 646 Epoxy → SW Hi-Build Epoxy Topcoat',
+    prepRate:200,paintRate:1400,coats:3,matPerSqft:2.75,laborRate:800,
+  },
+};
+let _indPieces=[],_indTier='appearance',_indClientId=null,_indBidId=null,_indClient=null;
+
+function openIndustrialEquipEstimate(c,bidId){
+  _indClient=c||null;_indClientId=c?.id||null;_indBidId=bidId||null;
+  _indPieces=[];_indTier='appearance';
+  if(bidId){const b=bids.find(x=>x.id===bidId);if(b){_indPieces=JSON.parse(JSON.stringify(b.indPieces||[]));_indTier=b.indTier||'appearance';}}
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='ind-equip-ov';
+  const box=document.createElement('div');
+  box.style.cssText='background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;padding-bottom:24px';
+  box.id='ind-equip-box';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  _renderIndModal();
+}
+function _renderIndModal(){
+  const box=document.getElementById('ind-equip-box');if(!box)return;
+  const c=_indClient;
+  const tierHtml=Object.keys(IND_TIERS).map(k=>{
+    const t=IND_TIERS[k];const sel=k===_indTier;
+    return '<button onclick="_setIndTier(\''+k+'\')" style="padding:10px 8px;border-radius:var(--r);border:2px solid '+(sel?'var(--blue)':'var(--border2)')+';background:'+(sel?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;text-align:left;width:100%">'+
+      '<div style="font-size:12px;font-weight:700;color:'+(sel?'var(--blue-dk)':'var(--text)')+'">'+(sel?'✓ ':'')+t.badge+' '+t.name+'</div>'+
+      '<div style="font-size:10px;color:var(--text3);margin-top:2px;line-height:1.4">'+t.desc+'</div></button>';
+  }).join('');
+  const typeOpts=Object.keys(IND_EQUIP_TYPES).map(k=>'<option value="'+k+'">'+IND_EQUIP_TYPES[k].name+'</option>').join('');
+  box.innerHTML=
+    '<div style="position:sticky;top:0;background:var(--bg);z-index:10;padding:16px 16px 12px;border-bottom:1px solid var(--border)">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between">'+
+        '<div><div style="font-size:17px;font-weight:800">🏗️ Industrial Equipment</div>'+
+          '<div style="font-size:12px;color:var(--text3);margin-top:2px">'+(c?escHtml(c.name):'No client')+'</div></div>'+
+        '<button onclick="document.getElementById(\'ind-equip-ov\').remove()" style="width:30px;height:30px;border-radius:50%;border:none;background:var(--bg2);color:var(--text2);font-size:18px;cursor:pointer;font-family:inherit">×</button>'+
+      '</div>'+
+    '</div>'+
+    '<div style="padding:14px 16px 0">'+
+      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:8px">Coating Tier</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:7px;margin-bottom:10px">'+tierHtml+'</div>'+
+      '<div style="font-size:10px;color:var(--text3);margin-bottom:14px;padding:7px 10px;background:var(--bg2);border-radius:var(--r)">'+
+        '<strong style="color:var(--text2)">Products:</strong> '+IND_TIERS[_indTier].products+'</div>'+
+      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:8px">Add Equipment Pieces</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 60px auto;gap:8px;align-items:center;margin-bottom:6px">'+
+        '<select id="ind-type-sel" onchange="_indTypeChange()" style="padding:9px 8px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:12px;font-family:inherit">'+typeOpts+'</select>'+
+        '<input id="ind-qty" type="number" value="1" min="1" max="99" style="padding:9px 6px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit;text-align:center">'+
+        '<button onclick="_addIndPiece()" style="padding:9px 12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">+ Add</button>'+
+      '</div>'+
+      '<div id="ind-custom-sqft-row" style="display:none;margin-bottom:8px">'+
+        '<input id="ind-custom-sqft" type="number" placeholder="Enter square footage for this piece" min="1" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit">'+
+      '</div>'+
+      '<div id="ind-pieces-list" style="margin-bottom:14px"></div>'+
+      '<div id="ind-result-card"></div>'+
+      '<div style="margin-top:14px">'+
+        '<div style="font-size:10px;font-weight:700;color:var(--text3);margin-bottom:5px;text-transform:uppercase;letter-spacing:.06em">Notes / Access concerns</div>'+
+        '<textarea id="ind-notes" rows="2" placeholder="e.g. Equipment in use until Friday, man-lift already on site" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit;resize:vertical"></textarea>'+
+      '</div>'+
+      '<button onclick="_saveIndBid()" style="width:100%;margin-top:12px;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">💾 Save as Draft Bid</button>'+
+    '</div>';
+  _renderIndPieces();_renderIndResult();
+}
+function _indTypeChange(){
+  const sel=document.getElementById('ind-type-sel');if(!sel)return;
+  const typ=IND_EQUIP_TYPES[sel.value];
+  const row=document.getElementById('ind-custom-sqft-row');
+  if(row)row.style.display=(typ&&typ.sqft===0)?'':'none';
+}
+function _setIndTier(k){_indTier=k;_renderIndModal();}
+function _addIndPiece(){
+  const sel=document.getElementById('ind-type-sel');if(!sel)return;
+  const typeKey=sel.value;const typ=IND_EQUIP_TYPES[typeKey];if(!typ)return;
+  const qty=Math.max(1,parseInt(document.getElementById('ind-qty')?.value)||1);
+  let sqft=typ.sqft;
+  if(sqft===0){
+    sqft=parseInt(document.getElementById('ind-custom-sqft')?.value)||0;
+    if(!sqft){showToast('Enter square footage for this piece','⚠️');return;}
+  }
+  _indPieces.push({typeKey,qty,sqft,name:typ.name,lift:typ.lift,note:typ.note});
+  _renderIndPieces();_renderIndResult();
+}
+function _removeIndPiece(i){_indPieces.splice(i,1);_renderIndPieces();_renderIndResult();}
+function _renderIndPieces(){
+  const el=document.getElementById('ind-pieces-list');if(!el)return;
+  if(!_indPieces.length){el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 0;text-align:center;border:1.5px dashed var(--border2);border-radius:var(--r)">No equipment added yet — select a type above</div>';return;}
+  el.innerHTML='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">Equipment list</div>'+
+    _indPieces.map((p,i)=>{
+      const totalSqft=p.qty*p.sqft;
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:var(--bg2);border-radius:var(--r);margin-bottom:5px;border:1px solid var(--border)">'+
+        '<div style="min-width:0;flex:1">'+
+          '<div style="font-size:12px;font-weight:700;color:var(--text)">'+(p.qty>1?p.qty+'× ':'')+p.name+'</div>'+
+          '<div style="font-size:10px;color:var(--text3);margin-top:1px">'+
+            (totalSqft?'~'+totalSqft.toLocaleString()+' sq ft':'custom sq ft')+
+            (p.lift?' · <span style="color:#c2410c;font-weight:600">⚠️ Lift needed</span>':'')+
+            (p.note?' · '+escHtml(p.note):'')+
+          '</div>'+
+        '</div>'+
+        '<button onclick="_removeIndPiece('+i+')" style="flex-shrink:0;margin-left:10px;background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer;font-family:inherit;padding:0 4px">×</button>'+
+      '</div>';
+    }).join('');
+}
+function _calcInd(){
+  const tier=IND_TIERS[_indTier];
+  const totalSqft=_indPieces.reduce((s,p)=>s+p.qty*p.sqft,0);
+  if(!totalSqft)return null;
+  const prepSqft=_indPieces.reduce((s,p)=>s+p.qty*p.sqft*(IND_EQUIP_TYPES[p.typeKey]?.prepRatio||0.4),0);
+  const prepManDays=prepSqft/tier.prepRate;
+  const paintManDays=(totalSqft*tier.coats)/tier.paintRate;
+  const totalManDays=prepManDays+paintManDays;
+  let crew=1;
+  if(totalManDays>3)crew=2;
+  if(totalManDays>8)crew=3;
+  if(totalManDays>18)crew=4;
+  const calDays=Math.ceil(totalManDays/crew);
+  const matCost=Math.round(totalSqft*tier.matPerSqft);
+  const laborCost=Math.round(totalManDays*tier.laborRate);
+  const totalMid=matCost+laborCost;
+  const liftNeeded=_indPieces.some(p=>p.lift);
+  const flags=[..._indPieces.reduce((s,p)=>{if(p.note)s.add(p.note);return s;},new Set())];
+  return{totalSqft,prepManDays,paintManDays,totalManDays,crew,calDays,matCost,laborCost,
+    totalLow:Math.round(totalMid*0.90),totalHigh:Math.round(totalMid*1.15),liftNeeded,flags};
+}
+function _renderIndResult(){
+  const el=document.getElementById('ind-result-card');if(!el)return;
+  const r=_calcInd();
+  if(!r){
+    el.innerHTML='<div style="padding:14px;background:var(--bg2);border-radius:var(--r);text-align:center;font-size:12px;color:var(--text3)">Add equipment above to see the estimate</div>';
+    return;
+  }
+  const crewLabel=r.crew===1?'Solo — you handle it':r.crew===2?'You + 1 helper needed':r.crew===3?'3-person crew needed':'Full 4-person crew';
+  const crewColor=r.crew===1?'#16a34a':r.crew===2?'#2563eb':r.crew>=3?'#d97706':'#1a1a1a';
+  const liftLine=r.liftNeeded?'<div style="margin-top:6px;padding:7px 10px;background:#fff7ed;border-radius:var(--r);font-size:11px;color:#c2410c;font-weight:600">⚠️ Man-lift rental likely needed (~$350/day) — add as line item if not on site</div>':'';
+  const scaffLine=r.flags.some(f=>f&&f.includes('Scaffolding'))?'<div style="margin-top:6px;padding:7px 10px;background:#fef9c3;border-radius:var(--r);font-size:11px;color:#854d0e;font-weight:600">🏗️ Scaffolding may be needed on one or more pieces — verify on-site</div>':'';
+  el.innerHTML=
+    '<div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);border-radius:var(--r);padding:16px;color:#fff">'+
+      '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;opacity:.7;margin-bottom:10px">Estimate Summary</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'+
+        '<div><div style="font-size:10px;opacity:.65">Surface area</div><div style="font-size:20px;font-weight:800">'+r.totalSqft.toLocaleString()+'<span style="font-size:11px;font-weight:400;opacity:.8"> sq ft</span></div></div>'+
+        '<div><div style="font-size:10px;opacity:.65">Duration</div><div style="font-size:20px;font-weight:800">'+r.calDays+'–'+(r.calDays+1)+'<span style="font-size:11px;font-weight:400;opacity:.8"> days</span></div></div>'+
+        '<div><div style="font-size:10px;opacity:.65">Materials</div><div style="font-size:15px;font-weight:700">'+fmt(r.matCost)+'</div></div>'+
+        '<div><div style="font-size:10px;opacity:.65">Labor</div><div style="font-size:15px;font-weight:700">'+fmt(r.laborCost)+'</div></div>'+
+      '</div>'+
+      '<div style="border-top:1px solid rgba(255,255,255,.2);padding-top:10px;margin-bottom:10px">'+
+        '<div style="font-size:10px;opacity:.65;margin-bottom:3px">Crew</div>'+
+        '<div style="font-size:14px;font-weight:800">'+crewLabel+'</div>'+
+      '</div>'+
+      '<div style="border-top:1px solid rgba(255,255,255,.2);padding-top:12px">'+
+        '<div style="font-size:10px;opacity:.65;margin-bottom:4px">Bid range</div>'+
+        '<div style="font-size:24px;font-weight:800">'+fmt(r.totalLow)+' – '+fmt(r.totalHigh)+'</div>'+
+        '<div style="font-size:10px;opacity:.55;margin-top:2px">25% deposit = '+fmt(Math.round((r.totalLow+r.totalHigh)/2*0.25))+'</div>'+
+      '</div>'+
+    '</div>'+
+    liftLine+scaffLine;
+}
+function _saveIndBid(){
+  if(!_indPieces.length){showToast('Add at least one piece of equipment','⚠️');return;}
+  const r=_calcInd();if(!r)return;
+  const c=getClientById(_indClientId);
+  const notes=(document.getElementById('ind-notes')?.value||'').trim();
+  const midPrice=Math.round((r.totalLow+r.totalHigh)/2);
+  const bidData={
+    id:_indBidId||_newBidId(),client_id:_indClientId,client_name:c?.name||'',
+    bid_date:todayKey(),amount:midPrice,deposit:Math.round(midPrice*0.25),
+    type:'Industrial Equipment Coating',trade_type:'painting',status:'Pending',draft:true,
+    notes,indPieces:_indPieces,indTier:_indTier,indResult:r,
+  };
+  if(_indBidId){const idx=bids.findIndex(x=>x.id===_indBidId);if(idx>=0)bids[idx]={...bids[idx],...bidData};}
+  else{bids.unshift(bidData);_indBidId=bidData.id;}
+  saveAll();
+  document.getElementById('ind-equip-ov')?.remove();
+  showToast('Industrial bid saved','💾');
+  if(document.getElementById('cdt-bids-content')?.style.display!=='none')setTimeout(()=>renderCDBids(),100);
+}
+// ─── End Industrial Equipment Estimate ──────────────────────────────────────
 
 function toggleAccSection(id){
   const sec=document.getElementById(id);
