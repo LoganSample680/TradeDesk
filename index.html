@@ -905,6 +905,13 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         </button>
       </div>
       <div id="prop-tier-hint" style="margin-top:8px;font-size:11px;color:var(--text3);text-align:center;min-height:14px"></div>
+      <div id="_tier-industrial-banner" style="display:none;margin-top:8px;padding:10px 12px;border-radius:var(--r);border:1.5px dashed #ea580c;background:#fff7ed">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:18px;flex-shrink:0">🏗️</span>
+          <div style="flex:1"><div style="font-size:12px;font-weight:700;color:#c2410c">Asphalt plant, tanks, or heavy machinery?</div><div style="font-size:11px;color:#9a3412">Switch to Equipment Coating for auto-calculated crew, schedule &amp; materials</div></div>
+          <button onclick="openIndustrialEquipEstimate(getClientById(currentClientId||estLinkedClientId))" style="padding:7px 12px;border-radius:var(--r);border:none;background:#c2410c;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">Switch →</button>
+        </div>
+      </div>
       <!-- Advanced rates — collapsed -->
       <details style="margin-top:10px">
         <summary style="font-size:11px;color:var(--text3);cursor:pointer;padding:4px 0;list-style:none;display:flex;align-items:center;gap:6px">
@@ -12409,21 +12416,28 @@ function saveAndExitEstimate(){
     }
   }
   const _saveTargetId=lastCreatedBidId||editingBidId;
-  if(_saveTargetId){
-    const b=bids.find(x=>x.id===_saveTargetId);
-    if(b){
-      b.amount=final;
-      b.status=b.status==='Closed Won'?'Closed Won':'Pending';
-      b.draft=true;b.lastStep=estStep;
-      if(!b.followup)b.followup=addDays(todayKey(),3);
-      if(clientId&&!b.client_id)b.client_id=clientId;
-      b.surfaces=[...estSurfaces];
-      b.roomScopeMap=JSON.parse(JSON.stringify(roomScopeMap));
-      b.paint=document.getElementById('e-paint')?.value||'';
-      b.days=days;
-      b.name=cname;b.phone=cphone;b.addr=caddr;
-      b.notes=document.getElementById('e-cnotes')?.value||b.notes||'';
-    }
+  // Defensive: if both IDs are null, check for an existing Pending+draft for this client
+  // to prevent creating duplicate estimates on each save/resume cycle
+  const _existingPendingDraft=(!_saveTargetId&&clientId)
+    ?bids.find(b=>b.client_id===clientId&&b.draft===true&&b.status==='Pending'&&!b.signingToken)
+    :null;
+  const _resolvedTarget=_saveTargetId
+    ?bids.find(x=>x.id===_saveTargetId)
+    :_existingPendingDraft||null;
+  if(_resolvedTarget){
+    const b=_resolvedTarget;
+    b.amount=final;
+    b.status=b.status==='Closed Won'?'Closed Won':'Pending';
+    b.draft=true;b.lastStep=estStep;
+    if(!b.followup)b.followup=addDays(todayKey(),3);
+    if(clientId&&!b.client_id)b.client_id=clientId;
+    b.surfaces=[...estSurfaces];
+    b.roomScopeMap=JSON.parse(JSON.stringify(roomScopeMap));
+    b.paint=document.getElementById('e-paint')?.value||'';
+    b.days=days;
+    b.name=cname;b.phone=cphone;b.addr=caddr;
+    b.notes=document.getElementById('e-cnotes')?.value||b.notes||'';
+    lastCreatedBidId=b.id; // ensure clearEstimatorForm knows this bid exists and is Pending
   } else {
     const c=clientId?getClientById(clientId):null;
     const followup=addDays(todayKey(),3);
@@ -12516,6 +12530,8 @@ function selectPropertyTier(key){
   });
   const hint=document.getElementById('prop-tier-hint');
   if(hint)hint.textContent=tier.hint;
+  const indBanner=document.getElementById('_tier-industrial-banner');
+  if(indBanner)indBanner.style.display=(key==='commercial')?'block':'none';
   // Enable Next button
   const nxt=document.getElementById('est-s2-next-btn');
   if(nxt){nxt.style.background='';nxt.style.color='';nxt.style.borderColor='';nxt.disabled=false;}
