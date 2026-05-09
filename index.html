@@ -20330,6 +20330,24 @@ function showDailyBriefing(){
   setTimeout(checkFridaySummary,2000);
 }
 
+// ── Auto-update: reload when a new deploy is detected ────────────────────────
+let _deployEtag=null;
+async function _checkForDeploy(){
+  try{
+    const r=await fetch(location.pathname+'?_='+Date.now(),{method:'HEAD',cache:'no-store'});
+    const tag=r.headers.get('etag')||r.headers.get('last-modified')||'';
+    if(!tag)return;
+    if(_deployEtag===null){_deployEtag=tag;return;}
+    if(tag!==_deployEtag){
+      showToast('Updating to the latest version…','🔄');
+      setTimeout(()=>location.reload(),1200);
+    }
+  }catch(e){}
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)_checkForDeploy();});
+setInterval(_checkForDeploy,10*60*1000);
+setTimeout(_checkForDeploy,3000); // capture baseline ETag shortly after load
+
 loadAll();applySettings();registerDevice();applyBrandLogo();
 setTimeout(showDailyBriefing,1200);
 setTimeout(checkStripeConnectReturn,800);
