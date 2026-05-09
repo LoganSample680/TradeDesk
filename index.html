@@ -14969,6 +14969,35 @@ function _addrSugSelect(suggId,streetId,cityId,stateId,zipId,street,city,state,z
   // For existing clients, fire lookup immediately on address selection
   if(editClientId&&street&&city)_lookupPropertyData(editClientId,{street,city,state,zip});
 }
+function _getRecentFromAddresses(limit=10){
+  const seen=new Set();const out=[];
+  for(let i=0;i<mileage.length&&out.length<limit;i++){
+    const addr=(mileage[i].from||'').trim();
+    if(addr&&!seen.has(addr.toLowerCase())){seen.add(addr.toLowerCase());out.push({addr,client_name:mileage[i].client_name||''});}
+  }
+  return out;
+}
+function _showRecentFromAddresses(){
+  const sugg=document.getElementById('lm-from-sugg');if(!sugg)return;
+  const recents=_getRecentFromAddresses();
+  if(!recents.length){sugg.style.display='none';sugg.innerHTML='';return;}
+  sugg.innerHTML='<div style="padding:4px 10px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Recent</div>'+
+    recents.map(r=>'<div onclick="_selectRecentFrom(\''+r.addr.replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\''+')" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)" onmouseenter="this.style.background=\'var(--bg2)\'" onmouseleave="this.style.background=\'\'">'+
+      '<span style="font-size:16px;color:var(--text3)">🕐</span>'+
+      '<div><div style="font-size:13px;color:var(--text)">'+escHtml(r.addr)+'</div>'+(r.client_name?'<div style="font-size:11px;color:var(--text3)">'+escHtml(r.client_name)+'</div>':'')+
+      '</div></div>').join('');
+  sugg.style.display='block';
+}
+function _selectRecentFrom(addr){
+  const inp=document.getElementById('lm-from');if(!inp)return;
+  inp.value=addr;_lmCoords.from=null;
+  const sugg=document.getElementById('lm-from-sugg');if(sugg){sugg.innerHTML='';sugg.style.display='none';}
+  const chip=document.getElementById('lm-from-chip');const chipTxt=document.getElementById('lm-from-chip-txt');
+  if(chip&&chipTxt){chipTxt.textContent=addr;chip.style.display='inline-flex';}
+  if(addr)_photonGeocode(addr).then(c=>{if(c)_lmCoords.from=c;}).catch(()=>{});
+  const toVal=(document.getElementById('lm-to')?.value||'').trim();
+  if(addr&&toVal)_previewRoute(addr,toVal);
+}
 function _getRecentDestinations(limit=10){
   const seen=new Set();const out=[];
   for(let i=0;i<mileage.length&&out.length<limit;i++){
@@ -15048,7 +15077,7 @@ function tripPlaceSearch(fieldId,suggId,val){
   const chipId=fieldId==='lm-from'?'lm-from-chip':'lm-to-chip';
   const chip=document.getElementById(chipId);if(chip)chip.style.display='none';
   const ckey=fieldId==='lm-from'?'from':'to';_lmCoords[ckey]=null;
-  if(val.length<2){box.style.display='none';return;}
+  if(val.length<2){if(fieldId==='lm-from')_showRecentFromAddresses();else box.style.display='none';return;}
   _tripSearchTimers[fieldId]=setTimeout(async()=>{
     try{
       const whichKey=fieldId==='lm-from'?'from':'to';
@@ -15143,7 +15172,7 @@ function openLogTripModal(opts){
     '<input type="hidden" id="lm-client" value="">'+
     '<div class="f" style="margin-bottom:12px"><label>Starting from</label>'+
       '<div style="display:flex;gap:8px">'+
-        '<input id="lm-from" placeholder="Your address or last job" style="flex:1" value="'+(opts.fromAddress||'')+'" oninput="tripPlaceSearch(\'lm-from\',\'lm-from-sugg\',this.value)" autocomplete="off">'+
+        '<input id="lm-from" placeholder="Your address or last job" style="flex:1" value="'+(opts.fromAddress||'')+'" onfocus="_showRecentFromAddresses()" oninput="tripPlaceSearch(\'lm-from\',\'lm-from-sugg\',this.value)" autocomplete="off">'+
         '<button type="button" onclick="grabMyLocation(true)" class="btn btn-sm" id="lm-gps-btn" style="white-space:nowrap;flex-shrink:0;min-height:44px">📍 GPS</button>'+
       '</div>'+
       '<div id="lm-from-sugg" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);margin-top:2px;overflow:hidden;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>'+
