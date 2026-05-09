@@ -14841,6 +14841,15 @@ function _photonGeocode(addr){
       return{lat,lng:lon};
     });
 }
+async function _resolveCoords(addrText){
+  // Use MapKit JS geocoder first (same database as mapkit.Directions) for consistent mileage
+  try{
+    const r=await _geocodeAddress(addrText,1);
+    if(r.length)return{lat:r[0].lat,lng:r[0].lon};
+  }catch(e){}
+  // Fallback to Photon if MapKit not ready or returned nothing
+  return _photonGeocode(addrText);
+}
 function _haversineMiles(c1,c2){
   const R=3958.8,toR=Math.PI/180;
   const dLat=(c2.lat-c1.lat)*toR,dLon=(c2.lng-c1.lng)*toR;
@@ -15338,8 +15347,8 @@ async function calculateAndShowRoute(){
   try{
     let fromCoords=_lmCoords.from;
     let toCoords=_lmCoords.to;
-    if(!fromCoords)fromCoords=await _photonGeocode(fromVal);
-    if(!toCoords)toCoords=await _photonGeocode(toVal);
+    if(!fromCoords)fromCoords=await _resolveCoords(fromVal);
+    if(!toCoords)toCoords=await _resolveCoords(toVal);
     const{miles,mins}=await _valhallaRoute(fromCoords,toCoords);
     document.getElementById('lm-miles-val').value=miles;
     document.getElementById('lm-miles-display').textContent=miles.toFixed(1)+' miles';
@@ -15397,8 +15406,8 @@ function saveLoggedTrip(){
   // Background: geocode if needed, get real route, update record
   (async()=>{
     try{
-      const fc=_lmCoords.from||(from?await _photonGeocode(from):null);
-      const tc=_lmCoords.to||(to?await _photonGeocode(to):null);
+      const fc=_lmCoords.from||(from?await _resolveCoords(from):null);
+      const tc=_lmCoords.to||(to?await _resolveCoords(to):null);
       if(!fc||!tc)return;
       const{miles}=await _valhallaRoute(fc,tc);
       const saved=mileage.find(m=>m.id===rec.id);
