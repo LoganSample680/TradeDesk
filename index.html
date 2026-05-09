@@ -2445,7 +2445,7 @@ function _buildStateBrackets(data,status){
   return[[Math.round(top*mult),low],[Infinity,high]];
 }
 
-function saveAll(){if(_devSupportMode){supaSaveDebounced();return;}if(_isEmployee){supaSaveDebounced();return;}try{const lp=(k,d)=>localStorage.setItem(k,JSON.stringify(d));lp('zp3_clients',clients);lp('zp3_bids',bids);lp('zp3_jobs',jobs);lp('zp3_inc',income);lp('zp3_exp',expenses);lp('zp3_mil',mileage);lp('zp3_chk',checksState);lp('zp3_S',S);lp('zp3_pay',payments);lp('zp3_lien',liens);lp('zp3_ev',events.slice(-600));lp('zp3_te',timeEntries.slice(-500));lp('zp3_photos',photos.slice(-300));lp('zp3_lic',licenses);}catch(e){}supaSaveDebounced();}
+function saveAll(){if(_devSupportMode){return;}if(_isEmployee){supaSaveDebounced();return;}try{const lp=(k,d)=>localStorage.setItem(k,JSON.stringify(d));lp('zp3_clients',clients);lp('zp3_bids',bids);lp('zp3_jobs',jobs);lp('zp3_inc',income);lp('zp3_exp',expenses);lp('zp3_mil',mileage);lp('zp3_chk',checksState);lp('zp3_S',S);lp('zp3_pay',payments);lp('zp3_lien',liens);lp('zp3_ev',events.slice(-600));lp('zp3_te',timeEntries.slice(-500));lp('zp3_photos',photos.slice(-300));lp('zp3_lic',licenses);}catch(e){}supaSaveDebounced();}
 function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s?JSON.parse(s):d;};clients=lp('zp3_clients',[]);bids=lp('zp3_bids',[]);jobs=lp('zp3_jobs',[]);income=lp('zp3_inc',[]);expenses=lp('zp3_exp',[]);mileage=lp('zp3_mil',[]);checksState=lp('zp3_chk',{});payments=lp('zp3_pay',[]);liens=lp('zp3_lien',[]);events=lp('zp3_ev',[]);timeEntries=lp('zp3_te',[]);photos=lp('zp3_photos',[]);licenses=lp('zp3_lic',[]);const ss=lp('zp3_S',null);if(ss)S={...S,...ss};
   // One-time migration: correct stale 2024 tax values in localStorage
   if(S.fedMFS===14600)S.fedMFS=15000;
@@ -18147,6 +18147,7 @@ async function _devLoadUserAccount(key){
   income=p(zd.income,[]);expenses=p(zd.expenses,[]);
   mileage=p(zd.mileage,[]);timeEntries=p(zd.time_entries,[]);
   _devSupportMode=true;_devSupportName=u.name;
+  document.body.style.overscrollBehavior='none'; // prevent pull-to-refresh while viewing support account
   window._devUnloadGuard=e=>{e.preventDefault();e.returnValue='';};
   window.addEventListener('beforeunload',window._devUnloadGuard);
   _renderDevTradeCard();renderDash();
@@ -18156,6 +18157,7 @@ async function _devLoadUserAccount(key){
 function _devExitSupportMode(){
   if(!_devSavedState)return;
   window.removeEventListener('beforeunload',window._devUnloadGuard);
+  document.body.style.overscrollBehavior=''; // restore pull-to-refresh
   ({clients,bids,jobs,payments,liens,income,expenses,mileage,timeEntries}=_devSavedState);
   _devSupportMode=false;_devSupportName='';_devSavedState=null;
   saveAll(); // flush dev's own data back to localStorage (support view may have written Zach's data there)
@@ -19191,6 +19193,7 @@ function supaSaveDebounced(){
 
 async function supaSaveToCloud(){
   if(!_supa||!_supaUser)return;
+  if(_devSupportMode)return; // never write to support user's data — read-only view
   try{
     const receiptImages={};
     const expensesForSync=expenses.map(e=>{
