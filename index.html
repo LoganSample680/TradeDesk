@@ -14795,6 +14795,7 @@ async function getCurrentLocAddress(){
     if(!navigator.geolocation){reject(new Error('GPS not available'));return;}
     navigator.geolocation.getCurrentPosition(async pos=>{
       const{latitude:lat,longitude:lon}=pos.coords;
+      _tripGpsCoords={lat,lng:lon}; // cache for search bias
       // MapKit reverse geocode (fast, Apple data)
       if(_mapkitReady){
         const gc=new mapkit.Geocoder({language:'en-US'});
@@ -14910,6 +14911,7 @@ function openDriveModal(opts){
 let _lmCoords={from:null,to:null};
 let _tripSearchTimers={};
 let _tripDestTimer=null;
+let _tripGpsCoords=null; // cached GPS fix for search bias
 
 // ── Shared geocoding — Mapbox (with key) or Photon+Census parallel ───────────
 const _MAPKIT_TOKEN='eyJhbGciOiJFUzI1NiIsImtpZCI6IjU1TjkyUTVQWkQiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzc4MDc2NTgxLCJleHAiOjE4NDExNDg1ODF9.PgQ2btzlf0EH-QJg_fX8dcsw2eR1yyx-o0K7Kckvn3D_bzdEI2hUMuz3iH2c9t2DtUY2fTtP08r7aEQCsYvQ3w';
@@ -14919,15 +14921,16 @@ function _initMapKit(){
   mapkit.init({authorizationCallback:done=>done(_MAPKIT_TOKEN),language:'en-US'});
   _mapkitReady=true;
 }
-async function _geocodeAddress(val,limit){
+async function _geocodeAddress(val,limit,biasLat,biasLon){
   limit=limit||5;
   // MapKit JS — Apple Maps database, every US address (primary)
   if(_mapkitReady){
     return new Promise(resolve=>{
-      const _mkLat=S.weatherLat||39.5,_mkLon=S.weatherLon||-98.35;
+      const _mkLat=biasLat||S.weatherLat||39.5,_mkLon=biasLon||S.weatherLon||-98.35;
+      const _hasLoc=!!(biasLat||S.weatherLat);
       const search=new mapkit.Search({
         language:'en-US',
-        region:new mapkit.CoordinateRegion(new mapkit.Coordinate(_mkLat,_mkLon),new mapkit.CoordinateSpan(S.weatherLat?4:25,S.weatherLat?6:60))
+        region:new mapkit.CoordinateRegion(new mapkit.Coordinate(_mkLat,_mkLon),new mapkit.CoordinateSpan(_hasLoc?3:25,_hasLoc?5:60))
       });
       search.search(val,(err,data)=>{
         if(err||!data||!data.places){resolve([]);return;}
@@ -14947,7 +14950,8 @@ async function _geocodeAddress(val,limit){
     });
   }
   if(S.mapboxKey){
-    const r=await fetch('https://api.mapbox.com/geocoding/v5/mapbox.places/'+encodeURIComponent(val)+'.json?access_token='+S.mapboxKey+'&country=US&types=address&limit='+limit+'&proximity=ip');
+    const _mbProx=(biasLat&&biasLon)?biasLon+','+biasLat:'ip';
+    const r=await fetch('https://api.mapbox.com/geocoding/v5/mapbox.places/'+encodeURIComponent(val)+'.json?access_token='+S.mapboxKey+'&country=US&types=address&limit='+limit+'&proximity='+_mbProx);
     const d=await r.json();
     return(d.features||[]).map(f=>{
       const ctx=f.context||[];
@@ -14962,7 +14966,8 @@ async function _geocodeAddress(val,limit){
     });
   }
   // No Mapbox key — Photon + Census in parallel
-  const bias=(S?.weatherLat&&S?.weatherLon)?'&lat='+S.weatherLat+'&lon='+S.weatherLon:'&lat=37.6922&lon=-97.3375';
+  const _bLat=biasLat||S?.weatherLat||37.6922,_bLon=biasLon||S?.weatherLon||-97.3375;
+  const bias='&lat='+_bLat+'&lon='+_bLon;
   const photonP=fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit='+(limit+1)+bias+'&lang=en').then(r=>r.json()).catch(()=>null);
   const censusP=fetch('https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address='+encodeURIComponent(val)+'&benchmark=Public_AR_Current&format=json').then(r=>r.json()).catch(()=>null);
   const pd=await photonP;
@@ -15091,7 +15096,8 @@ function _tripDestSearch(val){
       '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(c.addr||'')+'</div>'+
     '</div>').join('');
     try{
-      const results=await _geocodeAddress(val,5);
+      const _fromBias=_lmCoords.from||_tripGpsCoords||null;
+      const results=await _geocodeAddress(val,5,_fromBias?.lat||null,_fromBias?.lng||null);
       results.forEach(res=>{
         const safeL1=res.line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
         const safeL2=res.line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
@@ -15138,7 +15144,8 @@ function tripPlaceSearch(fieldId,suggId,val){
   _tripSearchTimers[fieldId]=setTimeout(async()=>{
     try{
       const whichKey=fieldId==='lm-from'?'from':'to';
-      const results=await _geocodeAddress(val,6);
+      const _searchBias=_tripGpsCoords||(whichKey==='to'?(_lmCoords.from||null):null);
+      const results=await _geocodeAddress(val,6,_searchBias?.lat||null,_searchBias?.lng||null);
       if(!results.length){box.style.display='none';return;}
       box.innerHTML=results.map(res=>{
         const safeL1=res.line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
