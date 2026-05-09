@@ -20332,8 +20332,20 @@ function showDailyBriefing(){
 
 // ── Auto-update: notify when a new deploy is detected ────────────────────────
 let _deployEtag=null;
+function _isFormActive(){
+  // Any modal open
+  if(document.querySelector('.zmodal-overlay'))return true;
+  if(document.querySelector('.lxh-modal.open'))return true;
+  // Estimate wizard pages
+  const activePg=document.querySelector('.pg.active')?.id||'';
+  if(activePg==='pg-est'||activePg==='pg-est-generic')return true;
+  // User is actively typing in any field
+  const ae=document.activeElement;
+  if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'))return true;
+  return false;
+}
 function _showUpdateBanner(){
-  if(document.getElementById('_update-banner'))return; // already showing
+  if(document.getElementById('_update-banner'))return;
   const b=document.createElement('div');
   b.id='_update-banner';
   b.style.cssText='position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:99999;background:#1d4ed8;color:#fff;border-radius:12px;padding:10px 18px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 16px rgba(0,0,0,.25);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap';
@@ -20347,7 +20359,13 @@ async function _checkForDeploy(){
     const tag=r.headers.get('etag')||r.headers.get('last-modified')||'';
     if(!tag)return;
     if(_deployEtag===null){_deployEtag=tag;return;}
-    if(tag!==_deployEtag)_showUpdateBanner();
+    if(tag===_deployEtag)return;
+    // New deploy detected — reload immediately if no form is active, else show banner
+    if(!_isFormActive()){
+      location.reload();
+    } else {
+      _showUpdateBanner();
+    }
   }catch(e){}
 }
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)_checkForDeploy();});
