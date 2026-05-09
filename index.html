@@ -20330,23 +20330,29 @@ function showDailyBriefing(){
   setTimeout(checkFridaySummary,2000);
 }
 
-// ── Auto-update: reload when a new deploy is detected ────────────────────────
+// ── Auto-update: notify when a new deploy is detected ────────────────────────
 let _deployEtag=null;
+function _showUpdateBanner(){
+  if(document.getElementById('_update-banner'))return; // already showing
+  const b=document.createElement('div');
+  b.id='_update-banner';
+  b.style.cssText='position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:99999;background:#1d4ed8;color:#fff;border-radius:12px;padding:10px 18px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 16px rgba(0,0,0,.25);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap';
+  b.innerHTML='🔄 New version available &nbsp;<span style="background:rgba(255,255,255,.2);border-radius:8px;padding:3px 10px;font-size:13px">Tap to update</span>';
+  b.onclick=()=>location.reload();
+  document.body.appendChild(b);
+}
 async function _checkForDeploy(){
   try{
     const r=await fetch(location.pathname+'?_='+Date.now(),{method:'HEAD',cache:'no-store'});
     const tag=r.headers.get('etag')||r.headers.get('last-modified')||'';
     if(!tag)return;
     if(_deployEtag===null){_deployEtag=tag;return;}
-    if(tag!==_deployEtag){
-      showToast('Updating to the latest version…','🔄');
-      setTimeout(()=>location.reload(),1200);
-    }
+    if(tag!==_deployEtag)_showUpdateBanner();
   }catch(e){}
 }
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)_checkForDeploy();});
 setInterval(_checkForDeploy,10*60*1000);
-setTimeout(_checkForDeploy,3000); // capture baseline ETag shortly after load
+setTimeout(_checkForDeploy,3000);
 
 loadAll();applySettings();registerDevice();applyBrandLogo();
 setTimeout(showDailyBriefing,1200);
