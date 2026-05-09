@@ -14933,6 +14933,7 @@ async function _geocodeAddress(val,limit){
         if(err||!data||!data.places){resolve([]);return;}
         const us=data.places.filter(p=>p.countryCode==='US');
         resolve(us.slice(0,limit).map(p=>({
+          name:p.name||'',
           line1:p.fullThoroughfare||[p.subThoroughfare,p.thoroughfare].filter(Boolean).join(' ')||p.name||'',
           line2:[p.locality,p.administrativeAreaCode,p.postCode].filter(Boolean).join(', '),
           street:p.fullThoroughfare||[p.subThoroughfare,p.thoroughfare].filter(Boolean).join(' ')||'',
@@ -14956,7 +14957,8 @@ async function _geocodeAddress(val,limit){
       const state=stateRaw.replace('US-','');
       const street=(f.address?f.address+' ':'')+f.text;
       const[lon,lat]=f.center;
-      return{line1:street,line2:[city,state,zip].filter(Boolean).join(', '),street,city,state,zip,lat,lon};
+      const name=f.place_type?.includes('poi')?f.text:'';
+      return{name,line1:street,line2:[city,state,zip].filter(Boolean).join(', '),street,city,state,zip,lat,lon};
     });
   }
   // No Mapbox key — Photon + Census in parallel
@@ -14973,13 +14975,13 @@ async function _geocodeAddress(val,limit){
       const state=_STATE_ABBR[p.state]||p.state||'';
       const zip=p.postcode||'';
       const[lon,lat]=f.geometry.coordinates;
-      return{line1:street,line2:[city,state,zip].filter(Boolean).join(', '),street,city,state,zip,lat,lon};
+      return{name:p.name||'',line1:street,line2:[city,state,zip].filter(Boolean).join(', '),street,city,state,zip,lat,lon};
     });
   }
   const cd=await censusP;
   return(cd?.result?.addressMatches||[]).slice(0,limit).map(m=>{
     const parts=(m.matchedAddress||'').split(', ');
-    return{line1:parts[0]||'',line2:[parts[1],parts[2],parts[3]].filter(Boolean).join(' '),
+    return{name:'',line1:parts[0]||'',line2:[parts[1],parts[2],parts[3]].filter(Boolean).join(' '),
       street:parts[0]||'',city:parts[1]||'',state:parts[2]||'',zip:parts[3]||'',
       lat:m.coordinates?.y||0,lon:m.coordinates?.x||0};
   });
@@ -15093,9 +15095,14 @@ function _tripDestSearch(val){
       results.forEach(res=>{
         const safeL1=res.line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
         const safeL2=res.line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        html+='<div onclick="selectTripPlace(\'lm-to\',\'lm-to-sugg\',\'to\',\''+safeL1+'\',\''+safeL2+'\','+res.lat+','+res.lon+')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
-          '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(res.line1)+'</div>'+
-          (res.line2?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(res.line2)+'</div>':'')+
+        const safeName=(res.name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const isPoi=res.name&&res.name.toLowerCase()!==res.line1.toLowerCase();
+        html+='<div onclick="selectTripPlace(\'lm-to\',\'lm-to-sugg\',\'to\',\''+safeL1+'\',\''+safeL2+'\','+res.lat+','+res.lon+',\''+safeName+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
+          (isPoi?
+            '<div style="font-size:13px;font-weight:700;color:var(--text)">📍 '+escHtml(res.name)+'</div>'+
+            '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(res.line1)+(res.line2?', '+escHtml(res.line2):'')+'</div>':
+            '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(res.line1)+'</div>'+
+            (res.line2?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(res.line2)+'</div>':''))+
         '</div>';
       });
     }catch(e){}
@@ -15136,27 +15143,33 @@ function tripPlaceSearch(fieldId,suggId,val){
       box.innerHTML=results.map(res=>{
         const safeL1=res.line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
         const safeL2=res.line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        return '<div onclick="selectTripPlace(\''+fieldId+'\',\''+suggId+'\',\''+whichKey+'\',\''+safeL1+'\',\''+safeL2+'\','+res.lat+','+res.lon+')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
-          '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(res.line1)+'</div>'+
-          (res.line2?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(res.line2)+'</div>':'')+
+        const safeName=(res.name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const isPoi=res.name&&res.name.toLowerCase()!==res.line1.toLowerCase();
+        return '<div onclick="selectTripPlace(\''+fieldId+'\',\''+suggId+'\',\''+whichKey+'\',\''+safeL1+'\',\''+safeL2+'\','+res.lat+','+res.lon+',\''+safeName+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
+          (isPoi?
+            '<div style="font-size:13px;font-weight:700;color:var(--text)">📍 '+escHtml(res.name)+'</div>'+
+            '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(res.line1)+(res.line2?', '+escHtml(res.line2):'')+'</div>':
+            '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(res.line1)+'</div>'+
+            (res.line2?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(res.line2)+'</div>':''))+
         '</div>';
       }).join('');
       box.style.display='block';
     }catch(e){if(box)box.style.display='none';}
   },200);
 }
-function selectTripPlace(fieldId,suggId,coordKey,line1,line2,lat,lng){
+function selectTripPlace(fieldId,suggId,coordKey,line1,line2,lat,lng,name){
   const full=line2?line1+', '+line2:line1;
   const inp=document.getElementById(fieldId);if(inp)inp.value=full;
   _lmCoords[coordKey]={lat,lng};
   const box=document.getElementById(suggId);if(box)box.style.display='none';
   const mv=document.getElementById('lm-miles-val');if(mv)mv.value='0';
   const rr=document.getElementById('lm-route-result');if(rr)rr.style.display='none';
-  // Show verified address chip
+  // Show verified address chip — prefer business name when available
   const chipId=fieldId==='lm-from'?'lm-from-chip':'lm-to-chip';
   const chip=document.getElementById(chipId);
   const chipTxt=document.getElementById(chipId+'-txt');
-  if(chip&&chipTxt){chipTxt.textContent=full;chip.style.display='inline-flex';}
+  const displayName=(name&&name.toLowerCase()!==line1.toLowerCase())?name:full;
+  if(chip&&chipTxt){chipTxt.textContent=displayName;chip.style.display='inline-flex';}
   if(coordKey==='to'&&(document.getElementById('lm-from')?.value||'').trim())setTimeout(calculateAndShowRoute,100);
 }
 function fillTripSuggestion(clientId,addr,purpose){
