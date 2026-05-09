@@ -14981,7 +14981,7 @@ function _addrSugSelect(suggId,streetId,cityId,stateId,zipId,street,city,state,z
 function _getRecentFromAddresses(limit=10){
   const seen=new Set();const out=[];
   for(let i=0;i<mileage.length&&out.length<limit;i++){
-    const addr=(mileage[i].from||'').trim();
+    const addr=(mileage[i].to||'').trim(); // last destination = most logical next starting point
     if(addr&&!seen.has(addr.toLowerCase())){seen.add(addr.toLowerCase());out.push({addr,client_name:mileage[i].client_name||''});}
   }
   return out;
