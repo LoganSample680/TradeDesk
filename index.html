@@ -14912,6 +14912,7 @@ let _lmCoords={from:null,to:null};
 let _tripSearchTimers={};
 let _tripDestTimer=null;
 let _tripGpsCoords=null; // cached GPS fix for search bias
+let _fromBiasCache={val:null,coords:null}; // MapKit-geocoded From coords for To-field bias
 
 // ── Shared geocoding — Mapbox (with key) or Photon+Census parallel ───────────
 const _MAPKIT_TOKEN='eyJhbGciOiJFUzI1NiIsImtpZCI6IjU1TjkyUTVQWkQiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzc4MDc2NTgxLCJleHAiOjE4NDExNDg1ODF9.PgQ2btzlf0EH-QJg_fX8dcsw2eR1yyx-o0K7Kckvn3D_bzdEI2hUMuz3iH2c9t2DtUY2fTtP08r7aEQCsYvQ3w';
@@ -15096,7 +15097,22 @@ function _tripDestSearch(val){
       '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(c.addr||'')+'</div>'+
     '</div>').join('');
     try{
-      const _fromBias=_lmCoords.from||_tripGpsCoords||null;
+      // Resolve From-field bias: prefer already-geocoded coords, then GPS cache,
+      // then geocode the From input text via MapKit so bias always tracks the actual starting location
+      let _fromBias=_lmCoords.from||_tripGpsCoords||null;
+      if(!_fromBias){
+        const fromVal=(document.getElementById('lm-from')?.value||'').trim();
+        if(fromVal){
+          if(_fromBiasCache.val===fromVal&&_fromBiasCache.coords){
+            _fromBias=_fromBiasCache.coords;
+          } else if(fromVal.length>4){
+            try{
+              const fr=await _geocodeAddress(fromVal,1);
+              if(fr.length){_fromBias={lat:fr[0].lat,lng:fr[0].lon};_fromBiasCache={val:fromVal,coords:_fromBias};}
+            }catch(e){}
+          }
+        }
+      }
       const results=await _geocodeAddress(val,5,_fromBias?.lat||null,_fromBias?.lng||null);
       results.forEach(res=>{
         const safeL1=res.line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
@@ -15139,6 +15155,7 @@ function tripPlaceSearch(fieldId,suggId,val){
   const box=document.getElementById(suggId);if(!box)return;
   const chipId=fieldId==='lm-from'?'lm-from-chip':'lm-to-chip';
   const chip=document.getElementById(chipId);if(chip)chip.style.display='none';
+  if(fieldId==='lm-from')_fromBiasCache={val:null,coords:null}; // clear stale bias when From changes
   const ckey=fieldId==='lm-from'?'from':'to';_lmCoords[ckey]=null;
   if(val.length<2){if(fieldId==='lm-from')_showRecentFromAddresses();else box.style.display='none';return;}
   _tripSearchTimers[fieldId]=setTimeout(async()=>{
