@@ -20060,6 +20060,7 @@ setTimeout(()=>{
     document.body.appendChild(_ptrBar);
   }
   document.addEventListener('touchstart',e=>{
+    if(_devSupportMode)return;
     if(window.scrollY===0&&e.touches.length===1){_ptrY=e.touches[0].clientY;_ptrCreate();}
   },{passive:true});
   document.addEventListener('touchmove',e=>{
