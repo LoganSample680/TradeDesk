@@ -18155,16 +18155,6 @@ async function _devLoadUserAccount(key){
   income=p(zd.income,[]);expenses=p(zd.expenses,[]);
   mileage=p(zd.mileage,[]);timeEntries=p(zd.time_entries,[]);
   _devSupportMode=true;_devSupportName=u.name;
-  document.body.style.overscrollBehavior='none';
-  document.documentElement.style.overscrollBehavior='none';
-  let _prStartY=0;
-  window._devPRStart=e=>{_prStartY=e.touches[0].clientY;};
-  window._devPRMove=e=>{
-    if((e.touches[0].clientY-_prStartY)>0&&(window.scrollY||document.documentElement.scrollTop||document.body.scrollTop)<=0)
-      e.preventDefault();
-  };
-  document.addEventListener('touchstart',window._devPRStart,{passive:true});
-  document.addEventListener('touchmove',window._devPRMove,{passive:false});
   window._devUnloadGuard=e=>{e.preventDefault();e.returnValue='';};
   window.addEventListener('beforeunload',window._devUnloadGuard);
   _renderDevTradeCard();renderDash();
@@ -18174,11 +18164,6 @@ async function _devLoadUserAccount(key){
 function _devExitSupportMode(){
   if(!_devSavedState)return;
   window.removeEventListener('beforeunload',window._devUnloadGuard);
-  document.removeEventListener('touchstart',window._devPRStart);
-  document.removeEventListener('touchmove',window._devPRMove);
-  window._devPRStart=null;window._devPRMove=null;
-  document.body.style.overscrollBehavior='';
-  document.documentElement.style.overscrollBehavior='';
   ({clients,bids,jobs,payments,liens,income,expenses,mileage,timeEntries}=_devSavedState);
   _devSupportMode=false;_devSupportName='';_devSavedState=null;
   saveAll(); // flush dev's own data back to localStorage (support view may have written Zach's data there)
@@ -20099,6 +20084,7 @@ setTimeout(()=>{
     _ptrY=0;
     if(_ptrBar){
       if(dy>80){
+        if(_devSupportMode){_ptrBar.style.height='0';setTimeout(()=>{_ptrBar&&_ptrBar.remove();_ptrBar=null;_ptrActive=false;},250);return;}
         const lbl=document.getElementById('_ptr_lbl');if(lbl)lbl.textContent='Refreshing…';
         setTimeout(()=>{
           _ptrBar&&(_ptrBar.style.height='0');
