@@ -14226,6 +14226,7 @@ function openExportPanel(){
         '</select>'+
       '</div>'+
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Choose format</div>'+
+      exportOptionHTML('exportAllDataCSV()','📦','Everything — one CSV','Every client, lead, bid, job, payment, income, expense, mileage, and time entry in one file. Clients, leads, bids, jobs, payments, income, expenses, mileage — all labeled sections.')+
       exportOptionHTML('exportPLCSV()','📈','Profit & Loss CSV','Income vs expenses vs mileage deduction — net profit at the bottom. Hand straight to your accountant.')+
       exportOptionHTML('exportIncomeCSV()','💰','Income CSV','Every revenue line — date, client, category, job, amount. Filtered to selected year.')+
       exportOptionHTML('exportExpensesCSV()','📊','Expenses CSV','Every expense line — date, vendor, IRS category, amount, job, receipt status. Open in Excel or send to your accountant.')+
@@ -14293,6 +14294,109 @@ function exportMileageCSV(){
   const csv=['"'+biz+' — Mileage — '+(yr==='all'?'All Years':yr)+'"','"IRS Rate $'+rate.toFixed(3)+'/mi"','',header.join(','),...rows,'','TOTAL,,,,"'+tot.toFixed(1)+'","'+(tot*rate).toFixed(2)+'",,'].join('\n');
   downloadFile((biz+' Mileage '+(yr==='all'?'All Years':yr)+'.csv').replace(/\s+/g,'_'),csv,'text/csv');
   showToast('Mileage log — '+filtered.length+' trips downloaded','🚗');
+}
+
+function exportAllDataCSV(){
+  const biz=S.bname||'TradeDesk';
+  const now=new Date().toLocaleDateString('en-US');
+  const q=s=>'"'+(s||'').toString().replace(/"/g,'""')+'"';
+  const sections=[];
+  const sec=(title,headers,rows)=>{
+    sections.push('"=== '+title+' ('+rows.length+' records) ==="');
+    sections.push(headers.map(q).join(','));
+    rows.forEach(r=>sections.push(r));
+    sections.push('');
+  };
+
+  // Clients
+  sec('CLIENTS',
+    ['Name','Phone','Email','Address','City','State','Zip','Source','Created'],
+    clients.sort((a,b)=>(a.name||'').localeCompare(b.name||'')).map(c=>[
+      q(c.name),q(c.phone),q(c.email),q(c.addr),q(c.city),q(c.state),q(c.zip),q(c.source),q(c.createdAt?.slice(0,10))
+    ].join(','))
+  );
+
+  // Leads (clients currently in a lead stage)
+  const LEAD_STAGES=['incomplete','new','est_scheduled','est_ready','bid_out','bid_urgent','abandoned'];
+  const leads=clients.filter(c=>LEAD_STAGES.includes(getClientStage(c.id).stage));
+  sec('LEADS',
+    ['Name','Phone','Email','Address','Stage','Source','Last Contact'],
+    leads.map(c=>{const st=getClientStage(c.id);return[q(c.name),q(c.phone),q(c.email),q(c.addr),q(st.stage),q(c.source),q(c.lastContact?.slice(0,10))].join(',');})
+  );
+
+  // Bids / Estimates
+  sec('BIDS & ESTIMATES',
+    ['Client','Trade','Amount','Status','Created','Signed Date','Deposit'],
+    bids.filter(b=>!b.draft||(b.amount||0)>0).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')).map(b=>[
+      q(clients.find(c=>c.id===b.client_id)?.name),q(b.trade_type||b.tradeType),
+      (b.amount||0).toFixed(2),q(b.status),q(b.createdAt?.slice(0,10)),
+      q(b.signedAt?.slice(0,10)),(b.deposit||0).toFixed(2)
+    ].join(','))
+  );
+
+  // Jobs
+  sec('JOBS',
+    ['Job Name','Client','Status','Value','Start Date','End Date','Address'],
+    jobs.sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')).map(j=>[
+      q(j.name),q(clients.find(c=>c.id===j.client_id)?.name),q(j.status),
+      (j.value||0).toFixed(2),q(j.start),q(j.end),q(j.addr)
+    ].join(','))
+  );
+
+  // Payments
+  sec('PAYMENTS',
+    ['Date','Client','Job','Amount','Method','Note'],
+    payments.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(p=>[
+      q(p.date),q(p.client_name||clients.find(c=>c.id===p.client_id)?.name),
+      q(p.job_name),( p.amount||0).toFixed(2),q(p.method),q(p.note)
+    ].join(','))
+  );
+
+  // Income
+  sec('INCOME',
+    ['Date','Source / Client','Category','Job','Amount','Notes'],
+    income.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(r=>[
+      q(r.date),q(r.client_name||r.source),q(r.cat||r.category||'Revenue'),
+      q(r.job_name),(r.amount||0).toFixed(2),q(r.note||r.notes)
+    ].join(','))
+  );
+
+  // Expenses
+  sec('EXPENSES',
+    ['Date','Vendor','IRS Category','Amount','Deductible','Job','Receipt'],
+    expenses.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(e=>{
+      const cat=IRS_EXPENSE_CATS.find(c=>c.id===e.cat)||{label:e.cat||'Other'};
+      return[q(e.date),q(e.vendor),q(cat.label),(e.amount||0).toFixed(2),
+        e.deductible===false?'No':'Yes',q(e.job_name),e.receipt_img||e.receipt_key?'Yes':'No'].join(',');
+    })
+  );
+
+  // Mileage
+  const rate=IRS();
+  sec('MILEAGE',
+    ['Date','Vehicle','From','To','Miles','IRS Deduction','Purpose','Client'],
+    mileage.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(m=>[
+      q(m.date),q(m.vehicle),q(m.from),q(m.to),
+      (m.miles||0).toFixed(1),((m.miles||0)*rate).toFixed(2),q(m.purpose),q(m.client_name)
+    ].join(','))
+  );
+
+  // Time Entries
+  if(timeEntries.length){
+    sec('TIME ENTRIES',
+      ['Date','Job','Start','End','Minutes','Scope'],
+      timeEntries.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(e=>[
+        q(e.date),q(jobs.find(j=>j.id===e.job_id)?.name||e.job_id),
+        q(e.start_time?.slice(11,16)),q(e.end_time?.slice(11,16)),
+        (e.minutes||0).toString(),q(e.scope_label)
+      ].join(','))
+    );
+  }
+
+  const header=['"'+biz+' — Full Data Export — '+now+'"',''];
+  const csv=[...header,...sections].join('\n');
+  downloadFile((biz+' Full Export '+now+'.csv').replace(/[/,\s]+/g,'_'),csv,'text/csv');
+  showToast('Full export — all data downloaded','📦');
 }
 
 function exportIncomeCSV(){
@@ -19357,7 +19461,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.11';
+const APP_VERSION='05.10.26.12';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){const o=document.getElementById('supa-boot-overlay');if(!o)return;o.classList.add('td-fadeout');setTimeout(()=>o.remove(),320);}
