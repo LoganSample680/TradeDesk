@@ -1314,6 +1314,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   <!-- Step 1: Job Info -->
   <div id="gei-s1" style="padding:10px 14px 80px">
     <div class="card" style="margin-bottom:12px">
+      <!-- T&M chip (shown in T&M mode) -->
+      <div id="gei-tm-chip" style="display:none;margin-bottom:12px">
+        <span style="display:inline-flex;align-items:center;gap:6px;background:#dbeafe;color:#1d4ed8;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px">⏱️ Time &amp; Materials Estimate</span>
+      </div>
       <!-- Scope toggles -->
       <div style="display:flex;gap:8px;margin-bottom:14px">
         <button id="gei-resi-btn" onclick="_geiSetScope(false)" class="btn" style="flex:1;padding:10px 6px;font-size:13px;font-weight:700;border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)">🏠 Residential</button>
@@ -1328,12 +1332,58 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         <input type="checkbox" id="gei-new-work" style="width:16px;height:16px;accent-color:var(--blue)" onchange="_geiNewWork=this.checked;if(_geiStep===2)_geiRenderTemplates()">
         New construction <span style="color:var(--text3);font-size:11px">(open walls — lower labor rates)</span>
       </label>
+      <!-- T&M reason (shown in T&M mode) -->
+      <div id="gei-tm-reason-wrap" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+        <div class="f" style="margin-bottom:8px">
+          <label>Why T&amp;M?</label>
+          <select id="tm-reason" onchange="document.getElementById('tm-reason-note-wrap').style.display=(['Other','Supplemental to fixed bid'].includes(this.value)?'':'none')">
+            <option value="">— Select a reason —</option>
+            <option>Unknown scope / conditions</option>
+            <option>Complex prep — extent TBD</option>
+            <option>Industrial / equipment work</option>
+            <option>Ongoing / open-ended</option>
+            <option>Client preference</option>
+            <option>Supplemental to fixed bid</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="f" id="tm-reason-note-wrap" style="display:none">
+          <label>Note <span style="font-weight:400;color:var(--text3)">(optional)</span></label>
+          <input type="text" id="tm-reason-note" placeholder="e.g. Significant rust under old paint — extent unknown">
+        </div>
+      </div>
     </div>
     <button class="btn btn-p" onclick="goGeiStep(2)" style="margin-bottom:8px">Next: Build estimate →</button>
   </div>
 
   <!-- Step 2: Build -->
   <div id="gei-s2" style="display:none;padding:10px 14px 120px">
+    <!-- Crew builder (T&M mode only) -->
+    <div id="gei-tm-crew" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--rl);padding:14px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:12px">Crew &amp; Labor</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">
+        <div class="f">
+          <label>Workers</label>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
+            <button onclick="_tmAdj(-1)" class="btn btn-sm" style="width:30px;height:30px;padding:0;flex-shrink:0">−</button>
+            <span id="tm-crew-display" style="font-weight:800;font-size:18px;min-width:24px;text-align:center">1</span>
+            <button onclick="_tmAdj(1)" class="btn btn-sm" style="width:30px;height:30px;padding:0;flex-shrink:0">+</button>
+          </div>
+        </div>
+        <div class="f">
+          <label>$/hr per worker</label>
+          <input type="number" id="tm-rate" placeholder="120" min="0" step="5" oninput="_tmRecalc()" style="margin-top:4px">
+        </div>
+        <div class="f">
+          <label>Est. total hours</label>
+          <input type="number" id="tm-hours" placeholder="80" min="0" step="1" oninput="_tmRecalc()" style="margin-top:4px">
+        </div>
+      </div>
+      <div style="background:var(--blue-lt);border-radius:var(--r);padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:13px;color:var(--blue-dk);font-weight:600">Labor estimate</span>
+        <span id="tm-labor-est" style="font-size:20px;font-weight:800;color:var(--blue)">—</span>
+      </div>
+    </div>
     <div style="display:flex;justify-content:flex-end;margin-bottom:4px">
       <button onclick="showGeiOnboarding({force:true})" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border2);border-radius:var(--r);color:var(--text3);cursor:pointer;font-family:inherit">⚙️ Change services</button>
     </div>
@@ -1342,9 +1392,50 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 
   <!-- Step 3: Review & Send -->
   <div id="gei-s3" style="display:none;padding:10px 14px 80px">
+    <!-- Contract terms (T&M mode only) -->
+    <div id="gei-tm-terms" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--rl);padding:14px;margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:12px">Contract Terms</div>
+      <!-- Billing cycle -->
+      <div style="margin-bottom:14px">
+        <div style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:6px">Billing cycle</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button id="tmc-weekly"     onclick="_tmSetCycle('weekly')"     class="btn btn-sm" style="font-size:12px">Weekly</button>
+          <button id="tmc-biweekly"   onclick="_tmSetCycle('biweekly')"   class="btn btn-sm" style="font-size:12px">Bi-weekly</button>
+          <button id="tmc-milestone"  onclick="_tmSetCycle('milestone')"  class="btn btn-sm" style="font-size:12px">Milestone</button>
+          <button id="tmc-completion" onclick="_tmSetCycle('completion')" class="btn btn-sm" style="font-size:12px">At completion</button>
+        </div>
+      </div>
+      <!-- Deposit -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+        <div class="f">
+          <label>Mobilization deposit %
+            <span style="font-weight:400;color:var(--text3);font-size:10px;display:block">Standard: 20% commercial</span>
+          </label>
+          <input type="number" id="tm-dep-pct" value="20" min="0" max="100" step="5" oninput="_tmCalcDeposit()">
+        </div>
+        <div style="display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:2px">
+          <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Deposit amount</div>
+          <div id="tm-dep-amt" style="font-size:22px;font-weight:800;color:var(--green-mid)">—</div>
+        </div>
+      </div>
+      <!-- NTE cap -->
+      <div>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px;cursor:pointer">
+          <input type="checkbox" id="tm-nte-on" checked onchange="_tmCalcNte()" style="width:16px;height:16px;accent-color:var(--blue)">
+          <span style="font-size:13px;font-weight:600">Not-to-exceed cap</span>
+        </label>
+        <div id="tm-nte-wrap" style="margin-left:24px">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
+            <span style="font-size:14px;color:var(--text2);font-weight:600">$</span>
+            <input type="number" id="tm-nte-cap" min="0" step="500" oninput="" style="flex:1;padding:8px 10px;border-radius:var(--r);border:1.5px solid var(--blue);font-size:16px;font-weight:700;color:var(--blue);background:var(--blue-lt)">
+          </div>
+          <div style="font-size:11px;color:var(--text3)">Client pays actual T&amp;M only, up to this cap</div>
+        </div>
+      </div>
+    </div>
     <div class="card" style="margin-bottom:12px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Line items</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)" id="gei-lines-label">Line items</div>
         <button class="btn btn-sm" onclick="addGeiLine()" style="width:auto;padding:5px 12px;font-size:12px">+ Add line</button>
       </div>
       <div id="gei-lines"></div>
@@ -2172,6 +2263,14 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   </div>
 </div>
 <script>
+// ── Service Worker — always-current version enforcement ───────────────────
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  navigator.serviceWorker.addEventListener('message',e=>{
+    if(e.data?.type==='SW_UPDATED') _autoSaveAndReload();
+  });
+}
+
 // ── Submit guard — prevents double-tap on any button ─────────────────────
 let _submitting=false,_allowPhoneDupe=false;
 let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[];
@@ -3369,12 +3468,11 @@ function _showTradePicker(title,cb){
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">'+
     lines.map(id=>{const m=TRADE_META[id]||{icon:'🔧',label:id};return'<button onclick="_pickTrade(\''+id+'\')" style="padding:14px 10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center"><div style="font-size:22px;margin-bottom:4px">'+m.icon+'</div><div style="font-size:13px;font-weight:700;color:var(--text)">'+m.label+'</div></button>';}).join('')+
     '</div>'+
-    (lines.includes('painting')?
-      '<button onclick="_pickTrade(\'_industrial\')" style="width:100%;padding:11px 14px;border-radius:var(--r);border:1.5px dashed #ea580c;background:#fff7ed;cursor:pointer;font-family:inherit;text-align:left;margin-bottom:10px;display:flex;align-items:center;gap:10px">'+
-        '<span style="font-size:20px;flex-shrink:0">🏗️</span>'+
-        '<div><div style="font-size:13px;font-weight:700;color:#c2410c">Industrial / Equipment Coating</div>'+
-        '<div style="font-size:11px;color:#9a3412;margin-top:1px">Asphalt plants, heavy machinery — crew & schedule auto-calculated</div></div>'+
-      '</button>':'')+
+    '<button onclick="_pickTrade(\'_tm\')" style="width:100%;padding:11px 14px;border-radius:var(--r);border:2px dashed #0284c7;background:#f0f9ff;cursor:pointer;font-family:inherit;text-align:left;margin-bottom:10px;display:flex;align-items:center;gap:10px">'+
+      '<span style="font-size:20px;flex-shrink:0">⏱️</span>'+
+      '<div><div style="font-size:13px;font-weight:700;color:#0369a1">Time &amp; Materials</div>'+
+      '<div style="font-size:11px;color:#0284c7;margin-top:1px">Any trade — crew × rate + materials, NTE cap &amp; deposit</div></div>'+
+    '</button>'+
     '<button onclick="document.getElementById(\'_trade-pick-ov\')?.remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -3384,6 +3482,11 @@ function _pickTrade(id){
   if(id==='_industrial'){
     _tradePickCb=null;
     openIndustrialEquipEstimate(getClientById(currentClientId));
+    return;
+  }
+  if(id==='_tm'){
+    _tradePickCb=null;
+    openTMEstimate(getClientById(currentClientId));
     return;
   }
   if(_tradePickCb){_tradePickCb(id);_tradePickCb=null;}
@@ -5921,7 +6024,9 @@ function renderCDBids(){
           (b.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+b.notes.substring(0,60)+'</div>':'')+
         '</div>'+
         '<div style="text-align:right">'+
-          '<div style="font-size:16px;font-weight:700;color:var(--green-mid)">'+fmt(b.amount)+'</div>'+
+          (b.isTM?'<span style="display:inline-block;font-size:10px;font-weight:700;background:#dbeafe;color:#1d4ed8;border-radius:10px;padding:2px 7px;margin-bottom:3px">⏱️ T&M</span><br>':'')+
+          '<div style="font-size:16px;font-weight:700;color:var(--green-mid)">'+(b.isTM&&b.tmNteCap?'Est. '+fmt(b.amount)+' / NTE '+fmt(b.tmNteCap):fmt(b.amount))+'</div>'+
+          (b.isTM&&b.tmDepositAmt?'<div style="font-size:11px;color:var(--text3)">Deposit: '+fmt(b.tmDepositAmt)+'</div>':'')+
           '<span class="bdg '+(SBADGE[b.status]||'')+'">'+b.status+'</span>'+
           (b.handshake?'<br><span style="font-size:10px;font-weight:700;background:#FFF8E8;color:#856404;border:1px solid var(--amber);border-radius:4px;padding:1px 6px;white-space:nowrap;display:inline-block;margin-top:3px">🤝 Handshake</span>':'')+
         '</div>'+
@@ -17135,11 +17240,18 @@ function _renderNavTradeSwitcher(){
 // ── Generic estimate (non-painting trades) ────────────────────────────
 let _geiClientId=null,_geiEditBidId=null,_geiLines=[],_geiTrade=null,_geiIsCommercial=false,_geiEmergency=false,_geiStep=1,_geiNewWork=false;
 let _panelSched=null; // null = not active, obj = panel schedule data
+let _geiIsTM=false,_tmCrewCount=1,_tmRatePerMan=0,_tmEstHours=0,_tmBillingCycle='weekly';
+
+function openTMEstimate(c,bidId){
+  _geiIsTM=true;
+  openGenericEstimate(c,bidId,null);
+}
 
 function openGenericEstimate(c,bidId,_tradePick){
   _geiClientId=c?.id||null;
   _geiEditBidId=bidId||null;
   _geiLines=[];_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;
+  if(!_geiIsTM){_geiIsTM=false;_tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';}
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
@@ -17166,6 +17278,11 @@ function openGenericEstimate(c,bidId,_tradePick){
       if(b.geiDuration)sf('gei-duration',b.geiDuration);
       if(b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(b.panelSched)_panelSched=JSON.parse(JSON.stringify(b.panelSched));
+      if(b.isTM){
+        _geiIsTM=true;
+        _tmCrewCount=b.tmCrewCount||1;_tmRatePerMan=b.tmRatePerMan||0;
+        _tmEstHours=b.tmEstHours||0;_tmBillingCycle=b.tmBillingCycle||'weekly';
+      }
     }
   }
   if(!_geiEditBidId){
@@ -17202,7 +17319,7 @@ function openGenericEstimate(c,bidId,_tradePick){
 
 function goGeiStep(n){
   // If going to Step 2 and no bundles are set, show the onboarding picker first
-  if(n===2&&(!S.myBundles||!S.myBundles.length)){
+  if(n===2&&(!S.myBundles||!S.myBundles.length)&&!_geiIsTM){
     showGeiOnboarding();return;
   }
   _geiStep=n;
@@ -17210,10 +17327,93 @@ function goGeiStep(n){
   window.scrollTo({top:0,behavior:'instant'});
   _geiRenderStepBar();
   _geiSyncScopeButtons();
+  // T&M mode: show/hide T&M-specific sections
+  const show=v=>el=>{const d=document.getElementById(el);if(d)d.style.display=v;};
+  if(_geiIsTM){
+    show('block')('gei-tm-chip');show('block')('gei-tm-reason-wrap');
+    if(n===2)show('block')('gei-tm-crew'); else show('none')('gei-tm-crew');
+    if(n===3){show('block')('gei-tm-terms');_tmSyncCycleButtons();_tmCalcDeposit();_tmCalcNte();}
+    else show('none')('gei-tm-terms');
+    const titleEl=document.getElementById('gei-trade-title');
+    if(titleEl)titleEl.textContent='⏱️ Time & Materials';
+    // In T&M mode restore crew inputs if editing
+    if(n===2){
+      const cd=document.getElementById('tm-crew-display');if(cd)cd.textContent=_tmCrewCount;
+      const ri=document.getElementById('tm-rate');if(ri&&_tmRatePerMan)ri.value=_tmRatePerMan;
+      const hi=document.getElementById('tm-hours');if(hi&&_tmEstHours)hi.value=_tmEstHours;
+      if(_tmRatePerMan||_tmEstHours)_tmRecalc();
+    }
+    // Restore reason if editing
+    if(n===1){
+      const b=bids.find(x=>x.id===_geiEditBidId);
+      if(b?.tmReason){const rs=document.getElementById('tm-reason');if(rs)rs.value=b.tmReason;}
+      if(b?.tmReasonNote){const rn=document.getElementById('tm-reason-note');if(rn)rn.value=b.tmReasonNote;}
+    }
+  } else {
+    ['gei-tm-chip','gei-tm-reason-wrap','gei-tm-crew','gei-tm-terms'].forEach(id=>{
+      const d=document.getElementById(id);if(d)d.style.display='none';
+    });
+  }
   const bar=document.getElementById('gei-cart-bar');
-  if(bar)bar.style.display=(n===2&&_geiLines.length)?'flex':'none';
-  if(n===2){_geiRenderTemplates();_geiRenderCartBar();}
+  if(bar)bar.style.display=(n===2&&_geiLines.length&&!_geiIsTM)?'flex':'none';
+  if(n===2){if(!_geiIsTM)_geiRenderTemplates();_geiRenderCartBar();}
   if(n===3){renderGeiLines();calcGeiTotal();_panelRenderSection();}
+}
+
+// ── T&M helpers ──────────────────────────────────────────────────────────────
+function _tmAdj(delta){
+  _tmCrewCount=Math.max(1,_tmCrewCount+delta);
+  const d=document.getElementById('tm-crew-display');if(d)d.textContent=_tmCrewCount;
+  _tmRecalc();
+}
+function _tmRecalc(){
+  _tmCrewCount=parseInt(document.getElementById('tm-crew-display')?.textContent)||_tmCrewCount||1;
+  _tmRatePerMan=parseFloat(document.getElementById('tm-rate')?.value)||0;
+  _tmEstHours=parseFloat(document.getElementById('tm-hours')?.value)||0;
+  const labor=_tmCrewCount*_tmRatePerMan*_tmEstHours;
+  const el=document.getElementById('tm-labor-est');
+  if(el)el.textContent=labor?'$'+labor.toLocaleString('en-US',{maximumFractionDigits:0}):'—';
+  // Upsert labor line
+  const idx=_geiLines.findIndex(l=>l._tmLabor);
+  const desc='Labor — '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr';
+  const line={desc,qty:_tmEstHours,unit:'hr',rate:Math.round(_tmRatePerMan*_tmCrewCount),_tmLabor:true,total:Math.round(_tmRatePerMan*_tmCrewCount*_tmEstHours)};
+  if(idx>=0){if(labor>0)_geiLines[idx]=line;else _geiLines.splice(idx,1);}
+  else if(labor>0)_geiLines.unshift(line);
+  renderGeiLines();calcGeiTotal();
+}
+function _tmCalcDeposit(){
+  const {sub}=calcGeiTotal();
+  const pct=parseFloat(document.getElementById('tm-dep-pct')?.value)||20;
+  const amt=Math.round(sub*pct/100);
+  const el=document.getElementById('tm-dep-amt');
+  if(el)el.textContent=amt?'$'+amt.toLocaleString('en-US',{maximumFractionDigits:0}):'—';
+  // Also update NTE suggestion if not manually set
+  _tmCalcNte();
+}
+function _tmCalcNte(){
+  const on=document.getElementById('tm-nte-on')?.checked;
+  const wrap=document.getElementById('tm-nte-wrap');
+  if(wrap)wrap.style.display=on?'block':'none';
+  if(!on)return;
+  const cap=document.getElementById('tm-nte-cap');
+  if(cap&&(!cap.value||parseFloat(cap.value)===0)){
+    const{sub}=calcGeiTotal();
+    if(sub>0)cap.value=Math.round(sub*1.15/500)*500; // round to nearest $500
+  }
+}
+function _tmSetCycle(v){
+  _tmBillingCycle=v;
+  _tmSyncCycleButtons();
+}
+function _tmSyncCycleButtons(){
+  ['weekly','biweekly','milestone','completion'].forEach(c=>{
+    const btn=document.getElementById('tmc-'+c);
+    if(!btn)return;
+    const active=_tmBillingCycle===c;
+    btn.style.background=active?'var(--blue)':'var(--bg2)';
+    btn.style.color=active?'#fff':'var(--text2)';
+    btn.style.border=active?'1.5px solid var(--blue)':'1.5px solid var(--border2)';
+  });
 }
 
 function _geiBack(){
@@ -17841,17 +18041,31 @@ function calcGeiTotal(){
 
 function saveGenericEstimate(draft){
   const v=id=>document.getElementById(id)?.value||'';
-  const{total}=calcGeiTotal();
+  const{total,sub}=calcGeiTotal();
   const trade=_geiTrade||getActiveTrade();
   const taxPct=parseFloat(v('gei-tax-pct'))||0;
+  // T&M extra fields
+  const _tmFields=_geiIsTM?{
+    isTM:true,
+    tmReason:v('tm-reason'),tmReasonNote:v('tm-reason-note'),
+    tmCrewCount:_tmCrewCount,tmRatePerMan:_tmRatePerMan,tmEstHours:_tmEstHours,
+    tmBillingCycle:_tmBillingCycle||'weekly',
+    tmDepositPct:parseFloat(v('tm-dep-pct'))||20,
+    tmDepositAmt:Math.round(sub*(parseFloat(v('tm-dep-pct'))||20)/100),
+    tmNteEnabled:document.getElementById('tm-nte-on')?.checked||false,
+    tmNteCap:parseFloat(v('tm-nte-cap'))||0,
+  }:{isTM:false};
+  const _deposit=_geiIsTM?(_tmFields.tmDepositAmt||0):Math.round(total*0.25*100)/100;
   if(_geiEditBidId){
     const b=bids.find(x=>x.id===_geiEditBidId);
     if(b){
-      b.amount=total;b.type=v('gei-desc')||TRADE_META[trade]?.label+' job';
+      b.amount=total;b.type=v('gei-desc')||(_geiIsTM?'T&M Estimate':TRADE_META[trade]?.label+' job');
       b.notes=v('gei-notes');b.geiLines=JSON.parse(JSON.stringify(_geiLines));
       b.geiTaxPct=taxPct;b.status=draft?'Draft':'Pending';b.draft=!!draft;
       b.geiDuration=v('gei-duration')||'';b.geiNewWork=_geiNewWork||false;
-      b.trade_type=trade;if(_panelSched)b.panelSched=JSON.parse(JSON.stringify(_panelSched));else delete b.panelSched;
+      b.trade_type=trade;b.deposit=_deposit;
+      if(_panelSched)b.panelSched=JSON.parse(JSON.stringify(_panelSched));else delete b.panelSched;
+      Object.assign(b,_tmFields);
       saveAll();
     }
   } else {
@@ -17860,12 +18074,12 @@ function saveGenericEstimate(draft){
       client_name:v('gei-client'),name:v('gei-client'),
       phone:'',addr:v('gei-addr'),
       bid_date:v('gei-date')||todayKey(),
-      amount:total,deposit:Math.round(total*0.25*100)/100,
-      type:v('gei-desc')||TRADE_META[trade]?.label+' job',
+      amount:total,deposit:_deposit,
+      type:v('gei-desc')||(_geiIsTM?'T&M Estimate':TRADE_META[trade]?.label+' job'),
       notes:v('gei-notes'),status:draft?'Draft':'Pending',draft:!!draft,
       geiLines:JSON.parse(JSON.stringify(_geiLines)),geiTaxPct:taxPct,
       geiDuration:v('gei-duration')||'',geiNewWork:_geiNewWork||false,
-      trade_type:trade,...(_panelSched?{panelSched:JSON.parse(JSON.stringify(_panelSched))}:{}),
+      trade_type:trade,...(_panelSched?{panelSched:JSON.parse(JSON.stringify(_panelSched))}:{}),..._tmFields,
     };
     bids.unshift(newBid);_geiEditBidId=newBid.id;saveAll();
   }
@@ -17890,7 +18104,16 @@ async function sendGenericProposal(){
   const estNum=_geiEditBidId?String(_geiEditBidId).slice(-6):'—';
   const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   const totalFmt='$'+total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const depositFmt='$'+(Math.round(total*0.25*100)/100).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const _tmDepPct=parseFloat(v('tm-dep-pct'))||20;
+  const _tmDepAmt=_geiIsTM?Math.round(sub*_tmDepPct/100):Math.round(total*0.25*100)/100;
+  const _tmNteCap=parseFloat(v('tm-nte-cap'))||0;
+  const depositFmt='$'+_tmDepAmt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const _tmDepRow=_geiIsTM
+    ?`<tr style="background:#0369a1;color:rgba(255,255,255,.88)"><td colspan="2" style="padding:6px 18px;font-size:11px;font-weight:600">Mobilization Deposit (${_tmDepPct}%) Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr>`
+    :`<tr style="background:#2a4a7f;color:rgba(255,255,255,.88)"><td colspan="2" style="padding:6px 18px;font-size:11px;font-weight:600">25% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr>`;
+  const _tmPayTerms=_geiIsTM
+    ?`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Contract type:</strong> Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}</div><div>2. <strong>Mobilization deposit:</strong> ${_tmDepPct}% (${depositFmt}) due before work begins.</div><div>3. <strong>Billing:</strong> ${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.</div><div>4. <strong>Warranty:</strong> All workmanship warranted for 1 year.</div></div>`
+    :`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> 25% due before work begins.</div><div>2. <strong>Balance:</strong> Remainder due upon completion.</div><div>3. <strong>Warranty:</strong> All workmanship warranted for 1 year.</div></div>`;
   const lineRows=_geiLines.filter(l=>l.desc||l.rate).map(l=>{
     const amt=(l.qty||1)*(l.rate||0);
     return `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 18px;font-size:12px;color:#2d3748">${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</td><td style="padding:9px 6px;text-align:center;font-size:12px;color:#64748b">${l.qty||1}</td><td style="padding:9px 18px 9px 4px;text-align:right;font-size:12px;font-weight:600;color:#1a365d">$${amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`;
@@ -17903,7 +18126,9 @@ async function sendGenericProposal(){
     const _pRows=(_panelSched.circuits||[]).map((c,i)=>`<tr><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${i+1}</td><td style="padding:4px 8px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.desc||'—')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.amps||''}A</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.phase==='2pole'?'2-pole':c.phase}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.gauge||'')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.afci?'✓':''}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.gfci?'✓':''}</td></tr>`).join('');
     _propPanelHtml=`<div style="padding:16px 24px;border-top:2px solid #e2e8f0"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px">📋 Panel Schedule — ${_panelSched.panelAmps}A</div><p style="font-size:11px;color:#64748b;margin:0 0 8px">L1 leg: ${_pl1}A · L2 leg: ${_pl2}A${_pimb>0.10?' · <strong style="color:#dc2626">⚠️ Rebalance recommended</strong>':' · ✓ Balanced'}</p><table style="width:100%;border-collapse:collapse"><thead><tr><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">#</th><th style="background:#1a365d;color:#fff;padding:5px 8px;border:1px solid #cbd5e1;text-align:left;font-size:10px">Circuit</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Amps</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Phase</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Wire</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">AFCI</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">GFCI</th></tr></thead><tbody>${_pRows}</tbody></table></div>`;
   }
-  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">${tradeIcon} Service Estimate</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#1a365d">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#1a365d">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:5px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid 30 days</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th><th style="padding:8px 6px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:40px">Qty</th><th style="padding:8px 18px 8px 4px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:90px">Amount</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${taxRow}<tr style="background:#1a365d;color:#fff"><td colspan="2" style="padding:12px 18px;font-weight:800;font-size:15px">TOTAL</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:15px">${totalFmt}</td></tr><tr style="background:#2a4a7f;color:rgba(255,255,255,.88)"><td colspan="2" style="padding:6px 18px;font-size:11px;font-weight:600">25% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr></tfoot></table>${notesHtml}${_propPanelHtml}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Payment Terms</div><div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> 25% due before work begins.</div><div>2. <strong>Balance:</strong> Remainder due upon completion.</div><div>3. <strong>Warranty:</strong> All workmanship warranted for 1 year.</div></div></div></div>`;
+  const _hdrLabel=_geiIsTM?'⏱️ Time &amp; Materials':tradeIcon+' Service Estimate';
+  const _nteRow=(_geiIsTM&&_tmNteCap)?`<tr style="background:#075985;color:rgba(255,255,255,.8)"><td colspan="2" style="padding:5px 18px;font-size:11px">Not-to-exceed cap</td><td style="padding:5px 18px;text-align:right;font-size:11px;font-weight:700">$${_tmNteCap.toLocaleString()}</td></tr>`:'';
+  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#1a365d">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#1a365d">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:5px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid 30 days</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th><th style="padding:8px 6px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:40px">Qty</th><th style="padding:8px 18px 8px 4px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:90px">Amount</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${taxRow}<tr style="background:#1a365d;color:#fff"><td colspan="2" style="padding:12px 18px;font-weight:800;font-size:15px">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:15px">${totalFmt}</td></tr>${_tmDepRow}${_nteRow}</tfoot></table>${notesHtml}${_propPanelHtml}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Payment Terms</div>${_tmPayTerms}</div></div>`;
   const bidId=_geiEditBidId;
   const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
   const proposalKey=`proposals/${_supaUser.id}/${bidId}_${token}.json`;
@@ -20330,47 +20555,16 @@ function showDailyBriefing(){
   setTimeout(checkFridaySummary,2000);
 }
 
-// ── Auto-update: notify when a new deploy is detected ────────────────────────
-let _deployEtag=null;
-function _isFormActive(){
-  // Any modal open
-  if(document.querySelector('.zmodal-overlay'))return true;
-  if(document.querySelector('.lxh-modal.open'))return true;
-  // Estimate wizard pages
+// ── Auto-update: SW signals reload; auto-save draft first ────────────────────
+async function _autoSaveAndReload(){
   const activePg=document.querySelector('.pg.active')?.id||'';
-  if(activePg==='pg-est'||activePg==='pg-est-generic')return true;
-  // User is actively typing in any field
-  const ae=document.activeElement;
-  if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'||ae.tagName==='SELECT'))return true;
-  return false;
-}
-function _showUpdateBanner(){
-  if(document.getElementById('_update-banner'))return;
-  const b=document.createElement('div');
-  b.id='_update-banner';
-  b.style.cssText='position:fixed;bottom:70px;left:50%;transform:translateX(-50%);z-index:99999;background:#1d4ed8;color:#fff;border-radius:12px;padding:10px 18px;display:flex;align-items:center;gap:12px;box-shadow:0 4px 16px rgba(0,0,0,.25);font-family:inherit;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap';
-  b.innerHTML='🔄 New version available &nbsp;<span style="background:rgba(255,255,255,.2);border-radius:8px;padding:3px 10px;font-size:13px">Tap to update</span>';
-  b.onclick=()=>location.reload();
-  document.body.appendChild(b);
-}
-async function _checkForDeploy(){
   try{
-    const r=await fetch(location.pathname+'?_='+Date.now(),{method:'HEAD',cache:'no-store'});
-    const tag=r.headers.get('etag')||r.headers.get('last-modified')||'';
-    if(!tag)return;
-    if(_deployEtag===null){_deployEtag=tag;return;}
-    if(tag===_deployEtag)return;
-    // New deploy detected — reload immediately if no form is active, else show banner
-    if(!_isFormActive()){
-      location.reload();
-    } else {
-      _showUpdateBanner();
-    }
+    if(activePg==='pg-est')saveEstFullDraft();
+    if(activePg==='pg-est-generic')saveGenericEstimate(true);
   }catch(e){}
+  await new Promise(r=>setTimeout(r,400));
+  location.reload(true);
 }
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)_checkForDeploy();});
-setInterval(_checkForDeploy,10*60*1000);
-setTimeout(_checkForDeploy,3000);
 
 loadAll();applySettings();registerDevice();applyBrandLogo();
 setTimeout(showDailyBriefing,1200);
