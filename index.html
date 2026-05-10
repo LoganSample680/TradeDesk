@@ -19286,7 +19286,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.2';
+const APP_VERSION='05.10.26.3';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){const o=document.getElementById('supa-boot-overlay');if(!o)return;o.classList.add('td-fadeout');setTimeout(()=>o.remove(),320);}
@@ -20559,6 +20559,23 @@ async function _autoSaveAndReload(){
   if(_syncTimer){clearTimeout(_syncTimer);try{await supaSaveToCloud();}catch(e){}}
   location.reload(true);
 }
+
+// ── Persistent version check: fires every time app comes to foreground ────────
+// Stores ETag in localStorage so it survives background/suspend.
+// If server has a newer version than last time we were live → reload immediately.
+async function _checkVersionOnResume(){
+  try{
+    const r=await fetch(location.pathname+'?_='+Date.now(),{method:'HEAD',cache:'no-store'});
+    const tag=r.headers.get('etag')||r.headers.get('last-modified')||'';
+    if(!tag)return;
+    const stored=localStorage.getItem('_td_ver_etag');
+    localStorage.setItem('_td_ver_etag',tag);
+    if(stored&&stored!==tag)await _autoSaveAndReload();
+  }catch(e){}
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)_checkVersionOnResume();});
+// Also run once shortly after first load to set the baseline tag
+setTimeout(_checkVersionOnResume,2000);
 
 loadAll();applySettings();registerDevice();applyBrandLogo();
 setTimeout(showDailyBriefing,1200);
