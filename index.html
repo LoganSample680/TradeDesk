@@ -2264,18 +2264,6 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 </div>
 <script>
 // ── Service Worker — always-current version enforcement ───────────────────
-// Kick off the version check fetch immediately, in parallel with normal boot.
-// _removeBootOverlay() waits for this promise before showing the app — so if
-// a new version is found while the boot overlay is still up, we reload while
-// the screen is covered and the user sees only ONE load screen total.
-let _bootVersionCheck = fetch(location.pathname, {cache:'reload'})
-  .then(r => r.text())
-  .then(html => {
-    const m = html.match(/const APP_VERSION='([^']+)'/);
-    if (m && m[1] !== APP_VERSION) location.reload(true);
-  })
-  .catch(() => {});
-
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('/sw.js').catch(()=>{});
   navigator.serviceWorker.addEventListener('message',e=>{
@@ -19319,18 +19307,10 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.8';
+const APP_VERSION='05.10.26.9';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
-function _removeBootOverlay(){
-  // Wait for the parallel version check before revealing the app.
-  // If a new version is found, it reloads while the overlay is still showing
-  // so the user sees only one load screen total (no visible double-flash).
-  (_bootVersionCheck||Promise.resolve()).finally(()=>{
-    const o=document.getElementById('supa-boot-overlay');if(!o)return;
-    o.classList.add('td-fadeout');setTimeout(()=>o.remove(),320);
-  });
-}
+function _removeBootOverlay(){const o=document.getElementById('supa-boot-overlay');if(!o)return;o.classList.add('td-fadeout');setTimeout(()=>o.remove(),320);}
 async function supaInit(){
   if(!supaEnabled())return;
   try{
@@ -20632,7 +20612,7 @@ async function _checkVersionOnResume(){
     if(m&&m[1]!==APP_VERSION)await _autoSaveAndReload();
   }catch(e){}
 }
-// Only fires on foreground resume — initial load is handled by _bootVersionCheck above
+// Fires on foreground resume — SW navigate handler covers fresh opens
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)_checkVersionOnResume();});
 
 loadAll();applySettings();registerDevice();applyBrandLogo();
