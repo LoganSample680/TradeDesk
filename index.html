@@ -19674,7 +19674,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.33';
+const APP_VERSION='05.10.26.34';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -20965,7 +20965,39 @@ function showDailyBriefing(){
 }
 
 // ── Auto-update: SW signals reload; auto-save draft first ────────────────────
+function _showUpdateOverlay(){
+  // Painted SYNCHRONOUSLY before any await/reload so the user never sees the
+  // dashboard flash through during the save+reload window. Same look as the
+  // boot overlay so reload feels seamless.
+  if(document.getElementById('_update-ov'))return;
+  const logo=S?.logoData||'';
+  const name=S?.bname||'TradeDesk';
+  const color=S?.brandColor||'#185FA5';
+  const hasBrand=!!S?.brandColor;
+  const bg=hasBrand?color:'#0D1117';
+  const barFg=hasBrand?'rgba(0,0,0,0.35)':color;
+  const barBg=hasBrand?'rgba(0,0,0,0.2)':'rgba(255,255,255,0.08)';
+  const labelColor=hasBrand?'rgba(0,0,0,0.55)':'rgba(255,255,255,0.55)';
+  const logoBlock=logo
+    ?'<img src="'+logo+'" style="max-height:260px;max-width:86vw;width:auto;object-fit:contain;display:block;animation:td-logoin .35s cubic-bezier(.22,1,.36,1) both">'
+    :'<div style="font-size:44px;font-weight:900;color:#fff;letter-spacing:-2px;animation:td-logoin .3s ease both">'+name+'</div>';
+  const ov=document.createElement('div');
+  ov.id='_update-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:'+bg+';display:flex;flex-direction:column;align-items:center;justify-content:center';
+  ov.innerHTML=
+    '<div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;padding:0 24px">'+
+      logoBlock+
+      '<div style="font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:'+labelColor+';margin-top:6px">Updating…</div>'+
+    '</div>'+
+    '<div style="width:100%;padding:0 0 52px">'+
+      '<div style="height:3px;background:'+barBg+';border-radius:99px;margin:0 32px;overflow:hidden">'+
+        '<div style="height:100%;background:'+barFg+';border-radius:99px;animation:td-bar 2.8s cubic-bezier(.4,0,.2,1) forwards"></div>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(ov);
+}
 async function _autoSaveAndReload(){
+  _showUpdateOverlay();
   const activePg=document.querySelector('.pg.active')?.id||'';
   try{
     if(activePg==='pg-est')saveEstFullDraft();
