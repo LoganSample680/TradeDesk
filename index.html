@@ -2567,14 +2567,26 @@ function _buildStateBrackets(data,status){
   return[[Math.round(top*mult),low],[Infinity,high]];
 }
 
-function saveAll(){if(_devSupportMode){supaSaveDebounced();return;}if(_isEmployee){supaSaveDebounced();return;}try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(e){}supaSaveDebounced();}
+function saveAll(){if(_devSupportMode){supaSaveDebounced();return;}if(_isEmployee){supaSaveDebounced();return;}try{
+  localStorage.setItem('zp3_S',JSON.stringify(S));
+  // These arrays are localStorage-only (not in Supabase schema) — safe to keep local
+  localStorage.setItem('zp3_chk',JSON.stringify(checksState));
+  localStorage.setItem('zp3_ev',JSON.stringify(events.slice(-600)));
+  localStorage.setItem('zp3_photos',JSON.stringify(photos.slice(-300)));
+  localStorage.setItem('zp3_lic',JSON.stringify(licenses));
+}catch(e){}supaSaveDebounced();}
 function loadAll(){
-  // Business data lives in Supabase only — initialize empty, populated by supaLoadFromCloud()
-  clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];checksState={};payments=[];liens=[];events=[];timeEntries=[];photos=[];licenses=[];
-  // Load settings only from localStorage for fast UI init before cloud connects
+  // Business data (clients, bids, jobs, etc.) lives in Supabase only — start empty, populated by supaLoadFromCloud()
+  clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];payments=[];liens=[];timeEntries=[];
+  // Load settings + localStorage-only arrays
   try{
+    const lp=(k,d)=>{const s=localStorage.getItem(k);return s?JSON.parse(s):d;};
     const ss=localStorage.getItem('zp3_S');
     if(ss){const parsed=JSON.parse(ss);S={...S,...parsed};}
+    checksState=lp('zp3_chk',{});
+    events=lp('zp3_ev',[]);
+    photos=lp('zp3_photos',[]);
+    licenses=lp('zp3_lic',[]);
     // Tax bracket migrations
     if(S.fedMFS===14600)S.fedMFS=15000;
     if(S.fedSingle===14600)S.fedSingle=15000;
@@ -2590,8 +2602,8 @@ function loadAll(){
     if(new Date().getFullYear()>=2026&&S.irsRate<0.725){S.irsRate=0.725;S.irsRateYear=new Date().getFullYear();}
     try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(e){}
   }catch(e){}
-  // Nuke any stale business data left by old app versions — can never be pushed to cloud again
-  try{['zp3_clients','zp3_bids','zp3_jobs','zp3_inc','zp3_exp','zp3_mil','zp3_chk','zp3_pay','zp3_lien','zp3_ev','zp3_te','zp3_photos','zp3_lic'].forEach(k=>localStorage.removeItem(k));}catch(e){}
+  // Nuke stale Supabase-managed keys left by old app versions
+  try{['zp3_clients','zp3_bids','zp3_jobs','zp3_inc','zp3_exp','zp3_mil','zp3_pay','zp3_lien','zp3_te'].forEach(k=>localStorage.removeItem(k));}catch(e){}
 }
 
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -19286,7 +19298,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.3';
+const APP_VERSION='05.10.26.4';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){const o=document.getElementById('supa-boot-overlay');if(!o)return;o.classList.add('td-fadeout');setTimeout(()=>o.remove(),320);}
@@ -20108,6 +20120,11 @@ async function supaLoadFromCloud(){
     renderClientList&&renderClientList();
     renderJobsPage&&renderJobsPage();
     renderMoneyPage&&renderMoneyPage();
+    // Cleanup: remove empty orphan draft bids, ensure all clients have tokens
+    bids=bids.filter(b=>!(b.draft===true&&b.status==='Draft'&&b.geiLines===undefined&&(!b.surfaces||!b.surfaces.length)&&!b.signingToken&&!b.amount));
+    const _geiSeen=new Set();
+    bids=bids.filter(b=>{if(b.geiLines===undefined||b.signingToken||b.amount||(b.geiLines||[]).length)return true;if(b.status!=='Draft'&&b.status!=='Pending')return true;const key=b.client_id+'|'+(b.trade_type||'general');if(_geiSeen.has(key))return false;_geiSeen.add(key);return true;});
+    clients.forEach(c=>{if(!c.clientToken)_ensureClientToken(c.id);});
     // Backfill hubs for any leads/clients that don't have one yet (background, non-blocking)
     setTimeout(()=>{
       if(_supaUser)clients.filter(c=>c.clientToken).forEach(c=>{_uploadClientHub(c.id).catch(()=>{});});
