@@ -1,0 +1,57 @@
+name: Auto Version
+
+on:
+  push:
+    branches: [main]
+
+# Prevent loop: don't run when the workflow itself commits the version bump
+concurrency:
+  group: auto-version
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Compute and write version
+        run: |
+          # Date in Central time (handles late-night pushes correctly)
+          DATE=$(TZ=America/Chicago date +'%m.%d.%y')
+          TODAY=$(TZ=America/Chicago date +'%Y-%m-%d')
+
+          # Count real (non-auto) commits to main today — this push is already
+          # in the log since checkout happens after the push lands.
+          N=$(git log --oneline --after="${TODAY}T00:00:00-06:00" origin/main \
+              | grep -v '\[skip ci\]' \
+              | wc -l | tr -d ' ')
+
+          # Fallback: if date filter returned nothing, N=1
+          [ "$N" -eq 0 ] && N=1
+
+          VERSION="${DATE}.${N}"
+          echo "Version: $VERSION"
+
+          # Write into index.html
+          sed -i "s/const APP_VERSION='[^']*'/const APP_VERSION='${VERSION}'/g" index.html
+
+          # Write version.json
+          printf '{"version":"%s"}\n' "${VERSION}" > version.json
+
+          # Commit and push back — [skip ci] prevents this commit from
+          # triggering another workflow run
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html version.json
+          git diff --staged --quiet && echo "Nothing to commit" && exit 0
+          git commit -m "v${VERSION} [skip ci]"
+          git push
