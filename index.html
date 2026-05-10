@@ -19639,10 +19639,22 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.29';
+const APP_VERSION='05.10.26.30';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
-function _removeBootOverlay(){const o=document.getElementById('supa-boot-overlay');if(!o)return;o.classList.add('td-fadeout');setTimeout(()=>o.remove(),320);}
+function _removeBootOverlay(){
+  const o=document.getElementById('supa-boot-overlay');if(!o)return;
+  o.classList.add('td-fadeout');
+  setTimeout(()=>{
+    o.remove();
+    const resumeBid=localStorage.getItem('_sw_resume_bid');
+    if(resumeBid){
+      localStorage.removeItem('_sw_resume_bid');
+      const bid=bids.find(b=>String(b.id)===resumeBid);
+      if(bid)setTimeout(()=>openEditBid(bid.id),80);
+    }
+  },320);
+}
 async function supaInit(){
   if(!supaEnabled())return;
   try{
@@ -20924,7 +20936,12 @@ async function _autoSaveAndReload(){
     if(activePg==='pg-est')saveEstFullDraft();
     if(activePg==='pg-est-generic')saveGenericEstimate(true);
   }catch(e){}
-  // Flush any pending debounced cloud save before reloading
+  // Save resume state so we land back in the right place after reload
+  if(activePg==='pg-est-generic'&&_geiEditBidId){
+    localStorage.setItem('_sw_resume_bid',String(_geiEditBidId));
+  }else if(activePg==='pg-est'&&editingBidId){
+    localStorage.setItem('_sw_resume_bid',String(editingBidId));
+  }
   if(_syncTimer){clearTimeout(_syncTimer);try{await supaSaveToCloud();}catch(e){}}
   location.reload(true);
 }
