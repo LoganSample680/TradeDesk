@@ -24,7 +24,7 @@ VERSION="${DATE}.${N}"
 echo "→ Version: v${VERSION}"
 
 # Update index.html
-sed -i "s/const APP_VERSION='[^']*'/const APP_VERSION='${VERSION}'/g" index.html
+sed -i "s/const APP_VERSION='[0-9][0-9]\.[0-9][0-9]\.[0-9][0-9]\.[0-9]*/const APP_VERSION='${VERSION}/g" index.html
 
 # Update version.json
 printf '{"version":"%s"}\n' "${VERSION}" > version.json
