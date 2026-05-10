@@ -7960,6 +7960,10 @@ function saveEndDriveModal(){
   gps.active=false;gps.startTime=null;gps.startCoords=null;
   clearInterval(gps.timerInt);
   saveAll();
+  // Mileage is the most-lost data because users immediately switch apps after
+  // saving a trip — flush to Supabase NOW instead of waiting for the 2s debounce.
+  if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
+  supaSaveToCloud();
   closeTopModal();
   hideDriveBanner();
   renderDash();
@@ -15715,7 +15719,14 @@ function saveLoggedTrip(){
   saveAll();
   closeTopModal();
   showToast('Trip saved — calculating mileage…','🚗');
-  if(mapApp&&to)openTripInMaps(mapApp,from,to);
+  if(mapApp&&to){
+    // iOS will suspend the PWA when we hand off to Apple/Google Maps — the 2s
+    // debounce in saveAll() dies before firing. Cancel it and push to Supabase
+    // NOW so the in-flight fetch survives the app switch.
+    if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
+    supaSaveToCloud();
+    openTripInMaps(mapApp,from,to);
+  }
   renderDash();
   if(document.getElementById('mil-table'))renderAllMileage();
   if(document.getElementById('cd-mile-list')&&currentClientId)renderCDMileage();
@@ -19663,7 +19674,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.32';
+const APP_VERSION='05.10.26.33';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
