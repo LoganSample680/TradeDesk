@@ -11627,7 +11627,7 @@ function showHubMenu(clientId){
   const mkBtn=(label,bg,color,fn)=>{const b=document.createElement('button');b.textContent=label;b.style.cssText='padding:14px;border:none;border-radius:var(--r);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;background:'+bg+';color:'+color;b.onclick=fn;return b;};
   sheet.appendChild(hdr);
   sheet.appendChild(mkBtn('📋  Copy link','var(--blue)','#fff',()=>{navigator.clipboard.writeText(hubUrl).then(()=>showToast('Hub link copied','📋')).catch(()=>showToast('Copy failed','⚠️'));ov.remove();}));
-  sheet.appendChild(mkBtn('🔗  Open hub','var(--blue-lt)','var(--blue)',()=>{window.open(hubUrl,'_blank');ov.remove();}));
+  sheet.appendChild(mkBtn('🔗  Open hub','var(--blue-lt)','var(--blue)',()=>{const a=document.createElement('a');a.href=hubUrl;a.target='_blank';a.rel='noopener noreferrer';document.body.appendChild(a);a.click();document.body.removeChild(a);ov.remove();}));
   sheet.appendChild(mkBtn('← Back','var(--bg2)','var(--text2)',()=>ov.remove()));
   ov.appendChild(sheet);
   document.body.appendChild(ov);
@@ -17695,9 +17695,9 @@ function _geiAddFreeFormLine(prefill){
   const isEdit=d._edit!==undefined;
   const ov=document.createElement('div');
   ov.id='_ff-add-ov';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:flex-end;justify-content:center';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   ov.innerHTML=
-    '<div style="background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;padding:20px 18px 36px;width:100%;max-width:480px;box-sizing:border-box">'+
+    '<div style="background:var(--bg);border-radius:var(--rl);padding:20px 18px 24px;width:100%;max-width:480px;box-sizing:border-box;max-height:90vh;overflow-y:auto">'+
       '<div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:14px">'+(isEdit?'Edit line':'Add line item')+'</div>'+
       '<div class="f" style="margin-bottom:10px"><label>Description</label>'+
         '<input id="_ffa-desc" type="text" value="'+escHtml(d.desc||'')+'" placeholder="e.g. Interior paint — 2 coats, Labor, Material" autocomplete="off" style="font-size:14px">'+
@@ -19639,7 +19639,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.24';
+const APP_VERSION='05.10.26.27';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){const o=document.getElementById('supa-boot-overlay');if(!o)return;o.classList.add('td-fadeout');setTimeout(()=>o.remove(),320);}
