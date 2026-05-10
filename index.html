@@ -18499,10 +18499,33 @@ async function sendGenericProposal(){
   }
   const bar=document.getElementById('proposal-link-bar');
   const input=document.getElementById('proposal-link-input');
-  if(bar)bar.style.display='flex';
+  const _cl=getClientById(b?.client_id);
+  if(bar){
+    bar.dataset.signingUrl=shareUrl;
+    bar.dataset.cname=clientName;
+    bar.dataset.bname=bname;
+    bar.dataset.cphone=(_cl?.phone||'').replace(/\D/g,'');
+    bar.dataset.cemail=_cl?.email||'';
+  }
   if(input)input.value=shareUrl;
-  showToast('Proposal link ready','🔗');
-  goPg('pg-clients');
+  _pendingSignToken={bidId,token,proposalKey};
+  // Show sharing sheet
+  const _gsov=document.createElement('div');
+  _gsov.id='_gei-share-ov';
+  _gsov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom,0px)';
+  const _geiShareName=clientName||'Client';
+  const _geiShareShort=shareUrl.replace(/^https?:\/\//,'');
+  const _geiSharePreview=_geiShareShort.length>44?_geiShareShort.slice(0,44)+'…':_geiShareShort;
+  _gsov.innerHTML='<div style="background:#fff;border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:20px 16px 28px"><div style="text-align:center;margin-bottom:16px"><div style="font-size:15px;font-weight:800;color:var(--text1);margin-bottom:4px">📨 Send to client</div><div style="font-size:13px;color:var(--text2)">'+_geiShareName+' · '+_geiSharePreview+'</div></div><div style="display:flex;flex-direction:column;gap:10px"><button onclick="sendProposalViaSms();document.getElementById(\'_gei-share-ov\')?.remove();" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">📱 Text client</button><button onclick="sendProposalViaEmail();document.getElementById(\'_gei-share-ov\')?.remove();" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">✉️ Email client</button><button id="_gei-copy-btn" onclick="_geiCopyShareLink(this)" style="width:100%;padding:14px;border-radius:var(--rl);border:1.5px solid var(--border2);background:#fff;color:var(--text1);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">📋 Copy link</button><button onclick="document.getElementById(\'_gei-share-ov\')?.remove();goPg(\'pg-clients\')" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--gray-lt);color:var(--text2);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">✓ Done</button></div></div>';
+  document.body.appendChild(_gsov);
+  _gsov.addEventListener('click',e=>{if(e.target===_gsov){_gsov.remove();goPg('pg-clients');}});
+  showToast('Proposal link ready — tap to send','🔗');
+}
+function _geiCopyShareLink(btn){
+  const url=_proposalShareData().url;
+  if(!url)return;
+  navigator.clipboard.writeText(url).catch(()=>{});
+  if(btn){btn.textContent='✓ Copied!';setTimeout(()=>btn.textContent='📋 Copy link',2000);}
 }
 
 // ─── Industrial Equipment Estimate ──────────────────────────────────────────
@@ -19639,7 +19662,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.30';
+const APP_VERSION='05.10.26.31';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
