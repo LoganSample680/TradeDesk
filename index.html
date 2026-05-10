@@ -19298,7 +19298,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.4';
+const APP_VERSION='05.10.26.5';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){const o=document.getElementById('supa-boot-overlay');if(!o)return;o.classList.add('td-fadeout');setTimeout(()=>o.remove(),320);}
@@ -19797,6 +19797,9 @@ async function supaSaveToCloud(){
       mileage:JSON.stringify(mileage),
       time_entries:JSON.stringify(timeEntries.slice(-500)),
       receipt_images:JSON.stringify(receiptImages),
+      licenses:JSON.stringify(licenses),
+      events:JSON.stringify(events.slice(-600)),
+      checks_state:JSON.stringify(checksState),
     }).eq('user_id',uid);
     if(e2){
       if(e2.code==='57014'){
@@ -20085,6 +20088,14 @@ async function supaLoadFromCloud(){
     mileage=parse(data.mileage,mileage);
     liens=parse(data.liens,liens);
     timeEntries=parse(data.time_entries,timeEntries);
+    // These columns may be missing in older rows — fall back to in-memory values
+    // (loadAll already seeded them from localStorage as a migration path)
+    const _cloudLic=parse(data.licenses,null);
+    if(_cloudLic&&_cloudLic.length)licenses=_cloudLic;
+    const _cloudEv=parse(data.events,null);
+    if(_cloudEv&&_cloudEv.length)events=_cloudEv;
+    const _cloudChk=parse(data.checks_state,null);
+    if(_cloudChk&&Object.keys(_cloudChk).length)checksState=_cloudChk;
     if(data.settings){const ss=parse(data.settings,null);if(ss){S={...S,...ss};
       // Migrate stale 2024 IRS/bracket values that may be stored in cloud
       if(S.fedMFS===14600)S.fedMFS=15000;
@@ -20578,20 +20589,19 @@ async function _autoSaveAndReload(){
 }
 
 // ── Persistent version check: fires every time app comes to foreground ────────
-// Stores ETag in localStorage so it survives background/suspend.
-// If server has a newer version than last time we were live → reload immediately.
+// Fetches version.json (a tiny file we control) and compares against the
+// embedded APP_VERSION constant. More reliable than ETag — CDN may cache ETags
+// for minutes after a deploy, but version.json content is explicit and exact.
 async function _checkVersionOnResume(){
   try{
-    const r=await fetch(location.pathname+'?_='+Date.now(),{method:'HEAD',cache:'no-store'});
-    const tag=r.headers.get('etag')||r.headers.get('last-modified')||'';
-    if(!tag)return;
-    const stored=localStorage.getItem('_td_ver_etag');
-    localStorage.setItem('_td_ver_etag',tag);
-    if(stored&&stored!==tag)await _autoSaveAndReload();
+    const r=await fetch('/version.json?_='+Date.now(),{cache:'no-store'});
+    if(!r.ok)return;
+    const{version}=await r.json();
+    if(version&&version!==APP_VERSION)await _autoSaveAndReload();
   }catch(e){}
 }
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)_checkVersionOnResume();});
-// Also run once shortly after first load to set the baseline tag
+// Also check shortly after first load (catches fast deploys during an open session)
 setTimeout(_checkVersionOnResume,2000);
 
 loadAll();applySettings();registerDevice();applyBrandLogo();
