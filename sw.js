@@ -15,7 +15,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   if (e.request.mode === 'navigate') {
     e.respondWith(
-      fetch(e.request)
+      fetch(e.request, {cache: 'reload'})
         .then(r => {
           caches.open(CACHE).then(c => c.put(e.request, r.clone()));
           return r;
