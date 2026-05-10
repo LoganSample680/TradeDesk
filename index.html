@@ -1318,6 +1318,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
       <div id="gei-tm-chip" style="display:none;margin-bottom:12px">
         <span style="display:inline-flex;align-items:center;gap:6px;background:#dbeafe;color:#1d4ed8;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px">⏱️ Time &amp; Materials Estimate</span>
       </div>
+      <!-- Free-form chip (shown in Build Your Own mode) -->
+      <div id="gei-ff-chip" style="display:none;margin-bottom:12px">
+        <span style="display:inline-flex;align-items:center;gap:6px;background:#f0fdf4;color:#166534;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px">✏️ Build Your Own Estimate</span>
+      </div>
       <!-- Scope toggles -->
       <div style="display:flex;gap:8px;margin-bottom:14px">
         <button id="gei-resi-btn" onclick="_geiSetScope(false)" class="btn" style="flex:1;padding:10px 6px;font-size:13px;font-weight:700;border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)">🏠 Residential</button>
@@ -1384,7 +1388,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         <span id="tm-labor-est" style="font-size:20px;font-weight:800;color:var(--blue)">—</span>
       </div>
     </div>
-    <div style="display:flex;justify-content:flex-end;margin-bottom:4px">
+    <div id="gei-svc-wrap" style="display:flex;justify-content:flex-end;margin-bottom:4px">
       <button onclick="showGeiOnboarding({force:true})" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border2);border-radius:var(--r);color:var(--text3);cursor:pointer;font-family:inherit">⚙️ Change services</button>
     </div>
     <div id="gei-templates"></div>
@@ -3481,11 +3485,6 @@ function _showTradePicker(title,cb){
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">'+
     lines.map(id=>{const m=TRADE_META[id]||{icon:'🔧',label:id};return'<button onclick="_pickTrade(\''+id+'\')" style="padding:14px 10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center"><div style="font-size:22px;margin-bottom:4px">'+m.icon+'</div><div style="font-size:13px;font-weight:700;color:var(--text)">'+m.label+'</div></button>';}).join('')+
     '</div>'+
-    '<button onclick="_pickTrade(\'_tm\')" style="width:100%;padding:11px 14px;border-radius:var(--r);border:2px dashed #0284c7;background:#f0f9ff;cursor:pointer;font-family:inherit;text-align:left;margin-bottom:10px;display:flex;align-items:center;gap:10px">'+
-      '<span style="font-size:20px;flex-shrink:0">⏱️</span>'+
-      '<div><div style="font-size:13px;font-weight:700;color:#0369a1">Time &amp; Materials</div>'+
-      '<div style="font-size:11px;color:#0284c7;margin-top:1px">Any trade — crew × rate + materials, NTE cap &amp; deposit</div></div>'+
-    '</button>'+
     '<button onclick="document.getElementById(\'_trade-pick-ov\')?.remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -3504,10 +3503,47 @@ function _pickTrade(id){
   }
   if(_tradePickCb){_tradePickCb(id);_tradePickCb=null;}
 }
-function _doOpenEstimate(c,_overrideAddr,_forceTrade){
+
+// ── 3-way estimate style picker ──────────────────────────────────────────────
+let _stylePickState=null;
+function _showEstimateStylePicker(c,overrideAddr){
+  _stylePickState={c,overrideAddr};
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_style-pick-ov';
+  const box=document.createElement('div');box.className='zmodal';
+  const btn=(id,icon,title,sub,extra)=>`<button onclick="_pickEstStyle('${id}')" style="width:100%;padding:14px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:10px;display:flex;align-items:flex-start;gap:12px${extra||''}"><span style="font-size:24px;flex-shrink:0;margin-top:1px">${icon}</span><div><div style="font-size:14px;font-weight:800;color:var(--text);margin-bottom:2px">${title}</div><div style="font-size:11px;color:var(--text3);line-height:1.45">${sub}</div></div></button>`;
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">How do you want to bid this job?</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:16px">Choose your estimate style</div>'+
+    btn('scope','🎯','Scope &amp; Price','Surfaces, products, and labor — spec it out by service. Best when you know exactly what the job needs.')+
+    btn('tm','⏱️','Time &amp; Materials','Crew size, hourly rate, estimated hours. Set a not-to-exceed cap and mobilization deposit.',';border-color:#0284c7;background:#f0f9ff')+
+    btn('freeform','✏️','Build Your Own','Blank page — add any line with a description, quantity, and price. Works for any job, any trade.',';border-color:#059669;background:#f0fdf4')+
+    '<button onclick="document.getElementById(\'_style-pick-ov\')?.remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function _pickEstStyle(style){
+  document.getElementById('_style-pick-ov')?.remove();
+  const {c,overrideAddr}=_stylePickState||{};
+  if(!c)return;
+  _stylePickState=null;
+  if(style==='scope'){_doOpenScopeEstimate(c,overrideAddr);}
+  else if(style==='tm'){openTMEstimate(c);}
+  else if(style==='freeform'){openFreeFormEstimate(c);}
+}
+function _doOpenScopeEstimate(c,overrideAddr){
   const lines=_getTradeLines();
-  if(!_forceTrade&&lines.length>1){
-    _showTradePicker('New estimate',t=>_doOpenEstimate(c,_overrideAddr,t));
+  if(lines.length>1){
+    _showTradePicker('Scope &amp; Price — choose trade',t=>{
+      _doOpenEstimate(c,overrideAddr,t);
+    });
+    return;
+  }
+  _doOpenEstimate(c,overrideAddr,getActiveTrade());
+}
+
+function _doOpenEstimate(c,_overrideAddr,_forceTrade){
+  if(!_forceTrade){
+    _showEstimateStylePicker(c,_overrideAddr);
     return;
   }
   const _trade=_forceTrade||getActiveTrade();
@@ -17408,9 +17444,14 @@ function _renderNavTradeSwitcher(){
 let _geiClientId=null,_geiEditBidId=null,_geiLines=[],_geiTrade=null,_geiIsCommercial=false,_geiEmergency=false,_geiStep=1,_geiNewWork=false;
 let _panelSched=null; // null = not active, obj = panel schedule data
 let _geiIsTM=false,_tmCrewCount=1,_tmRatePerMan=0,_tmEstHours=0,_tmBillingCycle='weekly';
+let _geiIsFreeForm=false;
 
 function openTMEstimate(c,bidId){
-  _geiIsTM=true;
+  _geiIsTM=true;_geiIsFreeForm=false;
+  openGenericEstimate(c,bidId,null);
+}
+function openFreeFormEstimate(c,bidId){
+  _geiIsFreeForm=true;_geiIsTM=false;
   openGenericEstimate(c,bidId,null);
 }
 
@@ -17418,7 +17459,10 @@ function openGenericEstimate(c,bidId,_tradePick){
   _geiClientId=c?.id||null;
   _geiEditBidId=bidId||null;
   _geiLines=[];_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;
-  if(!_geiIsTM){_geiIsTM=false;_tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';}
+  const _wasTM=_geiIsTM,_wasFF=_geiIsFreeForm;
+  _geiIsTM=false;_geiIsFreeForm=false;
+  if(_wasTM){_geiIsTM=true;}else{_tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';}
+  if(_wasFF)_geiIsFreeForm=true;
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
@@ -17450,6 +17494,7 @@ function openGenericEstimate(c,bidId,_tradePick){
         _tmCrewCount=b.tmCrewCount||1;_tmRatePerMan=b.tmRatePerMan||0;
         _tmEstHours=b.tmEstHours||0;_tmBillingCycle=b.tmBillingCycle||'weekly';
       }
+      if(b.isFreeForm)_geiIsFreeForm=true;
     }
   }
   if(!_geiEditBidId){
@@ -17471,6 +17516,8 @@ function openGenericEstimate(c,bidId,_tradePick){
       if(_b.geiDuration)sf('gei-duration',_b.geiDuration);
       if(_b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(_b.panelSched)_panelSched=JSON.parse(JSON.stringify(_b.panelSched));
+      if(_b.isFreeForm)_geiIsFreeForm=true;
+      if(_b.isTM){_geiIsTM=true;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';}
       // Purge other empty duplicates for this client+trade now that we have the right one
       bids=bids.filter(b=>b.id===_existingGei.id||!(b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&!b.amount&&!(b.geiLines||[]).length&&(b.status==='Draft'||b.status==='Pending')&&(b.trade_type===_geiTrade||!b.trade_type)));
       saveAll();
@@ -17485,8 +17532,8 @@ function openGenericEstimate(c,bidId,_tradePick){
 }
 
 function goGeiStep(n){
-  // If going to Step 2 and no bundles are set, show the onboarding picker first
-  if(n===2&&(!S.myBundles||!S.myBundles.length)&&!_geiIsTM){
+  // If going to Step 2 and no bundles are set, show the onboarding picker first (skip for T&M and free-form)
+  if(n===2&&(!S.myBundles||!S.myBundles.length)&&!_geiIsTM&&!_geiIsFreeForm){
     showGeiOnboarding();return;
   }
   _geiStep=n;
@@ -17494,36 +17541,45 @@ function goGeiStep(n){
   window.scrollTo({top:0,behavior:'instant'});
   _geiRenderStepBar();
   _geiSyncScopeButtons();
-  // T&M mode: show/hide T&M-specific sections
-  const show=v=>el=>{const d=document.getElementById(el);if(d)d.style.display=v;};
+  const show=v=>id=>{const d=document.getElementById(id);if(d)d.style.display=v;};
+  // Always hide all mode chips/sections first
+  ['gei-tm-chip','gei-tm-reason-wrap','gei-tm-crew','gei-tm-terms','gei-ff-chip'].forEach(id=>{
+    const d=document.getElementById(id);if(d)d.style.display='none';
+  });
+  const svcWrap=document.getElementById('gei-svc-wrap');
   if(_geiIsTM){
     show('block')('gei-tm-chip');show('block')('gei-tm-reason-wrap');
-    if(n===2)show('block')('gei-tm-crew'); else show('none')('gei-tm-crew');
+    if(n===2)show('block')('gei-tm-crew');
     if(n===3){show('block')('gei-tm-terms');_tmSyncCycleButtons();_tmCalcDeposit();_tmCalcNte();}
-    else show('none')('gei-tm-terms');
     const titleEl=document.getElementById('gei-trade-title');
     if(titleEl)titleEl.textContent='⏱️ Time & Materials';
-    // In T&M mode restore crew inputs if editing
+    if(svcWrap)svcWrap.style.display='none';
     if(n===2){
       const cd=document.getElementById('tm-crew-display');if(cd)cd.textContent=_tmCrewCount;
       const ri=document.getElementById('tm-rate');if(ri&&_tmRatePerMan)ri.value=_tmRatePerMan;
       const hi=document.getElementById('tm-hours');if(hi&&_tmEstHours)hi.value=_tmEstHours;
       if(_tmRatePerMan||_tmEstHours)_tmRecalc();
     }
-    // Restore reason if editing
     if(n===1){
       const b=bids.find(x=>x.id===_geiEditBidId);
       if(b?.tmReason){const rs=document.getElementById('tm-reason');if(rs)rs.value=b.tmReason;}
       if(b?.tmReasonNote){const rn=document.getElementById('tm-reason-note');if(rn)rn.value=b.tmReasonNote;}
     }
+  } else if(_geiIsFreeForm){
+    show('block')('gei-ff-chip');
+    if(svcWrap)svcWrap.style.display='none';
+    const titleEl=document.getElementById('gei-trade-title');
+    if(titleEl)titleEl.textContent='✏️ Build Your Own';
   } else {
-    ['gei-tm-chip','gei-tm-reason-wrap','gei-tm-crew','gei-tm-terms'].forEach(id=>{
-      const d=document.getElementById(id);if(d)d.style.display='none';
-    });
+    if(svcWrap)svcWrap.style.display='flex';
   }
   const bar=document.getElementById('gei-cart-bar');
-  if(bar)bar.style.display=(n===2&&_geiLines.length&&!_geiIsTM)?'flex':'none';
-  if(n===2){if(!_geiIsTM)_geiRenderTemplates();_geiRenderCartBar();}
+  if(bar)bar.style.display=(n===2&&_geiLines.length)?'flex':'none';
+  if(n===2){
+    if(_geiIsFreeForm)_geiRenderFreeFormBuilder();
+    else if(!_geiIsTM)_geiRenderTemplates();
+    _geiRenderCartBar();
+  }
   if(n===3){renderGeiLines();calcGeiTotal();_panelRenderSection();}
 }
 
@@ -17586,6 +17642,103 @@ function _tmSyncCycleButtons(){
 function _geiBack(){
   if(_geiStep>1)goGeiStep(_geiStep-1);
   else{document.getElementById('gei-cart-bar')?.remove();goPg('pg-clients');}
+}
+
+// ── Free-form (Build Your Own) builder ───────────────────────────────────────
+function _geiRenderFreeFormBuilder(){
+  const el=document.getElementById('gei-templates');if(!el)return;
+  const hist=(S.lineHistory||[]).slice().sort((a,b)=>(b.count||0)-(a.count||0)).slice(0,6);
+  const histHtml=hist.length?
+    '<div style="margin-bottom:14px">'+
+      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Recently used</div>'+
+      '<div style="display:flex;flex-wrap:wrap;gap:6px">'+
+      hist.map((h,i)=>'<button onclick="_geiHistoryChipAdd('+i+')" style="padding:5px 11px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);font-size:12px;cursor:pointer;font-family:inherit;color:var(--text2)">'+escHtml(h.desc)+' · $'+(h.rate||0).toLocaleString('en-US',{maximumFractionDigits:0})+'</button>').join('')+
+      '</div></div>':'';
+  const hasLines=_geiLines.length>0;
+  el.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'+
+      '<div style="font-size:13px;font-weight:700;color:var(--text)">Line items</div>'+
+      '<button onclick="_geiAddFreeFormLine()" class="btn btn-p btn-sm" style="padding:6px 14px;font-size:12px">+ Add line</button>'+
+    '</div>'+
+    histHtml+
+    '<div id="gei-ff-lines"></div>'+
+    (!hasLines?'<div style="text-align:center;padding:24px 0;font-size:13px;color:var(--text3)">Tap <strong>+ Add line</strong> to start building your estimate.</div>':'');
+  _geiRenderFreeFormLines();
+}
+function _geiRenderFreeFormLines(){
+  const el=document.getElementById('gei-ff-lines');if(!el)return;
+  if(!_geiLines.length){el.innerHTML='';return;}
+  el.innerHTML=_geiLines.map((l,i)=>{
+    const total=(l.qty||1)*(l.rate||0);
+    const totalFmt='$'+total.toLocaleString('en-US',{maximumFractionDigits:0});
+    return'<div style="background:var(--bg2);border-radius:var(--r);border:1px solid var(--border2);padding:11px 13px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px">'+escHtml(l.desc||'—')+'</div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+(l.qty||1)+' '+(l.unit||'ea')+' @ $'+(l.rate||0).toLocaleString('en-US',{maximumFractionDigits:0})+'</div>'+
+      '</div>'+
+      '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'+
+        '<div style="font-size:15px;font-weight:800;color:var(--blue)">'+totalFmt+'</div>'+
+        '<button onclick="_geiEditFreeFormLine('+i+')" style="background:none;border:none;cursor:pointer;color:var(--blue);font-size:11px;font-weight:700;font-family:inherit;padding:3px 6px;border-radius:4px;border:1px solid var(--blue)">Edit</button>'+
+        '<button onclick="_geiLines.splice('+i+',1);_geiRenderFreeFormBuilder();_geiRenderCartBar();" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:20px;padding:0;line-height:1">×</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+function _geiHistoryChipAdd(i){
+  const hist=(S.lineHistory||[]).slice().sort((a,b)=>(b.count||0)-(a.count||0));
+  const h=hist[i];if(!h)return;
+  _geiLines.push({desc:h.desc,qty:h.qty||1,unit:h.unit||'ea',rate:h.rate||0,total:(h.qty||1)*(h.rate||0)});
+  _geiRenderFreeFormBuilder();_geiRenderCartBar();
+}
+function _geiAddFreeFormLine(prefill){
+  const d=prefill||{};
+  const isEdit=d._edit!==undefined;
+  const ov=document.createElement('div');
+  ov.id='_ff-add-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:flex-end;justify-content:center';
+  ov.innerHTML=
+    '<div style="background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;padding:20px 18px 36px;width:100%;max-width:480px;box-sizing:border-box">'+
+      '<div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:14px">'+(isEdit?'Edit line':'Add line item')+'</div>'+
+      '<div class="f" style="margin-bottom:10px"><label>Description</label>'+
+        '<input id="_ffa-desc" type="text" value="'+escHtml(d.desc||'')+'" placeholder="e.g. Interior paint — 2 coats, Labor, Material" autocomplete="off" style="font-size:14px">'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">'+
+        '<div class="f"><label>Qty</label><input id="_ffa-qty" type="number" value="'+(d.qty||1)+'" min="0.01" step="any" oninput="_ffaLiveTotal()" style="font-size:14px"></div>'+
+        '<div class="f"><label>Unit</label><input id="_ffa-unit" type="text" value="'+escHtml(d.unit||'ea')+'" placeholder="ea" style="font-size:14px"></div>'+
+        '<div class="f"><label>Price per unit ($)</label><input id="_ffa-rate" type="number" value="'+(d.rate||'')+'" min="0" step="any" placeholder="0" oninput="_ffaLiveTotal()" style="font-size:14px"></div>'+
+      '</div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg2);padding:9px 12px;border-radius:var(--r);margin-bottom:14px">'+
+        '<span style="font-size:12px;color:var(--text2)">Line total</span>'+
+        '<span id="_ffa-total-disp" style="font-size:18px;font-weight:800;color:var(--blue)">'+(d.qty&&d.rate?'$'+((d.qty||1)*(d.rate||0)).toLocaleString('en-US',{maximumFractionDigits:0}):'—')+'</span>'+
+      '</div>'+
+      '<button class="btn btn-p" onclick="_geiConfirmFreeFormAdd('+(isEdit?d._edit:-1)+')" style="margin-bottom:8px">'+(isEdit?'Update line':'Add to estimate')+'</button>'+
+      '<button class="btn" onclick="document.getElementById(\'_ff-add-ov\')?.remove()" style="color:var(--text2);font-size:13px">Cancel</button>'+
+    '</div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  setTimeout(()=>document.getElementById('_ffa-desc')?.focus(),100);
+}
+function _ffaLiveTotal(){
+  const qty=parseFloat(document.getElementById('_ffa-qty')?.value)||0;
+  const rate=parseFloat(document.getElementById('_ffa-rate')?.value)||0;
+  const el=document.getElementById('_ffa-total-disp');
+  if(el)el.textContent=(qty&&rate)?'$'+(qty*rate).toLocaleString('en-US',{maximumFractionDigits:0}):'—';
+}
+function _geiConfirmFreeFormAdd(editIdx){
+  const desc=(document.getElementById('_ffa-desc')?.value||'').trim();
+  if(!desc){const inp=document.getElementById('_ffa-desc');if(inp){inp.style.borderColor='#dc2626';inp.focus();}return;}
+  const qty=parseFloat(document.getElementById('_ffa-qty')?.value)||1;
+  const unit=(document.getElementById('_ffa-unit')?.value||'ea').trim();
+  const rate=parseFloat(document.getElementById('_ffa-rate')?.value)||0;
+  document.getElementById('_ff-add-ov')?.remove();
+  const line={desc,qty,unit,rate,total:qty*rate};
+  if(editIdx>=0&&editIdx<_geiLines.length)_geiLines[editIdx]=line;
+  else _geiLines.push(line);
+  _geiRenderFreeFormBuilder();_geiRenderCartBar();
+}
+function _geiEditFreeFormLine(i){
+  const l=_geiLines[i];if(!l)return;
+  _geiAddFreeFormLine({...l,_edit:i});
 }
 
 function _geiRenderStepBar(){
@@ -18026,6 +18179,28 @@ function renderGeiLines(){
 
 function addGeiLine(){_geiLines.push({desc:'',qty:1,unit:'ea',rate:'',total:0});renderGeiLines();calcGeiTotal();}
 
+function _saveToLineHistory(){
+  if(!_geiLines.length)return;
+  if(!S.lineHistory)S.lineHistory=[];
+  _geiLines.forEach(l=>{
+    if(!l.desc||l._tmLabor)return;
+    const key=l.desc.toLowerCase().trim();
+    const idx=S.lineHistory.findIndex(h=>(h.desc||'').toLowerCase().trim()===key);
+    if(idx>=0){
+      S.lineHistory[idx].count=(S.lineHistory[idx].count||0)+1;
+      if(l.rate)S.lineHistory[idx].rate=l.rate;
+      if(l.unit)S.lineHistory[idx].unit=l.unit;
+      if(l.qty)S.lineHistory[idx].qty=l.qty;
+      S.lineHistory[idx].lastUsed=Date.now();
+    }else{
+      S.lineHistory.push({desc:l.desc,qty:l.qty||1,unit:l.unit||'ea',rate:l.rate||0,count:1,lastUsed:Date.now()});
+    }
+  });
+  S.lineHistory.sort((a,b)=>(b.count||0)-(a.count||0));
+  if(S.lineHistory.length>100)S.lineHistory.length=100;
+  saveAll();
+}
+
 function _geiRateBlur(i,val){
   const line=_geiLines[i];if(!line||!line.jobId)return;
   let job=null;
@@ -18223,14 +18398,15 @@ function saveGenericEstimate(draft){
     tmNteCap:parseFloat(v('tm-nte-cap'))||0,
   }:{isTM:false};
   const _deposit=_geiIsTM?(_tmFields.tmDepositAmt||0):Math.round(total*0.25*100)/100;
+  const _typeLabel=_geiIsTM?'T&M Estimate':_geiIsFreeForm?'Build Your Own Estimate':(TRADE_META[trade]?.label||'Trade')+' job';
   if(_geiEditBidId){
     const b=bids.find(x=>x.id===_geiEditBidId);
     if(b){
-      b.amount=total;b.type=v('gei-desc')||(_geiIsTM?'T&M Estimate':TRADE_META[trade]?.label+' job');
+      b.amount=total;b.type=v('gei-desc')||_typeLabel;
       b.notes=v('gei-notes');b.geiLines=JSON.parse(JSON.stringify(_geiLines));
       b.geiTaxPct=taxPct;b.status=draft?'Draft':'Pending';b.draft=!!draft;
       b.geiDuration=v('gei-duration')||'';b.geiNewWork=_geiNewWork||false;
-      b.trade_type=trade;b.deposit=_deposit;
+      b.trade_type=trade;b.deposit=_deposit;b.isFreeForm=_geiIsFreeForm||false;
       if(_panelSched)b.panelSched=JSON.parse(JSON.stringify(_panelSched));else delete b.panelSched;
       Object.assign(b,_tmFields);
       saveAll();
@@ -18242,14 +18418,16 @@ function saveGenericEstimate(draft){
       phone:'',addr:v('gei-addr'),
       bid_date:v('gei-date')||todayKey(),
       amount:total,deposit:_deposit,
-      type:v('gei-desc')||(_geiIsTM?'T&M Estimate':TRADE_META[trade]?.label+' job'),
+      type:v('gei-desc')||_typeLabel,
       notes:v('gei-notes'),status:draft?'Draft':'Pending',draft:!!draft,
+      isFreeForm:_geiIsFreeForm||false,
       geiLines:JSON.parse(JSON.stringify(_geiLines)),geiTaxPct:taxPct,
       geiDuration:v('gei-duration')||'',geiNewWork:_geiNewWork||false,
       trade_type:trade,...(_panelSched?{panelSched:JSON.parse(JSON.stringify(_panelSched))}:{}),..._tmFields,
     };
     bids.unshift(newBid);_geiEditBidId=newBid.id;saveAll();
   }
+  if(!draft)_saveToLineHistory();
   showToast(draft?'Draft saved':'Estimate saved','✅');
   if(!draft)goPg('pg-clients');
 }
