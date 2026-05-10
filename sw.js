@@ -13,21 +13,24 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  if (e.request.mode === 'navigate') {
+  // Navigate requests AND explicit cache:'reload' fetches (version checks) always go
+  // straight to the network — SW cache is bypassed and then updated with fresh content.
+  if (e.request.mode === 'navigate' || e.request.cache === 'reload') {
     e.respondWith(
       fetch(e.request, {cache: 'reload'})
         .then(r => {
-          caches.open(CACHE).then(c => c.put(e.request, r.clone()));
+          if (r.ok) caches.open(CACHE).then(c => c.put(e.request, r.clone()));
           return r;
         })
         .catch(() => caches.match('/index.html'))
     );
     return;
   }
+  // Cache-first for all other static assets (JS, CSS, images)
   e.respondWith(
     caches.match(e.request).then(cached => {
       const net = fetch(e.request).then(r => {
-        caches.open(CACHE).then(c => c.put(e.request, r.clone()));
+        if (r.ok) caches.open(CACHE).then(c => c.put(e.request, r.clone()));
         return r;
       });
       return cached || net;

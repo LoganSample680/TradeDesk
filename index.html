@@ -19298,7 +19298,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.5';
+const APP_VERSION='05.10.26.6';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){const o=document.getElementById('supa-boot-overlay');if(!o)return;o.classList.add('td-fadeout');setTimeout(()=>o.remove(),320);}
@@ -20589,15 +20589,18 @@ async function _autoSaveAndReload(){
 }
 
 // ── Persistent version check: fires every time app comes to foreground ────────
-// Fetches version.json (a tiny file we control) and compares against the
-// embedded APP_VERSION constant. More reliable than ETag — CDN may cache ETags
-// for minutes after a deploy, but version.json content is explicit and exact.
+// Fetches the FULL HTML page with cache:'reload' — this bypasses the browser
+// cache AND the SW's own cache (SW checks e.request.cache==='reload' and goes
+// straight to network). The fresh HTML is stored into the SW cache so that the
+// subsequent location.reload() is instant. We then extract the version string
+// embedded in the fetched HTML and compare to the running APP_VERSION.
 async function _checkVersionOnResume(){
   try{
-    const r=await fetch('/version.json?_='+Date.now(),{cache:'no-store'});
+    const r=await fetch(location.pathname,{cache:'reload'});
     if(!r.ok)return;
-    const{version}=await r.json();
-    if(version&&version!==APP_VERSION)await _autoSaveAndReload();
+    const html=await r.text();
+    const m=html.match(/const APP_VERSION='([^']+)'/);
+    if(m&&m[1]!==APP_VERSION)await _autoSaveAndReload();
   }catch(e){}
 }
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)_checkVersionOnResume();});
