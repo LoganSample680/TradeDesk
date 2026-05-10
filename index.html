@@ -19286,6 +19286,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
+const APP_VERSION='1.0.0';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){const o=document.getElementById('supa-boot-overlay');if(!o)return;o.classList.add('td-fadeout');setTimeout(()=>o.remove(),320);}
@@ -20745,5 +20746,7 @@ if(supaEnabled()){
 })();
 
 </script>
+<div id="app-version" style="position:fixed;bottom:6px;right:10px;font-size:10px;color:var(--text3);opacity:0.5;pointer-events:none;z-index:1;font-family:-apple-system,sans-serif;letter-spacing:.02em"></div>
+<script>document.getElementById('app-version').textContent='v'+APP_VERSION;</script>
 </body>
 </html>
