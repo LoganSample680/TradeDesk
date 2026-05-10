@@ -2567,39 +2567,31 @@ function _buildStateBrackets(data,status){
   return[[Math.round(top*mult),low],[Infinity,high]];
 }
 
-function saveAll(){if(_devSupportMode){supaSaveDebounced();return;}if(_isEmployee){supaSaveDebounced();return;}try{const lp=(k,d)=>localStorage.setItem(k,JSON.stringify(d));lp('zp3_clients',clients);lp('zp3_bids',bids);lp('zp3_jobs',jobs);lp('zp3_inc',income);lp('zp3_exp',expenses);lp('zp3_mil',mileage);lp('zp3_chk',checksState);lp('zp3_S',S);lp('zp3_pay',payments);lp('zp3_lien',liens);lp('zp3_ev',events.slice(-600));lp('zp3_te',timeEntries.slice(-500));lp('zp3_photos',photos.slice(-300));lp('zp3_lic',licenses);}catch(e){}supaSaveDebounced();}
-function loadAll(){try{const lp=(k,d)=>{const s=localStorage.getItem(k);return s?JSON.parse(s):d;};clients=lp('zp3_clients',[]);bids=lp('zp3_bids',[]);jobs=lp('zp3_jobs',[]);income=lp('zp3_inc',[]);expenses=lp('zp3_exp',[]);mileage=lp('zp3_mil',[]);checksState=lp('zp3_chk',{});payments=lp('zp3_pay',[]);liens=lp('zp3_lien',[]);events=lp('zp3_ev',[]);timeEntries=lp('zp3_te',[]);photos=lp('zp3_photos',[]);licenses=lp('zp3_lic',[]);const ss=lp('zp3_S',null);if(ss)S={...S,...ss};
-  // One-time migration: correct stale 2024 tax values in localStorage
-  if(S.fedMFS===14600)S.fedMFS=15000;
-  if(S.fedSingle===14600)S.fedSingle=15000;
-  if(S.fedMFJ===29200)S.fedMFJ=30000;
-  if(S.fedHOH===21900)S.fedHOH=22500;
-  if(S.b10===11600)S.b10=11925;
-  if(S.b12===47150)S.b12=48475;
-  if(S.b22===100525)S.b22=103350;
-  if(S.b24===191950)S.b24=197300;
-  if(S.b32===243725)S.b32=250525;
-  if(S.b35===609350)S.b35=626350;
-  if(S.irsRate===0.67||S.irsRate===0.670)S.irsRate=0.700;
-  if(new Date().getFullYear()>=2026&&S.irsRate<0.725){S.irsRate=0.725;S.irsRateYear=new Date().getFullYear();}
-  try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(e){}
+function saveAll(){if(_devSupportMode){supaSaveDebounced();return;}if(_isEmployee){supaSaveDebounced();return;}try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(e){}supaSaveDebounced();}
+function loadAll(){
+  // Business data lives in Supabase only — initialize empty, populated by supaLoadFromCloud()
+  clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];checksState={};payments=[];liens=[];events=[];timeEntries=[];photos=[];licenses=[];
+  // Load settings only from localStorage for fast UI init before cloud connects
+  try{
+    const ss=localStorage.getItem('zp3_S');
+    if(ss){const parsed=JSON.parse(ss);S={...S,...parsed};}
+    // Tax bracket migrations
+    if(S.fedMFS===14600)S.fedMFS=15000;
+    if(S.fedSingle===14600)S.fedSingle=15000;
+    if(S.fedMFJ===29200)S.fedMFJ=30000;
+    if(S.fedHOH===21900)S.fedHOH=22500;
+    if(S.b10===11600)S.b10=11925;
+    if(S.b12===47150)S.b12=48475;
+    if(S.b22===100525)S.b22=103350;
+    if(S.b24===191950)S.b24=197300;
+    if(S.b32===243725)S.b32=250525;
+    if(S.b35===609350)S.b35=626350;
+    if(S.irsRate===0.67||S.irsRate===0.670)S.irsRate=0.700;
+    if(new Date().getFullYear()>=2026&&S.irsRate<0.725){S.irsRate=0.725;S.irsRateYear=new Date().getFullYear();}
+    try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(e){}
   }catch(e){}
-  // One-time orphan cleanup: remove truly empty PAINT Draft bids (no surfaces, no amount).
-  // Guard: skip GEI bids (they have geiLines) — they are handled by the GEI dedup below.
-  const _before=bids.length;
-  bids=bids.filter(b=>!(b.draft===true&&b.status==='Draft'&&b.geiLines===undefined&&(!b.surfaces||!b.surfaces.length)&&!b.signingToken&&!b.amount));
-  // Also remove empty Pending/Draft GEI bids ($0, no lines) — duplicates and abandoned estimates.
-  // Normalize trade_type: undefined/null/'' all collapse to 'general' for dedup key.
-  const _geiSeen=new Set();
-  bids=bids.filter(b=>{
-    if(b.geiLines===undefined||b.signingToken||b.amount||(b.geiLines||[]).length)return true;
-    if(b.status!=='Draft'&&b.status!=='Pending')return true;
-    const key=b.client_id+'|'+(b.trade_type||'general');
-    if(_geiSeen.has(key))return false;
-    _geiSeen.add(key);return true;
-  });
-  if(bids.length!==_before)try{localStorage.setItem('zp3_bids',JSON.stringify(bids));}catch(e){}
-  clients.forEach(c=>{if(!c.clientToken)_ensureClientToken(c.id);});
+  // Nuke any stale business data left by old app versions — can never be pushed to cloud again
+  try{['zp3_clients','zp3_bids','zp3_jobs','zp3_inc','zp3_exp','zp3_mil','zp3_chk','zp3_pay','zp3_lien','zp3_ev','zp3_te','zp3_photos','zp3_lic'].forEach(k=>localStorage.removeItem(k));}catch(e){}
 }
 
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -19753,6 +19745,7 @@ function supaSaveDebounced(){
 
 async function supaSaveToCloud(){
   if(!_supa||!_supaUser)return;
+  if(!_supaCloudLoaded)return;
   try{
     const receiptImages={};
     const expensesForSync=expenses.map(e=>{
@@ -20056,8 +20049,8 @@ async function supaLoadFromCloud(){
     const{data,error}=await _supa.from('zj_data').select('*').eq('user_id',_loadUid).maybeSingle();
     if(error||!data){
       // First time this user has signed in — no cloud data yet.
-      // Clear any localStorage data from a previous user on this device.
       clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
+      _supaCloudLoaded=true;
       saveAll();
       _removeBootOverlay();
       renderDash();buildScopeGrid();
@@ -20103,7 +20096,6 @@ async function supaLoadFromCloud(){
       // For employees, restore their own name (don't let contractor's ownerName overwrite)
       if(_isEmployee&&_employeeRecord?.name&&_user){_user.name=_employeeRecord.name;}
     }}
-    saveAll(); // persist cloud data to localStorage as cache
     _supaCloudLoaded=true;
     supaSetStatus('synced');
     // Prefetch Stripe status in background so hub-share is instant (no 46s wait)
@@ -20562,7 +20554,8 @@ async function _autoSaveAndReload(){
     if(activePg==='pg-est')saveEstFullDraft();
     if(activePg==='pg-est-generic')saveGenericEstimate(true);
   }catch(e){}
-  await new Promise(r=>setTimeout(r,400));
+  // Flush any pending debounced cloud save before reloading
+  if(_syncTimer){clearTimeout(_syncTimer);try{await supaSaveToCloud();}catch(e){}}
   location.reload(true);
 }
 
