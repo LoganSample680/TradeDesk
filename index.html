@@ -14226,11 +14226,13 @@ function openExportPanel(){
         '</select>'+
       '</div>'+
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Choose format</div>'+
+      exportOptionHTML('exportPLCSV()','📈','Profit & Loss CSV','Income vs expenses vs mileage deduction — net profit at the bottom. Hand straight to your accountant.')+
+      exportOptionHTML('exportIncomeCSV()','💰','Income CSV','Every revenue line — date, client, category, job, amount. Filtered to selected year.')+
       exportOptionHTML('exportExpensesCSV()','📊','Expenses CSV','Every expense line — date, vendor, IRS category, amount, job, receipt status. Open in Excel or send to your accountant.')+
-      exportOptionHTML('exportTaxPDF()','📄','Full tax report — PDF','Schedule C summary, income, expenses by IRS category, mileage log. Print or save — IRS audit ready.')+
       exportOptionHTML('exportMileageCSV()','🚗','Mileage log CSV','Every trip — date, client, miles, IRS deduction. Meets IRS contemporaneous recordkeeping.')+
+      exportOptionHTML('exportTaxPDF()','📄','Full tax report — PDF','Schedule C summary, income, expenses by IRS category, mileage log. Print or save — IRS audit ready.')+
       exportOptionHTML('exportFullBackup()','💾','Full data backup','All clients, jobs, bids, income, expenses, mileage. JSON — restore or migrate anytime.')+
-      exportOptionHTML('exportReceiptImages()','📄','Receipt PDF','All receipt photos in one PDF — sorted by date with vendor, amount and category. Print or send to your CPA.')+ 
+      exportOptionHTML('exportReceiptImages()','📄','Receipt PDF','All receipt photos in one PDF — sorted by date with vendor, amount and category. Print or send to your CPA.')+
     '</div>';
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -14291,6 +14293,54 @@ function exportMileageCSV(){
   const csv=['"'+biz+' — Mileage — '+(yr==='all'?'All Years':yr)+'"','"IRS Rate $'+rate.toFixed(3)+'/mi"','',header.join(','),...rows,'','TOTAL,,,,"'+tot.toFixed(1)+'","'+(tot*rate).toFixed(2)+'",,'].join('\n');
   downloadFile((biz+' Mileage '+(yr==='all'?'All Years':yr)+'.csv').replace(/\s+/g,'_'),csv,'text/csv');
   showToast('Mileage log — '+filtered.length+' trips downloaded','🚗');
+}
+
+function exportIncomeCSV(){
+  const yr=getExportYear();
+  const biz=S.bname||'TradeDesk';
+  const filtered=(yr==='all'?income:income.filter(r=>r.date?.startsWith(yr)))
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const header=['Date','Source / Client','Category','Job','Amount','Notes'];
+  const rows=filtered.map(r=>[
+    r.date||'',
+    '"'+(r.client_name||r.source||'').replace(/"/g,'""')+'"',
+    '"'+(r.cat||r.category||'Revenue').replace(/"/g,'""')+'"',
+    '"'+(r.job_name||'').replace(/"/g,'""')+'"',
+    (r.amount||0).toFixed(2),
+    '"'+(r.note||r.notes||'').replace(/"/g,'""')+'"'
+  ].join(','));
+  const total=filtered.reduce((s,r)=>s+(r.amount||0),0);
+  const csv=['"'+biz+' — Income — '+(yr==='all'?'All Years':yr)+'"','',header.join(','),...rows,'','TOTAL,,,,'+total.toFixed(2)+','].join('\n');
+  downloadFile((biz+' Income '+(yr==='all'?'All Years':yr)+'.csv').replace(/\s+/g,'_'),csv,'text/csv');
+  showToast('Income CSV — '+filtered.length+' records downloaded','💰');
+}
+
+function exportPLCSV(){
+  const yr=getExportYear();
+  const biz=S.bname||'TradeDesk';
+  const label=yr==='all'?'All Years':yr;
+  const filterYr=arr=>(yr==='all'?arr:arr.filter(r=>r.date?.startsWith(yr)));
+  const yrInc=filterYr(income).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const yrExp=filterYr(expenses).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const yrMil=filterYr(mileage);
+  const tInc=yrInc.reduce((s,r)=>s+(r.amount||0),0);
+  const tExp=yrExp.reduce((s,r)=>s+(r.amount||0),0);
+  const tMil=yrMil.reduce((s,m)=>s+(m.miles||0),0)*IRS();
+  const net=tInc-tExp-tMil;
+  const lines=[
+    '"'+biz+' — Profit & Loss — '+label+'"','',
+    '"INCOME"','Date,Source / Client,Category,Amount',
+    ...yrInc.map(r=>[r.date||'','"'+(r.client_name||r.source||'').replace(/"/g,'""')+'"','"'+(r.cat||'Revenue')+'"',(r.amount||0).toFixed(2)].join(',')),
+    ',,TOTAL INCOME,'+tInc.toFixed(2),'',
+    '"EXPENSES"','Date,Vendor,IRS Category,Amount',
+    ...yrExp.map(e=>{const c=IRS_EXPENSE_CATS.find(x=>x.id===e.cat)||{label:e.cat||'Other'};return[e.date||'','"'+(e.vendor||'').replace(/"/g,'""')+'"','"'+c.label+'"',(e.amount||0).toFixed(2)].join(',');}),
+    ',,TOTAL EXPENSES,'+tExp.toFixed(2),'',
+    '"MILEAGE DEDUCTION"','Miles,IRS Rate,Deduction,',
+    tMil>0?tMil.toFixed(1)+','+IRS().toFixed(3)+','+(tMil).toFixed(2)+',':'(none)','',
+    '"NET PROFIT"','"'+label+'",,'+net.toFixed(2),
+  ];
+  downloadFile((biz+' P&L '+label+'.csv').replace(/\s+/g,'_'),lines.join('\n'),'text/csv');
+  showToast('P&L exported — '+label,'📈');
 }
 
 function exportTaxPDF(){
@@ -19307,7 +19357,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.10';
+const APP_VERSION='05.10.26.11';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){const o=document.getElementById('supa-boot-overlay');if(!o)return;o.classList.add('td-fadeout');setTimeout(()=>o.remove(),320);}
