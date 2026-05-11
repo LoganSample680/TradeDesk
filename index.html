@@ -19680,7 +19680,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.45';
+const APP_VERSION='05.10.26.46';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -19694,6 +19694,24 @@ function _removeBootOverlay(){
       const bid=bids.find(b=>String(b.id)===resumeBid);
       if(bid)setTimeout(()=>openEditBid(bid.id),80);
     }
+    // Restore any unsaved form fields that were open when auto-update fired
+    try{
+      const raw=localStorage.getItem('_form_snap');
+      if(raw){
+        localStorage.removeItem('_form_snap');
+        const snap=JSON.parse(raw);
+        const {_pg,...fields}=snap;
+        if(_pg&&_pg!=='pg-dash'&&_pg!=='pg-est'&&_pg!=='pg-est-generic')goPg(_pg);
+        setTimeout(()=>{
+          let restored=0;
+          Object.entries(fields).forEach(([id,val])=>{
+            const el=document.getElementById(id);
+            if(el&&val!==undefined){el.value=val;restored++;}
+          });
+          if(restored>0)showToast('Form data restored — review and save','📋');
+        },150);
+      }
+    }catch(e){}
   },320);
 }
 async function supaInit(){
@@ -21041,10 +21059,34 @@ function _showUpdateOverlay(){
   document.body.appendChild(ov);
 }
 let _reloadPending=false;
+function _snapshotForms(){
+  // Capture all visible form inputs so unsaved data (client form, expense
+  // modal, log-trip modal, etc.) survives the auto-update reload.
+  const snap={};
+  const activePg=document.querySelector('.pg.active');
+  if(activePg){
+    activePg.querySelectorAll('input:not([type=hidden]):not([type=file]),textarea,select').forEach(el=>{
+      if(el.id&&el.value)snap[el.id]=el.value;
+    });
+    snap._pg=activePg.id;
+  }
+  // Also capture any open modal overlays (expense, income, trip modals)
+  document.querySelectorAll('.zmodal-overlay').forEach(modal=>{
+    modal.querySelectorAll('input:not([type=hidden]):not([type=file]),textarea,select').forEach(el=>{
+      if(el.id&&el.value)snap[el.id]=el.value;
+    });
+  });
+  return snap;
+}
 async function _autoSaveAndReload(){
   if(_reloadPending)return; // SW_UPDATED + version.json poll can both fire — only the first wins
   _reloadPending=true;
   _showUpdateOverlay();
+  // Snapshot any open forms before saving/reloading
+  try{
+    const snap=_snapshotForms();
+    if(Object.keys(snap).length>1)localStorage.setItem('_form_snap',JSON.stringify(snap));
+  }catch(e){}
   const activePg=document.querySelector('.pg.active')?.id||'';
   try{
     if(activePg==='pg-est')saveEstFullDraft();
