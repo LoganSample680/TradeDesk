@@ -187,7 +187,13 @@ async function init(){
         });
       }catch(e){console.warn('sig check:',e);}
     }
-    applyBranding(_hub);showState('hub');renderAll();
+    applyBranding(_hub);renderAll();
+    // Activate the correct view BEFORE revealing pg-hub so there's no flash
+    const _hv=location.hash.slice(1);
+    if(!location.hash.startsWith('#paid-')&&!location.hash.startsWith('#invoice-')){
+      switchView(_VIEWS.includes(_hv)?_hv:'home');
+    }
+    showState('hub');
     if(location.hash.startsWith('#paid-')){
       const bidId=parseInt(location.hash.replace('#paid-',''));
       if(bidId)setTimeout(()=>showPaymentSuccess(bidId),300);
@@ -195,10 +201,6 @@ async function init(){
     }else if(location.hash.startsWith('#invoice-')){
       const bidId=parseInt(location.hash.replace('#invoice-',''));
       if(bidId)setTimeout(()=>openInvoice(bidId),300);
-    }else{
-      // Restore the view the user was on before refresh
-      const _hv=location.hash.slice(1);
-      switchView(_VIEWS.includes(_hv)?_hv:'home');
     }
   }catch(e){console.error(e);showState('err');}
 }
