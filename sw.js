@@ -1,5 +1,5 @@
 const CACHE = 'tradedesk-v1';
-const SW_VERSION = '05.10.26.44'; // auto-bumped by push.sh — changing this forces a new SW install
+const SW_VERSION = '05.10.26.45'; // auto-bumped by push.sh — changing this forces a new SW install
 
 self.addEventListener('install', () => self.skipWaiting());
 

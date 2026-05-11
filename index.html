@@ -2289,7 +2289,7 @@ if('serviceWorker' in navigator){
       .then(r=>r.json())
       .then(d=>{if(d.version&&d.version!==APP_VERSION)_autoSaveAndReload();})
       .catch(()=>{});
-  },60000);
+  },15000);
 }
 
 // ── Submit guard — prevents double-tap on any button ─────────────────────
@@ -19680,7 +19680,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.44';
+const APP_VERSION='05.10.26.45';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -21040,7 +21040,10 @@ function _showUpdateOverlay(){
     '</div>';
   document.body.appendChild(ov);
 }
+let _reloadPending=false;
 async function _autoSaveAndReload(){
+  if(_reloadPending)return; // SW_UPDATED + version.json poll can both fire — only the first wins
+  _reloadPending=true;
   _showUpdateOverlay();
   const activePg=document.querySelector('.pg.active')?.id||'';
   try{
