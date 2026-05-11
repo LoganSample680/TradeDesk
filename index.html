@@ -19672,7 +19672,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.39';
+const APP_VERSION='05.10.26.40';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -20196,16 +20196,17 @@ async function supaSaveToCloud(){
       : await _supa.from('zj_data').upsert(part1,{onConflict:'user_id'});
     if(e1)throw e1;
 
-    // Part 2 — history data (larger arrays, update-only since row guaranteed by Part 1)
+    // Part 2 — CRITICAL history data. Never bundle optional/maybe-missing
+    // columns here — a single unknown column makes PostgREST reject the entire
+    // update, silently losing user data (this is what wiped mileage before
+    // the schema fix — checks_state was missing from zj_data and killed every
+    // save in this batch).
     const {error:e2}=await _supa.from('zj_data').update({
       income:JSON.stringify(income),
       expenses:JSON.stringify(expensesForSync),
       mileage:JSON.stringify(mileage),
       time_entries:JSON.stringify(timeEntries.slice(-500)),
       receipt_images:JSON.stringify(receiptImages),
-      licenses:JSON.stringify(licenses),
-      events:JSON.stringify(events.slice(-600)),
-      checks_state:JSON.stringify(checksState),
     }).eq('user_id',uid);
     if(e2){
       if(e2.code==='57014'){
@@ -20225,6 +20226,16 @@ async function supaSaveToCloud(){
         throw e2;
       }
     }
+    // Part 3 — BEST-EFFORT optional columns. These may not exist in every
+    // schema (older Supabase tables). Failures here MUST NOT throw — the
+    // critical data already saved successfully above.
+    try{
+      const{error:e3}=await _supa.from('zj_data').update({
+        licenses:JSON.stringify(licenses),
+        events:JSON.stringify(events.slice(-600)),
+      }).eq('user_id',uid);
+      if(e3)_logSave('part3-skip',{id:_attemptId,code:e3.code,msg:e3.message});
+    }catch(e3){_logSave('part3-skip',{id:_attemptId,msg:e3?.message||String(e3)});}
     _logSave('ok',{id:_attemptId,mileage:_mileCount});
     supaSetStatus('synced');
   }catch(e){
