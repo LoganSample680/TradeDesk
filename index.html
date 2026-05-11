@@ -19672,7 +19672,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.41';
+const APP_VERSION='05.10.26.42';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -21218,7 +21218,6 @@ if(supaEnabled()){
     ov.innerHTML=
       '<div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;padding:0 24px">'+
         logoBlock+
-        (name!=='TradeDesk'&&logo?'<div style="font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:'+onColor+'">'+name+'</div>':'')+
       '</div>'+
       '<div style="width:100%;padding:0 0 52px">'+
         '<div style="height:3px;background:'+barBg+';border-radius:99px;margin:0 32px;overflow:hidden">'+
