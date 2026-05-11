@@ -3285,7 +3285,7 @@ function clearAllData(){
 
 function clearMileageOnly(){
   zConfirm('Delete all mileage records? This cannot be undone.',()=>{
-    mileage=[];saveAll();renderAllMileage();renderDash();
+    mileage=[];saveAll();_flushSaveNow();renderAllMileage();renderDash();
     zAlert('Mileage cleared.',{title:'Done'});
   },{title:'Clear mileage',yes:'Delete mileage',danger:true});
 }
@@ -7962,8 +7962,7 @@ function saveEndDriveModal(){
   saveAll();
   // Mileage is the most-lost data because users immediately switch apps after
   // saving a trip — flush to Supabase NOW instead of waiting for the 2s debounce.
-  if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
-  supaSaveToCloud();
+  _flushSaveNow();
   closeTopModal();
   hideDriveBanner();
   renderDash();
@@ -15721,10 +15720,9 @@ function saveLoggedTrip(){
   showToast('Trip saved — calculating mileage…','🚗');
   if(mapApp&&to){
     // iOS will suspend the PWA when we hand off to Apple/Google Maps — the 2s
-    // debounce in saveAll() dies before firing. Cancel it and push to Supabase
-    // NOW so the in-flight fetch survives the app switch.
-    if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
-    supaSaveToCloud();
+    // debounce in saveAll() dies before firing. Push to Supabase NOW so the
+    // in-flight fetch survives the app switch.
+    _flushSaveNow();
     openTripInMaps(mapApp,from,to);
   }
   renderDash();
@@ -15862,8 +15860,8 @@ function _togMileTrip(id){
   if(chv)chv.style.transform=open?'rotate(-90deg)':'rotate(0deg)';
 }
 function toggleMileAddr(id){_togMileTrip(id);}// legacy alias
-function delMileage(id){mileage=mileage.filter(x=>x.id!==id);saveAll();if(currentClientId){const el=document.getElementById('cd-mile-list');if(el)renderCDMileage();}renderAllMileage();}
-function editMilePurpose(id,val){const m=mileage.find(x=>x.id===id);if(!m)return;m.purpose=val;saveAll();}
+function delMileage(id){mileage=mileage.filter(x=>x.id!==id);saveAll();_flushSaveNow();if(currentClientId){const el=document.getElementById('cd-mile-list');if(el)renderCDMileage();}renderAllMileage();}
+function editMilePurpose(id,val){const m=mileage.find(x=>x.id===id);if(!m)return;m.purpose=val;saveAll();_flushSaveNow();}
 function openMileageEdit(id){
   const r=mileage.find(x=>x.id===id);if(!r)return;
   openLogTripModal({editId:id,fromAddress:r.from||'',toAddress:r.to||'',purpose:r.purpose||'',clientId:r.client_id,clientName:r.client_name||'',vehicle:r.vehicle||'',date:r.date||'',notes:r.notes||'',miles:r.miles||0});
@@ -15884,7 +15882,7 @@ function updateLoggedTrip(id){
   const cid=parseInt(document.getElementById('lm-client')?.value)||null;
   const c=cid?getClientById(cid):null;
   r.client_id=cid;if(c)r.client_name=c.name;
-  saveAll();closeTopModal();showToast('Trip updated','✓');
+  saveAll();_flushSaveNow();closeTopModal();showToast('Trip updated','✓');
   if(document.getElementById('mil-table'))renderAllMileage();
   if(document.getElementById('cd-mile-list')&&currentClientId)renderCDMileage();
 }
@@ -19674,7 +19672,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.35';
+const APP_VERSION='05.10.26.36';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -20142,6 +20140,13 @@ function supaSaveDebounced(){
   clearTimeout(_syncTimer);
   _syncTimer=setTimeout(()=>supaSaveToCloud(),2000);
   supaSetStatus('syncing');
+}
+// Cancel the 2s debounce and push the full state to Supabase RIGHT NOW.
+// Use for any data the user expects to survive an immediate app close,
+// pull-to-refresh, or app switch — mileage saves/edits/deletes especially.
+function _flushSaveNow(){
+  if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
+  supaSaveToCloud();
 }
 
 async function supaSaveToCloud(){
