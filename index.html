@@ -16983,14 +16983,12 @@ function openCollectModal(){
           '<div style="font-size:18px;font-weight:800;color:#A32D2D">'+fmt(balance)+'</div>'+
         '</div>'+
         '<div style="display:flex;gap:6px">'+
-          '<button class="btn btn-sm btn-g" onclick="document.querySelector(\'.zmodal-overlay\').remove();openClientDetail('+c.id+');setTimeout(()=>{setCDTab(\'bids\',null);setTimeout(()=>openPayPanel('+b.id+'),100)},200)" style="flex:1;font-size:12px">💰 Log payment</button>'+
-          (phone?'<button class="btn btn-sm" onclick="window.location.href=\'sms:'+phone+'\'" style="font-size:12px;padding:7px 10px">💬</button>':'')+ 
-          (phone?'<button class="btn btn-sm" onclick="window.location.href=\'tel:'+phone+'\'" style="font-size:12px;padding:7px 10px">📞</button>':'')+
+          '<button class="btn btn-sm btn-g" onclick="document.querySelector(\'.zmodal-overlay\').remove();openClientDetail('+c.id+');setTimeout(()=>{setCDTab(\'bids\',null);setTimeout(()=>openPayPanel('+b.id+'),100)},200)" style="flex:1;font-size:13px;padding:10px 14px">💰 Log payment</button>'+
         '</div>'+
       '</div>';
     }).join('');
   overlay.innerHTML=
-    '<div style="background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;width:100%;max-height:80vh;overflow-y:auto">'+
+    '<div style="background:var(--bg);border-radius:var(--rl);width:100%;max-width:420px;max-height:80vh;overflow-y:auto">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border2)">'+
         '<div style="font-size:16px;font-weight:800">Collect payment</div>'+
         '<div style="display:flex;gap:8px;align-items:center">'+
@@ -19699,7 +19697,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.63';
+const APP_VERSION='05.10.26.64';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
