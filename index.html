@@ -19674,7 +19674,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.34';
+const APP_VERSION='05.10.26.35';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -21009,9 +21009,24 @@ async function _autoSaveAndReload(){
   }else if(activePg==='pg-est'&&editingBidId){
     localStorage.setItem('_sw_resume_bid',String(editingBidId));
   }
-  if(_syncTimer){clearTimeout(_syncTimer);try{await supaSaveToCloud();}catch(e){}}
+  // ALWAYS flush — even when _syncTimer is null, in-memory state may have
+  // changes from a fire-and-forget save (saveLoggedTrip / saveEndDriveModal)
+  // that hasn't completed yet. Awaiting an idempotent full-state push
+  // guarantees the latest data is in the cloud before reload.
+  if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
+  try{await supaSaveToCloud();}catch(e){}
   location.reload(true);
 }
+
+// Catches pull-to-refresh, app close, app switch — fires synchronously when
+// the page is about to be hidden/unloaded. Browser navigation kills the 2s
+// debounce timer; this is the only reliable way to flush pending changes.
+window.addEventListener('pagehide',()=>{
+  if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;supaSaveToCloud();}
+});
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden&&_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;supaSaveToCloud();}
+});
 
 // ── Persistent version check: fires every time app comes to foreground ────────
 // Fetches the FULL HTML page with cache:'reload' — this bypasses the browser
