@@ -508,7 +508,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">Quick actions</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(95px,1fr));gap:8px">
       <button onclick="goPg('pg-clients');setTimeout(()=>openNewClient(),100)" style="padding:13px 6px;border-radius:var(--rl);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:5px;width:100%;transition:transform .1s,box-shadow .15s;border:1.5px solid var(--blue);background:var(--blue);color:#fff;box-shadow:0 2px 8px rgba(24,95,165,.25)">
-        <span style="font-size:20px">👤</span><span>New client</span>
+        <span style="font-size:20px">👤</span><span>New lead</span>
       </button>
       <button onclick="quickAction('drive')" style="padding:13px 6px;border-radius:var(--rl);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:5px;width:100%;transition:transform .1s,box-shadow .15s;border:1.5px solid var(--border2);background:var(--bg);color:var(--text)">
         <span style="font-size:20px">🚗</span><span>Drive</span>
@@ -545,6 +545,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 </div>
 <div class="pg" id="pg-clients">
   <div class="tbar"><div class="tbar-title" id="clients-page-title">Clients</div></div>
+  <div id="cf-search-wrap">
   <div style="margin-bottom:12px">
     <input id="cf-search" placeholder="&#128269; Search clients by name, address, phone..."
       oninput="onClientSearch(this)"
@@ -556,6 +557,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
     <button type="button" class="fb"        id="cft-active"  onclick="setCF('active',this)">Active</button>
     <button type="button" class="fb"        id="cft-collect" onclick="setCF('collect',this)">Collect</button>
     <button type="button" class="fb"        id="cft-closed"  onclick="setCF('closed',this)">Closed</button>
+  </div>
   </div>
   <div id="client-list"></div>
   <div id="client-form-wrap" style="display:none">
@@ -5465,8 +5467,9 @@ function openNewClient(){
   const crw=document.getElementById('cf-ref-wrap');if(crw)crw.style.display='none';
   document.getElementById('cf-ptype').value='Single family home';
   document.getElementById('client-list').style.display='none';
+  const sw=document.getElementById('cf-search-wrap');if(sw)sw.style.display='none';
   document.getElementById('client-form-wrap').style.display='block';
-  const pt=document.getElementById('clients-page-title');if(pt)pt.textContent='New client';
+  const pt=document.getElementById('clients-page-title');if(pt)pt.textContent='New Lead';
   const nb=document.getElementById('clients-new-btn');if(nb)nb.style.display='none';
   window.scrollTo(0,0);
   setTimeout(()=>{const n=document.getElementById('cf-name');if(n)n.focus();},100);
@@ -19680,7 +19683,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.47';
+const APP_VERSION='05.10.26.48';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -19701,33 +19704,35 @@ function _removeBootOverlay(){
         localStorage.removeItem('_form_snap');
         const snap=JSON.parse(raw);
         const{_pg,_clientFormOpen,_editClientId,...fields}=snap;
-        const hasFields=Object.keys(fields).length>0;
-        if(!hasFields)return;
-        // Navigate to the right page
-        if(_pg&&_pg!=='pg-dash'&&_pg!=='pg-est'&&_pg!=='pg-est-generic')goPg(_pg);
-        // If client form was open, re-open it first (openNewClient clears fields,
-        // so we restore AFTER calling it)
+        // Client form restore must run even if no fields were typed yet
         if(_clientFormOpen&&!_editClientId){
           setTimeout(()=>{
+            goPg('pg-clients');
             openNewClient();
-            setTimeout(()=>{
-              Object.entries(fields).forEach(([id,val])=>{
-                const el=document.getElementById(id);
-                if(el&&val!==undefined)el.value=val;
-              });
-              showToast('New client form restored — review and save','📋');
-            },80);
-          },150);
-        }else{
-          setTimeout(()=>{
-            let restored=0;
-            Object.entries(fields).forEach(([id,val])=>{
-              const el=document.getElementById(id);
-              if(el&&val!==undefined){el.value=val;restored++;}
-            });
-            if(restored>0)showToast('Form data restored — review and save','📋');
-          },150);
+            if(Object.keys(fields).length>0){
+              setTimeout(()=>{
+                Object.entries(fields).forEach(([id,val])=>{
+                  const el=document.getElementById(id);
+                  if(el&&val!==undefined)el.value=val;
+                });
+                showToast('New lead form restored — review and save','📋');
+              },80);
+            }
+          },200);
+          return;
         }
+        const hasFields=Object.keys(fields).length>0;
+        if(!hasFields)return;
+        // Navigate to the right page for non-client-form restores
+        if(_pg&&_pg!=='pg-dash'&&_pg!=='pg-est'&&_pg!=='pg-est-generic')goPg(_pg);
+        setTimeout(()=>{
+          let restored=0;
+          Object.entries(fields).forEach(([id,val])=>{
+            const el=document.getElementById(id);
+            if(el&&val!==undefined){el.value=val;restored++;}
+          });
+          if(restored>0)showToast('Form data restored — review and save','📋');
+        },150);
       }
     }catch(e){}
   },320);
@@ -21105,7 +21110,7 @@ function _snapshotForms(){
 async function _autoSaveAndReload(){
   if(_reloadPending)return; // SW_UPDATED + version.json poll can both fire — only the first wins
   _reloadPending=true;
-  _showUpdateOverlay();
+  document.body.style.visibility='hidden'; // hide current page during save — boot overlay handles the visual after reload
   // Snapshot any open forms before saving/reloading
   try{
     const snap=_snapshotForms();
