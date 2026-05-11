@@ -19672,7 +19672,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.38';
+const APP_VERSION='05.10.26.39';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -20152,9 +20152,19 @@ function _flushSaveNow(){
   return _pendingSavePromise;
 }
 
+// Diagnostic: ring buffer of recent save attempts so we can see WHY a save
+// failed when PTR has to rescue records. Inspect via window._saveLog in dev tools.
+window._saveLog=window._saveLog||[];
+function _logSave(stage,info){
+  window._saveLog.push({t:new Date().toISOString(),stage,info});
+  if(window._saveLog.length>40)window._saveLog.shift();
+}
 async function supaSaveToCloud(){
-  if(!_supa||!_supaUser)return;
-  if(!_supaCloudLoaded)return;
+  if(!_supa||!_supaUser){_logSave('skip','no _supa or _supaUser');return;}
+  if(!_supaCloudLoaded){_logSave('skip','_supaCloudLoaded=false');return;}
+  const _attemptId=Date.now()+'-'+Math.random().toString(36).slice(2,5);
+  const _mileCount=mileage.length;
+  _logSave('start',{id:_attemptId,mileage:_mileCount,page:document.querySelector('.pg.active')?.id});
   try{
     const receiptImages={};
     const expensesForSync=expenses.map(e=>{
@@ -20199,20 +20209,29 @@ async function supaSaveToCloud(){
     }).eq('user_id',uid);
     if(e2){
       if(e2.code==='57014'){
+        _logSave('part2-timeout-retry',{id:_attemptId,code:e2.code});
         // Retry with trimmed arrays
-        await _supa.from('zj_data').update({
+        const{error:e2r}=await _supa.from('zj_data').update({
           income:JSON.stringify(income.slice(-500)),
           expenses:JSON.stringify(expensesForSync.slice(-300)),
           mileage:JSON.stringify(mileage.slice(-300)),
           time_entries:JSON.stringify(timeEntries.slice(-200)),
           receipt_images:JSON.stringify({}),
         }).eq('user_id',uid);
+        if(e2r){_logSave('part2-retry-fail',{id:_attemptId,code:e2r.code,msg:e2r.message});throw e2r;}
       } else {
+        _logSave('part2-fail',{id:_attemptId,code:e2.code,msg:e2.message});
         console.warn('Cloud history save failed:',e2);
+        throw e2;
       }
     }
+    _logSave('ok',{id:_attemptId,mileage:_mileCount});
     supaSetStatus('synced');
-  }catch(e){console.warn('Cloud save failed:',e);supaSetStatus('error');}
+  }catch(e){
+    _logSave('throw',{id:_attemptId,name:e?.name,code:e?.code,msg:e?.message||String(e)});
+    console.warn('Cloud save failed:',e);
+    supaSetStatus('error');
+  }
 }
 
 async function checkNewSignatures(){
@@ -21141,7 +21160,19 @@ setTimeout(()=>{
               _flushSaveNow();
               renderDash();
               if(document.getElementById('mil-table'))renderAllMileage();
-              showToast('Recovered '+_rescued+' unsaved record'+(_rescued>1?'s':''),'💾');
+              // Diagnose: look at recent save log for why these failed to save
+              const log=(window._saveLog||[]).slice(-15);
+              const lastFail=[...log].reverse().find(e=>['throw','part2-fail','part2-retry-fail','skip'].includes(e.stage));
+              const lastOk=[...log].reverse().find(e=>e.stage==='ok');
+              const diag=lastFail
+                ? lastFail.stage+': '+(lastFail.info?.msg||lastFail.info?.code||lastFail.info||'?')
+                : (lastOk?'last save OK '+lastOk.t.slice(11,19):'no recent save attempts');
+              zAlert(
+                'Recovered '+_rescued+' unsaved record'+(_rescued>1?'s':'')+'.\n\n'+
+                'Most recent save status:\n'+diag+'\n\n'+
+                'Full log: open dev tools and run window._saveLog',
+                {title:'💾 Records rescued'}
+              );
             }
             if(_ptrCurPg&&_ptrCurPg!=='pg-dash')goPg(_ptrCurPg);
           })();
