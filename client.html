@@ -91,10 +91,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .prop-wrap{max-width:680px;margin:0 auto;padding:32px 24px 60px}
 .prop-close{position:fixed;top:16px;right:16px;background:var(--navy);color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit;z-index:10}
 @media print{.topbar,.left-nav,.bottom-nav,.inv-close,.prop-close,.no-print{display:none!important}#inv-overlay,#prop-overlay{position:static!important}.inv-wrap,.prop-wrap{padding:16px}body{background:#fff}}
-@keyframes tdFadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-@keyframes tdBootBar{0%{width:0%}100%{width:100%}}
-#boot-overlay{position:fixed;inset:0;background:#0D1117;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .45s ease}
-#inv-overlay,#prop-overlay{transition:opacity .25s ease}
+#boot-overlay{position:fixed;inset:0;background:#0D1117;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s ease;will-change:opacity}
+#inv-overlay,#prop-overlay{transition:opacity .22s ease;will-change:opacity}
 </style>
 </head>
 <body>
@@ -426,10 +424,13 @@ function switchView(key){
   _VIEWS.forEach(v=>{
     const el=document.getElementById('view-'+v);
     if(v===key){
+      el.style.opacity='0';el.style.transform='translateY(10px)';el.style.transition='';
       el.style.display='block';
-      el.style.animation='none';void el.offsetWidth;
-      el.style.animation='tdFadeUp .25s cubic-bezier(.4,0,.2,1) both';
-    }else{el.style.display='none';}
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        el.style.transition='opacity .22s ease,transform .22s ease';
+        el.style.opacity='1';el.style.transform='translateY(0)';
+      }));
+    }else{el.style.display='none';el.style.opacity='';el.style.transform='';el.style.transition='';}
     const ni=document.getElementById('ni-'+v);if(ni)ni.className='nav-item'+(v===key?' active':'');
   });
   _BN.forEach(v=>{const bi=document.getElementById('bni-'+v);if(bi)bi.className='bn-item'+(v===key?' active':'');});

@@ -11860,7 +11860,7 @@ async function sendProposalLink(){
     const proposalData={
       id:bidId,token,clientName:cname,businessName:bname,
       contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
-      proposalHtml:proposal.innerHTML+(document.getElementById('est-terms')?'<div style="margin-top:16px;padding:16px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;font-size:11px;color:#4a5568;line-height:1.8">'+document.getElementById('est-terms').innerHTML+'</div>':''),
+      proposalHtml:proposal.innerHTML,
       clientAddr:document.getElementById('e-caddr')?.value||_bidForProp?.addr||'',
       estDays:parseInt(document.getElementById('e-days')?.value)||_bidForProp?.days||2,
       amount:_propFinal,
@@ -11974,7 +11974,7 @@ function _commitProposalSent(){
     bid.followup=addDays(todayKey(),3);
     // Snapshot the exact proposal HTML the client will sign — required for legal record
     const proposalEl=document.getElementById('est-proposal');
-    if(proposalEl&&proposalEl.innerHTML.trim())bid.proposalHtml=proposalEl.innerHTML+(document.getElementById('est-terms')?'<div style="margin-top:16px;padding:16px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;font-size:11px;color:#4a5568;line-height:1.8">'+document.getElementById('est-terms').innerHTML+'</div>':'');
+    if(proposalEl&&proposalEl.innerHTML.trim())bid.proposalHtml=proposalEl.innerHTML;
     saveAll();
     // Re-upload hub now that signingToken is committed — snapshot gets correct signHubUrl
     if(bid.client_id)_uploadClientHub(bid.client_id).catch(()=>{});
@@ -19700,7 +19700,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.60';
+const APP_VERSION='05.10.26.61';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
