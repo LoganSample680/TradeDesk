@@ -419,6 +419,8 @@ async function init(){
     document.getElementById('sum-rows').innerHTML=
       (_days?'<div class="row"><span class="rl">Est. duration</span><span class="rv">'+_days+' day'+(_days!==1?'s':'')+'</span></div>':'');
     document.getElementById('prop-html').innerHTML=_prop.proposalHtml||'';
+    // Remove the embedded signature block from the proposal HTML — signing happens in sig-card below
+    document.querySelectorAll('#prop-html .sig-block, #prop-html [class*="sig-block"], #prop-html .signature-section').forEach(el=>el.remove());
     // Show EPA section for pre-1978 painting proposals
     if(_prop.epaRequired&&_prop.trade==='painting'){
       const epaSec=document.getElementById('epa-section');
