@@ -15360,58 +15360,75 @@ function _addrSugSelect(suggId,streetId,cityId,stateId,zipId,street,city,state,z
   if(editClientId&&street&&city)_lookupPropertyData(editClientId,{street,city,state,zip});
 }
 function _getRecentFromAddresses(limit=10){
-  const seen=new Set();const out=[];
-  for(let i=0;i<mileage.length&&out.length<limit;i++){
-    const addr=(mileage[i].to||'').trim(); // last destination = most logical next starting point
-    if(addr&&!seen.has(addr.toLowerCase())){seen.add(addr.toLowerCase());out.push({addr,poi_name:mileage[i].to_name||'',client_name:mileage[i].client_name||''});}
+function _getRecentFromAddresses(limit=8){
+  const seen=new Map();
+  for(let i=0;i<mileage.length;i++){
+    const addr=(mileage[i].to||'').trim();
+    if(!addr)continue;
+    const key=addr.toLowerCase();
+    if(!seen.has(key)){
+      seen.set(key,{addr,poi_name:mileage[i].to_name||'',client_name:mileage[i].client_name||''});
+    }else if(!seen.get(key).poi_name&&mileage[i].to_name){
+      seen.get(key).poi_name=mileage[i].to_name;
+    }
+    if(seen.size>=limit)break;
   }
-  return out;
+  return[...seen.values()];
 }
 function _showRecentFromAddresses(){
   const sugg=document.getElementById('lm-from-sugg');if(!sugg)return;
   const recents=_getRecentFromAddresses();
   if(!recents.length){sugg.style.display='none';sugg.innerHTML='';return;}
   sugg.innerHTML='<div style="padding:4px 10px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Recent</div>'+
-    recents.map(r=>'<div onclick="_selectRecentFrom(\''+r.addr.replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\''+')" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)" onmouseenter="this.style.background=\'var(--bg2)\'" onmouseleave="this.style.background=\'\'">'+
+    recents.map(r=>{const sa=r.addr.replace(/\\/g,'\\\\').replace(/'/g,"\\'");const sp=(r.poi_name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");return'<div onclick="_selectRecentFrom(\''+sa+'\',\''+sp+'\')" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)" onmouseenter="this.style.background=\'var(--bg2)\'" onmouseleave="this.style.background=\'\'">'+
       '<span style="font-size:16px;color:var(--text3)">🕐</span>'+
       '<div>'+(r.poi_name?'<div style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(r.poi_name)+'</div><div style="font-size:11px;color:var(--text3)">'+escHtml(r.addr)+'</div>':'<div style="font-size:13px;color:var(--text)">'+escHtml(r.addr)+'</div>')+(r.client_name?'<div style="font-size:11px;color:var(--text3)">'+escHtml(r.client_name)+'</div>':'')+
-      '</div></div>').join('');
+      '</div></div>';}).join('');
   sugg.style.display='block';
 }
-function _selectRecentFrom(addr){
+function _selectRecentFrom(addr,poiName=''){
   const inp=document.getElementById('lm-from');if(!inp)return;
   inp.value=addr;_lmCoords.from=null;
+  const nameInp=document.getElementById('lm-from-name');if(nameInp)nameInp.value=poiName||'';
   const sugg=document.getElementById('lm-from-sugg');if(sugg){sugg.innerHTML='';sugg.style.display='none';}
   const chip=document.getElementById('lm-from-chip');const chipTxt=document.getElementById('lm-from-chip-txt');
-  if(chip&&chipTxt){chipTxt.textContent=addr;chip.style.display='inline-flex';}
+  if(chip&&chipTxt){chipTxt.textContent=poiName||addr;chip.style.display='inline-flex';}
   if(addr)_photonGeocode(addr).then(c=>{if(c)_lmCoords.from=c;}).catch(()=>{});
   const toVal=(document.getElementById('lm-to')?.value||'').trim();
   if(addr&&toVal)_previewRoute(addr,toVal);
 }
 function _getRecentDestinations(limit=10){
-  const seen=new Set();const out=[];
-  for(let i=0;i<mileage.length&&out.length<limit;i++){
+  const seen=new Map();
+  for(let i=0;i<mileage.length;i++){
     const addr=(mileage[i].to||'').trim();
-    if(addr&&!seen.has(addr.toLowerCase())){seen.add(addr.toLowerCase());out.push({addr,poi_name:mileage[i].to_name||'',client_name:mileage[i].client_name||''});}
+    if(!addr)continue;
+    const key=addr.toLowerCase();
+    if(!seen.has(key)){
+      seen.set(key,{addr,poi_name:mileage[i].to_name||'',client_name:mileage[i].client_name||''});
+    }else if(!seen.get(key).poi_name&&mileage[i].to_name){
+      seen.get(key).poi_name=mileage[i].to_name;
+    }
+    if(seen.size>=limit)break;
   }
-  return out;
+  return[...seen.values()];
 }
 function _showRecentDestinations(){
   const sugg=document.getElementById('lm-to-sugg');if(!sugg)return;
   const recents=_getRecentDestinations();
   if(!recents.length){sugg.style.display='none';sugg.innerHTML='';return;}
   sugg.innerHTML='<div style="padding:4px 10px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Recent</div>'+
-    recents.map(r=>'<div onclick="_selectRecentDest(\''+r.addr.replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\''+')" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)" onmouseenter="this.style.background=\'var(--bg2)\'" onmouseleave="this.style.background=\'\'">'+
+    recents.map(r=>{const sa=r.addr.replace(/\\/g,'\\\\').replace(/'/g,"\\'");const sp=(r.poi_name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");return'<div onclick="_selectRecentDest(\''+sa+'\',\''+sp+'\')" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)" onmouseenter="this.style.background=\'var(--bg2)\'" onmouseleave="this.style.background=\'\'">'+
       '<span style="font-size:16px;color:var(--text3)">🕐</span>'+
       '<div>'+(r.poi_name?'<div style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(r.poi_name)+'</div><div style="font-size:11px;color:var(--text3)">'+escHtml(r.addr)+'</div>':'<div style="font-size:13px;color:var(--text)">'+escHtml(r.addr)+'</div>')+(r.client_name?'<div style="font-size:11px;color:var(--text3)">'+escHtml(r.client_name)+'</div>':'')+
-      '</div></div>').join('');
+      '</div></div>';}).join('');
   sugg.style.display='block';
 }
-function _selectRecentDest(addr){
+function _selectRecentDest(addr,poiName=''){
   const inp=document.getElementById('lm-to');if(!inp)return;
   inp.value=addr;_lmCoords.to=null;
+  const nameInp=document.getElementById('lm-to-name');if(nameInp)nameInp.value=poiName||'';
   const sugg=document.getElementById('lm-to-sugg');if(sugg){sugg.innerHTML='';sugg.style.display='none';}
-  const chip=document.getElementById('lm-to-chip');if(chip){chip.textContent=addr;chip.style.display='inline-block';}
+  const chip=document.getElementById('lm-to-chip');if(chip){chip.textContent=poiName||addr;chip.style.display='inline-block';}
   if(addr)_photonGeocode(addr).then(c=>{if(c)_lmCoords.to=c;}).catch(()=>{});
   const fromVal=(document.getElementById('lm-from')?.value||'').trim();
   if(fromVal&&addr)_previewRoute(fromVal,addr);
