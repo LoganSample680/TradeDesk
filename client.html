@@ -91,9 +91,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .prop-wrap{max-width:680px;margin:0 auto;padding:32px 24px 60px}
 .prop-close{position:fixed;top:16px;right:16px;background:var(--navy);color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit;z-index:10}
 @media print{.topbar,.left-nav,.bottom-nav,.inv-close,.prop-close,.no-print{display:none!important}#inv-overlay,#prop-overlay{position:static!important}.inv-wrap,.prop-wrap{padding:16px}body{background:#fff}}
+@keyframes tdFadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes tdBootBar{0%{width:0%}100%{width:100%}}
+#boot-overlay{position:fixed;inset:0;background:#0D1117;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .45s ease}
+#inv-overlay,#prop-overlay{transition:opacity .25s ease}
 </style>
 </head>
 <body>
+<!-- Boot overlay — covers everything until hub data loads -->
+<div id="boot-overlay">
+  <div id="boot-logo-wrap" style="display:none;margin-bottom:14px"><img id="boot-logo" style="height:54px;max-width:200px;object-fit:contain;border-radius:6px;display:block"></div>
+  <div id="boot-name" style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-.3px;text-align:center;padding:0 32px;line-height:1.25;margin-bottom:5px;max-width:300px"></div>
+  <div style="font-size:11px;color:rgba(255,255,255,.3);font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:32px">Project Hub</div>
+  <div style="width:110px;height:2px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden"><div id="boot-bar" style="height:100%;width:0%;background:#185FA5;border-radius:2px;transition:width 1.4s cubic-bezier(.4,0,.2,1)"></div></div>
+</div>
 <!-- Stripe embedded checkout modal -->
 <div id="stripe-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;overflow-y:auto;padding:16px">
   <div style="background:#fff;border-radius:16px;max-width:500px;margin:20px auto;padding:0;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)">
@@ -122,7 +133,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="nav-footer" id="nav-footer">Powered by TradeDesk</div>
   </nav>
   <div class="main-content">
-    <div class="pg-status" id="pg-load"><div class="pg-status-icon">⏳</div><h2>Loading your hub…</h2><p>Just a moment.</p></div>
     <div class="pg-status" id="pg-err" style="display:none"><div class="pg-status-icon">🔗</div><h2>Hub not found</h2><p>This link may have expired. Contact us for a new link.</p></div>
     <div id="pg-hub" style="display:none">
       <div id="view-home"></div>
@@ -152,6 +162,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 const SUPA_URL='https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
 const _supa=supabase.createClient(SUPA_URL,SUPA_KEY);
+// Kick off the boot bar pulse so it feels alive immediately
+setTimeout(()=>{const b=document.getElementById('boot-bar');if(b)b.style.width='35%';},60);
 let _hub=null,_activeView='home';
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtDate=s=>{if(!s)return'';try{return new Date(s+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return s;}};
@@ -369,10 +381,17 @@ function showQuoteInProgress(h){
   document.getElementById('pg-load').style.display='none';
   document.getElementById('pg-hub').style.display='block';
 }
+function _dismissBootOverlay(fast){
+  const ov=document.getElementById('boot-overlay');if(!ov)return;
+  const bb=document.getElementById('boot-bar');if(bb)bb.style.width='100%';
+  const delay=fast?0:220;
+  setTimeout(()=>{ov.style.opacity='0';setTimeout(()=>ov.style.display='none',450);},delay);
+}
 function showState(s){
-  document.getElementById('pg-load').style.display=s==='load'?'block':'none';
   document.getElementById('pg-err').style.display=s==='err'?'block':'none';
   document.getElementById('pg-hub').style.display=s==='hub'?'block':'none';
+  if(s==='hub'){_dismissBootOverlay(false);}
+  else if(s==='err'){_dismissBootOverlay(true);}
 }
 function applyBranding(h){
   if(h.brandColor)document.documentElement.style.setProperty('--accent',h.brandColor);
@@ -384,6 +403,12 @@ function applyBranding(h){
   if(nci)nci.innerHTML='<div class="nav-client-name">'+esc(h.clientName||'')+'</div>'+(h.clientAddr?'<div class="nav-client-addr">'+esc(h.clientAddr)+'</div>':'');
   const nf=document.getElementById('nav-footer');
   if(nf&&h.bwebsite)nf.innerHTML='<a href="'+esc(h.bwebsite)+'" target="_blank" style="color:inherit;text-decoration:none">'+esc(h.bwebsite.replace(/^https?:\/\//,''))+'</a>';
+  // Populate + animate boot overlay
+  const bn=document.getElementById('boot-name');if(bn)bn.textContent=h.contractorName||'';
+  const bl=document.getElementById('boot-logo'),blw=document.getElementById('boot-logo-wrap');
+  if(bl&&blw&&h.logoData){bl.src=h.logoData;blw.style.display='block';}
+  const bb=document.getElementById('boot-bar');
+  if(bb){if(h.brandColor)bb.style.background=h.brandColor;setTimeout(()=>bb.style.width='78%',40);}
 }
 function renderAll(){
   renderHome();renderProposals();renderPayments();renderPhotos();renderResources();
@@ -399,7 +424,12 @@ const _BN=['home','proposals','payments','photos','resources'];
 function switchView(key){
   _activeView=key;
   _VIEWS.forEach(v=>{
-    document.getElementById('view-'+v).style.display=v===key?'block':'none';
+    const el=document.getElementById('view-'+v);
+    if(v===key){
+      el.style.display='block';
+      el.style.animation='none';void el.offsetWidth;
+      el.style.animation='tdFadeUp .25s cubic-bezier(.4,0,.2,1) both';
+    }else{el.style.display='none';}
     const ni=document.getElementById('ni-'+v);if(ni)ni.className='nav-item'+(v===key?' active':'');
   });
   _BN.forEach(v=>{const bi=document.getElementById('bni-'+v);if(bi)bi.className='bn-item'+(v===key?' active':'');});
@@ -651,11 +681,14 @@ function openInvoice(bidId){
   html+='<button onclick="window.print()" class="btn" style="width:auto;flex:1;padding:12px">⬇ Save as PDF</button>';
   html+='<button onclick="closeInvoice()" class="btn btn-sec" style="width:auto;flex:1">Close</button></div>';
   document.getElementById('inv-content').innerHTML=html;
-  document.getElementById('inv-overlay').style.display='block';
+  const _invOv=document.getElementById('inv-overlay');
+  _invOv.style.opacity='0';_invOv.style.display='block';
+  requestAnimationFrame(()=>{_invOv.style.opacity='1';});
   history.replaceState(null,'','#invoice-'+bidId);scrollTo(0,0);
 }
 function closeInvoice(){
-  document.getElementById('inv-overlay').style.display='none';
+  const _ov=document.getElementById('inv-overlay');
+  _ov.style.opacity='0';setTimeout(()=>_ov.style.display='none',250);
   history.replaceState(null,'',''+location.pathname+location.search);
 }
 async function openProposal(bidId){
@@ -663,7 +696,7 @@ async function openProposal(bidId){
   if(!bid||!bid.proposalKey){alert('Proposal document not available. Please contact us.');return;}
   const ov=document.getElementById('prop-overlay'),ct=document.getElementById('prop-content');
   ct.innerHTML='<div style="text-align:center;padding:60px 20px;color:#999;font-size:16px">Loading proposal…</div>';
-  ov.style.display='block';scrollTo(0,0);
+  ov.style.opacity='0';ov.style.display='block';requestAnimationFrame(()=>ov.style.opacity='1');scrollTo(0,0);
   try{
     const{data,error}=await _supa.storage.from('proposals').download(bid.proposalKey);
     if(error||!data)throw new Error('not found');
@@ -676,7 +709,7 @@ async function openProposal(bidId){
       '<button onclick="closeProp()" class="btn btn-sec" style="margin:0 20px 20px;width:auto;padding:12px 24px">← Back</button>';
   }
 }
-function closeProp(){document.getElementById('prop-overlay').style.display='none';}
+function closeProp(){const _ov=document.getElementById('prop-overlay');_ov.style.opacity='0';setTimeout(()=>_ov.style.display='none',250);}
 function renderResources(){
   if(!_hub||!_hub.epaRequired){document.getElementById('view-resources').innerHTML='';return;}
   const ackLine=_hub.epaAck
