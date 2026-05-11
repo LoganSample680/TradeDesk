@@ -19672,7 +19672,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.37';
+const APP_VERSION='05.10.26.38';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -21107,16 +21107,42 @@ setTimeout(()=>{
         },600);
         if(supaEnabled()&&_supa&&_supaUser){
           const _ptrCurPg=document.querySelector('.pg.active')?.id||'pg-dash';
-          // CRITICAL: flush any pending save FIRST, then await it to complete,
-          // THEN load from cloud. Otherwise the load overwrites in-memory data
-          // (e.g. a just-logged trip whose save is still in flight) with stale
-          // cloud data, "deleting" it from the user's perspective.
+          // CRITICAL: PTR is destructive — supaLoadFromCloud() overwrites every
+          // in-memory array with cloud data. To make PTR non-destructive:
+          //  1. Flush + await any pending save first
+          //  2. Snapshot local data BEFORE the load
+          //  3. After load, restore any IDs in the snapshot that are missing
+          //     from cloud (a previous save may have silently failed)
+          //  4. Push the rescued items back to cloud
           (async()=>{
             try{
               if(_syncTimer)await _flushSaveNow();
               else if(_pendingSavePromise)await _pendingSavePromise;
             }catch(e){}
+            // Snapshot id→record for arrays the user can't afford to lose
+            const _snap={
+              mileage:new Map(mileage.map(m=>[m.id,m])),
+              expenses:new Map(expenses.map(e=>[e.id,e])),
+              income:new Map(income.map(i=>[i.id,i])),
+            };
             await supaLoadFromCloud();
+            let _rescued=0;
+            ['mileage','expenses','income'].forEach(arrName=>{
+              const arr=arrName==='mileage'?mileage:(arrName==='expenses'?expenses:income);
+              const cloudIds=new Set(arr.map(x=>x.id));
+              _snap[arrName].forEach((rec,id)=>{
+                if(!cloudIds.has(id)){arr.unshift(rec);_rescued++;}
+              });
+            });
+            if(_rescued>0){
+              // Re-sort expenses by date (load handler does this)
+              expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
+              // Push the rescued records back to cloud immediately
+              _flushSaveNow();
+              renderDash();
+              if(document.getElementById('mil-table'))renderAllMileage();
+              showToast('Recovered '+_rescued+' unsaved record'+(_rescued>1?'s':''),'💾');
+            }
             if(_ptrCurPg&&_ptrCurPg!=='pg-dash')goPg(_ptrCurPg);
           })();
         }else renderDash();
