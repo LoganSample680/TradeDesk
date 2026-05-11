@@ -19672,7 +19672,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.36';
+const APP_VERSION='05.10.26.37';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -20142,11 +20142,14 @@ function supaSaveDebounced(){
   supaSetStatus('syncing');
 }
 // Cancel the 2s debounce and push the full state to Supabase RIGHT NOW.
-// Use for any data the user expects to survive an immediate app close,
-// pull-to-refresh, or app switch — mileage saves/edits/deletes especially.
+// Returns the in-flight save promise so callers can await it.
+// Tracks the latest in-flight save in _pendingSavePromise so other code paths
+// (e.g. pull-to-refresh) can await it before reloading from cloud.
+let _pendingSavePromise=null;
 function _flushSaveNow(){
   if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
-  supaSaveToCloud();
+  _pendingSavePromise=supaSaveToCloud().finally(()=>{_pendingSavePromise=null;});
+  return _pendingSavePromise;
 }
 
 async function supaSaveToCloud(){
@@ -21104,7 +21107,18 @@ setTimeout(()=>{
         },600);
         if(supaEnabled()&&_supa&&_supaUser){
           const _ptrCurPg=document.querySelector('.pg.active')?.id||'pg-dash';
-          supaLoadFromCloud().then(()=>{if(_ptrCurPg&&_ptrCurPg!=='pg-dash')goPg(_ptrCurPg);});
+          // CRITICAL: flush any pending save FIRST, then await it to complete,
+          // THEN load from cloud. Otherwise the load overwrites in-memory data
+          // (e.g. a just-logged trip whose save is still in flight) with stale
+          // cloud data, "deleting" it from the user's perspective.
+          (async()=>{
+            try{
+              if(_syncTimer)await _flushSaveNow();
+              else if(_pendingSavePromise)await _pendingSavePromise;
+            }catch(e){}
+            await supaLoadFromCloud();
+            if(_ptrCurPg&&_ptrCurPg!=='pg-dash')goPg(_ptrCurPg);
+          })();
         }else renderDash();
       }else{
         _ptrBar.style.height='0';
