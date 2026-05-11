@@ -19680,7 +19680,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.46';
+const APP_VERSION='05.10.26.47';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -19700,16 +19700,34 @@ function _removeBootOverlay(){
       if(raw){
         localStorage.removeItem('_form_snap');
         const snap=JSON.parse(raw);
-        const {_pg,...fields}=snap;
+        const{_pg,_clientFormOpen,_editClientId,...fields}=snap;
+        const hasFields=Object.keys(fields).length>0;
+        if(!hasFields)return;
+        // Navigate to the right page
         if(_pg&&_pg!=='pg-dash'&&_pg!=='pg-est'&&_pg!=='pg-est-generic')goPg(_pg);
-        setTimeout(()=>{
-          let restored=0;
-          Object.entries(fields).forEach(([id,val])=>{
-            const el=document.getElementById(id);
-            if(el&&val!==undefined){el.value=val;restored++;}
-          });
-          if(restored>0)showToast('Form data restored — review and save','📋');
-        },150);
+        // If client form was open, re-open it first (openNewClient clears fields,
+        // so we restore AFTER calling it)
+        if(_clientFormOpen&&!_editClientId){
+          setTimeout(()=>{
+            openNewClient();
+            setTimeout(()=>{
+              Object.entries(fields).forEach(([id,val])=>{
+                const el=document.getElementById(id);
+                if(el&&val!==undefined)el.value=val;
+              });
+              showToast('New client form restored — review and save','📋');
+            },80);
+          },150);
+        }else{
+          setTimeout(()=>{
+            let restored=0;
+            Object.entries(fields).forEach(([id,val])=>{
+              const el=document.getElementById(id);
+              if(el&&val!==undefined){el.value=val;restored++;}
+            });
+            if(restored>0)showToast('Form data restored — review and save','📋');
+          },150);
+        }
       }
     }catch(e){}
   },320);
@@ -21069,6 +21087,12 @@ function _snapshotForms(){
       if(el.id&&el.value)snap[el.id]=el.value;
     });
     snap._pg=activePg.id;
+  }
+  // Track if the new-client form was open (so we can re-open it on restore)
+  const cfWrap=document.getElementById('client-form-wrap');
+  if(cfWrap&&cfWrap.style.display!=='none'){
+    snap._clientFormOpen=true;
+    snap._editClientId=editClientId||null;
   }
   // Also capture any open modal overlays (expense, income, trip modals)
   document.querySelectorAll('.zmodal-overlay').forEach(modal=>{
