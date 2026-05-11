@@ -187,7 +187,7 @@ async function init(){
         });
       }catch(e){console.warn('sig check:',e);}
     }
-    applyBranding(_hub);renderAll();showState('hub');
+    applyBranding(_hub);showState('hub');renderAll();
     if(location.hash.startsWith('#paid-')){
       const bidId=parseInt(location.hash.replace('#paid-',''));
       if(bidId)setTimeout(()=>showPaymentSuccess(bidId),300);
@@ -195,6 +195,10 @@ async function init(){
     }else if(location.hash.startsWith('#invoice-')){
       const bidId=parseInt(location.hash.replace('#invoice-',''));
       if(bidId)setTimeout(()=>openInvoice(bidId),300);
+    }else{
+      // Restore the view the user was on before refresh
+      const _hv=location.hash.slice(1);
+      switchView(_VIEWS.includes(_hv)?_hv:'home');
     }
   }catch(e){console.error(e);showState('err');}
 }
@@ -397,6 +401,7 @@ function switchView(key){
     const ni=document.getElementById('ni-'+v);if(ni)ni.className='nav-item'+(v===key?' active':'');
   });
   _BN.forEach(v=>{const bi=document.getElementById('bni-'+v);if(bi)bi.className='bn-item'+(v===key?' active':'');});
+  history.replaceState(null,'',location.pathname+location.search+(key!=='home'?'#'+key:''));
   window.scrollTo(0,0);
 }
 function renderHome(){
