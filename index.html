@@ -2273,15 +2273,23 @@ if('serviceWorker' in navigator){
   navigator.serviceWorker.addEventListener('message',e=>{
     if(e.data?.type==='SW_UPDATED') _autoSaveAndReload();
   });
-  // Force the browser to re-check sw.js every time the app comes to foreground.
-  // reg.update() is independent of the 24-hour browser interval — it always
-  // does a fresh network fetch of sw.js. If sw.js changed, the new SW installs,
-  // activates (skipWaiting), claims clients, and sends SW_UPDATED → reload.
+  // On foreground: check for new SW immediately.
+  // sw.js is now bumped on every push so reg.update() detects changes reliably.
   document.addEventListener('visibilitychange',()=>{
     if(!document.hidden){
       navigator.serviceWorker.getRegistration().then(reg=>{if(reg)reg.update();}).catch(()=>{});
     }
   });
+  // Poll every 60s for users who leave the app open all day without backgrounding.
+  // Two-pronged: reg.update() triggers SW_UPDATED if sw.js changed;
+  // version.json fetch catches any remaining gaps.
+  setInterval(()=>{
+    navigator.serviceWorker.getRegistration().then(reg=>{if(reg)reg.update();}).catch(()=>{});
+    fetch('/version.json',{cache:'reload'})
+      .then(r=>r.json())
+      .then(d=>{if(d.version&&d.version!==APP_VERSION)_autoSaveAndReload();})
+      .catch(()=>{});
+  },60000);
 }
 
 // ── Submit guard — prevents double-tap on any button ─────────────────────
@@ -19672,7 +19680,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.43';
+const APP_VERSION='05.10.26.44';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){

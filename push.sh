@@ -26,11 +26,15 @@ echo "→ Version: v${VERSION}"
 # Update index.html
 sed -i "s/const APP_VERSION='[0-9][0-9]\.[0-9][0-9]\.[0-9][0-9]\.[0-9]*/const APP_VERSION='${VERSION}/g" index.html
 
+# Update sw.js — changing SW_VERSION forces a new SW install on every push,
+# which triggers SW_UPDATED → _autoSaveAndReload() for users with the app open live.
+sed -i "s/const SW_VERSION = '[^']*'/const SW_VERSION = '${VERSION}'/g" sw.js
+
 # Update version.json
 printf '{"version":"%s"}\n' "${VERSION}" > version.json
 
 # Stage, commit, push
-git add index.html version.json
+git add index.html version.json sw.js
 git add -u
 git diff --staged --quiet && echo "Nothing to commit" && exit 0
 git commit -m "${MSG}
