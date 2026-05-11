@@ -11501,7 +11501,8 @@ function _buildClientHubSnapshot(clientId){
     const signToken=b.signingToken||(_pendingSignToken?.bidId===b.id?_pendingSignToken.token:null);
     const propKey=b.proposalKey||b.signingKey||(_pendingSignToken?.bidId===b.id?_pendingSignToken.proposalKey:null)||null;
     const signBase=signToken?baseUrl+'sign.html?t='+signToken+'&u='+(_supaUser?.id||'')+'&b='+b.id:null;
-    return {id:b.id,amount:b.amount||0,deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:b.type||'Painting',bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,
+    const _hubType=(b.type==='Build Your Own Estimate'?'Custom Estimate':b.type)||'Estimate';
+    return {id:b.id,amount:b.amount||0,deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,
       proposalKey:propKey,signingToken:signToken||null,
       signHubUrl:signBase?(signBase+(hubUrl?'&hub='+encodeURIComponent(hubUrl):'')):null};
   });
@@ -18418,7 +18419,7 @@ function saveGenericEstimate(draft){
     tmNteCap:parseFloat(v('tm-nte-cap'))||0,
   }:{isTM:false};
   const _deposit=_geiIsTM?(_tmFields.tmDepositAmt||0):Math.round(total*0.25*100)/100;
-  const _typeLabel=_geiIsTM?'T&M Estimate':_geiIsFreeForm?'Build Your Own Estimate':(TRADE_META[trade]?.label||'Trade')+' job';
+  const _typeLabel=_geiIsTM?'Time & Materials Estimate':_geiIsFreeForm?'Custom Estimate':(TRADE_META[trade]?.label||'Trade')+' Estimate';
   if(_geiEditBidId){
     const b=bids.find(x=>x.id===_geiEditBidId);
     if(b){
@@ -19683,7 +19684,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.48';
+const APP_VERSION='05.10.26.49';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
