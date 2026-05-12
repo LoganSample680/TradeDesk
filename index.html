@@ -7710,12 +7710,13 @@ function addVehicle(){
   if(!name)return zAlert('Enter a vehicle description (e.g. 2019 White F-150)');
   const vehs=getVehicles();
   if(vehs.find(v=>v.name===name))return zAlert('Vehicle already added.');
-  vehs.push({name,nickname});
+  vehs.push({name,nickname,addedDate:todayKey()});
   S.vehicles=vehs;
   saveAll();
   if(inp)inp.value='';
   if(nickInp)nickInp.value='';
   renderVehicleSettings();
+  setTimeout(()=>_checkOdometerPrompt(),400);
 }
 
 function removeVehicle(idx){
@@ -7790,16 +7791,15 @@ function _checkOdometerPrompt(){
 
   // Tasks needed:
   const tasks=[];
-  // 1. Start of current year — prompt Jan through Apr if not recorded
-  if(mo<=3){
-    vehs.forEach(v=>{
-      const key=_vehKey(v);
-      if(!(log[cy]&&log[cy][key]&&log[cy][key].start)){
-        tasks.push({year:cy,type:'start',veh:v});
-      }
-    });
-  }
-  // 2. End of previous year — prompt Jan through Mar if not recorded
+  // 1. Current year start — always check regardless of month (mid-year signups need this too)
+  vehs.forEach(v=>{
+    const key=_vehKey(v);
+    if(!(log[cy]&&log[cy][key]&&log[cy][key].start)){
+      // midYear=true when past April — modal shows "best estimate" language instead of "Jan 1"
+      tasks.push({year:cy,type:'start',veh:v,midYear:mo>3});
+    }
+  });
+  // 2. End of previous year — prompt Jan through Mar only (after that, prior year is filed)
   if(mo<=2){
     const ly=cy-1;
     vehs.forEach(v=>{
@@ -7840,16 +7840,16 @@ function _showOdometerModal(tasks,hardBlock){
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
         <div style="width:38px;height:38px;border-radius:50%;background:#dbeafe;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🚗</div>
         <div>
-          <div style="font-size:16px;font-weight:800;color:var(--text)">${isStart?t.year+' Start Odometer':'Year-End Odometer'}</div>
-          <div style="font-size:12px;color:var(--text3)">${vLabel} · ${isStart?'Jan 1, '+t.year:'Dec 31, '+t.year}</div>
+          <div style="font-size:16px;font-weight:800;color:var(--text)">${isStart?(t.midYear?t.year+' Opening Odometer':t.year+' Start Odometer'):'Year-End Odometer'}</div>
+          <div style="font-size:12px;color:var(--text3)">${vLabel} · ${isStart?(t.midYear?'First business use, '+t.year:'Jan 1, '+t.year):'Dec 31, '+t.year}</div>
         </div>
       </div>
       <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:var(--r);padding:10px 12px;margin:14px 0 16px;font-size:12px;color:#1e40af;line-height:1.5">
-        <strong>IRS Pub. 463 requires annual odometer records.</strong> Recording Jan 1 &amp; Dec 31 readings proves your business-use % and makes your mileage deduction bulletproof — even in a field audit.
+        <strong>IRS Pub. 463 requires annual odometer records.</strong> ${t.midYear?'You joined mid-year — enter the odometer reading from when you first started using this vehicle for business, or your best Jan 1 estimate. An estimate is far better than no record.':'Recording Jan 1 &amp; Dec 31 readings proves your business-use % and makes your mileage deduction bulletproof — even in a field audit.'}
         ${loggedMi>0?`<div style="margin-top:6px">📍 You logged <strong>${loggedMi.toFixed(1)} mi</strong> in ${t.year} for this vehicle in TradeDesk.</div>`:''}
         ${otherReading?`<div style="margin-top:4px">${isStart?'Dec 31':'Jan 1'} reading on file: <strong>${otherReading.toLocaleString()} mi</strong></div>`:''}
       </div>
-      <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:6px">${isStart?'Jan 1, '+t.year+' odometer reading':'Dec 31, '+t.year+' odometer reading'}</div>
+      <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:6px">${isStart?(t.midYear?t.year+' opening odometer (best estimate)':'Jan 1, '+t.year+' odometer reading'):'Dec 31, '+t.year+' odometer reading'}</div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
         <input id="_odo-val" type="number" min="0" inputmode="numeric" placeholder="e.g. 48,250" style="flex:1;padding:12px 14px;border-radius:var(--r);border:2px solid var(--blue);font-size:20px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--text);outline:none;box-sizing:border-box">
         <span style="font-size:13px;color:var(--text3);font-weight:600">miles</span>
