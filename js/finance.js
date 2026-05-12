@@ -1792,6 +1792,7 @@ function renderExpenses(){
   const yr=String(trackerYear||new Date().getFullYear());
   // Show all years for back-tax work if selected year matches
   const filtered=yr==='all'?expenses:expenses.filter(e=>e.date&&e.date.startsWith(yr));
+  console.log('[renderExpenses]',{yr,total_loaded:expenses.length,filtered:filtered.length,sample:expenses.slice(0,2).map(e=>({date:e.date,cat:e.cat,amount:e.amount}))});
   const total=filtered.reduce((s,e)=>s+e.amount,0);
   const deductible=filtered.filter(e=>e.deductible!==false).reduce((s,e)=>s+(e.meals_50?e.amount*0.5:e.amount),0);
   const noReceipt=filtered.filter(e=>!e.receipt||typeof e.receipt==='string'&&e.receipt.includes('No')).filter(e=>e.cat!=='fees'&&!e.autoLogged);
@@ -1828,22 +1829,7 @@ function renderExpenses(){
       '<div style="font-size:10px;color:var(--green-mid);font-weight:700">~'+fmt(deductible)+' deductible</div>'+
     '</div>'+
   '</div>';
-  // By category summary
-  const byCat={};
-  filtered.forEach(e=>{byCat[e.cat||'other']=(byCat[e.cat||'other']||0)+e.amount;});
-  const topCats=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,4);
-  if(topCats.length>1){
-    html+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'+
-      topCats.map(([cat,amt])=>{
-        const info=IRS_EXPENSE_CATS.find(c=>c.id===cat);
-        return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:6px 10px;font-size:11px">'+
-          '<span style="font-weight:700;color:var(--text2)">'+(info?info.icon+' '+info.label:cat)+'</span>'+
-          ' <span style="color:#A32D2D;font-weight:700">('+fmt(amt)+')</span>'+
-        '</div>';
-      }).join('')+
-    '</div>';
-  }
-  // Expense rows
+  // Expense rows — table first so rows are visible without scrolling
   try{
     html+='<div style="overflow-x:auto"><table class="tbl"><thead><tr>'+
       ['Date','Category','Vendor','Amount','Receipt'].map(h=>'<th>'+h+'</th>').join('')+'<th></th></tr></thead><tbody>'+
@@ -1863,6 +1849,21 @@ function renderExpenses(){
   }catch(err){
     console.error('renderExpenses table error:',err,{filtered:filtered.slice(0,3)});
     html+='<div class="tip tip-a">Error rendering expense rows — check console. ('+err.message+')</div>';
+  }
+  // Category breakdown chips — after table so rows are immediately visible
+  const byCat={};
+  filtered.forEach(e=>{byCat[e.cat||'other']=(byCat[e.cat||'other']||0)+e.amount;});
+  const topCats=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,4);
+  if(topCats.length>1){
+    html+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">'+
+      topCats.map(([cat,amt])=>{
+        const info=IRS_EXPENSE_CATS.find(c=>c.id===cat);
+        return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:6px 10px;font-size:11px">'+
+          '<span style="font-weight:700;color:var(--text2)">'+(info?info.icon+' '+info.label:cat)+'</span>'+
+          ' <span style="color:#A32D2D;font-weight:700">('+fmt(amt)+')</span>'+
+        '</div>';
+      }).join('')+
+    '</div>';
   }
   el.innerHTML=html;
 }
