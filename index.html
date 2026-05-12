@@ -7751,6 +7751,170 @@ function updateVehicleNick(idx,nick){
   const vehs=getVehicles();
   if(vehs[idx]){vehs[idx].nickname=nick;S.vehicles=vehs;saveAll();}
 }
+// ══════════════════════════════════════════════════════════════════
+// ANNUAL ODOMETER CHECK — IRS Publication 463 compliance
+// Records Jan 1 start + Dec 31 end odometer per vehicle per year.
+// Calculates true business-use % = logged miles / total miles driven.
+// ══════════════════════════════════════════════════════════════════
+function _checkOdometerPrompt(){
+  const vehs=getVehicles();
+  if(!vehs.length||_isEmployee||_devSupportMode)return;
+  const cy=new Date().getFullYear();
+  const mo=new Date().getMonth(); // 0=Jan
+  const log=S.vehicleOdoLog||{};
+  const snoozed=S._odoSnoozedUntil||0;
+  if(Date.now()<snoozed)return;
+
+  // Tasks needed:
+  const tasks=[];
+  // 1. Start of current year — prompt Jan through Apr if not recorded
+  if(mo<=3){
+    vehs.forEach(v=>{
+      const key=_vehKey(v);
+      if(!(log[cy]&&log[cy][key]&&log[cy][key].start)){
+        tasks.push({year:cy,type:'start',veh:v});
+      }
+    });
+  }
+  // 2. End of previous year — prompt Jan through Mar if not recorded
+  if(mo<=2){
+    const ly=cy-1;
+    vehs.forEach(v=>{
+      const key=_vehKey(v);
+      if(!(log[ly]&&log[ly][key]&&log[ly][key].end)){
+        tasks.push({year:ly,type:'end',veh:v});
+      }
+    });
+  }
+
+  if(!tasks.length)return;
+
+  // Count how many times snoozed — after 3 snoozes, hard block
+  const snoozeCount=S._odoSnoozeCount||0;
+  _showOdometerModal(tasks,snoozeCount>=3);
+}
+
+function _vehKey(v){return(typeof v==='string'?v:(v.name||'vehicle')).toLowerCase().replace(/\s+/g,'_');}
+
+function _showOdometerModal(tasks,hardBlock){
+  document.getElementById('_odo-modal-ov')?.remove();
+  let taskIdx=0;
+
+  function renderTask(){
+    if(taskIdx>=tasks.length){_odoFinish();return;}
+    const t=tasks[taskIdx];
+    const vLabel=getVehicleLabel(t.veh);
+    const isStart=t.type==='start';
+    const existing=(S.vehicleOdoLog||{})[t.year]?.[_vehKey(t.veh)]||{};
+    const otherReading=isStart?existing.end:existing.start;
+
+    // Calculate logged miles for this vehicle+year for context
+    const yrStr=String(t.year);
+    const loggedMi=mileage.filter(m=>m.date&&m.date.startsWith(yrStr)&&(!m.vehicle||m.vehicle.toLowerCase().includes((t.veh.nickname||t.veh.name||'').split(' ')[0].toLowerCase()))).reduce((s,m)=>s+(m.miles||0),0);
+
+    ov.innerHTML=`
+    <div style="background:var(--bg);border-radius:var(--rl);width:100%;max-width:440px;padding:24px 20px 28px;box-sizing:border-box">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+        <div style="width:38px;height:38px;border-radius:50%;background:#dbeafe;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🚗</div>
+        <div>
+          <div style="font-size:16px;font-weight:800;color:var(--text)">${isStart?t.year+' Start Odometer':'Year-End Odometer'}</div>
+          <div style="font-size:12px;color:var(--text3)">${vLabel} · ${isStart?'Jan 1, '+t.year:'Dec 31, '+t.year}</div>
+        </div>
+      </div>
+      <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:var(--r);padding:10px 12px;margin:14px 0 16px;font-size:12px;color:#1e40af;line-height:1.5">
+        <strong>IRS Pub. 463 requires annual odometer records.</strong> Recording Jan 1 &amp; Dec 31 readings proves your business-use % and makes your mileage deduction bulletproof — even in a field audit.
+        ${loggedMi>0?`<div style="margin-top:6px">📍 You logged <strong>${loggedMi.toFixed(1)} mi</strong> in ${t.year} for this vehicle in TradeDesk.</div>`:''}
+        ${otherReading?`<div style="margin-top:4px">${isStart?'Dec 31':'Jan 1'} reading on file: <strong>${otherReading.toLocaleString()} mi</strong></div>`:''}
+      </div>
+      <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:6px">${isStart?'Jan 1, '+t.year+' odometer reading':'Dec 31, '+t.year+' odometer reading'}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <input id="_odo-val" type="number" min="0" inputmode="numeric" placeholder="e.g. 48,250" style="flex:1;padding:12px 14px;border-radius:var(--r);border:2px solid var(--blue);font-size:20px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--text);outline:none;box-sizing:border-box">
+        <span style="font-size:13px;color:var(--text3);font-weight:600">miles</span>
+      </div>
+      <div id="_odo-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:10px"></div>
+      ${tasks.length>1?`<div style="font-size:11px;color:var(--text3);margin-bottom:12px;text-align:center">${taskIdx+1} of ${tasks.length} vehicles</div>`:''}
+      <button onclick="_odoSaveStep()" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:10px">Save &amp; continue →</button>
+      ${hardBlock
+        ? `<div style="font-size:11px;color:var(--text3);text-align:center">This record is required for IRS compliance. Enter your best estimate if unsure of the exact number.</div>`
+        : `<button onclick="_odoSnooze()" style="width:100%;padding:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Remind me in 24 hours (${3-(S._odoSnoozeCount||0)} snoozes left)</button>`
+      }
+    </div>`;
+    setTimeout(()=>document.getElementById('_odo-val')?.focus(),100);
+  }
+
+  function _odoSaveStep(){
+    const raw=parseFloat(document.getElementById('_odo-val')?.value)||0;
+    const err=document.getElementById('_odo-err');
+    if(!raw||raw<1){if(err)err.textContent='Enter a valid odometer reading.';return;}
+    const t=tasks[taskIdx];
+    const key=_vehKey(t.veh);
+    if(!S.vehicleOdoLog)S.vehicleOdoLog={};
+    if(!S.vehicleOdoLog[t.year])S.vehicleOdoLog[t.year]={};
+    if(!S.vehicleOdoLog[t.year][key])S.vehicleOdoLog[t.year][key]={};
+    const existing=S.vehicleOdoLog[t.year][key];
+    if(t.type==='start'){
+      if(existing.end&&raw>=existing.end){if(err)err.textContent='Start odometer must be less than end odometer ('+existing.end.toLocaleString()+' mi).';return;}
+      existing.start=raw;existing.startDate=todayKey();
+    } else {
+      if(existing.start&&raw<=existing.start){if(err)err.textContent='End odometer must be greater than start odometer ('+existing.start.toLocaleString()+' mi).';return;}
+      existing.end=raw;existing.endDate=todayKey();
+      // Cross-check: logged miles vs total miles
+      const yrStr=String(t.year);
+      const totalDriven=raw-(existing.start||0);
+      const logged=mileage.filter(m=>m.date&&m.date.startsWith(yrStr)).reduce((s,m)=>s+(m.miles||0),0);
+      if(totalDriven>0){
+        const bizPct=Math.min(100,Math.round(logged/totalDriven*100));
+        const vehs=getVehicles();const vi=vehs.findIndex(v=>_vehKey(v)===key);
+        if(vi>=0){vehs[vi].bizUse=bizPct;S.vehicles=vehs;}
+        existing.bizUsePct=bizPct;existing.loggedMi=Math.round(logged);existing.totalMi=totalDriven;
+        if(logged>totalDriven){existing.mileageFlag=true;}
+      }
+    }
+    S._odoSnoozeCount=0;
+    saveAll();
+    taskIdx++;
+    renderTask();
+  }
+
+  window._odoSaveStep=_odoSaveStep;
+
+  const ov=document.createElement('div');
+  ov.id='_odo-modal-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,'+(hardBlock?'.85':'.6')+');z-index:99990;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  if(!hardBlock)ov.addEventListener('click',e=>{if(e.target===ov)_odoSnooze();});
+  document.body.appendChild(ov);
+  renderTask();
+
+  function _odoFinish(){
+    ov.remove();
+    showToast('Odometer records saved — mileage deduction verified ✓','📋');
+    renderVehicleSettings();
+  }
+}
+
+function _odoSnooze(){
+  S._odoSnoozedUntil=Date.now()+86400000; // 24 hours
+  S._odoSnoozeCount=(S._odoSnoozeCount||0)+1;
+  saveAll();
+  document.getElementById('_odo-modal-ov')?.remove();
+  showToast('Odometer reminder set for tomorrow','⏰');
+}
+window._odoSnooze=_odoSnooze;
+
+function _getVehicleOdoSummary(veh,year){
+  const key=_vehKey(veh);
+  const log=(S.vehicleOdoLog||{})[year]?.[key]||{};
+  return log;
+}
+
+function updateVehicleBizUse(idx,val){
+  const vehs=getVehicles();
+  if(vehs[idx]){vehs[idx].bizUse=Math.max(1,Math.min(100,parseFloat(val)||100));S.vehicles=vehs;saveAll();}
+}
+function getAvgVehicleBizUse(){
+  const vehs=getVehicles();if(!vehs.length)return 1;
+  return vehs.reduce((s,v)=>s+(v.bizUse||100),0)/vehs.length/100;
+}
 
 function setTripPurpose(purpose, btn){
   gps.purpose=purpose;
@@ -15532,7 +15696,7 @@ function saveLoggedTrip(){
   const cid=parseInt(document.getElementById('lm-client')?.value)||null;
   const c=cid?getClientById(cid):null;
   // Save immediately with 0 miles — background route calc will update
-  const rec={id:Date.now(),date,vehicle,from,from_name,to,to_name,start:0,end:0,miles:0,purpose,client_id:cid,client_name:c?c.name:'',notes,calc_method:'pending'};
+  const rec={id:Date.now(),date,vehicle,from,from_name,to,to_name,start:0,end:0,miles:0,purpose,client_id:cid,client_name:c?c.name:'',notes,created_at:new Date().toISOString(),calc_method:'pending'};
   if(_isEmployee){rec.logged_by_id=_supaUser.id;rec.logged_by_name=_employeeRecord?.name||_supaUser.email;}
   mileage.unshift(rec);
   if(cid)autoLogContact(cid,'drive');
@@ -20293,6 +20457,8 @@ async function supaLoadFromCloud(){
       autoRefreshTaxBrackets();
       autoRefreshLienRules();
     },4000);
+    // Annual odometer check — IRS Publication 463 compliance
+    setTimeout(()=>_checkOdometerPrompt(),3500);
     // Check for new signatures then schedule alerts — sequential to avoid race
     setTimeout(async()=>{ await checkNewSignatures(); if(!window._showingScheduleAlert) showScheduleAlerts(); },2000);
     setInterval(()=>checkNewSignatures(),30000);
