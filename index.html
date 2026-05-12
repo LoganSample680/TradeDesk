@@ -15991,10 +15991,6 @@ function openLogTripModal(opts){
     '<div id="lm-recalc-row" style="display:none;text-align:right;margin-bottom:12px">'+
       '<button type="button" onclick="calculateAndShowRoute()" style="background:none;border:none;color:var(--blue);font-size:12px;font-weight:600;cursor:pointer;padding:0">↺ Recalculate</button>'+
     '</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
-      '<div class="f" style="margin:0"><label>Start odometer <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label><input id="lm-odo-start" type="number" placeholder="e.g. 48250" value="'+(opts.odo_start||'')+'" style="font-size:13px"></div>'+
-      '<div class="f" style="margin:0"><label>End odometer <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label><input id="lm-odo-end" type="number" placeholder="e.g. 48312" value="'+(opts.odo_end||'')+'" style="font-size:13px"></div>'+
-    '</div>'+
     '<input type="hidden" id="lm-map-app" value="">'+
     (!opts.editId?
       '<div class="f" style="margin-bottom:14px">'+
@@ -16273,9 +16269,6 @@ function updateLoggedTrip(id){
   r.from=(document.getElementById('lm-from')?.value||'').trim();
   r.to=to;r.purpose=purpose;
   r.notes=document.getElementById('lm-notes')?.value||'';
-  const _odoS=parseFloat(document.getElementById('lm-odo-start')?.value)||null;
-  const _odoE=parseFloat(document.getElementById('lm-odo-end')?.value)||null;
-  if(_odoS)r.odo_start=_odoS;if(_odoE)r.odo_end=_odoE;
   const miles=parseFloat(document.getElementById('lm-miles-val')?.value)||0;
   if(miles>0)r.miles=miles;
   const cid=parseInt(document.getElementById('lm-client')?.value)||null;
@@ -20183,7 +20176,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.12.26.11';
+const APP_VERSION='05.12.26.12';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
