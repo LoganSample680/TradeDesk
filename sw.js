@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-05.12.26.22';
+const CACHE = 'tradedesk-05.12.26.23';
 const NAV_URL = '/index.html';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
@@ -31,6 +31,9 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   // Navigation — cache-first for instant paint, update in background
   if (e.request.mode === 'navigate') {
+    // Only intercept the main app shell — let client.html, sign.html, etc. reach the network
+    const navPath = new URL(e.request.url).pathname;
+    if (navPath !== '/' && navPath !== '/index.html' && navPath !== '') return;
     e.respondWith(
       caches.match(NAV_URL).then(cached => {
         const networkFetch = fetch(e.request).then(r => {

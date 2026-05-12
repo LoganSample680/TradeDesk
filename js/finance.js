@@ -1794,7 +1794,7 @@ function renderExpenses(){
   const filtered=yr==='all'?expenses:expenses.filter(e=>e.date&&e.date.startsWith(yr));
   const total=filtered.reduce((s,e)=>s+e.amount,0);
   const deductible=filtered.filter(e=>e.deductible!==false).reduce((s,e)=>s+(e.meals_50?e.amount*0.5:e.amount),0);
-  const noReceipt=filtered.filter(e=>!e.receipt||e.receipt.includes('No')).filter(e=>e.cat!=='fees'&&!e.autoLogged);
+  const noReceipt=filtered.filter(e=>!e.receipt||typeof e.receipt==='string'&&e.receipt.includes('No')).filter(e=>e.cat!=='fees'&&!e.autoLogged);
   const today=todayKey();
   const purgeable=expenses.filter(e=>e.expires_at&&e.expires_at<today&&e.receipt_img);
   let html='';
@@ -1844,21 +1844,26 @@ function renderExpenses(){
     '</div>';
   }
   // Expense rows
-  html+='<div style="overflow-x:auto"><table class="tbl"><thead><tr>'+
-    ['Date','Category','Vendor','Amount','Receipt'].map(h=>'<th>'+h+'</th>').join('')+'<th></th></tr></thead><tbody>'+
-    [...filtered].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(r=>{
-      const info=IRS_EXPENSE_CATS.find(c=>c.id===r.cat);
-      const hasImg=!!(r.receipt_img||r.receipt_key);
-      const recLabel=hasImg?'<button onclick="viewReceipt('+r.id+')" style="background:var(--green-lt);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">📎 View</button>':'<span style="color:#A32D2D;font-weight:700;font-size:10px">Missing</span>';
-      return '<tr>'+
-        '<td class="mute">'+r.date+'</td>'+
-        '<td class="mute" style="font-size:10px">'+(info?info.icon+' '+info.label:r.catLabel||r.cat||'—')+'</td>'+
-        '<td class="bold">'+(r.vendor||'—')+(r.job_name?'<div style="font-size:9px;color:var(--text3)">'+r.job_name+'</div>':'')+'</td>'+
-        '<td class="red">('+fmtD(r.amount)+')'+(r.meals_50?'<div style="font-size:9px;color:var(--amber)">50% deduct</div>':'')+'</td>'+
-        '<td>'+recLabel+'</td>'+
-        '<td><button class="btn-del" onclick="delExpense('+r.id+')">&#10005;</button></td>'+
-      '</tr>';
-    }).join('')+'</tbody></table></div>';
+  try{
+    html+='<div style="overflow-x:auto"><table class="tbl"><thead><tr>'+
+      ['Date','Category','Vendor','Amount','Receipt'].map(h=>'<th>'+h+'</th>').join('')+'<th></th></tr></thead><tbody>'+
+      [...filtered].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(r=>{
+        const info=IRS_EXPENSE_CATS.find(c=>c.id===r.cat);
+        const hasImg=!!(r.receipt_img||r.receipt_key);
+        const recLabel=hasImg?'<button onclick="viewReceipt('+r.id+')" style="background:var(--green-lt);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">📎 View</button>':'<span style="color:#A32D2D;font-weight:700;font-size:10px">Missing</span>';
+        return '<tr>'+
+          '<td class="mute">'+(r.date||'')+'</td>'+
+          '<td class="mute" style="font-size:10px">'+(info?info.icon+' '+info.label:r.catLabel||r.cat||'—')+'</td>'+
+          '<td class="bold">'+(r.vendor||'—')+(r.job_name?'<div style="font-size:9px;color:var(--text3)">'+r.job_name+'</div>':'')+'</td>'+
+          '<td class="red">('+fmtD(r.amount||0)+')'+(r.meals_50?'<div style="font-size:9px;color:var(--amber)">50% deduct</div>':'')+'</td>'+
+          '<td>'+recLabel+'</td>'+
+          '<td><button class="btn-del" onclick="delExpense('+r.id+')">&#10005;</button></td>'+
+        '</tr>';
+      }).join('')+'</tbody></table></div>';
+  }catch(err){
+    console.error('renderExpenses table error:',err,{filtered:filtered.slice(0,3)});
+    html+='<div class="tip tip-a">Error rendering expense rows — check console. ('+err.message+')</div>';
+  }
   el.innerHTML=html;
 }
 
