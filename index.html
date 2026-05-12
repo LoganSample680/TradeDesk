@@ -1828,6 +1828,15 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         </div>
         <div class="f"><label>Hub accent color <span style="font-size:10px;font-weight:400;color:var(--text3)">(buttons &amp; links in client hub)</span></label><input type="color" id="set-brandcolor" value="#185FA5"></div>
         <div class="f"><label>Website URL <span style="font-size:10px;font-weight:400;color:var(--text3)">(shown in client hub footer)</span></label><input type="url" id="set-bwebsite" placeholder="https://yourwebsite.com"></div>
+        <div class="f" style="grid-column:1/-1">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none">
+            <input type="checkbox" id="set-home-office" onchange="S.homeOffice=this.checked;saveAll()" style="width:18px;height:18px;margin-top:1px;accent-color:var(--blue);flex-shrink:0">
+            <div>
+              <div style="font-size:13px;font-weight:700">I have a dedicated home office</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:2px">A room used ONLY for business — scheduling, estimating, billing. Unlocks the commuting deduction: drives from home to first job site become deductible business miles instead of non-deductible commutes. (IRS §280A)</div>
+            </div>
+          </label>
+        </div>
         <div class="f" style="grid-column:1/-1" id="settings-vehicles-section">
           <label>Vehicles <span style="font-size:10px;color:var(--text3);font-weight:400">(IRS log requires vehicle description per trip)</span></label>
           <div id="set-vehicles-list" style="margin-bottom:8px"></div>
@@ -3214,6 +3223,7 @@ function loadSettingsForm(){
   sf('set-review-url',S.reviewUrl||'');
   sf('set-brandcolor',S.brandColor||'#185FA5');
   sf('set-bwebsite',S.bwebsite||'');
+  const hoEl=document.getElementById('set-home-office');if(hoEl)hoEl.checked=!!S.homeOffice;
 }
 function saveSettings(){
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
@@ -15777,7 +15787,11 @@ function renderAllMileage(){
       '<span style="font-size:12px;font-weight:700">'+mi.toFixed(1)+' mi &nbsp;<span style="color:var(--green-mid);font-weight:600">'+fmt(mi*IRS())+'</span></span>'+
     '</div>';
   }).join('');
+  const homeOfficeNote=S.homeOffice
+    ?'<div style="background:#F0FDF4;border:1.5px solid #16A34A;border-radius:var(--r);padding:8px 12px;margin-bottom:8px;font-size:11px;color:#166534"><strong>✓ Home office active</strong> — your drives from home to job sites count as deductible business miles (not commuting). Log every trip.</div>'
+    :'<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:var(--r);padding:8px 12px;margin-bottom:8px;font-size:11px;color:#1E40AF">💡 <strong>Home office tip:</strong> Drives from home to your first job site are not deductible yet. Set up a home office in Settings to unlock that deduction.</div>';
   document.getElementById('tr-mile-mets').innerHTML=
+    homeOfficeNote+
     '<div class="mets" style="margin-bottom:8px">'+
       '<div class="met"><div class="met-l">'+yr+' miles</div><div class="met-v">'+tot.toFixed(1)+' mi</div></div>'+
       '<div class="met"><div class="met-l">IRS deduction</div><div class="met-v">'+fmt(tot*IRS())+'</div><div class="met-s">@ $'+IRS().toFixed(3)+'/mi</div></div>'+
@@ -16058,24 +16072,73 @@ function calcTax(){
       '</div>';
     }).join('');
 
+  // ── DIF Audit Risk Score ───────────────────────────────────────────────
+  const difPct=tIn>0?(tEx+mileDed)/tIn:0;
+  const difRisk=difPct>0.63?'high':difPct>0.52?'medium':'low';
+  const difResultsEl=document.getElementById('tx-results');
+  if(difResultsEl&&tIn>0){
+    const difColors={high:['#7f1d1d','#FEF2F2','#A32D2D'],medium:['#78350f','#FFFBEB','#D97706'],low:['#14532d','#F0FDF4','#16A34A']};
+    const [tc,bg,border]=difColors[difRisk];
+    const difHTML='<div style="background:'+bg+';border:1.5px solid '+border+';border-radius:var(--r);padding:10px 12px;margin-top:12px">'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:'+tc+';margin-bottom:3px">Audit Risk Indicator — '+Math.round(difPct*100)+'% expense ratio</div>'+
+      '<div style="font-size:11px;color:'+tc+';line-height:1.5">'+
+        (difRisk==='high'?'⚠️ Your deductions are '+Math.round(difPct*100)+'% of gross revenue — above the 63% threshold where the IRS DIF computer flags returns for review. Your deductions may be completely legitimate, but you need airtight receipts for every single one.':
+         difRisk==='medium'?'⚡ Moderate: '+Math.round(difPct*100)+'% of revenue in deductions. Keep all receipts — you\'re in the range the IRS notices.':
+         '✓ Low risk: '+Math.round(difPct*100)+'% expense ratio looks normal for your industry.')+
+      '</div></div>';
+    difResultsEl.innerHTML+=difHTML;
+  }
+
   // ── IRS Tips Panel ─────────────────────────────────────────────────────
   const tipEl=document.getElementById('tx-tips');
   if(tipEl){
     const mo=now.getMonth();
+    const activeTrade=getActiveTrade();
+    const NAICS_MAP={painting:{code:'238320',label:'Painting & Wall Covering'},electrical:{code:'238210',label:'Electrical Contractors'},plumbing:{code:'238220',label:'Plumbing, Heating, A/C'},hvac:{code:'238220',label:'Plumbing, Heating, A/C'},roofing:{code:'238160',label:'Roofing Contractors'},flooring:{code:'238330',label:'Flooring Contractors'},general:{code:'238990',label:'Specialty Trade Contractors'}};
+    const naics=NAICS_MAP[activeTrade]||NAICS_MAP.general;
     const tips=[];
+
     // SEP-IRA — show actual dollar amount based on their income
-    if(sepMax>0)tips.push({icon:'🏦',color:'#0369a1',bg:'#f0f9ff',title:'Retirement Account — You Can Stash '+fmt(sepMax)+' Tax-Free',body:'Based on your net income, you can put up to '+fmt(sepMax)+' into a SEP-IRA this year and deduct it from your taxes — right now, today. You have until Oct 15 (with extension) to fund it. At your income level that\'s roughly '+fmt(Math.round(sepMax*0.25))+' back in your pocket. Open one at any brokerage in 15 minutes.'});
-    // Health insurance line placement — always critical
-    tips.push({icon:'💊',color:'#1d4ed8',bg:'#eff6ff',title:'Health Insurance: Schedule 1, NOT Schedule C',body:'Deduct health insurance premiums on Schedule 1 Line 17 — not on Schedule C. On Schedule C they reduce income tax but NOT self-employment tax. On Schedule 1 they reduce both. At $18K/yr in premiums the wrong line costs ~$2,754 in extra SE tax annually.'});
-    // De minimis election — Jan through April (filing season) or year-round as a reminder
-    tips.push({icon:'🧾',color:'#166534',bg:'#f0fdf4',title:'De Minimis Election — Attach It Every Year',body:'You can immediately expense any single item under $2,500 (tools, equipment, parts) instead of depreciating over 5 years. But the election is NOT automatic — you or your CPA must attach a "De Minimis Safe Harbor Election" statement to your return each year or you lose it.'});
-    // December constructive receipt — Nov/Dec warning
-    if(mo>=10){tips.push({icon:'📅',urgent:true,color:'#92400e',bg:'#fffbeb',title:'December Alert: Constructive Receipt Rule',body:'Any payment you\'re owed and CAN collect before Dec 31 is taxable this year — even if the check arrives in January. Do NOT ask clients to hold off until next year to reduce your taxes. IRS calls that constructive receipt and taxes it in the year it was available. This is an audit trigger.'});}
-    // Minor child FICA exemption
-    tips.push({icon:'👶',color:'#7c3aed',bg:'#f5f3ff',title:'Kids on Payroll — Zero FICA if You\'re a Sole Prop',body:'Sole proprietors (not S-corps) who employ their child under 18 pay zero Social Security and Medicare tax on those wages. The child pays income tax at their lower rate, you deduct the wages. They can put it in a Roth IRA. Real work, reasonable pay, keep timesheets — and don\'t convert to S-corp until you\'ve modeled the FICA savings you\'d lose.'});
-    // Trailer depreciation note
-    tips.push({icon:'🚛',color:'#0369a1',bg:'#f0f9ff',title:'Tool Trailers Are NOT Subject to Vehicle Limits',body:'Many CPAs mistakenly put enclosed cargo/tool trailers under "vehicles" and apply luxury auto caps (§280F). Trailers have no motor and are not listed property — they\'re 5-year MACRS property eligible for full Section 179. A $15K trailer expensed in year one saves ~$3,750 in taxes immediately.'});
-    tipEl.innerHTML='<div class="card"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:12px">💡 IRS Tips — Things Even Good CPAs Miss</div>'+
+    if(sepMax>0)tips.push({icon:'🏦',color:'#0369a1',bg:'#f0f9ff',title:'Retirement Account — You Can Stash '+fmt(sepMax)+' Tax-Free',body:'Based on your net income, you can put up to '+fmt(sepMax)+' into a SEP-IRA this year and deduct every dollar from your taxes. You have until Oct 15 (with extension) to fund it. At your income level that\'s roughly '+fmt(Math.round(sepMax*0.25))+' back in your pocket right now. Open one at Fidelity or Vanguard in 15 minutes — they walk you through it.'});
+
+    // Kansas commercial labor tax — critical for KS contractors
+    if((S.state||'KS')==='KS')tips.push({icon:'🏗️',color:'#92400e',bg:'#fffbeb',title:'Kansas Trap: Labor on Commercial Jobs IS Taxable',body:'In Kansas, if you\'re doing work on an existing commercial building (repainting a restaurant, replumbing an office, rewiring a hotel), you must collect Kansas sales tax on your LABOR — not just materials. Residential and new construction are exempt. Get this wrong and you owe the tax out of your own pocket. A $15,000 commercial paint job at 9% = $1,350 you\'d owe the state. Register at ksrevenue.gov and collect it going forward.'});
+
+    // Home office commuting unlock
+    if(!S.homeOffice)tips.push({icon:'🏠',color:'#0369a1',bg:'#f0f9ff',title:'Home Office = Every Drive to a Job Site Becomes Deductible',body:'Right now, your drive from home to your first job site each day is "commuting" — not deductible. But if you have a room at home used ONLY for business (scheduling, estimates, billing), that changes everything. Your home becomes your business location and every drive to a job site is a deductible business trip. Check the home office box in Settings if this applies to you.'});
+    if(S.homeOffice)tips.push({icon:'🏠',color:'#166534',bg:'#f0fdf4',title:'Home Office Active — Your Drives to Job Sites Are Deductible',body:'Because you have a qualifying home office, the IRS treats your home as your business location. Every drive from home to a job site counts as business mileage — not commuting. Make sure every trip is logged in TradeDesk. This is also the biggest thing to document if you\'re ever audited: photograph the dedicated office space and keep records of what business work you do there.'});
+
+    // Health insurance line placement
+    tips.push({icon:'💊',color:'#1d4ed8',bg:'#eff6ff',title:'Health Insurance: Schedule 1, NOT Schedule C',body:'Deduct health insurance premiums on Schedule 1 Line 17 — not on Schedule C. On Schedule C they reduce income tax but NOT self-employment tax. On Schedule 1 they reduce both. At $18K/yr in family premiums the wrong line costs ~$2,754 in extra SE tax every year. One of the most common CPA errors for self-employed contractors.'});
+
+    // NAICS code
+    tips.push({icon:'📋',color:'#374151',bg:'#f9fafb',title:'Use NAICS Code '+naics.code+' on Schedule C',body:'Line B of Schedule C asks for your business code. Use '+naics.code+' ('+naics.label+'). The IRS computer compares your expense ratios against other contractors in your specific trade — use the right code or your numbers look abnormal by comparison, raising your audit score for no reason.'});
+
+    // Commingling
+    tips.push({icon:'🏦',color:'#7c3aed',bg:'#f5f3ff',title:'Separate Bank Account — Not Optional if You Want to Survive an Audit',body:'If you mix business and personal money in one account, an auditor adds up EVERY deposit and calls it all income unless you prove otherwise. That insurance check from your car accident? Income. That personal loan from your brother? Income. It\'s the fastest way to turn a simple audit into a nightmare. Open a free business checking account and run all business money through it — nothing else.'});
+
+    // De minimis election
+    tips.push({icon:'🧾',color:'#166534',bg:'#f0fdf4',title:'De Minimis Election — Must File Every Year',body:'You can immediately expense any single item under $2,500 (tools, equipment, supplies) instead of depreciating it over 5 years. But the election is NOT automatic — your CPA must attach a statement to your return every single year. One missed year means those tools get depreciated instead of expensed. Remind your CPA every filing season.'});
+
+    // December constructive receipt
+    if(mo>=10)tips.push({icon:'📅',color:'#92400e',bg:'#fffbeb',title:'December Alert: Money You Can Collect Now Is Taxable Now',body:'Even if a customer\'s check doesn\'t arrive until January, if you could have collected it in December, the IRS says it\'s December income. Do NOT ask clients to hold off on payment to push it into next year — that\'s called constructive receipt and it\'s an audit trigger. If you genuinely haven\'t earned the money yet, that\'s fine. But if the job is done and the invoice is due, that income belongs in this year.'});
+
+    // Depreciation recapture
+    tips.push({icon:'🔄',color:'#92400e',bg:'#fffbeb',title:'Selling Equipment You Wrote Off? Expect a Tax Bill',body:'If you used Section 179 or bonus depreciation to write off a truck or sprayer in full, your tax "book value" is now zero. Sell it for $20,000 and you owe tax on the full $20,000 as ordinary income — even though you "sold it at a loss" compared to what you paid. This is called depreciation recapture (§1245) and it catches contractors completely off guard. Run the numbers with your CPA before selling equipment you fully depreciated.'});
+
+    // Minor child FICA
+    tips.push({icon:'👶',color:'#7c3aed',bg:'#f5f3ff',title:'Kids on Payroll — Zero FICA if You\'re a Sole Prop',body:'Sole proprietors who employ their child under 18 pay zero Social Security and Medicare tax on those wages — that\'s 15.3% you\'re not paying. The child pays income tax at their own lower rate. You deduct the wages. They can contribute to a Roth IRA. Real work, reasonable pay, and timesheets required. Don\'t convert to S-corp before you\'ve modeled this — S-corps lose the FICA exemption for minor children.'});
+
+    // Tool trailer
+    tips.push({icon:'🚛',color:'#0369a1',bg:'#f0f9ff',title:'Tool Trailers Are NOT Subject to Vehicle Depreciation Limits',body:'A lot of CPAs file tool trailers under "vehicles" and apply the luxury auto caps, which limits your first-year deduction to $12,200. Trailers have no motor — they\'re not listed property under §280F. A $15K enclosed tool trailer is fully depreciable under Section 179 in year one. That\'s a $3,750 difference in your pocket.'});
+
+    // Record retention
+    tips.push({icon:'📁',color:'#374151',bg:'#f9fafb',title:'How Long to Keep Records (The 7-Year Rule)',body:'General rule: 7 years for all tax records. But equipment purchase records need to be kept until 7 years AFTER you sell the equipment — so that 2019 truck purchase receipt needs to stay until 2032 if you sell it in 2025. Equipment you still own: keep those records permanently while you own it. IRS has 6 years (not 3) if you underreported income by more than 25%. Photograph everything and store in Google Drive or Dropbox.'});
+
+    // OBBBA 2025 update
+    tips.push({icon:'⚡',color:'#0369a1',bg:'#f0f9ff',title:'2025 Law Change: 100% Bonus Depreciation Is Back',body:'The One Big Beautiful Bill Act (signed July 2025) permanently restored 100% bonus depreciation. Any qualifying equipment, tools, vehicles, or machinery placed in service after January 19, 2025 can be fully written off in year one. This was phasing down (60% in 2024, 40% early 2025) — now it\'s back to 100% permanently. Also: 1099-NEC threshold rises to $2,000 starting with the 2026 tax year. For 2025, the $600 threshold still applies.'});
+
+    tipEl.innerHTML='<div class="card"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:12px">💡 IRS — Plain English Rules Every Contractor Needs to Know</div>'+
       tips.map(t=>'<div style="background:'+t.bg+';border:1.5px solid '+t.color+';border-radius:var(--r);padding:10px 12px;margin-bottom:8px">'+
         '<div style="font-size:12px;font-weight:700;color:'+t.color+';margin-bottom:3px">'+t.icon+' '+t.title+'</div>'+
         '<div style="font-size:11px;color:var(--text2);line-height:1.6">'+t.body+'</div>'+
