@@ -1,7 +1,13 @@
-const CACHE = 'tradedesk-05.12.26.1'; // bump this with every deploy — forces browser to install new SW
+const CACHE = 'tradedesk-05.12.26.3'; // bump this with every deploy — forces browser to install new SW
 const NAV_URL = '/index.html';
 
-self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('install', e => {
+  self.skipWaiting();
+  // Pre-cache the app shell so first open after SW install is instant (no white screen)
+  e.waitUntil(
+    caches.open(CACHE).then(c => c.add(NAV_URL)).catch(() => {})
+  );
+});
 
 self.addEventListener('activate', e => {
   // Clear any old cache versions, take control of all open tabs immediately
