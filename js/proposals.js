@@ -275,7 +275,7 @@ function showHubMenu(clientId){
   const mkBtn=(label,bg,color,fn)=>{const b=document.createElement('button');b.textContent=label;b.style.cssText='padding:14px;border:none;border-radius:var(--r);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;background:'+bg+';color:'+color;b.onclick=fn;return b;};
   sheet.appendChild(hdr);
   sheet.appendChild(mkBtn('📋  Copy link','var(--blue)','#fff',()=>{navigator.clipboard.writeText(hubUrl).then(()=>showToast('Hub link copied','📋')).catch(()=>showToast('Copy failed','⚠️'));ov.remove();}));
-  sheet.appendChild(mkBtn('🔗  Open hub','var(--blue-lt)','var(--blue)',()=>{const a=document.createElement('a');a.href=hubUrl;a.target='_blank';a.rel='noopener noreferrer';document.body.appendChild(a);a.click();document.body.removeChild(a);ov.remove();}));
+  sheet.appendChild(mkBtn('🔗  Open hub','var(--blue-lt)','var(--blue)',()=>{ov.remove();window.location.href=hubUrl;}));
   sheet.appendChild(mkBtn('← Back','var(--bg2)','var(--text2)',()=>ov.remove()));
   ov.appendChild(sheet);
   document.body.appendChild(ov);
