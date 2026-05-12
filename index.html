@@ -13126,9 +13126,9 @@ function showKpiChart(type){
     const pct=Math.round(Math.abs(m.val)/maxVal*100);
     const color=type==='close'?(m.val>=40?'var(--green-mid)':m.val>=25?'var(--amber)':'#A32D2D'):
                 type==='profit'?(m.val<0?'#A32D2D':'var(--green-mid)'):'var(--blue)';
-    const label=type==='profit'?fmt(m.val):type==='close'?m.val+'%':m.val;
-    return '<div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex:1;min-width:0">'+
-      '<div style="font-size:10px;font-weight:700;color:'+color+';">'+label+'</div>'+
+    const label=type==='profit'?(m.val===0?'':fmtShort(m.val)):type==='close'?(m.val===0?'':m.val+'%'):(m.val===0?'':m.val);
+    return '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;min-width:0">'+
+      '<div style="font-size:9px;font-weight:700;color:'+color+';white-space:nowrap;overflow:hidden;max-width:100%;text-align:center">'+label+'</div>'+
       '<div style="width:100%;background:var(--border);border-radius:2px;height:80px;display:flex;align-items:flex-end;overflow:hidden">'+
         '<div style="width:100%;height:'+pct+'%;background:'+color+';border-radius:2px 2px 0 0;transition:height .4s ease;min-height:'+(m.val!==0?'2px':'0')+'"></div>'+
       '</div>'+
@@ -19732,7 +19732,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.11.26.1';
+const APP_VERSION='05.11.26.2';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
