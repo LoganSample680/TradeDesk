@@ -1727,6 +1727,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         <label>Quarterly taxes already paid ($)</label>
         <input type="number" id="tx-paid" value="0" oninput="calcTax()" placeholder="0">
       </div>
+      <div class="f">
+        <label>Last year's total tax bill ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">From your prior year return — unlocks safe harbor</span></label>
+        <input type="number" id="tx-prior-yr" value="0" oninput="calcTax()" placeholder="0 — enter from last year's return">
+      </div>
     </div>
   </div>
 
@@ -14916,9 +14920,12 @@ function openManualIncomeModal(){
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Client</label>'+
         '<select id="_inc-client" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box"><option value="">No client / other</option>'+clientOpts+'</select></div>'+
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Type</label>'+
-        '<select id="_inc-type" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box">'+
-          '<option value="Job payment">Job payment</option><option value="Deposit">Deposit</option><option value="Final payment">Final payment</option><option value="Cash">Cash</option><option value="Other">Other</option>'+
-        '</select></div>'+
+        '<select id="_inc-type" onchange="toggleIncDepositWarn()" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box">'+
+          '<option value="Job payment">Job payment</option><option value="Deposit">Deposit / advance</option><option value="Final payment">Final payment</option><option value="Cash">Cash</option><option value="Other">Other</option>'+
+        '</select>'+
+        '<div id="_inc-deposit-warn" style="display:none;background:#FFFBEB;border:1.5px solid #D97706;border-radius:var(--r);padding:10px 12px;margin-top:8px;font-size:12px;color:#92400E;line-height:1.5">'+
+          '💡 <strong>Deposits count as income now.</strong> The IRS says any money you receive is taxable the year you get it — even if it\'s a deposit for work you haven\'t done yet. Don\'t wait until the job is done to report it.'+
+        '</div></div>'+
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Payment method</label>'+
         '<select id="_inc-method" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box">'+
           '<option value="Cash">Cash</option><option value="Check">Check</option><option value="Card">Card</option><option value="Zelle">Zelle</option><option value="Venmo">Venmo</option><option value="Other">Other</option>'+
@@ -14930,6 +14937,11 @@ function openManualIncomeModal(){
     '<button onclick="saveManualIncome()" style="margin-top:14px;width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--accent,var(--blue));color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Save income</button>';
   ov.appendChild(sheet);document.body.appendChild(ov);
   setTimeout(()=>document.getElementById('_inc-amt')?.focus(),150);
+}
+function toggleIncDepositWarn(){
+  const t=document.getElementById('_inc-type')?.value||'';
+  const w=document.getElementById('_inc-deposit-warn');
+  if(w)w.style.display=(t==='Deposit')?'block':'none';
 }
 function saveManualIncome(){
   const date=document.getElementById('_inc-date')?.value||'';
@@ -15955,6 +15967,13 @@ function calcTax(){
   const totalOwed=seTax+fedTax+ksTax;
   const stillOwed=Math.max(0,totalOwed-taxPaid);
   const perQ=Math.ceil(stillOwed/4);
+  // Prior-year safe harbor: pay 100% of last year's tax (110% if AGI > $150K) to avoid underpayment penalty
+  const priorYrTax=nv('tx-prior-yr')||0;
+  const safeHarborRate=agi>150000?1.10:1.00;
+  const safeHarborTotal=Math.ceil(priorYrTax*safeHarborRate);
+  const safeHarborQ=priorYrTax>0?Math.ceil(safeHarborTotal/4):0;
+  // SEP-IRA: 20% of net self-employment income (after SE deduction), max $70,000
+  const sepMax=Math.min(70000,Math.floor(Math.max(0,netSelf-seDed)*0.20));
 
   const reserveRate=netSelf>0?Math.ceil(totalOwed/netSelf*100):32; // default 32% if no income yet
   const reserveAmt=Math.ceil(netSelf*reserveRate/100);
@@ -16014,17 +16033,28 @@ function calcTax(){
     {q:'Q3',due:'Sep 15',date:new Date(yr,8,15),period:'Jun–Aug'},
     {q:'Q4',due:'Jan 15',date:new Date(yr+1,0,15),period:'Sep–Dec'},
   ];
+  const safeHarborNote=safeHarborQ>0
+    ? '<div style="background:#F0FDF4;border:1.5px solid #16A34A;border-radius:var(--r);padding:10px 12px;margin-bottom:12px">'+
+        '<div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:3px">✓ Safe Harbor Shortcut — No Penalty Guaranteed</div>'+
+        '<div style="font-size:11px;color:#166534;line-height:1.5">Pay <strong>'+fmt(safeHarborQ)+'</strong>/quarter ('+fmt(safeHarborTotal)+'/yr total) and the IRS <em>cannot</em> charge you an underpayment penalty — even if you owe more at filing. That\'s '+Math.round(safeHarborRate*100)+'% of last year\'s '+fmt(priorYrTax)+' tax bill.'+(agi>150000?' High-income rate (110%) applies because your income is over $150K.':'')+'</div>'+
+      '</div>'
+    : '<div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:8px 10px;margin-bottom:12px;font-size:11px;color:#92400E">'+
+        '💡 Enter your prior year tax above to unlock the Safe Harbor shortcut — the legal way to pay less each quarter and never get penalized.'+
+      '</div>';
   document.getElementById('tx-quarters').innerHTML=
-    '<div style="font-size:11px;color:var(--text2);margin-bottom:10px">Pay quarterly to the IRS and Kansas to avoid underpayment penalties. Each quarter = '+fmt(perQ)+'.</div>'+
+    safeHarborNote+
+    '<div style="font-size:11px;color:var(--text2);margin-bottom:10px">Based on this year\'s numbers — pay '+fmt(perQ)+' each quarter to cover what you owe now.</div>'+
     qdates.map(({q,due,date,period})=>{
       const isPast=date<now;
-      const isNext=!isPast&&qdates.filter(x=>x.date>=now)[0]===arguments[0];
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">'+
         '<div>'+
           '<div style="font-size:13px;font-weight:700">'+q+' <span style="font-weight:400;color:var(--text3)">'+period+'</span></div>'+
           '<div style="font-size:11px;color:'+(isPast?'var(--text3)':'var(--text2)')+'">Due '+due+(isPast?' · past due':'')+'</div>'+
         '</div>'+
-        '<div style="font-size:15px;font-weight:700;color:'+(isPast?'var(--text3)':'#A32D2D')+'">'+fmt(perQ)+'</div>'+
+        '<div style="text-align:right">'+
+          '<div style="font-size:15px;font-weight:700;color:'+(isPast?'var(--text3)':'#A32D2D')+'">'+fmt(perQ)+'</div>'+
+          (safeHarborQ>0?'<div style="font-size:10px;color:#166534;font-weight:600">'+fmt(safeHarborQ)+' safe harbor</div>':'')+
+        '</div>'+
       '</div>';
     }).join('');
 
@@ -16033,6 +16063,8 @@ function calcTax(){
   if(tipEl){
     const mo=now.getMonth();
     const tips=[];
+    // SEP-IRA — show actual dollar amount based on their income
+    if(sepMax>0)tips.push({icon:'🏦',color:'#0369a1',bg:'#f0f9ff',title:'Retirement Account — You Can Stash '+fmt(sepMax)+' Tax-Free',body:'Based on your net income, you can put up to '+fmt(sepMax)+' into a SEP-IRA this year and deduct it from your taxes — right now, today. You have until Oct 15 (with extension) to fund it. At your income level that\'s roughly '+fmt(Math.round(sepMax*0.25))+' back in your pocket. Open one at any brokerage in 15 minutes.'});
     // Health insurance line placement — always critical
     tips.push({icon:'💊',color:'#1d4ed8',bg:'#eff6ff',title:'Health Insurance: Schedule 1, NOT Schedule C',body:'Deduct health insurance premiums on Schedule 1 Line 17 — not on Schedule C. On Schedule C they reduce income tax but NOT self-employment tax. On Schedule 1 they reduce both. At $18K/yr in premiums the wrong line costs ~$2,754 in extra SE tax annually.'});
     // De minimis election — Jan through April (filing season) or year-round as a reminder
