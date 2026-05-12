@@ -513,7 +513,6 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
     if(s.brandColor){ov.style.background=s.brandColor;var b=document.getElementById('_sbo_bar'),t=document.getElementById('_sbo_track');if(b)b.style.background='rgba(0,0,0,0.35)';if(t)t.style.background='rgba(0,0,0,0.2)';}
     var n=document.getElementById('_sbo_name');
     if(s.logoData&&n){var img=new Image();img.src=s.logoData;img.style.cssText='max-height:260px;max-width:86vw;width:auto;object-fit:contain;display:block;animation:td-logoin .55s cubic-bezier(.22,1,.36,1) both';n.replaceWith(img);}
-    else if(s.bname&&n)n.textContent=s.bname;
   }catch(e){}
   window._earlyBootDone=true;
 })();
@@ -20183,7 +20182,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.12.26.9';
+const APP_VERSION='05.12.26.10';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
