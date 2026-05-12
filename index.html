@@ -128,7 +128,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 }
 /* Quick-strip removed */
 /* ── Bottom Tab Bar ── */
-#mobile-tabbar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:1000;background:var(--nav-bg);border-top:1px solid var(--nav-border);padding-bottom:env(safe-area-inset-bottom,0px)}
+#mobile-tabbar{display:none;position:fixed;bottom:0;left:0;right:0;z-index:1000;background:var(--nav-bg);border-top:1px solid var(--nav-border);padding-bottom:env(safe-area-inset-bottom,0px);flex-wrap:nowrap;overflow:hidden}
 @media(max-width:767px){#mobile-tabbar{display:flex}}
 .mtb{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:none;border:none;color:var(--nav-text);cursor:pointer;padding:8px 2px 10px;font-family:inherit;font-size:10px;font-weight:600;letter-spacing:.01em;-webkit-tap-highlight-color:transparent;position:relative;min-height:56px;transition:color .15s}
 .mtb.active{color:#fff}
@@ -1370,10 +1370,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">
         <div class="f">
           <label>Workers</label>
-          <div style="display:flex;align-items:center;gap:6px;margin-top:4px">
-            <button onclick="_tmAdj(-1)" class="btn btn-sm" style="width:30px;height:30px;padding:0;flex-shrink:0">−</button>
-            <span id="tm-crew-display" style="font-weight:800;font-size:18px;min-width:24px;text-align:center">1</span>
-            <button onclick="_tmAdj(1)" class="btn btn-sm" style="width:30px;height:30px;padding:0;flex-shrink:0">+</button>
+          <div style="display:flex;align-items:center;justify-content:flex-start;gap:8px;margin-top:6px">
+            <button onclick="_tmAdj(-1)" class="btn btn-sm" style="width:36px;height:36px;min-height:36px;padding:0;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;line-height:1">−</button>
+            <span id="tm-crew-display" style="font-weight:800;font-size:20px;min-width:28px;text-align:center;line-height:1">1</span>
+            <button onclick="_tmAdj(1)" class="btn btn-sm" style="width:36px;height:36px;min-height:36px;padding:0;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px;line-height:1">+</button>
           </div>
         </div>
         <div class="f">
@@ -3413,8 +3413,12 @@ function _gateAddressThenEstimate(c){
     box.innerHTML=
       '<div style="font-size:18px;margin-bottom:6px">📍 Address required</div>'+
       '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">Add '+c.name+'\'s property address before starting an estimate. You can\'t measure or quote without it.</div>'+
-      '<input id="_addr-gate-inp" type="text" placeholder="123 Main St, City, ST" autocomplete="street-address" '+
-        'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);margin-bottom:14px">'+
+      '<div style="position:relative;margin-bottom:14px">'+
+'<input id="_addr-gate-inp" type="text" placeholder="123 Main St, City, ST" autocomplete="off" '+
+  'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)" '+
+  'oninput="_agSearch(this.value)" onblur="setTimeout(()=>{const b=document.getElementById(\'_ag-sugg\');if(b)b.style.display=\'none\'},150)">'+
+'<div id="_ag-sugg" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r);box-shadow:0 6px 20px rgba(0,0,0,.15);z-index:9999;max-height:220px;overflow-y:auto"></div>'+
+'</div>'+
       '<button id="_addr-gate-ok" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Save &amp; start estimate</button>'+
       '<button onclick="document.getElementById(\'_addr-gate-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
     ov.appendChild(box);document.body.appendChild(ov);
@@ -3430,6 +3434,35 @@ function _gateAddressThenEstimate(c){
     return;
   }
   _checkMultiPropertyThenOpen(c);
+}
+let _agTimer=null;
+function _agSearch(val){
+  clearTimeout(_agTimer);
+  const box=document.getElementById('_ag-sugg');if(!box)return;
+  if(!val||val.length<3){box.style.display='none';return;}
+  _agTimer=setTimeout(async()=>{
+    try{
+      const r=await fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit=6&lang=en');
+      const d=await r.json();
+      if(!d?.features?.length){box.style.display='none';return;}
+      box.innerHTML=d.features.filter(f=>{const p=f.properties||{};return p.housenumber&&p.street&&(p.city||p.town||p.village);}).slice(0,5).map(f=>{
+        const p=f.properties||{};
+        const street=(p.housenumber?p.housenumber+' ':'')+p.street;
+        const city=p.city||p.town||p.village||'';
+        const state=({'Alabama':'AL','Alaska':'AK','Arizona':'AZ','Arkansas':'AR','California':'CA','Colorado':'CO','Connecticut':'CT','Delaware':'DE','Florida':'FL','Georgia':'GA','Hawaii':'HI','Idaho':'ID','Illinois':'IL','Indiana':'IN','Iowa':'IA','Kansas':'KS','Kentucky':'KY','Louisiana':'LA','Maine':'ME','Maryland':'MD','Massachusetts':'MA','Michigan':'MI','Minnesota':'MN','Mississippi':'MS','Missouri':'MO','Montana':'MT','Nebraska':'NE','Nevada':'NV','New Hampshire':'NH','New Jersey':'NJ','New Mexico':'NM','New York':'NY','North Carolina':'NC','North Dakota':'ND','Ohio':'OH','Oklahoma':'OK','Oregon':'OR','Pennsylvania':'PA','Rhode Island':'RI','South Carolina':'SC','South Dakota':'SD','Tennessee':'TN','Texas':'TX','Utah':'UT','Vermont':'VT','Virginia':'VA','Washington':'WA','West Virginia':'WV','Wisconsin':'WI','Wyoming':'WY','District of Columbia':'DC'})[p.state]||p.state||'';
+        const zip=p.postcode||'';
+        const full=[street,city,[state,zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+        const disp=full.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+        const s=full.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        return '<div onmousedown="event.preventDefault()" onclick="_agPick(\''+s+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;font-size:14px">'+disp+'</div>';
+      }).join('');
+      box.style.display=box.innerHTML?'block':'none';
+    }catch(e){const box=document.getElementById('_ag-sugg');if(box)box.style.display='none';}
+  },220);
+}
+function _agPick(addr){
+  const inp=document.getElementById('_addr-gate-inp');if(inp)inp.value=addr;
+  const box=document.getElementById('_ag-sugg');if(box)box.style.display='none';
 }
 function _checkMultiPropertyThenOpen(c){
   // If client already has any in-progress bid (Pending+draft), offer to resume it
@@ -14985,7 +15018,9 @@ function renderIncome(){
     }).join('')+'</tbody></table></div>';
 }
 function triggerReceiptScan(){
-  document.getElementById('receipt-file-input').click();
+  openExpenseFlow();
+  // Give the modal time to render, then trigger the scan inside it
+  setTimeout(()=>expTriggerScan(),200);
 }
 
 async function processReceiptPhoto(input){
@@ -19697,7 +19732,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.10.26.64';
+const APP_VERSION='05.11.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
