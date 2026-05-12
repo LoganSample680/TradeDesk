@@ -374,6 +374,88 @@ function _initMapKit(){
   if(typeof mapkit==='undefined')return;
   mapkit.init({authorizationCallback:done=>done(_MAPKIT_TOKEN),language:'en-US'});
   _mapkitReady=true;
+  _retryPendingTrips();
+}
+async function _retryPendingTrips(){
+  const pending=mileage.filter(m=>m.calc_method==='pending'&&m.from&&m.to);
+  if(!pending.length)return;
+  for(const rec of pending){
+    try{
+      const fc=await _resolveCoords(rec.from);
+      const tc=await _resolveCoords(rec.to);
+      if(!fc||!tc)continue;
+      const{miles}=await _routeDistance(fc,tc);
+      rec.miles=Math.round(miles*10)/10;rec.calc_method='address';
+    }catch(e){}
+  }
+  saveAll();
+  if(document.getElementById('mil-table'))renderAllMileage();
+  renderDash();
+}
+function _photonGeocode(addr){
+  const bias=(S.weatherLat&&S.weatherLon)?'&lat='+S.weatherLat+'&lon='+S.weatherLon:'&lat=37.6922&lon=-97.3375';
+  return fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(addr)+'&limit=1'+bias+'&lang=en')
+    .then(r=>r.json())
+    .then(d=>{
+      if(!d||!d.features||!d.features.length)throw new Error('Address not found: "'+addr+'"');
+      const[lon,lat]=d.features[0].geometry.coordinates;
+      return{lat,lng:lon};
+    });
+}
+async function _resolveCoords(addrText){
+  try{
+    const r=await _geocodeAddress(addrText,1);
+    if(r.length)return{lat:r[0].lat,lng:r[0].lon};
+  }catch(e){}
+  return _photonGeocode(addrText);
+}
+function _haversineMiles(c1,c2){
+  const R=3958.8,toR=Math.PI/180;
+  const dLat=(c2.lat-c1.lat)*toR,dLon=(c2.lng-c1.lng)*toR;
+  const a=Math.sin(dLat/2)**2+Math.cos(c1.lat*toR)*Math.cos(c2.lat*toR)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+async function _routeDistance(fromCoords,toCoords){
+  // MapKit Directions — primary
+  if(_mapkitReady){
+    try{
+      return await new Promise((resolve,reject)=>{
+        const d=new mapkit.Directions();
+        d.route({
+          origin:new mapkit.Coordinate(fromCoords.lat,fromCoords.lng),
+          destination:new mapkit.Coordinate(toCoords.lat,toCoords.lng),
+          transportType:mapkit.Directions.Transport.Automobile,
+          requestsAlternateRoutes:false
+        },(err,data)=>{
+          if(err||!data?.routes?.[0]){reject(new Error('mapkit'));return;}
+          const r=data.routes[0];
+          resolve({miles:Math.round(r.distance/1609.344*10)/10,mins:Math.round(r.expectedTravelTime/60)});
+        });
+      });
+    }catch(e){}
+  }
+  // Fallback: Valhalla + OSRM in parallel
+  const body={locations:[{lon:fromCoords.lng,lat:fromCoords.lat},{lon:toCoords.lng,lat:toCoords.lat}],costing:'auto',directions_options:{units:'miles'}};
+  const valhallaP=fetch('https://valhalla1.openstreetmap.de/route',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)})
+    .then(r=>r.json()).then(d=>{
+      if(d?.trip)return{miles:Math.round(d.trip.summary.length*10)/10,mins:Math.round(d.trip.summary.time/60)};
+      throw new Error('valhalla');
+    });
+  const osrmP=fetch(`https://router.project-osrm.org/route/v1/driving/${fromCoords.lng},${fromCoords.lat};${toCoords.lng},${toCoords.lat}?overview=false`,{signal:AbortSignal.timeout(10000)})
+    .then(r=>r.json()).then(d=>{
+      if(d?.code==='Ok'&&d.routes?.[0])return{miles:Math.round(d.routes[0].distance/1609.344*10)/10,mins:Math.round(d.routes[0].duration/60)};
+      throw new Error('osrm');
+    });
+  return Promise.any([valhallaP,osrmP]);
+}
+// Keep _valhallaRoute as alias so any existing saved references still work
+const _valhallaRoute=_routeDistance;
+function startDriveToClient(){
+  const c=getClientById(currentClientId);if(!c)return;
+  const hasWon=bids.some(b=>b.client_id===currentClientId&&b.status==='Closed Won');
+  const hasPending=bids.some(b=>b.client_id===currentClientId&&b.status==='Pending');
+  const purpose=hasWon?'Job site':hasPending?'Estimate':'Estimate';
+  openDriveModal({toAddress:c.addr||'',clientName:c.name,clientId:c.id,purpose});
 }
 async function _geocodeAddress(val,limit,biasLat,biasLon){
   limit=limit||5;
@@ -815,7 +897,7 @@ async function calculateAndShowRoute(){
     let toCoords=_lmCoords.to;
     if(!fromCoords)fromCoords=await _resolveCoords(fromVal);
     if(!toCoords)toCoords=await _resolveCoords(toVal);
-    const{miles,mins}=await _valhallaRoute(fromCoords,toCoords);
+    const{miles,mins}=await _routeDistance(fromCoords,toCoords);
     document.getElementById('lm-miles-val').value=miles;
     document.getElementById('lm-miles-display').textContent=miles.toFixed(1)+' miles';
     document.getElementById('lm-time-display').textContent='~'+mins+' min drive · IRS deduction: '+fmt(miles*IRS());
@@ -883,7 +965,7 @@ function saveLoggedTrip(){
       const fc=_lmCoords.from||(from?await _resolveCoords(from):null);
       const tc=_lmCoords.to||(to?await _resolveCoords(to):null);
       if(!fc||!tc)return;
-      const{miles}=await _valhallaRoute(fc,tc);
+      const{miles}=await _routeDistance(fc,tc);
       const saved=mileage.find(m=>m.id===rec.id);
       if(!saved)return;
       saved.miles=Math.round(miles*10)/10;saved.calc_method='address';
@@ -891,7 +973,7 @@ function saveLoggedTrip(){
       if(document.getElementById('mil-table'))renderAllMileage();
       if(document.getElementById('cd-mile-list')&&currentClientId)renderCDMileage();
       showToast(saved.miles.toFixed(1)+' mi logged · '+fmt(saved.miles*IRS())+' deduction','✅');
-    }catch(e){}
+    }catch(e){showToast('Could not calculate mileage — tap Edit to add miles manually','⚠️');}
   })();
 }
 function renderAllMileage(){
