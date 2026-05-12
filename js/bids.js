@@ -1584,10 +1584,19 @@ function deleteBid(bidId){
 }
 function saveLien(){
   if(!activeLienBidId)return;
-  const bid=bids.find(b=>b.id===activeLienBidId);if(!bid)return;
+  const status=v('lien-status');
+  const bidId=activeLienBidId;
+  const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   liens=liens.filter(l=>l.bid_id!==activeLienBidId);
-  liens.push({id:Date.now(),bid_id:activeLienBidId,client_id:bid.client_id,client_name:bid.client_name,date:v('lien-date'),status:v('lien-status'),amount:parseFloat(v('lien-amount'))||0,county:v('lien-county'),notes:v('lien-notes')});
+  liens.push({id:Date.now(),bid_id:activeLienBidId,client_id:bid.client_id,client_name:bid.client_name,date:v('lien-date'),status,amount:parseFloat(v('lien-amount'))||0,county:v('lien-county'),notes:v('lien-notes')});
   saveAll();closeLienPanel();renderCDBids();
+  if(bid&&(status==='filed'||status==='attorney')){
+    setClientRisk(bid.client_id,'high_risk');
+    setBidCollStage(bid,'lien_filed','Lien filed');
+  }
+  if(bid&&status==='intent'){setBidCollStage(bid,'intent','Intent to lien recorded');}
+  renderDashActiveLiens();
+  if(status==='filed'||status==='attorney'){setTimeout(()=>printKansasLien(bidId),300);}
 }
 function releaseLien(bidId){
   const bid=bids.find(b=>b.id===bidId);
@@ -1614,3 +1623,198 @@ function releaseLien(bidId){
   },{title:'Release lien',yes:'Mark released',danger:false});
 }
 
+// ── Collection, risk, lien & county helpers (moved from constants.js) ─────
+function getBidCollStage(bid){
+  const lien=getBidLien(bid.id);
+  if(lien&&(lien.status==='filed'||lien.status==='attorney'))return 'lien_filed';
+  if(lien&&lien.status==='intent')return 'intent';
+  if(lien&&lien.status==='resolved')return 'resolved';
+  const rules=getLienRulesForBid(bid);
+  const daysUnpaid=bid.completion_date?daysSince(bid.completion_date):0;
+  return getAutoCollStage(daysUnpaid,bid.collStage,rules);
+}
+function setBidCollStage(bid,stage,note){
+  bid.collStage=stage;
+  if(!bid.collHistory)bid.collHistory=[];
+  bid.collHistory.push({stage,note,ts:new Date().toISOString()});
+  saveAll();
+}
+function collSendSMS(bid,stageKey){
+  const c=getClientById(bid.client_id);
+  if(!c||!c.phone)return zAlert('No phone number on file for this client. Add one in their profile first.',{title:'No phone'});
+  const fn=COLL_SMS[stageKey];if(!fn)return;
+  const biz=S.bname||'TradeDesk';
+  const bal=getBidBalance(bid);
+  const msg=fn(c.name,bal,bid.addr||c.addr||'the property',biz);
+  const phone=c.phone.replace(/\D/g,'');
+  const newStage=stageKey==='reminder'?'reminder':stageKey==='second'?'second':'intent';
+  const stageLabel={reminder:'Reminder',second:'2nd Notice',intent:'Intent to Lien'}[stageKey]||stageKey;
+  const ov=document.createElement('div');ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'+
+      '<div style="font-size:15px;font-weight:800">💬 '+stageLabel+' — '+escHtml(c.name)+'</div>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">✕</button>'+
+    '</div>'+
+    '<div style="background:var(--bg2);border-radius:var(--r);padding:12px;font-size:12px;color:var(--text);line-height:1.6;margin-bottom:14px;max-height:160px;overflow-y:auto">'+escHtml(msg)+'</div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">Amount: <strong>'+fmt(bal)+'</strong> · Sending to: '+escHtml(c.phone)+'</div>'+
+    '<div style="display:flex;gap:8px">'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
+      '<button onclick="_doCollSMS(\''+phone+'\',\''+encodeURIComponent(msg)+'\',bids.find(x=>x.id=='+bid.id+'),\''+newStage+'\',\''+stageLabel+'\');this.closest(\'.zmodal-overlay\').remove()" style="flex:2;padding:12px;border-radius:var(--r);border:none;background:var(--amber);color:#1a1a1a;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Send via Messages →</button>'+
+    '</div>'+
+    '<div style="margin-top:10px">'+
+      '<button onclick="_markCollSMSSent(bids.find(x=>x.id=='+bid.id+'),\''+newStage+'\',\''+stageLabel+'\');this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text2)">✓ Already sent — mark as sent</button>'+
+    '</div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function _doCollSMS(phone,encodedMsg,bid,newStage,label){
+  if(!bid)return;
+  const a=document.createElement('a');
+  a.href='sms:+1'+phone+'&body='+encodedMsg;
+  a.style.display='none';document.body.appendChild(a);a.click();
+  setTimeout(()=>document.body.removeChild(a),500);
+  setTimeout(()=>{zConfirm('Did the message send successfully?',()=>{_markCollSMSSent(bid,newStage,label);},{title:'Confirm sent',yes:'Yes, sent',no:'No',danger:false});},2000);
+}
+function _markCollSMSSent(bid,newStage,label){
+  if(!bid)return;
+  setBidCollStage(bid,newStage,label+' SMS sent — '+new Date().toLocaleDateString());
+  if(!bid.collHistory)bid.collHistory=[];
+  bid.collHistory.push({stage:newStage,note:label+' sent',ts:new Date().toISOString(),method:'sms'});
+  autoLogContact(bid.client_id,'collection_sms');
+  saveAll();
+  showToast(label+' sent to '+(getClientById(bid.client_id)?.name||'client'),'💬');
+  setTimeout(()=>{renderMoneyPage();try{renderCDBids();}catch(e){}try{renderDash();}catch(e){}},400);
+}
+function getClientRisk(cid){const c=getClientById(cid);return c?c.riskLevel||'normal':'normal';}
+function setClientRisk(cid,level){
+  const c=getClientById(cid);if(!c)return;
+  c.riskLevel=level;
+  if(!c.riskFlags)c.riskFlags=[];
+  if(level==='high_risk'&&!c.riskFlags.includes('lien_filed'))c.riskFlags.push('lien_filed');
+  saveAll();
+}
+function riskBadge(cid){
+  const r=getClientRisk(cid);
+  if(r==='blacklisted')return '<span style="font-size:10px;font-weight:800;background:#000;color:#fff;padding:2px 6px;border-radius:4px">🚫 BLACKLISTED</span>';
+  if(r==='high_risk')return '<span style="font-size:10px;font-weight:800;background:#A32D2D;color:#fff;padding:2px 6px;border-radius:4px">⚠️ HIGH RISK</span>';
+  if(r==='watch')return '<span style="font-size:10px;font-weight:800;background:var(--amber);color:#fff;padding:2px 6px;border-radius:4px">👁 Watch</span>';
+  return '';
+}
+function getCountyForBid(bid){
+  const c=getClientById(bid.client_id);
+  const addr=(bid.addr||c?.addr||'').toUpperCase();
+  const stateM=addr.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
+  const stateCode=stateM?stateM[1]:'KS';
+  let county=null;
+  for(const city of Object.keys(KS_CITY_COUNTY)){if(addr.includes(city)){county=KS_CITY_COUNTY[city];break;}}
+  if(!county)county='your county';
+  return{stateCode,county};
+}
+function getCountyFilingInfo(stateCode){return STATE_FILING_INFO[stateCode]||STATE_FILING_INFO.default;}
+function _lienMapsUrl(county,stateCode){
+  const info=STATE_FILING_INFO[stateCode]||STATE_FILING_INFO.default;
+  const q=(county&&county!=='your county')?county+' '+info.office:info.office+' '+stateCode;
+  return 'https://maps.apple.com/?q='+encodeURIComponent(q);
+}
+function getLienRulesForBid(bid){const{stateCode}=getCountyForBid(bid);return LIEN_RULES[stateCode]||LIEN_RULES.default;}
+function getLienTimeline(bid){
+  const rules=getLienRulesForBid(bid);
+  const daysUnpaid=bid.completion_date?daysSince(bid.completion_date):0;
+  const daysUntilDeadline=rules.filing_deadline_days-daysUnpaid;
+  const daysUntilNotice=rules.notice_days-daysUnpaid;
+  return{rules,daysUnpaid,daysUntilDeadline,daysUntilNotice};
+}
+function getAutoCollStage(daysUnpaid,existingStage,lienRules){
+  const rules=lienRules||LIEN_RULES.default;
+  const deadline=rules.filing_deadline_days;
+  const rank={none:0,reminder:1,second:2,intent:3,lien_ready:4,lien_filed:5,resolved:6};
+  let auto='none';
+  const d2=Math.round(deadline*0.25),d3=Math.round(deadline*0.40),d4=Math.round(deadline*0.60),d5=Math.round(deadline*0.85);
+  if(daysUnpaid>=d5)auto='lien_ready';
+  else if(daysUnpaid>=d4)auto='intent';
+  else if(daysUnpaid>=d3)auto='second';
+  else if(daysUnpaid>=d2)auto='reminder';
+  const cur=existingStage||'none';
+  return(rank[auto]||0)>(rank[cur]||0)?auto:cur;
+}
+function showFileLienDirect(bidId){
+  const bid=bids.find(b=>b.id===bidId);if(!bid)return;
+  const c=getClientById(bid.client_id);if(!c)return;
+  const bal=getBidBalance(bid);
+  const{rules,daysUnpaid,daysUntilDeadline}=getLienTimeline(bid);
+  const addr=bid.addr||c.addr||'';
+  const{stateCode,county}=getCountyForBid(bid);
+  const filingInfo=getCountyFilingInfo(stateCode);
+  const mapsUrl=_lienMapsUrl(county,stateCode);
+  const warningHtml=daysUntilDeadline<=0?'<div style="background:#3D0000;color:#FFB3B3;border-radius:var(--r);padding:10px 12px;margin-bottom:14px;font-size:12px">⚠️ Lien window may be expired — consult an attorney before filing.</div>':daysUntilDeadline<=30?'<div style="background:var(--amber-lt);color:#856404;border-radius:var(--r);padding:10px 12px;margin-bottom:14px;font-size:12px">⏰ '+daysUntilDeadline+' days left to file — act now.</div>':'';
+  const notesHtml=filingInfo.notes.map(n=>'<div style="display:flex;gap:6px;margin-bottom:4px"><span style="color:var(--blue);flex-shrink:0">→</span><span>'+escHtml(n)+'</span></div>').join('');
+  const ov=document.createElement('div');ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.style.maxHeight='90vh';box.style.overflowY='auto';
+  box.innerHTML=
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'+
+      '<div style="font-size:16px;font-weight:800">⚖️ File Mechanic\'s Lien</div>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">✕</button>'+
+    '</div>'+warningHtml+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">'+
+      '<div style="background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center"><div style="font-size:18px;font-weight:800;color:#A32D2D">'+fmt(bal)+'</div><div style="font-size:10px;color:var(--text3);margin-top:2px">Amount claimed</div></div>'+
+      '<div style="background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center"><div style="font-size:18px;font-weight:800">'+daysUnpaid+'d</div><div style="font-size:10px;color:var(--text3);margin-top:2px">Days unpaid</div></div>'+
+    '</div>'+
+    '<div style="font-size:12px;color:var(--text2);margin-bottom:4px"><strong>Client:</strong> '+escHtml(c.name)+'</div>'+
+    '<div style="font-size:12px;color:var(--text2);margin-bottom:4px"><strong>Property:</strong> '+escHtml(addr||'—')+'</div>'+
+    '<div style="font-size:12px;color:var(--text2);margin-bottom:14px"><strong>Completion:</strong> '+escHtml(bid.completion_date||'—')+'</div>'+
+    '<div style="background:var(--blue-lt);border-radius:var(--r);padding:12px 14px;margin-bottom:14px">'+
+      '<div style="font-size:12px;font-weight:800;color:var(--blue);margin-bottom:6px">📍 Filing Instructions — '+escHtml(stateCode)+'</div>'+
+      '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:2px">'+escHtml(filingInfo.office)+'</div>'+
+      '<div style="font-size:10px;color:var(--text3);margin-bottom:8px">'+escHtml(filingInfo.cite)+'</div>'+
+      '<a href="'+mapsUrl+'" target="_blank" style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--blue);font-weight:600;text-decoration:none;margin-bottom:10px">📍 Find '+escHtml(filingInfo.office)+' in Maps →</a>'+
+      '<div style="font-size:11px;color:var(--text2);line-height:1.7">'+notesHtml+'</div>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">Deadlines shown are for general guidance. Verify requirements with your county recorder before filing.</div>'+
+    '<div style="display:flex;gap:8px">'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:13px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
+      '<button onclick="_confirmFileLien('+bidId+',\''+escHtml(county)+'\');this.closest(\'.zmodal-overlay\').remove()" style="flex:2;padding:13px;border-radius:var(--r);border:none;background:#3D0000;color:#FFB3B3;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Generate & Print Lien →</button>'+
+    '</div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function _confirmFileLien(bidId,detectedCounty){
+  const bid=bids.find(b=>b.id===bidId);if(!bid)return;
+  const{stateCode,county:autoCounty}=getCountyForBid(bid);
+  const usedCounty=(detectedCounty||autoCounty||'Sedgwick County')+', Kansas';
+  let lien=liens.find(l=>l.bid_id===bidId);
+  if(!lien){
+    const c=getClientById(bid.client_id);
+    lien={id:Date.now(),bid_id:bidId,client_id:bid.client_id,client_name:bid.client_name||c?.name||'',amount:getBidBalance(bid),date:todayKey(),status:'filed',county:usedCounty,notes:''};
+    liens.push(lien);
+  }else{lien.status='filed';lien.date=todayKey();if(!lien.county)lien.county=usedCounty;}
+  setBidCollStage(bid,'lien_filed','Lien filed via direct action');
+  setClientRisk(bid.client_id,'high_risk');
+  saveAll();renderDashActiveLiens();
+  try{renderMoneyPage();}catch(e){}try{renderDash();}catch(e){}
+  setTimeout(()=>printKansasLien(bidId),200);
+}
+function renderDashActiveLiens(){
+  const card=document.getElementById('dash-liens-card');
+  const list=document.getElementById('dash-liens-list');
+  const count=document.getElementById('dash-liens-count');
+  if(!card||!list)return;
+  const active=liens.filter(l=>l.status==='filed'||l.status==='attorney'||l.status==='intent');
+  card.style.display=active.length?'':'none';
+  if(!active.length)return;
+  if(count)count.textContent='('+active.length+')';
+  list.innerHTML=active.map(l=>{
+    const bid=bids.find(b=>b.id===l.bid_id);
+    const days=l.date?daysSince(l.date):0;
+    const daysLeft=365-days;
+    const expiring=daysLeft<60;
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">'+
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
+        '<div><div style="font-size:13px;font-weight:700">'+l.client_name+'</div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+fmt(l.amount)+' claimed · filed '+l.date+(l.county?' · '+l.county:'')+'</div>'+
+        (expiring?'<div style="font-size:10px;font-weight:800;color:#A32D2D;margin-top:2px">⚠️ Expires in ~'+daysLeft+' days</div>':'<div style="font-size:11px;color:var(--text3)">~'+daysLeft+' days remaining</div>')+'</div>'+
+        (bid?'<button class="btn btn-sm" onclick="openClientDetail('+bid.client_id+')" style="font-size:10px">View</button>':'')+
+      '</div></div>';
+  }).join('');
+}
