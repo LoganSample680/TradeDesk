@@ -1147,4 +1147,3 @@ function renderLeadsPage(){
 }
 
 // ── Jobs page ─────────────────────────────────────────────────────────────
-let jobFilter='all';
