@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="TradeDesk">
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <title>TradeDesk</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" async id="supabase-sdk"></script>
 <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin async onload="_initMapKit()"></script>
 <style>@import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&display=swap');*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
 :root{
@@ -20162,7 +20162,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.12.26.4';
+const APP_VERSION='05.12.26.5';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -21787,7 +21787,9 @@ if(supaEnabled()){
       '</div>';
     if(!ov.parentNode)document.body.appendChild(ov);
   })();
-  supaInit();
+  // Supabase script is async — may not be ready when inline JS finishes
+  if(window.supabase){supaInit();}
+  else{document.getElementById('supabase-sdk').addEventListener('load',supaInit);}
   // Cmd+K / Ctrl+K global search
   document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();openSearch();}});
 } else {
