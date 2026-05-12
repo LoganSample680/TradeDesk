@@ -1735,6 +1735,8 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   <div class="card"><div class="card-hd">Estimated tax owed</div><div id="tx-results"></div></div>
   <div class="card"><div class="card-hd">Quarterly due dates</div><div id="tx-quarters"></div></div>
 
+  <div id="tx-tips" style="margin-bottom:4px"></div>
+
   <div style="font-size:11px;color:var(--text3);line-height:1.6;padding:0 4px 16px">
     These are estimates — not a substitute for a CPA. Especially year one as a new Kansas resident. Numbers intentionally round up to avoid surprises at filing.
   </div>
@@ -7739,17 +7741,38 @@ function renderVehicleSettings(){
       '</div>'+
       (sub?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+sub+'</div>':'')+
       '<input placeholder="Nickname (optional — e.g. Work Truck)" data-veh-idx="'+i+'" oninput="updateVehicleNick('+i+',this.value)" style="margin-top:6px;font-size:12px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit">'+
+      '<select data-gvwr-idx="'+i+'" oninput="updateVehicleGVWR('+i+',this.value)" style="margin-top:4px;font-size:11px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit">'+
+        '<option value="">IRS Weight Class (GVWR) — tap to set for depreciation</option>'+
+        '<option value="light">Under 6,000 lbs (car, crossover, small SUV)</option>'+
+        '<option value="heavy_truck">Over 6,000 lbs — Pickup or Van (F-150, RAM, Sprinter)</option>'+
+        '<option value="heavy_suv">Over 6,000 lbs — Large SUV (Tahoe, Expedition, Suburban)</option>'+
+        '<option value="commercial">Over 14,000 lbs (box truck, flatbed, commercial)</option>'+
+      '</select>'+
+      _gvwrNote(v.gvwr||'')+
     '</div>';
   }).join('');
   // Set input values after innerHTML (avoids quote issues)
   vehs.forEach((v,i)=>{
     const inp=el.querySelector('[data-veh-idx="'+i+'"]');
     if(inp)inp.value=v.nickname||'';
+    const gvwrSel=el.querySelector('[data-gvwr-idx="'+i+'"]');
+    if(gvwrSel)gvwrSel.value=v.gvwr||'';
   });
 }
 function updateVehicleNick(idx,nick){
   const vehs=getVehicles();
   if(vehs[idx]){vehs[idx].nickname=nick;S.vehicles=vehs;saveAll();}
+}
+function updateVehicleGVWR(idx,val){
+  const vehs=getVehicles();
+  if(vehs[idx]){vehs[idx].gvwr=val;S.vehicles=vehs;saveAll();renderVehicleSettings();}
+}
+function _gvwrNote(gvwr){
+  if(gvwr==='light')return '<div style="font-size:11px;background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:6px 8px;margin-top:5px;color:#92400E">⚠️ <strong>Section 280F applies:</strong> first-year depreciation capped ~$12,200. Standard mileage rate often beats actual expenses for these vehicles.</div>';
+  if(gvwr==='heavy_truck')return '<div style="font-size:11px;background:#F0FDF4;border:1px solid #16A34A;border-radius:var(--r);padding:6px 8px;margin-top:5px;color:#166534">✓ <strong>No 280F limits.</strong> Full Section 179 or bonus depreciation available (up to $70,000 in 2025). Keep mileage log proving &gt;50% business use every year.</div>';
+  if(gvwr==='heavy_suv')return '<div style="font-size:11px;background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:6px 8px;margin-top:5px;color:#92400E">⚠️ <strong>Section 179 SUV cap:</strong> max $31,300 in 2025. No luxury auto limits, but the SUV cap applies. A pickup truck with a bed doesn\'t have this cap.</div>';
+  if(gvwr==='commercial')return '<div style="font-size:11px;background:#F0FDF4;border:1px solid #16A34A;border-radius:var(--r);padding:6px 8px;margin-top:5px;color:#166534">✓ <strong>Commercial vehicle:</strong> no Section 280F limits. Full Section 179 deductible. Maintain &gt;50% business use documentation.</div>';
+  return '<div style="font-size:10px;color:var(--text3);margin-top:4px">Set weight class above — determines how much depreciation you can deduct (IRS §280F).</div>';
 }
 // ══════════════════════════════════════════════════════════════════
 // ANNUAL ODOMETER CHECK — IRS Publication 463 compliance
@@ -16004,6 +16027,29 @@ function calcTax(){
         '<div style="font-size:15px;font-weight:700;color:'+(isPast?'var(--text3)':'#A32D2D')+'">'+fmt(perQ)+'</div>'+
       '</div>';
     }).join('');
+
+  // ── IRS Tips Panel ─────────────────────────────────────────────────────
+  const tipEl=document.getElementById('tx-tips');
+  if(tipEl){
+    const mo=now.getMonth();
+    const tips=[];
+    // Health insurance line placement — always critical
+    tips.push({icon:'💊',color:'#1d4ed8',bg:'#eff6ff',title:'Health Insurance: Schedule 1, NOT Schedule C',body:'Deduct health insurance premiums on Schedule 1 Line 17 — not on Schedule C. On Schedule C they reduce income tax but NOT self-employment tax. On Schedule 1 they reduce both. At $18K/yr in premiums the wrong line costs ~$2,754 in extra SE tax annually.'});
+    // De minimis election — Jan through April (filing season) or year-round as a reminder
+    tips.push({icon:'🧾',color:'#166534',bg:'#f0fdf4',title:'De Minimis Election — Attach It Every Year',body:'You can immediately expense any single item under $2,500 (tools, equipment, parts) instead of depreciating over 5 years. But the election is NOT automatic — you or your CPA must attach a "De Minimis Safe Harbor Election" statement to your return each year or you lose it.'});
+    // December constructive receipt — Nov/Dec warning
+    if(mo>=10){tips.push({icon:'📅',urgent:true,color:'#92400e',bg:'#fffbeb',title:'December Alert: Constructive Receipt Rule',body:'Any payment you\'re owed and CAN collect before Dec 31 is taxable this year — even if the check arrives in January. Do NOT ask clients to hold off until next year to reduce your taxes. IRS calls that constructive receipt and taxes it in the year it was available. This is an audit trigger.'});}
+    // Minor child FICA exemption
+    tips.push({icon:'👶',color:'#7c3aed',bg:'#f5f3ff',title:'Kids on Payroll — Zero FICA if You\'re a Sole Prop',body:'Sole proprietors (not S-corps) who employ their child under 18 pay zero Social Security and Medicare tax on those wages. The child pays income tax at their lower rate, you deduct the wages. They can put it in a Roth IRA. Real work, reasonable pay, keep timesheets — and don\'t convert to S-corp until you\'ve modeled the FICA savings you\'d lose.'});
+    // Trailer depreciation note
+    tips.push({icon:'🚛',color:'#0369a1',bg:'#f0f9ff',title:'Tool Trailers Are NOT Subject to Vehicle Limits',body:'Many CPAs mistakenly put enclosed cargo/tool trailers under "vehicles" and apply luxury auto caps (§280F). Trailers have no motor and are not listed property — they\'re 5-year MACRS property eligible for full Section 179. A $15K trailer expensed in year one saves ~$3,750 in taxes immediately.'});
+    tipEl.innerHTML='<div class="card"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:12px">💡 IRS Tips — Things Even Good CPAs Miss</div>'+
+      tips.map(t=>'<div style="background:'+t.bg+';border:1.5px solid '+t.color+';border-radius:var(--r);padding:10px 12px;margin-bottom:8px">'+
+        '<div style="font-size:12px;font-weight:700;color:'+t.color+';margin-bottom:3px">'+t.icon+' '+t.title+'</div>'+
+        '<div style="font-size:11px;color:var(--text2);line-height:1.6">'+t.body+'</div>'+
+      '</div>').join('')+
+    '</div>';
+  }
 }
 
 // ── More menu toggle ──────────────────────────────────────────────────────
