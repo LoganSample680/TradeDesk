@@ -996,4 +996,15 @@ function saveVisitNotes(jobId,val){
   saveAll();
   showToast('Notes saved','📝');
 }
+
+function deleteJob(jobId){
+  const j=jobs.find(x=>x.id===jobId);
+  if(!j)return;
+  const label=j.eventType==='estimate'?'estimate visit':'job';
+  zConfirm('Remove this '+label+' from the calendar?',()=>{
+    jobs=jobs.filter(x=>x.id!==jobId);
+    saveAll();renderClientDetail();renderCalendar();
+  },{title:'Remove '+label,yes:'Remove',danger:true});
+}
+
 let jobFilter='all';

@@ -290,3 +290,18 @@ function calcTax(){
   }
 }
 
+function estimateTax(netSelf,yr){
+  if(netSelf<=0)return 0;
+  const status=S.txStatus||'single';
+  const seBase=netSelf*.9235;
+  const seTax=Math.ceil(seBase*.153);
+  const seDed=seTax/2;
+  const bkts=yr?_getFedBracketsForYear(yr):FED_BRACKETS;
+  const stdDed=yr?_getStdDedForYear(yr,status):(STD_DED[status]||14600);
+  const agi=netSelf-seDed;
+  const fedTaxable=Math.max(0,agi-stdDed);
+  const fedTax=Math.ceil(calcBrackets(fedTaxable,bkts[status]||bkts.single));
+  const ksTaxable=Math.max(0,agi-(KS_STD[status]||3500));
+  const ksTax=Math.ceil(calcBrackets(ksTaxable,KS_BRACKETS[status]||KS_BRACKETS.single));
+  return seTax+fedTax+ksTax;
+}
