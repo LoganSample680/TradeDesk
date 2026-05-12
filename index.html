@@ -493,12 +493,31 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 .tf-acts{display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding-top:6px;width:100%;padding-left:38px}</style>
 </head>
 <body>
-<!-- Static boot cover — blocks flash of dashboard before JS overlay renders -->
-<div id="supa-boot-overlay" style="position:fixed;inset:0;z-index:9998;background:#0D1117;display:flex;flex-direction:column;align-items:center;justify-content:center">
-  <div style="color:#fff;font-size:26px;font-weight:800;letter-spacing:-.5px;margin-bottom:6px">TradeDesk</div>
-  <div style="color:rgba(255,255,255,0.35);font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:32px">Pro</div>
-  <div style="width:28px;height:28px;border:2.5px solid rgba(255,255,255,0.12);border-top-color:#185FA5;border-radius:50%;animation:_ptr_rotate 0.8s linear infinite"></div>
+<!-- Full boot screen — visible before any JS runs. td-logoin/td-bar are defined in <style> above. -->
+<div id="supa-boot-overlay" style="position:fixed;inset:0;z-index:9998;background:#0D1117;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0">
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;padding:0 24px">
+    <div id="_sbo_name" style="font-size:44px;font-weight:900;color:#fff;letter-spacing:-2px;animation:td-logoin .4s ease both">TradeDesk</div>
+  </div>
+  <div style="width:100%;padding:0 0 52px">
+    <div id="_sbo_track" style="height:3px;background:rgba(255,255,255,0.08);border-radius:99px;margin:0 32px;overflow:hidden">
+      <div id="_sbo_bar" style="height:100%;background:#185FA5;border-radius:99px;animation:td-bar 5s cubic-bezier(.4,0,.2,1) forwards"></div>
+    </div>
+  </div>
 </div>
+<script>
+// Runs immediately — customise boot screen from localStorage before any other JS.
+(function(){
+  try{
+    var s=JSON.parse(localStorage.getItem('zp3_S')||'{}');
+    var ov=document.getElementById('supa-boot-overlay');if(!ov)return;
+    if(s.brandColor){ov.style.background=s.brandColor;var b=document.getElementById('_sbo_bar'),t=document.getElementById('_sbo_track');if(b)b.style.background='rgba(0,0,0,0.35)';if(t)t.style.background='rgba(0,0,0,0.2)';}
+    var n=document.getElementById('_sbo_name');
+    if(s.logoData&&n){var img=new Image();img.src=s.logoData;img.style.cssText='max-height:260px;max-width:86vw;width:auto;object-fit:contain;display:block;animation:td-logoin .55s cubic-bezier(.22,1,.36,1) both';n.replaceWith(img);}
+    else if(s.bname&&n)n.textContent=s.bname;
+  }catch(e){}
+  window._earlyBootDone=true;
+})();
+</script>
 <div id="app">
 <div class="pg active" id="pg-dash">
   <div class="tbar"><div><div class="tbar-title" id="dash-greet"></div><div class="tbar-sub" id="dash-date"></div></div><div style="display:flex;align-items:center;gap:5px"><span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Year</span><select id="dash-year-sel" onchange="setDashYear(this.value)" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)"></select></div></select></div>
@@ -20164,7 +20183,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.12.26.8';
+const APP_VERSION='05.12.26.9';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -21762,6 +21781,7 @@ setTimeout(()=>{
 if(supaEnabled()){
   // Show loading overlay — don't render local data, wait for cloud
   (function showLoadingScreen(){
+    if(window._earlyBootDone)return; // early-boot script already drew this
     const logo=S.logoData||'';
     const name=S.bname||'TradeDesk';
     const color=S.brandColor||'#185FA5';
