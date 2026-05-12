@@ -1741,6 +1741,10 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         <label>Quarterly taxes already paid ($)</label>
         <input type="number" id="tx-paid" value="0" oninput="calcTax()" placeholder="0">
       </div>
+      <div class="f">
+        <label>Last year's total tax bill ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">From your prior year return — unlocks safe harbor</span></label>
+        <input type="number" id="tx-prior-yr" value="0" oninput="calcTax()" placeholder="0 — enter from last year's return">
+      </div>
     </div>
   </div>
 
@@ -1748,6 +1752,8 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   <div class="card"><div class="card-hd">This year so far</div><div id="tx-inputs"></div></div>
   <div class="card"><div class="card-hd">Estimated tax owed</div><div id="tx-results"></div></div>
   <div class="card"><div class="card-hd">Quarterly due dates</div><div id="tx-quarters"></div></div>
+
+  <div id="tx-tips" style="margin-bottom:4px"></div>
 
   <div style="font-size:11px;color:var(--text3);line-height:1.6;padding:0 4px 16px">
     These are estimates — not a substitute for a CPA. Especially year one as a new Kansas resident. Numbers intentionally round up to avoid surprises at filing.
@@ -1836,6 +1842,15 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
         </div>
         <div class="f"><label>Hub accent color <span style="font-size:10px;font-weight:400;color:var(--text3)">(buttons &amp; links in client hub)</span></label><input type="color" id="set-brandcolor" value="#185FA5"></div>
         <div class="f"><label>Website URL <span style="font-size:10px;font-weight:400;color:var(--text3)">(shown in client hub footer)</span></label><input type="url" id="set-bwebsite" placeholder="https://yourwebsite.com"></div>
+        <div class="f" style="grid-column:1/-1">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none">
+            <input type="checkbox" id="set-home-office" onchange="S.homeOffice=this.checked;saveAll()" style="width:18px;height:18px;margin-top:1px;accent-color:var(--blue);flex-shrink:0">
+            <div>
+              <div style="font-size:13px;font-weight:700">I have a dedicated home office</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:2px">A room used ONLY for business — scheduling, estimating, billing. Unlocks the commuting deduction: drives from home to first job site become deductible business miles instead of non-deductible commutes. (IRS §280A)</div>
+            </div>
+          </label>
+        </div>
         <div class="f" style="grid-column:1/-1" id="settings-vehicles-section">
           <label>Vehicles <span style="font-size:10px;color:var(--text3);font-weight:400">(IRS log requires vehicle description per trip)</span></label>
           <div id="set-vehicles-list" style="margin-bottom:8px"></div>
@@ -3251,6 +3266,7 @@ function loadSettingsForm(){
   sf('set-review-url',S.reviewUrl||'');
   sf('set-brandcolor',S.brandColor||'#185FA5');
   sf('set-bwebsite',S.bwebsite||'');
+  const hoEl=document.getElementById('set-home-office');if(hoEl)hoEl.checked=!!S.homeOffice;
 }
 function saveSettings(){
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
@@ -7805,12 +7821,13 @@ function addVehicle(){
   if(!name)return zAlert('Enter a vehicle description (e.g. 2019 White F-150)');
   const vehs=getVehicles();
   if(vehs.find(v=>v.name===name))return zAlert('Vehicle already added.');
-  vehs.push({name,nickname});
+  vehs.push({name,nickname,addedDate:todayKey()});
   S.vehicles=vehs;
   saveAll();
   if(inp)inp.value='';
   if(nickInp)nickInp.value='';
   renderVehicleSettings();
+  setTimeout(()=>_checkOdometerPrompt(),400);
 }
 
 function removeVehicle(idx){
@@ -7840,18 +7857,194 @@ function renderVehicleSettings(){
         '<input type="number" min="1" max="100" data-biz-idx="'+i+'" value="'+(v.bizUse||100)+'" oninput="updateVehicleBizUse('+i+',this.value)" style="width:58px;font-size:12px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;box-sizing:border-box">'+
         '<span style="font-size:11px;color:var(--text3)">% business use (affects mileage deduction)</span>'+
       '</div>'+
+      '<select data-gvwr-idx="'+i+'" oninput="updateVehicleGVWR('+i+',this.value)" style="margin-top:4px;font-size:11px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit">'+
+        '<option value="">IRS Weight Class (GVWR) — tap to set for depreciation</option>'+
+        '<option value="light">Under 6,000 lbs (car, crossover, small SUV)</option>'+
+        '<option value="heavy_truck">Over 6,000 lbs — Pickup or Van (F-150, RAM, Sprinter)</option>'+
+        '<option value="heavy_suv">Over 6,000 lbs — Large SUV (Tahoe, Expedition, Suburban)</option>'+
+        '<option value="commercial">Over 14,000 lbs (box truck, flatbed, commercial)</option>'+
+      '</select>'+
+      _gvwrNote(v.gvwr||'')+
     '</div>';
   }).join('');
   // Set input values after innerHTML (avoids quote issues)
   vehs.forEach((v,i)=>{
     const inp=el.querySelector('[data-veh-idx="'+i+'"]');
     if(inp)inp.value=v.nickname||'';
+    const gvwrSel=el.querySelector('[data-gvwr-idx="'+i+'"]');
+    if(gvwrSel)gvwrSel.value=v.gvwr||'';
   });
 }
 function updateVehicleNick(idx,nick){
   const vehs=getVehicles();
   if(vehs[idx]){vehs[idx].nickname=nick;S.vehicles=vehs;saveAll();}
 }
+function updateVehicleGVWR(idx,val){
+  const vehs=getVehicles();
+  if(vehs[idx]){vehs[idx].gvwr=val;S.vehicles=vehs;saveAll();renderVehicleSettings();}
+}
+function _gvwrNote(gvwr){
+  if(gvwr==='light')return '<div style="font-size:11px;background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:6px 8px;margin-top:5px;color:#92400E">⚠️ <strong>Section 280F applies:</strong> first-year depreciation capped ~$12,200. Standard mileage rate often beats actual expenses for these vehicles.</div>';
+  if(gvwr==='heavy_truck')return '<div style="font-size:11px;background:#F0FDF4;border:1px solid #16A34A;border-radius:var(--r);padding:6px 8px;margin-top:5px;color:#166534">✓ <strong>No 280F limits.</strong> Full Section 179 or bonus depreciation available (up to $70,000 in 2025). Keep mileage log proving &gt;50% business use every year.</div>';
+  if(gvwr==='heavy_suv')return '<div style="font-size:11px;background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:6px 8px;margin-top:5px;color:#92400E">⚠️ <strong>Section 179 SUV cap:</strong> max $31,300 in 2025. No luxury auto limits, but the SUV cap applies. A pickup truck with a bed doesn\'t have this cap.</div>';
+  if(gvwr==='commercial')return '<div style="font-size:11px;background:#F0FDF4;border:1px solid #16A34A;border-radius:var(--r);padding:6px 8px;margin-top:5px;color:#166534">✓ <strong>Commercial vehicle:</strong> no Section 280F limits. Full Section 179 deductible. Maintain &gt;50% business use documentation.</div>';
+  return '<div style="font-size:10px;color:var(--text3);margin-top:4px">Set weight class above — determines how much depreciation you can deduct (IRS §280F).</div>';
+}
+// ══════════════════════════════════════════════════════════════════
+// ANNUAL ODOMETER CHECK — IRS Publication 463 compliance
+// Records Jan 1 start + Dec 31 end odometer per vehicle per year.
+// Calculates true business-use % = logged miles / total miles driven.
+// ══════════════════════════════════════════════════════════════════
+function _checkOdometerPrompt(){
+  const vehs=getVehicles();
+  if(!vehs.length||_isEmployee||_devSupportMode)return;
+  const cy=new Date().getFullYear();
+  const mo=new Date().getMonth(); // 0=Jan
+  const log=S.vehicleOdoLog||{};
+  const snoozed=S._odoSnoozedUntil||0;
+  if(Date.now()<snoozed)return;
+
+  // Tasks needed:
+  const tasks=[];
+  // 1. Current year start — always check regardless of month (mid-year signups need this too)
+  vehs.forEach(v=>{
+    const key=_vehKey(v);
+    if(!(log[cy]&&log[cy][key]&&log[cy][key].start)){
+      // midYear=true when past April — modal shows "best estimate" language instead of "Jan 1"
+      tasks.push({year:cy,type:'start',veh:v,midYear:mo>3});
+    }
+  });
+  // 2. End of previous year — prompt Jan through Mar only (after that, prior year is filed)
+  if(mo<=2){
+    const ly=cy-1;
+    vehs.forEach(v=>{
+      const key=_vehKey(v);
+      if(!(log[ly]&&log[ly][key]&&log[ly][key].end)){
+        tasks.push({year:ly,type:'end',veh:v});
+      }
+    });
+  }
+
+  if(!tasks.length)return;
+
+  // Count how many times snoozed — after 3 snoozes, hard block
+  const snoozeCount=S._odoSnoozeCount||0;
+  _showOdometerModal(tasks,snoozeCount>=3);
+}
+
+function _vehKey(v){return(typeof v==='string'?v:(v.name||'vehicle')).toLowerCase().replace(/\s+/g,'_');}
+
+function _showOdometerModal(tasks,hardBlock){
+  document.getElementById('_odo-modal-ov')?.remove();
+  let taskIdx=0;
+
+  function renderTask(){
+    if(taskIdx>=tasks.length){_odoFinish();return;}
+    const t=tasks[taskIdx];
+    const vLabel=getVehicleLabel(t.veh);
+    const isStart=t.type==='start';
+    const existing=(S.vehicleOdoLog||{})[t.year]?.[_vehKey(t.veh)]||{};
+    const otherReading=isStart?existing.end:existing.start;
+
+    // Calculate logged miles for this vehicle+year for context
+    const yrStr=String(t.year);
+    const loggedMi=mileage.filter(m=>m.date&&m.date.startsWith(yrStr)&&(!m.vehicle||m.vehicle.toLowerCase().includes((t.veh.nickname||t.veh.name||'').split(' ')[0].toLowerCase()))).reduce((s,m)=>s+(m.miles||0),0);
+
+    ov.innerHTML=`
+    <div style="background:var(--bg);border-radius:var(--rl);width:100%;max-width:440px;padding:24px 20px 28px;box-sizing:border-box">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+        <div style="width:38px;height:38px;border-radius:50%;background:#dbeafe;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🚗</div>
+        <div>
+          <div style="font-size:16px;font-weight:800;color:var(--text)">${isStart?(t.midYear?t.year+' Opening Odometer':t.year+' Start Odometer'):'Year-End Odometer'}</div>
+          <div style="font-size:12px;color:var(--text3)">${vLabel} · ${isStart?(t.midYear?'First business use, '+t.year:'Jan 1, '+t.year):'Dec 31, '+t.year}</div>
+        </div>
+      </div>
+      <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:var(--r);padding:10px 12px;margin:14px 0 16px;font-size:12px;color:#1e40af;line-height:1.5">
+        <strong>IRS Pub. 463 requires annual odometer records.</strong> ${t.midYear?'You joined mid-year — enter the odometer reading from when you first started using this vehicle for business, or your best Jan 1 estimate. An estimate is far better than no record.':'Recording Jan 1 &amp; Dec 31 readings proves your business-use % and makes your mileage deduction bulletproof — even in a field audit.'}
+        ${loggedMi>0?`<div style="margin-top:6px">📍 You logged <strong>${loggedMi.toFixed(1)} mi</strong> in ${t.year} for this vehicle in TradeDesk.</div>`:''}
+        ${otherReading?`<div style="margin-top:4px">${isStart?'Dec 31':'Jan 1'} reading on file: <strong>${otherReading.toLocaleString()} mi</strong></div>`:''}
+      </div>
+      <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:6px">${isStart?(t.midYear?t.year+' opening odometer (best estimate)':'Jan 1, '+t.year+' odometer reading'):'Dec 31, '+t.year+' odometer reading'}</div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+        <input id="_odo-val" type="number" min="0" inputmode="numeric" placeholder="e.g. 48,250" style="flex:1;padding:12px 14px;border-radius:var(--r);border:2px solid var(--blue);font-size:20px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--text);outline:none;box-sizing:border-box">
+        <span style="font-size:13px;color:var(--text3);font-weight:600">miles</span>
+      </div>
+      <div id="_odo-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:10px"></div>
+      ${tasks.length>1?`<div style="font-size:11px;color:var(--text3);margin-bottom:12px;text-align:center">${taskIdx+1} of ${tasks.length} vehicles</div>`:''}
+      <button onclick="_odoSaveStep()" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:10px">Save &amp; continue →</button>
+      ${hardBlock
+        ? `<div style="font-size:11px;color:var(--text3);text-align:center">This record is required for IRS compliance. Enter your best estimate if unsure of the exact number.</div>`
+        : `<button onclick="_odoSnooze()" style="width:100%;padding:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Remind me in 24 hours (${3-(S._odoSnoozeCount||0)} snoozes left)</button>`
+      }
+    </div>`;
+    setTimeout(()=>document.getElementById('_odo-val')?.focus(),100);
+  }
+
+  function _odoSaveStep(){
+    const raw=parseFloat(document.getElementById('_odo-val')?.value)||0;
+    const err=document.getElementById('_odo-err');
+    if(!raw||raw<1){if(err)err.textContent='Enter a valid odometer reading.';return;}
+    const t=tasks[taskIdx];
+    const key=_vehKey(t.veh);
+    if(!S.vehicleOdoLog)S.vehicleOdoLog={};
+    if(!S.vehicleOdoLog[t.year])S.vehicleOdoLog[t.year]={};
+    if(!S.vehicleOdoLog[t.year][key])S.vehicleOdoLog[t.year][key]={};
+    const existing=S.vehicleOdoLog[t.year][key];
+    if(t.type==='start'){
+      if(existing.end&&raw>=existing.end){if(err)err.textContent='Start odometer must be less than end odometer ('+existing.end.toLocaleString()+' mi).';return;}
+      existing.start=raw;existing.startDate=todayKey();
+    } else {
+      if(existing.start&&raw<=existing.start){if(err)err.textContent='End odometer must be greater than start odometer ('+existing.start.toLocaleString()+' mi).';return;}
+      existing.end=raw;existing.endDate=todayKey();
+      // Cross-check: logged miles vs total miles
+      const yrStr=String(t.year);
+      const totalDriven=raw-(existing.start||0);
+      const logged=mileage.filter(m=>m.date&&m.date.startsWith(yrStr)).reduce((s,m)=>s+(m.miles||0),0);
+      if(totalDriven>0){
+        const bizPct=Math.min(100,Math.round(logged/totalDriven*100));
+        const vehs=getVehicles();const vi=vehs.findIndex(v=>_vehKey(v)===key);
+        if(vi>=0){vehs[vi].bizUse=bizPct;S.vehicles=vehs;}
+        existing.bizUsePct=bizPct;existing.loggedMi=Math.round(logged);existing.totalMi=totalDriven;
+        if(logged>totalDriven){existing.mileageFlag=true;}
+      }
+    }
+    S._odoSnoozeCount=0;
+    saveAll();
+    taskIdx++;
+    renderTask();
+  }
+
+  window._odoSaveStep=_odoSaveStep;
+
+  const ov=document.createElement('div');
+  ov.id='_odo-modal-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,'+(hardBlock?'.85':'.6')+');z-index:99990;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  if(!hardBlock)ov.addEventListener('click',e=>{if(e.target===ov)_odoSnooze();});
+  document.body.appendChild(ov);
+  renderTask();
+
+  function _odoFinish(){
+    ov.remove();
+    showToast('Odometer records saved — mileage deduction verified ✓','📋');
+    renderVehicleSettings();
+  }
+}
+
+function _odoSnooze(){
+  S._odoSnoozedUntil=Date.now()+86400000; // 24 hours
+  S._odoSnoozeCount=(S._odoSnoozeCount||0)+1;
+  saveAll();
+  document.getElementById('_odo-modal-ov')?.remove();
+  showToast('Odometer reminder set for tomorrow','⏰');
+}
+window._odoSnooze=_odoSnooze;
+
+function _getVehicleOdoSummary(veh,year){
+  const key=_vehKey(veh);
+  const log=(S.vehicleOdoLog||{})[year]?.[key]||{};
+  return log;
+}
+
 function updateVehicleBizUse(idx,val){
   const vehs=getVehicles();
   if(vehs[idx]){vehs[idx].bizUse=Math.max(1,Math.min(100,parseFloat(val)||100));S.vehicles=vehs;saveAll();}
@@ -15030,9 +15223,12 @@ function openManualIncomeModal(){
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Client</label>'+
         '<select id="_inc-client" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box"><option value="">No client / other</option>'+clientOpts+'</select></div>'+
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Type</label>'+
-        '<select id="_inc-type" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box">'+
-          '<option value="Job payment">Job payment</option><option value="Deposit">Deposit</option><option value="Final payment">Final payment</option><option value="Cash">Cash</option><option value="Other">Other</option>'+
-        '</select></div>'+
+        '<select id="_inc-type" onchange="toggleIncDepositWarn()" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box">'+
+          '<option value="Job payment">Job payment</option><option value="Deposit">Deposit / advance</option><option value="Final payment">Final payment</option><option value="Cash">Cash</option><option value="Other">Other</option>'+
+        '</select>'+
+        '<div id="_inc-deposit-warn" style="display:none;background:#FFFBEB;border:1.5px solid #D97706;border-radius:var(--r);padding:10px 12px;margin-top:8px;font-size:12px;color:#92400E;line-height:1.5">'+
+          '💡 <strong>Deposits count as income now.</strong> The IRS says any money you receive is taxable the year you get it — even if it\'s a deposit for work you haven\'t done yet. Don\'t wait until the job is done to report it.'+
+        '</div></div>'+
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Payment method</label>'+
         '<select id="_inc-method" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box" onchange="toggleCashWarning()">'+
           '<option value="Check">Check</option><option value="Card">Card</option><option value="Zelle">Zelle</option><option value="Venmo">Venmo</option><option value="Cash">Cash</option><option value="Other">Other</option>'+
@@ -15051,6 +15247,11 @@ function openManualIncomeModal(){
     '<button onclick="saveManualIncome()" style="margin-top:14px;width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--accent,var(--blue));color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Save income</button>';
   ov.appendChild(sheet);document.body.appendChild(ov);
   setTimeout(()=>document.getElementById('_inc-amt')?.focus(),150);
+}
+function toggleIncDepositWarn(){
+  const t=document.getElementById('_inc-type')?.value||'';
+  const w=document.getElementById('_inc-deposit-warn');
+  if(w)w.style.display=(t==='Deposit')?'block':'none';
 }
 function saveManualIncome(){
   const date=document.getElementById('_inc-date')?.value||'';
@@ -15877,9 +16078,7 @@ function saveLoggedTrip(){
   const cid=parseInt(document.getElementById('lm-client')?.value)||null;
   const c=cid?getClientById(cid):null;
   // Save immediately with 0 miles — background route calc will update
-  const odo_start=parseFloat(document.getElementById('lm-odo-start')?.value)||null;
-  const odo_end=parseFloat(document.getElementById('lm-odo-end')?.value)||null;
-  const rec={id:Date.now(),date,vehicle,from,from_name,to,to_name,start:0,end:0,miles:0,purpose,client_id:cid,client_name:c?c.name:'',notes,odo_start,odo_end,created_at:new Date().toISOString(),calc_method:'pending'};
+  const rec={id:Date.now(),date,vehicle,from,from_name,to,to_name,start:0,end:0,miles:0,purpose,client_id:cid,client_name:c?c.name:'',notes,created_at:new Date().toISOString(),calc_method:'pending'};
   if(_isEmployee){rec.logged_by_id=_supaUser.id;rec.logged_by_name=_employeeRecord?.name||_supaUser.email;}
   mileage.unshift(rec);
   if(cid)autoLogContact(cid,'drive');
@@ -15931,7 +16130,11 @@ function renderAllMileage(){
       '<span style="font-size:12px;font-weight:700">'+mi.toFixed(1)+' mi &nbsp;<span style="color:var(--green-mid);font-weight:600">'+fmt(mi*IRS())+'</span></span>'+
     '</div>';
   }).join('');
+  const homeOfficeNote=S.homeOffice
+    ?'<div style="background:#F0FDF4;border:1.5px solid #16A34A;border-radius:var(--r);padding:8px 12px;margin-bottom:8px;font-size:11px;color:#166534"><strong>✓ Home office active</strong> — your drives from home to job sites count as deductible business miles (not commuting). Log every trip.</div>'
+    :'<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:var(--r);padding:8px 12px;margin-bottom:8px;font-size:11px;color:#1E40AF">💡 <strong>Home office tip:</strong> Drives from home to your first job site are not deductible yet. Set up a home office in Settings to unlock that deduction.</div>';
   document.getElementById('tr-mile-mets').innerHTML=
+    homeOfficeNote+
     '<div class="mets" style="margin-bottom:8px">'+
       '<div class="met"><div class="met-l">'+yr+' miles</div><div class="met-v">'+tot.toFixed(1)+' mi</div></div>'+
       '<div class="met"><div class="met-l">IRS deduction</div><div class="met-v">'+fmt(tot*IRS())+'</div><div class="met-s">@ $'+IRS().toFixed(3)+'/mi</div></div>'+
@@ -16124,6 +16327,13 @@ function calcTax(){
   const totalOwed=seTax+fedTax+ksTax;
   const stillOwed=Math.max(0,totalOwed-taxPaid);
   const perQ=Math.ceil(stillOwed/4);
+  // Prior-year safe harbor: pay 100% of last year's tax (110% if AGI > $150K) to avoid underpayment penalty
+  const priorYrTax=nv('tx-prior-yr')||0;
+  const safeHarborRate=agi>150000?1.10:1.00;
+  const safeHarborTotal=Math.ceil(priorYrTax*safeHarborRate);
+  const safeHarborQ=priorYrTax>0?Math.ceil(safeHarborTotal/4):0;
+  // SEP-IRA: 20% of net self-employment income (after SE deduction), max $70,000
+  const sepMax=Math.min(70000,Math.floor(Math.max(0,netSelf-seDed)*0.20));
 
   const reserveRate=netSelf>0?Math.ceil(totalOwed/netSelf*100):32; // default 32% if no income yet
   const reserveAmt=Math.ceil(netSelf*reserveRate/100);
@@ -16183,19 +16393,104 @@ function calcTax(){
     {q:'Q3',due:'Sep 15',date:new Date(yr,8,15),period:'Jun–Aug'},
     {q:'Q4',due:'Jan 15',date:new Date(yr+1,0,15),period:'Sep–Dec'},
   ];
+  const safeHarborNote=safeHarborQ>0
+    ? '<div style="background:#F0FDF4;border:1.5px solid #16A34A;border-radius:var(--r);padding:10px 12px;margin-bottom:12px">'+
+        '<div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:3px">✓ Safe Harbor Shortcut — No Penalty Guaranteed</div>'+
+        '<div style="font-size:11px;color:#166534;line-height:1.5">Pay <strong>'+fmt(safeHarborQ)+'</strong>/quarter ('+fmt(safeHarborTotal)+'/yr total) and the IRS <em>cannot</em> charge you an underpayment penalty — even if you owe more at filing. That\'s '+Math.round(safeHarborRate*100)+'% of last year\'s '+fmt(priorYrTax)+' tax bill.'+(agi>150000?' High-income rate (110%) applies because your income is over $150K.':'')+'</div>'+
+      '</div>'
+    : '<div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:8px 10px;margin-bottom:12px;font-size:11px;color:#92400E">'+
+        '💡 Enter your prior year tax above to unlock the Safe Harbor shortcut — the legal way to pay less each quarter and never get penalized.'+
+      '</div>';
   document.getElementById('tx-quarters').innerHTML=
-    '<div style="font-size:11px;color:var(--text2);margin-bottom:10px">Pay quarterly to the IRS and Kansas to avoid underpayment penalties. Each quarter = '+fmt(perQ)+'.</div>'+
+    safeHarborNote+
+    '<div style="font-size:11px;color:var(--text2);margin-bottom:10px">Based on this year\'s numbers — pay '+fmt(perQ)+' each quarter to cover what you owe now.</div>'+
     qdates.map(({q,due,date,period})=>{
       const isPast=date<now;
-      const isNext=!isPast&&qdates.filter(x=>x.date>=now)[0]===arguments[0];
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">'+
         '<div>'+
           '<div style="font-size:13px;font-weight:700">'+q+' <span style="font-weight:400;color:var(--text3)">'+period+'</span></div>'+
           '<div style="font-size:11px;color:'+(isPast?'var(--text3)':'var(--text2)')+'">Due '+due+(isPast?' · past due':'')+'</div>'+
         '</div>'+
-        '<div style="font-size:15px;font-weight:700;color:'+(isPast?'var(--text3)':'#A32D2D')+'">'+fmt(perQ)+'</div>'+
+        '<div style="text-align:right">'+
+          '<div style="font-size:15px;font-weight:700;color:'+(isPast?'var(--text3)':'#A32D2D')+'">'+fmt(perQ)+'</div>'+
+          (safeHarborQ>0?'<div style="font-size:10px;color:#166534;font-weight:600">'+fmt(safeHarborQ)+' safe harbor</div>':'')+
+        '</div>'+
       '</div>';
     }).join('');
+
+  // ── DIF Audit Risk Score ───────────────────────────────────────────────
+  const difPct=tIn>0?(tEx+mileDed)/tIn:0;
+  const difRisk=difPct>0.63?'high':difPct>0.52?'medium':'low';
+  const difResultsEl=document.getElementById('tx-results');
+  if(difResultsEl&&tIn>0){
+    const difColors={high:['#7f1d1d','#FEF2F2','#A32D2D'],medium:['#78350f','#FFFBEB','#D97706'],low:['#14532d','#F0FDF4','#16A34A']};
+    const [tc,bg,border]=difColors[difRisk];
+    const difHTML='<div style="background:'+bg+';border:1.5px solid '+border+';border-radius:var(--r);padding:10px 12px;margin-top:12px">'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:'+tc+';margin-bottom:3px">Audit Risk Indicator — '+Math.round(difPct*100)+'% expense ratio</div>'+
+      '<div style="font-size:11px;color:'+tc+';line-height:1.5">'+
+        (difRisk==='high'?'⚠️ Your deductions are '+Math.round(difPct*100)+'% of gross revenue — above the 63% threshold where the IRS DIF computer flags returns for review. Your deductions may be completely legitimate, but you need airtight receipts for every single one.':
+         difRisk==='medium'?'⚡ Moderate: '+Math.round(difPct*100)+'% of revenue in deductions. Keep all receipts — you\'re in the range the IRS notices.':
+         '✓ Low risk: '+Math.round(difPct*100)+'% expense ratio looks normal for your industry.')+
+      '</div></div>';
+    difResultsEl.innerHTML+=difHTML;
+  }
+
+  // ── IRS Tips Panel ─────────────────────────────────────────────────────
+  const tipEl=document.getElementById('tx-tips');
+  if(tipEl){
+    const mo=now.getMonth();
+    const activeTrade=getActiveTrade();
+    const NAICS_MAP={painting:{code:'238320',label:'Painting & Wall Covering'},electrical:{code:'238210',label:'Electrical Contractors'},plumbing:{code:'238220',label:'Plumbing, Heating, A/C'},hvac:{code:'238220',label:'Plumbing, Heating, A/C'},roofing:{code:'238160',label:'Roofing Contractors'},flooring:{code:'238330',label:'Flooring Contractors'},general:{code:'238990',label:'Specialty Trade Contractors'}};
+    const naics=NAICS_MAP[activeTrade]||NAICS_MAP.general;
+    const tips=[];
+
+    // SEP-IRA — show actual dollar amount based on their income
+    if(sepMax>0)tips.push({icon:'🏦',color:'#0369a1',bg:'#f0f9ff',title:'Retirement Account — You Can Stash '+fmt(sepMax)+' Tax-Free',body:'Based on your net income, you can put up to '+fmt(sepMax)+' into a SEP-IRA this year and deduct every dollar from your taxes. You have until Oct 15 (with extension) to fund it. At your income level that\'s roughly '+fmt(Math.round(sepMax*0.25))+' back in your pocket right now. Open one at Fidelity or Vanguard in 15 minutes — they walk you through it.'});
+
+    // Kansas commercial labor tax — critical for KS contractors
+    if((S.state||'KS')==='KS')tips.push({icon:'🏗️',color:'#92400e',bg:'#fffbeb',title:'Kansas Trap: Labor on Commercial Jobs IS Taxable',body:'In Kansas, if you\'re doing work on an existing commercial building (repainting a restaurant, replumbing an office, rewiring a hotel), you must collect Kansas sales tax on your LABOR — not just materials. Residential and new construction are exempt. Get this wrong and you owe the tax out of your own pocket. A $15,000 commercial paint job at 9% = $1,350 you\'d owe the state. Register at ksrevenue.gov and collect it going forward.'});
+
+    // Home office commuting unlock
+    if(!S.homeOffice)tips.push({icon:'🏠',color:'#0369a1',bg:'#f0f9ff',title:'Home Office = Every Drive to a Job Site Becomes Deductible',body:'Right now, your drive from home to your first job site each day is "commuting" — not deductible. But if you have a room at home used ONLY for business (scheduling, estimates, billing), that changes everything. Your home becomes your business location and every drive to a job site is a deductible business trip. Check the home office box in Settings if this applies to you.'});
+    if(S.homeOffice)tips.push({icon:'🏠',color:'#166534',bg:'#f0fdf4',title:'Home Office Active — Your Drives to Job Sites Are Deductible',body:'Because you have a qualifying home office, the IRS treats your home as your business location. Every drive from home to a job site counts as business mileage — not commuting. Make sure every trip is logged in TradeDesk. This is also the biggest thing to document if you\'re ever audited: photograph the dedicated office space and keep records of what business work you do there.'});
+
+    // Health insurance line placement
+    tips.push({icon:'💊',color:'#1d4ed8',bg:'#eff6ff',title:'Health Insurance: Schedule 1, NOT Schedule C',body:'Deduct health insurance premiums on Schedule 1 Line 17 — not on Schedule C. On Schedule C they reduce income tax but NOT self-employment tax. On Schedule 1 they reduce both. At $18K/yr in family premiums the wrong line costs ~$2,754 in extra SE tax every year. One of the most common CPA errors for self-employed contractors.'});
+
+    // NAICS code
+    tips.push({icon:'📋',color:'#374151',bg:'#f9fafb',title:'Use NAICS Code '+naics.code+' on Schedule C',body:'Line B of Schedule C asks for your business code. Use '+naics.code+' ('+naics.label+'). The IRS computer compares your expense ratios against other contractors in your specific trade — use the right code or your numbers look abnormal by comparison, raising your audit score for no reason.'});
+
+    // Commingling
+    tips.push({icon:'🏦',color:'#7c3aed',bg:'#f5f3ff',title:'Separate Bank Account — Not Optional if You Want to Survive an Audit',body:'If you mix business and personal money in one account, an auditor adds up EVERY deposit and calls it all income unless you prove otherwise. That insurance check from your car accident? Income. That personal loan from your brother? Income. It\'s the fastest way to turn a simple audit into a nightmare. Open a free business checking account and run all business money through it — nothing else.'});
+
+    // De minimis election
+    tips.push({icon:'🧾',color:'#166534',bg:'#f0fdf4',title:'De Minimis Election — Must File Every Year',body:'You can immediately expense any single item under $2,500 (tools, equipment, supplies) instead of depreciating it over 5 years. But the election is NOT automatic — your CPA must attach a statement to your return every single year. One missed year means those tools get depreciated instead of expensed. Remind your CPA every filing season.'});
+
+    // December constructive receipt
+    if(mo>=10)tips.push({icon:'📅',color:'#92400e',bg:'#fffbeb',title:'December Alert: Money You Can Collect Now Is Taxable Now',body:'Even if a customer\'s check doesn\'t arrive until January, if you could have collected it in December, the IRS says it\'s December income. Do NOT ask clients to hold off on payment to push it into next year — that\'s called constructive receipt and it\'s an audit trigger. If you genuinely haven\'t earned the money yet, that\'s fine. But if the job is done and the invoice is due, that income belongs in this year.'});
+
+    // Depreciation recapture
+    tips.push({icon:'🔄',color:'#92400e',bg:'#fffbeb',title:'Selling Equipment You Wrote Off? Expect a Tax Bill',body:'If you used Section 179 or bonus depreciation to write off a truck or sprayer in full, your tax "book value" is now zero. Sell it for $20,000 and you owe tax on the full $20,000 as ordinary income — even though you "sold it at a loss" compared to what you paid. This is called depreciation recapture (§1245) and it catches contractors completely off guard. Run the numbers with your CPA before selling equipment you fully depreciated.'});
+
+    // Minor child FICA
+    tips.push({icon:'👶',color:'#7c3aed',bg:'#f5f3ff',title:'Kids on Payroll — Zero FICA if You\'re a Sole Prop',body:'Sole proprietors who employ their child under 18 pay zero Social Security and Medicare tax on those wages — that\'s 15.3% you\'re not paying. The child pays income tax at their own lower rate. You deduct the wages. They can contribute to a Roth IRA. Real work, reasonable pay, and timesheets required. Don\'t convert to S-corp before you\'ve modeled this — S-corps lose the FICA exemption for minor children.'});
+
+    // Tool trailer
+    tips.push({icon:'🚛',color:'#0369a1',bg:'#f0f9ff',title:'Tool Trailers Are NOT Subject to Vehicle Depreciation Limits',body:'A lot of CPAs file tool trailers under "vehicles" and apply the luxury auto caps, which limits your first-year deduction to $12,200. Trailers have no motor — they\'re not listed property under §280F. A $15K enclosed tool trailer is fully depreciable under Section 179 in year one. That\'s a $3,750 difference in your pocket.'});
+
+    // Record retention
+    tips.push({icon:'📁',color:'#374151',bg:'#f9fafb',title:'How Long to Keep Records (The 7-Year Rule)',body:'General rule: 7 years for all tax records. But equipment purchase records need to be kept until 7 years AFTER you sell the equipment — so that 2019 truck purchase receipt needs to stay until 2032 if you sell it in 2025. Equipment you still own: keep those records permanently while you own it. IRS has 6 years (not 3) if you underreported income by more than 25%. Photograph everything and store in Google Drive or Dropbox.'});
+
+    // OBBBA 2025 update
+    tips.push({icon:'⚡',color:'#0369a1',bg:'#f0f9ff',title:'2025 Law Change: 100% Bonus Depreciation Is Back',body:'The One Big Beautiful Bill Act (signed July 2025) permanently restored 100% bonus depreciation. Any qualifying equipment, tools, vehicles, or machinery placed in service after January 19, 2025 can be fully written off in year one. This was phasing down (60% in 2024, 40% early 2025) — now it\'s back to 100% permanently. Also: 1099-NEC threshold rises to $2,000 starting with the 2026 tax year. For 2025, the $600 threshold still applies.'});
+
+    tipEl.innerHTML='<div class="card"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:12px">💡 IRS — Plain English Rules Every Contractor Needs to Know</div>'+
+      tips.map(t=>'<div style="background:'+t.bg+';border:1.5px solid '+t.color+';border-radius:var(--r);padding:10px 12px;margin-bottom:8px">'+
+        '<div style="font-size:12px;font-weight:700;color:'+t.color+';margin-bottom:3px">'+t.icon+' '+t.title+'</div>'+
+        '<div style="font-size:11px;color:var(--text2);line-height:1.6">'+t.body+'</div>'+
+      '</div>').join('')+
+    '</div>';
+  }
 }
 
 // ── More menu toggle ──────────────────────────────────────────────────────
@@ -20798,6 +21093,8 @@ async function supaLoadFromCloud(){
       autoRefreshTaxBrackets();
       autoRefreshLienRules();
     },4000);
+    // Annual odometer check — IRS Publication 463 compliance
+    setTimeout(()=>_checkOdometerPrompt(),3500);
     // Check for new signatures then schedule alerts — sequential to avoid race
     setTimeout(async()=>{ await checkNewSignatures(); if(!window._showingScheduleAlert) showScheduleAlerts(); },2000);
     setInterval(()=>checkNewSignatures(),30000);
