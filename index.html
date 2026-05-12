@@ -19566,6 +19566,7 @@ async function _devLoadUserAccount(key){
 }
 function _devExitSupportMode(){
   if(!_devSavedState)return;
+  clearTimeout(_syncTimer);_syncTimer=null; // cancel any pending save that might still have support user's data in memory
   window.removeEventListener('beforeunload',window._devUnloadGuard);
   ({clients,bids,jobs,payments,liens,income,expenses,mileage,timeEntries}=_devSavedState);
   _devSupportMode=false;_devSupportName='';_devSavedState=null;
@@ -20182,7 +20183,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.12.26.10';
+const APP_VERSION='05.12.26.11';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -20268,7 +20269,13 @@ async function supaInit(){
         if(window._obInProgress){return;}
         // TOKEN_REFRESHED in Supabase v2 can fire as SIGNED_IN — never reload cloud data
         // on a background token refresh; only load once per page session on explicit sign-in
-        if(_supaCloudLoaded){return;}
+        if(_supaCloudLoaded && _supaUser && session.user.id===_supaUser.id){return;}
+        if(_supaCloudLoaded && session.user.id!==(_supaUser?.id)){
+          // Different user signed in on same device — full reset before loading their data
+          _supaCloudLoaded=false;
+          clearTimeout(_syncTimer);_syncTimer=null;
+          _devSupportMode=false;_devSupportName='';_devSavedState=null;
+        }
         _supaUser=session.user;
         document.getElementById('supa-login-overlay')?.remove();
         document.getElementById('welcome-overlay')?.remove();
@@ -21611,6 +21618,7 @@ function _snapshotForms(){
 async function _autoSaveAndReload(){
   if(_reloadPending)return; // SW_UPDATED + version.json poll can both fire — only the first wins
   _reloadPending=true;
+  if(_devSupportMode){location.reload();return;} // dev's own data already saved on support entry — never push support user data to cloud
   document.body.style.visibility='hidden'; // hide current page during save — boot overlay handles the visual after reload
   // Snapshot any open forms before saving/reloading
   try{
