@@ -532,6 +532,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
   <div id="dash-goal" style="margin-bottom:10px"></div>
   <div id="dash-pipeline"></div>
   <div class="card"><div class="card-hd">Today on the calendar</div><div id="dash-today"></div></div>
+  <div id="dash-hobby-warn" style="display:none"></div>
   <div id="dash-close-tip" style="display:none;margin-bottom:10px"></div>
   <div class="card"><div class="card-hd">Lead sources</div><div id="dash-sources"></div></div>
   <!-- Hidden containers kept for backward-compat with renderDashFollowups / renderDashCollect -->
@@ -3845,6 +3846,27 @@ function renderDash(){
         '<div class="met-v" style="color:var(--text)">'+(avgJobVal!==null?fmtShort(avgJobVal):'—')+'</div>'+
       '</div>'+
     '</div>';
+  }
+
+  // Hobby loss check — 3 of last 5 years negative profit
+  const _hobbyEl=document.getElementById('dash-hobby-warn');
+  if(_hobbyEl&&!_isEmployee){
+    const _cy=new Date().getFullYear();
+    let _lossYears=0;
+    for(let _yi=0;_yi<5;_yi++){
+      const _yrs=String(_cy-_yi);
+      const _yi2=income.filter(r=>r.date&&r.date.startsWith(_yrs)).reduce((s,r)=>s+r.amount,0);
+      const _ye=expenses.filter(e=>e.date&&e.date.startsWith(_yrs)).reduce((s,e)=>s+e.amount,0);
+      const _ym=mileage.filter(m=>m.date&&m.date.startsWith(_yrs)).reduce((s,m)=>s+(m.miles||0),0);
+      if(_yi2-_ye-(_ym*_getIrsRateForYear(_yrs))<0)_lossYears++;
+    }
+    if(_lossYears>=3){
+      _hobbyEl.style.display='block';
+      _hobbyEl.innerHTML='<div style="background:#FFF8E7;border:1.5px solid #D4A017;border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">'+
+        '<div style="font-size:12px;font-weight:700;color:#78350F;margin-bottom:3px">⚠️ Hobby Loss Risk — '+_lossYears+' of last 5 years show net losses</div>'+
+        '<div style="font-size:12px;color:var(--text2);line-height:1.5">IRS may reclassify your business as a hobby, limiting deductions to hobby income only. Talk to your CPA about documenting profit motive.</div>'+
+      '</div>';
+    }else{_hobbyEl.style.display='none';}
   }
 
   const closeTip=document.getElementById('dash-close-tip');
@@ -7803,6 +7825,10 @@ function renderVehicleSettings(){
       '</div>'+
       (sub?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+sub+'</div>':'')+
       '<input placeholder="Nickname (optional — e.g. Work Truck)" data-veh-idx="'+i+'" oninput="updateVehicleNick('+i+',this.value)" style="margin-top:6px;font-size:12px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit">'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-top:6px">'+
+        '<input type="number" min="1" max="100" data-biz-idx="'+i+'" value="'+(v.bizUse||100)+'" oninput="updateVehicleBizUse('+i+',this.value)" style="width:58px;font-size:12px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;box-sizing:border-box">'+
+        '<span style="font-size:11px;color:var(--text3)">% business use (affects mileage deduction)</span>'+
+      '</div>'+
     '</div>';
   }).join('');
   // Set input values after innerHTML (avoids quote issues)
@@ -7814,6 +7840,14 @@ function renderVehicleSettings(){
 function updateVehicleNick(idx,nick){
   const vehs=getVehicles();
   if(vehs[idx]){vehs[idx].nickname=nick;S.vehicles=vehs;saveAll();}
+}
+function updateVehicleBizUse(idx,val){
+  const vehs=getVehicles();
+  if(vehs[idx]){vehs[idx].bizUse=Math.max(1,Math.min(100,parseFloat(val)||100));S.vehicles=vehs;saveAll();}
+}
+function getAvgVehicleBizUse(){
+  const vehs=getVehicles();if(!vehs.length)return 1;
+  return vehs.reduce((s,v)=>s+(v.bizUse||100),0)/vehs.length/100;
 }
 
 function setTripPurpose(purpose, btn){
@@ -13287,7 +13321,12 @@ function openExpenseFlow(){
       '</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
         '<div class="f"><label>Date *</label><input id="em-date" type="text" placeholder="MM/DD/YYYY" value="'+today.replace(/(\d{4})-(\d{2})-(\d{2})/,'$2/$3/$1')+'" style="font-size:14px" oninput="_fmtExpDate(this)"></div>'+
-        '<div class="f"><label>Category *</label><select id="em-cat" style="font-size:13px">'+catOpts+'</select></div>'+
+        '<div class="f"><label>Category *</label><select id="em-cat" style="font-size:13px" onchange="toggleMealFields()">'+catOpts+'</select></div>'+
+      '</div>'+
+      '<div id="em-meal-section" style="display:none;background:#FFF8F0;border:1.5px solid #F59E0B;border-radius:var(--r);padding:12px;margin-bottom:12px">'+
+        '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">🍽️ Meal — IRS requires business documentation</div>'+
+        '<div class="f" style="margin-bottom:8px"><label>Business purpose <span style="color:#A32D2D">*</span></label><input id="em-meal-purpose" placeholder="e.g. Client meeting — reviewed Bettis job scope" style="font-size:13px"></div>'+
+        '<div class="f"><label>Who attended</label><input id="em-meal-attendees" placeholder="e.g. Zach + client John Smith" style="font-size:13px"></div>'+
       '</div>'+
       '<div style="margin-bottom:14px">'+
         '<label style="display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-bottom:6px">Link to a job? <span style="font-weight:400;font-size:10px">(optional — skip for back-tax entries)</span></label>'+
@@ -13430,6 +13469,17 @@ function _confirmReceiptDate(aiDate,statusEl){
   };
 }
 
+function toggleMealFields(){
+  const cat=document.getElementById('em-cat')?.value||'';
+  const sec=document.getElementById('em-meal-section');
+  if(sec){sec.style.display=cat==='meals'?'block':'none';if(cat==='meals')document.getElementById('em-meal-purpose')?.focus();}
+}
+function toggleCashWarning(){
+  const method=document.getElementById('_inc-method')?.value||'';
+  const warn=document.getElementById('_inc-cash-warn');
+  if(warn)warn.style.display=method==='Cash'?'block':'none';
+  if(method!=='Cash'){const cb=document.getElementById('_inc-cash-confirm');if(cb)cb.checked=false;}
+}
 async function expSave(){
   const btn=document.getElementById('exp-save-btn');
   const err=document.getElementById('exp-save-err');
@@ -13445,6 +13495,7 @@ async function expSave(){
   if(!vendor){if(err)err.textContent='Enter a vendor name.';return;}
   if(!amount||amount<=0){if(err)err.textContent='Enter a valid amount.';return;}
   if(!date){if(err)err.textContent='Select a date.';return;}
+  if(cat==='meals'){const mp=(document.getElementById('em-meal-purpose')?.value||'').trim();if(!mp){if(err)err.textContent='IRS requires a business purpose for meal expenses.';document.getElementById('em-meal-purpose')?.focus();return;}}
   // Duplicate check — same vendor, amount, and date within 2 days
   const dupExp=expenses.find(e=>{
     if(e.vendor&&vendor&&e.vendor.toLowerCase()===vendor.toLowerCase()&&
@@ -13465,8 +13516,12 @@ async function expSave(){
   const receipt_img=_expState.imageData?('data:image/jpeg;base64,'+_expState.imageData.b64):null;
   const catInfo=IRS_EXPENSE_CATS.find(c=>c.id===cat)||{};
   const job=jobId?bids.find(b=>b.id===jobId):null;
+  const mealPurpose=cat==='meals'?(document.getElementById('em-meal-purpose')?.value||'').trim():'';
+  const mealAttendees=cat==='meals'?(document.getElementById('em-meal-attendees')?.value||'').trim():'';
   expenses.push({
     id:Date.now(),date,cat,catLabel:catInfo.label||cat,vendor,amount,notes,
+    meal_purpose:mealPurpose||undefined,meal_attendees:mealAttendees||undefined,
+    created_at:new Date().toISOString(),
     job_id:jobId,job_name:job?job.client_name||job.name:'',client_id:job?job.client_id:null,
     receipt:receipt_img?'Yes — photo stored':'No receipt photo',receipt_img,
     deductible:catInfo.deductible!==false,meals_50:!!(catInfo.meals_50),
@@ -13475,6 +13530,7 @@ async function expSave(){
   saveAll();
   if(typeof renderExpenses==='function')renderExpenses();
   showToast((new Date(date).getFullYear()<new Date().getFullYear()?'Back-tax expense':'Expense')+' saved — '+vendor+' '+fmt(amount),receipt_img?'📎':'🧾');
+  if(cat==='tools'&&amount>=500)setTimeout(()=>showToast('💡 Equipment $'+amount.toFixed(0)+'+ may qualify for Section 179 immediate deduction — flag for your CPA','📋'),900);
   closeExpenseFlow();
   goPg('pg-tracker');
   setTimeout(()=>{const b=document.getElementById('tr-t-expenses');if(b)b.click();},200);
@@ -14626,6 +14682,8 @@ function exportTaxPDF(){
   h+='<div class="tr2"><span>SE income base (92.35%)<span class="tsub">Schedule SE</span></span><span>'+fmt(seBase)+'</span></div>';
   h+='<div class="tr2"><span>Self-employment tax (15.3%)<span class="tsub">Social Security + Medicare</span></span><span class="red">'+fmt(seTax)+'</span></div>';
   h+='<div class="tr2"><span>1/2 SE deduction<span class="tsub">Reduces federal AGI</span></span><span class="green">('+fmt(seDed)+')</span></div>';
+  const qbiEst=Math.floor(Math.max(0,net-seDed)*0.20);
+  if(qbiEst>0)h+='<div class="tr2"><span>QBI deduction est. (Sec. 199A)<span class="tsub">20% pass-through — confirm with CPA</span></span><span class="green">('+fmt(qbiEst)+')</span></div>';
   h+='<div class="tr2"><span>Standard deduction<span class="tsub">Form 1040 — '+statusLabel+'</span></span><span class="green">('+fmt(stdDed)+')</span></div>';
   h+='<div class="tr2"><span>Federal taxable income</span><span style="font-weight:700">'+fmt(fedTaxable)+'</span></div>';
   h+='<div class="tr2"><span>Federal income tax<span class="tsub">Form 1040 brackets</span></span><span class="red">'+fmt(fedTax)+'</span></div>';
@@ -14965,10 +15023,17 @@ function openManualIncomeModal(){
           '<option value="Job payment">Job payment</option><option value="Deposit">Deposit</option><option value="Final payment">Final payment</option><option value="Cash">Cash</option><option value="Other">Other</option>'+
         '</select></div>'+
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Payment method</label>'+
-        '<select id="_inc-method" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box">'+
-          '<option value="Cash">Cash</option><option value="Check">Check</option><option value="Card">Card</option><option value="Zelle">Zelle</option><option value="Venmo">Venmo</option><option value="Other">Other</option>'+
+        '<select id="_inc-method" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box" onchange="toggleCashWarning()">'+
+          '<option value="Check">Check</option><option value="Card">Card</option><option value="Zelle">Zelle</option><option value="Venmo">Venmo</option><option value="Cash">Cash</option><option value="Other">Other</option>'+
         '</select></div>'+
-      '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Notes</label>'+
+      '<div id="_inc-cash-warn" style="display:none;background:#FFFACD;border:2px solid #F59E0B;border-radius:var(--r);padding:10px 12px;margin-top:10px">'+
+        '<div style="font-size:12px;font-weight:700;color:#78350F;margin-bottom:6px">⚠️ Cash Income — IRS Red Flag</div>'+
+        '<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px;color:#78350F">'+
+          '<input type="checkbox" id="_inc-cash-confirm" style="margin-top:2px;width:16px;height:16px;flex-shrink:0">'+
+          '<span>I confirm this cash was deposited to my business bank account</span>'+
+        '</label>'+
+      '</div>'+
+      '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px;margin-top:10px">Notes</label>'+
         '<input id="_inc-notes" type="text" placeholder="Optional note" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box"></div>'+
     '</div>'+
     '<div id="_inc-err" style="display:none;color:#A32D2D;font-size:12px;font-weight:600;margin:8px 0"></div>'+
@@ -14988,7 +15053,10 @@ function saveManualIncome(){
   const type=document.getElementById('_inc-type')?.value||'Job payment';
   const method=document.getElementById('_inc-method')?.value||'';
   const notes=document.getElementById('_inc-notes')?.value||'';
-  const entry={id:Date.now(),bid_id:null,client_id:client?client.id:null,client_name:client?client.name:(notes||'Other'),date:date.replace(/-/g,'').slice(0,8),type,amount:amtRaw,method,notes};
+  if(method==='Cash'&&!document.getElementById('_inc-cash-confirm')?.checked){
+    errEl.textContent='Please confirm this cash was deposited to your business account.';errEl.style.display='block';return;
+  }
+  const entry={id:Date.now(),bid_id:null,client_id:client?client.id:null,client_name:client?client.name:(notes||'Other'),date:date.replace(/-/g,'').slice(0,8),type,amount:amtRaw,method,notes,created_at:new Date().toISOString()};
   income.push(entry);
   saveAll();
   document.getElementById('_inc-ov')?.remove();
@@ -15096,8 +15164,20 @@ function renderExpenses(){
   if(purgeable.length){
     html+='<div class="tip tip-w" style="display:flex;justify-content:space-between;align-items:center"><span>'+purgeable.length+' receipt image'+(purgeable.length>1?'s':'')+' past 7 years — images can be deleted, records kept</span><button class="btn btn-sm" onclick="purgeOldReceiptImages()" style="flex-shrink:0;margin-left:8px">Clean up</button></div>';
   }
+  // 1099-NEC alert — aggregate subcontractor expenses by vendor
+  const subsFiltered=filtered.filter(e=>e.cat==='subs');
+  if(subsFiltered.length){
+    const subsBy={};
+    subsFiltered.forEach(e=>{const k=(e.vendor||'Unknown').trim();subsBy[k]=(subsBy[k]||0)+e.amount;});
+    const flagged=Object.entries(subsBy).filter(([,amt])=>amt>=600);
+    if(flagged.length){
+      html+='<div class="tip tip-a" style="background:#FFF3CD;border:1.5px solid #D4A017;color:#6B4C00"><strong>⚠️ 1099-NEC Required:</strong> '+flagged.length+' subcontractor'+(flagged.length>1?'s':'')+' reached $600+ in '+yr+' — file Form 1099-NEC by Jan 31. '+flagged.map(([v,a])=>v+' ('+fmt(a)+')').join(', ')+'</div>';
+    }
+  }
   if(noReceipt.length){
-    html+='<div class="tip tip-w"><strong>'+noReceipt.length+' missing receipt'+(noReceipt.length>1?'s':'')+' in '+yr+'</strong> — photograph them before they\'re gone.</div>';
+    const missingPct=filtered.length>0?Math.round(noReceipt.length/filtered.length*100):0;
+    const cls=missingPct>30?'tip-a':'tip-w';
+    html+='<div class="tip '+cls+'"><strong>'+noReceipt.length+' missing receipt'+(noReceipt.length>1?'s':'')+' ('+missingPct+'% of '+yr+' expenses)</strong>'+(missingPct>30?' — ⚠️ Over 30% missing. IRS can disallow undocumented expenses.':' — photograph them before they\'re gone.')+'</div>';
   }
   if(!expenses.length){el.innerHTML=html+'<div class="empty-state"><div class="empty-state-icon">🧾</div><h3>No expenses yet</h3><p>Tap the Expense button on the home screen or use the Scan button above to photograph a receipt.</p></div>';return;}
   if(!filtered.length){el.innerHTML=html+'<div class="empty">No expenses in '+yr+'.</div>';return;}
@@ -15675,6 +15755,10 @@ function openLogTripModal(opts){
     '<div id="lm-recalc-row" style="display:none;text-align:right;margin-bottom:12px">'+
       '<button type="button" onclick="calculateAndShowRoute()" style="background:none;border:none;color:var(--blue);font-size:12px;font-weight:600;cursor:pointer;padding:0">↺ Recalculate</button>'+
     '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
+      '<div class="f" style="margin:0"><label>Start odometer <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label><input id="lm-odo-start" type="number" placeholder="e.g. 48250" value="'+(opts.odo_start||'')+'" style="font-size:13px"></div>'+
+      '<div class="f" style="margin:0"><label>End odometer <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label><input id="lm-odo-end" type="number" placeholder="e.g. 48312" value="'+(opts.odo_end||'')+'" style="font-size:13px"></div>'+
+    '</div>'+
     '<input type="hidden" id="lm-map-app" value="">'+
     (!opts.editId?
       '<div class="f" style="margin-bottom:14px">'+
@@ -15782,7 +15866,9 @@ function saveLoggedTrip(){
   const cid=parseInt(document.getElementById('lm-client')?.value)||null;
   const c=cid?getClientById(cid):null;
   // Save immediately with 0 miles — background route calc will update
-  const rec={id:Date.now(),date,vehicle,from,from_name,to,to_name,start:0,end:0,miles:0,purpose,client_id:cid,client_name:c?c.name:'',notes,calc_method:'pending'};
+  const odo_start=parseFloat(document.getElementById('lm-odo-start')?.value)||null;
+  const odo_end=parseFloat(document.getElementById('lm-odo-end')?.value)||null;
+  const rec={id:Date.now(),date,vehicle,from,from_name,to,to_name,start:0,end:0,miles:0,purpose,client_id:cid,client_name:c?c.name:'',notes,odo_start,odo_end,created_at:new Date().toISOString(),calc_method:'pending'};
   if(_isEmployee){rec.logged_by_id=_supaUser.id;rec.logged_by_name=_employeeRecord?.name||_supaUser.email;}
   mileage.unshift(rec);
   if(cid)autoLogContact(cid,'drive');
@@ -15949,6 +16035,9 @@ function updateLoggedTrip(id){
   r.from=(document.getElementById('lm-from')?.value||'').trim();
   r.to=to;r.purpose=purpose;
   r.notes=document.getElementById('lm-notes')?.value||'';
+  const _odoS=parseFloat(document.getElementById('lm-odo-start')?.value)||null;
+  const _odoE=parseFloat(document.getElementById('lm-odo-end')?.value)||null;
+  if(_odoS)r.odo_start=_odoS;if(_odoE)r.odo_end=_odoE;
   const miles=parseFloat(document.getElementById('lm-miles-val')?.value)||0;
   if(miles>0)r.miles=miles;
   const cid=parseInt(document.getElementById('lm-client')?.value)||null;
@@ -19742,7 +19831,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.11.26.3';
+const APP_VERSION='05.11.26.4';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
