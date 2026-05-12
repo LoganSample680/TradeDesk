@@ -871,7 +871,14 @@ function populateTrackerYearSel(){
   const sel=document.getElementById('tracker-year-sel');
   if(!sel)return;
   const years=getTrackerYears();
-  const cur=trackerYear||new Date().getFullYear();
+  let cur=trackerYear||new Date().getFullYear();
+  // If current year has no income/expense data, auto-switch to most recent year that does
+  const curStr=String(cur);
+  const hasFinData=income.some(r=>r.date?.startsWith(curStr))||expenses.some(e=>e.date?.startsWith(curStr));
+  if(!hasFinData&&(income.length||expenses.length)){
+    const finYears=[...new Set([...income,...expenses].map(r=>parseInt((r.date||'').substring(0,4))).filter(y=>y>2000))].sort((a,b)=>b-a);
+    if(finYears.length)cur=finYears[0];
+  }
   const selYear=years.includes(cur)?cur:years[0];
   trackerYear=selYear;
   sel.innerHTML=years.map(y=>'<option value="'+y+'"'+(y===selYear?' selected':'')+'>'+y+'</option>').join('');
