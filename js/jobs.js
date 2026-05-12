@@ -1007,4 +1007,196 @@ function deleteJob(jobId){
   },{title:'Remove '+label,yes:'Remove',danger:true});
 }
 
+function reopenJob(jobId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  zConfirm('Reopen this job as active?',()=>{
+    const snap_status=j.status,snap_date=j.completion_date;
+    j.status='upcoming';j.completion_date='';
+    if(j.bid_id){const b=bids.find(x=>x.id===j.bid_id);if(b)b.completion_date='';}
+    saveAll();renderClientDetail();renderDash();renderJobsPage();renderMoneyPage();
+    const t=document.createElement('div');
+    t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:20px;font-size:13px;font-weight:700;z-index:9999;display:flex;align-items:center;gap:10px;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.3)';
+    t.innerHTML='Job reopened &nbsp;<button style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:4px 10px;border-radius:12px;font-size:12px;cursor:pointer;font-family:inherit">Undo</button>';
+    t.querySelector('button').onclick=()=>{j.status=snap_status;j.completion_date=snap_date;if(j.bid_id){const b=bids.find(x=>x.id===j.bid_id);if(b)b.completion_date=snap_date;}saveAll();renderClientDetail();renderDash();renderJobsPage();t.remove();};
+    document.body.appendChild(t);setTimeout(()=>{if(t.parentNode)t.remove();},5000);
+  },{title:'Reopen job?',yes:'Reopen',danger:false});
+}
+
+function markJobDone(jobId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+  const overlay=document.createElement('div');
+  overlay.className='zmodal-overlay';
+  const box=document.createElement('div');
+  box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Job complete</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+j.name+'</div>'+
+    '<div class="f" style="margin-bottom:14px">'+
+      '<label style="font-size:11px;font-weight:700;color:var(--text3)">Completion date</label>'+
+      '<input type="date" id="job-done-date" value="'+todayKey()+'" style="font-size:15px;padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text)">'+
+    '</div>'+
+    (bid?
+      '<div style="border:1px solid var(--border2);border-radius:var(--r);padding:12px;margin-bottom:14px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'+
+          '<div style="font-size:13px;font-weight:700">Need to change the final price?</div>'+
+          '<div style="font-size:14px;font-weight:800;color:var(--blue)">'+fmt(bid.amount||0)+'</div>'+
+        '</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:0" id="adj-type-btns">'+
+          '<button id="adj-dec" onclick="setAdjType(\'decrease\')" style="padding:10px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">▼ Lower price</button>'+
+          '<button id="adj-inc" onclick="setAdjType(\'increase\')" style="padding:10px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">▲ Raise price</button>'+
+        '</div>'+
+        '<div id="adj-fields" style="display:none;margin-top:10px">'+
+          '<div class="f" style="margin-bottom:8px">'+
+            '<label style="font-size:11px;font-weight:700;color:var(--text3)">Amount ($)</label>'+
+            '<input type="number" id="adj-amount" min="0" step="5" placeholder="0" inputmode="decimal"'+
+              ' style="font-size:22px;font-weight:700;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);text-align:center"'+
+              ' oninput="_previewAdjTotal('+jobId+')">'+
+          '</div>'+
+          '<div id="adj-preview" style="font-size:13px;font-weight:700;text-align:center;min-height:20px;margin-bottom:8px"></div>'+
+          '<div class="f">'+
+            '<label style="font-size:11px;font-weight:700;color:var(--text3)">Reason <span style="color:#A32D2D">*</span></label>'+
+            '<input type="text" id="adj-reason" placeholder="e.g. Finished early, extra wall added..." style="font-size:13px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit">'+
+          '</div>'+
+        '</div>'+
+      '</div>'
+    :'')+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
+      '<button onclick="closeTopModal();showJobDebrief('+jobId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Complete job ✓</button>'+
+    '</div>';
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  box._jobId=jobId;
+}
+let _adjType=null;
+function setAdjType(t){
+  _adjType=t;
+  const inc=document.getElementById('adj-inc');
+  const dec=document.getElementById('adj-dec');
+  const fields=document.getElementById('adj-fields');
+  if(inc){inc.style.borderColor=t==='increase'?'var(--blue)':'var(--border2)';inc.style.background=t==='increase'?'var(--blue-lt)':'var(--bg2)';}
+  if(dec){dec.style.borderColor=t==='decrease'?'#A32D2D':'var(--border2)';dec.style.background=t==='decrease'?'#FEE8E8':'var(--bg2)';}
+  if(fields){fields.style.display='';setTimeout(()=>{const a=document.getElementById('adj-amount');if(a){a.focus();a.select();}},60);}
+}
+function _previewAdjTotal(jobId){
+  const j=jobs.find(x=>x.id===jobId);
+  const bid=j?.bid_id?bids.find(b=>b.id===j.bid_id):null;
+  if(!bid)return;
+  const amt=parseFloat(document.getElementById('adj-amount')?.value)||0;
+  const preview=document.getElementById('adj-preview');
+  if(!preview||!amt)return;
+  const newTotal=_adjType==='increase'?bid.amount+amt:Math.max(0,bid.amount-amt);
+  const arrow=_adjType==='increase'?'↑':'↓';
+  const color=_adjType==='increase'?'var(--blue)':'var(--green-mid)';
+  preview.innerHTML='<span style="color:var(--text3)">'+fmt(bid.amount)+'</span> <span style="color:'+color+'">'+arrow+' '+fmt(newTotal)+'</span>';
+}
+function confirmJobDone(jobId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  const dateStr=document.getElementById('job-done-date')?.value||todayKey();
+  if(!dateStr.match(/^\d{4}-\d{2}-\d{2}$/)){zAlert('Enter a valid date.',{title:'Invalid date'});return;}
+  const adjFields=document.getElementById('adj-fields');
+  const adjOpen=adjFields&&adjFields.style.display!=='none';
+  const adjAmt=parseFloat(document.getElementById('adj-amount')?.value||0)||0;
+  const adjReason=(document.getElementById('adj-reason')?.value||'').trim();
+  if(adjOpen&&_adjType){
+    if(adjAmt<=0){
+      const el=document.getElementById('adj-amount');
+      if(el){el.style.borderColor='#A32D2D';el.focus();}
+      zAlert('Enter the amount to '+(_adjType==='increase'?'add':'deduct')+'.',{title:'Amount required'});return;
+    }
+    if(!adjReason||adjReason.length<5){
+      const el=document.getElementById('adj-reason');
+      if(el){el.style.borderColor='#A32D2D';el.style.background='var(--red-lt)';el.focus();}
+      zAlert('Enter a reason for the price change (at least 5 characters).',{title:'Reason required'});return;
+    }
+  }
+  closeTopModal();
+  j.status='done';
+  j.completion_date=dateStr;
+  if(j.bid_id){
+    const b=bids.find(x=>x.id===j.bid_id);
+    if(b){
+      b.completion_date=dateStr;
+      if(_adjType&&adjAmt>0){
+        const delta=_adjType==='increase'?adjAmt:-adjAmt;
+        b.amount=Math.max(0,Math.round((b.amount+delta)*100)/100);
+        if(!b.adjustments)b.adjustments=[];
+        b.adjustments.push({type:_adjType,amount:adjAmt,reason:adjReason,ts:new Date().toISOString()});
+      }
+    }
+  } else {
+    const unlinkedWon=bids.filter(x=>x.client_id===j.client_id&&x.status==='Closed Won'&&!x.completion_date)
+      .sort((a,b)=>(b.bid_date||'').localeCompare(a.bid_date||''));
+    if(unlinkedWon.length){
+      unlinkedWon[0].completion_date=dateStr;
+      j.bid_id=unlinkedWon[0].id;
+    }
+  }
+  _adjType=null;
+  const jobMiles=getClientMileage(j.client_id).filter(m=>m.date>=j.start&&m.date<=addDays(dateStr,3));
+  jobMiles.forEach(m=>{m.job_id=jobId;m.job_name=j.name;});
+  saveAll();
+  _refreshClientHub(j.client_id);
+  emitEvent('job_completed',j.client_id,{job_id:j.id,bid_id:j.bid_id});
+  renderClientDetail();
+  renderDash();
+  renderJobsPage();
+  renderMoneyPage();
+  let collectBid=j.bid_id?bids.find(x=>x.id===j.bid_id):null;
+  if(!collectBid){
+    const candidates=bids.filter(x=>x.client_id===j.client_id&&x.status==='Closed Won'&&getBidBalance(x)>0.01)
+      .sort((a,b)=>(b.bid_date||'').localeCompare(a.bid_date||''));
+    if(candidates.length)collectBid=candidates[0];
+  }
+  setTimeout(()=>showJobScorecard(jobId,collectBid?.id||null),200);
+  const _jid=jobId,_cid=j.client_id;
+  setTimeout(()=>{
+    const hasExp=expenses.some(e=>e.job_id===_jid);
+    if(hasExp)return;
+    const expOv=document.createElement('div');expOv.className='zmodal-overlay';
+    const expBox=document.createElement('div');expBox.className='zmodal';
+    expBox.innerHTML=
+      '<div style="font-size:17px;font-weight:800;margin-bottom:6px">Any material costs?</div>'+
+      '<div style="font-size:13px;color:var(--text2);margin-bottom:18px;line-height:1.5">Log paint, supplies, or other materials to track your real profit on this job.</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+        '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">No costs</button>'+
+        '<button onclick="this.closest(\'.zmodal-overlay\').remove();openExpenseForJob('+_jid+','+_cid+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Log expenses →</button>'+
+      '</div>';
+    expOv.appendChild(expBox);
+    document.body.appendChild(expOv);
+    expOv.addEventListener('click',e=>{if(e.target===expOv)expOv.remove();});
+  },600);
+  if(S.reviewUrl){
+    setTimeout(()=>showReviewRequestPrompt(j.client_id),800);
+  }
+}
+function confirmMarkComplete(jobId){confirmJobDone(jobId);}
+function showReviewRequestPrompt(clientId){
+  const c=getClientById(clientId);if(!c)return;
+  const firstName=c.name.split(' ')[0];
+  const reviewUrl=S.reviewUrl||'';
+  const msg='Hi '+firstName+', thank you so much for choosing '+((S.bname||'us'))+' — it was a pleasure working with you! If you have a moment, we\'d really appreciate a quick Google review: '+reviewUrl;
+  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="text-align:center;font-size:22px;margin-bottom:8px">⭐</div>'+
+    '<div class="zmodal-title" style="text-align:center">Request a review?</div>'+
+    '<div style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.5">Send '+firstName+' a text asking for a Google review while the job is fresh.</div>'+
+    '<textarea id="review-msg-text" style="width:100%;min-height:90px;font-size:12px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:none;box-sizing:border-box">'+msg+'</textarea>'+
+    '<div class="zmodal-btns" style="gap:8px;margin-top:12px">'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;flex:1">Skip</button>'+
+      '<button onclick="_sendReviewRequest(\''+c.phone+'\');this.closest(\'.zmodal-overlay\').remove()" style="padding:11px;border-radius:var(--r);border:none;background:#FFC107;color:#1a1a1a;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;flex:1">⭐ Send text</button>'+
+    '</div>';
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+}
+function _sendReviewRequest(phone){
+  const msg=document.getElementById('review-msg-text')?.value||'';
+  if(!phone||!msg)return;
+  window.location.href='sms:'+phone.replace(/\D/g,'')+'&body='+encodeURIComponent(msg);
+}
+
 let jobFilter='all';

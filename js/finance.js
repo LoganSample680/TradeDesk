@@ -51,22 +51,6 @@ function openExpenseFlow(){
 }
 
 function closeExpenseFlow(){document.getElementById('expense-modal')?.remove();_expState={imageData:null,imageKey:null,hasReceipt:false};}
-function _fmtExpDate(el){
-  let v=el.value.replace(/\D/g,'');
-  if(v.length>2)v=v.slice(0,2)+'/'+v.slice(2);
-  if(v.length>5)v=v.slice(0,5)+'/'+v.slice(5,9);
-  el.value=v;
-}
-function _ymdToMdY(s){
-  if(!s||!s.includes('-'))return s||'';
-  const[y,m,d]=s.split('-');return m+'/'+d+'/'+y;
-}
-function _mdYToYmd(s){
-  if(!s||!s.includes('/'))return s||'';
-  const p=s.split('/');
-  if(p.length!==3||p[2].length!==4)return '';
-  return p[2]+'-'+p[0].padStart(2,'0')+'-'+p[1].padStart(2,'0');
-}
 function expTriggerScan(){document.getElementById('exp-file-inp')?.click();}
 
 async function expProcessPhoto(input){

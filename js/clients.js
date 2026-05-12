@@ -771,22 +771,6 @@ function setCDTab(tab,btn){
   if(tab==='jobs')renderCDJobs();
   if(tab==='expenses')renderCDExpenses();
 }
-function reopenJob(jobId){
-  const j=jobs.find(x=>x.id===jobId);if(!j)return;
-  zConfirm('Reopen this job as active?',()=>{
-    const snap_status=j.status,snap_date=j.completion_date;
-    j.status='upcoming';j.completion_date='';
-    if(j.bid_id){const b=bids.find(x=>x.id===j.bid_id);if(b)b.completion_date='';}
-    saveAll();renderClientDetail();renderDash();renderJobsPage();renderMoneyPage();
-    // Undo toast
-    const t=document.createElement('div');
-    t.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#222;color:#fff;padding:10px 16px;border-radius:20px;font-size:13px;font-weight:700;z-index:9999;display:flex;align-items:center;gap:10px;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,.3)';
-    t.innerHTML='Job reopened &nbsp;<button style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:4px 10px;border-radius:12px;font-size:12px;cursor:pointer;font-family:inherit">Undo</button>';
-    t.querySelector('button').onclick=()=>{j.status=snap_status;j.completion_date=snap_date;if(j.bid_id){const b=bids.find(x=>x.id===j.bid_id);if(b)b.completion_date=snap_date;}saveAll();renderClientDetail();renderDash();renderJobsPage();t.remove();};
-    document.body.appendChild(t);setTimeout(()=>{if(t.parentNode)t.remove();},5000);
-  },{title:'Reopen job?',yes:'Reopen',danger:false});
-}
-
 function renderClientDetail(){
   const c=getClientById(currentClientId);if(!c)return;
   document.getElementById('cd-hdr').innerHTML=
@@ -1274,4 +1258,147 @@ function renderCDJobs(){
       '</div>'+
     '</div>';
   }).join('');
+}
+
+function callClient(){const c=getClientById(currentClientId);if(c&&c.phone)window.location.href='tel:'+c.phone.replace(/\D/g,'');}
+function textClient(){
+  const c=getClientById(currentClientId);if(!c?.phone)return;
+  const phone=c.phone.replace(/\D/g,'');
+  const existing=document.getElementById('_text-compose-ov');if(existing)existing.remove();
+  const ov=document.createElement('div');
+  ov.id='_text-compose-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;justify-content:flex-end;background:rgba(0,0,0,.45)';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const sheet=document.createElement('div');
+  sheet.style.cssText='background:var(--bg);border-radius:16px 16px 0 0;padding:16px 16px 32px;display:flex;flex-direction:column;gap:10px';
+  const sendBtn=document.createElement('button');
+  sendBtn.textContent='Open in Messages →';
+  sendBtn.style.cssText='padding:14px;border:none;border-radius:var(--r);background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit';
+  sendBtn.onclick=()=>{
+    const body=document.getElementById('_text-compose-body')?.value.trim()||'';
+    const sep=/iphone|ipad/i.test(navigator.userAgent)?'&':'?';
+    window.location.href='sms:'+phone+sep+'body='+encodeURIComponent(body);
+    ov.remove();
+  };
+  const cancelBtn=document.createElement('button');
+  cancelBtn.textContent='Cancel';
+  cancelBtn.style.cssText='padding:10px;border:1px solid var(--border2);border-radius:var(--r);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit';
+  cancelBtn.onclick=()=>ov.remove();
+  const grip=document.createElement('div');
+  grip.style.cssText='width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 4px';
+  const title=document.createElement('div');
+  title.style.cssText='font-size:14px;font-weight:700;color:var(--text2)';
+  title.textContent='Text '+c.name;
+  const ta=document.createElement('textarea');
+  ta.id='_text-compose-body';ta.rows=4;ta.placeholder='Type your message...';
+  ta.style.cssText='font-size:15px;padding:10px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:none;width:100%;box-sizing:border-box';
+  [grip,title,ta,sendBtn,cancelBtn].forEach(el=>sheet.appendChild(el));
+  ov.appendChild(sheet);document.body.appendChild(ov);
+  setTimeout(()=>ta.focus(),100);
+}
+function emailClient(){const c=getClientById(currentClientId);if(c&&c.email)window.open('mailto:'+c.email);}
+let _mapsPickerAddrs=[];
+function openMapsDir(){
+  const c=getClientById(currentClientId);if(!c||!c.addr)return zAlert('No address on file for this client.');
+  const extras=(c.extraAddresses||[]).filter(a=>a.addr);
+  if(extras.length===0){window.open('https://maps.apple.com/?daddr='+encodeURIComponent(c.addr),'_blank');return;}
+  _mapsPickerAddrs=[{label:'Primary',addr:c.addr},...extras];
+  const btns=_mapsPickerAddrs.map((a,i)=>'<button onclick="_mapsPickAddr('+i+')" style="display:block;width:100%;text-align:left;padding:11px 14px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);font-size:13px;cursor:pointer;font-family:inherit;color:var(--text);margin-bottom:6px"><span style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:2px">'+escHtml(a.label)+'</span>'+escHtml(a.addr)+'</button>').join('');
+  zAlert('<div style="text-align:left">'+btns+'</div>',{title:'Get directions to...'});
+}
+function _mapsPickAddr(idx){
+  const a=_mapsPickerAddrs[idx];
+  if(a)window.open('https://maps.apple.com/?daddr='+encodeURIComponent(a.addr),'_blank');
+  document.querySelector('.zmodal-overlay')?.remove();
+}
+let _cdAddrList=[];
+function _cdMapAddr(i){const a=_cdAddrList[i];if(a)window.open('https://maps.apple.com/?daddr='+encodeURIComponent(a),'_blank');}
+function renderCDAddresses(){
+  const el=document.getElementById('cd-addresses-list');if(!el)return;
+  const c=getClientById(currentClientId);if(!c)return;
+  const extras=(c.extraAddresses||[]);
+  _cdAddrList=[c.addr,...extras.map(a=>a.addr)];
+  const openKey='_cdpropOpen_'+currentClientId;
+  const isOpen=!!window[openKey];
+  const hasProp=!!(c.yearBuilt||c.sqft||c.estimatedValue||c.stories||c.bedrooms||c.bathrooms||c.exteriorMaterial||c.roofType||c.garage||c.lotSize||c.lastSaleDate||c.isRental);
+  const pre78Badge=c.yearBuilt&&c.yearBuilt<1978?`<span style="font-size:10px;background:rgba(163,45,45,.12);color:#A32D2D;border-radius:4px;padding:2px 5px;font-weight:700;margin-left:5px">⚠️ Pre-1978</span>`:'';
+  const srcBadge=c.propDataFetchedAt
+    ?(c.propDataExact===false?`<span style="font-size:10px;color:var(--text3);margin-left:4px">(area avg)</span>`:'')
+    :(c.street&&c.city?`<button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_lookupPropertyData(${c.id},{street:'${escHtml(c.street||'')}',city:'${escHtml(c.city||'')}',state:'${escHtml(c.state||'')}',zip:'${escHtml(c.zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:11px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;margin-left:6px">🏠 Look up</button>`:'');
+  const chevron=hasProp?`<span style="font-size:9px;color:var(--text3);display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s;margin-right:2px">▶</span>`:'';
+  const propPanel=hasProp&&isOpen?`<div style="padding:10px 0 4px;border-top:1px solid var(--border);margin-top:8px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:8px${c.exteriorMaterial||c.roofType||c.garage||c.isRental||c.lastSaleDate||c.lastSalePrice||c.assessorUrl?';margin-bottom:8px':''}">
+      ${c.yearBuilt?`<div><div style="font-size:15px;font-weight:800">${c.yearBuilt}</div><div style="font-size:10px;color:var(--text3)">📅 Year built</div></div>`:''}
+      ${c.sqft?`<div><div style="font-size:15px;font-weight:800">${Number(c.sqft).toLocaleString()}</div><div style="font-size:10px;color:var(--text3)">📐 Sq ft</div></div>`:''}
+      ${c.estimatedValue?`<div><div style="font-size:15px;font-weight:800">${fmt(c.estimatedValue)}</div><div style="font-size:10px;color:var(--text3)">💰 Est. value</div></div>`:''}
+      ${c.stories?`<div><div style="font-size:15px;font-weight:800">${c.stories}</div><div style="font-size:10px;color:var(--text3)">🏢 Stories</div></div>`:''}
+      ${c.bedrooms?`<div><div style="font-size:15px;font-weight:800">${c.bedrooms}</div><div style="font-size:10px;color:var(--text3)">🛏 Beds</div></div>`:''}
+      ${c.bathrooms?`<div><div style="font-size:15px;font-weight:800">${c.bathrooms}</div><div style="font-size:10px;color:var(--text3)">🛁 Baths</div></div>`:''}
+      ${c.lotSize?`<div><div style="font-size:15px;font-weight:800">${escHtml(String(c.lotSize))}</div><div style="font-size:10px;color:var(--text3)">🌳 Lot</div></div>`:''}
+    </div>
+    ${c.exteriorMaterial||c.roofType||c.garage||c.isRental?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:${c.lastSaleDate||c.lastSalePrice||c.assessorUrl?'8px':'0'}">
+      ${c.exteriorMaterial?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🏠 ${escHtml(String(c.exteriorMaterial))}</span>`:''}
+      ${c.roofType?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🏗️ ${escHtml(String(c.roofType))}</span>`:''}
+      ${c.garage?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🚗 ${escHtml(String(c.garage))}</span>`:''}
+      ${c.isRental?`<span style="font-size:11px;background:rgba(233,123,0,.12);border:1px solid rgba(233,123,0,.3);border-radius:20px;padding:3px 8px;color:#E97B00;font-weight:700">🔑 Rental</span>`:''}
+    </div>`:''}
+    ${c.lastSaleDate||c.lastSalePrice?`<div style="font-size:12px;color:var(--text3);padding-top:6px;border-top:1px solid var(--border);margin-bottom:${c.assessorUrl?'6px':'0'}">Last sold ${c.lastSaleDate?new Date(c.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${c.lastSalePrice?' · <strong style="color:var(--text)">'+fmt(c.lastSalePrice)+'</strong>':''}</div>`:''}
+    ${c.assessorUrl?`<a href="${escHtml(c.assessorUrl)}" target="_blank" style="font-size:11px;color:var(--blue)">County record →</a>`:''}
+  </div>`:''
+  let html=`<div style="padding:9px 0${extras.length?';border-bottom:1px solid var(--border)':''}">
+    <div onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()" style="display:flex;justify-content:space-between;align-items:flex-start;cursor:${hasProp?'pointer':'default'}">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:700;display:flex;align-items:center;flex-wrap:wrap;gap:2px">Primary${pre78Badge}${srcBadge}</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:2px">${escHtml(c.addr||'No address')}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:8px;margin-top:2px">
+        ${chevron}
+        <button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_cdMapAddr(0)" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text3)">Map</button>
+      </div>
+    </div>
+    ${propPanel}
+  </div>`;
+  extras.forEach((a,i)=>{
+    html+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0${i<extras.length-1?';border-bottom:1px solid var(--border)':''}">
+      <div><div style="font-size:12px;font-weight:700;color:var(--text3)">${escHtml(a.label||'Property '+(i+2))}</div><div style="font-size:13px;color:var(--text2);margin-top:2px">${escHtml(a.addr)}</div></div>
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        <button onclick="_cdMapAddr(${i+1})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text3)">Map</button>
+        <button onclick="removeClientAddress(${i})" style="background:none;border:1px solid #A32D2D;border-radius:var(--r);padding:5px 8px;font-size:11px;cursor:pointer;font-family:inherit;color:#A32D2D">✕</button>
+      </div></div>`;
+  });
+  if(!c.addr&&extras.length===0)html+='<div style="font-size:12px;color:var(--text3);padding:6px 0 2px">No address — edit client to add one.</div>';
+  el.innerHTML=html;
+}
+function openAddAddressModal(){
+  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
+  overlay.innerHTML='<div class="zmodal" style="max-width:360px"><div class="zmodal-title">Add property address</div>'+
+    '<div class="f" style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;display:block;margin-bottom:4px">Label (e.g. Vacation home, Rental)</label>'+
+    '<input id="_aa-label" placeholder="Vacation home" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit"></div>'+
+    '<div class="f" style="margin-bottom:14px"><label style="font-size:11px;font-weight:700;display:block;margin-bottom:4px">Address <span style="color:#A32D2D">*</span></label>'+
+    '<input id="_aa-addr" placeholder="5678 Oak Ave, Wichita KS 67206" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit"></div>'+
+    '<div style="display:flex;gap:8px">'+
+      '<button onclick="saveAddClientAddress()" class="btn btn-g" style="flex:1">Add</button>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Cancel</button>'+
+    '</div></div>';
+  document.body.appendChild(overlay);
+  setTimeout(()=>{const el=document.getElementById('_aa-label');if(el)el.focus();},80);
+}
+function saveAddClientAddress(){
+  const addr=(document.getElementById('_aa-addr')?.value||'').trim();
+  if(!addr){zAlert('Enter an address.');return;}
+  const label=(document.getElementById('_aa-label')?.value||'').trim()||'Additional property';
+  const c=getClientById(currentClientId);if(!c)return;
+  if(!c.extraAddresses)c.extraAddresses=[];
+  c.extraAddresses.push({label,addr});
+  saveAll();
+  document.querySelector('.zmodal-overlay')?.remove();
+  renderCDAddresses();
+}
+function removeClientAddress(idx){
+  const c=getClientById(currentClientId);if(!c||!c.extraAddresses)return;
+  zConfirm('Remove this address?',()=>{
+    c.extraAddresses.splice(idx,1);
+    saveAll();
+    renderCDAddresses();
+  });
 }
