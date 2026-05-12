@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-05.12.26.29';
+const CACHE = 'tradedesk-05.12.26.30';
 const NAV_URL = '/index.html';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
@@ -65,6 +65,10 @@ self.addEventListener('fetch', e => {
     );
     return;
   }
+
+  // Only cache GET requests over http/https — skip POST/PATCH/PUT (Supabase, etc.) and extension schemes
+  const url = new URL(e.request.url);
+  if (e.request.method !== 'GET' || (url.protocol !== 'http:' && url.protocol !== 'https:')) return;
 
   // Static assets — cache-first, update in background
   e.respondWith(
