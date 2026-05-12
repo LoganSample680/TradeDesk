@@ -13122,13 +13122,12 @@ function showKpiChart(type){
   const isNeg=type==='profit';
   const maxVal=Math.max(...months.map(m=>Math.abs(m.val)),1);
 
-  const bars=months.map(m=>{
+  const fmtLabel=v=>type==='profit'?(v===0?'—':fmt(v)):type==='close'?(v===0?'—':v+'%'):(v===0?'—':String(v));
+  const bars=months.map((m,i)=>{
     const pct=Math.round(Math.abs(m.val)/maxVal*100);
     const color=type==='close'?(m.val>=40?'var(--green-mid)':m.val>=25?'var(--amber)':'#A32D2D'):
                 type==='profit'?(m.val<0?'#A32D2D':'var(--green-mid)'):'var(--blue)';
-    const label=type==='profit'?(m.val===0?'':fmtShort(m.val)):type==='close'?(m.val===0?'':m.val+'%'):(m.val===0?'':m.val);
-    return '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;min-width:0">'+
-      '<div style="font-size:9px;font-weight:700;color:'+color+';white-space:nowrap;overflow:hidden;max-width:100%;text-align:center">'+label+'</div>'+
+    return '<div onclick="_bcTap('+i+')" style="display:flex;flex-direction:column;align-items:center;gap:2px;flex:1;min-width:0;cursor:pointer" data-val="'+fmtLabel(m.val)+'" data-lbl="'+m.label+'" data-color="'+color+'" id="bc-col-'+i+'">'+
       '<div style="width:100%;background:var(--border);border-radius:2px;height:80px;display:flex;align-items:flex-end;overflow:hidden">'+
         '<div style="width:100%;height:'+pct+'%;background:'+color+';border-radius:2px 2px 0 0;transition:height .4s ease;min-height:'+(m.val!==0?'2px':'0')+'"></div>'+
       '</div>'+
@@ -13141,11 +13140,14 @@ function showKpiChart(type){
   const box=document.createElement('div');
   box.className='zmodal';
   box.innerHTML=
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'+
       '<div style="font-size:15px;font-weight:800">'+titles[type]+'</div>'+
       '<button id="kpi-chart-close" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">✕</button>'+
     '</div>'+
-    '<div style="display:flex;gap:4px;align-items:flex-end;padding:8px 0">'+bars+'</div>'+
+    '<div id="bc-callout" style="min-height:36px;display:flex;align-items:center;justify-content:center;margin-bottom:4px">'+
+      '<span style="font-size:12px;color:var(--text3)">Tap a bar to see value</span>'+
+    '</div>'+
+    '<div style="display:flex;gap:4px;align-items:flex-end;padding:4px 0 8px">'+bars+'</div>'+
     (()=>{
       const vals=months.map(m=>m.val).filter(v=>v!==0);
       if(!vals.length)return '<div style="font-size:11px;color:var(--text3);text-align:center;margin-top:8px">No data yet</div>';
@@ -13163,6 +13165,14 @@ function showKpiChart(type){
   document.body.appendChild(overlay);
   document.getElementById('kpi-chart-close').onclick=()=>overlay.remove();
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+}
+function _bcTap(i){
+  const col=document.getElementById('bc-col-'+i);if(!col)return;
+  const val=col.dataset.val,lbl=col.dataset.lbl,color=col.dataset.color;
+  document.querySelectorAll('[id^="bc-col-"]').forEach(c=>c.style.opacity='0.45');
+  col.style.opacity='1';
+  const callout=document.getElementById('bc-callout');
+  if(callout)callout.innerHTML='<span style="font-size:22px;font-weight:800;color:'+color+'">'+val+'</span><span style="font-size:12px;color:var(--text3);margin-left:8px">'+lbl+'</span>';
 }
 function markFUWon(bidId,cid){
   zConfirm('Mark as won and schedule the job?',()=>{
@@ -19732,7 +19742,7 @@ function showToast(msg,icon,duration){
 // ── Supabase cloud sync ───────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.11.26.2';
+const APP_VERSION='05.11.26.3';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
