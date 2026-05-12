@@ -1773,10 +1773,13 @@ function populateExpJobSel(){
 }
 function renderExpenses(){
   const el=document.getElementById('exp-table');if(!el)return;
-  const yr=String(trackerYear||new Date().getFullYear());
-  // Show all years for back-tax work if selected year matches
+  let yr=String(trackerYear||new Date().getFullYear());
+  // If no data for selected year but data exists, fall back to most recent year with data
+  if(yr!=='all'&&expenses.length&&!expenses.some(e=>e.date&&e.date.startsWith(yr))){
+    const dataYear=expenses.map(e=>e.date?.slice(0,4)).filter(Boolean).sort().reverse()[0];
+    if(dataYear){yr=dataYear;trackerYear=parseInt(dataYear);}
+  }
   const filtered=yr==='all'?expenses:expenses.filter(e=>e.date&&e.date.startsWith(yr));
-  console.log('[renderExpenses]',{yr,total_loaded:expenses.length,filtered:filtered.length,sample:expenses.slice(0,2).map(e=>({date:e.date,cat:e.cat,amount:e.amount}))});
   const total=filtered.reduce((s,e)=>s+e.amount,0);
   const deductible=filtered.filter(e=>e.deductible!==false).reduce((s,e)=>s+(e.meals_50?e.amount*0.5:e.amount),0);
   const noReceipt=filtered.filter(e=>!e.receipt||typeof e.receipt==='string'&&e.receipt.includes('No')).filter(e=>e.cat!=='fees'&&!e.autoLogged);

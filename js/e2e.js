@@ -36,7 +36,9 @@ async function runE2ETest(){
   ];
   for(const fn of mustExist){
     check('typeof '+fn+' === function',()=>{
-      if(typeof window[fn]!=='function')throw new Error(fn+' is '+typeof window[fn]);
+      // const/let globals are lexical — not on window — use eval to reach them
+      let val;try{val=eval(fn);}catch(e){val=undefined;}
+      if(typeof val!=='function')throw new Error(fn+' is '+typeof val);
     });
   }
 
@@ -44,7 +46,10 @@ async function runE2ETest(){
   section('Global variables defined');
   const mustBeArray=['clients','bids','jobs','income','expenses','mileage','timeEntries','events','photos','licenses'];
   for(const arr of mustBeArray){
-    check(arr+' is an Array',()=>{if(!Array.isArray(window[arr]))throw new Error(arr+' is '+typeof window[arr]);});
+    check(arr+' is an Array',()=>{
+      let val;try{val=eval(arr);}catch(e){val=undefined;}
+      if(!Array.isArray(val))throw new Error(arr+' is '+typeof val);
+    });
   }
   check('S is an object',()=>{if(typeof S!=='object'||!S)throw new Error('S is '+typeof S);});
   check('SCOPE_ITEMS is an Array',()=>{if(!Array.isArray(SCOPE_ITEMS)||!SCOPE_ITEMS.length)throw new Error('SCOPE_ITEMS empty or missing');});

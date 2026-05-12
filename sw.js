@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-05.12.26.28';
+const CACHE = 'tradedesk-05.12.26.29';
 const NAV_URL = '/index.html';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
@@ -38,8 +38,9 @@ self.addEventListener('fetch', e => {
       caches.match(NAV_URL).then(cached => {
         const networkFetch = fetch(e.request).then(r => {
           if (!r.ok) return r;
-          // Cache without redirect flag
-          caches.open(CACHE).then(c => c.put(NAV_URL, safeClone(r)));
+          // Cache without redirect flag — clone synchronously before body is consumed
+          const toCache = safeClone(r);
+          caches.open(CACHE).then(c => c.put(NAV_URL, toCache));
           // Compare APP_VERSION — notify open tabs if version changed
           if (cached) {
             Promise.all([r.clone().text(), cached.clone().text()]).then(([freshHtml, cachedHtml]) => {
@@ -69,7 +70,10 @@ self.addEventListener('fetch', e => {
   e.respondWith(
     caches.match(e.request).then(cached => {
       const net = fetch(e.request).then(r => {
-        if (r.ok) caches.open(CACHE).then(c => c.put(e.request, safeClone(r)));
+        if (r.ok) {
+          const toCache = safeClone(r); // clone synchronously before body is consumed
+          caches.open(CACHE).then(c => c.put(e.request, toCache));
+        }
         return r;
       });
       return cached || net;
