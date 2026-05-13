@@ -212,8 +212,25 @@ input[type=text]:focus{border-color:var(--blue)}
   <div id="pg-pay" style="display:none">
     <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div></div>
     <div class="card">
-      <span class="lbl">Pay your deposit</span>
-      <div class="amt-box"><div style="font-size:13px;color:var(--blue);margin-bottom:6px">Deposit due now (25%)</div><div class="amt-total" id="pay-amt"></div><div class="amt-bal" id="pay-note"></div></div>
+      <span class="lbl">How much would you like to pay now?</span>
+
+      <!-- Payment amount tiles -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px">
+        <div id="pay-tile-dep" onclick="_selectPayTile('dep')" style="border-radius:var(--r);border:2px solid var(--blue);background:var(--blue-lt);padding:14px 10px;cursor:pointer;text-align:center">
+          <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--blue);margin-bottom:6px">25% Deposit</div>
+          <div id="pay-tile-dep-amt" style="font-size:20px;font-weight:800;color:var(--blue)"></div>
+          <div id="pay-tile-dep-note" style="font-size:11px;color:var(--text3);margin-top:5px;line-height:1.4"></div>
+          <div style="margin-top:8px;font-size:11px;font-weight:700;color:var(--blue)">✓ Selected</div>
+        </div>
+        <div id="pay-tile-full" onclick="_selectPayTile('full')" style="border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);padding:14px 10px;cursor:pointer;text-align:center">
+          <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:6px">Pay in Full</div>
+          <div id="pay-tile-full-amt" style="font-size:20px;font-weight:800;color:var(--text)"></div>
+          <div style="font-size:11px;color:var(--green-mid);margin-top:5px;line-height:1.4;font-weight:600">Nothing due later ✓</div>
+          <div style="margin-top:8px;font-size:11px;color:transparent">·</div>
+        </div>
+      </div>
+
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">How would you like to pay?</div>
 
       <div class="pay-opt sel" id="opt-card" onclick="selPay('card')">
         <div class="pay-opt-icon">💳</div>
@@ -234,13 +251,6 @@ input[type=text]:focus{border-color:var(--blue)}
 
       <div class="divider"></div>
 
-      <div id="pay-full-row" style="display:none;margin-bottom:12px">
-        <button onclick="togglePayFull()" style="width:100%;background:none;border:1.5px solid var(--border2);border-radius:var(--r);padding:11px 14px;font-family:inherit;cursor:pointer;font-size:13px;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:10px">
-          <span style="color:var(--text2)">Pay <strong id="pay-full-lbl" style="color:var(--blue)"></strong> in full instead</span>
-          <span id="pay-full-check" style="width:20px;height:20px;border-radius:50%;border:2px solid var(--border2);flex-shrink:0;display:flex;align-items:center;justify-content:center"></span>
-        </button>
-      </div>
-
       <div id="sec-card">
         <div id="stripe-note" style="background:var(--bg);border:1.5px solid var(--border2);border-radius:var(--r);padding:16px;margin-bottom:14px;font-size:13px;color:var(--text3);text-align:center">
           Secure card payment via Stripe
@@ -252,7 +262,6 @@ input[type=text]:focus{border-color:var(--blue)}
         <div style="background:var(--bg);border:1.5px solid var(--border2);border-radius:var(--r);padding:16px;margin-bottom:14px;font-size:13px;color:var(--text3);text-align:center">
           Bank transfer powered by Stripe — verify your bank account securely
         </div>
-
         <button class="btn btn-green" id="ach-btn" onclick="payACH()">Pay by bank transfer (ACH)</button>
       </div>
       <div id="sec-cash" style="display:none">
@@ -544,7 +553,9 @@ function goToPayment(){
   }
   if(_epaRequired())document.getElementById('epa-err').style.display='none';
   _sigData=sigCanvas.toDataURL('image/png');
+  _payFullAmount=false;
   show('pg-pay');scrollTo(0,0);
+  _renderPayTiles();
   selPay(_prop?.stripeConnectEnabled===false?'cash':'card');
 }
 function backToSign(){show('pg-sign');scrollTo(0,0);}
@@ -561,38 +572,56 @@ function selPay(opt){
   document.getElementById('sec-card').style.display=opt==='card'?'block':'none';
   document.getElementById('sec-ach').style.display=opt==='ach'?'block':'none';
   document.getElementById('sec-cash').style.display=opt==='cash'?'block':'none';
-  // Show "pay in full" option for card/ACH only; hide for cash; reset selection
-  const showFull=_prop&&(opt==='card'||opt==='ach')&&(_prop.amount||0)>(_prop.deposit||0)+0.01;
-  const row=document.getElementById('pay-full-row');
-  if(row){row.style.display=showFull?'block':'none';}
-  if(showFull){
-    const lbl=document.getElementById('pay-full-lbl');
-    if(lbl)lbl.textContent=fmt(_prop.amount);
-  }
-  _payFullAmount=false;_updatePayFullUI();
+  // For cash, force deposit tile (no pay-in-full for cash — contractor collects)
+  if(opt==='cash'&&_payFullAmount){_payFullAmount=false;_renderPayTiles();}
+  _updatePayButtons();
 }
-function togglePayFull(){
-  _payFullAmount=!_payFullAmount;
-  _updatePayFullUI();
+function _selectPayTile(choice){
+  const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice*0.25:_prop?.deposit||0;
+  const fullAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
+  // Don't allow full-pay tile if amounts are the same
+  if(choice==='full'&&Math.abs(fullAmt-depAmt)<0.01)return;
+  _payFullAmount=choice==='full';
+  _renderPayTiles();
+  _updatePayButtons();
 }
-function _updatePayFullUI(){
-  const check=document.getElementById('pay-full-check');
-  if(check){
-    check.style.background=_payFullAmount?'var(--blue)':'';
-    check.style.borderColor=_payFullAmount?'var(--blue)':'var(--border2)';
-    check.innerHTML=_payFullAmount?'<svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>':'';
+function _renderPayTiles(){
+  const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice*0.25:_prop?.deposit||0;
+  const fullAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
+  const showFull=fullAmt>depAmt+0.01;
+  const depSel=!_payFullAmount;
+  const td=document.getElementById('pay-tile-dep'),tf=document.getElementById('pay-tile-full');
+  if(td){
+    td.style.border='2px solid '+(depSel?'var(--blue)':'var(--border2)');
+    td.style.background=depSel?'var(--blue-lt)':'var(--bg2)';
+    td.querySelector('div:first-child').style.color=depSel?'var(--blue)':'var(--text3)';
+    document.getElementById('pay-tile-dep-amt').style.color=depSel?'var(--blue)':'var(--text)';
+    const check=td.lastElementChild;if(check)check.style.color=depSel?'var(--blue)':'transparent';
   }
+  if(tf){
+    tf.style.display=showFull?'':'none';
+    tf.style.border='2px solid '+(_payFullAmount?'var(--blue)':'var(--border2)');
+    tf.style.background=_payFullAmount?'var(--blue-lt)':'var(--bg2)';
+    tf.querySelector('div:first-child').style.color=_payFullAmount?'var(--blue)':'var(--text3)';
+    document.getElementById('pay-tile-full-amt').style.color=_payFullAmount?'var(--blue)':'var(--text)';
+  }
+  const depAmtEl=document.getElementById('pay-tile-dep-amt');
+  if(depAmtEl)depAmtEl.textContent=fmt(depAmt);
+  const depNote=document.getElementById('pay-tile-dep-note');
+  if(depNote)depNote.textContent=showFull?'Balance of '+fmt(fullAmt-depAmt)+' due at completion':'Remaining balance due at completion';
+  const fullAmtEl=document.getElementById('pay-tile-full-amt');
+  if(fullAmtEl)fullAmtEl.textContent=fmt(fullAmt);
+}
+function _updatePayButtons(){
   const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice*0.25:_prop?.deposit||0;
   const fullAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
   const amt=_payFullAmount?fullAmt:depAmt;
-  const payAmtEl=document.getElementById('pay-amt');
-  if(payAmtEl)payAmtEl.textContent=fmt(amt);
-  const noteEl=document.getElementById('pay-note');
-  if(noteEl)noteEl.textContent=_payFullAmount?'Paid in full — no balance remaining':'Balance of '+fmt(fullAmt-depAmt)+' due on completion';
   const cardBtn=document.getElementById('card-btn');
-  if(cardBtn)cardBtn.textContent=_payFullAmount?'Pay '+fmt(fullAmt)+' in full by card':'Pay deposit by card';
+  if(cardBtn)cardBtn.textContent=_payFullAmount?'Pay '+fmt(fullAmt)+' in full by card':'Pay '+fmt(depAmt)+' deposit by card';
   const achBtn=document.getElementById('ach-btn');
-  if(achBtn)achBtn.textContent=_payFullAmount?'Pay '+fmt(fullAmt)+' in full by bank transfer':'Pay by bank transfer (ACH)';
+  if(achBtn)achBtn.textContent=_payFullAmount?'Pay '+fmt(fullAmt)+' in full by bank transfer':'Pay '+fmt(depAmt)+' by bank transfer (ACH)';
+  const cashMsg=document.getElementById('cash-confirm-msg');
+  if(cashMsg)cashMsg.textContent=(_payFullAmount?' Your proposal is signed. The contractor will collect the full amount when they arrive.':' Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.');
 }
 
 async function payCard(){

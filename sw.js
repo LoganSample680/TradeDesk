@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-05.12.26.36';
+const CACHE = 'tradedesk-05.12.26.37';
 const NAV_URL = '/index.html';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
@@ -22,9 +22,19 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())
+    caches.keys().then(keys => {
+      const old = keys.filter(k => k !== CACHE);
+      const isUpdate = old.length > 0;
+      return Promise.all(old.map(k => caches.delete(k)))
+        .then(() => self.clients.claim())
+        .then(() => {
+          // Notify open tabs to reload when this is an update (not a fresh install)
+          if (!isUpdate) return;
+          return self.clients.matchAll({ includeUncontrolled: true }).then(clients =>
+            clients.forEach(c => c.postMessage({ type: 'SW_UPDATED' }))
+          );
+        });
+    })
   );
 });
 
