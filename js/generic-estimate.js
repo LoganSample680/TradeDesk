@@ -1369,7 +1369,7 @@ async function sendGenericProposal(){
   if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.');return;}
   if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});
   const v=id=>document.getElementById(id)?.value||'';
-  const{total}=calcGeiTotal();
+  const{total,sub}=calcGeiTotal();
   const trade=_geiTrade||getActiveTrade();
   const taxPct=parseFloat(v('gei-tax-pct'))||0;
   const bname=escHtml(S.bname||getBusinessName()||'');

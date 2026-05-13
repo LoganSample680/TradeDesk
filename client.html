@@ -741,6 +741,27 @@ function openPhoto(url,caption){
   document.body.appendChild(ov);
 }
 init();
+// Re-check signed status when returning from sign.html via browser back / bfcache restore
+async function _recheckSigned(){
+  if(!_hub||!_supa)return;
+  const u=new URLSearchParams(location.search).get('u');
+  if(!u)return;
+  const bidIds=_hub.bids.map(b=>String(b.id));
+  if(!bidIds.length)return;
+  try{
+    const{data:sigs}=await _supa.from('signed_proposals')
+      .select('bid_id,payment_status,payment_method,signed_at')
+      .eq('contractor_user_id',u).in('bid_id',bidIds);
+    if(!sigs)return;
+    let changed=false;
+    sigs.forEach(sp=>{
+      const bid=_hub.bids.find(b=>String(b.id)===sp.bid_id);
+      if(bid&&bid.status==='Pending'){bid.status='Closed Won';bid.signedAt=sp.signed_at;changed=true;}
+    });
+    if(changed)renderAll();
+  }catch(e){}
+}
+window.addEventListener('pageshow',e=>{if(e.persisted)_recheckSigned();});
 </script>
 </body>
 </html>

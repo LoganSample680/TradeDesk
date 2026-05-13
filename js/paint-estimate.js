@@ -1266,9 +1266,11 @@ function adjSurfBCount(d){
 
 function saveSurfBAndNext(){
   const isCustomer=document.getElementById('e-customer-paint')?.value==='1';
+  const curType=surfBQueue[surfBIdx];
+  const _noProduct=isCustomer||curType==='epoxy'||curType==='fence';
 
-  // Only validate product/color/finish when Zach supplies paint
-  if(!isCustomer){
+  // Only validate product/color/finish when Zach supplies paint on a paintable surface
+  if(!_noProduct){
     const _productVal=(document.getElementById('sw-selected-product')?.value||'').trim();
     const _colorVal=(document.getElementById('surf-color-b')?.value||'').trim();
     const _finishVal=(document.getElementById('sw-selected-finish')?.value||'').trim();
