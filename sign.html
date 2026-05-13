@@ -234,6 +234,13 @@ input[type=text]:focus{border-color:var(--blue)}
 
       <div class="divider"></div>
 
+      <div id="pay-full-row" style="display:none;margin-bottom:12px">
+        <button onclick="togglePayFull()" style="width:100%;background:none;border:1.5px solid var(--border2);border-radius:var(--r);padding:11px 14px;font-family:inherit;cursor:pointer;font-size:13px;text-align:left;display:flex;justify-content:space-between;align-items:center;gap:10px">
+          <span style="color:var(--text2)">Pay <strong id="pay-full-lbl" style="color:var(--blue)"></strong> in full instead</span>
+          <span id="pay-full-check" style="width:20px;height:20px;border-radius:50%;border:2px solid var(--border2);flex-shrink:0;display:flex;align-items:center;justify-content:center"></span>
+        </button>
+      </div>
+
       <div id="sec-card">
         <div id="stripe-note" style="background:var(--bg);border:1.5px solid var(--border2);border-radius:var(--r);padding:16px;margin-bottom:14px;font-size:13px;color:var(--text3);text-align:center">
           Secure card payment via Stripe
@@ -291,7 +298,7 @@ input[type=text]:focus{border-color:var(--blue)}
 const SUPA_URL='https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
 const _supa=supabase.createClient(SUPA_URL,SUPA_KEY);
-let _prop=null,_sigData=null,_payOpt='card';
+let _prop=null,_sigData=null,_payOpt='card',_payFullAmount=false;
 let sigCanvas,sigCtx,signing=false,hasInk=false;
 window._portfolioAccepted=false;
 let _portfolioStep=0;
@@ -553,6 +560,38 @@ function selPay(opt){
   document.getElementById('sec-card').style.display=opt==='card'?'block':'none';
   document.getElementById('sec-ach').style.display=opt==='ach'?'block':'none';
   document.getElementById('sec-cash').style.display=opt==='cash'?'block':'none';
+  // Show "pay in full" option for card/ACH only; hide for cash; reset selection
+  const showFull=_prop&&(opt==='card'||opt==='ach')&&(_prop.amount||0)>(_prop.deposit||0)+0.01;
+  const row=document.getElementById('pay-full-row');
+  if(row){row.style.display=showFull?'block':'none';}
+  if(showFull){
+    const lbl=document.getElementById('pay-full-lbl');
+    if(lbl)lbl.textContent=fmt(_prop.amount);
+  }
+  _payFullAmount=false;_updatePayFullUI();
+}
+function togglePayFull(){
+  _payFullAmount=!_payFullAmount;
+  _updatePayFullUI();
+}
+function _updatePayFullUI(){
+  const check=document.getElementById('pay-full-check');
+  if(check){
+    check.style.background=_payFullAmount?'var(--blue)':'';
+    check.style.borderColor=_payFullAmount?'var(--blue)':'var(--border2)';
+    check.innerHTML=_payFullAmount?'<svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>':'';
+  }
+  const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice*0.25:_prop?.deposit||0;
+  const fullAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
+  const amt=_payFullAmount?fullAmt:depAmt;
+  const payAmtEl=document.getElementById('pay-amt');
+  if(payAmtEl)payAmtEl.textContent=fmt(amt);
+  const noteEl=document.getElementById('pay-note');
+  if(noteEl)noteEl.textContent=_payFullAmount?'Paid in full — no balance remaining':'Balance of '+fmt(fullAmt-depAmt)+' due on completion';
+  const cardBtn=document.getElementById('card-btn');
+  if(cardBtn)cardBtn.textContent=_payFullAmount?'Pay '+fmt(fullAmt)+' in full by card':'Pay deposit by card';
+  const achBtn=document.getElementById('ach-btn');
+  if(achBtn)achBtn.textContent=_payFullAmount?'Pay '+fmt(fullAmt)+' in full by bank transfer':'Pay by bank transfer (ACH)';
 }
 
 async function payCard(){
@@ -560,13 +599,15 @@ async function payCard(){
   const btn=document.getElementById('card-btn');
   btn.disabled=true;btn.textContent='Setting up payment...';
   try{
-    const amt=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round(_prop.deposit*100);
+    const depBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round(_prop.deposit*100);
+    const fullBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*100):Math.round(_prop.amount*100);
+    const amt=_payFullAmount?fullBase:depBase;
     await _launchEmbedded(amt,'card');
   }catch(e){
     console.error(e);
     document.getElementById('pay-err').textContent='Card payment unavailable. Please pay cash or contact us directly.';
   }
-  btn.disabled=false;btn.textContent='Pay deposit by card';
+  btn.disabled=false;btn.textContent=_payFullAmount?'Pay in full by card':'Pay deposit by card';
 }
 
 async function payACH(){
@@ -574,13 +615,15 @@ async function payACH(){
   const btn=document.getElementById('ach-btn');
   btn.disabled=true;btn.textContent='Setting up bank transfer...';
   try{
-    const amt=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round(_prop.deposit*100);
+    const depBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round(_prop.deposit*100);
+    const fullBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*100):Math.round(_prop.amount*100);
+    const amt=_payFullAmount?fullBase:depBase;
     await _launchEmbedded(amt,'us_bank_account');
   }catch(e){
     console.error(e);
     document.getElementById('pay-err').textContent='Bank transfer unavailable. Please select card or cash.';
   }
-  btn.disabled=false;btn.textContent='Pay by bank transfer (ACH)';
+  btn.disabled=false;btn.textContent=_payFullAmount?'Pay in full by bank transfer':'Pay by bank transfer (ACH)';
 }
 
 async function submitCash(){

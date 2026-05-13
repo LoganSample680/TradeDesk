@@ -300,7 +300,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.12.26.34';
+const APP_VERSION='05.12.26.35';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -1246,6 +1246,12 @@ async function supaLoadFromCloud(){
     // Check for new signatures then schedule alerts — sequential to avoid race
     setTimeout(async()=>{ await checkNewSignatures(); if(!window._showingScheduleAlert) showScheduleAlerts(); },2000);
     setInterval(()=>checkNewSignatures(),30000);
+    // Realtime: fire checkNewSignatures instantly when sign.html writes notified_at
+    try{
+      _supa.channel('sig-feed-'+_supaUser.id)
+        .on('postgres_changes',{event:'*',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{checkNewSignatures();})
+        .subscribe();
+    }catch(e){}
     setInterval(()=>_loadPendingInbound(),30000);
     // Pre-load Stripe connect status so sendPaymentLink works without visiting Settings first
     setTimeout(()=>_fetchStripeConnectStatus(),3000);

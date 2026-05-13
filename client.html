@@ -631,8 +631,12 @@ async function payDeposit(bidId){
 function _payBtn(bid,h){
   if(!h.stripeEnabled||(bid.balance||0)<0.01)return '';
   const depositPaid=(bid.paid||0)>=(bid.deposit||0)-0.01;
-  if(!depositPaid&&(bid.deposit||0)>0.01)
-    return '<button id="pay-btn-'+bid.id+'" onclick="payDeposit('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:8px">💳 Pay '+fmt(bid.deposit)+' deposit</button>';
+  if(!depositPaid&&(bid.deposit||0)>0.01){
+    const fullBtn=(bid.balance||0)>(bid.deposit||0)+0.01
+      ?'<button onclick="payBalance('+bid.id+')" class="btn btn-sec" style="margin-top:6px;font-size:13px">💳 Pay '+fmt(bid.balance)+' in full instead</button>'
+      :'';
+    return '<button id="pay-btn-'+bid.id+'" onclick="payDeposit('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:2px">💳 Pay '+fmt(bid.deposit)+' deposit</button>'+fullBtn;
+  }
   return '<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:8px">💳 Pay '+fmt(bid.balance)+' balance</button>';
 }
 function showPaymentSuccess(bidId){
@@ -761,7 +765,13 @@ async function _recheckSigned(){
     if(changed)renderAll();
   }catch(e){}
 }
-window.addEventListener('pageshow',e=>{if(e.persisted)_recheckSigned();});
+window.addEventListener('pageshow',e=>{
+  if(e.persisted){_recheckSigned();return;}
+  // Fresh load: init() handles it, but schedule a safety re-check 3s later
+  // in case sign.html's write hadn't propagated when init() queried.
+  setTimeout(_recheckSigned,3000);
+});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')_recheckSigned();});
 </script>
 </body>
 </html>
