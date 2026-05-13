@@ -909,6 +909,9 @@ async function getCurrentLocAddress(){
             if(p.postCode)parts.push(p.postCode);
             const addr=parts.join(', ')||p.formattedAddress||'';
             if(addr){resolve(addr);return;}
+            console.warn('[MapKit reverse] empty result for',lat,lon,'→ falling back to Nominatim');
+          } else if(err){
+            console.warn('[MapKit reverse] error:',err);
           }
           // MapKit failed or returned empty — cascade to Nominatim
           const nom=await _nominatimReverse(lat,lon);
