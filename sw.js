@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-05.12.26.35';
+const CACHE = 'tradedesk-05.12.26.36';
 const NAV_URL = '/index.html';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
@@ -69,6 +69,10 @@ self.addEventListener('fetch', e => {
   // Only cache GET requests over http/https — skip POST/PATCH/PUT (Supabase, etc.) and extension schemes
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || (url.protocol !== 'http:' && url.protocol !== 'https:')) return;
+
+  // Never cache Supabase responses — they're dynamic user data (hub JSON, proposal files, API calls).
+  // Stale Supabase cache would hide newly-added proposals from the client hub.
+  if (url.hostname.endsWith('supabase.co')) return;
 
   // Static assets — cache-first, update in background
   e.respondWith(

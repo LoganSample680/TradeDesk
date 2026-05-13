@@ -545,6 +545,7 @@ function goToPayment(){
   if(_epaRequired())document.getElementById('epa-err').style.display='none';
   _sigData=sigCanvas.toDataURL('image/png');
   show('pg-pay');scrollTo(0,0);
+  selPay(_prop?.stripeConnectEnabled===false?'cash':'card');
 }
 function backToSign(){show('pg-sign');scrollTo(0,0);}
 
