@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-05.12.26.37';
+const CACHE = 'tradedesk-05.12.26.38';
 const NAV_URL = '/index.html';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
@@ -80,9 +80,9 @@ self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (e.request.method !== 'GET' || (url.protocol !== 'http:' && url.protocol !== 'https:')) return;
 
-  // Never cache Supabase responses — they're dynamic user data (hub JSON, proposal files, API calls).
-  // Stale Supabase cache would hide newly-added proposals from the client hub.
-  if (url.hostname.endsWith('supabase.co')) return;
+  // Don't cache client-hub snapshots — they change every time a new proposal is sent.
+  // Everything else on supabase.co (proposal JSON, images) is still cached so sign.html works offline.
+  if (url.hostname.endsWith('supabase.co') && url.pathname.includes('/client-hub/')) return;
 
   // Static assets — cache-first, update in background
   e.respondWith(

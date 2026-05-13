@@ -1418,7 +1418,8 @@ async function sendGenericProposal(){
     stripeConnectEnabled:!!(_stripeConnectStatus?.charges_enabled),
     trade_type:trade,
   };
-  await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true}).catch(()=>{});
+  const _uploadRes=await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true}).catch(e=>({error:e}));
+  if(_uploadRes?.error){showToast('Upload failed — check connection and try again','error');console.error('[proposal upload]',_uploadRes.error);return;}
   const b=bids.find(x=>x.id===bidId);
   if(b){b.signingToken=token;b.proposalKey=proposalKey;saveAll();}
   const baseUrl=_clientBaseUrl();
