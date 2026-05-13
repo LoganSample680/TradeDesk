@@ -16,11 +16,19 @@ function openExpenseFlow(){
         '<div style="font-size:18px;font-weight:800">Log expense</div>'+
         '<button onclick="closeExpenseFlow()" style="border:none;background:none;font-size:24px;cursor:pointer;color:var(--text3)">×</button>'+
       '</div>'+
-      '<div id="exp-scan-area" style="border:2px dashed var(--border2);border-radius:14px;padding:20px;text-align:center;margin-bottom:18px;cursor:pointer;background:var(--bg2)" onclick="expTriggerScan()">'+
-        '<div style="font-size:36px;margin-bottom:8px">📷</div>'+
-        '<div style="font-size:14px;font-weight:700">Scan receipt</div>'+
-        '<div style="font-size:12px;color:var(--text3);margin-top:4px">Tap to photograph — AI extracts everything automatically</div>'+
-        '<input type="file" id="exp-file-inp" accept="image/*" capture="environment" style="display:none" onchange="expProcessPhoto(this)">'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px">'+
+        '<div id="exp-scan-area" style="border:2px dashed var(--border2);border-radius:14px;padding:14px;text-align:center;cursor:pointer;background:var(--bg2)" onclick="expTriggerScan()">'+
+          '<div style="font-size:28px;margin-bottom:4px">📷</div>'+
+          '<div style="font-size:12px;font-weight:700">Scan receipt</div>'+
+          '<div style="font-size:10px;color:var(--text3);margin-top:2px">AI fills fields</div>'+
+          '<input type="file" id="exp-file-inp" accept="image/*" capture="environment" style="display:none" onchange="expProcessPhoto(this)">'+
+        '</div>'+
+        '<div id="exp-attach-area" style="border:2px dashed var(--border2);border-radius:14px;padding:14px;text-align:center;cursor:pointer;background:var(--bg2)" onclick="expTriggerAttach()">'+
+          '<div style="font-size:28px;margin-bottom:4px">📎</div>'+
+          '<div style="font-size:12px;font-weight:700">Attach photo</div>'+
+          '<div style="font-size:10px;color:var(--text3);margin-top:2px">No sign-in needed</div>'+
+          '<input type="file" id="exp-attach-inp" accept="image/*" capture="environment" style="display:none" onchange="expAttachPhotoOnly(this)">'+
+        '</div>'+
       '</div>'+
       '<div id="exp-scan-status" style="display:none;margin-bottom:14px"></div>'+
       '<div id="exp-preview-img" style="display:none;margin-bottom:14px;text-align:center"></div>'+
@@ -52,6 +60,28 @@ function openExpenseFlow(){
 
 function closeExpenseFlow(){document.getElementById('expense-modal')?.remove();_expState={imageData:null,imageKey:null,hasReceipt:false};}
 function expTriggerScan(){document.getElementById('exp-file-inp')?.click();}
+function expTriggerAttach(){document.getElementById('exp-attach-inp')?.click();}
+async function expAttachPhotoOnly(input){
+  const file=input.files[0];if(!file)return;
+  const attachArea=document.getElementById('exp-attach-area');
+  const preview=document.getElementById('exp-preview-img');
+  if(attachArea)attachArea.style.opacity='.5';
+  try{
+    const b64=await compressAndEncodeImage(file,900,0.75);
+    _expState.imageData={b64,type:'image/jpeg'};
+    _expState.hasReceipt=true;
+    if(preview){
+      preview.style.display='block';
+      const reader=new FileReader();
+      reader.onload=e=>{preview.innerHTML='<img src="'+e.target.result+'" style="max-height:80px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green-mid);margin-top:4px;font-weight:700">📎 Photo attached</div>';};
+      reader.readAsDataURL(file);
+    }
+    if(attachArea){attachArea.style.opacity='1';attachArea.style.borderColor='var(--green-mid)';}
+  }catch(e){
+    if(attachArea)attachArea.style.opacity='1';
+  }
+  input.value='';
+}
 
 async function expProcessPhoto(input){
   const file=input.files[0];if(!file)return;
@@ -114,19 +144,19 @@ async function expProcessPhoto(input){
   input.value='';
 }
 
-async function compressAndEncodeImage(file){
+async function compressAndEncodeImage(file,maxPx=1200,qual=0.85){
   return new Promise(resolve=>{
     const img=new Image();
     const url=URL.createObjectURL(file);
     img.onload=()=>{
-      const MAX=1200;let w=img.width,h=img.height;
-      if(w>MAX){h=Math.round(h*(MAX/w));w=MAX;}
-      if(h>MAX){w=Math.round(w*(MAX/h));h=MAX;}
+      let w=img.width,h=img.height;
+      if(w>maxPx){h=Math.round(h*(maxPx/w));w=maxPx;}
+      if(h>maxPx){w=Math.round(w*(maxPx/h));h=maxPx;}
       const canvas=document.createElement('canvas');
       canvas.width=w;canvas.height=h;
       canvas.getContext('2d').drawImage(img,0,0,w,h);
       URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL('image/jpeg',0.85).split(',')[1]);
+      resolve(canvas.toDataURL('image/jpeg',qual).split(',')[1]);
     };
     img.src=url;
   });
@@ -857,12 +887,12 @@ function populateTrackerYearSel(){
   if(!sel)return;
   const years=getTrackerYears();
   let cur=trackerYear||new Date().getFullYear();
-  // First open only (user hasn't manually picked a year): prefer a year with financial data
+  // First open only (user hasn't manually picked a year): prefer a year with any data
   if(!_trackerYearManual){
     const curStr=String(cur);
-    const hasFinData=income.some(r=>(r.date||'').startsWith(curStr))||expenses.some(e=>(e.date||'').startsWith(curStr));
-    if(!hasFinData&&(income.length||expenses.length)){
-      const finYear=years.find(y=>{const ys=String(y);return income.some(r=>(r.date||'').startsWith(ys))||expenses.some(e=>(e.date||'').startsWith(ys));});
+    const hasFinData=income.some(r=>(r.date||'').startsWith(curStr))||expenses.some(e=>(e.date||'').startsWith(curStr))||mileage.some(m=>(m.date||'').startsWith(curStr));
+    if(!hasFinData&&(income.length||expenses.length||mileage.length)){
+      const finYear=years.find(y=>{const ys=String(y);return income.some(r=>(r.date||'').startsWith(ys))||expenses.some(e=>(e.date||'').startsWith(ys))||mileage.some(m=>(m.date||'').startsWith(ys));});
       if(finYear)cur=finYear;
     }
   }

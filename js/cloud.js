@@ -300,7 +300,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.12.26.32';
+const APP_VERSION='05.12.26.33';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -889,7 +889,7 @@ async function supaSaveToCloud(){
           expenses:JSON.stringify(expensesForSync.slice(-300)),
           mileage:JSON.stringify(mileage.slice(-300)),
           time_entries:JSON.stringify(timeEntries.slice(-200)),
-          receipt_images:JSON.stringify({}),
+          receipt_images:JSON.stringify(receiptImages),
         }).eq('user_id',uid);
         if(e2r){_logSave('part2-retry-fail',{id:_attemptId,code:e2r.code,msg:e2r.message});throw e2r;}
       } else {
