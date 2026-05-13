@@ -1867,47 +1867,7 @@ async function purgeOldReceiptImages(){
   },{title:'Purge old receipt images',yes:'Delete images',danger:true});
 }
 function delExpense(id){expenses=expenses.filter(x=>x.id!==id);saveAll();renderExpenses();}
-async function getCurrentLocAddress(){
-  return new Promise((resolve,reject)=>{
-    if(!navigator.geolocation){reject(new Error('GPS not available'));return;}
-    navigator.geolocation.getCurrentPosition(async pos=>{
-      const{latitude:lat,longitude:lon}=pos.coords;
-      _tripGpsCoords={lat,lng:lon}; // cache for search bias
-      // MapKit reverse geocode (fast, Apple data)
-      if(_mapkitReady){
-        const gc=new mapkit.Geocoder({language:'en-US'});
-        gc.reverseLookup(new mapkit.Coordinate(lat,lon),(err,data)=>{
-          if(!err&&data?.results?.[0]){
-            const p=data.results[0];
-            const parts=[];
-            if(p.fullThoroughfare)parts.push(p.fullThoroughfare);
-            else if(p.thoroughfare)parts.push([p.subThoroughfare,p.thoroughfare].filter(Boolean).join(' '));
-            if(p.locality)parts.push(p.locality);
-            if(p.administrativeAreaCode)parts.push(p.administrativeAreaCode);
-            if(p.postCode)parts.push(p.postCode);
-            resolve(parts.join(', ')||p.formattedAddress||'');
-          } else {
-            resolve(lat.toFixed(4)+', '+lon.toFixed(4));
-          }
-        });
-        return;
-      }
-      // Nominatim fallback
-      try{
-        const r=await fetch('https://nominatim.openstreetmap.org/reverse?lat='+lat+'&lon='+lon+'&format=json',{headers:{'Accept-Language':'en-US','User-Agent':'TradeDesk/1.0'}});
-        const d=await r.json();
-        const a=d.address||{};
-        const parts=[];
-        if(a.house_number&&a.road)parts.push(a.house_number+' '+a.road);
-        else if(a.road)parts.push(a.road);
-        if(a.city||a.town||a.village)parts.push(a.city||a.town||a.village);
-        if(a.state)parts.push(a.state);
-        if(a.postcode)parts.push(a.postcode);
-        resolve(parts.join(', ')||d.display_name||'');
-      }catch(e){resolve(lat.toFixed(4)+', '+lon.toFixed(4));}
-    },err=>reject(err),{timeout:8000,enableHighAccuracy:false,maximumAge:300000});
-  });
-}
+
 function renderSummary(){
   const yr=String(trackerYear||new Date().getFullYear());
   const sumSel=document.getElementById('sum-tx-status');

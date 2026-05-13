@@ -876,6 +876,52 @@ function openLogTripModal(opts){
     },50);
   }
 }
+async function _nominatimReverse(lat,lon){
+  try{
+    const r=await fetch('https://nominatim.openstreetmap.org/reverse?lat='+lat+'&lon='+lon+'&format=json',{headers:{'Accept-Language':'en-US'}});
+    const d=await r.json();
+    const a=d.address||{};
+    const parts=[];
+    if(a.house_number&&a.road)parts.push(a.house_number+' '+a.road);
+    else if(a.road)parts.push(a.road);
+    if(a.city||a.town||a.village)parts.push(a.city||a.town||a.village);
+    if(a.state)parts.push(a.state);
+    if(a.postcode)parts.push(a.postcode);
+    return parts.join(', ')||d.display_name||null;
+  }catch(e){return null;}
+}
+async function getCurrentLocAddress(){
+  return new Promise((resolve,reject)=>{
+    if(!navigator.geolocation){reject(new Error('GPS not available'));return;}
+    navigator.geolocation.getCurrentPosition(async pos=>{
+      const{latitude:lat,longitude:lon}=pos.coords;
+      _tripGpsCoords={lat,lng:lon};
+      if(_mapkitReady){
+        const gc=new mapkit.Geocoder({language:'en-US'});
+        gc.reverseLookup(new mapkit.Coordinate(lat,lon),async(err,data)=>{
+          if(!err&&data?.results?.[0]){
+            const p=data.results[0];
+            const parts=[];
+            if(p.fullThoroughfare)parts.push(p.fullThoroughfare);
+            else if(p.thoroughfare)parts.push([p.subThoroughfare,p.thoroughfare].filter(Boolean).join(' '));
+            if(p.locality)parts.push(p.locality);
+            if(p.administrativeAreaCode)parts.push(p.administrativeAreaCode);
+            if(p.postCode)parts.push(p.postCode);
+            const addr=parts.join(', ')||p.formattedAddress||'';
+            if(addr){resolve(addr);return;}
+          }
+          // MapKit failed or returned empty — cascade to Nominatim
+          const nom=await _nominatimReverse(lat,lon);
+          resolve(nom||lat.toFixed(4)+', '+lon.toFixed(4));
+        });
+        return;
+      }
+      // MapKit not loaded — try Nominatim
+      const nom=await _nominatimReverse(lat,lon);
+      resolve(nom||lat.toFixed(4)+', '+lon.toFixed(4));
+    },err=>reject(err),{timeout:8000,enableHighAccuracy:false,maximumAge:300000});
+  });
+}
 async function grabMyLocation(showErr){
   const btn=document.getElementById('lm-gps-btn');
   if(btn){btn.disabled=true;btn.textContent='Locating...';}
