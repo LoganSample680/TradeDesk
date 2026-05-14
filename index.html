@@ -484,13 +484,40 @@ body.dark .fbar .fb.active{background:var(--blue);color:#fff;border-color:var(--
 input:checked+.dm-slider{background:var(--blue)}
 input:checked+.dm-slider:before{transform:translateX(22px)}
 /* ── Today Feed / Prompt engine ── */
-.tf-card{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.tf-card{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap;cursor:pointer;transition:background .1s}
 .tf-card:last-child{border-bottom:none}
-.tf-icon{font-size:22px;flex-shrink:0;margin-top:2px;width:28px;text-align:center;line-height:1}
+.tf-card:hover{background:var(--bg2)}
+.tf-icon{font-size:18px;flex-shrink:0;width:32px;height:32px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;line-height:1;margin-top:1px}
+.tf-icon.t-red{background:var(--red-lt);border-color:#f3c0bf}
+.tf-icon.t-amber{background:var(--amber-lt);border-color:#e5c58a}
+.tf-icon.t-green{background:var(--green-lt);border-color:#b0d58a}
+.tf-icon.t-blue{background:var(--blue-lt);border-color:#aacef3}
 .tf-body{flex:1;min-width:0}
 .tf-name{font-size:13px;font-weight:700;color:var(--text);line-height:1.3;word-break:break-word}
 .tf-sub{font-size:11px;margin-top:2px;line-height:1.4}
-.tf-acts{display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding-top:6px;width:100%;padding-left:38px}</style>
+.tf-arrow{font-size:11px;font-weight:700;color:var(--text3);flex-shrink:0;align-self:center;margin-left:4px}
+.tf-card:hover .tf-arrow{color:var(--blue)}
+.tf-acts{display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding-top:6px;width:100%;padding-left:42px}
+/* ── Dashboard v2 layout ── */
+.tbar-eyebrow{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);margin-bottom:4px}
+.tbar-l{min-width:0;flex:1}
+.tbar-r{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.split-2-wide{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:14px;align-items:flex-start;margin-bottom:14px}
+.card-pad-0{padding:0}
+.card-hd-title{font-size:14px;font-weight:800;letter-spacing:-.1px;color:var(--text)}
+.card-hd-sub{font-size:11px;color:var(--text3);font-weight:500;margin-top:1px}
+.card-hd2{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid var(--border)}
+.td-micro{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3)}
+.qa-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.qa{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:12px 6px;border-radius:var(--rl);border:1.5px solid var(--border2);background:var(--bg2);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text);transition:transform .1s,box-shadow .15s;width:100%}
+.qa:hover{background:var(--bg3)}.qa:active{transform:scale(.96)}
+.qa-emoji{font-size:20px;line-height:1}
+.qa-p{border-color:var(--blue);background:var(--blue);color:#fff;box-shadow:0 2px 8px rgba(24,95,165,.25)}
+.qa-p:hover{background:var(--blue-dk)}
+.qa-g{border-color:var(--green);background:var(--green);color:#fff;box-shadow:0 2px 8px rgba(39,80,10,.2)}
+.qa-g:hover{background:var(--green-mid)}
+.met-s.up{color:var(--green-mid)}.met-s.dn{color:var(--red)}
+@media(max-width:900px){.split-2-wide{grid-template-columns:1fr}}</style>
 </head>
 <body>
 <!-- Full boot screen — visible before any JS runs. td-logoin/td-bar are defined in <style> above. -->
@@ -519,54 +546,89 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 </script>
 <div id="app">
 <div class="pg active" id="pg-dash">
-  <div class="tbar"><div><div class="tbar-title" id="dash-greet"></div><div class="tbar-sub" id="dash-date"></div></div><div style="display:flex;align-items:center;gap:5px"><span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Year</span><select id="dash-year-sel" onchange="setDashYear(this.value)" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)"></select></div></select></div>
-  
-  <div id="dash-kpi" style="margin-bottom:10px"></div>
-
-  <div class="card" id="dash-money-feed-card" style="padding:0;margin-bottom:10px">
-    <div class="card-hd" style="padding:14px 14px 10px;margin-bottom:0">Make Money Today</div>
-    <div id="dash-money-feed"></div>
-  </div>
-
-  <div id="dash-quick" style="margin-bottom:12px">
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">Quick actions</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(95px,1fr));gap:8px">
-      <button onclick="goPg('pg-clients');setTimeout(()=>openNewClient(),100)" style="padding:13px 6px;border-radius:var(--rl);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:5px;width:100%;transition:transform .1s,box-shadow .15s;border:1.5px solid var(--blue);background:var(--blue);color:#fff;box-shadow:0 2px 8px rgba(24,95,165,.25)">
-        <span style="font-size:20px">👤</span><span>New lead</span>
-      </button>
-      <button onclick="quickAction('drive')" style="padding:13px 6px;border-radius:var(--rl);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:5px;width:100%;transition:transform .1s,box-shadow .15s;border:1.5px solid var(--border2);background:var(--bg);color:var(--text)">
-        <span style="font-size:20px">🚗</span><span>Drive</span>
-      </button>
-      <button onclick="quickAction('estimate')" style="padding:13px 6px;border-radius:var(--rl);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:5px;width:100%;transition:transform .1s,box-shadow .15s;border:1.5px solid var(--border2);background:var(--bg);color:var(--text)">
-        <span style="font-size:20px">📋</span><span>Estimate</span>
-      </button>
-      <button onclick="quickAction('schedule')" style="padding:13px 6px;border-radius:var(--rl);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:5px;width:100%;transition:transform .1s,box-shadow .15s;border:1.5px solid var(--border2);background:var(--bg);color:var(--text)">
-        <span style="font-size:20px">📅</span><span>Schedule</span>
-      </button>
-      <button onclick="quickAction('expense')" style="padding:13px 6px;border-radius:var(--rl);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:5px;width:100%;transition:transform .1s,box-shadow .15s;border:1.5px solid var(--border2);background:var(--bg);color:var(--text)">
-        <span style="font-size:20px">🧾</span><span>Expense</span>
-      </button>
-      <button onclick="quickAction('collect')" id="qa-collect-btn" style="padding:13px 6px;border-radius:var(--rl);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:5px;width:100%;transition:transform .1s,box-shadow .15s;border:1.5px solid var(--green);background:var(--green);color:#fff;box-shadow:0 2px 8px rgba(39,80,10,.2)">
-        <span style="font-size:20px">💰</span><span id="qa-collect-label">Collect</span>
-      </button>
+  <div class="tbar">
+    <div class="tbar-l">
+      <div class="tbar-eyebrow" id="dash-date"></div>
+      <div class="tbar-title" id="dash-greet"></div>
+      <div class="tbar-sub" id="dash-sub"></div>
+    </div>
+    <div class="tbar-r">
+      <select id="dash-year-sel" onchange="setDashYear(this.value)" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)"></select>
     </div>
   </div>
-  <div id="dash-resume" style="margin-bottom:10px;display:none"></div>
-  <div id="dash-nearby" style="margin-bottom:10px;display:none"></div>
-  <div id="dash-goal" style="margin-bottom:10px"></div>
-  <div id="dash-pipeline"></div>
-  <div class="card"><div class="card-hd">Today on the calendar</div><div id="dash-today"></div></div>
+
+  <div id="dash-kpi"></div>
   <div id="dash-hobby-warn" style="display:none"></div>
   <div id="dash-close-tip" style="display:none;margin-bottom:10px"></div>
-  <div class="card"><div class="card-hd">Lead sources</div><div id="dash-sources"></div></div>
-  <!-- Hidden containers kept for backward-compat with renderDashFollowups / renderDashCollect -->
+  <div id="dash-resume" style="display:none;margin-bottom:10px"></div>
+  <div id="dash-nearby" style="display:none;margin-bottom:10px"></div>
+  <div id="dash-goal" style="margin-bottom:10px"></div>
+  <div id="dash-pipeline"></div>
+
+  <div class="split-2-wide">
+    <!-- Left: Make Money Today feed -->
+    <div class="card card-pad-0" id="dash-money-feed-card">
+      <div class="card-hd2">
+        <div>
+          <div class="card-hd-title">Make money today</div>
+          <div class="card-hd-sub" id="dash-feed-sub">sorted by money on the table</div>
+        </div>
+      </div>
+      <div id="dash-money-feed"></div>
+    </div>
+
+    <!-- Right: Quick actions + calendar -->
+    <div>
+      <div class="card" id="dash-quick" style="margin-bottom:14px">
+        <div class="td-micro" style="margin-bottom:10px">Quick actions</div>
+        <div class="qa-grid">
+          <button class="qa qa-p" onclick="goPg('pg-clients');setTimeout(()=>openNewClient(),100)">
+            <span class="qa-emoji">👤</span><span>New lead</span>
+          </button>
+          <button class="qa" onclick="quickAction('drive')">
+            <span class="qa-emoji">🚗</span><span>Drive</span>
+          </button>
+          <button class="qa" onclick="quickAction('estimate')">
+            <span class="qa-emoji">📋</span><span>Estimate</span>
+          </button>
+          <button class="qa" onclick="quickAction('schedule')">
+            <span class="qa-emoji">📅</span><span>Schedule</span>
+          </button>
+          <button class="qa" onclick="quickAction('expense')">
+            <span class="qa-emoji">🧾</span><span>Expense</span>
+          </button>
+          <button class="qa qa-g" id="qa-collect-btn" onclick="quickAction('collect')">
+            <span class="qa-emoji">💰</span><span id="qa-collect-label">Collect</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="card card-pad-0">
+        <div class="card-hd2">
+          <div class="card-hd-title">Today's calendar</div>
+          <div class="card-hd-sub" id="dash-cal-date"></div>
+        </div>
+        <div style="padding:4px 16px 14px" id="dash-today"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card card-pad-0">
+    <div class="card-hd2">
+      <div>
+        <div class="card-hd-title">Lead sources</div>
+        <div class="card-hd-sub">Year to date · close rate &amp; revenue</div>
+      </div>
+    </div>
+    <div id="dash-sources"></div>
+  </div>
+
   <div id="dash-leads-sub" style="display:none"></div>
   <div id="dash-collect-sub" style="display:none"></div>
   <div id="dash-followups" style="display:none"></div>
   <div id="dash-fu" style="display:none"></div>
   <div id="dash-collect" style="display:none"></div>
-  <div style="text-align:right;padding:4px 10px 8px;font-size:10px;color:var(--text3);opacity:0.45;pointer-events:none;letter-spacing:.02em;font-family:-apple-system,sans-serif" id="app-version"></div>
-
+  <div style="text-align:right;padding:4px 10px 8px;font-size:10px;color:var(--text3);opacity:.45;pointer-events:none;letter-spacing:.02em;font-family:-apple-system,sans-serif" id="app-version"></div>
 </div>
 <div class="pg" id="pg-clients">
   <div class="tbar"><div class="tbar-title" id="clients-page-title">Clients</div></div>

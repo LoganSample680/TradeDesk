@@ -3,9 +3,10 @@ function renderDash(){
   if(_renderDashRunning)return; // prevent cascade
   _renderDashRunning=true;
   try{
-  const hr=new Date().getHours();
   document.getElementById('dash-greet').textContent=getDashGreeting();
   document.getElementById('dash-date').textContent=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  const _calDateEl=document.getElementById('dash-cal-date');
+  if(_calDateEl)_calDateEl.textContent=new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
   const tk=todayKey();
 
   const yr=dashYear||new Date().getFullYear();
@@ -32,6 +33,25 @@ function renderDash(){
   const closeSub=closeRatio===null?'No decided bids yet':closeRatio>=40?'Above avg ✓':closeRatio>=25?'Near avg (~33%)':'Below avg — follow up more';
   const wonBidAmts=bids.filter(b=>b.status==='Closed Won').map(b=>b.amount||0);
   const avgJobVal=wonBidAmts.length?Math.round(wonBidAmts.reduce((s,a)=>s+a,0)/wonBidAmts.length):null;
+
+  // Attention sub-text for tbar
+  const _subEl=document.getElementById('dash-sub');
+  if(_subEl&&!_isEmployee){
+    const _collectOwed=bids.filter(b=>b.status==='Closed Won'&&getBidBalance(b)>0.01&&b.completion_date).reduce((s,b)=>s+getBidBalance(b),0);
+    const _urgFu=bids.filter(b=>b.status==='Pending'&&!b.signingToken&&b.followup&&b.followup<=tk).length;
+    const _pendingBids=bids.filter(b=>b.status==='Pending').length;
+    const _licAlerts=getLicenseAlerts().filter(l=>_licStatus(l)==='expired').length;
+    const _attnItems=[_collectOwed>0,_urgFu>0,_pendingBids>0,_licAlerts>0].filter(Boolean).length;
+    if(_attnItems>0){
+      let _biggestNote='';
+      if(_collectOwed>0)_biggestNote='The biggest one is '+fmt(_collectOwed)+' in outstanding balances.';
+      else if(_urgFu>0)_biggestNote=_urgFu+' follow-up'+(+_urgFu>1?'s':'')+' are overdue.';
+      else if(_pendingBids>0)_biggestNote=_pendingBids+' pending bid'+(+_pendingBids>1?'s':'')+' need attention.';
+      _subEl.textContent=_attnItems+' thing'+(_attnItems>1?'s':'')+' need your attention today. '+_biggestNote;
+    }else{
+      _subEl.textContent='You\'re all caught up — nothing urgent.';
+    }
+  }else if(_subEl){_subEl.textContent='';}
 
   const kpiEl=document.getElementById('dash-kpi');
   if(kpiEl&&_isEmployee){
@@ -762,13 +782,17 @@ function renderTodayFeed(){
       '</div>'});
   }
 
+  const _feedSub=document.getElementById('dash-feed-sub');
   if(!items.length){
     el.innerHTML='<div style="padding:14px;font-size:13px;color:var(--text3)">You\'re caught up — nothing to chase right now.</div>';
+    if(_feedSub)_feedSub.textContent='all caught up';
     return;
   }
 
   items.sort((a,b)=>a.priority-b.priority);
-  el.innerHTML=items.slice(0,8).map(i=>i.html).join('');
+  const _shown=items.slice(0,8);
+  if(_feedSub)_feedSub.textContent=_shown.length+' action'+(+_shown.length>1?'s':'')+' · sorted by money on the table';
+  el.innerHTML=_shown.map(i=>i.html).join('');
 }
 
 function checkGoalPrompt(){
