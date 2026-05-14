@@ -6,6 +6,9 @@ function openExpenseFlow(){
   const ov=document.createElement('div');
   ov.id='expense-modal';
   ov.style.cssText='position:fixed;inset:0;z-index:9990;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;animation:fadein .15s;padding:16px';
+  const mktSrcs=[...new Set(clients.map(c=>c.source).filter(Boolean))].sort();
+  const mktSrcOpts=mktSrcs.map(s=>'<option value="'+escHtml(s)+'">'+escHtml(s)+'</option>').join('')+
+    '<option value="Other">Other</option>';
   const catOpts=IRS_EXPENSE_CATS.map(c=>'<option value="'+c.id+'">'+c.icon+' '+c.label+'</option>').join('');
   const jobOpts='<option value="">— Not tied to a specific job —</option>'+
     bids.filter(b=>b.status==='Closed Won').map(b=>'<option value="'+b.id+'">'+(b.client_name||b.name)+(b.addr?' · '+b.addr.split(',')[0]:'')+'</option>').join('');
@@ -38,7 +41,17 @@ function openExpenseFlow(){
       '</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
         '<div class="f"><label>Date *</label><input id="em-date" type="text" placeholder="MM/DD/YYYY" value="'+today.replace(/(\d{4})-(\d{2})-(\d{2})/,'$2/$3/$1')+'" style="font-size:14px" oninput="_fmtExpDate(this)"></div>'+
-        '<div class="f"><label>Category *</label><select id="em-cat" style="font-size:13px" onchange="toggleMealFields()">'+catOpts+'</select></div>'+
+        '<div class="f"><label>Category *</label><select id="em-cat" style="font-size:13px" onchange="toggleExpenseSections()">'+catOpts+'</select></div>'+
+      '</div>'+
+      '<div id="em-marketing-section" style="display:none;margin-bottom:12px">'+
+        '<div style="background:rgba(45,93,168,.07);border:1.5px solid rgba(45,93,168,.22);border-radius:var(--r);padding:12px">'+
+          '<div style="font-size:11px;font-weight:800;color:var(--blue);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">📢 Marketing channel</div>'+
+          '<div class="f"><label>Which lead source did you spend on? <span style="color:#A32D2D">*</span></label>'+
+            '<select id="em-mkt-source" style="font-size:13px">'+
+              '<option value="">— Select source —</option>'+mktSrcOpts+
+            '</select>'+
+          '</div>'+
+        '</div>'+
       '</div>'+
       '<div id="em-meal-section" style="display:none;background:#FFF8F0;border:1.5px solid #F59E0B;border-radius:var(--r);padding:12px;margin-bottom:12px">'+
         '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">🍽️ Meal — IRS requires business documentation</div>'+
@@ -192,11 +205,14 @@ function _confirmReceiptDate(aiDate,statusEl){
   };
 }
 
-function toggleMealFields(){
+function toggleExpenseSections(){
   const cat=document.getElementById('em-cat')?.value||'';
-  const sec=document.getElementById('em-meal-section');
-  if(sec){sec.style.display=cat==='meals'?'block':'none';if(cat==='meals')document.getElementById('em-meal-purpose')?.focus();}
+  const mealSec=document.getElementById('em-meal-section');
+  if(mealSec){mealSec.style.display=cat==='meals'?'block':'none';if(cat==='meals')document.getElementById('em-meal-purpose')?.focus();}
+  const mktSec=document.getElementById('em-marketing-section');
+  if(mktSec)mktSec.style.display=cat==='marketing'?'block':'none';
 }
+function toggleMealFields(){toggleExpenseSections();}  // backwards compat
 function toggleCashWarning(){
   const method=document.getElementById('_inc-method')?.value||'';
   const warn=document.getElementById('_inc-cash-warn');
@@ -219,6 +235,8 @@ async function expSave(){
   if(!amount||amount<=0){if(err)err.textContent='Enter a valid amount.';return;}
   if(!date){if(err)err.textContent='Select a date.';return;}
   if(cat==='meals'){const mp=(document.getElementById('em-meal-purpose')?.value||'').trim();if(!mp){if(err)err.textContent='IRS requires a business purpose for meal expenses.';document.getElementById('em-meal-purpose')?.focus();return;}}
+  const leadSource=cat==='marketing'?(document.getElementById('em-mkt-source')?.value||'').trim():'';
+  if(cat==='marketing'&&!leadSource){if(err)err.textContent='Select which marketing channel this belongs to.';document.getElementById('em-mkt-source')?.focus();return;}
   // Duplicate check — same vendor, amount, and date within 2 days
   const dupExp=expenses.find(e=>{
     if(e.vendor&&vendor&&e.vendor.toLowerCase()===vendor.toLowerCase()&&
@@ -243,6 +261,7 @@ async function expSave(){
   const mealAttendees=cat==='meals'?(document.getElementById('em-meal-attendees')?.value||'').trim():'';
   expenses.push({
     id:Date.now(),date,cat,catLabel:catInfo.label||cat,vendor,amount,notes,
+    lead_source:leadSource||undefined,
     meal_purpose:mealPurpose||undefined,meal_attendees:mealAttendees||undefined,
     created_at:new Date().toISOString(),
     job_id:jobId,job_name:job?job.client_name||job.name:'',client_id:job?job.client_id:null,

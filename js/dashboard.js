@@ -968,6 +968,13 @@ function renderLeadSources(){
   const totalLeads=rows.reduce((s,[,d])=>s+d.leads,0);
   if(!totalLeads){el.innerHTML='<div class="empty">Add a lead source when creating clients to track this.</div>';return;}
 
+  // Aggregate marketing spend by lead source
+  const mktCosts={};
+  expenses.filter(e=>e.cat==='marketing'&&e.lead_source).forEach(e=>{
+    mktCosts[e.lead_source]=(mktCosts[e.lead_source]||0)+e.amount;
+  });
+  const hasAnyROI=Object.keys(mktCosts).length>0;
+
   const showAll=window._leadSrcExpanded;
   const visible=showAll?rows:rows.slice(0,6);
   const noSrc=clients.filter(c=>!c.source).length;
@@ -975,14 +982,19 @@ function renderLeadSources(){
   const tbodyRows=visible.map(([src,d])=>{
     const decided=d.won+d.lost;
     const cr=decided>0?Math.round(d.won/decided*100):null;
-    const crCls=cr===null?'':cr>=40?'green':cr>=25?'':' red';
+    const crCls=cr===null?'':cr>=40?' green':cr>=25?'':' red';
     const crStr=cr!==null?cr+'%':'—';
+    const cost=mktCosts[src]||0;
+    const roi=cost>0&&d.revenue>0?Math.round(d.revenue/cost*10)/10:null;
+    const roiStr=roi!==null?(roi+'×'):cost>0?'0×':'—';
+    const roiCls=roi===null?'':roi>=3?' green':roi>=1?'':' red';
     return `<tr>
       <td style="font-weight:700">${ICONS[src]||'📋'} ${escHtml(src)}</td>
       <td class="num">${d.leads}</td>
       <td class="num">${d.won}</td>
       <td class="num${crCls}">${crStr}</td>
       <td class="num">${d.revenue>0?fmtShort(d.revenue):'—'}</td>
+      ${hasAnyROI?`<td class="num">${cost>0?fmtShort(cost):'—'}</td><td class="num${roiCls}">${roiStr}</td>`:''}
     </tr>`;
   }).join('');
 
@@ -993,6 +1005,7 @@ function renderLeadSources(){
     :'';
 
   const noSrcNote=noSrc?`<div style="font-size:11px;color:var(--text3);padding:8px 18px 4px">${noSrc} client${noSrc>1?'s':''} with no source set</div>`:'';
+  const roiHint=!hasAnyROI?`<div style="font-size:11px;color:var(--text3);padding:6px 18px 10px">💡 Log an <strong>Advertising &amp; marketing</strong> expense to see Cost &amp; ROI columns</div>`:'';
 
   el.innerHTML=`<table class="tbl">
     <thead><tr>
@@ -1001,10 +1014,11 @@ function renderLeadSources(){
       <th style="text-align:right">Won</th>
       <th style="text-align:right">Close %</th>
       <th style="text-align:right">Revenue</th>
+      ${hasAnyROI?'<th style="text-align:right">Cost</th><th style="text-align:right">ROI</th>':''}
     </tr></thead>
     <tbody>${tbodyRows}</tbody>
   </table>
-  ${toggleBtn}${noSrcNote}`;
+  ${toggleBtn}${noSrcNote}${roiHint}`;
 }
 
 function closeSourceDetail(){const el=document.getElementById('source-detail');if(el)el.style.display='none';}
