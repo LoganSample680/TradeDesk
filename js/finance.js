@@ -2113,13 +2113,17 @@ function openCollectModal(){
 
 function renderChecklist(){
   const done=CHECKS.filter(c=>checksState[c.title]).length,pct=Math.round(done/CHECKS.length*100);
-  document.getElementById('chk-progress').innerHTML=`<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;font-weight:600"><span>${done} of ${CHECKS.length} completed</span><span>${pct}%</span></div><div class="prog-bar" style="height:8px"><div class="prog-fill" style="width:${pct}%"></div></div>`;
-  document.getElementById('chk-body').innerHTML=Object.entries(CAT_CFG).map(([cat,cfg])=>{
+  const prog=document.getElementById('chk-progress');
+  const body=document.getElementById('chk-body');
+  if(!prog||!body)return;
+  prog.innerHTML=`<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;font-weight:600"><span>${done} of ${CHECKS.length} completed</span><span>${pct}%</span></div><div class="prog-bar" style="height:8px"><div class="prog-fill" style="width:${pct}%"></div></div>`;
+  body.innerHTML=Object.entries(CAT_CFG).map(([cat,cfg])=>{
     const items=CHECKS.filter(c=>c.cat===cat);
     return`<div class="card"><div style="font-size:12px;font-weight:700;color:${cfg.color};margin-bottom:10px;text-transform:uppercase;letter-spacing:.04em">${cfg.label}</div>`+items.map(c=>`<div class="check-item"><input type="checkbox" ${checksState[c.title]?'checked':''} onchange="toggleCheck(this,'${c.title.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"')}')"><div><div class="ctitle ${checksState[c.title]?'done':''}">${c.title}</div><div class="cdesc">${c.desc}</div></div></div>`).join('')+'</div>';
   }).join('');
 }
 function toggleCheck(el,title){checksState[title]=el.checked;saveAll();renderChecklist();}
+
 
 function toggleDarkMode(on){
   if(document.body&&document.body.classList)document.body.classList.toggle('dark', on);
