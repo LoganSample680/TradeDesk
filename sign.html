@@ -288,7 +288,9 @@ input[type=text]:focus{border-color:var(--blue)}
 
   <!-- Error -->
   <div id="pg-err" style="display:none">
-    <div class="pg-status"><div class="pg-status-icon">🔗</div><h2>Proposal not found</h2><p>This link may have expired or already been used. Please contact us for a new link.</p></div>
+    <div class="pg-status"><div class="pg-status-icon">🔗</div><h2>Proposal not found</h2><p>This link may have expired or already been used. Please contact us for a new link.</p>
+    <div id="pg-err-detail" style="margin-top:12px;font-size:11px;color:#94a3b8;word-break:break-all;text-align:left;background:#f8fafc;border-radius:8px;padding:10px 12px;display:none"></div>
+    </div>
   </div>
 </div>
 
@@ -409,7 +411,7 @@ async function init(){
   if(!key){show('pg-err');return;}
   try{
     const{data,error}=await _supa.storage.from('proposals').download(key);
-    if(error||!data)throw error;
+    if(error||!data)throw error||new Error('no data returned');
     _prop=JSON.parse(await data.text());
     if(_prop.status==='voided'){
       document.querySelector('#pg-err h2').textContent='Proposal Updated';
@@ -492,7 +494,17 @@ async function init(){
     if(_prop.isPortfolio)_showPortfolioOffer();
     // Check if returning from Stripe
     if(new URLSearchParams(location.search).get('payment')==='success') showDone('card');
-  }catch(e){console.error(e);show('pg-err');}
+  }catch(e){
+    console.error('[sign.html init error]',e);
+    show('pg-err');
+    const det=document.getElementById('pg-err-detail');
+    if(det){
+      const msg=e?.message||e?.error?.message||JSON.stringify(e)||'unknown error';
+      const status=e?.status||e?.statusCode||'';
+      det.textContent='Debug: '+(status?status+' — ':'')+msg+' | key: '+key;
+      det.style.display='block';
+    }
+  }
 }
 
 function initCanvas(){
