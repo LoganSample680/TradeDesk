@@ -69,11 +69,12 @@ function renderDash(){
   // Attention sub-text for tbar
   const _subEl=document.getElementById('dash-sub');
   if(_subEl&&!_isEmployee){
-    const _collectOwed=bids.filter(b=>b.status==='Closed Won'&&getBidBalance(b)>0.01&&b.completion_date).reduce((s,b)=>s+getBidBalance(b),0);
+    const _collectItems=bids.filter(b=>b.status==='Closed Won'&&getBidBalance(b)>0.01&&b.completion_date);
+    const _collectOwed=_collectItems.reduce((s,b)=>s+getBidBalance(b),0);
     const _urgFu=bids.filter(b=>b.status==='Pending'&&!b.signingToken&&b.followup&&b.followup<=tk).length;
     const _pendingBids=bids.filter(b=>b.status==='Pending').length;
     const _licAlerts=getLicenseAlerts().filter(l=>_licStatus(l)==='expired').length;
-    const _attnItems=[_collectOwed>0,_urgFu>0,_pendingBids>0,_licAlerts>0].filter(Boolean).length;
+    const _attnItems=_collectItems.length+_urgFu+_pendingBids+_licAlerts;
     if(_attnItems>0){
       let _biggestNote='';
       if(_collectOwed>0)_biggestNote='The biggest one is '+fmt(_collectOwed)+' in outstanding balances.';
@@ -965,92 +966,45 @@ function renderLeadSources(){
   rows.forEach(([src,d],i)=>d.color=PALETTE[i%PALETTE.length]);
 
   const totalLeads=rows.reduce((s,[,d])=>s+d.leads,0);
-  const totalRevenue=rows.reduce((s,[,d])=>s+d.revenue,0);
   if(!totalLeads){el.innerHTML='<div class="empty">Add a lead source when creating clients to track this.</div>';return;}
 
-  // ── Donut chart ─────────────────────────────────────────────
-  const R=56,cx=70,cy=70,strokeW=20;
-  const circ=2*Math.PI*R;
-  let slices=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--border2)" stroke-width="${strokeW}"/>`;
-  let off=circ*0.25;
-  rows.forEach(([src,d])=>{
-    const pct=d.leads/totalLeads;
-    const dash=circ*pct;
-    const gap=circ-dash;
-    slices+=`<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${d.color}" stroke-width="${strokeW}"
-      stroke-dasharray="${dash.toFixed(2)} ${gap.toFixed(2)}" stroke-dashoffset="${off.toFixed(2)}"
-      style="cursor:pointer;transition:opacity .15s" onmouseenter="this.style.opacity='.65'" onmouseleave="this.style.opacity='1'"
-      onclick="showSourceDetail('${src.replace(/'/g,"&apos;").replace(/"/g,"&quot;")}')"/>`;
-    off-=dash; if(off<0)off+=circ;
-  });
-  const donutSvg=`<svg viewBox="0 0 140 140" width="140" height="140" style="display:block">
-    ${slices}
-    <text x="${cx}" y="${cy-6}" text-anchor="middle" font-size="22" font-weight="800" fill="var(--text)">${totalLeads}</text>
-    <text x="${cx}" y="${cy+10}" text-anchor="middle" font-size="9" fill="var(--text3)">total leads</text>
-    ${totalRevenue>0?`<text x="${cx}" y="${cy+22}" text-anchor="middle" font-size="9" font-weight="700" fill="var(--green-mid)">${fmt(totalRevenue)}</text>`:''}
-  </svg>`;
-
-  // ── Source rows ──────────────────────────────────────────────
   const showAll=window._leadSrcExpanded;
-  const visible=showAll?rows:rows.slice(0,5);
-  const maxLeads=visible[0]?.[1]?.leads||1;
+  const visible=showAll?rows:rows.slice(0,6);
+  const noSrc=clients.filter(c=>!c.source).length;
 
-  const sourceRows=visible.map(([src,d])=>{
+  const tbodyRows=visible.map(([src,d])=>{
     const decided=d.won+d.lost;
     const cr=decided>0?Math.round(d.won/decided*100):null;
-    const crColor=cr===null?'var(--text3)':cr>=40?'var(--green-mid)':cr>=25?'var(--amber)':'#A32D2D';
-    const pct=Math.round(d.leads/totalLeads*100);
-    const barW=Math.round(d.leads/maxLeads*100);
-    return `<div style="display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--border2)">
-      <div style="width:10px;height:10px;border-radius:50%;background:${d.color};flex-shrink:0;margin-top:1px"></div>
-      <div style="min-width:0">
-        <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:3px;flex-wrap:wrap">
-          <span style="font-size:12px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:160px">${ICONS[src]||'📋'} ${src}</span>
-          <span style="font-size:11px;font-weight:800;color:${d.color}">${pct}%</span>
-          ${d.revenue>0?`<span style="font-size:11px;font-weight:700;color:var(--green-mid)">${fmt(d.revenue)}</span>`:''}
-        </div>
-        <div style="height:5px;background:var(--border2);border-radius:3px;overflow:hidden">
-          <div style="height:100%;width:${barW}%;background:${d.color};border-radius:3px"></div>
-        </div>
-        <div style="font-size:10px;color:var(--text3);margin-top:3px">${d.leads} lead${d.leads!==1?'s':''}${d.won>0?' · '+d.won+' won':''}${d.lost>0?' · '+d.lost+' lost':''}</div>
-      </div>
-      <div style="text-align:right;flex-shrink:0">
-        ${cr!==null?`<div style="font-size:13px;font-weight:800;color:${crColor}">${cr}%</div><div style="font-size:9px;color:var(--text3)">close</div>`:'<div style="font-size:11px;color:var(--text3)">—</div>'}
-      </div>
-    </div>`;
+    const crCls=cr===null?'':cr>=40?'green':cr>=25?'':' red';
+    const crStr=cr!==null?cr+'%':'—';
+    return `<tr>
+      <td style="font-weight:700">${ICONS[src]||'📋'} ${escHtml(src)}</td>
+      <td class="num">${d.leads}</td>
+      <td class="num">${d.won}</td>
+      <td class="num${crCls}">${crStr}</td>
+      <td class="num">${d.revenue>0?fmtShort(d.revenue):'—'}</td>
+    </tr>`;
   }).join('');
 
-  const toggleBtn=rows.length>5
+  const toggleBtn=rows.length>6
     ?showAll
-      ?`<button onclick="window._leadSrcExpanded=false;renderLeadSources()" style="border:none;background:none;cursor:pointer;font-size:12px;color:var(--text3);padding:6px 0;display:block;width:100%;text-align:center">&#8963; Show less</button>`
-      :`<button onclick="window._leadSrcExpanded=true;renderLeadSources()" style="border:none;background:none;cursor:pointer;font-size:12px;color:var(--blue);padding:6px 0;font-weight:700;display:block;width:100%;text-align:center">&#8964; Show all ${rows.length-5} more</button>`
+      ?`<button onclick="window._leadSrcExpanded=false;renderLeadSources()" style="border:none;background:none;cursor:pointer;font-size:12px;color:var(--text3);padding:8px 0;display:block;width:100%;text-align:center">&#8963; Show less</button>`
+      :`<button onclick="window._leadSrcExpanded=true;renderLeadSources()" style="border:none;background:none;cursor:pointer;font-size:12px;color:var(--blue);padding:8px 0;font-weight:700;display:block;width:100%;text-align:center">&#8964; Show all ${rows.length-6} more</button>`
     :'';
 
-  const noSrc=clients.filter(c=>!c.source).length;
-  const noSrcNote=noSrc?`<div style="font-size:10px;color:var(--text3);margin-top:6px">${noSrc} client${noSrc>1?'s':''} missing source</div>`:'';
+  const noSrcNote=noSrc?`<div style="font-size:11px;color:var(--text3);padding:8px 18px 4px">${noSrc} client${noSrc>1?'s':''} with no source set</div>`:'';
 
-  el.innerHTML=
-    `<div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
-      <div style="flex-shrink:0">${donutSvg}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Top sources</div>
-        ${rows.slice(0,4).map(([src,d])=>{
-          const pct=Math.round(d.leads/totalLeads*100);
-          return `<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:5px">
-            <div style="width:8px;height:8px;border-radius:50%;background:${d.color};flex-shrink:0;margin-top:3px"></div>
-            <div style="flex:1;min-width:0;font-size:11px;line-height:1.4">
-              <span style="font-weight:600;color:var(--text)">${ICONS[src]||'📋'} ${src}</span>
-              <span style="font-weight:800;color:${d.color};margin-left:4px">${pct}%</span>
-            </div>
-          </div>`;
-        }).join('')}
-        ${rows.length>4?`<div style="font-size:10px;color:var(--text3);margin-top:4px">+${rows.length-4} more sources</div>`:''}
-      </div>
-    </div>
-    <div id="source-detail" style="display:none;margin-bottom:10px;background:var(--bg2);border-radius:var(--r);padding:12px"></div>
-    ${sourceRows}
-    ${toggleBtn}
-    ${noSrcNote}`;
+  el.innerHTML=`<table class="tbl">
+    <thead><tr>
+      <th>Source</th>
+      <th style="text-align:right">Leads</th>
+      <th style="text-align:right">Won</th>
+      <th style="text-align:right">Close %</th>
+      <th style="text-align:right">Revenue</th>
+    </tr></thead>
+    <tbody>${tbodyRows}</tbody>
+  </table>
+  ${toggleBtn}${noSrcNote}`;
 }
 
 function closeSourceDetail(){const el=document.getElementById('source-detail');if(el)el.style.display='none';}
