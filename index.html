@@ -655,7 +655,16 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="tbar-sub" id="dash-sub"></div>
     </div>
     <div class="tbar-r">
-      <select id="dash-year-sel" onchange="setDashYear(this.value)" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)"></select>
+      <div class="seg" id="dash-period-seg">
+        <button class="seg-btn" id="dps-month" onclick="setDashPeriod('month')">Month</button>
+        <button class="seg-btn" id="dps-quarter" onclick="setDashPeriod('quarter')">Quarter</button>
+        <button class="seg-btn on" id="dps-year" onclick="setDashPeriod('year')">Year</button>
+        <button class="seg-btn" id="dps-all" onclick="setDashPeriod('all')">All</button>
+      </div>
+      <div style="position:relative;display:inline-flex" id="dash-year-btn-wrap">
+        <button class="btn btn-sm" style="gap:4px"><span id="dash-year-label">2026</span> ▾</button>
+        <select id="dash-year-sel" onchange="setDashYear(this.value)" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%"></select>
+      </div>
     </div>
   </div>
 
@@ -670,10 +679,15 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="split-2-wide">
     <!-- Left: Make Money Today feed -->
     <div class="card card-pad-0" id="dash-money-feed-card">
-      <div class="card-hd2">
+      <div class="card-hd">
         <div>
           <div class="card-hd-title">Make money today</div>
           <div class="card-hd-sub" id="dash-feed-sub">sorted by money on the table</div>
+        </div>
+        <div class="seg">
+          <button class="seg-btn on" id="dff-all" onclick="setDashFeedFilter('all')">All</button>
+          <button class="seg-btn" id="dff-money" onclick="setDashFeedFilter('money')">$$$</button>
+          <button class="seg-btn" id="dff-urgent" onclick="setDashFeedFilter('urgent')">⏰</button>
         </div>
       </div>
       <div id="dash-money-feed"></div>
@@ -706,7 +720,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
 
       <div class="card card-pad-0">
-        <div class="card-hd2">
+        <div class="card-hd">
           <div class="card-hd-title">Today's calendar</div>
           <div class="card-hd-sub" id="dash-cal-date"></div>
         </div>

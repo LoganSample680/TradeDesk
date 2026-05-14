@@ -1,4 +1,28 @@
 let _renderDashRunning=false;
+let _dashFeedFilter='all';
+
+function setDashFeedFilter(f){
+  _dashFeedFilter=f;
+  ['all','money','urgent'].forEach(id=>{
+    const btn=document.getElementById('dff-'+id);
+    if(btn)btn.classList.toggle('on',id===f);
+  });
+  renderTodayFeed();
+}
+
+function _trendHtml(curr,prev,reverseColor){
+  if(!prev||prev===0)return '<div class="met-s">— est.</div>';
+  const pct=Math.round((curr-prev)/Math.abs(prev)*100);
+  if(Math.abs(pct)<1)return '<div class="met-s">— vs LY</div>';
+  const isUp=pct>0;
+  const isGood=reverseColor?!isUp:isUp;
+  const color=isGood?'var(--c-green)':'var(--c-red)';
+  const arrow=isUp
+    ?'<svg viewBox="0 0 12 12" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2 9l4-4 4 4"/></svg>'
+    :'<svg viewBox="0 0 12 12" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M2 3l4 4 4-4"/></svg>';
+  return '<div class="met-s" style="color:'+color+'">'+arrow+Math.abs(pct)+'% <span style="color:var(--text3);font-weight:500">vs LY</span></div>';
+}
+
 function renderDash(){
   if(_renderDashRunning)return; // prevent cascade
   _renderDashRunning=true;
@@ -12,11 +36,19 @@ function renderDash(){
   const yr=dashYear||new Date().getFullYear();
   const yrStr=String(yr);
   initDashYear();
-  const _incomeSum=income.filter(r=>r.date&&r.date.startsWith(yrStr)).reduce((s,r)=>s+r.amount,0);
-  const _paymentsSum=payments.filter(p=>p.date&&p.date.startsWith(yrStr)&&p.amount>0).reduce((s,p)=>s+p.amount,0);
+  const _incomeSum=income.filter(r=>r.date&&_dashInRange(r.date)).reduce((s,r)=>s+r.amount,0);
+  const _paymentsSum=payments.filter(p=>p.date&&_dashInRange(p.date)&&p.amount>0).reduce((s,p)=>s+p.amount,0);
   const tInc=_incomeSum+_paymentsSum;
-  const tExp=expenses.filter(e=>e.date&&e.date.startsWith(yrStr)).reduce((s,e)=>s+e.amount,0);
-  const tMi=mileage.filter(m=>m.date&&m.date.startsWith(yrStr)).reduce((s,m)=>s+(m.miles||0),0);
+  const tExp=expenses.filter(e=>e.date&&_dashInRange(e.date)).reduce((s,e)=>s+e.amount,0);
+  const tMi=mileage.filter(m=>m.date&&_dashInRange(m.date)).reduce((s,m)=>s+(m.miles||0),0);
+  // Prior-year totals for trend arrows (year mode only)
+  const prevYrStr=String(yr-1);
+  const _pInc=income.filter(r=>r.date&&r.date.startsWith(prevYrStr)).reduce((s,r)=>s+r.amount,0);
+  const _pPay=payments.filter(p=>p.date&&p.date.startsWith(prevYrStr)&&p.amount>0).reduce((s,p)=>s+p.amount,0);
+  const prevInc=_pInc+_pPay;
+  const prevExp=expenses.filter(e=>e.date&&e.date.startsWith(prevYrStr)).reduce((s,e)=>s+e.amount,0);
+  const prevMi=mileage.filter(m=>m.date&&m.date.startsWith(prevYrStr)).reduce((s,m)=>s+(m.miles||0),0);
+  const showTrends=dashPeriod==='year';
   const net=tInc-tExp-(tMi*IRS());
 
   const mileDed=Math.round(tMi*IRS());
@@ -88,30 +120,37 @@ function renderDash(){
         '</div>').join(''):'');
   } else if(kpiEl){
     const pBids=bids.filter(b=>b.status==='Pending');
+    const prevTax=showTrends?estimateTax(Math.max(0,prevInc-prevExp-Math.round(prevMi*IRS()))):0;
+    const prevProfit=showTrends?Math.round(prevInc-prevExp-prevTax):0;
     kpiEl.innerHTML='<div class="mets" id="dash-mets-inner">'+
       '<div class="met" style="cursor:pointer" onclick="goToTrackerTab(\'income\')">'+
         '<div class="met-l">Revenue</div>'+
-        '<div class="met-v" style="color:var(--blue)">'+fmtShort(tInc)+'</div>'+
+        '<div class="met-v">'+fmtShort(tInc)+'</div>'+
+        (showTrends?_trendHtml(tInc,prevInc,false):'')+
       '</div>'+
       '<div class="met" style="cursor:pointer" onclick="goToTrackerTab(\'expenses\')">'+
         '<div class="met-l">Expenses</div>'+
-        '<div class="met-v" style="color:#A32D2D">'+fmtShort(tExp)+'</div>'+
+        '<div class="met-v">'+fmtShort(tExp)+'</div>'+
+        (showTrends?_trendHtml(tExp,prevExp,true):'')+
       '</div>'+
       '<div class="met" style="cursor:pointer" onclick="goToTrackerTab(\'mileage\')">'+
         '<div class="met-l">Mileage</div>'+
-        '<div class="met-v">'+Math.round(tMi).toLocaleString()+'<span style="font-size:11px;font-weight:400;color:var(--text3)"> mi</span></div>'+
+        '<div class="met-v">'+Math.round(tMi).toLocaleString()+'<span class="unit"> mi</span></div>'+
+        (showTrends?_trendHtml(tMi,prevMi,false):'')+
       '</div>'+
       '<div class="met" style="cursor:pointer" data-pg="pg-taxes" onclick="goPg(this.dataset.pg)">'+
-        '<div class="met-l">Taxes</div>'+
+        '<div class="met-l">Taxes (est)</div>'+
         '<div class="met-v" style="color:var(--amber)">'+fmtShort(ytdTaxEst)+'</div>'+
+        (showTrends&&prevTax?_trendHtml(ytdTaxEst,prevTax,true):'<div class="met-s">— est.</div>')+
       '</div>'+
       '<div class="met" style="cursor:pointer" data-chart="profit" onclick="showKpiChart(this.dataset.chart)">'+
         '<div class="met-l">Profit</div>'+
-        '<div class="met-v" style="color:'+(ytdTrueProfit<0?'#A32D2D':'var(--green-mid)')+'">'+fmtShort(ytdTrueProfit)+'</div>'+
+        '<div class="met-v" style="color:'+(ytdTrueProfit<0?'var(--c-red)':'var(--c-green)')+'">'+fmtShort(ytdTrueProfit)+'</div>'+
+        (showTrends?_trendHtml(ytdTrueProfit,prevProfit,false):'')+
       '</div>'+
       '<div class="met">'+
         '<div class="met-l">Avg job</div>'+
-        '<div class="met-v" style="color:var(--text)">'+(avgJobVal!==null?fmtShort(avgJobVal):'—')+'</div>'+
+        '<div class="met-v">'+(avgJobVal!==null?fmtShort(avgJobVal):'—')+'</div>'+
       '</div>'+
     '</div>';
   }
@@ -606,7 +645,7 @@ function renderTodayFeed(){
       actBtns+='<button onclick="printKansasLien('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">⚖️ View lien doc</button>';
     }
     actBtns+='<button onclick="openPayPanel('+b.id+')" class="btn btn-sm btn-g" style="font-size:11px">Collect →</button>';
-    items.push({priority:daysAgo>=7?1:2,html:
+    items.push({priority:daysAgo>=7?1:2,tags:'money urgent',html:
       '<div class="tf-card">'+
         '<div class="tf-icon">💰</div>'+
         '<div class="tf-body">'+
@@ -624,7 +663,7 @@ function renderTodayFeed(){
     const cDisp=c?c.name:b.client_name||b.name||'Client';
     const depositPaid=getBidPaid(b.id)>0;
     const daysAgo=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
-    items.push({priority:3,html:
+    items.push({priority:3,tags:'money',html:
       '<div class="tf-card">'+
         '<div class="tf-icon">🗓️</div>'+
         '<div class="tf-body">'+
@@ -644,7 +683,7 @@ function renderTodayFeed(){
     const fn=c.name.split(' ')[0];
     const smsBody=encodeURIComponent('Hey '+fn+', just wanted to see if this is still something you\'re wanting to move forward with?');
     const daysOut=b.followup?Math.floor((new Date(tk+'T12:00')-new Date(b.followup+'T12:00'))/86400000):0;
-    items.push({priority:4,html:
+    items.push({priority:4,tags:'urgent money',html:
       '<div class="tf-card">'+
         '<div class="tf-icon">🔥</div>'+
         '<div class="tf-body">'+
@@ -668,7 +707,7 @@ function renderTodayFeed(){
     const msgs=['Hey '+fn+', just checking in — did you get a chance to look over the proposal? Happy to answer any questions.','Hi '+fn+', wanted to follow up on the estimate I sent over. Let me know if you\'d like to move forward or have any questions.','Hey '+fn+', I have an opening coming up that might work great for your project. Would love to get it scheduled — let me know!'];
     const smsBody=encodeURIComponent(msgs[Math.min(stage-1,msgs.length-1)]);
     const daysOut=Math.floor((new Date(tk+'T12:00')-new Date(b.followup+'T12:00'))/86400000);
-    items.push({priority:5,html:
+    items.push({priority:5,tags:'urgent money',html:
       '<div class="tf-card">'+
         '<div class="tf-icon">⏰</div>'+
         '<div class="tf-body">'+
@@ -783,14 +822,21 @@ function renderTodayFeed(){
   }
 
   const _feedSub=document.getElementById('dash-feed-sub');
-  if(!items.length){
-    el.innerHTML='<div style="padding:14px;font-size:13px;color:var(--text3)">You\'re caught up — nothing to chase right now.</div>';
+  items.sort((a,b)=>a.priority-b.priority);
+
+  // Apply feed filter
+  let _filtered=items;
+  if(_dashFeedFilter==='money')_filtered=items.filter(i=>i.tags&&i.tags.includes('money'));
+  else if(_dashFeedFilter==='urgent')_filtered=items.filter(i=>i.tags&&i.tags.includes('urgent'));
+
+  if(!_filtered.length){
+    const msg=_dashFeedFilter==='all'?'You\'re caught up — nothing to chase right now.':('No '+(_dashFeedFilter==='money'?'money':'urgent')+' items right now.');
+    el.innerHTML='<div style="padding:14px;font-size:13px;color:var(--text3)">'+msg+'</div>';
     if(_feedSub)_feedSub.textContent='all caught up';
     return;
   }
 
-  items.sort((a,b)=>a.priority-b.priority);
-  const _shown=items.slice(0,8);
+  const _shown=_filtered.slice(0,8);
   if(_feedSub)_feedSub.textContent=_shown.length+' action'+(+_shown.length>1?'s':'')+' · sorted by money on the table';
   el.innerHTML=_shown.map(i=>i.html).join('');
 }

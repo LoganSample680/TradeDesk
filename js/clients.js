@@ -330,6 +330,21 @@ function _doOpenEstimate(c,_overrideAddr,_forceTrade){
 }
 
 let dashYear=new Date().getFullYear();
+let dashPeriod='year';
+
+function _dashInRange(dateStr){
+  if(!dateStr)return false;
+  if(dashPeriod==='all')return true;
+  if(dashPeriod==='year')return dateStr.startsWith(String(dashYear));
+  const cm=new Date().getMonth();
+  if(dashPeriod==='month')return dateStr.startsWith(String(dashYear)+'-'+String(cm+1).padStart(2,'0'));
+  if(dashPeriod==='quarter'){
+    const cq=Math.floor(cm/3);
+    const months=[[1,2,3],[4,5,6],[7,8,9],[10,11,12]][cq].map(m=>String(dashYear)+'-'+String(m).padStart(2,'0'));
+    return months.some(m=>dateStr.startsWith(m));
+  }
+  return dateStr.startsWith(String(dashYear));
+}
 
 function initDashYear(){
   const sel=document.getElementById('dash-year-sel');
@@ -342,10 +357,27 @@ function initDashYear(){
   mileage.forEach(m=>{if(m.date)years.add(parseInt(m.date.slice(0,4)));});
   const sorted=[...years].filter(y=>y>2015&&y<=cy+1).sort((a,b)=>b-a);
   sel.innerHTML=sorted.map(y=>'<option value="'+y+'"'+(y===dashYear?' selected':'')+'>'+y+'</option>').join('');
+  const lbl=document.getElementById('dash-year-label');
+  if(lbl)lbl.textContent=dashYear;
+  const ybw=document.getElementById('dash-year-btn-wrap');
+  if(ybw)ybw.style.display=dashPeriod==='all'?'none':'';
 }
 
 function setDashYear(yr){
   dashYear=parseInt(yr);
+  const lbl=document.getElementById('dash-year-label');
+  if(lbl)lbl.textContent=dashYear;
+  renderDash();
+}
+
+function setDashPeriod(p){
+  dashPeriod=p;
+  ['month','quarter','year','all'].forEach(id=>{
+    const btn=document.getElementById('dps-'+id);
+    if(btn)btn.classList.toggle('on',id===p);
+  });
+  const ybw=document.getElementById('dash-year-btn-wrap');
+  if(ybw)ybw.style.display=p==='all'?'none':'';
   renderDash();
 }
 
