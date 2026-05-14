@@ -1164,21 +1164,52 @@ function renderLeadsPage(){
     const fu=allLeadClients.filter(c=>{const s=getClientStage(c.id);return s.stage==='follow_up'||s.stage==='bid_urgent';});
     badge.textContent=fu.length||'';badge.style.display=fu.length?'':'none';
   }
-  if(!filtered.length){el.innerHTML=_inboundReviewHTML()+'<div class="empty">No '+(leadFilter==='all'?'active leads':leadFilter.replace('_',' '))+' right now.</div>';return;}
+  // Update tbar eyebrow
+  const leadsEyebrow=document.getElementById('leads-tbar-eyebrow');
+  if(leadsEyebrow){
+    const allLeadCount=clients.filter(c=>LEAD_STAGES.includes(getClientStage(c.id).stage)).length;
+    const fuCount=clients.filter(c=>{const s=getClientStage(c.id).stage;return s==='bid_urgent'||s==='abandoned';}).length;
+    leadsEyebrow.textContent=allLeadCount+' lead'+(allLeadCount!==1?'s':''+(fuCount?' · '+fuCount+' need follow-up':''));
+  }
+
+  if(!filtered.length){el.innerHTML=_inboundReviewHTML()+'<div class="empty"><div class="em-emoji">🎯</div><h3>No '+( leadFilter==='all'?'active leads':leadFilter.replace('_',' '))+' right now</h3><p>Add a lead above to start tracking prospects.</p></div>';return;}
+
+  const stgBdgMap={
+    incomplete:    {cls:'sf-pending', label:'NEEDS SETUP'},
+    new:           {cls:'sf-new',     label:'NEW LEAD'},
+    est_scheduled: {cls:'sf-upcoming',label:'EST BOOKED'},
+    est_ready:     {cls:'sf-deposit', label:'EST READY'},
+    bid_out:       {cls:'sf-pending', label:'BID OUT'},
+    bid_urgent:    {cls:'sf-overdue', label:'FOLLOW UP'},
+    abandoned:     {cls:'sf-done',    label:'COLD'},
+  };
+
   el.innerHTML=_inboundReviewHTML()+filtered.map(c=>{
     const st=getClientStage(c.id);
     const pendBids=getClientBids(c.id).filter(b=>b.status==='Pending');
     const bidAmtDisplay=pendBids.length>1?pendBids.length+' bids out':pendBids.length===1?fmtShort(pendBids[0].amount):'';
-    const addrLine=c.addr?c.addr.split(',')[0]:'No address yet — tap to add';
-    const addrColor=c.addr?'var(--text3)':'var(--amber)';
-    return '<div onclick="openClientDetail('+c.id+',\'leads\')" style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
-      '<div style="min-width:0;flex:1">'+
-        '<div style="font-size:14px;font-weight:700">'+c.name+'</div>'+
-        '<div style="font-size:11px;color:'+addrColor+';margin-top:1px">'+addrLine+'</div>'+
-      '</div>'+
-      '<div style="text-align:right;flex-shrink:0;margin-left:10px">'+
-        '<div style="font-size:11px;font-weight:700;color:'+st.color+'">'+st.label+'</div>'+
-        (bidAmtDisplay?'<div style="font-size:11px;color:var(--text3)">'+bidAmtDisplay+'</div>':'')+
+    const addrLine=c.addr?c.addr.split(',')[0]:'No address yet';
+    const addrColor=c.addr?'':'color:var(--c-amber)';
+    const sbdg=stgBdgMap[st.stage]||{cls:'sf-done',label:st.label.toUpperCase()};
+    const daysSince=c.created?Math.floor((new Date()-new Date(c.created+'T12:00'))/86400000):0;
+
+    return '<div class="client-card" onclick="openClientDetail('+c.id+',\'leads\')" style="margin-bottom:8px">'+
+      '<div class="cc-row">'+
+        '<div class="cc-l">'+
+          '<div class="cc-avatar">'+initials(c.name)+'</div>'+
+          '<div style="min-width:0;flex:1">'+
+            '<div class="cc-name">'+escHtml(c.name)+'</div>'+
+            '<div class="cc-meta" style="'+addrColor+'">'+escHtml(addrLine)+'</div>'+
+            '<div class="cc-stats">'+
+              (c.source?'<span class="cc-stat">'+escHtml(c.source)+'</span>':'')+
+              (bidAmtDisplay?'<span class="cc-stat">'+bidAmtDisplay+'</span>':'')+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+        '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">'+
+          '<span class="bdg-soft '+sbdg.cls+'">'+sbdg.label+'</span>'+
+          (daysSince>0?'<span style="font-size:10px;color:var(--text3);font-weight:600">'+daysSince+'d</span>':'')+
+        '</div>'+
       '</div>'+
     '</div>';
   }).join('');

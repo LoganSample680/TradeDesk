@@ -536,16 +536,35 @@ function getBidStage(b){
 function renderJobsPage(){
   const el=document.getElementById('jobs-list');if(!el)return;
   const tk=todayKey();
-  const JOB_STAGES=['active','signed','scheduled','balance_due','paid'];
+  const wonBidsList=bids.filter(b=>b.status==='Closed Won');
+
+  // Update nav badge
+  const badge=document.getElementById('nb-jobs-badge');
+  if(badge){
+    const n=wonBidsList.filter(b=>['active','scheduled','signed'].includes(getBidStage(b).stage)).length;
+    badge.textContent=n||'';badge.style.display=n?'':'none';
+  }
+
+  // Update tbar eyebrow
+  const jobsEyebrow=document.getElementById('jobs-tbar-eyebrow');
+  if(jobsEyebrow){
+    const activeN=wonBidsList.filter(b=>getBidStage(b).stage==='active').length;
+    const totalOpen=wonBidsList.filter(b=>['active','signed','scheduled','balance_due'].includes(getBidStage(b).stage)).length;
+    jobsEyebrow.textContent=totalOpen+' open · '+activeN+' active today';
+  }
+
+  // Board view = kanban; filtered views = list
+  if(jobFilter==='all'){
+    _renderJobsKanban(el,tk,wonBidsList);
+    return;
+  }
+
   const filterToStages={
-    all:JOB_STAGES,
     scheduled:['scheduled','signed'],
     active:['active'],
     completed:['paid','balance_due']
   };
-  const allowed=filterToStages[jobFilter]||JOB_STAGES;
-  // Bid-centric: one card per won bid (each bid = separate property)
-  const wonBidsList=bids.filter(b=>b.status==='Closed Won');
+  const allowed=filterToStages[jobFilter]||['active','signed','scheduled','balance_due','paid'];
   const filtered=wonBidsList.filter(b=>allowed.includes(getBidStage(b).stage))
     .sort((a,b2)=>{
       const stA=getBidStage(a),stB=getBidStage(b2);
@@ -556,35 +575,26 @@ function renderJobsPage(){
       if(jB)return 1;
       return (stA.priority||9)-(stB.priority||9);
     });
-  const badge=document.getElementById('nb-jobs-badge');
-  if(badge){
-    const n=wonBidsList.filter(b=>['active','scheduled','signed'].includes(getBidStage(b).stage)).length;
-    badge.textContent=n||'';badge.style.display=n?'':'none';
-  }
-  if(!filtered.length){el.innerHTML='<div class="empty">No '+(jobFilter==='all'?'active jobs':jobFilter)+' right now.<br><br><button class="btn btn-p" onclick="goPg(\'pg-schedule\')">Schedule a job</button></div>';return;}
-  el.innerHTML=filtered.map(b=>{
+  if(!filtered.length){el.innerHTML='<div class="empty"><div class="em-emoji">📋</div><h3>No '+jobFilter+' jobs right now</h3><p><button class="btn btn-p" onclick="goPg(\'pg-schedule\')">Schedule a job</button></p></div>';return;}
+  el.innerHTML='<div style="margin-top:4px">'+filtered.map(b=>{
     const c=getClientById(b.client_id)||{name:b.client_name||b.name||'Client',id:b.client_id,phone:'',addr:b.addr||''};
     const st=getBidStage(b);
     const paid=getBidPaid(b.id);
     const balance=getBidBalance(b);
     const nextJob=st.jobs.filter(j=>j.start>=tk).sort((a,x)=>a.start.localeCompare(x.start))[0];
-    const isExt=b.type==='Exterior painting'||(b.surfaces||[]).some(s=>s.type&&(s.type.startsWith('ext')||s.type==='deck'));
-    const typeColor=isExt?'#C47840':'#185FA5';
     const propAddr=(b.addr||c.addr||'').split(',')[0];
     const nextStart=nextJob?parseD(nextJob.start).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'';
     const nextJobId=nextJob?nextJob.id:null;
-    // One primary action button max
     let primaryBtn='';
     if(st.stage==='active'&&nextJobId&&!nextJob.completion_date){
-      primaryBtn='<button onclick="markJobDone('+nextJobId+')" style="padding:5px 14px;border-radius:20px;border:none;background:var(--green-mid);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">✓ Mark done</button>';
+      primaryBtn='<button onclick="markJobDone('+nextJobId+')" class="btn btn-sm btn-g" style="border-radius:20px">✓ Mark done</button>';
     } else if(st.stage==='balance_due'){
-      primaryBtn='<button onclick="openPayPanel('+b.id+',\'final\')" style="padding:5px 14px;border-radius:20px;border:none;background:#A32D2D;color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Collect '+fmt(balance)+'</button>';
+      primaryBtn='<button onclick="openPayPanel('+b.id+',\'final\')" class="btn btn-sm btn-r" style="border-radius:20px">Collect '+fmt(balance)+'</button>';
     } else if(paid<=0&&balance>0.01&&st.stage==='scheduled'){
-      primaryBtn='<button onclick="openPayPanel('+b.id+',\'deposit\')" style="padding:5px 14px;border-radius:20px;border:none;background:var(--blue);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Log deposit</button>';
+      primaryBtn='<button onclick="openPayPanel('+b.id+',\'deposit\')" class="btn btn-sm btn-d" style="border-radius:20px">Log deposit</button>';
     } else if(st.stage==='signed'){
-      primaryBtn='<button onclick="schedFromBid('+b.id+')" style="padding:5px 14px;border-radius:20px;border:none;background:var(--blue);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Schedule →</button>';
+      primaryBtn='<button onclick="schedFromBid('+b.id+')" class="btn btn-sm btn-d" style="border-radius:20px">Schedule →</button>';
     }
-    // Clock in/out button for active/scheduled jobs with a next job
     let clockBtn='';
     if(nextJobId&&!nextJob.completion_date&&(st.stage==='active'||st.stage==='scheduled')){
       const isClockedHere=_activeTimer&&_activeTimer.jobId===nextJobId;
@@ -592,36 +602,67 @@ function renderJobsPage(){
         const _el=Math.floor((Date.now()-_activeTimer.startTime)/1000);
         const _h=Math.floor(_el/3600),_m=Math.floor((_el%3600)/60),_s=_el%60;
         const _ts=(_h?_h+'h ':'')+_m+':'+((_s<10?'0':'')+_s);
-        const _scopeLbl=_activeTimer.scopeLabel?_activeTimer.scopeLabel+' ':'';
-        clockBtn='<button onclick="clockOut();event.stopPropagation()" style="padding:5px 12px;border-radius:20px;border:1px solid #E97B00;background:#FFF3E0;color:#E97B00;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">⏹ '+_scopeLbl+_ts+'</button>';
+        clockBtn='<button onclick="clockOut();event.stopPropagation()" class="btn btn-sm" style="border-radius:20px;border-color:#E97B00;background:#FFF3E0;color:#E97B00">⏹ '+_ts+'</button>';
       }else{
-        clockBtn='<button onclick="openClockInSheet('+nextJobId+');event.stopPropagation()" style="padding:5px 12px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">▶ Clock in</button>';
+        clockBtn='<button onclick="openClockInSheet('+nextJobId+');event.stopPropagation()" class="btn btn-sm" style="border-radius:20px">▶ Clock in</button>';
       }
     }
-    // Right side: amount + balance state
-    const amtColor=balance>0.01?'#A32D2D':paid>0?'var(--green-mid)':'var(--text)';
-    const amtSub=balance>0.01?'<div style="font-size:10px;font-weight:700;color:#A32D2D;margin-top:1px">'+fmt(balance)+' due</div>':
-                 paid>0?'<div style="font-size:10px;font-weight:600;color:var(--green-mid);margin-top:1px">Paid ✓</div>':'';
     const hasTasks=b.roomScopeMap&&Object.values(b.roomScopeMap).some(r=>Object.values(r).some(v=>v&&v.active));
-    const checklistBtn=hasTasks?'<button onclick="openJobChecklist('+b.id+');event.stopPropagation()" style="padding:5px 12px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">📋 Checklist</button>':'';
-    const btnRow=(primaryBtn||clockBtn||checklistBtn)?'<div style="margin-top:7px;display:flex;gap:6px;flex-wrap:wrap" onclick="event.stopPropagation()">'+(primaryBtn||'')+(clockBtn||'')+(checklistBtn||'')+'</div>':'';
-    return '<div onclick="openJobSheet('+c.id+')" style="display:flex;align-items:stretch;border-bottom:1px solid var(--border);cursor:pointer;min-height:60px">'+
-      '<div style="width:4px;background:'+typeColor+';border-radius:3px 0 0 3px;flex-shrink:0"></div>'+
-      '<div style="flex:1;min-width:0;padding:11px 12px;display:flex;justify-content:space-between;align-items:center;gap:10px">'+
-        '<div style="min-width:0;flex:1">'+
-          '<div style="font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(c.name)+'</div>'+
-          '<div style="font-size:11px;color:var(--text3);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+
-            escHtml(propAddr)+(nextStart?' · '+nextStart:'')+
-          '</div>'+
-          btnRow+
-        '</div>'+
-        '<div style="text-align:right;flex-shrink:0;padding-left:4px">'+
-          '<div style="font-size:14px;font-weight:800;color:'+amtColor+'">'+fmt(b.amount)+'</div>'+
-          amtSub+
-        '</div>'+
+    const checklistBtn=hasTasks?'<button onclick="openJobChecklist('+b.id+');event.stopPropagation()" class="btn btn-sm" style="border-radius:20px">📋 Checklist</button>':'';
+    const btnRow=(primaryBtn||clockBtn||checklistBtn)?'<div class="tf-acts">'+(primaryBtn||'')+(clockBtn||'')+(checklistBtn||'')+'</div>':'';
+    const amtColor=balance>0.01?'var(--c-red)':paid>0?'var(--c-green)':'var(--text)';
+    const amtSub=balance>0.01?'<div style="font-size:10px;font-weight:700;color:var(--c-red);margin-top:1px">'+fmt(balance)+' due</div>':paid>0?'<div style="font-size:10px;font-weight:600;color:var(--c-green);margin-top:1px">Paid ✓</div>':'';
+    return '<div class="tf-card" onclick="openJobSheet('+c.id+')">'+
+      '<div class="tf-icon '+(st.stage==='active'?'t-green':st.stage==='balance_due'?'t-red':'t-blue')+'" style="font-size:14px">'+
+        (st.stage==='active'?'🔨':st.stage==='balance_due'?'💰':st.stage==='signed'?'✍️':'📅')+
+      '</div>'+
+      '<div class="tf-body">'+
+        '<div class="tf-name">'+escHtml(c.name)+'</div>'+
+        '<div class="tf-sub" style="color:var(--text3)">'+escHtml(propAddr)+(nextStart?' · '+nextStart:'')+'</div>'+
+        btnRow+
+      '</div>'+
+      '<div style="text-align:right;flex-shrink:0">'+
+        '<div style="font-size:14px;font-weight:800;color:'+amtColor+'">'+fmt(b.amount)+'</div>'+
+        amtSub+
       '</div>'+
     '</div>';
-  }).join('');
+  }).join('')+'</div>';
+}
+
+function _renderJobsKanban(el,tk,wonBidsList){
+  const pendingSent=bids.filter(b=>b.status==='Pending'&&b.signingToken);
+  const cols=[
+    {id:'estimate', label:'Estimate sent',       bdgCls:'sf-new',     items:pendingSent},
+    {id:'signed',   label:'Signed · schedule',    bdgCls:'sf-deposit', items:wonBidsList.filter(b=>getBidStage(b).stage==='signed')},
+    {id:'active',   label:'Active',               bdgCls:'sf-active',  items:wonBidsList.filter(b=>getBidStage(b).stage==='active'||getBidStage(b).stage==='scheduled')},
+    {id:'collect',  label:'Collect',              bdgCls:'sf-overdue', items:wonBidsList.filter(b=>getBidStage(b).stage==='balance_due')},
+    {id:'complete', label:'Complete · paid',      bdgCls:'sf-won',     items:wonBidsList.filter(b=>getBidStage(b).stage==='paid').slice(0,8)},
+  ];
+  el.innerHTML='<div class="kanban">'+cols.map(col=>{
+    return '<div class="kcol" data-status="'+col.id+'">'+
+      '<div class="kcol-hd"><span>'+col.label+'</span><span class="k-count">'+col.items.length+'</span></div>'+
+      (col.items.length===0
+        ?'<div style="padding:18px 8px;text-align:center;color:var(--text3);font-size:11px;font-weight:500">Nothing here yet</div>'
+        :col.items.map(b=>{
+          const c=getClientById(b.client_id)||{name:b.name||'Client',id:b.client_id,addr:b.addr||''};
+          const st=getBidStage(b);
+          const nextJob=st.jobs&&st.jobs.filter(j=>j.start>=tk).sort((a,x)=>a.start.localeCompare(x.start))[0];
+          const dateStr=nextJob?parseD(nextJob.start).toLocaleDateString('en-US',{month:'short',day:'numeric'}):
+                        b.bid_date?parseD(b.bid_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+          const addrShort=(b.addr||c.addr||'').split(',')[0];
+          const balance=b.status==='Closed Won'?getBidBalance(b):0;
+          const amt=col.id==='collect'?fmt(balance):fmt(b.amount);
+          return '<div class="k-card" onclick="openJobSheet('+c.id+')" style="margin-bottom:8px">'+
+            '<div class="k-name">'+escHtml(c.name)+'</div>'+
+            '<div class="k-sub">'+escHtml(addrShort)+'</div>'+
+            '<div class="k-foot">'+
+              '<span class="bdg-soft '+col.bdgCls+'" style="font-size:10px">'+escHtml(dateStr||col.id.toUpperCase())+'</span>'+
+              '<span class="k-amt">'+amt+'</span>'+
+            '</div>'+
+          '</div>';
+        }).join(''))+
+    '</div>';
+  }).join('')+'</div>';
 }
 
 function openJobChecklist(bidId){

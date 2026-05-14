@@ -747,14 +747,21 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div style="text-align:right;padding:4px 10px 8px;font-size:10px;color:var(--text3);opacity:.45;pointer-events:none;letter-spacing:.02em;font-family:-apple-system,sans-serif" id="app-version"></div>
 </div>
 <div class="pg" id="pg-clients">
-  <div class="tbar"><div class="tbar-title" id="clients-page-title">Clients</div></div>
-  <div id="cf-search-wrap">
-  <div style="margin-bottom:12px">
-    <input id="cf-search" placeholder="&#128269; Search clients by name, address, phone..."
-      oninput="onClientSearch(this)"
-      style="width:100%;font-size:14px;padding:11px 14px;border-radius:var(--rl);border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);box-sizing:border-box">
+  <div class="tbar">
+    <div class="tbar-l">
+      <div class="tbar-eyebrow" id="clients-tbar-eyebrow">Clients</div>
+      <div class="tbar-title" id="clients-page-title">Clients</div>
+    </div>
+    <div class="tbar-r" id="clients-tbar-r">
+      <button class="btn btn-p" id="clients-new-btn" onclick="openNewClient()">+ New client</button>
+    </div>
   </div>
-  <div id="cf-tab-counts" class="fbar" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:12px;-webkit-overflow-scrolling:touch;scrollbar-width:none">
+  <div id="cf-search-wrap">
+  <div style="position:relative;margin-bottom:10px">
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--text3)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);pointer-events:none"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input id="cf-search" placeholder="Search by name, address, phone..." oninput="onClientSearch(this)" style="padding-left:38px">
+  </div>
+  <div id="cf-tab-counts" class="fbar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:12px">
     <button type="button" class="fb active" id="cft-all"     onclick="setCF('all',this)">All</button>
     <button type="button" class="fb"        id="cft-won"     onclick="setCF('won',this)">Won</button>
     <button type="button" class="fb"        id="cft-active"  onclick="setCF('active',this)">Active</button>
@@ -2281,42 +2288,60 @@ body.dark .cal-cell.other{background:var(--cream)}
 
 
 <div class="pg" id="pg-leads">
-  <div class="tbar"><div class="tbar-title">Leads</div></div>
-  <div style="margin-bottom:12px">
-    <div style="display:flex;gap:6px;flex-wrap:wrap;padding-bottom:4px">
-      <button type="button" class="fb active" id="lft-all"        onclick="setLeadFilter('all',this)">All</button>
-      <button type="button" class="fb"        id="lft-incomplete" onclick="setLeadFilter('incomplete',this)">Needs onboarding</button>
-      <button type="button" class="fb"        id="lft-new"        onclick="setLeadFilter('new',this)">Ready</button>
-      <button type="button" class="fb"        id="lft-estimate"   onclick="setLeadFilter('estimate',this)">Estimate</button>
-      <button type="button" class="fb"        id="lft-follow_up"  onclick="setLeadFilter('follow_up',this)">Follow-up</button>
-      <button type="button" class="fb"        id="lft-pending"    onclick="setLeadFilter('pending',this)">Pending bid</button>
+  <div class="tbar">
+    <div class="tbar-l">
+      <div class="tbar-eyebrow" id="leads-tbar-eyebrow">Leads</div>
+      <div class="tbar-title">Leads</div>
+      <div class="tbar-sub">New prospects waiting for an estimate. Chase the warm ones fast.</div>
     </div>
+    <div class="tbar-r">
+      <button class="btn btn-p btn-sm" onclick="openNewClient()">+ New lead</button>
+    </div>
+  </div>
+  <div class="fbar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:12px">
+    <button type="button" class="fb active" id="lft-all"        onclick="setLeadFilter('all',this)">All</button>
+    <button type="button" class="fb"        id="lft-incomplete" onclick="setLeadFilter('incomplete',this)">Needs setup</button>
+    <button type="button" class="fb"        id="lft-new"        onclick="setLeadFilter('new',this)">Ready</button>
+    <button type="button" class="fb"        id="lft-estimate"   onclick="setLeadFilter('estimate',this)">Estimate</button>
+    <button type="button" class="fb"        id="lft-follow_up"  onclick="setLeadFilter('follow_up',this)">Follow-up</button>
+    <button type="button" class="fb"        id="lft-pending"    onclick="setLeadFilter('pending',this)">Pending bid</button>
   </div>
   <div id="leads-list"></div>
 </div>
 <div class="pg" id="pg-jobs">
-  <div class="tbar"><div><div class="tbar-title">Jobs</div><div class="tbar-sub" id="jobs-count-sub"></div></div><button class="btn btn-p btn-sm" onclick="goPg('pg-schedule')">+ Schedule</button></div>
-  <div style="margin-bottom:14px">
-    <div style="display:flex;gap:6px;flex-wrap:wrap;padding-bottom:4px">
-      <button type="button" class="fb active" id="jft-all"       onclick="setJobFilter('all',this)">Board</button>
-      <button type="button" class="fb"        id="jft-scheduled"  onclick="setJobFilter('scheduled',this)">Scheduled</button>
-      <button type="button" class="fb"        id="jft-active"     onclick="setJobFilter('active',this)">Active</button>
-      <button type="button" class="fb"        id="jft-completed"  onclick="setJobFilter('completed',this)">Completed</button>
+  <div class="tbar">
+    <div class="tbar-l">
+      <div class="tbar-eyebrow" id="jobs-tbar-eyebrow">Jobs</div>
+      <div class="tbar-title">Jobs</div>
+      <div class="tbar-sub" id="jobs-count-sub"></div>
     </div>
+    <div class="tbar-r">
+      <button class="btn btn-p btn-sm" onclick="goPg('pg-schedule')">+ Schedule</button>
+    </div>
+  </div>
+  <div class="fbar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:14px">
+    <button type="button" class="fb active" id="jft-all"       onclick="setJobFilter('all',this)">Board</button>
+    <button type="button" class="fb"        id="jft-scheduled"  onclick="setJobFilter('scheduled',this)">Scheduled</button>
+    <button type="button" class="fb"        id="jft-active"     onclick="setJobFilter('active',this)">Active</button>
+    <button type="button" class="fb"        id="jft-completed"  onclick="setJobFilter('completed',this)">Completed</button>
   </div>
   <div id="jobs-list"></div>
 </div>
 <div class="pg" id="pg-money">
-  <div class="tbar"><div><div class="tbar-title">Collect</div><div class="tbar-sub" id="money-count-sub"></div></div></div>
-  <div id="money-summary" style="margin-bottom:12px"></div>
-  <div style="margin-bottom:12px">
-    <div style="display:flex;gap:6px;flex-wrap:wrap;padding-bottom:4px">
-      <button type="button" class="fb active" id="mft-all"      onclick="setMoneyFilter('all',this)">All owed</button>
-      <button type="button" class="fb"        id="mft-overdue"  onclick="setMoneyFilter('overdue',this)">Overdue</button>
-      <button type="button" class="fb"        id="mft-partial"  onclick="setMoneyFilter('partial',this)">Partial</button>
-      <button type="button" class="fb"        id="mft-unpaid"   onclick="setMoneyFilter('unpaid',this)">Unsent</button>
-      <button type="button" class="fb"        id="mft-paid"     onclick="setMoneyFilter('paid',this)">Paid</button>
+  <div class="tbar">
+    <div class="tbar-l">
+      <div class="tbar-eyebrow" id="money-tbar-eyebrow">Collect</div>
+      <div class="tbar-title">Collect</div>
+      <div class="tbar-sub">Pre-written SMS for each escalation stage. Lien deadlines auto-tracked.</div>
     </div>
+  </div>
+  <div id="money-summary" style="margin-bottom:12px"></div>
+  <div class="fbar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:12px">
+    <button type="button" class="fb active" id="mft-all"      onclick="setMoneyFilter('all',this)">All owed</button>
+    <button type="button" class="fb"        id="mft-overdue"  onclick="setMoneyFilter('overdue',this)">Overdue</button>
+    <button type="button" class="fb"        id="mft-partial"  onclick="setMoneyFilter('partial',this)">Partial</button>
+    <button type="button" class="fb"        id="mft-unpaid"   onclick="setMoneyFilter('unpaid',this)">Unsent</button>
+    <button type="button" class="fb"        id="mft-paid"     onclick="setMoneyFilter('paid',this)">Paid</button>
   </div>
   <div id="money-list"></div>
 </div>

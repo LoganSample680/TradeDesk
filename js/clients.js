@@ -522,11 +522,11 @@ function renderClientList(){
     const labels={won:'Won',active:'Active',collect:'Collect',closed:'Closed'};
     Object.keys(counts).forEach(k=>{
       const btn=document.getElementById('cft-'+k);
-      if(btn)btn.textContent=labels[k]+(counts[k]?' ('+counts[k]+')':'');
+      if(btn)btn.innerHTML=labels[k]+(counts[k]?'<span class="fb-count">'+counts[k]+'</span>':'');
     });
     const allTotal=clients.filter(c=>CLIENT_STAGES.includes(getClientStage(c.id).stage)).length;
     const allBtn=document.getElementById('cft-all');
-    if(allBtn)allBtn.textContent='All'+(allTotal?' ('+allTotal+')':'');
+    if(allBtn)allBtn.innerHTML='All'+(allTotal?'<span class="fb-count">'+allTotal+'</span>':'');
   }
 
   let filtered=clientFilter==='all'
@@ -550,26 +550,52 @@ function renderClientList(){
     withStage.sort((a,b)=>(b.c.created||'').localeCompare(a.c.created||''));
   }
 
+  // Update tbar eyebrow
+  const eyebrowEl=document.getElementById('clients-tbar-eyebrow');
+  if(eyebrowEl){
+    const activeCount=clients.filter(c=>getClientStage(c.id).stage==='active').length;
+    eyebrowEl.textContent=clients.length+' client'+(clients.length!==1?'s':'')+' · '+activeCount+' active today';
+  }
+
   el.innerHTML=withStage.map(({c,s})=>{
     const wonBids=getClientBids(c.id).filter(b=>b.status==='Closed Won');
     const totalOwed=wonBids.reduce((sum,b)=>sum+getBidBalance(b),0);
     const pendBids=getClientBids(c.id).filter(b=>b.status==='Pending');
     const hasBal=totalOwed>0.01;
-    const subLine=hasBal?'Balance: '+fmt(totalOwed):
-                  pendBids.length>1?pendBids.length+' bids out':
-                  pendBids.length===1?'Bid out: '+fmt(pendBids[0].amount)+
-                    (pendBids[0].bid_date?(' · '+(()=>{const d=Math.floor((new Date(tk)-new Date(pendBids[0].bid_date+'T12:00:00'))/86400000);return d>0?d+'d ago':''})()):''):
-                  s.label;
-    return '<div class="client-card" onclick="openClientDetail('+c.id+')" style="margin-bottom:4px">'+
-      '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px">'+
-        '<div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">'+
-          '<div class="cc-avatar" style="width:36px;height:36px;font-size:12px;flex-shrink:0;'+stageAvatar(s.stage)+'">'+initials(c.name)+'</div>'+
-          '<div style="min-width:0">'+
-            '<div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.name+'</div>'+
-            '<div style="font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+subLine+'</div>'+
+    const ltv=wonBids.reduce((sum,b)=>sum+(b.amount||0),0);
+    const addrPart=(c.addr||'').split(',')[0];
+
+    // Status badge
+    const bdgMap={
+      active:      {cls:'sf-active',   label:'ACTIVE'},
+      scheduled:   {cls:'sf-upcoming', label:'SCHEDULED'},
+      balance_due: {cls:'sf-overdue',  label:'BALANCE DUE'},
+      paid:        {cls:'sf-won',      label:'PAID'},
+      signed:      {cls:'sf-deposit',  label:'SIGNED'},
+      est_ready:   {cls:'sf-deposit',  label:'EST READY'},
+    };
+    const bdg=bdgMap[s.stage]||{cls:'sf-done',label:s.label.toUpperCase()};
+
+    const cardCls=s.stage==='active'?'client-card has-active':
+                  (s.stage==='signed'||s.stage==='scheduled')?'client-card has-bid':
+                  'client-card';
+
+    return '<div class="'+cardCls+'" onclick="openClientDetail('+c.id+')" style="margin-bottom:8px">'+
+      '<div class="cc-row">'+
+        '<div class="cc-l">'+
+          '<div class="cc-avatar">'+initials(c.name)+'</div>'+
+          '<div style="min-width:0;flex:1">'+
+            '<div class="cc-name">'+escHtml(c.name)+'</div>'+
+            '<div class="cc-meta">'+escHtml(addrPart||c.phone||'No address')+'</div>'+
+            '<div class="cc-stats">'+
+              (ltv>0?'<span class="cc-stat">'+fmt(ltv)+' LTV</span>':'')+
+              (c.source?'<span class="cc-stat">'+escHtml(c.source)+'</span>':'')+
+              (hasBal?'<span class="cc-stat" style="color:var(--c-red);background:var(--c-red-soft);border-color:var(--c-red-edge)">'+fmt(totalOwed)+' owed</span>':'')+
+              (pendBids.length&&!hasBal?'<span class="cc-stat">'+pendBids.length+' bid'+(pendBids.length>1?'s':'')+' out</span>':'')+
+            '</div>'+
           '</div>'+
         '</div>'+
-        '<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:var(--text3);fill:none;stroke-width:2;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>'+
+        '<span class="bdg-soft '+bdg.cls+'" style="flex-shrink:0">'+bdg.label+'</span>'+
       '</div>'+
     '</div>';
   }).join('');
