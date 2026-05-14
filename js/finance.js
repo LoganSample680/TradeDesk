@@ -272,9 +272,9 @@ function quickAction(type){
   const wonUnscheduled=bids.filter(b=>b.status==='Closed Won'&&!jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id&&j.eventType!=='estimate'&&j.start>=tk));
 
   if(type==='drive'){
-    openDriveModal();
+    try{ openDriveModal(); }catch(e){ console.error('[TradeDesk] openDriveModal failed:',e); }
   } else if(type==='expense'){
-    openExpenseFlow();
+    try{ openExpenseFlow(); }catch(e){ console.error('[TradeDesk] openExpenseFlow failed:',e); }
   } else if(type==='estimate'){
     const options=[];
     todayEstimates.forEach(j=>{

@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" style="background:#0D1117">
+<html lang="en" style="background:#1B1612">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -7,37 +7,40 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="TradeDesk">
-<meta name="theme-color" content="#0D1117">
+<meta name="theme-color" content="#1B1612">
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <link rel="manifest" href="/manifest.json">
 <title>TradeDesk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@500;700;800;900&family=Inter+Tight:wght@500;600;700;800;900&family=Dancing+Script:wght@600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" async id="supabase-sdk"></script>
 <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin defer onload="_initMapKit()"></script>
 <style>*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
 :root{
---blue:#185FA5;--blue-dk:#0C447C;--blue-lt:#E6F1FB;
---green:#27500A;--green-lt:#EAF3DE;--green-mid:#3B6D11;
---amber:#633806;--amber-lt:#FAEEDA;
---red:#791F1F;--red-lt:#FCEBEB;
---gray:#444441;--gray-lt:#F1EFE8;
---bg:#fff;--bg2:#f7f7f5;--bg3:#f0efec;
---text:#1a1a18;--text2:#5f5e5a;--text3:#9a9890;
---border:#e0dfd8;--border2:#cccbc4;
+--blue:#2D5DA8;--blue-dk:#1B3F7A;--blue-lt:#DCE8FA;
+--green:#117841;--green-lt:#D4ECDC;--green-mid:#0F6334;
+--amber:#9F5B00;--amber-lt:#FBE2BB;
+--red:#B22A20;--red-lt:#FAD6CF;
+--gray:#544D44;--gray-lt:#EEE7D8;
+--bg:#FFFFFF;--bg2:#F4F5F7;--bg3:#ECEEF2;
+--text:#161A1F;--text2:#4B5563;--text3:#8A92A0;
+--border:#E2E5EB;--border2:#CFD4DC;
 --r:8px;--rl:12px;
 }
 html{font-size:15px;-webkit-text-size-adjust:100%;overscroll-behavior-y:none;touch-action:pan-y}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg3);color:var(--text);min-height:100vh;overflow-x:hidden;overscroll-behavior:none;touch-action:pan-y}
+body{font-family:'Inter Tight',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg2);color:var(--text);min-height:100vh;overflow-x:hidden;overscroll-behavior:none;touch-action:pan-y;-webkit-font-smoothing:antialiased;font-feature-settings:"ss01","cv11","tnum"}
 @keyframes _ptr_rotate{to{transform:rotate(360deg)}}
-/* ── Sidebar nav — always left, dark navy ── */
+/* ── Sidebar nav — warm charcoal with denim accent ── */
 :root{
-  --nav-w:220px;
-  --nav-bg:#0D1117;
-  --nav-text:rgba(255,255,255,0.55);
-  --nav-text-active:#fff;
-  --nav-accent:#185FA5;
-  --nav-hover:rgba(255,255,255,0.06);
-  --nav-active-bg:rgba(24,95,165,0.25);
-  --nav-border:rgba(255,255,255,0.08);
+  --nav-w:240px;
+  --nav-bg:#1B1612;
+  --nav-text:rgba(245,239,226,0.55);
+  --nav-text-active:rgba(245,239,226,1);
+  --nav-accent:#2D5DA8;
+  --nav-hover:rgba(255,238,210,0.06);
+  --nav-active-bg:rgba(245,239,226,0.07);
+  --nav-border:rgba(255,238,210,0.08);
 }
 #nav{
   position:fixed;top:0;left:0;bottom:0;width:var(--nav-w);
@@ -45,40 +48,49 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   display:flex;flex-direction:column;
   z-index:1000;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;
   border-right:1px solid var(--nav-border);
-  box-shadow:2px 0 20px rgba(0,0,0,0.15);
+  scrollbar-width:none;
+}
+#nav::-webkit-scrollbar{display:none}
+#nav::before{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:260px;
+  background:radial-gradient(60% 50% at 50% 100%,rgba(45,93,168,.18),transparent 65%);
+  pointer-events:none;
 }
 #nav-logo{
+  position:relative;
   display:flex;align-items:center;gap:10px;
-  padding:22px 20px 20px;
+  padding:20px 18px 18px;
   border-bottom:1px solid var(--nav-border);
   flex-shrink:0;
 }
 #nav-logo-icon{
-  width:32px;height:32px;border-radius:8px;
-  background:var(--nav-accent);
+  width:32px;height:32px;border-radius:9px;
+  background:linear-gradient(145deg,#2D5DA8 0%,#1B3F7A 100%);
   display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 4px 10px rgba(45,93,168,.32);
 }
-#nav-logo-text{font-weight:800;font-size:16px;color:#fff;letter-spacing:-.3px}
-#nav-section-label{
-  font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
-  color:rgba(255,255,255,0.25);padding:18px 20px 6px;flex-shrink:0;
+#nav-logo-text{font-family:'Geist',-apple-system,sans-serif;font-weight:900;font-size:18px;color:rgba(245,239,226,1);letter-spacing:-.7px;line-height:1}
+#nav-pro{font-family:'Inter Tight',-apple-system,sans-serif;font-size:9px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#2D5DA8;background:rgba(45,93,168,.13);border:1px solid rgba(45,93,168,.32);padding:3px 6px 2px;border-radius:4px;margin-left:2px;line-height:1;flex-shrink:0}
+.nav-section-label{
+  font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  color:rgba(245,239,226,0.25);padding:16px 20px 5px;flex-shrink:0;
 }
 .nb{
-  width:100%;padding:9px 14px 9px 16px;
+  width:calc(100% - 16px);padding:9px 12px;
   display:flex;flex-direction:row;align-items:center;
   gap:11px;border:none;background:none;cursor:pointer;
-  color:var(--nav-text);font-size:13px;font-weight:500;
-  text-align:left;font-family:inherit;letter-spacing:-.1px;
-  border-radius:8px;margin:1px 8px;width:calc(100% - 16px);
-  transition:background .15s,color .15s;position:relative;
+  color:var(--nav-text);font-size:13px;font-weight:600;
+  text-align:left;font-family:'Inter Tight',-apple-system,sans-serif;letter-spacing:-.15px;
+  border-radius:7px;margin:1px 8px;
+  transition:background .12s,color .12s;position:relative;
 }
-.nb:hover{background:var(--nav-hover);color:rgba(255,255,255,0.85);}
-.nb.active{background:var(--nav-active-bg);color:var(--nav-text-active);font-weight:600;}
+.nb:hover{background:var(--nav-hover);color:var(--nav-text-active);}
+.nb.active{background:var(--nav-active-bg);color:var(--nav-text-active);font-weight:700;}
 .nb.active::before{
   content:'';position:absolute;left:-8px;top:50%;transform:translateY(-50%);
-  width:3px;height:20px;background:var(--nav-accent);border-radius:0 3px 3px 0;
+  width:3px;height:18px;background:var(--nav-accent);border-radius:0 3px 3px 0;
 }
-.nb svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;opacity:.8;}
+.nb svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0;opacity:.85;}
 .nb.active svg{opacity:1;}
 .nb .bx{position:relative;display:inline-flex;flex-shrink:0}
 .nbadge{
@@ -91,17 +103,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 #nav-spacer{flex:1;min-height:20px}
 #nav-user{
   padding:14px 16px;border-top:1px solid var(--nav-border);
-  display:flex;align-items:center;gap:10px;flex-shrink:0;
+  display:flex;align-items:center;gap:10px;flex-shrink:0;position:relative;
 }
 #nav-user-avatar{
-  width:32px;height:32px;border-radius:50%;
-  background:var(--nav-accent);display:flex;align-items:center;justify-content:center;
-  font-size:13px;font-weight:700;color:#fff;flex-shrink:0;
+  width:32px;height:32px;border-radius:8px;
+  background:linear-gradient(145deg,#2D5DA8 0%,#1B3F7A 100%);
+  display:flex;align-items:center;justify-content:center;
+  font-family:'Geist',-apple-system,sans-serif;font-size:12px;font-weight:800;color:rgba(245,239,226,1);flex-shrink:0;letter-spacing:-.3px;
 }
-#nav-user-name{font-size:12px;font-weight:600;color:rgba(255,255,255,.7);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-#nav-user-role{font-size:10px;color:rgba(255,255,255,.35);margin-top:1px;}
+#nav-user-name{font-size:12px;font-weight:700;color:rgba(245,239,226,.7);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#nav-user-role{font-size:10px;color:rgba(245,239,226,.35);margin-top:1px;}
 /* ── App layout ── */
-#app{padding-left:var(--nav-w);padding-bottom:0;min-height:100vh}
+#app{padding-left:var(--nav-w);padding-bottom:0;min-height:100vh;background:var(--bg2)}
 #supa-status{left:var(--nav-w);transition:opacity 0.8s ease;opacity:0}
 .drive-banner{left:var(--nav-w)}
 /* ── Mobile: bottom tab bar + full-width layout ── */
@@ -116,7 +129,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   .clock-active .pg{padding-top:60px}
   .drive-active.clock-active .pg{padding-top:110px}
   .drive-active #clock-banner{top:42px}
-  .tbar-title{font-size:19px}
+  .tbar-title{font-size:22px;letter-spacing:-.5px}
   .card{padding:14px}
   .f label{font-size:11px}
   .mets{grid-template-columns:repeat(auto-fit,minmax(80px,1fr));gap:8px}
@@ -153,10 +166,10 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 #pg-leads,#pg-jobs,#pg-money{padding-top:8px}
 .pg.active{display:block}
 #pg-est.active{position:fixed;inset:0;z-index:1100;overflow-y:auto;padding:0;background:var(--bg)}
-.tbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:8px;flex-wrap:wrap}
-.tbar-title{font-size:22px;font-weight:800;color:var(--text);letter-spacing:-.3px}
-.tbar-sub{font-size:11px;color:var(--text3);margin-top:1px}
-.card{background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.tbar{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:18px;gap:8px;flex-wrap:wrap}
+.tbar-title{font-family:'Geist',-apple-system,sans-serif;font-size:28px;font-weight:900;color:var(--text);letter-spacing:-1px;line-height:1.05}
+.tbar-sub{font-size:12px;color:var(--text2);margin-top:5px;font-weight:500;line-height:1.4}
+.card{background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:16px;margin-bottom:12px;box-shadow:0 1px 2px rgba(27,22,18,.04),0 0 0 1px var(--border)}
 .card-hd{font-size:14px;font-weight:700;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;color:var(--text)}
 .card-hd span{font-size:10px;font-weight:400;color:var(--text3)}
 .acc-sec{margin-bottom:8px;border:1px solid var(--border);border-radius:var(--rl);background:var(--bg);overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04)}
@@ -169,11 +182,11 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .acc-body{display:none;padding:0 16px 16px}
 .acc-sec.open>.acc-body{display:block}
 .mets{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:10px;margin-bottom:16px}
-.met{background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:12px 10px;display:flex;flex-direction:column;box-shadow:0 1px 4px rgba(0,0,0,.04);transition:box-shadow .15s;overflow:hidden;min-width:0}
-.met:hover{box-shadow:0 3px 12px rgba(0,0,0,.08)}
-.met-l{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px}
-.met-v{font-size:18px;font-weight:800;line-height:1.1;color:var(--text);overflow:hidden;white-space:nowrap;text-overflow:clip}
-.met-s{font-size:11px;color:var(--text3);margin-top:5px}
+.met{background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:14px 12px;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(27,22,18,.04),0 0 0 1px var(--border);transition:box-shadow .15s;overflow:hidden;min-width:0;cursor:pointer}
+.met:hover{box-shadow:0 3px 12px rgba(27,22,18,.08),0 0 0 1px var(--border)}
+.met-l{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:8px}
+.met-v{font-family:'Geist',-apple-system,sans-serif;font-size:20px;font-weight:800;line-height:1;letter-spacing:-.5px;color:var(--text);overflow:hidden;white-space:nowrap}
+.met-s{font-size:11px;color:var(--text3);margin-top:6px;font-weight:500}
 .fg{display:grid;gap:9px;margin-bottom:10px;align-items:start}
 .fg2{grid-template-columns:repeat(auto-fit,minmax(145px,1fr))}
 .fg3{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}
@@ -2272,54 +2285,84 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 </div>
 <div id="nav">
   <div id="nav-logo">
-  <div id="nav-logo-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>
-  <span id="nav-logo-text" class="brand-logo-slot">TradeDesk</span>
-  <button onclick="openSearch()" title="Search" style="margin-left:auto;background:none;border:none;cursor:pointer;padding:4px;border-radius:6px;color:rgba(255,255,255,.5);display:flex;align-items:center" id="nav-search-btn">
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-  </button>
-</div>
-<div id="nav-section-label">Menu</div>
+    <div id="nav-logo-icon"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="rgba(245,239,226,.9)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>
+    <span id="nav-logo-text" class="brand-logo-slot">TradeDesk</span>
+    <span id="nav-pro">PRO</span>
+  </div>
+
+  <div class="nav-section-label">Workspace</div>
+
   <button class="nb active" id="nb-dash" onclick="goPg('pg-dash')">
-    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div><span>Home</span>
+    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
+    <span>Dashboard</span>
   </button>
+
   <button class="nb" id="nb-leads" onclick="goPg('pg-leads')">
-    <div class="bx"><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span class="nbadge" id="nb-leads-badge"></span></div><span>Leads</span>
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span class="nbadge" id="nb-leads-badge"></span></div>
+    <span>Leads</span>
   </button>
+
   <button class="nb" id="nb-clients" onclick="goPg('pg-clients')">
-    <div class="bx"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></div><span>Clients</span>
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></div>
+    <span>Clients</span>
   </button>
+
   <button class="nb" id="nb-jobs" onclick="goPg('pg-jobs')">
-    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span class="nbadge" id="nb-jobs-badge"></span></div><span>Jobs</span>
+    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span class="nbadge" id="nb-jobs-badge"></span></div>
+    <span>Jobs</span>
   </button>
+
   <button class="nb" id="nb-cal" onclick="goPg('pg-cal')">
-    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><circle cx="8" cy="16" r="1" fill="currentColor"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg></div><span>Calendar</span>
+    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><circle cx="8" cy="16" r="1" fill="currentColor"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg></div>
+    <span>Calendar</span>
   </button>
+
   <button class="nb" id="nb-money" onclick="goPg('pg-money')">
-    <div class="bx"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg><span class="nbadge" id="nb-money-badge"></span></div><span>Collect</span>
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg><span class="nbadge" id="nb-money-badge"></span></div>
+    <span>Collect</span>
   </button>
-  <button class="nb" id="nb-taxes" onclick="goPg('pg-taxes')">
-    <div class="bx"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div><span>Taxes</span>
-  </button>
-  <button class="nb" id="nb-team" onclick="goPg('pg-team')">
-    <div class="bx"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></div><span>Fleet</span>
-  </button>
+
   <button class="nb" id="nb-tracker" onclick="goPg('pg-tracker')">
-    <div class="bx"><svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div><span>Books</span>
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg></div>
+    <span>Books</span>
   </button>
+
+  <button class="nb" id="nb-taxes" onclick="goPg('pg-taxes')">
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+    <span>Taxes</span>
+  </button>
+
+  <div class="nav-section-label" style="margin-top:2px">More</div>
+
+  <button class="nb" id="nb-team" onclick="goPg('pg-team')">
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg></div>
+    <span>Fleet</span>
+  </button>
+
   <button class="nb" id="nb-gallery" onclick="goPg('pg-gallery')">
-    <div class="bx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div><span>Gallery</span>
+    <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
+    <span>Gallery</span>
   </button>
+
   <button class="nb" id="nb-licensing" onclick="goPg('pg-licensing')">
-    <div class="bx"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><span>Licensing</span>
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+    <span>Licensing</span>
   </button>
+
   <div id="nav-trade-switcher" style="display:none;padding:6px 10px 4px;border-top:1px solid var(--nav-border)">
     <div style="font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.25);padding:0 4px 5px">Active trade</div>
     <div id="nav-trade-pills" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 2px 4px"></div>
   </div>
+
   <div id="nav-spacer"></div>
+
+  <div class="nav-section-label">Account</div>
+
   <button class="nb" id="nb-settings" onclick="goPg('pg-settings')">
-    <div class="bx"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></div><span>Settings</span>
+    <div class="bx"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></div>
+    <span>Settings</span>
   </button>
+
   <div id="nav-user" onclick="goPg('pg-settings')" style="cursor:pointer">
     <div id="nav-user-avatar">Z</div>
     <div style="min-width:0">
@@ -2327,6 +2370,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
       <div id="nav-user-role">Owner</div>
     </div>
   </div>
+
   <div id="supa-status" style="position:fixed;bottom:62px;left:0;right:0;text-align:center;font-size:10px;pointer-events:none;z-index:400;padding:2px 0;background:var(--bg)"></div>
 </div><!-- end #nav -->
 <!-- ── Mobile bottom tab bar ── -->
