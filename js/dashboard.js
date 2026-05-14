@@ -47,7 +47,7 @@ function renderDash(){
       if(_collectOwed>0)_biggestNote='The biggest one is '+fmt(_collectOwed)+' in outstanding balances.';
       else if(_urgFu>0)_biggestNote=_urgFu+' follow-up'+(+_urgFu>1?'s':'')+' are overdue.';
       else if(_pendingBids>0)_biggestNote=_pendingBids+' pending bid'+(+_pendingBids>1?'s':'')+' need attention.';
-      _subEl.textContent=_attnItems+' thing'+(_attnItems>1?'s':'')+' need your attention today. '+_biggestNote;
+      _subEl.textContent=_attnItems+' thing'+(_attnItems>1?'s':'')+' need'+(_attnItems===1?'s':'')+' your attention today. '+_biggestNote;
     }else{
       _subEl.textContent='You\'re all caught up — nothing urgent.';
     }
