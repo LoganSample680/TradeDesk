@@ -395,6 +395,8 @@ function openGenericEstimate(c,bidId,_tradePick){
   const m=TRADE_META[trade]||{icon:'🔧',label:trade.charAt(0).toUpperCase()+trade.slice(1)};
   const titleEl=document.getElementById('gei-trade-title');
   if(titleEl)titleEl.textContent=m.icon+' '+m.label+' Estimate';
+  const eyebrowEl=document.getElementById('gei-tbar-eyebrow');
+  if(eyebrowEl)eyebrowEl.textContent=m.label+' estimate';
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val||'';};
   sf('gei-client',c?.name||'');
   sf('gei-addr',c?.addr||'');
@@ -478,6 +480,8 @@ function goGeiStep(n){
     if(n===3){show('block')('gei-tm-terms');_tmSyncCycleButtons();_tmCalcDeposit();_tmCalcNte();}
     const titleEl=document.getElementById('gei-trade-title');
     if(titleEl)titleEl.textContent='⏱️ Time & Materials';
+    const eyebrowEl=document.getElementById('gei-tbar-eyebrow');
+    if(eyebrowEl)eyebrowEl.textContent='T&M estimate';
     if(svcWrap)svcWrap.style.display='none';
     if(n===2){
       const cd=document.getElementById('tm-crew-display');if(cd)cd.textContent=_tmCrewCount;
@@ -495,6 +499,8 @@ function goGeiStep(n){
     if(svcWrap)svcWrap.style.display='none';
     const titleEl=document.getElementById('gei-trade-title');
     if(titleEl)titleEl.textContent='✏️ Build Your Own';
+    const eyebrowEl=document.getElementById('gei-tbar-eyebrow');
+    if(eyebrowEl)eyebrowEl.textContent='Free-form estimate';
   } else {
     if(svcWrap)svcWrap.style.display='flex';
   }
@@ -673,24 +679,14 @@ function _geiEditFreeFormLine(i){
 function _geiRenderStepBar(){
   const el=document.getElementById('gei-step-bar');if(!el)return;
   const steps=['Job info','Build','Review'];
-  const dotStyle=(i)=>{
-    const done=i<_geiStep,active=i===_geiStep;
-    const bg=active?'var(--blue)':done?'#94a3b8':'var(--bg2)';
-    const border=active?'var(--blue)':done?'#94a3b8':'var(--border2)';
-    return `width:10px;height:10px;border-radius:50%;background:${bg};border:2px solid ${border};flex-shrink:0`;
-  };
-  const labelStyle=(i)=>{
-    const active=i===_geiStep;
-    return `font-size:10px;font-weight:${active?'700':'400'};color:${active?'var(--blue)':'var(--text3)'};white-space:nowrap`;
-  };
-  el.innerHTML=`<div style="display:flex;align-items:center;gap:0;margin-bottom:12px">`
-    +steps.map((s,i)=>`
-      <div style="display:flex;flex-direction:column;align-items:center;flex:1;position:relative">
-        <div style="${dotStyle(i+1)}"></div>
-        <div style="${labelStyle(i+1)};margin-top:4px">${s}</div>
-        ${i<steps.length-1?`<div style="position:absolute;top:5px;left:calc(50% + 7px);right:calc(-50% + 7px);height:2px;background:${_geiStep>i+1?'#94a3b8':'var(--border2)'}"></div>`:''}
-      </div>`).join('')
-    +`</div>`;
+  el.innerHTML='<div class="steps" style="margin-bottom:16px">'
+    +steps.map((s,i)=>{
+      const n=i+1;
+      const cls=n===_geiStep?'step active':n<_geiStep?'step done':'step';
+      const sep=i<steps.length-1?'<div class="ssep"></div>':'';
+      return `<div class="${cls}"><div class="snum">${n}</div><span class="slbl">${s}</span></div>${sep}`;
+    }).join('')
+    +'</div>';
 }
 
 function _geiSyncScopeButtons(){
