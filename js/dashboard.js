@@ -1007,7 +1007,7 @@ function renderLeadSources(){
   const noSrcNote=noSrc?`<div style="font-size:11px;color:var(--text3);padding:8px 18px 4px">${noSrc} client${noSrc>1?'s':''} with no source set</div>`:'';
   const roiHint=!hasAnyROI?`<div style="font-size:11px;color:var(--text3);padding:6px 18px 10px">💡 Log an <strong>Advertising &amp; marketing</strong> expense to see Cost &amp; ROI columns</div>`:'';
 
-  el.innerHTML=`<table class="tbl">
+  el.innerHTML=`<div style="overflow-x:auto"><table class="tbl">
     <thead><tr>
       <th>Source</th>
       <th style="text-align:right">Leads</th>
@@ -1017,7 +1017,7 @@ function renderLeadSources(){
       ${hasAnyROI?'<th style="text-align:right">Cost</th><th style="text-align:right">ROI</th>':''}
     </tr></thead>
     <tbody>${tbodyRows}</tbody>
-  </table>
+  </table></div>
   ${toggleBtn}${noSrcNote}${roiHint}`;
 }
 

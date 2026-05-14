@@ -1,6 +1,6 @@
-function openMobileMore(){const ov=document.getElementById('mobile-more-ov');if(ov)ov.style.display='block';}
-function closeMobileMore(){const ov=document.getElementById('mobile-more-ov');if(ov)ov.style.display='none';}
-function mobileNavTo(pg){closeMobileMore();goPg(pg);}
+function openMobileMore(){}
+function closeMobileMore(){}
+function mobileNavTo(pg){goPg(pg);}
 function goPg(id){
   // Redirect employees away from restricted pages
   if(_isEmployee&&['pg-leads','pg-taxes','pg-tracker','pg-team','pg-settings','pg-checklist'].includes(id))id='pg-dash';
@@ -19,15 +19,17 @@ function goPg(id){
     'pg-client-detail':window._clientDetailOrigin==='leads'?'nb-leads':'nb-clients'
   }[id]||('nb-'+id.replace('pg-','')));if(nb)nb.classList.add('active');
   // Sync mobile bottom tab bar
-  const _mtbMap={'pg-dash':'mtb-dash','pg-leads':'mtb-leads','pg-clients':'mtb-clients','pg-jobs':'mtb-jobs',
-    'pg-client-detail':window._clientDetailOrigin==='leads'?'mtb-leads':'mtb-clients'};
+  const _mtbMap={
+    'pg-dash':'mtb-dash','pg-leads':'mtb-leads','pg-clients':'mtb-clients','pg-jobs':'mtb-jobs',
+    'pg-cal':'mtb-cal','pg-schedule':'mtb-cal',
+    'pg-money':'mtb-money','pg-team':'mtb-team','pg-tracker':'mtb-tracker',
+    'pg-taxes':'mtb-taxes','pg-licensing':'mtb-licensing',
+    'pg-settings':'mtb-settings','pg-checklist':'mtb-settings',
+    'pg-client-detail':window._clientDetailOrigin==='leads'?'mtb-leads':'mtb-clients'
+  };
   document.querySelectorAll('.mtb').forEach(b=>b.classList.remove('active'));
   const _mtb=document.getElementById(_mtbMap[id]||'');
-  if(_mtb)_mtb.classList.add('active');
-  else{const _mm=document.getElementById('mtb-more');if(_mm)_mm.classList.add('active');}
-  document.querySelectorAll('.mmi').forEach(b=>b.classList.remove('active-pg'));
-  const _mmiKey={'pg-money':'mmi-money','pg-cal':'mmi-cal','pg-tracker':'mmi-tracker','pg-team':'mmi-team','pg-taxes':'mmi-taxes','pg-leads':'mmi-leads','pg-settings':'mmi-settings','pg-checklist':'mmi-settings','pg-schedule':'mmi-cal','pg-licensing':'mmi-licensing'}[id];
-  if(_mmiKey){const _mi=document.getElementById(_mmiKey);if(_mi)_mi.classList.add('active-pg');}
+  if(_mtb){_mtb.classList.add('active');_mtb.scrollIntoView({behavior:'smooth',block:'nearest',inline:'nearest'});}
   window.scrollTo({top:0,left:0,behavior:"instant"});document.body.scrollTop=0;document.documentElement.scrollTop=0;
   if(id==='pg-dash')renderDash();
   if(id==='pg-clients'){
