@@ -567,17 +567,29 @@ body.dark .cal-cell.other{background:var(--cream)}
   .split-2-wide{grid-template-columns:1fr}
   .mets{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
 }
+/* ── Mobile top header ── */
+#mobile-topbar{display:none;position:fixed;top:0;left:0;right:0;z-index:1001;height:56px;background:var(--ink);border-bottom:1px solid var(--ink-line);padding:0 16px;align-items:center;justify-content:space-between;gap:12px}
+@media(max-width:767px){#mobile-topbar{display:flex}}
+#mobile-topbar-brand{display:flex;align-items:center;gap:9px;min-width:0}
+.mobile-topbar-icon{width:34px;height:34px;border-radius:var(--r-mark);background:var(--grad-mark);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 4px 10px rgba(45,93,168,.32)}
+.mobile-topbar-icon svg{width:16px;height:16px;stroke:rgba(245,239,226,.9);fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+.mobile-topbar-name{font-family:var(--font-display);font-weight:900;font-size:19px;letter-spacing:-.8px;color:var(--text-cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mobile-topbar-pro{font-family:var(--font-ui);font-weight:800;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--denim);background:rgba(45,93,168,.13);border:1px solid rgba(45,93,168,.32);padding:3px 6px 2px;border-radius:4px;line-height:1;flex-shrink:0}
+.mobile-topbar-actions{display:flex;gap:4px;flex-shrink:0}
+.mobile-topbar-btn{width:36px;height:36px;border-radius:8px;border:none;background:rgba(245,239,226,.06);color:var(--text-cream-2);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .12s}
+.mobile-topbar-btn:active{background:rgba(245,239,226,.12)}
+.mobile-topbar-btn svg{stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 @media(max-width:767px){
   #nav{display:none}
-  #app{padding-left:0;padding-bottom:110px}
+  #app{padding-left:0;padding-top:56px;padding-bottom:110px}
   #supa-status{left:0;bottom:68px}
-  .drive-banner{left:0}
+  .drive-banner{left:0;top:56px}
   .pg{padding:14px 16px 20px}
   #pg-leads,#pg-jobs,#pg-money{padding-top:8px}
   .drive-active .pg{padding-top:60px}
   .clock-active .pg{padding-top:60px}
   .drive-active.clock-active .pg{padding-top:110px}
-  .drive-active #clock-banner{top:42px}
+  .drive-active #clock-banner{top:98px}
   .tbar-title{font-size:22px;letter-spacing:-.5px}
   .tbar{margin-bottom:14px}
   .card{padding:14px;border-radius:12px}
@@ -2450,6 +2462,24 @@ body.dark .cal-cell.other{background:var(--cream)}
 
   <div id="supa-status" style="position:fixed;bottom:62px;left:0;right:0;text-align:center;font-size:10px;pointer-events:none;z-index:400;padding:2px 0;background:var(--bg)"></div>
 </div><!-- end #nav -->
+<!-- ── Mobile top header ── -->
+<div id="mobile-topbar">
+  <div id="mobile-topbar-brand">
+    <div class="mobile-topbar-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="rgba(245,239,226,.9)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+    </div>
+    <span class="brand-logo-slot mobile-topbar-name">TradeDesk</span>
+    <span class="mobile-topbar-pro">PRO</span>
+  </div>
+  <div class="mobile-topbar-actions">
+    <button class="mobile-topbar-btn" onclick="openSearch()">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+    </button>
+    <button class="mobile-topbar-btn" id="mobile-notif-btn" onclick="goPg('pg-settings')">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/></svg>
+    </button>
+  </div>
+</div>
 <!-- ── Mobile bottom tab bar ── -->
 <div id="mobile-tabbar">
   <button class="mtb active" id="mtb-dash" onclick="goPg('pg-dash')">
