@@ -634,10 +634,10 @@ function _tmHidePage(){
 let _byoItems=[];
 const _BYO_DEFAULT_SECTIONS=['Interior','Add-ons','Exterior'];
 function _byoShowPage(){
+  _tmHidePage(); // must run first — _tmHidePage re-shows gei-old-tbar, then we hide it below
   ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.style.display='none';
   });
-  _tmHidePage();
   const p=document.getElementById('gei-byo-page');if(p)p.style.display='';
   // Trade branding
   const _bm=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
