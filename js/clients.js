@@ -167,34 +167,49 @@ function _pickTrade(id){
 let _stylePickState=null;
 function _showEstimateStylePicker(c,overrideAddr){
   _stylePickState={c,overrideAddr};
-  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_style-pick-ov';
-  ov.style.cssText='align-items:flex-end;padding:0';
-  const box=document.createElement('div');
-  box.style.cssText='width:100%;max-width:480px;background:var(--bg2);border-radius:20px 20px 0 0;padding:28px 20px 36px;box-sizing:border-box;max-height:92vh;overflow-y:auto';
-  const li=(icon,text)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin-bottom:5px"><span style="color:var(--denim);font-size:14px">${icon}</span>${text}</div>`;
-  const bigCard=(id,accent,bg,border,icon,title,bullets,startLabel)=>
-    `<button onclick="_pickEstStyle('${id}')" style="width:100%;padding:18px 16px 16px;border-radius:14px;border:2px solid ${border};background:${bg};cursor:pointer;font-family:inherit;text-align:left;margin-bottom:12px;display:block">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:22px">${icon}</span>
-          <span style="font-size:16px;font-weight:900;color:var(--ink);font-family:var(--font-display);letter-spacing:-.3px">${title}</span>
-        </div>
-        <span style="font-size:13px;font-weight:700;color:${accent}">Start →</span>
-      </div>
-      ${bullets.map(b=>li('✓',b)).join('')}
+  const ov=document.createElement('div');
+  ov.id='_style-pick-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:9000;background:var(--bg2);overflow-y:auto';
+  const clientLine=c?(escHtml(c.name)+(c.addr?' · '+escHtml((c.addr||'').split(',')[0]):'')):'Pick client after';
+  const card=(id,tone,icon,eyebrow,title,sub,desc,bullets)=>{
+    const bul=bullets.map(b=>'<li><span>✓</span>'+b+'</li>').join('');
+    return `<button class="chooser-card chooser-${tone}" onclick="_pickEstStyle('${id}')">
+      <div class="chooser-card-eyebrow">${eyebrow}</div>
+      <div class="chooser-card-icon">${icon}</div>
+      <div class="chooser-card-title">${title}</div>
+      <div class="chooser-card-sub">${sub}</div>
+      <div class="chooser-card-desc">${desc}</div>
+      <ul class="chooser-card-bullets">${bul}</ul>
+      <div class="chooser-card-cta">Start →</div>
     </button>`;
-  box.innerHTML=
-    '<div style="font-size:10px;font-weight:800;letter-spacing:.12em;color:var(--text3);margin-bottom:10px;text-transform:uppercase">Pick estimate type</div>'+
-    '<div style="font-family:var(--font-display);font-size:26px;font-weight:900;color:var(--ink);letter-spacing:-.6px;margin-bottom:18px">How are you billing this job?</div>'+
-    bigCard('scope','var(--denim)','#F0F5FF','#2D5DA8','🎯','Scope &amp; Price',
-      ['Surfaces, products &amp; labor','Line-item breakdown clients can read','Locked price — no surprises'],'Start')+
-    bigCard('tm','#0369a1','#F0F9FF','#0284c7','⏱️','Time &amp; Materials',
-      ['Crew size × hourly rate × hours','Not-to-exceed cap protects the client','Mobilization deposit up front'],'Start')+
-    bigCard('freeform','#059669','#F0FDF4','#059669','✏️','Build Your Own',
-      ['Blank page — any lines, any trade','Quantity × price per item','Works for any scope'],'Start')+
-    '<button onclick="document.getElementById(\'_style-pick-ov\')?.remove()" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
-  ov.appendChild(box);document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  };
+  ov.innerHTML=
+    '<div style="max-width:1100px;margin:0 auto;padding:24px 20px 40px">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">'+
+        '<div>'+
+          '<div class="tbar-eyebrow">Pick estimate type</div>'+
+          '<div class="tbar-title">How are you billing this job?</div>'+
+          '<div class="tbar-sub">'+clientLine+' — you can change this later, but the proposal template changes per type.</div>'+
+        '</div>'+
+        '<button class="btn btn-ghost" onclick="document.getElementById(\'_style-pick-ov\')?.remove()">Cancel</button>'+
+      '</div>'+
+      '<div class="chooser-grid">'+
+        card('scope','denim','📋','Most popular','Scope &amp; Price','Fixed scope, one final number',
+          'You define the work, the client sees one bottom-line price. Best for clearly-defined jobs like a full repaint.',
+          ['Line items private from client','Internal labor + materials math','Single-price proposal','30% deposit standard'])+
+        card('tm','amber','⏱️','For variable scope','Time &amp; Materials','Bill the hours, mark up the materials',
+          'Open-ended scope where the client agrees to a rate, not a final price. Best for unknown-scope work.',
+          ['Hourly rate + crew size','Materials at cost + markup','Not-to-exceed cap (optional)','Weekly invoicing'])+
+        card('freeform','green','🧩','Pick and choose','Build Your Own','Modular line items, client picks what they want',
+          'Send a menu of priced services. Client toggles what they want — bigger close rates because they choose their price.',
+          ['Optional / required tiers','Client-side toggles','Real-time recalculation','Upsell-friendly'])+
+      '</div>'+
+      '<div class="tip" style="margin-top:18px">'+
+        '<span style="font-size:18px">💡</span>'+
+        '<div><b>Tip · </b>Most painters use <b>Scope &amp; Price</b> for new clients and <b>T&M</b> for repeat customers with open-ended work. <b>Build Your Own</b> shines for upsells.</div>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(ov);
 }
 function _pickEstStyle(style){
   document.getElementById('_style-pick-ov')?.remove();
@@ -854,51 +869,58 @@ function renderClientDetail(){
   const _totalPaidAll=_wonBids.reduce((sum,b)=>sum+getBidPaid(b.id),0);
   const _ltv=_wonBids.reduce((sum,b)=>sum+(b.amount||0),0);
   const _tier=getClientTier(c);
-  const _tierColor=_tier==='A'?'#4ade80':_tier==='B'?'#93c5fd':'rgba(255,255,255,.55)';
   const _lastContactStr=(()=>{
     const d=c.last_contact_date;if(!d)return '—';
     const days=Math.floor((Date.now()-new Date(d+'T12:00').getTime())/86400000);
     if(days<1)return 'Today';if(days===1)return '1d ago';if(days<30)return days+'d ago';
     if(days<365)return Math.round(days/30)+'mo ago';return Math.round(days/365)+'y ago';
   })();
-  const _eyebrow='TIER '+_tier+(c.source?' · '+escHtml(c.source.toUpperCase()):'')+(_ltv>0?' · LTV '+fmt(_ltv):'');
-  const _btnStyle='background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.22);color:#fff;border-radius:10px;padding:8px 12px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:52px;cursor:pointer;white-space:nowrap;font-family:inherit';
+  const _eyebrow='TIER '+_tier+(c.source?' · '+escHtml(c.source):'')+(_ltv>0?' · LTV '+fmt(_ltv):'');
   document.getElementById('cd-hdr').innerHTML=
-    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">'+
-      '<div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:'+_tierColor+';text-transform:uppercase">'+_eyebrow+'</div>'+
-      '<button class="btn btn-sm" onclick="openEditClient()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.2);color:#fff;flex-shrink:0">Edit</button>'+
+    '<div class="detail-eyebrow">'+
+      '<span>'+_eyebrow+'</span>'+
+      '<button class="btn btn-sm" onclick="openEditClient()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.2);color:#fff">Edit</button>'+
     '</div>'+
-    '<div style="font-family:var(--font-display);font-size:34px;font-weight:900;color:#fff;letter-spacing:-.8px;line-height:1.05;margin-bottom:5px">'+
-      escHtml(c.name)+' '+riskBadge(c.id)+
-    '</div>'+
-    '<div style="font-size:12px;color:rgba(255,255,255,.5);margin-bottom:16px">'+
+    '<div class="detail-name">'+escHtml(c.name)+' '+riskBadge(c.id)+'</div>'+
+    '<div class="detail-addr">'+
       escHtml(c.addr||'No address')+(c.ptype?' · '+escHtml(c.ptype):'')+(c.yearBuilt?' · Built '+c.yearBuilt:'')+
       (getActiveTrade()==='painting'&&!c.yearBuilt?'<span onclick="openEditClient()" style="color:#fbbf24;font-weight:700;cursor:pointer;margin-left:6px">⚠️ Add year built</span>':'')+
     '</div>'+
-    '<div style="display:flex;gap:8px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px;margin-bottom:16px">'+
-      (c.phone?'<button onclick="callClient()" style="'+_btnStyle+'"><span style="font-size:17px">📞</span><span>Call</span></button>':'')+
-      (c.phone?'<button onclick="textClient();event.stopPropagation()" style="'+_btnStyle+'"><span style="font-size:17px">💬</span><span>SMS</span></button>':'')+
-      (c.email?'<button onclick="emailClient()" style="'+_btnStyle+'"><span style="font-size:17px">✉️</span><span>Email</span></button>':'')+
-      (!gps.active?'<button onclick="startDriveToClient()" style="'+_btnStyle+'"><span style="font-size:17px">🚗</span><span>Drive</span></button>':'')+
-      '<button onclick="showHubMenu('+c.id+')" style="'+_btnStyle+'"><span style="font-size:17px">🔗</span><span>Hub</span></button>'+
-    '</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'+
-      '<div style="background:rgba(255,255,255,.09);border-radius:8px;padding:10px 10px 8px">'+
-        '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.4);margin-bottom:5px">Lifetime value</div>'+
-        '<div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:-.2px">'+(_ltv>0?fmt(_ltv):'—')+'</div>'+
-      '</div>'+
-      '<div style="background:rgba(255,255,255,.09);border-radius:8px;padding:10px 10px 8px">'+
-        '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.4);margin-bottom:5px">Open balance</div>'+
-        '<div style="font-size:15px;font-weight:800;letter-spacing:-.2px;color:'+(_totalOwed>0.01?'#f87171':'rgba(255,255,255,.5)')+'">'+
-          (_totalOwed>0.01?fmt(_totalOwed):'$0')+
-        '</div>'+
-      '</div>'+
-      '<div style="background:rgba(255,255,255,.09);border-radius:8px;padding:10px 10px 8px">'+
-        '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.4);margin-bottom:5px">Last contact</div>'+
-        '<div style="font-size:15px;font-weight:800;color:rgba(255,255,255,.72);letter-spacing:-.2px">'+_lastContactStr+'</div>'+
-      '</div>'+
+    '<div class="detail-actions">'+
+      (c.phone?'<button class="btn" onclick="callClient()">📞 Call</button>':'')+
+      (c.phone?'<button class="btn" onclick="textClient();event.stopPropagation()">💬 SMS</button>':'')+
+      (c.email?'<button class="btn" onclick="emailClient()">✉️ Email</button>':'')+
+      (!gps.active?'<button class="btn" onclick="startDriveToClient()">🚗 Drive there</button>':'')+
+      '<button class="btn" onclick="showHubMenu('+c.id+')">🔗 Client hub</button>'+
+      '<button class="btn btn-p" onclick="openEstimateForClient()">+ New estimate</button>'+
     '</div>'+
     '';
+  // Metric tiles — outside hero in split-3-eq grid
+  const _heroMets=document.getElementById('cd-hero-mets');
+  if(_heroMets){
+    const _met=(label,val,sub,color)=>
+      '<div class="met">'+
+        '<div class="met-l">'+label+'</div>'+
+        '<div class="met-v"'+(color?' style="color:'+color+'"':'')+'>'+(val||'—')+'</div>'+
+        (sub?'<div class="met-s">'+sub+'</div>':'')+
+      '</div>';
+    _heroMets.innerHTML=
+      _met('Lifetime value',_ltv>0?fmt(_ltv):null,_wonBids.length+' job'+(  _wonBids.length!==1?'s':''))||
+      _met('Lifetime value','—','No completed jobs')+
+      _met('Open balance',_totalOwed>0.01?fmt(_totalOwed):(_totalPaidAll>0?'$0':null),
+        _totalOwed>0.01?_totalPaidAll>0?fmt(_totalPaidAll)+' paid · '+fmt(_totalOwed+_totalPaidAll)+' total':'Balance due':
+        _totalPaidAll>0?'Paid in full':null,
+        _totalOwed>0.01?'var(--c-red)':_totalPaidAll>0?'var(--c-green)':null)+
+      _met('Last contact',_lastContactStr,c.last_contact_date||'');
+    // Fix: render all 3 tiles properly
+    _heroMets.innerHTML=
+      _met('Lifetime value',_ltv>0?fmt(_ltv):'—',_wonBids.length+' job'+(_wonBids.length!==1?'s':'') ,null)+
+      _met('Open balance',_totalOwed>0.01?fmt(_totalOwed):'$0',
+        _totalOwed>0.01?(_totalPaidAll>0?fmt(_totalPaidAll)+' paid · '+fmt(_totalOwed+_totalPaidAll)+' total':'Balance due'):
+        _totalPaidAll>0?'Paid in full':'—',
+        _totalOwed>0.01?'var(--c-red)':null)+
+      _met('Last contact',_lastContactStr,'',null);
+  }
   if(gps.active&&gps.clientId===currentClientId){
     document.getElementById('cd-drive-idle').style.display='none';
     document.getElementById('cd-drive-end').style.display='none';

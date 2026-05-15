@@ -652,31 +652,31 @@ function _renderJobsKanban(el,tk,wonBidsList){
           const addrShort=(b.addr||c.addr||'').split(',')[0];
           const balance=b.status==='Closed Won'?getBidBalance(b):0;
           const amt=col.id==='collect'?fmt(balance):fmt(b.amount);
-          // Chip: semantic label + color per stage
-          let chipLabel,chipStyle;
+          // Chip: semantic label + CSS badge class per stage
+          let chipLabel,chipCls;
           if(col.id==='estimate'){
             chipLabel=dateStr?dateStr+' sent':'Sent';
-            chipStyle='background:#FBE2BB;color:#9F5B00;border:1px solid #E8C07A';
+            chipCls='sf-new';
           }else if(col.id==='signed'){
-            chipLabel=dateStr?dateStr:'Ready';
-            chipStyle='background:#DCE8FA;color:#1B3F7A;border:1px solid #9DBDE8';
+            chipLabel=dateStr?dateStr:'Ready to schedule';
+            chipCls='sf-deposit';
           }else if(col.id==='active'){
             const pct=b.completion_pct!=null?Math.round(b.completion_pct):null;
             chipLabel=pct!=null?pct+'% complete':(dateStr||'Active');
-            chipStyle='background:#D4ECDC;color:#1D5C14;border:1px solid #8BC4A2';
+            chipCls='sf-active';
           }else if(col.id==='collect'){
             chipLabel=fmt(balance)+' owed';
-            chipStyle='background:#FAD6CF;color:#B22A20;border:1px solid #E8A49E';
+            chipCls='sf-overdue';
           }else{
             const paidDate=b.completion_date?parseD(b.completion_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
             chipLabel=paidDate?paidDate+' paid':'Paid';
-            chipStyle='background:#D4ECDC;color:#1D5C14;border:1px solid #8BC4A2';
+            chipCls='sf-won';
           }
           return '<div class="k-card" onclick="openJobSheet('+c.id+')" style="margin-bottom:8px">'+
             '<div class="k-name">'+escHtml(c.name)+'</div>'+
             '<div class="k-sub">'+escHtml(addrShort)+'</div>'+
             '<div class="k-foot">'+
-              '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;'+chipStyle+'">'+chipLabel+'</span>'+
+              '<span class="bdg-soft '+chipCls+'" style="font-size:10px">'+chipLabel+'</span>'+
               '<span class="k-amt">'+amt+'</span>'+
             '</div>'+
           '</div>';
