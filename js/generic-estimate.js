@@ -596,9 +596,8 @@ function _tmShowPage(){
     const el=document.getElementById(id);if(el)el.style.display='none';
   });
   const p=document.getElementById('gei-tm-page');if(p)p.style.display='';
-  // Trade branding
+  // Trade branding in title
   const _tm=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
-  const eyeEl=document.getElementById('tm-tbar-eyebrow');if(eyeEl)eyeEl.textContent=_tm.icon+' '+_tm.label;
   const titleEl=document.getElementById('tm-tbar-title');if(titleEl)titleEl.textContent=_tm.icon+' '+_tm.label+' · Time & Materials';
   // Sub-header: client name · address
   const c=getClientById(_geiClientId);
@@ -639,9 +638,8 @@ function _byoShowPage(){
     const el=document.getElementById(id);if(el)el.style.display='none';
   });
   const p=document.getElementById('gei-byo-page');if(p)p.style.display='';
-  // Trade branding
+  // Trade branding in title
   const _bm=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
-  const byoEye=document.getElementById('byo-tbar-eyebrow');if(byoEye)byoEye.textContent=_bm.icon+' '+_bm.label;
   const byoTitle=document.getElementById('byo-tbar-title');if(byoTitle)byoTitle.textContent=_bm.icon+' '+_bm.label+' · Build Your Own';
   const c=getClientById(_geiClientId);
   const sub=document.getElementById('byo-page-sub');
