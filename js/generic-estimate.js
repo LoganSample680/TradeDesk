@@ -395,9 +395,9 @@ function openGenericEstimate(c,bidId,_tradePick){
   const trade=_geiTrade;
   const m=TRADE_META[trade]||{icon:'🔧',label:trade.charAt(0).toUpperCase()+trade.slice(1)};
   const titleEl=document.getElementById('gei-trade-title');
-  if(titleEl)titleEl.textContent=m.icon+' '+m.label+' Estimate';
+  if(titleEl)titleEl.textContent=m.icon+' '+m.label+' Proposal';
   const eyebrowEl=document.getElementById('gei-tbar-eyebrow');
-  if(eyebrowEl)eyebrowEl.textContent=m.label+' estimate';
+  if(eyebrowEl)eyebrowEl.textContent=m.label+' proposal';
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val||'';};
   sf('gei-client',c?.name||'');
   sf('gei-addr',c?.addr||'');
@@ -604,7 +604,8 @@ function _tmShowPage(){
   const setV=(id,v)=>{const e=document.getElementById(id);if(e)e.value=(v===0||v)?v:''};
   setV('tm-i-rate',_tmRatePerMan||'');
   setV('tm-i-hours',_tmEstHours||'');
-  setV('tm-i-crew',Math.min(4,Math.max(1,_tmCrewCount||2)));
+  const crewDisp=document.getElementById('tm-i-crew-count');
+  if(crewDisp)crewDisp.textContent=Math.max(1,_tmCrewCount||1);
   setV('tm-i-markup',_tmMatMarkup||20);
   const b=bids.find(x=>x.id===_geiEditBidId);
   if(b?.tmNteCap)setV('tm-i-nte',b.tmNteCap);
@@ -619,9 +620,18 @@ function _tmHidePage(){
     const el=document.getElementById(id);if(el)el.style.display='';
   });
 }
+function _tmCrewStep(delta){
+  _tmCrewCount=Math.max(1,Math.min(20,(_tmCrewCount||1)+delta));
+  const d=document.getElementById('tm-i-crew-count');if(d)d.textContent=_tmCrewCount;
+  const lbl=document.getElementById('tm-i-crew-label');
+  if(lbl)lbl.textContent=_tmCrewCount===1?'solo':_tmCrewCount===2?'me + helper':'crew';
+  _tmInputChange();
+}
 function _tmInputChange(){
   _tmRatePerMan=parseFloat(document.getElementById('tm-i-rate')?.value)||0;
-  _tmCrewCount=parseInt(document.getElementById('tm-i-crew')?.value)||1;
+  // Crew count driven by stepper; read stepper display, not a select
+  const crewDisp=document.getElementById('tm-i-crew-count');
+  if(crewDisp)_tmCrewCount=parseInt(crewDisp.textContent)||_tmCrewCount||1;
   _tmEstHours=parseFloat(document.getElementById('tm-i-hours')?.value)||0;
   _tmMatMarkup=parseFloat(document.getElementById('tm-i-markup')?.value)||0;
   const labor=_tmCrewCount*_tmRatePerMan*_tmEstHours;
@@ -640,18 +650,21 @@ function _tmInputChange(){
   setT('tm-stat-labor','$'+labor.toLocaleString());
   setT('tm-stat-labor-s',(_tmRatePerMan&&_tmEstHours)?_tmEstHours+'hr × '+_tmCrewCount+' × $'+_tmRatePerMan:'—');
   setT('tm-stat-days',days);
-  // Materials subtotal = sum of non-labor lines
-  const matSub=_geiLines.filter(l=>!l._tmLabor).reduce((s,l)=>s+(l.total||(l.qty||0)*(l.rate||0)),0);
-  const markupAmt=Math.round(matSub*_tmMatMarkup/100);
-  const total=labor+matSub+markupAmt;
+  // Materials subtotal — markup baked in, invisible to client
+  const matRaw=_geiLines.filter(l=>!l._tmLabor).reduce((s,l)=>s+(l.total||(l.qty||0)*(l.rate||0)),0);
+  const markupMult=_tmMatMarkup>0?(1+_tmMatMarkup/100):1;
+  const markedUpMat=Math.round(matRaw*markupMult);
+  const total=labor+markedUpMat;
   // Rail breakdown
   setT('tm-rail-total','$'+total.toLocaleString());
   setT('tm-rail-labor','$'+labor.toLocaleString());
-  setT('tm-rail-mat','$'+matSub.toLocaleString());
-  setT('tm-rail-mpct',_tmMatMarkup);
-  setT('tm-rail-mamt','$'+markupAmt.toLocaleString());
-  setT('tm-banner-pct',_tmMatMarkup);
-  const nte=parseFloat(document.getElementById('tm-i-nte')?.value)||0;
+  setT('tm-rail-mat','$'+markedUpMat.toLocaleString());
+  let nte=parseFloat(document.getElementById('tm-i-nte')?.value)||0;
+  const nteInp=document.getElementById('tm-i-nte');
+  if(nteInp&&nte>0&&nte<total){
+    nteInp.style.borderColor='var(--red)';
+    nteInp.title='NTE cap cannot be less than the estimated total ($'+total.toLocaleString()+')';
+  } else if(nteInp){nteInp.style.borderColor='';nteInp.title='';}
   const nteRow=document.getElementById('tm-rail-nte-row');
   if(nteRow)nteRow.style.display=nte>0?'flex':'none';
   if(nte>0)setT('tm-rail-nte-amt','$'+nte.toLocaleString());
@@ -675,41 +688,59 @@ function _tmRenderMatList(){
     el.innerHTML='<div class="tm-mat-empty">No material categories yet — tap "+ Add category" to start.</div>';
     return;
   }
+  const mm=_tmMatMarkup>0?(1+_tmMatMarkup/100):1;
   el.innerHTML=mats.map(({l,i})=>{
-    const total=l.total||((l.qty||0)*(l.rate||0));
+    const rawTotal=l.total||((l.qty||0)*(l.rate||0));
+    const dispTotal=Math.round(rawTotal*mm);
     return '<div class="tm-mat-row">'+
       '<div style="flex:1;cursor:pointer;min-width:0" onclick="_tmEditMatCat('+i+')">'+
         '<div class="tm-mat-cat">'+escHtml(l.desc||'Untitled')+'</div>'+
         (l.notes?'<div class="tm-mat-notes">'+escHtml(l.notes)+'</div>':'')+
       '</div>'+
       '<div style="display:flex;align-items:flex-start;gap:0">'+
-        '<div class="tm-mat-est">$'+(total||0).toLocaleString()+'</div>'+
+        '<div class="tm-mat-est">$'+(dispTotal||0).toLocaleString()+'</div>'+
         '<button class="tm-mat-del" onclick="_tmDelMatCat('+i+')" title="Remove category">×</button>'+
       '</div>'+
     '</div>';
   }).join('');
 }
-function _tmAddMatCat(){
-  const name=prompt('Category name (e.g. Paint & primer):');
-  if(!name)return;
-  const notes=prompt('Brief notes (optional — what\'s in it):','')||'';
-  const cost=parseFloat(prompt('Estimated cost ($):','0'))||0;
-  _geiLines.push({desc:name,notes:notes,qty:1,unit:'lot',rate:cost,total:cost});
-  _tmRenderMatList();_tmInputChange();
+function _tmAddMatCat(){ _tmMatCatModal(-1); }
+function _tmEditMatCat(idx){ _tmMatCatModal(idx); }
+function _tmMatCatModal(idx){
+  const isEdit=idx>=0;
+  const l=isEdit?_geiLines[idx]:null;
+  if(isEdit&&(!l||l._tmLabor))return;
+  const cur=isEdit?(l.total||((l.qty||0)*(l.rate||0))):0;
+  document.getElementById('_tm-mat-modal')?.remove();
+  const ov=document.createElement('div');
+  ov.id='_tm-mat-modal';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom,0px)';
+  ov.innerHTML='<div style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:20px 16px 28px">'+
+    '<div style="font-weight:800;font-size:16px;color:var(--text);margin-bottom:16px">'+(isEdit?'Edit category':'Add material category')+'</div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Category name</label><input type="text" id="tcm-name" placeholder="e.g. Paint &amp; primer" value="'+escHtml(l?.desc||'')+'" style="font-size:15px"></div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Notes <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input type="text" id="tcm-notes" placeholder="Brand, product type, etc." value="'+escHtml(l?.notes||'')+'"></div>'+
+    '<div class="f" style="margin-bottom:16px"><label>Estimated cost ($)</label><div class="input-prefix"><span>$</span><input type="number" id="tcm-cost" min="0" step="10" placeholder="0" value="'+(cur||'')+'" inputmode="decimal"></div></div>'+
+    '<div style="display:flex;gap:10px">'+
+      '<button onclick="document.getElementById(\'_tm-mat-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
+      '<button onclick="_tmMatCatSave('+idx+')" class="btn btn-p" style="flex:2">'+(isEdit?'Save changes':'Add category')+'</button>'+
+    '</div>'+
+  '</div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  setTimeout(()=>document.getElementById('tcm-name')?.focus(),50);
 }
-function _tmEditMatCat(idx){
-  const l=_geiLines[idx];if(!l||l._tmLabor)return;
-  const name=prompt('Category name:',l.desc||'');
-  if(name===null)return;
-  l.desc=name||l.desc;
-  const notes=prompt('Notes:',l.notes||'');
-  if(notes!==null)l.notes=notes;
-  const cur=l.total||((l.qty||0)*(l.rate||0));
-  const cost=prompt('Estimated cost ($):',cur);
-  if(cost!==null){
-    const c=parseFloat(cost)||0;
-    l.qty=1;l.unit='lot';l.rate=c;l.total=c;
+function _tmMatCatSave(idx){
+  const name=(document.getElementById('tcm-name')?.value||'').trim();
+  if(!name){document.getElementById('tcm-name')?.focus();return;}
+  const notes=(document.getElementById('tcm-notes')?.value||'').trim();
+  const cost=parseFloat(document.getElementById('tcm-cost')?.value)||0;
+  if(idx>=0){
+    const l=_geiLines[idx];if(!l)return;
+    l.desc=name;l.notes=notes;l.qty=1;l.unit='lot';l.rate=cost;l.total=cost;
+  } else {
+    _geiLines.push({desc:name,notes,qty:1,unit:'lot',rate:cost,total:cost});
   }
+  document.getElementById('_tm-mat-modal')?.remove();
   _tmRenderMatList();_tmInputChange();
 }
 function _tmDelMatCat(idx){
@@ -1488,7 +1519,7 @@ function saveGenericEstimate(draft){
     tmNteCap:_tmNteFromNew||parseFloat(v('tm-nte-cap'))||0,
   }:{isTM:false};
   const _deposit=_geiIsTM?(_tmFields.tmDepositAmt||0):Math.round(total*0.25*100)/100;
-  const _typeLabel=_geiIsTM?'Time & Materials Estimate':_geiIsFreeForm?'Custom Estimate':(TRADE_META[trade]?.label||'Trade')+' Estimate';
+  const _typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':(TRADE_META[trade]?.label||'Trade')+' Proposal';
   if(_geiEditBidId){
     const b=bids.find(x=>x.id===_geiEditBidId);
     if(b){
@@ -1518,7 +1549,7 @@ function saveGenericEstimate(draft){
     bids.unshift(newBid);_geiEditBidId=newBid.id;saveAll();
   }
   if(!draft)_saveToLineHistory();
-  showToast(draft?'Draft saved':'Estimate saved','✅');
+  showToast(draft?'Draft saved':'Proposal saved','✅');
   if(!draft)goPg('pg-clients');
 }
 
@@ -1550,11 +1581,15 @@ async function sendGenericProposal(){
   const _tmPayTerms=_geiIsTM
     ?`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Contract type:</strong> Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}</div><div>2. <strong>Mobilization deposit:</strong> ${_tmDepPct}% (${depositFmt}) due before work begins.</div><div>3. <strong>Billing:</strong> ${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.</div><div>4. <strong>Warranty:</strong> All workmanship warranted for 1 year.</div></div>`
     :`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> 25% due before work begins.</div><div>2. <strong>Balance:</strong> Remainder due upon completion.</div><div>3. <strong>Warranty:</strong> All workmanship warranted for 1 year.</div></div>`;
+  const _tmPropMarkupMult=(_geiIsTM&&_tmMatMarkup>0)?(1+_tmMatMarkup/100):1;
   const lineRows=_geiLines.filter(l=>l.desc||l.rate).map(l=>{
-    const amt=(l.qty||1)*(l.rate||0);
+    let amt=(l.qty||1)*(l.rate||0);
+    // For T&M, bake markup into material prices — client never sees the markup percentage
+    if(_geiIsTM&&!l._tmLabor)amt=Math.round(amt*_tmPropMarkupMult);
     return `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 18px;font-size:12px;color:#2d3748">${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</td><td style="padding:9px 6px;text-align:center;font-size:12px;color:#64748b">${l.qty||1}</td><td style="padding:9px 18px 9px 4px;text-align:right;font-size:12px;font-weight:600;color:#1a365d">$${amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`;
   }).join('');
-  const taxRow=taxPct?`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td colspan="2" style="padding:8px 18px;font-size:12px;color:#64748b">Tax / markup (${taxPct}%)</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$${(total*(taxPct/(100+taxPct))).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`:'';
+  // Suppress markup/tax row for T&M — markup is already in the line prices
+  const taxRow=(!_geiIsTM&&taxPct)?`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td colspan="2" style="padding:8px 18px;font-size:12px;color:#64748b">Tax / markup (${taxPct}%)</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$${(total*(taxPct/(100+taxPct))).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`:'';
   const notesHtml=v('gei-notes')?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6"><strong style="color:#1a365d">Notes:</strong> ${escHtml(v('gei-notes'))}</div>`:'';
   let _propPanelHtml='';
   if(_panelSched){
@@ -1562,7 +1597,7 @@ async function sendGenericProposal(){
     const _pRows=(_panelSched.circuits||[]).map((c,i)=>`<tr><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${i+1}</td><td style="padding:4px 8px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.desc||'—')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.amps||''}A</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.phase==='2pole'?'2-pole':c.phase}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.gauge||'')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.afci?'✓':''}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.gfci?'✓':''}</td></tr>`).join('');
     _propPanelHtml=`<div style="padding:16px 24px;border-top:2px solid #e2e8f0"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px">📋 Panel Schedule — ${_panelSched.panelAmps}A</div><p style="font-size:11px;color:#64748b;margin:0 0 8px">L1 leg: ${_pl1}A · L2 leg: ${_pl2}A${_pimb>0.10?' · <strong style="color:#dc2626">⚠️ Rebalance recommended</strong>':' · ✓ Balanced'}</p><table style="width:100%;border-collapse:collapse"><thead><tr><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">#</th><th style="background:#1a365d;color:#fff;padding:5px 8px;border:1px solid #cbd5e1;text-align:left;font-size:10px">Circuit</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Amps</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Phase</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Wire</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">AFCI</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">GFCI</th></tr></thead><tbody>${_pRows}</tbody></table></div>`;
   }
-  const _hdrLabel=_geiIsTM?'⏱️ Time &amp; Materials':tradeIcon+' Service Estimate';
+  const _hdrLabel=_geiIsTM?'⏱️ Time &amp; Materials':tradeIcon+' Service Proposal';
   const _nteRow=(_geiIsTM&&_tmNteCap)?`<tr style="background:#075985;color:rgba(255,255,255,.8)"><td colspan="2" style="padding:5px 18px;font-size:11px">Not-to-exceed cap</td><td style="padding:5px 18px;text-align:right;font-size:11px;font-weight:700">$${_tmNteCap.toLocaleString()}</td></tr>`:'';
   const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#1a365d">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#1a365d">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:5px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid 30 days</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th><th style="padding:8px 6px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:40px">Qty</th><th style="padding:8px 18px 8px 4px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:90px">Amount</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${taxRow}<tr style="background:#1a365d;color:#fff"><td colspan="2" style="padding:12px 18px;font-weight:800;font-size:15px">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:15px">${totalFmt}</td></tr>${_tmDepRow}${_nteRow}</tfoot></table>${notesHtml}${_propPanelHtml}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Payment Terms</div>${_tmPayTerms}</div></div>`;
   const bidId=_geiEditBidId;

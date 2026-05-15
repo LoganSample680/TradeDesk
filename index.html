@@ -1143,8 +1143,8 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
   <div id="cdt-jobs-content" style="display:none">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <span style="font-size:13px;font-weight:700">Estimates &amp; jobs</span>
-      <button class="btn btn-p btn-sm" onclick="schedForClient()">+ Schedule estimate</button>
+      <span style="font-size:13px;font-weight:700">Proposals &amp; jobs</span>
+      <button class="btn btn-p btn-sm" onclick="schedForClient()">+ Schedule proposal</button>
     </div>
     <div id="cd-jobs-list"></div>
   </div>
@@ -1673,7 +1673,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar">
       <div class="tbar-l">
         <button class="link-back" onclick="_geiBack()">← Pick a different type</button>
-        <div class="tbar-title">Time &amp; Materials estimate</div>
+        <div class="tbar-title">Time &amp; Materials proposal</div>
         <div class="tbar-sub" id="tm-page-sub">—</div>
       </div>
       <div class="tbar-r">
@@ -1694,20 +1694,20 @@ body.dark .cal-cell.other{background:var(--cream)}
             </div>
             <div class="f">
               <label>Crew size</label>
-              <select id="tm-i-crew" onchange="_tmInputChange()">
-                <option value="1">1 · solo</option>
-                <option value="2">2 · me + helper</option>
-                <option value="3">3 · full crew</option>
-                <option value="4">4+ · large crew</option>
-              </select>
+              <div style="display:flex;align-items:center;gap:10px;padding:6px 0">
+                <button onclick="_tmCrewStep(-1)" type="button" style="width:36px;height:36px;border-radius:50%;border:2px solid var(--border2);background:var(--bg);cursor:pointer;font-size:20px;font-weight:300;display:flex;align-items:center;justify-content:center;color:var(--text2);font-family:inherit;flex-shrink:0">−</button>
+                <span id="tm-i-crew-count" style="font-size:24px;font-weight:800;min-width:32px;text-align:center;color:var(--text)">1</span>
+                <button onclick="_tmCrewStep(1)" type="button" style="width:36px;height:36px;border-radius:50%;border:none;background:var(--blue);cursor:pointer;font-size:20px;font-weight:300;display:flex;align-items:center;justify-content:center;color:#fff;font-family:inherit;flex-shrink:0">+</button>
+                <span style="font-size:12px;color:var(--text3)" id="tm-i-crew-label"></span>
+              </div>
             </div>
             <div class="f">
               <label>Estimated hours</label>
               <input type="number" id="tm-i-hours" min="0" step="1" placeholder="40" oninput="_tmInputChange()">
             </div>
             <div class="f">
-              <label>Material markup %</label>
-              <div class="input-suffix"><input type="number" id="tm-i-markup" min="0" max="100" step="5" value="20" oninput="_tmInputChange()"><span>%</span></div>
+              <label>Material markup % <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>
+              <div class="input-suffix"><input type="number" id="tm-i-markup" min="0" max="100" step="5" placeholder="0" oninput="_tmInputChange()"><span>%</span></div>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px">
@@ -1738,7 +1738,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="tm-mat-list" id="tm-mat-list"></div>
           <div class="tip" style="margin-top:12px">
             <span style="font-size:18px">🧾</span>
-            <div><b>Materials billed at cost + <span id="tm-banner-pct">20</span>% markup.</b> Client sees the actual receipts; we add the markup as a line item.</div>
+            <div><b>Markup is baked into displayed prices.</b> Clients see the all-in price only — markup is never shown to them.</div>
           </div>
         </div>
 
@@ -1770,8 +1770,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="summary-meta">±15% normal for T&amp;M</div>
           <div class="summary-divider"></div>
           <div class="summary-row"><span>Labor</span><span id="tm-rail-labor">$0</span></div>
-          <div class="summary-row"><span>Materials est.</span><span id="tm-rail-mat">$0</span></div>
-          <div class="summary-row"><span>Markup (<span id="tm-rail-mpct">20</span>%)</span><span id="tm-rail-mamt">$0</span></div>
+          <div class="summary-row"><span>Materials</span><span id="tm-rail-mat">$0</span></div>
           <div class="summary-row" id="tm-rail-nte-row" style="display:none;color:var(--c-amber)"><span>NTE cap</span><span id="tm-rail-nte-amt">$0</span></div>
           <div class="summary-divider"></div>
           <div class="td-micro" style="margin-bottom:6px">Billing cadence</div>
@@ -1792,7 +1791,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar">
       <div class="tbar-l">
         <button class="link-back" onclick="_geiBack()">← Pick a different type</button>
-        <div class="tbar-title">Build Your Own estimate</div>
+        <div class="tbar-title">Build Your Own proposal</div>
         <div class="tbar-sub" id="byo-page-sub">—</div>
       </div>
       <div class="tbar-r">
@@ -1852,11 +1851,11 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="card" style="margin-bottom:12px">
       <!-- T&M chip (shown in T&M mode) -->
       <div id="gei-tm-chip" style="display:none;margin-bottom:12px">
-        <span style="display:inline-flex;align-items:center;gap:6px;background:#dbeafe;color:#1d4ed8;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px">⏱️ Time &amp; Materials Estimate</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;background:#dbeafe;color:#1d4ed8;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px">⏱️ Time &amp; Materials Proposal</span>
       </div>
       <!-- Free-form chip (shown in Build Your Own mode) -->
       <div id="gei-ff-chip" style="display:none;margin-bottom:12px">
-        <span style="display:inline-flex;align-items:center;gap:6px;background:#f0fdf4;color:#166534;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px">✏️ Build Your Own Estimate</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;background:#f0fdf4;color:#166534;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px">✏️ Build Your Own Proposal</span>
       </div>
       <!-- Scope toggles -->
       <div style="display:flex;gap:8px;margin-bottom:14px">
@@ -1893,7 +1892,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
       </div>
     </div>
-    <button class="btn btn-p" onclick="goGeiStep(2)" style="margin-bottom:8px">Next: Build estimate →</button>
+    <button class="btn btn-p" onclick="goGeiStep(2)" style="margin-bottom:8px">Next: Build proposal →</button>
   </div>
 
   <!-- Step 2: Build -->
@@ -1933,7 +1932,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <div style="text-align:center;padding:6px 0 4px;font-size:12px;color:var(--text3)">Add materials on the next screen</div>
       <!-- Proceed button (T&M only) -->
-      <button onclick="goGeiStep(3)" class="btn btn-p" style="margin-top:10px;margin-bottom:4px">Review &amp; send estimate →</button>
+      <button onclick="goGeiStep(3)" class="btn btn-p" style="margin-top:10px;margin-bottom:4px">Review &amp; send proposal →</button>
     </div>
     <div id="gei-svc-wrap" style="display:flex;justify-content:flex-end;margin-bottom:4px">
       <button onclick="showGeiOnboarding({force:true})" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border2);border-radius:var(--r);color:var(--text3);cursor:pointer;font-family:inherit">⚙️ Change services</button>
