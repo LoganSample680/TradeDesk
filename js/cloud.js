@@ -300,7 +300,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.15.26.05';
+const APP_VERSION='05.15.26.06';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -312,7 +312,16 @@ function _removeBootOverlay(){
     if(resumeBid){
       localStorage.removeItem('_sw_resume_bid');
       const bid=bids.find(b=>String(b.id)===resumeBid);
-      if(bid)setTimeout(()=>openEditBid(bid.id),80);
+      if(bid){
+        setTimeout(()=>{
+          // Generic/T&M/BYO bids — openGenericEstimate reads b.isTM / b.isFreeForm internally
+          if(bid.geiLines!==undefined){
+            openGenericEstimate(getClientById(bid.client_id),bid.id,bid.trade_type||'general');
+          }else{
+            openEditBid(bid.id);
+          }
+        },80);
+      }
     }
     // Restore any unsaved form fields that were open when auto-update fired
     try{
