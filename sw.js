@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-05.15.26.24';
+const CACHE = 'tradedesk-05.15.26.25';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
 // tries to serve it for a navigation. new Response() always has redirected:false.
@@ -31,10 +31,20 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
 
-  // Never intercept navigation — HTML always fetched natively by the browser.
-  // This prevents stale HTML from ever being served by the SW, which caused
-  // infinite reload loops on Chrome/Windows when the CDN cached old HTML.
-  if (e.request.mode === 'navigate') return;
+  // Navigation — network-first with cache:'no-cache' so CDN and browser HTTP
+  // cache are both bypassed. Offline fallback to SW cache for iOS PWA support.
+  if (e.request.mode === 'navigate') {
+    const navPath = url.pathname;
+    if (navPath !== '/' && navPath !== '/index.html' && navPath !== '') return;
+    e.respondWith(
+      fetch(new Request(e.request.url, {cache: 'no-cache'})).then(r => {
+        if (!r.ok) return r;
+        caches.open(CACHE).then(c => c.put('/index.html', safeClone(r)));
+        return r;
+      }).catch(() => caches.match('/index.html'))
+    );
+    return;
+  }
 
   // Only cache GET requests over http/https
   if (e.request.method !== 'GET' || (url.protocol !== 'http:' && url.protocol !== 'https:')) return;
