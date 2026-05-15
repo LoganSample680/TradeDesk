@@ -369,7 +369,7 @@ function _renderNavTradeSwitcher(){
 let _geiClientId=null,_geiEditBidId=null,_geiLines=[],_geiTrade=null,_geiIsCommercial=false,_geiEmergency=false,_geiStep=1,_geiNewWork=false;
 let _panelSched=null; // null = not active, obj = panel schedule data
 let _geiIsTM=false,_tmCrewCount=1,_tmRatePerMan=0,_tmEstHours=0,_tmBillingCycle='weekly';
-let _tmMatMarkup=20,_tmCapAction='Stop & get re-approval';
+let _tmMatMarkup=0,_tmCapAction='Stop & get re-approval';
 let _geiIsFreeForm=false;
 
 function openTMEstimate(c,bidId){
@@ -387,7 +387,7 @@ function openGenericEstimate(c,bidId,_tradePick){
   _geiLines=[];_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;
   const _wasTM=_geiIsTM,_wasFF=_geiIsFreeForm;
   _geiIsTM=false;_geiIsFreeForm=false;
-  if(_wasTM){_geiIsTM=true;}else{_tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmMatMarkup=20;_tmCapAction='Stop & get re-approval';}
+  if(_wasTM){_geiIsTM=true;}else{_tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmMatMarkup=0;_tmCapAction='Stop & get re-approval';}
   if(_wasFF)_geiIsFreeForm=true;
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
@@ -421,7 +421,7 @@ function openGenericEstimate(c,bidId,_tradePick){
         _geiIsTM=true;
         _tmCrewCount=b.tmCrewCount||1;_tmRatePerMan=b.tmRatePerMan||0;
         _tmEstHours=b.tmEstHours||0;_tmBillingCycle=b.tmBillingCycle||'weekly';
-        _tmMatMarkup=b.tmMatMarkup||b.geiTaxPct||20;
+        _tmMatMarkup=b.tmMatMarkup||b.geiTaxPct||0;
         _tmCapAction=b.tmCapAction||'Stop & get re-approval';
       }
       if(b.isFreeForm)_geiIsFreeForm=true;
@@ -606,7 +606,7 @@ function _tmShowPage(){
   setV('tm-i-hours',_tmEstHours||'');
   const crewDisp=document.getElementById('tm-i-crew-count');
   if(crewDisp)crewDisp.textContent=Math.max(1,_tmCrewCount||1);
-  setV('tm-i-markup',_tmMatMarkup||20);
+  setV('tm-i-markup',_tmMatMarkup||'');
   const b=bids.find(x=>x.id===_geiEditBidId);
   if(b?.tmNteCap)setV('tm-i-nte',b.tmNteCap);
   if(b?.tmCapAction){setV('tm-i-cap-action',b.tmCapAction);_tmCapAction=b.tmCapAction;}
