@@ -171,6 +171,27 @@ function _closeStylePicker(){
 }
 function _showEstimateStylePicker(c,overrideAddr){
   _stylePickState={c,overrideAddr};
+  const trade=getActiveTrade();
+  const _SCOPE_DESC={
+    painting:'You define the work, the client sees one bottom-line price. Best for clearly-defined jobs like a full repaint or exterior project.',
+    electrical:'You define the work, the client sees one bottom-line price. Best for service upgrades, panel installs, or any clearly-scoped electrical job.',
+    plumbing:'You define the work, the client sees one bottom-line price. Best for fixture replacements, pipe repairs, or clearly-scoped plumbing installs.',
+    hvac:'You define the work, the client sees one bottom-line price. Best for equipment installs, duct work, or any clearly-scoped HVAC job.',
+    roofing:'You define the work, the client sees one bottom-line price. Best for full replacements, repairs, or gutter installs with known scope.',
+    landscaping:'You define the work, the client sees one bottom-line price. Best for installs, hardscape, or irrigation projects with a defined deliverable.',
+    general:'You define the work, the client sees one bottom-line price. Best for any job with a fixed scope and a single deliverable.',
+  };
+  const _TIPS={
+    painting:'Most painters use <b>Scope &amp; Price</b> for new clients and <b>T&M</b> for repeat customers with open-ended work. <b>Build Your Own</b> shines for upsells.',
+    electrical:'Most electricians use <b>Scope &amp; Price</b> for installs and upgrades, <b>T&M</b> for troubleshooting and service calls, and <b>Build Your Own</b> for whole-home packages.',
+    plumbing:'Most plumbers use <b>Scope &amp; Price</b> for installs and replacements, <b>T&M</b> for service calls with unknown scope, and <b>Build Your Own</b> for remodel packages.',
+    hvac:'Most HVAC contractors use <b>Scope &amp; Price</b> for equipment installs, <b>T&M</b> for diagnostics and service calls, and <b>Build Your Own</b> for maintenance packages.',
+    roofing:'Most roofers use <b>Scope &amp; Price</b> for replacements, <b>T&M</b> for repairs with unknown damage extent, and <b>Build Your Own</b> for full exterior packages.',
+    landscaping:'Most landscapers use <b>Scope &amp; Price</b> for install projects, <b>T&M</b> for open-ended maintenance, and <b>Build Your Own</b> for seasonal service packages.',
+    general:'Use <b>Scope &amp; Price</b> for fixed deliverables, <b>T&M</b> for open-ended or uncertain scope, and <b>Build Your Own</b> when the client wants to choose their services.',
+  };
+  const scopeDesc=_SCOPE_DESC[trade]||_SCOPE_DESC.general;
+  const tipText=_TIPS[trade]||_TIPS.general;
   const ov=document.createElement('div');
   ov.id='_style-pick-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:9000;background:var(--bg2);overflow-y:auto;opacity:0;transform:translateY(18px);transition:opacity .22s ease,transform .25s cubic-bezier(.22,.8,.2,1)';
@@ -199,18 +220,18 @@ function _showEstimateStylePicker(c,overrideAddr){
       '</div>'+
       '<div class="chooser-grid">'+
         card('scope','denim','📋','Most popular','Scope &amp; Price','Fixed scope, one final number',
-          'You define the work, the client sees one bottom-line price. Best for clearly-defined jobs like a full repaint.',
-          ['Line items private from client','Internal labor + materials math','Single-price proposal','30% deposit standard'])+
+          scopeDesc,
+          ['Line items private from client','Internal labor + materials math','Single-price proposal','Deposit collected upfront'])+
         card('tm','amber','⏱️','For variable scope','Time &amp; Materials','Bill the hours, mark up the materials',
           'Open-ended scope where the client agrees to a rate, not a final price. Best for unknown-scope work.',
           ['Hourly rate + crew size','Materials at cost + markup','Not-to-exceed cap (optional)','Weekly invoicing'])+
         card('freeform','green','🧩','Pick and choose','Build Your Own','Modular line items, client picks what they want',
           'Send a menu of priced services. Client toggles what they want — bigger close rates because they choose their price.',
-          ['Optional / required tiers','Client-side toggles','Real-time recalculation','Upsell-friendly'])+
+          ['Client picks their own services','You set the prices','Deposit collected upfront','Upsell-friendly'])+
       '</div>'+
       '<div class="tip" style="margin-top:18px">'+
         '<span style="font-size:18px">💡</span>'+
-        '<div><b>Tip · </b>Most painters use <b>Scope &amp; Price</b> for new clients and <b>T&M</b> for repeat customers with open-ended work. <b>Build Your Own</b> shines for upsells.</div>'+
+        '<div><b>Tip · </b>'+tipText+'</div>'+
       '</div>'+
     '</div>';
   document.body.appendChild(ov);
