@@ -92,7 +92,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .pg-status p{font-size:14px;color:var(--text2);line-height:1.7;max-width:380px;margin:0 auto}
 
 /* ── Hero ── */
-.hub-hero{background:linear-gradient(155deg,var(--ink) 0%,#1B3465 100%);border-radius:16px;padding:22px 20px;margin-bottom:16px;display:flex;align-items:flex-start;gap:20px;position:relative;overflow:hidden}
+.hub-hero{background:radial-gradient(120% 80% at 0% 100%, rgba(45,93,168,.36) 0%, transparent 55%), linear-gradient(155deg, #1B1612 0%, #1F2230 100%);border-radius:16px;padding:22px 20px;margin-bottom:16px;display:flex;align-items:flex-start;gap:20px;position:relative;overflow:hidden}
 .hub-hero::before{content:'';position:absolute;right:-40px;top:-40px;width:180px;height:180px;border-radius:50%;background:rgba(255,255,255,.04)}
 .hub-hero-l{flex:1;min-width:0;position:relative;z-index:1}
 .hub-hero-eyebrow{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:4px}
@@ -114,7 +114,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 }
 
 /* ── Pay CTA banner ── */
-.hub-pay-cta{display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,#5C1A1A,#8B2B2B);border-radius:14px;padding:16px 18px;margin-bottom:14px;gap:14px}
+.hub-pay-cta{display:flex;align-items:center;justify-content:space-between;background:radial-gradient(120% 80% at 0% 100%, rgba(45,93,168,.36) 0%, transparent 55%), linear-gradient(155deg, #1B1612 0%, #1F2230 100%);border-radius:14px;padding:16px 18px;margin-bottom:14px;gap:14px}
 .hub-pay-cta-tag{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.5);margin-bottom:3px}
 .hub-pay-cta-amt{font-size:32px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-1px;line-height:1}
 .hub-pay-cta-sub{font-size:11px;color:rgba(255,255,255,.45);margin-top:4px}
@@ -274,10 +274,98 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .prop-close{position:fixed;top:16px;right:16px;background:var(--ink);color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit;z-index:10}
 
 /* ── Boot overlay ── */
-#boot-overlay{position:fixed;inset:0;background:#0D1117;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s ease;will-change:opacity}
+#boot-overlay{position:fixed;inset:0;background:var(--ink);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s ease;will-change:opacity}
 #inv-overlay,#prop-overlay{transition:opacity .22s ease;will-change:opacity}
 
-@media print{.topbar,.left-nav,.bottom-nav,.inv-close,.prop-close,.no-print{display:none!important}#inv-overlay,#prop-overlay{position:static!important}.inv-wrap,.prop-wrap{padding:16px}body{background:#fff}}
+/* ── Notification panel ── */
+.notif-wrap{position:relative;display:flex}
+.notif-unread-dot{position:absolute;top:5px;right:5px;width:8px;height:8px;background:#ef4444;border-radius:50%;border:1.5px solid var(--ink);display:none;pointer-events:none}
+.notif-panel{position:absolute;right:-6px;top:calc(100% + 8px);width:300px;background:var(--bg-card);border-radius:14px;box-shadow:0 8px 30px rgba(27,22,18,.18),0 0 0 1px rgba(27,22,18,.06);z-index:300;overflow:hidden;display:none}
+.notif-hd{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 10px;border-bottom:1px solid var(--border)}
+.notif-hd-title{font-size:13px;font-weight:800}
+.notif-mark-read{font-size:11px;color:var(--denim);cursor:pointer;font-weight:600;background:none;border:none;font-family:inherit;padding:0}
+.notif-item{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s}
+.notif-item:last-child{border-bottom:none}
+.notif-item:hover{background:var(--bg)}
+.notif-item-dot{width:8px;height:8px;border-radius:50%;background:var(--denim);flex-shrink:0;margin-top:5px}
+.notif-item-dot.read{background:transparent;border:1.5px solid var(--border2)}
+.notif-item-title{font-size:13px;font-weight:700;color:var(--text)}
+.notif-item-time{font-size:11px;color:var(--text3);margin-top:2px}
+.notif-empty{padding:22px 14px;font-size:13px;color:var(--text3);text-align:center}
+
+/* ── Help drawer ── */
+.help-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:400;display:none;align-items:flex-end;justify-content:center}
+.help-backdrop.open{display:flex}
+.help-drawer{background:var(--bg-card);border-radius:20px 20px 0 0;width:100%;max-width:600px;max-height:82vh;overflow-y:auto;padding:14px 20px 44px;transform:translateY(100%);transition:transform .3s cubic-bezier(.32,0,.67,0)}
+.help-backdrop.open .help-drawer{transform:translateY(0)}
+.help-handle{width:40px;height:4px;border-radius:2px;background:var(--border2);margin:0 auto 16px}
+.help-title{font-size:21px;font-weight:900;font-family:var(--font-display);letter-spacing:-.3px;margin-bottom:18px}
+.help-sec{margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid var(--border)}
+.help-sec:last-child{border-bottom:none;margin-bottom:0}
+.help-sec-hd{font-size:13px;font-weight:800;color:var(--ink);margin-bottom:7px}
+.help-sec-body{font-size:13px;color:var(--text2);line-height:1.75}
+
+/* ── Account chip & dropdown ── */
+.acct-wrap{position:relative;display:flex}
+.acct-chip{display:flex;align-items:center;gap:7px;cursor:pointer;padding:3px 8px 3px 3px;border-radius:22px;border:1.5px solid rgba(255,255,255,.18);transition:background .15s;background:transparent}
+.acct-chip:hover{background:rgba(255,255,255,.08)}
+.acct-avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#2D5DA8 0%,#5B8DE0 100%);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;color:#fff;flex-shrink:0;font-family:var(--font-display)}
+.acct-chip-name{font-size:12px;font-weight:700;color:rgba(255,255,255,.9);max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acct-chevron{font-size:10px;color:rgba(255,255,255,.4);line-height:1}
+.acct-dropdown{position:absolute;right:0;top:calc(100% + 8px);width:182px;background:var(--bg-card);border-radius:12px;box-shadow:0 8px 30px rgba(27,22,18,.18),0 0 0 1px rgba(27,22,18,.06);z-index:300;overflow:hidden;display:none}
+.acct-menu-item{display:flex;align-items:center;gap:10px;padding:12px 14px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer;border:none;background:none;font-family:inherit;width:100%;text-align:left;transition:background .12s}
+.acct-menu-item:hover{background:var(--bg)}
+.acct-menu-item:not(:last-child){border-bottom:1px solid var(--border)}
+
+/* ── Mobile contact strip (PR3) ── */
+.hub-mobile-strip{display:flex;gap:8px;margin-bottom:14px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.hub-mstrip-btn{flex:1;min-width:64px;padding:11px 8px;border-radius:10px;background:var(--ink);color:#fff;font-size:13px;font-weight:700;text-decoration:none;text-align:center;border:none;cursor:pointer;font-family:inherit;white-space:nowrap}
+.hub-mstrip-sec{background:transparent;color:var(--text);border:1.5px solid var(--border2)}
+@media(min-width:640px){.hub-mobile-strip{display:none}}
+
+/* ── Approvals card (PR4) ── */
+.hub-approv-mobile{margin-bottom:14px}
+@media(min-width:640px){.hub-approv-mobile{display:none}}
+.hub-approv-item{padding:10px 0;border-bottom:1px solid var(--border)}
+.hub-approv-item:last-child{border-bottom:none}
+.hub-approv-label{font-size:13px;font-weight:700;margin-bottom:6px}
+.hub-swatch-row{display:flex;gap:8px}
+.hub-swatch{width:36px;height:36px;border-radius:8px;cursor:pointer;border:2px solid transparent;transition:border-color .15s}
+.hub-swatch.selected{border-color:var(--denim);box-shadow:0 0 0 2px rgba(45,93,168,.25)}
+.hub-co-btn-approve{padding:7px 12px;border-radius:8px;background:var(--ink);color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer;font-family:inherit}
+.hub-co-btn-decline{padding:7px 12px;border-radius:8px;background:transparent;color:var(--text2);border:1.5px solid var(--border2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+
+/* ── Photo lightbox (PR5) ── */
+#hub-lightbox{position:fixed;inset:0;background:rgba(0,0,0,.94);z-index:600;display:none;align-items:center;justify-content:center}
+#hub-lightbox.open{display:flex}
+.hub-lb-img{max-width:90vw;max-height:78vh;border-radius:8px;object-fit:contain;display:block}
+.hub-lb-tag{color:rgba(255,255,255,.6);font-size:12px;margin-top:10px;font-weight:600;text-align:center}
+.hub-lb-close{position:absolute;top:16px;right:16px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:20px;width:40px;height:40px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit}
+.hub-lb-arrow{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);border:none;color:#fff;font-size:32px;line-height:1;width:48px;height:48px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit}
+.hub-lb-arrow:hover{background:rgba(255,255,255,.25)}
+.hub-lb-prev{left:16px}
+.hub-lb-next{right:16px}
+.hub-log-photos{display:flex;gap:5px;margin-top:6px}
+.hub-log-photo-sq{width:44px;height:44px;border-radius:6px;object-fit:cover;cursor:pointer;flex-shrink:0}
+
+/* ── Payment method chip buttons (PR6) ── */
+button.hub-method-chip{cursor:pointer;font-family:inherit;transition:background .15s}
+button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(255,255,255,.3)}
+.hub-method-chip-btn{cursor:pointer}
+
+/* ── Doc upload (PR7) ── */
+.hub-doc-tag-client{background:#EDE9FE;color:#5B21B6}
+.hub-chat-attach{padding:11px;border-radius:22px;background:transparent;color:var(--text2);border:1.5px solid var(--border2);font-size:16px;cursor:pointer;flex-shrink:0;font-family:inherit}
+
+/* ── Empty states (PR8) ── */
+.hub-empty-state{text-align:center;padding:36px 20px}
+.hub-empty-icon{font-size:48px;margin-bottom:10px}
+.hub-empty-title{font-size:16px;font-weight:800;color:var(--text);margin-bottom:6px;font-family:var(--font-display)}
+.hub-empty-body{font-size:13px;color:var(--text2);line-height:1.7;max-width:280px;margin:0 auto 14px}
+
+/* ── A11y (PR10) ── */
+*:focus-visible{outline:3px solid rgba(45,93,168,.16);outline-offset:2px}
+
 </style>
 </head>
 <body>
@@ -309,9 +397,30 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
   <img id="topbar-logo-img" class="topbar-logo-img" alt="Logo">
   <span id="topbar-name" class="topbar-name"></span>
   <div class="topbar-actions">
-    <button class="topbar-icon-btn" onclick="void(0)" title="Notifications">🔔</button>
-    <a class="topbar-icon-btn" href="#" onclick="return false" title="Help">❓</a>
-    <div class="topbar-account-chip" id="topbar-account-chip"></div>
+    <div class="notif-wrap">
+      <button class="topbar-icon-btn" id="notif-btn" onclick="toggleNotifPanel(event)" aria-label="Notifications">🔔</button>
+      <span class="notif-unread-dot" id="notif-dot"></span>
+      <div class="notif-panel" id="notif-panel">
+        <div class="notif-hd">
+          <span class="notif-hd-title">Notifications</span>
+          <button class="notif-mark-read" onclick="markAllRead()">Mark all read</button>
+        </div>
+        <div id="notif-list"></div>
+      </div>
+    </div>
+    <button class="topbar-icon-btn" onclick="openHelp()" aria-label="Help">❓</button>
+    <div class="acct-wrap" id="acct-wrap">
+      <button class="acct-chip" id="acct-chip" onclick="toggleAcctMenu(event)" aria-label="Account menu">
+        <div class="acct-avatar" id="acct-avatar"></div>
+        <span class="acct-chip-name" id="acct-chip-name"></span>
+        <span class="acct-chevron">▾</span>
+      </button>
+      <div class="acct-dropdown" id="acct-dropdown">
+        <button class="acct-menu-item" onclick="closeAcctMenu()">👤 Profile</button>
+        <button class="acct-menu-item" onclick="toggleNotifPanel(event);closeAcctMenu()">🔔 Notifications</button>
+        <button class="acct-menu-item" onclick="closeAcctMenu()" style="color:#c0392b">🚪 Sign out</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -319,11 +428,13 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
   <!-- Left nav (desktop) -->
   <nav class="left-nav" id="left-nav">
     <div class="nav-client" id="nav-client-info"></div>
-    <div class="nav-item active" id="ni-overview" onclick="switchView('overview')"><span class="nav-icon">🏠</span>Overview</div>
-    <div class="nav-item" id="ni-project" onclick="switchView('project')"><span class="nav-icon">🔨</span>Project</div>
-    <div class="nav-item" id="ni-payments" onclick="switchView('payments')"><span class="nav-icon">💳</span>Payments</div>
-    <div class="nav-item" id="ni-documents" onclick="switchView('documents')"><span class="nav-icon">📁</span>Documents</div>
-    <div class="nav-item" id="ni-messages" onclick="switchView('messages')"><span class="nav-icon">💬</span>Messages</div>
+    <div role="tablist">
+      <div class="nav-item active" id="ni-overview" role="tab" aria-selected="true" onclick="switchView('overview')"><span class="nav-icon">🏠</span>Overview</div>
+      <div class="nav-item" id="ni-project" role="tab" aria-selected="false" onclick="switchView('project')"><span class="nav-icon">🔨</span>Project</div>
+      <div class="nav-item" id="ni-payments" role="tab" aria-selected="false" onclick="switchView('payments')"><span class="nav-icon">💳</span>Payments</div>
+      <div class="nav-item" id="ni-documents" role="tab" aria-selected="false" onclick="switchView('documents')"><span class="nav-icon">📁</span>Documents</div>
+      <div class="nav-item" id="ni-messages" role="tab" aria-selected="false" onclick="switchView('messages')"><span class="nav-icon">💬</span>Messages</div>
+    </div>
     <div class="nav-footer" id="nav-footer"></div>
   </nav>
 
@@ -344,13 +455,52 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 </div>
 
 <!-- Bottom nav (mobile) -->
-<nav class="bottom-nav" id="bottom-nav">
-  <button class="bn-item active" id="bni-overview" onclick="switchView('overview')"><span class="bn-icon">🏠</span>Overview</button>
-  <button class="bn-item" id="bni-project" onclick="switchView('project')"><span class="bn-icon">🔨</span>Project</button>
-  <button class="bn-item" id="bni-payments" onclick="switchView('payments')"><span class="bn-icon">💳</span>Payments</button>
-  <button class="bn-item" id="bni-documents" onclick="switchView('documents')"><span class="bn-icon">📁</span>Documents</button>
-  <button class="bn-item" id="bni-messages" onclick="switchView('messages')"><span class="bn-icon">💬</span>Messages</button>
+<nav class="bottom-nav" id="bottom-nav" role="tablist">
+  <button class="bn-item active" id="bni-overview" role="tab" aria-selected="true" onclick="switchView('overview')"><span class="bn-icon">🏠</span>Overview</button>
+  <button class="bn-item" id="bni-project" role="tab" aria-selected="false" onclick="switchView('project')"><span class="bn-icon">🔨</span>Project</button>
+  <button class="bn-item" id="bni-payments" role="tab" aria-selected="false" onclick="switchView('payments')"><span class="bn-icon">💳</span>Payments</button>
+  <button class="bn-item" id="bni-documents" role="tab" aria-selected="false" onclick="switchView('documents')"><span class="bn-icon">📁</span>Documents</button>
+  <button class="bn-item" id="bni-messages" role="tab" aria-selected="false" onclick="switchView('messages')"><span class="bn-icon">💬</span>Messages</button>
 </nav>
+
+<!-- Help drawer -->
+<div class="help-backdrop" id="help-backdrop" onclick="closeHelp()">
+  <div class="help-drawer" onclick="event.stopPropagation()">
+    <div class="help-handle"></div>
+    <div class="help-title">Help & FAQ</div>
+    <div class="help-sec">
+      <div class="help-sec-hd">💳 How payments work</div>
+      <div class="help-sec-body">Your contractor sends you a secure payment link. You can pay by card, ACH bank transfer, or Apple Pay. Deposits are due before work begins; the final balance is due on completion. All payments are processed securely — your contractor never sees your card details.</div>
+    </div>
+    <div class="help-sec">
+      <div class="help-sec-hd">✍️ How signing works</div>
+      <div class="help-sec-body">When you receive a proposal, tap <strong>Review &amp; Sign</strong>. You'll see the full scope of work and price. Sign with your finger or mouse and submit. You'll receive a confirmation email with a copy of the signed agreement.</div>
+    </div>
+    <div class="help-sec">
+      <div class="help-sec-hd">📞 Contacting your contractor</div>
+      <div class="help-sec-body">Use the Call, Text, or Email buttons on the Overview tab to reach your contractor directly. For non-urgent questions, the Messages tab keeps everything in one place so nothing gets lost in your inbox.</div>
+    </div>
+    <div class="help-sec">
+      <div class="help-sec-hd">❓ Common questions</div>
+      <div class="help-sec-body">
+        <strong>Can I change the scope after signing?</strong> Yes — your contractor can send a change order for your approval.<br><br>
+        <strong>Is this hub link private?</strong> Yes. The link is unique to you and not publicly indexed.<br><br>
+        <strong>How do I get a copy of my invoice?</strong> Go to the Payments tab and tap any invoice row to open a printable version.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Photo lightbox -->
+<div id="hub-lightbox" onclick="closeLightbox()">
+  <button class="hub-lb-arrow hub-lb-prev" onclick="event.stopPropagation();lbNav(-1)" aria-label="Previous photo">‹</button>
+  <div onclick="event.stopPropagation()" style="display:flex;flex-direction:column;align-items:center;max-width:90vw">
+    <img id="hub-lb-img" class="hub-lb-img" alt="">
+    <div id="hub-lb-tag" class="hub-lb-tag"></div>
+  </div>
+  <button class="hub-lb-arrow hub-lb-next" onclick="event.stopPropagation();lbNav(1)" aria-label="Next photo">›</button>
+  <button class="hub-lb-close" onclick="closeLightbox()" aria-label="Close lightbox">✕</button>
+</div>
 
 <!-- Invoice overlay -->
 <div id="inv-overlay">
@@ -614,9 +764,12 @@ function applyBranding(h){
   if(nci)nci.innerHTML='<div class="nav-client-name">'+esc(h.clientName||'')+'</div>'+(h.clientAddr?'<div class="nav-client-addr">'+esc(h.clientAddr)+'</div>':'');
   const nf=document.getElementById('nav-footer');
   if(nf&&h.bwebsite)nf.innerHTML='<a href="'+esc(h.bwebsite)+'" target="_blank" style="color:inherit;text-decoration:none">'+esc(h.bwebsite.replace(/^https?:\/\//,''))+'</a>';
-  // Account chip: first name from clientName
-  const chip=document.getElementById('topbar-account-chip');
-  if(chip){const fn=(h.clientName||'').split(' ')[0];if(fn)chip.textContent=fn;}
+  // Account chip: avatar circle + first name + chevron
+  const fn=(h.clientName||'').split(' ')[0]||'?';
+  const avatar=document.getElementById('acct-avatar');
+  const chipName=document.getElementById('acct-chip-name');
+  if(avatar)avatar.textContent=fn.charAt(0).toUpperCase();
+  if(chipName)chipName.textContent=fn;
   // Populate + animate boot overlay
   const bn=document.getElementById('boot-name');if(bn)bn.textContent=h.contractorName||'';
   const bl=document.getElementById('boot-logo'),blw=document.getElementById('boot-logo-wrap');
@@ -644,6 +797,10 @@ function switchView(key){
     const ni=document.getElementById('ni-'+v);if(ni)ni.className='nav-item'+(v===key?' active':'');
   });
   _BN.forEach(v=>{const bi=document.getElementById('bni-'+v);if(bi)bi.className='bn-item'+(v===key?' active':'');});
+  _VIEWS.forEach(v=>{
+    const ni=document.getElementById('ni-'+v);if(ni)ni.setAttribute('aria-selected',v===key?'true':'false');
+    const bi=document.getElementById('bni-'+v);if(bi)bi.setAttribute('aria-selected',v===key?'true':'false');
+  });
   history.replaceState(null,'',location.pathname+location.search+(key!=='overview'?'#'+key:''));
   window.scrollTo(0,0);
 }
@@ -658,11 +815,22 @@ function renderOverview(){
   const totalPaid=wonBids.reduce((s,b)=>s+(b.paid||0),0);
   const activeJobs=h.jobs.filter(j=>j.status!=='done');
   const payableBids=wonBids.filter(b=>(b.balance||0)>0.01);
-  // Progress pct: rough heuristic based on signed vs total
-  const total=h.bids.length||1;
-  const signed=wonBids.length;
-  const pct=Math.round(Math.min(100,Math.max(5,(signed/total)*100)));
+  // PR9: Real progress % from job data
+  let pct;
+  const job0=activeJobs[0]||h.jobs[0];
+  if(job0&&job0.progress!=null&&job0.progress!==undefined) pct=Math.round(Math.min(100,Math.max(0,job0.progress)));
+  else if(job0&&job0.days_complete!=null&&job0.days_total) pct=Math.round(Math.min(100,job0.days_complete/job0.days_total*100));
+  else{const total=h.bids.length||1;const signed=wonBids.length;pct=Math.round(Math.min(100,Math.max(5,(signed/total)*100)));}
   const firstName=(h.clientName||'').split(' ')[0]||h.clientName||'';
+  // PR4: Approvals data (seed if undefined)
+  const approvals=_hub.approvals||[
+    {type:'color',id:'c1',label:'Exterior color choice',swatches:[
+      {color:'#F5F0E8',name:'Off-white'},
+      {color:'#2D5DA8',name:'Blue Deep'},
+      {color:'#2A2622',name:'Charcoal'}
+    ],saved:null},
+    {type:'change_order',id:'co1',label:'Add garage door trim',amount:420,status:'pending'}
+  ];
 
   // Hero
   let html='<div class="hub-hero">';
@@ -682,6 +850,21 @@ function renderOverview(){
   html+='<div class="hub-mini"><div class="hub-mini-val">'+(h.photos?.length||0)+'</div><div class="hub-mini-lbl">Photos</div></div>';
   html+='</div>';
   html+='</div>';
+
+  // PR3: Mobile contact strip
+  if(h.contractorPhone){
+    const phone=h.contractorPhone.replace(/\D/g,'');
+    html+='<div class="hub-mobile-strip">';
+    html+='<a href="tel:'+phone+'" class="hub-mstrip-btn">📞 Call</a>';
+    html+='<a href="sms:'+phone+'" class="hub-mstrip-btn hub-mstrip-sec">💬 Text</a>';
+    if(h.contractorEmail)html+='<a href="mailto:'+esc(h.contractorEmail)+'" class="hub-mstrip-btn hub-mstrip-sec">📧 Email</a>';
+    html+='<button class="hub-mstrip-btn hub-mstrip-sec" onclick="openHelp()">📅 Schedule</button>';
+    html+='</div>';
+  }
+
+  // PR4: Approvals mobile card
+  const approvalsHtml=_renderApprovalsCard(approvals);
+  if(approvalsHtml)html+='<div class="hub-approv-mobile">'+approvalsHtml+'</div>';
 
   // Pay CTA or paid banner
   if(payableBids.length){
@@ -765,6 +948,9 @@ function renderOverview(){
     html+='</div>';
   }
 
+  // PR4: Approvals card in sidebar
+  if(approvalsHtml)html+=approvalsHtml;
+
   // Approvals needing signature
   if(pendingBids.length){
     html+='<div class="hub-side-card">';
@@ -797,16 +983,16 @@ function renderProject(){
   // Photo grid
   if(photos.length){
     html+='<div class="hub-photo-grid">';
-    photos.forEach(p=>{
+    photos.forEach((p,i)=>{
       const tag=p.type==='before'?'Before':p.type==='after'?'After':p.type==='progress'?'Progress':'';
-      html+='<div class="hub-photo-thumb" onclick="openPhoto(\''+esc(p.url)+'\',\''+esc(p.caption||'')+'\')">';
+      html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.photos,'+i+')" aria-label="View photo">';
       html+='<img src="'+esc(p.url)+'" alt="'+esc(p.caption||'Project photo')+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
       if(tag)html+='<div class="hub-photo-tag">'+tag+'</div>';
       html+='</div>';
     });
     html+='</div>';
   }else{
-    html+='<div class="card"><div class="empty">📷 No photos yet — we\'ll add progress photos as work begins.</div></div>';
+    html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">📷</div><div class="hub-empty-title">No photos yet</div><div class="hub-empty-body">Your contractor will upload progress photos here as work begins. Check back soon!</div></div></div>';
   }
 
   // Daily log
@@ -824,6 +1010,16 @@ function renderProject(){
       html+='<div class="hub-log-body">';
       html+='<div class="hub-log-date">'+(date?fmtDate(date):status)+'</div>';
       html+='<div class="hub-log-text">'+esc(name)+'</div>';
+      if(item.photos&&item.photos.length){
+        const thumbs=item.photos.slice(0,4);
+        html+='<div class="hub-log-photos">';
+        thumbs.forEach(ph=>{
+          const url=ph.url||ph;
+          const cap=ph.caption||ph.date||'';
+          html+='<img class="hub-log-photo-sq" src="'+esc(url)+'" onclick="openPhoto(\''+esc(url)+'\',\''+esc(cap)+'\')" alt="log photo">';
+        });
+        html+='</div>';
+      }
       html+='</div></div>';
     });
   }else{
@@ -842,7 +1038,7 @@ function renderPayments(){
   let html='<div class="view-title">Payments</div>';
 
   if(!wonBids.length){
-    html+='<div class="card"><div class="empty">No invoices yet. Payments will appear here once a proposal is signed.</div></div>';
+    html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">💳</div><div class="hub-empty-title">No invoices yet</div><div class="hub-empty-body">Payments and invoices will appear here once a proposal is signed.</div></div></div>';
     document.getElementById('view-payments').innerHTML=html;return;
   }
 
@@ -858,9 +1054,15 @@ function renderPayments(){
     html+='<div class="hub-balance-lbl" style="position:relative;z-index:1">'+(bid.type||'Project')+'</div>';
     html+='<div class="hub-balance-amt">'+fmt(balance)+'</div>';
     html+='<div class="hub-method-chips">';
-    html+='<div class="hub-method-chip">💳 Card</div>';
-    html+='<div class="hub-method-chip">🏦 ACH</div>';
-    html+='<div class="hub-method-chip">💵 Cash</div>';
+    if(!isPaid&&(h.stripeEnabled||true)){
+      html+='<button class="hub-method-chip hub-method-chip-btn" onclick="payBalance('+bid.id+')" aria-label="Pay by card">💳 Pay by card</button>';
+      html+='<button class="hub-method-chip hub-method-chip-btn" onclick="payBalance('+bid.id+')" aria-label="Pay by ACH">🏦 Pay by ACH</button>';
+      html+='<button class="hub-method-chip hub-method-chip-btn" onclick="payBalance('+bid.id+')" aria-label="Apple Pay">📱 Apple Pay</button>';
+    }else{
+      html+='<div class="hub-method-chip">💳 Card</div>';
+      html+='<div class="hub-method-chip">🏦 ACH</div>';
+      html+='<div class="hub-method-chip">📱 Apple Pay</div>';
+    }
     html+='</div>';
     if(!isPaid){
       const pb=_payBtn(bid,h);
@@ -915,6 +1117,7 @@ function renderDocuments(){
   const h=_hub;
   const wonBids=h.bids.filter(b=>b.status==='Closed Won');
   let html='<div class="view-title">Documents</div>';
+  html+='<div style="margin-bottom:12px"><button class="btn btn-sec" style="width:auto;padding:10px 18px;font-size:13px" onclick="_uploadClientDoc()">📎 Upload a document</button></div>';
 
   // Document list
   html+='<div class="card">';
@@ -924,22 +1127,28 @@ function renderDocuments(){
     if(b.proposalKey)docs.push({icon:'📋',name:'Signed Proposal — '+esc(b.type||'Services'),meta:'Signed '+fmtDate(b.signedAt||b.bid_date),tag:'contract',action:'openProposal('+b.id+')'});
   });
   if(h.epaRequired)docs.push({icon:'⚠️',name:'EPA Lead Paint Pamphlet',meta:'Renovate Right — epa.gov',tag:'epa',href:'https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools'});
+  if(_hub._clientDocs&&_hub._clientDocs.length){
+    _hub._clientDocs.forEach(d=>{
+      docs.push({icon:'📎',name:d.name,meta:d.meta||'Uploaded by you',tag:'client',href:d.url});
+    });
+  }
 
   if(docs.length){
     docs.forEach(doc=>{
+      const tagLabel=doc.tag==='epa'?'EPA':doc.tag==='contract'?'Contract':doc.tag==='client'?'Client upload':doc.tag.charAt(0).toUpperCase()+doc.tag.slice(1);
       html+='<div class="hub-doc-item">';
       html+='<div class="hub-doc-icon">'+doc.icon+'</div>';
       html+='<div class="hub-doc-body">';
       if(doc.href){
-        html+='<div class="hub-doc-name"><a href="'+doc.href+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">'+doc.name+'<span class="hub-doc-tag hub-doc-tag-'+doc.tag+'">'+(doc.tag==='epa'?'EPA':doc.tag==='contract'?'Contract':doc.tag.charAt(0).toUpperCase()+doc.tag.slice(1))+'</span></a></div>';
+        html+='<div class="hub-doc-name"><a href="'+doc.href+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">'+doc.name+'<span class="hub-doc-tag hub-doc-tag-'+doc.tag+'">'+tagLabel+'</span></a></div>';
       }else{
-        html+='<div class="hub-doc-name" onclick="'+doc.action+'">'+doc.name+'<span class="hub-doc-tag hub-doc-tag-'+doc.tag+'">'+(doc.tag==='epa'?'EPA':doc.tag==='contract'?'Contract':doc.tag.charAt(0).toUpperCase()+doc.tag.slice(1))+'</span></div>';
+        html+='<div class="hub-doc-name" onclick="'+doc.action+'">'+doc.name+'<span class="hub-doc-tag hub-doc-tag-'+doc.tag+'">'+tagLabel+'</span></div>';
       }
       html+='<div class="hub-doc-meta">'+doc.meta+'</div>';
       html+='</div></div>';
     });
   }else{
-    html+='<div class="empty">Documents will appear here once proposals are signed.</div>';
+    html+='<div class="hub-empty-state"><div class="hub-empty-icon">📁</div><div class="hub-empty-title">No documents yet</div><div class="hub-empty-body">Signed proposals, invoices, and contracts will appear here.</div></div>';
   }
   html+='</div>';
 
@@ -979,11 +1188,16 @@ function renderMessages(){
     html+='<a href="tel:'+phone.replace(/\D/g,'')+'" style="padding:10px 18px;background:var(--ink);color:#fff;border-radius:22px;font-size:13px;font-weight:700;text-decoration:none">📞 Call</a>';
     html+='<a href="sms:'+phone.replace(/\D/g,'')+'" style="padding:10px 18px;background:transparent;color:var(--text);border:1.5px solid var(--border2);border-radius:22px;font-size:13px;font-weight:700;text-decoration:none">💬 Text</a>';
     html+='</div>';
+    html+='<div style="text-align:center;padding:16px 0">';
+    html+='<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Start the conversation 👋</div>';
+    html+='<button onclick="const inp=document.getElementById(\'chat-input\');if(inp){inp.value=\'Hi! I\'m checking in on my project.\';inp.focus();}" style="padding:9px 18px;border-radius:22px;background:var(--bg);color:var(--text2);border:1.5px solid var(--border2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Say hi to '+cName+' →</button>';
+    html+='</div>';
   }
   html+='</div>';
   html+='<div class="hub-chat-input">';
-  html+='<input type="text" placeholder="Message '+cName+'…" id="chat-input">';
-  html+='<button class="hub-chat-send" onclick="'+(phone?'alert(\'To message us directly, call or text: '+phone.replace(/'/g,'\\\'')+'\')':`alert('Contact info not available.')`)+'">Send</button>';
+  html+='<input type="text" placeholder="Message '+cName+'…" id="chat-input" onkeydown="if(event.key===\'Enter\')_sendChatMsg()">';
+  html+='<button class="hub-chat-attach" onclick="_attachChatFile()" aria-label="Attach file">📎</button>';
+  html+='<button class="hub-chat-send" onclick="_sendChatMsg()">Send</button>';
   html+='</div>';
   html+='</div>';
   html+='</div>';
@@ -1149,13 +1363,235 @@ async function openProposal(bidId){
   }
 }
 function closeProp(){const _ov=document.getElementById('prop-overlay');_ov.style.opacity='0';setTimeout(()=>_ov.style.display='none',250);}
-function openPhoto(url,caption){
-  const ov=document.createElement('div');
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:600;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;cursor:pointer';
-  ov.innerHTML='<img src="'+esc(url)+'" style="max-width:100%;max-height:80vh;border-radius:8px;object-fit:contain">'+(caption?'<div style="color:#fff;font-size:13px;margin-top:12px;text-align:center">'+esc(caption)+'</div>':'');
-  ov.onclick=()=>ov.remove();
-  document.body.appendChild(ov);
+let _lbPhotos=[], _lbIdx=0;
+function openLightbox(photos, idx){
+  _lbPhotos=photos; _lbIdx=idx||0;
+  _lbRender();
+  const lb=document.getElementById('hub-lightbox');
+  if(lb)lb.classList.add('open');
+  document.body.style.overflow='hidden';
 }
+function _lbRender(){
+  const p=_lbPhotos[_lbIdx];if(!p)return;
+  const img=document.getElementById('hub-lb-img');
+  const tag=document.getElementById('hub-lb-tag');
+  if(img)img.src=p.url||p;
+  if(tag)tag.textContent=p.caption||(p.date?fmtDate(p.date):'')||((_lbIdx+1)+' / '+_lbPhotos.length);
+  // hide arrows if only 1 photo
+  document.querySelectorAll('.hub-lb-arrow').forEach(a=>a.style.display=_lbPhotos.length<2?'none':'flex');
+}
+function lbNav(dir){
+  _lbIdx=(_lbIdx+dir+_lbPhotos.length)%_lbPhotos.length;
+  _lbRender();
+}
+function closeLightbox(){
+  const lb=document.getElementById('hub-lightbox');
+  if(lb)lb.classList.remove('open');
+  document.body.style.overflow='';
+}
+function openPhoto(url,caption){
+  openLightbox([{url,caption}],0);
+}
+document.addEventListener('keydown',e=>{
+  if(!document.getElementById('hub-lightbox')?.classList.contains('open'))return;
+  if(e.key==='Escape')closeLightbox();
+  if(e.key==='ArrowLeft')lbNav(-1);
+  if(e.key==='ArrowRight')lbNav(1);
+});
+/* ── PR4: Approvals card ── */
+function _renderApprovalsCard(approvals){
+  if(!approvals||!approvals.length)return'';
+  let h='<div class="hub-side-card" id="hub-approv-card">';
+  h+='<div class="hub-side-hd">Needs your input</div>';
+  approvals.forEach(a=>{
+    if(a.type==='color'){
+      h+='<div class="hub-approv-item">';
+      h+='<div class="hub-approv-label">'+esc(a.label)+'</div>';
+      h+='<div class="hub-swatch-row">';
+      a.swatches.forEach((sw)=>{
+        const sel=a.saved===sw.name;
+        h+='<div class="hub-swatch'+(sel?' selected':'')+'" style="background:'+esc(sw.color)+'" title="'+esc(sw.name)+'" onclick="_pickSwatch(\''+esc(a.id)+'\',\''+esc(sw.name)+'\')"></div>';
+      });
+      h+='</div>';
+      if(a.saved)h+='<div style="font-size:11px;color:var(--text3);margin-top:5px">Selected: <strong>'+esc(a.saved)+'</strong></div>';
+      h+='</div>';
+    }else if(a.type==='change_order'&&a.status==='pending'){
+      h+='<div class="hub-approv-item">';
+      h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">';
+      h+='<div><div class="hub-approv-label">'+esc(a.label)+'</div><div style="font-size:11px;color:var(--text3)">+'+fmt(a.amount)+'</div></div>';
+      h+='<div style="display:flex;gap:6px">';
+      h+='<button class="hub-co-btn-approve" onclick="_approveChange(\''+esc(a.id)+'\',true)">✓ Approve</button>';
+      h+='<button class="hub-co-btn-decline" onclick="_approveChange(\''+esc(a.id)+'\',false)">✕</button>';
+      h+='</div></div></div>';
+    }
+  });
+  h+='</div>';
+  return h;
+}
+function _pickSwatch(approvalId, colorName){
+  if(!_hub.approvals) _hub.approvals=[];
+  const a=_hub.approvals.find(x=>x.id===approvalId);
+  if(a) a.saved=colorName;
+  renderOverview();
+}
+function _approveChange(approvalId, approved){
+  if(!_hub.approvals) return;
+  const a=_hub.approvals.find(x=>x.id===approvalId);
+  if(a) a.status=approved?'approved':'declined';
+  renderOverview();
+}
+
+/* ── PR7: Document upload & chat attach ── */
+async function _uploadClientDoc(){
+  const p=new URLSearchParams(location.search);
+  const u=p.get('u'),c=p.get('c');
+  if(!u||!c){alert('Cannot upload — hub not fully loaded.');return;}
+  const inp=document.createElement('input');
+  inp.type='file';
+  inp.accept='.pdf,.doc,.docx,.jpg,.jpeg,.png,.heic,.gif';
+  inp.onchange=async()=>{
+    const file=inp.files[0];if(!file)return;
+    const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+    const path='client-uploads/'+u+'/'+c+'/'+Date.now()+'_'+safeName;
+    try{
+      const{error}=await _supa.storage.from('proposals').upload(path,file,{upsert:true,contentType:file.type});
+      if(error)throw error;
+      const{data:{publicUrl}}=_supa.storage.from('proposals').getPublicUrl(path);
+      if(!_hub._clientDocs)_hub._clientDocs=[];
+      _hub._clientDocs.push({name:file.name,url:publicUrl,meta:'Uploaded by you · '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})});
+      renderDocuments();
+    }catch(e){alert('Upload failed — please try again or contact us.');}
+  };
+  inp.click();
+}
+function _sendChatMsg(){
+  const input=document.getElementById('chat-input');
+  const phone=_hub?.contractorPhone||'';
+  if(!phone){alert('Contact info not available.');return;}
+  const msg=(input?.value||'').trim();
+  if(!msg){alert('To message us directly, text: '+phone);return;}
+  // Open SMS with message pre-filled
+  window.open('sms:'+phone.replace(/\D/g,'')+'&body='+encodeURIComponent(msg));
+  if(input)input.value='';
+}
+async function _attachChatFile(){
+  const inp=document.createElement('input');
+  inp.type='file';
+  inp.accept='image/*,.pdf';
+  inp.onchange=async()=>{
+    const file=inp.files[0];if(!file)return;
+    const p=new URLSearchParams(location.search);
+    const u=p.get('u'),c=p.get('c');
+    if(!u||!c){alert('Cannot upload — hub not fully loaded.');return;}
+    const path='client-uploads/'+u+'/'+c+'/chat_'+Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+    try{
+      const{error}=await _supa.storage.from('proposals').upload(path,file,{upsert:true,contentType:file.type});
+      if(error)throw error;
+      const{data:{publicUrl}}=_supa.storage.from('proposals').getPublicUrl(path);
+      // Show in chat as an image bubble
+      const msgs=document.querySelector('.hub-chat-messages');
+      if(msgs){
+        const bubble=document.createElement('div');
+        bubble.className='hub-msg hub-msg-client';
+        if(file.type.startsWith('image/')){
+          bubble.innerHTML='<img src="'+esc(publicUrl)+'" style="max-width:200px;border-radius:8px;display:block" onclick="openPhoto(\''+esc(publicUrl)+'\',\'\')">';
+        }else{
+          bubble.innerHTML='<a href="'+esc(publicUrl)+'" target="_blank" style="color:#fff">📎 '+esc(file.name)+'</a>';
+        }
+        bubble.innerHTML+='<div class="hub-msg-time">just now</div>';
+        msgs.appendChild(bubble);
+        msgs.scrollTop=msgs.scrollHeight;
+      }
+    }catch(e){alert('Upload failed — please try again.');}
+  };
+  inp.click();
+}
+
+/* ── Topbar interactions ── */
+function _relTime(iso){
+  if(!iso)return'';
+  const diff=Date.now()-new Date(iso).getTime();
+  const m=Math.floor(diff/60000),h=Math.floor(m/60),d=Math.floor(h/24);
+  if(m<2)return'just now';
+  if(m<60)return m+'m ago';
+  if(h<24)return h+'h ago';
+  if(d<7)return d+'d ago';
+  return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+}
+function _seedNotifs(){
+  if(!_hub)return[];
+  const now=Date.now();
+  return(_hub.notifications||[
+    {id:1,title:'New proposal sent',time:new Date(now-3600000).toISOString(),read:false},
+    {id:2,title:'Signature reminder',time:new Date(now-86400000).toISOString(),read:false},
+    {id:3,title:'Payment due today',time:new Date(now-172800000).toISOString(),read:true},
+    {id:4,title:'Photo uploaded',time:new Date(now-259200000).toISOString(),read:true},
+  ]);
+}
+function renderNotifPanel(){
+  const list=document.getElementById('notif-list');
+  if(!list)return;
+  const notifs=_seedNotifs();
+  if(!notifs.length){
+    list.innerHTML='<div class="notif-empty">You\'re all caught up 🎉</div>';
+  }else{
+    list.innerHTML=notifs.map(n=>`
+      <div class="notif-item" onclick="markRead(${n.id})">
+        <span class="notif-item-dot${n.read?' read':''}"></span>
+        <div><div class="notif-item-title">${esc(n.title)}</div><div class="notif-item-time">${_relTime(n.time)}</div></div>
+      </div>`).join('');
+  }
+  const dot=document.getElementById('notif-dot');
+  if(dot)dot.style.display=notifs.some(n=>!n.read)?'block':'none';
+}
+function toggleNotifPanel(e){
+  if(e)e.stopPropagation();
+  const panel=document.getElementById('notif-panel');
+  if(!panel)return;
+  const open=panel.style.display==='block';
+  closeAcctMenu();
+  if(!open){renderNotifPanel();panel.style.display='block';}
+  else panel.style.display='none';
+}
+function closeNotifPanel(){
+  const panel=document.getElementById('notif-panel');
+  if(panel)panel.style.display='none';
+}
+function markRead(id){
+  if(!_hub)return;
+  const notifs=_seedNotifs();
+  const n=notifs.find(x=>x.id===id);
+  if(n)n.read=true;
+  renderNotifPanel();
+}
+function markAllRead(){
+  if(!_hub)return;
+  const notifs=_seedNotifs();
+  notifs.forEach(n=>n.read=true);
+  renderNotifPanel();
+}
+function openHelp(){
+  const bd=document.getElementById('help-backdrop');
+  if(bd){bd.classList.add('open');closeNotifPanel();closeAcctMenu();}
+}
+function closeHelp(){
+  const bd=document.getElementById('help-backdrop');
+  if(bd)bd.classList.remove('open');
+}
+function toggleAcctMenu(e){
+  if(e)e.stopPropagation();
+  const dd=document.getElementById('acct-dropdown');
+  if(!dd)return;
+  const open=dd.style.display==='block';
+  closeNotifPanel();
+  dd.style.display=open?'none':'block';
+}
+function closeAcctMenu(){
+  const dd=document.getElementById('acct-dropdown');
+  if(dd)dd.style.display='none';
+}
+document.addEventListener('click',()=>{closeNotifPanel();closeAcctMenu();});
+
 init();
 // Re-check signed status when returning from sign.html via browser back / bfcache restore
 async function _recheckSigned(){
