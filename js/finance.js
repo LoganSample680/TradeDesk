@@ -346,7 +346,7 @@ function openCompleteJobModal(){
 
   const overlay=document.createElement('div');
   overlay.className='zmodal-overlay';
-  overlay.style.cssText='align-items:flex-end;padding:0';
+  overlay.style.cssText='';
   const rows=candidates.length===0
     ?'<div style="text-align:center;padding:24px;color:var(--text3)">No active jobs to complete right now.</div>'
     :candidates.map(({j,c,isPast,isToday})=>{
@@ -1666,8 +1666,8 @@ function renderJobSummary(){
 function openManualIncomeModal(){
   const today=new Date().toISOString().slice(0,10);
   const clientOpts=clients.map(c=>'<option value="'+c.id+'">'+escHtml(c.name)+'</option>').join('');
-  const ov=document.createElement('div');ov.id='_inc-ov';ov.style.cssText='position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.5);display:flex;align-items:flex-end';
-  const sheet=document.createElement('div');sheet.style.cssText='background:var(--bg2);border-radius:16px 16px 0 0;width:100%;padding:20px 16px 32px;box-sizing:border-box';
+  const ov=document.createElement('div');ov.id='_inc-ov';ov.style.cssText='position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  const sheet=document.createElement('div');sheet.style.cssText='background:var(--bg2);border-radius:14px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;padding:20px 16px 24px;box-sizing:border-box';
   sheet.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'+
       '<div style="font-size:17px;font-weight:800">Log Income</div>'+
