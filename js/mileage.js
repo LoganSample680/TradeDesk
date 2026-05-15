@@ -1298,9 +1298,12 @@ function _milRenderTripList(shown,yr){
       return '<div class="mil-day-trip'+needsClass+'">'+
         '<div class="mil-day-trip-time">'+(logTime||'—')+'</div>'+
         '<div class="mil-day-trip-route">'+
-          '<div class="mil-day-trip-from">'+(fromAddr?escHtml(fromAddr):'<span style="color:var(--text-3);font-style:italic">Start not recorded</span>')+'</div>'+
-          '<div class="mil-day-trip-to">'+(toAddr?escHtml(toAddr):'<span style="color:var(--text-3);font-style:italic">End not recorded</span>')+'</div>'+
-          (_hasMultiDriver&&r.logged_by_name?'<div style="font-size:10px;color:var(--text-3);margin-top:3px;font-weight:500">Driver: '+escHtml(r.logged_by_name)+'</div>':'')+
+          '<div class="mil-route-spine"><div class="mil-route-pin-s"></div><div class="mil-route-spine-line"></div><div class="mil-route-pin-e"></div></div>'+
+          '<div class="mil-route-addrs">'+
+            '<div class="mil-day-trip-from">'+(fromAddr?escHtml(fromAddr):'<span style="color:var(--text-3);font-style:italic">Start not recorded</span>')+'</div>'+
+            '<div class="mil-day-trip-to">'+(toAddr?escHtml(toAddr):'<span style="color:var(--text-3);font-style:italic">End not recorded</span>')+'</div>'+
+            (_hasMultiDriver&&r.logged_by_name?'<div style="font-size:10px;color:var(--text-3);font-weight:500">Driver: '+escHtml(r.logged_by_name)+'</div>':'')+
+          '</div>'+
         '</div>'+
         '<div class="mil-day-trip-stats">'+
           '<div class="mil-day-trip-miles">'+(r.miles?(+r.miles).toFixed(1):'—')+'<span style="font-size:10px;color:var(--text-3);font-weight:600"> mi</span></div>'+
