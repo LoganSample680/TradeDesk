@@ -300,7 +300,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.12.26.58';
+const APP_VERSION='05.12.26.59';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -838,6 +838,8 @@ async function supaSaveToCloud(){
   const _mileCount=mileage.length;
   _logSave('start',{id:_attemptId,mileage:_mileCount,page:document.querySelector('.pg.active')?.id});
   try{
+    // Snapshot ALL data synchronously before any await — prevents _devExitSupportMode()
+    // restoring Diana's arrays between Part 1 and Part 2 and corrupting Zach's row.
     const receiptImages={};
     const expensesForSync=expenses.map(e=>{
       if(e.receipt_img){
@@ -847,8 +849,12 @@ async function supaSaveToCloud(){
       }
       return e;
     });
+    const incomeSnap=[...income];
+    const mileageSnap=[...mileage];
+    const timeEntriesSnap=[...timeEntries];
     // In support/employee mode: write to the target user's row, never touch settings
-    const uid=_devSupportMode
+    const _isSupportSave=_devSupportMode;
+    const uid=_isSupportSave
       ? Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id
       : (_isEmployee?_contractorUserId:_supaUser.id);
     const part1={
@@ -860,10 +866,10 @@ async function supaSaveToCloud(){
       liens:JSON.stringify(liens),
       updated_at:new Date().toISOString()
     };
-    if(!_devSupportMode&&!_isEmployee){const {stateRates:_sr,...sForCloud}=S;part1.settings=JSON.stringify(sForCloud);}
+    if(!_isSupportSave&&!_isEmployee){const {stateRates:_sr,...sForCloud}=S;part1.settings=JSON.stringify(sForCloud);}
 
     // Part 1 — core business data; use update in support/employee mode (row guaranteed)
-    const {error:e1}=(_devSupportMode||_isEmployee)
+    const {error:e1}=(_isSupportSave||_isEmployee)
       ? await _supa.from('zj_data').update(part1).eq('user_id',uid)
       : await _supa.from('zj_data').upsert(part1,{onConflict:'user_id'});
     if(e1)throw e1;
@@ -874,10 +880,10 @@ async function supaSaveToCloud(){
     // the schema fix — checks_state was missing from zj_data and killed every
     // save in this batch).
     const {error:e2}=await _supa.from('zj_data').update({
-      income:JSON.stringify(income),
+      income:JSON.stringify(incomeSnap),
       expenses:JSON.stringify(expensesForSync),
-      mileage:JSON.stringify(mileage),
-      time_entries:JSON.stringify(timeEntries.slice(-500)),
+      mileage:JSON.stringify(mileageSnap),
+      time_entries:JSON.stringify(timeEntriesSnap.slice(-500)),
       receipt_images:JSON.stringify(receiptImages),
     }).eq('user_id',uid);
     if(e2){
@@ -885,10 +891,10 @@ async function supaSaveToCloud(){
         _logSave('part2-timeout-retry',{id:_attemptId,code:e2.code});
         // Retry with trimmed arrays
         const{error:e2r}=await _supa.from('zj_data').update({
-          income:JSON.stringify(income.slice(-500)),
+          income:JSON.stringify(incomeSnap.slice(-500)),
           expenses:JSON.stringify(expensesForSync.slice(-300)),
-          mileage:JSON.stringify(mileage.slice(-300)),
-          time_entries:JSON.stringify(timeEntries.slice(-200)),
+          mileage:JSON.stringify(mileageSnap.slice(-300)),
+          time_entries:JSON.stringify(timeEntriesSnap.slice(-200)),
           receipt_images:JSON.stringify(receiptImages),
         }).eq('user_id',uid);
         if(e2r){_logSave('part2-retry-fail',{id:_attemptId,code:e2r.code,msg:e2r.message});throw e2r;}
