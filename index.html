@@ -3066,14 +3066,19 @@ if('serviceWorker' in navigator){
       navigator.serviceWorker.getRegistration().then(reg=>{if(reg)reg.update();}).catch(()=>{});
     }
   });
-  // Poll every 60s for users who leave the app open all day without backgrounding.
-  // Two-pronged: reg.update() triggers SW_UPDATED if sw.js changed;
-  // version.json fetch catches any remaining gaps.
+  // Poll every 15s. If version mismatches, attempt reload up to 2 times.
+  // After 2 failed attempts (CDN serving stale HTML) stop looping and show toast.
+  let _reloadAttempts=0;
   setInterval(()=>{
     navigator.serviceWorker.getRegistration().then(reg=>{if(reg)reg.update();}).catch(()=>{});
-    fetch('/version.json',{cache:'reload'})
+    fetch('/version.json?_='+Date.now())
       .then(r=>r.json())
-      .then(d=>{if(d.version&&d.version!==APP_VERSION)_autoSaveAndReload();})
+      .then(d=>{
+        if(!d.version||d.version===APP_VERSION){_reloadAttempts=0;return;}
+        if(_reloadAttempts>=2){showToast('Update available — press Ctrl+Shift+R to refresh','🔄');return;}
+        _reloadAttempts++;
+        _autoSaveAndReload();
+      })
       .catch(()=>{});
   },15000);
 }
