@@ -10,30 +10,71 @@
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-:root{--accent:#2D5DA8;--accent-dk:#0D3B6E;--green:#16a34a;--green-mid:#3B6D11;--green-lt:#EAF3DE;--green-border:#97C459;--border:#e0dfd8;--border2:#cccbc4;--text:#1a1a18;--text2:#5f5e5a;--text3:#9a9890;--bg:#f7f7f5;--bg2:#fff;--r:10px;--rl:16px;--ink:#1B1612;--navy:#1B1612;--red:#A32D2D;--red-lt:#FFF0F0;--font-display:'Geist',system-ui,sans-serif;--font-ui:'Inter Tight',-apple-system,sans-serif;}
+:root{
+  --ink:#1B1612;
+  --navy:#1B3465;
+  --denim:#2D5DA8;
+  --green:#16a34a;
+  --green-mid:#3B6D11;
+  --green-lt:#EAF3DE;
+  --green-border:#97C459;
+  --red:#A32D2D;
+  --red-lt:#FFF0F0;
+  --border:#e0dfd8;
+  --border2:#cccbc4;
+  --text:#1a1a18;
+  --text2:#5f5e5a;
+  --text3:#9a9890;
+  --bg:#F4F5F7;
+  --bg-card:#fff;
+  --r:10px;
+  --rl:16px;
+  --font-display:'Geist',system-ui,sans-serif;
+  --font-ui:'Inter Tight',-apple-system,sans-serif;
+}
 body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif);background:var(--bg);color:var(--text);min-height:100vh}
-.topbar{position:fixed;top:0;left:0;right:0;height:52px;background:var(--ink);display:flex;align-items:center;padding:0 16px;gap:10px;z-index:100;border-bottom:1px solid rgba(255,255,255,.06)}
-.topbar-logo-img{height:28px;max-width:100px;object-fit:contain;display:none;border-radius:4px}
+
+/* ── Topbar ── */
+.topbar{position:fixed;top:0;left:0;right:0;height:52px;background:var(--ink);display:flex;align-items:center;padding:0 14px;gap:10px;z-index:100;border-bottom:1px solid rgba(255,255,255,.06)}
+.topbar-logo-img{height:28px;max-width:100px;object-fit:contain;display:none;border-radius:4px;flex-shrink:0}
 .topbar-name{font-size:15px;font-weight:800;color:#fff;letter-spacing:-.3px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-display)}
-.left-nav{width:220px;background:var(--bg2);border-right:1px solid var(--border);overflow-y:auto;display:none;flex-direction:column}
+.topbar-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.topbar-icon-btn{background:rgba(255,255,255,.08);border:none;color:#fff;font-size:16px;line-height:1;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-family:inherit}
+.topbar-icon-btn:hover{background:rgba(255,255,255,.14)}
+.topbar-account-chip{display:flex;align-items:center;padding:4px 10px;border-radius:20px;border:1.5px solid rgba(255,255,255,.3);background:#fff;font-size:12px;font-weight:700;color:var(--ink);letter-spacing:-.1px;cursor:default;white-space:nowrap}
+
+/* ── Layout ── */
+.body-wrap{padding-top:52px;min-height:100vh}
+.main-content{max-width:700px;margin:0 auto;padding:20px 16px 96px}
+
+/* ── Left nav (desktop) ── */
+.left-nav{width:220px;background:var(--bg-card);border-right:1px solid var(--border);overflow-y:auto;display:none;flex-direction:column}
 .nav-client{padding:14px 18px 10px;border-bottom:1px solid var(--border);margin-bottom:4px}
 .nav-client-name{font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .nav-client-addr{font-size:11px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .nav-item{display:flex;align-items:center;gap:10px;padding:13px 18px;font-size:14px;font-weight:600;color:var(--text2);cursor:pointer;border-left:3px solid transparent;transition:background .15s,color .15s}
 .nav-item:hover{background:var(--bg);color:var(--text)}
-.nav-item.active{background:var(--bg);color:var(--accent);border-left-color:var(--accent)}
+.nav-item.active{background:var(--bg);color:var(--ink);border-left-color:var(--ink)}
 .nav-icon{font-size:16px;width:22px;text-align:center;flex-shrink:0}
 .nav-footer{margin-top:auto;padding:14px 18px;font-size:10px;color:var(--text3)}
-.body-wrap{padding-top:52px;min-height:100vh}
-.main-content{max-width:700px;margin:0 auto;padding:20px 16px 80px}
-.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--bg2);border-top:1px solid var(--border);display:flex;align-items:stretch;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)}
+
+/* ── Bottom nav (mobile) ── */
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--bg-card);border-top:1px solid var(--border);display:flex;align-items:stretch;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)}
 .bn-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:10px;font-weight:700;color:var(--text3);cursor:pointer;border:none;background:none;padding:10px 4px;font-family:inherit;-webkit-tap-highlight-color:transparent;border-top:2px solid transparent;transition:color .15s,border-color .15s}
-.bn-item.active{color:var(--accent);border-top:2px solid var(--accent);padding-top:8px}
+.bn-item.active{color:var(--ink);border-top:2px solid var(--ink);padding-top:8px}
 .bn-icon{font-size:22px;line-height:1}
-@media(min-width:640px){.bottom-nav{display:none}.left-nav{display:flex;position:sticky;top:52px;height:calc(100vh - 52px)}.body-wrap{display:flex;align-items:flex-start}.main-content{flex:1;min-width:0;padding-bottom:40px}}
-.card{background:var(--bg2);border-radius:var(--rl);padding:20px;margin-bottom:14px;box-shadow:0 2px 8px rgba(27,22,18,.10),0 0 0 1px rgba(27,22,18,.05)}
+
+@media(min-width:640px){
+  .bottom-nav{display:none}
+  .left-nav{display:flex;position:sticky;top:52px;height:calc(100vh - 52px)}
+  .body-wrap{display:flex;align-items:flex-start}
+  .main-content{flex:1;min-width:0;padding-bottom:40px}
+}
+
+/* ── Cards & shared ── */
+.card{background:var(--bg-card);border-radius:var(--rl);padding:20px;margin-bottom:14px;box-shadow:0 2px 8px rgba(27,22,18,.10),0 0 0 1px rgba(27,22,18,.05)}
 .section-hdr{font-size:15px;font-weight:800;margin-bottom:14px;display:flex;align-items:center;gap:8px;font-family:var(--font-display)}
-.btn{display:block;width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--accent);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;text-decoration:none;transition:opacity .15s;box-shadow:0 2px 10px rgba(45,93,168,.3)}
+.btn{display:block;width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--ink);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;text-decoration:none;transition:opacity .15s;box-shadow:0 2px 10px rgba(27,22,18,.2)}
 .btn:active{opacity:.85}
 .btn-green{background:#1D5C14;box-shadow:0 2px 10px rgba(29,92,20,.3)}
 .btn-sec{background:transparent;color:var(--text2);border:1.5px solid var(--border2);font-size:13px;padding:11px;box-shadow:none}
@@ -43,35 +84,172 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.02em}
 .badge-pending{background:#FEF3C7;color:#92400E}
 .badge-won{background:var(--green-lt);color:var(--green-mid)}
-.hero-card{background:linear-gradient(135deg,var(--ink) 0%,#1B3465 100%);border-radius:var(--rl);padding:22px 20px 20px;margin-bottom:18px;position:relative;overflow:hidden}
-.hero-card::before{content:'';position:absolute;right:-40px;top:-40px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.04)}
-.hero-biz{font-size:24px;font-weight:900;color:#fff;letter-spacing:-.5px;margin-bottom:3px;font-family:var(--font-display)}
-.hero-sub{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.32);margin-bottom:6px}
-.hero-client{font-size:16px;font-weight:700;color:#fff}
-.hero-meta{margin-top:18px;padding-top:16px;border-top:1px solid rgba(255,255,255,.1);display:flex;justify-content:space-between;align-items:flex-end}
-.balance-box{background:linear-gradient(135deg,#5C1A1A 0%,#8B2B2B 100%);border-radius:var(--rl);padding:22px 20px 20px;margin-bottom:14px;position:relative;overflow:hidden}
-.balance-box::before{content:'';position:absolute;right:-40px;top:-40px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.04)}
-.balance-lbl{font-size:10px;font-weight:800;text-transform:uppercase;color:rgba(255,255,255,.55);margin-bottom:4px;letter-spacing:.1em}
-.balance-amt{font-size:52px;font-weight:900;color:#fff;letter-spacing:-2px;margin-bottom:18px;font-family:var(--font-display);line-height:1}
-.paid-box{background:var(--green-lt);border:1px solid var(--green-border);border-radius:var(--rl);padding:16px 18px;margin-bottom:14px;display:flex;align-items:center;gap:14px;box-shadow:0 2px 8px rgba(29,92,20,.08)}
-.bid-row{background:var(--bg2);border-radius:var(--rl);padding:16px;margin-bottom:10px;box-shadow:0 2px 8px rgba(27,22,18,.08),0 0 0 1px rgba(27,22,18,.06)}
-.bid-row:last-child{margin-bottom:0}
-.job-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)}
-.job-row:last-child{border-bottom:none}
-.photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-.photo-thumb{aspect-ratio:1;border-radius:var(--r);overflow:hidden;background:var(--bg);cursor:pointer;position:relative}
-.photo-thumb img{width:100%;height:100%;object-fit:cover}
-.photo-tag{position:absolute;bottom:4px;left:4px;background:rgba(0,0,0,.6);color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;text-transform:uppercase;letter-spacing:.04em}
+.empty{color:var(--text3);font-size:13px;text-align:center;padding:20px 0}
+.view-title{font-size:22px;font-weight:900;letter-spacing:-.4px;margin-bottom:18px;font-family:var(--font-display)}
 .pg-status{text-align:center;padding:80px 20px}
 .pg-status-icon{font-size:64px;margin-bottom:16px}
 .pg-status h2{font-size:26px;font-weight:900;margin-bottom:10px;font-family:var(--font-display);letter-spacing:-.4px}
 .pg-status p{font-size:14px;color:var(--text2);line-height:1.7;max-width:380px;margin:0 auto}
-.empty{color:var(--text3);font-size:13px;text-align:center;padding:20px 0}
-.view-title{font-size:22px;font-weight:900;letter-spacing:-.4px;margin-bottom:18px;font-family:var(--font-display)}
+
+/* ── Hero ── */
+.hub-hero{background:linear-gradient(155deg,var(--ink) 0%,#1B3465 100%);border-radius:16px;padding:22px 20px;margin-bottom:16px;display:flex;align-items:flex-start;gap:20px;position:relative;overflow:hidden}
+.hub-hero::before{content:'';position:absolute;right:-40px;top:-40px;width:180px;height:180px;border-radius:50%;background:rgba(255,255,255,.04)}
+.hub-hero-l{flex:1;min-width:0;position:relative;z-index:1}
+.hub-hero-eyebrow{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:4px}
+.hub-hero-greeting{font-size:38px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-.8px;line-height:1;margin-bottom:4px}
+.hub-hero-sub{font-size:13px;color:rgba(255,255,255,.55);font-weight:500;margin-bottom:3px}
+.hub-hero-phone{font-size:12px;color:rgba(255,255,255,.4);text-decoration:none;display:block;margin-bottom:14px}
+.hub-progress-row{display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.45);margin-bottom:5px;font-weight:600}
+.hub-progress-track{height:6px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden}
+.hub-progress-fill{height:100%;background:var(--denim);border-radius:3px;box-shadow:0 0 10px rgba(45,93,168,.8)}
+.hub-hero-r{display:flex;flex-direction:column;gap:8px;flex-shrink:0;position:relative;z-index:1}
+.hub-mini{background:rgba(255,255,255,.08);border-radius:10px;padding:10px 14px;text-align:center;min-width:72px}
+.hub-mini-val{font-size:20px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-.5px;line-height:1;margin-bottom:2px}
+.hub-mini-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.4)}
+@media(max-width:640px){
+  .hub-hero{flex-direction:column}
+  .hub-hero-r{flex-direction:row}
+  .hub-mini{flex:1}
+  .hub-hero-greeting{font-size:30px}
+}
+
+/* ── Pay CTA banner ── */
+.hub-pay-cta{display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,#5C1A1A,#8B2B2B);border-radius:14px;padding:16px 18px;margin-bottom:14px;gap:14px}
+.hub-pay-cta-tag{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.5);margin-bottom:3px}
+.hub-pay-cta-amt{font-size:32px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-1px;line-height:1}
+.hub-pay-cta-sub{font-size:11px;color:rgba(255,255,255,.45);margin-top:4px}
+.hub-pay-cta-r{flex-shrink:0}
+
+/* ── Paid banner ── */
+.hub-paid-banner{display:flex;align-items:center;gap:14px;background:var(--green-lt);border:1px solid var(--green-border);border-radius:14px;padding:14px 16px;margin-bottom:14px}
+.hub-paid-title{font-size:14px;font-weight:800;color:var(--green-mid)}
+.hub-paid-sub{font-size:12px;color:var(--green-mid);margin-top:2px}
+
+/* ── Two-col layout ── */
+.hub-two-col{display:grid;grid-template-columns:1fr 260px;gap:20px;align-items:start}
+.hub-col-main{min-width:0}
+.hub-col-side{display:flex;flex-direction:column;gap:12px}
+@media(max-width:640px){
+  .hub-two-col{grid-template-columns:1fr}
+  .hub-col-side{display:none}
+}
+
+/* ── Feed ── */
+.hub-feed-hd{font-size:13px;font-weight:800;color:var(--text);margin-bottom:10px;letter-spacing:-.1px}
+.hub-feed-item{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
+.hub-feed-item:last-child{border-bottom:none}
+.hub-feed-dot{width:8px;height:8px;border-radius:50%;background:var(--denim);flex-shrink:0;margin-top:4px}
+.hub-feed-title{font-size:13px;font-weight:700;color:var(--text)}
+.hub-feed-meta{font-size:11px;color:var(--text3);margin-top:2px}
+.hub-feed-empty{font-size:13px;color:var(--text3);padding:10px 0}
+
+/* ── Timeline ── */
+.hub-timeline{display:flex;flex-direction:column;gap:0}
+.hub-timeline-item{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+.hub-timeline-item:last-child{border-bottom:none}
+.hub-timeline-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:4px;background:var(--border2)}
+.hub-timeline-dot.done{background:var(--green-mid)}
+.hub-timeline-dot.active{background:var(--denim)}
+.hub-timeline-body{flex:1;min-width:0}
+.hub-timeline-title{font-size:13px;font-weight:700}
+.hub-timeline-meta{font-size:11px;color:var(--text3);margin-top:2px}
+.hub-timeline-status{display:flex;align-items:center;gap:8px;margin-top:6px}
+.hub-timeline-amt{font-size:13px;font-weight:700;color:var(--text)}
+.hub-badge{display:inline-block;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700}
+.hub-badge-paid{background:var(--green-lt);color:var(--green-mid)}
+.hub-badge-due{background:#FEF3C7;color:#92400E}
+
+/* ── Sidebar cards ── */
+.hub-side-card{background:var(--bg-card);border-radius:12px;padding:14px 16px;box-shadow:0 2px 8px rgba(27,22,18,.08),0 0 0 1px rgba(27,22,18,.05)}
+.hub-side-hd{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:10px}
+.hub-contact-btn{display:block;padding:10px 14px;border-radius:10px;background:var(--ink);color:#fff;font-size:13px;font-weight:700;text-decoration:none;text-align:center;margin-bottom:8px;font-family:inherit}
+.hub-contact-btn-sec{background:transparent;color:var(--text2);border:1.5px solid var(--border2)}
+.hub-approval-item{padding:8px 0;border-bottom:1px solid var(--border)}
+.hub-approval-item:last-child{border-bottom:none}
+.hub-approval-name{font-size:13px;font-weight:700}
+.hub-approval-amt{font-size:11px;color:var(--text3)}
+.hub-approval-link{font-size:12px;font-weight:700;color:var(--denim);text-decoration:none;display:block;margin-top:4px}
+
+/* ── Bid rows ── */
+.hub-bid-row{background:#fff;border-radius:14px;padding:16px;margin-bottom:10px;box-shadow:0 2px 8px rgba(27,22,18,.08),0 0 0 1px rgba(27,22,18,.06)}
+.hub-bid-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
+.hub-bid-name{font-size:15px;font-weight:700}
+.hub-bid-date{font-size:12px;color:var(--text3);margin-top:2px}
+.hub-bid-amt{font-size:26px;font-weight:900;font-family:var(--font-display);color:var(--denim);letter-spacing:-.7px;flex-shrink:0;margin-left:10px}
+.hub-bid-pending-msg{font-size:12px;color:var(--text3);margin-top:4px}
+.hub-btn{display:block;padding:13px 16px;border-radius:10px;border:none;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none;text-align:center}
+.hub-btn-sign{background:var(--ink);color:#fff;box-shadow:0 2px 10px rgba(27,22,18,.2)}
+
+/* ── Project tab ── */
+.hub-photo-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:20px}
+@media(max-width:640px){.hub-photo-grid{grid-template-columns:repeat(2,1fr)}}
+.hub-photo-thumb{aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--bg);cursor:pointer;position:relative}
+.hub-photo-thumb img{width:100%;height:100%;object-fit:cover}
+.hub-photo-tag{position:absolute;bottom:4px;left:4px;background:rgba(0,0,0,.6);color:#fff;font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;text-transform:uppercase}
+.hub-log-item{padding:12px 0;border-bottom:1px solid var(--border);display:flex;gap:12px}
+.hub-log-item:last-child{border-bottom:none}
+.hub-log-dot{width:10px;height:10px;border-radius:50%;background:var(--denim);flex-shrink:0;margin-top:3px}
+.hub-log-body{flex:1}
+.hub-log-date{font-size:11px;font-weight:700;color:var(--text3);margin-bottom:3px}
+.hub-log-text{font-size:13px;font-weight:700;color:var(--text)}
+
+/* ── Payments tab ── */
+.hub-balance-card{background:linear-gradient(135deg,var(--ink) 0%,#2D2826 100%);border-radius:16px;padding:22px 20px;margin-bottom:16px;position:relative;overflow:hidden}
+.hub-balance-card::before{content:'';position:absolute;right:-40px;top:-40px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.04)}
+.hub-balance-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.45);margin-bottom:4px;position:relative;z-index:1}
+.hub-balance-amt{font-size:44px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-2px;line-height:1;margin-bottom:14px;position:relative;z-index:1}
+.hub-method-chips{display:flex;gap:8px;flex-wrap:wrap;position:relative;z-index:1;margin-bottom:14px}
+.hub-method-chip{display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:20px;background:rgba(255,255,255,.1);color:rgba(255,255,255,.7);font-size:12px;font-weight:700;border:1px solid rgba(255,255,255,.15)}
+.hub-milestone{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+.hub-milestone:last-child{border-bottom:none}
+.hub-milestone-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;background:var(--border2)}
+.hub-milestone-dot.paid{background:var(--green-mid)}
+.hub-milestone-dot.due{background:#D97706}
+.hub-milestone-dot.upcoming{background:var(--border2)}
+.hub-milestone-body{flex:1}
+.hub-milestone-name{font-size:13px;font-weight:700}
+.hub-milestone-date{font-size:11px;color:var(--text3);margin-top:1px}
+.hub-milestone-amt{font-size:13px;font-weight:700;min-width:70px;text-align:right}
+.hub-inv-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px}
+.hub-inv-table th{text-align:left;padding:8px 10px;background:var(--bg);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);border-bottom:1px solid var(--border)}
+.hub-inv-table td{padding:9px 10px;border-bottom:1px solid var(--border)}
+.hub-inv-table tr:last-child td{border-bottom:none}
+.hub-inv-table .amt{text-align:right;font-weight:600}
+
+/* ── Documents tab ── */
+.hub-doc-item{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)}
+.hub-doc-item:last-child{border-bottom:none}
+.hub-doc-icon{width:38px;height:38px;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.hub-doc-body{flex:1;min-width:0}
+.hub-doc-name{font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.hub-doc-meta{font-size:11px;color:var(--text3);margin-top:2px}
+.hub-doc-tag{display:inline-block;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;margin-left:6px}
+.hub-doc-tag-contract{background:#EEF2FF;color:#4338CA}
+.hub-doc-tag-invoice{background:var(--green-lt);color:var(--green-mid)}
+.hub-doc-tag-epa{background:#FEF3C7;color:#92400E}
+.hub-doc-tag-proposal{background:var(--bg);color:var(--text2);border:1px solid var(--border2)}
+.hub-contractor-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.hub-contractor-cell{background:var(--bg);border-radius:10px;padding:12px 14px}
+.hub-contractor-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:4px}
+.hub-contractor-val{font-size:13px;font-weight:700;color:var(--text)}
+
+/* ── Messages tab ── */
+.hub-chat-wrap{display:flex;flex-direction:column;height:calc(100vh - 240px);min-height:300px}
+.hub-chat-messages{flex:1;overflow-y:auto;padding:12px 0;display:flex;flex-direction:column;gap:10px}
+.hub-msg{max-width:80%;padding:10px 14px;border-radius:14px;font-size:13px;line-height:1.5}
+.hub-msg-client{align-self:flex-end;background:var(--denim);color:#fff;border-radius:14px 14px 4px 14px}
+.hub-msg-contractor{align-self:flex-start;background:#F0EDE8;color:var(--text);border-radius:14px 14px 14px 4px}
+.hub-msg-time{font-size:10px;opacity:.6;margin-top:4px}
+.hub-chat-input{display:flex;gap:8px;padding:12px 0;border-top:1px solid var(--border)}
+.hub-chat-input input{flex:1;padding:11px 14px;border-radius:22px;border:1.5px solid var(--border2);font-size:14px;font-family:inherit;outline:none;background:#fff}
+.hub-chat-input input:focus{border-color:var(--ink)}
+.hub-chat-send{padding:11px 18px;border-radius:22px;background:var(--ink);color:#fff;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0}
+
+/* ── Invoice overlay ── */
 #inv-overlay{position:fixed;inset:0;background:#fff;z-index:500;overflow-y:auto;display:none}
 .inv-wrap{max-width:680px;margin:0 auto;padding:32px 24px 60px}
-.inv-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;padding-bottom:24px;border-bottom:3px solid var(--accent)}
-.inv-co-name{font-size:24px;font-weight:800;color:var(--accent);font-family:var(--font-display)}
+.inv-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:32px;padding-bottom:24px;border-bottom:3px solid var(--denim)}
+.inv-co-name{font-size:24px;font-weight:800;color:var(--denim);font-family:var(--font-display)}
 .inv-co-sub{font-size:12px;color:#666;margin-top:4px}
 .inv-title-block{text-align:right}
 .inv-title-block h1{font-size:32px;font-weight:800;color:#1a1a18;letter-spacing:-.02em}
@@ -88,16 +266,22 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .inv-total-row{display:flex;justify-content:space-between;padding:6px 0;font-size:13px;border-bottom:1px solid #f0eeec}
 .inv-total-grand{font-size:16px;font-weight:800;border-top:2px solid #1a1a18;border-bottom:none;padding-top:10px;margin-top:4px}
 .inv-footer-text{margin-top:40px;padding-top:16px;border-top:1px solid #e0e0dc;font-size:11px;color:#999;text-align:center}
-.inv-close{position:fixed;top:16px;right:16px;background:var(--navy);color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit;z-index:10}
+.inv-close{position:fixed;top:16px;right:16px;background:var(--ink);color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit;z-index:10}
+
+/* ── Proposal overlay ── */
 #prop-overlay{position:fixed;inset:0;background:#fff;z-index:500;overflow-y:auto;display:none}
 .prop-wrap{max-width:680px;margin:0 auto;padding:32px 24px 60px}
-.prop-close{position:fixed;top:16px;right:16px;background:var(--navy);color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit;z-index:10}
-@media print{.topbar,.left-nav,.bottom-nav,.inv-close,.prop-close,.no-print{display:none!important}#inv-overlay,#prop-overlay{position:static!important}.inv-wrap,.prop-wrap{padding:16px}body{background:#fff}}
+.prop-close{position:fixed;top:16px;right:16px;background:var(--ink);color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit;z-index:10}
+
+/* ── Boot overlay ── */
 #boot-overlay{position:fixed;inset:0;background:#0D1117;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s ease;will-change:opacity}
 #inv-overlay,#prop-overlay{transition:opacity .22s ease;will-change:opacity}
+
+@media print{.topbar,.left-nav,.bottom-nav,.inv-close,.prop-close,.no-print{display:none!important}#inv-overlay,#prop-overlay{position:static!important}.inv-wrap,.prop-wrap{padding:16px}body{background:#fff}}
 </style>
 </head>
 <body>
+
 <!-- Boot overlay — covers everything until hub data loads -->
 <div id="boot-overlay">
   <div id="boot-logo-wrap" style="display:none;margin-bottom:14px"><img id="boot-logo" style="height:54px;max-width:200px;object-fit:contain;border-radius:6px;display:block"></div>
@@ -105,6 +289,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
   <div style="font-size:11px;color:rgba(255,255,255,.3);font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:32px">Project Hub</div>
   <div style="width:110px;height:2px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden"><div id="boot-bar" style="height:100%;width:0%;background:#2D5DA8;border-radius:2px;transition:width 1.4s cubic-bezier(.4,0,.2,1)"></div></div>
 </div>
+
 <!-- Stripe embedded checkout modal -->
 <div id="stripe-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;overflow-y:auto;padding:16px">
   <div style="background:#fff;border-radius:16px;max-width:500px;margin:20px auto;padding:0;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25)">
@@ -118,53 +303,74 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
     <div id="checkout-embed-container" style="padding:4px 0"></div>
   </div>
 </div>
+
+<!-- Topbar -->
 <div class="topbar">
   <img id="topbar-logo-img" class="topbar-logo-img" alt="Logo">
   <span id="topbar-name" class="topbar-name"></span>
+  <div class="topbar-actions">
+    <button class="topbar-icon-btn" onclick="void(0)" title="Notifications">🔔</button>
+    <a class="topbar-icon-btn" href="#" onclick="return false" title="Help">❓</a>
+    <div class="topbar-account-chip" id="topbar-account-chip"></div>
+  </div>
 </div>
+
 <div class="body-wrap">
+  <!-- Left nav (desktop) -->
   <nav class="left-nav" id="left-nav">
     <div class="nav-client" id="nav-client-info"></div>
-    <div class="nav-item active" id="ni-home" onclick="switchView('home')"><span class="nav-icon">🏠</span>Home</div>
-    <div class="nav-item" id="ni-proposals" onclick="switchView('proposals')"><span class="nav-icon">📋</span>Proposals</div>
+    <div class="nav-item active" id="ni-overview" onclick="switchView('overview')"><span class="nav-icon">🏠</span>Overview</div>
+    <div class="nav-item" id="ni-project" onclick="switchView('project')"><span class="nav-icon">🔨</span>Project</div>
     <div class="nav-item" id="ni-payments" onclick="switchView('payments')"><span class="nav-icon">💳</span>Payments</div>
-    <div class="nav-item" id="ni-photos" onclick="switchView('photos')"><span class="nav-icon">📷</span>Photos</div>
-    <div class="nav-item" id="ni-resources" onclick="switchView('resources')" style="display:none"><span class="nav-icon">📁</span>Resources</div>
-    <div class="nav-footer" id="nav-footer">Powered by TradeDesk</div>
+    <div class="nav-item" id="ni-documents" onclick="switchView('documents')"><span class="nav-icon">📁</span>Documents</div>
+    <div class="nav-item" id="ni-messages" onclick="switchView('messages')"><span class="nav-icon">💬</span>Messages</div>
+    <div class="nav-footer" id="nav-footer"></div>
   </nav>
+
   <div class="main-content">
-    <div class="pg-status" id="pg-err" style="display:none"><div class="pg-status-icon">🔗</div><h2>Hub not found</h2><p>This link may have expired. Contact us for a new link.</p></div>
+    <div class="pg-status" id="pg-err" style="display:none">
+      <div class="pg-status-icon">🔗</div>
+      <h2>Hub not found</h2>
+      <p>This link may have expired. Contact us for a new link.</p>
+    </div>
     <div id="pg-hub" style="display:none">
-      <div id="view-home"></div>
-      <div id="view-proposals" style="display:none"></div>
+      <div id="view-overview"></div>
+      <div id="view-project" style="display:none"></div>
       <div id="view-payments" style="display:none"></div>
-      <div id="view-photos" style="display:none"></div>
-      <div id="view-resources" style="display:none"></div>
+      <div id="view-documents" style="display:none"></div>
+      <div id="view-messages" style="display:none"></div>
     </div>
   </div>
 </div>
+
+<!-- Bottom nav (mobile) -->
 <nav class="bottom-nav" id="bottom-nav">
-  <button class="bn-item active" id="bni-home" onclick="switchView('home')"><span class="bn-icon">🏠</span>Home</button>
-  <button class="bn-item" id="bni-proposals" onclick="switchView('proposals')"><span class="bn-icon">📋</span>Proposals</button>
+  <button class="bn-item active" id="bni-overview" onclick="switchView('overview')"><span class="bn-icon">🏠</span>Overview</button>
+  <button class="bn-item" id="bni-project" onclick="switchView('project')"><span class="bn-icon">🔨</span>Project</button>
   <button class="bn-item" id="bni-payments" onclick="switchView('payments')"><span class="bn-icon">💳</span>Payments</button>
-  <button class="bn-item" id="bni-photos" onclick="switchView('photos')"><span class="bn-icon">📷</span>Photos</button>
-  <button class="bn-item" id="bni-resources" onclick="switchView('resources')" style="display:none"><span class="bn-icon">📁</span>Resources</button>
+  <button class="bn-item" id="bni-documents" onclick="switchView('documents')"><span class="bn-icon">📁</span>Documents</button>
+  <button class="bn-item" id="bni-messages" onclick="switchView('messages')"><span class="bn-icon">💬</span>Messages</button>
 </nav>
+
+<!-- Invoice overlay -->
 <div id="inv-overlay">
   <button class="inv-close no-print" onclick="closeInvoice()">✕</button>
   <div class="inv-wrap" id="inv-content"></div>
 </div>
+
+<!-- Proposal overlay -->
 <div id="prop-overlay">
   <button class="prop-close no-print" onclick="closeProp()">✕</button>
   <div class="prop-wrap" id="prop-content"></div>
 </div>
+
 <script>
 const SUPA_URL='https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
 const _supa=supabase.createClient(SUPA_URL,SUPA_KEY);
 // Kick off the boot bar pulse so it feels alive immediately
 setTimeout(()=>{const b=document.getElementById('boot-bar');if(b)b.style.width='35%';},60);
-let _hub=null,_activeView='home';
+let _hub=null,_activeView='overview';
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtDate=s=>{if(!s)return'';try{return new Date(s+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return s;}};
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -203,7 +409,7 @@ async function init(){
     // Activate the correct view BEFORE revealing pg-hub so there's no flash
     const _hv=location.hash.slice(1);
     if(!location.hash.startsWith('#paid-')&&!location.hash.startsWith('#invoice-')){
-      switchView(_VIEWS.includes(_hv)?_hv:'home');
+      switchView(_VIEWS.includes(_hv)?_hv:'overview');
     }
     showState('hub');
     if(location.hash.startsWith('#paid-')){
@@ -235,7 +441,7 @@ async function initOnboard(t,u,c){
   document.getElementById('left-nav').style.display='none';
   document.getElementById('bottom-nav').style.display='none';
   document.getElementById('pg-hub').style.display='none';
-  document.getElementById('pg-load').style.display='none';
+  document.getElementById('pg-load') && (document.getElementById('pg-load').style.display='none');
   // Check if already completed — hub address OR localStorage flag (set on this device after submit)
   if((_hub&&_hub.clientAddr)||localStorage.getItem('td_onb_done_'+c)){
     showQuoteInProgress(_hub);
@@ -250,23 +456,23 @@ async function initOnboard(t,u,c){
       '<div style="font-size:22px;font-weight:800;letter-spacing:-.3px;margin-bottom:6px">'+(firstName?'Hi '+esc(firstName)+'!':'Get your free quote')+'</div>'+
       '<div style="font-size:14px;color:var(--text2);line-height:1.6">'+esc(contractorName)+' needs a couple details to prepare your quote — takes about 2 minutes.</div>'+
     '</div>'+
-    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:20px">'+
+    '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--rl);padding:20px">'+
       '<div style="margin-bottom:16px">'+
         '<label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:6px">Property address</label>'+
         '<div style="position:relative;margin-bottom:8px">'+
-          '<input id="onb-street" type="text" placeholder="Start typing address…" autocomplete="off" style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg2);color:var(--text)" oninput="_onbAddrSearch(this.value)" onblur="setTimeout(()=>{const b=document.getElementById(\'onb-addr-sugg\');if(b)b.style.display=\'none\'},150)">'+
-          '<div id="onb-addr-sugg" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r);box-shadow:0 6px 20px rgba(0,0,0,.15);z-index:200;max-height:240px;overflow-y:auto"></div>'+
+          '<input id="onb-street" type="text" placeholder="Start typing address…" autocomplete="off" style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg-card);color:var(--text)" oninput="_onbAddrSearch(this.value)" onblur="setTimeout(()=>{const b=document.getElementById(\'onb-addr-sugg\');if(b)b.style.display=\'none\'},150)">'+
+          '<div id="onb-addr-sugg" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--bg-card);border:1.5px solid var(--border2);border-radius:var(--r);box-shadow:0 6px 20px rgba(0,0,0,.15);z-index:200;max-height:240px;overflow-y:auto"></div>'+
         '</div>'+
         '<div style="display:grid;grid-template-columns:1fr 56px 90px;gap:8px;margin-bottom:0">'+
-          '<input id="onb-city" type="text" placeholder="City" autocomplete="address-level2" style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
-          '<input id="onb-state" type="text" placeholder="ST" maxlength="2" autocomplete="address-level1" style="width:100%;box-sizing:border-box;padding:13px 10px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg2);color:var(--text);text-align:center;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">'+
-          '<input id="onb-zip" type="text" placeholder="Zip" maxlength="10" autocomplete="postal-code" style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
+          '<input id="onb-city" type="text" placeholder="City" autocomplete="address-level2" style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg-card);color:var(--text)">'+
+          '<input id="onb-state" type="text" placeholder="ST" maxlength="2" autocomplete="address-level1" style="width:100%;box-sizing:border-box;padding:13px 10px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg-card);color:var(--text);text-align:center;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">'+
+          '<input id="onb-zip" type="text" placeholder="Zip" maxlength="10" autocomplete="postal-code" style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:16px;font-family:inherit;background:var(--bg-card);color:var(--text)">'+
         '</div>'+
         '<div id="onb-addr-err" style="display:none;font-size:12px;color:var(--red);margin-top:4px">Please enter the street address and city.</div>'+
       '</div>'+
       '<div style="margin-bottom:16px">'+
         '<label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:6px">What are you looking to get painted?</label>'+
-        '<textarea id="onb-notes" rows="3" placeholder="Interior walls, exterior trim, garage, deck..." style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);resize:none"></textarea>'+
+        '<textarea id="onb-notes" rows="3" placeholder="Interior walls, exterior trim, garage, deck..." style="width:100%;box-sizing:border-box;padding:13px 14px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg-card);color:var(--text);resize:none"></textarea>'+
       '</div>'+
       '<div style="margin-bottom:20px">'+
         '<label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:8px">Best time to call you?</label>'+
@@ -276,12 +482,11 @@ async function initOnboard(t,u,c){
           '<button type="button" onclick="onbTime(this,\'Evening\')" style="flex:1;padding:11px 6px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Evening</button>'+
         '</div>'+
       '</div>'+
-      '<button id="onb-submit" onclick="submitOnboard(\''+u+'\','+c+')" style="width:100%;padding:15px;border-radius:var(--r);border:none;background:var(--accent);color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit">Send my details →</button>'+
+      '<button id="onb-submit" onclick="submitOnboard(\''+u+'\','+c+')" style="width:100%;padding:15px;border-radius:var(--r);border:none;background:var(--ink);color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit">Send my details →</button>'+
     '</div>'+
     '<div style="text-align:center;margin-top:20px;font-size:12px;color:var(--text3)">'+esc(contractorName)+'</div>'+
     '</div>';
   // Replace body-wrap content
-  document.querySelector('.body-wrap').innerHTML=document.querySelector('.body-wrap').innerHTML;
   document.querySelector('.body-wrap').outerHTML='<div class="body-wrap" style="padding-top:52px">'+formHtml+'</div>';
   window._onbCallTime='';
 }
@@ -322,7 +527,7 @@ function onbTime(btn,val){
   document.querySelectorAll('#onb-time-btns button').forEach(b=>{
     b.style.background='var(--bg)';b.style.borderColor='var(--border2)';b.style.color='var(--text)';
   });
-  btn.style.background='var(--accent)';btn.style.borderColor='var(--accent)';btn.style.color='#fff';
+  btn.style.background='var(--ink)';btn.style.borderColor='var(--ink)';btn.style.color='#fff';
 }
 async function submitOnboard(userId,clientId){
   const street=(document.getElementById('onb-street')?.value||'').trim();
@@ -376,9 +581,9 @@ function showQuoteInProgress(h){
     '<div class="pg-status-icon">📋</div>'+
     '<h2>Quote in progress</h2>'+
     '<p>'+esc(name)+' has your details and is preparing your free quote.</p>'+
-    (phone?'<a href="tel:'+phone.replace(/\D/g,'')+'" style="display:inline-block;margin-top:20px;background:var(--accent);color:#fff;padding:14px 28px;border-radius:var(--r);font-weight:700;text-decoration:none;font-size:15px">Call '+esc(phone)+'</a>':'')+
+    (phone?'<a href="tel:'+phone.replace(/\D/g,'')+'" style="display:inline-block;margin-top:20px;background:var(--ink);color:#fff;padding:14px 28px;border-radius:var(--r);font-weight:700;text-decoration:none;font-size:15px">Call '+esc(phone)+'</a>':'')+
     '</div>';
-  document.getElementById('pg-load').style.display='none';
+  const pgLoad=document.getElementById('pg-load');if(pgLoad)pgLoad.style.display='none';
   document.getElementById('pg-hub').style.display='block';
 }
 function _dismissBootOverlay(fast){
@@ -394,7 +599,7 @@ function showState(s){
   else if(s==='err'){_dismissBootOverlay(true);}
 }
 function applyBranding(h){
-  if(h.brandColor)document.documentElement.style.setProperty('--accent',h.brandColor);
+  if(h.brandColor)document.documentElement.style.setProperty('--denim',h.brandColor);
   document.title=(h.contractorName||'Project Hub')+' — Your Hub';
   const logoEl=document.getElementById('topbar-logo-img'),nameEl=document.getElementById('topbar-name');
   if(h.logoData){logoEl.src=h.logoData;logoEl.style.display='block';nameEl.style.display='none';}
@@ -403,6 +608,9 @@ function applyBranding(h){
   if(nci)nci.innerHTML='<div class="nav-client-name">'+esc(h.clientName||'')+'</div>'+(h.clientAddr?'<div class="nav-client-addr">'+esc(h.clientAddr)+'</div>':'');
   const nf=document.getElementById('nav-footer');
   if(nf&&h.bwebsite)nf.innerHTML='<a href="'+esc(h.bwebsite)+'" target="_blank" style="color:inherit;text-decoration:none">'+esc(h.bwebsite.replace(/^https?:\/\//,''))+'</a>';
+  // Account chip: first name from clientName
+  const chip=document.getElementById('topbar-account-chip');
+  if(chip){const fn=(h.clientName||'').split(' ')[0];if(fn)chip.textContent=fn;}
   // Populate + animate boot overlay
   const bn=document.getElementById('boot-name');if(bn)bn.textContent=h.contractorName||'';
   const bl=document.getElementById('boot-logo'),blw=document.getElementById('boot-logo-wrap');
@@ -411,16 +619,10 @@ function applyBranding(h){
   if(bb){if(h.brandColor)bb.style.background=h.brandColor;setTimeout(()=>bb.style.width='78%',40);}
 }
 function renderAll(){
-  renderHome();renderProposals();renderPayments();renderPhotos();renderResources();
-  // Show Resources tab only for pre-1978 EPA homes
-  if(_hub&&_hub.epaRequired){
-    const ni=document.getElementById('ni-resources'),bni=document.getElementById('bni-resources');
-    if(ni)ni.style.display='flex';
-    if(bni)bni.style.display='flex';
-  }
+  renderOverview();renderProject();renderPayments();renderDocuments();renderMessages();
 }
-const _VIEWS=['home','proposals','payments','photos','resources'];
-const _BN=['home','proposals','payments','photos','resources'];
+const _VIEWS=['overview','project','payments','documents','messages'];
+const _BN=['overview','project','payments','documents','messages'];
 function switchView(key){
   _activeView=key;
   _VIEWS.forEach(v=>{
@@ -436,10 +638,12 @@ function switchView(key){
     const ni=document.getElementById('ni-'+v);if(ni)ni.className='nav-item'+(v===key?' active':'');
   });
   _BN.forEach(v=>{const bi=document.getElementById('bni-'+v);if(bi)bi.className='bn-item'+(v===key?' active':'');});
-  history.replaceState(null,'',location.pathname+location.search+(key!=='home'?'#'+key:''));
+  history.replaceState(null,'',location.pathname+location.search+(key!=='overview'?'#'+key:''));
   window.scrollTo(0,0);
 }
-function renderHome(){
+
+/* ── renderOverview ── */
+function renderOverview(){
   if(!_hub)return;
   const h=_hub;
   const pendingBids=h.bids.filter(b=>b.status==='Pending');
@@ -447,142 +651,358 @@ function renderHome(){
   const totalBalance=wonBids.reduce((s,b)=>s+(b.balance||0),0);
   const totalPaid=wonBids.reduce((s,b)=>s+(b.paid||0),0);
   const activeJobs=h.jobs.filter(j=>j.status!=='done');
-  let html='<div class="hero-card">';
-  html+='<div class="hero-biz">'+esc(h.contractorName)+'</div>';
-  if(h.contractorPhone)html+='<a href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" style="color:rgba(255,255,255,.5);font-size:13px;text-decoration:none;display:block">'+esc(h.contractorPhone)+'</a>';
-  html+='<div class="hero-meta"><div><div class="hero-sub">Your project hub</div><div class="hero-client">'+esc(h.clientName)+'</div>';
-  if(h.clientAddr)html+='<div style="font-size:12px;color:rgba(255,255,255,.4);margin-top:3px">'+esc(h.clientAddr)+'</div>';
-  html+='</div><div style="text-align:right"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.35);margin-bottom:4px">Updated</div>';
-  html+='<div style="font-size:12px;color:rgba(255,255,255,.5)">'+fmtDate((h.generatedAt||'').slice(0,10))+'</div></div></div></div>';
   const payableBids=wonBids.filter(b=>(b.balance||0)>0.01);
+  // Progress pct: rough heuristic based on signed vs total
+  const total=h.bids.length||1;
+  const signed=wonBids.length;
+  const pct=Math.round(Math.min(100,Math.max(5,(signed/total)*100)));
+  const firstName=(h.clientName||'').split(' ')[0]||h.clientName||'';
+
+  // Hero
+  let html='<div class="hub-hero">';
+  html+='<div class="hub-hero-l">';
+  html+='<div class="hub-hero-eyebrow">Your project hub</div>';
+  html+='<div class="hub-hero-greeting">'+esc(firstName)+'</div>';
+  html+='<div class="hub-hero-sub">'+esc(h.contractorName||'')+'</div>';
+  if(h.contractorPhone)html+='<a class="hub-hero-phone" href="tel:'+h.contractorPhone.replace(/\D/g,'')+'">'+esc(h.contractorPhone)+'</a>';
+  else html+='<div style="margin-bottom:14px"></div>';
+  html+='<div class="hub-progress-row"><span>Project progress</span><span>'+pct+'%</span></div>';
+  html+='<div class="hub-progress-track"><div class="hub-progress-fill" style="width:'+pct+'%"></div></div>';
+  html+='</div>';
+  // Mini stats
+  html+='<div class="hub-hero-r">';
+  html+='<div class="hub-mini"><div class="hub-mini-val">'+fmt(totalPaid)+'</div><div class="hub-mini-lbl">Paid</div></div>';
+  html+='<div class="hub-mini"><div class="hub-mini-val">'+(totalBalance>0.01?fmt(totalBalance):'$0')+'</div><div class="hub-mini-lbl">Balance</div></div>';
+  html+='<div class="hub-mini"><div class="hub-mini-val">'+(h.photos?.length||0)+'</div><div class="hub-mini-lbl">Photos</div></div>';
+  html+='</div>';
+  html+='</div>';
+
+  // Pay CTA or paid banner
   if(payableBids.length){
-    payableBids.forEach(bid=>{
-      const depPaid=(bid.paid||0)>=(bid.deposit||0)-0.01;
-      const boxLabel=!depPaid?'Deposit due':'Balance due';
-      const boxAmt=!depPaid?(bid.deposit||0):(bid.balance||0);
-      html+='<div class="balance-box">';
-      html+='<div style="font-size:11px;font-weight:700;color:rgba(255,255,255,.55);margin-bottom:2px;text-transform:uppercase;letter-spacing:.07em">'+esc(bid.type||'Estimate')+'</div>';
-      html+='<div class="balance-lbl">'+boxLabel+'</div><div class="balance-amt">'+fmt(boxAmt)+'</div>';
-      html+=_payBtn(bid,h);
-      html+='</div>';
-    });
-    if(h.contractorPhone){
-      html+='<div style="padding:0 0 4px">';
-      html+='<a href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" class="btn btn-green" style="margin-bottom:8px">📞 Call to pay — '+esc(h.contractorPhone)+'</a>';
-      html+='<a href="sms:'+h.contractorPhone.replace(/\D/g,'')+'" class="btn btn-sec">💬 Text us</a>';
-      html+='</div>';
-    }else if(!h.stripeEnabled){
-      html+='<div style="font-size:13px;color:var(--red);margin-top:4px">Contact us to arrange payment.</div>';
-    }
+    const bid=payableBids[0];
+    const depPaid=(bid.paid||0)>=(bid.deposit||0)-0.01;
+    const ctaLabel=!depPaid&&(bid.deposit||0)>0.01?'Deposit due':'Balance due';
+    const ctaAmt=!depPaid&&(bid.deposit||0)>0.01?(bid.deposit||0):(bid.balance||0);
+    html+='<div class="hub-pay-cta">';
+    html+='<div><div class="hub-pay-cta-tag">'+ctaLabel+'</div><div class="hub-pay-cta-amt">'+fmt(ctaAmt)+'</div><div class="hub-pay-cta-sub">Ready to pay online</div></div>';
+    html+='<div class="hub-pay-cta-r">'+_payBtn(bid,h)+'</div>';
+    html+='</div>';
   }else if(totalPaid>0.01){
-    html+='<div class="paid-box"><div style="font-size:28px">✅</div><div><div style="font-size:14px;font-weight:800;color:var(--green-mid)">Paid in full</div><div style="font-size:13px;color:var(--green-mid);margin-top:2px">'+fmt(totalPaid)+' received — thank you!</div></div></div>';
+    html+='<div class="hub-paid-banner"><div style="font-size:28px">✅</div><div><div class="hub-paid-title">Paid in full</div><div class="hub-paid-sub">'+fmt(totalPaid)+' received — thank you!</div></div></div>';
   }
-  if(pendingBids.length){
-    html+='<div class="card"><div class="section-hdr">📋 Pending proposals <span class="badge badge-pending">'+pendingBids.length+'</span></div>';
-    pendingBids.slice(0,2).forEach(b=>{
-      html+='<div class="bid-row"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px"><div><div style="font-size:15px;font-weight:700">'+esc(b.type||'Proposal')+'</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Sent '+fmtDate(b.bid_date)+'</div></div>';
-      html+='<div style="font-size:26px;font-weight:900;color:var(--accent);font-family:var(--font-display);letter-spacing:-.7px;flex-shrink:0;margin-left:10px">'+fmt(b.amount)+'</div></div>';
-      html+=(b.signHubUrl?'<a href="'+esc(b.signHubUrl)+'" class="btn btn-green" style="font-size:15px">✍️ Review &amp; Sign →</a>':'<div style="font-size:12px;color:var(--text3);margin-top:4px">Sign link on the way — check back soon</div>')+'</div>';
-    });
-    if(pendingBids.length>2)html+='<div class="empty" onclick="switchView(\'proposals\')" style="cursor:pointer;color:var(--accent)">'+(pendingBids.length-2)+' more — view all proposals →</div>';
-    html+='</div>';
-  }
+
+  // Two-col layout
+  html+='<div class="hub-two-col">';
+
+  // Main col
+  html+='<div class="hub-col-main">';
+
+  // Feed: daily updates
+  html+='<div class="card">';
+  html+='<div class="hub-feed-hd">Daily updates</div>';
   if(activeJobs.length){
-    html+='<div class="card"><div class="section-hdr">🔨 Active work</div>';
     activeJobs.forEach(j=>{
-      const bidAmt=h.bids.find(b=>b.id===j.bid_id)?.amount;
-      html+='<div class="job-row"><div><div style="font-size:14px;font-weight:700">'+esc(j.name)+'</div><div style="font-size:12px;color:var(--text3);margin-top:2px">'+(j.start?'Starts '+fmtDate(j.start):'')+(j.days?' · '+j.days+(j.days===1?' day':' days'):'')+'</div></div>';
-      html+='<div style="text-align:right;flex-shrink:0;margin-left:12px">'+(bidAmt?'<div style="font-size:18px;font-weight:900;color:var(--ink);font-family:var(--font-display);letter-spacing:-.5px">'+fmt(bidAmt)+'</div>':'')+'<span class="badge" style="background:#EEF2FF;color:#4338CA">In progress</span></div></div>';
+      html+='<div class="hub-feed-item"><div class="hub-feed-dot"></div><div><div class="hub-feed-title">'+esc(j.name)+'</div><div class="hub-feed-meta">'+(j.start?'Starts '+fmtDate(j.start):'')+(j.days?' · '+j.days+(j.days===1?' day':' days'):'In progress')+'</div></div></div>';
+    });
+  }else{
+    html+='<div class="hub-feed-empty">No updates yet — we\'ll post progress here.</div>';
+  }
+  html+='</div>';
+
+  // Awaiting signature
+  if(pendingBids.length){
+    html+='<div class="hub-feed-hd" style="margin-top:4px">Awaiting your signature</div>';
+    pendingBids.slice(0,3).forEach(b=>{
+      html+='<div class="hub-bid-row">';
+      html+='<div class="hub-bid-top"><div><div class="hub-bid-name">'+esc(b.type||'Proposal')+'</div><div class="hub-bid-date">Sent '+fmtDate(b.bid_date)+'</div></div>';
+      html+='<div class="hub-bid-amt">'+fmt(b.amount)+'</div></div>';
+      if(b.signHubUrl){
+        html+='<a href="'+esc(b.signHubUrl)+'" class="hub-btn hub-btn-sign" style="width:100%">✍️ Review &amp; Sign →</a>';
+      }else{
+        html+='<div class="hub-bid-pending-msg">Sign link on the way — check back soon</div>';
+      }
+      html+='</div>';
+    });
+  }
+
+  // Project timeline (won bids)
+  if(wonBids.length){
+    html+='<div class="card" style="margin-top:4px">';
+    html+='<div class="hub-feed-hd">Project timeline</div>';
+    html+='<div class="hub-timeline">';
+    wonBids.forEach(b=>{
+      const isPaid=(b.balance||0)<0.01;
+      html+='<div class="hub-timeline-item">';
+      html+='<div class="hub-timeline-dot '+(isPaid?'done':'active')+'"></div>';
+      html+='<div class="hub-timeline-body">';
+      html+='<div class="hub-timeline-title">'+esc(b.type||'Project')+'</div>';
+      html+='<div class="hub-timeline-meta">Signed '+fmtDate(b.signedAt||b.bid_date)+'</div>';
+      html+='<div class="hub-timeline-status">';
+      html+='<div class="hub-timeline-amt">'+fmt(b.amount)+'</div>';
+      html+='<span class="hub-badge '+(isPaid?'hub-badge-paid':'hub-badge-due')+'">'+(isPaid?'Paid ✓':'Balance due')+'</span>';
+      html+='</div></div></div>';
+    });
+    html+='</div></div>';
+  }
+
+  html+='</div>'; // end col-main
+
+  // Side col
+  html+='<div class="hub-col-side">';
+
+  // Contact card
+  if(h.contractorPhone){
+    html+='<div class="hub-side-card">';
+    html+='<div class="hub-side-hd">Contact us</div>';
+    html+='<a href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" class="hub-contact-btn">📞 Call '+esc(h.contractorPhone)+'</a>';
+    html+='<a href="sms:'+h.contractorPhone.replace(/\D/g,'')+'" class="hub-contact-btn hub-contact-btn-sec">💬 Send a text</a>';
+    html+='</div>';
+  }
+
+  // Approvals needing signature
+  if(pendingBids.length){
+    html+='<div class="hub-side-card">';
+    html+='<div class="hub-side-hd">Needs approval</div>';
+    pendingBids.forEach(b=>{
+      html+='<div class="hub-approval-item">';
+      html+='<div class="hub-approval-name">'+esc(b.type||'Proposal')+'</div>';
+      html+='<div class="hub-approval-amt">'+fmt(b.amount)+' · '+fmtDate(b.bid_date)+'</div>';
+      if(b.signHubUrl)html+='<a href="'+esc(b.signHubUrl)+'" class="hub-approval-link">Review &amp; Sign →</a>';
+      html+='</div>';
     });
     html+='</div>';
   }
-  document.getElementById('view-home').innerHTML=html;
+
+  html+='</div>'; // end col-side
+  html+='</div>'; // end two-col
+
+  document.getElementById('view-overview').innerHTML=html;
 }
-function renderProposals(){
+
+/* ── renderProject ── */
+function renderProject(){
   if(!_hub)return;
   const h=_hub;
-  const allBids=h.bids.slice().sort((a,b)=>(b.bid_date||'').localeCompare(a.bid_date||''));
-  let html='<div class="view-title">Proposals</div>';
-  if(!allBids.length){html+='<div class="empty">No proposals yet.</div>';document.getElementById('view-proposals').innerHTML=html;return;}
-  allBids.forEach(b=>{
-    const isPending=b.status==='Pending',isWon=b.status==='Closed Won';
-    const bidPmts=h.payments.filter(p=>p.bid_id===b.id||(!p.bid_id&&h.bids.length===1));
-    const totalPaid=bidPmts.reduce((s,p)=>s+(p.amount||0),0);
-    const balance=Math.max(0,(b.amount||0)-totalPaid);
-    const isPaid=balance<0.01;
-    let badge='';
-    if(isPending)badge='<span class="badge badge-pending">Pending signature</span>';
-    else if(isWon&&isPaid)badge='<span class="badge badge-won">Signed · Paid ✓</span>';
-    else if(isWon)badge='<span class="badge badge-won">Signed ✓</span>';
-    else badge='<span class="badge" style="background:var(--bg);color:var(--text3);border:1px solid var(--border)">'+(b.status||'Draft')+'</span>';
-    html+='<div class="bid-row">';
-    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">';
-    html+='<div><div style="font-size:15px;font-weight:700">'+esc(b.type||'Proposal')+'</div><div style="font-size:12px;color:var(--text3);margin-top:2px">'+fmtDate(b.bid_date)+'</div></div>';
-    html+='<div style="font-size:22px;font-weight:900;color:var(--accent);flex-shrink:0;margin-left:10px;font-family:var(--font-display);letter-spacing:-.5px">'+fmt(b.amount)+'</div></div>';
-    html+='<div style="margin-bottom:12px">'+badge+'</div>';
-    if(isPending){
-      html+=b.signHubUrl?'<a href="'+esc(b.signHubUrl)+'" class="btn btn-green">Review &amp; Sign →</a>':'<div style="font-size:12px;color:var(--text3);margin-top:4px">Sign link on the way — check back soon</div>';
-    }
-    if(isWon){
-      // Invoice summary inline
-      html+='<div style="background:var(--bg);border-radius:var(--r);padding:12px;margin-bottom:12px">';
-      html+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span style="color:var(--text3)">Total</span><span style="font-weight:600">'+fmt(b.amount)+'</span></div>';
-      if(totalPaid>0)html+='<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span style="color:var(--green-mid)">Paid</span><span style="font-weight:600;color:var(--green-mid)">'+fmt(totalPaid)+'</span></div>';
-      html+='<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:6px 0;border-top:1px solid var(--border);margin-top:4px"><span style="color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">Balance due</span><span style="color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">'+fmt(balance)+'</span></div>';
+  const photos=h.photos||[];
+  const wonBids=h.bids.filter(b=>b.status==='Closed Won');
+  const activeJobs=h.jobs.filter(j=>j.status!=='done');
+  let html='<div class="view-title">Project &amp; Photos</div>';
+
+  // Photo grid
+  if(photos.length){
+    html+='<div class="hub-photo-grid">';
+    photos.forEach(p=>{
+      const tag=p.type==='before'?'Before':p.type==='after'?'After':p.type==='progress'?'Progress':'';
+      html+='<div class="hub-photo-thumb" onclick="openPhoto(\''+esc(p.url)+'\',\''+esc(p.caption||'')+'\')">';
+      html+='<img src="'+esc(p.url)+'" alt="'+esc(p.caption||'Project photo')+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+      if(tag)html+='<div class="hub-photo-tag">'+tag+'</div>';
       html+='</div>';
-      if(!isPaid)html+=_payBtn(b,h);
-      if(b.proposalKey)html+='<button onclick="openProposal('+b.id+')" class="btn btn-sec" style="margin-bottom:6px">📋 View Signed Proposal</button>';
-      html+='<button onclick="openInvoice('+b.id+')" class="btn btn-sec">📄 Download Invoice</button>';
+    });
+    html+='</div>';
+  }else{
+    html+='<div class="card"><div class="empty">📷 No photos yet — we\'ll add progress photos as work begins.</div></div>';
+  }
+
+  // Daily log
+  html+='<div class="card">';
+  html+='<div class="section-hdr">Daily Log</div>';
+  const logItems=[...activeJobs,...wonBids];
+  if(logItems.length){
+    logItems.forEach(item=>{
+      const isJob=item.status!==undefined&&item.bid_date===undefined;
+      const date=isJob?(item.start||''):item.bid_date||'';
+      const name=isJob?item.name:(item.type||'Project');
+      const status=isJob?'In progress':'Signed';
+      html+='<div class="hub-log-item">';
+      html+='<div class="hub-log-dot"></div>';
+      html+='<div class="hub-log-body">';
+      html+='<div class="hub-log-date">'+(date?fmtDate(date):status)+'</div>';
+      html+='<div class="hub-log-text">'+esc(name)+'</div>';
+      html+='</div></div>';
+    });
+  }else{
+    html+='<div class="empty">No updates yet.</div>';
+  }
+  html+='</div>';
+
+  document.getElementById('view-project').innerHTML=html;
+}
+
+/* ── renderPayments ── */
+function renderPayments(){
+  if(!_hub)return;
+  const h=_hub;
+  const wonBids=h.bids.filter(b=>b.status==='Closed Won');
+  let html='<div class="view-title">Payments</div>';
+
+  if(!wonBids.length){
+    html+='<div class="card"><div class="empty">No invoices yet. Payments will appear here once a proposal is signed.</div></div>';
+    document.getElementById('view-payments').innerHTML=html;return;
+  }
+
+  wonBids.forEach(bid=>{
+    const balance=bid.balance||0;
+    const isPaid=balance<0.01;
+    const bidPmts=h.payments.filter(p=>p.bid_id===bid.id||(!p.bid_id&&h.bids.length===1));
+    const deposit=bid.deposit||0;
+    const depPaid=(bid.paid||0)>=(deposit-0.01);
+
+    // Balance card
+    html+='<div class="hub-balance-card">';
+    html+='<div class="hub-balance-lbl" style="position:relative;z-index:1">'+(bid.type||'Project')+'</div>';
+    html+='<div class="hub-balance-amt">'+fmt(balance)+'</div>';
+    html+='<div class="hub-method-chips">';
+    html+='<div class="hub-method-chip">💳 Card</div>';
+    html+='<div class="hub-method-chip">🏦 ACH</div>';
+    html+='<div class="hub-method-chip">💵 Cash</div>';
+    html+='</div>';
+    if(!isPaid){
+      const pb=_payBtn(bid,h);
+      if(pb)html+='<div style="position:relative;z-index:1">'+pb+'</div>';
+    }else{
+      html+='<div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.7);position:relative;z-index:1">✅ Paid in full</div>';
     }
     html+='</div>';
+
+    // Payment schedule
+    html+='<div class="card">';
+    html+='<div class="hub-feed-hd">Payment schedule</div>';
+    // Deposit milestone
+    if(deposit>0.01){
+      html+='<div class="hub-milestone">';
+      html+='<div class="hub-milestone-dot '+(depPaid?'paid':'due')+'"></div>';
+      html+='<div class="hub-milestone-body"><div class="hub-milestone-name">Deposit</div><div class="hub-milestone-date">'+(depPaid?'Paid':'Due upon signing')+'</div></div>';
+      html+='<div class="hub-milestone-amt">'+fmt(deposit)+'</div>';
+      html+='</div>';
+    }
+    // Final balance
+    const finalAmt=(bid.amount||0)-(deposit||0);
+    if(finalAmt>0.01||deposit<0.01){
+      html+='<div class="hub-milestone">';
+      html+='<div class="hub-milestone-dot '+(isPaid?'paid':(depPaid?'due':'upcoming'))+'"></div>';
+      html+='<div class="hub-milestone-body"><div class="hub-milestone-name">Final balance</div><div class="hub-milestone-date">'+(isPaid?'Paid':'Due upon completion')+'</div></div>';
+      html+='<div class="hub-milestone-amt">'+fmt(deposit>0.01?finalAmt:(bid.amount||0))+'</div>';
+      html+='</div>';
+    }
+    html+='</div>';
+
+    // Payment history
+    if(bidPmts.length){
+      html+='<div class="card">';
+      html+='<div class="hub-feed-hd">Payment history</div>';
+      html+='<table class="hub-inv-table"><thead><tr><th>Date</th><th>Type</th><th class="amt">Amount</th></tr></thead><tbody>';
+      const tl={deposit:'Deposit',final:'Final payment',stripe:'Online payment',card:'Card payment',check:'Check',cash:'Cash',ach:'Bank transfer'};
+      bidPmts.filter(p=>p.amount>0).sort((a,b)=>(b.date||'').localeCompare(a.date||'')).forEach(p=>{
+        html+='<tr><td>'+esc(fmtDate(p.date))+'</td><td>'+esc(tl[p.type]||p.type||'Payment')+'</td><td class="amt" style="color:var(--green-mid)">'+fmt(p.amount)+'</td></tr>';
+      });
+      html+='</tbody></table>';
+      html+='</div>';
+    }
   });
-  document.getElementById('view-proposals').innerHTML=html;
+
+  document.getElementById('view-payments').innerHTML=html;
 }
+
+/* ── renderDocuments ── */
+function renderDocuments(){
+  if(!_hub)return;
+  const h=_hub;
+  const wonBids=h.bids.filter(b=>b.status==='Closed Won');
+  let html='<div class="view-title">Documents</div>';
+
+  // Document list
+  html+='<div class="card">';
+  const docs=[];
+  wonBids.forEach(b=>{
+    docs.push({icon:'📄',name:'Invoice — '+esc(b.type||'Services'),meta:fmtDate(b.bid_date),tag:'invoice',action:'openInvoice('+b.id+')'});
+    if(b.proposalKey)docs.push({icon:'📋',name:'Signed Proposal — '+esc(b.type||'Services'),meta:'Signed '+fmtDate(b.signedAt||b.bid_date),tag:'contract',action:'openProposal('+b.id+')'});
+  });
+  if(h.epaRequired)docs.push({icon:'⚠️',name:'EPA Lead Paint Pamphlet',meta:'Renovate Right — epa.gov',tag:'epa',href:'https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools'});
+
+  if(docs.length){
+    docs.forEach(doc=>{
+      html+='<div class="hub-doc-item">';
+      html+='<div class="hub-doc-icon">'+doc.icon+'</div>';
+      html+='<div class="hub-doc-body">';
+      if(doc.href){
+        html+='<div class="hub-doc-name"><a href="'+doc.href+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">'+doc.name+'<span class="hub-doc-tag hub-doc-tag-'+doc.tag+'">'+(doc.tag==='epa'?'EPA':doc.tag==='contract'?'Contract':doc.tag.charAt(0).toUpperCase()+doc.tag.slice(1))+'</span></a></div>';
+      }else{
+        html+='<div class="hub-doc-name" onclick="'+doc.action+'">'+doc.name+'<span class="hub-doc-tag hub-doc-tag-'+doc.tag+'">'+(doc.tag==='epa'?'EPA':doc.tag==='contract'?'Contract':doc.tag.charAt(0).toUpperCase()+doc.tag.slice(1))+'</span></div>';
+      }
+      html+='<div class="hub-doc-meta">'+doc.meta+'</div>';
+      html+='</div></div>';
+    });
+  }else{
+    html+='<div class="empty">Documents will appear here once proposals are signed.</div>';
+  }
+  html+='</div>';
+
+  // Contractor info
+  html+='<div class="card">';
+  html+='<div class="hub-feed-hd">Contractor info</div>';
+  html+='<div class="hub-contractor-grid">';
+  html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Business</div><div class="hub-contractor-val">'+esc(h.contractorName||'—')+'</div></div>';
+  html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Phone</div><div class="hub-contractor-val">'+(h.contractorPhone?'<a href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" style="color:inherit;text-decoration:none">'+esc(h.contractorPhone)+'</a>':'—')+'</div></div>';
+  if(h.bwebsite)html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Website</div><div class="hub-contractor-val"><a href="'+esc(h.bwebsite)+'" target="_blank" style="color:var(--denim);text-decoration:none">'+esc(h.bwebsite.replace(/^https?:\/\//,''))+'</a></div></div>';
+  if(h.license)html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">License</div><div class="hub-contractor-val">'+esc(h.license)+'</div></div>';
+  html+='</div>';
+  html+='</div>';
+
+  document.getElementById('view-documents').innerHTML=html;
+}
+
+/* ── renderMessages ── */
+function renderMessages(){
+  if(!_hub)return;
+  const h=_hub;
+  const phone=h.contractorPhone||'';
+  const cName=esc(h.contractorName||'us');
+  let html='<div class="view-title">Messages</div>';
+  html+='<div class="card" style="padding:0">';
+  html+='<div class="hub-chat-wrap" style="padding:0 16px">';
+  html+='<div class="hub-chat-messages">';
+  // System message
+  html+='<div class="hub-msg hub-msg-contractor">';
+  html+='👋 Welcome to your project hub. Send us a message or call/text anytime.';
+  html+='<div class="hub-msg-time">'+cName+'</div>';
+  html+='</div>';
+  if(!phone){
+    html+='<div style="text-align:center;padding:20px 0;color:var(--text3);font-size:13px">Contact info not available yet.</div>';
+  }else{
+    html+='<div style="display:flex;gap:8px;justify-content:center;margin-top:8px">';
+    html+='<a href="tel:'+phone.replace(/\D/g,'')+'" style="padding:10px 18px;background:var(--ink);color:#fff;border-radius:22px;font-size:13px;font-weight:700;text-decoration:none">📞 Call</a>';
+    html+='<a href="sms:'+phone.replace(/\D/g,'')+'" style="padding:10px 18px;background:transparent;color:var(--text);border:1.5px solid var(--border2);border-radius:22px;font-size:13px;font-weight:700;text-decoration:none">💬 Text</a>';
+    html+='</div>';
+  }
+  html+='</div>';
+  html+='<div class="hub-chat-input">';
+  html+='<input type="text" placeholder="Message '+cName+'…" id="chat-input">';
+  html+='<button class="hub-chat-send" onclick="'+(phone?'alert(\'To message us directly, call or text: '+phone.replace(/'/g,'\\\'')+'\')':`alert('Contact info not available.')`)+'">Send</button>';
+  html+='</div>';
+  html+='</div>';
+  html+='</div>';
+  document.getElementById('view-messages').innerHTML=html;
+}
+
+/* ── renderInvoices (legacy compatibility) ── */
 function renderInvoices(){
   if(!_hub)return;
   const wonBids=_hub.bids.filter(b=>b.status==='Closed Won');
   let html='<div class="view-title">Invoices</div>';
-  if(!wonBids.length){html+='<div class="empty">No invoices yet.</div>';document.getElementById('view-invoices').innerHTML=html;return;}
+  if(!wonBids.length){html+='<div class="empty">No invoices yet.</div>';const el=document.getElementById('view-invoices');if(el)el.innerHTML=html;return;}
   wonBids.forEach(b=>{
     const job=_hub.jobs.find(j=>j.bid_id===b.id),isPaid=(b.balance||0)<0.01;
-    html+='<div class="bid-row"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">';
-    html+='<div><div style="font-size:15px;font-weight:700">'+esc(b.type||'Services')+'</div>';
-    html+='<div style="font-size:12px;color:var(--text3);margin-top:2px">'+(job&&job.completion_date?'Completed '+fmtDate(job.completion_date):b.bid_date?'Job from '+fmtDate(b.bid_date):'')+'</div></div>';
+    html+='<div class="hub-bid-row"><div class="hub-bid-top">';
+    html+='<div><div class="hub-bid-name">'+esc(b.type||'Services')+'</div>';
+    html+='<div class="hub-bid-date">'+(job&&job.completion_date?'Completed '+fmtDate(job.completion_date):b.bid_date?'Job from '+fmtDate(b.bid_date):'')+'</div></div>';
     html+='<div style="font-size:18px;font-weight:800;flex-shrink:0;margin-left:10px;color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">'+fmt(b.amount)+'</div></div>';
     html+='<div style="margin-bottom:10px"><span class="badge" style="background:'+(isPaid?'var(--green-lt)':'var(--red-lt)')+';color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">'+( isPaid?'Paid in full':'Balance: '+fmt(b.balance))+'</span></div>';
     if(!isPaid)html+=_payBtn(b,_hub);
     html+='<button onclick="openInvoice('+b.id+')" class="btn btn-sec">📄 View Invoice</button></div>';
   });
-  document.getElementById('view-invoices').innerHTML=html;
+  const el=document.getElementById('view-invoices');if(el)el.innerHTML=html;
 }
-function renderPayments(){
-  if(!_hub)return;
-  const pmts=((_hub.payments)||[]).filter(p=>p.amount>0).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  let html='<div class="view-title">Payments</div>';
-  if(!pmts.length){html+='<div class="empty">No payments recorded yet.</div>';document.getElementById('view-payments').innerHTML=html;return;}
-  const total=pmts.reduce((s,p)=>s+p.amount,0);
-  html+='<div class="card" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3)">Total paid</div><div style="font-size:10px;color:var(--text3);margin-top:2px">'+pmts.length+' payment'+(pmts.length===1?'':'s')+'</div></div><div style="font-size:30px;font-weight:900;color:var(--green-mid);font-family:var(--font-display);letter-spacing:-1px">'+fmt(total)+'</div></div><div class="card">';
-  const tl={deposit:'Deposit',final:'Final payment',stripe:'Online payment',card:'Card payment',check:'Check',cash:'Cash',ach:'Bank transfer'};
-  pmts.forEach(p=>{html+='<div class="row"><span class="rl">'+fmtDate(p.date)+'<br><span style="font-size:12px">'+esc(tl[p.type]||p.type||'Payment')+'</span></span><span class="rv" style="color:var(--green-mid)">'+fmt(p.amount)+'</span></div>';});
-  html+='</div>';
-  document.getElementById('view-payments').innerHTML=html;
-}
-function renderPhotos(){
-  if(!_hub)return;
-  const photos=_hub.photos||[];
-  let html='<div class="view-title">Project Photos</div>';
-  if(!photos.length){html+='<div class="empty">No photos yet.</div>';document.getElementById('view-photos').innerHTML=html;return;}
-  html+='<div class="photo-grid">';
-  photos.forEach(p=>{
-    const tag=p.type==='before'?'Before':p.type==='after'?'After':p.type==='progress'?'Progress':'';
-    html+='<div class="photo-thumb" onclick="openPhoto(\''+esc(p.url)+'\',\''+esc(p.caption||'')+'\')">';
-    html+='<img src="'+esc(p.url)+'" alt="'+esc(p.caption||'Project photo')+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
-    if(tag)html+='<div class="photo-tag">'+tag+'</div>';
-    html+='</div>';
-  });
-  html+='</div>';
-  document.getElementById('view-photos').innerHTML=html;
-}
+
 let _stripeCheckoutInstance=null;
 async function _launchCheckout(bidId,amount,label){
   const bid=_hub.bids.find(b=>b.id===bidId);if(!bid)return;
@@ -723,28 +1143,6 @@ async function openProposal(bidId){
   }
 }
 function closeProp(){const _ov=document.getElementById('prop-overlay');_ov.style.opacity='0';setTimeout(()=>_ov.style.display='none',250);}
-function renderResources(){
-  if(!_hub||!_hub.epaRequired){document.getElementById('view-resources').innerHTML='';return;}
-  const ackLine=_hub.epaAck
-    ?'<div style="margin-top:12px;padding:10px 12px;background:#f0fbf0;border:1px solid #97C459;border-radius:var(--r);font-size:12px;color:var(--green-mid);font-weight:600">✅ Acknowledged during proposal signing</div>'
-    :'<div style="margin-top:12px;font-size:12px;color:var(--text3)">Acknowledgment will appear here after signing a proposal.</div>';
-  document.getElementById('view-resources').innerHTML=
-    '<div class="view-title">Resources</div>'+
-    '<div class="card" style="border-left:3px solid #d97706">'+
-      '<div class="section-hdr" style="color:#92400e">⚠️ EPA Lead Paint Disclosure</div>'+
-      '<p style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:16px">'+
-        'This home was built before 1978. Federal law requires us to provide you with the '+
-        '<em>Renovate Right</em> pamphlet before renovation work begins. This document is permanently '+
-        'stored in your hub as a legal record.'+
-      '</p>'+
-      '<a href="https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools" target="_blank" rel="noopener" '+
-         'style="display:flex;align-items:center;gap:10px;padding:14px 16px;background:#fffbeb;border:1.5px solid #d97706;border-radius:var(--r);text-decoration:none;color:#92400e;font-weight:700;font-size:14px">'+
-        '<span style="font-size:22px">📄</span>'+
-        '<div><div>Renovate Right — EPA Lead Paint Info</div><div style="font-size:11px;font-weight:400;color:#b45309;margin-top:2px">View official EPA pamphlet (epa.gov)</div></div>'+
-      '</a>'+
-      ackLine+
-    '</div>';
-}
 function openPhoto(url,caption){
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:600;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;cursor:pointer';
