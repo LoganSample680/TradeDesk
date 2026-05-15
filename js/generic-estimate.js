@@ -369,6 +369,7 @@ function _renderNavTradeSwitcher(){
 let _geiClientId=null,_geiEditBidId=null,_geiLines=[],_geiTrade=null,_geiIsCommercial=false,_geiEmergency=false,_geiStep=1,_geiNewWork=false;
 let _panelSched=null; // null = not active, obj = panel schedule data
 let _geiIsTM=false,_tmCrewCount=1,_tmRatePerMan=0,_tmEstHours=0,_tmBillingCycle='weekly';
+let _tmMatMarkup=20,_tmCapAction='Stop & get re-approval';
 let _geiIsFreeForm=false;
 
 function openTMEstimate(c,bidId){
@@ -386,7 +387,7 @@ function openGenericEstimate(c,bidId,_tradePick){
   _geiLines=[];_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;
   const _wasTM=_geiIsTM,_wasFF=_geiIsFreeForm;
   _geiIsTM=false;_geiIsFreeForm=false;
-  if(_wasTM){_geiIsTM=true;}else{_tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';}
+  if(_wasTM){_geiIsTM=true;}else{_tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmMatMarkup=20;_tmCapAction='Stop & get re-approval';}
   if(_wasFF)_geiIsFreeForm=true;
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
@@ -420,6 +421,8 @@ function openGenericEstimate(c,bidId,_tradePick){
         _geiIsTM=true;
         _tmCrewCount=b.tmCrewCount||1;_tmRatePerMan=b.tmRatePerMan||0;
         _tmEstHours=b.tmEstHours||0;_tmBillingCycle=b.tmBillingCycle||'weekly';
+        _tmMatMarkup=b.tmMatMarkup||b.geiTaxPct||20;
+        _tmCapAction=b.tmCapAction||'Stop & get re-approval';
       }
       if(b.isFreeForm)_geiIsFreeForm=true;
     }
@@ -444,7 +447,7 @@ function openGenericEstimate(c,bidId,_tradePick){
       if(_b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(_b.panelSched)_panelSched=JSON.parse(JSON.stringify(_b.panelSched));
       if(_b.isFreeForm)_geiIsFreeForm=true;
-      if(_b.isTM){_geiIsTM=true;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';}
+      if(_b.isTM){_geiIsTM=true;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmMatMarkup=_b.tmMatMarkup||_b.geiTaxPct||20;_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
       // Purge other empty duplicates for this client+trade now that we have the right one
       bids=bids.filter(b=>b.id===_existingGei.id||!(b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&!b.amount&&!(b.geiLines||[]).length&&(b.status==='Draft'||b.status==='Pending')&&(b.trade_type===_geiTrade||!b.trade_type)));
       saveAll();
@@ -459,8 +462,17 @@ function openGenericEstimate(c,bidId,_tradePick){
 }
 
 function goGeiStep(n){
-  // If going to Step 2 and no bundles are set, show the onboarding picker first (skip for T&M and free-form)
-  if(n===2&&(!S.myBundles||!S.myBundles.length)&&!_geiIsTM&&!_geiIsFreeForm){
+  // T&M mode uses the single-page layout — bypass the wizard entirely
+  if(_geiIsTM){
+    _geiStep=n;
+    _tmShowPage();
+    window.scrollTo({top:0,behavior:'instant'});
+    return;
+  }
+  // Non-T&M: make sure the T&M single-page layout is hidden, legacy UI shown
+  _tmHidePage();
+  // If going to Step 2 and no bundles are set, show the onboarding picker first (skip for free-form)
+  if(n===2&&(!S.myBundles||!S.myBundles.length)&&!_geiIsFreeForm){
     showGeiOnboarding();return;
   }
   _geiStep=n;
@@ -570,6 +582,155 @@ function _tmSyncCycleButtons(){
     btn.style.color=active?'#fff':'var(--text2)';
     btn.style.border=active?'1.5px solid var(--blue)':'1.5px solid var(--border2)';
   });
+}
+
+// ── T&M single-page layout (matches design spec EstimateTM.jsx) ──────────────
+function _tmShowPage(){
+  // Hide legacy wizard UI inside pg-est-generic
+  ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.style.display='none';
+  });
+  const p=document.getElementById('gei-tm-page');if(p)p.style.display='';
+  // Sub-header: client name · address
+  const c=getClientById(_geiClientId);
+  const sub=document.getElementById('tm-page-sub');
+  if(sub){
+    const parts=[];
+    if(c?.name)parts.push(c.name);
+    if(c?.addr)parts.push(c.addr.split(',')[0]);
+    sub.textContent=parts.join(' · ')||'New estimate';
+  }
+  // Populate inputs from current state
+  const setV=(id,v)=>{const e=document.getElementById(id);if(e)e.value=(v===0||v)?v:''};
+  setV('tm-i-rate',_tmRatePerMan||'');
+  setV('tm-i-hours',_tmEstHours||'');
+  setV('tm-i-crew',Math.min(4,Math.max(1,_tmCrewCount||2)));
+  setV('tm-i-markup',_tmMatMarkup||20);
+  const b=bids.find(x=>x.id===_geiEditBidId);
+  if(b?.tmNteCap)setV('tm-i-nte',b.tmNteCap);
+  if(b?.tmCapAction){setV('tm-i-cap-action',b.tmCapAction);_tmCapAction=b.tmCapAction;}
+  _tmRenderMatList();
+  _tmInputChange();
+  _tmSyncCadence();
+}
+function _tmHidePage(){
+  const p=document.getElementById('gei-tm-page');if(p)p.style.display='none';
+  ['gei-old-tbar','gei-step-bar'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.style.display='';
+  });
+}
+function _tmInputChange(){
+  _tmRatePerMan=parseFloat(document.getElementById('tm-i-rate')?.value)||0;
+  _tmCrewCount=parseInt(document.getElementById('tm-i-crew')?.value)||1;
+  _tmEstHours=parseFloat(document.getElementById('tm-i-hours')?.value)||0;
+  _tmMatMarkup=parseFloat(document.getElementById('tm-i-markup')?.value)||0;
+  const labor=_tmCrewCount*_tmRatePerMan*_tmEstHours;
+  // Upsert labor line in _geiLines (same shape the rest of the app expects)
+  const idx=_geiLines.findIndex(l=>l._tmLabor);
+  const desc='Labor — '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr';
+  const line={desc,qty:_tmEstHours,unit:'hr',rate:Math.round(_tmRatePerMan*_tmCrewCount),_tmLabor:true,total:Math.round(_tmRatePerMan*_tmCrewCount*_tmEstHours)};
+  if(idx>=0){if(labor>0)_geiLines[idx]=line;else _geiLines.splice(idx,1);}
+  else if(labor>0)_geiLines.unshift(line);
+  // Stat tiles
+  const dayRate=_tmCrewCount*_tmRatePerMan*8;
+  const days=_tmEstHours>0?Math.ceil(_tmEstHours/8):0;
+  const setT=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
+  setT('tm-stat-day','$'+dayRate.toLocaleString());
+  setT('tm-stat-day-s',_tmRatePerMan&&_tmCrewCount?_tmCrewCount+'-person crew · 8hr day':'enter rate & crew');
+  setT('tm-stat-labor','$'+labor.toLocaleString());
+  setT('tm-stat-labor-s',(_tmRatePerMan&&_tmEstHours)?_tmEstHours+'hr × '+_tmCrewCount+' × $'+_tmRatePerMan:'—');
+  setT('tm-stat-days',days);
+  // Materials subtotal = sum of non-labor lines
+  const matSub=_geiLines.filter(l=>!l._tmLabor).reduce((s,l)=>s+(l.total||(l.qty||0)*(l.rate||0)),0);
+  const markupAmt=Math.round(matSub*_tmMatMarkup/100);
+  const total=labor+matSub+markupAmt;
+  // Rail breakdown
+  setT('tm-rail-total','$'+total.toLocaleString());
+  setT('tm-rail-labor','$'+labor.toLocaleString());
+  setT('tm-rail-mat','$'+matSub.toLocaleString());
+  setT('tm-rail-mpct',_tmMatMarkup);
+  setT('tm-rail-mamt','$'+markupAmt.toLocaleString());
+  setT('tm-banner-pct',_tmMatMarkup);
+  const nte=parseFloat(document.getElementById('tm-i-nte')?.value)||0;
+  const nteRow=document.getElementById('tm-rail-nte-row');
+  if(nteRow)nteRow.style.display=nte>0?'flex':'none';
+  if(nte>0)setT('tm-rail-nte-amt','$'+nte.toLocaleString());
+  // Mirror values to legacy DOM ids so saveGenericEstimate/sendGenericProposal pick them up
+  const setV=(id,v)=>{const e=document.getElementById(id);if(e)e.value=v;};
+  setV('tm-rate',_tmRatePerMan);
+  setV('tm-hours',_tmEstHours);
+  const cd=document.getElementById('tm-crew-display');if(cd)cd.textContent=_tmCrewCount;
+  setV('tm-nte-cap',nte||'');
+  setV('tm-dep-pct',20);
+  const nteOn=document.getElementById('tm-nte-on');if(nteOn)nteOn.checked=nte>0;
+  setV('gei-tax-pct',_tmMatMarkup); // materials markup folds into the existing tax/markup field
+  // Keep the legacy line items + totals in sync (used by save/proposal)
+  if(typeof renderGeiLines==='function')renderGeiLines();
+  if(typeof calcGeiTotal==='function')calcGeiTotal();
+}
+function _tmRenderMatList(){
+  const el=document.getElementById('tm-mat-list');if(!el)return;
+  const mats=_geiLines.map((l,i)=>({l,i})).filter(x=>!x.l._tmLabor);
+  if(!mats.length){
+    el.innerHTML='<div class="tm-mat-empty">No material categories yet — tap "+ Add category" to start.</div>';
+    return;
+  }
+  el.innerHTML=mats.map(({l,i})=>{
+    const total=l.total||((l.qty||0)*(l.rate||0));
+    return '<div class="tm-mat-row">'+
+      '<div style="flex:1;cursor:pointer;min-width:0" onclick="_tmEditMatCat('+i+')">'+
+        '<div class="tm-mat-cat">'+escHtml(l.desc||'Untitled')+'</div>'+
+        (l.notes?'<div class="tm-mat-notes">'+escHtml(l.notes)+'</div>':'')+
+      '</div>'+
+      '<div style="display:flex;align-items:flex-start;gap:0">'+
+        '<div class="tm-mat-est">$'+(total||0).toLocaleString()+'</div>'+
+        '<button class="tm-mat-del" onclick="_tmDelMatCat('+i+')" title="Remove category">×</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+function _tmAddMatCat(){
+  const name=prompt('Category name (e.g. Paint & primer):');
+  if(!name)return;
+  const notes=prompt('Brief notes (optional — what\'s in it):','')||'';
+  const cost=parseFloat(prompt('Estimated cost ($):','0'))||0;
+  _geiLines.push({desc:name,notes:notes,qty:1,unit:'lot',rate:cost,total:cost});
+  _tmRenderMatList();_tmInputChange();
+}
+function _tmEditMatCat(idx){
+  const l=_geiLines[idx];if(!l||l._tmLabor)return;
+  const name=prompt('Category name:',l.desc||'');
+  if(name===null)return;
+  l.desc=name||l.desc;
+  const notes=prompt('Notes:',l.notes||'');
+  if(notes!==null)l.notes=notes;
+  const cur=l.total||((l.qty||0)*(l.rate||0));
+  const cost=prompt('Estimated cost ($):',cur);
+  if(cost!==null){
+    const c=parseFloat(cost)||0;
+    l.qty=1;l.unit='lot';l.rate=c;l.total=c;
+  }
+  _tmRenderMatList();_tmInputChange();
+}
+function _tmDelMatCat(idx){
+  const l=_geiLines[idx];if(!l||l._tmLabor)return;
+  if(!confirm('Remove "'+(l.desc||'this category')+'"?'))return;
+  _geiLines.splice(idx,1);
+  _tmRenderMatList();_tmInputChange();
+}
+function _tmCadence(v){_tmBillingCycle=v;_tmSyncCadence();}
+function _tmSyncCadence(){
+  ['weekly','milestone','completion'].forEach(c=>{
+    const el=document.getElementById('tm-cad-'+c);if(!el)return;
+    if(_tmBillingCycle===c)el.classList.add('on');else el.classList.remove('on');
+  });
+}
+function _tmPreviewClient(){
+  // Save draft first so the latest data is persisted, then open the existing proposal preview flow
+  saveGenericEstimate(true);
+  // Fall back to sending if no dedicated preview exists yet
+  showToast('Preview as client — sending proposal flow opens for review','👁');
+  if(typeof sendGenericProposal==='function')sendGenericProposal();
 }
 
 function _geiBack(){
@@ -1313,15 +1474,18 @@ function saveGenericEstimate(draft){
   const trade=_geiTrade||getActiveTrade();
   const taxPct=parseFloat(v('gei-tax-pct'))||0;
   // T&M extra fields
+  const _tmNteFromNew=parseFloat(v('tm-i-nte'))||0;
   const _tmFields=_geiIsTM?{
     isTM:true,
     tmReason:v('tm-reason'),tmReasonNote:v('tm-reason-note'),
     tmCrewCount:_tmCrewCount,tmRatePerMan:_tmRatePerMan,tmEstHours:_tmEstHours,
     tmBillingCycle:_tmBillingCycle||'weekly',
+    tmMatMarkup:_tmMatMarkup,
+    tmCapAction:v('tm-i-cap-action')||_tmCapAction||'',
     tmDepositPct:parseFloat(v('tm-dep-pct'))||20,
     tmDepositAmt:Math.round(sub*(parseFloat(v('tm-dep-pct'))||20)/100),
-    tmNteEnabled:document.getElementById('tm-nte-on')?.checked||false,
-    tmNteCap:parseFloat(v('tm-nte-cap'))||0,
+    tmNteEnabled:(_tmNteFromNew>0)||(document.getElementById('tm-nte-on')?.checked||false),
+    tmNteCap:_tmNteFromNew||parseFloat(v('tm-nte-cap'))||0,
   }:{isTM:false};
   const _deposit=_geiIsTM?(_tmFields.tmDepositAmt||0):Math.round(total*0.25*100)/100;
   const _typeLabel=_geiIsTM?'Time & Materials Estimate':_geiIsFreeForm?'Custom Estimate':(TRADE_META[trade]?.label||'Trade')+' Estimate';

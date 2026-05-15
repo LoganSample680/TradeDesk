@@ -30,6 +30,7 @@ input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
   --gray:#544D44;--gray-lt:#EEE7D8;
   --bg:#FFFFFF;--bg2:#F4F5F7;--bg3:#ECEEF2;
   --text:#161A1F;--text2:#4B5563;--text3:#8A92A0;
+  --text-2:#4B5563;--text-3:#8A92A0;
   --border:#E2E5EB;--border2:#CFD4DC;
   --r:8px;--rl:12px;
   /* v2 names — used by new component classes */
@@ -665,6 +666,61 @@ body.dark .cal-cell.other{background:var(--cream)}
 .mil-action-label{font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.1px}
 .mil-action-sub{font-size:11px;color:var(--text-3);margin-top:1px;font-weight:500}
 @media(max-width:760px){.mil-hero{grid-template-columns:1fr}.mil-hero-r{flex-direction:row;flex-wrap:wrap}.mil-action{flex:1 1 calc(50% - 4px);min-width:140px}}
+
+/* ── Workwear Modern: missing design-system classes (spec parity) ── */
+/* Semantic type roles */
+.td-display,.td-hero{font-family:var(--font-display);font-weight:900;letter-spacing:-2px;line-height:.92;color:var(--text)}
+.td-h1{font-family:var(--font-display);font-weight:800;font-size:28px;letter-spacing:-.8px;line-height:1.05;color:var(--text)}
+.td-h2{font-family:var(--font-ui);font-weight:800;font-size:22px;letter-spacing:-.5px;line-height:1.1;color:var(--text)}
+.td-h3{font-family:var(--font-ui);font-weight:800;font-size:16px;letter-spacing:-.2px;color:var(--text)}
+.td-h4{font-family:var(--font-ui);font-weight:700;font-size:14px;color:var(--text)}
+.td-body{font-size:13px;color:var(--text)}
+.td-meta{font-size:11px;color:var(--text-3)}
+.td-metric{font-family:var(--font-display);font-weight:800;font-size:22px;line-height:1;letter-spacing:-.6px;color:var(--text)}
+
+/* Input affixes */
+.input-prefix,.input-suffix{display:flex;align-items:stretch;border:1.5px solid var(--line-2);border-radius:var(--r);background:var(--bg-card);overflow:hidden;transition:border-color .15s,box-shadow .15s}
+.input-prefix:focus-within,.input-suffix:focus-within{border-color:var(--denim);box-shadow:0 0 0 3px rgba(45,93,168,.16)}
+.input-prefix>span,.input-suffix>span{display:flex;align-items:center;padding:0 12px;background:var(--cream);color:var(--text-3);font-size:13px;font-weight:700;letter-spacing:-.1px}
+.input-prefix>input,.input-suffix>input{border:0!important;outline:none!important;box-shadow:none!important;background:transparent;padding:10px 12px;width:100%}
+.input-prefix>input{padding-left:10px}
+.input-suffix>input{border-right:1px solid var(--line)}
+
+/* Stat tiles (in-card metric tiles) */
+.stat-tile{background:var(--cream);border:1px solid var(--line);border-radius:var(--r);padding:12px}
+.stat-l{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);margin-bottom:6px}
+.stat-v{font-family:var(--font-display);font-size:18px;font-weight:900;letter-spacing:-.5px;line-height:1;color:var(--text);font-variant-numeric:tabular-nums}
+.stat-s{font-size:10px;color:var(--text-3);margin-top:4px;font-weight:500}
+
+/* Eyebrow-as-button (← Pick a different type) */
+.link-back{background:none;border:0;cursor:pointer;font-family:var(--font-ui);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:var(--denim);padding:0;margin-bottom:6px;display:inline-block}
+.link-back:hover{color:var(--denim-deep)}
+
+/* Right-side summary rail (estimate, T&M, BYO) */
+.summary-rail{position:sticky;top:24px}
+.summary-card{background:var(--bg-card);border:1px solid var(--line);border-radius:var(--r-lg);padding:18px;box-shadow:var(--shadow-card)}
+.summary-total{font-size:34px;color:var(--text);margin:4px 0 2px;letter-spacing:-1.4px;font-variant-numeric:tabular-nums}
+.summary-meta{font-size:11px;color:var(--text-3);font-weight:500}
+.summary-divider{height:1px;background:var(--line);margin:14px 0}
+.summary-row{display:flex;justify-content:space-between;font-size:12px;font-weight:600;color:var(--text-2);padding:4px 0;font-variant-numeric:tabular-nums}
+.summary-row b{color:var(--text);font-weight:800}
+
+/* T&M material category list */
+.tm-mat-list{display:flex;flex-direction:column;gap:0}
+.tm-mat-row{display:flex;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line);gap:14px}
+.tm-mat-row:last-child{border-bottom:none}
+.tm-mat-cat{font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.1px}
+.tm-mat-notes{font-size:11px;color:var(--text-3);margin-top:2px;font-weight:500}
+.tm-mat-est{font-family:var(--font-display);font-size:14px;font-weight:800;letter-spacing:-.3px;color:var(--text);font-variant-numeric:tabular-nums}
+.tm-mat-del{background:none;border:0;color:var(--text-3);cursor:pointer;font-size:14px;padding:0 0 0 8px;opacity:0;transition:opacity .12s,color .12s;font-family:inherit;line-height:1}
+.tm-mat-row:hover .tm-mat-del{opacity:1}
+.tm-mat-del:hover{color:var(--c-red)}
+.tm-mat-empty{padding:14px 0;text-align:center;color:var(--text-3);font-size:12px;font-weight:500}
+
+/* Billing cadence chip (interactive variant of .chip) */
+.chip.chip-int{cursor:pointer;transition:background .12s,border-color .12s,color .12s}
+.chip.chip-int:hover{border-color:var(--text-3);color:var(--text)}
+.chip.chip-int.on{background:var(--ink);color:var(--text-cream);border-color:var(--ink)}
 </style>
 
 </head>
@@ -1571,7 +1627,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div><!-- end est wrapper -->
 </div>
 <div class="pg" id="pg-est-generic">
-  <div class="tbar">
+  <div class="tbar" id="gei-old-tbar">
     <div class="tbar-l">
       <div class="tbar-eyebrow" id="gei-tbar-eyebrow">General estimate</div>
       <div class="tbar-title" id="gei-trade-title">Estimate</div>
@@ -1583,6 +1639,125 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
   <!-- Step progress bar -->
   <div id="gei-step-bar" style="padding:12px 16px 0"></div>
+
+  <!-- T&M single-page layout (matches design spec EstimateTM.jsx) — shown when _geiIsTM=true -->
+  <div id="gei-tm-page" style="display:none">
+    <div class="tbar">
+      <div class="tbar-l">
+        <button class="link-back" onclick="_geiBack()">← Pick a different type</button>
+        <div class="tbar-title">Time &amp; Materials estimate</div>
+        <div class="tbar-sub" id="tm-page-sub">—</div>
+      </div>
+      <div class="tbar-r">
+        <button class="btn" onclick="saveGenericEstimate(true)">💾 Save draft</button>
+        <button class="btn btn-ghost" onclick="_geiBack()">Cancel</button>
+      </div>
+    </div>
+
+    <div class="split-est">
+      <div>
+        <!-- Rates & crew -->
+        <div class="card">
+          <div class="td-h3" style="margin-bottom:10px">Rates &amp; crew</div>
+          <div class="fg fg2">
+            <div class="f">
+              <label>Hourly rate · $/hr</label>
+              <div class="input-prefix"><span>$</span><input type="number" id="tm-i-rate" min="0" step="5" placeholder="75" oninput="_tmInputChange()"></div>
+            </div>
+            <div class="f">
+              <label>Crew size</label>
+              <select id="tm-i-crew" onchange="_tmInputChange()">
+                <option value="1">1 · solo</option>
+                <option value="2">2 · me + helper</option>
+                <option value="3">3 · full crew</option>
+                <option value="4">4+ · large crew</option>
+              </select>
+            </div>
+            <div class="f">
+              <label>Estimated hours</label>
+              <input type="number" id="tm-i-hours" min="0" step="1" placeholder="40" oninput="_tmInputChange()">
+            </div>
+            <div class="f">
+              <label>Material markup %</label>
+              <div class="input-suffix"><input type="number" id="tm-i-markup" min="0" max="100" step="5" value="20" oninput="_tmInputChange()"><span>%</span></div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px">
+            <div class="stat-tile">
+              <div class="stat-l">Day rate</div>
+              <div class="stat-v" id="tm-stat-day">$0</div>
+              <div class="stat-s" id="tm-stat-day-s">enter rate &amp; crew</div>
+            </div>
+            <div class="stat-tile">
+              <div class="stat-l">Est. labor total</div>
+              <div class="stat-v" id="tm-stat-labor">$0</div>
+              <div class="stat-s" id="tm-stat-labor-s">—</div>
+            </div>
+            <div class="stat-tile">
+              <div class="stat-l">Working days</div>
+              <div class="stat-v" id="tm-stat-days">0</div>
+              <div class="stat-s">at 8hr days</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Material categories -->
+        <div class="card">
+          <div class="row-bw" style="margin-bottom:12px">
+            <div class="td-h3">Material categories</div>
+            <button class="btn btn-sm" onclick="_tmAddMatCat()">+ Add category</button>
+          </div>
+          <div class="tm-mat-list" id="tm-mat-list"></div>
+          <div class="tip" style="margin-top:12px">
+            <span style="font-size:18px">🧾</span>
+            <div><b>Materials billed at cost + <span id="tm-banner-pct">20</span>% markup.</b> Client sees the actual receipts; we add the markup as a line item.</div>
+          </div>
+        </div>
+
+        <!-- NTE cap -->
+        <div class="card">
+          <div class="td-h3" style="margin-bottom:10px">Not-to-exceed cap (optional)</div>
+          <div class="fg fg2">
+            <div class="f">
+              <label>Cap amount</label>
+              <div class="input-prefix"><span>$</span><input type="number" id="tm-i-nte" placeholder="e.g. 12,000" min="0" step="500" oninput="_tmInputChange()"></div>
+            </div>
+            <div class="f">
+              <label>What happens at cap</label>
+              <select id="tm-i-cap-action" onchange="_tmCapAction=this.value">
+                <option>Stop &amp; get re-approval</option>
+                <option>Continue at agreed rate</option>
+                <option>Switch to fixed-price quote</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary rail -->
+      <div class="summary-rail">
+        <div class="summary-card">
+          <div class="td-micro" style="margin-bottom:8px">Estimated total</div>
+          <div class="td-display summary-total" id="tm-rail-total">$0</div>
+          <div class="summary-meta">±15% normal for T&amp;M</div>
+          <div class="summary-divider"></div>
+          <div class="summary-row"><span>Labor</span><span id="tm-rail-labor">$0</span></div>
+          <div class="summary-row"><span>Materials est.</span><span id="tm-rail-mat">$0</span></div>
+          <div class="summary-row"><span>Markup (<span id="tm-rail-mpct">20</span>%)</span><span id="tm-rail-mamt">$0</span></div>
+          <div class="summary-row" id="tm-rail-nte-row" style="display:none;color:var(--c-amber)"><span>NTE cap</span><span id="tm-rail-nte-amt">$0</span></div>
+          <div class="summary-divider"></div>
+          <div class="td-micro" style="margin-bottom:6px">Billing cadence</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <span class="chip chip-int" id="tm-cad-weekly" onclick="_tmCadence('weekly')">Weekly</span>
+            <span class="chip chip-int" id="tm-cad-milestone" onclick="_tmCadence('milestone')">By milestone</span>
+            <span class="chip chip-int" id="tm-cad-completion" onclick="_tmCadence('completion')">On completion</span>
+          </div>
+          <button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">📨 Send T&amp;M proposal</button>
+          <button class="btn btn-full" style="margin-top:8px" onclick="_tmPreviewClient()">👁 Preview as client</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Step 1: Job Info -->
   <div id="gei-s1" style="padding:10px 14px 80px">
