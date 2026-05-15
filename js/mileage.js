@@ -1279,7 +1279,15 @@ function _milRenderTripList(shown,yr){
     byDay[r.date].push(r);
   });
   const days=Object.entries(byDay).sort((a,b)=>b[0].localeCompare(a[0]));
-  el.innerHTML='<div class="mil-list">'+days.map(([date,trips],dayIdx)=>{
+  // Purpose breakdown strip
+  const purpTotals={};
+  shown.forEach(r=>{const p=r.purpose||'';if(p){purpTotals[p]=(purpTotals[p]||0)+(r.miles||0);}});
+  const purpChips=Object.entries(purpTotals).sort((a,b)=>b[1]-a[1]).map(([p,mi])=>{
+    const _pc=MILE_PURPOSE_COLORS[p]||MILE_PURPOSE_COLORS['Other'];
+    return '<div class="mil-purp-chip" style="background:'+_pc.bg+';color:'+_pc.text+'">'+escHtml(p)+' · <strong>'+mi.toFixed(1)+' mi</strong></div>';
+  }).join('');
+  const purpRow=purpChips?'<div class="mil-purp-row">'+purpChips+'</div>':'';
+  el.innerHTML='<div class="mil-list">'+purpRow+days.map(([date,trips],dayIdx)=>{
     const dayMi=trips.reduce((s,t)=>s+(t.miles||0),0);
     const dayDed=trips.reduce((s,t)=>s+(t.miles||0)*irsRate,0);
     const needsCount=trips.filter(t=>!t.purpose).length;
@@ -1289,33 +1297,22 @@ function _milRenderTripList(shown,yr){
     const monthShort=dateObj.toLocaleDateString('en-US',{month:'short'}).toUpperCase();
     const openClass=dayIdx===0?' open':'';
     const reviewClass=needsCount?' has-review':'';
-    const tripRows=trips.slice().sort((a,b)=>(a.start||a.created_at||'').localeCompare(b.start||b.created_at||'')).map(r=>{
+    const tripRows=trips.slice().sort((a,b)=>(a.created_at||'').localeCompare(b.created_at||'')).map(r=>{
       const fromAddr=r.from_name||r.from||'';
       const toAddr=r.to_name||r.to||(r.client_id?getClientById(r.client_id)?.addr||'':'');
-      const logTime=r.created_at?new Date(r.created_at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}):'';
-      const _pc=MILE_PURPOSE_COLORS[r.purpose||'Other']||MILE_PURPOSE_COLORS['Other'];
       const needsClass=r.purpose?'':' needs';
       return '<div class="mil-day-trip'+needsClass+'">'+
-        '<div class="mil-day-trip-time">'+(logTime||'—')+'</div>'+
         '<div class="mil-day-trip-route">'+
           '<div class="mil-route-spine"><div class="mil-route-pin-s"></div><div class="mil-route-spine-line"></div><div class="mil-route-pin-e"></div></div>'+
           '<div class="mil-route-addrs">'+
             '<div class="mil-day-trip-from">'+(fromAddr?escHtml(fromAddr):'<span style="color:var(--text-3);font-style:italic">Start not recorded</span>')+'</div>'+
             '<div class="mil-day-trip-to">'+(toAddr?escHtml(toAddr):'<span style="color:var(--text-3);font-style:italic">End not recorded</span>')+'</div>'+
-            (_hasMultiDriver&&r.logged_by_name?'<div style="font-size:10px;color:var(--text-3);font-weight:500">Driver: '+escHtml(r.logged_by_name)+'</div>':'')+
+            (_hasMultiDriver&&r.logged_by_name?'<div style="font-size:10px;color:var(--text-3);font-weight:500;margin-top:2px">Driver: '+escHtml(r.logged_by_name)+'</div>':'')+
           '</div>'+
         '</div>'+
-        '<div class="mil-day-trip-stats">'+
-          '<div class="mil-day-trip-miles">'+(r.miles?(+r.miles).toFixed(1):'—')+'<span style="font-size:10px;color:var(--text-3);font-weight:600"> mi</span></div>'+
-          (r.vehicle?'<div class="mil-day-trip-dur">'+escHtml(r.vehicle)+'</div>':'')+
-        '</div>'+
-        '<div class="mil-day-trip-purpose">'+
-          '<span style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;background:'+_pc.bg+';color:'+_pc.text+'">'+escHtml(r.purpose||'⏳ NO PURPOSE')+'</span>'+
-        '</div>'+
-        '<div class="mil-day-trip-ded">'+(r.miles?fmt((+r.miles)*irsRate):'—')+'</div>'+
-        '<div style="display:flex;align-items:center;gap:5px;flex-shrink:0;align-self:center">'+
-          '<button onclick="openMileageEdit('+r.id+')" style="font-size:11px;font-weight:600;background:none;border:1px solid var(--line-2);border-radius:var(--r);padding:3px 8px;cursor:pointer;color:var(--text-2);white-space:nowrap">✏️ Edit</button>'+
-          '<button class="btn-del" onclick="delMileage('+r.id+')">&#10005;</button>'+
+        '<div class="mil-trip-side">'+
+          (r.miles?'<div class="mil-trip-mi">'+(+r.miles).toFixed(1)+' mi</div>':'')+
+          '<button class="mil-trip-edit" onclick="openMileageEdit('+r.id+')">Edit</button>'+
         '</div>'+
       '</div>';
     }).join('');
