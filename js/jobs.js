@@ -255,9 +255,9 @@ function doneForDay(){
         '<div style="font-size:13px"><span style="margin-right:6px">'+sc.icon+'</span>'+sc.label+'</div>'+
         '<div style="font-size:13px;font-weight:700;color:var(--text2)">'+_fmtMin(e.minutes)+'</div></div>';
     }).join('');
-    const ov=document.createElement('div');ov.className='zmodal-overlay';ov.style.cssText='align-items:flex-end;padding:0';
+    const ov=document.createElement('div');ov.className='zmodal-overlay';
     const box=document.createElement('div');box.className='zmodal';
-    box.style.cssText='border-radius:20px 20px 0 0;max-width:560px;width:100%;margin:0 auto;padding-bottom:env(safe-area-inset-bottom,20px)';
+    box.style.cssText='border-radius:14px;max-width:560px;width:100%;';
     box.innerHTML=
       '<div style="font-size:17px;font-weight:800;margin-bottom:2px">Day wrapped up 🎉</div>'+
       '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">'+jobName+' · '+_fmtMin(totalMin)+' total today</div>'+
@@ -701,9 +701,9 @@ function openJobChecklist(bidId){
   const done=tasks.filter(t=>prog[t.key]).length;
   const ov=document.createElement('div');
   ov.id='_checklist-ov';
-  ov.style.cssText='position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.5);display:flex;align-items:flex-end';
+  ov.style.cssText='position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   const sheet=document.createElement('div');
-  sheet.style.cssText='background:var(--bg2);border-radius:16px 16px 0 0;width:100%;max-height:85vh;overflow-y:auto;padding:20px 16px 32px';
+  sheet.style.cssText='background:var(--bg2);border-radius:14px;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;padding:20px 16px 24px';
   const hdr='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
     '<div style="font-size:17px;font-weight:800">📋 Job Checklist</div>'+
     '<button onclick="closeJobChecklist()" style="background:none;border:none;font-size:20px;color:var(--text3);cursor:pointer;padding:4px">✕</button>'+

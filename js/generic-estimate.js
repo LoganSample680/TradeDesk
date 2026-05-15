@@ -682,27 +682,22 @@ function _byoDelItem(idx){
 }
 function _byoUpdateRail(){
   const selected=_byoItems.filter(it=>it.on);
-  const subtotal=selected.reduce((s,it)=>s+it.price,0);
-  const discount=subtotal>=6000?Math.round(subtotal*0.05):0;
-  const total=subtotal-discount;
+  const total=selected.reduce((s,it)=>s+it.price,0);
   const depPct=(parseFloat(document.getElementById('byo-deposit-pct')?.value)||30)/100;
   const deposit=Math.round(total*depPct);
   const setT=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
   setT('byo-rail-total','$'+total.toLocaleString());
-  setT('byo-rail-meta',selected.length+' of '+_byoItems.length+' items selected');
-  setT('byo-rail-sub','$'+subtotal.toLocaleString());
+  setT('byo-rail-meta',selected.length+' of '+_byoItems.length+' items');
+  setT('byo-rail-sub','$'+total.toLocaleString());
   setT('byo-rail-deposit','$'+deposit.toLocaleString());
   setT('byo-rail-balance','$'+(total-deposit).toLocaleString());
-  const discRow=document.getElementById('byo-rail-disc-row');
-  if(discRow){discRow.style.display=discount>0?'':'none';}
-  setT('byo-rail-disc',discount>0?'-$'+discount.toLocaleString():'');
   _geiLines=selected.map(it=>({desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,_byoSection:it.section}));
 }
 function _byoAddItem(sec){
   document.getElementById('_byo-add-modal')?.remove();
   const ov=document.createElement('div');ov.id='_byo-add-modal';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom,0px)';
-  ov.innerHTML='<div style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:20px 16px 28px">'+
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
     '<div style="font-weight:800;font-size:16px;margin-bottom:16px">Add to '+escHtml(sec)+'</div>'+
     '<div class="f" style="margin-bottom:10px"><label>What is it?</label><input type="text" id="_bya-label" placeholder="e.g. Bedroom 3 — walls only"></div>'+
     '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="number" id="_bya-price" placeholder="0" min="0" step="50"></div></div>'+
@@ -820,8 +815,8 @@ function _tmMatCatModal(idx){
   document.getElementById('_tm-mat-modal')?.remove();
   const ov=document.createElement('div');
   ov.id='_tm-mat-modal';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom,0px)';
-  ov.innerHTML='<div style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:20px 16px 28px">'+
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
     '<div style="font-weight:800;font-size:16px;color:var(--text);margin-bottom:16px">'+(isEdit?'Edit category':'Add material category')+'</div>'+
     '<div class="f" style="margin-bottom:10px"><label>Category name</label><input type="text" id="tcm-name" placeholder="e.g. Paint &amp; primer" value="'+escHtml(l?.desc||'')+'" style="font-size:15px"></div>'+
     '<div class="f" style="margin-bottom:10px"><label>Notes <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input type="text" id="tcm-notes" placeholder="Brand, product type, etc." value="'+escHtml(l?.notes||'')+'"></div>'+
@@ -1303,9 +1298,9 @@ function _geiShowFreeFormModal(job){
   const unitLabel={sqft:'sqft','lin ft':'lin ft',kW:'kW',kWh:'kWh',fixture:'fixtures'}[job.unit]||job.unit;
   const ov=document.createElement('div');
   ov.id='_gei-ff-ov';
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   ov.innerHTML=`
-    <div style="background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;padding:20px 18px 32px;width:100%;max-width:480px;box-sizing:border-box">
+    <div style="background:var(--bg);border-radius:14px;padding:20px 18px 24px;width:100%;max-width:480px;box-sizing:border-box;max-height:90vh;overflow-y:auto">
       <div style="font-size:14px;font-weight:800;color:var(--text);margin-bottom:4px">${escHtml(job.name)}</div>
       <div style="font-size:12px;color:var(--text3);margin-bottom:14px">${escHtml(job.freeFormLabel||'Specify brand/model')}</div>
       <div class="f" style="margin-bottom:10px"><label>Brand / model</label>
@@ -1747,11 +1742,11 @@ async function sendGenericProposal(){
   // Show sharing sheet
   const _gsov=document.createElement('div');
   _gsov.id='_gei-share-ov';
-  _gsov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom,0px)';
+  _gsov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   const _geiShareName=clientName||'Client';
   const _geiShareShort=shareUrl.replace(/^https?:\/\//,'');
   const _geiSharePreview=_geiShareShort.length>44?_geiShareShort.slice(0,44)+'…':_geiShareShort;
-  _gsov.innerHTML='<div style="background:#fff;border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:20px 16px 28px"><div style="text-align:center;margin-bottom:16px"><div style="font-size:15px;font-weight:800;color:var(--text1);margin-bottom:4px">📨 Send to client</div><div style="font-size:13px;color:var(--text2)">'+_geiShareName+' · '+_geiSharePreview+'</div></div><div style="display:flex;flex-direction:column;gap:10px"><button onclick="sendProposalViaSms();document.getElementById(\'_gei-share-ov\')?.remove();" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">📱 Text client</button><button onclick="sendProposalViaEmail();document.getElementById(\'_gei-share-ov\')?.remove();" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">✉️ Email client</button><button id="_gei-copy-btn" onclick="_geiCopyShareLink(this)" style="width:100%;padding:14px;border-radius:var(--rl);border:1.5px solid var(--border2);background:#fff;color:var(--text1);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">📋 Copy link</button><button onclick="document.getElementById(\'_gei-share-ov\')?.remove();goPg(\'pg-clients\')" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--gray-lt);color:var(--text2);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">✓ Done</button></div></div>';
+  _gsov.innerHTML='<div style="background:#fff;border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto"><div style="text-align:center;margin-bottom:16px"><div style="font-size:15px;font-weight:800;color:var(--text1);margin-bottom:4px">📨 Send to client</div><div style="font-size:13px;color:var(--text2)">'+_geiShareName+' · '+_geiSharePreview+'</div></div><div style="display:flex;flex-direction:column;gap:10px"><button onclick="sendProposalViaSms();document.getElementById(\'_gei-share-ov\')?.remove();" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">📱 Text client</button><button onclick="sendProposalViaEmail();document.getElementById(\'_gei-share-ov\')?.remove();" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">✉️ Email client</button><button id="_gei-copy-btn" onclick="_geiCopyShareLink(this)" style="width:100%;padding:14px;border-radius:var(--rl);border:1.5px solid var(--border2);background:#fff;color:var(--text1);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">📋 Copy link</button><button onclick="document.getElementById(\'_gei-share-ov\')?.remove();goPg(\'pg-clients\')" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--gray-lt);color:var(--text2);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit">✓ Done</button></div></div>';
   document.body.appendChild(_gsov);
   _gsov.addEventListener('click',e=>{if(e.target===_gsov){_gsov.remove();goPg('pg-clients');}});
   showToast('Proposal link ready — tap to send','🔗');
