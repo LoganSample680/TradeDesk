@@ -239,6 +239,8 @@ async function _devLoadUserAccount(key){
   payments=p(zd.payments,[]);liens=p(zd.liens,[]);
   income=p(zd.income,[]);expenses=p(zd.expenses,[]);
   mileage=p(zd.mileage,[]);timeEntries=p(zd.time_entries,[]);
+  // Load target user's settings (vehicles, vehicleOdoLog, etc.) so support view reflects their data
+  if(zd.settings){try{const zS=JSON.parse(zd.settings);Object.assign(S,zS);}catch(e){}}
   _devSupportMode=true;_devSupportName=u.name;
   window._devUnloadGuard=e=>{e.preventDefault();e.returnValue='';};
   window.addEventListener('beforeunload',window._devUnloadGuard);
@@ -302,7 +304,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.15.26.44';
+const APP_VERSION='05.15.26.45';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
