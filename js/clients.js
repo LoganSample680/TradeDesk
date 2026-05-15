@@ -251,18 +251,21 @@ function _pickEstStyle(style){
   else{doIt();}
 }
 function _doOpenScopeEstimate(c,overrideAddr){
-  const lines=_getTradeLines();
-  if(lines.length>1){
-    _showTradePicker('Scope &amp; Price — choose trade',t=>{
-      _doOpenEstimate(c,overrideAddr,t);
-    });
-    return;
-  }
+  // Trade already confirmed before 3-type picker — go straight to open
   _doOpenEstimate(c,overrideAddr,getActiveTrade());
 }
 
 function _doOpenEstimate(c,_overrideAddr,_forceTrade){
   if(!_forceTrade){
+    // Multi-trade: ask which trade first, then show 3-type picker with correct branding
+    const lines=_getTradeLines();
+    if(lines.length>1){
+      _showTradePicker('Which trade is this job for?',t=>{
+        _activeTrade=t;_renderNavTradeSwitcher();
+        _showEstimateStylePicker(c,_overrideAddr);
+      });
+      return;
+    }
     _showEstimateStylePicker(c,_overrideAddr);
     return;
   }
