@@ -6,7 +6,6 @@ function goPg(id){
   if(_isEmployee&&['pg-leads','pg-taxes','pg-tracker','pg-team','pg-settings','pg-checklist'].includes(id))id='pg-dash';
   // Preserve currentClientId across navigation — only clear on explicit new client selection
   if(id==='pg-dash')window._fromDash=false;
-  if(id!=='pg-est')hideNotesFab();
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
   document.getElementById(id).classList.add('active');
@@ -59,6 +58,6 @@ function goPg(id){
   if(id==='pg-jobs')renderJobsPage();
   if(id==='pg-proposals')renderProposalsPage();
   if(id==='pg-money')renderMoneyPage();
-  if(id==='pg-est'){buildScopeGrid();showNotesFab();}
+  if(id==='pg-est'){buildScopeGrid();}
   if(id==='pg-client-hub')renderClientHubPage();
 }

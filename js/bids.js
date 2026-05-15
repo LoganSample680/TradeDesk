@@ -707,7 +707,8 @@ function payStatus(bid){
   const paid=getBidPaid(bid.id),total=bid.amount||0,balance=total-paid;
   if(paid<=0)return{label:'Unpaid',cls:'bdg-pending',color:'var(--amber)'};
   if(balance<=0.01)return{label:'Paid in full',cls:'bdg-paid',color:'var(--green)'};
-  if(paid>=total*.45&&paid<=total*.55)return{label:'Deposit paid',cls:'bdg-deposit',color:'var(--blue)'};
+  const dep=bid.deposit||Math.round(total*0.25*100)/100;
+  if(dep>0&&paid>=dep-0.01)return{label:'Deposit paid',cls:'bdg-deposit',color:'var(--blue)'};
   return{label:'Partial — '+fmt(balance)+' due',cls:'bdg-pending',color:'var(--amber)'};
 }
 let activePayBidId=null;
@@ -1294,7 +1295,7 @@ function getCountyForBid(bid){
   const c=getClientById(bid.client_id);
   const addr=(bid.addr||c?.addr||'').toUpperCase();
   const stateM=addr.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
-  const stateCode=stateM?stateM[1]:'KS';
+  const stateCode=stateM?stateM[1]:(S.state||'KS');
   let county=null;
   for(const city of Object.keys(KS_CITY_COUNTY)){if(addr.includes(city)){county=KS_CITY_COUNTY[city];break;}}
   if(!county)county='your county';
@@ -1371,7 +1372,9 @@ function showFileLienDirect(bidId){
 function _confirmFileLien(bidId,detectedCounty){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   const{stateCode,county:autoCounty}=getCountyForBid(bid);
-  const usedCounty=(detectedCounty||autoCounty||'Sedgwick County')+', Kansas';
+  const resolvedState=stateCode||S.state||'KS';
+  const fallbackCounty=resolvedState==='KS'?'Sedgwick County':'your county';
+  const usedCounty=(detectedCounty||autoCounty||fallbackCounty)+', '+resolvedState;
   let lien=liens.find(l=>l.bid_id===bidId);
   if(!lien){
     const c=getClientById(bid.client_id);

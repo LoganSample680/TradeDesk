@@ -1826,7 +1826,6 @@ function resumeEstimateDraft(){
     if(d.lastBidId)lastCreatedBidId=d.lastBidId;
     restoreEstFullDraft(d);
     goEstStep(d.step||1);
-    showNotesFab();
   },80);
 }
 function restoreEstFullDraft(d){

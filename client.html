@@ -871,10 +871,13 @@ function renderOverview(){
   if(payableBids.length){
     const bid=payableBids[0];
     const depPaid=(bid.paid||0)>=(bid.deposit||0)-0.01;
-    const ctaLabel=!depPaid&&(bid.deposit||0)>0.01?'Deposit due':'Balance due';
-    const ctaAmt=!depPaid&&(bid.deposit||0)>0.01?(bid.deposit||0):(bid.balance||0);
+    const ctaSub=!depPaid&&(bid.deposit||0)>0.01?'Deposit '+fmt(bid.deposit||0)+' due now':'Balance '+fmt(bid.balance||0)+' due';
     html+='<div class="hub-pay-cta">';
-    html+='<div><div class="hub-pay-cta-tag">'+ctaLabel+'</div><div class="hub-pay-cta-amt">'+fmt(ctaAmt)+'</div><div class="hub-pay-cta-sub">Ready to pay online</div></div>';
+    html+='<div>';
+    html+='<div class="hub-pay-cta-tag">'+(bid.type||'Project')+'</div>';
+    html+='<div class="hub-pay-cta-amt">'+fmt(bid.amount||0)+'</div>';
+    html+='<div class="hub-pay-cta-sub">'+ctaSub+'</div>';
+    html+='</div>';
     html+='<div class="hub-pay-cta-r">'+_payBtn(bid,h)+'</div>';
     html+='</div>';
   }else if(totalPaid>0.01){
@@ -1050,26 +1053,20 @@ function renderPayments(){
     const deposit=bid.deposit||0;
     const depPaid=(bid.paid||0)>=(deposit-0.01);
 
-    // Balance card
-    html+='<div class="hub-balance-card">';
-    html+='<div class="hub-balance-lbl" style="position:relative;z-index:1">'+(bid.type||'Project')+'</div>';
-    html+='<div class="hub-balance-amt">'+fmt(balance)+'</div>';
-    html+='<div class="hub-method-chips">';
-    if(!isPaid&&(h.stripeEnabled||true)){
-      html+='<button class="hub-method-chip hub-method-chip-btn" onclick="payBalance('+bid.id+')" aria-label="Pay by card">💳 Pay by card</button>';
-      html+='<button class="hub-method-chip hub-method-chip-btn" onclick="payBalance('+bid.id+')" aria-label="Pay by ACH">🏦 Pay by ACH</button>';
-      html+='<button class="hub-method-chip hub-method-chip-btn" onclick="payBalance('+bid.id+')" aria-label="Apple Pay">📱 Apple Pay</button>';
+    // Summary card
+    html+='<div class="card">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">';
+    html+='<div><div style="font-size:14px;font-weight:800;color:var(--ink)">'+(bid.type||'Project')+'</div>';
+    html+='<div style="font-size:11px;color:var(--text3);margin-top:2px">Total: '+fmt(bid.amount||0)+'</div></div>';
+    if(isPaid){
+      html+='<div style="display:flex;align-items:center;gap:6px;background:#F0FDF4;border-radius:8px;padding:6px 10px"><span style="font-size:18px">✅</span><div style="font-size:12px;font-weight:700;color:#166534">Paid in full</div></div>';
     }else{
-      html+='<div class="hub-method-chip">💳 Card</div>';
-      html+='<div class="hub-method-chip">🏦 ACH</div>';
-      html+='<div class="hub-method-chip">📱 Apple Pay</div>';
+      html+='<div style="text-align:right"><div style="font-size:20px;font-weight:900;color:var(--ink)">'+fmt(balance)+'</div><div style="font-size:10px;color:var(--text3)">remaining</div></div>';
     }
     html+='</div>';
     if(!isPaid){
       const pb=_payBtn(bid,h);
-      if(pb)html+='<div style="position:relative;z-index:1">'+pb+'</div>';
-    }else{
-      html+='<div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.7);position:relative;z-index:1">✅ Paid in full</div>';
+      if(pb)html+=pb;
     }
     html+='</div>';
 
@@ -1124,15 +1121,16 @@ function renderDocuments(){
   html+='<div class="card">';
   const docs=[];
   wonBids.forEach(b=>{
-    docs.push({icon:'📄',name:'Invoice — '+esc(b.type||'Services'),meta:fmtDate(b.bid_date),tag:'invoice',action:'openInvoice('+b.id+')'});
-    if(b.proposalKey)docs.push({icon:'📋',name:'Signed Proposal — '+esc(b.type||'Services'),meta:'Signed '+fmtDate(b.signedAt||b.bid_date),tag:'contract',action:'openProposal('+b.id+')'});
+    docs.push({icon:'📄',name:'Invoice — '+esc(b.type||'Services'),meta:fmtDate(b.bid_date),tag:'invoice',action:'openInvoice('+b.id+')',date:b.bid_date||''});
+    if(b.proposalKey)docs.push({icon:'📋',name:'Signed Proposal — '+esc(b.type||'Services'),meta:'Signed '+fmtDate(b.signedAt||b.bid_date),tag:'contract',action:'openProposal('+b.id+')',date:b.signedAt||b.bid_date||''});
   });
-  if(h.epaRequired)docs.push({icon:'⚠️',name:'EPA Lead Paint Pamphlet',meta:'Renovate Right — epa.gov',tag:'epa',href:'https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools'});
+  if(h.epaRequired)docs.push({icon:'⚠️',name:'EPA Lead Paint Pamphlet',meta:'Renovate Right — epa.gov',tag:'epa',href:'https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools',date:''});
   if(_hub._clientDocs&&_hub._clientDocs.length){
     _hub._clientDocs.forEach(d=>{
-      docs.push({icon:'📎',name:d.name,meta:d.meta||'Uploaded by you',tag:'client',href:d.url});
+      docs.push({icon:'📎',name:d.name,meta:d.meta||'Uploaded by you',tag:'client',href:d.url,date:d.date||''});
     });
   }
+  docs.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 
   if(docs.length){
     docs.forEach(doc=>{
@@ -1403,7 +1401,7 @@ document.addEventListener('keydown',e=>{
 });
 /* ── PR4: Approvals card ── */
 function _renderApprovalsCard(approvals){
-  if(!approvals||!approvals.length)return'';
+  return'';
   let h='<div class="hub-side-card" id="hub-approv-card">';
   h+='<div class="hub-side-hd">Needs your input</div>';
   approvals.forEach(a=>{

@@ -152,7 +152,7 @@ function calcTax(){
             '<div style="font-size:13px;color:#A32D2D;font-weight:700">'+reserveRate+'% of net</div>'+
           '</div>'+
           '<div style="font-size:12px;color:var(--text2);line-height:1.5">'+
-            'Set this aside from every payment. Based on your actual income, expenses, and Kansas tax rates. '+
+            'Set this aside from every payment. Based on your actual income, expenses, and '+(STATE_TAX[S.state]?.name||S.state||'your state')+' tax rates. '+
             'Rounds up — better to have extra at filing than scramble for it.'+
           '</div>'+
           (taxPaid>0?
@@ -174,10 +174,11 @@ function calcTax(){
     (spouseInc?'<div class="tax-row"><span style="color:var(--text2)">Spouse / other income</span><span>'+fmt(spouseInc)+'</span></div>':'')+
     '<div class="tax-row"><span style="color:var(--text2)">Effective AGI</span><span>'+fmt(agi)+'</span></div>';
 
+  const _stateTaxLabel=(STATE_TAX[S.state]?.name||S.state||'State')+' tax';
   document.getElementById('tx-results').innerHTML=
     '<div class="tax-row"><span>Self-employment tax (15.3%)</span><span style="color:#A32D2D">'+fmt(seTax)+'</span></div>'+
     '<div class="tax-row"><span>Federal income tax</span><span style="color:#A32D2D">'+fmt(fedTax)+'</span></div>'+
-    '<div class="tax-row"><span>Kansas state tax</span><span style="color:#A32D2D">'+fmt(ksTax)+'</span></div>'+
+    '<div class="tax-row"><span>'+_stateTaxLabel+'</span><span style="color:#A32D2D">'+fmt(ksTax)+'</span></div>'+
     '<div class="tax-row" style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px;font-size:15px;font-weight:700">'+
       '<span>Total estimated</span><span style="color:#A32D2D">'+fmt(totalOwed)+'</span>'+
     '</div>'+
@@ -219,7 +220,7 @@ function calcTax(){
     }).join('');
 
   // ── DIF Audit Risk Score ───────────────────────────────────────────────
-  const difPct=tIn>0?(tEx+mileDed)/tIn:0;
+  const difPct=tIn>0?tEx/tIn:0;
   const difRisk=difPct>0.63?'high':difPct>0.52?'medium':'low';
   const difResultsEl=document.getElementById('tx-results');
   if(difResultsEl&&tIn>0){
@@ -248,7 +249,7 @@ function calcTax(){
     if(sepMax>0)tips.push({icon:'🏦',color:'#0369a1',bg:'#f0f9ff',title:'Retirement Account — You Can Stash '+fmt(sepMax)+' Tax-Free',body:'Based on your net income, you can put up to '+fmt(sepMax)+' into a SEP-IRA this year and deduct every dollar from your taxes. You have until Oct 15 (with extension) to fund it. At your income level that\'s roughly '+fmt(Math.round(sepMax*0.25))+' back in your pocket right now. Open one at Fidelity or Vanguard in 15 minutes — they walk you through it.'});
 
     // Kansas commercial labor tax — critical for KS contractors
-    if((S.state||'KS')==='KS')tips.push({icon:'🏗️',color:'#92400e',bg:'#fffbeb',title:'Kansas Trap: Labor on Commercial Jobs IS Taxable',body:'In Kansas, if you\'re doing work on an existing commercial building (repainting a restaurant, replumbing an office, rewiring a hotel), you must collect Kansas sales tax on your LABOR — not just materials. Residential and new construction are exempt. Get this wrong and you owe the tax out of your own pocket. A $15,000 commercial paint job at 9% = $1,350 you\'d owe the state. Register at ksrevenue.gov and collect it going forward.'});
+    if(S.state==='KS')tips.push({icon:'🏗️',color:'#92400e',bg:'#fffbeb',title:'Kansas Trap: Labor on Commercial Jobs IS Taxable',body:'In Kansas, if you\'re doing work on an existing commercial building (repainting a restaurant, replumbing an office, rewiring a hotel), you must collect Kansas sales tax on your LABOR — not just materials. Residential and new construction are exempt. Get this wrong and you owe the tax out of your own pocket. A $15,000 commercial paint job at 9% = $1,350 you\'d owe the state. Register at ksrevenue.gov and collect it going forward.'});
 
     // Home office commuting unlock
     if(!S.homeOffice)tips.push({icon:'🏠',color:'#0369a1',bg:'#f0f9ff',title:'Home Office = Every Drive to a Job Site Becomes Deductible',body:'Right now, your drive from home to your first job site each day is "commuting" — not deductible. But if you have a room at home used ONLY for business (scheduling, estimates, billing), that changes everything. Your home becomes your business location and every drive to a job site is a deductible business trip. Check the home office box in Settings if this applies to you.'});
@@ -284,7 +285,7 @@ function calcTax(){
     // OBBBA 2025 update
     tips.push({icon:'⚡',color:'#0369a1',bg:'#f0f9ff',title:'2025 Law Change: 100% Bonus Depreciation Is Back',body:'The One Big Beautiful Bill Act (signed July 2025) permanently restored 100% bonus depreciation. Any qualifying equipment, tools, vehicles, or machinery placed in service after January 19, 2025 can be fully written off in year one. This was phasing down (60% in 2024, 40% early 2025) — now it\'s back to 100% permanently. Also: 1099-NEC threshold rises to $2,000 starting with the 2026 tax year. For 2025, the $600 threshold still applies.'});
 
-    tipEl.innerHTML='<div class="card"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:12px">💡 IRS — Plain English Rules Every Contractor Needs to Know</div>'+
+    tipEl.innerHTML='<div class="card"><div style="font-size:14px;font-weight:800;color:var(--text);margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--line)">💡 IRS Tips — Plain English</div>'+
       tips.map(t=>'<div style="background:'+t.bg+';border:1.5px solid '+t.color+';border-radius:var(--r);padding:10px 12px;margin-bottom:8px">'+
         '<div style="font-size:12px;font-weight:700;color:'+t.color+';margin-bottom:3px">'+t.icon+' '+t.title+'</div>'+
         '<div style="font-size:11px;color:var(--text2);line-height:1.6">'+t.body+'</div>'+
