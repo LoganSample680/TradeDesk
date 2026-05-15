@@ -126,12 +126,12 @@ function renderDash(){
     kpiEl.innerHTML='<div class="mets" id="dash-mets-inner">'+
       '<div class="met" style="cursor:pointer" onclick="goToTrackerTab(\'income\')">'+
         '<div class="met-l">Revenue</div>'+
-        '<div class="met-v">'+fmtShort(tInc)+'</div>'+
+        '<div class="met-v" style="color:var(--c-green)">'+fmtShort(tInc)+'</div>'+
         (showTrends?_trendHtml(tInc,prevInc,false):'')+
       '</div>'+
       '<div class="met" style="cursor:pointer" onclick="goToTrackerTab(\'expenses\')">'+
         '<div class="met-l">Expenses</div>'+
-        '<div class="met-v">'+fmtShort(tExp)+'</div>'+
+        '<div class="met-v" style="color:var(--c-red)">'+fmtShort(tExp)+'</div>'+
         (showTrends?_trendHtml(tExp,prevExp,true):'')+
       '</div>'+
       '<div class="met" style="cursor:pointer" onclick="goToTrackerTab(\'mileage\')">'+
@@ -141,7 +141,7 @@ function renderDash(){
       '</div>'+
       '<div class="met" style="cursor:pointer" data-pg="pg-taxes" onclick="goPg(this.dataset.pg)">'+
         '<div class="met-l">Taxes (est)</div>'+
-        '<div class="met-v" style="color:var(--amber)">'+fmtShort(ytdTaxEst)+'</div>'+
+        '<div class="met-v" style="color:var(--c-red)">'+fmtShort(ytdTaxEst)+'</div>'+
         (showTrends&&prevTax?_trendHtml(ytdTaxEst,prevTax,true):'<div class="met-s">— est.</div>')+
       '</div>'+
       '<div class="met" style="cursor:pointer" data-chart="profit" onclick="showKpiChart(this.dataset.chart)">'+
