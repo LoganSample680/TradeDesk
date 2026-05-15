@@ -3066,17 +3066,20 @@ if('serviceWorker' in navigator){
       navigator.serviceWorker.getRegistration().then(reg=>{if(reg)reg.update();}).catch(()=>{});
     }
   });
-  // Poll every 15s. Track reload attempts in sessionStorage so the counter
-  // survives page reloads — prevents infinite loop when CDN serves stale HTML.
+  // Poll every 15s. Counter stored in sessionStorage survives reloads.
+  // Resets after 5 min so a fixed CDN eventually gets through automatically.
   setInterval(()=>{
     navigator.serviceWorker.getRegistration().then(reg=>{if(reg)reg.update();}).catch(()=>{});
     fetch('/version.json?_='+Date.now())
       .then(r=>r.json())
       .then(d=>{
         if(!d.version||d.version===APP_VERSION){sessionStorage.removeItem('_rv');return;}
-        const attempts=parseInt(sessionStorage.getItem('_rv')||'0');
-        if(attempts>=2){showToast('New version available — press Ctrl+Shift+R to update','🔄');return;}
-        sessionStorage.setItem('_rv',String(attempts+1));
+        const raw=sessionStorage.getItem('_rv');
+        const rec=raw?JSON.parse(raw):{n:0,t:Date.now()};
+        if(Date.now()-rec.t>300000){rec.n=0;rec.t=Date.now();} // reset after 5 min
+        if(rec.n>=2){showToast('New version available — press Ctrl+Shift+R to update','🔄');return;}
+        rec.n++;
+        sessionStorage.setItem('_rv',JSON.stringify(rec));
         _autoSaveAndReload();
       })
       .catch(()=>{});
