@@ -361,6 +361,7 @@ function openDriveModal(opts){
   openLogTripModal(Object.assign({},opts,{suggestions}));
 }
 
+let _milFilter='all';
 let _lmCoords={from:null,to:null};
 let _tripSearchTimers={};
 let _tripDestTimer=null;
@@ -1040,29 +1041,17 @@ function saveLoggedTrip(){
 }
 function renderAllMileage(){
   const yr=String(trackerYear||new Date().getFullYear());
-  // Employees see only their own trips; owners see all
   const _mileSrc=_isEmployee?mileage.filter(m=>!m.logged_by_id||m.logged_by_id===_supaUser?.id):mileage;
   const filtered=_mileSrc.filter(m=>m.date&&m.date.startsWith(yr));
-  const _hasMultiDriver=!_isEmployee&&mileage.some(m=>m.logged_by_name);
-  const tot=filtered.reduce((s,r)=>s+(r.miles||0),0);
   const irsRate=IRS();
+  const tot=filtered.reduce((s,r)=>s+(r.miles||0),0);
   const deduction=tot*irsRate;
-  const byPurpose={};
-  filtered.forEach(m=>{const p=m.purpose||'Other';byPurpose[p]=(byPurpose[p]||0)+(m.miles||0);});
-  const purposeRows=Object.entries(byPurpose).sort((a,b)=>b[1]-a[1]);
-  const purposeHTML=purposeRows.map(([p,mi])=>{
-    const pc=MILE_PURPOSE_COLORS[p]||MILE_PURPOSE_COLORS['Other'];
-    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--line)">'+
-      '<span style="font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;background:'+pc.bg+';color:'+pc.text+'">'+p+'</span>'+
-      '<span style="font-size:12px;font-weight:700">'+mi.toFixed(1)+' mi &nbsp;<span style="color:var(--c-green);font-weight:600">'+fmt(mi*irsRate)+'</span></span>'+
-    '</div>';
-  }).join('');
+  const unclassified=filtered.filter(m=>!m.purpose);
 
-  // ── mil-hero banner ──
+  // ── Hero ──
   const heroEl=document.getElementById('mil-hero-wrap');
   if(heroEl){
-    // Get odometer data for primary vehicle
-    const vehs=(S.vehicles||[]);
+    const vehs=getVehicles();
     const pVeh=vehs[0]||null;
     const odoLog=(S.vehicleOdoLog||{})[yr]||{};
     const pKey=pVeh?_vehKey(pVeh):'default';
@@ -1072,7 +1061,7 @@ function renderAllMileage(){
     const totalDriven=endOdo>startOdo?endOdo-startOdo:0;
     const bizPct=totalDriven>0?Math.min(100,Math.round((tot/totalDriven)*100)):0;
     const personalMi=Math.max(0,totalDriven-tot);
-    const vehLabel=pVeh?(pVeh.year?pVeh.year+' '+pVeh.name:pVeh.name)||'Vehicle':'Vehicle';
+    const vehLabel=pVeh?getVehicleLabel(pVeh)||'Vehicle':'Vehicle';
     heroEl.innerHTML=
       '<div class="mil-hero">'+
         '<div class="mil-hero-l">'+
@@ -1087,120 +1076,319 @@ function renderAllMileage(){
           '</div>'+
           (totalDriven>0?
             '<div class="mil-bar">'+
-              '<div class="mil-bar-seg mil-bar-business" style="flex:'+Math.max(tot,0.1)+'">Business '+bizPct+'%</div>'+
-              '<div class="mil-bar-seg mil-bar-personal" style="flex:'+Math.max(personalMi,0.1)+'">'+(100-bizPct)+'% personal</div>'+
+              '<div class="mil-bar-seg mil-bar-business" style="flex:'+Math.max(tot,0.1)+'"><span>Business '+bizPct+'%</span></div>'+
+              '<div class="mil-bar-seg mil-bar-personal" style="flex:'+Math.max(personalMi,0.1)+'"><span>'+(100-bizPct)+'% personal</span></div>'+
             '</div>'+
             '<div class="mil-bar-foot">'+
               (startOdo?'<span>'+startOdo.toLocaleString()+' mi · Jan 1</span>':'<span>Set opening odometer below</span>')+
               (endOdo?'<span>'+endOdo.toLocaleString()+' mi today · '+totalDriven.toLocaleString()+' mi driven</span>':'')+'</div>':
-            '<div class="mil-bar"><div class="mil-bar-seg mil-bar-business" style="flex:1">Log trips to track business %</div></div>'
+            '<div class="mil-bar"><div class="mil-bar-seg mil-bar-business" style="flex:1"><span>Log trips to track business %</span></div></div>'
           )+
         '</div>'+
         '<div class="mil-hero-r">'+
           '<button class="mil-action mil-action-go" onclick="openDriveModal()">'+
             '<div class="mil-action-icon">📍</div>'+
-            '<div><div class="mil-action-label">Log a trip</div><div class="mil-action-sub">Manual · type addresses + miles</div></div>'+
+            '<div class="mil-action-body"><div class="mil-action-label">Log a trip</div><div class="mil-action-sub">Manual · type addresses + miles</div></div>'+
           '</button>'+
           '<button class="mil-action" onclick="checkOdometerEntries(true)">'+
             '<div class="mil-action-icon">🔢</div>'+
-            '<div><div class="mil-action-label">Update odometer</div><div class="mil-action-sub">'+vehLabel+(startOdo?' · '+startOdo.toLocaleString()+' mi':'')+' </div></div>'+
+            '<div class="mil-action-body"><div class="mil-action-label">Update odometer</div><div class="mil-action-sub">'+vehLabel+(startOdo?' · '+startOdo.toLocaleString()+' mi':'')+' </div></div>'+
           '</button>'+
           '<button class="mil-action" onclick="openExportPanel()">'+
             '<div class="mil-action-icon">📊</div>'+
-            '<div><div class="mil-action-label">Export IRS report</div><div class="mil-action-sub">Schedule C · Form 4562</div></div>'+
+            '<div class="mil-action-body"><div class="mil-action-label">Export IRS report</div><div class="mil-action-sub">Schedule C · Form 4562</div></div>'+
           '</button>'+
         '</div>'+
       '</div>';
   }
 
-  const homeOfficeNote=S.homeOffice
-    ?'<div class="tip" style="margin-bottom:10px"><span style="font-size:18px">✅</span><div><b>Home office active</b> — your drives from home to job sites count as deductible business miles. Log every trip.</div></div>'
-    :'<div class="tip" style="margin-bottom:10px"><span style="font-size:18px">💡</span><div><b>Home office tip:</b> Drives from home to your first job site are not deductible yet. Set up a home office in Settings to unlock that deduction.</div></div>';
-  document.getElementById('tr-mile-mets').innerHTML=
-    homeOfficeNote+
-    (purposeRows.length>1?
-      '<div class="card" style="margin-bottom:10px">'+
-        '<div class="card-hd-title" style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin-bottom:8px">By trip purpose</div>'+
-        purposeHTML+
-      '</div>':''
-    );
+  // ── Vehicle worksheet ──
+  _milRenderVehicleWorksheet(yr,tot,irsRate);
+
+  // ── Classify card ──
+  _milRenderClassifyCard(unclassified);
+
+  // ── Filter bar ──
+  const fbEl=document.getElementById('mil-filter-bar');
+  if(fbEl){
+    const classified=filtered.filter(m=>m.purpose);
+    fbEl.innerHTML=
+      '<div class="fbar">'+
+        '<button id="mil-fb-all" class="fb'+(_milFilter==='all'?' active':'')+'" onclick="setMilFilter(\'all\')">All trips<span class="fb-count">'+filtered.length+'</span></button>'+
+        '<button id="mil-fb-unclassified" class="fb'+(_milFilter==='unclassified'?' active':'')+'" onclick="setMilFilter(\'unclassified\')">Needs purpose<span class="fb-count">'+unclassified.length+'</span></button>'+
+        '<button id="mil-fb-classified" class="fb'+(_milFilter==='classified'?' active':'')+'" onclick="setMilFilter(\'classified\')">Categorized<span class="fb-count">'+classified.length+'</span></button>'+
+      '</div>';
+  }
+
+  // ── Trip list ──
+  const shown=_milFilter==='unclassified'?unclassified:_milFilter==='classified'?filtered.filter(m=>m.purpose):filtered;
+  _milRenderTripList(shown,yr);
+
+  // ── Summary ──
+  _milRenderSummary(filtered,tot,irsRate);
+
+  // ── Home office tip ──
+  const metsEl=document.getElementById('tr-mile-mets');
+  if(metsEl){
+    metsEl.innerHTML=S.homeOffice
+      ?'<div class="tip" style="margin-top:4px"><span style="font-size:18px">✅</span><div><b>Home office active</b> — your drives from home to job sites count as deductible business miles.</div></div>'
+      :'<div class="tip" style="margin-top:4px"><span style="font-size:18px">💡</span><div><b>Home office tip:</b> Set up a home office in Settings to make drives from home to your first job site deductible.</div></div>';
+  }
+}
+
+function setMilFilter(f){
+  _milFilter=f;
+  ['all','unclassified','classified'].forEach(id=>{
+    const el=document.getElementById('mil-fb-'+id);
+    if(el)el.className='fb'+(f===id?' active':'');
+  });
+  const yr=String(trackerYear||new Date().getFullYear());
+  const _mileSrc=_isEmployee?mileage.filter(m=>!m.logged_by_id||m.logged_by_id===_supaUser?.id):mileage;
+  const filtered=_mileSrc.filter(m=>m.date&&m.date.startsWith(yr));
+  const unclassified=filtered.filter(m=>!m.purpose);
+  const shown=f==='unclassified'?unclassified:f==='classified'?filtered.filter(m=>m.purpose):filtered;
+  _milRenderTripList(shown,yr);
+}
+
+function _milSetOdo(vehKey,field,val){
+  const yr=String(trackerYear||new Date().getFullYear());
+  if(!S.vehicleOdoLog)S.vehicleOdoLog={};
+  if(!S.vehicleOdoLog[yr])S.vehicleOdoLog[yr]={};
+  if(!S.vehicleOdoLog[yr][vehKey])S.vehicleOdoLog[yr][vehKey]={};
+  const n=parseFloat(String(val).replace(/[^0-9.]/g,''))||0;
+  S.vehicleOdoLog[yr][vehKey][field]=n;
+  saveAll();_flushSaveNow();
+  renderAllMileage();
+}
+
+function _milRenderVehicleWorksheet(yr,tot,irsRate){
+  const el=document.getElementById('mil-vehicle-wrap');
+  if(!el)return;
+  const vehs=getVehicles();
+  if(!vehs.length){el.innerHTML='';return;}
+  const odoLog=(S.vehicleOdoLog||{})[yr]||{};
+  const veh=vehs[0];
+  const pKey=_vehKey(veh);
+  const odoRec=odoLog[pKey]||{};
+  const startOdo=odoRec.start||0;
+  const endOdo=odoRec.end||0;
+  const totalDriven=endOdo>startOdo?endOdo-startOdo:0;
+  const bizPct=totalDriven>0?Math.min(100,Math.round((tot/totalDriven)*100)):0;
+  const personalMi=Math.max(0,totalDriven-tot);
+  const deduction=tot*irsRate;
+  const vehLabel=veh.year?veh.year+' '+veh.name:veh.name||'Vehicle';
+  const vehPlate=veh.plate||veh.license_plate||'';
+  el.innerHTML=
+    '<div class="card card-pad-0" style="margin-bottom:14px">'+
+      '<div class="card-hd">'+
+        '<div><div class="card-hd-title">Vehicle &amp; odometer worksheet</div>'+
+        '<div class="card-hd-sub" style="font-size:11px;color:var(--text-3);font-weight:500;margin-top:2px">Business-use % is calculated from year-start and year-end readings</div></div>'+
+        '<button class="btn btn-sm" onclick="checkOdometerEntries(true)">Update readings</button>'+
+      '</div>'+
+      '<div class="mil-vehicle">'+
+        '<div class="mil-vehicle-l">'+
+          '<div class="mil-vehicle-icon">🛻</div>'+
+          '<div>'+
+            '<div class="mil-vehicle-name">'+escHtml(vehLabel)+'</div>'+
+            (vehPlate?'<div class="mil-vehicle-plate">'+escHtml(vehPlate)+' · primary work vehicle</div>':'<div class="mil-vehicle-plate">Primary work vehicle</div>')+
+          '</div>'+
+        '</div>'+
+        '<div class="mil-vehicle-grid">'+
+          '<div class="mil-odo">'+
+            '<div class="td-micro">Odometer · year start</div>'+
+            '<div class="mil-odo-input">'+
+              '<input type="number" value="'+(startOdo||'')+'" placeholder="0" min="0"'+
+                ' onblur="_milSetOdo(\''+escHtml(pKey)+'\',\'start\',this.value)"'+
+                ' style="font-size:15px;font-weight:800">'+
+              '<span class="mil-odo-suffix">mi</span>'+
+            '</div>'+
+            '<div class="mil-odo-meta">As of Jan 1, '+yr+'</div>'+
+          '</div>'+
+          '<div class="mil-odo-arrow">→</div>'+
+          '<div class="mil-odo">'+
+            '<div class="td-micro">Odometer · today</div>'+
+            '<div class="mil-odo-input">'+
+              '<input type="number" value="'+(endOdo||'')+'" placeholder="0" min="0"'+
+                ' onblur="_milSetOdo(\''+escHtml(pKey)+'\',\'end\',this.value)"'+
+                ' style="font-size:15px;font-weight:800">'+
+              '<span class="mil-odo-suffix">mi</span>'+
+            '</div>'+
+            '<div class="mil-odo-meta">Update at year-end for Schedule C</div>'+
+          '</div>'+
+          '<div class="mil-odo-result">'+
+            '<div class="td-micro">Total miles driven YTD</div>'+
+            '<div class="mil-odo-big">'+(totalDriven?totalDriven.toLocaleString():'—')+'<span style="font-size:14px;color:var(--text-3);margin-left:4px;font-weight:600"> mi</span></div>'+
+          '</div>'+
+        '</div>'+
+        '<div class="mil-calc">'+
+          '<div class="mil-calc-row"><div class="mil-calc-label">Total miles driven</div><div class="mil-calc-eq">=</div><div class="mil-calc-v">'+(totalDriven?totalDriven.toLocaleString()+' mi':'—')+'</div></div>'+
+          '<div class="mil-calc-row"><div class="mil-calc-label">Business miles logged · YTD</div><div class="mil-calc-eq">−</div><div class="mil-calc-v" style="color:var(--c-green)">'+tot.toFixed(1)+' mi</div></div>'+
+          '<div class="mil-calc-row"><div class="mil-calc-label">Personal miles (everything else)</div><div class="mil-calc-eq">=</div><div class="mil-calc-v">'+personalMi.toFixed(1)+' mi</div></div>'+
+          '<div class="mil-calc-row mil-calc-pct"><div class="mil-calc-label">Business-use percentage</div><div class="mil-calc-eq">→</div><div class="mil-calc-v">'+(totalDriven?bizPct+'%':'—')+'</div></div>'+
+          '<div class="mil-calc-row mil-calc-final"><div class="mil-calc-label">Deduction · '+tot.toFixed(1)+' mi × $'+irsRate.toFixed(3)+'/mi</div><div class="mil-calc-eq">=</div><div class="mil-calc-v">'+fmt(deduction)+'</div></div>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+}
+
+function _milRenderClassifyCard(unclassified){
+  const el=document.getElementById('mil-classify-wrap');
+  if(!el)return;
+  if(!unclassified.length){el.innerHTML='';return;}
+  const next=unclassified[0];
+  const fromShort=(next.from_name||next.from||'').split(',')[0].trim()||'Start';
+  const toShort=(next.to_name||next.to||'').split(',')[0].trim()||'Destination';
+  const dateStr=next.date?new Date(next.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+  el.innerHTML=
+    '<div class="mil-classify-card">'+
+      '<div class="mil-classify-left">'+
+        '<div class="mil-classify-tag">Needs a purpose · '+unclassified.length+' trip'+(unclassified.length===1?'':'s')+'</div>'+
+        '<div class="mil-classify-title">'+escHtml(fromShort)+' → '+escHtml(toShort)+'</div>'+
+        '<div class="mil-classify-meta">'+(dateStr?dateStr+' · ':'')+((next.miles||0).toFixed(1))+' mi</div>'+
+      '</div>'+
+      '<div class="mil-classify-actions">'+
+        '<button class="mil-class-btn" onclick="_milSkipClassify('+next.id+')">Skip</button>'+
+        '<button class="mil-class-btn mil-class-business" onclick="openMileageEdit('+next.id+')">💼 Add purpose →</button>'+
+      '</div>'+
+    '</div>';
+}
+
+function _milSkipClassify(id){
+  const m=mileage.find(x=>x.id===id);if(!m)return;
+  m.purpose=m.purpose||'Other';
+  saveAll();_flushSaveNow();
+  renderAllMileage();
+}
+
+function _milRenderTripList(shown,yr){
   const el=document.getElementById('mil-table');
-  if(!mileage.length){el.innerHTML='<div class="empty">No trips yet.<br>Open a client record and tap <strong>Start driving</strong> to log a trip.</div>';return;}
-  if(!filtered.length){el.innerHTML='<div class="empty">No trips in '+yr+'.</div>';return;}
+  if(!el)return;
+  if(!mileage.length){
+    el.innerHTML='<div class="empty">No trips yet.<br>Tap <strong>Log a trip</strong> above to get started.</div>';
+    return;
+  }
+  if(!shown.length){
+    el.innerHTML='<div class="empty">No trips match this filter.</div>';
+    return;
+  }
+  const _hasMultiDriver=!_isEmployee&&mileage.some(m=>m.logged_by_name);
+  const irsRate=IRS();
   const byDay={};
-  [...filtered].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).forEach(r=>{if(!byDay[r.date])byDay[r.date]=[];byDay[r.date].push(r);});
-  el.innerHTML=Object.entries(byDay).sort((a,b)=>b[0].localeCompare(a[0])).map(([date,trips])=>{
+  [...shown].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).forEach(r=>{
+    if(!byDay[r.date])byDay[r.date]=[];
+    byDay[r.date].push(r);
+  });
+  const days=Object.entries(byDay).sort((a,b)=>b[0].localeCompare(a[0]));
+  el.innerHTML='<div class="mil-list">'+days.map(([date,trips],dayIdx)=>{
     const dayMi=trips.reduce((s,t)=>s+(t.miles||0),0);
+    const dayDed=trips.reduce((s,t)=>s+(t.miles||0)*irsRate,0);
+    const needsCount=trips.filter(t=>!t.purpose).length;
     const [y,mo,d]=date.split('-').map(Number);
-    const dayLabel=new Date(y,mo-1,d).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+    const dateObj=new Date(y,mo-1,d);
+    const dow=dateObj.toLocaleDateString('en-US',{weekday:'short'}).toUpperCase().slice(0,3);
+    const monthShort=dateObj.toLocaleDateString('en-US',{month:'short'}).toUpperCase();
+    const openClass=dayIdx===0?' open':'';
+    const reviewClass=needsCount?' has-review':'';
     const tripRows=trips.map(r=>{
-      const fromAddr=r.from||'';
-      const toAddr=r.to||(r.client_id?getClientById(r.client_id)?.addr||'':'');
-      const dotG='<div style="width:10px;height:10px;border-radius:50%;background:#16a34a;box-shadow:0 0 0 3px rgba(22,163,74,.15);flex-shrink:0"></div>';
-      const dotR='<div style="width:10px;height:10px;border-radius:50%;background:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,.15);flex-shrink:0"></div>';
+      const fromAddr=r.from_name||r.from||'';
+      const toAddr=r.to_name||r.to||(r.client_id?getClientById(r.client_id)?.addr||'':'');
+      const logTime=r.created_at?new Date(r.created_at).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}):'';
       const _pc=MILE_PURPOSE_COLORS[r.purpose||'Other']||MILE_PURPOSE_COLORS['Other'];
-      const purposeBadge='<span style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;background:'+_pc.bg+';color:'+_pc.text+';flex-shrink:0">'+(r.purpose||'Other')+'</span>';
-      // Route always visible — Everlance style. 3-row layout keeps dots perfectly aligned.
-      return '<div style="border-bottom:1px solid var(--border);padding:12px 14px">'+
-        // From row — miles float right on this row
-        '<div style="display:flex;align-items:flex-start;gap:10px">'+
-          '<div style="width:10px;flex-shrink:0;display:flex;justify-content:center;padding-top:3px">'+dotG+'</div>'+
-          '<div style="flex:1;min-width:0;font-size:13px;color:var(--text);line-height:1.35;user-select:all">'+(fromAddr?escHtml(fromAddr):'<span style="color:var(--text3);font-style:italic;font-size:12px">Start not recorded</span>')+'</div>'+
-          '<div style="text-align:right;flex-shrink:0;padding-left:10px">'+
-            '<div style="font-size:13px;font-weight:700;white-space:nowrap">'+(r.miles?(+r.miles).toFixed(1)+' mi':'—')+'</div>'+
-          '</div>'+
+      const needsClass=r.purpose?'':' needs';
+      return '<div class="mil-day-trip'+needsClass+'">'+
+        '<div class="mil-day-trip-time">'+(logTime||'—')+'</div>'+
+        '<div class="mil-day-trip-route">'+
+          '<div class="mil-day-trip-from">'+(fromAddr?escHtml(fromAddr):'<span style="color:var(--text-3);font-style:italic">Start not recorded</span>')+'</div>'+
+          '<div class="mil-day-trip-to">'+(toAddr?escHtml(toAddr):'<span style="color:var(--text-3);font-style:italic">End not recorded</span>')+'</div>'+
+          (_hasMultiDriver&&r.logged_by_name?'<div style="font-size:10px;color:var(--text-3);margin-top:3px;font-weight:500">Driver: '+escHtml(r.logged_by_name)+'</div>':'')+
         '</div>'+
-        // Connector row — deduction floats right
-        '<div style="display:flex;align-items:center;gap:10px;padding:3px 0">'+
-          '<div style="width:10px;flex-shrink:0;display:flex;justify-content:center">'+
-            '<div style="width:2px;height:14px;background:repeating-linear-gradient(to bottom,var(--border2) 0,var(--border2) 3px,transparent 3px,transparent 6px)"></div>'+
-          '</div>'+
-          '<div style="flex:1"></div>'+
-          '<div style="font-size:11px;color:var(--green-mid);font-weight:600;white-space:nowrap">'+(r.miles?fmt((+r.miles)*IRS()):'')+'</div>'+
+        '<div class="mil-day-trip-stats">'+
+          '<div class="mil-day-trip-miles">'+(r.miles?(+r.miles).toFixed(1):'—')+'<span style="font-size:10px;color:var(--text-3);font-weight:600"> mi</span></div>'+
+          (r.vehicle?'<div class="mil-day-trip-dur">'+escHtml(r.vehicle)+'</div>':'')+
         '</div>'+
-        // To row
-        '<div style="display:flex;align-items:flex-start;gap:10px">'+
-          '<div style="width:10px;flex-shrink:0;display:flex;justify-content:center;padding-top:3px">'+dotR+'</div>'+
-          '<div style="flex:1;min-width:0;font-size:13px;color:var(--text);line-height:1.35;user-select:all">'+(toAddr?escHtml(toAddr):'<span style="color:var(--text3);font-style:italic;font-size:12px">End not recorded</span>')+'</div>'+
+        '<div class="mil-day-trip-purpose">'+
+          '<span style="font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px;background:'+_pc.bg+';color:'+_pc.text+'">'+escHtml(r.purpose||'⏳ NO PURPOSE')+'</span>'+
         '</div>'+
-        // Bottom bar — labeled meta, edit + delete on right
-        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">'+
-          '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0;flex:1">'+
-            purposeBadge+
-            (r.vehicle?'<span style="font-size:10px;color:var(--text3)">Vehicle: <span style="color:var(--text2);font-weight:600">'+escHtml(r.vehicle)+'</span></span>':'')+
-            (r.client_name?'<span style="font-size:10px;color:var(--text3)">'+escHtml(r.client_name)+'</span>':'')+
-            (_hasMultiDriver&&r.logged_by_name?'<span style="font-size:10px;color:var(--text3)">Driver: <span style="color:var(--text2);font-weight:600">'+escHtml(r.logged_by_name)+'</span></span>':'')+
-          '</div>'+
-          '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'+
-            '<button onclick="openMileageEdit('+r.id+')" style="font-size:11px;font-weight:600;background:none;border:1px solid var(--border2);border-radius:var(--r);padding:3px 8px;cursor:pointer;color:var(--text2)">✏️ Edit</button>'+
-            '<button class="btn-del" onclick="delMileage('+r.id+')">&#10005;</button>'+
-          '</div>'+
+        '<div class="mil-day-trip-ded">'+(r.miles?fmt((+r.miles)*irsRate):'—')+'</div>'+
+        '<div style="display:flex;align-items:center;gap:5px;flex-shrink:0;align-self:center">'+
+          '<button onclick="openMileageEdit('+r.id+')" style="font-size:11px;font-weight:600;background:none;border:1px solid var(--line-2);border-radius:var(--r);padding:3px 8px;cursor:pointer;color:var(--text-2);white-space:nowrap">✏️ Edit</button>'+
+          '<button class="btn-del" onclick="delMileage('+r.id+')">&#10005;</button>'+
         '</div>'+
       '</div>';
     }).join('');
-    return '<div style="border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;margin-bottom:8px">'+
-      '<div onclick="_togMileDay(\''+date+'\')" style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;background:var(--bg2);cursor:pointer;user-select:none">'+
-        '<div style="display:flex;align-items:center;gap:8px">'+
-          '<span style="font-size:13px;font-weight:700">'+dayLabel+'</span>'+
-          '<span style="font-size:11px;color:var(--text3)">'+trips.length+' trip'+(trips.length!==1?'s':'')+'</span>'+
+    return '<div id="mil-day-'+date+'" class="mil-day'+openClass+reviewClass+'">'+
+      '<button class="mil-day-hd" onclick="_milTogDay(\''+date+'\')">'+
+        '<div class="mil-day-l">'+
+          '<div class="mil-day-date">'+
+            '<div class="mil-day-dow">'+dow+'</div>'+
+            '<div class="mil-day-num">'+d+'</div>'+
+            '<div class="mil-day-month">'+monthShort+'</div>'+
+          '</div>'+
+          '<div>'+
+            '<div class="mil-day-title">'+dateObj.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+'</div>'+
+            '<div class="mil-day-sub">'+trips.length+' trip'+(trips.length!==1?'s':'')+' · '+dayMi.toFixed(1)+' mi total'+(needsCount?' · <span style="color:#F59E0B;font-weight:800">'+needsCount+' need'+(needsCount===1?'':'s')+' a purpose</span>':'')+'</div>'+
+          '</div>'+
         '</div>'+
-        '<div style="display:flex;align-items:center;gap:10px">'+
-          '<span style="font-size:12px;font-weight:700">'+dayMi.toFixed(1)+' mi</span>'+
-          '<span style="font-size:12px;color:var(--green-mid)">'+fmt(dayMi*IRS())+'</span>'+
-          '<span id="mile-day-chv-'+date+'" style="font-size:11px;color:var(--text3);display:inline-block;transition:transform .15s">▼</span>'+
+        '<div class="mil-day-r">'+
+          '<div class="mil-day-stats">'+
+            '<div class="mil-day-miles">'+dayMi.toFixed(1)+'<span style="font-size:11px;color:var(--text-3);font-weight:600"> mi</span></div>'+
+            '<div class="mil-day-ded">+'+fmt(dayDed)+'</div>'+
+          '</div>'+
+          '<div class="mil-day-chev">▸</div>'+
         '</div>'+
-      '</div>'+
-      '<div id="mile-day-body-'+date+'" style="display:none">'+tripRows+'</div>'+
+      '</button>'+
+      '<div class="mil-day-body"'+(!openClass?' style="display:none"':'')+'>'+tripRows+'</div>'+
     '</div>';
-  }).join('');
+  }).join('')+'</div>';
 }
-function _togMileDay(date){
-  const body=document.getElementById('mile-day-body-'+date);
-  const chv=document.getElementById('mile-day-chv-'+date);
-  if(!body)return;
-  const open=body.style.display!=='none';
-  body.style.display=open?'none':'';
-  if(chv)chv.style.transform=open?'':'rotate(180deg)';
+
+function _milTogDay(date){
+  const el=document.getElementById('mil-day-'+date);
+  if(!el)return;
+  const open=el.classList.toggle('open');
+  const body=el.querySelector('.mil-day-body');
+  if(body)body.style.display=open?'':'none';
+}
+
+function _milRenderSummary(filtered,tot,irsRate){
+  const el=document.getElementById('mil-summary-wrap');
+  if(!el||!filtered.length){if(el)el.innerHTML='';return;}
+  const classified=filtered.filter(m=>m.purpose);
+  const avgTrip=classified.length?tot/classified.length:0;
+  const byPurpose={};
+  classified.forEach(m=>{const p=m.purpose||'Other';byPurpose[p]=(byPurpose[p]||0)+(m.miles||0);});
+  const topPurpose=Object.entries(byPurpose).sort((a,b)=>b[1]-a[1])[0];
+  const yr=String(trackerYear||new Date().getFullYear());
+  const odoLog=(S.vehicleOdoLog||{})[yr]||{};
+  const vehs=getVehicles();
+  const pVeh=vehs[0]||null;
+  const pKey=pVeh?_vehKey(pVeh):'default';
+  const odoRec=odoLog[pKey]||{};
+  const totalDriven=(odoRec.end||0)>(odoRec.start||0)?(odoRec.end-odoRec.start):0;
+  const bizPct=totalDriven>0?Math.min(100,Math.round((tot/totalDriven)*100)):null;
+  el.innerHTML=
+    '<div class="mil-summary">'+
+      '<div class="mil-summary-cell">'+
+        '<div class="td-micro">Business-use %</div>'+
+        '<div class="mil-summary-v" style="color:var(--c-green)">'+(bizPct!==null?bizPct+'%':'—')+'</div>'+
+        '<div class="mil-summary-sub">'+tot.toFixed(1)+(totalDriven?' of '+totalDriven.toLocaleString():'')+' mi</div>'+
+      '</div>'+
+      '<div class="mil-summary-cell">'+
+        '<div class="td-micro">Avg trip length</div>'+
+        '<div class="mil-summary-v">'+avgTrip.toFixed(1)+'<span style="font-size:12px;color:var(--text-3);font-weight:600"> mi</span></div>'+
+        '<div class="mil-summary-sub">'+filtered.length+' trips this period</div>'+
+      '</div>'+
+      '<div class="mil-summary-cell">'+
+        '<div class="td-micro">Top purpose</div>'+
+        '<div class="mil-summary-v" style="font-size:16px">'+(topPurpose?escHtml(topPurpose[0]):'—')+'</div>'+
+        '<div class="mil-summary-sub">'+(topPurpose&&tot>0?Math.round((topPurpose[1]/tot)*100)+'% of business miles':'No categorized trips')+'</div>'+
+      '</div>'+
+      '<div class="mil-summary-cell">'+
+        '<div class="td-micro">Audit-ready</div>'+
+        '<div class="mil-summary-v" style="color:var(--c-green)">'+(filtered.every(m=>m.purpose)?'✓':'⚠️')+'</div>'+
+        '<div class="mil-summary-sub">'+(filtered.every(m=>m.purpose)?'IRS Pub. 463 compliant':filtered.filter(m=>!m.purpose).length+' trips need purpose')+'</div>'+
+      '</div>'+
+    '</div>';
 }
 function _togMileTrip(id){
   const det=document.getElementById('mile-det-'+id);
