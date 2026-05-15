@@ -416,6 +416,84 @@ function _clientBaseUrl(){
   if(S.subdomain)return 'https://'+S.subdomain+'.tradedeskpro.app/';
   return window.location.origin+window.location.pathname.split('index.html')[0];
 }
+
+// ── Client hub directory (one row per client with hub status + share actions) ──
+function _clientHubUrl(c){
+  if(!c?.clientToken||!_supaUser)return null;
+  return _clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+c.id;
+}
+function renderClientHubPage(){
+  const el=document.getElementById('client-hub-list');if(!el)return;
+  const subEl=document.getElementById('client-hub-sub');
+  // Newest activity first — sort by created date desc as a reasonable default
+  const sorted=[...clients].sort((a,b)=>(b.created||'').localeCompare(a.created||''));
+  const withHub=sorted.filter(c=>c.clientToken);
+  const withoutHub=sorted.filter(c=>!c.clientToken);
+  if(subEl){
+    const active=withHub.length;const total=sorted.length;
+    subEl.textContent=total
+      ? active+' of '+total+' clients have a live hub · tap any row to preview'
+      : 'Every client has a private project portal — preview, share, or copy any link.';
+  }
+  if(!sorted.length){
+    el.innerHTML='<div class="card hub-empty-card"><div style="font-size:36px;margin-bottom:8px">📂</div><h3>No clients yet</h3><p>Add your first client from the Clients tab and a private hub link is created automatically.</p><button class="btn btn-p" onclick="goPg(\'pg-clients\')">Go to Clients →</button></div>';
+    return;
+  }
+  const rowHtml=c=>{
+    const url=_clientHubUrl(c);
+    const phone=(c.phone||'').replace(/\D/g,'');
+    const firstName=(c.name||'there').split(/[\s,]+/)[0];
+    const bname=S.bname||'TradeDesk';
+    const smsBody=url?'Hi '+firstName+', here\'s your project hub from '+bname+': '+url:'';
+    const statusBadge=url
+      ? '<span class="bdg-soft sf-won" style="height:18px;font-size:9px;padding:0 7px">LIVE</span>'
+      : '<span class="bdg-soft sf-done" style="height:18px;font-size:9px;padding:0 7px">NO HUB YET</span>';
+    const addrLine=c.addr?c.addr.split(',')[0]:'';
+    const meta=[statusBadge,addrLine?'<span>'+escHtml(addrLine)+'</span>':'',c.phone?'<span>'+escHtml(c.phone)+'</span>':''].filter(Boolean).join('<span style="color:var(--line-2)">·</span>');
+    const actions=url
+      ? '<button class="btn btn-sm" onclick="event.stopPropagation();window.open(\''+url+'\',\'_blank\')" title="Open client hub in a new tab">👁 Preview</button>'+
+        '<button class="btn btn-sm" onclick="event.stopPropagation();_clientHubCopy(\''+url+'\',this)" title="Copy link to clipboard">📋 Copy</button>'+
+        (phone?'<button class="btn btn-sm btn-p" onclick="event.stopPropagation();window.location.href=\'sms:'+phone+'?body='+encodeURIComponent(smsBody)+'\'" title="Text the hub link to client">📱 Send</button>':'')
+      : '<button class="btn btn-sm" onclick="event.stopPropagation();_clientHubGenerate('+c.id+')">⚡ Generate hub</button>';
+    return '<div class="hub-dir-row" onclick="openClientDetail('+c.id+',\'clients\')">'+
+      '<div class="hub-dir-l">'+
+        '<div class="hub-dir-name">'+escHtml(c.name||'Unnamed client')+'</div>'+
+        '<div class="hub-dir-meta">'+meta+'</div>'+
+      '</div>'+
+      '<div class="hub-dir-r">'+actions+'</div>'+
+    '</div>';
+  };
+  let html='';
+  if(withHub.length){
+    html+='<div class="card card-pad-0" style="margin-bottom:14px">'+
+      '<div class="card-hd"><div class="card-hd-title">Active hubs</div><div class="card-hd-sub">'+withHub.length+' client'+(withHub.length!==1?'s':'')+'</div></div>'+
+      '<div>'+withHub.map(rowHtml).join('')+'</div>'+
+    '</div>';
+  }
+  if(withoutHub.length){
+    html+='<div class="card card-pad-0">'+
+      '<div class="card-hd"><div class="card-hd-title">Not yet generated</div><div class="card-hd-sub">'+withoutHub.length+' client'+(withoutHub.length!==1?'s':'')+'</div></div>'+
+      '<div>'+withoutHub.map(rowHtml).join('')+'</div>'+
+    '</div>';
+  }
+  el.innerHTML=html;
+}
+function _clientHubCopy(url,btn){
+  navigator.clipboard.writeText(url).then(()=>{
+    if(btn){const orig=btn.textContent;btn.textContent='✓ Copied';setTimeout(()=>{btn.textContent=orig;},1600);}
+    if(typeof showToast==='function')showToast('Hub link copied','📋');
+  }).catch(()=>{
+    if(typeof showToast==='function')showToast('Could not copy link','⚠️');
+  });
+}
+function _clientHubGenerate(cid){
+  const c=getClientById(cid);if(!c)return;
+  if(typeof _ensureClientToken==='function')_ensureClientToken(cid);
+  saveAll();
+  if(typeof _uploadClientHub==='function')_uploadClientHub(cid).catch(()=>{});
+  renderClientHubPage();
+  if(typeof showToast==='function')showToast('Hub link generated for '+(c.name||'client'),'✅');
+}
 function pipelineResendSms(bidId){
   const b=bids.find(x=>x.id===bidId);
   if(!b||!b.signingToken)return;

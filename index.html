@@ -721,6 +721,34 @@ body.dark .cal-cell.other{background:var(--cream)}
 .chip.chip-int{cursor:pointer;transition:background .12s,border-color .12s,color .12s}
 .chip.chip-int:hover{border-color:var(--text-3);color:var(--text)}
 .chip.chip-int.on{background:var(--ink);color:var(--text-cream);border-color:var(--ink)}
+
+/* BYO rows (Build Your Own line-item estimate) */
+.byo-row{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s}
+.byo-row:last-child{border-bottom:none}
+.byo-row:hover{background:var(--cream)}
+.byo-row.on{background:rgba(45,93,168,.04)}
+.byo-row.req{cursor:default;opacity:.95}
+.byo-row.req:hover{background:transparent}
+.byo-check{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--line-2);background:var(--bg-card);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:transparent;font-size:12px;font-weight:900}
+.byo-check.on{background:var(--denim);border-color:var(--denim);color:#fff}
+.byo-body{flex:1;min-width:0}
+.byo-label{font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.1px}
+.byo-meta{font-size:10px;color:var(--text-3);margin-top:3px;font-weight:600;letter-spacing:.04em;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.byo-price{font-family:var(--font-display);font-size:15px;font-weight:800;color:var(--text);letter-spacing:-.3px;font-variant-numeric:tabular-nums}
+.byo-edit{background:none;border:0;color:var(--text-3);cursor:pointer;font-size:10px;font-weight:700;font-family:inherit;padding:1px 4px;letter-spacing:.04em;text-transform:uppercase;text-decoration:underline;text-underline-offset:2px}
+.byo-edit:hover{color:var(--text)}
+
+/* Client hub directory page */
+.hub-dir-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);transition:background .12s}
+.hub-dir-row:last-child{border-bottom:none}
+.hub-dir-row:hover{background:var(--cream)}
+.hub-dir-l{flex:1;min-width:0}
+.hub-dir-name{font-size:14px;font-weight:700;color:var(--text);letter-spacing:-.1px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hub-dir-meta{font-size:11px;color:var(--text-3);font-weight:500;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hub-dir-r{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.hub-empty-card{padding:36px 24px;text-align:center}
+.hub-empty-card h3{font-family:var(--font-display);font-size:18px;font-weight:800;color:var(--text-2);margin-bottom:6px;letter-spacing:-.3px}
+.hub-empty-card p{font-size:13px;line-height:1.6;color:var(--text-3);max-width:380px;margin:0 auto 14px}
 </style>
 
 </head>
@@ -1759,6 +1787,66 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
   </div>
 
+  <!-- Build Your Own (line-item) single-page layout (matches EstimateBYO.jsx) — shown when _geiIsFreeForm=true -->
+  <div id="gei-byo-page" style="display:none">
+    <div class="tbar">
+      <div class="tbar-l">
+        <button class="link-back" onclick="_geiBack()">← Pick a different type</button>
+        <div class="tbar-title">Build Your Own estimate</div>
+        <div class="tbar-sub" id="byo-page-sub">—</div>
+      </div>
+      <div class="tbar-r">
+        <button class="btn" onclick="saveGenericEstimate(true)">💾 Save draft</button>
+        <button class="btn btn-ghost" onclick="_geiBack()">Cancel</button>
+      </div>
+    </div>
+
+    <div class="split-est">
+      <div>
+        <div id="byo-sections"></div>
+
+        <div class="card">
+          <div class="td-h3" style="margin-bottom:10px">Bundling &amp; discounts</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="stat-tile">
+              <div class="stat-l">Bundle discount</div>
+              <div class="stat-v">5%</div>
+              <div class="stat-s">applies at $6k+</div>
+            </div>
+            <div class="stat-tile">
+              <div class="stat-l">Tax</div>
+              <div class="stat-v">0%</div>
+              <div class="stat-s">KS services exempt</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="summary-rail">
+        <div class="summary-card">
+          <div class="td-micro" style="margin-bottom:8px">Client total · live</div>
+          <div class="td-display summary-total" id="byo-rail-total">$0</div>
+          <div class="summary-meta" id="byo-rail-meta">0 of 0 items selected</div>
+          <div class="summary-divider"></div>
+          <div class="summary-row"><span>Items subtotal</span><span id="byo-rail-sub">$0</span></div>
+          <div class="summary-row" id="byo-rail-disc-row" style="display:none;color:var(--c-green)"><span>Bundle 5%</span><span id="byo-rail-disc">-$0</span></div>
+          <div class="summary-divider"></div>
+          <div class="summary-row"><span>Deposit · 30%</span><span id="byo-rail-deposit">$0</span></div>
+          <div class="summary-row" style="color:var(--text-3)"><span>Balance later</span><span id="byo-rail-balance">$0</span></div>
+          <div class="summary-divider"></div>
+          <div class="td-micro" style="margin-bottom:6px">Client controls</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <span class="chip">Can toggle</span>
+            <span class="chip">Lives 14d</span>
+            <span class="chip">Auto-recalc</span>
+          </div>
+          <button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">📨 Send pick-your-own proposal</button>
+          <button class="btn btn-full" style="margin-top:8px" onclick="_byoPreviewClient()">👁 Preview as client</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Step 1: Job Info -->
   <div id="gei-s1" style="padding:10px 14px 80px">
     <div class="card" style="margin-bottom:12px">
@@ -2600,6 +2688,20 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div id="money-list"></div>
 </div>
 
+<div class="pg" id="pg-client-hub">
+  <div class="tbar">
+    <div class="tbar-l">
+      <div class="tbar-eyebrow">Workspace</div>
+      <div class="tbar-title">Client hub</div>
+      <div class="tbar-sub" id="client-hub-sub">Every client has a private project portal — preview, share, or copy any link.</div>
+    </div>
+    <div class="tbar-r">
+      <button class="btn btn-sm" onclick="renderClientHubPage()">↻ Refresh</button>
+    </div>
+  </div>
+  <div id="client-hub-list"></div>
+</div>
+
 <div class="pg" id="pg-gallery">
   <div class="tbar">
     <div><div class="tbar-title">Gallery</div><div class="tbar-sub" id="gallery-count-sub"></div></div>
@@ -2714,6 +2816,11 @@ body.dark .cal-cell.other{background:var(--cream)}
     <span>Taxes</span>
   </button>
 
+  <button class="nb" id="nb-hub" onclick="goPg('pg-client-hub')">
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+    <span>Client hub</span>
+  </button>
+
   <div class="nav-section-label" style="margin-top:2px">More</div>
 
   <button class="nb" id="nb-team" onclick="goPg('pg-team')">
@@ -2812,6 +2919,9 @@ body.dark .cal-cell.other{background:var(--cream)}
     </button>
     <button class="mmi" id="mmi-taxes" onclick="mobileNavTo('pg-taxes')">
       <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Taxes
+    </button>
+    <button class="mmi" id="mmi-hub" onclick="mobileNavTo('pg-client-hub')">
+      <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>Client hub
     </button>
     <button class="mmi" id="mmi-licensing" onclick="mobileNavTo('pg-licensing')">
       <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Licensing

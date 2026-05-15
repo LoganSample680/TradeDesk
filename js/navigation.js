@@ -58,4 +58,5 @@ function goPg(id){
   if(id==='pg-jobs')renderJobsPage();
   if(id==='pg-money')renderMoneyPage();
   if(id==='pg-est'){buildScopeGrid();showNotesFab();}
+  if(id==='pg-client-hub')renderClientHubPage();
 }
