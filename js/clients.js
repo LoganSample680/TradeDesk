@@ -165,11 +165,15 @@ function _pickTrade(id){
 
 // ── 3-way estimate style picker ──────────────────────────────────────────────
 let _stylePickState=null;
+function _closeStylePicker(){
+  const ov=document.getElementById('_style-pick-ov');
+  if(ov){ov.style.opacity='0';ov.style.transform='translateY(14px)';setTimeout(()=>ov.remove(),220);}
+}
 function _showEstimateStylePicker(c,overrideAddr){
   _stylePickState={c,overrideAddr};
   const ov=document.createElement('div');
   ov.id='_style-pick-ov';
-  ov.style.cssText='position:fixed;inset:0;z-index:9000;background:var(--bg2);overflow-y:auto';
+  ov.style.cssText='position:fixed;inset:0;z-index:9000;background:var(--bg2);overflow-y:auto;opacity:0;transform:translateY(18px);transition:opacity .22s ease,transform .25s cubic-bezier(.22,.8,.2,1)';
   const clientLine=c?(escHtml(c.name)+(c.addr?' · '+escHtml((c.addr||'').split(',')[0]):'')):'Pick client after';
   const card=(id,tone,icon,eyebrow,title,sub,desc,bullets)=>{
     const bul=bullets.map(b=>'<li><span>✓</span>'+b+'</li>').join('');
@@ -191,7 +195,7 @@ function _showEstimateStylePicker(c,overrideAddr){
           '<div class="tbar-title">How are you billing this job?</div>'+
           '<div class="tbar-sub">'+clientLine+' — you can change this later, but the proposal template changes per type.</div>'+
         '</div>'+
-        '<button class="btn btn-ghost" onclick="document.getElementById(\'_style-pick-ov\')?.remove()">Cancel</button>'+
+        '<button class="btn btn-ghost" onclick="_closeStylePicker()">Cancel</button>'+
       '</div>'+
       '<div class="chooser-grid">'+
         card('scope','denim','📋','Most popular','Scope &amp; Price','Fixed scope, one final number',
@@ -210,15 +214,20 @@ function _showEstimateStylePicker(c,overrideAddr){
       '</div>'+
     '</div>';
   document.body.appendChild(ov);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{ov.style.opacity='1';ov.style.transform='translateY(0)';}));
 }
 function _pickEstStyle(style){
-  document.getElementById('_style-pick-ov')?.remove();
-  const {c,overrideAddr}=_stylePickState||{};
-  if(!c)return;
-  _stylePickState=null;
-  if(style==='scope'){_doOpenScopeEstimate(c,overrideAddr);}
-  else if(style==='tm'){openTMEstimate(c);}
-  else if(style==='freeform'){openFreeFormEstimate(c);}
+  const ov=document.getElementById('_style-pick-ov');
+  const doIt=()=>{
+    const {c,overrideAddr}=_stylePickState||{};
+    if(!c)return;
+    _stylePickState=null;
+    if(style==='scope'){_doOpenScopeEstimate(c,overrideAddr);}
+    else if(style==='tm'){openTMEstimate(c);}
+    else if(style==='freeform'){openFreeFormEstimate(c);}
+  };
+  if(ov){ov.style.opacity='0';ov.style.transform='translateY(10px)';setTimeout(()=>{ov.remove();doIt();},200);}
+  else{doIt();}
 }
 function _doOpenScopeEstimate(c,overrideAddr){
   const lines=_getTradeLines();

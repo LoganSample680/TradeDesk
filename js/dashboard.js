@@ -1215,4 +1215,122 @@ function renderLeadsPage(){
   }).join('');
 }
 
+// ── Proposals page ───────────────────────────────────────────────────────
+let _proposalFilter='all';
+function setProposalFilter(f,btn){
+  _proposalFilter=f;
+  document.querySelectorAll('#pg-proposals .fb').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  renderProposalsPage();
+}
+function renderProposalsPage(){
+  const sentBids=bids.filter(b=>b.signingToken);
+  const signed=sentBids.filter(b=>b.status==='Closed Won');
+  const awaiting=sentBids.filter(b=>b.status==='Pending'||b.status==='Draft');
+  const declined=sentBids.filter(b=>b.status==='Closed Lost'||b.status==='Abandoned');
+  const counts={all:sentBids.length,awaiting_sig:awaiting.length,signed:signed.length,declined:declined.length};
+  ['all','awaiting_sig','signed','declined'].forEach(k=>{
+    const el=document.getElementById('pft-c-'+k);
+    if(el){el.textContent=counts[k]||'';el.style.display=counts[k]?'':'none';}
+  });
+  const closeRate=sentBids.length?Math.round(signed.length/sentBids.length*100):0;
+  const eyebrow=document.getElementById('proposals-eyebrow');
+  if(eyebrow)eyebrow.textContent=sentBids.length+' sent · '+closeRate+'% close rate';
+  const totalSent=sentBids.reduce((s,b)=>s+(b.amount||0),0);
+  const signedAmt=signed.reduce((s,b)=>s+(b.amount||0),0);
+  const awaitingAmt=awaiting.reduce((s,b)=>s+(b.amount||0),0);
+  const mets=document.getElementById('proposals-mets');
+  if(mets)mets.innerHTML=
+    '<div class="met"><div class="met-l">Sent</div><div class="met-v">'+fmt(totalSent)+'</div><div class="met-s">'+sentBids.length+' proposals</div></div>'+
+    '<div class="met"><div class="met-l">Signed</div><div class="met-v" style="color:var(--green)">'+fmt(signedAmt)+'</div><div class="met-s up">'+signed.length+' clients</div></div>'+
+    '<div class="met"><div class="met-l">Awaiting sig</div><div class="met-v" style="color:var(--amber)">'+fmt(awaitingAmt)+'</div><div class="met-s">'+awaiting.length+' clients</div></div>'+
+    '<div class="met"><div class="met-l">Close rate</div><div class="met-v">'+closeRate+'<span class="unit">%</span></div><div class="met-s">of sent</div></div>';
+  const f=_proposalFilter;
+  const filtered=f==='all'?sentBids:f==='signed'?signed:f==='awaiting_sig'?awaiting:declined;
+  const list=document.getElementById('proposals-list');
+  if(!list)return;
+  if(!filtered.length){
+    list.innerHTML='<div class="empty"><div class="em-emoji">📨</div><h3>No proposals here</h3><p>Try a different filter, or send a new estimate to a client.</p></div>';
+    return;
+  }
+  const rows=filtered.map(b=>{
+    const c=getClientById(b.client_id)||{name:b.client_name||b.name||'Unknown'};
+    const proj=b.addr||b.type||'—';
+    const status=b.status==='Closed Won'?'signed':(b.status==='Closed Lost'||b.status==='Abandoned')?'declined':'awaiting_sig';
+    const sBadge=status==='signed'?'<span class="bdg-soft sf-won">SIGNED</span>':status==='declined'?'<span class="bdg-soft sf-lost">DECLINED</span>':'<span class="bdg-soft sf-pending">AWAITING SIG</span>';
+    const deposit=b.status==='Closed Won'&&b.deposit?'<div style="font-size:10px;color:var(--green);font-weight:700;margin-top:2px">Deposit '+fmt(b.deposit)+' received</div>':'';
+    const tmChip=b.isTM?'<span class="bdg-soft sf-pending" style="font-size:9px;margin-right:4px">⏱️ T&M</span>':'';
+    return '<tr onclick="openClientDetail('+b.client_id+',\'leads\')" style="cursor:pointer">'+
+      '<td><div style="font-weight:800">'+escHtml(c.name)+'</div>'+
+      '<div style="font-size:10px;color:var(--text3);font-weight:500;margin-top:2px">'+tmChip+escHtml((proj+'').split(',')[0])+'</div>'+deposit+'</td>'+
+      '<td>'+sBadge+'</td>'+
+      '<td class="muted">'+escHtml(b.bid_date||'')+'</td>'+
+      '<td class="num">'+fmt(b.amount||0)+'</td>'+
+      '<td style="text-align:right"><button class="btn btn-sm btn-p" onclick="event.stopPropagation();openClientDetail('+b.client_id+',\'leads\')">Open →</button></td>'+
+      '</tr>';
+  }).join('');
+  list.innerHTML='<div class="card card-pad-0" style="overflow:hidden">'+
+    '<div class="card-hd"><div class="card-hd-title">Proposals</div></div>'+
+    '<table class="tbl"><thead><tr><th>Client &amp; project</th><th>Status</th><th>Sent</th><th class="num">Amount</th><th></th></tr></thead>'+
+    '<tbody>'+rows+'</tbody></table></div>';
+}
+
+// ── Estimates page ────────────────────────────────────────────────────────
+let _estFilter='all';
+function setEstFilter(f,btn){
+  _estFilter=f;
+  document.querySelectorAll('#pg-estimates .fb').forEach(b=>b.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  renderEstimatesPage();
+}
+function renderEstimatesPage(){
+  const allBids=bids.filter(b=>b.id);
+  const _bidType=b=>b.isTM?'tm':(b.geiLines!==undefined?'freeform':'scope');
+  const f=_estFilter;
+  let filtered;
+  if(f==='all')filtered=allBids;
+  else if(f==='draft')filtered=allBids.filter(b=>b.draft||b.status==='Draft');
+  else filtered=allBids.filter(b=>_bidType(b)===f);
+  const total=allBids.length;
+  const drafts=allBids.filter(b=>b.draft||b.status==='Draft').length;
+  const awaiting=allBids.filter(b=>b.signingToken&&b.status==='Pending').length;
+  const eyebrow=document.getElementById('estimates-eyebrow');
+  if(eyebrow)eyebrow.textContent=total+' estimates · '+drafts+' draft'+(drafts===1?'':'s')+' · '+awaiting+' awaiting sig';
+  const hd=document.getElementById('estimates-hd-title');
+  if(hd)hd.textContent=f==='all'?'All estimates':f==='tm'?'Time & Materials':f==='freeform'?'Build Your Own':f==='draft'?'Drafts':'Scope & Price';
+  const wrap=document.getElementById('estimates-tbl-wrap');
+  const empty=document.getElementById('estimates-empty');
+  if(!wrap)return;
+  if(!filtered.length){wrap.innerHTML='';if(empty)empty.style.display='';return;}
+  if(empty)empty.style.display='none';
+  const typeChip=b=>{
+    if(b.isTM)return '<span class="bdg-soft sf-pending">T&amp;M</span>';
+    if(b.geiLines!==undefined)return '<span class="bdg-soft sf-active">Build Your Own</span>';
+    return '<span class="bdg-soft sf-deposit">Scope &amp; Price</span>';
+  };
+  const statusChip=b=>{
+    if(b.status==='Closed Won')return '<span class="bdg-soft sf-won">SIGNED</span>';
+    if(b.status==='Closed Lost'||b.status==='Abandoned')return '<span class="bdg-soft sf-lost">DECLINED</span>';
+    if(b.draft||b.status==='Draft')return '<span class="bdg-soft sf-done">DRAFT</span>';
+    if(b.signingToken)return '<span class="bdg-soft sf-pending">AWAITING SIG</span>';
+    return '<span class="bdg-soft sf-done">PENDING</span>';
+  };
+  const rows=filtered.map(b=>{
+    const c=getClientById(b.client_id)||{name:b.client_name||b.name||'Unknown'};
+    const proj=b.addr||b.type||'—';
+    const amt=b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' / NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'—');
+    const revFn=b.geiLines!==undefined?'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')'  :'openEditBid('+b.id+')';
+    return '<tr style="cursor:pointer" onclick="'+revFn+'">'+
+      '<td><div style="font-weight:800">'+escHtml(c.name)+'</div>'+
+      '<div style="font-size:10px;color:var(--text3);font-weight:500;margin-top:2px">'+escHtml((proj+'').split(',')[0])+'</div></td>'+
+      '<td>'+typeChip(b)+'</td>'+
+      '<td>'+statusChip(b)+'</td>'+
+      '<td class="muted">'+escHtml(b.bid_date||'')+'</td>'+
+      '<td class="num">'+amt+'</td>'+
+      '<td style="text-align:right"><button class="btn btn-sm btn-p" onclick="event.stopPropagation();'+revFn+'">Open →</button></td>'+
+      '</tr>';
+  }).join('');
+  wrap.innerHTML='<table class="tbl"><thead><tr><th>Client &amp; project</th><th>Type</th><th>Status</th><th>Date</th><th class="num">Amount</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
+
 // ── Jobs page ─────────────────────────────────────────────────────────────

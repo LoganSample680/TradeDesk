@@ -209,6 +209,9 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 .sf-active{background:var(--c-green-soft);color:var(--c-green)}
 .sf-upcoming{background:var(--denim-soft);color:var(--denim)}
 .sf-done{background:var(--c-gray-soft);color:var(--c-gray)}
+.sf-new{background:#e0f2fe;color:#0369a1}
+.fb-count{background:rgba(0,0,0,.08);border-radius:99px;padding:0 5px;font-size:9px;font-weight:800;letter-spacing:.02em;margin-left:2px;display:inline-flex;align-items:center;line-height:16px}
+.fb.active .fb-count{background:rgba(255,255,255,.22)}
 .brow{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
 
 /* ── Forms / Inputs ── */
@@ -2638,7 +2641,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button type="button" class="fb active" id="lft-all"        onclick="setLeadFilter('all',this)">All</button>
     <button type="button" class="fb"        id="lft-incomplete" onclick="setLeadFilter('incomplete',this)">Needs setup</button>
     <button type="button" class="fb"        id="lft-new"        onclick="setLeadFilter('new',this)">Ready</button>
-    <button type="button" class="fb"        id="lft-estimate"   onclick="setLeadFilter('estimate',this)">Estimate</button>
+    <button type="button" class="fb"        id="lft-estimate"   onclick="setLeadFilter('estimate',this)">Proposal sent</button>
     <button type="button" class="fb"        id="lft-follow_up"  onclick="setLeadFilter('follow_up',this)">Follow-up</button>
     <button type="button" class="fb"        id="lft-pending"    onclick="setLeadFilter('pending',this)">Pending bid</button>
   </div>
@@ -2717,6 +2720,55 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div id="gallery-grid"></div>
   </div>
 </div>
+
+<div class="pg" id="pg-proposals">
+  <div class="tbar">
+    <div class="tbar-l">
+      <div class="tbar-eyebrow" id="proposals-eyebrow">Proposals</div>
+      <div class="tbar-title">Proposals</div>
+      <div class="tbar-sub">Everything you've sent for signature. Tap any row to open the client's portal.</div>
+    </div>
+    <div class="tbar-r">
+      <button class="btn btn-p btn-sm" onclick="goPg('pg-clients')">+ New proposal</button>
+    </div>
+  </div>
+  <div class="mets" id="proposals-mets"></div>
+  <div class="fbar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:12px">
+    <button type="button" class="fb active" id="pft-all"          onclick="setProposalFilter('all',this)">All<span class="fb-count" id="pft-c-all"></span></button>
+    <button type="button" class="fb"        id="pft-awaiting_sig" onclick="setProposalFilter('awaiting_sig',this)">Awaiting sig<span class="fb-count" id="pft-c-awaiting_sig"></span></button>
+    <button type="button" class="fb"        id="pft-signed"       onclick="setProposalFilter('signed',this)">Signed<span class="fb-count" id="pft-c-signed"></span></button>
+    <button type="button" class="fb"        id="pft-declined"     onclick="setProposalFilter('declined',this)">Declined<span class="fb-count" id="pft-c-declined"></span></button>
+  </div>
+  <div id="proposals-list"></div>
+</div>
+
+<div class="pg" id="pg-estimates">
+  <div class="tbar">
+    <div class="tbar-l">
+      <div class="tbar-eyebrow" id="estimates-eyebrow">Estimates</div>
+      <div class="tbar-title">Estimates</div>
+      <div class="tbar-sub">All quotes you've built — drafts, sent, and signed.</div>
+    </div>
+    <div class="tbar-r">
+      <button class="btn btn-p btn-sm" onclick="goPg('pg-clients')">+ New estimate</button>
+    </div>
+  </div>
+  <div class="fbar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:12px">
+    <button type="button" class="fb active" id="eft-all"      onclick="setEstFilter('all',this)">All</button>
+    <button type="button" class="fb"        id="eft-scope"    onclick="setEstFilter('scope',this)">Scope &amp; Price</button>
+    <button type="button" class="fb"        id="eft-tm"       onclick="setEstFilter('tm',this)">T&amp;M</button>
+    <button type="button" class="fb"        id="eft-freeform" onclick="setEstFilter('freeform',this)">Build Your Own</button>
+    <button type="button" class="fb"        id="eft-draft"    onclick="setEstFilter('draft',this)">Drafts</button>
+  </div>
+  <div class="card card-pad-0" style="overflow:hidden">
+    <div class="card-hd"><div class="card-hd-title" id="estimates-hd-title">All estimates</div></div>
+    <div id="estimates-tbl-wrap"></div>
+  </div>
+  <div id="estimates-empty" style="display:none">
+    <div class="empty"><div class="em-emoji">📋</div><h3>No estimates yet</h3><p>Start by opening a client and tapping + New estimate.</p></div>
+  </div>
+</div>
+
 </div>
 <div id="drive-banner" style="display:none;position:fixed;top:0;left:0;right:0;background:#1A4A0A;color:#fff;z-index:999;padding:8px 14px;display:none;align-items:center;justify-content:space-between;gap:10px">
   <div onclick="jumpToDriveClient()" style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer">
@@ -2792,6 +2844,16 @@ body.dark .cal-cell.other{background:var(--cream)}
   <button class="nb" id="nb-jobs" onclick="goPg('pg-jobs')">
     <div class="bx"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span class="nbadge" id="nb-jobs-badge"></span></div>
     <span>Jobs</span>
+  </button>
+
+  <button class="nb" id="nb-estimates" onclick="goPg('pg-estimates')">
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13l2 2 4-4"/></svg></div>
+    <span>Estimates</span>
+  </button>
+
+  <button class="nb" id="nb-proposals" onclick="goPg('pg-proposals')">
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h4"/></svg><span class="nbadge" id="nb-proposals-badge"></span></div>
+    <span>Proposals</span>
   </button>
 
   <button class="nb" id="nb-cal" onclick="goPg('pg-cal')">
@@ -2903,6 +2965,12 @@ body.dark .cal-cell.other{background:var(--cream)}
 <!-- ── More popup (tap-to-open, no swipe needed) ── -->
 <div id="mtb-more-popup" onclick="closeMobileMore()">
   <div id="mtb-more-menu" onclick="event.stopPropagation()">
+    <button class="mmi" id="mmi-estimates" onclick="mobileNavTo('pg-estimates')">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13l2 2 4-4"/></svg>Estimates
+    </button>
+    <button class="mmi" id="mmi-proposals" onclick="mobileNavTo('pg-proposals')">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h4"/></svg>Proposals
+    </button>
     <button class="mmi" id="mmi-cal" onclick="mobileNavTo('pg-cal')">
       <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><circle cx="8" cy="16" r="1" fill="currentColor"/><circle cx="12" cy="16" r="1" fill="currentColor"/></svg>Calendar
     </button>
