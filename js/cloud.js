@@ -300,7 +300,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.15.26.42';
+const APP_VERSION='05.15.26.43';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -947,18 +947,21 @@ async function checkNewSignatures(){
       let changed=false;const alerts=[];const newSeen=[];
       for(const s of data){
         const key=String(s.bid_id);
-        if(seenCache.has(key))continue; // already handled, skip forever
+        const alreadySeen=seenCache.has(key);
         const bid=bids.find(b=>String(b.id)===key);
-        if(!bid){newSeen.push(key);continue;} // deleted/orphaned — mark seen, no popup
+        if(!bid){if(!alreadySeen)newSeen.push(key);continue;} // deleted/orphaned
         if(bid.status!=='Closed Won'){
+          // Always fix the status regardless of seenCache — data may have been reset
           bid.status='Closed Won';bid.draft=false;
           bid.signedAt=s.signed_at;
           bid.signedName=s.client_signed_name||s.client_name;
           bid.paymentMethod=s.payment_method;
           changed=true;
-          alerts.push({name:s.client_name||'Client',bidId:bid.id,clientId:bid.client_id,isPaid:s.payment_status==='paid'});
+          if(!alreadySeen){
+            alerts.push({name:s.client_name||'Client',bidId:bid.id,clientId:bid.client_id,isPaid:s.payment_status==='paid'});
+          }
         }
-        newSeen.push(key);
+        if(!alreadySeen)newSeen.push(key);
       }
       if(newSeen.length){
         newSeen.forEach(id=>seenCache.add(id));
