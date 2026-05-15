@@ -951,27 +951,27 @@ function renderMonthlyPL(){
   let totalInc=0,totalExp=0,totalMiles=0;
   keys.forEach(k=>{
     const m=months[k];
-    const mileDed=m.miles*IRS();
-    const net=m.inc-m.exp-mileDed;
+    const net=m.inc-m.exp;
     totalInc+=m.inc;totalExp+=m.exp;totalMiles+=m.miles;
     const [yr,mo]=k.split('-');
     const label=new Date(parseInt(yr),parseInt(mo)-1,1).toLocaleDateString('en-US',{month:'short',year:'numeric'});
     html+='<div style="display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:4px 10px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px;align-items:center">'+
       '<span style="font-weight:600">'+label+'</span>'+
       '<span style="text-align:right;color:var(--green-mid);font-weight:700">'+fmt(m.inc)+'</span>'+
-      '<span style="text-align:right;color:#A32D2D">('+fmt(m.exp+mileDed)+')</span>'+
+      '<span style="text-align:right;color:#A32D2D">('+fmt(m.exp)+')</span>'+
       '<span style="text-align:right;font-weight:700;color:'+(net>=0?'var(--green-mid)':'#A32D2D')+'">'+fmt(net)+'</span>'+
     '</div>';
   });
 
   const totalMileDed=totalMiles*IRS();
-  const grandNet=totalInc-totalExp-totalMileDed;
+  const grandNet=totalInc-totalExp;
   html+='<div style="display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:4px 10px;padding:8px 0;font-size:13px;font-weight:700;border-top:2px solid var(--border);margin-top:4px">'+
     '<span>Total</span>'+
     '<span style="text-align:right;color:var(--green-mid)">'+fmt(totalInc)+'</span>'+
-    '<span style="text-align:right;color:#A32D2D">('+fmt(totalExp+totalMileDed)+')</span>'+
+    '<span style="text-align:right;color:#A32D2D">('+fmt(totalExp)+')</span>'+
     '<span style="text-align:right;color:'+(grandNet>=0?'var(--green-mid)':'#A32D2D')+'">'+fmt(grandNet)+'</span>'+
-  '</div>';
+  '</div>'+
+  (totalMiles>0?'<div style="font-size:10px;color:var(--text3);margin-top:8px;padding-top:6px;border-top:1px solid var(--border)">'+totalMiles.toFixed(0)+' mi driven · '+fmt(totalMileDed)+' mileage tax deduction — reduces taxable income, not cash profit</div>':'');
   el.innerHTML=html;
 }
 
@@ -1241,14 +1241,18 @@ function exportPLCSV(){
   const yrInc=filterYr(income).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const yrExp=filterYr(expenses).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const yrMil=filterYr(mileage);
-  const tInc=yrInc.reduce((s,r)=>s+(r.amount||0),0);
+  const yrPay=filterYr(payments).filter(p=>p.amount>0).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const tIncBase=yrInc.reduce((s,r)=>s+(r.amount||0),0);
+  const tIncPay=yrPay.reduce((s,p)=>s+(p.amount||0),0);
+  const tInc=tIncBase+tIncPay;
   const tExp=yrExp.reduce((s,r)=>s+(r.amount||0),0);
   const tMil=yrMil.reduce((s,m)=>s+(m.miles||0),0)*IRS();
-  const net=tInc-tExp-tMil;
+  const net=tInc-tExp;
   const lines=[
     '"'+biz+' — Profit & Loss — '+label+'"','',
     '"INCOME"','Date,Source / Client,Category,Amount',
     ...yrInc.map(r=>[r.date||'','"'+(r.client_name||r.source||'').replace(/"/g,'""')+'"','"'+(r.cat||'Revenue')+'"',(r.amount||0).toFixed(2)].join(',')),
+    ...yrPay.map(p=>[p.date||'','"'+(p.client_name||'Payment').replace(/"/g,'""')+'"','"Payment"',(p.amount||0).toFixed(2)].join(',')),
     ',,TOTAL INCOME,'+tInc.toFixed(2),'',
     '"EXPENSES"','Date,Vendor,IRS Category,Amount',
     ...yrExp.map(e=>{const c=IRS_EXPENSE_CATS.find(x=>x.id===e.cat)||{label:e.cat||'Other'};return[e.date||'','"'+(e.vendor||'').replace(/"/g,'""')+'"','"'+c.label+'"',(e.amount||0).toFixed(2)].join(',');}),
@@ -1647,9 +1651,8 @@ function renderJobSummary(){
     const rev=getClientIncome(b.client_id).reduce((s,i)=>s+i.amount,0);
     const exp=expenses.filter(e=>e.job_id===b.id).reduce((s,e)=>s+e.amount,0);
     const miles=mileage.filter(m=>m.client_id===b.client_id).reduce((s,m)=>s+(m.miles||0),0);
-    const mileDed=miles*IRS();
-    const net=rev-exp-mileDed;
-    grandRev+=rev;grandExp+=exp+mileDed;
+    const net=rev-exp;
+    grandRev+=rev;grandExp+=exp;
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">'+
       '<div><div style="font-size:13px;font-weight:700">'+(b.client_name||b.name)+'</div>'+
       '<div class="meta-xs">'+(b.addr||'')+(exp>0?' · '+fmt(exp)+' expenses':'')+' '+(miles>0?' · '+miles.toFixed(1)+'mi':'')+'</div></div>'+

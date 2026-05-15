@@ -463,6 +463,9 @@ function printKansasLien(bidId){
   const addr=bid.addr||c.addr||'';
   // Auto-detect county if not already set on the lien record
   const {stateCode:detectedState,county:detectedCounty}=getCountyForBid(bid);
+  const stateName=(typeof STATE_TAX!=='undefined'&&STATE_TAX[detectedState]?.name)||detectedState;
+  const isKS=detectedState==='KS';
+  const statuteRef=isKS?'K.S.A. 60-1101 et seq.':(detectedState+' mechanic\'s lien statutes');
   const county=lien.county||(detectedCounty+', '+detectedState);
   const countyShort=county.replace(/,\s*[A-Z]{2}$/,'');
   const filingInfo=getCountyFilingInfo(detectedState);
@@ -498,16 +501,16 @@ function printKansasLien(bidId){
   @media print{body{padding:20px}.no-print{display:none}}
 </style></head><body>
 <div class="no-print" style="background:#185FA5;color:#fff;padding:12px 16px;margin:-40px -40px 30px;display:flex;justify-content:space-between;align-items:center">
-  <span style="font-size:15px;font-weight:700">Kansas Mechanic's Lien — Ready to print</span>
+  <span style="font-size:15px;font-weight:700">${escHtml(stateName)} Mechanic's Lien — Ready to print</span>
   <button onclick="tdPrint()" style="padding:8px 20px;border-radius:6px;border:none;background:#fff;color:#185FA5;font-size:13px;font-weight:700;cursor:pointer">🖨️ Print</button>
 </div>
 
 <h1>Mechanic's Lien Statement</h1>
-<h2>State of Kansas</h2>
-<div class="subtitle">Pursuant to K.S.A. 60-1101 et seq.</div>
+<h2>State of ${escHtml(stateName)}</h2>
+<div class="subtitle">Pursuant to ${escHtml(statuteRef)}</div>
 
 <div class="notice">
-  <strong>NOTICE:</strong> This Mechanic's Lien Statement is filed with the Register of Deeds of ${escHtml(county)} pursuant to the Kansas Mechanic's Lien Act (K.S.A. 60-1101 et seq.). This lien attaches to the real property described herein for labor, services, and materials furnished but unpaid.
+  <strong>NOTICE:</strong> This Mechanic's Lien Statement is filed with the Register of Deeds of ${escHtml(county)} pursuant to ${escHtml(stateName)} mechanic's lien statutes (${escHtml(statuteRef)}). This lien attaches to the real property described herein for labor, services, and materials furnished but unpaid.
 </div>
 
 <div class="section">
@@ -530,7 +533,7 @@ function printKansasLien(bidId){
 
 <div class="section">
   <div class="label">4. Legal Description of Property</div>
-  <div class="value" style="min-height:48px">The real property located at ${escHtml(addr)}, ${escHtml(countyShort)}, Kansas (legal description to be obtained from county records if required for filing)</div>
+  <div class="value" style="min-height:48px">The real property located at ${escHtml(addr)}, ${escHtml(countyShort)}, ${escHtml(stateName)} (legal description to be obtained from county records if required for filing)</div>
 </div>
 
 <div class="section">
@@ -593,7 +596,7 @@ ${lien.notes?'<div class="section"><div class="label">Notes / Case Reference</di
 
 <div class="notary">
   <div class="notary-title">Notary Acknowledgment</div>
-  State of Kansas<br>
+  State of ${escHtml(stateName)}<br>
   County of ____________________________<br><br>
   Subscribed and sworn to before me this _______ day of __________________, 20___,<br>
   by ____________________________________________.<br><br>
