@@ -635,6 +635,19 @@ function _selectRecentDest(addr,poiName=''){
   const fromVal=(document.getElementById('lm-from')?.value||'').trim();
   if(fromVal&&addr)_previewRoute(fromVal,addr);
 }
+async function _previewRoute(fromAddr,toAddr){
+  try{
+    let fc=_lmCoords.from,tc=_lmCoords.to;
+    if(!fc)fc=await _resolveCoords(fromAddr);
+    if(!tc)tc=await _resolveCoords(toAddr);
+    const{miles,mins}=await _routeDistance(fc,tc);
+    const mv=document.getElementById('lm-miles-val');if(mv)mv.value=miles;
+    const md=document.getElementById('lm-miles-display');if(md)md.textContent=miles.toFixed(1)+' miles';
+    const td=document.getElementById('lm-time-display');if(td)td.textContent='~'+mins+' min drive · IRS deduction: '+fmt(miles*IRS());
+    const rr=document.getElementById('lm-route-result');if(rr)rr.style.display='block';
+    const rc=document.getElementById('lm-recalc-row');if(rc)rc.style.display='block';
+  }catch(e){}
+}
 function _tripDestSearch(val){
   clearTimeout(_tripDestTimer);
   const box=document.getElementById('lm-to-sugg');if(!box)return;
