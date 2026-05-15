@@ -961,10 +961,14 @@ function renderLeadSources(){
     const src=c.source||'No source set';
     if(!sources[src])sources[src]={leads:0,won:0,lost:0,revenue:0,color:''};
     sources[src].leads++;
-    getClientBids(c.id).forEach(b=>{
-      if(b.status==='Closed Won'){sources[src].won++;sources[src].revenue+=getBidPaid(b.id)||b.amount||0;}
-      else if(b.status==='Closed Lost'||b.status==='Abandoned')sources[src].lost++;
-    });
+    const cb=getClientBids(c.id);
+    const wonBids=cb.filter(b=>b.status==='Closed Won');
+    if(wonBids.length){
+      sources[src].won++;
+      sources[src].revenue+=wonBids.reduce((s,b)=>s+(b.amount||0),0);
+    } else if(cb.some(b=>b.status==='Closed Lost'||b.status==='Abandoned')){
+      sources[src].lost++;
+    }
   });
 
   const rows=Object.entries(sources).sort((a,b)=>b[1].revenue-a[1].revenue||b[1].leads-a[1].leads);
@@ -1033,11 +1037,11 @@ function showSourceDetail(src){
   const srcClients=clients.filter(c=>(c.source||'Unknown')===src);
   let won=0,lost=0,revenue=0,pending=0;
   srcClients.forEach(c=>{
-    getClientBids(c.id).forEach(b=>{
-      if(b.status==='Closed Won'){won++;revenue+=getBidPaid(b.id)||b.amount||0;}
-      else if(b.status==='Closed Lost'||b.status==='Abandoned')lost++;
-      else if(b.status==='Pending')pending++;
-    });
+    const cb=getClientBids(c.id);
+    const wonBids=cb.filter(b=>b.status==='Closed Won');
+    if(wonBids.length){won++;revenue+=wonBids.reduce((s,b)=>s+(b.amount||0),0);}
+    else if(cb.some(b=>b.status==='Closed Lost'||b.status==='Abandoned')){lost++;}
+    if(cb.some(b=>b.status==='Pending'))pending++;
   });
   const decided=won+lost;
   const cr=decided>0?Math.round(won/decided*100):null;
