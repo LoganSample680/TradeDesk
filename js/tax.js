@@ -98,9 +98,12 @@ function setTaxTab(tab,btn){
   calcTax();
 }
 function calcTax(){
-  const tIn=income.reduce((s,r)=>s+r.amount,0);
-  const tEx=expenses.reduce((s,r)=>s+r.amount,0);
-  const tMi=mileage.reduce((s,r)=>s+(r.miles||0),0);
+  const _taxYr=String(trackerYear||S.taxYear||new Date().getFullYear());
+  // Gross income = manually-logged income entries + bid payments (both filtered to selected year)
+  const tIn=income.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+r.amount,0)
+           +payments.filter(p=>p.amount>0&&p.date&&p.date.startsWith(_taxYr)).reduce((s,p)=>s+p.amount,0);
+  const tEx=expenses.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+r.amount,0);
+  const tMi=mileage.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+(r.miles||0),0);
   const mileDed=tMi*IRS();
   const netSelf=Math.max(0,tIn-tEx-mileDed);
   const spouseInc=nv('tx-spouse');
