@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-05.15.26.20';
+const CACHE = 'tradedesk-05.15.26.21';
 const NAV_URL = '/index.html';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
@@ -38,8 +38,9 @@ self.addEventListener('fetch', e => {
     // Only intercept the main app shell — let client.html, sign.html, etc. reach the network
     const navPath = new URL(e.request.url).pathname;
     if (navPath !== '/' && navPath !== '/index.html' && navPath !== '') return;
+    // cache:'no-store' bypasses Chrome's HTTP cache so we always get the real server response
     e.respondWith(
-      fetch(e.request).then(r => {
+      fetch(new Request(e.request.url, {cache: 'no-store'})).then(r => {
         if (!r.ok) return r;
         const toCache = safeClone(r);
         caches.open(CACHE).then(c => c.put(NAV_URL, toCache));
