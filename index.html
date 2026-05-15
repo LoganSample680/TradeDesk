@@ -3073,13 +3073,13 @@ if('serviceWorker' in navigator){
     fetch('/version.json?_='+Date.now())
       .then(r=>r.json())
       .then(d=>{
-        if(!d.version||d.version===APP_VERSION){sessionStorage.removeItem('_rv');return;}
-        const raw=sessionStorage.getItem('_rv');
+        if(!d.version||d.version===APP_VERSION){localStorage.removeItem('_rv');return;}
+        const raw=localStorage.getItem('_rv');
         const rec=raw?JSON.parse(raw):{n:0,t:Date.now()};
         if(Date.now()-rec.t>300000){rec.n=0;rec.t=Date.now();} // reset after 5 min
-        if(rec.n>=2){showToast('New version available — press Ctrl+Shift+R to update','🔄');return;}
+        if(rec.n>=3){showToast('New version available — press Ctrl+Shift+R to update','🔄');return;}
         rec.n++;
-        sessionStorage.setItem('_rv',JSON.stringify(rec));
+        localStorage.setItem('_rv',JSON.stringify(rec));
         _autoSaveAndReload();
       })
       .catch(()=>{});
