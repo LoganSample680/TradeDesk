@@ -1206,7 +1206,7 @@ function _milRenderVehicleWorksheet(yr,tot,irsRate){
           '</div>'+
           '<div class="mil-odo-arrow">→</div>'+
           '<div class="mil-odo">'+
-            '<div class="td-micro">Odometer · today</div>'+
+            '<div class="td-micro">Odometer · year end</div>'+
             '<div class="mil-odo-input">'+
               '<input type="number" value="'+(endOdo||'')+'" placeholder="0" min="0"'+
                 ' onblur="_milSetOdo(\''+escHtml(pKey)+'\',\'end\',this.value)"'+
