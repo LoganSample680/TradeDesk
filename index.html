@@ -738,7 +738,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 .byo-body{flex:1;min-width:0}
 .byo-label{font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.1px}
 .byo-meta{font-size:10px;color:var(--text-3);margin-top:3px;font-weight:600;letter-spacing:.04em;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.byo-price{font-family:var(--font-display);font-size:15px;font-weight:800;color:var(--text);letter-spacing:-.3px;font-variant-numeric:tabular-nums}
+.byo-price{font-family:var(--font-display);font-size:15px;font-weight:800;color:var(--text);letter-spacing:-.3px;font-variant-numeric:tabular-nums;min-width:64px;text-align:right;flex-shrink:0}
 .byo-edit{background:none;border:0;color:var(--text-3);cursor:pointer;font-size:10px;font-weight:700;font-family:inherit;padding:1px 4px;letter-spacing:.04em;text-transform:uppercase;text-decoration:underline;text-underline-offset:2px}
 .byo-edit:hover{color:var(--text)}
 
@@ -1163,9 +1163,6 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar-l">
       <div class="tbar-eyebrow">Paint estimate</div>
       <div class="tbar-title">Estimate builder</div>
-    </div>
-    <div class="tbar-r">
-      <button onclick="saveAndExitEstimate()" class="btn" style="font-size:12px;color:var(--text2)">💾 Save &amp; exit</button>
     </div>
   </div>
   <div class="steps" id="est-steps">
@@ -1833,15 +1830,15 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="summary-row"><span>Items subtotal</span><span id="byo-rail-sub">$0</span></div>
           <div class="summary-row" id="byo-rail-disc-row" style="display:none;color:var(--c-green)"><span>Bundle 5%</span><span id="byo-rail-disc">-$0</span></div>
           <div class="summary-divider"></div>
-          <div class="summary-row"><span>Deposit · 30%</span><span id="byo-rail-deposit">$0</span></div>
-          <div class="summary-row" style="color:var(--text-3)"><span>Balance later</span><span id="byo-rail-balance">$0</span></div>
-          <div class="summary-divider"></div>
-          <div class="td-micro" style="margin-bottom:6px">Client controls</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <span class="chip">Can toggle</span>
-            <span class="chip">Lives 14d</span>
-            <span class="chip">Auto-recalc</span>
+          <div class="summary-row" style="align-items:center">
+            <span style="display:flex;align-items:center;gap:5px">Deposit
+              <input type="number" id="byo-deposit-pct" value="30" min="0" max="100" step="5"
+                oninput="_byoUpdateRail()"
+                style="width:44px;padding:3px 6px;border-radius:6px;border:1px solid var(--border2);font-size:12px;text-align:center;font-family:inherit">%
+            </span>
+            <span id="byo-rail-deposit">$0</span>
           </div>
+          <div class="summary-row" style="color:var(--text-3)"><span>Balance later</span><span id="byo-rail-balance">$0</span></div>
           <button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">📨 Send pick-your-own proposal</button>
           <button class="btn btn-full" style="margin-top:8px" onclick="_byoPreviewClient()">👁 Preview as client</button>
         </div>
