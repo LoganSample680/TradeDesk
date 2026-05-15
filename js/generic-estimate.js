@@ -629,21 +629,6 @@ function _tmHidePage(){
 // ── Build Your Own single-page layout ────────────────────────────────────────
 let _byoItems=[];
 const _BYO_DEFAULT_SECTIONS=['Interior','Add-ons','Exterior'];
-function _byoDefaults(){
-  return [
-    {id:1,section:'Interior',label:'Living room — walls + ceiling',price:1280,required:true,on:true},
-    {id:2,section:'Interior',label:'Kitchen — walls + trim',price:980,required:true,on:true},
-    {id:3,section:'Interior',label:'Master bedroom — walls only',price:720,required:false,on:true},
-    {id:4,section:'Interior',label:'Bedroom 2 — walls + trim',price:640,required:false,on:false},
-    {id:5,section:'Interior',label:'Hallway + stairwell',price:540,required:false,on:false},
-    {id:6,section:'Interior',label:'All baseboards · whole house',price:380,required:false,on:true},
-    {id:7,section:'Add-ons',label:'Cabinet refinish · 24 doors',price:2400,required:false,on:false},
-    {id:8,section:'Add-ons',label:'Front door · stain + reseal',price:340,required:false,on:false},
-    {id:9,section:'Add-ons',label:'Garage floor epoxy · 400 sf',price:1800,required:false,on:false},
-    {id:10,section:'Exterior',label:'Front porch + trim',price:1100,required:false,on:false},
-    {id:11,section:'Exterior',label:'Deck · stain + seal',price:920,required:false,on:false},
-  ];
-}
 function _byoShowPage(){
   ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.style.display='none';
@@ -653,10 +638,10 @@ function _byoShowPage(){
   const c=getClientById(_geiClientId);
   const sub=document.getElementById('byo-page-sub');
   if(sub){const parts=[];if(c?.name)parts.push(c.name);if(c?.addr)parts.push(c.addr.split(',')[0]);sub.textContent=parts.join(' · ')||'New estimate';}
-  // Load items from saved bid or use defaults
+  // Load items from saved bid, otherwise start blank
   const b=bids.find(x=>x.id===_geiEditBidId);
   if(b?.byoItems&&b.byoItems.length){_byoItems=b.byoItems.map(x=>({...x}));}
-  else if(!_byoItems.length){_byoItems=_byoDefaults();}
+  else{_byoItems=[];}
   _byoRenderSections();
   _byoUpdateRail();
 }
@@ -669,23 +654,19 @@ function _byoRenderSections(){
   const sections=[..._BYO_DEFAULT_SECTIONS,...new Set(_byoItems.map(x=>x.section).filter(s=>!_BYO_DEFAULT_SECTIONS.includes(s)))];
   wrap.innerHTML=sections.map(sec=>{
     const rows=_byoItems.filter(it=>it.section===sec);
-    if(!rows.length)return'';
-    const rowHtml=rows.map((it,i)=>{
+    const rowHtml=rows.length?rows.map(it=>{
       const idx=_byoItems.indexOf(it);
-      const req=it.required;
-      return '<div class="byo-row'+(it.on?' on':'')+(req?' req':'')+'" onclick="'+(req?'':'_byoToggle('+idx+')')+'">'+
+      return '<div class="byo-row'+(it.on?' on':'')+'" onclick="_byoToggle('+idx+')">'+
         '<div class="byo-check'+(it.on?' on':'')+'">'+( it.on?'✓':''  )+'</div>'+
         '<div class="byo-body">'+
           '<div class="byo-label">'+escHtml(it.label)+'</div>'+
-          '<div class="byo-meta">'+
-            (req?'<span class="bdg-soft sf-deposit" style="height:18px;font-size:9px;padding:0 6px">REQUIRED</span>':
-                 '<span class="bdg-soft sf-done" style="height:18px;font-size:9px;padding:0 6px">OPTIONAL</span>')+
-          '</div>'+
+          (it.notes?'<div class="byo-meta" style="font-size:11px;color:var(--text-3)">'+escHtml(it.notes)+'</div>':'')+
         '</div>'+
         '<div class="byo-price">$'+it.price.toLocaleString()+'</div>'+
-        (req?'':' <button class="tm-mat-del" onclick="event.stopPropagation();_byoDelItem('+idx+')" title="Remove">×</button>')+
+        '<button class="tm-mat-del" onclick="event.stopPropagation();_byoDelItem('+idx+')" title="Remove">×</button>'+
       '</div>';
-    }).join('');
+    }).join(''):
+    '<div style="padding:14px 16px;font-size:12px;color:var(--text-3);font-style:italic">No items yet — tap + Add item</div>';
     return '<div class="card card-pad-0" style="margin-bottom:12px">'+
       '<div class="card-hd"><div class="card-hd-title">'+escHtml(sec)+'</div>'+
       '<button class="btn btn-sm" onclick="_byoAddItem(\''+escHtml(sec)+'\')">+ Add item</button></div>'+
@@ -704,7 +685,8 @@ function _byoUpdateRail(){
   const subtotal=selected.reduce((s,it)=>s+it.price,0);
   const discount=subtotal>=6000?Math.round(subtotal*0.05):0;
   const total=subtotal-discount;
-  const deposit=Math.round(total*0.3);
+  const depPct=(parseFloat(document.getElementById('byo-deposit-pct')?.value)||30)/100;
+  const deposit=Math.round(total*depPct);
   const setT=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
   setT('byo-rail-total','$'+total.toLocaleString());
   setT('byo-rail-meta',selected.length+' of '+_byoItems.length+' items selected');
@@ -714,8 +696,7 @@ function _byoUpdateRail(){
   const discRow=document.getElementById('byo-rail-disc-row');
   if(discRow){discRow.style.display=discount>0?'':'none';}
   setT('byo-rail-disc',discount>0?'-$'+discount.toLocaleString():'');
-  // Sync _geiLines with selected items for save
-  _geiLines=selected.map(it=>({desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,_byoSection:it.section,_byoRequired:it.required}));
+  _geiLines=selected.map(it=>({desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,_byoSection:it.section}));
 }
 function _byoAddItem(sec){
   document.getElementById('_byo-add-modal')?.remove();
@@ -723,11 +704,9 @@ function _byoAddItem(sec){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom,0px)';
   ov.innerHTML='<div style="background:var(--bg);border-radius:20px 20px 0 0;width:100%;max-width:480px;padding:20px 16px 28px">'+
     '<div style="font-weight:800;font-size:16px;margin-bottom:16px">Add to '+escHtml(sec)+'</div>'+
-    '<div class="f" style="margin-bottom:10px"><label>Item description</label><input type="text" id="_bya-label" placeholder="e.g. Bedroom 3 — walls only"></div>'+
-    '<div class="f" style="margin-bottom:16px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="number" id="_bya-price" placeholder="0" min="0" step="50"></div></div>'+
-    '<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:16px;cursor:pointer">'+
-      '<input type="checkbox" id="_bya-req" style="width:16px;height:16px;accent-color:var(--blue)">Required (can\'t be toggled off)'+
-    '</label>'+
+    '<div class="f" style="margin-bottom:10px"><label>What is it?</label><input type="text" id="_bya-label" placeholder="e.g. Bedroom 3 — walls only"></div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="number" id="_bya-price" placeholder="0" min="0" step="50"></div></div>'+
+    '<div class="f" style="margin-bottom:16px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><input type="text" id="_bya-notes" placeholder="e.g. Two coats, ceilings included"></div>'+
     '<div style="display:flex;gap:10px">'+
       '<button onclick="document.getElementById(\'_byo-add-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
       '<button onclick="_byaConfirm(\''+escHtml(sec)+'\')" class="btn btn-p" style="flex:2">Add item</button>'+
@@ -739,10 +718,10 @@ function _byoAddItem(sec){
 function _byaConfirm(sec){
   const label=(document.getElementById('_bya-label')?.value||'').trim();
   const price=parseFloat(document.getElementById('_bya-price')?.value)||0;
-  const required=document.getElementById('_bya-req')?.checked||false;
+  const notes=(document.getElementById('_bya-notes')?.value||'').trim();
   if(!label)return;
   const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
-  _byoItems.push({id:nextId,section:sec,label,price,required,on:true});
+  _byoItems.push({id:nextId,section:sec,label,price,notes,on:true});
   document.getElementById('_byo-add-modal')?.remove();
   _byoRenderSections();_byoUpdateRail();
 }
