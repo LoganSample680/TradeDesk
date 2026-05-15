@@ -1,5 +1,4 @@
-const CACHE = 'tradedesk-05.15.26.22';
-const NAV_URL = '/index.html';
+const CACHE = 'tradedesk-05.15.26.23';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
 // tries to serve it for a navigation. new Response() always has redirected:false.
@@ -10,8 +9,6 @@ function safeClone(r) {
 
 self.addEventListener('install', e => {
   self.skipWaiting();
-  // No HTML pre-cache on install — avoids caching stale HTML if deploy hasn't
-  // fully propagated yet. Navigation uses network-first so HTML is always fresh.
 });
 
 self.addEventListener('activate', e => {
@@ -22,7 +19,6 @@ self.addEventListener('activate', e => {
       return Promise.all(old.map(k => caches.delete(k)))
         .then(() => self.clients.claim())
         .then(() => {
-          // Notify open tabs to reload when this is an update (not a fresh install)
           if (!isUpdate) return;
           return self.clients.matchAll({ includeUncontrolled: true }).then(clients =>
             clients.forEach(c => c.postMessage({ type: 'SW_UPDATED' }))
@@ -33,37 +29,28 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // Navigation — network-first so HTML is always fresh; cache is offline fallback only
-  if (e.request.mode === 'navigate') {
-    // Only intercept the main app shell — let client.html, sign.html, etc. reach the network
-    const navPath = new URL(e.request.url).pathname;
-    if (navPath !== '/' && navPath !== '/index.html' && navPath !== '') return;
-    // cache:'no-store' bypasses Chrome's HTTP cache so we always get the real server response
-    e.respondWith(
-      fetch(new Request(e.request.url, {cache: 'no-store'})).then(r => {
-        if (!r.ok) return r;
-        const toCache = safeClone(r);
-        caches.open(CACHE).then(c => c.put(NAV_URL, toCache));
-        return r;
-      }).catch(() => caches.match(NAV_URL))
-    );
-    return;
-  }
-
-  // Only cache GET requests over http/https — skip POST/PATCH/PUT (Supabase, etc.) and extension schemes
   const url = new URL(e.request.url);
+
+  // Never intercept navigation — HTML always fetched natively by the browser.
+  // This prevents stale HTML from ever being served by the SW, which caused
+  // infinite reload loops on Chrome/Windows when the CDN cached old HTML.
+  if (e.request.mode === 'navigate') return;
+
+  // Only cache GET requests over http/https
   if (e.request.method !== 'GET' || (url.protocol !== 'http:' && url.protocol !== 'https:')) return;
 
+  // Never cache version.json — must always reflect the live server value
+  if (url.pathname === '/version.json') return;
+
   // Don't cache client-hub snapshots — they change every time a new proposal is sent.
-  // Everything else on supabase.co (proposal JSON, images) is still cached so sign.html works offline.
   if (url.hostname.endsWith('supabase.co') && url.pathname.includes('/client-hub/')) return;
 
-  // Static assets — cache-first, update in background
+  // Static assets (JS, CSS, images) — cache-first, update in background
   e.respondWith(
     caches.match(e.request).then(cached => {
       const net = fetch(e.request).then(r => {
         if (r.ok) {
-          const toCache = safeClone(r); // clone synchronously before body is consumed
+          const toCache = safeClone(r);
           caches.open(CACHE).then(c => c.put(e.request, toCache));
         }
         return r;
