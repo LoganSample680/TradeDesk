@@ -458,16 +458,19 @@ function renderClientHubPage(){
       ? '<span class="bdg-soft sf-won" style="height:18px;font-size:9px;padding:0 7px">LIVE</span>'
       : '<span class="bdg-soft sf-done" style="height:18px;font-size:9px;padding:0 7px">NO HUB YET</span>';
     const addrLine=c.addr?c.addr.split(',')[0]:'';
-    const meta=[statusBadge,addrLine?'<span>'+escHtml(addrLine)+'</span>':'',c.phone?'<span>'+escHtml(c.phone)+'</span>':''].filter(Boolean).join('<span style="color:var(--line-2)">·</span>');
+    const metaParts=[addrLine?escHtml(addrLine):'',c.phone?escHtml(c.phone):''].filter(Boolean).join(' · ');
     const actions=url
-      ? '<button class="btn btn-sm" onclick="event.stopPropagation();window.open(\''+url+'\',\'_blank\')" title="Open client hub in a new tab">👁 Preview</button>'+
-        '<button class="btn btn-sm" onclick="event.stopPropagation();_clientHubCopy(\''+url+'\',this)" title="Copy link to clipboard">📋 Copy</button>'+
-        (phone?'<button class="btn btn-sm btn-p" onclick="event.stopPropagation();window.location.href=\'sms:'+phone+'?body='+encodeURIComponent(smsBody)+'\'" title="Text the hub link to client">📱 Send</button>':'')
-      : '<button class="btn btn-sm" onclick="event.stopPropagation();_clientHubGenerate('+c.id+')">⚡ Generate hub</button>';
+      ? '<button class="btn btn-sm" onclick="event.stopPropagation();window.open(\''+url+'\',\'_blank\')">👁 Preview</button>'+
+        '<button class="btn btn-sm" onclick="event.stopPropagation();_clientHubCopy(\''+url+'\',this)">📋 Copy</button>'+
+        (phone?'<button class="btn btn-sm btn-p" onclick="event.stopPropagation();window.location.href=\'sms:'+phone+'?body='+encodeURIComponent(smsBody)+'\'">📱 Send</button>':'')
+      : '<button class="btn btn-sm btn-p" onclick="event.stopPropagation();_clientHubGenerate('+c.id+')">⚡ Generate hub</button>';
     return '<div class="hub-dir-row" onclick="openClientDetail('+c.id+',\'clients\')">'+
       '<div class="hub-dir-l">'+
-        '<div class="hub-dir-name">'+escHtml(c.name||'Unnamed client')+'</div>'+
-        '<div class="hub-dir-meta">'+meta+'</div>'+
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
+          '<div class="hub-dir-name">'+escHtml(c.name||'Unnamed client')+'</div>'+
+          statusBadge+
+        '</div>'+
+        (metaParts?'<div class="hub-dir-meta">'+metaParts+'</div>':'')+
       '</div>'+
       '<div class="hub-dir-r">'+actions+'</div>'+
     '</div>';
