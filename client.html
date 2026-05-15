@@ -522,7 +522,7 @@ const _supa=supabase.createClient(SUPA_URL,SUPA_KEY);
 setTimeout(()=>{const b=document.getElementById('boot-bar');if(b)b.style.width='35%';},60);
 let _hub=null,_activeView='overview';
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const fmtDate=s=>{if(!s)return'';try{return new Date(s+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return s;}};
+const fmtDate=s=>{if(!s)return'';try{const d=s.includes('T')?new Date(s):new Date(s+'T12:00:00');if(isNaN(d.getTime()))return'';return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}};
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 async function init(){
   const p=new URLSearchParams(location.search);
@@ -816,11 +816,10 @@ function renderOverview(){
   const activeJobs=h.jobs.filter(j=>j.status!=='done');
   const payableBids=wonBids.filter(b=>(b.balance||0)>0.01);
   // PR9: Real progress % from job data
-  let pct;
+  let pct=null;
   const job0=activeJobs[0]||h.jobs[0];
   if(job0&&job0.progress!=null&&job0.progress!==undefined) pct=Math.round(Math.min(100,Math.max(0,job0.progress)));
   else if(job0&&job0.days_complete!=null&&job0.days_total) pct=Math.round(Math.min(100,job0.days_complete/job0.days_total*100));
-  else{const total=h.bids.length||1;const signed=wonBids.length;pct=Math.round(Math.min(100,Math.max(5,(signed/total)*100)));}
   const firstName=(h.clientName||'').split(' ')[0]||h.clientName||'';
   // PR4: Approvals data (seed if undefined)
   const approvals=_hub.approvals||[
@@ -840,8 +839,10 @@ function renderOverview(){
   html+='<div class="hub-hero-sub">'+esc(h.contractorName||'')+'</div>';
   if(h.contractorPhone)html+='<a class="hub-hero-phone" href="tel:'+h.contractorPhone.replace(/\D/g,'')+'">'+esc(h.contractorPhone)+'</a>';
   else html+='<div style="margin-bottom:14px"></div>';
-  html+='<div class="hub-progress-row"><span>Project progress</span><span>'+pct+'%</span></div>';
-  html+='<div class="hub-progress-track"><div class="hub-progress-fill" style="width:'+pct+'%"></div></div>';
+  if(pct!==null){
+    html+='<div class="hub-progress-row"><span>Project progress</span><span>'+pct+'%</span></div>';
+    html+='<div class="hub-progress-track"><div class="hub-progress-fill" style="width:'+pct+'%"></div></div>';
+  }
   html+='</div>';
   // Mini stats
   html+='<div class="hub-hero-r">';
@@ -1279,11 +1280,13 @@ async function payDeposit(bidId){
 function _payBtn(bid,h){
   if(!h.stripeEnabled||(bid.balance||0)<0.01)return '';
   const depositPaid=(bid.paid||0)>=(bid.deposit||0)-0.01;
+  if(!depositPaid&&(bid.deposit||0)>0.01&&(bid.balance||0)>(bid.deposit||0)+0.01){
+    // Full payment preferred — it's primary, deposit is secondary option
+    return '<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:6px">💳 Pay '+fmt(bid.balance)+' in full</button>'+
+      '<button onclick="payDeposit('+bid.id+')" class="btn" style="background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.28);color:rgba(255,255,255,.85);font-size:13px">Or pay deposit only — '+fmt(bid.deposit)+'</button>';
+  }
   if(!depositPaid&&(bid.deposit||0)>0.01){
-    const fullBtn=(bid.balance||0)>(bid.deposit||0)+0.01
-      ?'<button onclick="payBalance('+bid.id+')" class="btn btn-sec" style="margin-top:6px;font-size:13px">💳 Pay '+fmt(bid.balance)+' in full instead</button>'
-      :'';
-    return '<button id="pay-btn-'+bid.id+'" onclick="payDeposit('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:2px">💳 Pay '+fmt(bid.deposit)+' deposit</button>'+fullBtn;
+    return '<button id="pay-btn-'+bid.id+'" onclick="payDeposit('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:8px">💳 Pay '+fmt(bid.deposit)+' deposit</button>';
   }
   return '<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:8px">💳 Pay '+fmt(bid.balance)+' balance</button>';
 }
