@@ -632,11 +632,11 @@ function renderJobsPage(){
 function _renderJobsKanban(el,tk,wonBidsList){
   const pendingSent=bids.filter(b=>b.status==='Pending'&&b.signingToken);
   const cols=[
-    {id:'estimate', label:'Estimate sent',       bdgCls:'sf-new',     items:pendingSent},
-    {id:'signed',   label:'Signed · schedule',    bdgCls:'sf-deposit', items:wonBidsList.filter(b=>getBidStage(b).stage==='signed')},
-    {id:'active',   label:'Active',               bdgCls:'sf-active',  items:wonBidsList.filter(b=>getBidStage(b).stage==='active'||getBidStage(b).stage==='scheduled')},
-    {id:'collect',  label:'Collect',              bdgCls:'sf-overdue', items:wonBidsList.filter(b=>getBidStage(b).stage==='balance_due')},
-    {id:'complete', label:'Complete · paid',      bdgCls:'sf-won',     items:wonBidsList.filter(b=>getBidStage(b).stage==='paid').slice(0,8)},
+    {id:'estimate', label:'Estimate sent',            items:pendingSent},
+    {id:'signed',   label:'Signed · ready to sched',  items:wonBidsList.filter(b=>getBidStage(b).stage==='signed')},
+    {id:'active',   label:'Active',                    items:wonBidsList.filter(b=>getBidStage(b).stage==='active'||getBidStage(b).stage==='scheduled')},
+    {id:'collect',  label:'Collect',                   items:wonBidsList.filter(b=>getBidStage(b).stage==='balance_due')},
+    {id:'complete', label:'Complete · paid',            items:wonBidsList.filter(b=>getBidStage(b).stage==='paid').slice(0,8)},
   ];
   el.innerHTML='<div class="kanban">'+cols.map(col=>{
     return '<div class="kcol" data-status="'+col.id+'">'+
@@ -652,11 +652,31 @@ function _renderJobsKanban(el,tk,wonBidsList){
           const addrShort=(b.addr||c.addr||'').split(',')[0];
           const balance=b.status==='Closed Won'?getBidBalance(b):0;
           const amt=col.id==='collect'?fmt(balance):fmt(b.amount);
+          // Chip: semantic label + color per stage
+          let chipLabel,chipStyle;
+          if(col.id==='estimate'){
+            chipLabel=dateStr?dateStr+' sent':'Sent';
+            chipStyle='background:#FBE2BB;color:#9F5B00;border:1px solid #E8C07A';
+          }else if(col.id==='signed'){
+            chipLabel=dateStr?dateStr:'Ready';
+            chipStyle='background:#DCE8FA;color:#1B3F7A;border:1px solid #9DBDE8';
+          }else if(col.id==='active'){
+            const pct=b.completion_pct!=null?Math.round(b.completion_pct):null;
+            chipLabel=pct!=null?pct+'% complete':(dateStr||'Active');
+            chipStyle='background:#D4ECDC;color:#1D5C14;border:1px solid #8BC4A2';
+          }else if(col.id==='collect'){
+            chipLabel=fmt(balance)+' owed';
+            chipStyle='background:#FAD6CF;color:#B22A20;border:1px solid #E8A49E';
+          }else{
+            const paidDate=b.completion_date?parseD(b.completion_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+            chipLabel=paidDate?paidDate+' paid':'Paid';
+            chipStyle='background:#D4ECDC;color:#1D5C14;border:1px solid #8BC4A2';
+          }
           return '<div class="k-card" onclick="openJobSheet('+c.id+')" style="margin-bottom:8px">'+
             '<div class="k-name">'+escHtml(c.name)+'</div>'+
             '<div class="k-sub">'+escHtml(addrShort)+'</div>'+
             '<div class="k-foot">'+
-              '<span class="bdg-soft '+col.bdgCls+'" style="font-size:10px">'+escHtml(dateStr||col.id.toUpperCase())+'</span>'+
+              '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;'+chipStyle+'">'+chipLabel+'</span>'+
               '<span class="k-amt">'+amt+'</span>'+
             '</div>'+
           '</div>';

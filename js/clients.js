@@ -168,15 +168,31 @@ let _stylePickState=null;
 function _showEstimateStylePicker(c,overrideAddr){
   _stylePickState={c,overrideAddr};
   const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_style-pick-ov';
-  const box=document.createElement('div');box.className='zmodal';
-  const btn=(id,icon,title,sub,extra)=>`<button onclick="_pickEstStyle('${id}')" style="width:100%;padding:14px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:10px;display:flex;align-items:flex-start;gap:12px${extra||''}"><span style="font-size:24px;flex-shrink:0;margin-top:1px">${icon}</span><div><div style="font-size:14px;font-weight:800;color:var(--text);margin-bottom:2px">${title}</div><div style="font-size:11px;color:var(--text3);line-height:1.45">${sub}</div></div></button>`;
+  ov.style.cssText='align-items:flex-end;padding:0';
+  const box=document.createElement('div');
+  box.style.cssText='width:100%;max-width:480px;background:var(--bg2);border-radius:20px 20px 0 0;padding:28px 20px 36px;box-sizing:border-box;max-height:92vh;overflow-y:auto';
+  const li=(icon,text)=>`<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text2);margin-bottom:5px"><span style="color:var(--denim);font-size:14px">${icon}</span>${text}</div>`;
+  const bigCard=(id,accent,bg,border,icon,title,bullets,startLabel)=>
+    `<button onclick="_pickEstStyle('${id}')" style="width:100%;padding:18px 16px 16px;border-radius:14px;border:2px solid ${border};background:${bg};cursor:pointer;font-family:inherit;text-align:left;margin-bottom:12px;display:block">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:22px">${icon}</span>
+          <span style="font-size:16px;font-weight:900;color:var(--ink);font-family:var(--font-display);letter-spacing:-.3px">${title}</span>
+        </div>
+        <span style="font-size:13px;font-weight:700;color:${accent}">Start →</span>
+      </div>
+      ${bullets.map(b=>li('✓',b)).join('')}
+    </button>`;
   box.innerHTML=
-    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">How do you want to bid this job?</div>'+
-    '<div style="font-size:13px;color:var(--text3);margin-bottom:16px">Choose your estimate style</div>'+
-    btn('scope','🎯','Scope &amp; Price','Surfaces, products, and labor — spec it out by service. Best when you know exactly what the job needs.')+
-    btn('tm','⏱️','Time &amp; Materials','Crew size, hourly rate, estimated hours. Set a not-to-exceed cap and mobilization deposit.',';border-color:#0284c7;background:#f0f9ff')+
-    btn('freeform','✏️','Build Your Own','Blank page — add any line with a description, quantity, and price. Works for any job, any trade.',';border-color:#059669;background:#f0fdf4')+
-    '<button onclick="document.getElementById(\'_style-pick-ov\')?.remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
+    '<div style="font-size:10px;font-weight:800;letter-spacing:.12em;color:var(--text3);margin-bottom:10px;text-transform:uppercase">Pick estimate type</div>'+
+    '<div style="font-family:var(--font-display);font-size:26px;font-weight:900;color:var(--ink);letter-spacing:-.6px;margin-bottom:18px">How are you billing this job?</div>'+
+    bigCard('scope','var(--denim)','#F0F5FF','#2D5DA8','🎯','Scope &amp; Price',
+      ['Surfaces, products &amp; labor','Line-item breakdown clients can read','Locked price — no surprises'],'Start')+
+    bigCard('tm','#0369a1','#F0F9FF','#0284c7','⏱️','Time &amp; Materials',
+      ['Crew size × hourly rate × hours','Not-to-exceed cap protects the client','Mobilization deposit up front'],'Start')+
+    bigCard('freeform','#059669','#F0FDF4','#059669','✏️','Build Your Own',
+      ['Blank page — any lines, any trade','Quantity × price per item','Works for any scope'],'Start')+
+    '<button onclick="document.getElementById(\'_style-pick-ov\')?.remove()" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
@@ -831,24 +847,56 @@ function setCDTab(tab,btn){
 }
 function renderClientDetail(){
   const c=getClientById(currentClientId);if(!c)return;
+  // Compute financials up front so hero tiles can use them
+  const _cbids=getClientBids(currentClientId);
+  const _wonBids=_cbids.filter(b=>b.status==='Closed Won');
+  const _totalOwed=_wonBids.reduce((sum,b)=>sum+getBidBalance(b),0);
+  const _totalPaidAll=_wonBids.reduce((sum,b)=>sum+getBidPaid(b.id),0);
+  const _ltv=_wonBids.reduce((sum,b)=>sum+(b.amount||0),0);
+  const _tier=getClientTier(c);
+  const _tierColor=_tier==='A'?'#4ade80':_tier==='B'?'#93c5fd':'rgba(255,255,255,.55)';
+  const _lastContactStr=(()=>{
+    const d=c.last_contact_date;if(!d)return '—';
+    const days=Math.floor((Date.now()-new Date(d+'T12:00').getTime())/86400000);
+    if(days<1)return 'Today';if(days===1)return '1d ago';if(days<30)return days+'d ago';
+    if(days<365)return Math.round(days/30)+'mo ago';return Math.round(days/365)+'y ago';
+  })();
+  const _eyebrow='TIER '+_tier+(c.source?' · '+escHtml(c.source.toUpperCase()):'')+(_ltv>0?' · LTV '+fmt(_ltv):'');
+  const _btnStyle='background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.22);color:#fff;border-radius:10px;padding:8px 12px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:52px;cursor:pointer;white-space:nowrap;font-family:inherit';
   document.getElementById('cd-hdr').innerHTML=
-    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'+
-      '<div style="display:flex;align-items:center;gap:12px;min-width:0;flex:1">'+
-        '<div style="width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0">'+initials(c.name)+'</div>'+
-        '<div style="min-width:0">'+
-          '<div class="detail-name" style="font-size:18px">'+c.name+' '+riskBadge(c.id)+'</div>'+
-          '<div class="detail-addr" style="font-size:11px">'+(c.addr||'No address')+(c.ptype?' · '+c.ptype:'')+(c.yearBuilt?' · Built '+c.yearBuilt:'')+'</div>'+
-          (getActiveTrade()==='painting'&&!c.yearBuilt?'<div onclick="openEditClient()" style="font-size:11px;color:var(--amber);font-weight:700;margin-top:2px;cursor:pointer">⚠️ Add year built →</div>':'')+
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">'+
+      '<div style="font-size:10px;font-weight:800;letter-spacing:.1em;color:'+_tierColor+';text-transform:uppercase">'+_eyebrow+'</div>'+
+      '<button class="btn btn-sm" onclick="openEditClient()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.2);color:#fff;flex-shrink:0">Edit</button>'+
+    '</div>'+
+    '<div style="font-family:var(--font-display);font-size:34px;font-weight:900;color:#fff;letter-spacing:-.8px;line-height:1.05;margin-bottom:5px">'+
+      escHtml(c.name)+' '+riskBadge(c.id)+
+    '</div>'+
+    '<div style="font-size:12px;color:rgba(255,255,255,.5);margin-bottom:16px">'+
+      escHtml(c.addr||'No address')+(c.ptype?' · '+escHtml(c.ptype):'')+(c.yearBuilt?' · Built '+c.yearBuilt:'')+
+      (getActiveTrade()==='painting'&&!c.yearBuilt?'<span onclick="openEditClient()" style="color:#fbbf24;font-weight:700;cursor:pointer;margin-left:6px">⚠️ Add year built</span>':'')+
+    '</div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px;margin-bottom:16px">'+
+      (c.phone?'<button onclick="callClient()" style="'+_btnStyle+'"><span style="font-size:17px">📞</span><span>Call</span></button>':'')+
+      (c.phone?'<button onclick="textClient();event.stopPropagation()" style="'+_btnStyle+'"><span style="font-size:17px">💬</span><span>SMS</span></button>':'')+
+      (c.email?'<button onclick="emailClient()" style="'+_btnStyle+'"><span style="font-size:17px">✉️</span><span>Email</span></button>':'')+
+      (!gps.active?'<button onclick="startDriveToClient()" style="'+_btnStyle+'"><span style="font-size:17px">🚗</span><span>Drive</span></button>':'')+
+      '<button onclick="showHubMenu('+c.id+')" style="'+_btnStyle+'"><span style="font-size:17px">🔗</span><span>Hub</span></button>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'+
+      '<div style="background:rgba(255,255,255,.09);border-radius:8px;padding:10px 10px 8px">'+
+        '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.4);margin-bottom:5px">Lifetime value</div>'+
+        '<div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:-.2px">'+(_ltv>0?fmt(_ltv):'—')+'</div>'+
+      '</div>'+
+      '<div style="background:rgba(255,255,255,.09);border-radius:8px;padding:10px 10px 8px">'+
+        '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.4);margin-bottom:5px">Open balance</div>'+
+        '<div style="font-size:15px;font-weight:800;letter-spacing:-.2px;color:'+(_totalOwed>0.01?'#f87171':'rgba(255,255,255,.5)')+'">'+
+          (_totalOwed>0.01?fmt(_totalOwed):'$0')+
         '</div>'+
       '</div>'+
-      '<button class="btn btn-sm" onclick="openEditClient()" style="background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.25);color:#fff;flex-shrink:0;margin-left:8px">Edit</button>'+
-    '</div>'+
-    '<div style="display:flex;gap:8px;flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px">'+
-      (c.phone?'<button onclick="callClient()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#128222;</span><span>Call</span></button>':'')+
-      (c.phone?'<button onclick="textClient();event.stopPropagation()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#128172;</span><span>Text</span></button>':'')+
-      (c.email?'<button onclick="emailClient()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#9993;&#65039;</span><span>Email</span></button>':'')+
-      (!gps.active?'<button onclick="startDriveToClient()" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#128663;</span><span>Drive</span></button>':'')+
-      '<button onclick="showHubMenu('+c.id+')" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;min-width:48px;cursor:pointer"><span style="font-size:18px">&#128279;</span><span>Hub</span></button>'+
+      '<div style="background:rgba(255,255,255,.09);border-radius:8px;padding:10px 10px 8px">'+
+        '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.4);margin-bottom:5px">Last contact</div>'+
+        '<div style="font-size:15px;font-weight:800;color:rgba(255,255,255,.72);letter-spacing:-.2px">'+_lastContactStr+'</div>'+
+      '</div>'+
     '</div>'+
     '';
   if(gps.active&&gps.clientId===currentClientId){
@@ -869,10 +917,10 @@ function renderClientDetail(){
   } else {
     resetDriveUI();
   }
-  const cbids=getClientBids(currentClientId),cjobs=getClientJobs(currentClientId);
-  const wonBids=cbids.filter(b=>b.status==='Closed Won');
-  const totalOwed=wonBids.reduce((sum,b)=>sum+getBidBalance(b),0);
-  const totalPaidAll=wonBids.reduce((sum,b)=>sum+getBidPaid(b.id),0);
+  const cbids=_cbids,cjobs=getClientJobs(currentClientId);
+  const wonBids=_wonBids;
+  const totalOwed=_totalOwed;
+  const totalPaidAll=_totalPaidAll;
   const balanceHTML=totalOwed>0.01?
     `<div style="background:#FFF0F0;border:2px solid #A32D2D;border-radius:var(--rl);padding:12px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
       <div>
