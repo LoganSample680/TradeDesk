@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-05.15.26.18';
+const CACHE = 'tradedesk-05.15.26.19';
 const NAV_URL = '/index.html';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
@@ -10,14 +10,8 @@ function safeClone(r) {
 
 self.addEventListener('install', e => {
   self.skipWaiting();
-  // Pre-cache the HTML shell so first open after install is instant.
-  // Must use safeClone — server may redirect (HTTPS, trailing slash, etc.)
-  e.waitUntil(
-    fetch(NAV_URL).then(r => {
-      if (!r.ok) return;
-      return caches.open(CACHE).then(c => c.put(NAV_URL, safeClone(r)));
-    }).catch(() => {})
-  );
+  // No HTML pre-cache on install — avoids caching stale HTML if deploy hasn't
+  // fully propagated yet. Navigation uses network-first so HTML is always fresh.
 });
 
 self.addEventListener('activate', e => {
@@ -39,39 +33,18 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // Navigation — cache-first for instant paint, update in background
+  // Navigation — network-first so HTML is always fresh; cache is offline fallback only
   if (e.request.mode === 'navigate') {
     // Only intercept the main app shell — let client.html, sign.html, etc. reach the network
     const navPath = new URL(e.request.url).pathname;
     if (navPath !== '/' && navPath !== '/index.html' && navPath !== '') return;
     e.respondWith(
-      caches.match(NAV_URL).then(cached => {
-        const networkFetch = fetch(e.request).then(r => {
-          if (!r.ok) return r;
-          // Cache without redirect flag — clone synchronously before body is consumed
-          const toCache = safeClone(r);
-          caches.open(CACHE).then(c => c.put(NAV_URL, toCache));
-          // Compare APP_VERSION — notify open tabs if version changed
-          if (cached) {
-            Promise.all([r.clone().text(), cached.clone().text()]).then(([freshHtml, cachedHtml]) => {
-              const freshV  = (freshHtml.match(/APP_VERSION='([^']+)'/)  || [])[1];
-              const cachedV = (cachedHtml.match(/APP_VERSION='([^']+)'/) || [])[1];
-              if (freshV && cachedV && freshV !== cachedV) {
-                self.clients.matchAll({ includeUncontrolled: true }).then(clients =>
-                  clients.forEach(c => c.postMessage({ type: 'SW_UPDATED' }))
-                );
-              }
-            }).catch(() => {});
-          }
-          return r;
-        }).catch(() => null);
-
-        if (cached) {
-          networkFetch.catch(() => {});
-          return cached;
-        }
-        return networkFetch || fetch(e.request);
-      })
+      fetch(e.request).then(r => {
+        if (!r.ok) return r;
+        const toCache = safeClone(r);
+        caches.open(CACHE).then(c => c.put(NAV_URL, toCache));
+        return r;
+      }).catch(() => caches.match(NAV_URL))
     );
     return;
   }
