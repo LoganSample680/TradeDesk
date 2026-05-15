@@ -3066,17 +3066,17 @@ if('serviceWorker' in navigator){
       navigator.serviceWorker.getRegistration().then(reg=>{if(reg)reg.update();}).catch(()=>{});
     }
   });
-  // Poll every 15s. If version mismatches, attempt reload up to 2 times.
-  // After 2 failed attempts (CDN serving stale HTML) stop looping and show toast.
-  let _reloadAttempts=0;
+  // Poll every 15s. Track reload attempts in sessionStorage so the counter
+  // survives page reloads — prevents infinite loop when CDN serves stale HTML.
   setInterval(()=>{
     navigator.serviceWorker.getRegistration().then(reg=>{if(reg)reg.update();}).catch(()=>{});
     fetch('/version.json?_='+Date.now())
       .then(r=>r.json())
       .then(d=>{
-        if(!d.version||d.version===APP_VERSION){_reloadAttempts=0;return;}
-        if(_reloadAttempts>=2){showToast('Update available — press Ctrl+Shift+R to refresh','🔄');return;}
-        _reloadAttempts++;
+        if(!d.version||d.version===APP_VERSION){sessionStorage.removeItem('_rv');return;}
+        const attempts=parseInt(sessionStorage.getItem('_rv')||'0');
+        if(attempts>=2){showToast('New version available — press Ctrl+Shift+R to update','🔄');return;}
+        sessionStorage.setItem('_rv',String(attempts+1));
         _autoSaveAndReload();
       })
       .catch(()=>{});
