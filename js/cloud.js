@@ -233,7 +233,7 @@ async function _devLoadUserAccount(key){
     snaps.unshift({ts:new Date().toISOString(),data:zd});
     localStorage.setItem(snapKey,JSON.stringify(snaps.slice(0,5)));
   }catch(e){}
-  _devSavedState={clients:[...clients],bids:[...bids],jobs:[...jobs],payments:[...payments],liens:[...liens],income:[...income],expenses:[...expenses],mileage:[...mileage],timeEntries:[...timeEntries]};
+  _devSavedState={clients:[...clients],bids:[...bids],jobs:[...jobs],payments:[...payments],liens:[...liens],income:[...income],expenses:[...expenses],mileage:[...mileage],timeEntries:[...timeEntries],S:JSON.parse(JSON.stringify(S))};
   const p=(s,fb)=>{try{return s?JSON.parse(s):fb}catch{return fb}};
   clients=p(zd.clients,[]);bids=p(zd.bids,[]);jobs=p(zd.jobs,[]);
   payments=p(zd.payments,[]);liens=p(zd.liens,[]);
@@ -251,6 +251,8 @@ function _devExitSupportMode(){
   clearTimeout(_syncTimer);_syncTimer=null; // cancel any pending save that might still have support user's data in memory
   window.removeEventListener('beforeunload',window._devUnloadGuard);
   ({clients,bids,jobs,payments,liens,income,expenses,mileage,timeEntries}=_devSavedState);
+  // Restore dev's own settings — wipes any settings that leaked in from the support user's account
+  if(_devSavedState.S){const dS=_devSavedState.S;Object.keys(S).forEach(k=>{if(!(k in dS))delete S[k];});Object.assign(S,dS);}
   _devSupportMode=false;_devSupportName='';_devSavedState=null;
   saveAll(); // flush dev's own data back to localStorage (support view may have written Zach's data there)
   _renderDevTradeCard();renderDash();
@@ -300,7 +302,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.15.26.43';
+const APP_VERSION='05.15.26.44';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){

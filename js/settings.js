@@ -654,6 +654,34 @@ function _checkOdometerPrompt(){
 
 function _vehKey(v){return(typeof v==='string'?v:(v.name||'vehicle')).toLowerCase().replace(/\s+/g,'_');}
 
+// Public entry point called from "Update readings" button and the mileage action card
+function checkOdometerEntries(manual){
+  if(_isEmployee||_devSupportMode)return;
+  if(!manual){_checkOdometerPrompt();return;}
+  // Manual: build tasks for current year (start + end) regardless of whether they exist, so user can correct values
+  const vehs=getVehicles();
+  if(!vehs.length)return;
+  const cy=new Date().getFullYear();
+  const mo=new Date().getMonth();
+  const log=S.vehicleOdoLog||{};
+  const tasks=[];
+  vehs.forEach(v=>{
+    const key=_vehKey(v);
+    const rec=log[cy]?.[key]||{};
+    tasks.push({year:cy,type:'start',veh:v,midYear:mo>3,manual:true});
+    // Show year-end slot if past June or if a reading already exists to correct
+    if(mo>=6||rec.end){tasks.push({year:cy,type:'end',veh:v,manual:true});}
+  });
+  // Jan–Mar: also allow correcting prior year's end
+  if(mo<=2){
+    const ly=cy-1;
+    vehs.forEach(v=>{tasks.push({year:ly,type:'end',veh:v,manual:true});});
+  }
+  if(!tasks.length)return;
+  _showOdometerModal(tasks,false);
+}
+window.checkOdometerEntries=checkOdometerEntries;
+
 // ── Stripe Connect ─────────────────────────────────────────────────────────
 
 function toggleAccSection(id){

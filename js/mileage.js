@@ -27,10 +27,11 @@ function _showOdometerModal(tasks,hardBlock){
         <strong>IRS Pub. 463 requires annual odometer records.</strong> ${t.midYear?'You joined mid-year — enter the odometer reading from when you first started using this vehicle for business, or your best Jan 1 estimate. An estimate is far better than no record.':'Recording Jan 1 &amp; Dec 31 readings proves your business-use % and makes your mileage deduction bulletproof — even in a field audit.'}
         ${loggedMi>0?`<div style="margin-top:6px">📍 You logged <strong>${loggedMi.toFixed(1)} mi</strong> in ${t.year} for this vehicle in TradeDesk.</div>`:''}
         ${otherReading?`<div style="margin-top:4px">${isStart?'Dec 31':'Jan 1'} reading on file: <strong>${otherReading.toLocaleString()} mi</strong></div>`:''}
+        ${(()=>{const prevEnd=(S.vehicleOdoLog||{})[t.year-1]?.[_vehKey(t.veh)]?.end||0;return(isStart&&prevEnd&&!existing.start)?`<div style="margin-top:4px">✅ Carried forward from Dec 31, ${t.year-1}: <strong>${prevEnd.toLocaleString()} mi</strong></div>`:'';})()}
       </div>
       <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:6px">${isStart?(t.midYear?t.year+' opening odometer (best estimate)':'Jan 1, '+t.year+' odometer reading'):'Dec 31, '+t.year+' odometer reading'}</div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <input id="_odo-val" type="number" min="0" inputmode="numeric" placeholder="e.g. 48,250" style="flex:1;padding:12px 14px;border-radius:var(--r);border:2px solid var(--blue);font-size:20px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--text);outline:none;box-sizing:border-box">
+        <input id="_odo-val" type="number" min="0" inputmode="numeric" placeholder="e.g. 48,250" value="${(()=>{const pv=isStart?(existing.start||((S.vehicleOdoLog||{})[t.year-1]?.[_vehKey(t.veh)]?.end||0)):existing.end||0;return pv||'';})()}" style="flex:1;padding:12px 14px;border-radius:var(--r);border:2px solid var(--blue);font-size:20px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--text);outline:none;box-sizing:border-box">
         <span style="font-size:13px;color:var(--text3);font-weight:600">miles</span>
       </div>
       <div id="_odo-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:10px"></div>
@@ -71,9 +72,15 @@ function _showOdometerModal(tasks,hardBlock){
         existing.bizUsePct=bizPct;existing.loggedMi=Math.round(logged);existing.totalMi=totalDriven;
         if(logged>totalDriven){existing.mileageFlag=true;}
       }
+      // Auto-seed next year's Jan 1 start from this Dec 31 reading — user never has to enter year-start again
+      const ny=t.year+1;
+      if(!S.vehicleOdoLog[ny])S.vehicleOdoLog[ny]={};
+      if(!S.vehicleOdoLog[ny][key])S.vehicleOdoLog[ny][key]={};
+      S.vehicleOdoLog[ny][key].start=raw;
+      S.vehicleOdoLog[ny][key].startDate=todayKey();
     }
     S._odoSnoozeCount=0;
-    saveAll();
+    saveAll();_flushSaveNow();
     taskIdx++;
     renderTask();
   }
