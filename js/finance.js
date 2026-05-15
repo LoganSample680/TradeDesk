@@ -935,9 +935,12 @@ function renderMonthlyPL(){
     if(!months[key])months[key]={inc:0,exp:0,miles:0};
     months[key][type]+=amount;
   };
-  income.forEach(r=>{if(r.date)addMonth(r.date.slice(0,7),'inc',r.amount);});
-  expenses.forEach(r=>{if(r.date)addMonth(r.date.slice(0,7),'exp',r.amount);});
-  mileage.forEach(r=>{if(r.date)addMonth(r.date.slice(0,7),'miles',r.miles||0);});
+  // Normalize date to YYYY-MM regardless of whether stored as YYYYMMDD or YYYY-MM-DD
+  const mKey=d=>{if(!d)return'';const c=d.replace(/-/g,'');return c.slice(0,4)+'-'+c.slice(4,6);};
+  income.forEach(r=>{if(r.date)addMonth(mKey(r.date),'inc',r.amount);});
+  payments.filter(p=>p.amount>0&&p.date).forEach(p=>{addMonth(mKey(p.date),'inc',p.amount);});
+  expenses.forEach(r=>{if(r.date)addMonth(mKey(r.date),'exp',r.amount);});
+  mileage.forEach(r=>{if(r.date)addMonth(mKey(r.date),'miles',r.miles||0);});
 
   const keys=Object.keys(months).sort().reverse();
   if(!keys.length){el.innerHTML='<div class="empty">No data yet — log income and expenses to see monthly P&L.</div>';return;}
@@ -1743,13 +1746,15 @@ function saveManualIncome(){
 function renderIncome(){
   const el=document.getElementById('inc-table');
   const yr=String(trackerYear||new Date().getFullYear());
-  const filtered=[...income].filter(r=>r.date&&r.date.startsWith(yr)).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const fmtDateDisp=d=>{if(!d)return'—';const c=d.replace(/-/g,'');return c.slice(0,4)+'-'+c.slice(4,6)+'-'+c.slice(6,8);};
+  const incRows=income.filter(r=>r.date&&r.date.replace(/-/g,'').startsWith(yr)).map(r=>({date:r.date,sortDate:r.date.replace(/-/g,''),client_id:r.client_id,client_name:r.client_name,type:r.type||'Income',amount:r.amount,method:r.pay||'—',_src:'income'}));
+  const payRows=payments.filter(p=>p.date&&p.amount>0&&p.date.replace(/-/g,'').startsWith(yr)).map(p=>({date:p.date,sortDate:p.date.replace(/-/g,''),client_id:p.client_id,client_name:p.client_name,type:p.type==='deposit'?'Deposit':p.type==='final'?'Final payment':'Payment',amount:p.amount,method:p.method||'—',_src:'payment'}));
+  const filtered=[...incRows,...payRows].sort((a,b)=>b.sortDate.localeCompare(a.sortDate));
   const total=filtered.reduce((s,r)=>s+r.amount,0);
-  if(!income.length){el.innerHTML='<div class="empty">No income logged yet.<br><br>Income is recorded automatically when you log a payment on a client bid.</div>';return;}
   if(!filtered.length){el.innerHTML='<div class="empty">No income in '+yr+'.</div>';return;}
   el.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0 10px;border-bottom:2px solid var(--border);margin-bottom:4px">'+
-      '<span style="font-size:12px;font-weight:700;color:var(--text3)">'+filtered.length+' payment'+(filtered.length!==1?'s':'')+' in '+yr+'</span>'+
+      '<span style="font-size:12px;font-weight:700;color:var(--text3)">'+filtered.length+' record'+(filtered.length!==1?'s':'')+' in '+yr+'</span>'+
       '<span style="font-size:15px;font-weight:800;color:var(--green-mid)">'+fmt(total)+'</span>'+
     '</div>'+
     '<div style="overflow-x:auto"><table class="tbl"><thead><tr>'+
@@ -1757,11 +1762,11 @@ function renderIncome(){
     filtered.map(r=>{
       const c=clients.find(x=>x.id===r.client_id);
       return '<tr style="cursor:'+(c?'pointer':'default')+'"'+(c?' onclick="openClientDetail('+c.id+')"':'')+'>'+
-        '<td class="mute">'+r.date+'</td>'+
+        '<td class="mute">'+fmtDateDisp(r.date)+'</td>'+
         '<td class="bold" style="color:'+(c?'var(--blue)':'inherit')+'">'+(r.client_name||'—')+'</td>'+
-        '<td class="mute">'+(r.type||'—')+'</td>'+
+        '<td class="mute">'+r.type+'</td>'+
         '<td class="green">'+fmtD(r.amount)+'</td>'+
-        '<td class="mute">'+(r.pay||'—')+'</td>'+
+        '<td class="mute">'+r.method+'</td>'+
       '</tr>';
     }).join('')+'</tbody></table></div>';
 }

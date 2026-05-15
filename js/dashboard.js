@@ -657,23 +657,28 @@ function renderTodayFeed(){
       '</div>'});
   });
 
-  // TIER 2 — Won bid, no job scheduled yet (lock it in)
+  // TIER 2 — Won bid: not yet completed — show if no job yet, OR job exists but deposit not collected
   bids.filter(b=>b.status==='Closed Won'&&!b.completion_date).forEach(b=>{
-    if(jobs.some(j=>(j.bid_id===b.id||(j.client_id===b.client_id&&!j.bid_id))&&j.eventType!=='estimate'))return;
+    const depositPaid=getBidPaid(b.id)>0;
+    const hasJob=jobs.some(j=>(j.bid_id===b.id||(j.client_id===b.client_id&&!j.bid_id))&&j.eventType!=='estimate');
+    if(hasJob&&depositPaid)return; // job scheduled + deposit collected → wait for completion
     const c=getClientById(b.client_id);
     const cDisp=c?c.name:b.client_name||b.name||'Client';
-    const depositPaid=getBidPaid(b.id)>0;
     const daysAgo=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
-    items.push({priority:3,tags:'money',html:
+    const subText=hasJob
+      ?'Job in progress · deposit not collected · '+fmt(b.amount)
+      :'Approved '+fmt(b.amount)+' · '+(!depositPaid?'no deposit · ':'deposit paid · ')+'not scheduled';
+    const subColor=hasJob?'#A32D2D':'var(--blue)';
+    items.push({priority:hasJob?2:3,tags:'money',html:
       '<div class="tf-card">'+
-        '<div class="tf-icon">🗓️</div>'+
+        '<div class="tf-icon">'+(hasJob?'💰':'🗓️')+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(cDisp)+'</div>'+
-          '<div class="tf-sub" style="color:var(--blue)">Approved '+fmt(b.amount)+' · '+(!depositPaid?'no deposit · ':'deposit paid · ')+'not scheduled</div>'+
+          '<div class="tf-sub" style="color:'+subColor+'">'+subText+'</div>'+
         '</div>'+
         '<div class="tf-acts">'+
           (!depositPaid?'<button onclick="openPayPanel('+b.id+',\'deposit\')" class="btn btn-sm" style="font-size:11px;border-color:var(--blue);color:var(--blue)">Deposit</button>':'')+
-          '<button onclick="schedFromBid('+b.id+')" class="btn btn-sm btn-p" style="font-size:11px">Schedule →</button>'+
+          (!hasJob?'<button onclick="schedFromBid('+b.id+')" class="btn btn-sm btn-p" style="font-size:11px">Schedule →</button>':'')+
         '</div>'+
       '</div>'});
   });
