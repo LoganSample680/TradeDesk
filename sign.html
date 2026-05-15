@@ -10,56 +10,87 @@
 <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-:root{--blue:#2D5DA8;--blue-lt:#EBF2FB;--blue-dk:#0D3B6E;--denim:#2D5DA8;--green-mid:#3B6D11;--green-lt:#EAF3DE;--green-border:#97C459;--border:#e0dfd8;--border2:#cccbc4;--text:#1a1a18;--text2:#5f5e5a;--text3:#9a9890;--bg:#f7f7f5;--bg2:#fff;--r:10px;--rl:16px;--ink:#1B1612;--amber:#B8600A;--amber-lt:#FAEEDA;--font-display:'Geist',system-ui,sans-serif;--font-ui:'Inter Tight',-apple-system,sans-serif;}
+:root{
+  --blue:#2D5DA8;--blue-lt:#EBF2FB;--blue-dk:#0D3B6E;
+  --denim:#2D5DA8;
+  --green-mid:#3B6D11;--green-lt:#EAF3DE;--green-border:#97C459;
+  --border:#e0dfd8;--border2:#cccbc4;
+  --text:#1a1a18;--text2:#5f5e5a;--text3:#9a9890;
+  --bg:#F4F5F7;--bg2:#fff;
+  --r:10px;--rl:16px;
+  --ink:#1B1612;
+  --amber:#B8600A;--amber-lt:#FAEEDA;
+  --font-display:'Geist',system-ui,sans-serif;
+  --font-ui:'Inter Tight',-apple-system,sans-serif;
+}
 body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif);background:var(--bg);color:var(--text);min-height:100vh}
+
+/* Topbar */
 .topbar{background:var(--ink);padding:13px 18px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:100;border-bottom:1px solid rgba(255,255,255,.06)}
 .topbar-logo{width:28px;height:28px;border-radius:7px;background:var(--denim);display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .topbar-name{font-size:14px;font-weight:800;color:#fff;letter-spacing:-.2px;font-family:var(--font-display)}
 .topbar-biz{font-size:11px;color:rgba(255,255,255,.38);margin-left:auto;font-weight:500}
+
+/* Layout */
 .wrap{max-width:680px;margin:0 auto;padding:20px 16px 80px}
 .card{background:var(--bg2);border-radius:var(--rl);padding:20px;margin-bottom:14px;box-shadow:0 2px 8px rgba(27,22,18,.10),0 0 0 1px rgba(27,22,18,.05)}
 .lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);margin-bottom:12px;display:block;font-family:var(--font-ui)}
-.amt-box{background:linear-gradient(135deg,var(--ink) 0%,#2D4A7A 100%);border-radius:var(--rl);padding:28px 24px;text-align:center;margin-bottom:16px;position:relative;overflow:hidden}
+
+/* Amount box */
+.amt-box{background:linear-gradient(135deg,var(--ink) 0%,#1B3465 100%);border-radius:var(--rl);padding:28px 24px;text-align:center;margin-bottom:16px;position:relative;overflow:hidden}
 .amt-box::before{content:'';position:absolute;right:-30px;top:-30px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.04)}
 .amt-total{font-size:52px;font-weight:900;color:#fff;letter-spacing:-2px;font-family:var(--font-display);line-height:1}
 .amt-dep{font-size:14px;color:rgba(255,255,255,.65);margin-top:10px;font-weight:600}
 .amt-bal{font-size:12px;color:rgba(255,255,255,.38);margin-top:4px;font-weight:500}
+
+/* Row */
 .row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px}
 .row:last-child{border-bottom:none;padding-bottom:0}
 .rl{color:var(--text3)} .rv{font-weight:600;text-align:right}
-.sig-wrap{border:2px dashed var(--border2);border-radius:var(--r);background:#fff;position:relative;touch-action:none;cursor:crosshair;overflow:hidden;margin-bottom:10px}
-.sig-wrap canvas{display:block;width:100%;height:160px}
-.sig-ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:13px;pointer-events:none}
+
+/* Input */
 input[type=text]{width:100%;padding:12px 14px;border-radius:var(--r);border:1.5px solid var(--border2);background:#fff;font-size:15px;font-family:inherit;color:var(--text);outline:none;transition:border-color .15s}
 input[type=text]:focus{border-color:var(--denim)}
-.terms{font-size:11px;color:var(--text3);line-height:1.75;background:var(--bg);border-radius:var(--r);padding:12px;border:1px solid var(--border);max-height:110px;overflow-y:auto;margin-bottom:16px}
+
+/* Buttons */
 .btn{width:100%;padding:15px;border-radius:var(--r);border:none;background:var(--ink);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);box-shadow:0 2px 12px rgba(27,22,18,.25);transition:opacity .15s;margin-bottom:8px}
 .btn:disabled{opacity:.38;cursor:not-allowed}
 .btn-sec{background:transparent;color:var(--text2);border:1.5px solid var(--border2);box-shadow:none;font-size:13px;padding:11px}
 .btn-green{background:#1D5C14;box-shadow:0 3px 16px rgba(29,92,20,.35)}
-.pay-opt{display:flex;align-items:center;gap:12px;padding:16px;border:2px solid var(--border2);border-radius:var(--rl);cursor:pointer;margin-bottom:10px;background:#fff;transition:border-color .15s,background .15s}
-.pay-opt:hover,.pay-opt.sel{border-color:var(--denim);background:var(--blue-lt)}
-.pay-opt-icon{font-size:28px;flex-shrink:0}
-.pay-opt-title{font-size:15px;font-weight:700}
-.pay-opt-sub{font-size:12px;color:var(--text3);margin-top:2px}
-.radio{width:20px;height:20px;border-radius:50%;border:2px solid var(--border2);margin-left:auto;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:border-color .15s}
-.radio.on{border-color:var(--denim);background:var(--denim)}
+.btn-ghost{background:none;border:none;color:var(--text3);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;padding:4px 8px;border-radius:6px;transition:background .15s}
+.btn-ghost:hover{background:var(--bg)}
+
+/* Legacy pay-opt and radio hidden for JS compat */
+.pay-opt{display:none}
+.radio{display:none}
+
+/* Divider */
 .divider{border:none;border-top:1px solid var(--border);margin:16px 0}
+
+/* Status pages */
 .pg-status{text-align:center;padding:60px 20px}
 .pg-status-icon{font-size:60px;margin-bottom:16px}
 .pg-status h2{font-size:26px;font-weight:900;margin-bottom:10px;font-family:var(--font-display);letter-spacing:-.5px}
 .pg-status p{font-size:14px;color:var(--text2);line-height:1.7;max-width:400px;margin:0 auto}
+
+/* Done box */
 .done-box{margin-top:20px;background:var(--green-lt);border:1px solid var(--green-border);border-radius:var(--rl);padding:16px;text-align:left}
+
+/* Step dots */
 .step-dots{display:flex;gap:5px;margin-bottom:22px}
 .dot{height:5px;flex:1;border-radius:3px;background:var(--border2);transition:all .3s}
 .dot.active{background:var(--denim);flex:2}
 .dot.done{background:var(--green-mid)}
+
+/* Portfolio offer */
 .po-hdr{background:linear-gradient(135deg,var(--ink) 0%,#1a365d 100%);border-radius:var(--rl) var(--rl) 0 0;padding:18px 20px}
 .po-body{background:#fff;border:1px solid var(--border);border-top:none;border-radius:0 0 var(--rl) var(--rl);padding:18px 20px}
 .po-prices{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
 .po-price-box{border-radius:var(--r);padding:16px;text-align:center}
 .po-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
 .po-amt{font-size:24px;font-weight:800;letter-spacing:-.3px;font-family:var(--font-display)}
+
+/* Hero card */
 .hero-card{background:linear-gradient(135deg,var(--ink) 0%,#1B3465 100%);border-radius:var(--rl);padding:22px 20px 20px;margin-bottom:18px;position:relative;overflow:hidden}
 .hero-card::before{content:'';position:absolute;right:-40px;top:-40px;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.04)}
 .hero-card::after{content:'';position:absolute;right:30px;bottom:-50px;width:100px;height:100px;border-radius:50%;background:rgba(255,255,255,.03)}
@@ -69,11 +100,93 @@ input[type=text]:focus{border-color:var(--denim)}
 .hero-meta-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:4px}
 .hero-meta-val{font-size:15px;font-weight:700;color:#fff}
 .hero-meta-sub{font-size:11px;color:rgba(255,255,255,.42);margin-top:2px;line-height:1.4}
+
+/* Sticky bar */
 #sticky-bar{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--border);padding:12px 20px;display:none;align-items:center;justify-content:space-between;gap:14px;z-index:200;box-shadow:0 -4px 24px rgba(27,22,18,.12)}
+
+/* Float call */
 #float-call{position:fixed;bottom:80px;right:16px;width:52px;height:52px;border-radius:50%;background:#16a34a;display:none;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,.25);z-index:201;font-size:20px;text-decoration:none}
+
+/* PDF button */
 .pdf-btn{width:100%;padding:11px;border-radius:var(--r);border:1.5px solid var(--border2);background:#fff;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:7px}
+
+/* --- sig-* new classes --- */
+
+/* Eyebrow label */
+.sig-eyebrow{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:var(--denim);margin-bottom:8px;display:block}
+
+/* Title */
+.sig-title{font-size:32px;font-weight:900;font-family:var(--font-display);letter-spacing:-.5px;color:var(--text);margin-bottom:18px;line-height:1.1}
+
+/* Summary banner */
+.sig-summary{background:linear-gradient(135deg,var(--ink) 0%,#1B3465 100%);border-radius:var(--r);padding:16px 18px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;position:relative;overflow:hidden}
+.sig-summary-lbl{font-size:11px;color:rgba(255,255,255,.5);font-weight:700;text-transform:uppercase;letter-spacing:.07em}
+.sig-summary-amt{font-size:34px;font-weight:900;color:#fff;font-family:var(--font-display);letter-spacing:-1px;line-height:1}
+
+/* Field wrapper */
+.sig-field{margin-bottom:14px}
+.sig-label{display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-bottom:6px}
+
+/* Signature pad */
+.sig-pad{background:#fff;border:1.5px solid var(--border2);border-radius:10px;min-height:130px;position:relative;overflow:hidden;margin-bottom:6px;touch-action:none;cursor:crosshair}
+.sig-pad canvas{display:block;width:100%;height:130px}
+.sig-pad-baseline{position:absolute;bottom:28px;left:20px;right:20px;height:1.5px;background:var(--ink);opacity:.1}
+.sig-pad .sig-ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:13px;pointer-events:none;text-align:center;padding:0 20px}
+
+/* Meta grid */
+.sig-meta{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;border-radius:10px;overflow:hidden;background:var(--border);margin-bottom:16px}
+.sig-meta-cell{background:var(--bg);padding:10px 12px}
+.sig-meta-lbl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:3px}
+.sig-meta-val{font-size:13px;font-weight:700;color:var(--text);word-break:break-all}
+
+/* Checkbox */
+.sig-checkbox{display:flex;align-items:flex-start;gap:12px;padding:14px;background:var(--bg);border:1.5px solid var(--border2);border-radius:10px;cursor:pointer;margin-bottom:20px}
+.sig-checkbox:has(input:checked){border-color:var(--ink)}
+.sig-checkbox input[type=checkbox]{width:20px;height:20px;min-width:20px;accent-color:var(--ink);margin-top:1px;cursor:pointer}
+.sig-checkbox-text{flex:1}
+.sig-checkbox-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px}
+.sig-checkbox-body{font-size:11px;color:var(--text3);line-height:1.7}
+
+/* Payment option label */
+.sig-pay-opts-label{font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px}
+
+/* Payment option tiles */
+.sig-pay-opts-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px}
+.sig-pay-opt{border:2px solid var(--border2);border-radius:16px;padding:16px;cursor:pointer;background:#fff;text-align:center;transition:border-color .15s,background .15s}
+.sig-pay-opt.sel{border-color:var(--denim);background:var(--blue-lt)}
+.sig-pay-opt-badge{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px}
+.sig-pay-opt.sel .sig-pay-opt-badge{color:var(--denim)}
+.sig-pay-opt-amt{font-size:24px;font-weight:900;font-family:var(--font-display);color:var(--text);margin-bottom:4px}
+.sig-pay-opt.sel .sig-pay-opt-amt{color:var(--denim)}
+.sig-pay-opt-sub{font-size:11px;color:var(--text3);line-height:1.4;margin-bottom:6px}
+.sig-pay-opt-sel{font-size:11px;font-weight:700;color:var(--denim)}
+
+/* Balance card (pg-pay) */
+.pay-balance-card{background:linear-gradient(135deg,var(--ink) 0%,#2D2826 100%);border-radius:16px;padding:20px 22px;margin-bottom:20px;text-align:center}
+.pay-balance-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.45);margin-bottom:8px}
+.pay-balance-amt{font-size:44px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-2px;line-height:1}
+
+/* Pay method chips */
+.pay-chips-label{font-size:13px;font-weight:700;color:var(--text);margin-bottom:10px}
+.pay-chips-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}
+.pay-chip{display:flex;align-items:center;gap:6px;padding:9px 16px;border-radius:24px;border:1.5px solid var(--border2);background:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:background .15s,border-color .15s,color .15s}
+.pay-chip.sel{background:var(--ink);border-color:var(--ink);color:#fff}
+
+/* Stripe footer */
+.stripe-footer{display:flex;justify-content:center;align-items:center;gap:6px;font-size:11px;color:var(--text3);padding:14px 0 4px;margin-top:8px}
+
+/* Stripe note info box */
+.stripe-note{background:var(--bg);border:1.5px solid var(--border2);border-radius:10px;padding:14px;text-align:center;font-size:13px;color:var(--text3);margin-bottom:14px}
+
+/* Cash notice */
+.cash-notice{background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:12px;margin-bottom:14px;font-size:13px;color:#92400E;line-height:1.6}
+
+@media(max-width:480px){
+  .sig-meta{grid-template-columns:1fr 1fr}
+}
+
 @media print{
-  .topbar,#sticky-bar,#float-call,.step-dots,#portfolio-offer-card,.sig-wrap,.btn,.btn-sec,button,.pdf-btn{display:none!important}
+  .topbar,#sticky-bar,#float-call,.step-dots,#portfolio-offer-card,.sig-pad,.btn,.btn-sec,button,.pdf-btn{display:none!important}
   .wrap{padding:8px;max-width:100%}
   body{background:#fff}
   .card{box-shadow:none;border:1px solid #ddd;break-inside:avoid;margin-bottom:10px}
@@ -96,18 +209,21 @@ input[type=text]:focus{border-color:var(--denim)}
   <div style="font-size:11px;color:rgba(255,255,255,.32);font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:34px">Secure Proposal</div>
   <div style="width:110px;height:2px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden"><div id="sign-boot-bar" style="height:100%;width:0%;background:var(--denim);border-radius:2px;transition:width 1.4s cubic-bezier(.4,0,.2,1)"></div></div>
 </div>
+
 <div class="topbar">
   <div class="topbar-logo"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>
   <span class="topbar-name">TradeDesk</span>
   <span style="font-size:10px;color:rgba(255,255,255,.3);margin-left:auto">Secure proposal</span>
 </div>
+
 <div class="wrap" style="padding-bottom:90px">
   <!-- Loading -->
   <div id="pg-load" class="pg-status"><div class="pg-status-icon">⏳</div><h2>Loading proposal...</h2><p>Just a moment.</p></div>
 
-  <!-- Review + Sign -->
+  <!-- Step 1: Review -->
   <div id="pg-sign" style="display:none">
     <a id="back-to-hub" href="#" style="display:none;align-items:center;gap:6px;font-size:13px;color:var(--text3);text-decoration:none;margin-bottom:14px;padding:8px 0">← Back to project hub</a>
+
     <!-- Hero branding card -->
     <div class="hero-card">
       <div class="hero-biz" id="hero-biz-name"></div>
@@ -125,6 +241,7 @@ input[type=text]:focus{border-color:var(--denim)}
         </div>
       </div>
     </div>
+
     <!-- Portfolio offer — shown only when isPortfolio=true -->
     <div id="portfolio-offer-card" style="display:none;margin-bottom:14px;box-shadow:0 2px 8px rgba(0,0,0,.1);border-radius:var(--rl)">
       <div class="po-hdr">
@@ -164,35 +281,70 @@ input[type=text]:focus{border-color:var(--denim)}
         <div id="po-declined" style="display:none;color:var(--text3);font-size:13px;text-align:center;padding:4px 0">No problem — full price applies. Scroll down to review and sign.</div>
       </div>
     </div>
+
     <div class="step-dots"><div class="dot active" id="d1"></div><div class="dot" id="d2"></div><div class="dot" id="d3"></div></div>
+
     <div class="card">
       <span class="lbl">Your estimate</span>
       <div class="amt-box"><div class="amt-total" id="amt-total"></div><div class="amt-dep" id="amt-dep"></div><div class="amt-bal" id="amt-bal"></div></div>
       <div id="sum-rows"></div>
     </div>
+
     <button class="pdf-btn" onclick="window.print()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download PDF</button>
-    <div class="card"><span class="lbl">Scope & terms</span><div id="prop-html" style="font-size:13px;line-height:1.6"></div></div>
+
+    <div class="card"><span class="lbl">Scope &amp; terms</span><div id="prop-html" style="font-size:13px;line-height:1.6"></div></div>
   </div>
 
   <!-- Step 2: Sign -->
   <div id="pg-sign-action" style="display:none">
     <button onclick="show('pg-sign');scrollTo(0,0)" style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;padding:8px 0;margin-bottom:14px">← Back to proposal</button>
     <div class="step-dots"><div class="dot done"></div><div class="dot active"></div><div class="dot"></div></div>
+
     <div class="card" id="sig-card">
-      <span class="lbl">Sign to accept</span>
-      <div style="background:linear-gradient(135deg,var(--ink) 0%,#1B3465 100%);border-radius:var(--r);padding:16px 18px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;position:relative;overflow:hidden">
-        <div style="font-size:11px;color:rgba(255,255,255,.5);font-weight:700;text-transform:uppercase;letter-spacing:.07em">Signing for</div>
-        <div style="font-size:34px;font-weight:900;color:#fff;font-family:var(--font-display);letter-spacing:-1px;line-height:1" id="sign-act-total"></div>
+      <span class="sig-eyebrow">Agreement</span>
+      <h1 class="sig-title">Review &amp; Sign</h1>
+
+      <div class="sig-summary">
+        <div class="sig-summary-lbl">Signing for</div>
+        <div id="sign-act-total" class="sig-summary-amt"></div>
       </div>
-      <div style="margin-bottom:14px">
-        <label style="display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-bottom:6px">Full name *</label>
-        <input type="text" id="sig-name" placeholder="Type your full name" oninput="updateTypedSigPreview();checkReady()">
-        <div id="sig-typed-preview" style="font-family:'Dancing Script',cursive;font-size:36px;color:var(--denim);min-height:52px;display:flex;align-items:center;justify-content:center;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r);margin-top:6px;background:#fff"></div>
+
+      <!-- Name field -->
+      <div class="sig-field">
+        <label class="sig-label" for="sig-name">Full name *</label>
+        <input type="text" id="sig-name" placeholder="Type your full legal name" oninput="updateTypedSigPreview();checkReady()">
       </div>
-      <label style="display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-bottom:6px;margin-top:14px">Draw signature <span style="font-size:11px;font-weight:400;text-transform:none;color:var(--text3)">(optional if name typed above)</span></label>
-      <div class="sig-wrap"><canvas id="sig-canvas"></canvas><div class="sig-ph" id="sig-ph">✍️ Draw over your name or sign here</div></div>
-      <button class="btn btn-sec" onclick="clearSig()" style="margin-bottom:14px">Clear drawing</button>
-      <div class="terms">By signing, you agree to the total price, scope of work, and all terms above. This is a binding agreement under the Uniform Electronic Transactions Act (UETA). A 25% deposit is due before work begins; remaining balance due on completion.</div>
+
+      <!-- Signature pad -->
+      <div class="sig-pad" id="sig-pad-wrap">
+        <canvas id="sig-canvas"></canvas>
+        <div class="sig-pad-baseline"></div>
+        <div class="sig-ph" id="sig-ph">✍️ Signature appears here as you type — or draw below</div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
+        <button class="btn-ghost" onclick="clearSig()">Clear drawing</button>
+      </div>
+
+      <!-- Meta grid -->
+      <div class="sig-meta" style="margin-bottom:16px">
+        <div class="sig-meta-cell">
+          <div class="sig-meta-lbl">Signed by</div>
+          <div class="sig-meta-val" id="sig-meta-name">—</div>
+        </div>
+        <div class="sig-meta-cell">
+          <div class="sig-meta-lbl">Initials</div>
+          <div class="sig-meta-val" id="sig-meta-initials">—</div>
+        </div>
+        <div class="sig-meta-cell">
+          <div class="sig-meta-lbl">Date</div>
+          <div class="sig-meta-val" id="sig-meta-date">—</div>
+        </div>
+        <div class="sig-meta-cell">
+          <div class="sig-meta-lbl">Method</div>
+          <div class="sig-meta-val">Electronic</div>
+        </div>
+      </div>
+
       <!-- EPA Lead Paint Disclosure — shown only for pre-1978 painting jobs -->
       <div id="epa-section" style="display:none;background:var(--amber-lt);border:1.5px solid var(--amber);border-radius:var(--r);padding:14px;margin-bottom:14px">
         <div style="font-size:13px;font-weight:800;color:#78350f;margin-bottom:8px">⚠️ EPA Lead Paint Disclosure — Required by Federal Law</div>
@@ -203,75 +355,85 @@ input[type=text]:focus{border-color:var(--denim)}
         </label>
         <div id="epa-err" style="display:none;color:#A32D2D;font-size:12px;margin-top:6px;font-weight:600">Please confirm receipt of the EPA pamphlet before signing.</div>
       </div>
+
+      <!-- UETA checkbox -->
+      <label class="sig-checkbox">
+        <input type="checkbox" id="sig-ueta-ck" onchange="checkReady()">
+        <div class="sig-checkbox-text">
+          <div class="sig-checkbox-title">I agree to this electronic agreement</div>
+          <div class="sig-checkbox-body">By checking this box, I accept the total price, scope of work, and all terms above. This constitutes a binding electronic signature under the Uniform Electronic Transactions Act (UETA), 15 U.S.C. § 7001 et seq. A deposit is due before work begins; remaining balance is due on completion.</div>
+        </div>
+      </label>
+
+      <!-- Pay amount tiles -->
+      <div class="sig-pay-opts-label">How much would you like to pay now?</div>
+      <div class="sig-pay-opts-row">
+        <div id="pay-tile-dep" class="sig-pay-opt sel" onclick="_selectPayTile('dep')">
+          <div class="sig-pay-opt-badge">25% Deposit</div>
+          <div id="pay-tile-dep-amt" class="sig-pay-opt-amt"></div>
+          <div id="pay-tile-dep-note" class="sig-pay-opt-sub"></div>
+          <div class="sig-pay-opt-sel">✓ Selected</div>
+        </div>
+        <div id="pay-tile-full" class="sig-pay-opt" onclick="_selectPayTile('full')">
+          <div class="sig-pay-opt-badge" style="color:#3B6D11">Pay in Full</div>
+          <div id="pay-tile-full-amt" class="sig-pay-opt-amt"></div>
+          <div class="sig-pay-opt-sub" style="color:#3B6D11;font-weight:600">Save 3% — nothing due later ✓</div>
+          <div class="sig-pay-opt-sel" style="opacity:0">·</div>
+        </div>
+      </div>
+
       <button class="btn" id="sign-btn" disabled onclick="goToPayment()">Continue to payment →</button>
       <div id="sign-err" style="color:#A32D2D;font-size:12px;text-align:center;min-height:16px"></div>
     </div>
-
   </div>
 
   <!-- Step 3: Payment -->
   <div id="pg-pay" style="display:none">
     <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div></div>
     <div class="card">
-      <span class="lbl">How much would you like to pay now?</span>
 
-      <!-- Payment amount tiles -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px">
-        <div id="pay-tile-dep" onclick="_selectPayTile('dep')" style="border-radius:var(--r);border:2px solid var(--blue);background:var(--blue-lt);padding:14px 10px;cursor:pointer;text-align:center">
-          <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--blue);margin-bottom:6px">25% Deposit</div>
-          <div id="pay-tile-dep-amt" style="font-size:20px;font-weight:800;color:var(--blue)"></div>
-          <div id="pay-tile-dep-note" style="font-size:11px;color:var(--text3);margin-top:5px;line-height:1.4"></div>
-          <div style="margin-top:8px;font-size:11px;font-weight:700;color:var(--blue)">✓ Selected</div>
-        </div>
-        <div id="pay-tile-full" onclick="_selectPayTile('full')" style="border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);padding:14px 10px;cursor:pointer;text-align:center">
-          <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:6px">Pay in Full</div>
-          <div id="pay-tile-full-amt" style="font-size:20px;font-weight:800;color:var(--text)"></div>
-          <div style="font-size:11px;color:var(--green-mid);margin-top:5px;line-height:1.4;font-weight:600">Nothing due later ✓</div>
-          <div style="margin-top:8px;font-size:11px;color:transparent">·</div>
-        </div>
+      <!-- Balance display -->
+      <div class="pay-balance-card">
+        <div class="pay-balance-lbl">Amount due now</div>
+        <div id="pay-now-display" class="pay-balance-amt"></div>
       </div>
 
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">How would you like to pay?</div>
-
-      <div class="pay-opt sel" id="opt-card" onclick="selPay('card')">
-        <div class="pay-opt-icon">💳</div>
-        <div><div class="pay-opt-title">Pay by card</div><div class="pay-opt-sub">Visa, Mastercard, Amex — secure via Stripe</div></div>
-        <div class="radio on" id="radio-card"><div style="width:8px;height:8px;border-radius:50%;background:#fff"></div></div>
+      <!-- Payment method chips -->
+      <div class="pay-chips-label">How would you like to pay?</div>
+      <div class="pay-chips-row">
+        <button id="chip-card" class="pay-chip sel" onclick="selPay('card')">💳 Card</button>
+        <button id="chip-ach" class="pay-chip" onclick="selPay('ach')">🏦 Bank transfer</button>
+        <button id="chip-cash" class="pay-chip" onclick="selPay('cash')">💵 Cash</button>
       </div>
 
-      <div class="pay-opt" id="opt-ach" onclick="selPay('ach')">
-        <div class="pay-opt-icon">🏦</div>
-        <div><div class="pay-opt-title">Pay by bank transfer (ACH)</div><div class="pay-opt-sub">Direct bank transfer — secure via Stripe</div></div>
-        <div class="radio" id="radio-ach"></div>
-      </div>
-      <div class="pay-opt" id="opt-cash" onclick="selPay('cash')">
-        <div class="pay-opt-icon">💵</div>
-        <div><div class="pay-opt-title">Pay cash</div><div class="pay-opt-sub">I'll pay the contractor directly in person</div></div>
-        <div class="radio" id="radio-cash"></div>
-      </div>
+      <!-- Hidden legacy elements for JS compatibility -->
+      <div id="opt-card" style="display:none"></div>
+      <div id="opt-ach" style="display:none"></div>
+      <div id="opt-cash" style="display:none"></div>
+      <div id="radio-card" style="display:none"></div>
+      <div id="radio-ach" style="display:none"></div>
+      <div id="radio-cash" style="display:none"></div>
 
       <div class="divider"></div>
 
       <div id="sec-card">
-        <div id="stripe-note" style="background:var(--bg);border:1.5px solid var(--border2);border-radius:var(--r);padding:16px;margin-bottom:14px;font-size:13px;color:var(--text3);text-align:center">
-          Secure card payment via Stripe
-        </div>
-        <button class="btn btn-green" id="card-btn" onclick="payCard()">Pay deposit by card</button>
+        <div class="stripe-note">Secure card payment via Stripe</div>
+        <button class="btn" id="card-btn" onclick="payCard()">Pay deposit by card</button>
       </div>
 
       <div id="sec-ach" style="display:none">
-        <div style="background:var(--bg);border:1.5px solid var(--border2);border-radius:var(--r);padding:16px;margin-bottom:14px;font-size:13px;color:var(--text3);text-align:center">
-          Bank transfer powered by Stripe — verify your bank account securely
-        </div>
-        <button class="btn btn-green" id="ach-btn" onclick="payACH()">Pay by bank transfer (ACH)</button>
+        <div class="stripe-note">Bank transfer powered by Stripe</div>
+        <button class="btn" id="ach-btn" onclick="payACH()">Pay by bank transfer (ACH)</button>
       </div>
+
       <div id="sec-cash" style="display:none">
-        <div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:12px;margin-bottom:14px;font-size:13px;color:#92400E;line-height:1.6">
-          <strong>Cash selected.</strong><span id="cash-confirm-msg"> Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.</span>
-        </div>
+        <div class="cash-notice"><strong>Cash selected.</strong><span id="cash-confirm-msg"> Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.</span></div>
         <button class="btn" onclick="submitCash()">Confirm — I'll pay cash in person</button>
       </div>
+
       <div id="pay-err" style="color:#A32D2D;font-size:12px;text-align:center;min-height:16px"></div>
+
+      <div class="stripe-footer">🔒 Secured by Stripe · TLS 1.3 · PCI DSS Level 1</div>
     </div>
     <button class="btn btn-sec" onclick="backToSign()">← Back</button>
   </div>
@@ -301,8 +463,9 @@ input[type=text]:focus{border-color:var(--denim)}
     <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);font-family:var(--font-ui)">Project Total</div>
     <div style="font-size:26px;font-weight:900;color:var(--ink);letter-spacing:-.5px;font-family:var(--font-display)" id="sticky-total"></div>
   </div>
-  <button id="approve-btn" onclick="approveAndSign()" style="padding:14px 22px;border-radius:var(--r);border:none;background:#1D5C14;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);flex-shrink:0;box-shadow:0 3px 16px rgba(29,92,20,.4);transition:background .3s">✓ Approve &amp; Sign</button>
+  <button id="approve-btn" onclick="approveAndSign()" style="padding:14px 22px;border-radius:var(--r);border:none;background:var(--ink);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);flex-shrink:0;box-shadow:0 3px 16px rgba(27,22,18,.3);transition:background .3s">✓ Approve &amp; Sign</button>
 </div>
+
 <!-- Floating call button -->
 <a id="float-call" href="" data-has-phone="0">📞</a>
 
@@ -508,7 +671,7 @@ async function init(){
 function initCanvas(){
   sigCanvas=document.getElementById('sig-canvas');
   const dpr=window.devicePixelRatio||1,w=sigCanvas.parentElement.offsetWidth||340;
-  sigCanvas.width=w*dpr;sigCanvas.height=160*dpr;
+  sigCanvas.width=w*dpr;sigCanvas.height=130*dpr;
   sigCtx=sigCanvas.getContext('2d');
   sigCtx.scale(dpr,dpr);sigCtx.lineCap='round';sigCtx.lineJoin='round';sigCtx.lineWidth=2.5;sigCtx.strokeStyle='#1a1a18';
   const pos=e=>{const r=sigCanvas.getBoundingClientRect(),s=e.touches?e.touches[0]:e;return{x:s.clientX-r.left,y:s.clientY-r.top};};
@@ -520,24 +683,32 @@ function initCanvas(){
 }
 function ink(){hasInk=true;document.getElementById('sig-ph').style.display='none';checkReady();}
 function clearSig(){if(!sigCtx)return;sigCtx.clearRect(0,0,sigCanvas.width,sigCanvas.height);hasInk=false;document.getElementById('sig-ph').style.display='';checkReady();}
+
 function updateTypedSigPreview(){
   const val=document.getElementById('sig-name')?.value||'';
-  const prev=document.getElementById('sig-typed-preview');
-  if(prev)prev.textContent=val;
   if(sigCtx&&val.length>2){
     const dpr=window.devicePixelRatio||1;
     const logW=sigCanvas.width/dpr;  // logical width after DPR scale
-    sigCtx.clearRect(0,0,logW,160);
+    sigCtx.clearRect(0,0,logW,130);
     sigCtx.font='bold 52px Dancing Script, cursive';  // logical px in already-scaled context
     sigCtx.fillStyle='#1a1a18';
     sigCtx.textAlign='center';
     sigCtx.textBaseline='middle';
-    sigCtx.fillText(val,logW/2,80);  // center of 160px-tall canvas
+    sigCtx.fillText(val,logW/2,65);  // center of 130px-tall canvas
     hasInk=false;
     document.getElementById('sig-ph').style.display='none';
   }
+  // Update meta name and initials
+  const metaName=document.getElementById('sig-meta-name');
+  if(metaName)metaName.textContent=val||'—';
+  const initials=val.split(/\s+/).filter(Boolean).map(w=>w[0]?.toUpperCase()||'').join('');
+  const metaInitials=document.getElementById('sig-meta-initials');
+  if(metaInitials)metaInitials.textContent=initials||'—';
 }
+
 function approveAndSign(){
+  const metaDate=document.getElementById('sig-meta-date');
+  if(metaDate)metaDate.textContent=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   const el=document.getElementById('sign-act-total');
   if(el)el.textContent=fmt(_prop?.amount||0);
   show('pg-sign-action');
@@ -550,7 +721,8 @@ function _epaRequired(){return _prop?.epaRequired&&_prop?.trade==='painting';}
 function checkReady(){
   const typedOk=document.getElementById('sig-name')?.value.trim().length>2;
   const epaOk=!_epaRequired()||document.getElementById('epa-ack')?.checked;
-  document.getElementById('sign-btn').disabled=!(typedOk||hasInk)||!epaOk;
+  const uetaOk=!!(document.getElementById('sig-ueta-ck')?.checked);
+  document.getElementById('sign-btn').disabled=!(typedOk||hasInk)||!epaOk||!uetaOk;
 }
 
 function goToPayment(){
@@ -563,9 +735,13 @@ function goToPayment(){
   }
   if(_epaRequired())document.getElementById('epa-err').style.display='none';
   _sigData=sigCanvas.toDataURL('image/png');
-  _payFullAmount=false;
   show('pg-pay');scrollTo(0,0);
   _renderPayTiles();
+  const depAmt2=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice*0.25:_prop?.deposit||0;
+  const fullAmt2=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
+  const nowAmt=_payFullAmount?fullAmt2:depAmt2;
+  const pnd=document.getElementById('pay-now-display');
+  if(pnd)pnd.textContent=fmt(nowAmt);
   selPay(_prop?.stripeConnectEnabled===false?'cash':'card');
 }
 function backToSign(){show('pg-sign');scrollTo(0,0);}
@@ -578,6 +754,11 @@ function selPay(opt){
     r.classList.toggle('on',o===opt);
     r.style.borderColor=o===opt?'var(--blue)':'var(--border2)';
     r.innerHTML=o===opt?'<div style="width:8px;height:8px;border-radius:50%;background:'+(o==='card'?'#fff':'var(--blue)')+'"></div>':'';
+  });
+  // Update chip selection
+  ['card','ach','cash'].forEach(o=>{
+    const ch=document.getElementById('chip-'+o);
+    if(ch)ch.classList.toggle('sel',o===opt);
   });
   document.getElementById('sec-card').style.display=opt==='card'?'block':'none';
   document.getElementById('sec-ach').style.display=opt==='ach'?'block':'none';
@@ -602,18 +783,17 @@ function _renderPayTiles(){
   const depSel=!_payFullAmount;
   const td=document.getElementById('pay-tile-dep'),tf=document.getElementById('pay-tile-full');
   if(td){
-    td.style.border='2px solid '+(depSel?'var(--blue)':'var(--border2)');
-    td.style.background=depSel?'var(--blue-lt)':'var(--bg2)';
-    td.querySelector('div:first-child').style.color=depSel?'var(--blue)':'var(--text3)';
-    document.getElementById('pay-tile-dep-amt').style.color=depSel?'var(--blue)':'var(--text)';
-    const check=td.lastElementChild;if(check)check.style.color=depSel?'var(--blue)':'transparent';
+    td.classList.toggle('sel',depSel);
+    const badge=td.querySelector('.sig-pay-opt-badge');
+    if(badge)badge.style.color=depSel?'var(--denim)':'var(--text3)';
+    const amtEl=td.querySelector('.sig-pay-opt-amt');
+    if(amtEl)amtEl.style.color=depSel?'var(--denim)':'var(--text)';
+    const selEl=td.querySelector('.sig-pay-opt-sel');
+    if(selEl)selEl.style.color=depSel?'var(--denim)':'transparent';
   }
   if(tf){
     tf.style.display=showFull?'':'none';
-    tf.style.border='2px solid '+(_payFullAmount?'var(--blue)':'var(--border2)');
-    tf.style.background=_payFullAmount?'var(--blue-lt)':'var(--bg2)';
-    tf.querySelector('div:first-child').style.color=_payFullAmount?'var(--blue)':'var(--text3)';
-    document.getElementById('pay-tile-full-amt').style.color=_payFullAmount?'var(--blue)':'var(--text)';
+    tf.classList.toggle('sel',_payFullAmount);
   }
   const depAmtEl=document.getElementById('pay-tile-dep-amt');
   if(depAmtEl)depAmtEl.textContent=fmt(depAmt);
@@ -767,6 +947,7 @@ async function _launchEmbedded(amount,paymentMethod){
 }
 </script>
 
+<!-- Sign stripe overlay -->
 <div id="sign-stripe-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:14px;width:min(480px,96vw);max-height:90vh;display:flex;flex-direction:column;overflow:hidden">
     <div style="padding:16px 18px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between">
