@@ -860,6 +860,7 @@ function openLogTripModal(opts){
       '</div>':'')+
     '<div class="f" style="margin-bottom:14px"><label>Notes <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>'+
       '<input id="lm-notes" placeholder="e.g. Supply stop at Sherwin-Williams" value="'+(opts.notes||'')+'"></div>'+
+    (opts.editId?'<button onclick="zConfirm(\'Delete this trip?\',function(){delMileage('+opts.editId+');closeTopModal();},{yes:\'Delete\',danger:true})" class="btn" style="width:100%;margin-bottom:8px;color:#dc2626;border-color:#fca5a5;background:#fff5f5;font-weight:700">🗑 Delete trip</button>':'')+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Cancel</button>'+
       (opts.editId
@@ -1284,7 +1285,11 @@ function _milRenderTripList(shown,yr){
   shown.forEach(r=>{const p=r.purpose||'';if(p){purpTotals[p]=(purpTotals[p]||0)+(r.miles||0);}});
   const purpChips=Object.entries(purpTotals).sort((a,b)=>b[1]-a[1]).map(([p,mi])=>{
     const _pc=MILE_PURPOSE_COLORS[p]||MILE_PURPOSE_COLORS['Other'];
-    return '<div class="mil-purp-chip" style="background:'+_pc.bg+';color:'+_pc.text+'">'+escHtml(p)+' · <strong>'+mi.toFixed(1)+' mi</strong></div>';
+    return '<div class="mil-purp-chip">'+
+      '<div class="mil-purp-dot" style="background:'+_pc.text+'"></div>'+
+      '<div class="mil-purp-name">'+escHtml(p)+'</div>'+
+      '<div class="mil-purp-mi">'+mi.toFixed(1)+' mi</div>'+
+    '</div>';
   }).join('');
   const purpRow=purpChips?'<div class="mil-purp-row">'+purpChips+'</div>':'';
   el.innerHTML='<div class="mil-list">'+purpRow+days.map(([date,trips],dayIdx)=>{
