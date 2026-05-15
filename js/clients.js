@@ -484,7 +484,7 @@ function renderClientHubPage(){
     const addrLine=c.addr?c.addr.split(',')[0]:'';
     const metaParts=[addrLine?escHtml(addrLine):'',c.phone?escHtml(c.phone):''].filter(Boolean).join(' · ');
     const actions=url
-      ? '<button class="btn btn-sm" onclick="event.stopPropagation();window.open(\''+url+'\',\'_blank\')">👁 Preview</button>'+
+      ? '<button class="btn btn-sm" onclick="event.stopPropagation();_previewClientHub(\''+url+'\',\''+escHtml(c.name||'')+'\')" >👁 Preview</button>'+
         '<button class="btn btn-sm" onclick="event.stopPropagation();_clientHubCopy(\''+url+'\',this)">📋 Copy</button>'+
         (phone?'<button class="btn btn-sm btn-p" onclick="event.stopPropagation();window.location.href=\'sms:'+phone+'?body='+encodeURIComponent(smsBody)+'\'">📱 Send</button>':'')
       : '<button class="btn btn-sm btn-p" onclick="event.stopPropagation();_clientHubGenerate('+c.id+')">⚡ Generate hub</button>';
@@ -513,6 +513,24 @@ function renderClientHubPage(){
     '</div>';
   }
   el.innerHTML=html;
+}
+function _previewClientHub(url,clientName){
+  let ov=document.getElementById('_hub-preview-ov');
+  if(!ov){
+    ov=document.createElement('div');
+    ov.id='_hub-preview-ov';
+    ov.style.cssText='position:fixed;inset:0;z-index:99999;display:flex;flex-direction:column;background:#000';
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML=
+    '<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:#1B1612;flex-shrink:0;padding-top:max(10px,env(safe-area-inset-top))">'+
+      '<button onclick="document.getElementById(\'_hub-preview-ov\').remove()" style="display:flex;align-items:center;gap:5px;background:rgba(255,255,255,.12);border:none;color:#fff;font-size:13px;font-weight:700;padding:7px 12px;border-radius:8px;cursor:pointer;font-family:inherit">'+
+        '← TradeDesk'+
+      '</button>'+
+      '<div style="font-size:13px;color:rgba(255,255,255,.6);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(clientName?escHtml(clientName)+' — Hub preview':'Hub preview')+'</div>'+
+    '</div>'+
+    '<iframe src="'+url+'" style="flex:1;border:none;width:100%" allow="payment"></iframe>';
+  ov.style.display='flex';
 }
 function _clientHubCopy(url,btn){
   navigator.clipboard.writeText(url).then(()=>{

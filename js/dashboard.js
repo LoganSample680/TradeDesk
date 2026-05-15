@@ -74,10 +74,21 @@ function renderDash(){
     const _urgFu=bids.filter(b=>b.status==='Pending'&&!b.signingToken&&b.followup&&b.followup<=tk).length;
     const _pendingBids=bids.filter(b=>b.status==='Pending').length;
     const _licAlerts=getLicenseAlerts().filter(l=>_licStatus(l)==='expired').length;
-    const _attnItems=_collectItems.length+_urgFu+_pendingBids+_licAlerts;
+    // Closed Won bids that still need a job scheduled and/or deposit collected
+    const _wonNeedAction=bids.filter(b=>{
+      if(b.status!=='Closed Won'||b.completion_date)return false;
+      const depositPaid=getBidPaid(b.id)>0;
+      const hasJob=jobs.some(j=>(j.bid_id===b.id||(j.client_id===b.client_id&&!j.bid_id))&&j.eventType!=='estimate');
+      return!(hasJob&&depositPaid);
+    }).length;
+    // In-progress drafts (paint full draft OR generic Draft/Pending-unsent bids)
+    const _ld=loadEstFullDraft();
+    const _draftCount=(_ld&&_ld.cname?1:0)+bids.filter(b=>!b.signingToken&&(b.status==='Draft'||(b.status==='Pending'&&!b.bid_date))).length;
+    const _attnItems=_collectItems.length+_urgFu+_pendingBids+_licAlerts+_wonNeedAction+_draftCount;
     if(_attnItems>0){
       let _biggestNote='';
       if(_collectOwed>0)_biggestNote='The biggest one is '+fmt(_collectOwed)+' in outstanding balances.';
+      else if(_wonNeedAction>0)_biggestNote=_wonNeedAction+' signed job'+(+_wonNeedAction>1?'s':'')+' need scheduling or a deposit.';
       else if(_urgFu>0)_biggestNote=_urgFu+' follow-up'+(+_urgFu>1?'s':'')+' are overdue.';
       else if(_pendingBids>0)_biggestNote=_pendingBids+' pending bid'+(+_pendingBids>1?'s':'')+' need attention.';
       _subEl.textContent=_attnItems+' thing'+(_attnItems>1?'s':'')+' need'+(_attnItems===1?'s':'')+' your attention today. '+_biggestNote;
