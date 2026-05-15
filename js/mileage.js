@@ -1045,28 +1045,82 @@ function renderAllMileage(){
   const filtered=_mileSrc.filter(m=>m.date&&m.date.startsWith(yr));
   const _hasMultiDriver=!_isEmployee&&mileage.some(m=>m.logged_by_name);
   const tot=filtered.reduce((s,r)=>s+(r.miles||0),0);
+  const irsRate=IRS();
+  const deduction=tot*irsRate;
   const byPurpose={};
   filtered.forEach(m=>{const p=m.purpose||'Other';byPurpose[p]=(byPurpose[p]||0)+(m.miles||0);});
   const purposeRows=Object.entries(byPurpose).sort((a,b)=>b[1]-a[1]);
   const purposeHTML=purposeRows.map(([p,mi])=>{
     const pc=MILE_PURPOSE_COLORS[p]||MILE_PURPOSE_COLORS['Other'];
-    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)">'+
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--line)">'+
       '<span style="font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;background:'+pc.bg+';color:'+pc.text+'">'+p+'</span>'+
-      '<span style="font-size:12px;font-weight:700">'+mi.toFixed(1)+' mi &nbsp;<span style="color:var(--green-mid);font-weight:600">'+fmt(mi*IRS())+'</span></span>'+
+      '<span style="font-size:12px;font-weight:700">'+mi.toFixed(1)+' mi &nbsp;<span style="color:var(--c-green);font-weight:600">'+fmt(mi*irsRate)+'</span></span>'+
     '</div>';
   }).join('');
+
+  // ── mil-hero banner ──
+  const heroEl=document.getElementById('mil-hero-wrap');
+  if(heroEl){
+    // Get odometer data for primary vehicle
+    const vehs=(S.vehicles||[]);
+    const pVeh=vehs[0]||null;
+    const odoLog=(S.vehicleOdoLog||{})[yr]||{};
+    const pKey=pVeh?_vehKey(pVeh):'default';
+    const odoRec=odoLog[pKey]||{};
+    const startOdo=odoRec.start||0;
+    const endOdo=odoRec.end||0;
+    const totalDriven=endOdo>startOdo?endOdo-startOdo:0;
+    const bizPct=totalDriven>0?Math.min(100,Math.round((tot/totalDriven)*100)):0;
+    const personalMi=Math.max(0,totalDriven-tot);
+    const vehLabel=pVeh?(pVeh.year?pVeh.year+' '+pVeh.name:pVeh.name)||'Vehicle':'Vehicle';
+    heroEl.innerHTML=
+      '<div class="mil-hero">'+
+        '<div class="mil-hero-l">'+
+          '<div class="td-micro" style="color:rgba(255,255,255,.55);margin-bottom:8px">Mileage deduction · '+yr+'</div>'+
+          '<div class="mil-deduction">'+fmt(deduction)+'</div>'+
+          '<div class="mil-meta">'+
+            '<span><b style="color:#fff">'+tot.toFixed(1)+'</b> business miles</span>'+
+            '<span>·</span>'+
+            '<span>IRS $'+irsRate.toFixed(3)+'/mi</span>'+
+            '<span>·</span>'+
+            '<span>'+filtered.length+' trip'+(filtered.length!==1?'s':'')+' logged</span>'+
+          '</div>'+
+          (totalDriven>0?
+            '<div class="mil-bar">'+
+              '<div class="mil-bar-seg mil-bar-business" style="flex:'+Math.max(tot,0.1)+'">Business '+bizPct+'%</div>'+
+              '<div class="mil-bar-seg mil-bar-personal" style="flex:'+Math.max(personalMi,0.1)+'">'+(100-bizPct)+'% personal</div>'+
+            '</div>'+
+            '<div class="mil-bar-foot">'+
+              (startOdo?'<span>'+startOdo.toLocaleString()+' mi · Jan 1</span>':'<span>Set opening odometer below</span>')+
+              (endOdo?'<span>'+endOdo.toLocaleString()+' mi today · '+totalDriven.toLocaleString()+' mi driven</span>':'')+'</div>':
+            '<div class="mil-bar"><div class="mil-bar-seg mil-bar-business" style="flex:1">Log trips to track business %</div></div>'
+          )+
+        '</div>'+
+        '<div class="mil-hero-r">'+
+          '<button class="mil-action mil-action-go" onclick="openDriveModal()">'+
+            '<div class="mil-action-icon">📍</div>'+
+            '<div><div class="mil-action-label">Log a trip</div><div class="mil-action-sub">Manual · type addresses + miles</div></div>'+
+          '</button>'+
+          '<button class="mil-action" onclick="checkOdometerEntries(true)">'+
+            '<div class="mil-action-icon">🔢</div>'+
+            '<div><div class="mil-action-label">Update odometer</div><div class="mil-action-sub">'+vehLabel+(startOdo?' · '+startOdo.toLocaleString()+' mi':'')+' </div></div>'+
+          '</button>'+
+          '<button class="mil-action" onclick="openExportPanel()">'+
+            '<div class="mil-action-icon">📊</div>'+
+            '<div><div class="mil-action-label">Export IRS report</div><div class="mil-action-sub">Schedule C · Form 4562</div></div>'+
+          '</button>'+
+        '</div>'+
+      '</div>';
+  }
+
   const homeOfficeNote=S.homeOffice
-    ?'<div style="background:#F0FDF4;border:1.5px solid #16A34A;border-radius:var(--r);padding:8px 12px;margin-bottom:8px;font-size:11px;color:#166534"><strong>✓ Home office active</strong> — your drives from home to job sites count as deductible business miles (not commuting). Log every trip.</div>'
-    :'<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:var(--r);padding:8px 12px;margin-bottom:8px;font-size:11px;color:#1E40AF">💡 <strong>Home office tip:</strong> Drives from home to your first job site are not deductible yet. Set up a home office in Settings to unlock that deduction.</div>';
+    ?'<div class="tip" style="margin-bottom:10px"><span style="font-size:18px">✅</span><div><b>Home office active</b> — your drives from home to job sites count as deductible business miles. Log every trip.</div></div>'
+    :'<div class="tip" style="margin-bottom:10px"><span style="font-size:18px">💡</span><div><b>Home office tip:</b> Drives from home to your first job site are not deductible yet. Set up a home office in Settings to unlock that deduction.</div></div>';
   document.getElementById('tr-mile-mets').innerHTML=
     homeOfficeNote+
-    '<div class="mets" style="margin-bottom:8px">'+
-      '<div class="met"><div class="met-l">'+yr+' miles</div><div class="met-v">'+tot.toFixed(1)+' mi</div></div>'+
-      '<div class="met"><div class="met-l">IRS deduction</div><div class="met-v">'+fmt(tot*IRS())+'</div><div class="met-s">@ $'+IRS().toFixed(3)+'/mi</div></div>'+
-    '</div>'+
     (purposeRows.length>1?
-      '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin-bottom:10px">'+
-        '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:6px">By trip purpose</div>'+
+      '<div class="card" style="margin-bottom:10px">'+
+        '<div class="card-hd-title" style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);margin-bottom:8px">By trip purpose</div>'+
         purposeHTML+
       '</div>':''
     );

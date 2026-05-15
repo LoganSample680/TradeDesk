@@ -646,6 +646,25 @@ body.dark .cal-cell.other{background:var(--cream)}
   .mets{grid-template-columns:1fr 1fr}
   .qa-grid{grid-template-columns:repeat(2,1fr)}
 }
+/* ── Mileage hero ── */
+.mil-hero{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:14px;margin-bottom:14px}
+.mil-hero-l{background:linear-gradient(155deg,var(--ink) 0%,#0E1217 100%);border-radius:14px;padding:22px 24px;color:#fff;position:relative;overflow:hidden;box-shadow:0 8px 24px rgba(22,26,31,.18)}
+.mil-hero-l::before{content:'';position:absolute;inset:auto -30% -70% -10%;background:radial-gradient(45% 38% at 50% 0%,rgba(45,93,168,.36),transparent 70%);pointer-events:none}
+.mil-deduction{font-family:var(--font-display);font-size:46px;font-weight:900;letter-spacing:-2px;line-height:1;color:#fff;margin-bottom:8px;font-variant-numeric:tabular-nums}
+.mil-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:rgba(255,255,255,.65);font-weight:500;margin-bottom:14px}
+.mil-bar{display:flex;height:26px;background:rgba(255,255,255,.06);border-radius:8px;overflow:hidden;font-family:var(--font-ui)}
+.mil-bar-seg{display:flex;align-items:center;padding:0 10px;font-size:10px;font-weight:800;letter-spacing:.04em;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:60px}
+.mil-bar-business{background:linear-gradient(90deg,var(--c-green) 0%,#1A9858 100%)}
+.mil-bar-personal{background:linear-gradient(90deg,var(--denim) 0%,#5C8FD4 100%)}
+.mil-bar-foot{display:flex;justify-content:space-between;font-size:10px;color:rgba(255,255,255,.45);margin-top:6px;font-weight:500}
+.mil-hero-r{display:flex;flex-direction:column;gap:8px}
+.mil-action{display:flex;align-items:center;gap:12px;background:var(--bg-card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;text-align:left;font-family:var(--font-ui);width:100%;transition:transform .08s,box-shadow .12s,border-color .12s}
+.mil-action:hover{transform:translateY(-1px);border-color:var(--text-3);box-shadow:0 4px 12px rgba(22,26,31,.08)}
+.mil-action-icon{width:38px;height:38px;border-radius:10px;background:var(--denim-soft);color:var(--denim);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.mil-action-go .mil-action-icon{background:var(--c-green-soft);color:var(--c-green)}
+.mil-action-label{font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.1px}
+.mil-action-sub{font-size:11px;color:var(--text-3);margin-top:1px;font-weight:500}
+@media(max-width:760px){.mil-hero{grid-template-columns:1fr}.mil-hero-r{flex-direction:row;flex-wrap:wrap}.mil-action{flex:1 1 calc(50% - 4px);min-width:140px}}
 </style>
 
 </head>
@@ -1881,7 +1900,19 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
 </div>
 <div class="pg" id="pg-tracker">
-  <div class="tbar"><div class="tbar-title">Books</div><div style="display:flex;align-items:center;gap:8px"><button class="btn btn-sm" onclick="openExportPanel()">⬇ Export</button><span style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Year</span><select id="tracker-year-sel" onchange="setTrackerYear(parseInt(this.value))" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)"></select></div></div>
+  <div class="tbar">
+    <div class="tbar-l">
+      <div class="tbar-eyebrow" id="tracker-eyebrow">IRS Schedule C ready</div>
+      <div class="tbar-title">Books</div>
+      <div class="tbar-sub">Every payment, receipt, and mile. Categories follow IRS Schedule C buckets so taxes are one tap.</div>
+    </div>
+    <div class="tbar-r" style="flex-wrap:nowrap">
+      <button class="btn btn-sm" onclick="triggerReceiptScan()">📷 Scan receipt</button>
+      <button class="btn btn-sm" onclick="openDriveModal()">📍 Log trip</button>
+      <button class="btn btn-p btn-sm" onclick="openManualIncomeModal()">+ Add entry</button>
+      <select id="tracker-year-sel" onchange="setTrackerYear(parseInt(this.value))" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);cursor:pointer"></select>
+    </div>
+  </div>
   <div class="fbar">
     <button type="button" class="fb active" id="tr-t-income" onclick="setTrTab('income',this)">Income</button>
     <button type="button" class="fb" id="tr-t-expenses" onclick="setTrTab('expenses',this)">Expenses</button>
@@ -1910,14 +1941,15 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="card"><div class="card-hd">Expense log</div><div id="exp-table"></div></div>
   </div>
   <div id="tr-mileage" style="display:none">
-    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">
-      <button class="btn btn-p" style="flex:1;min-height:48px;font-size:15px;font-weight:700" onclick="openDriveModal()">🚗 Log a trip</button>
-    </div>
+    <div id="mil-hero-wrap"></div>
     <div id="tr-mile-mets"></div>
     <input type="hidden" id="mil-date"><input type="hidden" id="mil-vehicle"><input type="hidden" id="mil-from">
     <input type="hidden" id="mil-to"><input type="hidden" id="mil-start"><input type="hidden" id="mil-end">
     <input type="hidden" id="mil-purpose"><select id="mil-client-sel" style="display:none"><option value="">—</option></select>
-    <div class="card"><div class="card-hd">Full mileage log</div><div id="mil-table"></div></div>
+    <div class="card card-pad-0">
+      <div class="card-hd"><div class="card-hd-title">Mileage log</div><button class="btn btn-sm" onclick="openExportPanel()">Export IRS</button></div>
+      <div id="mil-table" style="padding:0"></div>
+    </div>
   </div>
   <div id="tr-jobs" style="display:none">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
@@ -2334,9 +2366,10 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar-l">
       <div class="tbar-eyebrow" id="leads-tbar-eyebrow">Leads</div>
       <div class="tbar-title">Leads</div>
-      <div class="tbar-sub">New prospects waiting for an estimate. Chase the warm ones fast.</div>
+      <div class="tbar-sub">New prospects waiting for an estimate. Cold leads turn warm again fast — chase the ones with a name beside them.</div>
     </div>
     <div class="tbar-r">
+      <button class="btn btn-sm" onclick="goPg('pg-intake')">📋 Intake form</button>
       <button class="btn btn-p btn-sm" onclick="openNewClient()">+ New lead</button>
     </div>
   </div>
@@ -2374,7 +2407,11 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar-l">
       <div class="tbar-eyebrow" id="money-tbar-eyebrow">Collect</div>
       <div class="tbar-title">Collect</div>
-      <div class="tbar-sub">Pre-written SMS for each escalation stage. Lien deadlines auto-tracked.</div>
+      <div class="tbar-sub">Pre-written SMS for each escalation stage. Lien deadlines auto-tracked under K.S.A. 60-1105.</div>
+    </div>
+    <div class="tbar-r">
+      <button class="btn btn-sm" id="money-send-all-btn" onclick="collSendAllReminders()" style="display:none">📤 Send all reminders</button>
+      <button class="btn btn-p btn-sm" onclick="openManualInvoiceModal()">+ Manual invoice</button>
     </div>
   </div>
   <div id="money-summary" style="margin-bottom:12px"></div>

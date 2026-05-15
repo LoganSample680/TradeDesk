@@ -1984,11 +1984,34 @@ function renderMoneyPage(){
   const totalOwed=allItems.filter(x=>x.bucket!=='paid').reduce((s,x)=>s+x.balance,0);
   const overdueCt=allItems.filter(x=>x.bucket==='overdue').length;
   const paidThisMonth=allItems.filter(x=>x.bucket==='paid'&&x.b.completion_date&&x.b.completion_date.startsWith(String(new Date().getFullYear())+'-'+String(new Date().getMonth()+1).padStart(2,'0'))).reduce((s,x)=>s+x.total,0);
+  // Update eyebrow
+  const eyebrowEl=document.getElementById('money-tbar-eyebrow');
+  if(eyebrowEl){
+    const overdueCounts=allItems.filter(x=>x.bucket==='overdue');
+    if(overdueCounts.length){
+      const oldest=Math.max(...overdueCounts.map(x=>x.daysUnpaid||0));
+      eyebrowEl.textContent=overdueCounts.length+' account'+(overdueCounts.length!==1?'s':'')+' past due · oldest is '+oldest+'d out';
+    } else {
+      eyebrowEl.textContent='Collect';
+    }
+  }
+  // Show/hide send all reminders button
+  const sendAllBtn=document.getElementById('money-send-all-btn');
+  if(sendAllBtn){
+    const smsEligible=allItems.filter(x=>x.bucket==='overdue'&&x.b.completion_date&&getClientById(x.b.client_id)?.phone);
+    sendAllBtn.style.display=smsEligible.length?'':'none';
+  }
   if(summEl){
+    const lienOpen=allItems.filter(x=>x.bucket==='overdue'&&x.b.completion_date).filter(x=>{
+      const {daysUntilDeadline}=getLienTimeline?.(x.b)||{daysUntilDeadline:999};
+      return daysUntilDeadline>0&&daysUntilDeadline<=60;
+    }).length;
+    const avgDaysOut=allItems.filter(x=>x.bucket==='overdue'&&x.daysUnpaid>0).reduce((s,x,_,a)=>s+x.daysUnpaid/a.length,0)||0;
     summEl.innerHTML='<div class="mets">'+
-      '<div class="met"><div class="met-l">Total owed</div><div class="met-v" style="color:'+(totalOwed>0?'#A32D2D':'var(--green-mid)')+'">'+fmt(totalOwed)+'</div></div>'+
-      '<div class="met"><div class="met-l">Overdue</div><div class="met-v" style="color:'+(overdueCt?'#A32D2D':'var(--green-mid)')+'">'+overdueCt+'</div></div>'+
-      '<div class="met"><div class="met-l">This month</div><div class="met-v" style="color:var(--blue)">'+fmt(paidThisMonth)+'</div></div>'+
+      '<div class="met"><div class="met-l">Total outstanding</div><div class="met-v" style="color:'+(totalOwed>0?'var(--c-red)':'var(--c-green)')+'">'+fmt(totalOwed)+'</div><div class="met-s">across '+allItems.filter(x=>x.bucket!=='paid').length+' accounts</div></div>'+
+      '<div class="met"><div class="met-l">Avg days out</div><div class="met-v">'+(avgDaysOut?Math.round(avgDaysOut)+'<span class="unit">d</span>':'—')+'</div><div class="met-s">target ≤ 14d</div></div>'+
+      '<div class="met"><div class="met-l">Lien windows open</div><div class="met-v" style="color:'+(lienOpen?'var(--c-amber)':'var(--text-3)')+'">'+lienOpen+'</div><div class="met-s">'+(lienOpen?'act before deadline':'none expiring soon')+'</div></div>'+
+      '<div class="met"><div class="met-l">Collected this month</div><div class="met-v" style="color:var(--c-green)">'+fmt(paidThisMonth)+'</div></div>'+
     '</div>';
   }
   // Money badge
@@ -2009,44 +2032,45 @@ function renderMoneyPage(){
     const pct=total>0?Math.min(100,Math.round(paid/total*100)):0;
     const stage=b.collStage||'none';
     const csInfo=COLL_STAGES[stage]||{};
-    const urgTag=bucket==='overdue'?
-      '<span style="font-size:10px;font-weight:800;color:#fff;background:#A32D2D;padding:2px 6px;border-radius:4px">'+daysUnpaid+'d unpaid</span>'+
-      (csInfo.label?'<span style="font-size:10px;color:'+csInfo.color+';font-weight:700;margin-left:4px">'+csInfo.label+'</span>':''):
-      bucket==='paid'?'<span style="font-size:10px;font-weight:800;color:#fff;background:var(--green);padding:2px 6px;border-radius:4px">Paid ✓</span>':'';
     const phone=c.phone?c.phone.replace(/\D/g,''):'';
-    return '<div style="padding:12px 0;border-bottom:1px solid var(--border)">'+
-      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px">'+
-        '<div style="flex:1;min-width:0">'+
-          '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:2px">'+
-            '<div style="font-size:14px;font-weight:700;cursor:pointer" onclick="openClientDetail('+c.id+')">'+(c.name)+'</div>'+
-            urgTag+
-          '</div>'+
-          '<div style="font-size:11px;color:var(--text3)">'+
-            (paid>0.01?fmt(paid)+' paid · ':'')+fmt(balance)+' remaining'+
-            (b.completion_date?' · done '+b.completion_date:'')+
-          '</div>'+
-          (total>0&&paid>0?'<div class="pay-bar" style="margin-top:6px"><div class="pay-fill" style="width:'+pct+'%;background:var(--green)"></div></div>':'')+ 
+    // Stage badge color (design spec)
+    const stageLabel=bucket==='overdue'?(daysUnpaid>=30?'30d+':daysUnpaid>=21?'21d':daysUnpaid>=14?'14d':daysUnpaid>0?'7d':'Due'):bucket==='paid'?'Paid':'Unsent';
+    const stageColor=bucket==='overdue'?(daysUnpaid>=21?'var(--c-red)':daysUnpaid>=14?'var(--c-amber)':'var(--text-2)'):bucket==='paid'?'var(--c-green)':'var(--text-3)';
+    const stageBg=bucket==='overdue'?(daysUnpaid>=21?'var(--c-red-soft)':daysUnpaid>=14?'var(--c-amber-soft)':'var(--cream)'):bucket==='paid'?'var(--c-green-soft)':'var(--cream)';
+    const stageBorder=bucket==='overdue'?(daysUnpaid>=21?'var(--c-red-edge)':daysUnpaid>=14?'var(--c-amber-edge)':'var(--line)'):bucket==='paid'?'var(--c-green-edge)':'var(--line)';
+    const {daysUntilDeadline}=getLienTimeline(b)||{daysUntilDeadline:999};
+    const lienWarn=daysUntilDeadline>0&&daysUntilDeadline<=30?
+      ' <span style="color:var(--c-red);font-weight:700">· ⚠ Lien: '+daysUntilDeadline+'d left</span>':'';
+    const nxt=getNextCollAction(stage);
+    let nextBtn='';
+    if(nxt.smsKey){
+      nextBtn='<button class="btn btn-sm" onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+nxt.smsKey+'\')" style="font-size:11px">💬 '+nxt.label+'</button>';
+    } else if(stage==='intent'||stage==='lien_ready'){
+      nextBtn='<button class="btn btn-sm" onclick="showFileLienDirect('+b.id+')" style="font-size:11px;background:var(--c-deep);color:var(--c-deep-soft);border-color:transparent">⚖️ '+nxt.label+'</button>';
+    } else if(stage==='lien_filed'){
+      nextBtn='<button class="btn btn-sm" onclick="releaseLien('+b.id+')" style="font-size:11px;background:var(--c-green-soft);color:var(--c-green);border-color:var(--c-green-edge)">'+nxt.label+'</button>';
+    }
+    return '<div style="display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);cursor:pointer" onclick="openClientDetail('+c.id+',\'money\')" >'+
+      // Stage badge box
+      '<div style="font-family:var(--font-display);font-size:16px;font-weight:900;color:'+stageColor+';background:'+stageBg+';border:1px solid '+stageBorder+';border-radius:8px;padding:7px 10px;min-width:54px;text-align:center;letter-spacing:-.4px;flex-shrink:0">'+stageLabel+'</div>'+
+      // Client info
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:14px;font-weight:800;color:var(--text);letter-spacing:-.2px">'+escHtml(c.name)+'</div>'+
+        '<div style="font-size:11px;color:var(--text-3);margin-top:2px;font-weight:500">'+
+          escHtml(csInfo.label||'Overdue')+' · '+daysUnpaid+'d past completion'+lienWarn+
         '</div>'+
-        '<div style="font-size:16px;font-weight:800;color:'+(bucket==='paid'?'var(--green-mid)':bucket==='overdue'?'#A32D2D':'var(--blue)')+'">'+fmt(bucket==='paid'?total:balance)+'</div>'+
+        (paid>0.01&&total>0?'<div class="pay-bar" style="margin-top:6px;max-width:200px"><div class="pay-fill" style="width:'+pct+'%;background:var(--c-green)"></div></div>':'')+
       '</div>'+
-      (bucket!=='paid'?
-        (()=>{
-          const stage=b.collStage||'none';
-          const nxt=getNextCollAction(stage);
-          const phone=c.phone?c.phone.replace(/\D/g,''):'';
-          let nextBtn='';
-          if(nxt.smsKey){
-            nextBtn='<button class="btn btn-sm btn-r" onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+nxt.smsKey+'\')" style="flex:1;font-size:11px">'+nxt.label+'</button>';
-          } else if(stage==='intent'||stage==='lien_ready'){
-            nextBtn='<button class="btn btn-sm btn-r" onclick="showFileLienDirect('+b.id+')" style="flex:1;font-size:11px">'+nxt.label+'</button>';
-          } else if(stage==='lien_filed'){
-            nextBtn='<button class="btn btn-sm" onclick="releaseLien('+b.id+')" style="flex:1;font-size:11px;background:var(--green-lt);color:var(--green);border-color:var(--green)">'+nxt.label+'</button>';
-          }
-          return '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
-            nextBtn+
-            '<button class="btn btn-sm btn-g" onclick="openPayPanel('+b.id+')" style="font-size:11px">💰 Log payment</button>'+
-            '</div>';
-        })():'')+
+      // Balance
+      '<div style="text-align:right;flex-shrink:0">'+
+        '<div style="font-family:var(--font-display);font-size:18px;font-weight:900;color:'+(bucket==='paid'?'var(--c-green)':'var(--c-red)')+'">'+fmt(bucket==='paid'?total:balance)+'</div>'+
+        '<div style="font-size:10px;color:var(--text-3);font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-top:2px">'+(bucket==='paid'?'paid':'owed')+'</div>'+
+      '</div>'+
+      // Action buttons
+      '<div style="display:flex;gap:6px;flex-shrink:0" onclick="event.stopPropagation()">'+
+        nextBtn+
+        '<button class="btn btn-sm btn-g" onclick="openPayPanel('+b.id+')" style="font-size:11px">💰 Log payment</button>'+
+      '</div>'+
     '</div>';
   }).join('');
 }
@@ -2067,6 +2091,30 @@ function _updateNavBadges(){
   const jd=document.getElementById('mtb-jobs-dot');
   if(jd){jd.style.display=jn?'':'none';}
 }
+// ── Send all reminders button on collect page ─────────────────────────────
+function collSendAllReminders(){
+  const tk=todayKey();
+  const due=bids.filter(b=>b.status==='Closed Won'&&getBidBalance(b)>0.01&&b.completion_date);
+  if(!due.length){zAlert('No outstanding balances to send reminders for.',{title:'All clear'});return;}
+  const count=due.filter(b=>{const c=getClientById(b.client_id);return c&&c.phone;}).length;
+  zConfirm('Send SMS reminders to '+count+' client'+(count!==1?'s':'')+' with outstanding balances?',{title:'Send all reminders',ok:'Send '+count,cancel:'Cancel'},()=>{
+    due.forEach(b=>{
+      const c=getClientById(b.client_id);if(!c||!c.phone)return;
+      const stage=b.collStage||'none';
+      const nxt=getNextCollAction(stage);
+      if(nxt.smsKey)collSendSMS(b,nxt.smsKey);
+    });
+    showToast('Reminders queued','📤');
+    setTimeout(renderMoneyPage,400);
+  });
+}
+
+// ── Manual invoice alias ───────────────────────────────────────────────────
+function openManualInvoiceModal(){
+  // Route to the log payment / manual invoice flow via pay panel if bids exist
+  openCollectModal();
+}
+
 // ── quickAction('collect') — prioritized collect modal ───────────────────
 function refreshCollectLabel(){
   const owing=bids.filter(b=>b.status==='Closed Won'&&getBidBalance(b)>0.01);
