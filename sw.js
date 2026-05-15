@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-05.15.26.02';
+const CACHE = 'tradedesk-05.15.26.03';
 const NAV_URL = '/index.html';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
