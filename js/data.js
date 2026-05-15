@@ -159,7 +159,7 @@ function _buildStateBrackets(data,status){
   return[[Math.round(top*mult),low],[Infinity,high]];
 }
 
-function saveAll(){if(_devSupportMode){supaSaveDebounced();return;}if(_isEmployee){supaSaveDebounced();return;}try{
+function saveAll(){if(_devSupportMode){_flushSaveNow();return;}if(_isEmployee){supaSaveDebounced();return;}try{
   localStorage.setItem('zp3_S',JSON.stringify(S));
   // These arrays are localStorage-only (not in Supabase schema) — safe to keep local
   localStorage.setItem('zp3_chk',JSON.stringify(checksState));
