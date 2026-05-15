@@ -394,13 +394,19 @@ async function init(){
     if(u&&bidIds.length){
       try{
         const{data:sigs}=await _supa.from('signed_proposals')
-          .select('bid_id,payment_status,payment_method,signed_at')
+          .select('bid_id,payment_status,payment_method,signed_at,deposit')
           .eq('contractor_user_id',u).in('bid_id',bidIds);
         if(sigs)sigs.forEach(sp=>{
           const bid=_hub.bids.find(b=>String(b.id)===sp.bid_id);
-          if(bid&&bid.status==='Pending'){
+          if(!bid)return;
+          if(bid.status==='Pending'){
             bid.status='Closed Won';bid.signedAt=sp.signed_at;bid.paymentStatus=sp.payment_status;
-            if(sp.payment_status==='paid')bid.balance=Math.max(0,(bid.balance||0)-(bid.deposit||0));
+          }
+          if(sp.payment_status==='paid'){
+            const amtPaid=sp.deposit||bid.deposit||0;
+            bid.paid=Math.min(bid.amount||0,(bid.paid||0)+amtPaid);
+            bid.balance=Math.max(0,(bid.balance||0)-amtPaid);
+            bid.paymentStatus='paid';
           }
         });
       }catch(e){console.warn('sig check:',e);}
