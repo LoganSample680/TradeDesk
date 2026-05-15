@@ -300,7 +300,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.15.26.24';
+const APP_VERSION='05.15.26.25';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -1780,7 +1780,9 @@ async function _autoSaveAndReload(){
   // guarantees the latest data is in the cloud before reload.
   if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
   try{await supaSaveToCloud();}catch(e){}
-  location.reload();
+  // Navigate to a timestamped URL so Chrome's HTTP cache has no entry to serve.
+  // location.reload() respects the HTTP cache and can serve stale HTML forever.
+  window.location.replace('/?_v='+Date.now());
 }
 
 // Catches pull-to-refresh, app close, app switch — fires synchronously when
