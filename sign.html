@@ -282,7 +282,7 @@ input[type=text]:focus{border-color:var(--denim)}
       </div>
     </div>
 
-    <div class="step-dots"><div class="dot active" id="d1"></div><div class="dot" id="d2"></div><div class="dot" id="d3"></div></div>
+    <div class="step-dots"><div class="dot active" id="d1"></div><div class="dot" id="d2"></div><div class="dot" id="d3"></div><div class="dot" id="d4"></div></div>
 
     <div class="card">
       <span class="lbl">Your estimate</span>
@@ -295,10 +295,22 @@ input[type=text]:focus{border-color:var(--denim)}
     <div class="card"><span class="lbl">Scope &amp; terms</span><div id="prop-html" style="font-size:13px;line-height:1.6"></div></div>
   </div>
 
-  <!-- Step 2: Sign -->
-  <div id="pg-sign-action" style="display:none">
+  <!-- Step 2: Color selection (painting only) -->
+  <div id="pg-color-pick" style="display:none">
     <button onclick="show('pg-sign');scrollTo(0,0)" style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;padding:8px 0;margin-bottom:14px">← Back to proposal</button>
-    <div class="step-dots"><div class="dot done"></div><div class="dot active"></div><div class="dot"></div></div>
+    <div class="step-dots"><div class="dot done"></div><div class="dot active"></div><div class="dot"></div><div class="dot"></div></div>
+    <div class="card">
+      <div style="font-size:20px;font-weight:900;letter-spacing:-.4px;color:var(--ink);margin-bottom:4px;font-family:var(--font-display)">Choose your colors 🎨</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:18px;line-height:1.5">Select a Sherwin-Williams color for each area below. Your contractor will order the exact paint before your project starts. You can leave any field blank and decide later.</div>
+      <div id="color-pick-rows"></div>
+      <button class="btn" onclick="_goToSignPad()" style="margin-top:6px">Continue to sign →</button>
+    </div>
+  </div>
+
+  <!-- Step 3: Sign -->
+  <div id="pg-sign-action" style="display:none">
+    <button onclick="_backFromSign();scrollTo(0,0)" style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;padding:8px 0;margin-bottom:14px">← Back</button>
+    <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div><div class="dot"></div></div>
 
     <div class="card" id="sig-card">
       <span class="sig-eyebrow">Agreement</span>
@@ -387,9 +399,9 @@ input[type=text]:focus{border-color:var(--denim)}
     </div>
   </div>
 
-  <!-- Step 3: Payment -->
+  <!-- Step 4: Payment -->
   <div id="pg-pay" style="display:none">
-    <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div></div>
+    <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div></div>
     <div class="card">
 
       <!-- Balance display -->
@@ -478,7 +490,7 @@ let sigCanvas,sigCtx,signing=false,hasInk=false;
 window._portfolioAccepted=false;
 let _portfolioStep=0;
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const pages=['pg-load','pg-sign','pg-sign-action','pg-pay','pg-done','pg-err'];
+const pages=['pg-load','pg-sign','pg-color-pick','pg-sign-action','pg-pay','pg-done','pg-err'];
 let _bootGone=false;
 function _dismissSignBoot(){
   if(_bootGone)return;_bootGone=true;
@@ -707,6 +719,74 @@ function updateTypedSigPreview(){
 }
 
 function approveAndSign(){
+  // Painting proposals with surfaces go to color picker first
+  if(_prop?.trade==='painting'&&_prop?.surfaces?.length){
+    _buildColorPickUI();
+    show('pg-color-pick');
+    scrollTo(0,0);
+    return;
+  }
+  _openSignPad();
+}
+function _buildColorPickUI(){
+  const surfs=_prop.surfaces||[];
+  // Group by cleaned room name (strip product/color note after ' — ')
+  const rooms=new Map();
+  const SURF_NICE={walls:'Walls',ceiling:'Ceiling',trim:'Trim',doors:'Doors',windows:'Windows',cabinets:'Cabinets',ext_walls:'Siding',ext_trim:'Ext Trim',deck:'Deck',fence:'Fencing',epoxy:'Epoxy Floor'};
+  surfs.forEach(s=>{
+    const roomRaw=s.room||'';
+    const roomName=(roomRaw.indexOf(' — ')>-1?roomRaw.slice(0,roomRaw.indexOf(' — ')):roomRaw).replace('[Ext] ','').trim()||'General';
+    if(!rooms.has(roomName))rooms.set(roomName,{types:[],existing:''});
+    const label=SURF_NICE[s.type]||s.type;
+    if(!rooms.get(roomName).types.includes(label))rooms.get(roomName).types.push(label);
+    // Extract existing color note if contractor pre-selected one
+    if(roomRaw.indexOf(' — ')>-1){
+      const note=roomRaw.split(' — ').slice(1).join(' — ');
+      // Color is after the product name and ·
+      const colorPart=note.split(' · ').slice(-1)[0].replace(/\s*\[.*\]/,'').trim();
+      if(colorPart&&!rooms.get(roomName).existing)rooms.get(roomName).existing=colorPart;
+    }
+  });
+  const container=document.getElementById('color-pick-rows');
+  if(!container)return;
+  let html='';
+  rooms.forEach((data,roomName)=>{
+    const safeId=roomName.replace(/[^a-zA-Z0-9]/g,'_');
+    html+='<div style="border:1px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:12px">'+
+      '<div style="font-weight:700;font-size:14px;color:var(--ink);margin-bottom:4px">'+roomName+'</div>'+
+      '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">'+data.types.join(' · ')+'</div>'+
+      '<div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end">'+
+        '<div><label style="font-size:11px;font-weight:600;color:var(--text2);display:block;margin-bottom:4px">Color name</label>'+
+        '<input type="text" id="cp-name-'+safeId+'" placeholder="e.g. Accessible Beige" value="'+_escHtml(data.existing)+'" style="width:100%;padding:9px 10px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;color:var(--ink);background:#fff">'+
+        '</div>'+
+        '<div style="width:90px"><label style="font-size:11px;font-weight:600;color:var(--text2);display:block;margin-bottom:4px">SW Code</label>'+
+        '<input type="text" id="cp-code-'+safeId+'" placeholder="SW-XXXX" maxlength="10" style="width:100%;padding:9px 10px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;color:var(--ink);background:#fff">'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  });
+  if(!html)html='<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">No surfaces to color — tap Continue to sign.</div>';
+  container.innerHTML=html;
+  window._colorPickRooms=[...rooms.keys()].map(n=>n.replace(/[^a-zA-Z0-9]/g,'_'));
+}
+function _escHtml(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function _goToSignPad(){
+  // Collect color choices before moving to sign pad
+  window._colorChoices=[];
+  (window._colorPickRooms||[]).forEach(safeId=>{
+    const nameEl=document.getElementById('cp-name-'+safeId);
+    const codeEl=document.getElementById('cp-code-'+safeId);
+    const name=(nameEl?.value||'').trim();
+    const code=(codeEl?.value||'').trim().toUpperCase();
+    if(name||code)window._colorChoices.push({room:safeId.replace(/_/g,' ').trim(),colorName:name,swCode:code});
+  });
+  _openSignPad();
+}
+function _backFromSign(){
+  if(_prop?.trade==='painting'&&_prop?.surfaces?.length){show('pg-color-pick');scrollTo(0,0);}
+  else{show('pg-sign');scrollTo(0,0);}
+}
+function _openSignPad(){
   const metaDate=document.getElementById('sig-meta-date');
   if(metaDate)metaDate.textContent=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   const el=document.getElementById('sign-act-total');
@@ -854,7 +934,7 @@ async function submitCash(){
   const _subAmt=(window._portfolioAccepted&&_prop.discountedPrice)?_prop.discountedPrice:_prop.amount;
   const _subDep=Math.round(_subAmt*0.25*100)/100;
   try{
-    const updated={..._prop,status:'signed',signedAt:ts,signerName:name,paymentMethod:'cash',signatureDataUrl:_sigData,portfolioAccepted:window._portfolioAccepted,finalAmount:_subAmt};
+    const updated={..._prop,status:'signed',signedAt:ts,signerName:name,paymentMethod:'cash',signatureDataUrl:_sigData,portfolioAccepted:window._portfolioAccepted,finalAmount:_subAmt,colorChoices:window._colorChoices||[]};
     await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true});
     await _supa.from('signed_proposals').upsert({
       bid_id:String(_prop.id),contractor_user_id:_prop.contractorUserId,
@@ -926,6 +1006,7 @@ async function _launchEmbedded(amount,paymentMethod){
       bidId:String(_prop.id),contractorUserId:_prop.contractorUserId,
       notifyEmail:_prop.notifyEmail,signatureDataUrl:_sigData,
       signerName:document.getElementById('sig-name').value.trim(),
+      colorChoices:window._colorChoices||[],
       successUrl:location.href+'&payment=success',cancelUrl:location.href,
       embedded:true,
     })
