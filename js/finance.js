@@ -72,11 +72,8 @@ function openExpenseFlow(){
 }
 
 function closeExpenseFlow(){document.getElementById('expense-modal')?.remove();_expState={imageData:null,imageKey:null,hasReceipt:false};}
-function expTriggerScan(){document.getElementById('exp-file-inp')?.click();}
-function expTriggerAttach(){document.getElementById('exp-attach-inp')?.click();}
-function expAttachPhotoOnly(input){
-  const file=input.files[0];if(!file)return;input.value='';
-  _showReceiptScanner(file,async blob=>{
+function expTriggerAttach(){
+  _showReceiptScanner(null,async blob=>{
     const attachArea=document.getElementById('exp-attach-area');
     const preview=document.getElementById('exp-preview-img');
     if(attachArea)attachArea.style.opacity='.5';
@@ -91,35 +88,22 @@ function expAttachPhotoOnly(input){
     }catch(e){if(attachArea)attachArea.style.opacity='1';}
   });
 }
+function expAttachPhotoOnly(input){expTriggerAttach();}  // legacy — redirect to live scanner
 
-function expProcessPhoto(input){
-  const file=input.files[0];if(!file)return;input.value='';
-  // Fetch token in background while user crops
-  const tokenP=(async()=>{
-    if(!_supa)return null;
-    const{data}=await _supa.auth.getSession();let t=data?.session?.access_token||null;
-    if(!t){const{data:r}=await _supa.auth.refreshSession();t=r?.session?.access_token||null;}
-    return t;
-  })();
-  _showReceiptScanner(file,async blob=>{
+function expTriggerScan(){
+  const tokenP=(async()=>{if(!_supa)return null;const{data}=await _supa.auth.getSession();let t=data?.session?.access_token||null;if(!t){const{data:r}=await _supa.auth.refreshSession();t=r?.session?.access_token||null;}return t;})();
+  _showReceiptScanner(null,async blob=>{
     const status=document.getElementById('exp-scan-status');
     const scanArea=document.getElementById('exp-scan-area');
     const token=await tokenP;
-    if(!token){
-      if(status){status.style.display='block';status.innerHTML='<div class="tip tip-w">Sign in to use receipt scanning. <button class="btn btn-sm btn-p" onclick="supaShowLogin()" style="margin-left:8px">Sign in</button></div>';}
-      return;
-    }
+    if(!token){if(status){status.style.display='block';status.innerHTML='<div class="tip tip-w">Sign in to use receipt scanning. <button class="btn btn-sm btn-p" onclick="supaShowLogin()" style="margin-left:8px">Sign in</button></div>';}return;}
     if(status){status.style.display='block';status.innerHTML='<div class="tip"><strong>📡 Reading receipt...</strong></div>';}
     if(scanArea)scanArea.style.opacity='.5';
     const b64=await compressAndEncodeImage(blob);
     _expState.imageData={b64,type:'image/jpeg'};
     try{
-      const resp=await fetch('https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/scan-receipt',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
-        body:JSON.stringify({imageBase64:b64,mediaType:'image/jpeg'})
-      });
-      if(!resp.ok){const t=await resp.text();console.warn('scan-receipt:',resp.status,t);throw new Error('Scan error '+resp.status);}
+      const resp=await fetch('https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/scan-receipt',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({imageBase64:b64,mediaType:'image/jpeg'})});
+      if(!resp.ok)throw new Error('Scan error '+resp.status);
       const parsed=await resp.json();
       if(parsed.vendor)document.getElementById('em-vendor').value=parsed.vendor;
       if(parsed.amount)document.getElementById('em-amount').value=parsed.amount;
@@ -138,6 +122,7 @@ function expProcessPhoto(input){
     }
   });
 }
+function expProcessPhoto(input){expTriggerScan();}
 
 async function compressAndEncodeImage(file,maxPx=1200,qual=0.85){
   return new Promise(resolve=>{
@@ -157,9 +142,167 @@ async function compressAndEncodeImage(file,maxPx=1200,qual=0.85){
   });
 }
 
-// ── Receipt Scanner (TurboScan-style perspective crop + auto-enhance) ───
+// ── Receipt Scanner (TurboScan-style live camera + perspective crop) ────
 
-function _showReceiptScanner(file,callback){
+// Entry point — use live camera if available, else fall back to file picker
+function _showReceiptScanner(fileOrNull, callback){
+  if(navigator.mediaDevices?.getUserMedia){
+    _openLiveScanner(callback);
+  } else {
+    // No getUserMedia — use file picker then show crop UI
+    if(fileOrNull){_loadAndBuildScanUI(fileOrNull,callback);}
+    else{
+      const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.capture='environment';inp.style.display='none';
+      inp.onchange=()=>{const f=inp.files[0];inp.remove();if(f)_loadAndBuildScanUI(f,callback);};
+      document.body.appendChild(inp);inp.click();
+    }
+  }
+}
+
+async function _openLiveScanner(callback){
+  document.getElementById('live-scan-ui')?.remove();
+  const ov=document.createElement('div');
+  ov.id='live-scan-ui';
+  ov.style.cssText='position:fixed;inset:0;background:#000;z-index:10000;font-family:inherit;overflow:hidden';
+  document.body.appendChild(ov);
+
+  // Video element — fills screen
+  const video=document.createElement('video');
+  video.playsInline=true;video.autoplay=true;video.muted=true;
+  video.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover';
+  ov.appendChild(video);
+
+  // Overlay canvas — same size, drawn on top
+  const overlay=document.createElement('canvas');
+  overlay.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
+  ov.appendChild(overlay);
+
+  // Top bar
+  const topBar=document.createElement('div');
+  topBar.style.cssText='position:absolute;top:0;left:0;right:0;padding:env(safe-area-inset-top,0px) 16px 12px;padding-top:calc(env(safe-area-inset-top,0px) + 12px);background:linear-gradient(rgba(0,0,0,.6),transparent);display:flex;justify-content:space-between;align-items:center;z-index:1';
+  topBar.innerHTML='<button id="ls-cancel" style="background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.3);color:#fff;padding:8px 18px;border-radius:20px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">✕ Cancel</button>'+
+    '<div style="color:#fff;font-size:13px;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,.8)">Point at receipt</div>'+
+    '<div style="width:80px"></div>';
+  ov.appendChild(topBar);
+
+  // Bottom bar — shutter button
+  const botBar=document.createElement('div');
+  botBar.style.cssText='position:absolute;bottom:0;left:0;right:0;padding:20px 0 calc(env(safe-area-inset-bottom,0px) + 24px);display:flex;justify-content:center;align-items:center;background:linear-gradient(transparent,rgba(0,0,0,.6));z-index:1';
+  botBar.innerHTML='<button id="ls-shutter" style="width:72px;height:72px;border-radius:50%;background:#fff;border:5px solid rgba(255,255,255,.4);cursor:pointer;box-shadow:0 4px 24px rgba(0,0,0,.5);transition:transform .1s" onmousedown="this.style.transform=\'scale(.93)\'" onmouseup="this.style.transform=\'\'"></button>';
+  ov.appendChild(botBar);
+
+  // Hint label (changes based on detection state)
+  const hint=document.createElement('div');
+  hint.id='ls-hint';
+  hint.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 115px);left:0;right:0;text-align:center;color:#fff;font-size:13px;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,.9);pointer-events:none;z-index:1';
+  hint.textContent='Align receipt in view';
+  ov.appendChild(hint);
+
+  let stream=null;
+  const stopStream=()=>stream?.getTracks().forEach(t=>t.stop());
+
+  // Try to start camera
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}});
+    video.srcObject=stream;
+    await new Promise(res=>{video.onloadedmetadata=res;});
+    video.play();
+  }catch(e){
+    ov.remove();
+    // Fallback to file picker
+    const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.capture='environment';inp.style.display='none';
+    inp.onchange=()=>{const f=inp.files[0];inp.remove();if(f)_loadAndBuildScanUI(f,callback);};
+    document.body.appendChild(inp);inp.click();
+    return;
+  }
+
+  let detectedCorners=null,stableFrames=0,detecting=false;
+
+  function runDetection(){
+    if(detecting||!video.videoWidth)return;
+    detecting=true;
+    const tw=160,th=Math.round(video.videoHeight*160/video.videoWidth);
+    const tmp=document.createElement('canvas');tmp.width=tw;tmp.height=th;
+    const tc=tmp.getContext('2d');tc.drawImage(video,0,0,tw,th);
+    const raw=_scanDetectCornersFromCanvas(tc,tw,th);
+    if(raw){
+      const sx=video.videoWidth/tw,sy=video.videoHeight/th;
+      detectedCorners=raw.map(c=>({x:c.x*sx,y:c.y*sy}));
+      stableFrames=Math.min(stableFrames+1,8);
+    } else {
+      detectedCorners=null;stableFrames=Math.max(stableFrames-1,0);
+    }
+    detecting=false;
+  }
+
+  function drawOverlay(){
+    overlay.width=ov.offsetWidth;overlay.height=ov.offsetHeight;
+    const oc=overlay.getContext('2d');
+    oc.clearRect(0,0,overlay.width,overlay.height);
+    if(!detectedCorners||!video.videoWidth)return;
+
+    // Map video coords → overlay coords (accounting for object-fit:cover)
+    const vw=video.videoWidth,vh=video.videoHeight;
+    const dw=ov.offsetWidth,dh=ov.offsetHeight;
+    const vAR=vw/vh,dAR=dw/dh;
+    let scale,ox=0,oy=0;
+    if(vAR>dAR){scale=dh/vh;ox=(dw-vw*scale)/2;}
+    else{scale=dw/vw;oy=(dh-vh*scale)/2;}
+    const map=c=>({x:c.x*scale+ox,y:c.y*scale+oy});
+    const sc=detectedCorners.map(map);
+
+    const confident=stableFrames>=4;
+    oc.beginPath();
+    oc.moveTo(sc[0].x,sc[0].y);
+    sc.slice(1).forEach(c=>oc.lineTo(c.x,c.y));
+    oc.closePath();
+    oc.fillStyle=confident?'rgba(14,165,233,0.15)':'rgba(255,255,255,0.08)';oc.fill();
+    oc.strokeStyle=confident?'#38bdf8':'rgba(255,255,255,0.5)';
+    oc.lineWidth=3;oc.setLineDash(confident?[]:[10,6]);oc.stroke();oc.setLineDash([]);
+    // Corner dots
+    sc.forEach(c=>{oc.beginPath();oc.arc(c.x,c.y,7,0,Math.PI*2);oc.fillStyle=confident?'#38bdf8':'rgba(255,255,255,.6)';oc.fill();});
+
+    const hintEl=document.getElementById('ls-hint');
+    if(hintEl)hintEl.textContent=confident?'✓ Receipt detected — tap shutter':'Align receipt in view';
+  }
+
+  const detInterval=setInterval(()=>{runDetection();drawOverlay();},350);
+
+  function capture(){
+    clearInterval(detInterval);
+    const cap=document.createElement('canvas');
+    cap.width=video.videoWidth;cap.height=video.videoHeight;
+    cap.getContext('2d').drawImage(video,0,0);
+    stopStream();ov.remove();
+
+    if(detectedCorners&&stableFrames>=3){
+      // Auto-warp with detected corners
+      const img=new Image();
+      cap.toBlob(blob=>{
+        img.onload=()=>{
+          try{
+            const warped=_scanWarp(img,cap.width,cap.height,detectedCorners);
+            _scanEnhance(warped);
+            warped.toBlob(wb=>callback(wb),'image/jpeg',0.92);
+          }catch(e){callback(blob);}
+        };
+        img.src=URL.createObjectURL(blob);
+      },'image/jpeg',0.95);
+    } else {
+      // No detection — show manual crop UI
+      cap.toBlob(blob=>{
+        const img=new Image();
+        img.onload=()=>{URL.revokeObjectURL(img.src);_buildScanUI(img,blob,callback);};
+        img.src=URL.createObjectURL(blob);
+      },'image/jpeg',0.95);
+    }
+  }
+
+  document.getElementById('ls-cancel').onclick=()=>{clearInterval(detInterval);stopStream();ov.remove();};
+  document.getElementById('ls-shutter').onclick=capture;
+}
+
+function _loadAndBuildScanUI(file,callback){
   const url=URL.createObjectURL(file);
   const img=new Image();
   img.onload=()=>{URL.revokeObjectURL(url);_buildScanUI(img,file,callback);};
@@ -167,7 +310,7 @@ function _showReceiptScanner(file,callback){
   img.src=url;
 }
 
-function _buildScanUI(img,origFile,callback){
+function _buildScanUI(img,origBlob,callback){
   document.getElementById('rcpt-scan-ui')?.remove();
   const ov=document.createElement('div');
   ov.id='rcpt-scan-ui';
@@ -268,7 +411,9 @@ function _buildScanUI(img,origFile,callback){
   };
 }
 
-function _scanDetectCorners(ctx,w,h){
+// Used by _buildScanUI (draws from display canvas)
+function _scanDetectCorners(ctx,w,h){return _scanDetectCornersFromCanvas(ctx,w,h);}
+function _scanDetectCornersFromCanvas(ctx,w,h){
   try{
     const tw=160,th=Math.round(h*160/w);
     const tmp=document.createElement('canvas');tmp.width=tw;tmp.height=th;
@@ -1166,28 +1311,21 @@ function renderMonthlyPL(){
 
 // ── Add receipt photo to an existing expense ─────────────────────────
 function addReceiptToExpense(expId){
-  const inp=document.createElement('input');
-  inp.type='file';inp.accept='image/*';inp.capture='environment';
-  inp.style.display='none';
-  inp.onchange=()=>{
-    const file=inp.files[0];inp.remove();if(!file)return;
-    _showReceiptScanner(file,async blob=>{
-      const exp=expenses.find(e=>e.id==expId);if(!exp)return;
-      showToast('Attaching photo...','📎',2500);
+  _showReceiptScanner(null,async blob=>{
+    const exp=expenses.find(e=>e.id==expId);if(!exp)return;
+    showToast('Attaching photo...','📎',2500);
+    try{
+      const b64=await compressAndEncodeImage(blob,900,0.75);
       try{
-        const b64=await compressAndEncodeImage(blob,900,0.75);
-        try{
-          const key=await _uploadReceiptToStorage(exp.id,b64);
-          if(key){exp.receipt_key=key;exp.receipt_img=null;}
-          else exp.receipt_img='data:image/jpeg;base64,'+b64;
-        }catch(e){exp.receipt_img='data:image/jpeg;base64,'+b64;}
-        exp.receipt='Yes — photo stored';
-        if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
-        renderExpenses();showToast('Receipt attached to '+exp.vendor,'📎');
-      }catch(e){showToast('Could not attach photo','⚠️');}
-    });
-  };
-  document.body.appendChild(inp);inp.click();
+        const key=await _uploadReceiptToStorage(exp.id,b64);
+        if(key){exp.receipt_key=key;exp.receipt_img=null;}
+        else exp.receipt_img='data:image/jpeg;base64,'+b64;
+      }catch(e){exp.receipt_img='data:image/jpeg;base64,'+b64;}
+      exp.receipt='Yes — photo stored';
+      if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
+      renderExpenses();showToast('Receipt attached to '+exp.vendor,'📎');
+    }catch(e){showToast('Could not attach photo','⚠️');}
+  });
 }
 
 // ── Receipt viewer ────────────────────────────────────────────────────
@@ -2045,16 +2183,13 @@ function renderIncome(){
       '</tr>';
     }).join('')+'</tbody></table></div>';
 }
-function triggerReceiptScan(){
-  openExpenseFlow();
-  // Give the modal time to render, then trigger the scan inside it
-  setTimeout(()=>expTriggerScan(),200);
-}
+function triggerReceiptScan(){_scanAndFillBooksExpense();}
 
-function processReceiptPhoto(input){
-  const file=input.files[0];if(!file)return;input.value='';
+function processReceiptPhoto(input){input.value='';_scanAndFillBooksExpense();}
+
+function _scanAndFillBooksExpense(){
   const tokenP=(async()=>{const session=_supa?await _supa.auth.getSession():null;return session?.data?.session?.access_token||null;})();
-  _showReceiptScanner(file,async blob=>{
+  _showReceiptScanner(null,async blob=>{
     const tip=document.getElementById('scan-tip');
     const resultArea=document.getElementById('scan-result');
     if(tip)tip.innerHTML='<strong>Reading receipt...</strong>';
@@ -2072,10 +2207,7 @@ function processReceiptPhoto(input){
       if(parsed.vendor)document.getElementById('exp-vendor').value=parsed.vendor;
       if(parsed.amount)document.getElementById('exp-amount').value=parsed.amount;
       if(parsed.date)document.getElementById('exp-date').value=parsed.date;
-      if(parsed.category){
-        const sel=document.getElementById('exp-cat');
-        for(let i=0;i<sel.options.length;i++){if(sel.options[i].text.toLowerCase().includes(parsed.category.toLowerCase())){sel.selectedIndex=i;break;}}
-      }
+      if(parsed.category){const sel=document.getElementById('exp-cat');for(let i=0;i<sel.options.length;i++){if(sel.options[i].text.toLowerCase().includes(parsed.category.toLowerCase())){sel.selectedIndex=i;break;}}}
       if(parsed.notes)document.getElementById('exp-notes').value=parsed.notes;
       document.getElementById('exp-receipt').value='Yes — photo taken';
       if(resultArea){resultArea.style.display='block';resultArea.innerHTML='<div class="tip tip-s" style="margin-bottom:8px"><strong>&#10003; Receipt read</strong> — '+(parsed.vendor||'vendor')+' · '+fmt(parsed.amount||0)+'. Review below and save.</div>';}
