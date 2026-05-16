@@ -305,7 +305,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.16.26.58';
+const APP_VERSION='05.16.26.59';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -863,6 +863,12 @@ async function supaSaveToCloud(){
       }
       return e;
     });
+    // localStorage backup — survives Part 2 network failure + app close.
+    // Guard against localStorage quota: skip if payload > 4MB.
+    try{
+      const _rcptJson=JSON.stringify(receiptImages);
+      if(_rcptJson.length<4*1024*1024)localStorage.setItem('zp3_rcpt_imgs',_rcptJson);
+    }catch(e){}
     const incomeSnap=[...income];
     const mileageSnap=[...mileage];
     const timeEntriesSnap=[...timeEntries];
@@ -1205,8 +1211,10 @@ async function supaLoadFromCloud(){
     jobs=parse(data.jobs,jobs);
     payments=parse(data.payments,payments);
     income=parse(data.income,income);
-    // Restore receipt images from dedicated column back onto expense records
-    const rcptImgs=parse(data.receipt_images,{});
+    // Restore receipt images: merge localStorage backup with cloud column.
+    // Cloud takes priority per ID; localStorage fills gaps where Part 2 failed.
+    const _lsRcpt=(()=>{try{return JSON.parse(localStorage.getItem('zp3_rcpt_imgs')||'{}')}catch{return{}}})();
+    const rcptImgs={..._lsRcpt,...parse(data.receipt_images,{})};
     const rawExp=parse(data.expenses,expenses);
     expenses=rawExp.map(e=>rcptImgs[e.id]?{...e,receipt_img:rcptImgs[e.id]}:e);
     expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
