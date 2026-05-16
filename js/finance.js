@@ -74,87 +74,69 @@ function openExpenseFlow(){
 function closeExpenseFlow(){document.getElementById('expense-modal')?.remove();_expState={imageData:null,imageKey:null,hasReceipt:false};}
 function expTriggerScan(){document.getElementById('exp-file-inp')?.click();}
 function expTriggerAttach(){document.getElementById('exp-attach-inp')?.click();}
-async function expAttachPhotoOnly(input){
-  const file=input.files[0];if(!file)return;
-  const attachArea=document.getElementById('exp-attach-area');
-  const preview=document.getElementById('exp-preview-img');
-  if(attachArea)attachArea.style.opacity='.5';
-  try{
-    const b64=await compressAndEncodeImage(file,900,0.75);
-    _expState.imageData={b64,type:'image/jpeg'};
-    _expState.hasReceipt=true;
-    if(preview){
-      preview.style.display='block';
-      const reader=new FileReader();
-      reader.onload=e=>{preview.innerHTML='<img src="'+e.target.result+'" style="max-height:80px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green-mid);margin-top:4px;font-weight:700">📎 Photo attached</div>';};
-      reader.readAsDataURL(file);
-    }
-    if(attachArea){attachArea.style.opacity='1';attachArea.style.borderColor='var(--green-mid)';}
-  }catch(e){
-    if(attachArea)attachArea.style.opacity='1';
-  }
-  input.value='';
+function expAttachPhotoOnly(input){
+  const file=input.files[0];if(!file)return;input.value='';
+  _showReceiptScanner(file,async blob=>{
+    const attachArea=document.getElementById('exp-attach-area');
+    const preview=document.getElementById('exp-preview-img');
+    if(attachArea)attachArea.style.opacity='.5';
+    try{
+      const b64=await compressAndEncodeImage(blob,900,0.75);
+      _expState.imageData={b64,type:'image/jpeg'};_expState.hasReceipt=true;
+      if(preview){
+        preview.style.display='block';
+        preview.innerHTML='<img src="data:image/jpeg;base64,'+b64+'" style="max-height:80px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green-mid);margin-top:4px;font-weight:700">📎 Photo attached</div>';
+      }
+      if(attachArea){attachArea.style.opacity='1';attachArea.style.borderColor='var(--green-mid)';}
+    }catch(e){if(attachArea)attachArea.style.opacity='1';}
+  });
 }
 
-async function expProcessPhoto(input){
-  const file=input.files[0];if(!file)return;
-  const status=document.getElementById('exp-scan-status');
-  const scanArea=document.getElementById('exp-scan-area');
-
-  // Get auth token
-  let token=null;
-  if(_supa){
-    const{data}=await _supa.auth.getSession();
-    token=data?.session?.access_token||null;
-    // If no session, try refreshing
+function expProcessPhoto(input){
+  const file=input.files[0];if(!file)return;input.value='';
+  // Fetch token in background while user crops
+  const tokenP=(async()=>{
+    if(!_supa)return null;
+    const{data}=await _supa.auth.getSession();let t=data?.session?.access_token||null;
+    if(!t){const{data:r}=await _supa.auth.refreshSession();t=r?.session?.access_token||null;}
+    return t;
+  })();
+  _showReceiptScanner(file,async blob=>{
+    const status=document.getElementById('exp-scan-status');
+    const scanArea=document.getElementById('exp-scan-area');
+    const token=await tokenP;
     if(!token){
-      const{data:r}=await _supa.auth.refreshSession();
-      token=r?.session?.access_token||null;
+      if(status){status.style.display='block';status.innerHTML='<div class="tip tip-w">Sign in to use receipt scanning. <button class="btn btn-sm btn-p" onclick="supaShowLogin()" style="margin-left:8px">Sign in</button></div>';}
+      return;
     }
-  }
-
-  if(!token){
-    status.style.display='block';
-    status.innerHTML='<div class="tip tip-w">Sign in to use receipt scanning. <button class="btn btn-sm btn-p" onclick="supaShowLogin()" style="margin-left:8px">Sign in</button></div>';
-    input.value='';return;
-  }
-
-  status.style.display='block';
-  status.innerHTML='<div class="tip"><strong>📡 Reading receipt...</strong></div>';
-  scanArea.style.opacity='.5';
-  const b64=await compressAndEncodeImage(file);
-  _expState.imageData={b64,type:'image/jpeg'};
-  try{
-    const resp=await fetch('https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/scan-receipt',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
-      body:JSON.stringify({imageBase64:b64,mediaType:'image/jpeg'})
-    });
-    if(!resp.ok){
-      const errText=await resp.text();
-      console.warn('scan-receipt response:',resp.status,errText);
-      throw new Error('Scan error '+resp.status);
+    if(status){status.style.display='block';status.innerHTML='<div class="tip"><strong>📡 Reading receipt...</strong></div>';}
+    if(scanArea)scanArea.style.opacity='.5';
+    const b64=await compressAndEncodeImage(blob);
+    _expState.imageData={b64,type:'image/jpeg'};
+    try{
+      const resp=await fetch('https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/scan-receipt',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
+        body:JSON.stringify({imageBase64:b64,mediaType:'image/jpeg'})
+      });
+      if(!resp.ok){const t=await resp.text();console.warn('scan-receipt:',resp.status,t);throw new Error('Scan error '+resp.status);}
+      const parsed=await resp.json();
+      if(parsed.vendor)document.getElementById('em-vendor').value=parsed.vendor;
+      if(parsed.amount)document.getElementById('em-amount').value=parsed.amount;
+      if(parsed.date)document.getElementById('em-date').value=parsed.date;
+      if(parsed.category)document.getElementById('em-cat').value=parsed.category;
+      if(parsed.notes)document.getElementById('em-notes').value=parsed.notes;
+      const preview=document.getElementById('exp-preview-img');
+      if(preview){preview.style.display='block';preview.innerHTML='<img src="data:image/jpeg;base64,'+b64+'" style="max-height:80px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green-mid);margin-top:4px;font-weight:700">✓ Receipt captured</div>';}
+      _expState.hasReceipt=true;
+      if(scanArea){scanArea.style.opacity='1';scanArea.style.borderColor='var(--green-mid)';}
+      _confirmReceiptDate(parsed.date||'',status);
+    }catch(e){
+      console.warn('Receipt scan failed:',e);
+      if(status)status.innerHTML='<div class="tip tip-w">Could not auto-read — fill in manually below.</div>';
+      if(scanArea)scanArea.style.opacity='1';
     }
-    const parsed=await resp.json();
-    if(parsed.vendor)document.getElementById('em-vendor').value=parsed.vendor;
-    if(parsed.amount)document.getElementById('em-amount').value=parsed.amount;
-    if(parsed.date)document.getElementById('em-date').value=parsed.date;
-    if(parsed.category)document.getElementById('em-cat').value=parsed.category;
-    if(parsed.notes)document.getElementById('em-notes').value=parsed.notes;
-    const preview=document.getElementById('exp-preview-img');
-    preview.style.display='block';
-    const reader=new FileReader();
-    reader.onload=e=>preview.innerHTML='<img src="'+e.target.result+'" style="max-height:80px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green-mid);margin-top:4px;font-weight:700">✓ Receipt captured</div>';
-    reader.readAsDataURL(file);
-    _expState.hasReceipt=true;
-    scanArea.style.opacity='1';scanArea.style.borderColor='var(--green-mid)';
-    _confirmReceiptDate(parsed.date||'',status);
-  }catch(e){
-    console.warn('Receipt scan failed:',e);
-    status.innerHTML='<div class="tip tip-w">Could not auto-read — fill in manually below.</div>';
-    scanArea.style.opacity='1';
-  }
-  input.value='';
+  });
 }
 
 async function compressAndEncodeImage(file,maxPx=1200,qual=0.85){
@@ -174,6 +156,203 @@ async function compressAndEncodeImage(file,maxPx=1200,qual=0.85){
     img.src=url;
   });
 }
+
+// ── Receipt Scanner (TurboScan-style perspective crop + auto-enhance) ───
+
+function _showReceiptScanner(file,callback){
+  const url=URL.createObjectURL(file);
+  const img=new Image();
+  img.onload=()=>{URL.revokeObjectURL(url);_buildScanUI(img,file,callback);};
+  img.onerror=()=>{URL.revokeObjectURL(url);callback(file);};
+  img.src=url;
+}
+
+function _buildScanUI(img,origFile,callback){
+  document.getElementById('rcpt-scan-ui')?.remove();
+  const ov=document.createElement('div');
+  ov.id='rcpt-scan-ui';
+  ov.style.cssText='position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column;font-family:inherit';
+  document.body.appendChild(ov);
+
+  const hdr=document.createElement('div');
+  hdr.style.cssText='padding:12px 16px;display:flex;justify-content:space-between;align-items:center;background:#111;flex-shrink:0';
+  hdr.innerHTML=
+    '<button id="scan-skip-btn" style="background:none;border:1px solid #555;color:#ccc;padding:7px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Skip</button>'+
+    '<div style="color:#fff;font-size:14px;font-weight:700">Crop receipt</div>'+
+    '<button id="scan-use-btn" style="background:#0ea5e9;border:none;color:#fff;padding:7px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Use scan ✓</button>';
+  ov.appendChild(hdr);
+
+  const wrap=document.createElement('div');
+  wrap.style.cssText='flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;background:#000';
+  ov.appendChild(wrap);
+
+  const cvs=document.createElement('canvas');
+  cvs.style.cssText='touch-action:none;max-width:100%;max-height:100%;display:block';
+  wrap.appendChild(cvs);
+  const ctx=cvs.getContext('2d');
+
+  const foot=document.createElement('div');
+  foot.style.cssText='padding:10px 16px;background:#111;text-align:center;flex-shrink:0;color:#888;font-size:12px';
+  foot.textContent='Drag the blue corners to the edges of your receipt';
+  ov.appendChild(foot);
+
+  const maxW=window.innerWidth,maxH=window.innerHeight-110;
+  const scale=Math.min(maxW/img.naturalWidth,maxH/img.naturalHeight,1);
+  const dw=Math.round(img.naturalWidth*scale),dh=Math.round(img.naturalHeight*scale);
+  cvs.width=dw;cvs.height=dh;
+  ctx.drawImage(img,0,0,dw,dh);
+
+  const p=0.06;
+  let corners=[
+    {x:dw*p,     y:dh*p},
+    {x:dw*(1-p), y:dh*p},
+    {x:dw*(1-p), y:dh*(1-p)},
+    {x:dw*p,     y:dh*(1-p)},
+  ];
+  const auto=_scanDetectCorners(ctx,dw,dh);
+  if(auto)corners=auto;
+
+  let active=-1;
+  const HR=Math.max(18,Math.min(28,dw*0.05));
+
+  function redraw(){
+    ctx.drawImage(img,0,0,dw,dh);
+    ctx.beginPath();
+    ctx.moveTo(corners[0].x,corners[0].y);
+    for(let i=1;i<4;i++)ctx.lineTo(corners[i].x,corners[i].y);
+    ctx.closePath();
+    ctx.fillStyle='rgba(14,165,233,0.18)';ctx.fill();
+    ctx.strokeStyle='#38bdf8';ctx.lineWidth=2;ctx.setLineDash([8,4]);ctx.stroke();ctx.setLineDash([]);
+    corners.forEach((c,i)=>{
+      ctx.beginPath();ctx.arc(c.x,c.y,HR,0,Math.PI*2);
+      ctx.fillStyle=i===active?'#fff':'#0ea5e9';ctx.fill();
+      ctx.strokeStyle='#fff';ctx.lineWidth=2.5;ctx.stroke();
+    });
+  }
+  redraw();
+
+  function evPos(e){
+    const rect=cvs.getBoundingClientRect(),t=e.touches?e.touches[0]:e;
+    return{x:(t.clientX-rect.left)*(dw/rect.width),y:(t.clientY-rect.top)*(dh/rect.height)};
+  }
+  function nearest(pos){
+    const hit=Math.max(44,dw*0.1)*(dw/(cvs.getBoundingClientRect().width||dw));
+    let best=-1,bd=hit;
+    corners.forEach((c,i)=>{const d=Math.hypot(c.x-pos.x,c.y-pos.y);if(d<bd){bd=d;best=i;}});
+    return best;
+  }
+  function clamp(c){return{x:Math.max(0,Math.min(dw,c.x)),y:Math.max(0,Math.min(dh,c.y))};}
+
+  cvs.addEventListener('touchstart',e=>{e.preventDefault();active=nearest(evPos(e));redraw();},{passive:false});
+  cvs.addEventListener('touchmove',e=>{e.preventDefault();if(active<0)return;corners[active]=clamp(evPos(e));redraw();},{passive:false});
+  cvs.addEventListener('touchend',e=>{e.preventDefault();active=-1;redraw();},{passive:false});
+  cvs.addEventListener('mousedown',e=>{active=nearest(evPos(e));redraw();});
+  cvs.addEventListener('mousemove',e=>{if(active<0||!e.buttons)return;corners[active]=clamp(evPos(e));redraw();});
+  cvs.addEventListener('mouseup',()=>{active=-1;redraw();});
+
+  document.getElementById('scan-skip-btn').onclick=()=>{ov.remove();callback(origFile);};
+  document.getElementById('scan-use-btn').onclick=()=>{
+    const btn=document.getElementById('scan-use-btn');
+    if(!btn)return;btn.disabled=true;btn.textContent='Processing…';
+    foot.textContent='Applying perspective correction…';
+    const ws=Math.min(1500/img.naturalWidth,1500/img.naturalHeight,1);
+    const ww=Math.round(img.naturalWidth*ws),wh=Math.round(img.naturalHeight*ws);
+    const sc=corners.map(c=>({x:c.x/scale*ws,y:c.y/scale*ws}));
+    setTimeout(()=>{
+      try{
+        const warped=_scanWarp(img,ww,wh,sc);
+        _scanEnhance(warped);
+        warped.toBlob(blob=>{ov.remove();callback(blob);},'image/jpeg',0.92);
+      }catch(e){console.warn('Scan warp failed:',e);ov.remove();callback(origFile);}
+    },16);
+  };
+}
+
+function _scanDetectCorners(ctx,w,h){
+  try{
+    const tw=160,th=Math.round(h*160/w);
+    const tmp=document.createElement('canvas');tmp.width=tw;tmp.height=th;
+    const tc=tmp.getContext('2d');tc.drawImage(ctx.canvas,0,0,tw,th);
+    const d=tc.getImageData(0,0,tw,th).data;
+    const gray=new Uint8Array(tw*th);
+    for(let i=0;i<tw*th;i++)gray[i]=Math.round(d[i*4]*0.299+d[i*4+1]*0.587+d[i*4+2]*0.114);
+    const sorted=[...gray].sort((a,b)=>a-b);
+    const med=sorted[sorted.length>>1];
+    const thr=28;
+    let x0=tw,x1=0,y0=th,y1=0;
+    for(let y=0;y<th;y++)for(let x=0;x<tw;x++){
+      const g=gray[y*tw+x];
+      const hit=med<128?g>med+thr:g<med-thr;
+      if(hit){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
+    }
+    if(x1<=x0||y1<=y0||(x1-x0)<tw*0.25||(y1-y0)<th*0.25)return null;
+    const pad=5;
+    x0=Math.max(0,x0-pad);y0=Math.max(0,y0-pad);
+    x1=Math.min(tw-1,x1+pad);y1=Math.min(th-1,y1+pad);
+    const sx=w/tw,sy=h/th;
+    return[{x:x0*sx,y:y0*sy},{x:x1*sx,y:y0*sy},{x:x1*sx,y:y1*sy},{x:x0*sx,y:y1*sy}];
+  }catch(e){return null;}
+}
+
+function _scanWarp(img,w,h,corners){
+  const[tl,tr,br,bl]=corners;
+  const outW=Math.round(Math.max(Math.hypot(tr.x-tl.x,tr.y-tl.y),Math.hypot(br.x-bl.x,br.y-bl.y)));
+  const outH=Math.round(Math.max(Math.hypot(bl.x-tl.x,bl.y-tl.y),Math.hypot(br.x-tr.x,br.y-tr.y)));
+  const src=document.createElement('canvas');src.width=w;src.height=h;
+  const sctx=src.getContext('2d');sctx.drawImage(img,0,0,w,h);
+  const sData=sctx.getImageData(0,0,w,h).data;
+  const dst=document.createElement('canvas');dst.width=outW;dst.height=outH;
+  const dctx=dst.getContext('2d');const dImg=dctx.createImageData(outW,outH);const dd=dImg.data;
+  const hm=_scanHomography([[0,0],[outW,0],[outW,outH],[0,outH]],[[tl.x,tl.y],[tr.x,tr.y],[br.x,br.y],[bl.x,bl.y]]);
+  for(let y=0;y<outH;y++)for(let x=0;x<outW;x++){
+    const ww=hm[6]*x+hm[7]*y+1;
+    const sx=Math.round((hm[0]*x+hm[1]*y+hm[2])/ww);
+    const sy=Math.round((hm[3]*x+hm[4]*y+hm[5])/ww);
+    if(sx>=0&&sx<w&&sy>=0&&sy<h){
+      const si=(sy*w+sx)<<2,di=(y*outW+x)<<2;
+      dd[di]=sData[si];dd[di+1]=sData[si+1];dd[di+2]=sData[si+2];dd[di+3]=255;
+    }
+  }
+  dctx.putImageData(dImg,0,0);return dst;
+}
+
+function _scanHomography(src4,dst4){
+  const A=[],b=[];
+  for(let i=0;i<4;i++){
+    const[sx,sy]=src4[i],[dx,dy]=dst4[i];
+    A.push([-sx,-sy,-1,0,0,0,sx*dx,sy*dx]);b.push(-dx);
+    A.push([0,0,0,-sx,-sy,-1,sx*dy,sy*dy]);b.push(-dy);
+  }
+  const n=8,M=A.map((r,i)=>[...r,b[i]]);
+  for(let c=0;c<n;c++){
+    let mx=c;for(let r=c+1;r<n;r++)if(Math.abs(M[r][c])>Math.abs(M[mx][c]))mx=r;
+    [M[c],M[mx]]=[M[mx],M[c]];
+    for(let r=c+1;r<n;r++){const f=M[r][c]/M[c][c];for(let j=c;j<=n;j++)M[r][j]-=f*M[c][j];}
+  }
+  const x=new Array(n).fill(0);
+  for(let i=n-1;i>=0;i--){x[i]=M[i][n];for(let j=i+1;j<n;j++)x[i]-=M[i][j]*x[j];x[i]/=M[i][i];}
+  return x;
+}
+
+function _scanEnhance(canvas){
+  const ctx=canvas.getContext('2d');const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+  const d=img.data,n=d.length;
+  let rMin=255,rMax=0,gMin=255,gMax=0,bMin=255,bMax=0;
+  for(let i=0;i<n;i+=4){
+    if(d[i]<rMin)rMin=d[i];if(d[i]>rMax)rMax=d[i];
+    if(d[i+1]<gMin)gMin=d[i+1];if(d[i+1]>gMax)gMax=d[i+1];
+    if(d[i+2]<bMin)bMin=d[i+2];if(d[i+2]>bMax)bMax=d[i+2];
+  }
+  const rs=255/Math.max(1,rMax-rMin),gs=255/Math.max(1,gMax-gMin),bs=255/Math.max(1,bMax-bMin);
+  for(let i=0;i<n;i+=4){
+    d[i]=Math.min(255,(d[i]-rMin)*rs);
+    d[i+1]=Math.min(255,(d[i+1]-gMin)*gs);
+    d[i+2]=Math.min(255,(d[i+2]-bMin)*bs);
+  }
+  ctx.putImageData(img,0,0);
+}
+
+// ── End Receipt Scanner ──────────────────────────────────────────────────
 
 function _confirmReceiptDate(aiDate,statusEl){
   const existing=document.getElementById('rcpt-date-confirm');
@@ -990,23 +1169,23 @@ function addReceiptToExpense(expId){
   const inp=document.createElement('input');
   inp.type='file';inp.accept='image/*';inp.capture='environment';
   inp.style.display='none';
-  inp.onchange=async()=>{
+  inp.onchange=()=>{
     const file=inp.files[0];inp.remove();if(!file)return;
-    const exp=expenses.find(e=>e.id==expId);if(!exp)return;
-    showToast('Attaching photo...','📎',2500);
-    try{
-      const b64=await compressAndEncodeImage(file,900,0.75);
+    _showReceiptScanner(file,async blob=>{
+      const exp=expenses.find(e=>e.id==expId);if(!exp)return;
+      showToast('Attaching photo...','📎',2500);
       try{
-        const key=await _uploadReceiptToStorage(exp.id,b64);
-        if(key){exp.receipt_key=key;exp.receipt_img=null;}
-        else exp.receipt_img='data:image/jpeg;base64,'+b64;
-      }catch(e){
-        exp.receipt_img='data:image/jpeg;base64,'+b64;
-      }
-      exp.receipt='Yes — photo stored';
-      if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
-      renderExpenses();showToast('Receipt attached to '+exp.vendor,'📎');
-    }catch(e){showToast('Could not attach photo','⚠️');}
+        const b64=await compressAndEncodeImage(blob,900,0.75);
+        try{
+          const key=await _uploadReceiptToStorage(exp.id,b64);
+          if(key){exp.receipt_key=key;exp.receipt_img=null;}
+          else exp.receipt_img='data:image/jpeg;base64,'+b64;
+        }catch(e){exp.receipt_img='data:image/jpeg;base64,'+b64;}
+        exp.receipt='Yes — photo stored';
+        if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
+        renderExpenses();showToast('Receipt attached to '+exp.vendor,'📎');
+      }catch(e){showToast('Could not attach photo','⚠️');}
+    });
   };
   document.body.appendChild(inp);inp.click();
 }
@@ -1872,47 +2051,41 @@ function triggerReceiptScan(){
   setTimeout(()=>expTriggerScan(),200);
 }
 
-async function processReceiptPhoto(input){
-  const file=input.files[0];if(!file)return;
-  const tip=document.getElementById('scan-tip');
-  const resultArea=document.getElementById('scan-result');
-  tip.innerHTML='<strong>Reading receipt...</strong>';
-  resultArea.style.display='none';
-  const b64=await new Promise((res,rej)=>{
-    const r=new FileReader();
-    r.onload=()=>res(r.result.split(',')[1]);
-    r.onerror=rej;
-    r.readAsDataURL(file);
-  });
-  try{
-    // Call via Supabase Edge Function so API key stays secure server-side
-    const session=_supa?await _supa.auth.getSession():null;
-    const token=session?.data?.session?.access_token;
-    const resp=await fetch('https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/scan-receipt',{
-      method:'POST',
-      headers:{'Content-Type':'application/json',...(token?{'Authorization':'Bearer '+token}:{})},
-      body:JSON.stringify({imageBase64:b64,mediaType:'image/jpeg'})
-    });
-    if(!resp.ok)throw new Error('Scan service error '+resp.status);
-    const parsed=await resp.json();
-    if(parsed.vendor)document.getElementById('exp-vendor').value=parsed.vendor;
-    if(parsed.amount)document.getElementById('exp-amount').value=parsed.amount;
-    if(parsed.date)document.getElementById('exp-date').value=parsed.date;
-    if(parsed.category){
-      const sel=document.getElementById('exp-cat');
-      for(let i=0;i<sel.options.length;i++){if(sel.options[i].text.toLowerCase().includes(parsed.category.toLowerCase())){sel.selectedIndex=i;break;}}
+function processReceiptPhoto(input){
+  const file=input.files[0];if(!file)return;input.value='';
+  const tokenP=(async()=>{const session=_supa?await _supa.auth.getSession():null;return session?.data?.session?.access_token||null;})();
+  _showReceiptScanner(file,async blob=>{
+    const tip=document.getElementById('scan-tip');
+    const resultArea=document.getElementById('scan-result');
+    if(tip)tip.innerHTML='<strong>Reading receipt...</strong>';
+    if(resultArea)resultArea.style.display='none';
+    const b64=await compressAndEncodeImage(blob);
+    try{
+      const token=await tokenP;
+      const resp=await fetch('https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/scan-receipt',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',...(token?{'Authorization':'Bearer '+token}:{})},
+        body:JSON.stringify({imageBase64:b64,mediaType:'image/jpeg'})
+      });
+      if(!resp.ok)throw new Error('Scan service error '+resp.status);
+      const parsed=await resp.json();
+      if(parsed.vendor)document.getElementById('exp-vendor').value=parsed.vendor;
+      if(parsed.amount)document.getElementById('exp-amount').value=parsed.amount;
+      if(parsed.date)document.getElementById('exp-date').value=parsed.date;
+      if(parsed.category){
+        const sel=document.getElementById('exp-cat');
+        for(let i=0;i<sel.options.length;i++){if(sel.options[i].text.toLowerCase().includes(parsed.category.toLowerCase())){sel.selectedIndex=i;break;}}
+      }
+      if(parsed.notes)document.getElementById('exp-notes').value=parsed.notes;
+      document.getElementById('exp-receipt').value='Yes — photo taken';
+      if(resultArea){resultArea.style.display='block';resultArea.innerHTML='<div class="tip tip-s" style="margin-bottom:8px"><strong>&#10003; Receipt read</strong> — '+(parsed.vendor||'vendor')+' · '+fmt(parsed.amount||0)+'. Review below and save.</div>';}
+      if(tip)tip.textContent='Receipt scanned. Review the details below and tap Save expense.';
+      document.getElementById('exp-vendor')?.scrollIntoView({behavior:'smooth',block:'center'});
+    }catch(e){
+      if(tip)tip.textContent='Could not read receipt. Fill in manually below.';
+      if(resultArea)resultArea.style.display='none';
     }
-    if(parsed.notes)document.getElementById('exp-notes').value=parsed.notes;
-    document.getElementById('exp-receipt').value='Yes — photo taken';
-    resultArea.style.display='block';
-    resultArea.innerHTML='<div class="tip tip-s" style="margin-bottom:8px"><strong>&#10003; Receipt read</strong> — '+(parsed.vendor||'vendor')+' · '+fmt(parsed.amount||0)+'. Review below and save.</div>';
-    tip.textContent='Receipt scanned. Review the details below and tap Save expense.';
-    document.getElementById('exp-vendor').scrollIntoView({behavior:'smooth',block:'center'});
-  }catch(e){
-    tip.textContent='Could not read receipt. Fill in manually below.';
-    resultArea.style.display='none';
-  }
-  input.value='';
+  });
 }
 
 function populateExpJobSel(){
