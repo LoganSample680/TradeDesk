@@ -305,7 +305,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.16.26.61';
+const APP_VERSION='05.16.26.62';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -823,8 +823,14 @@ async function supaSignOut(){
 
 // ── Supabase Storage helpers for receipt photos ───────────────────────
 async function _uploadReceiptToStorage(expenseId,b64){
-  if(!_supa||!_supaUser||_devSupportMode||_isEmployee)return null;
-  const path=_supaUser.id+'/'+expenseId+'.jpg';
+  if(!_supa||!_supaUser||_isEmployee)return null;
+  let targetUserId=_supaUser.id;
+  if(_devSupportMode){
+    const su=Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName);
+    if(!su)return null;
+    targetUserId=su.userId;
+  }
+  const path=targetUserId+'/'+expenseId+'.jpg';
   const byteStr=atob(b64);
   const arr=new Uint8Array(byteStr.length);
   for(let i=0;i<byteStr.length;i++)arr[i]=byteStr.charCodeAt(i);
