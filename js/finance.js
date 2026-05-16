@@ -253,25 +253,33 @@ async function expSave(){
   }
   btn.disabled=true;btn.textContent='Saving...';
   if(err)err.textContent='';
-  // Store photo inline on the expense record — no storage bucket needed
-  const receipt_img=_expState.imageData?('data:image/jpeg;base64,'+_expState.imageData.b64):null;
   const catInfo=IRS_EXPENSE_CATS.find(c=>c.id===cat)||{};
   const job=jobId?bids.find(b=>b.id===jobId):null;
   const mealPurpose=cat==='meals'?(document.getElementById('em-meal-purpose')?.value||'').trim():'';
   const mealAttendees=cat==='meals'?(document.getElementById('em-meal-attendees')?.value||'').trim():'';
+  const expId=Date.now();
+  let receipt_img=null,receipt_key=null;
+  if(_expState.imageData){
+    try{
+      receipt_key=await _uploadReceiptToStorage(expId,_expState.imageData.b64);
+    }catch(e){
+      // Fall back to inline if bucket upload fails (offline, etc.)
+      receipt_img='data:image/jpeg;base64,'+_expState.imageData.b64;
+    }
+    if(!receipt_key&&!receipt_img)receipt_img='data:image/jpeg;base64,'+_expState.imageData.b64;
+  }
   expenses.push({
-    id:Date.now(),date,cat,catLabel:catInfo.label||cat,vendor,amount,notes,
+    id:expId,date,cat,catLabel:catInfo.label||cat,vendor,amount,notes,
     lead_source:leadSource||undefined,
     meal_purpose:mealPurpose||undefined,meal_attendees:mealAttendees||undefined,
     created_at:new Date().toISOString(),
     job_id:jobId,job_name:job?job.client_name||job.name:'',client_id:job?job.client_id:null,
-    receipt:receipt_img?'Yes — photo stored':'No receipt photo',receipt_img,
+    receipt:receipt_key||receipt_img?'Yes — photo stored':'No receipt photo',
+    receipt_key,receipt_img,
     deductible:catInfo.deductible!==false,meals_50:!!(catInfo.meals_50),
   });
   expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
-  // Flush immediately when a receipt photo is attached — don't wait for the 2s debounce.
-  // Debounce + page-close = photo lost before it reaches Supabase.
-  if(receipt_img&&typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
+  if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
   if(typeof renderExpenses==='function')renderExpenses();
   showToast((new Date(date).getFullYear()<new Date().getFullYear()?'Back-tax expense':'Expense')+' saved — '+vendor+' '+fmt(amount),receipt_img?'📎':'🧾');
   if(cat==='tools'&&amount>=500)setTimeout(()=>showToast('💡 Equipment $'+amount.toFixed(0)+'+ may qualify for Section 179 immediate deduction — flag for your CPA','📋'),900);
@@ -988,7 +996,13 @@ function addReceiptToExpense(expId){
     showToast('Attaching photo...','📎',2500);
     try{
       const b64=await compressAndEncodeImage(file,900,0.75);
-      exp.receipt_img='data:image/jpeg;base64,'+b64;
+      try{
+        const key=await _uploadReceiptToStorage(exp.id,b64);
+        if(key){exp.receipt_key=key;exp.receipt_img=null;}
+        else exp.receipt_img='data:image/jpeg;base64,'+b64;
+      }catch(e){
+        exp.receipt_img='data:image/jpeg;base64,'+b64;
+      }
       exp.receipt='Yes — photo stored';
       if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
       renderExpenses();showToast('Receipt attached to '+exp.vendor,'📎');
@@ -998,22 +1012,28 @@ function addReceiptToExpense(expId){
 }
 
 // ── Receipt viewer ────────────────────────────────────────────────────
-function viewReceipt(expId){
+async function viewReceipt(expId){
   const exp=expenses.find(e=>e.id==expId);
-  const src=exp?.receipt_img;
-  if(!src)return zAlert('No receipt photo stored for this expense.',{title:'No photo'});
+  if(!exp?.receipt_img&&!exp?.receipt_key)return zAlert('No receipt photo stored for this expense.',{title:'No photo'});
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  ov.className='rcpt-ov';
+  ov.innerHTML='<div style="max-width:600px;width:100%;text-align:center"><div style="color:#fff;font-size:13px;opacity:.6;margin-bottom:12px">Loading…</div></div>';
+  document.body.appendChild(ov);
+  let src=exp.receipt_img||null;
+  if(!src&&exp.receipt_key){
+    try{src=await _getReceiptSignedUrl(exp.receipt_key,300);}
+    catch(e){ov.remove();return zAlert('Could not load receipt photo.',{title:'Error'});}
+  }
+  const fname='receipt_'+(exp.date||'')+'_'+(exp.vendor||'').replace(/[^a-z0-9]/gi,'_')+'.jpg';
   ov.innerHTML='<div style="max-width:600px;width:100%;text-align:center">'+
     '<img src="'+src+'" style="max-width:100%;max-height:80vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5)">'+
     '<div style="margin-top:12px;display:flex;gap:10px;justify-content:center">'+
-      '<a href="'+src+'" download="receipt_'+(exp.date||'')+'_'+(exp.vendor||'').replace(/[^a-z0-9]/gi,'_')+'.jpg" style="color:#fff;font-size:13px;font-weight:600;text-decoration:none;background:rgba(255,255,255,.15);padding:8px 16px;border-radius:8px">⬇ Save photo</a>'+
+      '<a href="'+src+'" download="'+fname+'" style="color:#fff;font-size:13px;font-weight:600;text-decoration:none;background:rgba(255,255,255,.15);padding:8px 16px;border-radius:8px">⬇ Save photo</a>'+
       '<button onclick="this.closest(\'.rcpt-ov\').remove()" style="color:#fff;font-size:13px;font-weight:600;background:rgba(255,255,255,.15);border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-family:inherit">✕ Close</button>'+
     '</div>'+
   '</div>';
-  ov.className='rcpt-ov';
-  document.body.appendChild(ov);
 }
 
 // ── State-based tax & lien info ────────────────────────────────────────
@@ -1440,11 +1460,22 @@ function exportFullBackup(){
   downloadFile(biz+'_TradeDesk_Backup_'+ts+'.json',JSON.stringify(backup,null,2),'application/json');
   showToast('Full backup downloaded — keep this safe','💾');
 }
-function exportReceiptImages(){
+async function exportReceiptImages(){
   const yr=document.getElementById('exp-panel-year')?.value||new Date().getFullYear();
-  const filtered=expenses.filter(e=>e.receipt_img&&(yr==='all'||String(new Date(e.date).getFullYear())===String(yr)))
+  const filtered=expenses.filter(e=>(e.receipt_img||e.receipt_key)&&(yr==='all'||String(new Date(e.date).getFullYear())===String(yr)))
     .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   if(!filtered.length){zAlert('No stored receipt photos for '+yr+'.',{title:'No receipts'});return;}
+  // Pre-fetch all bucket images as data URLs before opening print window
+  // (signed URLs can expire during long print sessions; data URLs are safe)
+  showToast('Preparing receipt PDF…','📄',3000);
+  const _srcMap={};
+  await Promise.all(filtered.map(async e=>{
+    if(e.receipt_img){_srcMap[e.id]=e.receipt_img;return;}
+    if(e.receipt_key){
+      try{_srcMap[e.id]=await _downloadReceiptAsDataUrl(e.receipt_key);}
+      catch(err){console.warn('Could not fetch receipt',e.id,err);}
+    }
+  }));
   const bname=S.bname||'TradeDesk';
   const pages=filtered.map((e,i)=>{
     const cat=e.catLabel||e.cat||'';
@@ -1461,7 +1492,7 @@ function exportReceiptImages(){
           ${e.notes?`<span class="field notes">${e.notes}</span>`:''}
         </div>
       </div>
-      <div class="img-wrap"><img src="${e.receipt_img}" alt="Receipt ${i+1}"></div>
+      <div class="img-wrap">${_srcMap[e.id]?`<img src="${_srcMap[e.id]}" alt="Receipt ${i+1}">`:'<div style="color:#999;font-size:13px;padding:40px">Image unavailable</div>'}</div>
     </div>`;
   }).join('');
   const win=window.open('','_blank');
