@@ -305,7 +305,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.16.26.60';
+const APP_VERSION='05.16.26.61';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -844,6 +844,11 @@ async function _downloadReceiptAsDataUrl(receiptKey){
   const{data,error}=await _supa.storage.from('receipts').download(receiptKey);
   if(error)throw error;
   return new Promise(resolve=>{const r=new FileReader();r.onload=e=>resolve(e.target.result);r.readAsDataURL(data);});
+}
+async function _deleteReceiptFromStorage(receiptKey){
+  if(!_supa||!receiptKey)return;
+  const{error}=await _supa.storage.from('receipts').remove([receiptKey]);
+  if(error)throw error;
 }
 function supaSaveDebounced(){
   if(!supaEnabled()||!_supaUser)return;

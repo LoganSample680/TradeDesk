@@ -1029,11 +1029,29 @@ async function viewReceipt(expId){
   const fname='receipt_'+(exp.date||'')+'_'+(exp.vendor||'').replace(/[^a-z0-9]/gi,'_')+'.jpg';
   ov.innerHTML='<div style="max-width:600px;width:100%;text-align:center">'+
     '<img src="'+src+'" style="max-width:100%;max-height:80vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5)">'+
-    '<div style="margin-top:12px;display:flex;gap:10px;justify-content:center">'+
+    '<div style="margin-top:12px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">'+
       '<a href="'+src+'" download="'+fname+'" style="color:#fff;font-size:13px;font-weight:600;text-decoration:none;background:rgba(255,255,255,.15);padding:8px 16px;border-radius:8px">⬇ Save photo</a>'+
+      '<button onclick="deleteReceiptPhoto('+expId+')" style="color:#fff;font-size:13px;font-weight:600;background:rgba(180,30,30,.7);border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-family:inherit">🗑 Delete photo</button>'+
       '<button onclick="this.closest(\'.rcpt-ov\').remove()" style="color:#fff;font-size:13px;font-weight:600;background:rgba(255,255,255,.15);border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-family:inherit">✕ Close</button>'+
     '</div>'+
   '</div>';
+}
+function deleteReceiptPhoto(expId){
+  zConfirm('Delete this receipt photo? The expense record stays intact — you can add a new photo anytime.',{title:'Delete photo?',ok:'Delete photo',cancel:'Cancel'},async()=>{
+    const exp=expenses.find(e=>e.id==expId);
+    if(!exp)return;
+    if(exp.receipt_key){
+      try{await _deleteReceiptFromStorage(exp.receipt_key);}
+      catch(e){console.warn('Storage delete failed:',e);}
+    }
+    exp.receipt_img=null;
+    exp.receipt_key=null;
+    exp.receipt=null;
+    if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
+    document.querySelector('.rcpt-ov')?.remove();
+    renderExpenses();
+    showToast('Receipt photo deleted','🗑️');
+  });
 }
 
 // ── State-based tax & lien info ────────────────────────────────────────
