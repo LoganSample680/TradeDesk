@@ -1027,12 +1027,8 @@ async function viewReceipt(expId){
     catch(e){ov.remove();return zAlert('Could not load receipt photo.',{title:'Error'});}
   }
   const fname='receipt_'+(exp.date||'')+'_'+(exp.vendor||'').replace(/[^a-z0-9]/gi,'_')+'.jpg';
-  const storageBadge=exp.receipt_key
-    ?'<div style="display:inline-block;background:rgba(16,185,129,.2);color:#6ee7b7;font-size:11px;font-weight:700;padding:3px 10px;border-radius:12px;margin-bottom:10px">☁️ Supabase Storage</div>'
-    :'<div style="display:inline-block;background:rgba(245,158,11,.2);color:#fcd34d;font-size:11px;font-weight:700;padding:3px 10px;border-radius:12px;margin-bottom:10px">💾 Inline (DB row)</div>';
   ov.innerHTML='<div style="max-width:600px;width:100%;text-align:center">'+
-    storageBadge+
-    '<img src="'+src+'" style="max-width:100%;max-height:75vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5)">'+
+    '<img src="'+src+'" style="max-width:100%;max-height:80vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5)">'+
     '<div style="margin-top:12px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">'+
       '<a href="'+src+'" download="'+fname+'" style="color:#fff;font-size:13px;font-weight:600;text-decoration:none;background:rgba(255,255,255,.15);padding:8px 16px;border-radius:8px">⬇ Save photo</a>'+
       '<button onclick="deleteReceiptPhoto('+expId+')" style="color:#fff;font-size:13px;font-weight:600;background:rgba(180,30,30,.7);border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-family:inherit">🗑 Delete photo</button>'+
