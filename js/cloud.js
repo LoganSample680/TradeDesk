@@ -305,7 +305,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.16.26.57';
+const APP_VERSION='05.16.26.58';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -1181,6 +1181,10 @@ function resendProposalLink(bidId){
 }
 async function supaLoadFromCloud(){
   if(!_supa||!_supaUser)return;
+  // Flush any pending debounced save BEFORE overwriting memory — prevents PTR
+  // from discarding unsaved receipt photos or other in-flight writes.
+  if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;try{await supaSaveToCloud();}catch(e){}}
+  else if(_pendingSavePromise){try{await _pendingSavePromise;}catch(e){}}
   try{
     const _loadUid=_isEmployee?_contractorUserId:_supaUser.id;
     const{data,error}=await _supa.from('zj_data').select('*').eq('user_id',_loadUid).maybeSingle();
