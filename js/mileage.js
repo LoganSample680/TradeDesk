@@ -685,7 +685,9 @@ function _tripDestSearch(val){
           }
         }
       }
-      const results=await _geocodeAddress(val,5,_fromBias?.lat||null,_fromBias?.lng||null);
+      let results=await _geocodeAddress(val,5,_fromBias?.lat||null,_fromBias?.lng||null);
+      // Bias may cut off distant locations (e.g. MT address when starting from KS) — retry unbiased
+      if(!results.length&&_fromBias)results=await _geocodeAddress(val,5);
       results.forEach(res=>{
         const safeL1=res.line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
         const safeL2=res.line2.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
