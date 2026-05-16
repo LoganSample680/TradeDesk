@@ -3148,12 +3148,18 @@ setTimeout(()=>{
                 if(!cloudIds.has(id)){arr.unshift(rec);_rescued++;}
               });
             });
-            // Restore receipt_img from snapshot for expenses that exist in cloud
-            // but whose image column (receipt_images in Part 2) failed to save.
+            // Restore receipt data from snapshot for expenses present in cloud
+            // but missing their photo (Part 2 failed or bucket upload didn't complete).
             expenses.forEach((e,i)=>{
               const snapped=_snap.expenses.get(e.id);
-              if(snapped?.receipt_img&&!e.receipt_img){
-                expenses[i]={...e,receipt_img:snapped.receipt_img,receipt:snapped.receipt||e.receipt};
+              if(!snapped)return;
+              const hasImg=e.receipt_img||e.receipt_key;
+              const snappedImg=snapped.receipt_img||snapped.receipt_key;
+              if(snappedImg&&!hasImg){
+                expenses[i]={...e,
+                  receipt_img:snapped.receipt_img||e.receipt_img,
+                  receipt_key:snapped.receipt_key||e.receipt_key,
+                  receipt:snapped.receipt||e.receipt};
                 _rescued++;
               }
             });

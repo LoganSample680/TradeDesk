@@ -305,7 +305,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.16.26.59';
+const APP_VERSION='05.16.26.60';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -821,6 +821,30 @@ async function supaSignOut(){
   if(_supa)await _supa.auth.signOut();
 }
 
+// ── Supabase Storage helpers for receipt photos ───────────────────────
+async function _uploadReceiptToStorage(expenseId,b64){
+  if(!_supa||!_supaUser||_devSupportMode||_isEmployee)return null;
+  const path=_supaUser.id+'/'+expenseId+'.jpg';
+  const byteStr=atob(b64);
+  const arr=new Uint8Array(byteStr.length);
+  for(let i=0;i<byteStr.length;i++)arr[i]=byteStr.charCodeAt(i);
+  const blob=new Blob([arr],{type:'image/jpeg'});
+  const{error}=await _supa.storage.from('receipts').upload(path,blob,{contentType:'image/jpeg',upsert:true});
+  if(error)throw error;
+  return path;
+}
+async function _getReceiptSignedUrl(receiptKey,expiresIn=300){
+  if(!_supa||!receiptKey)return null;
+  const{data,error}=await _supa.storage.from('receipts').createSignedUrl(receiptKey,expiresIn);
+  if(error)throw error;
+  return data?.signedUrl||null;
+}
+async function _downloadReceiptAsDataUrl(receiptKey){
+  if(!_supa||!receiptKey)return null;
+  const{data,error}=await _supa.storage.from('receipts').download(receiptKey);
+  if(error)throw error;
+  return new Promise(resolve=>{const r=new FileReader();r.onload=e=>resolve(e.target.result);r.readAsDataURL(data);});
+}
 function supaSaveDebounced(){
   if(!supaEnabled()||!_supaUser)return;
   clearTimeout(_syncTimer);
@@ -854,6 +878,20 @@ async function supaSaveToCloud(){
   try{
     // Snapshot ALL data synchronously before any await — prevents _devExitSupportMode()
     // restoring Diana's arrays between Part 1 and Part 2 and corrupting Zach's row.
+    // Lazy-migrate up to 3 inline receipt_img per save → Supabase Storage bucket.
+    // Skip in support/employee mode — RLS blocks writing to other users' folders.
+    if(!_devSupportMode&&!_isEmployee&&_supaUser){
+      const toMigrate=expenses.filter(e=>e.receipt_img&&!e.receipt_key).slice(0,3);
+      for(const e of toMigrate){
+        try{
+          const b64=e.receipt_img.includes(',')?e.receipt_img.split(',')[1]:e.receipt_img;
+          const key=await _uploadReceiptToStorage(e.id,b64);
+          if(key){e.receipt_key=key;e.receipt_img=null;}
+        }catch(err){console.warn('[receipt migrate]',err);}
+      }
+    }
+    // Build receipt_images for any expenses still using inline storage (pre-migration).
+    // Written to DB column as transition fallback; will shrink to empty over time.
     const receiptImages={};
     const expensesForSync=expenses.map(e=>{
       if(e.receipt_img){
@@ -863,11 +901,11 @@ async function supaSaveToCloud(){
       }
       return e;
     });
-    // localStorage backup — survives Part 2 network failure + app close.
-    // Guard against localStorage quota: skip if payload > 4MB.
+    // localStorage backup for remaining inline images only.
     try{
       const _rcptJson=JSON.stringify(receiptImages);
       if(_rcptJson.length<4*1024*1024)localStorage.setItem('zp3_rcpt_imgs',_rcptJson);
+      else localStorage.removeItem('zp3_rcpt_imgs');
     }catch(e){}
     const incomeSnap=[...income];
     const mileageSnap=[...mileage];
@@ -1808,6 +1846,39 @@ async function _autoSaveAndReload(){
 // Catches pull-to-refresh, app close, app switch — fires synchronously when
 // the page is about to be hidden/unloaded. Browser navigation kills the 2s
 // debounce timer; this is the only reliable way to flush pending changes.
+// ── Dev tools: receipt storage migration & recovery ───────────────────
+window._migrateReceiptsToStorage=async function(){
+  if(!_supa||!_supaUser){console.warn('Not signed in');return;}
+  const pending=expenses.filter(e=>e.receipt_img&&!e.receipt_key);
+  if(!pending.length){console.log('Nothing to migrate — all receipts already in bucket');return;}
+  console.log('Migrating',pending.length,'receipts to storage...');
+  let ok=0,fail=0;
+  for(const e of pending){
+    try{
+      const b64=e.receipt_img.includes(',')?e.receipt_img.split(',')[1]:e.receipt_img;
+      const key=await _uploadReceiptToStorage(e.id,b64);
+      if(key){e.receipt_key=key;e.receipt_img=null;ok++;}
+    }catch(err){console.warn('Failed expense',e.id,err);fail++;}
+  }
+  console.log('Done:',ok,'migrated,',fail,'failed');
+  if(ok>0){_flushSaveNow();console.log('Saved to cloud.');}
+};
+window._restoreReceiptsFromStorage=async function(){
+  if(!_supa||!_supaUser){console.warn('Not signed in');return;}
+  const{data:files,error}=await _supa.storage.from('receipts').list(_supaUser.id,{limit:1000});
+  if(error){console.error(error);return;}
+  if(!files?.length){console.log('No files in bucket for this user');return;}
+  const bucketIds=new Set(files.map(f=>parseInt(f.name)));
+  let restored=0;
+  expenses.forEach(e=>{
+    if(!e.receipt_key&&bucketIds.has(e.id)){
+      e.receipt_key=_supaUser.id+'/'+e.id+'.jpg';
+      restored++;
+    }
+  });
+  console.log('Restored receipt_key on',restored,'expenses');
+  if(restored>0){_flushSaveNow();console.log('Saved.');}
+};
 window.addEventListener('pagehide',()=>{
   if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;supaSaveToCloud();}
 });
