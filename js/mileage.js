@@ -1311,7 +1311,7 @@ function _milRenderTripList(shown,yr){
     const monthShort=dateObj.toLocaleDateString('en-US',{month:'short'}).toUpperCase();
     const openClass=dayIdx===0?' open':'';
     const reviewClass=needsCount?' has-review':'';
-    const tripRows=trips.slice().sort((a,b)=>(a.created_at||'').localeCompare(b.created_at||'')).map(r=>{
+    const tripRows=trips.slice().sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).map(r=>{
       const fromAddr=r.from_name||r.from||'';
       const toAddr=r.to_name||r.to||(r.client_id?getClientById(r.client_id)?.addr||'':'');
       const needsClass=r.purpose?'':' needs';
