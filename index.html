@@ -641,11 +641,12 @@ body.dark .cal-cell.other{background:var(--cream)}
   .qa-grid{grid-template-columns:repeat(3,1fr)}
   .qa{padding:14px 6px;font-size:10px}
   .qa-emoji{font-size:20px}
-  .kanban{grid-template-columns:repeat(5,minmax(200px,86vw));overflow-x:auto;padding-bottom:8px;-webkit-overflow-scrolling:touch}
+  .kanban{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-bottom:12px;gap:10px}
+  .kcol{flex:0 0 82vw;scroll-snap-align:start}
   .cal-cell{min-height:64px;padding:4px}
   .tbl th,.tbl td{padding:8px;font-size:11px}
   .zmodal-overlay{padding:10px}
-  .tbar-r{width:100%}
+  .tbar-r{width:100%;flex-wrap:wrap}
 }
 @media(max-width:380px){
   .mets{grid-template-columns:1fr 1fr}
@@ -2240,7 +2241,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="tbar-title">Books</div>
       <div class="tbar-sub">Every payment, receipt, and mile. Categories follow IRS Schedule C buckets so taxes are one tap.</div>
     </div>
-    <div class="tbar-r" style="flex-wrap:nowrap">
+    <div class="tbar-r">
       <button class="btn btn-sm" onclick="triggerReceiptScan()">📷 Scan receipt</button>
       <button class="btn btn-sm" onclick="openDriveModal()">📍 Log trip</button>
       <button class="btn btn-p btn-sm" onclick="openManualIncomeModal()">+ Add entry</button>
