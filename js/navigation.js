@@ -8,7 +8,9 @@ function goPg(id){
   if(id==='pg-dash')window._fromDash=false;
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
+  const _pgEl=document.getElementById(id);
+  if(!_pgEl){console.error('[goPg] element not found:',id);if(id!=='pg-dash')goPg('pg-dash');return;}
+  _pgEl.classList.add('active');
   const nb=document.getElementById({
     'pg-leads':'nb-leads','pg-jobs':'nb-jobs','pg-money':'nb-money',
     'pg-schedule':'nb-jobs',
