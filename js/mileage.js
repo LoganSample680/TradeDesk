@@ -1311,17 +1311,20 @@ function _milRenderTripList(shown,yr){
     const monthShort=dateObj.toLocaleDateString('en-US',{month:'short'}).toUpperCase();
     const openClass=dayIdx===0?' open':'';
     const reviewClass=needsCount?' has-review':'';
-    const tripRows=trips.slice().sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||'')).map(r=>{
+    const _sorted=trips.slice().sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+    const tripRows=_sorted.map((r,i)=>{
       const fromAddr=r.from_name||r.from||'';
       const toAddr=r.to_name||r.to||(r.client_id?getClientById(r.client_id)?.addr||'':'');
       const needsClass=r.purpose?'':' needs';
+      const tripNum=trips.length-i;
       return '<div class="mil-day-trip'+needsClass+'">'+
         '<div class="mil-day-trip-route">'+
           '<div class="mil-route-spine"><div class="mil-route-pin-s"></div><div class="mil-route-spine-line"></div><div class="mil-route-pin-e"></div></div>'+
           '<div class="mil-route-addrs">'+
+            '<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Trip '+tripNum+'</div>'+
             '<div class="mil-day-trip-from">'+(fromAddr?escHtml(fromAddr):'<span style="color:var(--text-3);font-style:italic">Start not recorded</span>')+'</div>'+
             '<div class="mil-day-trip-to">'+(toAddr?escHtml(toAddr):'<span style="color:var(--text-3);font-style:italic">End not recorded</span>')+'</div>'+
-            (_hasMultiDriver&&r.logged_by_name?'<div style="font-size:10px;color:var(--text-3);font-weight:500;margin-top:2px">Driver: '+escHtml(r.logged_by_name)+'</div>':'')+
+            (_hasMultiDriver&&r.logged_by_name?'<div style="font-size:10px;color:var(--text3);font-weight:500;margin-top:2px">Driver: '+escHtml(r.logged_by_name)+'</div>':'')+
           '</div>'+
         '</div>'+
         '<div class="mil-trip-side">'+
