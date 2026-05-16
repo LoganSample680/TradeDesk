@@ -1027,8 +1027,12 @@ async function viewReceipt(expId){
     catch(e){ov.remove();return zAlert('Could not load receipt photo.',{title:'Error'});}
   }
   const fname='receipt_'+(exp.date||'')+'_'+(exp.vendor||'').replace(/[^a-z0-9]/gi,'_')+'.jpg';
+  const storageBadge=exp.receipt_key
+    ?'<div style="display:inline-block;background:rgba(16,185,129,.2);color:#6ee7b7;font-size:11px;font-weight:700;padding:3px 10px;border-radius:12px;margin-bottom:10px">☁️ Supabase Storage</div>'
+    :'<div style="display:inline-block;background:rgba(245,158,11,.2);color:#fcd34d;font-size:11px;font-weight:700;padding:3px 10px;border-radius:12px;margin-bottom:10px">💾 Inline (DB row)</div>';
   ov.innerHTML='<div style="max-width:600px;width:100%;text-align:center">'+
-    '<img src="'+src+'" style="max-width:100%;max-height:80vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5)">'+
+    storageBadge+
+    '<img src="'+src+'" style="max-width:100%;max-height:75vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5)">'+
     '<div style="margin-top:12px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">'+
       '<a href="'+src+'" download="'+fname+'" style="color:#fff;font-size:13px;font-weight:600;text-decoration:none;background:rgba(255,255,255,.15);padding:8px 16px;border-radius:8px">⬇ Save photo</a>'+
       '<button onclick="deleteReceiptPhoto('+expId+')" style="color:#fff;font-size:13px;font-weight:600;background:rgba(180,30,30,.7);border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-family:inherit">🗑 Delete photo</button>'+
@@ -1972,8 +1976,12 @@ function renderExpenses(){
       ['Date','Category','Vendor','Amount','Receipt'].map(h=>'<th>'+h+'</th>').join('')+'<th></th></tr></thead><tbody>'+
       [...filtered].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(r=>{
         const info=IRS_EXPENSE_CATS.find(c=>c.id===r.cat);
-        const hasImg=!!(r.receipt_img||r.receipt_key);
-        const recLabel=hasImg?'<button onclick="viewReceipt('+r.id+')" style="background:var(--green-lt);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">📎 View</button>':'<button onclick="addReceiptToExpense('+r.id+')" style="background:rgba(162,45,45,.08);border:1px solid #A32D2D;color:#A32D2D;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">+ Add</button>';
+        const hasBucket=!!r.receipt_key,hasInline=!!r.receipt_img,hasImg=hasBucket||hasInline;
+        const recLabel=hasImg
+          ?(hasBucket
+            ?'<button onclick="viewReceipt('+r.id+')" style="background:var(--green-lt);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit" title="Stored in Supabase Storage">☁️ View</button>'
+            :'<button onclick="viewReceipt('+r.id+')" style="background:#fff8e1;border:1px solid #f59e0b;color:#b45309;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit" title="Stored inline — will migrate to cloud on next save">💾 View</button>')
+          :'<button onclick="addReceiptToExpense('+r.id+')" style="background:rgba(162,45,45,.08);border:1px solid #A32D2D;color:#A32D2D;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">+ Add</button>';
         return '<tr>'+
           '<td class="mute">'+(r.date||'')+'</td>'+
           '<td class="mute" style="font-size:10px">'+(info?info.icon+' '+info.label:r.catLabel||r.cat||'—')+'</td>'+
