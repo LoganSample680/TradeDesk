@@ -269,7 +269,9 @@ async function expSave(){
     deductible:catInfo.deductible!==false,meals_50:!!(catInfo.meals_50),
   });
   expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
-  saveAll();
+  // Flush immediately when a receipt photo is attached — don't wait for the 2s debounce.
+  // Debounce + page-close = photo lost before it reaches Supabase.
+  if(receipt_img&&typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
   if(typeof renderExpenses==='function')renderExpenses();
   showToast((new Date(date).getFullYear()<new Date().getFullYear()?'Back-tax expense':'Expense')+' saved — '+vendor+' '+fmt(amount),receipt_img?'📎':'🧾');
   if(cat==='tools'&&amount>=500)setTimeout(()=>showToast('💡 Equipment $'+amount.toFixed(0)+'+ may qualify for Section 179 immediate deduction — flag for your CPA','📋'),900);
@@ -988,7 +990,8 @@ function addReceiptToExpense(expId){
       const b64=await compressAndEncodeImage(file,900,0.75);
       exp.receipt_img='data:image/jpeg;base64,'+b64;
       exp.receipt='Yes — photo stored';
-      saveAll();renderExpenses();showToast('Receipt attached to '+exp.vendor,'📎');
+      if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
+      renderExpenses();showToast('Receipt attached to '+exp.vendor,'📎');
     }catch(e){showToast('Could not attach photo','⚠️');}
   };
   document.body.appendChild(inp);inp.click();
