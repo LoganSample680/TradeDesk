@@ -975,6 +975,25 @@ function renderMonthlyPL(){
   el.innerHTML=html;
 }
 
+// ── Add receipt photo to an existing expense ─────────────────────────
+function addReceiptToExpense(expId){
+  const inp=document.createElement('input');
+  inp.type='file';inp.accept='image/*';inp.capture='environment';
+  inp.style.display='none';
+  inp.onchange=async()=>{
+    const file=inp.files[0];inp.remove();if(!file)return;
+    const exp=expenses.find(e=>e.id==expId);if(!exp)return;
+    showToast('Attaching photo...','📎',2500);
+    try{
+      const b64=await compressAndEncodeImage(file,900,0.75);
+      exp.receipt_img='data:image/jpeg;base64,'+b64;
+      exp.receipt='Yes — photo stored';
+      saveAll();renderExpenses();showToast('Receipt attached to '+exp.vendor,'📎');
+    }catch(e){showToast('Could not attach photo','⚠️');}
+  };
+  document.body.appendChild(inp);inp.click();
+}
+
 // ── Receipt viewer ────────────────────────────────────────────────────
 function viewReceipt(expId){
   const exp=expenses.find(e=>e.id==expId);
@@ -1880,7 +1899,7 @@ function renderExpenses(){
       [...filtered].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(r=>{
         const info=IRS_EXPENSE_CATS.find(c=>c.id===r.cat);
         const hasImg=!!(r.receipt_img||r.receipt_key);
-        const recLabel=hasImg?'<button onclick="viewReceipt('+r.id+')" style="background:var(--green-lt);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">📎 View</button>':'<span style="color:#A32D2D;font-weight:700;font-size:10px">Missing</span>';
+        const recLabel=hasImg?'<button onclick="viewReceipt('+r.id+')" style="background:var(--green-lt);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">📎 View</button>':'<button onclick="addReceiptToExpense('+r.id+')" style="background:rgba(162,45,45,.08);border:1px solid #A32D2D;color:#A32D2D;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">+ Add</button>';
         return '<tr>'+
           '<td class="mute">'+(r.date||'')+'</td>'+
           '<td class="mute" style="font-size:10px">'+(info?info.icon+' '+info.label:r.catLabel||r.cat||'—')+'</td>'+

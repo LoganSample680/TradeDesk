@@ -250,7 +250,6 @@ window.addEventListener('error',e=>{
   if(!e.message||e.message==='Script error.')return; // cross-origin, no info
   const loc=e.filename?e.filename.replace(/.*\//,'')+':'+e.lineno:'';
   const msg=(loc?'['+loc+'] ':'')+e.message;
-  // Use showToast if available, otherwise fall back to console
   if(typeof showToast==='function'){
     showToast(msg,'🔴',8000);
   }
