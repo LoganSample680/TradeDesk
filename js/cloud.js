@@ -248,9 +248,10 @@ async function _devLoadUserAccount(key){
   renderClientList&&renderClientList();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
   showToast('Viewing '+_devSupportName+'\'s account','👁');
 }
-function _devExitSupportMode(){
+async function _devExitSupportMode(){
   if(!_devSavedState)return;
-  clearTimeout(_syncTimer);_syncTimer=null; // cancel any pending save that might still have support user's data in memory
+  clearTimeout(_syncTimer);_syncTimer=null;
+  if(_pendingSavePromise){try{await _pendingSavePromise;}catch(e){console.warn('[support exit] pending save failed:',e);}}
   window.removeEventListener('beforeunload',window._devUnloadGuard);
   ({clients,bids,jobs,payments,liens,income,expenses,mileage,timeEntries}=_devSavedState);
   // Restore dev's own settings — wipes any settings that leaked in from the support user's account
@@ -304,7 +305,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.16.26.54';
+const APP_VERSION='05.16.26.55';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
