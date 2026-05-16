@@ -513,6 +513,7 @@ async function sendProposalLink(){
       yearBuilt:(()=>{const cl=_bidForProp?clients.find(c=>c.id===_bidForProp.client_id):null;return cl?.yearBuilt||null;})(),
       epaRequired:(()=>{const cl=_bidForProp?clients.find(c=>c.id===_bidForProp.client_id):null;return !!(cl?.yearBuilt&&cl.yearBuilt<1978&&getActiveTrade()==='painting');})(),
       trade:getActiveTrade(),
+      surfaces:getActiveTrade()==='painting'?[...estSurfaces]:[],
     };
     // Set signing info BEFORE hub upload so snapshot captures correct signHubUrl
     const _bidForHub=bids.find(b=>b.id===bidId);

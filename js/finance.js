@@ -1584,8 +1584,30 @@ function viewSavedProposal(bidId){
       '<div style="font-size:15px;font-weight:800">Signed Proposal</div>'+
       '<button onclick="document.querySelector(\'[data-pov]\').remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 14px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Close</button>'+
     '</div>'+
-    '<div style="padding:16px;max-width:680px;margin:0 auto">'+signedBadge+b.proposalHtml+'</div>';
+    '<div style="padding:16px;max-width:680px;margin:0 auto"><div id="pov-color-section"></div>'+signedBadge+b.proposalHtml+'</div>';
   document.body.appendChild(ov);
+  // Async: fetch updated proposal JSON to show client color choices
+  if(b.signingKey&&b.signedAt){
+    _supa.storage.from('proposals').download(b.signingKey).then(({data})=>{
+      if(!data)return;
+      data.text().then(txt=>{
+        try{
+          const prop=JSON.parse(txt);
+          const choices=prop.colorChoices||[];
+          if(!choices.length)return;
+          const sec=document.getElementById('pov-color-section');
+          if(!sec)return;
+          sec.innerHTML='<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:var(--rl,10px);padding:14px 16px;margin-bottom:16px">'+
+            '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">🎨 Client Color Selections</div>'+
+            choices.map(c=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px">'+
+              '<span style="font-weight:600;color:#1E3A5F">'+escHtml(c.room)+'</span>'+
+              '<span style="color:#1E40AF;font-weight:700">'+escHtml(c.colorName)+(c.swCode?' <span style="font-size:11px;font-weight:500;color:#93C5FD">('+escHtml(c.swCode)+')</span>':'')+'</span>'+
+            '</div>').join('')+
+          '</div>';
+        }catch(e){}
+      });
+    }).catch(()=>{});
+  }
 }
 function openBidHistoryDetail(bidId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
