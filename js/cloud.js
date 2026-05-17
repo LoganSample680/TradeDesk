@@ -305,7 +305,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.17.26.71';
+const APP_VERSION='05.17.26.72';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -1708,11 +1708,17 @@ function showDailyBriefing(){
   // Supply reminder for tomorrow
   if(tmrJobs.length>0){
     const tmrClients=tmrJobs.map(j=>{const c=getClientById(j.client_id);return c?c.name:'Job';}).slice(0,2).join(', ');
+    // Find the first tomorrow job that has a paint estimate (surfaces data)
+    const paintBid=tmrJobs.map(j=>j.bid_id?bids.find(b=>b.id===j.bid_id):null).find(b=>b&&(b.surfaces||[]).length>0);
+    const checklistAction=paintBid
+      ?'showSupplyList('+paintBid.id+');this.closest(\'.zmodal-overlay\').remove()'
+      :'goPg(\'pg-checklist\');this.closest(\'.zmodal-overlay\').remove()';
+    const checklistLabel=paintBid?'View supply list →':'View checklist →';
     sections+=
       '<div style="background:var(--blue-lt);border-radius:var(--r);padding:10px 12px;margin-bottom:14px">'+
         '<div style="font-size:12px;font-weight:700;color:var(--blue);margin-bottom:3px">🛒 Supply check for tomorrow</div>'+
         '<div style="font-size:12px;color:var(--text2)">Job'+(tmrJobs.length>1?'s':'')+': '+escHtml(tmrClients)+'</div>'+
-        '<div style="margin-top:6px"><button onclick="goPg(\'pg-checklist\');this.closest(\'.zmodal-overlay\').remove()" style="padding:6px 14px;border-radius:20px;border:none;background:var(--blue);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">View checklist →</button></div>'+
+        '<div style="margin-top:6px"><button onclick="'+checklistAction+'" style="padding:6px 14px;border-radius:20px;border:none;background:var(--blue);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">'+checklistLabel+'</button></div>'+
       '</div>';
   }
 
