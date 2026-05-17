@@ -594,12 +594,10 @@ function copyProposalLink(){
 function shareProposalLink(){
   const d=_proposalShareData();
   if(!d.url){showToast('Generate the link first','⚠️');return;}
-  const bar=document.getElementById('proposal-link-bar');
-  const url=bar?.dataset.signingDirectUrl||d.url;
   pwaShare({
     title:d.bname+' Proposal',
     text:'Hi '+d.cname+'! Your proposal from '+d.bname+' is ready to view and sign.',
-    url
+    url:d.url
   });
 }
 function _proposalShareData(){
