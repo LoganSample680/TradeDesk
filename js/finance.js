@@ -15,10 +15,22 @@ function openExpenseFlow(){
   const today=new Date().toISOString().slice(0,10);
   ov.innerHTML=
     '<div style="background:var(--bg);border-radius:20px;width:100%;max-width:600px;max-height:92vh;overflow-y:auto;padding:20px 20px 28px">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
         '<div style="font-size:18px;font-weight:800">Log expense</div>'+
         '<button onclick="closeExpenseFlow()" style="border:none;background:none;font-size:24px;cursor:pointer;color:var(--text3)">×</button>'+
       '</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">'+
+        '<button id="exp-scan-area" style="border:1.5px solid var(--blue);border-radius:12px;padding:12px 8px;cursor:pointer;background:rgba(45,93,168,.06);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px" onclick="expTriggerScan()">'+
+          '<span style="font-size:22px">📷</span>'+
+          '<div style="text-align:left"><div style="font-size:13px;font-weight:700;color:var(--blue)">Scan receipt</div><div style="font-size:10px;color:var(--text3)">AI fills fields</div></div>'+
+        '</button>'+
+        '<button id="exp-attach-area" style="border:1.5px solid var(--border2);border-radius:12px;padding:12px 8px;cursor:pointer;background:var(--bg2);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px" onclick="expTriggerAttach()">'+
+          '<span style="font-size:22px">📎</span>'+
+          '<div style="text-align:left"><div style="font-size:13px;font-weight:700">Attach photo</div><div style="font-size:10px;color:var(--text3)">No sign-in needed</div></div>'+
+        '</button>'+
+      '</div>'+
+      '<div id="exp-scan-status" style="display:none;margin-bottom:10px"></div>'+
+      '<div id="exp-preview-img" style="display:none;margin-bottom:12px;text-align:center"></div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
         '<div class="f"><label>Vendor / Store *</label><input id="em-vendor" placeholder="Home Depot..." style="font-size:14px"></div>'+
         '<div class="f"><label>Amount * ($)</label><input id="em-amount" type="number" step="0.01" placeholder="0.00" style="font-size:14px"></div>'+
@@ -47,18 +59,6 @@ function openExpenseFlow(){
         '<select id="em-job" style="font-size:13px;width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit">'+jobOpts+'</select>'+
       '</div>'+
       '<div class="f" style="margin-bottom:14px"><label>Notes (optional)</label><textarea id="em-notes" placeholder="What was this for?" style="min-height:44px;font-size:13px"></textarea></div>'+
-      '<div id="exp-scan-status" style="display:none;margin-bottom:10px"></div>'+
-      '<div id="exp-preview-img" style="display:none;margin-bottom:10px;text-align:center"></div>'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">'+
-        '<button id="exp-scan-area" style="border:1.5px solid var(--border2);border-radius:12px;padding:11px 8px;text-align:center;cursor:pointer;background:var(--bg2);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px" onclick="expTriggerScan()">'+
-          '<span style="font-size:18px">📷</span>'+
-          '<div style="text-align:left"><div style="font-size:12px;font-weight:700">Scan receipt</div><div style="font-size:10px;color:var(--text3)">AI fills fields</div></div>'+
-        '</button>'+
-        '<button id="exp-attach-area" style="border:1.5px solid var(--border2);border-radius:12px;padding:11px 8px;text-align:center;cursor:pointer;background:var(--bg2);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px" onclick="expTriggerAttach()">'+
-          '<span style="font-size:18px">📎</span>'+
-          '<div style="text-align:left"><div style="font-size:12px;font-weight:700">Attach photo</div><div style="font-size:10px;color:var(--text3)">No sign-in needed</div></div>'+
-        '</button>'+
-      '</div>'+
       '<button class="btn btn-p btn-full btn-xl" onclick="expSave()" id="exp-save-btn">Save expense</button>'+
       '<div id="exp-save-err" style="color:#A32D2D;font-size:12px;text-align:center;margin-top:8px;min-height:16px"></div>'+
     '</div>';
@@ -264,12 +264,10 @@ async function _openLiveScanner(callback){
   ov.appendChild(hint);
 
   const shutterWrap=document.createElement('div');
-  shutterWrap.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom,0px)+28px);left:50%;transform:translateX(-50%);z-index:3';
+  shutterWrap.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom,0px)+20px);left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:10px;z-index:3';
   shutterWrap.innerHTML=
-    '<svg width="88" height="88" style="position:absolute;top:0;left:0;pointer-events:none" viewBox="0 0 88 88">'+
-      '<circle id="ls-ring" cx="44" cy="44" r="38" fill="none" stroke="#0ea5e9" stroke-width="4" stroke-dasharray="239" stroke-dashoffset="239" transform="rotate(-90 44 44)" style="transition:stroke-dashoffset .2s,stroke .3s"/>'+
-    '</svg>'+
-    '<button id="ls-shutter" style="width:72px;height:72px;border-radius:50%;background:#fff;border:5px solid rgba(255,255,255,.5);cursor:pointer;box-shadow:0 4px 24px rgba(0,0,0,.5);margin:8px;display:block;transition:transform .1s"></button>';
+    '<div id="ls-ready-label" style="background:rgba(0,0,0,.55);color:#fff;font-size:12px;font-weight:700;padding:5px 14px;border-radius:20px;opacity:0;transition:opacity .3s">✓ Receipt detected — tap to capture</div>'+
+    '<button id="ls-shutter" style="width:76px;height:76px;border-radius:50%;background:#fff;border:5px solid rgba(255,255,255,.4);cursor:pointer;box-shadow:0 4px 28px rgba(0,0,0,.6);display:block;transition:transform .1s,background .2s"></button>';
   ov.appendChild(shutterWrap);
 
   let stream=null;
@@ -305,13 +303,10 @@ async function _openLiveScanner(callback){
   }
   syncOverlaySize();
 
-  // Cache ring element reference — querySelector once, not every frame
-  const ring=document.getElementById('ls-ring');
-  let lastRingOffset=-1,lastRingStroke='';
-
+  const readyLabel=document.getElementById('ls-ready-label');
   let detectedCorners=null,stableFrames=0,capturing=false,rafId=null;
   let gpuPending=false,lastDetectMs=0;
-  const STABLE_FOR_AUTO=10;
+  const STABLE_NEEDED=8; // frames at 200ms = 1.6s before showing "ready" label
 
   function videoToOverlay(c){
     const vw=video.videoWidth,vh=video.videoHeight;
@@ -320,39 +315,54 @@ async function _openLiveScanner(callback){
     return{x:c.x*sc+ox,y:c.y*sc+oy};
   }
 
+  // Draw the static guide rectangle (target frame) centered in viewfinder
+  function drawGuide(){
+    const gw=ovW*0.82,gh=Math.min(ovH*0.55,gw*1.45);
+    const gx=(ovW-gw)/2,gy=(ovH-gh)/2-ovH*0.04;
+    const arm=Math.min(gw,gh)*0.1;
+    oc.strokeStyle='rgba(255,255,255,0.55)';oc.lineWidth=2;oc.setLineDash([6,5]);
+    oc.strokeRect(gx,gy,gw,gh);oc.setLineDash([]);
+    // L-bracket corners
+    oc.strokeStyle='rgba(255,255,255,0.9)';oc.lineWidth=3;
+    [[gx,gy,1,1],[gx+gw,gy,-1,1],[gx+gw,gy+gh,-1,-1],[gx,gy+gh,1,-1]].forEach(([cx,cy,sx,sy])=>{
+      oc.beginPath();oc.moveTo(cx+sx*arm,cy);oc.lineTo(cx,cy);oc.lineTo(cx,cy+sy*arm);oc.stroke();
+    });
+  }
+
   function drawOverlay(){
     syncOverlaySize();
     oc.clearRect(0,0,ovW,ovH);
+    drawGuide();
     if(!detectedCorners||!video.videoWidth)return;
     const sc=detectedCorners.map(c=>videoToOverlay(c));
-    const confident=stableFrames>=6;
+    const confident=stableFrames>=STABLE_NEEDED;
     oc.beginPath();oc.moveTo(sc[0].x,sc[0].y);sc.slice(1).forEach(c=>oc.lineTo(c.x,c.y));oc.closePath();
-    oc.fillStyle=confident?'rgba(14,165,233,0.18)':'rgba(255,255,255,0.07)';oc.fill();
-    oc.strokeStyle=confident?'#38bdf8':'rgba(255,255,255,0.4)';
-    oc.lineWidth=confident?3:2;oc.setLineDash(confident?[]:[10,6]);oc.stroke();oc.setLineDash([]);
-    const r=Math.max(6,Math.min(10,ovW*0.013));
-    sc.forEach(c=>{
-      oc.beginPath();oc.arc(c.x,c.y,r,0,Math.PI*2);
-      oc.fillStyle=confident?'#38bdf8':'rgba(255,255,255,.5)';oc.fill();
-      oc.strokeStyle='rgba(255,255,255,.8)';oc.lineWidth=1.5;oc.stroke();
+    oc.fillStyle=confident?'rgba(56,189,248,0.15)':'rgba(255,255,255,0.06)';oc.fill();
+    oc.strokeStyle=confident?'#22d3ee':'rgba(255,255,255,0.5)';
+    oc.lineWidth=confident?3:2;oc.setLineDash([]);oc.stroke();
+    const arm=Math.max(14,Math.min(22,ovW*0.04));
+    sc.forEach((c,i)=>{
+      const nx=sc[(i+1)%4],pv=sc[(i+3)%4];
+      const dx1=(nx.x-c.x),dy1=(nx.y-c.y),len1=Math.sqrt(dx1*dx1+dy1*dy1)||1;
+      const dx2=(pv.x-c.x),dy2=(pv.y-c.y),len2=Math.sqrt(dx2*dx2+dy2*dy2)||1;
+      oc.strokeStyle=confident?'#22d3ee':'rgba(255,255,255,.75)';oc.lineWidth=3;
+      oc.beginPath();
+      oc.moveTo(c.x+dx1/len1*arm,c.y+dy1/len1*arm);oc.lineTo(c.x,c.y);
+      oc.lineTo(c.x+dx2/len2*arm,c.y+dy2/len2*arm);oc.stroke();
     });
-    // Only touch the DOM when values actually change
-    if(ring){
-      const off=String(Math.round(239*(1-Math.min(1,stableFrames/STABLE_FOR_AUTO))));
-      const str=confident?'#38bdf8':'rgba(255,255,255,.3)';
-      if(off!==lastRingOffset){ring.setAttribute('stroke-dashoffset',off);lastRingOffset=off;}
-      if(str!==lastRingStroke){ring.setAttribute('stroke',str);lastRingStroke=str;}
-    }
   }
 
   function applyResult(raw){
-    if(raw){detectedCorners=raw;stableFrames=Math.min(stableFrames+1,STABLE_FOR_AUTO+1);}
-    else{detectedCorners=null;stableFrames=Math.max(stableFrames-2,0);}
-    if(stableFrames===0)hint.textContent='Point camera at receipt';
-    else if(stableFrames<5)hint.textContent='Hold steady…';
-    else if(stableFrames<STABLE_FOR_AUTO)hint.textContent='✓ Receipt detected — hold still';
-    else hint.textContent='📸 Capturing…';
-    if(stableFrames>=STABLE_FOR_AUTO&&!capturing)doCapture();
+    if(raw){detectedCorners=raw;stableFrames=Math.min(stableFrames+1,STABLE_NEEDED+4);}
+    else{detectedCorners=null;stableFrames=Math.max(stableFrames-3,0);}
+    const ready=stableFrames>=STABLE_NEEDED;
+    if(stableFrames===0)hint.textContent='Align receipt inside the frame';
+    else if(stableFrames<4)hint.textContent='Hold steady…';
+    else if(!ready)hint.textContent='Almost — keep holding…';
+    else hint.textContent='';
+    if(readyLabel)readyLabel.style.opacity=ready?'1':'0';
+    const shutter=document.getElementById('ls-shutter');
+    if(shutter)shutter.style.background=ready?'#22d3ee':'#fff';
   }
 
   function rafLoop(){
@@ -368,11 +378,11 @@ async function _openLiveScanner(callback){
         _gpuSobelAsync(video,TW,TH).then(raw=>{gpuPending=false;applyResult(raw);}).catch(()=>{gpuPending=false;});
       }
     }else{
-      // Reuse pre-allocated canvas — no DOM allocation per frame
       detCtx.drawImage(video,0,0,TW,TH);
       const imgData=detCtx.getImageData(0,0,TW,TH);
       applyResult(_detectDocCorners(imgData.data,TW,TH,video.videoWidth,video.videoHeight));
     }
+    // No auto-capture — user taps shutter when ready
   }
 
   rafId=requestAnimationFrame(rafLoop);
@@ -525,7 +535,9 @@ function _detectDocCorners(data,tw,th,outW,outH){
     for(let y=mg;y<th-mg;y++) for(let x=mg;x<tw-mg;x++){
       if(e[y*tw+x]>thr){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;cnt++;}
     }
-    if(cnt<40||x1-x0<tw*0.25||y1-y0<th*0.25) return null;
+    if(cnt<60||x1-x0<tw*0.38||y1-y0<th*0.30) return null;
+    // Reject if bounding box fills nearly the entire frame — probably background clutter not a document
+    if(x1-x0>tw*0.97&&y1-y0>th*0.97) return null;
     // Walk from each bounding-box corner diagonally inward to find first strong edge
     function walk(sx,sy,dx,dy){
       for(let i=0;i<Math.max(tw,th);i++){
