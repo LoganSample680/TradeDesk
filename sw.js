@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-05.17.26.74';
+const CACHE = 'tradedesk-05.17.26.75';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
 // tries to serve it for a navigation. new Response() always has redirected:false.
@@ -30,6 +30,19 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
+
+  // Share target — POST from iOS share sheet with a photo file.
+  // Cache the formData so the app can retrieve it after navigation.
+  if (e.request.method === 'POST' && url.searchParams.get('shortcut') === 'share-photo') {
+    e.respondWith(
+      e.request.formData().then(fd => {
+        return caches.open('share-target-v1').then(c => {
+          return c.put('/share-target-latest', new Response(fd));
+        });
+      }).then(() => Response.redirect('/?shortcut=share-photo', 303))
+    );
+    return;
+  }
 
   // Navigation — network-first with cache:'no-cache' so CDN and browser HTTP
   // cache are both bypassed. Offline fallback to SW cache for iOS PWA support.

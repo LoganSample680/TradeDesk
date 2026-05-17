@@ -60,6 +60,7 @@ function goPg(id){
   if(id==='pg-jobs')renderJobsPage();
   if(id==='pg-proposals')renderProposalsPage();
   if(id==='pg-money')renderMoneyPage();
-  if(id==='pg-est'){buildScopeGrid();}
+  if(id==='pg-est'){buildScopeGrid();window._wakeLockRequest&&window._wakeLockRequest();}
+  else if(id!=='pg-est-generic'){window._wakeLockRelease&&window._wakeLockRelease();}
   if(id==='pg-client-hub')renderClientHubPage();
 }
