@@ -594,6 +594,7 @@ function copyProposalLink(){
 function shareProposalLink(){
   const d=_proposalShareData();
   if(!d.url){showToast('Generate the link first','⚠️');return;}
+  _commitProposalSent();
   pwaShare({
     title:d.bname+' Proposal',
     text:'Hi '+d.cname+'! Your proposal from '+d.bname+' is ready to view and sign.',
