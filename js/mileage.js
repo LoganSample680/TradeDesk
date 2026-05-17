@@ -244,6 +244,7 @@ function confirmStartDrive(){
   const av=document.getElementById('cd-active-vehicle');if(av)av.textContent=gps.vehicle||'';
   clearInterval(gps.timerInt);
   gps.timerInt=setInterval(updateDriveTimer,1000);
+  window._wakeLockRequest&&window._wakeLockRequest();
   if(c&&c.phone){
     const phone=c.phone.replace(/\D/g,'');
     const msg='Hi '+c.name.split(' ')[0]+', this is '+(S.bname||'TradeDesk')+' — I\'m on my way! I\'ll be there shortly.';
@@ -311,6 +312,7 @@ function saveEndDriveModal(){
   });
   gps.active=false;gps.startTime=null;gps.startCoords=null;
   clearInterval(gps.timerInt);
+  window._wakeLockRelease&&window._wakeLockRelease();
   saveAll();
   // Mileage is the most-lost data because users immediately switch apps after
   // saving a trip — flush to Supabase NOW instead of waiting for the 2s debounce.
