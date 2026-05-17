@@ -223,13 +223,10 @@ function _gpuDestroy(){
 }
 
 function _showReceiptScanner(fileOrNull,callback){
-  if(navigator.mediaDevices?.getUserMedia){_openLiveScanner(callback);}
-  else if(fileOrNull){_loadAndBuildScanUI(fileOrNull,callback);}
-  else{
-    const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.capture='environment';inp.style.display='none';
-    inp.onchange=()=>{const f=inp.files[0];inp.remove();if(f)_loadAndBuildScanUI(f,callback);};
-    document.body.appendChild(inp);inp.click();
-  }
+  if(fileOrNull){_loadAndBuildScanUI(fileOrNull,callback);return;}
+  const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.capture='environment';inp.style.display='none';
+  inp.onchange=()=>{const f=inp.files[0];inp.remove();if(f)_loadAndBuildScanUI(f,callback);};
+  document.body.appendChild(inp);inp.click();
 }
 
 async function _openLiveScanner(callback){
