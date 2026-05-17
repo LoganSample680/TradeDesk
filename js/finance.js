@@ -142,10 +142,369 @@ async function compressAndEncodeImage(file,maxPx=1200,qual=0.85){
   });
 }
 
-// ── Receipt Scanner (TurboScan-style live camera + perspective crop) ────
+// ── Receipt Scanner ───────────────────────────────────────────────────────
 
-// Entry point — use live camera if available, else fall back to file picker
-function _showReceiptScanner(fileOrNull, callback){
+function _showReceiptScanner(fileOrNull,callback){
+  if(navigator.mediaDevices?.getUserMedia){_openLiveScanner(callback);}
+  else if(fileOrNull){_loadAndBuildScanUI(fileOrNull,callback);}
+  else{
+    const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.capture='environment';inp.style.display='none';
+    inp.onchange=()=>{const f=inp.files[0];inp.remove();if(f)_loadAndBuildScanUI(f,callback);};
+    document.body.appendChild(inp);inp.click();
+  }
+}
+
+async function _openLiveScanner(callback){
+  document.getElementById('live-scan-ui')?.remove();
+  const ov=document.createElement('div');
+  ov.id='live-scan-ui';
+  ov.style.cssText='position:fixed;inset:0;background:#000;z-index:10000;font-family:inherit;overflow:hidden';
+  document.body.appendChild(ov);
+
+  const video=document.createElement('video');
+  video.playsInline=true;video.autoplay=true;video.muted=true;
+  video.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover';
+  ov.appendChild(video);
+
+  const overlay=document.createElement('canvas');
+  overlay.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
+  ov.appendChild(overlay);
+
+  // Flash element for capture feedback
+  const flash=document.createElement('div');
+  flash.style.cssText='position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:2;transition:opacity .15s';
+  ov.appendChild(flash);
+
+  // Cancel button (top-left)
+  const cancelBtn=document.createElement('button');
+  cancelBtn.id='ls-cancel';
+  cancelBtn.style.cssText='position:absolute;top:calc(env(safe-area-inset-top,0px)+14px);left:16px;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.3);color:#fff;padding:8px 18px;border-radius:20px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;z-index:3';
+  cancelBtn.textContent='✕ Cancel';
+  ov.appendChild(cancelBtn);
+
+  // Hint (bottom, above shutter)
+  const hint=document.createElement('div');
+  hint.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom,0px)+120px);left:0;right:0;text-align:center;color:#fff;font-size:13px;font-weight:700;text-shadow:0 1px 6px rgba(0,0,0,.9);pointer-events:none;z-index:3;transition:color .3s';
+  hint.textContent='Point camera at receipt';
+  ov.appendChild(hint);
+
+  // Shutter button with progress ring
+  const shutterWrap=document.createElement('div');
+  shutterWrap.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom,0px)+28px);left:50%;transform:translateX(-50%);z-index:3';
+  shutterWrap.innerHTML=
+    '<svg width="88" height="88" style="position:absolute;top:0;left:0;pointer-events:none" viewBox="0 0 88 88">'+
+      '<circle id="ls-ring" cx="44" cy="44" r="38" fill="none" stroke="#0ea5e9" stroke-width="4" stroke-dasharray="239" stroke-dashoffset="239" transform="rotate(-90 44 44)" style="transition:stroke-dashoffset .2s,stroke .3s"/>'+
+    '</svg>'+
+    '<button id="ls-shutter" style="width:72px;height:72px;border-radius:50%;background:#fff;border:5px solid rgba(255,255,255,.5);cursor:pointer;box-shadow:0 4px 24px rgba(0,0,0,.5);margin:8px;display:block;transition:transform .1s"></button>';
+  ov.appendChild(shutterWrap);
+
+  let stream=null;
+  const stopStream=()=>stream?.getTracks().forEach(t=>t.stop());
+
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}});
+    video.srcObject=stream;
+    await new Promise(res=>{video.onloadedmetadata=res;});
+    await video.play();
+  }catch(e){
+    ov.remove();
+    const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.capture='environment';inp.style.display='none';
+    inp.onchange=()=>{const f=inp.files[0];inp.remove();if(f)_loadAndBuildScanUI(f,callback);};
+    document.body.appendChild(inp);inp.click();
+    return;
+  }
+
+  let detectedCorners=null,stableFrames=0,autoTimer=null,capturing=false;
+  const STABLE_FOR_AUTO=7; // ~1.4s at 200ms
+
+  function videoToOverlay(c){
+    const vw=video.videoWidth,vh=video.videoHeight;
+    const dw=ov.offsetWidth,dh=ov.offsetHeight;
+    const vAR=vw/vh,dAR=dw/dh;
+    let sc,ox=0,oy=0;
+    if(vAR>dAR){sc=dh/vh;ox=(dw-vw*sc)/2;}else{sc=dw/vw;oy=(dh-vh*sc)/2;}
+    return{x:c.x*sc+ox,y:c.y*sc+oy};
+  }
+
+  function drawOverlay(){
+    overlay.width=ov.offsetWidth;overlay.height=ov.offsetHeight;
+    const oc=overlay.getContext('2d');
+    oc.clearRect(0,0,overlay.width,overlay.height);
+    if(!detectedCorners||!video.videoWidth)return;
+    const sc=detectedCorners.map(c=>videoToOverlay(c));
+    const confident=stableFrames>=4;
+    oc.beginPath();oc.moveTo(sc[0].x,sc[0].y);sc.slice(1).forEach(c=>oc.lineTo(c.x,c.y));oc.closePath();
+    oc.fillStyle=confident?'rgba(14,165,233,0.18)':'rgba(255,255,255,0.07)';oc.fill();
+    oc.strokeStyle=confident?'#38bdf8':'rgba(255,255,255,0.4)';
+    oc.lineWidth=confident?3:2;oc.setLineDash(confident?[]:[10,6]);oc.stroke();oc.setLineDash([]);
+    // Corner dots
+    const r=Math.max(6,Math.min(10,ov.offsetWidth*0.013));
+    sc.forEach(c=>{
+      oc.beginPath();oc.arc(c.x,c.y,r,0,Math.PI*2);
+      oc.fillStyle=confident?'#38bdf8':'rgba(255,255,255,.5)';oc.fill();
+      oc.strokeStyle='rgba(255,255,255,.8)';oc.lineWidth=1.5;oc.stroke();
+    });
+    // Progress ring
+    const ring=document.getElementById('ls-ring');
+    if(ring){
+      const pct=Math.min(1,stableFrames/STABLE_FOR_AUTO);
+      ring.setAttribute('stroke-dashoffset',String(Math.round(239*(1-pct))));
+      ring.setAttribute('stroke',confident?'#38bdf8':'rgba(255,255,255,.3)');
+    }
+  }
+
+  function detect(){
+    if(capturing||!video.videoWidth)return;
+    const tw=180,th=Math.round(video.videoHeight*180/video.videoWidth);
+    const tmp=document.createElement('canvas');tmp.width=tw;tmp.height=th;
+    const tc=tmp.getContext('2d');tc.drawImage(video,0,0,tw,th);
+    const imgData=tc.getImageData(0,0,tw,th);
+    const raw=_detectDocCorners(imgData.data,tw,th,video.videoWidth,video.videoHeight);
+    if(raw){
+      detectedCorners=raw;
+      stableFrames=Math.min(stableFrames+1,STABLE_FOR_AUTO+1);
+    }else{
+      detectedCorners=null;
+      stableFrames=Math.max(stableFrames-2,0);
+    }
+    drawOverlay();
+    // Update hint
+    if(stableFrames===0)hint.textContent='Point camera at receipt';
+    else if(stableFrames<4)hint.textContent='Hold steady…';
+    else if(stableFrames<STABLE_FOR_AUTO)hint.textContent='✓ Receipt detected — hold still';
+    else hint.textContent='📸 Capturing…';
+    // Auto-capture
+    if(stableFrames>=STABLE_FOR_AUTO&&!capturing){doCapture();}
+  }
+
+  const detInterval=setInterval(detect,200);
+
+  function doCapture(){
+    if(capturing)return;
+    capturing=true;
+    clearInterval(detInterval);
+    // Flash
+    flash.style.opacity='1';setTimeout(()=>flash.style.opacity='0',150);
+    const cap=document.createElement('canvas');
+    cap.width=video.videoWidth;cap.height=video.videoHeight;
+    cap.getContext('2d').drawImage(video,0,0);
+    stopStream();
+    setTimeout(()=>{
+      ov.remove();
+      if(detectedCorners&&stableFrames>=3){
+        cap.toBlob(blob=>{
+          const img=new Image();const u=URL.createObjectURL(blob);
+          img.onload=()=>{
+            URL.revokeObjectURL(u);
+            try{const w=_scanWarp(img,cap.width,cap.height,detectedCorners);_scanEnhance(w);w.toBlob(wb=>callback(wb),'image/jpeg',0.92);}
+            catch(e){callback(blob);}
+          };img.src=u;
+        },'image/jpeg',0.95);
+      }else{
+        cap.toBlob(blob=>{
+          const img=new Image();const u=URL.createObjectURL(blob);
+          img.onload=()=>{URL.revokeObjectURL(u);_buildScanUI(img,blob,callback);};img.src=u;
+        },'image/jpeg',0.95);
+      }
+    },200);
+  }
+
+  cancelBtn.onclick=()=>{clearInterval(detInterval);stopStream();ov.remove();};
+  document.getElementById('ls-shutter').onclick=()=>{if(!capturing)doCapture();};
+}
+
+function _loadAndBuildScanUI(file,callback){
+  const url=URL.createObjectURL(file);
+  const img=new Image();
+  img.onload=()=>{URL.revokeObjectURL(url);_buildScanUI(img,file,callback);};
+  img.onerror=()=>{URL.revokeObjectURL(url);callback(file);};
+  img.src=url;
+}
+
+function _buildScanUI(img,origBlob,callback){
+  document.getElementById('rcpt-scan-ui')?.remove();
+  const ov=document.createElement('div');
+  ov.id='rcpt-scan-ui';
+  ov.style.cssText='position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column;font-family:inherit';
+  document.body.appendChild(ov);
+
+  const hdr=document.createElement('div');
+  hdr.style.cssText='padding:12px 16px;display:flex;justify-content:space-between;align-items:center;background:#111;flex-shrink:0';
+  hdr.innerHTML=
+    '<button id="scan-skip-btn" style="background:none;border:1px solid #555;color:#ccc;padding:7px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Skip</button>'+
+    '<div style="color:#fff;font-size:14px;font-weight:700">Adjust crop</div>'+
+    '<button id="scan-use-btn" style="background:#0ea5e9;border:none;color:#fff;padding:7px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Use scan ✓</button>';
+  ov.appendChild(hdr);
+
+  const wrap=document.createElement('div');
+  wrap.style.cssText='flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;background:#000';
+  ov.appendChild(wrap);
+
+  const cvs=document.createElement('canvas');
+  cvs.style.cssText='touch-action:none;max-width:100%;max-height:100%;display:block';
+  wrap.appendChild(cvs);
+  const ctx=cvs.getContext('2d');
+
+  const foot=document.createElement('div');
+  foot.id='scan-foot';
+  foot.style.cssText='padding:10px 16px;background:#111;text-align:center;flex-shrink:0;color:#888;font-size:12px';
+  foot.textContent='Drag the blue corners to the edges of your receipt';
+  ov.appendChild(foot);
+
+  const maxW=window.innerWidth,maxH=window.innerHeight-110;
+  const scale=Math.min(maxW/img.naturalWidth,maxH/img.naturalHeight,1);
+  const dw=Math.round(img.naturalWidth*scale),dh=Math.round(img.naturalHeight*scale);
+  cvs.width=dw;cvs.height=dh;
+  ctx.drawImage(img,0,0,dw,dh);
+
+  const p=0.06;
+  let corners=[{x:dw*p,y:dh*p},{x:dw*(1-p),y:dh*p},{x:dw*(1-p),y:dh*(1-p)},{x:dw*p,y:dh*(1-p)}];
+  const tmp=document.createElement('canvas');tmp.width=180;tmp.height=Math.round(dh*180/dw);
+  tmp.getContext('2d').drawImage(img,0,0,180,tmp.height);
+  const id=tmp.getContext('2d').getImageData(0,0,180,tmp.height);
+  const auto=_detectDocCorners(id.data,180,tmp.height,dw,dh);
+  if(auto)corners=auto;
+
+  let active=-1;
+  const HR=Math.max(18,Math.min(28,dw*0.05));
+
+  function redraw(){
+    ctx.drawImage(img,0,0,dw,dh);
+    ctx.beginPath();ctx.moveTo(corners[0].x,corners[0].y);
+    for(let i=1;i<4;i++)ctx.lineTo(corners[i].x,corners[i].y);
+    ctx.closePath();ctx.fillStyle='rgba(14,165,233,0.18)';ctx.fill();
+    ctx.strokeStyle='#38bdf8';ctx.lineWidth=2;ctx.setLineDash([8,4]);ctx.stroke();ctx.setLineDash([]);
+    corners.forEach((c,i)=>{ctx.beginPath();ctx.arc(c.x,c.y,HR,0,Math.PI*2);ctx.fillStyle=i===active?'#fff':'#0ea5e9';ctx.fill();ctx.strokeStyle='#fff';ctx.lineWidth=2.5;ctx.stroke();});
+  }
+  redraw();
+
+  function evPos(e){const rect=cvs.getBoundingClientRect(),t=e.touches?e.touches[0]:e;return{x:(t.clientX-rect.left)*(dw/rect.width),y:(t.clientY-rect.top)*(dh/rect.height)};}
+  function nearest(pos){const hit=Math.max(44,dw*0.1)*(dw/(cvs.getBoundingClientRect().width||dw));let best=-1,bd=hit;corners.forEach((c,i)=>{const d=Math.hypot(c.x-pos.x,c.y-pos.y);if(d<bd){bd=d;best=i;}});return best;}
+  function clamp(c){return{x:Math.max(0,Math.min(dw,c.x)),y:Math.max(0,Math.min(dh,c.y))};}
+
+  cvs.addEventListener('touchstart',e=>{e.preventDefault();active=nearest(evPos(e));redraw();},{passive:false});
+  cvs.addEventListener('touchmove',e=>{e.preventDefault();if(active<0)return;corners[active]=clamp(evPos(e));redraw();},{passive:false});
+  cvs.addEventListener('touchend',e=>{e.preventDefault();active=-1;redraw();},{passive:false});
+  cvs.addEventListener('mousedown',e=>{active=nearest(evPos(e));redraw();});
+  cvs.addEventListener('mousemove',e=>{if(active<0||!e.buttons)return;corners[active]=clamp(evPos(e));redraw();});
+  cvs.addEventListener('mouseup',()=>{active=-1;redraw();});
+
+  document.getElementById('scan-skip-btn').onclick=()=>{ov.remove();callback(origBlob);};
+  document.getElementById('scan-use-btn').onclick=()=>{
+    const btn=document.getElementById('scan-use-btn');if(!btn)return;
+    btn.disabled=true;btn.textContent='Processing…';
+    document.getElementById('scan-foot').textContent='Applying perspective correction…';
+    const ws=Math.min(1500/img.naturalWidth,1500/img.naturalHeight,1);
+    const sc=corners.map(c=>({x:c.x/scale*ws,y:c.y/scale*ws}));
+    setTimeout(()=>{
+      try{const warped=_scanWarp(img,Math.round(img.naturalWidth*ws),Math.round(img.naturalHeight*ws),sc);_scanEnhance(warped);warped.toBlob(blob=>{ov.remove();callback(blob);},'image/jpeg',0.92);}
+      catch(e){ov.remove();callback(origBlob);}
+    },16);
+  };
+}
+
+// ── Core detection: Sobel edges + corner walking ──────────────────────────
+
+function _detectDocCorners(data,tw,th,outW,outH){
+  try{
+    // Grayscale
+    const g=new Float32Array(tw*th);
+    for(let i=0;i<tw*th;i++) g[i]=data[i*4]*0.299+data[i*4+1]*0.587+data[i*4+2]*0.114;
+    // Sobel edge magnitude
+    const e=new Uint8Array(tw*th);
+    for(let y=1;y<th-1;y++) for(let x=1;x<tw-1;x++){
+      const gx=-g[(y-1)*tw+x-1]-2*g[y*tw+x-1]-g[(y+1)*tw+x-1]+g[(y-1)*tw+x+1]+2*g[y*tw+x+1]+g[(y+1)*tw+x+1];
+      const gy=-g[(y-1)*tw+x-1]-2*g[(y-1)*tw+x]-g[(y-1)*tw+x+1]+g[(y+1)*tw+x-1]+2*g[(y+1)*tw+x]+g[(y+1)*tw+x+1];
+      e[y*tw+x]=Math.min(255,Math.sqrt(gx*gx+gy*gy));
+    }
+    // Adaptive threshold — top 30% of non-trivial edges
+    const vals=[];for(let i=0;i<e.length;i++) if(e[i]>8)vals.push(e[i]);
+    if(vals.length<80) return null;
+    vals.sort((a,b)=>a-b);
+    const thr=vals[Math.floor(vals.length*0.7)];
+    // Bounding box of strong edges (ignore 4% border)
+    const mg=Math.round(Math.min(tw,th)*0.04);
+    let x0=tw,x1=0,y0=th,y1=0,cnt=0;
+    for(let y=mg;y<th-mg;y++) for(let x=mg;x<tw-mg;x++){
+      if(e[y*tw+x]>thr){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;cnt++;}
+    }
+    if(cnt<40||x1-x0<tw*0.25||y1-y0<th*0.25) return null;
+    // Walk from each bounding-box corner diagonally inward to find first strong edge
+    function walk(sx,sy,dx,dy){
+      for(let i=0;i<Math.max(tw,th);i++){
+        const x=Math.round(sx+i*dx),y=Math.round(sy+i*dy);
+        if(x<0||x>=tw||y<0||y>=th) break;
+        if(e[y*tw+x]>thr*0.55) return{x,y};
+      }
+      return{x:Math.max(0,Math.min(tw-1,Math.round(sx))),y:Math.max(0,Math.min(th-1,Math.round(sy)))};
+    }
+    const tl=walk(x0,y0, 1, 1),tr=walk(x1,y0,-1, 1);
+    const br=walk(x1,y1,-1,-1),bl=walk(x0,y1, 1,-1);
+    const sx=outW/tw,sy=outH/th;
+    return[{x:tl.x*sx,y:tl.y*sy},{x:tr.x*sx,y:tr.y*sy},{x:br.x*sx,y:br.y*sy},{x:bl.x*sx,y:bl.y*sy}];
+  }catch(e){return null;}
+}
+
+// keep old name for any callers
+function _scanDetectCorners(ctx,w,h){
+  const tw=180,th=Math.round(h*180/w);
+  const tmp=document.createElement('canvas');tmp.width=tw;tmp.height=th;
+  tmp.getContext('2d').drawImage(ctx.canvas,0,0,tw,th);
+  const id=tmp.getContext('2d').getImageData(0,0,tw,th);
+  return _detectDocCorners(id.data,tw,th,w,h);
+}
+function _scanDetectCornersFromCanvas(ctx,w,h){return _scanDetectCorners(ctx,w,h);}
+
+function _scanWarp(img,w,h,corners){
+  const[tl,tr,br,bl]=corners;
+  const outW=Math.round(Math.max(Math.hypot(tr.x-tl.x,tr.y-tl.y),Math.hypot(br.x-bl.x,br.y-bl.y)));
+  const outH=Math.round(Math.max(Math.hypot(bl.x-tl.x,bl.y-tl.y),Math.hypot(br.x-tr.x,br.y-tr.y)));
+  const src=document.createElement('canvas');src.width=w;src.height=h;
+  src.getContext('2d').drawImage(img,0,0,w,h);
+  const sData=src.getContext('2d').getImageData(0,0,w,h).data;
+  const dst=document.createElement('canvas');dst.width=outW;dst.height=outH;
+  const dctx=dst.getContext('2d');const dImg=dctx.createImageData(outW,outH);const dd=dImg.data;
+  const hm=_scanHomography([[0,0],[outW,0],[outW,outH],[0,outH]],[[tl.x,tl.y],[tr.x,tr.y],[br.x,br.y],[bl.x,bl.y]]);
+  for(let y=0;y<outH;y++) for(let x=0;x<outW;x++){
+    const ww=hm[6]*x+hm[7]*y+1;
+    const sx=Math.round((hm[0]*x+hm[1]*y+hm[2])/ww);
+    const sy=Math.round((hm[3]*x+hm[4]*y+hm[5])/ww);
+    if(sx>=0&&sx<w&&sy>=0&&sy<h){const si=(sy*w+sx)<<2,di=(y*outW+x)<<2;dd[di]=sData[si];dd[di+1]=sData[si+1];dd[di+2]=sData[si+2];dd[di+3]=255;}
+  }
+  dctx.putImageData(dImg,0,0);return dst;
+}
+
+function _scanHomography(src4,dst4){
+  const A=[],b=[];
+  for(let i=0;i<4;i++){
+    const[sx,sy]=src4[i],[dx,dy]=dst4[i];
+    A.push([-sx,-sy,-1,0,0,0,sx*dx,sy*dx]);b.push(-dx);
+    A.push([0,0,0,-sx,-sy,-1,sx*dy,sy*dy]);b.push(-dy);
+  }
+  const n=8,M=A.map((r,i)=>[...r,b[i]]);
+  for(let c=0;c<n;c++){
+    let mx=c;for(let r=c+1;r<n;r++)if(Math.abs(M[r][c])>Math.abs(M[mx][c]))mx=r;
+    [M[c],M[mx]]=[M[mx],M[c]];
+    for(let r=c+1;r<n;r++){const f=M[r][c]/M[c][c];for(let j=c;j<=n;j++)M[r][j]-=f*M[c][j];}
+  }
+  const x=new Array(n).fill(0);
+  for(let i=n-1;i>=0;i--){x[i]=M[i][n];for(let j=i+1;j<n;j++)x[i]-=M[i][j]*x[j];x[i]/=M[i][i];}
+  return x;
+}
+
+function _scanEnhance(canvas){
+  const ctx=canvas.getContext('2d');const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+  const d=img.data,n=d.length;
+  let rMn=255,rMx=0,gMn=255,gMx=0,bMn=255,bMx=0;
+  for(let i=0;i<n;i+=4){if(d[i]<rMn)rMn=d[i];if(d[i]>rMx)rMx=d[i];if(d[i+1]<gMn)gMn=d[i+1];if(d[i+1]>gMx)gMx=d[i+1];if(d[i+2]<bMn)bMn=d[i+2];if(d[i+2]>bMx)bMx=d[i+2];}
+  const rs=255/Math.max(1,rMx-rMn),gs=255/Math.max(1,gMx-gMn),bs=255/Math.max(1,bMx-bMn);
+  for(let i=0;i<n;i+=4){d[i]=Math.min(255,(d[i]-rMn)*rs);d[i+1]=Math.min(255,(d[i+1]-gMn)*gs);d[i+2]=Math.min(255,(d[i+2]-bMn)*bs);}
+  ctx.putImageData(img,0,0);
+}
+
+// ── End Receipt Scanner ───────────────────────────────────────────────────
+
+function _confirmReceiptDate(aiDate,statusEl){
   if(navigator.mediaDevices?.getUserMedia){
     _openLiveScanner(callback);
   } else {
