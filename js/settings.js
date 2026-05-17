@@ -496,8 +496,7 @@ function clearMileageOnly(){
 
 function resetSettings(){zConfirm('Reset all settings to defaults?',()=>{S={irsRate:.700,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:83,p2:65,p3:95,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00};applySettings();loadSettingsForm();},{title:'Reset settings',yes:'Reset',danger:false});}
 function resetLocationPermission(){
-  // Clear stored location so modal re-prompts
-  delete S.weatherLat;delete S.weatherLon;S.locationDenied=false;
+  delete S.weatherLat;delete S.weatherLon;S.locationDenied=false;S.locationGranted=false;
   _weatherCache=null;saveAll();
   updateLocationBtn();
   requestLocationPermission(()=>{

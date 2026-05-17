@@ -281,7 +281,7 @@ function _geocodeAddr(addr){
 }
 async function checkNearbyJob(){
   if(!navigator.geolocation||!_supaUser)return;
-  navigator.geolocation.getCurrentPosition(async pos=>{
+  geoIfGranted(async pos=>{
     const{latitude:myLat,longitude:myLon}=pos.coords;
     const activeJobs=jobs.filter(j=>!j.completion_date&&j.status!=='done'&&j.status!=='canceled');
     for(const j of activeJobs){

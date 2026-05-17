@@ -116,4 +116,25 @@ function _mdYToYmd(s){
   return p[2]+'-'+p[0].padStart(2,'0')+'-'+p[1].padStart(2,'0');
 }
 
+// ── Geolocation helper ───────────────────────────────────────────────
+// Silent GPS grab — only fires if OS permission is already 'granted'.
+// Never triggers the OS permission dialog. Use requestLocationPermission()
+// for any flow that needs to ask the user.
+function geoIfGranted(cb, errCb, opts){
+  if(!navigator.geolocation)return;
+  const doGet=()=>navigator.geolocation.getCurrentPosition(
+    cb, errCb||function(){},
+    opts||{enableHighAccuracy:false,timeout:5000,maximumAge:30000}
+  );
+  if(S.locationGranted){doGet();return;}
+  if(!navigator.permissions||!navigator.permissions.query)return;
+  navigator.permissions.query({name:'geolocation'}).then(p=>{
+    if(p.status==='granted'){
+      S.locationGranted=true;S.locationDenied=false;
+      try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(e){}
+      doGet();
+    }
+  }).catch(()=>{});
+}
+
 // ── Supabase cloud sync ───────────────────────────────────────────────

@@ -2663,6 +2663,28 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
   </div>
 
+  <!-- Notifications -->
+  <div class="acc-sec" id="acc-notif">
+    <div class="acc-hd" onclick="toggleAccSection('acc-notif')">
+      <div class="acc-hd-left">
+        <div class="acc-hd-title">🔔 Notifications</div>
+        <div class="acc-hd-sub" id="acc-notif-sub">Get notified when clients sign proposals</div>
+      </div>
+      <span class="acc-hd-arrow">▼</span>
+    </div>
+    <div class="acc-body">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.6">Know the moment a client signs — even when the app is closed.<br><span style="color:var(--text3)">Requires iOS 16.4+ with TradeDesk added to your Home Screen.</span></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg);border-radius:var(--r);margin-bottom:10px">
+        <div>
+          <div style="font-size:13px;font-weight:700" id="notif-status-label">Status: checking…</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px" id="notif-status-sub"></div>
+        </div>
+        <div id="notif-status-dot" style="width:10px;height:10px;border-radius:50%;background:var(--text3);flex-shrink:0"></div>
+      </div>
+      <button id="notif-enable-btn" onclick="window._pwaRequestPushPermission&&window._pwaRequestPushPermission()" class="btn btn-p" style="width:100%">🔔 Enable notifications</button>
+    </div>
+  </div>
+
   <div class="brow">
     <button class="btn btn-p" onclick="saveSettings()">Save all settings</button>
     <button class="btn" onclick="if(supaEnabled())supaSignOut()" style="font-size:12px;color:var(--text3)">Sign out of cloud sync</button>
