@@ -1531,7 +1531,15 @@ async function sendGenericProposal(){
   const _uploadRes=await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true}).catch(e=>({error:e}));
   if(_uploadRes?.error){showToast('Upload failed — check connection and try again','error');console.error('[proposal upload]',_uploadRes.error);return;}
   const b=bids.find(x=>x.id===bidId);
-  if(b){b.signingToken=token;b.proposalKey=proposalKey;saveAll();}
+  if(b){
+    b.signingToken=token;b.proposalKey=proposalKey;
+    // Mark Pending now so hub snapshot shows the proposal — _commitProposalSent still
+    // fires on Text/Email but is safe to call twice (idempotent status change)
+    if(b.status==='Draft'||!b.status)b.status='Pending';
+    b.draft=false;
+    if(!b.proposalSentDate)b.proposalSentDate=todayKey();
+    saveAll();
+  }
   const baseUrl=_clientBaseUrl();
   const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
   const shortUrl=await shortenUrl(signingUrl);
