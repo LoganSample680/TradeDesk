@@ -534,6 +534,7 @@ async function sendProposalLink(){
       _hubClientId?Promise.race([_uploadClientHub(_hubClientId),new Promise(r=>setTimeout(r,6000,null))]).catch(()=>null):Promise.resolve(null)
     ]);
     if(uploadResult?.error)console.warn('Storage upload issue (link may still work):',uploadResult.error?.message);
+    const signingDirectUrl=shortUrl;
     let shareUrl=_hu||shortUrl;
     const bar=document.getElementById('proposal-link-bar');
     const input=document.getElementById('proposal-link-input');
@@ -543,6 +544,7 @@ async function sendProposalLink(){
     if(bar){
       bar.style.display='block';
       bar.dataset.signingUrl=shareUrl;
+      bar.dataset.signingDirectUrl=signingDirectUrl;
       bar.dataset.cname=cname;
       bar.dataset.bname=bname;
       const c=getClientById(estLinkedClientId);
@@ -592,10 +594,12 @@ function copyProposalLink(){
 function shareProposalLink(){
   const d=_proposalShareData();
   if(!d.url){showToast('Generate the link first','⚠️');return;}
+  const bar=document.getElementById('proposal-link-bar');
+  const url=bar?.dataset.signingDirectUrl||d.url;
   pwaShare({
     title:d.bname+' Proposal',
     text:'Hi '+d.cname+'! Your proposal from '+d.bname+' is ready to view and sign.',
-    url:d.url
+    url
   });
 }
 function _proposalShareData(){
