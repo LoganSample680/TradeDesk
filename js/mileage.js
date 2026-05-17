@@ -234,7 +234,7 @@ function confirmStartDrive(){
   gps.active=true;
   gps.clientId=currentClientId;
   // Capture GPS coords at trip start
-  if(!S.locationDenied&&navigator.geolocation){navigator.geolocation.getCurrentPosition(p=>{gps.startCoords={lat:p.coords.latitude,lon:p.coords.longitude};},()=>{},{enableHighAccuracy:false,timeout:5000,maximumAge:30000});}
+  geoIfGranted(p=>{gps.startCoords={lat:p.coords.latitude,lon:p.coords.longitude};});
   const c=getClientById(currentClientId);
   gps.clientName=c?c.name:'Client';
   gps.startTime=Date.now();
@@ -919,7 +919,7 @@ async function _nominatimReverse(lat,lon){
 async function getCurrentLocAddress(){
   return new Promise((resolve,reject)=>{
     if(!navigator.geolocation){reject(new Error('GPS not available'));return;}
-    navigator.geolocation.getCurrentPosition(async pos=>{
+    const doGet=()=>navigator.geolocation.getCurrentPosition(async pos=>{
       const{latitude:lat,longitude:lon}=pos.coords;
       _tripGpsCoords={lat,lng:lon};
       if(_mapkitReady){
@@ -939,16 +939,18 @@ async function getCurrentLocAddress(){
           } else if(err){
             console.warn('[MapKit reverse] error:',err);
           }
-          // MapKit failed or returned empty — cascade to Nominatim
           const nom=await _nominatimReverse(lat,lon);
           resolve(nom||lat.toFixed(4)+', '+lon.toFixed(4));
         });
         return;
       }
-      // MapKit not loaded — try Nominatim
       const nom=await _nominatimReverse(lat,lon);
       resolve(nom||lat.toFixed(4)+', '+lon.toFixed(4));
     },err=>reject(err),{timeout:8000,enableHighAccuracy:false,maximumAge:300000});
+    if(S.locationGranted){doGet();return;}
+    if(typeof requestLocationPermission==='function'){
+      requestLocationPermission(doGet,()=>reject(new Error('Location denied')));
+    }else{doGet();}
   });
 }
 async function grabMyLocation(showErr){

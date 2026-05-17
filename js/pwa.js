@@ -166,6 +166,113 @@ async function _pwaHandleSharedPhoto(){
   }catch(e){}
 }
 
+// ── Web Push Notifications ────────────────────────────────────────────────────
+// VAPID public key — private key lives server-side (Supabase Edge Function).
+// To trigger background pushes: deploy edge fn that queries push_subscriptions
+// and calls web-push sendNotification when a bid.status changes to 'Signed'.
+const _VAPID_PUBLIC_KEY='BEq_Ly35TQZL3U-6i8x4HD_csk12QxgPvoX4yBU7nU6ao_z7TE7zmjd3UyCL3mptc-mGEajzauwD-9K5YTW82dA';
+
+function _vapidKeyToUint8(b64){
+  const pad='='.repeat((4-b64.length%4)%4);
+  const raw=atob((b64+pad).replace(/-/g,'+').replace(/_/g,'/'));
+  return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));
+}
+
+async function _pwaRequestPushPermission(){
+  if(!('Notification' in window)||!('serviceWorker' in navigator)||!('PushManager' in window)){
+    showToast('Push notifications not supported on this device','⚠️');return false;
+  }
+  const perm=await Notification.requestPermission();
+  if(perm!=='granted'){
+    showToast('Notifications blocked — enable in iOS Settings → TradeDesk','⚠️',5000);
+    return false;
+  }
+  const ok=await _pwaSubscribePush();
+  if(ok){showToast('Notifications enabled','🔔');}
+  _updateNotifSettings();
+  return ok;
+}
+
+async function _pwaSubscribePush(){
+  try{
+    const reg=await navigator.serviceWorker.ready;
+    const existing=await reg.pushManager.getSubscription();
+    if(existing){_pwaSavePushSub(existing);return true;}
+    const sub=await reg.pushManager.subscribe({
+      userVisibleOnly:true,
+      applicationServerKey:_vapidKeyToUint8(_VAPID_PUBLIC_KEY)
+    });
+    _pwaSavePushSub(sub);
+    return true;
+  }catch(e){console.warn('[Push] subscribe failed:',e);return false;}
+}
+
+async function _pwaSavePushSub(sub){
+  if(!window._supaUser||!window.supabase)return;
+  const p256=sub.getKey('p256dh');
+  const auth=sub.getKey('auth');
+  try{
+    await window.supabase.from('push_subscriptions').upsert({
+      user_id:window._supaUser.id,
+      endpoint:sub.endpoint,
+      p256dh:p256?btoa(String.fromCharCode(...new Uint8Array(p256))):null,
+      auth:auth?btoa(String.fromCharCode(...new Uint8Array(auth))):null,
+      updated_at:new Date().toISOString()
+    },{onConflict:'user_id'});
+  }catch(e){} // table may not exist yet — silent fail until deployed
+}
+
+function _pwaLocalNotify(title,body,data){
+  if(!('serviceWorker' in navigator)||Notification.permission!=='granted')return;
+  navigator.serviceWorker.ready.then(reg=>{
+    reg.showNotification(title,{
+      body,icon:'/icon-192.png',badge:'/icon-96.png',
+      data:data||{},vibrate:[200,100,200],requireInteraction:false
+    });
+  });
+}
+
+function _updateNotifSettings(){
+  const lbl=document.getElementById('notif-status-label');
+  const sub=document.getElementById('notif-status-sub');
+  const dot=document.getElementById('notif-status-dot');
+  const btn=document.getElementById('notif-enable-btn');
+  if(!lbl)return;
+  const perm='Notification' in window?Notification.permission:'unsupported';
+  if(perm==='granted'){
+    lbl.textContent='Notifications: On ✓';
+    if(sub)sub.textContent='You\'ll be notified when a proposal is signed';
+    if(dot)dot.style.background='var(--green-mid)';
+    if(btn){btn.textContent='✓ Notifications enabled';btn.disabled=true;btn.style.opacity='.6';}
+  }else if(perm==='denied'){
+    lbl.textContent='Notifications: Blocked';
+    if(sub)sub.textContent='Go to iOS Settings → TradeDesk → Notifications to allow';
+    if(dot)dot.style.background='var(--red)';
+    if(btn){btn.textContent='Blocked — open iOS Settings';btn.disabled=true;btn.style.opacity='.6';}
+  }else if(perm==='unsupported'){
+    lbl.textContent='Not supported on this device';
+    if(sub)sub.textContent='iOS 16.4+ PWA required';
+    if(dot)dot.style.background='var(--text3)';
+    if(btn)btn.style.display='none';
+  }else{
+    lbl.textContent='Notifications: Off';
+    if(sub)sub.textContent='Tap to enable — get notified when clients sign proposals';
+    if(dot)dot.style.background='var(--amber)';
+    if(btn){btn.textContent='🔔 Enable notifications';btn.disabled=false;btn.style.opacity='';}
+  }
+}
+
+// Handle notification tap — SW posts NOTIFICATION_CLICK, navigate to right page
+navigator.serviceWorker&&navigator.serviceWorker.addEventListener('message',e=>{
+  if(e.data?.type==='NOTIFICATION_CLICK'){
+    const url=e.data.url||'';
+    if(url.includes('pg-clients')||!url)goPg('pg-clients');
+  }
+});
+
 // ── Expose wake lock controls to drive and estimate modules ───────────────────
 window._wakeLockRequest=_wakeLockRequest;
 window._wakeLockRelease=_wakeLockRelease;
+window._pwaRequestPushPermission=_pwaRequestPushPermission;
+window._updateNotifSettings=_updateNotifSettings;
+window._pwaLocalNotify=_pwaLocalNotify;

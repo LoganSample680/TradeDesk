@@ -1470,12 +1470,15 @@ function renderCalMonthLabel(){const M=['January','February','March','April','Ma
 function getJobsOnDay(key){const res=[];jobs.forEach(job=>{if(job.status==='canceled')return;const workDays=getJobWorkDays(job);if(workDays.includes(key)){res.push({job,isBuf:false});return;}const lastDay=workDays.length?workDays[workDays.length-1]:job.start;const b=parseInt(job.buffer)||0;for(let i=1;i<=b;i++){if(addDays(lastDay,i)===key){res.push({job,isBuf:true});return;}}});return res;}
 function requestLocationPermission(onGranted, onDenied){
   if(S.weatherLat&&S.weatherLon){if(onGranted)onGranted();return;}
+  // Previously granted on this device — skip modal entirely
+  if(S.locationGranted){_grabLocCoords(onGranted,onDenied);return;}
+  // Only block if denied and never previously granted
   if(S.locationDenied){if(onDenied)onDenied();return;}
-  // Check OS-level permission first — avoids showing our modal to users who already said yes
-  // (handles iOS PWA clearing localStorage between sessions)
+  // Check OS-level permission — avoids showing our modal to users who already said yes
   if(navigator.permissions&&navigator.permissions.query){
     navigator.permissions.query({name:'geolocation'}).then(p=>{
       if(p.status==='granted'){
+        S.locationGranted=true;S.locationDenied=false;
         _grabLocCoords(onGranted,onDenied);
       }else if(p.status==='denied'){
         S.locationDenied=true;saveAll();if(onDenied)onDenied();
@@ -1491,7 +1494,7 @@ function _grabLocCoords(onGranted,onDenied){
   navigator.geolocation.getCurrentPosition(pos=>{
     S.weatherLat=Math.round(pos.coords.latitude*10000)/10000;
     S.weatherLon=Math.round(pos.coords.longitude*10000)/10000;
-    S.locationDenied=false;saveAll();
+    S.locationDenied=false;S.locationGranted=true;saveAll();
     if(onGranted)onGranted();
   },()=>{S.locationDenied=true;saveAll();if(onDenied)onDenied();},{enableHighAccuracy:false,timeout:10000});
 }

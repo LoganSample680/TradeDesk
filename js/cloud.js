@@ -305,7 +305,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.17.26.83';
+const APP_VERSION='05.17.26.84';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -367,7 +367,10 @@ function _removeBootOverlay(){
       }
     }catch(e){}
     // Handle PWA shortcuts and share-target after app is fully rendered
-    setTimeout(()=>window._pwaHandleShortcut&&window._pwaHandleShortcut(),500);
+    setTimeout(()=>{
+      window._pwaHandleShortcut&&window._pwaHandleShortcut();
+      window._updateNotifSettings&&window._updateNotifSettings();
+    },500);
   },320);
 }
 async function supaInit(){
@@ -482,20 +485,18 @@ function registerDevice(updateLocation){
   saveSettings();
   // Capture GPS if explicitly requested or first time registering
   if(updateLocation||idx===-1){
-    if(navigator.geolocation){
-      navigator.geolocation.getCurrentPosition(pos=>{
-        const devIdx=S.devices.findIndex(d=>d.id===id);
-        if(devIdx>-1){
-          S.devices[devIdx].lat=pos.coords.latitude;
-          S.devices[devIdx].lon=pos.coords.longitude;
-          S.devices[devIdx].locAt=now;
-          saveSettings();
-          const tpl=document.getElementById('team-page-devices');
-          const tsl=document.getElementById('device-list');
-          if(tpl||tsl)renderTeam();
-        }
-      },()=>{},{enableHighAccuracy:false,timeout:5000,maximumAge:300000});
-    }
+    geoIfGranted(pos=>{
+      const devIdx=S.devices.findIndex(d=>d.id===id);
+      if(devIdx>-1){
+        S.devices[devIdx].lat=pos.coords.latitude;
+        S.devices[devIdx].lon=pos.coords.longitude;
+        S.devices[devIdx].locAt=now;
+        saveSettings();
+        const tpl=document.getElementById('team-page-devices');
+        const tsl=document.getElementById('device-list');
+        if(tpl||tsl)renderTeam();
+      }
+    });
   }
 }
 function renderTeam(){
@@ -937,7 +938,7 @@ async function supaSaveToCloud(){
       liens:JSON.stringify(liens),
       updated_at:new Date().toISOString()
     };
-    if(!_isSupportSave&&!_isEmployee){const {stateRates:_sr,locationDenied:_ld,...sForCloud}=S;part1.settings=JSON.stringify(sForCloud);}
+    if(!_isSupportSave&&!_isEmployee){const {stateRates:_sr,locationDenied:_ld,locationGranted:_lg,...sForCloud}=S;part1.settings=JSON.stringify(sForCloud);}
 
     // Part 1 — core business data; use update in support/employee mode (row guaranteed)
     const {error:e1}=(_isSupportSave||_isEmployee)
