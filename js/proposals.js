@@ -589,6 +589,15 @@ function copyProposalLink(){
   const btn=document.querySelector('[onclick="copyProposalLink()"]');
   if(btn){btn.textContent='✓ Copied!';setTimeout(()=>btn.textContent='📋 Copy link',2000);}
 }
+function shareProposalLink(){
+  const d=_proposalShareData();
+  if(!d.url){showToast('Generate the link first','⚠️');return;}
+  pwaShare({
+    title:d.bname+' Proposal',
+    text:'Hi '+d.cname+'! Your proposal from '+d.bname+' is ready to view and sign.',
+    url:d.url
+  });
+}
 function _proposalShareData(){
   const bar=document.getElementById('proposal-link-bar');
   const defBname=S.bname||'TradeDesk';
