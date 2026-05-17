@@ -297,8 +297,8 @@ async function _openLiveScanner(callback){
   const useGPU=await _gpuInit(TW,TH);
 
   let detectedCorners=null,stableFrames=0,capturing=false,rafId=null;
-  let gpuPending=false,cpuFrame=0;
-  const STABLE_FOR_AUTO=7;
+  let gpuPending=false,lastDetectMs=0;
+  const STABLE_FOR_AUTO=10; // 10 detections × 200ms each = ~2 seconds of confirmed stability
 
   function videoToOverlay(c){
     const vw=video.videoWidth,vh=video.videoHeight,dw=ov.offsetWidth,dh=ov.offsetHeight;
@@ -313,7 +313,7 @@ async function _openLiveScanner(callback){
     oc.clearRect(0,0,overlay.width,overlay.height);
     if(!detectedCorners||!video.videoWidth)return;
     const sc=detectedCorners.map(c=>videoToOverlay(c));
-    const confident=stableFrames>=4;
+    const confident=stableFrames>=6;
     oc.beginPath();oc.moveTo(sc[0].x,sc[0].y);sc.slice(1).forEach(c=>oc.lineTo(c.x,c.y));oc.closePath();
     oc.fillStyle=confident?'rgba(14,165,233,0.18)':'rgba(255,255,255,0.07)';oc.fill();
     oc.strokeStyle=confident?'#38bdf8':'rgba(255,255,255,0.4)';
@@ -336,7 +336,7 @@ async function _openLiveScanner(callback){
     if(raw){detectedCorners=raw;stableFrames=Math.min(stableFrames+1,STABLE_FOR_AUTO+1);}
     else{detectedCorners=null;stableFrames=Math.max(stableFrames-2,0);}
     if(stableFrames===0)hint.textContent='Point camera at receipt';
-    else if(stableFrames<4)hint.textContent='Hold steady…';
+    else if(stableFrames<5)hint.textContent='Hold steady…';
     else if(stableFrames<STABLE_FOR_AUTO)hint.textContent='✓ Receipt detected — hold still';
     else hint.textContent='📸 Capturing…';
     if(stableFrames>=STABLE_FOR_AUTO&&!capturing)doCapture();
@@ -346,16 +346,17 @@ async function _openLiveScanner(callback){
     if(capturing)return;
     rafId=requestAnimationFrame(rafLoop);
     drawOverlay();
+    // Throttle detection to ~200ms regardless of GPU or CPU path
+    const now=performance.now();
+    if(now-lastDetectMs<200||!video.videoWidth)return;
+    lastDetectMs=now;
     if(useGPU){
-      // GPU path: fire async Sobel every frame; non-blocking — result updates detectedCorners when ready
-      if(!gpuPending&&video.videoWidth){
+      if(!gpuPending){
         gpuPending=true;
         _gpuSobelAsync(video,TW,TH).then(raw=>{gpuPending=false;applyResult(raw);}).catch(()=>{gpuPending=false;});
       }
     }else{
-      // CPU fallback: throttle to every 5 frames (~12fps detection @ 60fps RAF)
-      cpuFrame=(cpuFrame+1)%5;
-      if(cpuFrame===0&&video.videoWidth){
+      {
         const tw=TW,th=Math.round(video.videoHeight*tw/video.videoWidth);
         const tmp=document.createElement('canvas');tmp.width=tw;tmp.height=th;
         tmp.getContext('2d').drawImage(video,0,0,tw,th);
