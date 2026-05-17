@@ -144,6 +144,88 @@ async function compressAndEncodeImage(file,maxPx=1200,qual=0.85){
 
 // ── Receipt Scanner ───────────────────────────────────────────────────────
 
+// WebGPU state — allocated once per scanner session, destroyed on close
+const _gpu={dev:null,pipe:null,sampler:null,uniformBuf:null,readBuf:null,tw:0,th:0};
+
+const _GPU_WGSL=`
+struct Dims { tw: u32, th: u32 }
+@group(0) @binding(0) var<uniform> dims: Dims;
+@group(0) @binding(1) var src: texture_external;
+@group(0) @binding(2) var<storage,read_write> edges: array<f32>;
+
+fn lum(c: vec4<f32>) -> f32 { return c.r*0.299+c.g*0.587+c.b*0.114; }
+
+@compute @workgroup_size(8,8)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+  let x=gid.x; let y=gid.y;
+  if(x<1u||y<1u||x>=dims.tw-1u||y>=dims.th-1u){
+    if(x<dims.tw&&y<dims.th){edges[y*dims.tw+x]=0.0;}
+    return;
+  }
+  let tl=lum(textureLoad(src,vec2<i32>(i32(x)-1,i32(y)-1)));
+  let tc=lum(textureLoad(src,vec2<i32>(i32(x),  i32(y)-1)));
+  let tr=lum(textureLoad(src,vec2<i32>(i32(x)+1,i32(y)-1)));
+  let ml=lum(textureLoad(src,vec2<i32>(i32(x)-1,i32(y)  )));
+  let mr=lum(textureLoad(src,vec2<i32>(i32(x)+1,i32(y)  )));
+  let bl=lum(textureLoad(src,vec2<i32>(i32(x)-1,i32(y)+1)));
+  let bc=lum(textureLoad(src,vec2<i32>(i32(x),  i32(y)+1)));
+  let br=lum(textureLoad(src,vec2<i32>(i32(x)+1,i32(y)+1)));
+  let gx=(tr+2.0*mr+br)-(tl+2.0*ml+bl);
+  let gy=(bl+2.0*bc+br)-(tl+2.0*tc+tr);
+  edges[y*dims.tw+x]=sqrt(gx*gx+gy*gy)*255.0;
+}`;
+
+async function _gpuInit(tw,th){
+  if(!navigator.gpu)return false;
+  try{
+    const adapter=await navigator.gpu.requestAdapter();
+    if(!adapter)return false;
+    const dev=await adapter.requestDevice();
+    const pipe=await dev.createComputePipelineAsync({
+      layout:'auto',
+      compute:{module:dev.createShaderModule({code:_GPU_WGSL}),entryPoint:'main'}
+    });
+    const uniformBuf=dev.createBuffer({size:8,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+    const edgeBuf=dev.createBuffer({size:tw*th*4,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_SRC});
+    const readBuf=dev.createBuffer({size:tw*th*4,usage:GPUBufferUsage.MAP_READ|GPUBufferUsage.COPY_DST});
+    Object.assign(_gpu,{dev,pipe,uniformBuf,edgeBuf,readBuf,tw,th});
+    return true;
+  }catch(e){console.warn('WebGPU init failed:',e);return false;}
+}
+
+async function _gpuSobelAsync(video,tw,th){
+  const{dev,pipe,uniformBuf,edgeBuf,readBuf}=_gpu;
+  if(!dev||!video.videoWidth)return null;
+  try{
+    const ext=dev.importExternalTexture({source:video});
+    const bg=dev.createBindGroup({layout:pipe.getBindGroupLayout(0),entries:[
+      {binding:0,resource:{buffer:uniformBuf}},
+      {binding:1,resource:ext},
+      {binding:2,resource:{buffer:edgeBuf}},
+    ]});
+    dev.queue.writeBuffer(uniformBuf,0,new Uint32Array([tw,th]));
+    const enc=dev.createCommandEncoder();
+    const pass=enc.beginComputePass();
+    pass.setPipeline(pipe);pass.setBindGroup(0,bg);
+    pass.dispatchWorkgroups(Math.ceil(tw/8),Math.ceil(th/8));
+    pass.end();
+    enc.copyBufferToBuffer(edgeBuf,0,readBuf,0,tw*th*4);
+    dev.queue.submit([enc.finish()]);
+    await readBuf.mapAsync(GPUMapMode.READ);
+    const raw=new Float32Array(readBuf.getMappedRange().slice(0));
+    readBuf.unmap();
+    // Convert float edge map → Uint8Array for _detectDocCorners
+    const e=new Uint8Array(tw*th*4);
+    for(let i=0;i<tw*th;i++){const v=Math.min(255,raw[i]);e[i*4]=v;e[i*4+1]=v;e[i*4+2]=v;e[i*4+3]=255;}
+    return _detectDocCorners(e,tw,th,video.videoWidth,video.videoHeight);
+  }catch(e){return null;}
+}
+
+function _gpuDestroy(){
+  try{_gpu.edgeBuf?.destroy();_gpu.readBuf?.destroy();_gpu.uniformBuf?.destroy();}catch(e){}
+  Object.assign(_gpu,{dev:null,pipe:null,uniformBuf:null,edgeBuf:null,readBuf:null,tw:0,th:0});
+}
+
 function _showReceiptScanner(fileOrNull,callback){
   if(navigator.mediaDevices?.getUserMedia){_openLiveScanner(callback);}
   else if(fileOrNull){_loadAndBuildScanUI(fileOrNull,callback);}
@@ -170,25 +252,21 @@ async function _openLiveScanner(callback){
   overlay.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
   ov.appendChild(overlay);
 
-  // Flash element for capture feedback
   const flash=document.createElement('div');
   flash.style.cssText='position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:2;transition:opacity .15s';
   ov.appendChild(flash);
 
-  // Cancel button (top-left)
   const cancelBtn=document.createElement('button');
   cancelBtn.id='ls-cancel';
   cancelBtn.style.cssText='position:absolute;top:calc(env(safe-area-inset-top,0px)+14px);left:16px;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.3);color:#fff;padding:8px 18px;border-radius:20px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;z-index:3';
   cancelBtn.textContent='✕ Cancel';
   ov.appendChild(cancelBtn);
 
-  // Hint (bottom, above shutter)
   const hint=document.createElement('div');
   hint.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom,0px)+120px);left:0;right:0;text-align:center;color:#fff;font-size:13px;font-weight:700;text-shadow:0 1px 6px rgba(0,0,0,.9);pointer-events:none;z-index:3;transition:color .3s';
   hint.textContent='Point camera at receipt';
   ov.appendChild(hint);
 
-  // Shutter button with progress ring
   const shutterWrap=document.createElement('div');
   shutterWrap.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom,0px)+28px);left:50%;transform:translateX(-50%);z-index:3';
   shutterWrap.innerHTML=
@@ -214,14 +292,17 @@ async function _openLiveScanner(callback){
     return;
   }
 
-  let detectedCorners=null,stableFrames=0,autoTimer=null,capturing=false;
-  const STABLE_FOR_AUTO=7; // ~1.4s at 200ms
+  // Try to init WebGPU at thumbnail size; fall back to CPU if unavailable
+  const TW=180,TH=Math.round(video.videoHeight*180/Math.max(1,video.videoWidth))||180;
+  const useGPU=await _gpuInit(TW,TH);
+
+  let detectedCorners=null,stableFrames=0,capturing=false,rafId=null;
+  let gpuPending=false,cpuFrame=0;
+  const STABLE_FOR_AUTO=7;
 
   function videoToOverlay(c){
-    const vw=video.videoWidth,vh=video.videoHeight;
-    const dw=ov.offsetWidth,dh=ov.offsetHeight;
-    const vAR=vw/vh,dAR=dw/dh;
-    let sc,ox=0,oy=0;
+    const vw=video.videoWidth,vh=video.videoHeight,dw=ov.offsetWidth,dh=ov.offsetHeight;
+    const vAR=vw/vh,dAR=dw/dh;let sc,ox=0,oy=0;
     if(vAR>dAR){sc=dh/vh;ox=(dw-vw*sc)/2;}else{sc=dw/vw;oy=(dh-vh*sc)/2;}
     return{x:c.x*sc+ox,y:c.y*sc+oy};
   }
@@ -237,14 +318,12 @@ async function _openLiveScanner(callback){
     oc.fillStyle=confident?'rgba(14,165,233,0.18)':'rgba(255,255,255,0.07)';oc.fill();
     oc.strokeStyle=confident?'#38bdf8':'rgba(255,255,255,0.4)';
     oc.lineWidth=confident?3:2;oc.setLineDash(confident?[]:[10,6]);oc.stroke();oc.setLineDash([]);
-    // Corner dots
     const r=Math.max(6,Math.min(10,ov.offsetWidth*0.013));
     sc.forEach(c=>{
       oc.beginPath();oc.arc(c.x,c.y,r,0,Math.PI*2);
       oc.fillStyle=confident?'#38bdf8':'rgba(255,255,255,.5)';oc.fill();
       oc.strokeStyle='rgba(255,255,255,.8)';oc.lineWidth=1.5;oc.stroke();
     });
-    // Progress ring
     const ring=document.getElementById('ls-ring');
     if(ring){
       const pct=Math.min(1,stableFrames/STABLE_FOR_AUTO);
@@ -253,37 +332,46 @@ async function _openLiveScanner(callback){
     }
   }
 
-  function detect(){
-    if(capturing||!video.videoWidth)return;
-    const tw=180,th=Math.round(video.videoHeight*180/video.videoWidth);
-    const tmp=document.createElement('canvas');tmp.width=tw;tmp.height=th;
-    const tc=tmp.getContext('2d');tc.drawImage(video,0,0,tw,th);
-    const imgData=tc.getImageData(0,0,tw,th);
-    const raw=_detectDocCorners(imgData.data,tw,th,video.videoWidth,video.videoHeight);
-    if(raw){
-      detectedCorners=raw;
-      stableFrames=Math.min(stableFrames+1,STABLE_FOR_AUTO+1);
-    }else{
-      detectedCorners=null;
-      stableFrames=Math.max(stableFrames-2,0);
-    }
-    drawOverlay();
-    // Update hint
+  function applyResult(raw){
+    if(raw){detectedCorners=raw;stableFrames=Math.min(stableFrames+1,STABLE_FOR_AUTO+1);}
+    else{detectedCorners=null;stableFrames=Math.max(stableFrames-2,0);}
     if(stableFrames===0)hint.textContent='Point camera at receipt';
     else if(stableFrames<4)hint.textContent='Hold steady…';
     else if(stableFrames<STABLE_FOR_AUTO)hint.textContent='✓ Receipt detected — hold still';
     else hint.textContent='📸 Capturing…';
-    // Auto-capture
-    if(stableFrames>=STABLE_FOR_AUTO&&!capturing){doCapture();}
+    if(stableFrames>=STABLE_FOR_AUTO&&!capturing)doCapture();
   }
 
-  const detInterval=setInterval(detect,200);
+  function rafLoop(){
+    if(capturing)return;
+    rafId=requestAnimationFrame(rafLoop);
+    drawOverlay();
+    if(useGPU){
+      // GPU path: fire async Sobel every frame; non-blocking — result updates detectedCorners when ready
+      if(!gpuPending&&video.videoWidth){
+        gpuPending=true;
+        _gpuSobelAsync(video,TW,TH).then(raw=>{gpuPending=false;applyResult(raw);}).catch(()=>{gpuPending=false;});
+      }
+    }else{
+      // CPU fallback: throttle to every 5 frames (~12fps detection @ 60fps RAF)
+      cpuFrame=(cpuFrame+1)%5;
+      if(cpuFrame===0&&video.videoWidth){
+        const tw=TW,th=Math.round(video.videoHeight*tw/video.videoWidth);
+        const tmp=document.createElement('canvas');tmp.width=tw;tmp.height=th;
+        tmp.getContext('2d').drawImage(video,0,0,tw,th);
+        const imgData=tmp.getContext('2d').getImageData(0,0,tw,th);
+        applyResult(_detectDocCorners(imgData.data,tw,th,video.videoWidth,video.videoHeight));
+      }
+    }
+  }
+
+  rafId=requestAnimationFrame(rafLoop);
 
   function doCapture(){
     if(capturing)return;
     capturing=true;
-    clearInterval(detInterval);
-    // Flash
+    cancelAnimationFrame(rafId);rafId=null;
+    _gpuDestroy();
     flash.style.opacity='1';setTimeout(()=>flash.style.opacity='0',150);
     const cap=document.createElement('canvas');
     cap.width=video.videoWidth;cap.height=video.videoHeight;
@@ -294,8 +382,7 @@ async function _openLiveScanner(callback){
       if(detectedCorners&&stableFrames>=3){
         cap.toBlob(blob=>{
           const img=new Image();const u=URL.createObjectURL(blob);
-          img.onload=()=>{
-            URL.revokeObjectURL(u);
+          img.onload=()=>{URL.revokeObjectURL(u);
             try{const w=_scanWarp(img,cap.width,cap.height,detectedCorners);_scanEnhance(w);w.toBlob(wb=>callback(wb),'image/jpeg',0.92);}
             catch(e){callback(blob);}
           };img.src=u;
@@ -309,7 +396,7 @@ async function _openLiveScanner(callback){
     },200);
   }
 
-  cancelBtn.onclick=()=>{clearInterval(detInterval);stopStream();ov.remove();};
+  cancelBtn.onclick=()=>{cancelAnimationFrame(rafId);rafId=null;_gpuDestroy();stopStream();ov.remove();};
   document.getElementById('ls-shutter').onclick=()=>{if(!capturing)doCapture();};
 }
 
@@ -503,360 +590,6 @@ function _scanEnhance(canvas){
 }
 
 // ── End Receipt Scanner ───────────────────────────────────────────────────
-
-function _confirmReceiptDate(aiDate,statusEl){
-  if(navigator.mediaDevices?.getUserMedia){
-    _openLiveScanner(callback);
-  } else {
-    // No getUserMedia — use file picker then show crop UI
-    if(fileOrNull){_loadAndBuildScanUI(fileOrNull,callback);}
-    else{
-      const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.capture='environment';inp.style.display='none';
-      inp.onchange=()=>{const f=inp.files[0];inp.remove();if(f)_loadAndBuildScanUI(f,callback);};
-      document.body.appendChild(inp);inp.click();
-    }
-  }
-}
-
-async function _openLiveScanner(callback){
-  document.getElementById('live-scan-ui')?.remove();
-  const ov=document.createElement('div');
-  ov.id='live-scan-ui';
-  ov.style.cssText='position:fixed;inset:0;background:#000;z-index:10000;font-family:inherit;overflow:hidden';
-  document.body.appendChild(ov);
-
-  // Video element — fills screen
-  const video=document.createElement('video');
-  video.playsInline=true;video.autoplay=true;video.muted=true;
-  video.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover';
-  ov.appendChild(video);
-
-  // Overlay canvas — same size, drawn on top
-  const overlay=document.createElement('canvas');
-  overlay.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
-  ov.appendChild(overlay);
-
-  // Top bar
-  const topBar=document.createElement('div');
-  topBar.style.cssText='position:absolute;top:0;left:0;right:0;padding:env(safe-area-inset-top,0px) 16px 12px;padding-top:calc(env(safe-area-inset-top,0px) + 12px);background:linear-gradient(rgba(0,0,0,.6),transparent);display:flex;justify-content:space-between;align-items:center;z-index:1';
-  topBar.innerHTML='<button id="ls-cancel" style="background:rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.3);color:#fff;padding:8px 18px;border-radius:20px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">✕ Cancel</button>'+
-    '<div style="color:#fff;font-size:13px;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,.8)">Point at receipt</div>'+
-    '<div style="width:80px"></div>';
-  ov.appendChild(topBar);
-
-  // Bottom bar — shutter button
-  const botBar=document.createElement('div');
-  botBar.style.cssText='position:absolute;bottom:0;left:0;right:0;padding:20px 0 calc(env(safe-area-inset-bottom,0px) + 24px);display:flex;justify-content:center;align-items:center;background:linear-gradient(transparent,rgba(0,0,0,.6));z-index:1';
-  botBar.innerHTML='<button id="ls-shutter" style="width:72px;height:72px;border-radius:50%;background:#fff;border:5px solid rgba(255,255,255,.4);cursor:pointer;box-shadow:0 4px 24px rgba(0,0,0,.5);transition:transform .1s" onmousedown="this.style.transform=\'scale(.93)\'" onmouseup="this.style.transform=\'\'"></button>';
-  ov.appendChild(botBar);
-
-  // Hint label (changes based on detection state)
-  const hint=document.createElement('div');
-  hint.id='ls-hint';
-  hint.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 115px);left:0;right:0;text-align:center;color:#fff;font-size:13px;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,.9);pointer-events:none;z-index:1';
-  hint.textContent='Align receipt in view';
-  ov.appendChild(hint);
-
-  let stream=null;
-  const stopStream=()=>stream?.getTracks().forEach(t=>t.stop());
-
-  // Try to start camera
-  try{
-    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}});
-    video.srcObject=stream;
-    await new Promise(res=>{video.onloadedmetadata=res;});
-    video.play();
-  }catch(e){
-    ov.remove();
-    // Fallback to file picker
-    const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.capture='environment';inp.style.display='none';
-    inp.onchange=()=>{const f=inp.files[0];inp.remove();if(f)_loadAndBuildScanUI(f,callback);};
-    document.body.appendChild(inp);inp.click();
-    return;
-  }
-
-  let detectedCorners=null,stableFrames=0,detecting=false;
-
-  function runDetection(){
-    if(detecting||!video.videoWidth)return;
-    detecting=true;
-    const tw=160,th=Math.round(video.videoHeight*160/video.videoWidth);
-    const tmp=document.createElement('canvas');tmp.width=tw;tmp.height=th;
-    const tc=tmp.getContext('2d');tc.drawImage(video,0,0,tw,th);
-    const raw=_scanDetectCornersFromCanvas(tc,tw,th);
-    if(raw){
-      const sx=video.videoWidth/tw,sy=video.videoHeight/th;
-      detectedCorners=raw.map(c=>({x:c.x*sx,y:c.y*sy}));
-      stableFrames=Math.min(stableFrames+1,8);
-    } else {
-      detectedCorners=null;stableFrames=Math.max(stableFrames-1,0);
-    }
-    detecting=false;
-  }
-
-  function drawOverlay(){
-    overlay.width=ov.offsetWidth;overlay.height=ov.offsetHeight;
-    const oc=overlay.getContext('2d');
-    oc.clearRect(0,0,overlay.width,overlay.height);
-    if(!detectedCorners||!video.videoWidth)return;
-
-    // Map video coords → overlay coords (accounting for object-fit:cover)
-    const vw=video.videoWidth,vh=video.videoHeight;
-    const dw=ov.offsetWidth,dh=ov.offsetHeight;
-    const vAR=vw/vh,dAR=dw/dh;
-    let scale,ox=0,oy=0;
-    if(vAR>dAR){scale=dh/vh;ox=(dw-vw*scale)/2;}
-    else{scale=dw/vw;oy=(dh-vh*scale)/2;}
-    const map=c=>({x:c.x*scale+ox,y:c.y*scale+oy});
-    const sc=detectedCorners.map(map);
-
-    const confident=stableFrames>=4;
-    oc.beginPath();
-    oc.moveTo(sc[0].x,sc[0].y);
-    sc.slice(1).forEach(c=>oc.lineTo(c.x,c.y));
-    oc.closePath();
-    oc.fillStyle=confident?'rgba(14,165,233,0.15)':'rgba(255,255,255,0.08)';oc.fill();
-    oc.strokeStyle=confident?'#38bdf8':'rgba(255,255,255,0.5)';
-    oc.lineWidth=3;oc.setLineDash(confident?[]:[10,6]);oc.stroke();oc.setLineDash([]);
-    // Corner dots
-    sc.forEach(c=>{oc.beginPath();oc.arc(c.x,c.y,7,0,Math.PI*2);oc.fillStyle=confident?'#38bdf8':'rgba(255,255,255,.6)';oc.fill();});
-
-    const hintEl=document.getElementById('ls-hint');
-    if(hintEl)hintEl.textContent=confident?'✓ Receipt detected — tap shutter':'Align receipt in view';
-  }
-
-  const detInterval=setInterval(()=>{runDetection();drawOverlay();},350);
-
-  function capture(){
-    clearInterval(detInterval);
-    const cap=document.createElement('canvas');
-    cap.width=video.videoWidth;cap.height=video.videoHeight;
-    cap.getContext('2d').drawImage(video,0,0);
-    stopStream();ov.remove();
-
-    if(detectedCorners&&stableFrames>=3){
-      // Auto-warp with detected corners
-      const img=new Image();
-      cap.toBlob(blob=>{
-        img.onload=()=>{
-          try{
-            const warped=_scanWarp(img,cap.width,cap.height,detectedCorners);
-            _scanEnhance(warped);
-            warped.toBlob(wb=>callback(wb),'image/jpeg',0.92);
-          }catch(e){callback(blob);}
-        };
-        img.src=URL.createObjectURL(blob);
-      },'image/jpeg',0.95);
-    } else {
-      // No detection — show manual crop UI
-      cap.toBlob(blob=>{
-        const img=new Image();
-        img.onload=()=>{URL.revokeObjectURL(img.src);_buildScanUI(img,blob,callback);};
-        img.src=URL.createObjectURL(blob);
-      },'image/jpeg',0.95);
-    }
-  }
-
-  document.getElementById('ls-cancel').onclick=()=>{clearInterval(detInterval);stopStream();ov.remove();};
-  document.getElementById('ls-shutter').onclick=capture;
-}
-
-function _loadAndBuildScanUI(file,callback){
-  const url=URL.createObjectURL(file);
-  const img=new Image();
-  img.onload=()=>{URL.revokeObjectURL(url);_buildScanUI(img,file,callback);};
-  img.onerror=()=>{URL.revokeObjectURL(url);callback(file);};
-  img.src=url;
-}
-
-function _buildScanUI(img,origBlob,callback){
-  document.getElementById('rcpt-scan-ui')?.remove();
-  const ov=document.createElement('div');
-  ov.id='rcpt-scan-ui';
-  ov.style.cssText='position:fixed;inset:0;background:#000;z-index:10000;display:flex;flex-direction:column;font-family:inherit';
-  document.body.appendChild(ov);
-
-  const hdr=document.createElement('div');
-  hdr.style.cssText='padding:12px 16px;display:flex;justify-content:space-between;align-items:center;background:#111;flex-shrink:0';
-  hdr.innerHTML=
-    '<button id="scan-skip-btn" style="background:none;border:1px solid #555;color:#ccc;padding:7px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Skip</button>'+
-    '<div style="color:#fff;font-size:14px;font-weight:700">Crop receipt</div>'+
-    '<button id="scan-use-btn" style="background:#0ea5e9;border:none;color:#fff;padding:7px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Use scan ✓</button>';
-  ov.appendChild(hdr);
-
-  const wrap=document.createElement('div');
-  wrap.style.cssText='flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;background:#000';
-  ov.appendChild(wrap);
-
-  const cvs=document.createElement('canvas');
-  cvs.style.cssText='touch-action:none;max-width:100%;max-height:100%;display:block';
-  wrap.appendChild(cvs);
-  const ctx=cvs.getContext('2d');
-
-  const foot=document.createElement('div');
-  foot.style.cssText='padding:10px 16px;background:#111;text-align:center;flex-shrink:0;color:#888;font-size:12px';
-  foot.textContent='Drag the blue corners to the edges of your receipt';
-  ov.appendChild(foot);
-
-  const maxW=window.innerWidth,maxH=window.innerHeight-110;
-  const scale=Math.min(maxW/img.naturalWidth,maxH/img.naturalHeight,1);
-  const dw=Math.round(img.naturalWidth*scale),dh=Math.round(img.naturalHeight*scale);
-  cvs.width=dw;cvs.height=dh;
-  ctx.drawImage(img,0,0,dw,dh);
-
-  const p=0.06;
-  let corners=[
-    {x:dw*p,     y:dh*p},
-    {x:dw*(1-p), y:dh*p},
-    {x:dw*(1-p), y:dh*(1-p)},
-    {x:dw*p,     y:dh*(1-p)},
-  ];
-  const auto=_scanDetectCorners(ctx,dw,dh);
-  if(auto)corners=auto;
-
-  let active=-1;
-  const HR=Math.max(18,Math.min(28,dw*0.05));
-
-  function redraw(){
-    ctx.drawImage(img,0,0,dw,dh);
-    ctx.beginPath();
-    ctx.moveTo(corners[0].x,corners[0].y);
-    for(let i=1;i<4;i++)ctx.lineTo(corners[i].x,corners[i].y);
-    ctx.closePath();
-    ctx.fillStyle='rgba(14,165,233,0.18)';ctx.fill();
-    ctx.strokeStyle='#38bdf8';ctx.lineWidth=2;ctx.setLineDash([8,4]);ctx.stroke();ctx.setLineDash([]);
-    corners.forEach((c,i)=>{
-      ctx.beginPath();ctx.arc(c.x,c.y,HR,0,Math.PI*2);
-      ctx.fillStyle=i===active?'#fff':'#0ea5e9';ctx.fill();
-      ctx.strokeStyle='#fff';ctx.lineWidth=2.5;ctx.stroke();
-    });
-  }
-  redraw();
-
-  function evPos(e){
-    const rect=cvs.getBoundingClientRect(),t=e.touches?e.touches[0]:e;
-    return{x:(t.clientX-rect.left)*(dw/rect.width),y:(t.clientY-rect.top)*(dh/rect.height)};
-  }
-  function nearest(pos){
-    const hit=Math.max(44,dw*0.1)*(dw/(cvs.getBoundingClientRect().width||dw));
-    let best=-1,bd=hit;
-    corners.forEach((c,i)=>{const d=Math.hypot(c.x-pos.x,c.y-pos.y);if(d<bd){bd=d;best=i;}});
-    return best;
-  }
-  function clamp(c){return{x:Math.max(0,Math.min(dw,c.x)),y:Math.max(0,Math.min(dh,c.y))};}
-
-  cvs.addEventListener('touchstart',e=>{e.preventDefault();active=nearest(evPos(e));redraw();},{passive:false});
-  cvs.addEventListener('touchmove',e=>{e.preventDefault();if(active<0)return;corners[active]=clamp(evPos(e));redraw();},{passive:false});
-  cvs.addEventListener('touchend',e=>{e.preventDefault();active=-1;redraw();},{passive:false});
-  cvs.addEventListener('mousedown',e=>{active=nearest(evPos(e));redraw();});
-  cvs.addEventListener('mousemove',e=>{if(active<0||!e.buttons)return;corners[active]=clamp(evPos(e));redraw();});
-  cvs.addEventListener('mouseup',()=>{active=-1;redraw();});
-
-  document.getElementById('scan-skip-btn').onclick=()=>{ov.remove();callback(origFile);};
-  document.getElementById('scan-use-btn').onclick=()=>{
-    const btn=document.getElementById('scan-use-btn');
-    if(!btn)return;btn.disabled=true;btn.textContent='Processing…';
-    foot.textContent='Applying perspective correction…';
-    const ws=Math.min(1500/img.naturalWidth,1500/img.naturalHeight,1);
-    const ww=Math.round(img.naturalWidth*ws),wh=Math.round(img.naturalHeight*ws);
-    const sc=corners.map(c=>({x:c.x/scale*ws,y:c.y/scale*ws}));
-    setTimeout(()=>{
-      try{
-        const warped=_scanWarp(img,ww,wh,sc);
-        _scanEnhance(warped);
-        warped.toBlob(blob=>{ov.remove();callback(blob);},'image/jpeg',0.92);
-      }catch(e){console.warn('Scan warp failed:',e);ov.remove();callback(origFile);}
-    },16);
-  };
-}
-
-// Used by _buildScanUI (draws from display canvas)
-function _scanDetectCorners(ctx,w,h){return _scanDetectCornersFromCanvas(ctx,w,h);}
-function _scanDetectCornersFromCanvas(ctx,w,h){
-  try{
-    const tw=160,th=Math.round(h*160/w);
-    const tmp=document.createElement('canvas');tmp.width=tw;tmp.height=th;
-    const tc=tmp.getContext('2d');tc.drawImage(ctx.canvas,0,0,tw,th);
-    const d=tc.getImageData(0,0,tw,th).data;
-    const gray=new Uint8Array(tw*th);
-    for(let i=0;i<tw*th;i++)gray[i]=Math.round(d[i*4]*0.299+d[i*4+1]*0.587+d[i*4+2]*0.114);
-    const sorted=[...gray].sort((a,b)=>a-b);
-    const med=sorted[sorted.length>>1];
-    const thr=28;
-    let x0=tw,x1=0,y0=th,y1=0;
-    for(let y=0;y<th;y++)for(let x=0;x<tw;x++){
-      const g=gray[y*tw+x];
-      const hit=med<128?g>med+thr:g<med-thr;
-      if(hit){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}
-    }
-    if(x1<=x0||y1<=y0||(x1-x0)<tw*0.25||(y1-y0)<th*0.25)return null;
-    const pad=5;
-    x0=Math.max(0,x0-pad);y0=Math.max(0,y0-pad);
-    x1=Math.min(tw-1,x1+pad);y1=Math.min(th-1,y1+pad);
-    const sx=w/tw,sy=h/th;
-    return[{x:x0*sx,y:y0*sy},{x:x1*sx,y:y0*sy},{x:x1*sx,y:y1*sy},{x:x0*sx,y:y1*sy}];
-  }catch(e){return null;}
-}
-
-function _scanWarp(img,w,h,corners){
-  const[tl,tr,br,bl]=corners;
-  const outW=Math.round(Math.max(Math.hypot(tr.x-tl.x,tr.y-tl.y),Math.hypot(br.x-bl.x,br.y-bl.y)));
-  const outH=Math.round(Math.max(Math.hypot(bl.x-tl.x,bl.y-tl.y),Math.hypot(br.x-tr.x,br.y-tr.y)));
-  const src=document.createElement('canvas');src.width=w;src.height=h;
-  const sctx=src.getContext('2d');sctx.drawImage(img,0,0,w,h);
-  const sData=sctx.getImageData(0,0,w,h).data;
-  const dst=document.createElement('canvas');dst.width=outW;dst.height=outH;
-  const dctx=dst.getContext('2d');const dImg=dctx.createImageData(outW,outH);const dd=dImg.data;
-  const hm=_scanHomography([[0,0],[outW,0],[outW,outH],[0,outH]],[[tl.x,tl.y],[tr.x,tr.y],[br.x,br.y],[bl.x,bl.y]]);
-  for(let y=0;y<outH;y++)for(let x=0;x<outW;x++){
-    const ww=hm[6]*x+hm[7]*y+1;
-    const sx=Math.round((hm[0]*x+hm[1]*y+hm[2])/ww);
-    const sy=Math.round((hm[3]*x+hm[4]*y+hm[5])/ww);
-    if(sx>=0&&sx<w&&sy>=0&&sy<h){
-      const si=(sy*w+sx)<<2,di=(y*outW+x)<<2;
-      dd[di]=sData[si];dd[di+1]=sData[si+1];dd[di+2]=sData[si+2];dd[di+3]=255;
-    }
-  }
-  dctx.putImageData(dImg,0,0);return dst;
-}
-
-function _scanHomography(src4,dst4){
-  const A=[],b=[];
-  for(let i=0;i<4;i++){
-    const[sx,sy]=src4[i],[dx,dy]=dst4[i];
-    A.push([-sx,-sy,-1,0,0,0,sx*dx,sy*dx]);b.push(-dx);
-    A.push([0,0,0,-sx,-sy,-1,sx*dy,sy*dy]);b.push(-dy);
-  }
-  const n=8,M=A.map((r,i)=>[...r,b[i]]);
-  for(let c=0;c<n;c++){
-    let mx=c;for(let r=c+1;r<n;r++)if(Math.abs(M[r][c])>Math.abs(M[mx][c]))mx=r;
-    [M[c],M[mx]]=[M[mx],M[c]];
-    for(let r=c+1;r<n;r++){const f=M[r][c]/M[c][c];for(let j=c;j<=n;j++)M[r][j]-=f*M[c][j];}
-  }
-  const x=new Array(n).fill(0);
-  for(let i=n-1;i>=0;i--){x[i]=M[i][n];for(let j=i+1;j<n;j++)x[i]-=M[i][j]*x[j];x[i]/=M[i][i];}
-  return x;
-}
-
-function _scanEnhance(canvas){
-  const ctx=canvas.getContext('2d');const img=ctx.getImageData(0,0,canvas.width,canvas.height);
-  const d=img.data,n=d.length;
-  let rMin=255,rMax=0,gMin=255,gMax=0,bMin=255,bMax=0;
-  for(let i=0;i<n;i+=4){
-    if(d[i]<rMin)rMin=d[i];if(d[i]>rMax)rMax=d[i];
-    if(d[i+1]<gMin)gMin=d[i+1];if(d[i+1]>gMax)gMax=d[i+1];
-    if(d[i+2]<bMin)bMin=d[i+2];if(d[i+2]>bMax)bMax=d[i+2];
-  }
-  const rs=255/Math.max(1,rMax-rMin),gs=255/Math.max(1,gMax-gMin),bs=255/Math.max(1,bMax-bMin);
-  for(let i=0;i<n;i+=4){
-    d[i]=Math.min(255,(d[i]-rMin)*rs);
-    d[i+1]=Math.min(255,(d[i+1]-gMin)*gs);
-    d[i+2]=Math.min(255,(d[i+2]-bMin)*bs);
-  }
-  ctx.putImageData(img,0,0);
-}
-
-// ── End Receipt Scanner ──────────────────────────────────────────────────
 
 function _confirmReceiptDate(aiDate,statusEl){
   const existing=document.getElementById('rcpt-date-confirm');
