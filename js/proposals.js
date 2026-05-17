@@ -597,7 +597,7 @@ function shareProposalLink(){
   _commitProposalSent();
   pwaShare({
     title:d.bname+' Proposal',
-    text:'Hi '+d.cname+'! Your proposal from '+d.bname+' is ready to view and sign.',
+    text:'Hi '+d.cname.split(' ')[0]+' — '+d.bname+' sent your estimate. Tap to review and approve.',
     url:d.url
   });
 }
