@@ -14,27 +14,11 @@ function openExpenseFlow(){
     bids.filter(b=>b.status==='Closed Won').map(b=>'<option value="'+b.id+'">'+(b.client_name||b.name)+(b.addr?' · '+b.addr.split(',')[0]:'')+'</option>').join('');
   const today=new Date().toISOString().slice(0,10);
   ov.innerHTML=
-    '<div style="background:var(--bg);border-radius:20px;width:100%;max-width:600px;max-height:92vh;overflow-y:auto;padding:20px 20px 32px">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">'+
+    '<div style="background:var(--bg);border-radius:20px;width:100%;max-width:600px;max-height:92vh;overflow-y:auto;padding:20px 20px 28px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">'+
         '<div style="font-size:18px;font-weight:800">Log expense</div>'+
         '<button onclick="closeExpenseFlow()" style="border:none;background:none;font-size:24px;cursor:pointer;color:var(--text3)">×</button>'+
       '</div>'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:18px">'+
-        '<div id="exp-scan-area" style="border:2px dashed var(--border2);border-radius:14px;padding:14px;text-align:center;cursor:pointer;background:var(--bg2)" onclick="expTriggerScan()">'+
-          '<div style="font-size:28px;margin-bottom:4px">📷</div>'+
-          '<div style="font-size:12px;font-weight:700">Scan receipt</div>'+
-          '<div style="font-size:10px;color:var(--text3);margin-top:2px">AI fills fields</div>'+
-          '<input type="file" id="exp-file-inp" accept="image/*" capture="environment" style="display:none" onchange="expProcessPhoto(this)">'+
-        '</div>'+
-        '<div id="exp-attach-area" style="border:2px dashed var(--border2);border-radius:14px;padding:14px;text-align:center;cursor:pointer;background:var(--bg2)" onclick="expTriggerAttach()">'+
-          '<div style="font-size:28px;margin-bottom:4px">📎</div>'+
-          '<div style="font-size:12px;font-weight:700">Attach photo</div>'+
-          '<div style="font-size:10px;color:var(--text3);margin-top:2px">No sign-in needed</div>'+
-          '<input type="file" id="exp-attach-inp" accept="image/*" capture="environment" style="display:none" onchange="expAttachPhotoOnly(this)">'+
-        '</div>'+
-      '</div>'+
-      '<div id="exp-scan-status" style="display:none;margin-bottom:14px"></div>'+
-      '<div id="exp-preview-img" style="display:none;margin-bottom:14px;text-align:center"></div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">'+
         '<div class="f"><label>Vendor / Store *</label><input id="em-vendor" placeholder="Home Depot..." style="font-size:14px"></div>'+
         '<div class="f"><label>Amount * ($)</label><input id="em-amount" type="number" step="0.01" placeholder="0.00" style="font-size:14px"></div>'+
@@ -58,11 +42,23 @@ function openExpenseFlow(){
         '<div class="f" style="margin-bottom:8px"><label>Business purpose <span style="color:#A32D2D">*</span></label><input id="em-meal-purpose" placeholder="e.g. Client meeting — reviewed Bettis job scope" style="font-size:13px"></div>'+
         '<div class="f"><label>Who attended</label><input id="em-meal-attendees" placeholder="e.g. Zach + client John Smith" style="font-size:13px"></div>'+
       '</div>'+
-      '<div style="margin-bottom:14px">'+
-        '<label style="display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-bottom:6px">Link to a job? <span style="font-weight:400;font-size:10px">(optional — skip for back-tax entries)</span></label>'+
+      '<div style="margin-bottom:12px">'+
+        '<label style="display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-bottom:6px">Link to a job? <span style="font-weight:400;font-size:10px">(optional)</span></label>'+
         '<select id="em-job" style="font-size:13px;width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit">'+jobOpts+'</select>'+
       '</div>'+
-      '<div class="f" style="margin-bottom:16px"><label>Notes (optional)</label><textarea id="em-notes" placeholder="What was this for?" style="min-height:44px;font-size:13px"></textarea></div>'+
+      '<div class="f" style="margin-bottom:14px"><label>Notes (optional)</label><textarea id="em-notes" placeholder="What was this for?" style="min-height:44px;font-size:13px"></textarea></div>'+
+      '<div id="exp-scan-status" style="display:none;margin-bottom:10px"></div>'+
+      '<div id="exp-preview-img" style="display:none;margin-bottom:10px;text-align:center"></div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">'+
+        '<button id="exp-scan-area" style="border:1.5px solid var(--border2);border-radius:12px;padding:11px 8px;text-align:center;cursor:pointer;background:var(--bg2);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px" onclick="expTriggerScan()">'+
+          '<span style="font-size:18px">📷</span>'+
+          '<div style="text-align:left"><div style="font-size:12px;font-weight:700">Scan receipt</div><div style="font-size:10px;color:var(--text3)">AI fills fields</div></div>'+
+        '</button>'+
+        '<button id="exp-attach-area" style="border:1.5px solid var(--border2);border-radius:12px;padding:11px 8px;text-align:center;cursor:pointer;background:var(--bg2);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px" onclick="expTriggerAttach()">'+
+          '<span style="font-size:18px">📎</span>'+
+          '<div style="text-align:left"><div style="font-size:12px;font-weight:700">Attach photo</div><div style="font-size:10px;color:var(--text3)">No sign-in needed</div></div>'+
+        '</button>'+
+      '</div>'+
       '<button class="btn btn-p btn-full btn-xl" onclick="expSave()" id="exp-save-btn">Save expense</button>'+
       '<div id="exp-save-err" style="color:#A32D2D;font-size:12px;text-align:center;margin-top:8px;min-height:16px"></div>'+
     '</div>';
@@ -296,21 +292,37 @@ async function _openLiveScanner(callback){
   const TW=180,TH=Math.round(video.videoHeight*180/Math.max(1,video.videoWidth))||180;
   const useGPU=await _gpuInit(TW,TH);
 
+  // Pre-allocate detection canvas once — never recreate it per frame
+  const detCanvas=document.createElement('canvas');detCanvas.width=TW;detCanvas.height=TH;
+  const detCtx=detCanvas.getContext('2d',{willReadFrequently:true});
+
+  // Cache overlay canvas context and size — only resize on actual layout change
+  const oc=overlay.getContext('2d');
+  let ovW=0,ovH=0;
+  function syncOverlaySize(){
+    const w=ov.offsetWidth,h=ov.offsetHeight;
+    if(w!==ovW||h!==ovH){overlay.width=w;overlay.height=h;ovW=w;ovH=h;}
+  }
+  syncOverlaySize();
+
+  // Cache ring element reference — querySelector once, not every frame
+  const ring=document.getElementById('ls-ring');
+  let lastRingOffset=-1,lastRingStroke='';
+
   let detectedCorners=null,stableFrames=0,capturing=false,rafId=null;
   let gpuPending=false,lastDetectMs=0;
-  const STABLE_FOR_AUTO=10; // 10 detections × 200ms each = ~2 seconds of confirmed stability
+  const STABLE_FOR_AUTO=10;
 
   function videoToOverlay(c){
-    const vw=video.videoWidth,vh=video.videoHeight,dw=ov.offsetWidth,dh=ov.offsetHeight;
-    const vAR=vw/vh,dAR=dw/dh;let sc,ox=0,oy=0;
-    if(vAR>dAR){sc=dh/vh;ox=(dw-vw*sc)/2;}else{sc=dw/vw;oy=(dh-vh*sc)/2;}
+    const vw=video.videoWidth,vh=video.videoHeight;
+    const vAR=vw/vh,dAR=ovW/ovH;let sc,ox=0,oy=0;
+    if(vAR>dAR){sc=ovH/vh;ox=(ovW-vw*sc)/2;}else{sc=ovW/vw;oy=(ovH-vh*sc)/2;}
     return{x:c.x*sc+ox,y:c.y*sc+oy};
   }
 
   function drawOverlay(){
-    overlay.width=ov.offsetWidth;overlay.height=ov.offsetHeight;
-    const oc=overlay.getContext('2d');
-    oc.clearRect(0,0,overlay.width,overlay.height);
+    syncOverlaySize();
+    oc.clearRect(0,0,ovW,ovH);
     if(!detectedCorners||!video.videoWidth)return;
     const sc=detectedCorners.map(c=>videoToOverlay(c));
     const confident=stableFrames>=6;
@@ -318,17 +330,18 @@ async function _openLiveScanner(callback){
     oc.fillStyle=confident?'rgba(14,165,233,0.18)':'rgba(255,255,255,0.07)';oc.fill();
     oc.strokeStyle=confident?'#38bdf8':'rgba(255,255,255,0.4)';
     oc.lineWidth=confident?3:2;oc.setLineDash(confident?[]:[10,6]);oc.stroke();oc.setLineDash([]);
-    const r=Math.max(6,Math.min(10,ov.offsetWidth*0.013));
+    const r=Math.max(6,Math.min(10,ovW*0.013));
     sc.forEach(c=>{
       oc.beginPath();oc.arc(c.x,c.y,r,0,Math.PI*2);
       oc.fillStyle=confident?'#38bdf8':'rgba(255,255,255,.5)';oc.fill();
       oc.strokeStyle='rgba(255,255,255,.8)';oc.lineWidth=1.5;oc.stroke();
     });
-    const ring=document.getElementById('ls-ring');
+    // Only touch the DOM when values actually change
     if(ring){
-      const pct=Math.min(1,stableFrames/STABLE_FOR_AUTO);
-      ring.setAttribute('stroke-dashoffset',String(Math.round(239*(1-pct))));
-      ring.setAttribute('stroke',confident?'#38bdf8':'rgba(255,255,255,.3)');
+      const off=String(Math.round(239*(1-Math.min(1,stableFrames/STABLE_FOR_AUTO))));
+      const str=confident?'#38bdf8':'rgba(255,255,255,.3)';
+      if(off!==lastRingOffset){ring.setAttribute('stroke-dashoffset',off);lastRingOffset=off;}
+      if(str!==lastRingStroke){ring.setAttribute('stroke',str);lastRingStroke=str;}
     }
   }
 
@@ -346,7 +359,6 @@ async function _openLiveScanner(callback){
     if(capturing)return;
     rafId=requestAnimationFrame(rafLoop);
     drawOverlay();
-    // Throttle detection to ~200ms regardless of GPU or CPU path
     const now=performance.now();
     if(now-lastDetectMs<200||!video.videoWidth)return;
     lastDetectMs=now;
@@ -356,13 +368,10 @@ async function _openLiveScanner(callback){
         _gpuSobelAsync(video,TW,TH).then(raw=>{gpuPending=false;applyResult(raw);}).catch(()=>{gpuPending=false;});
       }
     }else{
-      {
-        const tw=TW,th=Math.round(video.videoHeight*tw/video.videoWidth);
-        const tmp=document.createElement('canvas');tmp.width=tw;tmp.height=th;
-        tmp.getContext('2d').drawImage(video,0,0,tw,th);
-        const imgData=tmp.getContext('2d').getImageData(0,0,tw,th);
-        applyResult(_detectDocCorners(imgData.data,tw,th,video.videoWidth,video.videoHeight));
-      }
+      // Reuse pre-allocated canvas — no DOM allocation per frame
+      detCtx.drawImage(video,0,0,TW,TH);
+      const imgData=detCtx.getImageData(0,0,TW,TH);
+      applyResult(_detectDocCorners(imgData.data,TW,TH,video.videoWidth,video.videoHeight));
     }
   }
 
