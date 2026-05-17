@@ -602,7 +602,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   .mets{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
 }
 /* ── Mobile top header ── */
-#mobile-topbar{display:none;position:fixed;top:0;left:0;right:0;z-index:1001;height:56px;background:var(--ink);border-bottom:1px solid var(--ink-line);padding:0 16px;align-items:center;justify-content:space-between;gap:12px}
+#mobile-topbar{display:none;position:fixed;top:0;left:0;right:0;z-index:1001;height:calc(56px + env(safe-area-inset-top,0px));padding-top:env(safe-area-inset-top,0px);background:var(--ink);border-bottom:1px solid var(--ink-line);padding-left:16px;padding-right:16px;align-items:center;justify-content:space-between;gap:12px}
 @media(max-width:767px){#mobile-topbar{display:flex}}
 #mobile-topbar-brand{display:flex;align-items:center;gap:9px;min-width:0}
 .mobile-topbar-icon{width:34px;height:34px;border-radius:var(--r-mark);background:var(--grad-mark);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 4px 10px rgba(45,93,168,.32)}
@@ -615,9 +615,9 @@ body.dark .cal-cell.other{background:var(--cream)}
 .mobile-topbar-btn svg{stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 @media(max-width:767px){
   #nav{display:none}
-  #app{padding-left:0;padding-top:56px;padding-bottom:110px}
+  #app{padding-left:0;padding-top:calc(56px + env(safe-area-inset-top,0px));padding-bottom:110px}
   #supa-status{left:0;bottom:68px}
-  .drive-banner{left:0;top:56px}
+  .drive-banner{left:0;top:calc(56px + env(safe-area-inset-top,0px))}
   .pg{padding:14px 16px 20px}
   #pg-leads,#pg-jobs,#pg-money{padding-top:8px}
   .drive-active .pg{padding-top:60px}
