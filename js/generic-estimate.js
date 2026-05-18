@@ -1472,8 +1472,8 @@ async function sendGenericProposal(){
   saveGenericEstimate(true); // draft=true skips navigation — modal shows over estimate page
   _saveToLineHistory();
   // Build minimal proposal for sign.html
-  if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.');return;}
   if(!navigator.onLine){zAlert('You\'re offline — the proposal link can\'t be activated right now.\n\nYour estimate is saved. Once you\'re back online, open this bid and tap Send to send the link to your client.',{title:'No internet connection'});return;}
+  if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.');return;}
   if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});
   const v=id=>document.getElementById(id)?.value||'';
   const{total,sub}=calcGeiTotal();
@@ -1838,8 +1838,8 @@ function _saveIndBid(silent){
 }
 async function _sendIndProposal(){
   if(!_saveIndBid(true))return; // save first, bail if no pieces
-  if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.');return;}
   if(!navigator.onLine){zAlert('You\'re offline — the proposal link can\'t be activated right now.\n\nYour estimate is saved. Once you\'re back online, open this bid and tap Send to send the link to your client.',{title:'No internet connection'});return;}
+  if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.');return;}
   const r=_calcInd();
   const c=_indClient;
   const{color,primerColor,finish,colorNotes,notes}=_indReadColorFields();

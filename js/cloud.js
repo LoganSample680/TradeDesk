@@ -111,11 +111,11 @@ async function sendPaymentLink(bidId){
   const c=getClientById(bid.client_id);if(!c)return;
   const balance=getBidBalance(bid);
   if(balance<0.50){zAlert('No balance outstanding on this bid.');return;}
-  if(!supaEnabled()||!_supaUser){zAlert('Sign in to send payment links.');return;}
   if(!navigator.onLine){
     zAlert('Payment links require an internet connection — Stripe can\'t create a checkout session offline.\n\nOnce you\'re back online, tap Send Pay Link and it\'ll go right through. You can also record a manual cash or check payment now.',{title:'No internet connection'});
     return;
   }
+  if(!supaEnabled()||!_supaUser){zAlert('Sign in to send payment links.');return;}
   if(!_stripeConnectStatus?.charges_enabled){
     zAlert('Connect your Stripe account in Settings first.','',{title:'Stripe not connected'});goPg('pg-settings');return;
   }
@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.18.26.111';
+const APP_VERSION='05.18.26.112';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -474,8 +474,13 @@ async function supaInit(){
         if(hasAccount){
           if(_mergeOnSignIn){
             _mergeOnSignIn=false;
-            // Snapshot records entered while offline before cloud load overwrites memory
-            const _oClients=[...clients],_oBids=[...bids],_oJobs=[...jobs];
+            // Snapshot records entered while offline before cloud load overwrites memory.
+            // Also restore from zp3_offline_pending in case the app was force-quit and restarted.
+            const _op=(() => {try{return JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');}catch(_e){return null;}})();
+            const _oClients=[...clients,...(_op?.clients||[])];
+            const _oBids=[...bids,...(_op?.bids||[])];
+            const _oJobs=[...jobs,...(_op?.jobs||[])];
+            localStorage.removeItem('zp3_offline_pending');
             await supaLoadFromCloud(); // non-silent: sets up timers, renders, navigates
             // Merge offline additions that aren't already in cloud data
             const _cSet=new Set(clients.map(c=>c.id));
@@ -1151,6 +1156,12 @@ async function _onReconnect(){
 async function _probeAndSync(){
   try{
     await fetch('/version.json?_='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(5000)});
+    if(_supa&&!_supaUser&&_mergeOnSignIn){
+      // Online but no session — poke Supabase to refresh the token.
+      // If successful it fires SIGNED_IN which runs the merge + hides the banner.
+      _supa.auth.getSession().catch(()=>{});
+      return;
+    }
     _onReconnect();
   }catch(e){if(localStorage.getItem('zp3_pending_sync')==='1')_showOfflineBanner(false);}
 }
@@ -1170,7 +1181,13 @@ function _logSave(stage,info){
   if(window._saveLog.length>40)window._saveLog.shift();
 }
 async function supaSaveToCloud(){
-  if(!_supa||!_supaUser){_logSave('skip','no _supa or _supaUser');return;}
+  if(!_supa||!_supaUser){
+    // No session — persist in-memory arrays to localStorage so they survive app restarts
+    if(_mergeOnSignIn){
+      try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,ts:Date.now()}));}catch(_e){}
+    }
+    _logSave('skip','no _supa or _supaUser');return;
+  }
   if(!_supaCloudLoaded){_logSave('skip','_supaCloudLoaded=false');return;}
   // Sanity guard — refuse to push if any critical array is unexpectedly empty
   // compared to the last known-good cache. Prevents a partial cache load or a
