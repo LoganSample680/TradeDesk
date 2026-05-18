@@ -1086,72 +1086,105 @@ function renderPayments(){
 
   const tl={deposit:'Deposit',final:'Final payment',stripe:'Online payment',card:'Card payment',check:'Check',cash:'Cash',ach:'Bank transfer'};
   wonBids.forEach(bid=>{
+    const total=bid.amount||0;
     const balance=bid.balance||0;
+    const paid=bid.paid||0;
     const isPaid=balance<0.01;
     const deposit=bid.deposit||0;
-    const depPaid=(bid.paid||0)>=(deposit-0.01);
-    const bidPmts=h.payments.filter(p=>p.bid_id===bid.id||(!p.bid_id&&h.bids.length===1));
+    const depPaid=paid>=(deposit-0.01);
+    const pct=total>0?Math.min(100,Math.round(paid/total*100)):0;
+    const bidPmts=h.payments.filter(p=>p.bid_id===bid.id||(!p.bid_id&&h.bids.length===1)).filter(p=>p.amount>0);
 
-    // One card per estimate — header + pay buttons + schedule + history
-    html+='<div class="card" style="margin-bottom:14px">';
+    html+='<div style="border-radius:var(--rl);overflow:hidden;margin-bottom:16px;box-shadow:0 2px 12px rgba(27,22,18,.12),0 0 0 1px rgba(27,22,18,.06)">';
 
-    // Header row
-    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">';
-    html+='<div><div style="font-size:15px;font-weight:800;color:var(--ink)">'+(bid.type||'Project')+'</div>';
-    html+='<div style="font-size:11px;color:var(--text3);margin-top:2px">Total '+fmt(bid.amount||0)+' · Signed '+fmtDate(bid.bid_date)+'</div></div>';
-    if(isPaid){
-      html+='<div style="display:flex;align-items:center;gap:5px;background:#F0FDF4;border-radius:8px;padding:5px 10px"><span style="font-size:16px">✅</span><div style="font-size:12px;font-weight:700;color:#166534">Paid</div></div>';
-    }else{
-      html+='<div style="text-align:right"><div style="font-size:22px;font-weight:900;color:var(--ink);letter-spacing:-.5px">'+fmt(balance)+'</div><div style="font-size:10px;color:var(--text3)">remaining</div></div>';
-    }
-    html+='</div>';
-
-    // Pay buttons — light-mode safe styles
-    if(!isPaid&&h.stripeEnabled){
-      if(!depPaid&&deposit>0.01&&balance>deposit+0.01){
-        html+='<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:8px">💳 Pay '+fmt(balance)+' in full</button>';
-        html+='<button onclick="payDeposit('+bid.id+')" class="btn btn-sec" style="margin-bottom:14px;font-size:13px">Or pay deposit only — '+fmt(deposit)+'</button>';
-      }else if(!depPaid&&deposit>0.01){
-        html+='<button id="pay-btn-'+bid.id+'" onclick="payDeposit('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:14px">💳 Pay '+fmt(deposit)+' deposit</button>';
-      }else{
-        html+='<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:14px">💳 Pay '+fmt(balance)+' balance</button>';
+    // ── Balance header (dark = unpaid, green = paid) ──
+    if(!isPaid){
+      html+='<div style="background:linear-gradient(140deg,#1B1612 0%,#24202C 100%);padding:22px 20px 20px;position:relative;overflow:hidden">';
+      html+='<div style="position:absolute;right:-24px;top:-24px;width:130px;height:130px;border-radius:50%;background:rgba(255,255,255,.04);pointer-events:none"></div>';
+      html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">';
+      html+='<div><div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:rgba(255,255,255,.38);margin-bottom:3px">'+esc(bid.type||'Estimate')+'</div>';
+      html+='<div style="font-size:11px;color:rgba(255,255,255,.3)">Signed '+fmtDate(bid.bid_date)+'</div></div>';
+      html+='<span style="font-size:11px;font-weight:700;background:rgba(99,91,255,.22);color:#C4B5FD;padding:4px 11px;border-radius:20px;border:1px solid rgba(99,91,255,.3);white-space:nowrap">Balance due</span>';
+      html+='</div>';
+      html+='<div style="font-size:46px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-2.5px;line-height:1;margin-bottom:3px">'+fmt(balance)+'</div>';
+      html+='<div style="font-size:12px;color:rgba(255,255,255,.35);font-weight:500">remaining of '+fmt(total)+(pct>0?' · '+pct+'% paid':'')+'</div>';
+      if(pct>0){
+        html+='<div style="margin-top:14px;height:3px;background:rgba(255,255,255,.08);border-radius:2px">';
+        html+='<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,#4ade80,#22c55e);border-radius:2px"></div></div>';
       }
+      html+='</div>';
+      // Pay buttons on white
+      html+='<div style="background:var(--bg-card);padding:16px 20px;border-bottom:1px solid var(--border)">';
+      if(!depPaid&&deposit>0.01&&balance>deposit+0.01){
+        html+='<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" style="display:block;width:100%;padding:16px;border-radius:var(--r);border:none;background:#635BFF;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;margin-bottom:9px;box-shadow:0 4px 16px rgba(99,91,255,.38)">💳 Pay '+fmt(balance)+' in full</button>';
+        html+='<button onclick="payDeposit('+bid.id+')" style="display:block;width:100%;padding:13px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center">Or pay '+fmt(deposit)+' deposit to get started</button>';
+      }else if(!depPaid&&deposit>0.01){
+        html+='<button id="pay-btn-'+bid.id+'" onclick="payDeposit('+bid.id+')" style="display:block;width:100%;padding:16px;border-radius:var(--r);border:none;background:#635BFF;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 16px rgba(99,91,255,.38)">💳 Pay '+fmt(deposit)+' deposit</button>';
+      }else{
+        html+='<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" style="display:block;width:100%;padding:16px;border-radius:var(--r);border:none;background:#635BFF;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 16px rgba(99,91,255,.38)">💳 Pay '+fmt(balance)+' balance</button>';
+      }
+      html+='<div style="text-align:center;font-size:11px;color:var(--text3);margin-top:10px;font-weight:500">🔒 Secured by Stripe · SSL encrypted</div>';
+      html+='</div>';
+    }else{
+      html+='<div style="background:linear-gradient(140deg,#14532D 0%,#1A6B3A 100%);padding:22px 20px;position:relative;overflow:hidden">';
+      html+='<div style="position:absolute;right:-24px;top:-24px;width:130px;height:130px;border-radius:50%;background:rgba(255,255,255,.04);pointer-events:none"></div>';
+      html+='<div style="display:flex;align-items:center;gap:14px">';
+      html+='<div style="width:48px;height:48px;border-radius:50%;background:rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">✅</div>';
+      html+='<div><div style="font-size:22px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-.5px">Paid in full</div>';
+      html+='<div style="font-size:12px;color:rgba(255,255,255,.45);margin-top:3px">'+fmt(total)+' · '+esc(bid.type||'Estimate')+' · Signed '+fmtDate(bid.bid_date)+'</div></div>';
+      html+='</div></div>';
     }
 
-    // Payment schedule (inline section)
-    html+='<div style="border-top:1px solid var(--border);padding-top:14px;margin-bottom:'+(bidPmts.length?'14':'0')+'px">';
-    html+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">Payment schedule</div>';
+    // ── Payment schedule ──
+    html+='<div style="background:var(--bg-card);padding:16px 20px;border-bottom:1px solid var(--border)">';
+    html+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);margin-bottom:12px">Payment schedule</div>';
     if(deposit>0.01){
-      html+='<div class="hub-milestone"><div class="hub-milestone-dot '+(depPaid?'paid':'due')+'"></div>';
-      html+='<div class="hub-milestone-body"><div class="hub-milestone-name">Deposit</div><div class="hub-milestone-date">'+(depPaid?'Paid ✓':'Due upon signing')+'</div></div>';
-      html+='<div class="hub-milestone-amt">'+fmt(deposit)+'</div></div>';
+      const dStyle=depPaid?'color:var(--green-mid)':'color:var(--text)';
+      html+='<div style="display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--border)">';
+      html+='<div style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:'+(depPaid?'var(--green-mid)':'#D97706')+'"></div>';
+      html+='<div style="flex:1"><div style="font-size:13px;font-weight:700;'+dStyle+'">Deposit</div>';
+      html+='<div style="font-size:11px;color:var(--text3)">'+(depPaid?'Received':'Due upon signing')+'</div></div>';
+      html+='<div style="font-size:14px;font-weight:800;'+dStyle+'">'+fmt(deposit)+'</div></div>';
     }
     const finalAmt=(bid.amount||0)-(deposit||0);
     if(finalAmt>0.01||deposit<0.01){
-      html+='<div class="hub-milestone"><div class="hub-milestone-dot '+(isPaid?'paid':(depPaid?'due':'upcoming'))+'"></div>';
-      html+='<div class="hub-milestone-body"><div class="hub-milestone-name">Final balance</div><div class="hub-milestone-date">'+(isPaid?'Paid ✓':'Due upon completion')+'</div></div>';
-      html+='<div class="hub-milestone-amt">'+fmt(deposit>0.01?finalAmt:(bid.amount||0))+'</div></div>';
+      const fStyle=isPaid?'color:var(--green-mid)':'color:var(--text)';
+      const fDot=isPaid?'var(--green-mid)':depPaid?'#D97706':'var(--border2)';
+      html+='<div style="display:flex;align-items:center;gap:12px;padding:9px 0">';
+      html+='<div style="width:10px;height:10px;border-radius:50%;flex-shrink:0;background:'+fDot+'"></div>';
+      html+='<div style="flex:1"><div style="font-size:13px;font-weight:700;'+fStyle+'">Final balance</div>';
+      html+='<div style="font-size:11px;color:var(--text3)">'+(isPaid?'Received':'Due upon completion')+'</div></div>';
+      html+='<div style="font-size:14px;font-weight:800;'+fStyle+'">'+fmt(deposit>0.01?finalAmt:total)+'</div></div>';
     }
     html+='</div>';
 
-    // Payment history (inline section, only if payments exist)
-    if(bidPmts.filter(p=>p.amount>0).length){
-      html+='<div style="border-top:1px solid var(--border);padding-top:14px">';
-      html+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">Payment history</div>';
-      html+='<table class="hub-inv-table"><thead><tr><th>Date</th><th>Type</th><th class="amt">Amount</th></tr></thead><tbody>';
-      bidPmts.filter(p=>p.amount>0).sort((a,b)=>(b.date||'').localeCompare(a.date||'')).forEach(p=>{
-        html+='<tr><td>'+esc(fmtDate(p.date))+'</td><td>'+esc(tl[p.type]||p.type||'Payment')+'</td><td class="amt" style="color:var(--green-mid)">'+fmt(p.amount)+'</td></tr>';
+    // ── Payments received (ledger rows) ──
+    if(bidPmts.length){
+      html+='<div style="background:var(--bg-card);padding:16px 20px;border-bottom:1px solid var(--border)">';
+      html+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);margin-bottom:10px">Payments received</div>';
+      bidPmts.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).forEach(p=>{
+        html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">';
+        html+='<div><div style="font-size:13px;font-weight:600;color:var(--text)">'+esc(tl[p.type]||p.type||'Payment')+'</div>';
+        html+='<div style="font-size:11px;color:var(--text3)">'+esc(fmtDate(p.date))+'</div></div>';
+        html+='<div style="font-size:14px;font-weight:800;color:var(--green-mid)">+'+fmt(p.amount)+'</div></div>';
       });
-      html+='</tbody></table></div>';
+      html+='</div>';
     }
 
-    // View invoice link
-    html+='<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">';
-    html+='<button onclick="openInvoice('+bid.id+')" style="background:none;border:none;color:var(--denim);font-size:13px;font-weight:700;cursor:pointer;padding:0;font-family:inherit">📄 View invoice →</button>';
-    html+='</div>';
+    // ── Invoice link ──
+    html+='<div style="background:var(--bg-card);padding:0">';
+    html+='<button onclick="openInvoice('+bid.id+')" style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 20px;background:none;border:none;cursor:pointer;font-family:inherit;text-align:left">';
+    html+='<div style="width:36px;height:36px;background:var(--bg);border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">📄</div>';
+    html+='<div style="flex:1"><div style="font-size:13px;font-weight:700;color:var(--text)">View invoice</div>';
+    html+='<div style="font-size:11px;color:var(--text3)">Open or print a detailed invoice</div></div>';
+    html+='<div style="font-size:20px;color:var(--text3)">›</div>';
+    html+='</button></div>';
 
     html+='</div>'; // end card
   });
+
+  document.getElementById('view-payments').innerHTML=html;
+}
 
   document.getElementById('view-payments').innerHTML=html;
 }
