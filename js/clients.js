@@ -477,7 +477,7 @@ function renderClientHubPage(){
     const phone=(c.phone||'').replace(/\D/g,'');
     const firstName=(c.name||'there').split(/[\s,]+/)[0];
     const bname=S.bname||'TradeDesk';
-    const smsBody=url?'Hi '+firstName+', here\'s your project hub from '+bname+': '+url:'';
+    const smsBody=url?_smsApply(S.smsHub||_getSmsDefaults().hub,{name:firstName,business:bname,url}):'';
     const statusBadge=url
       ? '<span class="bdg-soft sf-won" style="height:18px;font-size:9px;padding:0 7px">LIVE</span>'
       : '<span class="bdg-soft sf-done" style="height:18px;font-size:9px;padding:0 7px">NO HUB YET</span>';
@@ -559,7 +559,7 @@ function pipelineResendSms(bidId){
   const firstName=(c?c.name:b.client_name||b.name||'Client').split(/[\s,&]+/)[0];
   const bname=S.bname||'TradeDesk';
   const phone=(c?.phone||b.phone||'').replace(/\D/g,'');
-  const msg='Hey '+firstName+'!\n\nJust following up — your painting proposal is still ready to go. Tap the link below to review and sign when you\'re ready:\n\n'+url+'\n\nAny questions at all, just reply. Talk soon!\n\n— '+bname;
+  const msg=_smsApply(S.smsFollowup||_getSmsDefaults().followup,{name:firstName,business:bname,url});
   window.location.href='sms:'+phone+'?body='+encodeURIComponent(msg);
 }
 function onClientSearch(inp){
