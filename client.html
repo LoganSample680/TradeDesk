@@ -573,6 +573,7 @@ async function init(){
       switchView(_VIEWS.includes(_hv)?_hv:'overview');
     }
     showState('hub');
+    try{_supa.from('proposal_views').insert({contractor_user_id:u,client_id:c,user_agent:(navigator.userAgent||'').slice(0,250)}).then(()=>{}).catch(()=>{});}catch(_e){}
     if(location.hash.startsWith('#paid-')){
       const bidId=parseInt(location.hash.replace('#paid-',''));
       if(bidId)setTimeout(()=>showPaymentSuccess(bidId),300);

@@ -305,8 +305,9 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.18.26.100';
+const APP_VERSION='05.18.26.101';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
+let _proposalViews={};
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
@@ -1120,6 +1121,20 @@ async function checkNewSignatures(){
     }
   }catch(e){console.warn('checkNewSignatures:',e);}
 }
+async function _fetchProposalViews(){
+  if(!_supa||!_supaUser)return;
+  try{
+    const{data}=await _supa.from('proposal_views')
+      .select('client_id,opened_at')
+      .eq('contractor_user_id',_supaUser.id)
+      .order('opened_at',{ascending:false});
+    if(data){
+      _proposalViews={};
+      data.forEach(v=>{if(!_proposalViews[v.client_id])_proposalViews[v.client_id]=v.opened_at;});
+      renderDash();
+    }
+  }catch(e){}
+}
 function showScheduleAlerts(){
   let alerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
   // Discard any alerts whose bid no longer exists locally — they can't be scheduled
@@ -1414,8 +1429,8 @@ async function supaLoadFromCloud(){
     // Annual odometer check — IRS Publication 463 compliance
     setTimeout(()=>_checkOdometerPrompt(),3500);
     // Check for new signatures then schedule alerts — sequential to avoid race
-    setTimeout(async()=>{ await checkNewSignatures(); if(!window._showingScheduleAlert) showScheduleAlerts(); },2000);
-    setInterval(()=>checkNewSignatures(),30000);
+    setTimeout(async()=>{ await checkNewSignatures(); _fetchProposalViews(); if(!window._showingScheduleAlert) showScheduleAlerts(); },2000);
+    setInterval(()=>{checkNewSignatures();_fetchProposalViews();},30000);
     // Realtime: fire checkNewSignatures instantly when sign.html writes notified_at
     try{
       _supa.channel('sig-feed-'+_supaUser.id)
