@@ -112,6 +112,10 @@ async function sendPaymentLink(bidId){
   const balance=getBidBalance(bid);
   if(balance<0.50){zAlert('No balance outstanding on this bid.');return;}
   if(!supaEnabled()||!_supaUser){zAlert('Sign in to send payment links.');return;}
+  if(!navigator.onLine){
+    zAlert('Payment links require an internet connection — Stripe can\'t create a checkout session offline.\n\nOnce you\'re back online, tap Send Pay Link and it\'ll go right through. You can also record a manual cash or check payment now.',{title:'No internet connection'});
+    return;
+  }
   if(!_stripeConnectStatus?.charges_enabled){
     zAlert('Connect your Stripe account in Settings first.','',{title:'Stripe not connected'});goPg('pg-settings');return;
   }
@@ -305,7 +309,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.18.26.106';
+const APP_VERSION='05.18.26.107';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -993,7 +997,7 @@ async function _onReconnect(){
     try{
       // Snapshot records the contractor entered while offline (in-memory only)
       const _oClients=[...clients],_oBids=[...bids],_oJobs=[...jobs];
-      await supaLoadFromCloud(); // restores cloud data + sets _supaCloudLoaded=true
+      await supaLoadFromCloud({silent:true}); // restores cloud data + sets _supaCloudLoaded=true
       // Merge: append any offline-created records not present in cloud
       const _cSet=new Set(clients.map(c=>c.id));
       const _bSet=new Set(bids.map(b=>b.id));
@@ -1006,6 +1010,8 @@ async function _onReconnect(){
       localStorage.removeItem('zp3_pending_sync');
       _hideOfflineBanner();
       showToast('Back online — all changes synced','✅');
+      typeof _drainHubQueue==='function'&&_drainHubQueue();
+      typeof _drainPhotoQueue==='function'&&_drainPhotoQueue();
     }catch(e){_showOfflineBanner(false);}
     return;
   }
@@ -1013,7 +1019,11 @@ async function _onReconnect(){
   // Case 2: Loaded from cache, no user writes — just refresh from cloud silently.
   if(_loadedFromCacheOnly&&!hasPending){
     _showOfflineBanner(true);
-    try{await supaLoadFromCloud();_hideOfflineBanner();}catch(e){_showOfflineBanner(false);}
+    try{
+      await supaLoadFromCloud({silent:true});renderDash&&renderDash();_hideOfflineBanner();showToast('Back online','✅');
+      typeof _drainHubQueue==='function'&&_drainHubQueue();
+      typeof _drainPhotoQueue==='function'&&_drainPhotoQueue();
+    }catch(e){_showOfflineBanner(false);}
     return;
   }
 
@@ -1026,6 +1036,8 @@ async function _onReconnect(){
     localStorage.removeItem('zp3_pending_sync');
     _hideOfflineBanner();
     showToast('Back online — all changes synced','✅');
+    typeof _drainHubQueue==='function'&&_drainHubQueue();
+    typeof _drainPhotoQueue==='function'&&_drainPhotoQueue();
   }catch(e){_showOfflineBanner(false);}
 }
 async function _probeAndSync(){
@@ -1447,7 +1459,7 @@ function resendProposalLink(bidId){
     navigator.clipboard.writeText(sigUrl).then(()=>showToast('Proposal link copied','🔗')).catch(()=>{});
   }
 }
-async function supaLoadFromCloud(){
+async function supaLoadFromCloud({silent=false}={}){
   if(!_supa||!_supaUser)return;
   // Flush any pending debounced save BEFORE overwriting memory — prevents PTR
   // from discarding unsaved receipt photos or other in-flight writes.
@@ -1461,8 +1473,7 @@ async function supaLoadFromCloud(){
       clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
       _supaCloudLoaded=true;
       saveAll();
-      _removeBootOverlay();
-      renderDash();buildScopeGrid();
+      if(!silent){_removeBootOverlay();renderDash();buildScopeGrid();}
       supaSetStatus('synced');
       return;
     }
@@ -1522,48 +1533,51 @@ async function supaLoadFromCloud(){
     _supaCloudLoaded=true;
     _loadedFromCacheOnly=false;
     supaSetStatus('synced');
-    // Prefetch Stripe status in background so hub-share is instant (no 46s wait)
-    setTimeout(()=>{if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});},500);
-    // Dismiss loading screen and render with cloud data
-    _removeBootOverlay();
-    renderDash();buildScopeGrid();
-    goPg('pg-dash');
-    renderClientList&&renderClientList();
-    renderJobsPage&&renderJobsPage();
-    renderMoneyPage&&renderMoneyPage();
+    if(!silent){
+      // Prefetch Stripe status in background so hub-share is instant (no 46s wait)
+      setTimeout(()=>{if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});},500);
+      // Dismiss loading screen and render with cloud data
+      _removeBootOverlay();
+      renderDash();buildScopeGrid();
+      goPg('pg-dash');
+      renderClientList&&renderClientList();
+      renderJobsPage&&renderJobsPage();
+      renderMoneyPage&&renderMoneyPage();
+    }
     // Cleanup: remove empty orphan draft bids, ensure all clients have tokens
     bids=bids.filter(b=>!(b.draft===true&&b.status==='Draft'&&b.geiLines===undefined&&(!b.surfaces||!b.surfaces.length)&&!b.signingToken&&!b.amount));
     const _geiSeen=new Set();
     bids=bids.filter(b=>{if(b.geiLines===undefined||b.signingToken||b.amount||(b.geiLines||[]).length)return true;if(b.status!=='Draft'&&b.status!=='Pending')return true;const key=b.client_id+'|'+(b.trade_type||'general');if(_geiSeen.has(key))return false;_geiSeen.add(key);return true;});
     clients.forEach(c=>{if(!c.clientToken)_ensureClientToken(c.id);});
-    // Backfill hubs for any leads/clients that don't have one yet (background, non-blocking)
-    setTimeout(()=>{
-      if(_supaUser)clients.filter(c=>c.clientToken).forEach(c=>{_uploadClientHub(c.id).catch(()=>{});});
-      autoRefreshRates();
-      autoRefreshTaxBrackets();
-      autoRefreshLienRules();
-    },4000);
-    // Annual odometer check — IRS Publication 463 compliance
-    setTimeout(()=>_checkOdometerPrompt(),3500);
-    // Check for new signatures then schedule alerts — sequential to avoid race
-    setTimeout(async()=>{ await checkNewSignatures(); _fetchProposalViews(); if(!window._showingScheduleAlert) showScheduleAlerts(); },2000);
-    setInterval(()=>{checkNewSignatures();_fetchProposalViews();},30000);
-    // Realtime: fire checkNewSignatures instantly when sign.html writes notified_at
-    try{
-      _supa.channel('sig-feed-'+_supaUser.id)
-        .on('postgres_changes',{event:'*',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{checkNewSignatures();})
-        .subscribe();
-    }catch(e){}
-    setInterval(()=>_loadPendingInbound(),30000);
-    // Pre-load Stripe connect status so sendPaymentLink works without visiting Settings first
-    setTimeout(()=>_fetchStripeConnectStatus(),3000);
-    // Load any pending inbound leads on boot
-    setTimeout(()=>_loadPendingInbound(),2000);
-    // Also check when user returns to the app (e.g., after sending SMS to client)
-    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){checkNewSignatures();if(_supaUser)_loadPendingInbound();checkNearbyJob();}});
-
-    setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
-    setTimeout(()=>checkNearbyJob(),4000);
+    if(!silent){
+      // Backfill hubs for any leads/clients that don't have one yet (background, non-blocking)
+      setTimeout(()=>{
+        if(_supaUser)clients.filter(c=>c.clientToken).forEach(c=>{_uploadClientHub(c.id).catch(()=>{});});
+        autoRefreshRates();
+        autoRefreshTaxBrackets();
+        autoRefreshLienRules();
+      },4000);
+      // Annual odometer check — IRS Publication 463 compliance
+      setTimeout(()=>_checkOdometerPrompt(),3500);
+      // Check for new signatures then schedule alerts — sequential to avoid race
+      setTimeout(async()=>{ await checkNewSignatures(); _fetchProposalViews(); if(!window._showingScheduleAlert) showScheduleAlerts(); },2000);
+      setInterval(()=>{checkNewSignatures();_fetchProposalViews();},30000);
+      // Realtime: fire checkNewSignatures instantly when sign.html writes notified_at
+      try{
+        _supa.channel('sig-feed-'+_supaUser.id)
+          .on('postgres_changes',{event:'*',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{checkNewSignatures();})
+          .subscribe();
+      }catch(e){}
+      setInterval(()=>_loadPendingInbound(),30000);
+      // Pre-load Stripe connect status so sendPaymentLink works without visiting Settings first
+      setTimeout(()=>_fetchStripeConnectStatus(),3000);
+      // Load any pending inbound leads on boot
+      setTimeout(()=>_loadPendingInbound(),2000);
+      // Also check when user returns to the app (e.g., after sending SMS to client)
+      document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){checkNewSignatures();if(_supaUser)_loadPendingInbound();checkNearbyJob();}});
+      setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
+      setTimeout(()=>checkNearbyJob(),4000);
+    }
     // Cache successful load for offline fallback — strip inline receipt blobs to stay within localStorage limits
     try{
       const _snap={clients,bids,jobs,payments,income,
@@ -1590,9 +1604,9 @@ async function supaLoadFromCloud(){
         if(_cd.photos?.length)photos=_cd.photos;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
+        _loadedFromCacheOnly=true;
         _supaCloudLoaded=true;
-        localStorage.setItem('zp3_pending_sync','1');
-        _removeBootOverlay();renderDash();buildScopeGrid();
+        if(!silent){_removeBootOverlay();renderDash();buildScopeGrid();}
         _showOfflineBanner();
         supaSetStatus('error');
         return;

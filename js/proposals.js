@@ -193,12 +193,30 @@ async function _uploadClientHub(clientId){
     c.clientHubKey=key;
     saveAll();
   };
+  const _queueHub=()=>{
+    try{
+      const q=JSON.parse(localStorage.getItem('zp3_hub_queue')||'[]');
+      if(!q.includes(clientId)){q.push(clientId);localStorage.setItem('zp3_hub_queue',JSON.stringify(q));}
+    }catch(_e){}
+  };
   if(isNew){
-    await doUpload(); // first time — must wait so the file exists before client opens link
+    try{await doUpload();}catch(e){console.warn('hub upload:',e);_queueHub();}
   }else{
-    doUpload().catch(e=>console.warn('hub refresh:',e)); // file exists — return instantly, refresh in background
+    doUpload().catch(e=>{console.warn('hub refresh:',e);_queueHub();}); // file exists — return instantly, refresh in background
   }
   return url;
+}
+async function _drainHubQueue(){
+  try{
+    const q=JSON.parse(localStorage.getItem('zp3_hub_queue')||'[]');
+    if(!q.length)return;
+    const remaining=[];
+    for(const cid of q){
+      try{await _uploadClientHub(cid);}catch(e){remaining.push(cid);}
+    }
+    if(remaining.length)localStorage.setItem('zp3_hub_queue',JSON.stringify(remaining));
+    else localStorage.removeItem('zp3_hub_queue');
+  }catch(_e){}
 }
 function _relTime(ts){if(!ts)return'';try{const d=Math.round((Date.now()-new Date(ts).getTime())/60000);if(d<2)return'just now';if(d<60)return d+'m ago';if(d<1440)return Math.round(d/60)+'h ago';return Math.round(d/1440)+'d ago';}catch(e){return '';}}
 function sendOnboardingLink(clientId){
