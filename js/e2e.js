@@ -256,7 +256,10 @@ window.addEventListener('error',e=>{
   console.error('[TradeDesk JS Error]',msg,e);
 });
 window.addEventListener('unhandledrejection',e=>{
-  const msg='Unhandled promise: '+(e.reason?.message||String(e.reason));
-  if(typeof showToast==='function')showToast(msg,'🔴',8000);
+  const msg=(e.reason?.message||String(e.reason)||'');
+  // Suppress service worker fetch/update errors — these fire every SW update check
+  // cycle when offline and are not actionable by the user.
+  if(msg.includes('sw.js')||msg.includes('ServiceWorker')||msg.includes('load failed')||msg.includes('Failed to fetch')||(!navigator.onLine&&(msg.includes('NetworkError')||msg.includes('network')||msg.includes('fetch'))))return;
+  if(typeof showToast==='function')showToast('Unhandled promise: '+msg,'🔴',8000);
   console.error('[TradeDesk Unhandled Rejection]',msg,e);
 });
