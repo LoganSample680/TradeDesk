@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-05.18.26.90';
+const CACHE = 'tradedesk-05.18.26.91';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
 // tries to serve it for a navigation. new Response() always has redirected:false.
@@ -24,36 +24,6 @@ self.addEventListener('activate', e => {
             clients.forEach(c => c.postMessage({ type: 'SW_UPDATED' }))
           );
         });
-    })
-  );
-});
-
-self.addEventListener('push', e => {
-  let d={};
-  try{d=e.data?e.data.json():{};}catch(err){}
-  const title=d.title||'TradeDesk';
-  const body=d.body||'You have a new notification';
-  e.waitUntil(
-    self.registration.showNotification(title,{
-      body,icon:'/icon-192.png',badge:'/icon-96.png',
-      data:d.url?{url:d.url}:{},
-      vibrate:[200,100,200],requireInteraction:false
-    })
-  );
-});
-
-self.addEventListener('notificationclick', e => {
-  e.notification.close();
-  const url=e.notification.data?.url||'/';
-  e.waitUntil(
-    clients.matchAll({type:'window',includeUncontrolled:true}).then(list=>{
-      for(const c of list){
-        if(c.url.includes(self.registration.scope)&&'focus' in c){
-          c.postMessage({type:'NOTIFICATION_CLICK',url});
-          return c.focus();
-        }
-      }
-      if(clients.openWindow)return clients.openWindow(url);
     })
   );
 });
