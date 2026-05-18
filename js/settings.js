@@ -430,7 +430,8 @@ function loadSettingsForm(){
   if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-bitly-key',S.bitlyKey||'');sf('set-mapbox-key',S.mapboxKey||'');sf('set-subdomain',S.subdomain||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-byears',S.byears||'');sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
   sf('set-margin',S.margin);sf('set-cov',S.cov);sf('set-mm',S.mm);sf('set-supplies-rate',S.suppliesRate||0.12);sf('set-r-walls',S.rWalls||1.30);sf('set-r-ceil',S.rCeil||1.00);sf('set-r-trim',S.rTrim||4.00);sf('set-r-door',S.rDoor||95);sf('set-r-win',S.rWin||50);sf('set-r-ext',S.rExt||1.10);sf('set-r-deck',S.rDeck||1.00);
   sf('set-review-url',S.reviewUrl||'');
-  sf('set-brandcolor',S.brandColor||'#185FA5');
+  sf('set-brandcolor',S.brandColor||'#2D5DA8');
+  _updateBootPreview();
   sf('set-bwebsite',S.bwebsite||'');
   const hoEl=document.getElementById('set-home-office');if(hoEl)hoEl.checked=!!S.homeOffice;
 }
@@ -458,18 +459,50 @@ function applyBrandLogo(){
     }
   });
 }
+function _updateBootPreview(){
+  const color=(document.getElementById('set-brandcolor')||{}).value||S.brandColor||'';
+  const logo=S.logoData||'';
+  const bname=S.bname||'';
+  const bg=document.getElementById('boot-preview-bg');
+  const bar=document.getElementById('boot-preview-bar');
+  const wordmark=document.getElementById('boot-preview-wordmark');
+  const pro=document.getElementById('boot-preview-pro');
+  const logoEl=document.getElementById('boot-preview-logo');
+  if(!bg)return;
+  if(color){
+    bg.style.background=color;
+    if(bar){
+      const hex=color.replace('#','');
+      const r=parseInt(hex.substr(0,2),16)||0,g=parseInt(hex.substr(2,2),16)||0,b=parseInt(hex.substr(4,2),16)||0;
+      const lum=(0.299*r+0.587*g+0.114*b)/255;
+      bar.style.background=lum>0.5?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.6)';
+    }
+  }else{
+    bg.style.background='radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
+    if(bar)bar.style.background='#2D5DA8';
+  }
+  if(logoEl){
+    if(logo){
+      logoEl.innerHTML='<img src="'+logo+'" style="max-height:36px;max-width:120px;object-fit:contain">';
+    }else if(bname){
+      logoEl.innerHTML='<span style="font-family:Geist,sans-serif;font-weight:900;font-size:22px;color:#fff;letter-spacing:-1px">'+bname.replace(/</g,'&lt;')+'</span>';
+    }else{
+      logoEl.innerHTML='<span id="boot-preview-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:22px;color:#fff;letter-spacing:-1px">TradeDesk</span><span id="boot-preview-pro" style="font-size:8px;font-weight:800;color:#5C8FD4;background:rgba(45,93,168,.18);border:1px solid rgba(45,93,168,.36);padding:2px 5px;border-radius:4px;text-transform:uppercase;letter-spacing:.06em;margin-left:5px;vertical-align:4px">Pro</span>';
+    }
+  }
+}
 function handleLogoUpload(input){
   const file=input.files&&input.files[0];if(!file)return;
   if(!file.type.includes('png')){zAlert('Please upload a PNG file only. PNG works best for logos with transparency.');input.value='';return;}
   const reader=new FileReader();
   reader.onload=e=>{
-    S.logoData=e.target.result;saveAll();_renderLogoPreview();applyBrandLogo();
+    S.logoData=e.target.result;saveAll();_renderLogoPreview();applyBrandLogo();_updateBootPreview();
     showToast('Logo saved — proposals will use your logo','🎨');
   };
   reader.readAsDataURL(file);
 }
 function clearLogoSetting(){
-  S.logoData='';saveAll();_renderLogoPreview();
+  S.logoData='';saveAll();_renderLogoPreview();_updateBootPreview();
   showToast('Logo removed — proposals will show business name','✓');
 }
 function clearAllData(){
