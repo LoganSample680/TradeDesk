@@ -1004,6 +1004,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="tbar-title" id="clients-page-title">Clients</div>
     </div>
     <div class="tbar-r" id="clients-tbar-r">
+      <button class="btn" id="clients-import-btn" onclick="openImportContacts()" style="margin-right:6px">Import</button>
       <button class="btn btn-p" id="clients-new-btn" onclick="openNewClient()">+ New client</button>
     </div>
   </div>
@@ -1055,6 +1056,7 @@ body.dark .cal-cell.other{background:var(--cream)}
               <option value="Property manager">Property manager / landlord</option>
               <option value="Builder / contractor">Builder / contractor</option>
               <option value="Repeat customer">Repeat customer</option>
+              <option value="Existing Contact">Existing Contact (imported)</option>
             </optgroup>
             <optgroup label="Online">
               <option value="Google / online">Google / online</option>
@@ -3371,5 +3373,42 @@ if(supaEnabled()){
 
 </script>
 <script>document.getElementById('app-version').textContent='v'+APP_VERSION;</script>
+
+<!-- ── Import Contacts Modal ── -->
+<div id="import-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9998;align-items:flex-end;justify-content:center" onclick="if(event.target===this)closeImportModal()">
+  <div style="background:var(--bg-card);border-radius:var(--r-xl) var(--r-xl) 0 0;width:100%;max-width:500px;padding:20px 20px 32px;max-height:85vh;overflow-y:auto;box-shadow:var(--shadow-modal)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <div style="font-size:16px;font-weight:800">Import Contacts</div>
+      <button onclick="closeImportModal()" style="background:none;border:none;color:var(--text3);font-size:22px;cursor:pointer;padding:0;line-height:1">×</button>
+    </div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:16px">All imported contacts are tagged <strong>Existing Contact</strong> as their lead source.</div>
+    <div id="import-phone-opt" style="display:none;margin-bottom:10px">
+      <button onclick="_importPhoneContacts()" style="width:100%;text-align:left;padding:14px 16px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit">
+        <div style="font-weight:700;font-size:14px;color:var(--text)">📱 From your phone contacts</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">Pick contacts directly from your device</div>
+      </button>
+    </div>
+    <div style="margin-bottom:10px">
+      <label style="display:block;padding:14px 16px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer">
+        <input type="file" accept=".csv" style="display:none" onchange="_handleImportFile(this.files[0]);this.value=''">
+        <div style="font-weight:700;font-size:14px;color:var(--text)">📄 Upload CSV</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">From Jobber, HouseCall Pro, spreadsheet, or any app</div>
+      </label>
+    </div>
+    <div style="margin-bottom:6px">
+      <label style="display:block;padding:14px 16px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer">
+        <input type="file" accept=".vcf,.vcard" style="display:none" onchange="_handleImportFile(this.files[0]);this.value=''">
+        <div style="font-weight:700;font-size:14px;color:var(--text)">👤 Upload vCard (.vcf)</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px">Export from Apple Contacts, Google Contacts, or Outlook</div>
+      </label>
+    </div>
+    <div id="import-preview" style="display:none;border-top:1px solid var(--border2);margin-top:16px;padding-top:16px">
+      <div id="import-preview-summary" style="font-size:13px;margin-bottom:10px"></div>
+      <div id="import-preview-list" style="max-height:180px;overflow-y:auto;border:1px solid var(--border2);border-radius:var(--r);margin-bottom:12px;font-size:12px"></div>
+      <button id="import-confirm-btn" onclick="_doImport()" class="btn btn-p" style="width:100%">Import</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
