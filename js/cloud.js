@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.18.26.113';
+const APP_VERSION='05.18.26.114';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -490,7 +490,7 @@ async function supaInit(){
             _oClients.filter(c=>!_cSet.has(c.id)).forEach(c=>{clients.push(c);_merged=true;});
             _oBids.filter(b=>!_bSet.has(b.id)).forEach(b=>{bids.push(b);_merged=true;});
             _oJobs.filter(j=>!_jSet.has(j.id)).forEach(j=>{jobs.push(j);_merged=true;});
-            if(_merged){await _flushSaveNow();renderDash();showToast('Offline changes synced','✅');}
+            if(_merged){await _flushSaveNow();renderDash();}
             typeof _drainHubQueue==='function'&&_drainHubQueue();
             typeof _drainPhotoQueue==='function'&&_drainPhotoQueue();
           } else {
@@ -1122,7 +1122,6 @@ async function _onReconnect(){
       if(_merged){await _flushSaveNow();renderDash();}
       localStorage.removeItem('zp3_pending_sync');
       _hideOfflineBanner();
-      showToast('Back online — all changes synced','✅');
       typeof _drainHubQueue==='function'&&_drainHubQueue();
       typeof _drainPhotoQueue==='function'&&_drainPhotoQueue();
     }catch(e){_showOfflineBanner(false);}
@@ -1133,7 +1132,7 @@ async function _onReconnect(){
   if(_loadedFromCacheOnly&&!hasPending){
     _showOfflineBanner(true);
     try{
-      await supaLoadFromCloud({silent:true});renderDash&&renderDash();_hideOfflineBanner();showToast('Back online','✅');
+      await supaLoadFromCloud({silent:true});renderDash&&renderDash();_hideOfflineBanner();
       typeof _drainHubQueue==='function'&&_drainHubQueue();
       typeof _drainPhotoQueue==='function'&&_drainPhotoQueue();
     }catch(e){_showOfflineBanner(false);}
@@ -1148,7 +1147,6 @@ async function _onReconnect(){
     await _flushSaveNow();
     localStorage.removeItem('zp3_pending_sync');
     _hideOfflineBanner();
-    showToast('Back online — all changes synced','✅');
     typeof _drainHubQueue==='function'&&_drainHubQueue();
     typeof _drainPhotoQueue==='function'&&_drainPhotoQueue();
   }catch(e){_showOfflineBanner(false);}
@@ -1156,14 +1154,13 @@ async function _onReconnect(){
 async function _probeAndSync(){
   try{
     await fetch('/version.json?_='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(5000)});
+    _hideOfflineBanner(); // connection confirmed — hide immediately, sync in background
     if(_supa&&!_supaUser&&_mergeOnSignIn){
-      // Online but no session — poke Supabase to refresh the token.
-      // If successful it fires SIGNED_IN which runs the merge + hides the banner.
-      _supa.auth.getSession().catch(()=>{});
+      _supa.auth.getSession().catch(()=>{}); // triggers token refresh → fires SIGNED_IN silently
       return;
     }
     _onReconnect();
-  }catch(e){if(localStorage.getItem('zp3_pending_sync')==='1')_showOfflineBanner(false);}
+  }catch(e){if(_isOfflineState())_showOfflineBanner(false);}
 }
 function _isOfflineState(){
   return !_supaCloudLoaded||_loadedFromCacheOnly||_mergeOnSignIn||localStorage.getItem('zp3_pending_sync')==='1';
