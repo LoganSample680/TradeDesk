@@ -184,6 +184,8 @@ async function loadAccountData(){
       _activeTrade=_config?.business_type||'painting';
       _renderNavTradeSwitcher();
       applyPermissions();
+      // Cache for offline restore
+      try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,account:_account,config:_config,activeTrade:_activeTrade,isEmployee:false}));}catch(_e){}
       return true;
     }
     // Check if this user is a linked employee
@@ -191,7 +193,9 @@ async function loadAccountData(){
     if(empRow){
       _isEmployee=true;_contractorUserId=empRow.contractor_user_id;_employeeRecord=empRow;
       _user={id:_supaUser.id,email:_supaUser.email,name:empRow.name,role:empRow.role||'employee',account_id:null};
-      applyPermissions();return true;
+      applyPermissions();
+      try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'painting',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
+      return true;
     }
     // Check for pending invite (email match, not yet linked)
     const{data:inviteRow}=await _supa.from('team_members').select('*').eq('email',_supaUser.email).is('employee_user_id',null).maybeSingle();
@@ -200,17 +204,36 @@ async function loadAccountData(){
       _isEmployee=true;_contractorUserId=inviteRow.contractor_user_id;
       _employeeRecord={...inviteRow,employee_user_id:_supaUser.id,active:true};
       _user={id:_supaUser.id,email:_supaUser.email,name:inviteRow.name,role:inviteRow.role||'employee',account_id:null};
-      applyPermissions();return true;
+      applyPermissions();
+      try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'painting',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
+      return true;
     }
     // No users row — check for pre-schema user via zj_data
     const{data:zd}=await _supa.from('zj_data').select('user_id').eq('user_id',_supaUser.id).maybeSingle();
     if(zd){
       _user={id:_supaUser.id,email:_supaUser.email,name:getOwnerName()||'',role:'owner',account_id:null};
       applyPermissions();
+      try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:_activeTrade||'painting',isEmployee:false}));}catch(_e){}
       return true;
     }
     return false;
-  }catch(e){console.warn('loadAccountData failed:',e);return false;}
+  }catch(e){
+    console.warn('loadAccountData failed:',e);
+    // Network failure — restore from cache so offline sign-in still reaches supaLoadFromCloud()
+    try{
+      const _ac=JSON.parse(localStorage.getItem('zp3_acct_'+_supaUser.id)||'null');
+      if(_ac){
+        _user=_ac.user||{id:_supaUser.id,email:_supaUser.email,name:getOwnerName()||'',role:'owner',account_id:null};
+        if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;}
+        _activeTrade=_ac.activeTrade||'painting';
+        if(_ac.account){_account=_ac.account;if(_account.business_name)S.bname=_account.business_name;if(_account.phone)S.bphone=_account.phone;}
+        if(_ac.config)_config=_ac.config;
+        _renderNavTradeSwitcher();applyPermissions();
+        return true;
+      }
+    }catch(_ce){}
+    return false;
+  }
 }
 
 // ── Dev Support View ──────────────────────────────────────────────────
@@ -309,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.18.26.108';
+const APP_VERSION='05.18.26.109';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.

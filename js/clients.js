@@ -460,34 +460,23 @@ function renderClientHubPage(){
   const subEl=document.getElementById('client-hub-sub');
   // Newest activity first — sort by created date desc as a reasonable default
   const sorted=[...clients].sort((a,b)=>(b.created||'').localeCompare(a.created||''));
-  const withHub=sorted.filter(c=>c.clientToken);
-  const withoutHub=sorted.filter(c=>!c.clientToken);
-  if(subEl){
-    const active=withHub.length;const total=sorted.length;
-    subEl.textContent=total
-      ? active+' of '+total+' clients have a live hub · tap any row to preview'
-      : 'Every client has a private project portal — preview, share, or copy any link.';
-  }
+  if(subEl)subEl.textContent=sorted.length?sorted.length+' client'+(sorted.length!==1?'s':'')+'  · tap any row to preview':'Every client has a private project portal — preview, share, or copy any link.';
   if(!sorted.length){
     el.innerHTML='<div class="card hub-empty-card"><div style="font-size:36px;margin-bottom:8px">📂</div><h3>No clients yet</h3><p>Add your first client from the Clients tab and a private hub link is created automatically.</p><button class="btn btn-p" onclick="goPg(\'pg-clients\')">Go to Clients →</button></div>';
     return;
   }
   const rowHtml=c=>{
     const url=_clientHubUrl(c);
+    if(!url)return ''; // token not yet generated — skip row
     const phone=(c.phone||'').replace(/\D/g,'');
     const firstName=(c.name||'there').split(/[\s,]+/)[0];
     const bname=S.bname||'TradeDesk';
-    const smsBody=url?_smsApply(S.smsHub||_getSmsDefaults().hub,{name:firstName,business:bname,url}):'';
-    const statusBadge=url
-      ? '<span class="bdg-soft sf-won" style="height:18px;font-size:9px;padding:0 7px">LIVE</span>'
-      : '<span class="bdg-soft sf-done" style="height:18px;font-size:9px;padding:0 7px">NO HUB YET</span>';
+    const smsBody=_smsApply(S.smsHub||_getSmsDefaults().hub,{name:firstName,business:bname,url});
     const addrLine=c.addr?c.addr.split(',')[0]:'';
     const metaParts=[addrLine?escHtml(addrLine):'',c.phone?escHtml(c.phone):''].filter(Boolean).join(' · ');
-    const actions=url
-      ? '<button class="btn btn-sm" onclick="event.stopPropagation();_previewClientHub(\''+url+'\',\''+escHtml(c.name||'')+'\')" >👁 Preview</button>'+
-        '<button class="btn btn-sm" onclick="event.stopPropagation();_clientHubCopy(\''+url+'\',this)">📋 Copy</button>'+
-        (phone?'<button class="btn btn-sm btn-p" onclick="event.stopPropagation();window.location.href=\'sms:'+phone+'?body='+encodeURIComponent(smsBody)+'\'">📱 Send</button>':'')
-      : '<button class="btn btn-sm btn-p" onclick="event.stopPropagation();_clientHubGenerate('+c.id+')">⚡ Generate hub</button>';
+    const actions='<button class="btn btn-sm" onclick="event.stopPropagation();_previewClientHub(\''+url+'\',\''+escHtml(c.name||'')+'\')" >👁 Preview</button>'+
+      '<button class="btn btn-sm" onclick="event.stopPropagation();_clientHubCopy(\''+url+'\',this)">📋 Copy</button>'+
+      (phone?'<button class="btn btn-sm btn-p" onclick="event.stopPropagation();window.location.href=\'sms:'+phone+'?body='+encodeURIComponent(smsBody)+'\'">📱 Send</button>':'');
     return '<div class="hub-dir-row" onclick="openClientDetail('+c.id+',\'clients\')">'+
       '<div class="hub-dir-l">'+
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
@@ -499,20 +488,7 @@ function renderClientHubPage(){
       '<div class="hub-dir-r">'+actions+'</div>'+
     '</div>';
   };
-  let html='';
-  if(withHub.length){
-    html+='<div class="card card-pad-0" style="margin-bottom:14px">'+
-      '<div class="card-hd"><div class="card-hd-title">Active hubs</div><div class="card-hd-sub">'+withHub.length+' client'+(withHub.length!==1?'s':'')+'</div></div>'+
-      '<div>'+withHub.map(rowHtml).join('')+'</div>'+
-    '</div>';
-  }
-  if(withoutHub.length){
-    html+='<div class="card card-pad-0">'+
-      '<div class="card-hd"><div class="card-hd-title">Not yet generated</div><div class="card-hd-sub">'+withoutHub.length+' client'+(withoutHub.length!==1?'s':'')+'</div></div>'+
-      '<div>'+withoutHub.map(rowHtml).join('')+'</div>'+
-    '</div>';
-  }
-  el.innerHTML=html;
+  el.innerHTML='<div class="card card-pad-0">'+sorted.map(rowHtml).join('')+'</div>';
 }
 function _previewClientHub(url,clientName){
   let ov=document.getElementById('_hub-preview-ov');
@@ -539,14 +515,6 @@ function _clientHubCopy(url,btn){
   }).catch(()=>{
     if(typeof showToast==='function')showToast('Could not copy link','⚠️');
   });
-}
-function _clientHubGenerate(cid){
-  const c=getClientById(cid);if(!c)return;
-  if(typeof _ensureClientToken==='function')_ensureClientToken(cid);
-  saveAll();
-  if(typeof _uploadClientHub==='function')_uploadClientHub(cid).catch(()=>{});
-  renderClientHubPage();
-  if(typeof showToast==='function')showToast('Hub link generated for '+(c.name||'client'),'✅');
 }
 function pipelineResendSms(bidId){
   const b=bids.find(x=>x.id===bidId);
