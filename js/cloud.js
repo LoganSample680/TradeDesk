@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.18.26.109';
+const APP_VERSION='05.18.26.110';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -424,7 +424,29 @@ async function supaInit(){
         supaSetStatus('cloud');
       }
     } else {
-      // Not signed in — show login screen
+      // No valid session — if offline with cached data, skip login and load from cache.
+      // Supabase will fire SIGNED_IN when the token refreshes on reconnect.
+      const _cc=localStorage.getItem('zp3_cloud_cache');
+      if(!navigator.onLine&&_cc){
+        try{
+          const _cd=JSON.parse(_cc);
+          clients=_cd.clients||[];bids=_cd.bids||[];jobs=_cd.jobs||[];
+          payments=_cd.payments||[];income=_cd.income||[];expenses=_cd.expenses||[];
+          mileage=_cd.mileage||[];liens=_cd.liens||[];timeEntries=_cd.timeEntries||[];
+          if(_cd.licenses?.length)licenses=_cd.licenses;
+          if(_cd.events?.length)events=_cd.events;
+          if(_cd.contracts?.length)contracts=_cd.contracts;
+          if(_cd.photos?.length)photos=_cd.photos;
+          if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
+          if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
+          _loadedFromCacheOnly=true;
+          _removeBootOverlay();renderDash();buildScopeGrid();
+          _showOfflineBanner();
+          supaSetStatus('error');
+          return;
+        }catch(_ce){}
+      }
+      // Online or no cache — show login screen
       _removeBootOverlay();
       renderDash();buildScopeGrid();
       supaSetStatus('local');
@@ -463,16 +485,25 @@ async function supaInit(){
       } else if(event==='SIGNED_OUT'){
         _supaUser=null;_user=null;_account=null;_config=null;
         // Only wipe local data when the user explicitly clicked sign out.
-        // Supabase also fires SIGNED_OUT on token refresh failures (e.g. during devSwitchTrade)
-        // — in those cases we must NOT wipe data or the user loses everything.
+        // Supabase also fires SIGNED_OUT on token refresh failures (offline) —
+        // in those cases keep data in memory and just show the offline banner.
         if(_deliberateSignOut){
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],weatherLat:null,weatherLon:null,locationDenied:false};
           saveAll();
           _deliberateSignOut=false;
+          supaSetStatus('local');
+          supaShowLogin();
+        } else if(!navigator.onLine&&localStorage.getItem('zp3_cloud_cache')){
+          // Token refresh failed offline — data still in memory, keep the app running.
+          // Supabase will fire SIGNED_IN automatically when connection returns.
+          _loadedFromCacheOnly=true;
+          _showOfflineBanner();
+          supaSetStatus('error');
+        } else {
+          supaSetStatus('local');
+          supaShowLogin();
         }
-        supaSetStatus('local');
-        supaShowLogin();
       }
     });
     _startOfflineWatcher();
@@ -930,6 +961,16 @@ async function supaSignIn(){
   const pass=document.getElementById('supa-pass')?.value;
   const err=document.getElementById('supa-login-err');
   if(!email||!pass){if(err)err.textContent='Enter email and password.';return;}
+  if(!navigator.onLine){
+    if(err){
+      if(localStorage.getItem('zp3_cloud_cache')){
+        err.innerHTML='No internet — <button onclick="document.getElementById(\'supa-login-overlay\').remove();_removeBootOverlay();renderDash();buildScopeGrid();" style="border:none;background:none;color:var(--blue);text-decoration:underline;cursor:pointer;font-size:inherit;font-family:inherit;padding:0">use your saved data instead</button>';
+      }else{
+        err.textContent='No internet connection — connect to sign in.';
+      }
+    }
+    return;
+  }
   if(err)err.textContent='Signing in...';
   const{error}=await _supa.auth.signInWithPassword({email,password:pass});
   if(error&&err)err.textContent=error.message;
