@@ -332,13 +332,14 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.18.26.110';
+const APP_VERSION='05.18.26.111';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
 // supaSaveToCloud() checks this + runs a sanity guard to prevent pushing
 // incomplete in-memory state over real cloud data.
 let _loadedFromCacheOnly=false;
+let _mergeOnSignIn=false; // true when offline data in memory needs merging after SIGNED_IN
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
@@ -440,6 +441,7 @@ async function supaInit(){
           if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
           if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
           _loadedFromCacheOnly=true;
+          _mergeOnSignIn=true;
           _removeBootOverlay();renderDash();buildScopeGrid();
           _showOfflineBanner();
           supaSetStatus('error');
@@ -461,7 +463,7 @@ async function supaInit(){
         if(_supaCloudLoaded && _supaUser && session.user.id===_supaUser.id){return;}
         if(_supaCloudLoaded && session.user.id!==(_supaUser?.id)){
           // Different user signed in on same device — full reset before loading their data
-          _supaCloudLoaded=false;
+          _supaCloudLoaded=false;_mergeOnSignIn=false; // don't merge previous user's data
           clearTimeout(_syncTimer);_syncTimer=null;
           _devSupportMode=false;_devSupportName='';_devSavedState=null;
         }
@@ -470,8 +472,26 @@ async function supaInit(){
         document.getElementById('welcome-overlay')?.remove();
         const hasAccount=await loadAccountData();
         if(hasAccount){
-          await supaLoadFromCloud();
-          goPg('pg-dash');
+          if(_mergeOnSignIn){
+            _mergeOnSignIn=false;
+            // Snapshot records entered while offline before cloud load overwrites memory
+            const _oClients=[...clients],_oBids=[...bids],_oJobs=[...jobs];
+            await supaLoadFromCloud(); // non-silent: sets up timers, renders, navigates
+            // Merge offline additions that aren't already in cloud data
+            const _cSet=new Set(clients.map(c=>c.id));
+            const _bSet=new Set(bids.map(b=>b.id));
+            const _jSet=new Set(jobs.map(j=>j.id));
+            let _merged=false;
+            _oClients.filter(c=>!_cSet.has(c.id)).forEach(c=>{clients.push(c);_merged=true;});
+            _oBids.filter(b=>!_bSet.has(b.id)).forEach(b=>{bids.push(b);_merged=true;});
+            _oJobs.filter(j=>!_jSet.has(j.id)).forEach(j=>{jobs.push(j);_merged=true;});
+            if(_merged){await _flushSaveNow();renderDash();showToast('Offline changes synced','✅');}
+            typeof _drainHubQueue==='function'&&_drainHubQueue();
+            typeof _drainPhotoQueue==='function'&&_drainPhotoQueue();
+          } else {
+            await supaLoadFromCloud();
+            goPg('pg-dash');
+          }
         } else {
           _removeBootOverlay();
           renderDash();buildScopeGrid();
@@ -498,6 +518,7 @@ async function supaInit(){
           // Token refresh failed offline — data still in memory, keep the app running.
           // Supabase will fire SIGNED_IN automatically when connection returns.
           _loadedFromCacheOnly=true;
+          _mergeOnSignIn=true;
           _showOfflineBanner();
           supaSetStatus('error');
         } else {
@@ -932,6 +953,29 @@ function _hiringRow(label,amount,isGross){
   '</div>';
 }
 
+function _enterOfflineMode(){
+  document.getElementById('supa-login-overlay')?.remove();
+  // Load from cache so the app has real data, not an empty shell
+  const _cc=localStorage.getItem('zp3_cloud_cache');
+  if(_cc){
+    try{
+      const _cd=JSON.parse(_cc);
+      clients=_cd.clients||[];bids=_cd.bids||[];jobs=_cd.jobs||[];
+      payments=_cd.payments||[];income=_cd.income||[];expenses=_cd.expenses||[];
+      mileage=_cd.mileage||[];liens=_cd.liens||[];timeEntries=_cd.timeEntries||[];
+      if(_cd.licenses?.length)licenses=_cd.licenses;
+      if(_cd.events?.length)events=_cd.events;
+      if(_cd.contracts?.length)contracts=_cd.contracts;
+      if(_cd.photos?.length)photos=_cd.photos;
+      if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
+      if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
+    }catch(_ce){}
+  }
+  _loadedFromCacheOnly=true;
+  _mergeOnSignIn=true; // merge any new records entered here when SIGNED_IN fires
+  _removeBootOverlay();renderDash();buildScopeGrid();
+  _showOfflineBanner();
+}
 function supaShowLogin(){
   if(!supaEnabled())return;
   if(document.getElementById('supa-login-overlay'))return;
@@ -949,7 +993,7 @@ function supaShowLogin(){
     '<button onclick="supaSignIn()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Sign in</button>'+
     '<div style="text-align:right;margin-bottom:10px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:13px;cursor:pointer;font-family:inherit;padding:0;text-decoration:underline">Forgot password?</button></div>'+
     '<button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:16px">Create account</button>'+
-    '<button onclick="document.getElementById(\'supa-login-overlay\').remove();_removeBootOverlay();renderDash();buildScopeGrid();" style="width:100%;padding:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Use offline (data stays on this device only)</button>'+
+    '<button onclick="_enterOfflineMode()" style="width:100%;padding:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Use offline (data stays on this device only)</button>'+
     '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:10px;text-align:center;min-height:16px"></div>'+
     '</div>';
   document.body.appendChild(overlay);
@@ -964,7 +1008,7 @@ async function supaSignIn(){
   if(!navigator.onLine){
     if(err){
       if(localStorage.getItem('zp3_cloud_cache')){
-        err.innerHTML='No internet — <button onclick="document.getElementById(\'supa-login-overlay\').remove();_removeBootOverlay();renderDash();buildScopeGrid();" style="border:none;background:none;color:var(--blue);text-decoration:underline;cursor:pointer;font-size:inherit;font-family:inherit;padding:0">use your saved data instead</button>';
+        err.innerHTML='No internet — <button onclick="_enterOfflineMode()" style="border:none;background:none;color:var(--blue);text-decoration:underline;cursor:pointer;font-size:inherit;font-family:inherit;padding:0">use your saved data instead</button>';
       }else{
         err.textContent='No internet connection — connect to sign in.';
       }
