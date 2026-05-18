@@ -2571,26 +2571,22 @@ function renderMoneyPage(){
     } else if(stage==='lien_filed'){
       nextBtn='<button class="btn btn-sm" onclick="releaseLien('+b.id+')" style="font-size:11px;background:var(--c-green-soft);color:var(--c-green);border-color:var(--c-green-edge)">'+nxt.label+'</button>';
     }
-    return '<div style="display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);cursor:pointer" onclick="openClientDetail('+c.id+',\'money\')" >'+
-      // Stage badge box
-      '<div style="font-family:var(--font-display);font-size:16px;font-weight:900;color:'+stageColor+';background:'+stageBg+';border:1px solid '+stageBorder+';border-radius:8px;padding:7px 10px;min-width:54px;text-align:center;letter-spacing:-.4px;flex-shrink:0">'+stageLabel+'</div>'+
-      // Client info
-      '<div style="flex:1;min-width:0">'+
-        '<div style="font-size:14px;font-weight:800;color:var(--text);letter-spacing:-.2px">'+escHtml(c.name)+'</div>'+
-        '<div style="font-size:11px;color:var(--text-3);margin-top:2px;font-weight:500">'+
-          escHtml(csInfo.label||'Overdue')+' · '+daysUnpaid+'d past completion'+lienWarn+
+    return '<div style="padding:14px 18px;border-bottom:1px solid var(--line);cursor:pointer" onclick="openClientDetail('+c.id+',\'money\')" >'+
+      '<div style="display:flex;align-items:center;gap:10px">'+
+        '<div style="font-family:var(--font-display);font-size:14px;font-weight:900;color:'+stageColor+';background:'+stageBg+';border:1px solid '+stageBorder+';border-radius:8px;padding:6px 10px;min-width:52px;text-align:center;letter-spacing:-.4px;flex-shrink:0">'+stageLabel+'</div>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:14px;font-weight:800;color:var(--text);letter-spacing:-.2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(c.name)+'</div>'+
+          '<div style="font-size:11px;color:var(--text-3);margin-top:1px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(csInfo.label||'Overdue')+(daysUnpaid>0?' · '+daysUnpaid+'d past completion':'')+lienWarn+'</div>'+
         '</div>'+
-        (paid>0.01&&total>0?'<div class="pay-bar" style="margin-top:6px;max-width:200px"><div class="pay-fill" style="width:'+pct+'%;background:var(--c-green)"></div></div>':'')+
+        '<div style="text-align:right;flex-shrink:0">'+
+          '<div style="font-family:var(--font-display);font-size:18px;font-weight:900;color:'+(bucket==='paid'?'var(--c-green)':'var(--c-red)')+'">'+fmt(bucket==='paid'?total:balance)+'</div>'+
+          '<div style="font-size:10px;color:var(--text-3);font-weight:700;letter-spacing:.04em;text-transform:uppercase">'+(bucket==='paid'?'paid':'owed')+'</div>'+
+        '</div>'+
       '</div>'+
-      // Balance
-      '<div style="text-align:right;flex-shrink:0">'+
-        '<div style="font-family:var(--font-display);font-size:18px;font-weight:900;color:'+(bucket==='paid'?'var(--c-green)':'var(--c-red)')+'">'+fmt(bucket==='paid'?total:balance)+'</div>'+
-        '<div style="font-size:10px;color:var(--text-3);font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-top:2px">'+(bucket==='paid'?'paid':'owed')+'</div>'+
-      '</div>'+
-      // Action buttons
-      '<div style="display:flex;gap:6px;flex-shrink:0" onclick="event.stopPropagation()">'+
+      (paid>0.01&&total>0?'<div class="pay-bar" style="margin-top:8px"><div class="pay-fill" style="width:'+pct+'%;background:var(--c-green)"></div></div>':'')+
+      '<div style="display:flex;gap:6px;margin-top:10px" onclick="event.stopPropagation()">'+
         nextBtn+
-        '<button class="btn btn-sm btn-g" onclick="openPayPanel('+b.id+')" style="font-size:11px">💰 Log payment</button>'+
+        '<button class="btn btn-sm btn-g" onclick="openPayPanel('+b.id+')" style="font-size:11px;flex:1">💰 Log payment</button>'+
       '</div>'+
     '</div>';
   }).join('');
