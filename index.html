@@ -227,8 +227,8 @@ input[readonly],input:disabled{background:var(--cream);color:var(--text-3)}
 textarea{resize:none;min-height:52px;line-height:1.5}
 select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239a9890' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
 input[type=range]{-webkit-appearance:none;appearance:none;background:transparent}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:22px;height:22px;border-radius:50%;background:#0D1117;cursor:pointer;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3);margin-top:-8px}
-input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:#0D1117;cursor:pointer;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:22px;height:22px;border-radius:50%;background:var(--ink);cursor:pointer;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3);margin-top:-8px}
+input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:var(--ink);cursor:pointer;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)}
 input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(to right,var(--denim-soft),var(--denim))}
 
 /* ── Filter bar ── */
@@ -739,7 +739,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 .mil-day-trip.needs{background:rgba(253,186,116,.07)}
 .mil-day-trip-route{flex:1;min-width:0;display:flex;gap:8px;align-items:stretch}
 .mil-route-spine{display:flex;flex-direction:column;align-items:center;width:12px;flex-shrink:0;padding:2px 0}
-.mil-route-pin-s{width:10px;height:10px;border-radius:50%;background:#22c55e;border:2px solid #16a34a;flex-shrink:0}
+.mil-route-pin-s{width:10px;height:10px;border-radius:50%;background:#22c55e;border:2px solid var(--c-green);flex-shrink:0}
 .mil-route-spine-line{width:2px;flex:1;min-height:10px;margin:3px 0;background:repeating-linear-gradient(to bottom,#9ca3af 0,#9ca3af 3px,transparent 3px,transparent 6px)}
 .mil-route-pin-e{width:10px;height:10px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:#ef4444;border:2px solid #dc2626;flex-shrink:0}
 .mil-route-addrs{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:6px}
@@ -1030,11 +1030,11 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:10px">Required</div>
       <div class="fg fg2">
         <div class="f"><label>Full name</label><input id="cf-name" placeholder="John &amp; Sarah Smith" oninput="checkClientDupe(this.value);clearFErr('cf-name')">
-          <div id="cf-dupe-warn" style="display:none;font-size:11px;color:#A32D2D;margin-top:4px;background:#FEE8E8;border-radius:var(--r);padding:6px 8px"></div>
-          <div id="err-cf-name" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
+          <div id="cf-dupe-warn" style="display:none;font-size:11px;color:var(--c-red);margin-top:4px;background:#FEE8E8;border-radius:var(--r);padding:6px 8px"></div>
+          <div id="err-cf-name" style="display:none;font-size:11px;color:var(--c-red);margin-top:3px"></div>
         </div>
         <div class="f"><label>Phone</label><input id="cf-phone" type="tel" placeholder="XXX-XXX-XXXX" maxlength="12" oninput="fmtPhone(this);clearFErr('cf-phone');_allowPhoneDupe=false;">
-          <div id="err-cf-phone" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
+          <div id="err-cf-phone" style="display:none;font-size:11px;color:var(--c-red);margin-top:3px"></div>
         </div>
         <div class="f" style="grid-column:1/-1">
           <label>Lead source</label>
@@ -1068,7 +1068,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             </optgroup>
             <option value="Other">Other</option>
           </select>
-          <div id="err-cf-source" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
+          <div id="err-cf-source" style="display:none;font-size:11px;color:var(--c-red);margin-top:3px"></div>
         </div>
         <div class="f" id="cf-ref-wrap" style="display:none;grid-column:1/-1">
           <label>Referred by</label>
@@ -1081,7 +1081,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="fg fg2">
           <div class="f" style="grid-column:1/-1;position:relative"><label>Street address</label><input id="cf-street" placeholder="1234 Maple St" autocomplete="off" oninput="clearFErr('cf-street');_updateAddrComputed();_addrSugSearch(this.value,'cf-addr-sugg','cf-street','cf-city','cf-state','cf-zip')" onblur="setTimeout(()=>{const b=document.getElementById('cf-addr-sugg');if(b)b.style.display='none'},150)">
             <div id="cf-addr-sugg" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:200;max-height:240px;overflow-y:auto"></div>
-            <div id="err-cf-addr" style="display:none;font-size:11px;color:#A32D2D;margin-top:3px"></div>
+            <div id="err-cf-addr" style="display:none;font-size:11px;color:var(--c-red);margin-top:3px"></div>
           </div>
           <div class="f"><label>City</label><input id="cf-city" placeholder="Denver" autocomplete="address-level2" oninput="_updateAddrComputed()"></div>
           <div class="f" style="display:grid;grid-template-columns:1fr 80px;gap:8px">
@@ -1235,8 +1235,8 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
     </div>
     <div id="cd-lien-panel" style="display:none">
-      <div class="card" style="border:2px solid #A32D2D">
-        <div class="card-hd" style="color:#A32D2D">Mechanic's lien record</div>
+      <div class="card" style="border:2px solid var(--c-red)">
+        <div class="card-hd" style="color:var(--c-red)">Mechanic's lien record</div>
         <div class="tip tip-d">A mechanic's lien claims the property for unpaid work. Deadlines vary by state — general guidance only. <strong>Consult an attorney in your jurisdiction before filing.</strong></div>
         <div class="fg fg2">
           <div class="f"><label>Lien status</label>
@@ -1305,9 +1305,9 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="card"><div class="card-hd">Client info <span id="e-client-linked"></span></div>
       <div id="e-client-display" style="background:var(--blue-lt);border-radius:var(--r);padding:9px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:var(--blue-dk)">Client: <span id="e-client-linked">—</span></div>
       <div class="fg fg2">
-        <div class="f"><label>Client name <span style="color:#A32D2D">*</span></label><input id="e-cname" placeholder="John &amp; Sarah Smith" style="border:2px solid #A32D2D;background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
-        <div class="f"><label>Phone <span style="color:#A32D2D">*</span></label><input id="e-cphone" type="tel" maxlength="12" style="border:2px solid #A32D2D;background:var(--red-lt)" oninput="fmtPhone(this);markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
-        <div class="f" style="grid-column:1/-1"><label>Property address <span style="color:#A32D2D">*</span></label><input id="e-caddr" placeholder="1234 Maple St, Wichita KS 67201" style="border:2px solid #A32D2D;background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
+        <div class="f"><label>Client name <span style="color:var(--c-red)">*</span></label><input id="e-cname" placeholder="John &amp; Sarah Smith" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
+        <div class="f"><label>Phone <span style="color:var(--c-red)">*</span></label><input id="e-cphone" type="tel" maxlength="12" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="fmtPhone(this);markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
+        <div class="f" style="grid-column:1/-1"><label>Property address <span style="color:var(--c-red)">*</span></label><input id="e-caddr" placeholder="1234 Maple St, Wichita KS 67201" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
         <div style="grid-column:1/-1"><button type="button" class="btn btn-sm" style="width:100%;background:var(--bg2);border-color:var(--border2);color:var(--text2);font-size:12px" onclick="openLogTripModal({purpose:'Estimate',toAddress:document.getElementById('e-caddr').value,clientName:document.getElementById('e-cname').value})">🚗 Log drive to this estimate</button></div>
         <div class="f"><label>Property type</label><select id="e-cprop" onchange="_onEstPropTypeChange(this)"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>
         <div id="_est-industrial-banner" style="display:none;grid-column:1/-1;padding:10px 12px;border-radius:var(--r);border:1.5px dashed #ea580c;background:#fff7ed">
@@ -1413,7 +1413,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div style="font-size:13px;font-weight:800;color:var(--blue);margin-bottom:10px" id="surf-card-title">New room</div>
 
         <div style="margin-bottom:12px">
-          <label id="surf-room-name-label" style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Room name <span style="color:#A32D2D">*</span></label>
+          <label id="surf-room-name-label" style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Room name <span style="color:var(--c-red)">*</span></label>
           <input id="surf-room-name" placeholder="Living room, Master bedroom..."
             style="font-size:16px;font-weight:700;padding:10px 12px;width:100%;border:1.5px solid var(--border2);background:var(--bg2);border-radius:var(--r);outline:none;box-sizing:border-box;color:var(--text)"
             oninput="onSurfRoomName(this)">
@@ -1522,7 +1522,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <!-- Product line selector -->
         <div id="sw-product-wrap" style="margin-top:14px;background:var(--bg2);border-radius:var(--rl);border:1px solid var(--border2);overflow:hidden">
           <div style="padding:10px 12px 8px;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between">
-            <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3)">Product <span style="color:#A32D2D">*</span></div>
+            <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3)">Product <span style="color:var(--c-red)">*</span></div>
             <div id="sw-product-selected" style="font-size:11px;font-weight:700;color:var(--blue)"></div>
           </div>
           <div style="padding:6px 12px 4px;font-size:11px;color:var(--blue-dk);font-weight:700" id="sw-product-grid-hdr"></div>
@@ -1534,7 +1534,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div id="sw-color-wrap" style="margin-top:14px;background:var(--bg2);border-radius:var(--rl);border:1px solid var(--border2);overflow:hidden">
           <!-- Header with selected pill -->
           <div style="padding:10px 12px 8px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border2)">
-            <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3)">Color &amp; Finish <span style="color:#A32D2D">*</span></div>
+            <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3)">Color &amp; Finish <span style="color:var(--c-red)">*</span></div>
             <div id="sw-selected-pill" style="display:none;align-items:center;gap:6px">
               <div id="sw-color-preview" style="width:20px;height:20px;border-radius:3px;background:#eee;border:1px solid var(--border2);cursor:pointer" onclick="swOpenFullscreen()"></div>
               <span id="sw-selected-label" style="font-size:11px;font-weight:700;color:var(--text);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
@@ -1655,7 +1655,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
         <label style="font-size:11px;color:var(--text2);min-width:80px">Adjust price</label>
-        <input type="range" id="est-adj" min="-40" max="40" step="1" value="0" oninput="syncAdj()" onchange="onAdjSliderRelease()" style="flex:1;accent-color:var(--navy,#0D1117);height:6px;cursor:pointer">
+        <input type="range" id="est-adj" min="-40" max="40" step="1" value="0" oninput="syncAdj()" onchange="onAdjSliderRelease()" style="flex:1;accent-color:var(--ink);height:6px;cursor:pointer">
         <span id="est-adj-val" style="font-size:12px;font-weight:700;min-width:55px;text-align:right;color:var(--blue)">0%</span>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:10px;padding:0 2px">
@@ -1676,9 +1676,9 @@ body.dark .cal-cell.other{background:var(--cream)}
       <input type="hidden" id="e-customer-paint">
     <div class="card">
       <div class="f">
-        <label>Est. days to complete <span style="color:#A32D2D">*</span></label>
+        <label>Est. days to complete <span style="color:var(--c-red)">*</span></label>
         <input type="number" id="e-days" placeholder="e.g. 2" min="1" max="60"
-          style="border:2px solid #A32D2D;background:var(--red-lt)"
+          style="border:2px solid var(--c-red);background:var(--red-lt)"
           onchange="validateJobSettings();saveEstFullDraft()" oninput="validateJobSettings();saveEstFullDraft()">
       </div>
       <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;font-weight:600;margin-top:10px">
@@ -1733,7 +1733,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="f" style="margin-bottom:8px">
         <label>Signature — type your name</label>
         <input id="sig-typed" placeholder="Type full name to sign..." oninput="updateTypedSig()" style="width:100%;box-sizing:border-box;font-size:16px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit">
-        <div id="sig-typed-preview" style="font-family:'Dancing Script',cursive;font-size:36px;color:#185FA5;min-height:52px;display:flex;align-items:center;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r);margin-top:6px;background:var(--bg)"></div>
+        <div id="sig-typed-preview" style="font-family:'Dancing Script',cursive;font-size:36px;color:var(--denim);min-height:52px;display:flex;align-items:center;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r);margin-top:6px;background:var(--bg)"></div>
       </div>
       <details style="margin-bottom:6px">
         <summary style="font-size:11px;color:var(--text3);cursor:pointer;padding:4px 0">Or draw signature instead</summary>
@@ -2224,12 +2224,12 @@ body.dark .cal-cell.other{background:var(--cream)}
         <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--amber-lt);border-radius:2px;margin-right:3px"></span>Buffer</span>
         <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:#FDE68A;border-radius:2px;margin-right:3px"></span>Time off</span>
         <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:#7F77DD;border-radius:2px;margin-right:3px"></span>Estimate</span>
-        <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:#185FA5;border-radius:2px;margin-right:3px"></span>Job</span>
+        <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--denim);border-radius:2px;margin-right:3px"></span>Job</span>
       </div>
     </div>
     <div id="sched-preview" style="display:none;background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin:10px 0;font-size:12px"></div>
     <div class="f" style="margin-top:8px"><label>Notes</label><textarea id="s-notes" placeholder="Access info, what to bring, client preferences..."></textarea></div>
-    <div id="sched-err" style="display:none;font-size:12px;color:#A32D2D;background:#FEE8E8;border-radius:var(--r);padding:8px 10px;margin-bottom:8px"></div>
+    <div id="sched-err" style="display:none;font-size:12px;color:var(--c-red);background:#FEE8E8;border-radius:var(--r);padding:8px 10px;margin-bottom:8px"></div>
     <div class="brow">
       <button class="btn btn-g" onclick="scheduleJob()">Add to calendar</button>
       <button class="btn" onclick="resetSched()">Clear</button>
@@ -2480,7 +2480,12 @@ body.dark .cal-cell.other{background:var(--cream)}
             </div>
           </div>
         </div>
-        <div class="f"><label>Hub accent color <span style="font-size:10px;font-weight:400;color:var(--text3)">(buttons &amp; links in client hub)</span></label><input type="color" id="set-brandcolor" value="#185FA5"></div>
+        <div class="f"><label>Hub accent color <span style="font-size:10px;font-weight:400;color:var(--text3)">(buttons &amp; links in client hub)</span></label><input type="color" id="set-brandcolor" value="#2D5DA8" oninput="_updateBootPreview()"></div>
+        <div id="boot-preview-wrap" style="grid-column:1/-1;border-radius:12px;overflow:hidden;height:100px;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px" aria-label="Boot screen preview">
+          <div id="boot-preview-bg" style="position:absolute;inset:0;background:radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)"></div>
+          <div id="boot-preview-logo" style="position:relative;display:flex;align-items:baseline;gap:0"><span id="boot-preview-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:22px;color:#fff;letter-spacing:-1px">TradeDesk</span><span id="boot-preview-pro" style="font-size:8px;font-weight:800;color:#5C8FD4;background:rgba(45,93,168,.18);border:1px solid rgba(45,93,168,.36);padding:2px 5px;border-radius:4px;text-transform:uppercase;letter-spacing:.06em;margin-left:5px;vertical-align:4px">Pro</span></div>
+          <div style="position:relative;width:80px;height:2px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden"><div id="boot-preview-bar" style="width:60%;height:100%;background:#2D5DA8;border-radius:2px"></div></div>
+        </div>
         <div class="f"><label>Website URL <span style="font-size:10px;font-weight:400;color:var(--text3)">(shown in client hub footer)</span></label><input type="url" id="set-bwebsite" placeholder="https://yourwebsite.com"></div>
         <div class="f" style="grid-column:1/-1">
           <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none">
@@ -2716,12 +2721,12 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
   <div id="set-saved" style="display:none;margin-top:8px" class="tip tip-s">Settings saved!</div>
 
-  <div class="card" style="margin-top:16px;border:1px solid #A32D2D">
-    <div class="card-hd" style="color:#A32D2D">Danger zone</div>
+  <div class="card" style="margin-top:16px;border:1px solid var(--c-red)">
+    <div class="card-hd" style="color:var(--c-red)">Danger zone</div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Use this to wipe all test data and start fresh. Cannot be undone.</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
       <button class="btn btn-r" onclick="clearAllData()" style="font-size:13px">&#128465; Clear ALL data — start fresh</button>
-      <button class="btn" onclick="clearMileageOnly()" style="font-size:13px;color:#A32D2D;border-color:#A32D2D">Clear mileage only</button>
+      <button class="btn" onclick="clearMileageOnly()" style="font-size:13px;color:var(--c-red);border-color:var(--c-red)">Clear mileage only</button>
     </div>
   </div>
 </div>
@@ -2868,7 +2873,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="font-size:10px;color:rgba(255,255,255,.7)" id="banner-timer">Tap to return · 0:00</div>
     </div>
   </div>
-  <button onclick="showEndDrive()" style="background:#A32D2D;color:#fff;border:none;border-radius:var(--r);padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0">End trip</button>
+  <button onclick="showEndDrive()" style="background:var(--c-red);color:#fff;border:none;border-radius:var(--r);padding:6px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0">End trip</button>
 </div>
 
 <div id="clock-banner">

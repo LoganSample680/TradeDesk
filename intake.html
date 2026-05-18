@@ -131,6 +131,8 @@ textarea.input{resize:vertical;min-height:90px}
   </div>
 </div>
 
+<div style="text-align:center;padding:24px 16px 8px;font-size:11px;color:var(--text3);font-weight:500">Powered by <strong style="font-weight:700;color:var(--text2)">TradeDesk Pro</strong></div>
+
 <script>
 const SUPA_URL='https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
@@ -204,7 +206,7 @@ async function init(){
     return;
   }
   try{
-    const{data,error}=await _supa.from('accounts').select('id,business_name,phone').eq('id',ACCOUNT_ID).maybeSingle();
+    const{data,error}=await _supa.from('accounts').select('id,business_name,phone,logo_data,brand_color').eq('id',ACCOUNT_ID).maybeSingle();
     if(error||!data){
       showErr('Contractor not found','This link may be invalid or expired.');
       return;
@@ -220,9 +222,23 @@ async function init(){
 
 function applyBranding(){
   const name=_acct.business_name||'Your Contractor';
+  const logo=_acct.logo_data||'';
+  const color=_acct.brand_color||'';
   document.getElementById('hero-biz').textContent=name;
-  document.getElementById('topbar-name').textContent=name+' — Free Quote';
   document.title=name+' — Get a Free Quote';
+  // Topbar: logo takes priority over name
+  const tbLogo=document.getElementById('topbar-logo');
+  const tbName=document.getElementById('topbar-name');
+  if(logo&&tbLogo){tbLogo.src=logo;tbLogo.style.display='block';if(tbName)tbName.style.display='none';}
+  else if(tbName){tbName.textContent=name+' — Free Quote';}
+  // Hero card: use brandColor gradient when set
+  const hero=document.getElementById('hero-card');
+  if(hero&&color){hero.style.background='linear-gradient(135deg,'+color+' 0%,'+color+'cc 100%)';}
+  // Submit button: brandColor when set, else charcoal default
+  const btn=document.getElementById('submit-btn');
+  if(btn&&color){btn.style.background=color;btn.style.boxShadow='0 2px 12px '+color+'44';}
+  // Focus ring color
+  if(color){const s=document.createElement('style');s.textContent='.input:focus{border-color:'+color+'!important;box-shadow:0 0 0 3px '+color+'22!important}.time-btn.sel{border-color:'+color+'!important;background:'+color+'!important}';document.head.appendChild(s);}
 }
 
 function showErr(hdr,msg){

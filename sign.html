@@ -196,7 +196,7 @@ input[type=text]:focus{border-color:var(--denim)}
 <style>
 @keyframes sig-pulse{0%,100%{box-shadow:0 0 0 0 rgba(22,163,74,.5);}60%{box-shadow:0 0 0 10px rgba(22,163,74,0);}}
 .sig-active{border:2px solid #16a34a !important;animation:sig-pulse 1.1s ease 3;}
-#sign-boot{position:fixed;inset:0;background:#0D1117;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s ease;will-change:opacity}
+#sign-boot{position:fixed;inset:0;background:#1B1612;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s ease;will-change:opacity}
 </style>
 </head>
 <body>
@@ -467,6 +467,7 @@ input[type=text]:focus{border-color:var(--denim)}
     <div id="pg-err-detail" style="margin-top:12px;font-size:11px;color:#94a3b8;word-break:break-all;text-align:left;background:#f8fafc;border-radius:8px;padding:10px 12px;display:none"></div>
     </div>
   </div>
+  <div style="text-align:center;padding:28px 16px 12px;font-size:11px;color:var(--text3);font-weight:500">Powered by <strong style="font-weight:700;color:var(--text2)">TradeDesk Pro</strong></div>
 </div>
 
 <!-- Sticky approve bar -->
@@ -631,6 +632,9 @@ async function init(){
     }
     const _biz=_prop.businessName||'Your Contractor';
     document.title='Review & Sign — '+_biz;
+    // Topbar
+    const tbName=document.querySelector('.topbar-name');if(tbName)tbName.textContent=_biz;
+    if(_prop.logoData){const tbLogo=document.querySelector('.topbar-logo');if(tbLogo){tbLogo.innerHTML='<img src="'+_prop.logoData+'" style="height:26px;max-width:80px;object-fit:contain;border-radius:4px">';}}
     // Hero card
     document.getElementById('hero-biz-name').textContent=_biz;
     if(_prop.businessPhone){document.getElementById('hero-biz-phone').textContent=_prop.businessPhone;}
@@ -702,7 +706,7 @@ function updateTypedSigPreview(){
     const dpr=window.devicePixelRatio||1;
     const logW=sigCanvas.width/dpr;  // logical width after DPR scale
     sigCtx.clearRect(0,0,logW,130);
-    sigCtx.font='bold 52px Dancing Script, cursive';  // logical px in already-scaled context
+    sigCtx.font='46px Dancing Script, cursive';  // logical px in already-scaled context
     sigCtx.fillStyle='#1a1a18';
     sigCtx.textAlign='center';
     sigCtx.textBaseline='middle';
