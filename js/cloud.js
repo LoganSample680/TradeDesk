@@ -305,7 +305,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.18.26.91';
+const APP_VERSION='05.18.26.92';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -554,6 +554,29 @@ function renderTeam(){
   }).join('');
   const del=document.getElementById('device-list');if(del)del.innerHTML=devHtml;
   const del2=document.getElementById('team-page-devices');if(del2)del2.innerHTML=devHtml;
+  // Subcontractors
+  const subs=S.subcontractors||[];
+  const subEl=document.getElementById('team-page-subs');
+  if(subEl){
+    subEl.innerHTML=!subs.length
+      ?'<div style="font-size:12px;color:var(--text3);padding:6px 0">No subs yet. Add a subcontractor to assign them to jobs and track what you owe.</div>'
+      :subs.map((s,i)=>
+          '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
+            '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
+              '<div style="display:flex;align-items:center;gap:8px">'+
+                '<div style="width:34px;height:34px;border-radius:50%;background:var(--amber);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;flex-shrink:0">'+(s.name||'?').charAt(0).toUpperCase()+'</div>'+
+                '<div>'+
+                  '<div style="font-size:13px;font-weight:700">'+escHtml(s.name||'')+'</div>'+
+                  (s.trade?'<div style="font-size:11px;color:var(--text3)">'+escHtml(s.trade)+'</div>':'')+
+                '</div>'+
+              '</div>'+
+              '<button onclick="openEditSubModal('+i+')" style="font-size:11px;padding:4px 10px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">Edit</button>'+
+            '</div>'+
+            (s.phone?'<div style="font-size:11px;color:var(--text3);margin-top:4px">📞 '+escHtml(s.phone)+'</div>':'')+
+            (s.rate?'<div style="font-size:11px;color:var(--text3);margin-top:2px">💰 '+escHtml(s.rate)+'</div>':'')+
+          '</div>'
+        ).join('');
+  }
 }
 function _timeAgo(iso){
   const ms=Date.now()-new Date(iso).getTime();
@@ -645,6 +668,54 @@ function removeEmployee(idx){
   if(!S.employees)return;
   S.employees.splice(idx,1);
   saveSettings();document.getElementById('emp-modal-overlay')?.remove();renderTeam();
+}
+
+// ── Subcontractor management ─────────────────────────────────────────────────
+function _subModalHTML(sub,idx){
+  const isNew=idx==null;
+  const s=sub||{name:'',trade:'',phone:'',email:'',rate:''};
+  return '<div style="font-size:17px;font-weight:800;margin-bottom:14px">'+(isNew?'Add subcontractor':'Edit '+escHtml(s.name||'Sub'))+'</div>'+
+    '<div class="fg fg2" style="margin-bottom:12px">'+
+      '<div class="f"><label>Full name</label><input id="sub-name" value="'+escHtml(s.name||'')+'" placeholder="Mike Garcia" style="font-size:15px;padding:10px"></div>'+
+      '<div class="f"><label>Trade</label><input id="sub-trade" value="'+escHtml(s.trade||'')+'" placeholder="Drywall, Electrical, Plumbing..." style="font-size:14px;padding:10px"></div>'+
+    '</div>'+
+    '<div class="fg fg2" style="margin-bottom:12px">'+
+      '<div class="f"><label>Phone</label><input id="sub-phone" type="tel" value="'+escHtml(s.phone||'')+'" placeholder="XXX-XXX-XXXX" maxlength="12" oninput="fmtPhone(this)" style="font-size:15px;padding:10px"></div>'+
+      '<div class="f"><label>Email</label><input id="sub-email" type="email" value="'+escHtml(s.email||'')+'" placeholder="sub@email.com" style="font-size:14px;padding:10px"></div>'+
+    '</div>'+
+    '<div class="f" style="margin-bottom:16px"><label>Rate / notes</label>'+
+      '<input id="sub-rate" value="'+escHtml(s.rate||'')+'" placeholder="e.g. $45/hr or $800 per room" style="font-size:14px;padding:10px">'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      (!isNew?'<button onclick="_removeSub('+idx+')" style="padding:10px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>':'<div></div>')+
+      '<button onclick="_saveSub('+(isNew?'null':idx)+')" style="padding:10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+(isNew?'Add':'Save')+'</button>'+
+    '</div>'+
+    '<button onclick="document.getElementById(\'_sub-modal-ov\').remove()" style="width:100%;padding:8px;border:none;background:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>';
+}
+function openAddSubModal(){_openSubModal(null,null);}
+function openEditSubModal(idx){_openSubModal((S.subcontractors||[])[idx],idx);}
+function _openSubModal(sub,idx){
+  document.getElementById('_sub-modal-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_sub-modal-ov';ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=_subModalHTML(sub,idx);
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  setTimeout(()=>document.getElementById('sub-name')?.focus(),100);
+}
+function _saveSub(idx){
+  const name=(document.getElementById('sub-name')?.value||'').trim();
+  if(!name)return showToast('Enter a name','⚠️');
+  const sub={id:idx==null?Date.now():((S.subcontractors||[])[idx]?.id||Date.now()),name,trade:(document.getElementById('sub-trade')?.value||'').trim(),phone:(document.getElementById('sub-phone')?.value||'').trim(),email:(document.getElementById('sub-email')?.value||'').trim(),rate:(document.getElementById('sub-rate')?.value||'').trim()};
+  if(!S.subcontractors)S.subcontractors=[];
+  if(idx==null)S.subcontractors.push(sub);else S.subcontractors[idx]=sub;
+  saveSettings();document.getElementById('_sub-modal-ov')?.remove();renderTeam();
+  showToast(idx==null?'Subcontractor added':'Saved','✓');
+}
+function _removeSub(idx){
+  if(!S.subcontractors)return;
+  S.subcontractors.splice(idx,1);
+  saveSettings();document.getElementById('_sub-modal-ov')?.remove();renderTeam();
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -985,6 +1056,10 @@ async function supaSaveToCloud(){
       }).eq('user_id',uid);
       if(e3)_logSave('part3-skip',{id:_attemptId,code:e3.code,msg:e3.message});
     }catch(e3){_logSave('part3-skip',{id:_attemptId,msg:e3?.message||String(e3)});}
+    // Part 4 — contracts (localStorage is primary; Supabase best-effort backup)
+    try{
+      await _supa.from('zj_data').update({contracts:JSON.stringify(contracts)}).eq('user_id',uid);
+    }catch(_e4){}
     _logSave('ok',{id:_attemptId,mileage:_mileCount});
     supaSetStatus('synced');
   }catch(e){
@@ -1278,6 +1353,8 @@ async function supaLoadFromCloud(){
     if(_cloudLic&&_cloudLic.length)licenses=_cloudLic;
     const _cloudEv=parse(data.events,null);
     if(_cloudEv&&_cloudEv.length)events=_cloudEv;
+    const _cloudCt=parse(data.contracts,null);
+    if(_cloudCt&&_cloudCt.length)contracts=_cloudCt;
     const _cloudChk=parse(data.checks_state,null);
     if(_cloudChk&&Object.keys(_cloudChk).length)checksState=_cloudChk;
     if(data.settings){const ss=parse(data.settings,null);if(ss){S={...S,...ss};

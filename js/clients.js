@@ -983,7 +983,7 @@ function closeClientForm(){
 
 function setCDTab(tab,btn){
   cdTab=tab;
-  ['overview','mileage','bids','jobs','expenses'].forEach(t=>{
+  ['overview','mileage','bids','jobs','expenses','contracts'].forEach(t=>{
     const el=document.getElementById('cdt-'+t+'-content');if(el)el.style.display=t===tab?'block':'none';
     const b=document.getElementById('cdt-'+t);if(b)b.classList.toggle('active',t===tab);
   });
@@ -991,6 +991,7 @@ function setCDTab(tab,btn){
   if(tab==='bids')renderCDBids();
   if(tab==='jobs')renderCDJobs();
   if(tab==='expenses')renderCDExpenses();
+  if(tab==='contracts')renderClientContracts(currentClientId);
 }
 function renderClientDetail(){
   const c=getClientById(currentClientId);if(!c)return;

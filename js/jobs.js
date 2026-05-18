@@ -929,6 +929,9 @@ function openJobSheet(clientId){
       '<button onclick="deleteJobPhoto('+photoJobId+','+idx+',\''+type+'\');this.closest(\'.zmodal-overlay\').remove();openJobSheet('+clientId+')" '+
         'style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);border:none;color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1">✕</button>'+
     '</div>';
+    const shareBtn=beforePhotos.length&&afterPhotos.length
+      ?'<button onclick="_shareBeforeAfterCard('+clientId+')" style="display:inline-flex;align-items:center;gap:5px;margin-top:10px;padding:8px 14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;width:100%;justify-content:center">📤 Share before/after card</button>'
+      :'';
     photosHtml=
       '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">📸 Job photos</div>'+
@@ -950,6 +953,93 @@ function openJobSheet(clientId){
               '<input type="file" accept="image/*" capture="environment" onchange="addJobPhoto('+photoJobId+',this,\'after\');this.closest(\'.zmodal-overlay\').remove();setTimeout(()=>openJobSheet('+clientId+'),600)" style="display:none">+ After</label>'+
           '</div>'+
         '</div>'+
+        shareBtn+
+      '</div>';
+  }
+
+  // ── Actual material costs vs estimated ──────────────────────
+  const clientExpenses=expenses.filter(e=>e.client_id===clientId);
+  let actualCostsHtml='';
+  if(bid&&clientExpenses.length){
+    const totalActual=clientExpenses.reduce((s,e)=>s+(e.amount||0),0);
+    const estimatedCost=Math.round(bid.amount*(1-((S.margin||40)/100)));
+    const actualMargin=bid.amount>0?Math.round((bid.amount-totalActual)/bid.amount*100):0;
+    const marginColor=actualMargin>=30?'var(--green-mid)':actualMargin>=15?'var(--amber)':'#A32D2D';
+    const byCat={};
+    clientExpenses.forEach(e=>{const k=e.category||'Other';byCat[k]=(byCat[k]||0)+(e.amount||0);});
+    const topCats=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,3);
+    actualCostsHtml=
+      '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'+
+          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">📊 Actual costs</div>'+
+          '<button onclick="this.closest(\'.zmodal-overlay\').remove();showQuickExpenseModal('+clientId+',null)" style="padding:5px 12px;border-radius:20px;border:none;background:var(--bg2);color:var(--text3);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Log cost</button>'+
+        '</div>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px">'+
+          '<div style="background:var(--bg2);border-radius:var(--r);padding:8px;text-align:center">'+
+            '<div style="font-size:9px;color:var(--text3);font-weight:700;text-transform:uppercase;margin-bottom:2px">Contract</div>'+
+            '<div style="font-size:14px;font-weight:800">'+fmt(bid.amount)+'</div>'+
+          '</div>'+
+          '<div style="background:var(--bg2);border-radius:var(--r);padding:8px;text-align:center">'+
+            '<div style="font-size:9px;color:var(--text3);font-weight:700;text-transform:uppercase;margin-bottom:2px">Spent</div>'+
+            '<div style="font-size:14px;font-weight:800;color:#A32D2D">'+fmt(totalActual)+'</div>'+
+          '</div>'+
+          '<div style="background:var(--bg2);border-radius:var(--r);padding:8px;text-align:center">'+
+            '<div style="font-size:9px;color:var(--text3);font-weight:700;text-transform:uppercase;margin-bottom:2px">Margin</div>'+
+            '<div style="font-size:14px;font-weight:800;color:'+marginColor+'">'+actualMargin+'%</div>'+
+          '</div>'+
+        '</div>'+
+        (topCats.length?
+          '<div>'+topCats.map(([cat,amt])=>
+            '<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border2)">'+
+              '<span style="color:var(--text2)">'+escHtml(cat)+'</span>'+
+              '<span style="font-weight:700;color:var(--text)">'+fmt(amt)+'</span>'+
+            '</div>'
+          ).join('')+'</div>'
+        :'')+
+      '</div>';
+  } else if(!bid&&clientExpenses.length){
+    const totalActual=clientExpenses.reduce((s,e)=>s+(e.amount||0),0);
+    actualCostsHtml=
+      '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
+          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">📊 Job expenses</div>'+
+          '<button onclick="this.closest(\'.zmodal-overlay\').remove();showQuickExpenseModal('+clientId+',null)" style="padding:5px 12px;border-radius:20px;border:none;background:var(--bg2);color:var(--text3);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Log cost</button>'+
+        '</div>'+
+        '<div style="font-size:14px;font-weight:800;color:#A32D2D">'+fmt(totalActual)+' logged</div>'+
+      '</div>';
+  }
+
+  // ── Subcontractors on this job ───────────────────────────────
+  const subsJob=latestJob||allJobs.filter(j=>j.status!=='canceled').sort((a,b)=>b.start.localeCompare(a.start))[0];
+  const subsJobId=subsJob?subsJob.id:null;
+  const jobSubs=(subsJob&&subsJob.subs)||[];
+  const subRoster=S.subcontractors||[];
+  let subsHtml='';
+  if(subsJobId){
+    const totalOwed=jobSubs.filter(s=>!s.paid).reduce((s,x)=>s+(x.amount||0),0);
+    subsHtml=
+      '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:'+(jobSubs.length?'10px':'0')+'">'+
+          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">🔨 Subcontractors'+(totalOwed>0?' <span style="font-size:10px;font-weight:700;background:#FEE8E8;color:#991B1B;padding:1px 7px;border-radius:8px">'+fmt(totalOwed)+' owed</span>':'')+'</div>'+
+          '<button onclick="openAssignSubModal('+subsJobId+','+clientId+')" style="padding:5px 12px;border-radius:20px;border:none;background:var(--bg2);color:var(--blue);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Assign sub</button>'+
+        '</div>'+
+        (jobSubs.length?
+          jobSubs.map((sub,si)=>
+            '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border2)">'+
+              '<div>'+
+                '<div style="font-size:13px;font-weight:700">'+escHtml(sub.subName||'Sub')+'</div>'+
+                (sub.desc?'<div style="font-size:11px;color:var(--text3)">'+escHtml(sub.desc)+'</div>':'')+
+              '</div>'+
+              '<div style="text-align:right;flex-shrink:0;margin-left:10px">'+
+                '<div style="font-size:13px;font-weight:800;color:'+(sub.paid?'var(--green-mid)':'#A32D2D')+'">'+fmt(sub.amount||0)+(sub.paid?' ✓':'')+'</div>'+
+                (!sub.paid?'<button onclick="markSubPaid('+subsJobId+','+si+','+clientId+')" style="font-size:10px;padding:2px 8px;border-radius:var(--r);border:none;background:var(--green-lt);color:var(--green-mid);font-weight:700;cursor:pointer;font-family:inherit;margin-top:2px">Mark paid</button>':
+                  '<div style="font-size:10px;color:var(--text3);margin-top:1px">'+sub.paidDate+'</div>')+
+              '</div>'+
+            '</div>'
+          ).join('')
+        :
+          '<div style="font-size:12px;color:var(--text3);padding:6px 0">No subs assigned to this job.</div>'
+        )+
       '</div>';
   }
 
@@ -1012,11 +1102,113 @@ function openJobSheet(clientId){
     '</div>';
   }
 
-  body.innerHTML=payHtml+schedHtml+coHistoryHtml+supplyHtml+scopeHtml+photosHtml+visitNotesHtml+actionsHtml;
+  body.innerHTML=payHtml+schedHtml+coHistoryHtml+supplyHtml+scopeHtml+photosHtml+actualCostsHtml+subsHtml+visitNotesHtml+actionsHtml;
   box.appendChild(body);
   ov.appendChild(box);
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   document.body.appendChild(ov);
+}
+
+// ── Before/after shareable card ───────────────────────────────────────────────
+async function _shareBeforeAfterCard(clientId){
+  const c=getClientById(clientId);
+  const allJobs=getClientJobs(clientId).filter(j=>j.eventType!=='estimate'&&j.status!=='canceled');
+  const job=allJobs.sort((a,b)=>b.start.localeCompare(a.start))[0];
+  if(!job)return;
+  const before=(job.photos||[]).filter(p=>p.type==='before');
+  const after=(job.photos||[]).filter(p=>p.type==='after');
+  if(!before.length||!after.length)return showToast('Need at least one before and one after photo','⚠️');
+  showToast('Building card…','🎨');
+  try{
+    const W=1200,H=700,PAD=24,LABEL_H=40;
+    const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H;
+    const ctx=canvas.getContext('2d');
+    ctx.fillStyle='#111827';ctx.fillRect(0,0,W,H);
+    const half=(W-PAD*3)/2;
+    const imgH=H-LABEL_H*2-PAD*2;
+    const loadImg=src=>new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=src;});
+    const [bImg,aImg]=await Promise.all([loadImg(before[before.length-1].data),loadImg(after[after.length-1].data)]);
+    const drawCovered=(img,x,y,w,h)=>{
+      const scale=Math.max(w/img.width,h/img.height);
+      const sw=img.width*scale,sh=img.height*scale;
+      ctx.drawImage(img,x+(w-sw)/2,y+(h-sh)/2,sw,sh);
+    };
+    ctx.save();ctx.beginPath();ctx.roundRect(PAD,PAD+LABEL_H,half,imgH,8);ctx.clip();
+    drawCovered(bImg,PAD,PAD+LABEL_H,half,imgH);ctx.restore();
+    ctx.save();ctx.beginPath();ctx.roundRect(PAD*2+half,PAD+LABEL_H,half,imgH,8);ctx.clip();
+    drawCovered(aImg,PAD*2+half,PAD+LABEL_H,half,imgH);ctx.restore();
+    // Labels
+    const labelBg=(x,w,color,text)=>{ctx.fillStyle=color;ctx.beginPath();ctx.roundRect(x,PAD,w,LABEL_H-4,6);ctx.fill();ctx.fillStyle='#fff';ctx.font='bold 18px system-ui';ctx.textAlign='center';ctx.fillText(text,x+w/2,PAD+26);};
+    labelBg(PAD,half,'#92400E','BEFORE');
+    labelBg(PAD*2+half,half,'#065F46','AFTER');
+    // Branding footer
+    const biz=S.bname||'TradeDesk';
+    ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillRect(0,H-LABEL_H,W,LABEL_H);
+    ctx.fillStyle='#fff';ctx.font='bold 16px system-ui';ctx.textAlign='left';
+    ctx.fillText(biz+(c?' · '+c.name:''),PAD,H-12);
+    ctx.textAlign='right';ctx.fillStyle='rgba(255,255,255,.5)';ctx.font='13px system-ui';
+    ctx.fillText(new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'}),W-PAD,H-12);
+    canvas.toBlob(async blob=>{
+      if(!blob)return showToast('Could not build image','⚠️');
+      const file=new File([blob],'before-after.jpg',{type:'image/jpeg'});
+      if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
+        try{await navigator.share({files:[file],title:biz+' — Before & After',text:(c?c.name+' · ':'')+'Finished job by '+biz});}
+        catch(e){if(e.name!=='AbortError')showToast('Share cancelled','');}
+      } else {
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement('a');a.href=url;a.download='before-after.jpg';a.click();
+        setTimeout(()=>URL.revokeObjectURL(url),3000);
+        showToast('Image downloaded','📥');
+      }
+    },'image/jpeg',0.92);
+  }catch(e){showToast('Could not build card','⚠️');console.warn(e);}
+}
+
+// ── Subcontractor assignment ───────────────────────────────────────────────────
+function openAssignSubModal(jobId,clientId){
+  const subs=S.subcontractors||[];
+  document.getElementById('_asub-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_asub-ov';ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  const subOpts=subs.length
+    ?subs.map((s,i)=>'<option value="'+i+'">'+escHtml(s.name||'Sub')+(s.trade?' ('+s.trade+')':'')+'</option>').join('')
+    :'<option value="">— No subs in roster —</option>';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:14px">Assign Subcontractor</div>'+
+    '<div class="f" style="margin-bottom:12px"><label>Subcontractor</label>'+
+      '<select id="asub-pick" style="font-size:14px;padding:10px">'+subOpts+'</select>'+
+      (!subs.length?'<div style="font-size:11px;color:var(--text3);margin-top:4px">Add subs in Fleet & Team first.</div>':'')+
+    '</div>'+
+    '<div class="f" style="margin-bottom:12px"><label>Description of work</label>'+
+      '<input id="asub-desc" placeholder="Drywall repair, trim, plumbing rough-in..." style="font-size:14px;padding:10px"></div>'+
+    '<div class="f" style="margin-bottom:16px"><label>Amount owed ($)</label>'+
+      '<input id="asub-amount" type="number" min="0" step="0.01" placeholder="0.00" style="font-size:15px;padding:10px;font-weight:700"></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      '<button onclick="document.getElementById(\'_asub-ov\').remove()" style="padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
+      '<button onclick="_saveSubAssignment('+jobId+','+clientId+')" style="padding:11px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Assign</button>'+
+    '</div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function _saveSubAssignment(jobId,clientId){
+  const idx=parseInt(document.getElementById('asub-pick')?.value);
+  const sub=(S.subcontractors||[])[idx];
+  if(!sub)return showToast('Select a subcontractor','⚠️');
+  const desc=(document.getElementById('asub-desc')?.value||'').trim();
+  const amount=parseFloat(document.getElementById('asub-amount')?.value||0)||0;
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  if(!j.subs)j.subs=[];
+  j.subs.push({subId:sub.id,subName:sub.name,desc,amount,paid:false,paidDate:''});
+  saveAll();
+  document.getElementById('_asub-ov')?.remove();
+  showToast(sub.name+' assigned','✓');
+  openJobSheet(clientId);
+}
+function markSubPaid(jobId,subIdx,clientId){
+  const j=jobs.find(x=>x.id===jobId);if(!j||!j.subs||!j.subs[subIdx])return;
+  j.subs[subIdx].paid=true;j.subs[subIdx].paidDate=todayKey();
+  saveAll();showToast('Marked paid','✓');
+  openJobSheet(clientId);
 }
 
 function openMapsForClient(clientId){
