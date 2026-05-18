@@ -1162,7 +1162,7 @@ async function _shareBeforeAfterCard(clientId){
             const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
             const publicUrl=urlData?.publicUrl||'';
             if(publicUrl){
-              photos.push({id:Date.now()+Math.random(),url:publicUrl,type:'before-after',caption:'Before & After',client_id:clientId,client_name:c?c.name:'',uploadedAt:new Date().toISOString()});
+              photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type:'before-after',caption:'Before & After',client_id:clientId,client_name:c?c.name:'',uploadedAt:new Date().toISOString()});
               saveAll();
               _uploadClientHub&&_uploadClientHub(clientId).catch(()=>{});
               showToast('Added to client hub','✓');
