@@ -1103,6 +1103,8 @@ function renderPayments(){
     const pct=total>0?Math.min(100,Math.round(paid/total*100)):0;
     const bidPmts=h.payments.filter(p=>p.bid_id===bid.id||(!p.bid_id&&h.bids.length===1)).filter(p=>p.amount>0);
     const bid_id=bid.id;
+    // ── Accordion body (collapsed by default, first unpaid auto-opens) ──
+    const autoOpen=!isPaid&&i===0;
 
     html+='<div style="border-radius:var(--rl);overflow:hidden;margin-bottom:12px;box-shadow:0 1px 6px rgba(27,22,18,.1),0 0 0 1px rgba(27,22,18,.06)">';
 
@@ -1110,24 +1112,15 @@ function renderPayments(){
     const hdrBg=isPaid?'linear-gradient(135deg,#14532D,#1A6B3A)':'linear-gradient(135deg,#1B1612,#24202C)';
     html+='<div onclick="_togglePay('+bid_id+')" style="background:'+hdrBg+';padding:14px 16px;cursor:pointer;position:relative">';
     html+='<div style="display:flex;align-items:center;gap:10px">';
-    // Left: type + amount
     html+='<div style="flex:1;min-width:0">';
-    html+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.38);margin-bottom:3px">'+esc(bid.type||'Estimate')+'</div>';
-    html+='<div style="display:flex;align-items:baseline;gap:8px">';
-    html+='<span style="font-size:26px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-1px;line-height:1">'+fmt(isPaid?total:balance)+'</span>';
-    html+='<span style="font-size:11px;color:rgba(255,255,255,.4);font-weight:500">'+(isPaid?'paid in full':'remaining')+'</span>';
+    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:4px">'+esc(bid.type||'Estimate')+(isPaid?' · Paid ✓':' · Balance due')+'</div>';
+    html+='<div style="display:flex;align-items:baseline;gap:7px">';
+    html+='<span style="font-size:28px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-1.5px;line-height:1">'+fmt(isPaid?total:balance)+'</span>';
+    html+='<span style="font-size:12px;color:rgba(255,255,255,.4);font-weight:500">'+(isPaid?'paid in full':'remaining')+'</span>';
     html+='</div>';
     if(!isPaid&&pct>0)html+='<div style="font-size:10px;color:rgba(255,255,255,.3);margin-top:2px">'+fmt(paid)+' of '+fmt(total)+' paid</div>';
     html+='</div>';
-    // Right: pill + chevron
-    html+='<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0">';
-    if(isPaid){
-      html+='<span style="font-size:11px;font-weight:700;background:rgba(255,255,255,.12);color:#86efac;padding:3px 9px;border-radius:20px">Paid ✓</span>';
-    }else{
-      html+='<span style="font-size:11px;font-weight:700;background:rgba(99,91,255,.22);color:#C4B5FD;padding:3px 9px;border-radius:20px;border:1px solid rgba(99,91,255,.3)">Balance due</span>';
-    }
-    html+='<span id="pc-'+bid_id+'" style="font-size:16px;color:rgba(255,255,255,.35);transition:transform .2s;display:block">›</span>';
-    html+='</div>';
+    html+='<span id="pc-'+bid_id+'" style="font-size:20px;color:rgba(255,255,255,.3);transition:transform .2s;flex-shrink:0;'+(autoOpen?'transform:rotate(90deg)':'')+'">›</span>';
     html+='</div>';
     // Thin progress bar at very bottom of header
     if(!isPaid&&pct>0){
@@ -1135,9 +1128,6 @@ function renderPayments(){
       html+='<div style="width:'+pct+'%;height:100%;background:linear-gradient(90deg,#4ade80,#22c55e)"></div></div>';
     }
     html+='</div>'; // end header
-
-    // ── Accordion body (collapsed by default, first unpaid auto-opens) ──
-    const autoOpen=!isPaid&&i===0;
     html+='<div id="pb-'+bid_id+'" style="display:'+(autoOpen?'block':'none')+'">';
 
     // Pay buttons
@@ -1204,18 +1194,26 @@ function renderPayments(){
 }
 
 /* ── renderDocuments ── */
+function _toggleDoc(id){
+  const body=document.getElementById('db-'+id);
+  const chev=document.getElementById('dc-'+id);
+  if(!body)return;
+  const opening=body.style.display==='none'||body.style.display==='';
+  body.style.display=opening?'block':'none';
+  if(chev)chev.style.transform=opening?'rotate(90deg)':'rotate(0deg)';
+}
 function _docRow(icon,label,meta,tagHtml,onclick,href){
   const inner=
-    '<div style="width:40px;height:40px;border-radius:10px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">'+icon+'</div>'+
+    '<div style="width:36px;height:36px;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">'+icon+'</div>'+
     '<div style="flex:1;min-width:0">'+
       '<div style="font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+label+tagHtml+'</div>'+
       '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+meta+'</div>'+
     '</div>'+
     '<div style="font-size:18px;color:var(--text3);flex-shrink:0">›</div>';
   if(href){
-    return '<a href="'+href+'" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);text-decoration:none;cursor:pointer">'+inner+'</a>';
+    return '<a href="'+href+'" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);text-decoration:none;cursor:pointer">'+inner+'</a>';
   }
-  return '<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="'+onclick+'">'+inner+'</div>';
+  return '<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="'+onclick+'">'+inner+'</div>';
 }
 function renderDocuments(){
   if(!_hub)return;
@@ -1227,33 +1225,39 @@ function renderDocuments(){
     html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">📁</div><div class="hub-empty-title">No documents yet</div><div class="hub-empty-body">Signed proposals and invoices will appear here once a proposal is signed.</div></div></div>';
   }
 
-  // One card per signed estimate — invoice + proposal grouped together
-  wonBids.forEach(bid=>{
+  // One accordion card per signed estimate — invoice + agreement nested inside
+  wonBids.forEach((bid,i)=>{
     const isPaid=(bid.balance||0)<0.01;
-    const badgeColor=isPaid?'var(--green-mid)':'#92400E';
-    const badgeBg=isPaid?'var(--green-lt)':'#FEF3C7';
-    const badgeLabel=isPaid?'Paid ✓':'Balance due';
-    html+='<div class="card" style="margin-bottom:14px">';
-    // Estimate header
-    html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">';
-    html+='<div style="font-size:14px;font-weight:800;color:var(--ink)">'+esc(bid.type||'Project')+'</div>';
-    html+='<span style="font-size:11px;font-weight:700;background:'+badgeBg+';color:'+badgeColor+';padding:3px 9px;border-radius:20px">'+badgeLabel+'</span>';
+    const autoOpen=i===0;
+    const docCount=1+(bid.proposalKey?1:0);
+    const hdrBg=isPaid?'linear-gradient(135deg,#14532D,#1A6B3A)':'linear-gradient(135deg,#1B1612,#24202C)';
+    html+='<div style="border-radius:var(--rl);overflow:hidden;margin-bottom:12px;box-shadow:0 1px 6px rgba(27,22,18,.1),0 0 0 1px rgba(27,22,18,.06)">';
+    // Tappable header
+    html+='<div onclick="_toggleDoc('+bid.id+')" style="background:'+hdrBg+';padding:14px 16px;cursor:pointer">';
+    html+='<div style="display:flex;align-items:center;gap:10px">';
+    html+='<div style="flex:1;min-width:0">';
+    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:3px">'+esc(bid.type||'Estimate')+(isPaid?' · Paid ✓':' · Balance due')+'</div>';
+    html+='<div style="font-size:16px;font-weight:800;color:#fff;line-height:1.2">'+esc(bid.type||'Project')+'</div>';
+    html+='<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:3px">Signed '+fmtDate(bid.bid_date)+' · '+fmt(bid.amount||0)+' · '+docCount+' doc'+(docCount!==1?'s':'')+'</div>';
     html+='</div>';
-    html+='<div style="font-size:11px;color:var(--text3);margin-bottom:12px">Signed '+fmtDate(bid.bid_date)+' · '+fmt(bid.amount||0)+'</div>';
-    // Invoice row
+    html+='<span id="dc-'+bid.id+'" style="font-size:20px;color:rgba(255,255,255,.3);transition:transform .2s;flex-shrink:0;'+(autoOpen?'transform:rotate(90deg)':'')+'">›</span>';
+    html+='</div>';
+    html+='</div>'; // end header
+    // Collapsible body
+    html+='<div id="db-'+bid.id+'" style="background:var(--bg-card);display:'+(autoOpen?'block':'none')+'">';
+    html+='<div style="padding:0 16px">';
     html+=_docRow('📄','Invoice','View or print a detailed invoice','<span class="hub-doc-tag hub-doc-tag-invoice" style="margin-left:6px">Invoice</span>','openInvoice('+bid.id+')','');
-    // Signed proposal row (if available)
     if(bid.proposalKey){
       html+=_docRow('📋','Signed Agreement','Tap to view signed proposal','<span class="hub-doc-tag hub-doc-tag-contract" style="margin-left:6px">Contract</span>','openProposal('+bid.id+')','');
     }
-    // Remove trailing border from last row
-    html=html.replace(/border-bottom:1px solid var\(--border\)(?=[^<]*<\/(?:div|a)>[^<]*<\/div>\s*<\/div>\s*$)/,'border-bottom:none');
     html+='</div>';
+    html+='</div>'; // end body
+    html+='</div>'; // end card
   });
 
   // Client-uploaded docs
   if(_hub._clientDocs&&_hub._clientDocs.length){
-    html+='<div class="card" style="margin-bottom:14px">';
+    html+='<div class="card" style="margin-bottom:12px">';
     html+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Your uploads</div>';
     _hub._clientDocs.forEach(d=>{
       html+=_docRow('📎',esc(d.name),d.meta||'Uploaded by you','<span class="hub-doc-tag hub-doc-tag-client" style="margin-left:6px">Yours</span>','',d.url);
@@ -1263,7 +1267,7 @@ function renderDocuments(){
 
   // EPA compliance
   if(h.epaRequired){
-    html+='<div class="card" style="margin-bottom:14px">';
+    html+='<div class="card" style="margin-bottom:12px">';
     html+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Compliance</div>';
     html+=_docRow('⚠️','EPA Lead Paint Pamphlet','Renovate Right — required for pre-1978 homes','<span class="hub-doc-tag hub-doc-tag-epa" style="margin-left:6px">EPA</span>','','https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools');
     html+='</div>';
