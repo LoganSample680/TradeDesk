@@ -984,57 +984,90 @@ function renderOverview(){
 function renderProject(){
   if(!_hub)return;
   const h=_hub;
-  const photos=h.photos||[];
-  const wonBids=h.bids.filter(b=>b.status==='Closed Won');
-  const activeJobs=h.jobs.filter(j=>j.status!=='done');
+  const allJobs=h.jobs||[];
+  const allPhotos=h.photos||[];
   let html='<div class="view-title">Project &amp; Photos</div>';
 
-  // Photo grid
-  if(photos.length){
-    html+='<div class="hub-photo-grid">';
-    photos.forEach((p,i)=>{
-      const tag=p.type==='before'?'Before':p.type==='after'?'After':p.type==='progress'?'Progress':'';
-      html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.photos,'+i+')" aria-label="View photo">';
-      html+='<img src="'+esc(p.url)+'" alt="'+esc(p.caption||'Project photo')+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
-      if(tag)html+='<div class="hub-photo-tag">'+tag+'</div>';
-      html+='</div>';
-    });
-    html+='</div>';
-  }else{
+  if(!allJobs.length&&!allPhotos.length){
     html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">📷</div><div class="hub-empty-title">No photos yet</div><div class="hub-empty-body">Your contractor will upload progress photos here as work begins. Check back soon!</div></div></div>';
+    document.getElementById('view-project').innerHTML=html;return;
   }
 
-  // Daily log
-  html+='<div class="card">';
-  html+='<div class="section-hdr">Daily Log</div>';
-  const logItems=[...activeJobs,...wonBids];
-  if(logItems.length){
-    logItems.forEach(item=>{
-      const isJob=item.status!==undefined&&item.bid_date===undefined;
-      const date=isJob?(item.start||''):item.bid_date||'';
-      const name=isJob?item.name:(item.type||'Project');
-      const status=isJob?'In progress':'Signed';
-      html+='<div class="hub-log-item">';
-      html+='<div class="hub-log-dot"></div>';
-      html+='<div class="hub-log-body">';
-      html+='<div class="hub-log-date">'+(date?fmtDate(date):status)+'</div>';
-      html+='<div class="hub-log-text">'+esc(name)+'</div>';
-      if(item.photos&&item.photos.length){
-        const thumbs=item.photos.slice(0,4);
-        html+='<div class="hub-log-photos">';
-        thumbs.forEach(ph=>{
-          const url=ph.url||ph;
-          const cap=ph.caption||ph.date||'';
-          html+='<img class="hub-log-photo-sq" src="'+esc(url)+'" onclick="openPhoto(\''+esc(url)+'\',\''+esc(cap)+'\')" alt="log photo">';
+  // Per-job cards with nested before/after photos
+  const jobIds=new Set(allJobs.map(j=>j.id));
+  allJobs.forEach((job,jobIdx)=>{
+    const jobPhotos=job.photos||[];
+    const beforePhotos=jobPhotos.filter(p=>p.type==='before');
+    const afterPhotos=jobPhotos.filter(p=>p.type==='after');
+    const otherPhotos=jobPhotos.filter(p=>p.type!=='before'&&p.type!=='after');
+    const isDone=job.status==='done';
+    const isActive=job.status==='active';
+    const statusLabel=isDone?'Complete':isActive?'In progress':'Scheduled';
+    const statusColor=isDone?'var(--green-mid)':isActive?'var(--denim)':'var(--text3)';
+    html+='<div class="card" style="margin-bottom:12px">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:'+(jobPhotos.length?'14':'0')+'px">';
+    html+='<div style="flex:1;min-width:0">';
+    html+='<div style="font-size:15px;font-weight:800;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(job.name)+'</div>';
+    if(job.start)html+='<div style="font-size:11px;color:var(--text3);margin-top:2px">'+fmtDate(job.start)+(job.days?' · '+job.days+' day'+(job.days!==1?'s':''):'')+'</div>';
+    html+='</div>';
+    html+='<span style="font-size:11px;font-weight:700;color:'+statusColor+';flex-shrink:0;margin-left:10px">'+statusLabel+'</span>';
+    html+='</div>';
+    if(beforePhotos.length&&afterPhotos.length){
+      const b=beforePhotos[beforePhotos.length-1];
+      const a=afterPhotos[afterPhotos.length-1];
+      const bIdx=jobPhotos.indexOf(b);
+      const aIdx=jobPhotos.indexOf(a);
+      html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">';
+      html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+bIdx+')" aria-label="Before">';
+      html+='<img src="'+esc(b.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+      html+='<div class="hub-photo-tag">Before</div></div>';
+      html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+aIdx+')" aria-label="After">';
+      html+='<img src="'+esc(a.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+      html+='<div class="hub-photo-tag">After</div></div>';
+      html+='</div>';
+      if(otherPhotos.length){
+        html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px;margin-top:6px">';
+        otherPhotos.forEach(p=>{
+          const idx=jobPhotos.indexOf(p);
+          const tag=p.type==='progress'?'Progress':p.type==='before-after'?'B&A':p.type;
+          html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+idx+')">';
+          html+='<img src="'+esc(p.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+          html+='<div class="hub-photo-tag">'+tag+'</div></div>';
         });
         html+='</div>';
       }
-      html+='</div></div>';
+    }else if(jobPhotos.length){
+      html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px">';
+      jobPhotos.forEach((p,idx)=>{
+        const tag=p.type==='before'?'Before':p.type==='after'?'After':p.type==='progress'?'Progress':p.type==='before-after'?'B&A':'';
+        html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+idx+')">';
+        html+='<img src="'+esc(p.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+        if(tag)html+='<div class="hub-photo-tag">'+tag+'</div>';
+        html+='</div>';
+      });
+      html+='</div>';
+    }else{
+      html+='<div style="font-size:12px;color:var(--text3);padding-top:'+(job.start||job.name?'8':'0')+'px;border-top:'+(job.start||job.name?'1px solid var(--border)':'none')+'">📷 Progress photos will appear here</div>';
+    }
+    html+='</div>';
+  });
+
+  // Orphan photos: not linked to any job in this snapshot (e.g. before/after share cards)
+  const orphanPhotos=allPhotos.filter(p=>!p.job_id||!jobIds.has(p.job_id));
+  if(orphanPhotos.length){
+    html+='<div class="card">';
+    html+='<div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:12px">Other photos</div>';
+    html+='<div class="hub-photo-grid">';
+    orphanPhotos.forEach(p=>{
+      const i=allPhotos.indexOf(p);
+      const tag=p.type==='before'?'Before':p.type==='after'?'After':p.type==='before-after'?'B&A':p.type==='progress'?'Progress':'';
+      html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.photos,'+i+')">';
+      html+='<img src="'+esc(p.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+      if(tag)html+='<div class="hub-photo-tag">'+tag+'</div>';
+      html+='</div>';
     });
-  }else{
-    html+='<div class="empty">No updates yet.</div>';
+    html+='</div></div>';
   }
-  html+='</div>';
 
   document.getElementById('view-project').innerHTML=html;
 }
@@ -1051,119 +1084,155 @@ function renderPayments(){
     document.getElementById('view-payments').innerHTML=html;return;
   }
 
+  const tl={deposit:'Deposit',final:'Final payment',stripe:'Online payment',card:'Card payment',check:'Check',cash:'Cash',ach:'Bank transfer'};
   wonBids.forEach(bid=>{
     const balance=bid.balance||0;
     const isPaid=balance<0.01;
-    const bidPmts=h.payments.filter(p=>p.bid_id===bid.id||(!p.bid_id&&h.bids.length===1));
     const deposit=bid.deposit||0;
     const depPaid=(bid.paid||0)>=(deposit-0.01);
+    const bidPmts=h.payments.filter(p=>p.bid_id===bid.id||(!p.bid_id&&h.bids.length===1));
 
-    // Summary card
-    html+='<div class="card">';
-    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">';
-    html+='<div><div style="font-size:14px;font-weight:800;color:var(--ink)">'+(bid.type||'Project')+'</div>';
-    html+='<div style="font-size:11px;color:var(--text3);margin-top:2px">Total: '+fmt(bid.amount||0)+'</div></div>';
+    // One card per estimate — header + pay buttons + schedule + history
+    html+='<div class="card" style="margin-bottom:14px">';
+
+    // Header row
+    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px">';
+    html+='<div><div style="font-size:15px;font-weight:800;color:var(--ink)">'+(bid.type||'Project')+'</div>';
+    html+='<div style="font-size:11px;color:var(--text3);margin-top:2px">Total '+fmt(bid.amount||0)+' · Signed '+fmtDate(bid.bid_date)+'</div></div>';
     if(isPaid){
-      html+='<div style="display:flex;align-items:center;gap:6px;background:#F0FDF4;border-radius:8px;padding:6px 10px"><span style="font-size:18px">✅</span><div style="font-size:12px;font-weight:700;color:#166534">Paid in full</div></div>';
+      html+='<div style="display:flex;align-items:center;gap:5px;background:#F0FDF4;border-radius:8px;padding:5px 10px"><span style="font-size:16px">✅</span><div style="font-size:12px;font-weight:700;color:#166534">Paid</div></div>';
     }else{
-      html+='<div style="text-align:right"><div style="font-size:20px;font-weight:900;color:var(--ink)">'+fmt(balance)+'</div><div style="font-size:10px;color:var(--text3)">remaining</div></div>';
-    }
-    html+='</div>';
-    if(!isPaid){
-      const pb=_payBtn(bid,h);
-      if(pb)html+=pb;
+      html+='<div style="text-align:right"><div style="font-size:22px;font-weight:900;color:var(--ink);letter-spacing:-.5px">'+fmt(balance)+'</div><div style="font-size:10px;color:var(--text3)">remaining</div></div>';
     }
     html+='</div>';
 
-    // Payment schedule
-    html+='<div class="card">';
-    html+='<div class="hub-feed-hd">Payment schedule</div>';
-    // Deposit milestone
-    if(deposit>0.01){
-      html+='<div class="hub-milestone">';
-      html+='<div class="hub-milestone-dot '+(depPaid?'paid':'due')+'"></div>';
-      html+='<div class="hub-milestone-body"><div class="hub-milestone-name">Deposit</div><div class="hub-milestone-date">'+(depPaid?'Paid':'Due upon signing')+'</div></div>';
-      html+='<div class="hub-milestone-amt">'+fmt(deposit)+'</div>';
-      html+='</div>';
+    // Pay buttons — light-mode safe styles
+    if(!isPaid&&h.stripeEnabled){
+      if(!depPaid&&deposit>0.01&&balance>deposit+0.01){
+        html+='<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:8px">💳 Pay '+fmt(balance)+' in full</button>';
+        html+='<button onclick="payDeposit('+bid.id+')" class="btn btn-sec" style="margin-bottom:14px;font-size:13px">Or pay deposit only — '+fmt(deposit)+'</button>';
+      }else if(!depPaid&&deposit>0.01){
+        html+='<button id="pay-btn-'+bid.id+'" onclick="payDeposit('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:14px">💳 Pay '+fmt(deposit)+' deposit</button>';
+      }else{
+        html+='<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:14px">💳 Pay '+fmt(balance)+' balance</button>';
+      }
     }
-    // Final balance
+
+    // Payment schedule (inline section)
+    html+='<div style="border-top:1px solid var(--border);padding-top:14px;margin-bottom:'+(bidPmts.length?'14':'0')+'px">';
+    html+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">Payment schedule</div>';
+    if(deposit>0.01){
+      html+='<div class="hub-milestone"><div class="hub-milestone-dot '+(depPaid?'paid':'due')+'"></div>';
+      html+='<div class="hub-milestone-body"><div class="hub-milestone-name">Deposit</div><div class="hub-milestone-date">'+(depPaid?'Paid ✓':'Due upon signing')+'</div></div>';
+      html+='<div class="hub-milestone-amt">'+fmt(deposit)+'</div></div>';
+    }
     const finalAmt=(bid.amount||0)-(deposit||0);
     if(finalAmt>0.01||deposit<0.01){
-      html+='<div class="hub-milestone">';
-      html+='<div class="hub-milestone-dot '+(isPaid?'paid':(depPaid?'due':'upcoming'))+'"></div>';
-      html+='<div class="hub-milestone-body"><div class="hub-milestone-name">Final balance</div><div class="hub-milestone-date">'+(isPaid?'Paid':'Due upon completion')+'</div></div>';
-      html+='<div class="hub-milestone-amt">'+fmt(deposit>0.01?finalAmt:(bid.amount||0))+'</div>';
-      html+='</div>';
+      html+='<div class="hub-milestone"><div class="hub-milestone-dot '+(isPaid?'paid':(depPaid?'due':'upcoming'))+'"></div>';
+      html+='<div class="hub-milestone-body"><div class="hub-milestone-name">Final balance</div><div class="hub-milestone-date">'+(isPaid?'Paid ✓':'Due upon completion')+'</div></div>';
+      html+='<div class="hub-milestone-amt">'+fmt(deposit>0.01?finalAmt:(bid.amount||0))+'</div></div>';
     }
     html+='</div>';
 
-    // Payment history
-    if(bidPmts.length){
-      html+='<div class="card">';
-      html+='<div class="hub-feed-hd">Payment history</div>';
+    // Payment history (inline section, only if payments exist)
+    if(bidPmts.filter(p=>p.amount>0).length){
+      html+='<div style="border-top:1px solid var(--border);padding-top:14px">';
+      html+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">Payment history</div>';
       html+='<table class="hub-inv-table"><thead><tr><th>Date</th><th>Type</th><th class="amt">Amount</th></tr></thead><tbody>';
-      const tl={deposit:'Deposit',final:'Final payment',stripe:'Online payment',card:'Card payment',check:'Check',cash:'Cash',ach:'Bank transfer'};
       bidPmts.filter(p=>p.amount>0).sort((a,b)=>(b.date||'').localeCompare(a.date||'')).forEach(p=>{
         html+='<tr><td>'+esc(fmtDate(p.date))+'</td><td>'+esc(tl[p.type]||p.type||'Payment')+'</td><td class="amt" style="color:var(--green-mid)">'+fmt(p.amount)+'</td></tr>';
       });
-      html+='</tbody></table>';
-      html+='</div>';
+      html+='</tbody></table></div>';
     }
+
+    // View invoice link
+    html+='<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">';
+    html+='<button onclick="openInvoice('+bid.id+')" style="background:none;border:none;color:var(--denim);font-size:13px;font-weight:700;cursor:pointer;padding:0;font-family:inherit">📄 View invoice →</button>';
+    html+='</div>';
+
+    html+='</div>'; // end card
   });
 
   document.getElementById('view-payments').innerHTML=html;
 }
 
 /* ── renderDocuments ── */
+function _docRow(icon,label,meta,tagHtml,onclick,href){
+  const inner=
+    '<div style="width:40px;height:40px;border-radius:10px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">'+icon+'</div>'+
+    '<div style="flex:1;min-width:0">'+
+      '<div style="font-size:13px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+label+tagHtml+'</div>'+
+      '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+meta+'</div>'+
+    '</div>'+
+    '<div style="font-size:18px;color:var(--text3);flex-shrink:0">›</div>';
+  if(href){
+    return '<a href="'+href+'" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);text-decoration:none;cursor:pointer">'+inner+'</a>';
+  }
+  return '<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="'+onclick+'">'+inner+'</div>';
+}
 function renderDocuments(){
   if(!_hub)return;
   const h=_hub;
   const wonBids=h.bids.filter(b=>b.status==='Closed Won');
   let html='<div class="view-title">Documents</div>';
-  html+='<div style="margin-bottom:12px"><button class="btn btn-sec" style="width:auto;padding:10px 18px;font-size:13px" onclick="_uploadClientDoc()">📎 Upload a document</button></div>';
 
-  // Document list
-  html+='<div class="card">';
-  const docs=[];
-  wonBids.forEach(b=>{
-    docs.push({icon:'📄',name:'Invoice — '+esc(b.type||'Services'),meta:fmtDate(b.bid_date),tag:'invoice',action:'openInvoice('+b.id+')',date:b.bid_date||''});
-    if(b.proposalKey)docs.push({icon:'📋',name:'Signed Proposal — '+esc(b.type||'Services'),meta:'Signed '+fmtDate(b.signedAt||b.bid_date),tag:'contract',action:'openProposal('+b.id+')',date:b.signedAt||b.bid_date||''});
+  if(!wonBids.length&&!h.epaRequired&&!(_hub._clientDocs&&_hub._clientDocs.length)){
+    html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">📁</div><div class="hub-empty-title">No documents yet</div><div class="hub-empty-body">Signed proposals and invoices will appear here once a proposal is signed.</div></div></div>';
+  }
+
+  // One card per signed estimate — invoice + proposal grouped together
+  wonBids.forEach(bid=>{
+    const isPaid=(bid.balance||0)<0.01;
+    const badgeColor=isPaid?'var(--green-mid)':'#92400E';
+    const badgeBg=isPaid?'var(--green-lt)':'#FEF3C7';
+    const badgeLabel=isPaid?'Paid ✓':'Balance due';
+    html+='<div class="card" style="margin-bottom:14px">';
+    // Estimate header
+    html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">';
+    html+='<div style="font-size:14px;font-weight:800;color:var(--ink)">'+esc(bid.type||'Project')+'</div>';
+    html+='<span style="font-size:11px;font-weight:700;background:'+badgeBg+';color:'+badgeColor+';padding:3px 9px;border-radius:20px">'+badgeLabel+'</span>';
+    html+='</div>';
+    html+='<div style="font-size:11px;color:var(--text3);margin-bottom:12px">Signed '+fmtDate(bid.bid_date)+' · '+fmt(bid.amount||0)+'</div>';
+    // Invoice row
+    html+=_docRow('📄','Invoice','View or print a detailed invoice','<span class="hub-doc-tag hub-doc-tag-invoice" style="margin-left:6px">Invoice</span>','openInvoice('+bid.id+')','');
+    // Signed proposal row (if available)
+    if(bid.proposalKey){
+      html+=_docRow('📋','Signed Agreement','Tap to view signed proposal','<span class="hub-doc-tag hub-doc-tag-contract" style="margin-left:6px">Contract</span>','openProposal('+bid.id+')','');
+    }
+    // Remove trailing border from last row
+    html=html.replace(/border-bottom:1px solid var\(--border\)(?=[^<]*<\/(?:div|a)>[^<]*<\/div>\s*<\/div>\s*$)/,'border-bottom:none');
+    html+='</div>';
   });
-  if(h.epaRequired)docs.push({icon:'⚠️',name:'EPA Lead Paint Pamphlet',meta:'Renovate Right — epa.gov',tag:'epa',href:'https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools',date:''});
-  if(_hub._clientDocs&&_hub._clientDocs.length){
-    _hub._clientDocs.forEach(d=>{
-      docs.push({icon:'📎',name:d.name,meta:d.meta||'Uploaded by you',tag:'client',href:d.url,date:d.date||''});
-    });
-  }
-  docs.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 
-  if(docs.length){
-    docs.forEach(doc=>{
-      const tagLabel=doc.tag==='epa'?'EPA':doc.tag==='contract'?'Contract':doc.tag==='client'?'Client upload':doc.tag.charAt(0).toUpperCase()+doc.tag.slice(1);
-      html+='<div class="hub-doc-item">';
-      html+='<div class="hub-doc-icon">'+doc.icon+'</div>';
-      html+='<div class="hub-doc-body">';
-      if(doc.href){
-        html+='<div class="hub-doc-name"><a href="'+doc.href+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">'+doc.name+'<span class="hub-doc-tag hub-doc-tag-'+doc.tag+'">'+tagLabel+'</span></a></div>';
-      }else{
-        html+='<div class="hub-doc-name" onclick="'+doc.action+'">'+doc.name+'<span class="hub-doc-tag hub-doc-tag-'+doc.tag+'">'+tagLabel+'</span></div>';
-      }
-      html+='<div class="hub-doc-meta">'+doc.meta+'</div>';
-      html+='</div></div>';
+  // Client-uploaded docs
+  if(_hub._clientDocs&&_hub._clientDocs.length){
+    html+='<div class="card" style="margin-bottom:14px">';
+    html+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Your uploads</div>';
+    _hub._clientDocs.forEach(d=>{
+      html+=_docRow('📎',esc(d.name),d.meta||'Uploaded by you','<span class="hub-doc-tag hub-doc-tag-client" style="margin-left:6px">Yours</span>','',d.url);
     });
-  }else{
-    html+='<div class="hub-empty-state"><div class="hub-empty-icon">📁</div><div class="hub-empty-title">No documents yet</div><div class="hub-empty-body">Signed proposals, invoices, and contracts will appear here.</div></div>';
+    html+='</div>';
   }
-  html+='</div>';
+
+  // EPA compliance
+  if(h.epaRequired){
+    html+='<div class="card" style="margin-bottom:14px">';
+    html+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Compliance</div>';
+    html+=_docRow('⚠️','EPA Lead Paint Pamphlet','Renovate Right — required for pre-1978 homes','<span class="hub-doc-tag hub-doc-tag-epa" style="margin-left:6px">EPA</span>','','https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools');
+    html+='</div>';
+  }
+
+  // Upload button
+  html+='<div style="margin-bottom:14px"><button class="btn btn-sec" style="width:auto;padding:10px 18px;font-size:13px" onclick="_uploadClientDoc()">📎 Upload a document</button></div>';
 
   // Contractor info
   html+='<div class="card">';
-  html+='<div class="hub-feed-hd">Contractor info</div>';
+  html+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">Your contractor</div>';
   html+='<div class="hub-contractor-grid">';
   html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Business</div><div class="hub-contractor-val">'+esc(h.contractorName||'—')+'</div></div>';
   html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Phone</div><div class="hub-contractor-val">'+(h.contractorPhone?'<a href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" style="color:inherit;text-decoration:none">'+esc(h.contractorPhone)+'</a>':'—')+'</div></div>';
   if(h.bwebsite)html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Website</div><div class="hub-contractor-val"><a href="'+esc(h.bwebsite)+'" target="_blank" style="color:var(--denim);text-decoration:none">'+esc(h.bwebsite.replace(/^https?:\/\//,''))+'</a></div></div>';
-  if(h.license)html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">License</div><div class="hub-contractor-val">'+esc(h.license)+'</div></div>';
+  if(h.trade)html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Trade</div><div class="hub-contractor-val" style="text-transform:capitalize">'+esc(h.trade)+'</div></div>';
   html+='</div>';
   html+='</div>';
 

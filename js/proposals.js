@@ -147,9 +147,13 @@ function _buildClientHubSnapshot(clientId){
       proposalKey:propKey,signingToken:signToken||null,
       signHubUrl:signBase?(signBase+(hubUrl?'&hub='+encodeURIComponent(hubUrl):'')):null};
   });
-  const snapshotJobs=cjobs.map(j=>({id:j.id,bid_id:j.bid_id||null,name:j.name||'Job',start:j.start||'',days:j.days||0,status:j.status||'scheduled',completion_date:j.completion_date||''}));
+  const clientPhotos=photos.filter(p=>p.client_id===clientId);
+  const snapshotJobs=cjobs.map(j=>{
+    const jPhotos=clientPhotos.filter(p=>p.job_id===j.id).map(p=>({url:p.url,type:p.type,caption:p.caption||''}));
+    return {id:j.id,bid_id:j.bid_id||null,name:j.name||'Job',start:j.start||'',days:j.days||0,status:j.status||'scheduled',completion_date:j.completion_date||'',photos:jPhotos};
+  });
   const snapshotPayments=cpayments.map(p=>({date:p.date||'',type:p.type||'',amount:p.amount||0,bid_id:p.bid_id||null,ref:p.ref||'',method:p.method||''}));
-  const jobPhotos=photos.filter(p=>p.client_id===clientId).map(p=>({url:p.url,type:p.type,caption:p.caption||'',job_name:p.job_name||''}));
+  const jobPhotos=clientPhotos.map(p=>({url:p.url,type:p.type,caption:p.caption||'',job_name:p.job_name||'',job_id:p.job_id||null}));
   return {
     clientId,clientName:c.name,clientPhone:c.phone||'',clientAddr:c.addr||'',
     contractorName:S.bname||'TradeDesk',contractorPhone:S.bphone||'',
