@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.18.26.114';
+const APP_VERSION='05.18.26.115';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -1709,6 +1709,21 @@ async function supaLoadFromCloud({silent=false}={}){
       setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
       setTimeout(()=>checkNearbyJob(),4000);
     }
+    // Drain any data entered while offline (survives force-quit via zp3_offline_pending)
+    try{
+      const _op=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');
+      if(_op){
+        const _cSet=new Set(clients.map(c=>c.id));
+        const _bSet=new Set(bids.map(b=>b.id));
+        const _jSet=new Set(jobs.map(j=>j.id));
+        let _merged=false;
+        (_op.clients||[]).filter(c=>!_cSet.has(c.id)).forEach(c=>{clients.push(c);_merged=true;});
+        (_op.bids||[]).filter(b=>!_bSet.has(b.id)).forEach(b=>{bids.push(b);_merged=true;});
+        (_op.jobs||[]).filter(j=>!_jSet.has(j.id)).forEach(j=>{jobs.push(j);_merged=true;});
+        localStorage.removeItem('zp3_offline_pending');
+        if(_merged)setTimeout(()=>_flushSaveNow(),800); // push merged data to cloud after render
+      }
+    }catch(_oe){}
     // Cache successful load for offline fallback — strip inline receipt blobs to stay within localStorage limits
     try{
       const _snap={clients,bids,jobs,payments,income,
