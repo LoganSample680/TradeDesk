@@ -305,9 +305,13 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.18.26.105';
+const APP_VERSION='05.18.26.106';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
+// true when data came from localStorage cache, not a live Supabase fetch.
+// supaSaveToCloud() checks this + runs a sanity guard to prevent pushing
+// incomplete in-memory state over real cloud data.
+let _loadedFromCacheOnly=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
@@ -462,7 +466,7 @@ async function supaInit(){
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
         _supaCloudLoaded=true;
-        localStorage.setItem('zp3_pending_sync','1');
+        _loadedFromCacheOnly=true;
         _removeBootOverlay();renderDash();buildScopeGrid();
         _showOfflineBanner();
         supaSetStatus('error');
@@ -978,8 +982,44 @@ function _showOfflineBanner(syncing){
 }
 function _hideOfflineBanner(){const b=document.getElementById('offline-banner');if(b)b.style.display='none';}
 async function _onReconnect(){
-  if(localStorage.getItem('zp3_pending_sync')!=='1')return;
-  if(!_supa||!_supaUser||!_supaCloudLoaded)return;
+  if(!_supa||!_supaUser)return;
+  const hasPending=localStorage.getItem('zp3_pending_sync')==='1';
+
+  // Case 1: Never loaded from Supabase (no cache, started offline).
+  // Snapshot any in-memory additions, do a fresh cloud load, merge additions back,
+  // then push. This prevents offline-entered records from being silently lost.
+  if(!_supaCloudLoaded){
+    _showOfflineBanner(true);
+    try{
+      // Snapshot records the contractor entered while offline (in-memory only)
+      const _oClients=[...clients],_oBids=[...bids],_oJobs=[...jobs];
+      await supaLoadFromCloud(); // restores cloud data + sets _supaCloudLoaded=true
+      // Merge: append any offline-created records not present in cloud
+      const _cSet=new Set(clients.map(c=>c.id));
+      const _bSet=new Set(bids.map(b=>b.id));
+      const _jSet=new Set(jobs.map(j=>j.id));
+      let _merged=false;
+      _oClients.filter(c=>!_cSet.has(c.id)).forEach(c=>{clients.push(c);_merged=true;});
+      _oBids.filter(b=>!_bSet.has(b.id)).forEach(b=>{bids.push(b);_merged=true;});
+      _oJobs.filter(j=>!_jSet.has(j.id)).forEach(j=>{jobs.push(j);_merged=true;});
+      if(_merged){await _flushSaveNow();renderDash();}
+      localStorage.removeItem('zp3_pending_sync');
+      _hideOfflineBanner();
+      showToast('Back online — all changes synced','✅');
+    }catch(e){_showOfflineBanner(false);}
+    return;
+  }
+
+  // Case 2: Loaded from cache, no user writes — just refresh from cloud silently.
+  if(_loadedFromCacheOnly&&!hasPending){
+    _showOfflineBanner(true);
+    try{await supaLoadFromCloud();_hideOfflineBanner();}catch(e){_showOfflineBanner(false);}
+    return;
+  }
+
+  // Case 3: Network blip mid-session (or cache load + user made offline writes).
+  // Sanity guard inside supaSaveToCloud() prevents pushing incomplete data.
+  if(!hasPending)return;
   _showOfflineBanner(true);
   try{
     await _flushSaveNow();
@@ -997,9 +1037,9 @@ async function _probeAndSync(){
 function _startOfflineWatcher(){
   window.addEventListener('online',()=>_probeAndSync());
   document.addEventListener('visibilitychange',()=>{
-    if(document.visibilityState==='visible'&&localStorage.getItem('zp3_pending_sync')==='1')_probeAndSync();
+    if(document.visibilityState==='visible'&&(!_supaCloudLoaded||_loadedFromCacheOnly||localStorage.getItem('zp3_pending_sync')==='1'))_probeAndSync();
   });
-  setInterval(()=>{if(localStorage.getItem('zp3_pending_sync')==='1')_probeAndSync();},30000);
+  setInterval(()=>{if(!_supaCloudLoaded||_loadedFromCacheOnly||localStorage.getItem('zp3_pending_sync')==='1')_probeAndSync();},30000);
 }
 
 // Diagnostic: ring buffer of recent save attempts so we can see WHY a save
@@ -1012,6 +1052,23 @@ function _logSave(stage,info){
 async function supaSaveToCloud(){
   if(!_supa||!_supaUser){_logSave('skip','no _supa or _supaUser');return;}
   if(!_supaCloudLoaded){_logSave('skip','_supaCloudLoaded=false');return;}
+  // Sanity guard — refuse to push if any critical array is unexpectedly empty
+  // compared to the last known-good cache. Prevents a partial cache load or a
+  // failed Supabase fetch from wiping real data (the incident that inspired this).
+  if(_loadedFromCacheOnly){
+    const _sc=localStorage.getItem('zp3_cloud_cache');
+    if(_sc){try{
+      const _scd=JSON.parse(_sc);
+      const _wipe=(arr,key)=>arr.length===0&&(_scd[key]||[]).length>0;
+      if(_wipe(clients,'clients')||_wipe(mileage,'mileage')||_wipe(bids,'bids')||_wipe(income,'income')){
+        _logSave('sanity-abort',{clients:clients.length,mileage:mileage.length,bids:bids.length});
+        console.warn('[TradeDesk] Push aborted — in-memory arrays are empty but cache has data. Refusing to overwrite Supabase.');
+        localStorage.setItem('zp3_pending_sync','1');
+        _showOfflineBanner();
+        return;
+      }
+    }catch(_e){}}
+  }
   const _attemptId=Date.now()+'-'+Math.random().toString(36).slice(2,5);
   const _mileCount=mileage.length;
   _logSave('start',{id:_attemptId,mileage:_mileCount,page:document.querySelector('.pg.active')?.id});
@@ -1463,6 +1520,7 @@ async function supaLoadFromCloud(){
       if(_isEmployee&&_employeeRecord?.name&&_user){_user.name=_employeeRecord.name;}
     }}
     _supaCloudLoaded=true;
+    _loadedFromCacheOnly=false;
     supaSetStatus('synced');
     // Prefetch Stripe status in background so hub-share is instant (no 46s wait)
     setTimeout(()=>{if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});},500);
