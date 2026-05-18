@@ -256,6 +256,7 @@ function renderDash(){
   else if(_activePg==='pg-money')renderMoneyPage();
   else _updateNavBadges(); // fast badge-only update when on home or other pages
   window._pwaUpdateBadge&&window._pwaUpdateBadge();
+  renderContractsDash&&renderContractsDash();
 
   }finally{_renderDashRunning=false;}
 }

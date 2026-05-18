@@ -1,6 +1,6 @@
 // ── Submit guard — prevents double-tap on any button ─────────────────────
 let _submitting=false,_allowPhoneDupe=false;
-let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[];
+let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[],contracts=[];
 function _newBidId(){return Date.now()*1000+Math.floor(Math.random()*999);}
 let currentClientId=null,editClientId=null,clientFilter='all';
 let estSurfaces=[],estSurfId=0,estStep=1,estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
@@ -74,7 +74,7 @@ let gps={active:false,startCoords:null,endCoords:null,startTime:null,clientId:nu
 let _activeTimer=null; // {jobId,jobName,clientName,startTime,timerInterval}
 
 
-let S={bitlyKey:'',mapboxKey:'',goalMonthly:0,laborRate:45,irsRate:.725,irsRateYear:2026,bracketYear:0,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{}};
+let S={bitlyKey:'',mapboxKey:'',goalMonthly:0,laborRate:45,irsRate:.725,irsRateYear:2026,bracketYear:0,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],subcontractors:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{}};
 
 // ZJ's logo — SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
 // Only shown for ZJ's Painting account — other accounts see plain business name text.
@@ -166,6 +166,7 @@ function saveAll(){if(_devSupportMode){_flushSaveNow();return;}if(_isEmployee){s
   localStorage.setItem('zp3_ev',JSON.stringify(events.slice(-600)));
   localStorage.setItem('zp3_photos',JSON.stringify(photos.slice(-300)));
   localStorage.setItem('zp3_lic',JSON.stringify(licenses));
+  localStorage.setItem('zp3_contracts',JSON.stringify(contracts));
 }catch(e){}supaSaveDebounced();}
 function loadAll(){
   // Business data (clients, bids, jobs, etc.) lives in Supabase only — start empty, populated by supaLoadFromCloud()
@@ -179,6 +180,7 @@ function loadAll(){
     events=lp('zp3_ev',[]);
     photos=lp('zp3_photos',[]);
     licenses=lp('zp3_lic',[]);
+    contracts=lp('zp3_contracts',[]);
     // Tax bracket migrations
     if(S.fedMFS===14600)S.fedMFS=15000;
     if(S.fedSingle===14600)S.fedSingle=15000;

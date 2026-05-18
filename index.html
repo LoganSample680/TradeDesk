@@ -923,6 +923,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div id="dash-close-tip" style="display:none;margin-bottom:10px"></div>
   <div id="dash-resume" style="display:none;margin-bottom:10px"></div>
   <div id="dash-nearby" style="display:none;margin-bottom:10px"></div>
+  <div id="dash-contracts" style="display:none;margin-bottom:10px"></div>
   <div id="dash-goal" style="margin-bottom:10px"></div>
   <div id="dash-pipeline"></div>
 
@@ -1180,6 +1181,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button type="button" class="fb" id="cdt-jobs" onclick="setCDTab('jobs',this)">Jobs</button>
     <button type="button" class="fb" id="cdt-mileage" onclick="setCDTab('mileage',this)">Mileage</button>
     <button type="button" class="fb" id="cdt-expenses" onclick="setCDTab('expenses',this)">Expenses</button>
+    <button type="button" class="fb" id="cdt-contracts" onclick="setCDTab('contracts',this)">Contracts</button>
   </div>
   <div id="cdt-overview-content">
     <div id="cd-estimates-upcoming"></div>
@@ -1271,6 +1273,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button onclick="showQuickExpenseModal(currentClientId,null)" class="btn btn-p btn-full" style="margin-bottom:12px">+ Log expense for this client</button>
     <div id="cdt-expenses-list"></div>
   </div>
+  <div id="cdt-contracts-content" style="display:none"></div>
 </div>
 <div class="pg" id="pg-est">
   <div style="padding:20px 16px 24px;max-width:900px;margin:0 auto;box-sizing:border-box;width:100%">
@@ -2248,6 +2251,13 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
   <div class="card" style="margin-top:12px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Subcontractors</div>
+      <button onclick="openAddSubModal()" class="btn btn-sm btn-p" style="font-size:11px">+ Add sub</button>
+    </div>
+    <div id="team-page-subs"></div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
       <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Devices</div>
       <button onclick="registerDevice(true);renderTeam()" class="btn btn-sm" style="font-size:10px;padding:3px 8px">📍 Update my location</button>
     </div>
@@ -3058,6 +3068,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 <script src="js/tax.js"></script>
 <script src="js/finance.js"></script>
 <script src="js/generic-estimate.js"></script>
+<script src="js/contracts.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/e2e.js"></script>
 <script src="js/pwa.js"></script>
