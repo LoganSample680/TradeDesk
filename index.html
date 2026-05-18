@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="TradeDesk">
-<meta name="theme-color" content="#1B3F7A">
+<meta name="theme-color" content="#1B1612">
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <link rel="apple-touch-icon" href="/icons/icon-180.png">
 <link rel="manifest" href="/manifest.json">
@@ -850,25 +850,48 @@ body.dark .cal-cell.other{background:var(--cream)}
 </head>
 <body>
 <!-- Full boot screen — visible before any JS runs. td-logoin/td-bar are defined in <style> above. -->
-<div id="supa-boot-overlay" style="position:fixed;inset:0;z-index:9998;background:#0D1117;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0">
+<div id="supa-boot-overlay" style="position:fixed;inset:0;z-index:9998;background:radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0">
   <div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;padding:0 24px">
-    <div id="_sbo_name" style="font-size:44px;font-weight:900;color:#fff;letter-spacing:-2px;animation:td-logoin .4s ease both">TradeDesk</div>
+    <div id="_sbo_name" style="animation:td-logoin .4s ease both;display:flex;align-items:baseline">
+      <span style="font-family:Geist,sans-serif;font-weight:900;font-size:44px;color:#fff;letter-spacing:-2px">TradeDesk</span><span id="_sbo_pro" style="font-size:11px;font-weight:800;color:#5C8FD4;background:rgba(45,93,168,.18);border:1px solid rgba(45,93,168,.36);padding:3px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.06em;margin-left:8px;vertical-align:6px">Pro</span>
+    </div>
   </div>
   <div style="width:100%;padding:0 0 52px">
     <div id="_sbo_track" style="height:3px;background:rgba(255,255,255,0.08);border-radius:99px;margin:0 32px;overflow:hidden">
-      <div id="_sbo_bar" style="height:100%;background:#185FA5;border-radius:99px;animation:td-bar 5s cubic-bezier(.4,0,.2,1) forwards"></div>
+      <div id="_sbo_bar" style="height:100%;background:#2D5DA8;border-radius:99px;animation:td-bar 5s cubic-bezier(.4,0,.2,1) forwards"></div>
     </div>
   </div>
 </div>
 <script>
-// Runs immediately — customise boot screen from localStorage before any other JS.
+// Runs before any other JS — applies contractor white-label or TradeDesk defaults.
 (function(){
   try{
-    var s=JSON.parse(localStorage.getItem('zp3_S')||'{}');
+    var raw=localStorage.getItem('zp3_S');
+    var s=raw?JSON.parse(raw):{};
     var ov=document.getElementById('supa-boot-overlay');if(!ov)return;
-    if(s.brandColor){ov.style.background=s.brandColor;var b=document.getElementById('_sbo_bar'),t=document.getElementById('_sbo_track');if(b)b.style.background='rgba(0,0,0,0.35)';if(t)t.style.background='rgba(0,0,0,0.2)';}
-    var n=document.getElementById('_sbo_name');
-    if(s.logoData&&n){var img=new Image();img.src=s.logoData;img.style.cssText='max-height:260px;max-width:86vw;width:auto;object-fit:contain;display:block;animation:td-logoin .55s cubic-bezier(.22,1,.36,1) both';n.replaceWith(img);}
+    // Rewrite theme-color meta to brand color before paint
+    if(s.brandColor){var tc=document.querySelector('meta[name="theme-color"]');if(tc)tc.setAttribute('content',s.brandColor);}
+    // Background + progress bar: brand color with luminance-aware overlay, or leave denim gradient
+    if(s.brandColor){
+      ov.style.background=s.brandColor;
+      var hex=s.brandColor.replace('#','');
+      var r=parseInt(hex.substr(0,2),16)||0,g=parseInt(hex.substr(2,2),16)||0,b=parseInt(hex.substr(4,2),16)||0;
+      var lum=(0.299*r+0.587*g+0.114*b)/255;
+      var barFg=lum>0.5?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.6)';
+      var barBg=lum>0.5?'rgba(0,0,0,0.15)':'rgba(255,255,255,0.15)';
+      var bar=document.getElementById('_sbo_bar'),track=document.getElementById('_sbo_track');
+      if(bar)bar.style.background=barFg;if(track)track.style.background=barBg;
+    }
+    // Logo/name priority: logoData > bname > default (already rendered)
+    var nameEl=document.getElementById('_sbo_name');
+    if(s.logoData&&nameEl){
+      var img=new Image();img.src=s.logoData;
+      img.style.cssText='max-height:260px;max-width:86vw;width:auto;object-fit:contain;display:block;animation:td-logoin .55s cubic-bezier(.22,1,.36,1) both';
+      nameEl.replaceWith(img);
+    }else if(s.bname&&nameEl){
+      var esc=function(t){return t.replace(/[<>&"]/g,function(c){return{'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});};
+      nameEl.innerHTML='<span style="font-family:Geist,sans-serif;font-weight:900;font-size:44px;color:#fff;letter-spacing:-2px">'+esc(s.bname)+'</span>';
+    }
   }catch(e){}
   window._earlyBootDone=true;
 })();
@@ -3219,20 +3242,30 @@ setTimeout(()=>{
 if(supaEnabled()){
   // Show loading overlay — don't render local data, wait for cloud
   (function showLoadingScreen(){
-    if(window._earlyBootDone)return; // early-boot script already drew this
+    if(window._earlyBootDone)return;
     const logo=S.logoData||'';
-    const name=S.bname||'TradeDesk';
-    const color=S.brandColor||'#185FA5';
-    const hasBrand=!!S.brandColor;
-    // Solid opaque background — brand color if set, dark navy if not
-    const bg=hasBrand?color:'#0D1117';
-    // On brand-color bg text/bar contrast; on dark bg use white
-    const onColor=hasBrand?'rgba(0,0,0,0.55)':'rgba(255,255,255,0.45)';
-    const barFg=hasBrand?'rgba(0,0,0,0.35)':color;
-    const barBg=hasBrand?'rgba(0,0,0,0.2)':'rgba(255,255,255,0.08)';
+    const bname=S.bname||'';
+    const brandColor=S.brandColor||'';
+    // Background: brand color solid, or denim wash on charcoal
+    const bg=brandColor
+      ?brandColor
+      :'radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
+    // Progress bar: luminance-aware on brand color, denim on default
+    let barFg,barBg;
+    if(brandColor){
+      const hex=brandColor.replace('#','');
+      const r=parseInt(hex.substr(0,2),16)||0,g=parseInt(hex.substr(2,2),16)||0,b=parseInt(hex.substr(4,2),16)||0;
+      const lum=(0.299*r+0.587*g+0.114*b)/255;
+      barFg=lum>0.5?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.6)';
+      barBg=lum>0.5?'rgba(0,0,0,0.15)':'rgba(255,255,255,0.15)';
+    }else{barFg='#2D5DA8';barBg='rgba(255,255,255,0.08)';}
+    const proCapsule='<span style="font-size:11px;font-weight:800;color:#5C8FD4;background:rgba(45,93,168,.18);border:1px solid rgba(45,93,168,.36);padding:3px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.06em;margin-left:8px;vertical-align:6px">Pro</span>';
+    const esc=t=>t.replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
     const logoBlock=logo
       ?'<img src="'+logo+'" style="max-height:260px;max-width:86vw;width:auto;object-fit:contain;display:block;animation:td-logoin .55s cubic-bezier(.22,1,.36,1) both">'
-      :'<div style="font-size:44px;font-weight:900;color:#fff;letter-spacing:-2px;animation:td-logoin .4s ease both">TradeDesk</div>';
+      :bname
+        ?'<div style="font-family:Geist,sans-serif;font-weight:900;font-size:44px;color:#fff;letter-spacing:-2px;animation:td-logoin .4s ease both">'+esc(bname)+'</div>'
+        :'<div style="animation:td-logoin .4s ease both;display:flex;align-items:baseline"><span style="font-family:Geist,sans-serif;font-weight:900;font-size:44px;color:#fff;letter-spacing:-2px">TradeDesk</span>'+proCapsule+'</div>';
     const ov=document.getElementById('supa-boot-overlay')||document.createElement('div');
     ov.id='supa-boot-overlay';
     ov.style.cssText='position:fixed;inset:0;z-index:9998;background:'+bg+';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0';
