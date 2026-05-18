@@ -836,12 +836,15 @@ function openJobSheet(clientId){
     schedHtml=
       '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">📅 Schedule</div>'+
-        '<div style="background:var(--blue-lt);border-radius:var(--r);padding:10px 14px;display:flex;justify-content:space-between;align-items:center">'+
+        '<div style="background:var(--blue-lt);border-radius:var(--r);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px">'+
           '<div>'+
             '<div style="font-size:14px;font-weight:700;color:var(--blue-dk)">'+dt+(nextJob.time?' · '+fmtTime(nextJob.time):'')+'</div>'+
             '<div style="font-size:11px;color:var(--blue);margin-top:2px">'+(nextJob.days||1)+' day'+(nextJob.days!==1?'s':'')+' est.</div>'+
           '</div>'+
-          '<button onclick="this.closest(\'.zmodal-overlay\').remove();goPg(\'pg-schedule\')" style="padding:7px 12px;border-radius:var(--r);border:1px solid var(--blue);background:#fff;color:var(--blue-dk);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Reschedule</button>'+
+          '<div style="display:flex;gap:6px;flex-shrink:0">'+
+            '<button onclick="openPushBackModal('+nextJob.id+','+clientId+',this.closest(\'.zmodal-overlay\'))" style="padding:7px 12px;border-radius:var(--r);border:1px solid var(--amber);background:var(--amber-lt);color:#92400E;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📅 Push back</button>'+
+            '<button onclick="this.closest(\'.zmodal-overlay\').remove();goPg(\'pg-schedule\')" style="padding:7px 12px;border-radius:var(--r);border:1px solid var(--blue);background:#fff;color:var(--blue-dk);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Reschedule</button>'+
+          '</div>'+
         '</div>'+
       '</div>';
   } else if(bid&&st.stage==='signed'){
@@ -1150,6 +1153,23 @@ async function _shareBeforeAfterCard(clientId){
     ctx.fillText(new Date().toLocaleDateString('en-US',{month:'long',year:'numeric'}),W-PAD,H-12);
     canvas.toBlob(async blob=>{
       if(!blob)return showToast('Could not build image','⚠️');
+      // Upload to gallery bucket → push to photos[] → refresh client hub
+      try{
+        if(supaEnabled&&supaEnabled()&&_supaUser){
+          const path=_supaUser.id+'/'+clientId+'/ba-'+Date.now()+'.jpg';
+          const{error:upErr}=await _supa.storage.from('gallery').upload(path,blob,{contentType:'image/jpeg',upsert:false});
+          if(!upErr){
+            const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
+            const publicUrl=urlData?.publicUrl||'';
+            if(publicUrl){
+              photos.push({id:Date.now()+Math.random(),url:publicUrl,type:'before-after',caption:'Before & After',client_id:clientId,client_name:c?c.name:'',uploadedAt:new Date().toISOString()});
+              saveAll();
+              _uploadClientHub&&_uploadClientHub(clientId).catch(()=>{});
+              showToast('Added to client hub','✓');
+            }
+          }
+        }
+      }catch(_e){}
       const file=new File([blob],'before-after.jpg',{type:'image/jpeg'});
       if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
         try{await navigator.share({files:[file],title:biz+' — Before & After',text:(c?c.name+' · ':'')+'Finished job by '+biz});}
@@ -1209,6 +1229,67 @@ function markSubPaid(jobId,subIdx,clientId){
   j.subs[subIdx].paid=true;j.subs[subIdx].paidDate=todayKey();
   saveAll();showToast('Marked paid','✓');
   openJobSheet(clientId);
+}
+
+// ── Push job date back ────────────────────────────────────────────────────────
+function openPushBackModal(jobId,clientId,parentOverlay){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  const c=getClientById(clientId);
+  const firstName=c?c.name.split(' ')[0]:'there';
+  const biz=S.bname||'your contractor';
+  const oldDate=parseD(j.start).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  const defaultMsg='Hi '+firstName+', this is '+biz+'. We need to push your job back a bit — we\'ll get you on the schedule as soon as possible and confirm the new date. We\'re sorry for any inconvenience and appreciate your patience!';
+  document.getElementById('_pb-modal-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_pb-modal-ov';ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">📅 Push job back</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">Currently: <strong>'+oldDate+'</strong></div>'+
+    '<div class="f" style="margin-bottom:14px"><label>New start date</label>'+
+      '<input id="pb-new-date" type="date" value="'+j.start+'" min="'+todayKey()+'" style="font-size:15px;padding:10px;font-weight:700" oninput="_updatePushBackMsg('+clientId+')"></div>'+
+    '<div class="f" style="margin-bottom:16px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'+
+        '<label style="margin:0">Client message</label>'+
+        (c&&c.phone?'<span style="font-size:10px;color:var(--text3)">Sends via SMS</span>':'<span style="font-size:10px;color:var(--amber)">No phone on file</span>')+
+      '</div>'+
+      '<textarea id="pb-msg" style="font-size:13px;padding:10px;min-height:90px;resize:none;line-height:1.5;width:100%;box-sizing:border-box;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit">'+escHtml(defaultMsg)+'</textarea>'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      '<button onclick="document.getElementById(\'_pb-modal-ov\').remove()" style="padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
+      '<button onclick="_savePushBack('+jobId+','+clientId+')" style="padding:11px;border-radius:var(--r);border:none;background:var(--amber);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Save & '+(c&&c.phone?'Text client':'Notify')+'</button>'+
+    '</div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  if(parentOverlay)parentOverlay.remove();
+}
+function _updatePushBackMsg(clientId){
+  const c=getClientById(clientId);if(!c)return;
+  const firstName=c.name.split(' ')[0];
+  const biz=S.bname||'your contractor';
+  const newDateEl=document.getElementById('pb-new-date');
+  const msgEl=document.getElementById('pb-msg');
+  if(!newDateEl||!msgEl)return;
+  const newDateStr=newDateEl.value;
+  if(!newDateStr)return;
+  const newDateFmt=parseD(newDateStr).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  msgEl.value='Hi '+firstName+', this is '+biz+'. We\'ve rescheduled your job to '+newDateFmt+'. We apologize for the change and look forward to seeing you then!';
+}
+function _savePushBack(jobId,clientId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  const c=getClientById(clientId);
+  const newDate=document.getElementById('pb-new-date')?.value;
+  const msg=(document.getElementById('pb-msg')?.value||'').trim();
+  if(!newDate)return showToast('Pick a new date','⚠️');
+  if(newDate===j.start)return showToast('Date unchanged','⚠️');
+  j.start=newDate;
+  saveAll();
+  _uploadClientHub&&_uploadClientHub(clientId).catch(()=>{});
+  document.getElementById('_pb-modal-ov')?.remove();
+  showToast('Job pushed to '+parseD(newDate).toLocaleDateString('en-US',{month:'short',day:'numeric'}),'📅');
+  if(c&&c.phone&&msg){
+    window.location.href='sms:'+c.phone.replace(/\D/g,'')+'&body='+encodeURIComponent(msg);
+  }
+  setTimeout(()=>openJobSheet(clientId),500);
 }
 
 function openMapsForClient(clientId){
