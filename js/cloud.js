@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.18.26.112';
+const APP_VERSION='05.18.26.113';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -1165,12 +1165,21 @@ async function _probeAndSync(){
     _onReconnect();
   }catch(e){if(localStorage.getItem('zp3_pending_sync')==='1')_showOfflineBanner(false);}
 }
+function _isOfflineState(){
+  return !_supaCloudLoaded||_loadedFromCacheOnly||_mergeOnSignIn||localStorage.getItem('zp3_pending_sync')==='1';
+}
 function _startOfflineWatcher(){
   window.addEventListener('online',()=>_probeAndSync());
   document.addEventListener('visibilitychange',()=>{
-    if(document.visibilityState==='visible'&&(!_supaCloudLoaded||_loadedFromCacheOnly||localStorage.getItem('zp3_pending_sync')==='1'))_probeAndSync();
+    if(document.visibilityState==='visible'&&_isOfflineState())_probeAndSync();
   });
-  setInterval(()=>{if(!_supaCloudLoaded||_loadedFromCacheOnly||localStorage.getItem('zp3_pending_sync')==='1')_probeAndSync();},30000);
+  // 5s when offline (banner showing), 30s when fully synced
+  const _tick=()=>{
+    const offline=_isOfflineState();
+    if(offline)_probeAndSync();
+    setTimeout(_tick,offline?5000:30000);
+  };
+  setTimeout(_tick,5000);
 }
 
 // Diagnostic: ring buffer of recent save attempts so we can see WHY a save
