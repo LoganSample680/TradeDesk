@@ -1308,12 +1308,30 @@ function sendOMWText(clientId){
 function addJobPhoto(jobId,input,type){
   const file=input.files[0];if(!file)return;
   const reader=new FileReader();
-  reader.onload=e=>{
+  reader.onload=async e=>{
     const j=jobs.find(x=>x.id===jobId);if(!j)return;
     if(!j.photos)j.photos=[];
     j.photos.push({type,data:e.target.result,ts:new Date().toISOString()});
     saveAll();
     showToast((type==='before'?'Before':'After')+' photo saved','📸');
+    // Upload to gallery storage → push to global photos[] → refresh client hub
+    if(typeof supaEnabled==='function'&&supaEnabled()&&_supaUser&&_supa){
+      try{
+        const ext=(file.name.split('.').pop()||'jpg').toLowerCase();
+        const path=_supaUser.id+'/'+jobId+'/'+type+'-'+Date.now()+'.'+ext;
+        const{error}=await _supa.storage.from('gallery').upload(path,file,{contentType:file.type||'image/jpeg',upsert:false});
+        if(!error){
+          const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
+          const publicUrl=urlData?.publicUrl||'';
+          if(publicUrl){
+            const c=clients.find(x=>x.id===j.client_id);
+            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type,caption:'',client_id:j.client_id||null,client_name:c?.name||'',job_id:jobId,job_name:j.name||'',uploadedAt:new Date().toISOString()});
+            saveAll();
+            typeof _uploadClientHub==='function'&&_uploadClientHub(j.client_id).catch(()=>{});
+          }
+        }
+      }catch(_e){}
+    }
   };
   reader.readAsDataURL(file);
 }
