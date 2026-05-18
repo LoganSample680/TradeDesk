@@ -54,7 +54,14 @@ function openPhotoViewer(photoId){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 function deletePhoto(photoId){
-  zConfirm('Delete this photo?',()=>{photos=photos.filter(p=>p.id!==photoId);saveAll();renderGallery();},{title:'Delete photo',yes:'Delete',danger:true});
+  const p=photos.find(x=>x.id===photoId);if(!p)return;
+  zConfirm('Delete this photo?',()=>{
+    photos=photos.filter(x=>x.id!==photoId);
+    saveAll();renderGallery();
+    if(p.storagePath&&supaEnabled()&&_supa){
+      _supa.storage.from('gallery').remove([p.storagePath]).catch(()=>{});
+    }
+  },{title:'Delete photo',yes:'Delete',danger:true});
 }
 function openGalleryUpload(jobId,clientId){
   const job=jobId?jobs.find(j=>j.id===jobId):null;
@@ -96,7 +103,7 @@ async function processGalleryUpload(input){
   let uploaded=0;
   for(const file of files){
     try{
-      let url='';
+      let url='',storagePath='';
       if(supaEnabled()&&_supaUser){
         const ext=file.name.split('.').pop()||'jpg';
         const path='gallery/'+_supaUser.id+'/'+Date.now()+'_'+Math.random().toString(36).slice(2)+'.'+ext;
@@ -104,13 +111,14 @@ async function processGalleryUpload(input){
         if(!error){
           const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
           url=urlData?.publicUrl||'';
+          if(url)storagePath=path;
         }
       }
       if(!url){
         // Fallback: base64 for offline (large but works)
         url=await new Promise(res=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.readAsDataURL(file);});
       }
-      photos.push({id:Date.now()+Math.random(),url,type:ptype,caption,job_id:selectedJobId,job_name:job?.name||'',client_id:c?.id||null,client_name:c?.name||'',uploadedAt:new Date().toISOString()});
+      photos.push({id:Date.now()+Math.random(),url,storagePath,type:ptype,caption,job_id:selectedJobId,job_name:job?.name||'',client_id:c?.id||null,client_name:c?.name||'',uploadedAt:new Date().toISOString()});
       uploaded++;
       if(status)status.textContent='Uploaded '+uploaded+'/'+files.length;
     }catch(e){console.warn('photo upload:',e);}

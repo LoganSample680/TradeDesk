@@ -305,7 +305,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.18.26.93';
+const APP_VERSION='05.18.26.94';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -1060,6 +1060,11 @@ async function supaSaveToCloud(){
     try{
       await _supa.from('zj_data').update({contracts:JSON.stringify(contracts)}).eq('user_id',uid);
     }catch(_e4){}
+    // Part 5 — gallery photo metadata (URLs + storagePaths; no base64 blobs)
+    try{
+      const _photosMeta=photos.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}));
+      await _supa.from('zj_data').update({gallery_photos:JSON.stringify(_photosMeta.slice(-300))}).eq('user_id',uid);
+    }catch(_e5){}
     _logSave('ok',{id:_attemptId,mileage:_mileCount});
     supaSetStatus('synced');
   }catch(e){
@@ -1355,6 +1360,8 @@ async function supaLoadFromCloud(){
     if(_cloudEv&&_cloudEv.length)events=_cloudEv;
     const _cloudCt=parse(data.contracts,null);
     if(_cloudCt&&_cloudCt.length)contracts=_cloudCt;
+    const _cloudPhotos=parse(data.gallery_photos,null);
+    if(_cloudPhotos&&_cloudPhotos.length)photos=_cloudPhotos;
     const _cloudChk=parse(data.checks_state,null);
     if(_cloudChk&&Object.keys(_cloudChk).length)checksState=_cloudChk;
     if(data.settings){const ss=parse(data.settings,null);if(ss){S={...S,...ss};
