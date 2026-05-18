@@ -1440,6 +1440,11 @@ function renderCDBids(){
             ' · '+(b.days||2)+' day'+(b.days!==1?'s':'')+' est.'+
           '</div>'+
           (b.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+b.notes.substring(0,60)+'</div>':'')+
+          (b.status==='Pending'&&b.signingToken&&typeof _proposalViews!=='undefined'?
+            (_proposalViews[String(b.client_id)]?
+              '<div style="font-size:11px;color:var(--green-mid);margin-top:2px">👁 Opened '+_timeAgo(_proposalViews[String(b.client_id)])+'</div>':
+              '<div style="font-size:11px;color:var(--text3);margin-top:2px">Not opened yet</div>'
+            ):'')+
         '</div>'+
         '<div style="text-align:right">'+
           (b.isTM?'<span style="display:inline-block;font-size:10px;font-weight:700;background:#dbeafe;color:#1d4ed8;border-radius:10px;padding:2px 7px;margin-bottom:3px">⏱️ T&M</span><br>':'')+
