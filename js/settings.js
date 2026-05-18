@@ -395,6 +395,29 @@ function applyDefaultScope(){
   buildScopeGrid();
   checkStep2Ready();
 }
+function _getSmsDefaults(){
+  return {
+    hub:`Hi {name}, here's your project hub from {business}: {url}`,
+    followup:`Hey {name}!\n\nJust following up — your proposal is still ready to go. Tap the link below to review and sign:\n\n{url}\n\nAny questions, just reply!\n\n— {business}`,
+    reminder:`Hi {name}, this is {business}. Just a friendly reminder that a balance of {amount} is outstanding for the work at {address}. Please let us know when you're ready to take care of this. Thank you!`,
+    second:`Hi {name}, this is a second notice from {business}. A balance of {amount} remains outstanding for work completed at {address}. Please respond within 5 business days to arrange payment and avoid further collection steps.`,
+    intent:`{name}, this is formal written notice from {business} of our intent to file a Mechanic's Lien against the property at {address} for unpaid services totaling {amount}. You have 7 days to remit full payment before we proceed with filing. Please contact us immediately.`,
+  };
+}
+function _smsApply(template,vars){
+  return template
+    .replace(/\{name\}/g,vars.name||'')
+    .replace(/\{business\}/g,vars.business||'')
+    .replace(/\{url\}/g,vars.url||'')
+    .replace(/\{amount\}/g,vars.amount||'')
+    .replace(/\{address\}/g,vars.address||'');
+}
+function _resetSmsTemplate(id){
+  const defaults=_getSmsDefaults();
+  const map={'set-sms-hub':'hub','set-sms-followup':'followup','set-sms-reminder':'reminder','set-sms-second':'second','set-sms-intent':'intent'};
+  const el=document.getElementById(id);
+  if(el&&map[id])el.value=defaults[map[id]];
+}
 function applySettings(){
   FED_BRACKETS.single=[[S.b10,.10],[S.b12,.12],[S.b22,.22],[S.b24,.24],[S.b32,.32],[S.b35,.35],[Infinity,.37]];
   FED_BRACKETS.mfj=[[S.b10*2,.10],[S.b12*2,.12],[S.b22*2,.22],[S.b24*2,.24],[S.b32*2,.32],[S.b35*2,.35],[Infinity,.37]];
@@ -431,13 +454,27 @@ function loadSettingsForm(){
   sf('set-margin',S.margin);sf('set-cov',S.cov);sf('set-mm',S.mm);sf('set-supplies-rate',S.suppliesRate||0.12);sf('set-r-walls',S.rWalls||1.30);sf('set-r-ceil',S.rCeil||1.00);sf('set-r-trim',S.rTrim||4.00);sf('set-r-door',S.rDoor||95);sf('set-r-win',S.rWin||50);sf('set-r-ext',S.rExt||1.10);sf('set-r-deck',S.rDeck||1.00);
   sf('set-review-url',S.reviewUrl||'');
   sf('set-brandcolor',S.brandColor||'#2D5DA8');
+  const _smsDefaults=_getSmsDefaults();
+  sf('set-sms-hub',S.smsHub||_smsDefaults.hub);
+  sf('set-sms-followup',S.smsFollowup||_smsDefaults.followup);
+  sf('set-sms-reminder',S.smsReminder||_smsDefaults.reminder);
+  sf('set-sms-second',S.smsSecond||_smsDefaults.second);
+  sf('set-sms-intent',S.smsIntent||_smsDefaults.intent);
   _updateBootPreview();
   sf('set-bwebsite',S.bwebsite||'');
   const hoEl=document.getElementById('set-home-office');if(hoEl)hoEl.checked=!!S.homeOffice;
 }
 function saveSettings(){
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
-  setOwnerName(gs('set-owner-name')||getOwnerName()||'');S={...S,txStatus:gs('set-txstatus')||'single',goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',mapboxKey:gs('set-mapbox-key')||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.40,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||''};
+  setOwnerName(gs('set-owner-name')||getOwnerName()||'');
+  const _smsD=_getSmsDefaults();
+  S={...S,
+    smsHub:gs('set-sms-hub')||_smsD.hub,
+    smsFollowup:gs('set-sms-followup')||_smsD.followup,
+    smsReminder:gs('set-sms-reminder')||_smsD.reminder,
+    smsSecond:gs('set-sms-second')||_smsD.second,
+    smsIntent:gs('set-sms-intent')||_smsD.intent,
+    txStatus:gs('set-txstatus')||'single',goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',mapboxKey:gs('set-mapbox-key')||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.40,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||''};
   applySettings();saveAll();
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
   // Propagate branding/settings to all live client hubs in the background

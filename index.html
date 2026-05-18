@@ -2530,6 +2530,40 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
   </div>
 
+  <!-- SMS Templates -->
+  <div class="acc-sec" id="acc-sms">
+    <div class="acc-hd" onclick="toggleAccSection('acc-sms')">
+      <div class="acc-hd-left">
+        <div class="acc-hd-title">SMS Templates</div>
+        <div class="acc-hd-sub">Customize every message sent to clients</div>
+      </div>
+      <span class="acc-hd-arrow">▼</span>
+    </div>
+    <div class="acc-body">
+      <div style="font-size:11px;color:var(--text3);margin:8px 0 14px;line-height:1.5">Variables: <code>{name}</code> first name &nbsp;·&nbsp; <code>{business}</code> your biz name &nbsp;·&nbsp; <code>{url}</code> proposal/hub link &nbsp;·&nbsp; <code>{amount}</code> balance &nbsp;·&nbsp; <code>{address}</code> job address</div>
+      <div class="f" style="margin-bottom:12px">
+        <label style="display:flex;justify-content:space-between;align-items:center">Hub send <button type="button" onclick="_resetSmsTemplate('set-sms-hub')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
+        <textarea id="set-sms-hub" rows="2" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box" placeholder="Hi {name}, here's your project hub from {business}: {url}"></textarea>
+      </div>
+      <div class="f" style="margin-bottom:12px">
+        <label style="display:flex;justify-content:space-between;align-items:center">Proposal follow-up <button type="button" onclick="_resetSmsTemplate('set-sms-followup')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
+        <textarea id="set-sms-followup" rows="4" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box"></textarea>
+      </div>
+      <div class="f" style="margin-bottom:12px">
+        <label style="display:flex;justify-content:space-between;align-items:center">Collection — Reminder <button type="button" onclick="_resetSmsTemplate('set-sms-reminder')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
+        <textarea id="set-sms-reminder" rows="3" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box"></textarea>
+      </div>
+      <div class="f" style="margin-bottom:12px">
+        <label style="display:flex;justify-content:space-between;align-items:center">Collection — 2nd Notice <button type="button" onclick="_resetSmsTemplate('set-sms-second')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
+        <textarea id="set-sms-second" rows="3" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box"></textarea>
+      </div>
+      <div class="f" style="margin-bottom:12px">
+        <label style="display:flex;justify-content:space-between;align-items:center">Collection — Intent to Lien <button type="button" onclick="_resetSmsTemplate('set-sms-intent')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
+        <textarea id="set-sms-intent" rows="4" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box"></textarea>
+      </div>
+    </div>
+  </div>
+
   <!-- Goals -->
   <div class="acc-sec" id="acc-goals">
     <div class="acc-hd" onclick="toggleAccSection('acc-goals')">
