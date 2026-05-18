@@ -3121,13 +3121,13 @@ if('serviceWorker' in navigator){
   // sw.js is now bumped on every push so reg.update() detects changes reliably.
   document.addEventListener('visibilitychange',()=>{
     if(!document.hidden){
-      navigator.serviceWorker.getRegistration().then(reg=>{if(reg)reg.update();}).catch(()=>{});
+      navigator.serviceWorker.getRegistration().then(reg=>{if(reg)reg.update().catch(()=>{});}).catch(()=>{});
     }
   });
   // Poll every 15s. Counter stored in sessionStorage survives reloads.
   // Resets after 5 min so a fixed CDN eventually gets through automatically.
   setInterval(()=>{
-    navigator.serviceWorker.getRegistration().then(reg=>{if(reg)reg.update();}).catch(()=>{});
+    navigator.serviceWorker.getRegistration().then(reg=>{if(reg)reg.update().catch(()=>{});}).catch(()=>{});
     fetch('/version.json?_='+Date.now())
       .then(r=>r.json())
       .then(d=>{
