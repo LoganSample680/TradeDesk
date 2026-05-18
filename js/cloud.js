@@ -305,7 +305,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.18.26.104';
+const APP_VERSION='05.18.26.105';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
@@ -444,8 +444,31 @@ async function supaInit(){
         supaShowLogin();
       }
     });
+    _startOfflineWatcher();
   }catch(e){
     console.warn('Supabase init failed:',e);
+    // Even if Supabase itself won't init (e.g. no network), try serving from cache
+    const _cc=localStorage.getItem('zp3_cloud_cache');
+    if(_cc){
+      try{
+        const _cd=JSON.parse(_cc);
+        clients=_cd.clients||[];bids=_cd.bids||[];jobs=_cd.jobs||[];
+        payments=_cd.payments||[];income=_cd.income||[];expenses=_cd.expenses||[];
+        mileage=_cd.mileage||[];liens=_cd.liens||[];timeEntries=_cd.timeEntries||[];
+        if(_cd.licenses?.length)licenses=_cd.licenses;
+        if(_cd.events?.length)events=_cd.events;
+        if(_cd.contracts?.length)contracts=_cd.contracts;
+        if(_cd.photos?.length)photos=_cd.photos;
+        if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
+        if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
+        _supaCloudLoaded=true;
+        localStorage.setItem('zp3_pending_sync','1');
+        _removeBootOverlay();renderDash();buildScopeGrid();
+        _showOfflineBanner();
+        supaSetStatus('error');
+        return;
+      }catch(_ce){}
+    }
     _removeBootOverlay();
     renderDash();buildScopeGrid();
     supaSetStatus('local');
@@ -947,6 +970,38 @@ function _flushSaveNow(){
   return _pendingSavePromise;
 }
 
+// ── Offline / reconnect watcher ────────────────────────────────────────────
+function _showOfflineBanner(syncing){
+  const b=document.getElementById('offline-banner');if(!b)return;
+  if(syncing){b.textContent='Syncing...';b.style.cssText+='background:#2563eb;color:#fff;display:block';}
+  else{b.textContent='Offline — changes saved locally';b.style.cssText+='background:#D97706;color:#1a1a1a;display:block';}
+}
+function _hideOfflineBanner(){const b=document.getElementById('offline-banner');if(b)b.style.display='none';}
+async function _onReconnect(){
+  if(localStorage.getItem('zp3_pending_sync')!=='1')return;
+  if(!_supa||!_supaUser||!_supaCloudLoaded)return;
+  _showOfflineBanner(true);
+  try{
+    await _flushSaveNow();
+    localStorage.removeItem('zp3_pending_sync');
+    _hideOfflineBanner();
+    showToast('Back online — all changes synced','✅');
+  }catch(e){_showOfflineBanner(false);}
+}
+async function _probeAndSync(){
+  try{
+    await fetch('/version.json?_='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(5000)});
+    _onReconnect();
+  }catch(e){if(localStorage.getItem('zp3_pending_sync')==='1')_showOfflineBanner(false);}
+}
+function _startOfflineWatcher(){
+  window.addEventListener('online',()=>_probeAndSync());
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible'&&localStorage.getItem('zp3_pending_sync')==='1')_probeAndSync();
+  });
+  setInterval(()=>{if(localStorage.getItem('zp3_pending_sync')==='1')_probeAndSync();},30000);
+}
+
 // Diagnostic: ring buffer of recent save attempts so we can see WHY a save
 // failed when PTR has to rescue records. Inspect via window._saveLog in dev tools.
 window._saveLog=window._saveLog||[];
@@ -1067,10 +1122,14 @@ async function supaSaveToCloud(){
       await _supa.from('zj_data').update({gallery_photos:JSON.stringify(_photosMeta.slice(-300))}).eq('user_id',uid);
     }catch(_e5){}
     _logSave('ok',{id:_attemptId,mileage:_mileCount});
+    localStorage.removeItem('zp3_pending_sync');
+    _hideOfflineBanner();
     supaSetStatus('synced');
   }catch(e){
     _logSave('throw',{id:_attemptId,name:e?.name,code:e?.code,msg:e?.message||String(e)});
     console.warn('Cloud save failed:',e);
+    localStorage.setItem('zp3_pending_sync','1');
+    _showOfflineBanner();
     supaSetStatus('error');
   }
 }
@@ -1447,8 +1506,40 @@ async function supaLoadFromCloud(){
 
     setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
     setTimeout(()=>checkNearbyJob(),4000);
+    // Cache successful load for offline fallback — strip inline receipt blobs to stay within localStorage limits
+    try{
+      const _snap={clients,bids,jobs,payments,income,
+        expenses:expenses.map(({receipt_img,...r})=>r),
+        mileage,liens,timeEntries,licenses,events,contracts,photos,checksState,
+        settings:S,cached_at:new Date().toISOString()};
+      localStorage.setItem('zp3_cloud_cache',JSON.stringify(_snap));
+    }catch(_ce){}
+    localStorage.removeItem('zp3_pending_sync');
+    _hideOfflineBanner();
   }catch(e){
     console.warn('Cloud load failed:',e);
+    // Attempt to serve from local cache so the app works fully offline
+    const _cc=localStorage.getItem('zp3_cloud_cache');
+    if(_cc){
+      try{
+        const _cd=JSON.parse(_cc);
+        clients=_cd.clients||[];bids=_cd.bids||[];jobs=_cd.jobs||[];
+        payments=_cd.payments||[];income=_cd.income||[];expenses=_cd.expenses||[];
+        mileage=_cd.mileage||[];liens=_cd.liens||[];timeEntries=_cd.timeEntries||[];
+        if(_cd.licenses?.length)licenses=_cd.licenses;
+        if(_cd.events?.length)events=_cd.events;
+        if(_cd.contracts?.length)contracts=_cd.contracts;
+        if(_cd.photos?.length)photos=_cd.photos;
+        if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
+        if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
+        _supaCloudLoaded=true;
+        localStorage.setItem('zp3_pending_sync','1');
+        _removeBootOverlay();renderDash();buildScopeGrid();
+        _showOfflineBanner();
+        supaSetStatus('error');
+        return;
+      }catch(_ce){console.warn('Cache load failed:',_ce);}
+    }
     _removeBootOverlay();
     renderDash();buildScopeGrid();
     supaSetStatus('error');
