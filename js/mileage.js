@@ -1317,8 +1317,17 @@ function _milRenderTripList(shown,yr){
     const reviewClass=needsCount?' has-review':'';
     const _sorted=trips.slice().sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
     const tripRows=_sorted.map((r,i)=>{
-      const fromAddr=r.from_name||r.from||'';
-      const toAddr=r.to_name||r.to||(r.client_id?getClientById(r.client_id)?.addr||'':'');
+      const fromName=r.from_name||'';
+      const fromAddr=r.from||'';
+      const toName=r.to_name||'';
+      const toAddr=r.to||(r.client_id?getClientById(r.client_id)?.addr||'':'');
+      const _loc=(name,addr)=>{
+        if(!name&&!addr)return'';
+        if(name&&addr&&name!==addr)return escHtml(name)+'<div style="font-size:12px;color:var(--text3);font-weight:400;margin-top:1px">'+escHtml(addr)+'</div>';
+        return escHtml(name||addr);
+      };
+      const fromHtml=_loc(fromName,fromAddr)||'<span style="color:var(--text-3);font-style:italic">Start not recorded</span>';
+      const toHtml=_loc(toName,toAddr)||'<span style="color:var(--text-3);font-style:italic">End not recorded</span>';
       const needsClass=r.purpose?'':' needs';
       const tripNum=trips.length-i;
       return '<div class="mil-day-trip'+needsClass+'">'+
@@ -1326,8 +1335,8 @@ function _milRenderTripList(shown,yr){
           '<div class="mil-route-spine"><div class="mil-route-pin-s"></div><div class="mil-route-spine-line"></div><div class="mil-route-pin-e"></div></div>'+
           '<div class="mil-route-addrs">'+
             '<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Trip '+tripNum+'</div>'+
-            '<div class="mil-day-trip-from">'+(fromAddr?escHtml(fromAddr):'<span style="color:var(--text-3);font-style:italic">Start not recorded</span>')+'</div>'+
-            '<div class="mil-day-trip-to">'+(toAddr?escHtml(toAddr):'<span style="color:var(--text-3);font-style:italic">End not recorded</span>')+'</div>'+
+            '<div class="mil-day-trip-from">'+fromHtml+'</div>'+
+            '<div class="mil-day-trip-to">'+toHtml+'</div>'+
             (_hasMultiDriver&&r.logged_by_name?'<div style="font-size:10px;color:var(--text3);font-weight:500;margin-top:2px">Driver: '+escHtml(r.logged_by_name)+'</div>':'')+
           '</div>'+
         '</div>'+
