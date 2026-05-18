@@ -981,6 +981,171 @@ function closeClientForm(){
   editClientId=null;
 }
 
+// ── Contact Import ──────────────────────────────────────────
+let _importContacts=[];
+
+function openImportContacts(){
+  const m=document.getElementById('import-modal');
+  if(!m)return;
+  _importContacts=[];
+  document.getElementById('import-preview').style.display='none';
+  const phoneOpt=document.getElementById('import-phone-opt');
+  if(phoneOpt)phoneOpt.style.display=('contacts' in navigator&&'ContactsManager' in window)?'block':'none';
+  m.style.display='flex';
+}
+
+function closeImportModal(){
+  const m=document.getElementById('import-modal');
+  if(m)m.style.display='none';
+}
+
+async function _importPhoneContacts(){
+  try{
+    const raw=await navigator.contacts.select(['name','tel','email'],{multiple:true});
+    if(!raw||!raw.length){showToast('No contacts selected','ℹ️');return;}
+    const parsed=raw.map(c=>({
+      name:(c.name&&c.name[0])||'',
+      phone:(c.tel&&c.tel[0])||'',
+      email:(c.email&&c.email[0])||'',
+      addr:'',city:'',state:'',zip:''
+    })).filter(c=>c.name&&c.phone);
+    _showImportPreview(parsed);
+  }catch(e){showToast('Contact access denied','⚠️');}
+}
+
+function _handleImportFile(file){
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const text=e.target.result;
+    const ext=(file.name.split('.').pop()||'').toLowerCase();
+    const parsed=(ext==='vcf'||ext==='vcard')?_parseVCard(text):_parseCSV(text);
+    if(!parsed.length){showToast('No contacts found in file','⚠️');return;}
+    _showImportPreview(parsed);
+  };
+  reader.readAsText(file);
+}
+
+const _IMPORT_FIELDS={
+  name:    /^(full.?name|name|client|customer|contact|display.?name|client.?name)$/i,
+  first:   /^(first.?name|first|fname|given.?name|forename)$/i,
+  last:    /^(last.?name|last|lname|surname|family.?name)$/i,
+  phone:   /^(phone|mobile|cell|telephone|tel|ph|number|phone.?number|mobile.?number|cell.?number|primary.?phone)$/i,
+  email:   /^(email|e.?mail|email.?address)$/i,
+  address: /^(address|street|addr|location|service.?address|street.?address|mailing.?address)$/i,
+  city:    /^(city|town|municipality)$/i,
+  state:   /^(state|province|st)$/i,
+  zip:     /^(zip|postal|postal.?code|zip.?code)$/i,
+};
+
+function _parseCSV(text){
+  const lines=text.split(/\r?\n/).filter(l=>l.trim());
+  if(lines.length<2)return[];
+  const headers=_csvRow(lines[0]).map(h=>h.trim());
+  const map={};
+  headers.forEach((h,i)=>{
+    for(const[field,re] of Object.entries(_IMPORT_FIELDS)){
+      if(re.test(h)&&!Object.values(map).includes(field)){map[i]=field;break;}
+    }
+  });
+  const contacts=[];
+  for(let r=1;r<lines.length;r++){
+    const cols=_csvRow(lines[r]);
+    const raw={};
+    Object.entries(map).forEach(([i,field])=>{raw[field]=(cols[i]||'').trim();});
+    if(!raw.name&&(raw.first||raw.last))raw.name=[raw.first,raw.last].filter(Boolean).join(' ');
+    if(!raw.name||!raw.phone)continue;
+    contacts.push({name:raw.name,phone:raw.phone,email:raw.email||'',addr:raw.address||'',city:raw.city||'',state:raw.state||'',zip:raw.zip||''});
+  }
+  return contacts;
+}
+
+function _csvRow(line){
+  const cols=[];let cur='';let inQ=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(ch==='"'&&!inQ){inQ=true;continue;}
+    if(ch==='"'&&inQ&&(i===line.length-1||line[i+1]===',')){inQ=false;continue;}
+    if(ch===','&&!inQ){cols.push(cur);cur='';continue;}
+    cur+=ch;
+  }
+  cols.push(cur);
+  return cols;
+}
+
+function _parseVCard(text){
+  const contacts=[];
+  const cards=text.split(/BEGIN:VCARD/i).slice(1);
+  cards.forEach(card=>{
+    const get=re=>{const m=card.match(re);return m?(m[1]||'').trim():'';};
+    let name=get(/^FN[^:\r\n]*:(.+)$/m);
+    if(!name){
+      const n=get(/^N[^:\r\n]*:(.+)$/m);
+      if(n){const p=n.split(';');name=[p[1],p[0]].filter(Boolean).join(' ');}
+    }
+    const phone=get(/^TEL[^:\r\n]*:(.+)$/m);
+    const email=get(/^EMAIL[^:\r\n]*:(.+)$/m);
+    const adr=get(/^ADR[^:\r\n]*:(.+)$/m);
+    let addr='',city='',state='',zip='';
+    if(adr){const p=adr.split(';');addr=(p[2]||'').trim();city=(p[3]||'').trim();state=(p[4]||'').trim();zip=(p[5]||'').trim();}
+    if(name&&phone)contacts.push({name,phone,email,addr,city,state,zip});
+  });
+  return contacts;
+}
+
+function _showImportPreview(parsed){
+  const existingPhones=new Set(clients.map(c=>(c.phone||'').replace(/\D/g,'')));
+  const existingNames=new Set(clients.map(c=>(c.name||'').toLowerCase().trim()));
+  const toImport=parsed.filter(c=>{
+    const ph=c.phone.replace(/\D/g,'');
+    return ph.length>=7&&!existingPhones.has(ph)&&!existingNames.has(c.name.toLowerCase().trim());
+  });
+  const skipped=parsed.length-toImport.length;
+  _importContacts=toImport;
+  const preview=document.getElementById('import-preview');
+  const summary=document.getElementById('import-preview-summary');
+  const list=document.getElementById('import-preview-list');
+  const btn=document.getElementById('import-confirm-btn');
+  if(!preview)return;
+  const hasEmail=toImport.some(c=>c.email);
+  const hasAddr=toImport.some(c=>c.addr||c.city);
+  summary.innerHTML='<strong>'+toImport.length+' contacts ready to import</strong>'+
+    (hasEmail?' <span style="color:var(--green-mid)">· Email ✓</span>':'')+
+    (hasAddr?' <span style="color:var(--green-mid)">· Address ✓</span>':'')+
+    (skipped?' <span style="color:var(--text3)">· '+skipped+' skipped (already in list)</span>':'');
+  list.innerHTML=toImport.slice(0,25).map(c=>
+    '<div style="padding:7px 10px;border-bottom:1px solid var(--border2)">'+
+      '<strong>'+escHtml(c.name)+'</strong>'+
+      '<span style="color:var(--text3);margin-left:8px">'+escHtml(c.phone)+'</span>'+
+      (c.email?'<span style="color:var(--text3);margin-left:8px">'+escHtml(c.email)+'</span>':'')+
+    '</div>'
+  ).join('')+(toImport.length>25?'<div style="padding:7px 10px;color:var(--text3)">…and '+(toImport.length-25)+' more</div>':'');
+  if(btn)btn.textContent='Import '+toImport.length+' contacts';
+  preview.style.display='block';
+}
+
+function _doImport(){
+  if(!_importContacts.length)return;
+  const today=todayKey();
+  let added=0;
+  _importContacts.forEach((c,i)=>{
+    const id=Date.now()+i;
+    const addr=[c.addr,c.city,[c.state,c.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+    const nc={id,name:c.name,phone:c.phone,email:c.email||'',
+      addr,street:c.addr||'',city:c.city||'',state:c.state||'',zip:c.zip||'',
+      source:'Existing Contact',ref:'',notes:'',created:today,ptype:'',
+      extraAddresses:[],clientToken:'',clientHubKey:''};
+    clients.push(nc);
+    _ensureClientToken(nc.id);
+    added++;
+  });
+  saveAll();
+  renderClients();
+  closeImportModal();
+  showToast(added+' contact'+(added!==1?'s':'')+' imported','✅');
+  _importContacts=[];
+}
+
 function setCDTab(tab,btn){
   cdTab=tab;
   ['overview','mileage','bids','jobs','expenses','contracts'].forEach(t=>{
