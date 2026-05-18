@@ -2745,6 +2745,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
     <div class="tbar-r">
       <button class="btn btn-sm" onclick="goPg('pg-intake')">📋 Intake form</button>
+      <button class="btn btn-sm" onclick="openImportContacts()">Import</button>
       <button class="btn btn-p btn-sm" onclick="openNewClient()">+ New lead</button>
     </div>
   </div>
@@ -3375,8 +3376,8 @@ if(supaEnabled()){
 <script>document.getElementById('app-version').textContent='v'+APP_VERSION;</script>
 
 <!-- ── Import Contacts Modal ── -->
-<div id="import-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9998;align-items:flex-end;justify-content:center" onclick="if(event.target===this)closeImportModal()">
-  <div style="background:var(--bg-card);border-radius:var(--r-xl) var(--r-xl) 0 0;width:100%;max-width:500px;padding:20px 20px 32px;max-height:85vh;overflow-y:auto;box-shadow:var(--shadow-modal)">
+<div id="import-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9998;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)closeImportModal()">
+  <div style="background:var(--bg-card);border-radius:var(--r-xl);width:100%;max-width:460px;padding:20px 20px 24px;max-height:85vh;overflow-y:auto;box-shadow:var(--shadow-modal)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
       <div style="font-size:16px;font-weight:800">Import Contacts</div>
       <button onclick="closeImportModal()" style="background:none;border:none;color:var(--text3);font-size:22px;cursor:pointer;padding:0;line-height:1">×</button>
