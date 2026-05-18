@@ -1329,11 +1329,55 @@ function addJobPhoto(jobId,input,type){
             saveAll();
             typeof _uploadClientHub==='function'&&_uploadClientHub(j.client_id).catch(()=>{});
           }
+        }else{
+          // Storage offline — mark base64 for retry on reconnect
+          const lastPhoto=j.photos[j.photos.length-1];
+          if(lastPhoto){lastPhoto.pendingUpload=true;lastPhoto._uploadExt=(file.name.split('.').pop()||'jpg').toLowerCase();lastPhoto._uploadMime=file.type||'image/jpeg';saveAll();}
         }
-      }catch(_e){}
+      }catch(_e){
+        // Network error — mark for retry
+        const lastPhoto=j.photos[j.photos.length-1];
+        if(lastPhoto&&!lastPhoto.pendingUpload){lastPhoto.pendingUpload=true;lastPhoto._uploadExt=(file.name.split('.').pop()||'jpg').toLowerCase();lastPhoto._uploadMime=file.type||'image/jpeg';saveAll();}
+      }
+    }else{
+      // Not connected to Supabase — mark base64 for upload when online
+      const lastPhoto=j.photos[j.photos.length-1];
+      if(lastPhoto){lastPhoto.pendingUpload=true;lastPhoto._uploadExt=(file.name.split('.').pop()||'jpg').toLowerCase();lastPhoto._uploadMime=file.type||'image/jpeg';saveAll();}
     }
   };
   reader.readAsDataURL(file);
+}
+async function _drainPhotoQueue(){
+  if(!supaEnabled()||!_supaUser||!_supa)return;
+  let dirty=false;
+  for(const j of jobs){
+    if(!j.photos)continue;
+    for(const p of j.photos){
+      if(!p.pendingUpload||!p.data)continue;
+      try{
+        const ext=p._uploadExt||'jpg';
+        const mime=p._uploadMime||'image/jpeg';
+        const path=_supaUser.id+'/'+j.id+'/'+p.type+'-'+Date.now()+'.'+ext;
+        // Convert base64 data URL to Blob for upload
+        const b64=p.data.split(',')[1]||p.data;
+        const bytes=Uint8Array.from(atob(b64),ch=>ch.charCodeAt(0));
+        const blob=new Blob([bytes],{type:mime});
+        const{error}=await _supa.storage.from('gallery').upload(path,blob,{contentType:mime,upsert:false});
+        if(!error){
+          const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
+          const publicUrl=urlData?.publicUrl||'';
+          if(publicUrl){
+            const c=clients.find(x=>x.id===j.client_id);
+            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type:p.type,caption:'',client_id:j.client_id||null,client_name:c?.name||'',job_id:j.id,job_name:j.name||'',uploadedAt:new Date().toISOString()});
+            typeof _uploadClientHub==='function'&&_uploadClientHub(j.client_id).catch(()=>{});
+          }
+          delete p.pendingUpload;delete p._uploadExt;delete p._uploadMime;
+          dirty=true;
+        }
+      }catch(_e){}
+    }
+  }
+  if(dirty)saveAll();
 }
 function deleteJobPhoto(jobId,idx,type){
   const j=jobs.find(x=>x.id===jobId);if(!j||!j.photos)return;
