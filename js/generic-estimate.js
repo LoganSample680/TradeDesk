@@ -231,6 +231,12 @@ function openGenericEstimate(c,bidId,_tradePick){
         _tmCapAction=b.tmCapAction||'Stop & get re-approval';
       }
       if(b.isFreeForm)_geiIsFreeForm=true;
+      // Restore deposit pct from saved bid (back-calculate from deposit/amount)
+      if(!b.isTM&&b.amount>0&&b.deposit>0){
+        const _storedPct=Math.round((b.deposit/b.amount)*100);
+        const _depEl=document.getElementById('byo-deposit-pct');
+        if(_depEl)_depEl.value=_storedPct;
+      }
     }
   }
   if(!_geiEditBidId){
@@ -254,6 +260,7 @@ function openGenericEstimate(c,bidId,_tradePick){
       if(_b.panelSched)_panelSched=JSON.parse(JSON.stringify(_b.panelSched));
       if(_b.isFreeForm)_geiIsFreeForm=true;
       if(_b.isTM){_geiIsTM=true;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmMatMarkup=_b.tmMatMarkup||_b.geiTaxPct||20;_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
+      if(!_b.isTM&&_b.amount>0&&_b.deposit>0){const _storedPct=Math.round((_b.deposit/_b.amount)*100);const _depEl=document.getElementById('byo-deposit-pct');if(_depEl)_depEl.value=_storedPct;}
       // Purge other empty duplicates for this client+trade now that we have the right one
       bids=bids.filter(b=>b.id===_existingGei.id||!(b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&!b.amount&&!(b.geiLines||[]).length&&(b.status==='Draft'||b.status==='Pending')&&(b.trade_type===_geiTrade||!b.trade_type)));
       saveAll();
