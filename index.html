@@ -1711,20 +1711,12 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
     <div id="proposal-link-bar" style="display:none;margin-top:8px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px">
       <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:8px">✓ Link ready — send to client</div>
-      <a id="proposal-link-anchor" href="#" target="_blank" style="display:block;background:#fff;border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px;text-decoration:none;margin-bottom:8px">
-        <div style="display:flex;align-items:center;gap:10px">
-          <div style="font-size:24px;line-height:1;flex-shrink:0">📄</div>
-          <div style="flex:1;min-width:0;overflow:hidden">
-            <div id="proposal-link-label" style="font-size:13px;font-weight:700;color:var(--blue-dk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
-            <div id="proposal-link-sublabel" style="font-size:11px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
-            <div id="proposal-link-shorturl" style="font-size:11px;color:var(--blue);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600"></div>
-          </div>
-          <div style="font-size:11px;color:var(--blue);white-space:nowrap;flex-shrink:0;font-weight:600">View ↗</div>
-        </div>
-      </a>
+      <a id="proposal-link-anchor" href="#" target="_blank" style="display:none"></a>
+      <div id="proposal-link-label" style="display:none"></div>
+      <div id="proposal-link-sublabel" style="display:none"></div>
+      <div id="proposal-link-shorturl" style="display:none"></div>
       <input id="proposal-link-input" readonly style="display:none">
-      <button onclick="shareProposalLink()" class="btn" style="width:100%;padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);margin-bottom:8px">⬆️ Send to client</button>
-      <button onclick="saveAndExitEstimate()" class="btn btn-p" style="width:100%;font-size:14px">✓ Done — back to home</button>
+      <button onclick="shareProposalLink()" class="btn" style="width:100%;padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue)">⬆️ Send to client</button>
       <div style="font-size:11px;color:var(--text3);margin-top:6px">Bid saved as Pending. You'll get a follow-up reminder in 3 days if no response.</div>
     </div>
   </div>
