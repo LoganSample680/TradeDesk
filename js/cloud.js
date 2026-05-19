@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.127';
+const APP_VERSION='05.19.26.128';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -541,6 +541,9 @@ async function supaInit(){
           supaShowLogin({force:true});
         } else if(localStorage.getItem('zp3_cloud_cache')){
           // Non-deliberate sign-out (token refresh failure or rotation) — keep data in memory.
+          // Stop autoRefresh immediately so Supabase doesn't keep retrying offline and
+          // firing SIGNED_OUT in a loop. _startOfflineWatcher's online handler restarts it.
+          if(_supa)_supa.auth.stopAutoRefresh();
           // autoRefreshToken fires TOKEN_REFRESHED within ms if it was just a rotation.
           // Delay the banner 1s so routine rotations don't cause a visible flash.
           _loadedFromCacheOnly=true;
@@ -1075,7 +1078,10 @@ function _saveSessionBackup(session){
 }
 async function supaSignOut(){
   _deliberateSignOut=true;
-  if(_supa)await _supa.auth.signOut();
+  // scope:'local' clears this device only — refresh token stays valid server-side.
+  // scope:'global' (the default) revokes the token on the server, so the backup key
+  // can't be used to silently re-auth when the user comes back online.
+  if(_supa)await _supa.auth.signOut({scope:'local'});
 }
 
 // ── Supabase Storage helpers for receipt photos ───────────────────────
@@ -1236,7 +1242,11 @@ function _isOfflineState(){
   return !_supaCloudLoaded||_loadedFromCacheOnly||_mergeOnSignIn||localStorage.getItem('zp3_pending_sync')==='1';
 }
 function _startOfflineWatcher(){
-  window.addEventListener('online',()=>_probeAndSync());
+  // Restart auto-refresh and probe on connectivity restore.
+  window.addEventListener('online',()=>{if(_supa)_supa.auth.startAutoRefresh();_probeAndSync();});
+  // Stop auto-refresh when the browser reports offline so Supabase doesn't fire
+  // SIGNED_OUT repeatedly from failed refresh attempts while disconnected.
+  window.addEventListener('offline',()=>{if(_supa)_supa.auth.stopAutoRefresh();});
   document.addEventListener('visibilitychange',()=>{
     // Flush offline-pending to localStorage the moment the app is backgrounded —
     // last chance to persist before iOS suspends or kills the process.
