@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.129';
+const APP_VERSION='05.19.26.130';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -503,6 +503,7 @@ async function supaInit(){
             _oBids.filter(b=>!_bSet.has(b.id)).forEach(b=>{bids.push(b);_merged=true;});
             _oJobs.filter(j=>!_jSet.has(j.id)).forEach(j=>{jobs.push(j);_merged=true;});
             if(_merged){await _flushSaveNow();renderDash();}
+            goPg('pg-dash'); // ensure we land on home whether cloud load succeeded or fell back to cache
             typeof _drainHubQueue==='function'&&_drainHubQueue();
             typeof _drainPhotoQueue==='function'&&_drainPhotoQueue();
           } else {
@@ -1004,6 +1005,7 @@ function _enterOfflineMode(){
   _loadedFromCacheOnly=true;
   _mergeOnSignIn=true; // merge any new records entered here when SIGNED_IN fires
   _removeBootOverlay();renderDash();buildScopeGrid();
+  goPg('pg-dash'); // always land on home, not whatever page the login overlay sat on top of
   _showOfflineBanner();
   // Immediately probe for connection so re-auth fires without waiting for the 5s tick
   setTimeout(()=>_probeAndSync(),500);
@@ -1045,19 +1047,17 @@ async function supaSignIn(){
   const pass=document.getElementById('supa-pass')?.value;
   const err=document.getElementById('supa-login-err');
   if(!email||!pass){if(err)err.textContent='Enter email and password.';return;}
-  if(!navigator.onLine){
-    if(err){
-      if(localStorage.getItem('zp3_cloud_cache')){
-        err.innerHTML='No internet — <button onclick="_enterOfflineMode()" style="border:none;background:none;color:var(--blue);text-decoration:underline;cursor:pointer;font-size:inherit;font-family:inherit;padding:0">use your saved data instead</button>';
-      }else{
-        err.textContent='No internet connection — connect to sign in.';
-      }
-    }
-    return;
-  }
   if(err)err.textContent='Signing in...';
-  const{error}=await _supa.auth.signInWithPassword({email,password:pass});
-  if(error&&err)err.textContent=error.message;
+  // Attempt real auth — on network failure (no HTTP status, or thrown exception),
+  // enter offline mode automatically if we have cached data. This works on iOS where
+  // navigator.onLine unreliably returns true even on airplane mode.
+  let _authErr=null;
+  try{const{error}=await _supa.auth.signInWithPassword({email,password:pass});_authErr=error;}
+  catch(e){_authErr={status:0};}
+  if(_authErr){
+    if(!_authErr.status&&localStorage.getItem('zp3_cloud_cache')){_enterOfflineMode();return;}
+    if(err)err.textContent=_authErr.message||'No internet connection.';
+  }
 }
 async function supaForgotPassword(){
   const email=document.getElementById('supa-email')?.value?.trim();
