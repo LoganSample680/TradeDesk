@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.122';
+const APP_VERSION='05.19.26.123';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -414,6 +414,7 @@ async function supaInit(){
     const{data:{session}}=await _supa.auth.getSession();
     if(session){
       _supaUser=session.user;
+      _saveSessionBackup(session);
       const hasAccount=await loadAccountData();
       if(hasAccount){
         await supaLoadFromCloud();
@@ -472,6 +473,7 @@ async function supaInit(){
           _devSupportMode=false;_devSupportName='';_devSavedState=null;
         }
         _supaUser=session.user;
+        _saveSessionBackup(session);
         document.getElementById('supa-login-overlay')?.remove();
         document.getElementById('welcome-overlay')?.remove();
         const hasAccount=await loadAccountData();
@@ -517,11 +519,12 @@ async function supaInit(){
         // this is the signal that we're back online with a valid session; sync now.
         if(session){
           _supaUser=session.user;
+          _saveSessionBackup(session);
           if(!_supaCloudLoaded||_loadedFromCacheOnly||_mergeOnSignIn)_onReconnect();
         }
         return;
       } else if(event==='INITIAL_SESSION'){
-        if(session)_supaUser=session.user;
+        if(session){_supaUser=session.user;_saveSessionBackup(session);}
         return;
       } else if(event==='SIGNED_OUT'){
         _supaUser=null;_user=null;_account=null;_config=null;
@@ -1052,8 +1055,16 @@ async function supaForgotPassword(){
   else{if(err){err.style.color='#1a7340';err.textContent='Reset link sent — check your email.';}}
 }
 let _deliberateSignOut=false;
+function _saveSessionBackup(session){
+  if(!session)return;
+  try{localStorage.setItem('zp3_session_backup',JSON.stringify({
+    access_token:session.access_token,
+    refresh_token:session.refresh_token
+  }));}catch(_e){}
+}
 async function supaSignOut(){
   _deliberateSignOut=true;
+  localStorage.removeItem('zp3_session_backup');
   if(_supa)await _supa.auth.signOut();
 }
 
@@ -1177,13 +1188,19 @@ async function _probeAndSync(){
     await fetch('/version.json?_='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(5000)});
     _hideOfflineBanner(); // connection confirmed — hide immediately, sync in background
     if(_supa&&!_supaUser&&_mergeOnSignIn){
-      // refreshSession() makes a live network call using the stored refresh token.
-      // If the token is still valid (signal drop, not explicit sign-out), this silently
-      // re-auths and fires TOKEN_REFRESHED → _onReconnect() syncs without a login screen.
-      // If the refresh token is gone or expired, fall through to the login overlay.
-      _supa.auth.refreshSession().then(({data:{session}})=>{
-        if(!session)supaShowLogin();
-      }).catch(()=>supaShowLogin());
+      // Supabase clears its own LS key before firing SIGNED_OUT, so refreshSession()
+      // has nothing to work with. Instead we keep our own backup of the refresh token
+      // and call setSession() which makes a live network call to mint a new access token.
+      // On success Supabase fires TOKEN_REFRESHED → _onReconnect() syncs without a login.
+      // Falls to login only if refresh token is expired (30+ days) or deliberately cleared.
+      const _bk=(()=>{try{return JSON.parse(localStorage.getItem('zp3_session_backup')||'null');}catch(_e){return null;}})();
+      if(_bk?.access_token&&_bk?.refresh_token){
+        _supa.auth.setSession(_bk).then(({data:{session}})=>{
+          if(!session)supaShowLogin();
+        }).catch(()=>supaShowLogin());
+      } else {
+        supaShowLogin();
+      }
       return;
     }
     _onReconnect();
