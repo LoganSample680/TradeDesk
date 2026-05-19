@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.138';
+const APP_VERSION='05.19.26.139';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -502,7 +502,7 @@ async function supaInit(){
         if(_supaCloudLoaded && _supaUser && session.user.id===_supaUser.id){return;}
         if(_supaCloudLoaded && _supaUser && session.user.id!==_supaUser.id){
           // Different user signed in on same device — full reset before loading their data
-          _supaCloudLoaded=false;_mergeOnSignIn=false; // don't merge previous user's data
+          _supaCloudLoaded=false;_mergeOnSignIn=false;_realtimeSubscribed=false;_loadInProgress=false;
           clearTimeout(_syncTimer);_syncTimer=null;
           _devSupportMode=false;_devSupportName='';_devSavedState=null;
         }
@@ -568,7 +568,7 @@ async function supaInit(){
         // navigator.onLine is unreliable on iOS — don't use it. Always prefer cache.
         if(_deliberateSignOut){
           clearTimeout(_syncTimer);_syncTimer=null; // prevent a live timer from flushing emptied arrays
-          _supaCloudLoaded=false; // force a fresh load on next sign-in
+          _supaCloudLoaded=false;_realtimeSubscribed=false;_loadInProgress=false; // force a fresh load on next sign-in
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],weatherLat:null,weatherLon:null,locationDenied:false};
           saveAll();
