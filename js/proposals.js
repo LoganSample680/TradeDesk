@@ -531,7 +531,7 @@ async function sendProposalLink(){
       amount:_propFinal,
       deposit:Math.round(_propFinal*0.25*100)/100,
       createdAt:new Date().toISOString(),status:'pending',
-      notifyEmail:_supaUser.email,businessPhone:S.bphone||'',stripeConnectEnabled:!!(_stripeConnectStatus?.charges_enabled),
+      notifyEmail:_supaUser.email,businessPhone:S.bphone||'',stripeConnectEnabled:!!(_stripeConnectStatus?.charges_enabled),ccSurchargeEnabled:!!(S.ccSurchargeEnabled),ccSurchargePct:S.ccSurchargePct||3,
       isPortfolio:document.getElementById('portfolio-toggle')?.checked||false,
       portfolioPct:parseInt(document.getElementById('portfolio-pct')?.value)||15,
       portfolioTarget:5,
