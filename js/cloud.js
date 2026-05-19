@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.132';
+const APP_VERSION='05.19.26.133';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -1442,6 +1442,13 @@ async function supaSaveToCloud(){
     _logSave('ok',{id:_attemptId,mileage:_mileCount});
     localStorage.removeItem('zp3_pending_sync');
     localStorage.removeItem('zp3_offline_pending'); // clear any stale pending written during offline session
+    // Update the local cache to match what we just pushed. This means a force-quit followed
+    // by a reopen with a brief network blip will still show current data — no stale snapshot.
+    try{const _snap={clients,bids,jobs,payments,income,
+      expenses:expenses.map(({receipt_img,...r})=>r),
+      mileage,liens,timeEntries,licenses,events,contracts,photos,checksState,
+      settings:S,cached_at:new Date().toISOString()};
+    localStorage.setItem('zp3_cloud_cache',JSON.stringify(_snap));}catch(_ce){}
     _hideOfflineBanner();
     supaSetStatus('synced');
   }catch(e){
