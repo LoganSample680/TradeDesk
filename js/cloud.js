@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.18.26.115';
+const APP_VERSION='05.18.26.116';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -425,8 +425,9 @@ async function supaInit(){
         supaSetStatus('cloud');
       }
     } else {
-      // No valid session — if offline with cached data, skip login and load from cache.
-      // Supabase will fire SIGNED_IN when the token refreshes on reconnect.
+      // No valid session — if offline with cached data, load from cache instead of showing login.
+      // onAuthStateChange + _startOfflineWatcher must always be reached below, so no early return.
+      let _cacheLoaded=false;
       const _cc=localStorage.getItem('zp3_cloud_cache');
       if(!navigator.onLine&&_cc){
         try{
@@ -445,14 +446,16 @@ async function supaInit(){
           _removeBootOverlay();renderDash();buildScopeGrid();
           _showOfflineBanner();
           supaSetStatus('error');
-          return;
+          _cacheLoaded=true;
         }catch(_ce){}
       }
-      // Online or no cache — show login screen
-      _removeBootOverlay();
-      renderDash();buildScopeGrid();
-      supaSetStatus('local');
-      supaShowLogin();
+      if(!_cacheLoaded){
+        // Online or cache parse failed — show login screen
+        _removeBootOverlay();
+        renderDash();buildScopeGrid();
+        supaSetStatus('local');
+        supaShowLogin();
+      }
     }
     _supa.auth.onAuthStateChange(async(event,session)=>{
       if(event==='SIGNED_IN'){
