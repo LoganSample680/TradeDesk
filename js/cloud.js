@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.18.26.116';
+const APP_VERSION='05.19.26.117';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -425,11 +425,12 @@ async function supaInit(){
         supaSetStatus('cloud');
       }
     } else {
-      // No valid session — if offline with cached data, load from cache instead of showing login.
+      // No valid session — load from cache if available, regardless of navigator.onLine
+      // (iOS reports onLine:true even on airplane mode, so the flag is not reliable).
       // onAuthStateChange + _startOfflineWatcher must always be reached below, so no early return.
       let _cacheLoaded=false;
       const _cc=localStorage.getItem('zp3_cloud_cache');
-      if(!navigator.onLine&&_cc){
+      if(_cc){
         try{
           const _cd=JSON.parse(_cc);
           clients=_cd.clients||[];bids=_cd.bids||[];jobs=_cd.jobs||[];
@@ -506,15 +507,22 @@ async function supaInit(){
           supaSetStatus('cloud');
           goPg('pg-dash');
         }
-      } else if(event==='TOKEN_REFRESHED'||event==='INITIAL_SESSION'){
-        // Token auto-refreshed — do NOT reload data, just update user ref silently
+      } else if(event==='TOKEN_REFRESHED'){
+        // Token silently refreshed — update user ref. If we were in offline/cache mode,
+        // this is the signal that we're back online with a valid session; sync now.
+        if(session){
+          _supaUser=session.user;
+          if(!_supaCloudLoaded||_loadedFromCacheOnly||_mergeOnSignIn)_onReconnect();
+        }
+        return;
+      } else if(event==='INITIAL_SESSION'){
         if(session)_supaUser=session.user;
         return;
       } else if(event==='SIGNED_OUT'){
         _supaUser=null;_user=null;_account=null;_config=null;
         // Only wipe local data when the user explicitly clicked sign out.
-        // Supabase also fires SIGNED_OUT on token refresh failures (offline) —
-        // in those cases keep data in memory and just show the offline banner.
+        // Supabase fires SIGNED_OUT on token refresh failures too (e.g. offline, network blip).
+        // navigator.onLine is unreliable on iOS — don't use it. Always prefer cache.
         if(_deliberateSignOut){
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],weatherLat:null,weatherLon:null,locationDenied:false};
@@ -522,9 +530,9 @@ async function supaInit(){
           _deliberateSignOut=false;
           supaSetStatus('local');
           supaShowLogin();
-        } else if(!navigator.onLine&&localStorage.getItem('zp3_cloud_cache')){
-          // Token refresh failed offline — data still in memory, keep the app running.
-          // Supabase will fire SIGNED_IN automatically when connection returns.
+        } else if(localStorage.getItem('zp3_cloud_cache')){
+          // Non-deliberate sign-out (token refresh failure) — keep data, show offline banner.
+          // autoRefreshToken will fire TOKEN_REFRESHED when connection returns.
           _loadedFromCacheOnly=true;
           _mergeOnSignIn=true;
           _showOfflineBanner();
@@ -1078,10 +1086,13 @@ async function _deleteReceiptFromStorage(receiptKey){
   if(error)throw error;
 }
 function supaSaveDebounced(){
-  if(!supaEnabled()||!_supaUser)return;
+  if(!supaEnabled())return;
+  // When offline without a session but _mergeOnSignIn is set, still queue supaSaveToCloud
+  // so it writes zp3_offline_pending — the only way offline data survives a force-quit.
+  if(!_supaUser&&!_mergeOnSignIn)return;
   clearTimeout(_syncTimer);
   _syncTimer=setTimeout(()=>supaSaveToCloud(),2000);
-  supaSetStatus('syncing');
+  if(_supaUser)supaSetStatus('syncing');
 }
 // Cancel the 2s debounce and push the full state to Supabase RIGHT NOW.
 // Returns the in-flight save promise so callers can await it.
@@ -1602,9 +1613,23 @@ async function supaLoadFromCloud({silent=false}={}){
   try{
     const _loadUid=_isEmployee?_contractorUserId:_supaUser.id;
     const{data,error}=await _supa.from('zj_data').select('*').eq('user_id',_loadUid).maybeSingle();
-    if(error||!data){
+    if(error){
+      // Real network/server error — throw so the catch block falls back to cache.
+      throw error;
+    }
+    if(!data){
       // First time this user has signed in — no cloud data yet.
+      // Still drain any offline-pending records so they aren't lost on first auth.
       clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
+      try{
+        const _op=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');
+        if(_op){
+          (_op.clients||[]).forEach(c=>clients.push(c));
+          (_op.bids||[]).forEach(b=>bids.push(b));
+          (_op.jobs||[]).forEach(j=>jobs.push(j));
+          localStorage.removeItem('zp3_offline_pending');
+        }
+      }catch(_oe){}
       _supaCloudLoaded=true;
       saveAll();
       if(!silent){_removeBootOverlay();renderDash();buildScopeGrid();}
