@@ -787,16 +787,18 @@ function renderTodayFeed(){
         '</div>'+
       '</div>'});
   }
-  bids.filter(b=>!b.signingToken&&(b.status==='Pending'||(b.status==='Draft'&&b.geiLines!==undefined))&&b.id!==_activeDraftBidId).forEach(b=>{
-    const c=getClientById(b.client_id);if(!c)return;
+  bids.filter(b=>!b.signingToken&&(b.draft||b.status==='Pending'||(b.status==='Draft'&&b.geiLines!==undefined))&&b.id!==_activeDraftBidId).forEach(b=>{
+    const c=getClientById(b.client_id);
+    const displayName=c?.name||b.client_name||b.name||'';
+    if(!displayName)return;
     const days=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
-    const isDraft=b.status==='Draft';
-    const subLabel=isDraft?'Draft — finish &amp; send':(fmt(b.amount)+' · built '+(days===0?'today':days+'d ago')+' · not sent yet');
+    const isDraft=b.status==='Draft'||b.draft;
+    const subLabel=isDraft&&!b.amount?'In progress — finish &amp; send':isDraft?'Draft — finish &amp; send':(fmt(b.amount)+' · built '+(days===0?'today':days+'d ago')+' · not sent yet');
     items.push({priority:6,html:
       '<div class="tf-card">'+
         '<div class="tf-icon">✏️</div>'+
         '<div class="tf-body">'+
-          '<div class="tf-name">'+escHtml(c.name)+'</div>'+
+          '<div class="tf-name">'+escHtml(displayName)+'</div>'+
           '<div class="tf-sub" style="color:var(--text3)">'+subLabel+'</div>'+
         '</div>'+
         '<div class="tf-acts">'+
