@@ -1131,39 +1131,28 @@ function renderPayments(){
     html+='</div>'; // end header
     html+='<div id="pb-'+bid_id+'" style="display:'+(autoOpen?'block':'none')+'">';
 
-    // Pay buttons
+    // Pay buttons — always 4 options: credit card, debit card, ACH, cash
     if(!isPaid&&h.stripeEnabled){
       html+='<div style="background:var(--bg-card);padding:14px 16px;border-bottom:1px solid var(--border)">';
-      if(h.ccSurchargeEnabled){
-        // Two-path: card (with fee) vs bank transfer (free)
+      if(!depPaid&&deposit>0.01&&balance>deposit+0.01){
+        html+='<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Pay in full</div>';
+        html+=_pay4Btns(bid_id,'payBalance',balance,h);
         const pct=h.ccSurchargePct||3;
-        const _cardFmt=(amt)=>fmt(amt*(1+pct/100));
-        const _btnPrimary='display:block;width:100%;padding:13px;border-radius:var(--r);border:none;background:#635BFF;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 3px 12px rgba(99,91,255,.3)';
-        const _btnSec='display:block;width:100%;padding:12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;margin-top:8px';
-        if(!depPaid&&deposit>0.01&&balance>deposit+0.01){
-          html+='<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Choose how to pay</div>';
-          html+='<button id="pay-btn-'+bid_id+'" onclick="payBalance('+bid_id+',\'card\')" style="'+_btnPrimary+';margin-bottom:6px">💳 Credit card — '+_cardFmt(balance)+' <span style="font-size:10px;font-weight:600;opacity:.8">(+'+pct+'% fee)</span></button>';
-          html+='<button onclick="payBalance('+bid_id+',\'us_bank_account\')" style="'+_btnSec+'">🏦 Bank transfer — '+fmt(balance)+' <span style="font-size:11px;color:var(--green-mid);font-weight:700">Free</span></button>';
-          html+='<div style="font-size:10px;color:var(--text3);margin-top:6px">Or <button onclick="payDeposit('+bid_id+',\'card\')" style="background:none;border:none;color:var(--blue);font-size:10px;font-weight:700;cursor:pointer;padding:0;font-family:inherit">pay '+_cardFmt(deposit)+' deposit by credit card</button> / <button onclick="payDeposit('+bid_id+',\'us_bank_account\')" style="background:none;border:none;color:var(--blue);font-size:10px;font-weight:700;cursor:pointer;padding:0;font-family:inherit">'+fmt(deposit)+' by bank</button></div>';
-        }else if(!depPaid&&deposit>0.01){
-          html+='<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Choose how to pay deposit</div>';
-          html+='<button id="pay-btn-'+bid_id+'" onclick="payDeposit('+bid_id+',\'card\')" style="'+_btnPrimary+';margin-bottom:6px">💳 Credit card — '+_cardFmt(deposit)+' <span style="font-size:10px;font-weight:600;opacity:.8">(+'+pct+'% fee)</span></button>';
-          html+='<button onclick="payDeposit('+bid_id+',\'us_bank_account\')" style="'+_btnSec+'">🏦 Bank transfer — '+fmt(deposit)+' <span style="font-size:11px;color:var(--green-mid);font-weight:700">Free</span></button>';
-        }else{
-          html+='<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Choose how to pay balance</div>';
-          html+='<button id="pay-btn-'+bid_id+'" onclick="payBalance('+bid_id+',\'card\')" style="'+_btnPrimary+';margin-bottom:6px">💳 Credit card — '+_cardFmt(balance)+' <span style="font-size:10px;font-weight:600;opacity:.8">(+'+pct+'% fee)</span></button>';
-          html+='<button onclick="payBalance('+bid_id+',\'us_bank_account\')" style="'+_btnSec+'">🏦 Bank transfer — '+fmt(balance)+' <span style="font-size:11px;color:var(--green-mid);font-weight:700">Free</span></button>';
-        }
+        const depCC=h.ccSurchargeEnabled?Math.round(deposit*(1+pct/100)):deposit;
+        const depFee=h.ccSurchargeEnabled?' (+'+pct+'%)':'';
+        const sm='flex:1;padding:8px 4px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg);color:var(--text);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center';
+        html+='<div style="font-size:10px;color:var(--text3);margin-top:2px;margin-bottom:6px;text-align:center">— or pay deposit only —</div>';
+        html+='<div style="display:flex;gap:6px">'+
+          '<button onclick="payDeposit('+bid_id+',\'card\')" style="'+sm+'">💳 Credit<br>'+fmt(depCC)+depFee+'</button>'+
+          '<button onclick="payDeposit('+bid_id+',\'debit\')" style="'+sm+'">💳 Debit<br>'+fmt(deposit)+'</button>'+
+          '<button onclick="payDeposit('+bid_id+',\'us_bank_account\')" style="'+sm+'">🏦 ACH<br>'+fmt(deposit)+'</button>'+
+          '</div>';
+      }else if(!depPaid&&deposit>0.01){
+        html+='<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Pay deposit</div>';
+        html+=_pay4Btns(bid_id,'payDeposit',deposit,h);
       }else{
-        // No surcharge — original single-button flow
-        if(!depPaid&&deposit>0.01&&balance>deposit+0.01){
-          html+='<button id="pay-btn-'+bid_id+'" onclick="payBalance('+bid_id+')" style="display:block;width:100%;padding:14px;border-radius:var(--r);border:none;background:#635BFF;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;margin-bottom:8px;box-shadow:0 3px 12px rgba(99,91,255,.35)">💳 Pay '+fmt(balance)+' in full</button>';
-          html+='<button onclick="payDeposit('+bid_id+')" style="display:block;width:100%;padding:12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center">Or pay '+fmt(deposit)+' deposit</button>';
-        }else if(!depPaid&&deposit>0.01){
-          html+='<button id="pay-btn-'+bid_id+'" onclick="payDeposit('+bid_id+')" style="display:block;width:100%;padding:14px;border-radius:var(--r);border:none;background:#635BFF;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 3px 12px rgba(99,91,255,.35)">💳 Pay '+fmt(deposit)+' deposit</button>';
-        }else{
-          html+='<button id="pay-btn-'+bid_id+'" onclick="payBalance('+bid_id+')" style="display:block;width:100%;padding:14px;border-radius:var(--r);border:none;background:#635BFF;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 3px 12px rgba(99,91,255,.35)">💳 Pay '+fmt(balance)+' balance</button>';
-        }
+        html+='<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Pay balance</div>';
+        html+=_pay4Btns(bid_id,'payBalance',balance,h);
       }
       html+='<div style="text-align:center;font-size:10px;color:var(--text3);margin-top:8px">🔒 Secured by Stripe · SSL encrypted</div>';
       html+='</div>';
@@ -1378,10 +1367,11 @@ async function _launchCheckout(bidId,amount,label,method='card'){
   if(btn){btn.textContent='Setting up…';btn.disabled=true;}
   try{
     const hubBase=location.href.split('#')[0];
+    const stripeMethod=method==='debit'?'card':method;
     const surchargeAmount=(method==='card'&&_hub.ccSurchargeEnabled)?Math.round(amount*(_hub.ccSurchargePct||3)/100):0;
     const res=await fetch(SUPA_URL+'/functions/v1/create-checkout',{
       method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
-      body:JSON.stringify({amount,currency:'usd',paymentMethod:method,
+      body:JSON.stringify({amount,currency:'usd',paymentMethod:stripeMethod,
         surchargeAmount:surchargeAmount||undefined,
         proposalKey:bid.proposalKey||null,clientName:_hub.clientName,
         businessName:_hub.contractorName,bidId:String(bid.id),
@@ -1427,29 +1417,38 @@ async function payDeposit(bidId,method='card'){
   if(amount<50){alert('No deposit amount found.');return;}
   await _launchCheckout(bidId,amount,'Pay deposit',method);
 }
+function _pay4Btns(bidId,payFn,amt,hub){
+  const pct=hub.ccSurchargePct||3;
+  const ccAmt=hub.ccSurchargeEnabled?Math.round(amt*(1+pct/100)):amt;
+  const fee=hub.ccSurchargeEnabled?' <span style="font-size:10px;font-weight:600;opacity:.8">(+'+pct+'% fee)</span>':'';
+  const bP='display:block;width:100%;padding:12px;border-radius:var(--r);border:none;background:#635BFF;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 3px 12px rgba(99,91,255,.3);margin-bottom:7px';
+  const bS='display:block;width:100%;padding:11px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg);color:var(--text);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;margin-bottom:7px';
+  const bT='display:block;width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border);background:var(--bg2);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;margin-bottom:7px';
+  return '<button id="pay-btn-'+bidId+'" onclick="'+payFn+'('+bidId+',\'card\')" style="'+bP+'">💳 Credit card — '+fmt(ccAmt)+fee+'</button>'+
+    '<button onclick="'+payFn+'('+bidId+',\'debit\')" style="'+bS+'">💳 Debit card — '+fmt(amt)+'</button>'+
+    '<button onclick="'+payFn+'('+bidId+',\'us_bank_account\')" style="'+bS+'">🏦 Bank transfer (ACH) — '+fmt(amt)+' <span style="font-size:11px;color:var(--green-mid);font-weight:700">Free</span></button>'+
+    '<button onclick="_showCashMsg()" style="'+bT+'">💵 Cash</button>';
+}
+function _showCashMsg(){
+  const biz=escHtml(_hub.contractorName||'your contractor');
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom,0)';
+  ov.innerHTML='<div style="background:var(--bg);border-radius:20px 20px 0 0;padding:24px 20px 32px;width:100%;max-width:480px;text-align:center">'+
+    '<div style="font-size:32px;margin-bottom:12px">💵</div>'+
+    '<div style="font-size:17px;font-weight:800;margin-bottom:8px">Paying with cash?</div>'+
+    '<div style="font-size:14px;color:var(--text2);line-height:1.5;margin-bottom:20px">Contact '+biz+' directly to arrange your cash payment. They\'ll mark it as received once collected.</div>'+
+    '<button onclick="this.closest(\'[data-cash-ov]\').remove()" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--bg2);color:var(--text);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Got it</button>'+
+    '</div>';
+  ov.dataset.cashOv='1';
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  document.body.appendChild(ov);
+}
 function _payBtn(bid,h){
   if(!h.stripeEnabled||(bid.balance||0)<0.01)return '';
   const depositPaid=(bid.paid||0)>=(bid.deposit||0)-0.01;
-  if(h.ccSurchargeEnabled){
-    const pct=h.ccSurchargePct||3;
-    const cf=amt=>fmt(amt*(1+pct/100));
-    const bankBtn=(fn,amt)=>'<button onclick="'+fn+'('+bid.id+',\'us_bank_account\')" class="btn" style="background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.28);color:rgba(255,255,255,.85);font-size:12px;margin-top:6px">🏦 Bank transfer — '+fmt(amt)+' (free)</button>';
-    if(!depositPaid&&(bid.deposit||0)>0.01&&(bid.balance||0)>(bid.deposit||0)+0.01){
-      return '<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+',\'card\')" class="btn" style="background:#635BFF;margin-bottom:4px">💳 Credit card — '+cf(bid.balance)+'</button>'+bankBtn('payBalance',bid.balance);
-    }
-    if(!depositPaid&&(bid.deposit||0)>0.01){
-      return '<button id="pay-btn-'+bid.id+'" onclick="payDeposit('+bid.id+',\'card\')" class="btn" style="background:#635BFF;margin-bottom:4px">💳 Credit card — '+cf(bid.deposit)+'</button>'+bankBtn('payDeposit',bid.deposit);
-    }
-    return '<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+',\'card\')" class="btn" style="background:#635BFF;margin-bottom:4px">💳 Credit card — '+cf(bid.balance)+'</button>'+bankBtn('payBalance',bid.balance);
-  }
-  if(!depositPaid&&(bid.deposit||0)>0.01&&(bid.balance||0)>(bid.deposit||0)+0.01){
-    return '<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:6px">💳 Pay '+fmt(bid.balance)+' in full</button>'+
-      '<button onclick="payDeposit('+bid.id+')" class="btn" style="background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.28);color:rgba(255,255,255,.85);font-size:13px">Or pay deposit only — '+fmt(bid.deposit)+'</button>';
-  }
-  if(!depositPaid&&(bid.deposit||0)>0.01){
-    return '<button id="pay-btn-'+bid.id+'" onclick="payDeposit('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:8px">💳 Pay '+fmt(bid.deposit)+' deposit</button>';
-  }
-  return '<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:8px">💳 Pay '+fmt(bid.balance)+' balance</button>';
+  const amt=(!depositPaid&&(bid.deposit||0)>0.01)?bid.deposit:bid.balance;
+  const fn=(!depositPaid&&(bid.deposit||0)>0.01)?'payDeposit':'payBalance';
+  return _pay4Btns(bid.id,fn,amt,h);
 }
 function showPaymentSuccess(bidId){
   const bid=_hub.bids.find(b=>b.id===bidId);
