@@ -336,7 +336,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.156';
+const APP_VERSION='05.19.26.157';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -1476,17 +1476,27 @@ async function supaSaveToCloud(){
     const _upsertTable=async(tbl,arr,txFn)=>{
       const rows=(txFn?txFn(arr):arr);
       const currentIds=new Set(rows.map(r=>String(r.id)));
-      // Upsert live records in batches of 50
+      // Fetch server-locked records (updated_at > 1 year from now = admin-deleted, must not overwrite)
+      const lockCutoff=new Date(Date.now()+365*24*60*60*1000).toISOString();
+      const{data:lockedRows}=await _supa.from(tbl).select('id').eq('user_id',uid).gt('updated_at',lockCutoff);
+      const lockedIds=new Set((lockedRows||[]).map(r=>String(r.id)));
+      if(lockedIds.size){
+        // Evict locked records from local memory so they don't resurface
+        const tdef=_TD_TABLES.find(x=>x.t===tbl);
+        if(tdef?.set) tdef.set(rows.filter(r=>!lockedIds.has(String(r.id))));
+        lockedIds.forEach(id=>currentIds.delete(id));
+      }
+      // Upsert live records in batches of 50 (excluding locked)
       if(rows.length){
-        const dbRows=rows.map(r=>({id:String(r.id),user_id:uid,data:r,updated_at:ts,deleted_at:null}));
+        const dbRows=rows.filter(r=>!lockedIds.has(String(r.id))).map(r=>({id:String(r.id),user_id:uid,data:r,updated_at:ts,deleted_at:null}));
         for(let i=0;i<dbRows.length;i+=50){
           const{error}=await _supa.from(tbl).upsert(dbRows.slice(i,i+50),{onConflict:'id,user_id'});
           if(error)throw error;
         }
       }
-      // Soft-delete records that were removed locally since last known state
+      // Soft-delete records that were removed locally since last known state (never touch locked)
       const prev=_lastKnownIds[tbl]||new Set();
-      const gone=[...prev].filter(id=>!currentIds.has(id));
+      const gone=[...prev].filter(id=>!currentIds.has(id)&&!lockedIds.has(id));
       if(gone.length){
         for(let i=0;i<gone.length;i+=50){
           const{error:_de}=await _supa.from(tbl).update({deleted_at:ts,updated_at:ts}).in('id',gone.slice(i,i+50)).eq('user_id',uid);
