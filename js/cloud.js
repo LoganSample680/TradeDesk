@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.130';
+const APP_VERSION='05.19.26.131';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -1121,12 +1121,16 @@ async function _deleteReceiptFromStorage(receiptKey){
 }
 function supaSaveDebounced(){
   if(!supaEnabled())return;
-  // When offline without a session but _mergeOnSignIn is set, still queue supaSaveToCloud
-  // so it writes zp3_offline_pending — the only way offline data survives a force-quit.
   if(!_supaUser&&!_mergeOnSignIn)return;
   clearTimeout(_syncTimer);
-  // Null the handle inside the callback so _syncTimer accurately reflects
-  // "save pending" — visibilitychange relies on it for the force-quit safety net.
+  // Write the snapshot SYNCHRONOUSLY before starting the 2s timer.
+  // This is the bulletproof force-quit safety net: iOS may kill the PWA process
+  // before visibilitychange or the async catch block can run, but a synchronous
+  // localStorage write completes atomically and survives any force-quit.
+  // Cleared by supaSaveToCloud() on a successful push. Drain deduplicates on reload.
+  if(_supaCloudLoaded||_mergeOnSignIn){
+    try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,ts:Date.now()}));}catch(_e){}
+  }
   _syncTimer=setTimeout(()=>{_syncTimer=null;supaSaveToCloud();},2000);
   if(_supaUser)supaSetStatus('syncing');
 }
@@ -1288,6 +1292,9 @@ async function supaSaveToCloud(){
     _logSave('skip','no _supa or _supaUser');return;
   }
   if(!_supaCloudLoaded){_logSave('skip','_supaCloudLoaded=false');return;}
+  // Write snapshot before ANY async work so force-quit mid-push can't lose data.
+  // Covers _flushSaveNow() callers that bypass supaSaveDebounced(). Cleared on success.
+  try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,ts:Date.now()}));}catch(_e){}
   // Sanity guard — refuse to push if any critical array is unexpectedly empty
   // compared to the last known-good cache. Prevents a partial cache load or a
   // failed Supabase fetch from wiping real data (the incident that inspired this).
