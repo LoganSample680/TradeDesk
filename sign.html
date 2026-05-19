@@ -931,45 +931,39 @@ function _renderSignPayBtns(){
   const bS='display:block;width:100%;padding:11px;border-radius:10px;border:1.5px solid #e2e0da;background:#fff;color:#1b1612;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center;margin-bottom:8px';
   let html='';
   if(stripeOk){
+    // Native Apple Pay button — only rendered on devices that support it (Safari/iOS/macOS)
+    if(window.ApplePaySession&&typeof ApplePaySession.canMakePayments==='function'&&ApplePaySession.canMakePayments())
+      html+='<button onclick="_paySign(\'applepay\')" style="-webkit-appearance:-apple-pay-button;-apple-pay-button-type:plain;-apple-pay-button-style:black;width:100%;height:46px;border-radius:10px;margin-bottom:8px;cursor:pointer;border:none"></button>';
     html+='<button onclick="_paySign(\'ach\')" style="'+bP+'">Bank transfer (ACH) <span style="font-size:11px;font-weight:700;opacity:.85">· No fee</span></button>';
     html+='<button onclick="_paySign(\'card\')" style="'+bS+'">Credit card'+fee+'</button>';
     html+='<button onclick="_paySign(\'debit\')" style="'+bS+'">Debit card</button>';
+    html+='<button onclick="_paySign(\'cashapp\')" style="'+bS+'">Cash App Pay</button>';
   }
-  html+='<button onclick="_paySign(\'venmo\')" style="'+bS+'">Venmo</button>';
-  html+='<button onclick="_paySign(\'cashapp\')" style="'+bS+'">Cash App</button>';
   html+='<button onclick="_paySign(\'cash\')" style="'+bS+'">Cash</button>';
   container.innerHTML=html;
 }
 async function _paySign(method){
   if(!_prop)return;
-  if(method==='cash'||method==='venmo'||method==='cashapp'){
-    _manualPayMethod=method;
+  if(method==='cash'){
+    _manualPayMethod='cash';
     document.getElementById('sign-pay-btns').style.display='none';
     const cashSec=document.getElementById('sec-cash');
     cashSec.style.display='block';
     const hdr=document.getElementById('cash-confirm-hdr');
     const msg=document.getElementById('cash-confirm-msg');
     const confirmBtn=document.getElementById('sec-cash-confirm-btn');
-    if(method==='venmo'){
-      if(hdr)hdr.textContent='Venmo selected.';
-      if(msg)msg.textContent=' Please send your payment via Venmo. The contractor will confirm receipt and your spot will be reserved.';
-      if(confirmBtn)confirmBtn.textContent="I've sent payment via Venmo";
-    }else if(method==='cashapp'){
-      if(hdr)hdr.textContent='Cash App selected.';
-      if(msg)msg.textContent=' Please send your payment via Cash App. The contractor will confirm receipt and your spot will be reserved.';
-      if(confirmBtn)confirmBtn.textContent="I've sent payment via Cash App";
-    }else{
-      if(hdr)hdr.textContent='Cash selected.';
-      if(msg)msg.textContent=_payFullAmount?' Your proposal is signed. The contractor will collect the full amount when they arrive.':' Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.';
-      if(confirmBtn)confirmBtn.textContent="Confirm — I'll pay cash in person";
-      if(_payFullAmount){_payFullAmount=false;_renderPayTiles();_updatePayButtons();}
-    }
+    if(hdr)hdr.textContent='Cash selected.';
+    if(msg)msg.textContent=_payFullAmount?' Your proposal is signed. The contractor will collect the full amount when they arrive.':' Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.';
+    if(confirmBtn)confirmBtn.textContent="Confirm — I'll pay cash in person";
+    if(_payFullAmount){_payFullAmount=false;_renderPayTiles();_updatePayButtons();}
     return;
   }
   const depBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round((_prop.deposit||0)*100);
   const fullBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*100):Math.round((_prop.amount||0)*100);
   const amt=_payFullAmount?fullBase:depBase;
-  const stripeMethod=method==='debit'?'card':method==='ach'?'us_bank_account':method;
+  // applepay and debit both use 'card' in Stripe — Apple Pay auto-surfaces in card checkout
+  const stripeMethod=method==='debit'||method==='applepay'?'card':method==='ach'?'us_bank_account':method;
+  // surcharge only for explicit credit card selection, not debit/applepay/cashapp
   const surcharge=(method==='card'&&_prop.ccSurchargeEnabled)?Math.round(amt*(_prop.ccSurchargePct||3)/100):0;
   const btns=document.querySelectorAll('#sign-pay-btns button');
   btns.forEach(b=>b.disabled=true);

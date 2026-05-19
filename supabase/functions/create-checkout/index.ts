@@ -84,31 +84,36 @@ Deno.serve(async (req) => {
 
     let sessionParams: Stripe.Checkout.SessionCreateParams;
 
-    const paymentMethodTypes = paymentMethod === 'us_bank_account'
-      ? ['us_bank_account']
-      : paymentMethod === 'venmo'
-      ? ['venmo']
+    // ACH and Cash App Pay need explicit method types.
+    // Card/debit/applepay use automatic_payment_methods so Apple Pay, Google Pay,
+    // and Link all surface automatically based on device/browser support.
+    const explicitMethodTypes = paymentMethod === 'us_bank_account'
+      ? (['us_bank_account'] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[])
       : paymentMethod === 'cashapp'
-      ? ['cashapp']
-      : ['card'];
+      ? (['cashapp'] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[])
+      : null;
 
     if (embedded) {
       sessionParams = {
         mode: 'payment',
-        payment_method_types: paymentMethodTypes as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
         line_items: lineItems,
         metadata,
         ui_mode: 'embedded',
         return_url: successUrl,
+        ...(explicitMethodTypes
+          ? { payment_method_types: explicitMethodTypes }
+          : { automatic_payment_methods: { enabled: true, allow_redirects: 'never' } }),
       };
     } else {
       sessionParams = {
         mode: 'payment',
-        payment_method_types: paymentMethodTypes as Stripe.Checkout.SessionCreateParams.PaymentMethodType[],
         line_items: lineItems,
         metadata,
         success_url: successUrl,
         cancel_url: cancelUrl,
+        ...(explicitMethodTypes
+          ? { payment_method_types: explicitMethodTypes }
+          : { automatic_payment_methods: { enabled: true, allow_redirects: 'never' } }),
       };
     }
 
