@@ -167,6 +167,10 @@ function saveAll(){if(_devSupportMode){_flushSaveNow();return;}if(_isEmployee){s
   localStorage.setItem('zp3_photos',JSON.stringify(photos.slice(-300)));
   localStorage.setItem('zp3_lic',JSON.stringify(licenses));
   localStorage.setItem('zp3_contracts',JSON.stringify(contracts));
+  // Offline-pending: write synchronously so a force-quit can never outrun a timer
+  if(typeof _mergeOnSignIn!=='undefined'&&_mergeOnSignIn&&!_supaUser){
+    localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,ts:Date.now()}));
+  }
 }catch(e){}supaSaveDebounced();}
 function loadAll(){
   // Business data (clients, bids, jobs, etc.) lives in Supabase only — start empty, populated by supaLoadFromCloud()
