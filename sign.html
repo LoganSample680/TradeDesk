@@ -848,37 +848,6 @@ function _updatePayButtons(){
   if(cashMsg)cashMsg.textContent=(_payFullAmount?' Your proposal is signed. The contractor will collect the full amount when they arrive.':' Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.');
 }
 
-async function payCard(){
-  if(_prop.stripeConnectEnabled===false){selPay('cash');return;}
-  const btn=document.getElementById('card-btn');
-  btn.disabled=true;btn.textContent='Setting up payment...';
-  try{
-    const depBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round(_prop.deposit*100);
-    const fullBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*100):Math.round(_prop.amount*100);
-    const amt=_payFullAmount?fullBase:depBase;
-    await _launchEmbedded(amt,'card');
-  }catch(e){
-    console.error(e);
-    document.getElementById('pay-err').textContent='Card payment unavailable. Please pay cash or contact us directly.';
-  }
-  btn.disabled=false;btn.textContent=_payFullAmount?'Pay in full by card':'Pay deposit by card';
-}
-
-async function payACH(){
-  if(_prop.stripeConnectEnabled===false){selPay('cash');return;}
-  const btn=document.getElementById('ach-btn');
-  btn.disabled=true;btn.textContent='Setting up bank transfer...';
-  try{
-    const depBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round(_prop.deposit*100);
-    const fullBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*100):Math.round(_prop.amount*100);
-    const amt=_payFullAmount?fullBase:depBase;
-    await _launchEmbedded(amt,'us_bank_account');
-  }catch(e){
-    console.error(e);
-    document.getElementById('pay-err').textContent='Bank transfer unavailable. Please select card or cash.';
-  }
-  btn.disabled=false;btn.textContent=_payFullAmount?'Pay in full by bank transfer':'Pay by bank transfer (ACH)';
-}
 
 async function submitCash(){
   const btn=event.target;btn.disabled=true;btn.textContent='Confirming...';
@@ -933,10 +902,6 @@ function showDone(method){
   show('pg-done');scrollTo(0,0);
 }
 
-// Set initial state
-document.getElementById('sec-card').style.display='block';
-document.getElementById('sec-ach').style.display='none';
-document.getElementById('sec-cash').style.display='none';
 // Kick the boot bar to feel alive immediately
 setTimeout(()=>{const b=document.getElementById('sign-boot-bar');if(b)b.style.width='40%';},55);
 init();
