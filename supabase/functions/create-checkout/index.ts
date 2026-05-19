@@ -79,6 +79,7 @@ Deno.serve(async (req) => {
     const metadata = {
       proposalKey, bidId, contractorUserId,
       notifyEmail, signerName, clientName, businessName,
+      paymentMethod: paymentMethod || 'card',
     };
 
     let sessionParams: Stripe.Checkout.SessionCreateParams;
