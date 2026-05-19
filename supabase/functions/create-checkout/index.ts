@@ -19,6 +19,7 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const {
       amount, currency, paymentMethod,
+      surchargeAmount,
       proposalKey, clientName, businessName,
       bidId, contractorUserId, notifyEmail,
       signatureDataUrl, signerName,
@@ -48,7 +49,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    const lineItems = [{
+    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [{
       price_data: {
         currency: currency || 'usd',
         product_data: {
@@ -59,6 +60,21 @@ Deno.serve(async (req) => {
       },
       quantity: 1,
     }];
+
+    if (surchargeAmount && surchargeAmount > 0) {
+      const surchargePct = Math.round((surchargeAmount / amount) * 100);
+      lineItems.push({
+        price_data: {
+          currency: currency || 'usd',
+          product_data: {
+            name: 'Credit card processing fee',
+            description: `${surchargePct}% fee — covers card processing costs`,
+          },
+          unit_amount: surchargeAmount,
+        },
+        quantity: 1,
+      });
+    }
 
     const metadata = {
       proposalKey, bidId, contractorUserId,
