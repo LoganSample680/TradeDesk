@@ -160,6 +160,8 @@ function _buildClientHubSnapshot(clientId){
     brandColor:S.brandColor||'',logoData:S.logoData||'',bwebsite:S.bwebsite||'',
     contractorUserId:_supaUser?.id||'',notifyEmail:S.bemail||_supaUser?.email||'',
     stripeEnabled:!!(_stripeConnectStatus?.charges_enabled),
+    ccSurchargeEnabled:!!(S.ccSurchargeEnabled&&_stripeConnectStatus?.charges_enabled),
+    ccSurchargePct:Math.min(4,Math.max(0.5,parseFloat(S.ccSurchargePct||3)||3)),
     yearBuilt:c.yearBuilt||null,
     epaRequired:!!(c.yearBuilt&&c.yearBuilt<1978&&getActiveTrade()==='painting'),
     epaAck:c.epaAck||false,
