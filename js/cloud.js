@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.120';
+const APP_VERSION='05.19.26.121';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -482,12 +482,13 @@ async function supaInit(){
           const _hasPendingData=!!localStorage.getItem('zp3_offline_pending');
           if(_mergeOnSignIn||_hasPendingData){
             _mergeOnSignIn=false;
-            // Snapshot records entered while offline before cloud load overwrites memory.
-            // Also restore from zp3_offline_pending in case the app was force-quit and restarted.
             const _op=(() => {try{return JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');}catch(_e){return null;}})();
-            const _oClients=[...clients,...(_op?.clients||[])];
-            const _oBids=[...bids,...(_op?.bids||[])];
-            const _oJobs=[...jobs,...(_op?.jobs||[])];
+            // Deduplicate by ID across in-memory + pending — saveAll() writes all current
+            // clients to pending, so without dedup the same record appears in both arrays
+            // and gets pushed twice when neither ID is yet in the cloud.
+            const _oClients=[...new Map([...(_op?.clients||[]),...clients].map(c=>[c.id,c])).values()];
+            const _oBids=[...new Map([...(_op?.bids||[]),...bids].map(b=>[b.id,b])).values()];
+            const _oJobs=[...new Map([...(_op?.jobs||[]),...jobs].map(j=>[j.id,j])).values()];
             localStorage.removeItem('zp3_offline_pending');
             await supaLoadFromCloud(); // non-silent: sets up timers, renders, navigates
             // Merge offline additions that aren't already in cloud data
@@ -1176,12 +1177,13 @@ async function _probeAndSync(){
     await fetch('/version.json?_='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(5000)});
     _hideOfflineBanner(); // connection confirmed — hide immediately, sync in background
     if(_supa&&!_supaUser&&_mergeOnSignIn){
-      // Try to silently restore the session via the stored refresh token.
-      // If successful, TOKEN_REFRESHED fires and _onReconnect() syncs.
-      // If no valid session exists, show login so they can re-auth without losing offline data.
-      _supa.auth.getSession().then(({data:{session}})=>{
+      // refreshSession() makes a live network call using the stored refresh token.
+      // If the token is still valid (signal drop, not explicit sign-out), this silently
+      // re-auths and fires TOKEN_REFRESHED → _onReconnect() syncs without a login screen.
+      // If the refresh token is gone or expired, fall through to the login overlay.
+      _supa.auth.refreshSession().then(({data:{session}})=>{
         if(!session)supaShowLogin();
-      }).catch(()=>{});
+      }).catch(()=>supaShowLogin());
       return;
     }
     _onReconnect();
