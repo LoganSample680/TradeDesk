@@ -1357,9 +1357,11 @@ async function _launchCheckout(bidId,amount,label){
   if(btn){btn.textContent='Setting up…';btn.disabled=true;}
   try{
     const hubBase=location.href.split('#')[0];
+    const surchargeAmount=_hub.ccSurchargeEnabled?Math.round(amount*(_hub.ccSurchargePct||3)/100):0;
     const res=await fetch(SUPA_URL+'/functions/v1/create-checkout',{
       method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
       body:JSON.stringify({amount,currency:'usd',paymentMethod:'card',
+        surchargeAmount:surchargeAmount||undefined,
         proposalKey:bid.proposalKey||null,clientName:_hub.clientName,
         businessName:_hub.contractorName,bidId:String(bid.id),
         contractorUserId:_hub.contractorUserId,notifyEmail:_hub.notifyEmail,
@@ -1370,7 +1372,8 @@ async function _launchCheckout(bidId,amount,label){
     if(btn){btn.textContent=label;btn.disabled=false;}
     if(d.clientSecret&&d.publishableKey){
       document.getElementById('stripe-modal-biz').textContent=_hub.contractorName||'Secure Payment';
-      document.getElementById('stripe-modal-amt').textContent='Amount: '+fmt(amount/100)+' · Secured by Stripe';
+      const _dispTotal=(amount+(surchargeAmount||0))/100;
+      document.getElementById('stripe-modal-amt').textContent='Amount: '+fmt(_dispTotal)+(surchargeAmount?' (incl. '+(_hub.ccSurchargePct||3)+'% card fee)':'')+' · Secured by Stripe';
       document.getElementById('checkout-embed-container').innerHTML='';
       document.getElementById('stripe-overlay').style.display='block';
       document.body.style.overflow='hidden';
@@ -1395,54 +1398,13 @@ async function payBalance(bidId){
   const bid=_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const amount=Math.round((bid.balance||0)*100);
   if(amount<50){alert('No balance outstanding.');return;}
-  _launchCheckoutMaybeSurcharge(bidId,amount,'Pay balance');
+  await _launchCheckout(bidId,amount,'Pay balance');
 }
 async function payDeposit(bidId){
   const bid=_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const amount=Math.round((bid.deposit||0)*100);
   if(amount<50){alert('No deposit amount found.');return;}
-  _launchCheckoutMaybeSurcharge(bidId,amount,'Pay deposit');
-}
-function _launchCheckoutMaybeSurcharge(bidId,baseAmountCents,label){
-  if(!_hub.ccSurchargeEnabled){_launchCheckout(bidId,baseAmountCents,label);return;}
-  const pct=_hub.ccSurchargePct||3;
-  const feeCents=Math.round(baseAmountCents*(pct/100));
-  const totalCents=baseAmountCents+feeCents;
-  const ov=document.createElement('div');
-  ov.id='_surcharge-ov';
-  ov.style.cssText='position:fixed;inset:0;z-index:3000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);padding:20px';
-  ov.innerHTML=
-    '<div style="background:var(--bg-card);border-radius:18px;width:100%;max-width:360px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.3)">'+
-      '<div style="padding:20px 20px 0">'+
-        '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Credit card fee</div>'+
-        '<div style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:16px">'+esc(_hub.contractorName||'Your contractor')+' passes the card processing fee on to clients. Paying by ACH bank transfer has no fee.</div>'+
-        '<div style="background:var(--bg);border-radius:12px;padding:14px 16px;margin-bottom:4px">'+
-          '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px">'+
-            '<span style="color:var(--text2)">'+esc(label)+'</span>'+
-            '<span style="font-weight:700">'+fmt(baseAmountCents/100)+'</span>'+
-          '</div>'+
-          '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:14px;border-top:1px solid var(--border)">'+
-            '<span style="color:var(--text2)">Credit card fee ('+pct+'%)</span>'+
-            '<span style="font-weight:700;color:var(--text2)">+'+fmt(feeCents/100)+'</span>'+
-          '</div>'+
-          '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0 4px;font-size:16px;border-top:2px solid var(--border)">'+
-            '<span style="font-weight:800">Total charged</span>'+
-            '<span style="font-weight:800;color:#635BFF">'+fmt(totalCents/100)+'</span>'+
-          '</div>'+
-        '</div>'+
-        '<div style="font-size:10px;color:var(--text3);text-align:center;padding:6px 0 14px">🔒 Secured by Stripe · Your card is never stored</div>'+
-      '</div>'+
-      '<div style="display:flex;border-top:1px solid var(--border)">'+
-        '<button onclick="document.getElementById(\'_surcharge-ov\').remove()" style="flex:1;padding:16px;border:none;background:none;font-size:14px;font-weight:700;cursor:pointer;color:var(--text2);font-family:inherit;border-right:1px solid var(--border)">Cancel</button>'+
-        '<button id="_surcharge-confirm" style="flex:1;padding:16px;border:none;background:none;font-size:14px;font-weight:800;cursor:pointer;color:#635BFF;font-family:inherit">Continue</button>'+
-      '</div>'+
-    '</div>';
-  document.body.appendChild(ov);
-  document.getElementById('_surcharge-confirm').onclick=()=>{
-    ov.remove();
-    _launchCheckout(bidId,totalCents,label);
-  };
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  await _launchCheckout(bidId,amount,'Pay deposit');
 }
 function _payBtn(bid,h){
   if(!h.stripeEnabled||(bid.balance||0)<0.01)return '';
