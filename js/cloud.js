@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.121';
+const APP_VERSION='05.19.26.122';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -1725,6 +1725,12 @@ async function supaLoadFromCloud({silent=false}={}){
       renderJobsPage&&renderJobsPage();
       renderMoneyPage&&renderMoneyPage();
     }
+    // Dedup by ID — the offline merge bug could push the same record twice with
+    // the same ID; filter to first occurrence so delete-by-ID works correctly.
+    const _dedupById=(arr)=>{const seen=new Set();return arr.filter(x=>{if(seen.has(x.id))return false;seen.add(x.id);return true;});};
+    const _preLen=clients.length+bids.length+jobs.length;
+    clients=_dedupById(clients);bids=_dedupById(bids);jobs=_dedupById(jobs);
+    if(clients.length+bids.length+jobs.length<_preLen)setTimeout(()=>_flushSaveNow(),1200);
     // Cleanup: remove empty orphan draft bids, ensure all clients have tokens
     bids=bids.filter(b=>!(b.draft===true&&b.status==='Draft'&&b.geiLines===undefined&&(!b.surfaces||!b.surfaces.length)&&!b.signingToken&&!b.amount));
     const _geiSeen=new Set();
