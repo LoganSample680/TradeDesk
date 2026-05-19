@@ -336,7 +336,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.144';
+const APP_VERSION='05.19.26.145';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -370,6 +370,70 @@ const _TD_TABLES=[
   {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
     tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
 ];
+
+// ── Long-press delete (3s hold on any [data-lp-id] element) ────────────────
+let _lpTimer=null,_lpFired=false;
+(function(){
+  const s=document.createElement('style');
+  s.textContent='[data-lp-id]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}';
+  (document.head||document.documentElement).appendChild(s);
+  function _lpStart(e){
+    const row=e.target.closest('[data-lp-id]');
+    if(!row)return;
+    if(e.target.closest('button,select,input,a,label'))return;
+    clearTimeout(_lpTimer);_lpFired=false;
+    _lpTimer=setTimeout(()=>{_lpTimer=null;_lpFired=true;_showLpDeletePopup(row);},3000);
+  }
+  function _lpCancel(){clearTimeout(_lpTimer);_lpTimer=null;}
+  document.addEventListener('touchstart',_lpStart,{passive:true});
+  document.addEventListener('touchend',_lpCancel);
+  document.addEventListener('touchmove',_lpCancel,{passive:true});
+  document.addEventListener('mousedown',_lpStart);
+  document.addEventListener('mouseup',_lpCancel);
+  document.addEventListener('click',e=>{if(_lpFired){_lpFired=false;e.stopPropagation();e.preventDefault();}},true);
+  document.addEventListener('contextmenu',e=>{if(e.target.closest('[data-lp-id]'))e.preventDefault();});
+})();
+function _showLpDeletePopup(row){
+  document.getElementById('_lp-del-popup')?.remove();
+  const id=row.dataset.lpId,type=row.dataset.lpType,label=row.dataset.lpLabel||'this record';
+  const isClient=(type==='lead'||type==='client');
+  const sub=isClient?'Also removes all their bids, jobs, and expenses.':'This cannot be undone.';
+  const ov=document.createElement('div');
+  ov.id='_lp-del-popup';
+  ov.style.cssText='position:fixed;inset:0;z-index:99990;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);padding:20px';
+  ov.innerHTML='<div style="background:var(--bg);border-radius:16px;padding:24px;width:100%;max-width:300px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.35)">'+
+    '<div style="font-size:32px;margin-bottom:8px">🗑️</div>'+
+    '<div style="font-size:15px;font-weight:800;margin-bottom:4px">Delete '+escHtml(label)+'?</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:20px;line-height:1.4">'+sub+'</div>'+
+    '<div style="display:flex;gap:10px">'+
+      '<button onclick="document.getElementById(\'_lp-del-popup\').remove()" style="flex:1;padding:12px;border:1.5px solid var(--border);background:var(--bg2);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Cancel</button>'+
+      '<button id="_lp-del-btn" style="flex:1;padding:12px;border:none;background:#A32D2D;color:#fff;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Delete</button>'+
+    '</div>'+
+  '</div>';
+  document.body.appendChild(ov);
+  document.getElementById('_lp-del-btn').onclick=()=>{ov.remove();_lpDoDelete(id,type);};
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function _lpDoDelete(id,type){
+  const nid=parseInt(id,10);
+  if(type==='income'){income=income.filter(x=>x.id!==nid);saveAll();if(typeof renderIncome==='function')renderIncome();}
+  else if(type==='payment'){payments=payments.filter(x=>x.id!==nid);saveAll();if(typeof renderIncome==='function')renderIncome();}
+  else if(type==='expense'){if(typeof delExpense==='function')delExpense(nid);}
+  else if(type==='mileage'){if(typeof delMileage==='function')delMileage(nid);}
+  else if(type==='lead'||type==='client'){_lpDeleteClientById(nid,type);}
+}
+function _lpDeleteClientById(id,fromType){
+  clients=clients.filter(x=>x.id!==id);
+  bids=bids.filter(b=>b.client_id!==id);
+  jobs=jobs.filter(j=>j.client_id!==id);
+  mileage=mileage.filter(m=>m.client_id!==id);
+  income=income.filter(i=>i.client_id!==id);
+  expenses=expenses.filter(e=>e.client_id!==id);
+  saveAll();
+  if(fromType==='lead'){if(typeof renderLeadsPage==='function')renderLeadsPage();}
+  else{if(typeof renderClientList==='function')renderClientList();}
+}
+
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
 // supaSaveToCloud() checks this + runs a sanity guard to prevent pushing
