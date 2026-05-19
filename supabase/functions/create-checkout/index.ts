@@ -87,6 +87,8 @@ Deno.serve(async (req) => {
       ? ['us_bank_account']
       : paymentMethod === 'venmo'
       ? ['venmo']
+      : paymentMethod === 'cashapp'
+      ? ['cashapp']
       : ['card'];
 
     if (embedded) {

@@ -1428,6 +1428,7 @@ function _pay4Btns(bidId,payFn,amt,hub){
     '<button onclick="'+payFn+'('+bidId+',\'debit\')" style="'+bS+'">💳 Debit card — '+fmt(amt)+'</button>'+
     '<button onclick="'+payFn+'('+bidId+',\'us_bank_account\')" style="'+bS+'">🏦 Bank transfer (ACH) — '+fmt(amt)+' <span style="font-size:11px;color:var(--green-mid);font-weight:700">Free</span></button>'+
     '<button onclick="'+payFn+'('+bidId+',\'venmo\')" style="'+bS+'">💜 Venmo — '+fmt(amt)+'</button>'+
+    '<button onclick="'+payFn+'('+bidId+',\'cashapp\')" style="'+bS+'">💚 Cash App — '+fmt(amt)+'</button>'+
     '<button onclick="_showCashMsg()" style="'+bT+'">💵 Cash</button>';
 }
 function _showCashMsg(){
