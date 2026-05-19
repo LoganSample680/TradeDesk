@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.131';
+const APP_VERSION='05.19.26.132';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -444,6 +444,7 @@ async function supaInit(){
           if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
           if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
+          _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
           _loadedFromCacheOnly=true;
           _mergeOnSignIn=true;
           _removeBootOverlay();renderDash();buildScopeGrid();
@@ -575,6 +576,7 @@ async function supaInit(){
         if(_cd.photos?.length)photos=_cd.photos;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
+        _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
         _supaCloudLoaded=true;
         _loadedFromCacheOnly=true;
         _removeBootOverlay();renderDash();buildScopeGrid();
@@ -984,6 +986,21 @@ function _hiringRow(label,amount,isGross){
   '</div>';
 }
 
+// Merge any records written to zp3_offline_pending into the current in-memory arrays.
+// Called after every cache load so a force-quit mid-session never hides data from the user.
+// Does NOT remove the key — it stays until a successful cloud push clears it (line ~1411).
+function _mergeOfflinePendingToMemory(){
+  try{
+    const _op=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');
+    if(!_op)return;
+    const _cSet=new Set(clients.map(c=>c.id));
+    const _bSet=new Set(bids.map(b=>b.id));
+    const _jSet=new Set(jobs.map(j=>j.id));
+    (_op.clients||[]).filter(c=>!_cSet.has(c.id)).forEach(c=>clients.push(c));
+    (_op.bids||[]).filter(b=>!_bSet.has(b.id)).forEach(b=>bids.push(b));
+    (_op.jobs||[]).filter(j=>!_jSet.has(j.id)).forEach(j=>jobs.push(j));
+  }catch(_e){}
+}
 function _enterOfflineMode(){
   document.getElementById('supa-login-overlay')?.remove();
   // Load from cache so the app has real data, not an empty shell
@@ -1002,6 +1019,7 @@ function _enterOfflineMode(){
       if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
     }catch(_ce){}
   }
+  _mergeOfflinePendingToMemory(); // show any records created since the last cloud sync
   _loadedFromCacheOnly=true;
   _mergeOnSignIn=true; // merge any new records entered here when SIGNED_IN fires
   _removeBootOverlay();renderDash();buildScopeGrid();
