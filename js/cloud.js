@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.134';
+const APP_VERSION='05.19.26.135';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -1332,6 +1332,7 @@ async function supaSaveToCloud(){
   }
   const _attemptId=Date.now()+'-'+Math.random().toString(36).slice(2,5);
   const _mileCount=mileage.length;
+  _lastLocalSaveAt=Date.now(); // suppress realtime self-notification for entire multi-part save
   _logSave('start',{id:_attemptId,mileage:_mileCount,page:document.querySelector('.pg.active')?.id});
   try{
     // Snapshot ALL data synchronously before any await — prevents _devExitSupportMode()
@@ -1440,7 +1441,6 @@ async function supaSaveToCloud(){
       await _supa.from('zj_data').update({gallery_photos:JSON.stringify(_photosMeta.slice(-300))}).eq('user_id',uid);
     }catch(_e5){}
     _logSave('ok',{id:_attemptId,mileage:_mileCount});
-    _lastLocalSaveAt=Date.now();
     localStorage.removeItem('zp3_pending_sync');
     localStorage.removeItem('zp3_offline_pending'); // clear any stale pending written during offline session
     // Update the local cache to match what we just pushed. This means a force-quit followed
@@ -1882,8 +1882,11 @@ async function supaLoadFromCloud({silent=false}={}){
         (_op.clients||[]).filter(c=>!_cSet.has(c.id)).forEach(c=>{clients.push(c);_merged=true;});
         (_op.bids||[]).filter(b=>!_bSet.has(b.id)).forEach(b=>{bids.push(b);_merged=true;});
         (_op.jobs||[]).filter(j=>!_jSet.has(j.id)).forEach(j=>{jobs.push(j);_merged=true;});
-        localStorage.removeItem('zp3_offline_pending');
-        if(_merged)setTimeout(()=>_flushSaveNow(),800); // push merged data to cloud after render
+        // Only clear pending when nothing was merged (already in Supabase).
+        // When merged=true, leave pending in place — supaSaveToCloud() clears it on success.
+        // This closes the 800ms window where a refresh between the clear and the flush loses data.
+        if(!_merged)localStorage.removeItem('zp3_offline_pending');
+        if(_merged)setTimeout(()=>_flushSaveNow(),800);
       }
     }catch(_oe){}
     // Cache successful load for offline fallback — strip inline receipt blobs to stay within localStorage limits
