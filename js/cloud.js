@@ -332,8 +332,8 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.133';
-let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
+const APP_VERSION='05.19.26.134';
+let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
 // supaSaveToCloud() checks this + runs a sanity guard to prevent pushing
@@ -1440,6 +1440,7 @@ async function supaSaveToCloud(){
       await _supa.from('zj_data').update({gallery_photos:JSON.stringify(_photosMeta.slice(-300))}).eq('user_id',uid);
     }catch(_e5){}
     _logSave('ok',{id:_attemptId,mileage:_mileCount});
+    _lastLocalSaveAt=Date.now();
     localStorage.removeItem('zp3_pending_sync');
     localStorage.removeItem('zp3_offline_pending'); // clear any stale pending written during offline session
     // Update the local cache to match what we just pushed. This means a force-quit followed
@@ -1848,6 +1849,18 @@ async function supaLoadFromCloud({silent=false}={}){
           .on('postgres_changes',{event:'*',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{checkNewSignatures();})
           .subscribe();
       }catch(e){}
+      // Realtime: reload when another device saves to this account — enables live cross-device sync.
+      // Self-update suppression: ignore events within 5s of our own push (_lastLocalSaveAt).
+      // If a local save is pending (_syncTimer), skip too — our outgoing write will win.
+      try{
+        _supa.channel('zdata-sync-'+_supaUser.id)
+          .on('postgres_changes',{event:'UPDATE',schema:'public',table:'zj_data',filter:'user_id=eq.'+_supaUser.id},()=>{
+            if(Date.now()-_lastLocalSaveAt<5000)return;
+            if(_syncTimer)return;
+            supaLoadFromCloud();
+          })
+          .subscribe();
+      }catch(_e){}
       setInterval(()=>_loadPendingInbound(),30000);
       // Pre-load Stripe connect status so sendPaymentLink works without visiting Settings first
       setTimeout(()=>_fetchStripeConnectStatus(),3000);
