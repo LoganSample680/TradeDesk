@@ -389,7 +389,7 @@ input[type=text]:focus{border-color:var(--denim)}
         <div id="pay-tile-full" class="sig-pay-opt" onclick="_selectPayTile('full')">
           <div class="sig-pay-opt-badge" style="color:#3B6D11">Pay in Full</div>
           <div id="pay-tile-full-amt" class="sig-pay-opt-amt"></div>
-          <div class="sig-pay-opt-sub" style="color:#3B6D11;font-weight:600">Save 3% — nothing due later ✓</div>
+          <div class="sig-pay-opt-sub" style="opacity:0">·</div>
           <div class="sig-pay-opt-sel" style="opacity:0">·</div>
         </div>
       </div>
@@ -410,37 +410,14 @@ input[type=text]:focus{border-color:var(--denim)}
         <div id="pay-now-display" class="pay-balance-amt"></div>
       </div>
 
-      <!-- Payment method chips -->
+      <!-- Payment method buttons -->
       <div class="pay-chips-label">How would you like to pay?</div>
-      <div class="pay-chips-row">
-        <button id="chip-card" class="pay-chip sel" onclick="selPay('card')">💳 Card</button>
-        <button id="chip-ach" class="pay-chip" onclick="selPay('ach')">🏦 Bank transfer</button>
-        <button id="chip-cash" class="pay-chip" onclick="selPay('cash')">💵 Cash</button>
-      </div>
-
-      <!-- Hidden legacy elements for JS compatibility -->
-      <div id="opt-card" style="display:none"></div>
-      <div id="opt-ach" style="display:none"></div>
-      <div id="opt-cash" style="display:none"></div>
-      <div id="radio-card" style="display:none"></div>
-      <div id="radio-ach" style="display:none"></div>
-      <div id="radio-cash" style="display:none"></div>
-
-      <div class="divider"></div>
-
-      <div id="sec-card">
-        <div class="stripe-note">Secure card payment via Stripe</div>
-        <button class="btn" id="card-btn" onclick="payCard()">Pay deposit by card</button>
-      </div>
-
-      <div id="sec-ach" style="display:none">
-        <div class="stripe-note">Bank transfer powered by Stripe</div>
-        <button class="btn" id="ach-btn" onclick="payACH()">Pay by bank transfer (ACH)</button>
-      </div>
+      <div id="sign-pay-btns" style="margin-top:4px"></div>
 
       <div id="sec-cash" style="display:none">
         <div class="cash-notice"><strong>Cash selected.</strong><span id="cash-confirm-msg"> Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.</span></div>
         <button class="btn" onclick="submitCash()">Confirm — I'll pay cash in person</button>
+        <button class="btn btn-sec" onclick="document.getElementById('sec-cash').style.display='none';document.getElementById('sign-pay-btns').style.display='block'" style="margin-top:8px;font-size:13px">← Choose a different payment method</button>
       </div>
 
       <div id="pay-err" style="color:#A32D2D;font-size:12px;text-align:center;min-height:16px"></div>
@@ -594,14 +571,7 @@ async function init(){
       document.querySelector('#pg-err p').textContent='Your contractor has updated this proposal. Please request the new link to review and sign.';
       show('pg-err');return;
     }
-    // Hide card and ACH only when Stripe is explicitly disabled (=== false); undefined/missing = show options
-    if(_prop.stripeConnectEnabled===false){
-      const optCard=document.getElementById('opt-card');
-      const optAch=document.getElementById('opt-ach');
-      if(optCard)optCard.style.display='none';
-      if(optAch)optAch.style.display='none';
-      selPay('cash');
-    }
+    // stripeConnectEnabled===false: _renderSignPayBtns() will show cash-only
     // Check proposal JSON status AND signed_proposals table (table is authoritative — storage can be cached)
     let alreadySigned=_prop.status==='signed'||_prop.status==='paid';
     let _sigRecord=null;
@@ -826,30 +796,13 @@ function goToPayment(){
   const nowAmt=_payFullAmount?fullAmt2:depAmt2;
   const pnd=document.getElementById('pay-now-display');
   if(pnd)pnd.textContent=fmt(nowAmt);
-  selPay(_prop?.stripeConnectEnabled===false?'cash':'card');
+  _renderSignPayBtns();
 }
 function backToSign(){show('pg-sign');scrollTo(0,0);}
 
 function selPay(opt){
   _payOpt=opt;
-  ['card','ach','cash'].forEach(o=>{
-    document.getElementById('opt-'+o).classList.toggle('sel',o===opt);
-    const r=document.getElementById('radio-'+o);
-    r.classList.toggle('on',o===opt);
-    r.style.borderColor=o===opt?'var(--blue)':'var(--border2)';
-    r.innerHTML=o===opt?'<div style="width:8px;height:8px;border-radius:50%;background:'+(o==='card'?'#fff':'var(--blue)')+'"></div>':'';
-  });
-  // Update chip selection
-  ['card','ach','cash'].forEach(o=>{
-    const ch=document.getElementById('chip-'+o);
-    if(ch)ch.classList.toggle('sel',o===opt);
-  });
-  document.getElementById('sec-card').style.display=opt==='card'?'block':'none';
-  document.getElementById('sec-ach').style.display=opt==='ach'?'block':'none';
-  document.getElementById('sec-cash').style.display=opt==='cash'?'block':'none';
-  // For cash, force deposit tile (no pay-in-full for cash — contractor collects)
-  if(opt==='cash'&&_payFullAmount){_payFullAmount=false;_renderPayTiles();}
-  _updatePayButtons();
+  if(opt==='cash')_paySign('cash');
 }
 function _selectPayTile(choice){
   const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice*0.25:_prop?.deposit||0;
@@ -889,11 +842,8 @@ function _renderPayTiles(){
 function _updatePayButtons(){
   const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice*0.25:_prop?.deposit||0;
   const fullAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
-  const amt=_payFullAmount?fullAmt:depAmt;
-  const cardBtn=document.getElementById('card-btn');
-  if(cardBtn)cardBtn.textContent=_payFullAmount?'Pay '+fmt(fullAmt)+' in full by card':'Pay '+fmt(depAmt)+' deposit by card';
-  const achBtn=document.getElementById('ach-btn');
-  if(achBtn)achBtn.textContent=_payFullAmount?'Pay '+fmt(fullAmt)+' in full by bank transfer':'Pay '+fmt(depAmt)+' by bank transfer (ACH)';
+  const pnd=document.getElementById('pay-now-display');
+  if(pnd)pnd.textContent=fmt(_payFullAmount?fullAmt:depAmt);
   const cashMsg=document.getElementById('cash-confirm-msg');
   if(cashMsg)cashMsg.textContent=(_payFullAmount?' Your proposal is signed. The contractor will collect the full amount when they arrive.':' Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.');
 }
@@ -997,7 +947,53 @@ function _closeStripeModal(){
   document.getElementById('sign-stripe-overlay').style.display='none';
   document.body.style.overflow='';
 }
-async function _launchEmbedded(amount,paymentMethod){
+function _renderSignPayBtns(){
+  const container=document.getElementById('sign-pay-btns');if(!container)return;
+  const stripeOk=_prop?.stripeConnectEnabled!==false;
+  const pct=_prop?.ccSurchargePct||3;
+  const surchargeOn=!!(_prop?.ccSurchargeEnabled);
+  const fee=surchargeOn?' <span style="font-size:10px;opacity:.75">(+'+pct+'% fee)</span>':'';
+  const bP='display:block;width:100%;padding:12px;border-radius:10px;border:none;background:#635BFF;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;text-align:center;box-shadow:0 3px 12px rgba(99,91,255,.3);margin-bottom:8px';
+  const bS='display:block;width:100%;padding:11px;border-radius:10px;border:1.5px solid #e2e0da;background:#fff;color:#1b1612;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center;margin-bottom:8px';
+  let html='';
+  if(stripeOk){
+    html+='<button onclick="_paySign(\'ach\')" style="'+bP+'">Bank transfer (ACH) <span style="font-size:11px;font-weight:700;opacity:.85">· No fee</span></button>';
+    html+='<button onclick="_paySign(\'card\')" style="'+bS+'">Credit card'+fee+'</button>';
+    html+='<button onclick="_paySign(\'debit\')" style="'+bS+'">Debit card</button>';
+    html+='<button onclick="_paySign(\'venmo\')" style="'+bS+'">Venmo</button>';
+    html+='<button onclick="_paySign(\'cashapp\')" style="'+bS+'">Cash App</button>';
+  }
+  html+='<button onclick="_paySign(\'cash\')" style="'+bS+'">Cash</button>';
+  container.innerHTML=html;
+}
+async function _paySign(method){
+  if(!_prop)return;
+  if(method==='cash'){
+    document.getElementById('sign-pay-btns').style.display='none';
+    document.getElementById('sec-cash').style.display='block';
+    if(_payFullAmount){_payFullAmount=false;_renderPayTiles();_updatePayButtons();}
+    return;
+  }
+  const depBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round((_prop.deposit||0)*100);
+  const fullBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*100):Math.round((_prop.amount||0)*100);
+  const amt=_payFullAmount?fullBase:depBase;
+  const stripeMethod=method==='debit'?'card':method;
+  const surcharge=(method==='card'&&_prop.ccSurchargeEnabled)?Math.round(amt*(_prop.ccSurchargePct||3)/100):0;
+  const btns=document.querySelectorAll('#sign-pay-btns button');
+  btns.forEach(b=>b.disabled=true);
+  const clickedBtn=event?.target?.closest('button');
+  const origText=clickedBtn?.innerHTML;
+  if(clickedBtn)clickedBtn.textContent='Setting up...';
+  try{
+    await _launchEmbedded(amt,stripeMethod,surcharge);
+  }catch(e){
+    console.error(e);
+    document.getElementById('pay-err').textContent='Payment unavailable. Please try another method.';
+  }
+  btns.forEach(b=>b.disabled=false);
+  if(clickedBtn&&origText)clickedBtn.innerHTML=origText;
+}
+async function _launchEmbedded(amount,paymentMethod,surchargeAmount=0){
   const _p=new URLSearchParams(location.search);
   let propKey=_p.get('key');
   if(!propKey){const t=_p.get('t'),u=_p.get('u'),b=_p.get('b');if(t&&u&&b)propKey=`proposals/${u}/${b}_${t}.json`;}
@@ -1006,6 +1002,7 @@ async function _launchEmbedded(amount,paymentMethod){
     headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
     body:JSON.stringify({
       amount,currency:'usd',paymentMethod,
+      surchargeAmount:surchargeAmount||undefined,
       proposalKey:propKey,clientName:_prop.clientName,businessName:_prop.businessName,
       bidId:String(_prop.id),contractorUserId:_prop.contractorUserId,
       notifyEmail:_prop.notifyEmail,signatureDataUrl:_sigData,
