@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-05.19.26.165';
+const CACHE = 'tradedesk-05.19.26.166';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
 // tries to serve it for a navigation. new Response() always has redirected:false.
@@ -64,6 +64,9 @@ self.addEventListener('fetch', e => {
 
   // Never cache version.json — must always reflect the live server value
   if (url.pathname === '/version.json') return;
+
+  // Never cache .well-known — Apple Pay domain verification must always be fetched fresh
+  if (url.pathname.startsWith('/.well-known/')) return;
 
   // Don't cache client-hub snapshots — they change every time a new proposal is sent.
   if (url.hostname.endsWith('supabase.co') && url.pathname.includes('/client-hub/')) return;
