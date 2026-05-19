@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.125';
+const APP_VERSION='05.19.26.126';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -1187,14 +1187,10 @@ async function _probeAndSync(){
   try{
     await fetch('/version.json?_='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(5000)});
     _hideOfflineBanner(); // connection confirmed — hide immediately, sync in background
-    if(_supa&&!_supaUser&&_mergeOnSignIn&&!_sessionRestoreInProgress){
-      // Supabase clears its own LS key before firing SIGNED_OUT, so refreshSession()
-      // has nothing to work with. We keep our own token backup and call setSession()
-      // which exchanges the refresh token for a fresh access token over the network.
-      // We drive the reconnect directly in .then() rather than waiting for an auth event,
-      // because Supabase fires onAuthStateChange asynchronously — by the time SIGNED_IN
-      // arrives our .then() may have already run. Guard with _supaUser so that if the
-      // auth event DOES fire first, the .then() is a no-op instead of a double sync.
+    // No active user — try silent session restore regardless of _mergeOnSignIn.
+    // _mergeOnSignIn is only true after involuntary SIGNED_OUT; after deliberate sign-out
+    // the flag stays false, but we still want to re-auth when the backup token is present.
+    if(_supa&&!_supaUser&&!_sessionRestoreInProgress){
       const _bk=(()=>{try{return JSON.parse(localStorage.getItem('zp3_session_backup')||'null');}catch(_e){return null;}})();
       if(_bk?.access_token&&_bk?.refresh_token){
         _sessionRestoreInProgress=true;
@@ -1208,11 +1204,10 @@ async function _probeAndSync(){
             _mergeOnSignIn=false;
             _onReconnect();
           }
-          // If _supaUser was already set by the auth event, reconnect was handled there
+          // If auth event already set _supaUser, reconnect was handled there
         }).catch(()=>{_sessionRestoreInProgress=false;supaShowLogin();});
-      } else {
-        supaShowLogin();
       }
+      // No backup — stay on current screen; don't call supaShowLogin() repeatedly from tick
       return;
     }
     _onReconnect();
