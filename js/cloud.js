@@ -332,8 +332,9 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.136';
+const APP_VERSION='05.19.26.137';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0,_syncBroadcastChannel=null;
+const _deviceId=Math.random().toString(36).slice(2,10);
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
 // supaSaveToCloud() checks this + runs a sanity guard to prevent pushing
@@ -535,6 +536,8 @@ async function supaInit(){
         // Supabase fires SIGNED_OUT on token refresh failures too (e.g. offline, network blip).
         // navigator.onLine is unreliable on iOS — don't use it. Always prefer cache.
         if(_deliberateSignOut){
+          clearTimeout(_syncTimer);_syncTimer=null; // prevent a live timer from flushing emptied arrays
+          _supaCloudLoaded=false; // force a fresh load on next sign-in
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],weatherLat:null,weatherLon:null,locationDenied:false};
           saveAll();
@@ -1374,6 +1377,21 @@ async function supaSaveToCloud(){
     const uid=_isSupportSave
       ? Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id
       : (_isEmployee?_contractorUserId:_supaUser.id);
+    // Pre-save merge: pick up any records another device added since our last load.
+    // Prevents concurrent saves from overwriting each other — only adds missing IDs, never overwrites local changes.
+    if(!_isSupportSave&&!_isEmployee){
+      try{
+        const{data:_rd}=await _supa.from('zj_data').select('clients,bids,jobs').eq('user_id',uid).maybeSingle();
+        if(_rd){
+          const _lc=new Set(clients.map(c=>c.id));
+          const _lb=new Set(bids.map(b=>b.id));
+          const _lj=new Set(jobs.map(j=>j.id));
+          JSON.parse(_rd.clients||'[]').filter(c=>!_lc.has(c.id)).forEach(c=>clients.push(c));
+          JSON.parse(_rd.bids||'[]').filter(b=>!_lb.has(b.id)).forEach(b=>bids.push(b));
+          JSON.parse(_rd.jobs||'[]').filter(j=>!_lj.has(j.id)).forEach(j=>jobs.push(j));
+        }
+      }catch(_me){}
+    }
     const part1={
       user_id:uid,
       clients:JSON.stringify(clients),
@@ -1452,7 +1470,7 @@ async function supaSaveToCloud(){
     localStorage.setItem('zp3_cloud_cache',JSON.stringify(_snap));}catch(_ce){}
     _hideOfflineBanner();
     supaSetStatus('synced');
-    if(_syncBroadcastChannel){try{_syncBroadcastChannel.send({type:'broadcast',event:'data_saved',payload:{}});}catch(_e){}}
+    if(_syncBroadcastChannel){try{_syncBroadcastChannel.send({type:'broadcast',event:'data_saved',payload:{deviceId:_deviceId}});}catch(_e){}}
   }catch(e){
     _logSave('throw',{id:_attemptId,name:e?.name,code:e?.code,msg:e?.message||String(e)});
     console.warn('Cloud save failed:',e);
@@ -1857,8 +1875,9 @@ async function supaLoadFromCloud({silent=false}={}){
       try{
         _syncBroadcastChannel=_supa.channel('user-data-'+_supaUser.id);
         _syncBroadcastChannel
-          .on('broadcast',{event:'data_saved'},()=>{
-            if(Date.now()-_lastLocalSaveAt<5000)return;
+          .on('broadcast',{event:'data_saved'},(msg)=>{
+            // Only suppress if the broadcast came from THIS device (our own echo)
+            if(msg?.payload?.deviceId===_deviceId&&Date.now()-_lastLocalSaveAt<5000)return;
             if(_syncTimer)return;
             supaLoadFromCloud();
           })
