@@ -246,28 +246,32 @@ const _DEV_SUPPORT_USERS={
 };
 async function _devLoadUserAccount(key){
   if(!_config?.is_dev)return;
-  clearTimeout(_syncTimer); // cancel any pending debounced save before swapping data
-  // Force-save dev's own data to their row BEFORE swapping — page refresh always returns to dev's data
+  clearTimeout(_syncTimer);
   await supaSaveToCloud();
   const u=_DEV_SUPPORT_USERS[key];
   if(!u){showToast('Unknown support user','⚠️');return;}
-  const{data:zd,error}=await _supa.from('zj_data').select('*').eq('user_id',u.userId).maybeSingle();
-  if(error||!zd){showToast('No data found — check Supabase RLS policy','❌');return;}
-  // Auto-snapshot before touching anything — keeps last 5 restore points in localStorage
-  try{
-    const snapKey='zp3_dev_snaps_'+key;
-    const snaps=JSON.parse(localStorage.getItem(snapKey)||'[]');
-    snaps.unshift({ts:new Date().toISOString(),data:zd});
-    localStorage.setItem(snapKey,JSON.stringify(snaps.slice(0,5)));
-  }catch(e){}
-  _devSavedState={clients:[...clients],bids:[...bids],jobs:[...jobs],payments:[...payments],liens:[...liens],income:[...income],expenses:[...expenses],mileage:[...mileage],timeEntries:[...timeEntries],S:JSON.parse(JSON.stringify(S))};
-  const p=(s,fb)=>{try{return s?JSON.parse(s):fb}catch{return fb}};
-  clients=p(zd.clients,[]);bids=p(zd.bids,[]);jobs=p(zd.jobs,[]);
-  payments=p(zd.payments,[]);liens=p(zd.liens,[]);
-  income=p(zd.income,[]);expenses=p(zd.expenses,[]);
-  mileage=p(zd.mileage,[]);timeEntries=p(zd.time_entries,[]);
-  // Load target user's settings (vehicles, vehicleOdoLog, etc.) so support view reflects their data
-  if(zd.settings){try{const zS=JSON.parse(zd.settings);Object.assign(S,zS);}catch(e){}}
+  // Load all per-record tables for target user in parallel (requires dev_support RLS policy)
+  const[tableResults,settingsResult]=await Promise.all([
+    Promise.all(_TD_TABLES.map(({t})=>_supa.from(t).select('id,data').eq('user_id',u.userId).is('deleted_at',null))),
+    _supa.from('zj_data').select('settings,checks_state').eq('user_id',u.userId).maybeSingle()
+  ]);
+  if(tableResults.some(r=>r.error)){showToast('Load failed — run dev_support SQL policy in Supabase','❌');return;}
+  // Snapshot dev's own state (all arrays + _lastKnownIds) so exit restores cleanly
+  _devSavedState={
+    clients:[...clients],bids:[...bids],jobs:[...jobs],payments:[...payments],liens:[...liens],
+    income:[...income],expenses:[...expenses],mileage:[...mileage],timeEntries:[...timeEntries],
+    licenses:[...licenses],events:[...events],contracts:[...contracts],photos:[...photos],
+    S:JSON.parse(JSON.stringify(S)),
+    lastKnownIds:Object.fromEntries(Object.entries(_lastKnownIds).map(([k,v])=>[k,[...v]]))
+  };
+  // Load target user's records into memory
+  for(let i=0;i<_TD_TABLES.length;i++){
+    const{t,set}=_TD_TABLES[i];
+    const rows=(tableResults[i].data||[]).map(r=>r.data);
+    set(rows);
+    _lastKnownIds[t]=new Set((tableResults[i].data||[]).map(r=>String(r.id)));
+  }
+  if(settingsResult.data?.settings){try{const zS=JSON.parse(settingsResult.data.settings);Object.assign(S,zS);}catch(e){}}
   _devSupportMode=true;_devSupportName=u.name;
   window._devUnloadGuard=e=>{e.preventDefault();e.returnValue='';};
   window.addEventListener('beforeunload',window._devUnloadGuard);
@@ -280,11 +284,11 @@ async function _devExitSupportMode(){
   clearTimeout(_syncTimer);_syncTimer=null;
   if(_pendingSavePromise){try{await _pendingSavePromise;}catch(e){console.warn('[support exit] pending save failed:',e);}}
   window.removeEventListener('beforeunload',window._devUnloadGuard);
-  ({clients,bids,jobs,payments,liens,income,expenses,mileage,timeEntries}=_devSavedState);
-  // Restore dev's own settings — wipes any settings that leaked in from the support user's account
+  ({clients,bids,jobs,payments,liens,income,expenses,mileage,timeEntries,licenses,events,contracts,photos}=_devSavedState);
   if(_devSavedState.S){const dS=_devSavedState.S;Object.keys(S).forEach(k=>{if(!(k in dS))delete S[k];});Object.assign(S,dS);}
+  if(_devSavedState.lastKnownIds){for(const[k,v]of Object.entries(_devSavedState.lastKnownIds))_lastKnownIds[k]=new Set(v);}
   _devSupportMode=false;_devSupportName='';_devSavedState=null;
-  saveAll(); // flush dev's own data back to localStorage (support view may have written Zach's data there)
+  saveAll();
   _renderDevTradeCard();renderDash();
   renderClientList&&renderClientList();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
   showToast('Back to your account','✓');
@@ -332,7 +336,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.139';
+const APP_VERSION='05.19.26.140';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false;
 const _deviceId=Math.random().toString(36).slice(2,10);
