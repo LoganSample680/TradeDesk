@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.126';
+const APP_VERSION='05.19.26.127';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -538,7 +538,7 @@ async function supaInit(){
           saveAll();
           _deliberateSignOut=false;
           supaSetStatus('local');
-          supaShowLogin();
+          supaShowLogin({force:true});
         } else if(localStorage.getItem('zp3_cloud_cache')){
           // Non-deliberate sign-out (token refresh failure or rotation) — keep data in memory.
           // autoRefreshToken fires TOKEN_REFRESHED within ms if it was just a rotation.
@@ -1002,9 +1002,19 @@ function _enterOfflineMode(){
   _mergeOnSignIn=true; // merge any new records entered here when SIGNED_IN fires
   _removeBootOverlay();renderDash();buildScopeGrid();
   _showOfflineBanner();
+  // Immediately probe for connection so re-auth fires without waiting for the 5s tick
+  setTimeout(()=>_probeAndSync(),500);
 }
-function supaShowLogin(){
+function supaShowLogin(opts={}){
   if(!supaEnabled())return;
+  // Never interrupt the user with a login screen if they have a session backup
+  // (setSession() will silently re-auth on the next connection probe) or cached data
+  // (the app is fully usable offline). Only bypass this guard when _deliberateSignOut
+  // explicitly requested the login screen, or when the backup token has confirmed expired.
+  if(!opts.force){
+    if(localStorage.getItem('zp3_session_backup'))return;
+    if(localStorage.getItem('zp3_cloud_cache'))return;
+  }
   if(document.getElementById('supa-login-overlay'))return;
   const overlay=document.createElement('div');
   overlay.id='supa-login-overlay';
@@ -1196,7 +1206,13 @@ async function _probeAndSync(){
         _sessionRestoreInProgress=true;
         _supa.auth.setSession(_bk).then(({data:{session}})=>{
           _sessionRestoreInProgress=false;
-          if(!session){supaShowLogin();return;}
+          if(!session){
+            // Refresh token confirmed expired (not a network error — Supabase returned null).
+            // Clear the stale backup so future probes don't keep trying it.
+            localStorage.removeItem('zp3_session_backup');
+            supaShowLogin({force:true});
+            return;
+          }
           if(!_supaUser){
             // Auth event hasn't fired yet — drive reconnect ourselves
             _supaUser=session.user;
@@ -1205,7 +1221,10 @@ async function _probeAndSync(){
             _onReconnect();
           }
           // If auth event already set _supaUser, reconnect was handled there
-        }).catch(()=>{_sessionRestoreInProgress=false;supaShowLogin();});
+        }).catch(()=>{
+          // Network error during token exchange — don't show login, retry on next probe
+          _sessionRestoreInProgress=false;
+        });
       }
       // No backup — stay on current screen; don't call supaShowLogin() repeatedly from tick
       return;
