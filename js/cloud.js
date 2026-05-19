@@ -336,7 +336,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.148';
+const APP_VERSION='05.19.26.149';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -416,8 +416,8 @@ function _showLpDeletePopup(row){
 }
 function _lpDoDelete(id,type){
   const nid=parseInt(id,10);
-  if(type==='income'){income=income.filter(x=>x.id!==nid);saveAll();if(typeof renderIncome==='function')renderIncome();}
-  else if(type==='payment'){payments=payments.filter(x=>x.id!==nid);saveAll();if(typeof renderIncome==='function')renderIncome();}
+  if(type==='income'){income=income.filter(x=>x.id!==nid);_flushSaveNow&&_flushSaveNow();if(typeof renderIncome==='function')renderIncome();}
+  else if(type==='payment'){payments=payments.filter(x=>x.id!==nid);_flushSaveNow&&_flushSaveNow();if(typeof renderIncome==='function')renderIncome();}
   else if(type==='expense'){if(typeof delExpense==='function')delExpense(nid);}
   else if(type==='mileage'){if(typeof delMileage==='function')delMileage(nid);}
   else if(type==='lead'||type==='client'){_lpDeleteClientById(nid,type);}
@@ -429,7 +429,7 @@ function _lpDeleteClientById(id,fromType){
   mileage=mileage.filter(m=>m.client_id!==id);
   income=income.filter(i=>i.client_id!==id);
   expenses=expenses.filter(e=>e.client_id!==id);
-  saveAll();
+  _flushSaveNow&&_flushSaveNow();
   if(fromType==='lead'){if(typeof renderLeadsPage==='function')renderLeadsPage();}
   else{if(typeof renderClientList==='function')renderClientList();}
 }
@@ -1850,7 +1850,10 @@ async function supaLoadFromCloud({silent=false}={}){
       _removeBootOverlay();goPg('pg-dash');
     }
     renderDash();buildScopeGrid();
-    renderClientList&&renderClientList();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
+    renderClientList&&renderClientList();renderLeadsPage&&renderLeadsPage();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
+    if(typeof renderIncome==='function')renderIncome();
+    if(typeof renderExpenses==='function')renderExpenses();
+    if(typeof renderAllMileage==='function')renderAllMileage();
 
     const _dedupById=(arr)=>{const seen=new Set();return arr.filter(x=>{if(seen.has(x.id))return false;seen.add(x.id);return true;});};
     const _preLen=clients.length+bids.length+jobs.length;
@@ -1976,18 +1979,28 @@ function _applyRealtimeRecord(tbl,payload){
       if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(rec.id));}
     }else{
       const data=rec.data||rec;
-      const idx=arr.findIndex(r=>String(r.id)===String(data.id!=null?data.id:rec.id));
-      if(idx!==-1)arr[idx]=data;
-      else{arr.push(data);_lastKnownIds[tbl]?.add(String(rec.id));}
+      const recId=String(data.id!=null?data.id:rec.id);
+      const idx=arr.findIndex(r=>String(r.id)===recId);
+      if(idx!==-1){
+        arr[idx]=data;
+      }else if(!_lastKnownIds[tbl]?.has(recId)){
+        // Only add if this ID was never known to us — if it was known but
+        // isn't in arr, we deleted it locally and another device's stale
+        // save is trying to resurrect it. Ignore it.
+        arr.push(data);_lastKnownIds[tbl]?.add(recId);
+      }
     }
   }else if(ev==='DELETE'&&payload.old){
     const idx=arr.findIndex(r=>String(r.id)===String(payload.old.id));
     if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(payload.old.id));}
   }
   _writeLocalCache();
-  renderDash&&renderDash();renderClientList&&renderClientList();
+  renderDash&&renderDash();buildScopeGrid&&buildScopeGrid();
+  renderClientList&&renderClientList();renderLeadsPage&&renderLeadsPage();
   renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
-  buildScopeGrid&&buildScopeGrid();
+  if(typeof renderIncome==='function')renderIncome();
+  if(typeof renderExpenses==='function')renderExpenses();
+  if(typeof renderAllMileage==='function')renderAllMileage();
 }
 
 // ── Inbound leads (onboarding form + QR intake) ───────────────────────────

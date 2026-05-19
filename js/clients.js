@@ -939,7 +939,7 @@ function deleteClient(){
     mileage=mileage.filter(m=>m.client_id!==id);
     income=income.filter(i=>i.client_id!==id);
     expenses=expenses.filter(e=>e.client_id!==id);
-    saveAll();closeClientForm();goPg('pg-clients');
+    _flushSaveNow&&_flushSaveNow();closeClientForm();goPg('pg-clients');
   },{title:'Delete client',yes:'Delete everything',danger:true});
 }
 function closeClientForm(){

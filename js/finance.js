@@ -2431,7 +2431,7 @@ async function purgeOldReceiptImages(){
     saveAll();renderExpenses();showToast(old.length+' receipt images purged — records kept','🗑️');
   },{title:'Purge old receipt images',yes:'Delete images',danger:true});
 }
-function delExpense(id){expenses=expenses.filter(x=>x.id!==id);saveAll();renderExpenses();}
+function delExpense(id){expenses=expenses.filter(x=>x.id!==id);_flushSaveNow&&_flushSaveNow();renderExpenses();}
 
 function renderSummary(){
   const yr=String(trackerYear||new Date().getFullYear());
