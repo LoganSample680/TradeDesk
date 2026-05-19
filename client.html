@@ -1364,6 +1364,7 @@ let _stripeCheckoutInstance=null;
 async function _launchCheckout(bidId,amount,label,method='card'){
   const bid=_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const btn=document.getElementById('pay-btn-'+bidId)||document.getElementById('pay-inv-btn-'+bidId);
+  const btnOrig=btn?btn.innerHTML:null;
   if(btn){btn.textContent='Setting up…';btn.disabled=true;}
   try{
     const hubBase=location.href.split('#')[0];
@@ -1380,7 +1381,7 @@ async function _launchCheckout(bidId,amount,label,method='card'){
         embedded:true})
     });
     const d=await res.json();
-    if(btn){btn.textContent=label;btn.disabled=false;}
+    if(btn){if(btnOrig)btn.innerHTML=btnOrig;else btn.textContent=label;btn.disabled=false;}
     if(d.clientSecret&&d.publishableKey){
       document.getElementById('stripe-modal-biz').textContent=_hub.contractorName||'Secure Payment';
       const _dispTotal=(amount+(surchargeAmount||0))/100;
@@ -1397,7 +1398,7 @@ async function _launchCheckout(bidId,amount,label,method='card'){
     }else{
       alert('Could not set up payment. Please contact us directly.');
     }
-  }catch(e){if(btn){btn.textContent=label;btn.disabled=false;}}
+  }catch(e){if(btn){if(btnOrig)btn.innerHTML=btnOrig;else btn.textContent=label;btn.disabled=false;}}
 }
 function closePaymentModal(){
   if(_stripeCheckoutInstance){_stripeCheckoutInstance.destroy();_stripeCheckoutInstance=null;}
@@ -1419,17 +1420,15 @@ async function payDeposit(bidId,method='card'){
 }
 function _pay4Btns(bidId,payFn,amt,hub){
   const pct=hub.ccSurchargePct||3;
-  const ccAmt=hub.ccSurchargeEnabled?Math.round(amt*(1+pct/100)):amt;
-  const fee=hub.ccSurchargeEnabled?' <span style="font-size:10px;font-weight:600;opacity:.8">(+'+pct+'% fee)</span>':'';
+  const fee=hub.ccSurchargeEnabled?' <span style="font-size:10px;font-weight:600;opacity:.75">(+'+pct+'% fee)</span>':'';
   const bP='display:block;width:100%;padding:12px;border-radius:var(--r);border:none;background:#635BFF;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 3px 12px rgba(99,91,255,.3);margin-bottom:7px';
   const bS='display:block;width:100%;padding:11px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg);color:var(--text);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;margin-bottom:7px';
-  const bT='display:block;width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border);background:var(--bg2);color:var(--text2);font-size:12px;font-weight:600;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;margin-bottom:7px';
-  return '<button id="pay-btn-'+bidId+'" onclick="'+payFn+'('+bidId+',\'us_bank_account\')" style="'+bP+'">🏦 Bank transfer (ACH) — '+fmt(amt)+' <span style="font-size:11px;font-weight:700;opacity:.85">No fee</span></button>'+
-    '<button onclick="'+payFn+'('+bidId+',\'card\')" style="'+bS+'">💳 Credit card — '+fmt(ccAmt)+fee+'</button>'+
-    '<button onclick="'+payFn+'('+bidId+',\'debit\')" style="'+bS+'">💳 Debit card — '+fmt(amt)+'</button>'+
-    '<button onclick="'+payFn+'('+bidId+',\'venmo\')" style="'+bS+'">💜 Venmo — '+fmt(amt)+'</button>'+
-    '<button onclick="'+payFn+'('+bidId+',\'cashapp\')" style="'+bS+'">💚 Cash App — '+fmt(amt)+'</button>'+
-    '<button onclick="_showCashMsg()" style="'+bT+'">💵 Cash</button>';
+  return '<button id="pay-btn-'+bidId+'" onclick="'+payFn+'('+bidId+',\'us_bank_account\')" style="'+bP+'">Bank transfer (ACH) <span style="font-size:11px;font-weight:700;opacity:.85">· No fee</span></button>'+
+    '<button onclick="'+payFn+'('+bidId+',\'card\')" style="'+bS+'">Credit card'+fee+'</button>'+
+    '<button onclick="'+payFn+'('+bidId+',\'debit\')" style="'+bS+'">Debit card</button>'+
+    '<button onclick="'+payFn+'('+bidId+',\'venmo\')" style="'+bS+'">Venmo</button>'+
+    '<button onclick="'+payFn+'('+bidId+',\'cashapp\')" style="'+bS+'">Cash App</button>'+
+    '<button onclick="_showCashMsg()" style="'+bS+'">Cash</button>';
 }
 function _showCashMsg(){
   const biz=escHtml(_hub.contractorName||'your contractor');
