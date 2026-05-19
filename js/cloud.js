@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.119';
+const APP_VERSION='05.19.26.120';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -476,7 +476,11 @@ async function supaInit(){
         document.getElementById('welcome-overlay')?.remove();
         const hasAccount=await loadAccountData();
         if(hasAccount){
-          if(_mergeOnSignIn){
+          // Trigger merge path if _mergeOnSignIn is set OR if zp3_offline_pending exists.
+          // The flag may be false after a force-quit restart even if there is pending data —
+          // checking the key directly means no offline record is ever silently dropped.
+          const _hasPendingData=!!localStorage.getItem('zp3_offline_pending');
+          if(_mergeOnSignIn||_hasPendingData){
             _mergeOnSignIn=false;
             // Snapshot records entered while offline before cloud load overwrites memory.
             // Also restore from zp3_offline_pending in case the app was force-quit and restarted.
@@ -1796,6 +1800,19 @@ async function supaLoadFromCloud({silent=false}={}){
         if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
         _loadedFromCacheOnly=true;
         _supaCloudLoaded=true;
+        // Merge any offline-pending records into cache-loaded data so they appear in the UI.
+        // Don't remove the key — we can't push to Supabase yet. Drain happens on next success.
+        try{
+          const _op=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');
+          if(_op){
+            const _cSet=new Set(clients.map(c=>c.id));
+            const _bSet=new Set(bids.map(b=>b.id));
+            const _jSet=new Set(jobs.map(j=>j.id));
+            (_op.clients||[]).filter(c=>!_cSet.has(c.id)).forEach(c=>clients.push(c));
+            (_op.bids||[]).filter(b=>!_bSet.has(b.id)).forEach(b=>bids.push(b));
+            (_op.jobs||[]).filter(j=>!_jSet.has(j.id)).forEach(j=>jobs.push(j));
+          }
+        }catch(_oe){}
         if(!silent){_removeBootOverlay();renderDash();buildScopeGrid();}
         _showOfflineBanner();
         supaSetStatus('error');
