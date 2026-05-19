@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.118';
+const APP_VERSION='05.19.26.119';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -531,12 +531,14 @@ async function supaInit(){
           supaSetStatus('local');
           supaShowLogin();
         } else if(localStorage.getItem('zp3_cloud_cache')){
-          // Non-deliberate sign-out (token refresh failure) — keep data, show offline banner.
-          // autoRefreshToken will fire TOKEN_REFRESHED when connection returns.
+          // Non-deliberate sign-out (token refresh failure or rotation) — keep data in memory.
+          // autoRefreshToken fires TOKEN_REFRESHED within ms if it was just a rotation.
+          // Delay the banner 1s so routine rotations don't cause a visible flash.
           _loadedFromCacheOnly=true;
           _mergeOnSignIn=true;
-          _showOfflineBanner();
           supaSetStatus('error');
+          clearTimeout(window._offlineBannerTimer);
+          window._offlineBannerTimer=setTimeout(()=>{if(_mergeOnSignIn&&!_supaUser)_showOfflineBanner();},1000);
         } else {
           supaSetStatus('local');
           supaShowLogin();
@@ -1170,7 +1172,12 @@ async function _probeAndSync(){
     await fetch('/version.json?_='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(5000)});
     _hideOfflineBanner(); // connection confirmed — hide immediately, sync in background
     if(_supa&&!_supaUser&&_mergeOnSignIn){
-      _supa.auth.getSession().catch(()=>{}); // triggers token refresh → fires SIGNED_IN silently
+      // Try to silently restore the session via the stored refresh token.
+      // If successful, TOKEN_REFRESHED fires and _onReconnect() syncs.
+      // If no valid session exists, show login so they can re-auth without losing offline data.
+      _supa.auth.getSession().then(({data:{session}})=>{
+        if(!session)supaShowLogin();
+      }).catch(()=>{});
       return;
     }
     _onReconnect();
@@ -1342,12 +1349,15 @@ async function supaSaveToCloud(){
     }catch(_e5){}
     _logSave('ok',{id:_attemptId,mileage:_mileCount});
     localStorage.removeItem('zp3_pending_sync');
+    localStorage.removeItem('zp3_offline_pending'); // clear any stale pending written during offline session
     _hideOfflineBanner();
     supaSetStatus('synced');
   }catch(e){
     _logSave('throw',{id:_attemptId,name:e?.name,code:e?.code,msg:e?.message||String(e)});
     console.warn('Cloud save failed:',e);
     localStorage.setItem('zp3_pending_sync','1');
+    // Persist current data locally so a force-quit can't lose it — drained on next successful load
+    try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,ts:Date.now()}));}catch(_e){}
     _showOfflineBanner();
     supaSetStatus('error');
   }
@@ -1696,6 +1706,7 @@ async function supaLoadFromCloud({silent=false}={}){
     }}
     _supaCloudLoaded=true;
     _loadedFromCacheOnly=false;
+    _mergeOnSignIn=false; // cloud data is authoritative now — no pending merge
     supaSetStatus('synced');
     if(!silent){
       // Prefetch Stripe status in background so hub-share is instant (no 46s wait)
