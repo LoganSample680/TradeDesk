@@ -332,9 +332,40 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.137';
-let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0,_syncBroadcastChannel=null;
+const APP_VERSION='05.19.26.138';
+let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
+let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false;
 const _deviceId=Math.random().toString(36).slice(2,10);
+
+// Tracks IDs present in each table after the last successful load or save.
+// Used to detect deletions (record in _lastKnownIds but not in current array).
+let _lastKnownIds={
+  td_clients:new Set(),td_bids:new Set(),td_jobs:new Set(),
+  td_income:new Set(),td_expenses:new Set(),td_mileage:new Set(),
+  td_payments:new Set(),td_liens:new Set(),td_time_entries:new Set(),
+  td_licenses:new Set(),td_events:new Set(),td_contracts:new Set(),td_photos:new Set()
+};
+
+// Per-record table definitions — one entry per data type.
+// arr: getter for the live in-memory array
+// set: setter (replaces array contents in-place; keeps same reference for other code)
+// transform: strip fields that shouldn't go to Supabase (e.g. inline base64)
+const _TD_TABLES=[
+  {t:'td_clients',     get:()=>clients,     set:v=>{clients.length=0;v.forEach(r=>clients.push(r));},     tx:null},
+  {t:'td_bids',        get:()=>bids,        set:v=>{bids.length=0;v.forEach(r=>bids.push(r));},           tx:null},
+  {t:'td_jobs',        get:()=>jobs,        set:v=>{jobs.length=0;v.forEach(r=>jobs.push(r));},           tx:null},
+  {t:'td_income',      get:()=>income,      set:v=>{income.length=0;v.forEach(r=>income.push(r));},       tx:null},
+  {t:'td_expenses',    get:()=>expenses,    set:v=>{expenses.length=0;v.forEach(r=>expenses.push(r));},   tx:arr=>arr.map(({receipt_img,...r})=>r)},
+  {t:'td_mileage',     get:()=>mileage,     set:v=>{mileage.length=0;v.forEach(r=>mileage.push(r));},     tx:null},
+  {t:'td_payments',    get:()=>payments,    set:v=>{payments.length=0;v.forEach(r=>payments.push(r));},   tx:null},
+  {t:'td_liens',       get:()=>liens,       set:v=>{liens.length=0;v.forEach(r=>liens.push(r));},         tx:null},
+  {t:'td_time_entries',get:()=>timeEntries, set:v=>{timeEntries.length=0;v.forEach(r=>timeEntries.push(r));}, tx:arr=>arr.slice(-500)},
+  {t:'td_licenses',    get:()=>licenses,    set:v=>{licenses.length=0;v.forEach(r=>licenses.push(r));},   tx:null},
+  {t:'td_events',      get:()=>events,      set:v=>{events.length=0;v.forEach(r=>events.push(r));},       tx:arr=>arr.slice(-600)},
+  {t:'td_contracts',   get:()=>contracts,   set:v=>{contracts.length=0;v.forEach(r=>contracts.push(r));}, tx:null},
+  {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
+    tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
+];
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
 // supaSaveToCloud() checks this + runs a sanity guard to prevent pushing
@@ -1304,179 +1335,126 @@ function _logSave(stage,info){
   window._saveLog.push({t:new Date().toISOString(),stage,info});
   if(window._saveLog.length>40)window._saveLog.shift();
 }
+function _writeLocalCache(){
+  try{
+    const _snap={clients,bids,jobs,payments,income,
+      expenses:expenses.map(({receipt_img,...r})=>r),
+      mileage,liens,timeEntries,licenses,events,contracts,photos,checksState,
+      settings:S,cached_at:new Date().toISOString()};
+    localStorage.setItem('zp3_cloud_cache',JSON.stringify(_snap));
+  }catch(_e){}
+}
+
 async function supaSaveToCloud(){
   if(!_supa||!_supaUser){
-    // No session — persist in-memory arrays to localStorage so they survive app restarts
     if(_mergeOnSignIn){
-      try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,ts:Date.now()}));}catch(_e){}
+      try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,ts:Date.now()}));}catch(_e){}
     }
     _logSave('skip','no _supa or _supaUser');return;
   }
   if(!_supaCloudLoaded){_logSave('skip','_supaCloudLoaded=false');return;}
-  // Write snapshot before ANY async work so force-quit mid-push can't lose data.
-  // Covers _flushSaveNow() callers that bypass supaSaveDebounced(). Cleared on success.
-  try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,ts:Date.now()}));}catch(_e){}
-  // Sanity guard — refuse to push if any critical array is unexpectedly empty
-  // compared to the last known-good cache. Prevents a partial cache load or a
-  // failed Supabase fetch from wiping real data (the incident that inspired this).
+
+  // Sanity guard — refuse to push if critical arrays unexpectedly empty vs cache
   if(_loadedFromCacheOnly){
     const _sc=localStorage.getItem('zp3_cloud_cache');
     if(_sc){try{
       const _scd=JSON.parse(_sc);
       const _wipe=(arr,key)=>arr.length===0&&(_scd[key]||[]).length>0;
       if(_wipe(clients,'clients')||_wipe(mileage,'mileage')||_wipe(bids,'bids')||_wipe(income,'income')){
-        _logSave('sanity-abort',{clients:clients.length,mileage:mileage.length,bids:bids.length});
-        console.warn('[TradeDesk] Push aborted — in-memory arrays are empty but cache has data. Refusing to overwrite Supabase.');
-        localStorage.setItem('zp3_pending_sync','1');
-        _showOfflineBanner();
-        return;
+        _logSave('sanity-abort',{clients:clients.length,mileage:mileage.length});
+        localStorage.setItem('zp3_pending_sync','1');_showOfflineBanner();return;
       }
     }catch(_e){}}
   }
+
   const _attemptId=Date.now()+'-'+Math.random().toString(36).slice(2,5);
   const _mileCount=mileage.length;
-  _lastLocalSaveAt=Date.now(); // suppress realtime self-notification for entire multi-part save
+  _lastLocalSaveAt=Date.now();
   _logSave('start',{id:_attemptId,mileage:_mileCount,page:document.querySelector('.pg.active')?.id});
-  try{
-    // Snapshot ALL data synchronously before any await — prevents _devExitSupportMode()
-    // restoring Diana's arrays between Part 1 and Part 2 and corrupting Zach's row.
-    // Lazy-migrate up to 3 inline receipt_img per save → Supabase Storage bucket.
-    // Skip in support/employee mode — RLS blocks writing to other users' folders.
-    if(!_devSupportMode&&!_isEmployee&&_supaUser){
-      const toMigrate=expenses.filter(e=>e.receipt_img&&!e.receipt_key).slice(0,3);
-      for(const e of toMigrate){
-        try{
-          const b64=e.receipt_img.includes(',')?e.receipt_img.split(',')[1]:e.receipt_img;
-          const key=await _uploadReceiptToStorage(e.id,b64);
-          if(key){e.receipt_key=key;e.receipt_img=null;}
-        }catch(err){console.warn('[receipt migrate]',err);}
-      }
-    }
-    // Build receipt_images for any expenses still using inline storage (pre-migration).
-    // Written to DB column as transition fallback; will shrink to empty over time.
-    const receiptImages={};
-    const expensesForSync=expenses.map(e=>{
-      if(e.receipt_img){
-        receiptImages[e.id]=e.receipt_img;
-        const{receipt_img,...rest}=e;
-        return{...rest,receipt_img_local:true};
-      }
-      return e;
-    });
-    // localStorage backup for remaining inline images only.
-    try{
-      const _rcptJson=JSON.stringify(receiptImages);
-      if(_rcptJson.length<4*1024*1024)localStorage.setItem('zp3_rcpt_imgs',_rcptJson);
-      else localStorage.removeItem('zp3_rcpt_imgs');
-    }catch(e){}
-    const incomeSnap=[...income];
-    const mileageSnap=[...mileage];
-    const timeEntriesSnap=[...timeEntries];
-    // In support/employee mode: write to the target user's row, never touch settings
-    const _isSupportSave=_devSupportMode;
-    const uid=_isSupportSave
-      ? Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id
-      : (_isEmployee?_contractorUserId:_supaUser.id);
-    // Pre-save merge: pick up any records another device added since our last load.
-    // Prevents concurrent saves from overwriting each other — only adds missing IDs, never overwrites local changes.
-    if(!_isSupportSave&&!_isEmployee){
+
+  // Force-quit safety net — written before any async work
+  try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,ts:Date.now()}));}catch(_e){}
+  _writeLocalCache();
+
+  // Lazy-migrate up to 3 inline receipt_img → Supabase Storage
+  if(!_devSupportMode&&!_isEmployee&&_supaUser){
+    const toMigrate=expenses.filter(e=>e.receipt_img&&!e.receipt_key).slice(0,3);
+    for(const e of toMigrate){
       try{
-        const{data:_rd}=await _supa.from('zj_data').select('clients,bids,jobs').eq('user_id',uid).maybeSingle();
-        if(_rd){
-          const _lc=new Set(clients.map(c=>c.id));
-          const _lb=new Set(bids.map(b=>b.id));
-          const _lj=new Set(jobs.map(j=>j.id));
-          JSON.parse(_rd.clients||'[]').filter(c=>!_lc.has(c.id)).forEach(c=>clients.push(c));
-          JSON.parse(_rd.bids||'[]').filter(b=>!_lb.has(b.id)).forEach(b=>bids.push(b));
-          JSON.parse(_rd.jobs||'[]').filter(j=>!_lj.has(j.id)).forEach(j=>jobs.push(j));
+        const b64=e.receipt_img.includes(',')?e.receipt_img.split(',')[1]:e.receipt_img;
+        const key=await _uploadReceiptToStorage(e.id,b64);
+        if(key){e.receipt_key=key;e.receipt_img=null;}
+      }catch(err){console.warn('[receipt migrate]',err);}
+    }
+  }
+
+  // Cache receipt images still using inline storage
+  const receiptImages={};
+  expenses.forEach(e=>{if(e.receipt_img)receiptImages[e.id]=e.receipt_img;});
+  try{
+    const _rj=JSON.stringify(receiptImages);
+    if(_rj.length<4*1024*1024)localStorage.setItem('zp3_rcpt_imgs',_rj);
+    else localStorage.removeItem('zp3_rcpt_imgs');
+  }catch(_e){}
+
+  const uid=_devSupportMode
+    ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
+    :(_isEmployee?_contractorUserId:_supaUser.id);
+
+  try{
+    const ts=new Date().toISOString();
+
+    // Batch upsert helper: upserts all live records, soft-deletes any that vanished
+    const _upsertTable=async(tbl,arr,txFn)=>{
+      const rows=(txFn?txFn(arr):arr);
+      const currentIds=new Set(rows.map(r=>String(r.id)));
+      // Upsert live records in batches of 50
+      if(rows.length){
+        const dbRows=rows.map(r=>({id:String(r.id),user_id:uid,data:r,updated_at:ts,deleted_at:null}));
+        for(let i=0;i<dbRows.length;i+=50){
+          const{error}=await _supa.from(tbl).upsert(dbRows.slice(i,i+50),{onConflict:'id,user_id'});
+          if(error)throw error;
         }
-      }catch(_me){}
-    }
-    const part1={
-      user_id:uid,
-      clients:JSON.stringify(clients),
-      bids:JSON.stringify(bids),
-      jobs:JSON.stringify(jobs),
-      payments:JSON.stringify(payments),
-      liens:JSON.stringify(liens),
-      updated_at:new Date().toISOString()
-    };
-    if(!_isSupportSave&&!_isEmployee){const {stateRates:_sr,locationDenied:_ld,locationGranted:_lg,...sForCloud}=S;part1.settings=JSON.stringify(sForCloud);}
-
-    // Part 1 — core business data; use update in support/employee mode (row guaranteed)
-    const {error:e1}=(_isSupportSave||_isEmployee)
-      ? await _supa.from('zj_data').update(part1).eq('user_id',uid)
-      : await _supa.from('zj_data').upsert(part1,{onConflict:'user_id'});
-    if(e1)throw e1;
-
-    // Part 2 — CRITICAL history data. Never bundle optional/maybe-missing
-    // columns here — a single unknown column makes PostgREST reject the entire
-    // update, silently losing user data (this is what wiped mileage before
-    // the schema fix — checks_state was missing from zj_data and killed every
-    // save in this batch).
-    const {error:e2}=await _supa.from('zj_data').update({
-      income:JSON.stringify(incomeSnap),
-      expenses:JSON.stringify(expensesForSync),
-      mileage:JSON.stringify(mileageSnap),
-      time_entries:JSON.stringify(timeEntriesSnap.slice(-500)),
-      receipt_images:JSON.stringify(receiptImages),
-    }).eq('user_id',uid);
-    if(e2){
-      if(e2.code==='57014'){
-        _logSave('part2-timeout-retry',{id:_attemptId,code:e2.code});
-        // Retry with trimmed arrays
-        const{error:e2r}=await _supa.from('zj_data').update({
-          income:JSON.stringify(incomeSnap.slice(-500)),
-          expenses:JSON.stringify(expensesForSync.slice(-300)),
-          mileage:JSON.stringify(mileageSnap.slice(-300)),
-          time_entries:JSON.stringify(timeEntriesSnap.slice(-200)),
-          receipt_images:JSON.stringify(receiptImages),
-        }).eq('user_id',uid);
-        if(e2r){_logSave('part2-retry-fail',{id:_attemptId,code:e2r.code,msg:e2r.message});throw e2r;}
-      } else {
-        _logSave('part2-fail',{id:_attemptId,code:e2.code,msg:e2.message});
-        console.warn('Cloud history save failed:',e2);
-        throw e2;
       }
+      // Soft-delete records that were removed locally since last known state
+      const prev=_lastKnownIds[tbl]||new Set();
+      const gone=[...prev].filter(id=>!currentIds.has(id));
+      if(gone.length){
+        for(let i=0;i<gone.length;i+=50){
+          await _supa.from(tbl).update({deleted_at:ts,updated_at:ts}).in('id',gone.slice(i,i+50)).eq('user_id',uid);
+        }
+      }
+      _lastKnownIds[tbl]=currentIds;
+    };
+
+    for(const {t,get,tx} of _TD_TABLES){
+      const arr=get();
+      await _upsertTable(t,arr,tx);
     }
-    // Part 3 — BEST-EFFORT optional columns. These may not exist in every
-    // schema (older Supabase tables). Failures here MUST NOT throw — the
-    // critical data already saved successfully above.
-    try{
-      const{error:e3}=await _supa.from('zj_data').update({
-        licenses:JSON.stringify(licenses),
-        events:JSON.stringify(events.slice(-600)),
-      }).eq('user_id',uid);
-      if(e3)_logSave('part3-skip',{id:_attemptId,code:e3.code,msg:e3.message});
-    }catch(e3){_logSave('part3-skip',{id:_attemptId,msg:e3?.message||String(e3)});}
-    // Part 4 — contracts (localStorage is primary; Supabase best-effort backup)
-    try{
-      await _supa.from('zj_data').update({contracts:JSON.stringify(contracts)}).eq('user_id',uid);
-    }catch(_e4){}
-    // Part 5 — gallery photo metadata (URLs + storagePaths; no base64 blobs)
-    try{
-      const _photosMeta=photos.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}));
-      await _supa.from('zj_data').update({gallery_photos:JSON.stringify(_photosMeta.slice(-300))}).eq('user_id',uid);
-    }catch(_e5){}
+
+    // Settings + checksState stay in zj_data (single-writer object, no concurrent conflict)
+    if(!_isEmployee){
+      const{stateRates:_sr,locationDenied:_ld,locationGranted:_lg,...sForCloud}=S;
+      const{error:_se}=await _supa.from('zj_data').upsert(
+        {user_id:uid,settings:JSON.stringify(sForCloud),checks_state:JSON.stringify(checksState),updated_at:ts},
+        {onConflict:'user_id'}
+      );
+      if(_se)console.warn('[td settings]',_se);
+    }
+
     _logSave('ok',{id:_attemptId,mileage:_mileCount});
     localStorage.removeItem('zp3_pending_sync');
-    localStorage.removeItem('zp3_offline_pending'); // clear any stale pending written during offline session
-    // Update the local cache to match what we just pushed. This means a force-quit followed
-    // by a reopen with a brief network blip will still show current data — no stale snapshot.
-    try{const _snap={clients,bids,jobs,payments,income,
-      expenses:expenses.map(({receipt_img,...r})=>r),
-      mileage,liens,timeEntries,licenses,events,contracts,photos,checksState,
-      settings:S,cached_at:new Date().toISOString()};
-    localStorage.setItem('zp3_cloud_cache',JSON.stringify(_snap));}catch(_ce){}
+    localStorage.removeItem('zp3_offline_pending');
+    _writeLocalCache();
     _hideOfflineBanner();
     supaSetStatus('synced');
+    // Signal other open devices to reload
     if(_syncBroadcastChannel){try{_syncBroadcastChannel.send({type:'broadcast',event:'data_saved',payload:{deviceId:_deviceId}});}catch(_e){}}
   }catch(e){
     _logSave('throw',{id:_attemptId,name:e?.name,code:e?.code,msg:e?.message||String(e)});
     console.warn('Cloud save failed:',e);
     localStorage.setItem('zp3_pending_sync','1');
-    // Persist current data locally so a force-quit can't lose it — drained on next successful load
-    try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,ts:Date.now()}));}catch(_e){}
+    try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,ts:Date.now()}));}catch(_e){}
     _showOfflineBanner();
     supaSetStatus('error');
   }
@@ -1740,190 +1718,119 @@ function resendProposalLink(bidId){
 }
 async function supaLoadFromCloud({silent=false}={}){
   if(!_supa||!_supaUser)return;
-  // Flush any pending debounced save BEFORE overwriting memory — prevents PTR
-  // from discarding unsaved receipt photos or other in-flight writes.
+  if(_loadInProgress)return;
+  _loadInProgress=true;
   if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;try{await supaSaveToCloud();}catch(e){}}
   else if(_pendingSavePromise){try{await _pendingSavePromise;}catch(e){}}
   try{
-    const _loadUid=_isEmployee?_contractorUserId:_supaUser.id;
-    const{data,error}=await _supa.from('zj_data').select('*').eq('user_id',_loadUid).maybeSingle();
-    if(error){
-      // Real network/server error — throw so the catch block falls back to cache.
-      throw error;
+    const uid=_devSupportMode
+      ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
+      :(_isEmployee?_contractorUserId:_supaUser.id);
+
+    const[tableResults,settingsResult]=await Promise.all([
+      Promise.all(_TD_TABLES.map(({t})=>
+        _supa.from(t).select('id,data').eq('user_id',uid).is('deleted_at',null)
+      )),
+      _supa.from('zj_data').select('settings,checks_state,receipt_images').eq('user_id',uid).maybeSingle()
+    ]);
+
+    for(let i=0;i<_TD_TABLES.length;i++){if(tableResults[i].error)throw tableResults[i].error;}
+
+    for(let i=0;i<_TD_TABLES.length;i++){
+      const{t,set}=_TD_TABLES[i];
+      const rows=(tableResults[i].data||[]).map(r=>r.data);
+      set(rows);
+      _lastKnownIds[t]=new Set((tableResults[i].data||[]).map(r=>String(r.id)));
     }
-    if(!data){
-      // First time this user has signed in — no cloud data yet.
-      // Still drain any offline-pending records so they aren't lost on first auth.
-      clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
-      try{
-        const _op=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');
-        if(_op){
-          (_op.clients||[]).forEach(c=>clients.push(c));
-          (_op.bids||[]).forEach(b=>bids.push(b));
-          (_op.jobs||[]).forEach(j=>jobs.push(j));
-          localStorage.removeItem('zp3_offline_pending');
-        }
-      }catch(_oe){}
-      _supaCloudLoaded=true;
-      saveAll();
-      if(!silent){_removeBootOverlay();renderDash();buildScopeGrid();}
-      supaSetStatus('synced');
-      return;
-    }
-    const parse=(s,fb)=>{try{return s?JSON.parse(s):fb}catch{return fb}};
-    // Cloud is primary — overwrite everything from cloud
-    clients=parse(data.clients,clients);
-    bids=parse(data.bids,bids);
-    jobs=parse(data.jobs,jobs);
-    payments=parse(data.payments,payments);
-    income=parse(data.income,income);
-    // Restore receipt images: merge localStorage backup with cloud column.
-    // Cloud takes priority per ID; localStorage fills gaps where Part 2 failed.
+
     const _lsRcpt=(()=>{try{return JSON.parse(localStorage.getItem('zp3_rcpt_imgs')||'{}')}catch{return{}}})();
-    const rcptImgs={..._lsRcpt,...parse(data.receipt_images,{})};
-    const rawExp=parse(data.expenses,expenses);
-    expenses=rawExp.map(e=>rcptImgs[e.id]?{...e,receipt_img:rcptImgs[e.id]}:e);
+    const _dbRcpt=(()=>{try{const v=settingsResult.data?.receipt_images;return v?JSON.parse(v):{}}catch{return{}}})();
+    const rcptImgs={..._lsRcpt,..._dbRcpt};
+    expenses=expenses.map(e=>rcptImgs[e.id]?{...e,receipt_img:rcptImgs[e.id]}:e);
     expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
-    mileage=parse(data.mileage,mileage);
-    liens=parse(data.liens,liens);
-    timeEntries=parse(data.time_entries,timeEntries);
-    // These columns may be missing in older rows — fall back to in-memory values
-    // (loadAll already seeded them from localStorage as a migration path)
-    const _cloudLic=parse(data.licenses,null);
-    if(_cloudLic&&_cloudLic.length)licenses=_cloudLic;
-    const _cloudEv=parse(data.events,null);
-    if(_cloudEv&&_cloudEv.length)events=_cloudEv;
-    const _cloudCt=parse(data.contracts,null);
-    if(_cloudCt&&_cloudCt.length)contracts=_cloudCt;
-    const _cloudPhotos=parse(data.gallery_photos,null);
-    if(_cloudPhotos&&_cloudPhotos.length)photos=_cloudPhotos;
-    const _cloudChk=parse(data.checks_state,null);
-    if(_cloudChk&&Object.keys(_cloudChk).length)checksState=_cloudChk;
-    if(data.settings){const ss=parse(data.settings,null);if(ss){S={...S,...ss};
-      // Migrate stale 2024 IRS/bracket values that may be stored in cloud
-      if(S.fedMFS===14600)S.fedMFS=15000;
-      if(S.fedSingle===14600)S.fedSingle=15000;
-      if(S.fedMFJ===29200)S.fedMFJ=30000;
-      if(S.fedHOH===21900)S.fedHOH=22500;
-      if(S.b10===11600)S.b10=11925;
-      if(S.b12===47150)S.b12=48475;
-      if(S.b22===100525)S.b22=103350;
-      if(S.b24===191950)S.b24=197300;
-      if(S.b32===243725)S.b32=250525;
-      if(S.b35===609350)S.b35=626350;
-      // IRS mileage rate — auto-migrates ALL users each January update.
-      // To update: change the rate and year below. Previous rates auto-upgrade on next load.
-      // 2024: 0.670 | 2025: 0.700 | 2026: 0.725
-      const _IRS_RATE_2026=0.725,_IRS_YEAR=2026;
-      if(new Date().getFullYear()>=_IRS_YEAR&&S.irsRate<_IRS_RATE_2026){S.irsRate=_IRS_RATE_2026;S.irsRateYear=_IRS_YEAR;}
-      applySettings();
-      loadSettingsForm();
-      // Restore owner name to this device's localStorage so nav shows correctly
-      if(!_isEmployee&&ss.ownerName&&_supaUser?.id){localStorage.setItem('zp3_uname_'+_supaUser.id,ss.ownerName);if(_user)_user.name=ss.ownerName;}
-      // For employees, restore their own name (don't let contractor's ownerName overwrite)
-      if(_isEmployee&&_employeeRecord?.name&&_user){_user.name=_employeeRecord.name;}
-    }}
-    _supaCloudLoaded=true;
-    _loadedFromCacheOnly=false;
-    _mergeOnSignIn=false; // cloud data is authoritative now — no pending merge
-    supaSetStatus('synced');
-    if(!silent){
-      // Prefetch Stripe status in background so hub-share is instant (no 46s wait)
-      setTimeout(()=>{if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});},500);
-      // Dismiss loading screen and render with cloud data
-      _removeBootOverlay();
-      renderDash();buildScopeGrid();
-      goPg('pg-dash');
-      renderClientList&&renderClientList();
-      renderJobsPage&&renderJobsPage();
-      renderMoneyPage&&renderMoneyPage();
+
+    const sd=settingsResult.data;
+    if(sd){
+      if(sd.checks_state){const cc=(()=>{try{return JSON.parse(sd.checks_state);}catch{return null;}})();if(cc&&Object.keys(cc).length)checksState=cc;}
+      if(sd.settings){const ss=(()=>{try{return JSON.parse(sd.settings);}catch{return null;}})();
+        if(ss){S={...S,...ss};
+          if(S.fedMFS===14600)S.fedMFS=15000;if(S.fedSingle===14600)S.fedSingle=15000;
+          if(S.fedMFJ===29200)S.fedMFJ=30000;if(S.fedHOH===21900)S.fedHOH=22500;
+          if(S.b10===11600)S.b10=11925;if(S.b12===47150)S.b12=48475;
+          if(S.b22===100525)S.b22=103350;if(S.b24===191950)S.b24=197300;
+          if(S.b32===243725)S.b32=250525;if(S.b35===609350)S.b35=626350;
+          const _IRS_RATE_2026=0.725,_IRS_YEAR=2026;
+          if(new Date().getFullYear()>=_IRS_YEAR&&S.irsRate<_IRS_RATE_2026){S.irsRate=_IRS_RATE_2026;S.irsRateYear=_IRS_YEAR;}
+          applySettings();loadSettingsForm();
+          if(!_isEmployee&&ss.ownerName&&_supaUser?.id){localStorage.setItem('zp3_uname_'+_supaUser.id,ss.ownerName);if(_user)_user.name=ss.ownerName;}
+          if(_isEmployee&&_employeeRecord?.name&&_user){_user.name=_employeeRecord.name;}
+        }
+      }
     }
-    // Dedup by ID — the offline merge bug could push the same record twice with
-    // the same ID; filter to first occurrence so delete-by-ID works correctly.
+
+    _supaCloudLoaded=true;_loadedFromCacheOnly=false;_mergeOnSignIn=false;
+    supaSetStatus('synced');
+
+    if(!silent){
+      setTimeout(()=>{if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});},500);
+      _removeBootOverlay();renderDash();buildScopeGrid();goPg('pg-dash');
+      renderClientList&&renderClientList();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
+    }
+
     const _dedupById=(arr)=>{const seen=new Set();return arr.filter(x=>{if(seen.has(x.id))return false;seen.add(x.id);return true;});};
     const _preLen=clients.length+bids.length+jobs.length;
     clients=_dedupById(clients);bids=_dedupById(bids);jobs=_dedupById(jobs);
     if(clients.length+bids.length+jobs.length<_preLen)setTimeout(()=>_flushSaveNow(),1200);
-    // Cleanup: remove empty orphan draft bids, ensure all clients have tokens
     bids=bids.filter(b=>!(b.draft===true&&b.status==='Draft'&&b.geiLines===undefined&&(!b.surfaces||!b.surfaces.length)&&!b.signingToken&&!b.amount));
     const _geiSeen=new Set();
     bids=bids.filter(b=>{if(b.geiLines===undefined||b.signingToken||b.amount||(b.geiLines||[]).length)return true;if(b.status!=='Draft'&&b.status!=='Pending')return true;const key=b.client_id+'|'+(b.trade_type||'general');if(_geiSeen.has(key))return false;_geiSeen.add(key);return true;});
     clients.forEach(c=>{if(!c.clientToken)_ensureClientToken(c.id);});
+
     if(!silent){
-      // Backfill hubs for any leads/clients that don't have one yet (background, non-blocking)
       setTimeout(()=>{
         if(_supaUser)clients.filter(c=>c.clientToken).forEach(c=>{_uploadClientHub(c.id).catch(()=>{});});
-        autoRefreshRates();
-        autoRefreshTaxBrackets();
-        autoRefreshLienRules();
+        autoRefreshRates();autoRefreshTaxBrackets();autoRefreshLienRules();
       },4000);
-      // Annual odometer check — IRS Publication 463 compliance
       setTimeout(()=>_checkOdometerPrompt(),3500);
-      // Check for new signatures then schedule alerts — sequential to avoid race
-      setTimeout(async()=>{ await checkNewSignatures(); _fetchProposalViews(); if(!window._showingScheduleAlert) showScheduleAlerts(); },2000);
+      setTimeout(async()=>{await checkNewSignatures();_fetchProposalViews();if(!window._showingScheduleAlert)showScheduleAlerts();},2000);
       setInterval(()=>{checkNewSignatures();_fetchProposalViews();},30000);
-      // Realtime: fire checkNewSignatures instantly when sign.html writes notified_at
       try{
         _supa.channel('sig-feed-'+_supaUser.id)
           .on('postgres_changes',{event:'*',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{checkNewSignatures();})
           .subscribe();
       }catch(e){}
-      // Realtime broadcast: reload when another device saves — free-tier alternative to
-      // postgres_changes (which requires Pro-level replication). Saving device broadcasts
-      // 'data_saved'; other devices reload. Self-suppression via _lastLocalSaveAt covers
-      // the sender receiving its own broadcast.
-      try{
-        _syncBroadcastChannel=_supa.channel('user-data-'+_supaUser.id);
-        _syncBroadcastChannel
-          .on('broadcast',{event:'data_saved'},(msg)=>{
-            // Only suppress if the broadcast came from THIS device (our own echo)
-            if(msg?.payload?.deviceId===_deviceId&&Date.now()-_lastLocalSaveAt<5000)return;
-            if(_syncTimer)return;
-            supaLoadFromCloud();
-          })
-          .subscribe();
-      }catch(_e){}
       setInterval(()=>_loadPendingInbound(),30000);
-      // Pre-load Stripe connect status so sendPaymentLink works without visiting Settings first
       setTimeout(()=>_fetchStripeConnectStatus(),3000);
-      // Load any pending inbound leads on boot
       setTimeout(()=>_loadPendingInbound(),2000);
-      // Also check when user returns to the app (e.g., after sending SMS to client)
       document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){checkNewSignatures();if(_supaUser)_loadPendingInbound();checkNearbyJob();}});
       setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
       setTimeout(()=>checkNearbyJob(),4000);
     }
-    // Drain any data entered while offline (survives force-quit via zp3_offline_pending)
+
     try{
       const _op=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');
       if(_op){
-        const _cSet=new Set(clients.map(c=>c.id));
-        const _bSet=new Set(bids.map(b=>b.id));
-        const _jSet=new Set(jobs.map(j=>j.id));
         let _merged=false;
-        (_op.clients||[]).filter(c=>!_cSet.has(c.id)).forEach(c=>{clients.push(c);_merged=true;});
-        (_op.bids||[]).filter(b=>!_bSet.has(b.id)).forEach(b=>{bids.push(b);_merged=true;});
-        (_op.jobs||[]).filter(j=>!_jSet.has(j.id)).forEach(j=>{jobs.push(j);_merged=true;});
-        // Only clear pending when nothing was merged (already in Supabase).
-        // When merged=true, leave pending in place — supaSaveToCloud() clears it on success.
-        // This closes the 800ms window where a refresh between the clear and the flush loses data.
+        for(const{t,get}of _TD_TABLES){
+          const key=t.replace(/^td_/,'').replace(/_([a-z])/g,(_m,c)=>c.toUpperCase());
+          const pending=_op[key]||[];
+          if(pending.length){
+            const arr=get();const existingIds=new Set(arr.map(r=>String(r.id)));
+            pending.filter(r=>!existingIds.has(String(r.id))).forEach(r=>{arr.push(r);_merged=true;});
+          }
+        }
         if(!_merged)localStorage.removeItem('zp3_offline_pending');
         if(_merged)setTimeout(()=>_flushSaveNow(),800);
       }
     }catch(_oe){}
-    // Cache successful load for offline fallback — strip inline receipt blobs to stay within localStorage limits
-    try{
-      const _snap={clients,bids,jobs,payments,income,
-        expenses:expenses.map(({receipt_img,...r})=>r),
-        mileage,liens,timeEntries,licenses,events,contracts,photos,checksState,
-        settings:S,cached_at:new Date().toISOString()};
-      localStorage.setItem('zp3_cloud_cache',JSON.stringify(_snap));
-    }catch(_ce){}
+
+    _writeLocalCache();
     localStorage.removeItem('zp3_pending_sync');
     _hideOfflineBanner();
+
+    if(!_realtimeSubscribed){_realtimeSubscribed=true;_initRealtimeSubscriptions(uid);}
   }catch(e){
     console.warn('Cloud load failed:',e);
-    // Attempt to serve from local cache so the app works fully offline
     const _cc=localStorage.getItem('zp3_cloud_cache');
     if(_cc){
       try{
@@ -1931,37 +1838,78 @@ async function supaLoadFromCloud({silent=false}={}){
         clients=_cd.clients||[];bids=_cd.bids||[];jobs=_cd.jobs||[];
         payments=_cd.payments||[];income=_cd.income||[];expenses=_cd.expenses||[];
         mileage=_cd.mileage||[];liens=_cd.liens||[];timeEntries=_cd.timeEntries||[];
-        if(_cd.licenses?.length)licenses=_cd.licenses;
-        if(_cd.events?.length)events=_cd.events;
-        if(_cd.contracts?.length)contracts=_cd.contracts;
-        if(_cd.photos?.length)photos=_cd.photos;
+        if(_cd.licenses?.length)licenses=_cd.licenses;if(_cd.events?.length)events=_cd.events;
+        if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.photos?.length)photos=_cd.photos;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
-        _loadedFromCacheOnly=true;
-        _supaCloudLoaded=true;
-        // Merge any offline-pending records into cache-loaded data so they appear in the UI.
-        // Don't remove the key — we can't push to Supabase yet. Drain happens on next success.
+        _loadedFromCacheOnly=true;_supaCloudLoaded=true;
         try{
           const _op=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');
           if(_op){
-            const _cSet=new Set(clients.map(c=>c.id));
-            const _bSet=new Set(bids.map(b=>b.id));
-            const _jSet=new Set(jobs.map(j=>j.id));
-            (_op.clients||[]).filter(c=>!_cSet.has(c.id)).forEach(c=>clients.push(c));
-            (_op.bids||[]).filter(b=>!_bSet.has(b.id)).forEach(b=>bids.push(b));
-            (_op.jobs||[]).filter(j=>!_jSet.has(j.id)).forEach(j=>jobs.push(j));
+            for(const{t,get}of _TD_TABLES){
+              const key=t.replace(/^td_/,'').replace(/_([a-z])/g,(_m,c)=>c.toUpperCase());
+              const pending=_op[key]||[];
+              if(pending.length){
+                const arr=get();const existingIds=new Set(arr.map(r=>String(r.id)));
+                pending.filter(r=>!existingIds.has(String(r.id))).forEach(r=>arr.push(r));
+              }
+            }
           }
         }catch(_oe){}
         if(!silent){_removeBootOverlay();renderDash();buildScopeGrid();}
-        _showOfflineBanner();
-        supaSetStatus('error');
-        return;
+        _showOfflineBanner();supaSetStatus('error');return;
       }catch(_ce){console.warn('Cache load failed:',_ce);}
     }
-    _removeBootOverlay();
-    renderDash();buildScopeGrid();
-    supaSetStatus('error');
+    _removeBootOverlay();renderDash();buildScopeGrid();supaSetStatus('error');
+  }finally{
+    _loadInProgress=false;
   }
+}
+function _initRealtimeSubscriptions(uid){
+  try{
+    const ch=_supa.channel('td-sync-'+uid);
+    for(const{t}of _TD_TABLES){
+      ch.on('postgres_changes',{event:'*',schema:'public',table:t,filter:'user_id=eq.'+uid},(payload)=>{
+        _applyRealtimeRecord(t,payload);
+      });
+    }
+    ch.subscribe();
+  }catch(e){console.warn('[realtime] td-sync subscribe failed:',e);}
+  try{
+    _syncBroadcastChannel=_supa.channel('user-data-'+_supaUser.id);
+    _syncBroadcastChannel
+      .on('broadcast',{event:'data_saved'},(msg)=>{
+        if(msg?.payload?.deviceId===_deviceId&&Date.now()-_lastLocalSaveAt<5000)return;
+        if(_syncTimer||_loadInProgress)return;
+        supaLoadFromCloud({silent:true});
+      })
+      .subscribe();
+  }catch(_e){}
+}
+function _applyRealtimeRecord(tbl,payload){
+  const desc=_TD_TABLES.find(d=>d.t===tbl);
+  if(!desc)return;
+  const arr=desc.get();
+  const ev=payload.eventType;
+  const rec=payload.new;
+  if((ev==='INSERT'||ev==='UPDATE')&&rec){
+    if(rec.deleted_at){
+      const idx=arr.findIndex(r=>String(r.id)===String(rec.id));
+      if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(rec.id));}
+    }else{
+      const data=rec.data||rec;
+      const idx=arr.findIndex(r=>String(r.id)===String(data.id!=null?data.id:rec.id));
+      if(idx!==-1)arr[idx]=data;
+      else{arr.push(data);_lastKnownIds[tbl]?.add(String(rec.id));}
+    }
+  }else if(ev==='DELETE'&&payload.old){
+    const idx=arr.findIndex(r=>String(r.id)===String(payload.old.id));
+    if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(payload.old.id));}
+  }
+  _writeLocalCache();
+  renderDash&&renderDash();renderClientList&&renderClientList();
+  renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
+  buildScopeGrid&&buildScopeGrid();
 }
 
 // ── Inbound leads (onboarding form + QR intake) ───────────────────────────
