@@ -1142,17 +1142,20 @@ function renderPayments(){
         const _btnSec='display:block;width:100%;padding:12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;margin-top:8px';
         if(!depPaid&&deposit>0.01&&balance>deposit+0.01){
           html+='<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Choose how to pay</div>';
-          html+='<button id="pay-btn-'+bid_id+'" onclick="payBalance('+bid_id+',\'card\')" style="'+_btnPrimary+';margin-bottom:6px">💳 Card — '+_cardFmt(balance)+' <span style="font-size:10px;font-weight:600;opacity:.8">(+'+pct+'% fee)</span></button>';
+          html+='<button id="pay-btn-'+bid_id+'" onclick="payBalance('+bid_id+',\'card\')" style="'+_btnPrimary+';margin-bottom:6px">💳 Credit card — '+_cardFmt(balance)+' <span style="font-size:10px;font-weight:600;opacity:.8">(+'+pct+'% fee)</span></button>';
           html+='<button onclick="payBalance('+bid_id+',\'us_bank_account\')" style="'+_btnSec+'">🏦 Bank transfer — '+fmt(balance)+' <span style="font-size:11px;color:var(--green-mid);font-weight:700">Free</span></button>';
-          html+='<div style="font-size:10px;color:var(--text3);margin-top:8px">Or <button onclick="payDeposit('+bid_id+',\'card\')" style="background:none;border:none;color:var(--blue);font-size:10px;font-weight:700;cursor:pointer;padding:0;font-family:inherit">pay '+_cardFmt(deposit)+' deposit by card</button> / <button onclick="payDeposit('+bid_id+',\'us_bank_account\')" style="background:none;border:none;color:var(--blue);font-size:10px;font-weight:700;cursor:pointer;padding:0;font-family:inherit">'+fmt(deposit)+' by bank</button></div>';
+          html+='<div style="font-size:10px;color:var(--text3);margin-top:6px">Have a debit card? Use bank transfer to avoid the fee.</div>';
+          html+='<div style="font-size:10px;color:var(--text3);margin-top:6px">Or <button onclick="payDeposit('+bid_id+',\'card\')" style="background:none;border:none;color:var(--blue);font-size:10px;font-weight:700;cursor:pointer;padding:0;font-family:inherit">pay '+_cardFmt(deposit)+' deposit by credit card</button> / <button onclick="payDeposit('+bid_id+',\'us_bank_account\')" style="background:none;border:none;color:var(--blue);font-size:10px;font-weight:700;cursor:pointer;padding:0;font-family:inherit">'+fmt(deposit)+' by bank</button></div>';
         }else if(!depPaid&&deposit>0.01){
           html+='<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Choose how to pay deposit</div>';
-          html+='<button id="pay-btn-'+bid_id+'" onclick="payDeposit('+bid_id+',\'card\')" style="'+_btnPrimary+';margin-bottom:6px">💳 Card — '+_cardFmt(deposit)+' <span style="font-size:10px;font-weight:600;opacity:.8">(+'+pct+'% fee)</span></button>';
+          html+='<button id="pay-btn-'+bid_id+'" onclick="payDeposit('+bid_id+',\'card\')" style="'+_btnPrimary+';margin-bottom:6px">💳 Credit card — '+_cardFmt(deposit)+' <span style="font-size:10px;font-weight:600;opacity:.8">(+'+pct+'% fee)</span></button>';
           html+='<button onclick="payDeposit('+bid_id+',\'us_bank_account\')" style="'+_btnSec+'">🏦 Bank transfer — '+fmt(deposit)+' <span style="font-size:11px;color:var(--green-mid);font-weight:700">Free</span></button>';
+          html+='<div style="font-size:10px;color:var(--text3);margin-top:6px">Have a debit card? Use bank transfer to avoid the fee.</div>';
         }else{
           html+='<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Choose how to pay balance</div>';
-          html+='<button id="pay-btn-'+bid_id+'" onclick="payBalance('+bid_id+',\'card\')" style="'+_btnPrimary+';margin-bottom:6px">💳 Card — '+_cardFmt(balance)+' <span style="font-size:10px;font-weight:600;opacity:.8">(+'+pct+'% fee)</span></button>';
+          html+='<button id="pay-btn-'+bid_id+'" onclick="payBalance('+bid_id+',\'card\')" style="'+_btnPrimary+';margin-bottom:6px">💳 Credit card — '+_cardFmt(balance)+' <span style="font-size:10px;font-weight:600;opacity:.8">(+'+pct+'% fee)</span></button>';
           html+='<button onclick="payBalance('+bid_id+',\'us_bank_account\')" style="'+_btnSec+'">🏦 Bank transfer — '+fmt(balance)+' <span style="font-size:11px;color:var(--green-mid);font-weight:700">Free</span></button>';
+          html+='<div style="font-size:10px;color:var(--text3);margin-top:6px">Have a debit card? Use bank transfer to avoid the fee.</div>';
         }
       }else{
         // No surcharge — original single-button flow
@@ -1433,14 +1436,15 @@ function _payBtn(bid,h){
   if(h.ccSurchargeEnabled){
     const pct=h.ccSurchargePct||3;
     const cf=amt=>fmt(amt*(1+pct/100));
+    const debitNote='<div style="font-size:10px;color:rgba(255,255,255,.6);margin-top:4px">Have a debit card? Use bank transfer to avoid the fee.</div>';
     const bankBtn=(fn,amt)=>'<button onclick="'+fn+'('+bid.id+',\'us_bank_account\')" class="btn" style="background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.28);color:rgba(255,255,255,.85);font-size:12px;margin-top:6px">🏦 Bank transfer — '+fmt(amt)+' (free)</button>';
     if(!depositPaid&&(bid.deposit||0)>0.01&&(bid.balance||0)>(bid.deposit||0)+0.01){
-      return '<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+',\'card\')" class="btn" style="background:#635BFF;margin-bottom:4px">💳 Card — '+cf(bid.balance)+'</button>'+bankBtn('payBalance',bid.balance);
+      return '<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+',\'card\')" class="btn" style="background:#635BFF;margin-bottom:4px">💳 Credit card — '+cf(bid.balance)+'</button>'+bankBtn('payBalance',bid.balance)+debitNote;
     }
     if(!depositPaid&&(bid.deposit||0)>0.01){
-      return '<button id="pay-btn-'+bid.id+'" onclick="payDeposit('+bid.id+',\'card\')" class="btn" style="background:#635BFF;margin-bottom:4px">💳 Card — '+cf(bid.deposit)+'</button>'+bankBtn('payDeposit',bid.deposit);
+      return '<button id="pay-btn-'+bid.id+'" onclick="payDeposit('+bid.id+',\'card\')" class="btn" style="background:#635BFF;margin-bottom:4px">💳 Credit card — '+cf(bid.deposit)+'</button>'+bankBtn('payDeposit',bid.deposit)+debitNote;
     }
-    return '<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+',\'card\')" class="btn" style="background:#635BFF;margin-bottom:4px">💳 Card — '+cf(bid.balance)+'</button>'+bankBtn('payBalance',bid.balance);
+    return '<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+',\'card\')" class="btn" style="background:#635BFF;margin-bottom:4px">💳 Credit card — '+cf(bid.balance)+'</button>'+bankBtn('payBalance',bid.balance)+debitNote;
   }
   if(!depositPaid&&(bid.deposit||0)>0.01&&(bid.balance||0)>(bid.deposit||0)+0.01){
     return '<button id="pay-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" class="btn" style="background:#635BFF;margin-bottom:6px">💳 Pay '+fmt(bid.balance)+' in full</button>'+
