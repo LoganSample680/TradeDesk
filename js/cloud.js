@@ -332,8 +332,8 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.135';
-let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
+const APP_VERSION='05.19.26.136';
+let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0,_syncBroadcastChannel=null;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
 // supaSaveToCloud() checks this + runs a sanity guard to prevent pushing
@@ -1452,6 +1452,7 @@ async function supaSaveToCloud(){
     localStorage.setItem('zp3_cloud_cache',JSON.stringify(_snap));}catch(_ce){}
     _hideOfflineBanner();
     supaSetStatus('synced');
+    if(_syncBroadcastChannel){try{_syncBroadcastChannel.send({type:'broadcast',event:'data_saved',payload:{}});}catch(_e){}}
   }catch(e){
     _logSave('throw',{id:_attemptId,name:e?.name,code:e?.code,msg:e?.message||String(e)});
     console.warn('Cloud save failed:',e);
@@ -1849,12 +1850,14 @@ async function supaLoadFromCloud({silent=false}={}){
           .on('postgres_changes',{event:'*',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{checkNewSignatures();})
           .subscribe();
       }catch(e){}
-      // Realtime: reload when another device saves to this account — enables live cross-device sync.
-      // Self-update suppression: ignore events within 5s of our own push (_lastLocalSaveAt).
-      // If a local save is pending (_syncTimer), skip too — our outgoing write will win.
+      // Realtime broadcast: reload when another device saves — free-tier alternative to
+      // postgres_changes (which requires Pro-level replication). Saving device broadcasts
+      // 'data_saved'; other devices reload. Self-suppression via _lastLocalSaveAt covers
+      // the sender receiving its own broadcast.
       try{
-        _supa.channel('zdata-sync-'+_supaUser.id)
-          .on('postgres_changes',{event:'UPDATE',schema:'public',table:'zj_data',filter:'user_id=eq.'+_supaUser.id},()=>{
+        _syncBroadcastChannel=_supa.channel('user-data-'+_supaUser.id);
+        _syncBroadcastChannel
+          .on('broadcast',{event:'data_saved'},()=>{
             if(Date.now()-_lastLocalSaveAt<5000)return;
             if(_syncTimer)return;
             supaLoadFromCloud();
