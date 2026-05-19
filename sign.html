@@ -415,8 +415,8 @@ input[type=text]:focus{border-color:var(--denim)}
       <div id="sign-pay-btns" style="margin-top:4px"></div>
 
       <div id="sec-cash" style="display:none">
-        <div class="cash-notice"><strong>Cash selected.</strong><span id="cash-confirm-msg"> Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.</span></div>
-        <button class="btn" onclick="submitCash()">Confirm — I'll pay cash in person</button>
+        <div class="cash-notice"><strong id="cash-confirm-hdr">Cash selected.</strong><span id="cash-confirm-msg"> Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.</span></div>
+        <button class="btn" id="sec-cash-confirm-btn" onclick="submitCash()">Confirm — I'll pay cash in person</button>
         <button class="btn btn-sec" onclick="document.getElementById('sec-cash').style.display='none';document.getElementById('sign-pay-btns').style.display='block'" style="margin-top:8px;font-size:13px">← Choose a different payment method</button>
       </div>
 
@@ -638,6 +638,7 @@ async function init(){
       if(epaSec)epaSec.style.display='block';
     }
     show('pg-sign');
+    _renderPayTiles();_updatePayButtons();
     if(_prop.isPortfolio)_showPortfolioOffer();
     // Check if returning from Stripe
     if(new URLSearchParams(location.search).get('payment')==='success') showDone('card');
@@ -850,32 +851,34 @@ function _updatePayButtons(){
 
 
 async function submitCash(){
-  const btn=event.target;btn.disabled=true;btn.textContent='Confirming...';
+  const btn=event.target;btn.disabled=true;
+  const method=_manualPayMethod||'cash';
+  const origLabel=btn.textContent;
+  btn.textContent='Confirming...';
   const name=document.getElementById('sig-name').value.trim();
   const params2=new URLSearchParams(location.search);let key=params2.get('key');if(!key){const t=params2.get('t'),u=params2.get('u'),b=params2.get('b');if(t&&u&&b)key=`proposals/${u}/${b}_${t}.json`;}
   const ts=new Date().toISOString();
   const _subAmt=(window._portfolioAccepted&&_prop.discountedPrice)?_prop.discountedPrice:_prop.amount;
   const _subDep=Math.round(_subAmt*0.25*100)/100;
   try{
-    const updated={..._prop,status:'signed',signedAt:ts,signerName:name,paymentMethod:'cash',signatureDataUrl:_sigData,portfolioAccepted:window._portfolioAccepted,finalAmount:_subAmt,colorChoices:window._colorChoices||[]};
+    const updated={..._prop,status:'signed',signedAt:ts,signerName:name,paymentMethod:method,signatureDataUrl:_sigData,portfolioAccepted:window._portfolioAccepted,finalAmount:_subAmt,colorChoices:window._colorChoices||[]};
     await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true});
     await _supa.from('signed_proposals').upsert({
       bid_id:String(_prop.id),contractor_user_id:_prop.contractorUserId,
       client_name:_prop.clientName,client_signed_name:name,
       amount:_subAmt,deposit:_subDep,
-      payment_method:'cash',payment_status:'pending_cash',
+      payment_method:method,payment_status:'pending_'+method,
       signed_at:ts,notify_email:_prop.notifyEmail,storage_key:key,
       portfolio_accepted:window._portfolioAccepted||false,
       portfolio_pct:window._portfolioAccepted?(_prop.portfolioPct||null):null,
     });
-    showDone('cash');
+    showDone(method);
   }catch(e){
     console.error(e);
     document.getElementById('pay-err').textContent='Something went wrong. Try again.';
-    btn.disabled=false;btn.textContent="Confirm — I'll pay cash in person";
+    btn.disabled=false;btn.textContent=origLabel;
     return;
   }
-  // Non-critical: fire-and-forget notified_at to trigger realtime UPDATE event on contractor's app
   _supa.from('signed_proposals').update({notified_at:new Date().toISOString()}).eq('bid_id',String(_prop.id)).then(null,e=>console.warn('notified_at:',e));
 }
 
@@ -883,19 +886,24 @@ function showDone(method){
   const isPaid=method==='card'||method==='ach';
   const isCard=method==='card';
   const isAch=method==='ach';
+  const isVenmo=method==='venmo';
+  const isCashApp=method==='cashapp';
   document.getElementById('done-icon').textContent=isPaid?'🎉':'✅';
   document.getElementById('done-title').textContent=isPaid?'Payment confirmed!':'Proposal signed!';
   document.getElementById('done-msg').textContent=isPaid
     ?'Your deposit has been received. The contractor will be in touch to confirm your start date.'
+    :isVenmo?'Your proposal is signed. The contractor will confirm your Venmo payment and be in touch to schedule.'
+    :isCashApp?'Your proposal is signed. The contractor will confirm your Cash App payment and be in touch to schedule.'
     :'Your proposal is signed. The contractor will collect your deposit on arrival.';
   const _confNum=_prop?'#CONF-'+String(_prop.id).slice(-6).toUpperCase():'';
+  const payLabel=isCard?'💳 Card charged':isAch?'🏦 Bank transfer':isVenmo?'📱 Venmo (pending)':isCashApp?'💚 Cash App (pending)':'💵 Cash on arrival';
   document.getElementById('done-rows').innerHTML=
     (_confNum?'<div class="row"><span class="rl">Confirmation</span><span class="rv" style="font-weight:700;color:var(--green)">'+_confNum+'</span></div>':'')+
     '<div class="row"><span class="rl">Client</span><span class="rv">'+(_prop?.clientName||'')+'</span></div>'+
     (_prop?.clientAddr?'<div class="row"><span class="rl">Address</span><span class="rv" style="text-align:right;max-width:220px">'+_prop.clientAddr+'</span></div>':'')+
     '<div class="row"><span class="rl">Total</span><span class="rv">'+fmt(_prop?.amount)+'</span></div>'+
     '<div class="row"><span class="rl">Deposit</span><span class="rv">'+fmt(_prop?.deposit)+'</span></div>'+
-    '<div class="row"><span class="rl">Payment</span><span class="rv">'+(isCard?'💳 Card charged':isAch?'🏦 Bank transfer':'💵 Cash on arrival')+'</span></div>';
+    '<div class="row"><span class="rl">Payment</span><span class="rv">'+payLabel+'</span></div>';
   const hubUrl=new URLSearchParams(location.search).get('hub')||'';
   const hubCta=document.getElementById('done-hub-cta');
   if(hubCta&&hubUrl){hubCta.href=hubUrl;hubCta.style.display='block';}
@@ -912,6 +920,7 @@ function _closeStripeModal(){
   document.getElementById('sign-stripe-overlay').style.display='none';
   document.body.style.overflow='';
 }
+let _manualPayMethod='cash';
 function _renderSignPayBtns(){
   const container=document.getElementById('sign-pay-btns');if(!container)return;
   const stripeOk=_prop?.stripeConnectEnabled!==false;
@@ -925,24 +934,42 @@ function _renderSignPayBtns(){
     html+='<button onclick="_paySign(\'ach\')" style="'+bP+'">Bank transfer (ACH) <span style="font-size:11px;font-weight:700;opacity:.85">· No fee</span></button>';
     html+='<button onclick="_paySign(\'card\')" style="'+bS+'">Credit card'+fee+'</button>';
     html+='<button onclick="_paySign(\'debit\')" style="'+bS+'">Debit card</button>';
-    html+='<button onclick="_paySign(\'venmo\')" style="'+bS+'">Venmo</button>';
-    html+='<button onclick="_paySign(\'cashapp\')" style="'+bS+'">Cash App</button>';
   }
+  html+='<button onclick="_paySign(\'venmo\')" style="'+bS+'">Venmo</button>';
+  html+='<button onclick="_paySign(\'cashapp\')" style="'+bS+'">Cash App</button>';
   html+='<button onclick="_paySign(\'cash\')" style="'+bS+'">Cash</button>';
   container.innerHTML=html;
 }
 async function _paySign(method){
   if(!_prop)return;
-  if(method==='cash'){
+  if(method==='cash'||method==='venmo'||method==='cashapp'){
+    _manualPayMethod=method;
     document.getElementById('sign-pay-btns').style.display='none';
-    document.getElementById('sec-cash').style.display='block';
-    if(_payFullAmount){_payFullAmount=false;_renderPayTiles();_updatePayButtons();}
+    const cashSec=document.getElementById('sec-cash');
+    cashSec.style.display='block';
+    const hdr=document.getElementById('cash-confirm-hdr');
+    const msg=document.getElementById('cash-confirm-msg');
+    const confirmBtn=document.getElementById('sec-cash-confirm-btn');
+    if(method==='venmo'){
+      if(hdr)hdr.textContent='Venmo selected.';
+      if(msg)msg.textContent=' Please send your payment via Venmo. The contractor will confirm receipt and your spot will be reserved.';
+      if(confirmBtn)confirmBtn.textContent="I've sent payment via Venmo";
+    }else if(method==='cashapp'){
+      if(hdr)hdr.textContent='Cash App selected.';
+      if(msg)msg.textContent=' Please send your payment via Cash App. The contractor will confirm receipt and your spot will be reserved.';
+      if(confirmBtn)confirmBtn.textContent="I've sent payment via Cash App";
+    }else{
+      if(hdr)hdr.textContent='Cash selected.';
+      if(msg)msg.textContent=_payFullAmount?' Your proposal is signed. The contractor will collect the full amount when they arrive.':' Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.';
+      if(confirmBtn)confirmBtn.textContent="Confirm — I'll pay cash in person";
+      if(_payFullAmount){_payFullAmount=false;_renderPayTiles();_updatePayButtons();}
+    }
     return;
   }
   const depBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round((_prop.deposit||0)*100);
   const fullBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*100):Math.round((_prop.amount||0)*100);
   const amt=_payFullAmount?fullBase:depBase;
-  const stripeMethod=method==='debit'?'card':method;
+  const stripeMethod=method==='debit'?'card':method==='ach'?'us_bank_account':method;
   const surcharge=(method==='card'&&_prop.ccSurchargeEnabled)?Math.round(amt*(_prop.ccSurchargePct||3)/100):0;
   const btns=document.querySelectorAll('#sign-pay-btns button');
   btns.forEach(b=>b.disabled=true);
