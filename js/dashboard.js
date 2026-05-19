@@ -1218,7 +1218,7 @@ function renderLeadsPage(){
     const sbdg=stgBdgMap[st.stage]||{cls:'sf-done',label:st.label.toUpperCase()};
     const daysSince=c.created?Math.floor((new Date()-new Date(c.created+'T12:00'))/86400000):0;
 
-    return '<div class="client-card" onclick="openClientDetail('+c.id+',\'leads\')" style="margin-bottom:8px">'+
+    return '<div class="client-card" data-lp-id="'+c.id+'" data-lp-type="lead" data-lp-label="'+escHtml(c.name||'lead')+'" onclick="openClientDetail('+c.id+',\'leads\')" style="margin-bottom:8px">'+
       '<div class="cc-row">'+
         '<div class="cc-l">'+
           '<div class="cc-avatar">'+initials(c.name)+'</div>'+

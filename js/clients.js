@@ -713,7 +713,7 @@ function renderClientList(){
                   (s.stage==='signed'||s.stage==='scheduled')?'client-card has-bid':
                   'client-card';
 
-    return '<div class="'+cardCls+'" onclick="openClientDetail('+c.id+')" style="margin-bottom:8px">'+
+    return '<div class="'+cardCls+'" data-lp-id="'+c.id+'" data-lp-type="client" data-lp-label="'+escHtml(c.name||'client')+'" onclick="openClientDetail('+c.id+')" style="margin-bottom:8px">'+
       '<div class="cc-row">'+
         '<div class="cc-l">'+
           '<div class="cc-avatar">'+initials(c.name)+'</div>'+

@@ -2271,8 +2271,8 @@ function renderIncome(){
   const el=document.getElementById('inc-table');
   const yr=String(trackerYear||new Date().getFullYear());
   const fmtDateDisp=d=>{if(!d)return'—';const c=d.replace(/-/g,'');return c.slice(0,4)+'-'+c.slice(4,6)+'-'+c.slice(6,8);};
-  const incRows=income.filter(r=>r.date&&r.date.replace(/-/g,'').startsWith(yr)).map(r=>({date:r.date,sortDate:r.date.replace(/-/g,''),client_id:r.client_id,client_name:r.client_name,type:r.type||'Income',amount:r.amount,method:r.pay||'—',_src:'income'}));
-  const payRows=payments.filter(p=>p.date&&p.amount>0&&p.date.replace(/-/g,'').startsWith(yr)).map(p=>({date:p.date,sortDate:p.date.replace(/-/g,''),client_id:p.client_id,client_name:p.client_name,type:p.type==='deposit'?'Deposit':p.type==='final'?'Final payment':'Payment',amount:p.amount,method:p.method||'—',_src:'payment'}));
+  const incRows=income.filter(r=>r.date&&r.date.replace(/-/g,'').startsWith(yr)).map(r=>({id:r.id,date:r.date,sortDate:r.date.replace(/-/g,''),client_id:r.client_id,client_name:r.client_name,type:r.type||'Income',amount:r.amount,method:r.pay||'—',_src:'income'}));
+  const payRows=payments.filter(p=>p.date&&p.amount>0&&p.date.replace(/-/g,'').startsWith(yr)).map(p=>({id:p.id,date:p.date,sortDate:p.date.replace(/-/g,''),client_id:p.client_id,client_name:p.client_name,type:p.type==='deposit'?'Deposit':p.type==='final'?'Final payment':'Payment',amount:p.amount,method:p.method||'—',_src:'payment'}));
   const filtered=[...incRows,...payRows].sort((a,b)=>b.sortDate.localeCompare(a.sortDate));
   const total=filtered.reduce((s,r)=>s+r.amount,0);
   if(!filtered.length){el.innerHTML='<div class="empty">No income in '+yr+'.</div>';return;}
@@ -2285,7 +2285,7 @@ function renderIncome(){
     ['Date','Client','Type','Amount','Method'].map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'+
     filtered.map(r=>{
       const c=clients.find(x=>x.id===r.client_id);
-      return '<tr style="cursor:'+(c?'pointer':'default')+'"'+(c?' onclick="openClientDetail('+c.id+')"':'')+'>'+
+      return '<tr data-lp-id="'+r.id+'" data-lp-type="'+r._src+'" data-lp-label="'+escHtml((r.client_name||'record')+' · '+fmt(r.amount||0))+'" style="cursor:'+(c?'pointer':'default')+'"'+(c?' onclick="openClientDetail('+c.id+')"':'')+'>'+
         '<td class="mute">'+fmtDateDisp(r.date)+'</td>'+
         '<td class="bold" style="color:'+(c?'var(--blue)':'inherit')+'">'+(r.client_name||'—')+'</td>'+
         '<td class="mute">'+r.type+'</td>'+
@@ -2389,7 +2389,7 @@ function renderExpenses(){
             ?'<button onclick="viewReceipt('+r.id+')" style="background:var(--green-lt);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit" title="Stored in Supabase Storage">☁️ View</button>'
             :'<button onclick="viewReceipt('+r.id+')" style="background:#fff8e1;border:1px solid #f59e0b;color:#b45309;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit" title="Stored inline — will migrate to cloud on next save">💾 View</button>')
           :'<button onclick="addReceiptToExpense('+r.id+')" style="background:rgba(162,45,45,.08);border:1px solid #A32D2D;color:#A32D2D;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">+ Add</button>';
-        return '<tr>'+
+        return '<tr data-lp-id="'+r.id+'" data-lp-type="expense" data-lp-label="'+escHtml((r.vendor||'expense')+' · '+fmt(r.amount||0))+'">'+
           '<td class="mute">'+(r.date||'')+'</td>'+
           '<td class="mute" style="font-size:10px">'+(info?info.icon+' '+info.label:r.catLabel||r.cat||'—')+'</td>'+
           '<td class="bold">'+(r.vendor||'—')+(r.job_name?'<div style="font-size:9px;color:var(--text3)">'+r.job_name+'</div>':'')+'</td>'+
