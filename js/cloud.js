@@ -336,7 +336,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.167';
+const APP_VERSION='05.19.26.168';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -654,7 +654,7 @@ async function supaInit(){
           _mergeOnSignIn=true;
           supaSetStatus('error');
           clearTimeout(window._offlineBannerTimer);
-          window._offlineBannerTimer=setTimeout(()=>{if(_mergeOnSignIn&&!_supaUser)_showOfflineBanner();},1000);
+          window._offlineBannerTimer=setTimeout(()=>{if(_mergeOnSignIn&&!_supaUser)_showOfflineBanner();},3000);
         } else {
           supaSetStatus('local');
           supaShowLogin();
@@ -1315,7 +1315,13 @@ async function _onReconnect(){
 
   // Case 3: Network blip mid-session (or cache load + user made offline writes).
   // Sanity guard inside supaSaveToCloud() prevents pushing incomplete data.
-  if(!hasPending)return;
+  if(!hasPending){
+    // Nothing to sync and cloud is fully loaded — routine token rotation triggered
+    // _mergeOnSignIn via SIGNED_OUT but TOKEN_REFRESHED confirms we're still online.
+    // Clear the flag and cancel/hide the banner so it doesn't linger.
+    _mergeOnSignIn=false;clearTimeout(window._offlineBannerTimer);_hideOfflineBanner();
+    return;
+  }
   _showOfflineBanner(true);
   try{
     await _flushSaveNow();
