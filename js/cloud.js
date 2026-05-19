@@ -336,9 +336,9 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.143';
+const APP_VERSION='05.19.26.144';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
-let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false;
+let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
 
 // Tracks IDs present in each table after the last successful load or save.
@@ -572,7 +572,7 @@ async function supaInit(){
         // navigator.onLine is unreliable on iOS — don't use it. Always prefer cache.
         if(_deliberateSignOut){
           clearTimeout(_syncTimer);_syncTimer=null; // prevent a live timer from flushing emptied arrays
-          _supaCloudLoaded=false;_realtimeSubscribed=false;_loadInProgress=false; // force a fresh load on next sign-in
+          _supaCloudLoaded=false;_realtimeSubscribed=false;_loadInProgress=false;clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],weatherLat:null,weatherLon:null,locationDenied:false};
           saveAll();
@@ -1725,9 +1725,14 @@ async function supaLoadFromCloud({silent=false}={}){
   if(!_supa||!_supaUser)return;
   if(_loadInProgress)return;
   _loadInProgress=true;
-  if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;try{await supaSaveToCloud();}catch(e){}}
-  else if(_pendingSavePromise){try{await _pendingSavePromise;}catch(e){}}
-  try{
+  if(silent){
+    // Server state wins — cancel any pending debounce without flushing it.
+    // Flushing stale local data before loading would re-insert records deleted on another device.
+    if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
+  }else{
+    if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;try{await supaSaveToCloud();}catch(e){}}
+    else if(_pendingSavePromise){try{await _pendingSavePromise;}catch(e){}}
+  }  try{
     const uid=_devSupportMode
       ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
       :(_isEmployee?_contractorUserId:_supaUser.id);
@@ -1886,8 +1891,11 @@ function _initRealtimeSubscriptions(uid){
     _syncBroadcastChannel
       .on('broadcast',{event:'data_saved'},(msg)=>{
         if(msg?.payload?.deviceId===_deviceId&&Date.now()-_lastLocalSaveAt<5000)return;
-        if(_syncTimer||_loadInProgress)return;
-        supaLoadFromCloud({silent:true});
+        if(_loadInProgress)return;
+        // Small delay: lets postgres_changes per-record patches arrive first (smoother).
+        // If realtime already handled everything, the reload is a cheap no-op.
+        clearTimeout(_broadcastReloadTimer);
+        _broadcastReloadTimer=setTimeout(()=>{if(!_loadInProgress)supaLoadFromCloud({silent:true});},300);
       })
       .subscribe();
   }catch(_e){}
