@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.123';
+const APP_VERSION='05.19.26.124';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -340,6 +340,7 @@ let _proposalViews={};
 // incomplete in-memory state over real cloud data.
 let _loadedFromCacheOnly=false;
 let _mergeOnSignIn=false; // true when offline data in memory needs merging after SIGNED_IN
+let _sessionRestoreInProgress=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
@@ -466,7 +467,7 @@ async function supaInit(){
         // TOKEN_REFRESHED in Supabase v2 can fire as SIGNED_IN — never reload cloud data
         // on a background token refresh; only load once per page session on explicit sign-in
         if(_supaCloudLoaded && _supaUser && session.user.id===_supaUser.id){return;}
-        if(_supaCloudLoaded && session.user.id!==(_supaUser?.id)){
+        if(_supaCloudLoaded && _supaUser && session.user.id!==_supaUser.id){
           // Different user signed in on same device — full reset before loading their data
           _supaCloudLoaded=false;_mergeOnSignIn=false; // don't merge previous user's data
           clearTimeout(_syncTimer);_syncTimer=null;
@@ -1187,17 +1188,29 @@ async function _probeAndSync(){
   try{
     await fetch('/version.json?_='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(5000)});
     _hideOfflineBanner(); // connection confirmed — hide immediately, sync in background
-    if(_supa&&!_supaUser&&_mergeOnSignIn){
+    if(_supa&&!_supaUser&&_mergeOnSignIn&&!_sessionRestoreInProgress){
       // Supabase clears its own LS key before firing SIGNED_OUT, so refreshSession()
-      // has nothing to work with. Instead we keep our own backup of the refresh token
-      // and call setSession() which makes a live network call to mint a new access token.
-      // On success Supabase fires TOKEN_REFRESHED → _onReconnect() syncs without a login.
-      // Falls to login only if refresh token is expired (30+ days) or deliberately cleared.
+      // has nothing to work with. We keep our own token backup and call setSession()
+      // which exchanges the refresh token for a fresh access token over the network.
+      // We drive the reconnect directly in .then() rather than waiting for an auth event,
+      // because Supabase fires onAuthStateChange asynchronously — by the time SIGNED_IN
+      // arrives our .then() may have already run. Guard with _supaUser so that if the
+      // auth event DOES fire first, the .then() is a no-op instead of a double sync.
       const _bk=(()=>{try{return JSON.parse(localStorage.getItem('zp3_session_backup')||'null');}catch(_e){return null;}})();
       if(_bk?.access_token&&_bk?.refresh_token){
+        _sessionRestoreInProgress=true;
         _supa.auth.setSession(_bk).then(({data:{session}})=>{
-          if(!session)supaShowLogin();
-        }).catch(()=>supaShowLogin());
+          _sessionRestoreInProgress=false;
+          if(!session){supaShowLogin();return;}
+          if(!_supaUser){
+            // Auth event hasn't fired yet — drive reconnect ourselves
+            _supaUser=session.user;
+            _saveSessionBackup(session);
+            _mergeOnSignIn=false;
+            _onReconnect();
+          }
+          // If _supaUser was already set by the auth event, reconnect was handled there
+        }).catch(()=>{_sessionRestoreInProgress=false;supaShowLogin();});
       } else {
         supaShowLogin();
       }
