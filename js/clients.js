@@ -468,6 +468,8 @@ function renderClientHubPage(){
   const rowHtml=c=>{
     const url=_clientHubUrl(c);
     if(!url)return ''; // token not yet generated — skip row
+    const _stg=getClientStage(c.id);
+    const statusBadge=_stg?`<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:${_stg.color}22;color:${_stg.color};white-space:nowrap">${escHtml(_stg.label)}</span>`:'';
     const phone=(c.phone||'').replace(/\D/g,'');
     const firstName=(c.name||'there').split(/[\s,]+/)[0];
     const bname=S.bname||'TradeDesk';
