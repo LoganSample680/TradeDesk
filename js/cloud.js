@@ -332,7 +332,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.19.26.128';
+const APP_VERSION='05.19.26.129';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false;
 let _proposalViews={};
 // true when data came from localStorage cache, not a live Supabase fetch.
@@ -1125,7 +1125,9 @@ function supaSaveDebounced(){
   // so it writes zp3_offline_pending — the only way offline data survives a force-quit.
   if(!_supaUser&&!_mergeOnSignIn)return;
   clearTimeout(_syncTimer);
-  _syncTimer=setTimeout(()=>supaSaveToCloud(),2000);
+  // Null the handle inside the callback so _syncTimer accurately reflects
+  // "save pending" — visibilitychange relies on it for the force-quit safety net.
+  _syncTimer=setTimeout(()=>{_syncTimer=null;supaSaveToCloud();},2000);
   if(_supaUser)supaSetStatus('syncing');
 }
 // Cancel the 2s debounce and push the full state to Supabase RIGHT NOW.
@@ -1249,9 +1251,15 @@ function _startOfflineWatcher(){
   window.addEventListener('offline',()=>{if(_supa)_supa.auth.stopAutoRefresh();});
   document.addEventListener('visibilitychange',()=>{
     // Flush offline-pending to localStorage the moment the app is backgrounded —
-    // last chance to persist before iOS suspends or kills the process.
-    if(document.visibilityState==='hidden'&&_mergeOnSignIn&&!_supaUser){
-      try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,ts:Date.now()}));}catch(_e){}
+    // last chance to persist before iOS suspends or kills the process. Fire whenever
+    // there's any unsaved data: pending debounced save, offline mode, or a failed
+    // push that hasn't drained yet. (Before v05.19.26.129 this only fired when
+    // _supaUser was null, which stopped working once we paused autoRefresh on offline.)
+    if(document.visibilityState==='hidden'){
+      const _hasUnsaved=_syncTimer||_mergeOnSignIn||localStorage.getItem('zp3_pending_sync')==='1';
+      if(_hasUnsaved){
+        try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,ts:Date.now()}));}catch(_e){}
+      }
     }
     if(document.visibilityState==='visible'&&_isOfflineState())_probeAndSync();
   });
