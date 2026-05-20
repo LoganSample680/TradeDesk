@@ -1218,7 +1218,10 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div id="cdt-bids-content" style="display:none">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <span style="font-size:13px;font-weight:700">Bids &amp; payments</span>
-      <button class="btn btn-p btn-sm" onclick="quickBid()">+ Add bid</button>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-sm" onclick="openClientProposals(currentClientId)" style="font-size:12px">📄 Proposals</button>
+        <button class="btn btn-p btn-sm" onclick="quickBid()">+ Add bid</button>
+      </div>
     </div>
     <div id="cd-overdue-alerts"></div>
     <div id="cd-bids-list"></div>
