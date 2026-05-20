@@ -117,10 +117,10 @@ Deno.serve(async (req) => {
       };
     }
 
-    // Build statement descriptor from business name + payment type (max 22 chars)
-    const _safeBname = (businessName || 'Payment').replace(/[^A-Za-z0-9 ]/g, '').trim().toUpperCase();
-    const _descSuffix = paymentType === 'full' ? 'FULL PMT' : 'DEPOSIT';
-    const statementDescriptor = (_safeBname + ' ' + _descSuffix).substring(0, 22) || 'PAYMENT';
+    // Statement descriptor: "SAMPLE-DEPOSIT" or "SAMPLE-FULL" (max 22 chars)
+    const _lastName = ((clientName||'').trim().split(/\s+/).pop()||'CLIENT').replace(/[^A-Za-z0-9]/g,'').toUpperCase();
+    const _suffix = paymentType === 'full' ? 'FULL' : 'DEPOSIT';
+    const statementDescriptor = (_lastName + '-' + _suffix).substring(0, 22) || 'PAYMENT';
 
     // Route payment to contractor's connected account if available
     if (stripeAccountId) {
