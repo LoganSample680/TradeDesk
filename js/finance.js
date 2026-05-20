@@ -1981,12 +1981,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .no-print{display:none!important}
   @page{margin:0.3in;size:letter portrait}
-  /* Use absolute paper height (11in - 0.6in margins = 10.4in) so iOS does not
-     use screen viewport height, which causes 3 print pages per receipt */
-  .page{padding:8px 0;height:10.4in;max-height:10.4in;overflow:hidden;page-break-after:always;page-break-inside:avoid}
+  /* Let .page height be auto — constrain the image directly so it fits within
+     the printable area (10.4in) minus header (~0.9in). No overflow:hidden and
+     no page-break-inside:avoid, both of which caused cutoff or double pages. */
+  .page{padding:4px 0;height:auto;max-height:none;overflow:visible;display:block;page-break-after:always}
   .page:last-child{page-break-after:auto}
-  .img-wrap{max-height:9.6in}
-  .img-wrap img{max-height:9.6in;max-width:7.4in}
+  .img-wrap{display:block;text-align:center;max-height:9in;overflow:hidden}
+  .img-wrap img{display:block;margin:0 auto;max-width:7.4in;max-height:9in;width:auto;height:auto}
 }
 </style>
 </head><body>
