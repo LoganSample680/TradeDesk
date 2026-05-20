@@ -521,7 +521,7 @@ async function sendProposalLink(){
     // Always use live calcEst().final for amount — captures tier multiplier, adjustments, etc.
     // Never use bid.amount which may be stale from an earlier step before tier was set.
     const{final:_propFinal}=calcEst();
-    if(_bidForProp)_bidForProp.amount=_propFinal; // keep bid record in sync
+    if(_bidForProp){_bidForProp.amount=_propFinal;_bidForProp.deposit=_noDeposit?0:Math.round(_propFinal*0.25*100)/100;}
     const proposalData={
       id:bidId,token,clientName:cname,businessName:bname,
       contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
@@ -529,7 +529,7 @@ async function sendProposalLink(){
       clientAddr:document.getElementById('e-caddr')?.value||_bidForProp?.addr||'',
       estDays:parseInt(document.getElementById('e-days')?.value)||_bidForProp?.days||2,
       amount:_propFinal,
-      deposit:Math.round(_propFinal*0.25*100)/100,
+      deposit:_noDeposit?0:Math.round(_propFinal*0.25*100)/100,
       createdAt:new Date().toISOString(),status:'pending',
       notifyEmail:_supaUser.email,businessPhone:S.bphone||'',stripeConnectEnabled:!!(_stripeConnectStatus?.charges_enabled),ccSurchargeEnabled:!!(S.ccSurchargeEnabled),ccSurchargePct:S.ccSurchargePct||3,
       isPortfolio:document.getElementById('portfolio-toggle')?.checked||false,
@@ -791,6 +791,7 @@ function buildProposal(){
   const deposit=Math.round(final*.25*100)/100;
   const balance=Math.round(final*.75*100)/100;
   const allowWeekend=document.getElementById('e-allow-weekend')?.checked||false;
+  const _noDeposit=document.getElementById('e-no-deposit')?.checked||false;
   const description=buildDescription();
   const matLine=matTotal+flatAdd;
   const customerPaint=document.getElementById('e-customer-paint')?.value==='1'||false;
@@ -988,9 +989,11 @@ function buildProposal(){
   <div style="padding:20px 24px;border-top:3px solid #1a365d;background:#f8fafc">
     <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Payment Terms</div>
     <div style="font-size:11.5px;color:#2d3748;line-height:2">
-      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">1.</span><span><strong>Deposit:</strong> 25% due before work begins.</span></div>
-      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">2.</span><span><strong>Balance:</strong> Remainder due upon completion.</span></div>
-      <div style="display:flex;align-items:baseline;gap:8px"><span style="color:#1a365d;font-weight:700;min-width:16px">3.</span><span><strong>Warranty:</strong> All workmanship warranted for 1 year.</span></div>
+      ${_noDeposit
+        ?'<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">1.</span><span><strong>Payment:</strong> Full balance due upon completion. No deposit required.</span></div>'
+        :'<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">1.</span><span><strong>Deposit:</strong> 25% due before work begins and before a start date is confirmed.</span></div>'+
+         '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">2.</span><span><strong>Balance:</strong> Remainder due upon completion.</span></div>'}
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="color:#1a365d;font-weight:700;min-width:16px">${_noDeposit?'2.':'3.'}</span><span><strong>Warranty:</strong> All workmanship warranted for 1 year.</span></div>
     </div>
     <div style="margin-top:10px;font-size:10px;color:#94a3b8;line-height:1.5">Full terms &amp; conditions — including cancellation, lien rights, and liability — are on the signing page.</div>
     <canvas id="proposal-notes-canvas" style="display:none"></canvas>
@@ -1170,6 +1173,7 @@ if(!hasSignature()&&typedSig.length<=2){zAlert('Please type your name or draw yo
         draft.cond=v('e-cond');draft.paint=v('e-paint');
         draft.completion_date='';draft.collStage='none';
         draft.allowWeekend=document.getElementById('e-allow-weekend')?.checked||false;
+        draft.deposit=document.getElementById('e-no-deposit')?.checked?0:Math.round(final*0.25*100)/100;
         draft.isPortfolio=document.getElementById('portfolio-toggle')?.checked||false;
         draft.portfolioPct=parseInt(document.getElementById('portfolio-pct')?.value)||15;
         draft.adjustmentType=v('adj-type-hidden')||'';draft.adjustmentReason=v('adj-reason-hidden')||'';draft.adjustmentPct=parseInt(v('est-adj'))||0;
@@ -1244,6 +1248,8 @@ function clearEstimatorForm(){
   const adjV=document.getElementById('est-adj-val');if(adjV)adjV.textContent='0%';
   const _ptogClear=document.getElementById('portfolio-toggle');
   if(_ptogClear){_ptogClear.checked=false;togglePortfolioShowcase();}
+  const _noDepClear=document.getElementById('e-no-deposit');if(_noDepClear)_noDepClear.checked=false;
+  const _wkndClear=document.getElementById('e-allow-weekend');if(_wkndClear)_wkndClear.checked=false;
   const _pPct=document.getElementById('portfolio-pct');if(_pPct)_pPct.value=15;
   const _plb=document.getElementById('proposal-link-bar');if(_plb){_plb.style.display='none';_plb.dataset.signingUrl='';}
   const _pli=document.getElementById('proposal-link-input');if(_pli)_pli.value='';
