@@ -294,62 +294,6 @@ function calcTax(){
   }
 }
 
-// ── State home-solicitation cancellation laws ──────────────────────────────
-// All states mirror FTC Cooling-Off Rule (16 CFR Part 429): 3 business days
-// at the buyer's home, $25+. Business days exclude Sundays + federal holidays.
-const STATE_CANCEL={
-  AL:{days:3,statute:'Ala. Code §5-19-14'},
-  AK:{days:3,statute:'AS §45.63.010'},
-  AZ:{days:3,statute:'A.R.S. §44-5002'},
-  AR:{days:3,statute:'A.C.A. §4-89-103'},
-  CA:{days:3,statute:'Civ. Code §1689.5'},
-  CO:{days:3,statute:'C.R.S. §6-1-702'},
-  CT:{days:3,statute:'C.G.S. §42-134a'},
-  DE:{days:3,statute:'6 Del. C. §4402'},
-  FL:{days:3,statute:'Fla. Stat. §501.021'},
-  GA:{days:3,statute:'O.C.G.A. §10-1-6'},
-  HI:{days:3,statute:'HRS §481C-2'},
-  ID:{days:3,statute:'Idaho Code §48-902'},
-  IL:{days:3,statute:'815 ILCS 730/1'},
-  IN:{days:3,statute:'Ind. Code §24-5-10-6'},
-  IA:{days:3,statute:'Iowa Code §555A.2'},
-  KS:{days:3,statute:'K.S.A. §50-640'},
-  KY:{days:3,statute:'KRS §367.430'},
-  LA:{days:3,statute:'La. R.S. §9:3538'},
-  ME:{days:3,statute:'9-A M.R.S.A. §3-502'},
-  MD:{days:3,statute:'Md. Code §14-302'},
-  MA:{days:3,statute:'G.L. c. 93 §48'},
-  MI:{days:3,statute:'MCL §445.111'},
-  MN:{days:3,statute:'Minn. Stat. §325G.06'},
-  MS:{days:3,statute:'Miss. Code §75-66-5'},
-  MO:{days:3,statute:'Mo. Rev. Stat. §407.675'},
-  MT:{days:3,statute:'MCA §30-14-502'},
-  NE:{days:3,statute:'Neb. Rev. Stat. §69-1602'},
-  NV:{days:3,statute:'NRS §598.2825'},
-  NH:{days:3,statute:'RSA §361-B:2'},
-  NJ:{days:3,statute:'N.J.S.A. §17:16C-68'},
-  NM:{days:3,statute:'NMSA §57-12A-3'},
-  NY:{days:3,statute:'Pers. Prop. Law §425'},
-  NC:{days:3,statute:'N.C.G.S. §25A-39'},
-  ND:{days:3,statute:'N.D.C.C. §51-18-02'},
-  OH:{days:3,statute:'O.R.C. §1345.23'},
-  OK:{days:3,statute:'14A O.S. §5-104'},
-  OR:{days:3,statute:'ORS §83.820'},
-  PA:{days:3,statute:'73 P.S. §201-7'},
-  RI:{days:3,statute:'R.I.G.L. §6-28-2'},
-  SC:{days:3,statute:'S.C. Code §37-2-502'},
-  SD:{days:3,statute:'SDCL §37-24-28'},
-  TN:{days:3,statute:'Tenn. Code §47-18-703'},
-  TX:{days:3,statute:'Tex. Bus. & Com. Code §601.002'},
-  UT:{days:3,statute:'Utah Code §70C-4-102'},
-  VT:{days:3,statute:'9 V.S.A. §2454'},
-  VA:{days:3,statute:'Va. Code §59.1-214'},
-  WA:{days:3,statute:'RCW §63.14.102'},
-  WV:{days:3,statute:'W.Va. Code §46A-2-501'},
-  WI:{days:3,statute:'Wis. Stat. §423.203'},
-  WY:{days:3,statute:'Wyo. Stat. §40-12-201'},
-};
-
 function estimateTax(netSelf,yr){
   if(netSelf<=0)return 0;
   const status=S.txStatus||'single';
