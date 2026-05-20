@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const {
-      amount, currency, paymentMethod,
+      amount, currency, paymentMethod, paymentType,
       surchargeAmount,
       proposalKey, clientName, businessName,
       bidId, contractorUserId, notifyEmail,
@@ -117,12 +117,20 @@ Deno.serve(async (req) => {
       };
     }
 
+    // Build statement descriptor from business name + payment type (max 22 chars)
+    const _safeBname = (businessName || 'Payment').replace(/[^A-Za-z0-9 ]/g, '').trim().toUpperCase();
+    const _descSuffix = paymentType === 'full' ? 'FULL PMT' : 'DEPOSIT';
+    const statementDescriptor = (_safeBname + ' ' + _descSuffix).substring(0, 22) || 'PAYMENT';
+
     // Route payment to contractor's connected account if available
     if (stripeAccountId) {
       sessionParams.payment_intent_data = {
         application_fee_amount: 0,
         transfer_data: { destination: stripeAccountId },
+        statement_descriptor: statementDescriptor,
       };
+    } else {
+      sessionParams.payment_intent_data = { statement_descriptor: statementDescriptor };
     }
 
     const session = await stripe.checkout.sessions.create(sessionParams);

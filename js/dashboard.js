@@ -647,7 +647,7 @@ function _markDepositCash(bidId){
 function renderTodayFeed(){
   const el=document.getElementById('dash-money-feed');if(!el)return;
   const tk=todayKey();
-  const collectItems=[],scheduleItems=[],closeItems=[],buildItems=[],alertItems=[];
+  const finalPayItems=[],depositItems=[],scheduleItems=[],pendingItems=[],buildItems=[],alertItems=[];
 
   // ALERTS — License expiring/expired (always first, outside sections)
   const licAlerts=getLicenseAlerts();
@@ -685,7 +685,7 @@ function renderTodayFeed(){
     else if(isFileable)actBtns+='<button onclick="showFileLienDirect('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">⚖️ File Lien</button>';
     else if(lienStage)actBtns+='<button onclick="printKansasLien('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">⚖️ View lien doc</button>';
     actBtns+='<button onclick="openPayPanel('+b.id+')" class="btn btn-sm btn-g" style="font-size:11px">Collect →</button>';
-    collectItems.push(
+    finalPayItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">💰</div>'+
         '<div class="tf-body">'+
@@ -721,12 +721,12 @@ function renderTodayFeed(){
         '</div>'
       );
     } else {
-      // Deposit still needed — goes to Collect
+      // Deposit still needed — goes to Deposit & Schedule
       const depAmt=depositRequired?fmt(b.deposit):fmt(b.amount);
-      const subText=hasJob?'Job in progress · deposit not collected · '+depAmt:'Approved '+fmt(b.amount)+' · deposit not collected';
-      collectItems.push(
+      const subText=hasJob?'Job in progress · deposit not collected · '+depAmt:'Deposit required before scheduling · '+depAmt;
+      depositItems.push(
         '<div class="tf-card">'+
-          '<div class="tf-icon">'+(hasJob?'💰':'🏷️')+'</div>'+
+          '<div class="tf-icon">'+(hasJob?'💰':'💳')+'</div>'+
           '<div class="tf-body">'+
             '<div class="tf-name">'+escHtml(cDisp)+'</div>'+
             '<div class="tf-sub" style="color:'+(hasJob?'#A32D2D':'var(--blue)')+'">'+subText+'</div>'+
@@ -746,7 +746,7 @@ function renderTodayFeed(){
     const fn=c.name.split(' ')[0];
     const smsBody=encodeURIComponent('Hey '+fn+', just wanted to see if this is still something you\'re wanting to move forward with?');
     const daysOut=b.followup?Math.floor((new Date(tk+'T12:00')-new Date(b.followup+'T12:00'))/86400000):0;
-    closeItems.push(
+    pendingItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">🔥</div>'+
         '<div class="tf-body">'+
@@ -771,7 +771,7 @@ function renderTodayFeed(){
     const msgs=['Hey '+fn+', just checking in — did you get a chance to look over the proposal? Happy to answer any questions.','Hi '+fn+', wanted to follow up on the estimate I sent over. Let me know if you\'d like to move forward or have any questions.','Hey '+fn+', I have an opening coming up that might work great for your project. Would love to get it scheduled — let me know!'];
     const smsBody=encodeURIComponent(msgs[Math.min(stage-1,msgs.length-1)]);
     const daysOut=Math.floor((new Date(tk+'T12:00')-new Date(b.followup+'T12:00'))/86400000);
-    closeItems.push(
+    pendingItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">⏰</div>'+
         '<div class="tf-body">'+
@@ -794,7 +794,7 @@ function renderTodayFeed(){
     const days=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
     const urgColor=days>=14?'#A32D2D':days>=7?'var(--amber)':'var(--text3)';
     const daysStr=days===0?'Sent today':days===1?'1 day waiting':days+'d waiting';
-    closeItems.push(
+    pendingItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">📨</div>'+
         '<div class="tf-body">'+
@@ -875,9 +875,9 @@ function renderTodayFeed(){
   }
 
   // Filter visibility per tab
-  const showCollect=_dashFeedFilter!=='urgent';
-  const showSchedule=_dashFeedFilter!=='urgent';
-  const showClose=_dashFeedFilter!=='money';
+  const showFinalPay=_dashFeedFilter!=='urgent';
+  const showDepSched=_dashFeedFilter!=='urgent';
+  const showPending=_dashFeedFilter!=='money';
   const showBuild=_dashFeedFilter==='all';
 
   // Section builder
@@ -895,7 +895,7 @@ function renderTodayFeed(){
     '</div>';
   };
 
-  const totalShown=(showBuild?buildItems.length:0)+(showClose?closeItems.length:0)+(showSchedule?scheduleItems.length:0)+(showCollect?collectItems.length:0)+alertItems.length;
+  const totalShown=(showBuild?buildItems.length:0)+(showPending?pendingItems.length:0)+(showDepSched?depositItems.length+scheduleItems.length:0)+(showFinalPay?finalPayItems.length:0)+alertItems.length;
   const _feedSub=document.getElementById('dash-feed-sub');
 
   if(!totalShown){
@@ -908,18 +908,18 @@ function renderTodayFeed(){
   if(_feedSub){
     const parts=[];
     if(showBuild&&buildItems.length)parts.push(buildItems.length+' to build');
-    if(showClose&&closeItems.length)parts.push(closeItems.length+' pending');
-    if(showSchedule&&scheduleItems.length)parts.push(scheduleItems.length+' to schedule');
-    if(showCollect&&collectItems.length)parts.push(collectItems.length+' to collect');
+    if(showPending&&pendingItems.length)parts.push(pendingItems.length+' pending');
+    if(showDepSched&&(depositItems.length+scheduleItems.length))parts.push((depositItems.length+scheduleItems.length)+' to deposit/schedule');
+    if(showFinalPay&&finalPayItems.length)parts.push(finalPayItems.length+' to collect');
     _feedSub.textContent=parts.join(' · ')||'all caught up';
   }
 
   el.innerHTML=
     (alertItems.length?'<div>'+alertItems.join('')+'</div>':'')+
     _sec('build','✏️','Build','var(--text2)',buildItems,showBuild)+
-    _sec('close','📨','Pending','#7c3aed',closeItems,showClose)+
-    _sec('schedule','📅','Schedule','var(--blue)',scheduleItems,showSchedule)+
-    _sec('collect','💰','Collect','#A32D2D',collectItems,showCollect);
+    _sec('pending','📨','Pending','#7c3aed',pendingItems,showPending)+
+    _sec('dep-sched','💳','Deposit & Schedule','var(--blue)',[...depositItems,...scheduleItems],showDepSched)+
+    _sec('collect','💰','Collect','#A32D2D',finalPayItems,showFinalPay);
 }
 
 function checkGoalPrompt(){
