@@ -630,7 +630,7 @@ ${bid.proposalHtml?`<div class="page-break"></div><div class="proposal-section">
 }
 
 function _mmtToggle(id){
-  window['_mmtCol_'+id]=!window['_mmtCol_'+id];
+  window['_mmtCol_'+id]=window['_mmtCol_'+id]===false?true:false;
   renderTodayFeed();
 }
 
@@ -883,7 +883,7 @@ function renderTodayFeed(){
   // Section builder
   const _sec=(id,icon,label,color,items,show)=>{
     if(!show||!items.length)return '';
-    const col=!!window['_mmtCol_'+id];
+    const col=window['_mmtCol_'+id]!==false;
     return '<div class="mmt-sec">'+
       '<div class="mmt-sec-hdr" onclick="_mmtToggle(\''+id+'\')">'+
         '<span style="font-size:14px">'+icon+'</span>'+
