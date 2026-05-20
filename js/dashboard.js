@@ -634,6 +634,16 @@ function _mmtToggle(id){
   renderTodayFeed();
 }
 
+function _markDepositCash(bidId){
+  const bid=bids.find(b=>b.id===bidId);if(!bid)return;
+  const depAmt=(bid.deposit||0)>0?bid.deposit:bid.amount||0;
+  zConfirm('Mark '+fmt(depAmt)+' deposit collected as cash?',()=>{
+    payments.push({id:Date.now(),bid_id:bidId,client_id:bid.client_id,client_name:bid.client_name,
+      date:todayKey(),type:'deposit',amount:depAmt,method:'cash',ref:'Cash — recorded from feed'});
+    saveAll();renderDash();showToast('Cash deposit recorded','💰');
+  });
+}
+
 function renderTodayFeed(){
   const el=document.getElementById('dash-money-feed');if(!el)return;
   const tk=todayKey();
@@ -689,13 +699,15 @@ function renderTodayFeed(){
 
   // COLLECT + SCHEDULE — Won bids not yet completed
   bids.filter(b=>b.status==='Closed Won'&&!b.completion_date).forEach(b=>{
-    const depositPaid=getBidPaid(b.id)>0;
+    // If no deposit was required treat as paid — $0-deposit and cash-upfront jobs
+    const depositRequired=(b.deposit||0)>0;
+    const depositPaid=!depositRequired||getBidPaid(b.id)>0;
     const hasJob=jobs.some(j=>(j.bid_id===b.id||(j.client_id===b.client_id&&!j.bid_id))&&j.eventType!=='estimate');
     if(hasJob&&depositPaid)return;
     const c=getClientById(b.client_id);
     const cDisp=c?c.name:b.client_name||b.name||'Client';
     if(!hasJob&&depositPaid){
-      // Deposit collected — just needs scheduling
+      // Deposit collected (or not required) — just needs scheduling
       scheduleItems.push(
         '<div class="tf-card">'+
           '<div class="tf-icon">📅</div>'+
@@ -710,7 +722,8 @@ function renderTodayFeed(){
       );
     } else {
       // Deposit still needed — goes to Collect
-      const subText=hasJob?'Job in progress · deposit not collected · '+fmt(b.amount):'Approved '+fmt(b.amount)+' · deposit not collected';
+      const depAmt=depositRequired?fmt(b.deposit):fmt(b.amount);
+      const subText=hasJob?'Job in progress · deposit not collected · '+depAmt:'Approved '+fmt(b.amount)+' · deposit not collected';
       collectItems.push(
         '<div class="tf-card">'+
           '<div class="tf-icon">'+(hasJob?'💰':'🏷️')+'</div>'+
@@ -720,7 +733,7 @@ function renderTodayFeed(){
           '</div>'+
           '<div class="tf-acts">'+
             '<button onclick="openPayPanel('+b.id+',\'deposit\')" class="btn btn-sm" style="font-size:11px;border-color:var(--blue);color:var(--blue)">Deposit</button>'+
-            (!hasJob?'<button onclick="schedFromBid('+b.id+')" class="btn btn-sm btn-p" style="font-size:11px">Schedule →</button>':'')+
+            '<button onclick="_markDepositCash('+b.id+')" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Paid Cash</button>'+
           '</div>'+
         '</div>'
       );
