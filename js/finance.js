@@ -76,6 +76,10 @@ function expTriggerAttach(){
     try{
       const b64=await compressAndEncodeImage(blob,900,0.75);
       _expState.imageData={b64,type:'image/jpeg'};_expState.hasReceipt=true;
+      // Pre-upload to Supabase immediately — so the photo is in the bucket even
+      // if the user is interrupted before hitting Save.
+      _expState.preId=Date.now();_expState.imageKey=null;
+      _uploadReceiptToStorage(_expState.preId,b64).then(k=>{if(k)_expState.imageKey=k;}).catch(()=>{});
       if(preview){
         preview.style.display='block';
         preview.innerHTML='<img src="data:image/jpeg;base64,'+b64+'" style="max-height:80px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green-mid);margin-top:4px;font-weight:700">📎 Photo attached</div>';
@@ -97,6 +101,10 @@ function expTriggerScan(){
     if(scanArea)scanArea.style.opacity='.5';
     const b64=await compressAndEncodeImage(blob);
     _expState.imageData={b64,type:'image/jpeg'};
+    // Pre-upload to Supabase immediately so the photo is safely in the bucket
+    // before the user finishes filling in fields and hits Save.
+    _expState.preId=Date.now();_expState.imageKey=null;
+    _uploadReceiptToStorage(_expState.preId,b64).then(k=>{if(k)_expState.imageKey=k;}).catch(()=>{});
     try{
       const resp=await fetch('https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/scan-receipt',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({imageBase64:b64,mediaType:'image/jpeg'})});
       if(!resp.ok)throw new Error('Scan error '+resp.status);
@@ -692,13 +700,15 @@ async function expSave(){
   const job=jobId?bids.find(b=>b.id===jobId):null;
   const mealPurpose=cat==='meals'?(document.getElementById('em-meal-purpose')?.value||'').trim():'';
   const mealAttendees=cat==='meals'?(document.getElementById('em-meal-attendees')?.value||'').trim():'';
-  const expId=Date.now();
+  const expId=_expState.preId||Date.now();
   let receipt_img=null,receipt_key=null;
-  if(_expState.imageData){
+  if(_expState.imageKey){
+    // Early upload completed at capture time — just reference the key
+    receipt_key=_expState.imageKey;
+  } else if(_expState.imageData){
     try{
       receipt_key=await _uploadReceiptToStorage(expId,_expState.imageData.b64);
     }catch(e){
-      // Fall back to inline if bucket upload fails (offline, etc.)
       receipt_img='data:image/jpeg;base64,'+_expState.imageData.b64;
     }
     if(!receipt_key&&!receipt_img)receipt_img='data:image/jpeg;base64,'+_expState.imageData.b64;
@@ -1977,7 +1987,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </head><body>
 <div class="no-print">
   <span><strong>${bname}</strong> — ${filtered.length} receipt${filtered.length>1?'s':''} · ${yr}</span>
-  <button onclick="tdPrint()">🖨 Print / Save PDF</button>
+  <button onclick="window.print()">🖨 Print / Save PDF</button>
 </div>
 ${pages}
 </body></html>`);
