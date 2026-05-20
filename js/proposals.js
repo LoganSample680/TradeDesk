@@ -521,7 +521,7 @@ async function sendProposalLink(){
     // Always use live calcEst().final for amount — captures tier multiplier, adjustments, etc.
     // Never use bid.amount which may be stale from an earlier step before tier was set.
     const{final:_propFinal}=calcEst();
-    if(_bidForProp){_bidForProp.amount=_propFinal;_bidForProp.deposit=_noDeposit?0:Math.round(_propFinal*0.25*100)/100;}
+    if(_bidForProp){_bidForProp.amount=_propFinal;_bidForProp.deposit=_depositAmt;}
     const proposalData={
       id:bidId,token,clientName:cname,businessName:bname,
       contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
@@ -529,7 +529,7 @@ async function sendProposalLink(){
       clientAddr:document.getElementById('e-caddr')?.value||_bidForProp?.addr||'',
       estDays:parseInt(document.getElementById('e-days')?.value)||_bidForProp?.days||2,
       amount:_propFinal,
-      deposit:_noDeposit?0:Math.round(_propFinal*0.25*100)/100,
+      deposit:_depositAmt,
       createdAt:new Date().toISOString(),status:'pending',
       notifyEmail:_supaUser.email,businessPhone:S.bphone||'',stripeConnectEnabled:!!(_stripeConnectStatus?.charges_enabled),ccSurchargeEnabled:!!(S.ccSurchargeEnabled),ccSurchargePct:S.ccSurchargePct||3,
       isPortfolio:document.getElementById('portfolio-toggle')?.checked||false,
@@ -791,7 +791,8 @@ function buildProposal(){
   const deposit=Math.round(final*.25*100)/100;
   const balance=Math.round(final*.75*100)/100;
   const allowWeekend=document.getElementById('e-allow-weekend')?.checked||false;
-  const _noDeposit=document.getElementById('e-no-deposit')?.checked||false;
+  const _depositPct=(parseFloat(document.getElementById('e-deposit-pct')?.value)||0)/100;
+  const _depositAmt=Math.round(_propFinal*_depositPct*100)/100;
   const description=buildDescription();
   const matLine=matTotal+flatAdd;
   const customerPaint=document.getElementById('e-customer-paint')?.value==='1'||false;
@@ -989,11 +990,11 @@ function buildProposal(){
   <div style="padding:20px 24px;border-top:3px solid #1a365d;background:#f8fafc">
     <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Payment Terms</div>
     <div style="font-size:11.5px;color:#2d3748;line-height:2">
-      ${_noDeposit
+      ${_depositPct===0
         ?'<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">1.</span><span><strong>Payment:</strong> Full balance due upon completion. No deposit required.</span></div>'
-        :'<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">1.</span><span><strong>Deposit:</strong> 25% due before work begins and before a start date is confirmed.</span></div>'+
+        :'<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">1.</span><span><strong>Deposit:</strong> '+Math.round(_depositPct*100)+'% ('+fmt(_depositAmt)+') due before work begins and before a start date is confirmed.</span></div>'+
          '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">2.</span><span><strong>Balance:</strong> Remainder due upon completion.</span></div>'}
-      <div style="display:flex;align-items:baseline;gap:8px"><span style="color:#1a365d;font-weight:700;min-width:16px">${_noDeposit?'2.':'3.'}</span><span><strong>Warranty:</strong> All workmanship warranted for 1 year.</span></div>
+      <div style="display:flex;align-items:baseline;gap:8px"><span style="color:#1a365d;font-weight:700;min-width:16px">${_depositPct===0?'2.':'3.'}</span><span><strong>Warranty:</strong> All workmanship warranted for 1 year.</span></div>
     </div>
     <div style="margin-top:10px;font-size:10px;color:#94a3b8;line-height:1.5">Full terms &amp; conditions — including cancellation, lien rights, and liability — are on the signing page.</div>
     <canvas id="proposal-notes-canvas" style="display:none"></canvas>
@@ -1035,7 +1036,7 @@ function buildProposal(){
   </div>
 </div>`;
   document.getElementById('est-sig-sum').innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><div style="font-size:15px;font-weight:700">${cname}</div><div style="font-size:12px;color:var(--text2)">${caddr}</div></div><div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--blue)">${fmt(proposalTotal)}</div><div style="font-size:11px;color:var(--text3)">${estNum}</div></div></div>`;
-  document.getElementById('est-terms').innerHTML='<div style="background:#FEF3C7;border-left:3px solid #92400E;padding:8px 10px;margin-bottom:10px;font-size:10px;font-weight:700;color:#92400E">⚠ KCPA NOTICE: Buyer may cancel this transaction within 3 business days of signing. See Notice of Cancellation on signed proposal.</div><strong style="color:#1a365d">Terms &amp; Conditions</strong><br><br>1. <strong>Payment:</strong> A 25% deposit is required before any work begins and before a start date will be scheduled. The remaining balance is due upon completion of work.<br><br>2. <strong>Cancellation &amp; Deposits:</strong> Buyer has the right to cancel within 3 business days of signing (K.S.A. 50-640). After that period, the deposit is retained as liquidated damages covering: (a) mobilization &amp; scheduling costs — crew reservation and declined projects for those dates; (b) administrative costs — site measurements, color consulting, scope preparation; and (c) material procurement — specific paint colors and supplies that may not be returnable. These represent a reasonable estimate of actual damages, not a penalty. Materials purchased will be made available for pickup upon cancellation.<br><br>3. <strong>Change Orders:</strong> This proposal covers only the scope described herein. Any additional work, surfaces, or materials not listed require a written change order signed by both parties and may be billed at the current rate.<br><br>4. <strong>Warranty:</strong> All workmanship is warranted for one (1) year from the date of completion. This warranty covers labor defects and application failures. It does not cover pre-existing surface conditions, substrate failure, moisture damage, or damage caused by events outside the contractor\'s control.<br><br>5. <strong>Limitation of Liability:</strong> Contractor is not responsible for damage to surfaces, structures, or contents that existed prior to the start of work, or for conditions not disclosed at the time of walkthrough. Client assumes all risk associated with pressure washing services on their property.<br><br>6. <strong>Materials &amp; Sales Tax:</strong> Contractor purchases all materials and pays applicable Kansas sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.<br><br>7. <strong>Mechanic\'s Lien Notice:</strong> Under Kansas law (K.S.A. 60-1101 et seq.), contractor has the right to file a mechanic\'s lien against this property for any amounts unpaid under this agreement. Client is hereby notified of this right. Contractor will pursue all available legal remedies for non-payment, including lien filing.<br><br>By signing below, client acknowledges receipt of the Notice of Cancellation, full agreement with all scope, pricing, and terms, and that this constitutes a legally binding electronic agreement pursuant to K.S.A. 16-1601 et seq.';
+  document.getElementById('est-terms').innerHTML='<div style="background:#FEF3C7;border-left:3px solid #92400E;padding:8px 10px;margin-bottom:10px;font-size:10px;font-weight:700;color:#92400E">⚠ KCPA NOTICE: Buyer may cancel this transaction within 3 business days of signing. See Notice of Cancellation on signed proposal.</div><strong style="color:#1a365d">Terms &amp; Conditions</strong><br><br>1. <strong>Payment:</strong> '+(_depositPct===0?'Full balance due upon completion. No deposit required.':Math.round(_depositPct*100)+'% deposit ('+fmt(_depositAmt)+') required before any work begins and before a start date will be scheduled. The remaining balance is due upon completion of work.')+'<br><br>2. <strong>Cancellation &amp; Deposits:</strong> Buyer has the right to cancel within 3 business days of signing (K.S.A. 50-640). After that period, the deposit is retained as liquidated damages covering: (a) mobilization &amp; scheduling costs — crew reservation and declined projects for those dates; (b) administrative costs — site measurements, color consulting, scope preparation; and (c) material procurement — specific paint colors and supplies that may not be returnable. These represent a reasonable estimate of actual damages, not a penalty. Materials purchased will be made available for pickup upon cancellation.<br><br>3. <strong>Change Orders:</strong> This proposal covers only the scope described herein. Any additional work, surfaces, or materials not listed require a written change order signed by both parties and may be billed at the current rate.<br><br>4. <strong>Warranty:</strong> All workmanship is warranted for one (1) year from the date of completion. This warranty covers labor defects and application failures. It does not cover pre-existing surface conditions, substrate failure, moisture damage, or damage caused by events outside the contractor\'s control.<br><br>5. <strong>Limitation of Liability:</strong> Contractor is not responsible for damage to surfaces, structures, or contents that existed prior to the start of work, or for conditions not disclosed at the time of walkthrough. Client assumes all risk associated with pressure washing services on their property.<br><br>6. <strong>Materials &amp; Sales Tax:</strong> Contractor purchases all materials and pays applicable Kansas sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.<br><br>7. <strong>Mechanic\'s Lien Notice:</strong> Under Kansas law (K.S.A. 60-1101 et seq.), contractor has the right to file a mechanic\'s lien against this property for any amounts unpaid under this agreement. Client is hereby notified of this right. Contractor will pursue all available legal remedies for non-payment, including lien filing.<br><br>By signing below, client acknowledges receipt of the Notice of Cancellation, full agreement with all scope, pricing, and terms, and that this constitutes a legally binding electronic agreement pursuant to K.S.A. 16-1601 et seq.';
   document.getElementById('sig-date').value=ds;
   document.getElementById('sig-pname').value=cname;
   initSigPad();
@@ -1173,7 +1174,7 @@ if(!hasSignature()&&typedSig.length<=2){zAlert('Please type your name or draw yo
         draft.cond=v('e-cond');draft.paint=v('e-paint');
         draft.completion_date='';draft.collStage='none';
         draft.allowWeekend=document.getElementById('e-allow-weekend')?.checked||false;
-        draft.deposit=document.getElementById('e-no-deposit')?.checked?0:Math.round(final*0.25*100)/100;
+        draft.deposit=Math.round(final*((parseFloat(document.getElementById('e-deposit-pct')?.value)||0)/100)*100)/100;
         draft.isPortfolio=document.getElementById('portfolio-toggle')?.checked||false;
         draft.portfolioPct=parseInt(document.getElementById('portfolio-pct')?.value)||15;
         draft.adjustmentType=v('adj-type-hidden')||'';draft.adjustmentReason=v('adj-reason-hidden')||'';draft.adjustmentPct=parseInt(v('est-adj'))||0;
@@ -1248,7 +1249,7 @@ function clearEstimatorForm(){
   const adjV=document.getElementById('est-adj-val');if(adjV)adjV.textContent='0%';
   const _ptogClear=document.getElementById('portfolio-toggle');
   if(_ptogClear){_ptogClear.checked=false;togglePortfolioShowcase();}
-  const _noDepClear=document.getElementById('e-no-deposit');if(_noDepClear)_noDepClear.checked=false;
+  const _depPctClear=document.getElementById('e-deposit-pct');if(_depPctClear)_depPctClear.value=25;
   const _wkndClear=document.getElementById('e-allow-weekend');if(_wkndClear)_wkndClear.checked=false;
   const _pPct=document.getElementById('portfolio-pct');if(_pPct)_pPct.value=15;
   const _plb=document.getElementById('proposal-link-bar');if(_plb){_plb.style.display='none';_plb.dataset.signingUrl='';}

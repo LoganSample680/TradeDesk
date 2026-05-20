@@ -1703,11 +1703,10 @@ body.dark .cal-cell.other{background:var(--cream)}
         Available to work weekends for this job
       </label>
       <div style="font-size:11px;color:var(--text3);margin-top:4px;margin-left:28px">Saturday and Sunday will show as available when scheduling</div>
-      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;font-weight:600;margin-top:14px">
-        <input type="checkbox" id="e-no-deposit" style="width:18px;height:18px;accent-color:var(--blue);cursor:pointer;appearance:auto;-webkit-appearance:checkbox;flex-shrink:0">
-        Waive deposit for this job
-      </label>
-      <div style="font-size:11px;color:var(--text3);margin-top:4px;margin-left:28px">Client pays in full upon completion — no deposit collected upfront</div>
+      <div class="f" style="margin-top:14px">
+        <label>Deposit % <span style="font-size:10px;font-weight:400;color:var(--text3)">(0 = no deposit required)</span></label>
+        <input type="number" id="e-deposit-pct" value="25" min="0" max="100" step="5" style="font-size:16px;font-weight:700">
+      </div>
     </div>
         <div class="brow"><button class="btn" onclick="goEstStep(3)">&#8592; Back</button><button class="btn btn-p" onclick="validateAndGoStep5()">Generate proposal &#8594;</button></div>
         <div class="brow" style="margin-top:6px"><button class="btn" onclick="saveAndExitEstimate()" style="width:100%;background:var(--bg2);border-color:var(--border2);color:var(--text2);font-size:13px">💾 Save bid &amp; exit — I'll finish later</button></div>
