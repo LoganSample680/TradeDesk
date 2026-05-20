@@ -637,6 +637,14 @@ async function init(){
       const epaSec=document.getElementById('epa-section');
       if(epaSec)epaSec.style.display='block';
     }
+    // Update UETA checkbox with state-specific legal citations from proposal data
+    const _uetaBody=document.querySelector('.sig-checkbox-body');
+    if(_uetaBody){
+      const _cd=_prop.cancelDays||3;
+      const _cs=_prop.cancelStatute||'16 CFR Part 429';
+      const _ls=_prop.lienStatute||'applicable mechanic\'s lien statutes';
+      _uetaBody.textContent='By checking this box, I confirm I have received and read the Notice of Cancellation ('+_cd+'-business-day right to cancel under '+_cs+' / 16 CFR Part 429), accept the total price, scope of work, and all terms above. This constitutes a binding electronic signature under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.). A deposit is due before work begins and before a start date is scheduled; remaining balance is due on completion. Contractor retains lien rights under '+_ls+'.';
+    }
     show('pg-sign');
     _renderPayTiles();_updatePayButtons();
     if(_prop.isPortfolio)_showPortfolioOffer();
