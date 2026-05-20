@@ -1596,6 +1596,233 @@ function renderCDBids(){
   }).join('');
 }
 
+// ── Client Proposals Popup ────────────────────────────────────────────
+function openClientProposals(clientId){
+  const c=getClientById(clientId);if(!c)return;
+  const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const SHORT_MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  // All won bids newest-first, keyed by signed date
+  const wonBids=getClientBids(clientId)
+    .filter(b=>b.status==='Closed Won')
+    .map(b=>{
+      const dk=b.signedAt?new Date(b.signedAt).toISOString().slice(0,10):(b.completion_date||b.bid_date||'');
+      return {...b,_dk:dk};
+    })
+    .sort((a,b)=>b._dk.localeCompare(a._dk));
+
+  // Group year → month
+  const byYear={};
+  wonBids.forEach(b=>{
+    const yr=b._dk.slice(0,4)||'—';
+    const mo=b._dk.slice(0,7)||'—';
+    if(!byYear[yr])byYear[yr]={};
+    if(!byYear[yr][mo])byYear[yr][mo]=[];
+    byYear[yr][mo].push(b);
+  });
+  const years=Object.keys(byYear).sort((a,b)=>b.localeCompare(a));
+
+  // Default: most recent year + month open
+  if(years.length){
+    const ry=years[0];
+    if(window['_cpYr_'+ry]===undefined)window['_cpYr_'+ry]=true;
+    const rmos=Object.keys(byYear[ry]).sort((a,b)=>b.localeCompare(a));
+    if(rmos.length&&window['_cpMo_'+ry+'_'+rmos[0]]===undefined)window['_cpMo_'+ry+'_'+rmos[0]]=true;
+  }
+
+  function _bidCard(b){
+    const dateStr=b.signedAt
+      ?new Date(b.signedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
+      :(b._dk||'Unknown date');
+    const signedLine=b.signedAt
+      ?'<span style="color:var(--green-mid);font-size:11px;font-weight:600">✓ Signed '+dateStr+(b.signedName?' · '+escHtml(b.signedName):'')+'</span>'
+      :'<span style="color:var(--text3);font-size:11px">Won '+dateStr+'</span>';
+    return '<div class="card" style="margin:0 0 10px;border-radius:12px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:15px;font-weight:700;margin-bottom:3px">'+escHtml(b.type||b.trade_type||'Proposal')+'</div>'+
+          signedLine+
+        '</div>'+
+        '<div style="font-size:18px;font-weight:800;color:var(--green-mid);margin-left:12px;flex-shrink:0">'+fmt(b.amount)+'</div>'+
+      '</div>'+
+      '<div style="display:flex;gap:8px">'+
+        '<button onclick="_cpOpen('+b.id+',\'bid\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700">📋 Our bid</button>'+
+        (b.proposalHtml
+          ?'<button onclick="_cpOpen('+b.id+',\'proposal\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700;background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">📄 Client view</button>'
+          :'<span style="flex:1;font-size:11px;color:var(--text3);display:flex;align-items:center;justify-content:center;font-style:italic">No proposal saved</span>')+
+      '</div>'+
+    '</div>';
+  }
+
+  function _accordionHTML(){
+    if(!wonBids.length)return '<div style="padding:40px 16px;text-align:center;color:var(--text3);font-size:14px">No signed proposals yet.</div>';
+    return years.map(yr=>{
+      const yrOpen=window['_cpYr_'+yr]===true;
+      const yrBids=Object.values(byYear[yr]).flat();
+      const months=Object.keys(byYear[yr]).sort((a,b)=>b.localeCompare(a));
+      const moHTML=yrOpen?months.map(mo=>{
+        const moOpen=window['_cpMo_'+yr+'_'+mo]===true;
+        const moBids=byYear[yr][mo];
+        const moIdx=parseInt(mo.slice(5))-1;
+        return '<div style="border-top:1px solid var(--border)">'+
+          '<div onclick="_cpToggleMo(\''+yr+'\',\''+mo+'\')" style="display:flex;align-items:center;gap:8px;padding:10px 16px 10px 28px;cursor:pointer;-webkit-user-select:none;user-select:none">'+
+            '<span style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;flex:1;color:var(--text2)">'+SHORT_MO[moIdx]+'</span>'+
+            '<span style="font-size:11px;font-weight:700;background:var(--border2);border-radius:10px;padding:1px 8px;color:var(--text2)">'+moBids.length+'</span>'+
+            '<span style="font-size:13px;color:var(--text3);width:14px;text-align:center">'+(moOpen?'⌄':'›')+'</span>'+
+          '</div>'+
+          (moOpen?'<div style="padding:4px 14px 14px">'+moBids.map(_bidCard).join('')+'</div>':'')+
+        '</div>';
+      }).join(''):'';
+      return '<div style="border-top:1px solid var(--line)">'+
+        '<div onclick="_cpToggleYr(\''+yr+'\')" style="display:flex;align-items:center;gap:10px;padding:14px 16px;cursor:pointer;-webkit-user-select:none;user-select:none;background:var(--cream)">'+
+          '<span style="font-size:16px;font-weight:800;flex:1;color:var(--text)">'+yr+'</span>'+
+          '<span style="font-size:12px;font-weight:700;background:var(--border2);border-radius:10px;padding:2px 10px;color:var(--text2)">'+yrBids.length+' proposal'+(yrBids.length!==1?'s':'')+'</span>'+
+          '<span style="font-size:14px;color:var(--text3);width:14px;text-align:center">'+(yrOpen?'⌄':'›')+'</span>'+
+        '</div>'+
+        moHTML+
+      '</div>';
+    }).join('');
+  }
+
+  document.querySelector('[data-cpov]')?.remove();
+  const ov=document.createElement('div');
+  ov.setAttribute('data-cpov','1');
+  ov.style.cssText='position:fixed;inset:0;background:var(--bg);z-index:10001;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column';
+  ov.innerHTML=
+    '<div id="cp-list" style="flex:1">'+
+      '<div style="position:sticky;top:0;background:#1a365d;color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;z-index:2">'+
+        '<div>'+
+          '<div style="font-size:16px;font-weight:800">Proposals</div>'+
+          '<div style="font-size:12px;opacity:.7;margin-top:1px">'+escHtml(c.name)+'</div>'+
+        '</div>'+
+        '<button onclick="document.querySelector(\'[data-cpov]\').remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:7px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Close</button>'+
+      '</div>'+
+      '<div id="cp-accordion">'+_accordionHTML()+'</div>'+
+    '</div>'+
+    '<div id="cp-detail" style="display:none;flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch">'+
+      '<div style="position:sticky;top:0;background:var(--bg);border-bottom:2px solid var(--border);padding:10px 14px;display:flex;align-items:center;gap:10px;z-index:2">'+
+        '<button onclick="_cpBack()" style="padding:7px 12px;border-radius:8px;border:1.5px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text);white-space:nowrap">← Back</button>'+
+        '<div id="cp-tabs" style="display:flex;gap:6px;flex:1;justify-content:center"></div>'+
+        '<div style="width:70px"></div>'+
+      '</div>'+
+      '<div id="cp-bid-pane" style="padding:16px;max-width:680px;margin:0 auto"></div>'+
+      '<div id="cp-prop-pane" style="padding:16px;max-width:680px;margin:0 auto;display:none"></div>'+
+    '</div>';
+  document.body.appendChild(ov);
+
+  window._cpRefresh=()=>{const acc=document.getElementById('cp-accordion');if(acc)acc.innerHTML=_accordionHTML();};
+}
+
+function _cpToggleYr(yr){
+  window['_cpYr_'+yr]=window['_cpYr_'+yr]!==true;
+  window._cpRefresh?.();
+}
+function _cpToggleMo(yr,mo){
+  window['_cpMo_'+yr+'_'+mo]=window['_cpMo_'+yr+'_'+mo]!==true;
+  window._cpRefresh?.();
+}
+function _cpBack(){
+  const ov=document.querySelector('[data-cpov]');if(!ov)return;
+  document.getElementById('cp-list').style.display='';
+  document.getElementById('cp-detail').style.display='none';
+  ov.scrollTop=0;
+}
+function _cpOpen(bidId,view){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  const ov=document.querySelector('[data-cpov]');if(!ov)return;
+  document.getElementById('cp-list').style.display='none';
+  document.getElementById('cp-detail').style.display='';
+  ov.scrollTop=0;
+
+  // Build bid pane (internal contractor view)
+  const pays=getBidPayments(bidId);
+  const paid=getBidPaid(bidId);
+  const PAINT={'std':'Standard (Behr/Valspar)','prem':'Sherwin-Williams Premium','ultra':'SW Emerald Ultra'};
+  const COND={'1.0':'Good — minor prep','1.2':'Fair — moderate prep','1.5':'Poor — heavy prep'};
+  const surfs=b.surfaces||[];
+  const scope=b.scope?Object.entries(b.scope).filter(([,v])=>v).map(([k])=>{const s=SCOPE_ITEMS?.find(x=>x.id===k);return s?s.label:k;}):[];
+  const SURF={'walls':'Walls','ceiling':'Ceiling','trim':'Trim','doors':'Doors','windows':'Windows','cabinets':'Cabinets','ext_walls':'Siding','ext_trim':'Ext trim','deck':'Deck','fence':'Fence','epoxy':'Epoxy floor'};
+  const dateStr=b.signedAt?new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):(b.bid_date||'');
+
+  let bidHTML=
+    '<div style="background:var(--blue-lt);border-radius:12px;padding:16px;margin-bottom:16px">'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--blue-dk);margin-bottom:6px">Signed proposal</div>'+
+      '<div style="font-size:20px;font-weight:800;color:var(--text);margin-bottom:2px">'+escHtml(b.type||b.trade_type||'Proposal')+'</div>'+
+      (b.addr?'<div style="font-size:12px;color:var(--text2);margin-top:2px">'+escHtml(b.addr)+'</div>':'')+
+      '<div style="font-size:12px;color:var(--text3);margin-top:4px">'+(dateStr?'Signed '+dateStr+' · ':'')+fmt(b.amount)+' total</div>'+
+    '</div>';
+
+  if(b.geiLines&&b.geiLines.length){
+    bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">Line items</div>'+
+      b.geiLines.map(l=>'<div style="display:flex;justify-content:space-between;align-items:baseline;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px"><span>'+escHtml(l.desc||l.name||'')+'</span><span style="font-weight:700;color:var(--green-mid)">'+fmt(l.total||l.amount||0)+'</span></div>').join('')+
+      '<div style="display:flex;justify-content:space-between;padding:8px 0 0;font-size:14px;font-weight:800"><span>Total</span><span style="color:var(--green-mid)">'+fmt(b.amount)+'</span></div>'+
+    '</div>';
+  }else if(surfs.length){
+    bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">Surfaces</div>'+
+      surfs.map(s=>'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)"><span>'+(SURF[s.type]||s.type)+(s.room?' · '+escHtml(s.room):'')+'</span><span style="color:var(--text2)">'+((s.qty||s.sqft||0)+' '+(s.unit||'sqft'))+'</span></div>').join('')+
+    '</div>';
+    if(b.paint||b.condition)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:12px;color:var(--text2);margin-bottom:4px"><strong>Paint:</strong> '+(PAINT[b.paint]||b.paint||'—')+'</div><div style="font-size:12px;color:var(--text2)"><strong>Condition:</strong> '+(COND[b.condition]||b.condition||'—')+'</div></div>';
+    if(scope.length)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Scope of work</div>'+scope.map(s=>'<div style="font-size:13px;padding:3px 0;border-bottom:1px solid var(--border)">'+escHtml(s)+'</div>').join('')+'</div>';
+  }
+
+  if(b.notes)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Notes</div><div style="font-size:13px;color:var(--text2);line-height:1.5">'+escHtml(b.notes)+'</div></div>';
+
+  if(pays.length){
+    bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Payment history</div>'+
+      pays.map(p=>{const ref=p.type==='refund';return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+(ref?'REFUND':(p.method||p.type)+(p.ref?' #'+p.ref:''))+'</span><span style="font-weight:700;color:'+(ref?'#A32D2D':'var(--green-mid)')+'">'+( ref?'↩ -':'+' )+fmt(Math.abs(p.amount))+'</span></div>';}).join('')+
+      '<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;padding:8px 0 0"><span>Total paid</span><span style="color:var(--green-mid)">'+fmt(paid)+'</span></div>'+
+    '</div>';
+  }
+
+  document.getElementById('cp-bid-pane').innerHTML=bidHTML;
+
+  // Build proposal pane (client view)
+  const propPane=document.getElementById('cp-prop-pane');
+  if(b.proposalHtml){
+    const signedBadge=b.signedAt?
+      '<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px">'+
+        '<span style="font-size:16px">✓</span>'+
+        '<span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span>'+
+      '</div>':'';
+    propPane.innerHTML=signedBadge+b.proposalHtml;
+    if(b.signingKey&&b.signedAt&&typeof _supa!=='undefined'){
+      _supa.storage.from('proposals').download(b.signingKey).then(({data})=>{
+        if(!data)return;
+        data.text().then(txt=>{try{
+          const prop=JSON.parse(txt);const choices=prop.colorChoices||[];if(!choices.length)return;
+          const colorDiv=document.createElement('div');
+          colorDiv.style.cssText='background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 16px;margin-bottom:16px';
+          colorDiv.innerHTML='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">🎨 Client Color Selections</div>'+
+            choices.map(ch=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px"><span style="font-weight:600;color:#1E3A5F">'+escHtml(ch.room)+'</span><span style="color:#1E40AF;font-weight:700">'+escHtml(ch.colorName)+(ch.swCode?' <span style="font-size:11px;opacity:.7">('+escHtml(ch.swCode)+')</span>':'')+'</span></div>').join('');
+          propPane.insertBefore(colorDiv,propPane.firstChild);
+        }catch(e){}});
+      }).catch(()=>{});
+    }
+  }else{
+    propPane.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--text3);font-size:14px;font-style:italic">No saved proposal — this bid was sent before proposal storage was added.</div>';
+  }
+
+  // Render tabs
+  function _tabBtn(v,label,active){
+    return '<button id="cp-tab-'+v+'" onclick="_cpView(\''+v+'\')" style="padding:7px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;border:1.5px solid '+(active?'var(--blue)':'var(--border2)')+';background:'+(active?'var(--blue-lt)':'var(--bg)')+';color:'+(active?'var(--blue-dk)':'var(--text2)')+'">'+label+'</button>';
+  }
+  document.getElementById('cp-tabs').innerHTML=_tabBtn('bid','📋 Our bid',view==='bid')+_tabBtn('proposal','📄 Client view',view==='proposal');
+  _cpView(view);
+}
+function _cpView(v){
+  ['bid','proposal'].forEach(x=>{
+    const pane=document.getElementById('cp-'+x+'-pane');
+    const tab=document.getElementById('cp-tab-'+x);
+    if(pane)pane.style.display=x===v?'':'none';
+    if(tab){
+      const active=x===v;
+      tab.style.borderColor=active?'var(--blue)':'var(--border2)';
+      tab.style.background=active?'var(--blue-lt)':'var(--bg)';
+      tab.style.color=active?'var(--blue-dk)':'var(--text2)';
+    }
+  });
+}
+
 function renderCDJobs(){
   const cjobs=getClientJobs(currentClientId);
   const tk=todayKey();
