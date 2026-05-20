@@ -858,6 +858,12 @@ function _renderDevTradeCard(){
   ${_devSupportMode?`<div style="margin-top:8px;padding:8px 10px;background:var(--amber-lt);border-radius:var(--r);font-size:11px;color:#856404;display:flex;justify-content:space-between;align-items:center"><span>👁 Viewing: ${escHtml(_devSupportName)}</span><button onclick="_devExitSupportMode()" style="font-size:10px;padding:3px 8px;border:1px solid #856404;border-radius:4px;background:none;color:#856404;cursor:pointer;font-family:inherit">Exit</button></div>`:''}
   ${_devRenderSnapshots('zach')}
 </div>`;
+  // Init legal inspector with current state and today's date
+  const _lsEl=document.getElementById('dev-legal-state');
+  const _ldEl=document.getElementById('dev-legal-date');
+  if(_lsEl){_lsEl.value=S?.state||'KS';}
+  if(_ldEl&&!_ldEl.value){_ldEl.value=new Date().toISOString().slice(0,10);}
+  if(typeof renderLegalInspector==='function')renderLegalInspector();
 }
 async function devSwitchTrade(type){
   if(!_config?.is_dev||!_config?.account_id)return;

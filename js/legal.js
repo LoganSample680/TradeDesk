@@ -122,10 +122,53 @@ function _lienNotice(state){
   return 'Under '+stateName+' law ('+statute+'), contractor has the right to file a mechanic\'s lien against this property for any amounts unpaid under this agreement. Client is hereby notified of this right.';
 }
 
-// Returns the cancellation citation string for a given state.
+// Returns the cancellation citation string. State law is the authority; federal is the floor.
 function _cancelCitation(state){
   const st=state||'KS';
   const rule=STATE_CANCEL[st];
-  const statute=rule?rule.statute:'applicable state law';
-  return statute+' / 16 CFR Part 429';
+  // State statute is the binding cite. Federal (16 CFR Part 429) is the baseline only.
+  return rule?rule.statute:'16 CFR Part 429 (federal)';
+}
+
+// ── Dev: Legal Compliance Inspector ──────────────────────────────────────────
+// Shows the exact strings that will appear on proposals, sign page, and client hub
+// for any state. Client-side only — no API calls.
+function renderLegalInspector(){
+  const el=document.getElementById('dev-legal-inspector');if(!el)return;
+  const st=document.getElementById('dev-legal-state')?.value||S?.state||'KS';
+  const cancel=STATE_CANCEL[st]||{days:3,statute:'16 CFR Part 429'};
+  const lien=STATE_LIEN[st]||{statute:'applicable mechanic\'s lien statutes'};
+  const stateName=(typeof STATE_TAX!=='undefined'&&STATE_TAX[st])?STATE_TAX[st].name:st;
+  const lienTxt=_lienNotice(st);
+  const cancelTxt=_cancelCitation(st);
+
+  // Deadline preview
+  const rawDate=document.getElementById('dev-legal-date')?.value;
+  const sigDate=rawDate?new Date(rawDate+'T08:00:00'):new Date();
+  let deadlineTxt='—';
+  let holidaysHit=[];
+  if(typeof _fedHolidays==='function'){
+    const yr=sigDate.getFullYear();
+    const holidays=[..._fedHolidays(yr),..._fedHolidays(yr+1)];
+    const d=new Date(sigDate);d.setHours(0,0,0,0);
+    let count=0;const steps=[];
+    while(count<cancel.days){
+      d.setDate(d.getDate()+1);
+      const ymd=d.toISOString().slice(0,10);
+      const isSun=d.getDay()===0;
+      const isFed=holidays.includes(ymd);
+      if(isSun)steps.push({date:ymd,skip:true,reason:'Sunday'});
+      else if(isFed){steps.push({date:ymd,skip:true,reason:'Federal holiday'});holidaysHit.push(ymd);}
+      else{count++;steps.push({date:ymd,skip:false,reason:'Business day '+count});}
+    }
+    d.setHours(23,59,59,999);
+    deadlineTxt=d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})+' at midnight';
+    el.querySelector('#dev-legal-steps').innerHTML=steps.map(s=>'<div style="font-size:10px;padding:2px 0;color:'+(s.skip?'#94a3b8':'var(--text)')+'">'+s.date+' — '+(s.skip?'<em>skipped ('+s.reason+')</em>':s.reason)+'</div>').join('');
+  }
+
+  el.querySelector('#dev-legal-cancel-stat').textContent=cancelTxt;
+  el.querySelector('#dev-legal-cancel-days').textContent=cancel.days+' business days';
+  el.querySelector('#dev-legal-lien-stat').textContent=lien.statute;
+  el.querySelector('#dev-legal-lien-txt').textContent=lienTxt;
+  el.querySelector('#dev-legal-deadline').textContent=deadlineTxt;
 }
