@@ -1964,10 +1964,10 @@ async function exportReceiptImages(){
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#1a1a1a}
 .no-print{background:#185FA5;color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center}
 .no-print button{background:#fff;color:#185FA5;border:none;padding:8px 18px;border-radius:6px;font-weight:700;font-size:14px;cursor:pointer}
-.page{page-break-after:always;padding:20px 24px;max-width:800px;margin:0 auto;border-bottom:2px solid #eee;height:calc(100vh - 52px);display:flex;flex-direction:column}
+.page{page-break-after:always;page-break-inside:avoid;padding:20px 24px;max-width:800px;margin:0 auto;border-bottom:2px solid #eee;height:calc(100vh - 52px);display:flex;flex-direction:column;overflow:hidden}
 .page:last-child{page-break-after:auto;border-bottom:none}
-.page-hdr{margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid #ddd}
-.pg-num{font-size:11px;color:#888;margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em}
+.page-hdr{flex-shrink:0;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #ddd}
+.pg-num{font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em}
 .pg-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
 .field{font-size:13px;padding:4px 10px;border-radius:4px;background:#f5f5f3}
 .vendor{font-weight:700;font-size:15px;background:#EBF2FB;color:#185FA5}
@@ -1975,13 +1975,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .cat{background:#FEF3C7;color:#92400E}
 .job{background:#F0F0FF;color:#555}
 .notes{background:#f5f5f3;color:#666;font-style:italic}
-.img-wrap{text-align:center;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.img-wrap{text-align:center;flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
 .img-wrap img{max-width:100%;max-height:100%;object-fit:contain;border:1px solid #ddd;border-radius:8px}
 @media print{
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .no-print{display:none!important}
   @page{margin:0.3in;size:letter portrait}
-  .page{padding:10px 0;height:100vh;page-break-after:always}
+  /* Use absolute paper height (11in - 0.6in margins = 10.4in) so iOS does not
+     use screen viewport height, which causes 3 print pages per receipt */
+  .page{padding:8px 0;height:10.4in;max-height:10.4in;overflow:hidden;page-break-after:always;page-break-inside:avoid}
   .page:last-child{page-break-after:auto}
+  .img-wrap{max-height:9.6in}
+  .img-wrap img{max-height:9.6in;max-width:7.4in}
 }
 </style>
 </head><body>
