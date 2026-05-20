@@ -629,40 +629,53 @@ ${bid.proposalHtml?`<div class="page-break"></div><div class="proposal-section">
   else{zAlert('Allow pop-ups to open the lien document. In Safari: tap AA in address bar → Allow pop-ups.');}
 }
 
+function _mmtToggle(id){
+  window['_mmtCol_'+id]=!window['_mmtCol_'+id];
+  renderTodayFeed();
+}
+
 function renderTodayFeed(){
   const el=document.getElementById('dash-money-feed');if(!el)return;
   const tk=todayKey();
-  const items=[];
+  const collectItems=[],scheduleItems=[],closeItems=[],buildItems=[],alertItems=[];
 
-  // TIER 1 — Collect money (completed job, balance owed) — highest urgency
+  // ALERTS — License expiring/expired (always first, outside sections)
+  const licAlerts=getLicenseAlerts();
+  if(licAlerts.length){
+    const hasExpired=licAlerts.some(l=>_licStatus(l)==='expired');
+    alertItems.push(
+      '<div class="tf-card" onclick="goPg(\'pg-licensing\')" style="cursor:pointer">'+
+        '<div class="tf-icon">'+(hasExpired?'🚨':'⚠️')+'</div>'+
+        '<div class="tf-body">'+
+          '<div class="tf-name">'+(hasExpired?licAlerts.filter(l=>_licStatus(l)==='expired').length+' expired license'+(licAlerts.filter(l=>_licStatus(l)==='expired').length>1?'s':''):'')+(hasExpired&&licAlerts.some(l=>_licStatus(l)==='soon')?' · ':'')+(!hasExpired&&licAlerts.filter(l=>_licStatus(l)==='soon').length?licAlerts.filter(l=>_licStatus(l)==='soon').length+' expiring soon':'')+'</div>'+
+          '<div class="tf-sub" style="color:'+(hasExpired?'var(--red)':'var(--amber)')+'">'+licAlerts.slice(0,2).map(l=>escHtml(l.label)).join(', ')+(licAlerts.length>2?' +more':'')+'</div>'+
+        '</div>'+
+        '<div style="font-size:11px;color:var(--blue);font-weight:700;flex-shrink:0">View →</div>'+
+      '</div>'
+    );
+  }
+
+  // COLLECT — Completed jobs with balance owed
   bids.filter(b=>b.status==='Closed Won'&&getBidBalance(b)>0.01&&b.completion_date).forEach(b=>{
     const c=getClientById(b.client_id);if(!c)return;
     const bal=getBidBalance(b);
     const daysAgo=Math.floor((new Date(tk+'T12:00')-new Date(b.completion_date+'T12:00'))/86400000);
-    const {rules,daysUntilDeadline}=getLienTimeline(b);
+    const {daysUntilDeadline}=getLienTimeline(b);
     const deadlineUrgent=daysUntilDeadline<=30&&daysUntilDeadline>0;
     const deadlineExpired=daysUntilDeadline<=0;
-    const countdownTag=deadlineExpired?
-      '<span style="display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;padding:2px 5px;border-radius:3px;background:#000;color:#FFB3B3;margin-left:4px">Lien window expired</span>':
-      deadlineUrgent?
-      '<span style="display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;padding:2px 5px;border-radius:3px;background:#A32D2D;color:#fff;margin-left:4px">'+daysUntilDeadline+'d to file</span>':'';
+    const countdownTag=deadlineExpired?'<span style="display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;padding:2px 5px;border-radius:3px;background:#000;color:#FFB3B3;margin-left:4px">Lien window expired</span>':
+      deadlineUrgent?'<span style="display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;padding:2px 5px;border-radius:3px;background:#A32D2D;color:#fff;margin-left:4px">'+daysUntilDeadline+'d to file</span>':'';
     const urgTag=daysAgo>=30?'<span style="display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;padding:2px 5px;border-radius:3px;background:#A32D2D;color:#fff;margin-left:4px">30+ days</span>':
-                 daysAgo>=7?'<span style="display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;padding:2px 5px;border-radius:3px;background:#C0720A;color:#fff;margin-left:4px">Overdue</span>':'';
-    const stage=getBidCollStage(b);
-    const next=getNextCollAction(stage);
-    const lienStage=stage==='lien_filed';
-    const isFileable=stage==='intent'||stage==='lien_ready';
+      daysAgo>=7?'<span style="display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;padding:2px 5px;border-radius:3px;background:#C0720A;color:#fff;margin-left:4px">Overdue</span>':'';
+    const stage=getBidCollStage(b);const next=getNextCollAction(stage);
+    const lienStage=stage==='lien_filed';const isFileable=stage==='intent'||stage==='lien_ready';
     let actBtns='';
-    if(c.phone)(actBtns+='<a href="tel:'+c.phone.replace(/\D/g,'')+'" onclick="autoLogContact('+c.id+',\'call\')" class="btn btn-sm" style="font-size:11px">Call</a>');
-    if(next.smsKey&&c.phone){
-      actBtns+='<button onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+next.smsKey+'\')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+next.label+'</button>';
-    } else if(isFileable){
-      actBtns+='<button onclick="showFileLienDirect('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">⚖️ File Lien</button>';
-    } else if(lienStage){
-      actBtns+='<button onclick="printKansasLien('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">⚖️ View lien doc</button>';
-    }
+    if(c.phone)actBtns+='<a href="tel:'+c.phone.replace(/\D/g,'')+'" onclick="autoLogContact('+c.id+',\'call\')" class="btn btn-sm" style="font-size:11px">Call</a>';
+    if(next.smsKey&&c.phone)actBtns+='<button onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+next.smsKey+'\')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+next.label+'</button>';
+    else if(isFileable)actBtns+='<button onclick="showFileLienDirect('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">⚖️ File Lien</button>';
+    else if(lienStage)actBtns+='<button onclick="printKansasLien('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">⚖️ View lien doc</button>';
     actBtns+='<button onclick="openPayPanel('+b.id+')" class="btn btn-sm btn-g" style="font-size:11px">Collect →</button>';
-    items.push({priority:daysAgo>=7?1:2,tags:'money urgent',html:
+    collectItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">💰</div>'+
         '<div class="tf-body">'+
@@ -670,47 +683,62 @@ function renderTodayFeed(){
           '<div class="tf-sub" style="color:#A32D2D">'+fmt(bal)+' owed · '+daysAgo+'d since completion</div>'+
         '</div>'+
         '<div class="tf-acts">'+actBtns+'</div>'+
-      '</div>'});
+      '</div>'
+    );
   });
 
-  // TIER 2 — Won bid: not yet completed — show if no job yet, OR job exists but deposit not collected
+  // COLLECT + SCHEDULE — Won bids not yet completed
   bids.filter(b=>b.status==='Closed Won'&&!b.completion_date).forEach(b=>{
     const depositPaid=getBidPaid(b.id)>0;
     const hasJob=jobs.some(j=>(j.bid_id===b.id||(j.client_id===b.client_id&&!j.bid_id))&&j.eventType!=='estimate');
-    if(hasJob&&depositPaid)return; // job scheduled + deposit collected → wait for completion
+    if(hasJob&&depositPaid)return;
     const c=getClientById(b.client_id);
     const cDisp=c?c.name:b.client_name||b.name||'Client';
-    const daysAgo=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
-    const subText=hasJob
-      ?'Job in progress · deposit not collected · '+fmt(b.amount)
-      :'Approved '+fmt(b.amount)+' · '+(!depositPaid?'no deposit · ':'deposit paid · ')+'not scheduled';
-    const subColor=hasJob?'#A32D2D':'var(--blue)';
-    items.push({priority:hasJob?2:3,tags:'money',html:
-      '<div class="tf-card">'+
-        '<div class="tf-icon">'+(hasJob?'💰':'🗓️')+'</div>'+
-        '<div class="tf-body">'+
-          '<div class="tf-name">'+escHtml(cDisp)+'</div>'+
-          '<div class="tf-sub" style="color:'+subColor+'">'+subText+'</div>'+
-        '</div>'+
-        '<div class="tf-acts">'+
-          (!depositPaid?'<button onclick="openPayPanel('+b.id+',\'deposit\')" class="btn btn-sm" style="font-size:11px;border-color:var(--blue);color:var(--blue)">Deposit</button>':'')+
-          (!hasJob?'<button onclick="schedFromBid('+b.id+')" class="btn btn-sm btn-p" style="font-size:11px">Schedule →</button>':'')+
-        '</div>'+
-      '</div>'});
+    if(!hasJob&&depositPaid){
+      // Deposit collected — just needs scheduling
+      scheduleItems.push(
+        '<div class="tf-card">'+
+          '<div class="tf-icon">📅</div>'+
+          '<div class="tf-body">'+
+            '<div class="tf-name">'+escHtml(cDisp)+'</div>'+
+            '<div class="tf-sub" style="color:var(--blue)">'+fmt(b.amount)+' · deposit paid · not yet scheduled</div>'+
+          '</div>'+
+          '<div class="tf-acts">'+
+            '<button onclick="schedFromBid('+b.id+')" class="btn btn-sm btn-p" style="font-size:11px">Schedule →</button>'+
+          '</div>'+
+        '</div>'
+      );
+    } else {
+      // Deposit still needed — goes to Collect
+      const subText=hasJob?'Job in progress · deposit not collected · '+fmt(b.amount):'Approved '+fmt(b.amount)+' · deposit not collected';
+      collectItems.push(
+        '<div class="tf-card">'+
+          '<div class="tf-icon">'+(hasJob?'💰':'🏷️')+'</div>'+
+          '<div class="tf-body">'+
+            '<div class="tf-name">'+escHtml(cDisp)+'</div>'+
+            '<div class="tf-sub" style="color:'+(hasJob?'#A32D2D':'var(--blue)')+'">'+subText+'</div>'+
+          '</div>'+
+          '<div class="tf-acts">'+
+            '<button onclick="openPayPanel('+b.id+',\'deposit\')" class="btn btn-sm" style="font-size:11px;border-color:var(--blue);color:var(--blue)">Deposit</button>'+
+            (!hasJob?'<button onclick="schedFromBid('+b.id+')" class="btn btn-sm btn-p" style="font-size:11px">Schedule →</button>':'')+
+          '</div>'+
+        '</div>'
+      );
+    }
   });
 
-  // TIER 3 — Second follow-up (noResponseCount >= 1, still Pending, NOT awaiting signature)
+  // CLOSE — 2nd follow-up needed
   bids.filter(b=>b.status==='Pending'&&!b.signingToken&&!b.draft&&(b.noResponseCount||0)>=1).forEach(b=>{
     const c=getClientById(b.client_id);if(!c)return;
     const fn=c.name.split(' ')[0];
     const smsBody=encodeURIComponent('Hey '+fn+', just wanted to see if this is still something you\'re wanting to move forward with?');
     const daysOut=b.followup?Math.floor((new Date(tk+'T12:00')-new Date(b.followup+'T12:00'))/86400000):0;
-    items.push({priority:4,tags:'urgent money',html:
+    closeItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">🔥</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(c.name)+'</div>'+
-          '<div class="tf-sub" style="color:#A32D2D">2nd follow-up needed · '+fmt(b.amount)+' · '+Math.abs(daysOut)+'d waiting</div>'+
+          '<div class="tf-sub" style="color:#A32D2D">2nd follow-up · '+fmt(b.amount)+' · '+Math.abs(daysOut)+'d waiting</div>'+
         '</div>'+
         '<div class="tf-acts">'+
           (c.phone?'<a href="tel:'+c.phone.replace(/\D/g,'')+'" onclick="autoLogContact('+c.id+',\'call\')" class="btn btn-sm" style="font-size:11px">Call</a>':'')+
@@ -718,10 +746,11 @@ function renderTodayFeed(){
           '<button onclick="_snoozeFollowup('+b.id+',2)" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Snooze 2d</button>'+
           '<button onclick="markFUWon('+b.id+','+b.client_id+')" class="btn btn-sm btn-g" style="font-size:11px">Won ✓</button>'+
         '</div>'+
-      '</div>'});
+      '</div>'
+    );
   });
 
-  // TIER 4 — Follow-up overdue (Pending, followup date passed, no noResponseCount yet, NOT awaiting signature)
+  // CLOSE — Follow-up overdue
   bids.filter(b=>b.status==='Pending'&&!b.signingToken&&!b.draft&&b.followup&&b.followup<=tk&&!(b.noResponseCount>=1)).forEach(b=>{
     const c=getClientById(b.client_id);if(!c)return;
     const fn=c.name.split(' ')[0];
@@ -729,7 +758,7 @@ function renderTodayFeed(){
     const msgs=['Hey '+fn+', just checking in — did you get a chance to look over the proposal? Happy to answer any questions.','Hi '+fn+', wanted to follow up on the estimate I sent over. Let me know if you\'d like to move forward or have any questions.','Hey '+fn+', I have an opening coming up that might work great for your project. Would love to get it scheduled — let me know!'];
     const smsBody=encodeURIComponent(msgs[Math.min(stage-1,msgs.length-1)]);
     const daysOut=Math.floor((new Date(tk+'T12:00')-new Date(b.followup+'T12:00'))/86400000);
-    items.push({priority:5,tags:'urgent money',html:
+    closeItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">⏰</div>'+
         '<div class="tf-body">'+
@@ -742,31 +771,33 @@ function renderTodayFeed(){
           '<button onclick="_snoozeFollowup('+b.id+',2)" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Snooze 2d</button>'+
           '<button onclick="markFUWon('+b.id+','+b.client_id+')" class="btn btn-sm btn-g" style="font-size:11px">Won ✓</button>'+
         '</div>'+
-      '</div>'});
+      '</div>'
+    );
   });
 
-  // TIER 5 — Sent proposals awaiting signature (has signing link, not yet won)
+  // CLOSE — Awaiting signature
   bids.filter(b=>b.signingToken&&b.status==='Pending').forEach(b=>{
     const c=getClientById(b.client_id);if(!c)return;
     const days=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
     const urgColor=days>=14?'#A32D2D':days>=7?'var(--amber)':'var(--text3)';
     const daysStr=days===0?'Sent today':days===1?'1 day waiting':days+'d waiting';
-    items.push({priority:5,html:
+    closeItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">📨</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(c.name)+'</div>'+
-          '<div class="tf-sub" style="color:'+urgColor+'">'+fmt(b.amount)+' · '+daysStr+' · awaiting signature</div>'+
+          '<div class="tf-sub" style="color:'+urgColor+'">'+fmt(b.amount)+' · '+daysStr+'</div>'+
         '</div>'+
         '<div class="tf-acts">'+
           (b.proposalHtml?'<button onclick="viewSavedProposal('+b.id+')" class="btn btn-sm" style="font-size:11px">View</button>':'')+
           '<button onclick="resendProposalLink('+b.id+')" class="btn btn-sm" style="font-size:11px">Resend</button>'+
           '<button onclick="discardInProgressBid('+b.id+')" class="btn btn-sm" style="font-size:11px;color:#A32D2D">Delete</button>'+
         '</div>'+
-      '</div>'});
+      '</div>'
+    );
   });
 
-  // TIER 6 — Estimates in progress (built but not yet sent)
+  // BUILD — Unsaved wizard draft
   let draft=loadEstFullDraft();
   if(draft&&draft.cname){
     const alreadyWon=bids.some(b=>b.status==='Closed Won'&&(b.client_name||b.name||'').toLowerCase().trim()===(draft.cname||'').toLowerCase().trim());
@@ -774,7 +805,7 @@ function renderTodayFeed(){
   }
   const _activeDraftBidId=draft?.lastBidId||null;
   if(draft&&draft.cname){
-    items.push({priority:6,html:
+    buildItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">✏️</div>'+
         '<div class="tf-body">'+
@@ -785,7 +816,8 @@ function renderTodayFeed(){
           '<button onclick="resumeEstimateDraft()" class="btn btn-sm btn-p" style="font-size:11px">Resume →</button>'+
           '<button onclick="clearEstFullDraft();renderDash()" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Discard</button>'+
         '</div>'+
-      '</div>'});
+      '</div>'
+    );
   }
   bids.filter(b=>!b.signingToken&&(b.draft||b.status==='Pending'||(b.status==='Draft'&&b.geiLines!==undefined))&&b.id!==_activeDraftBidId).forEach(b=>{
     const c=getClientById(b.client_id);
@@ -794,7 +826,7 @@ function renderTodayFeed(){
     const days=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
     const isDraft=b.status==='Draft'||b.draft;
     const subLabel=isDraft&&!b.amount?'In progress — finish &amp; send':isDraft?'Draft — finish &amp; send':(fmt(b.amount)+' · built '+(days===0?'today':days+'d ago')+' · not sent yet');
-    items.push({priority:6,html:
+    buildItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">✏️</div>'+
         '<div class="tf-body">'+
@@ -805,26 +837,11 @@ function renderTodayFeed(){
           '<button onclick="'+(b.geiLines!==undefined?'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')':'openEditBid('+b.id+','+(b.lastStep||1)+')')+'" class="btn btn-sm btn-p" style="font-size:11px">Resume →</button>'+
           '<button onclick="discardInProgressBid('+b.id+')" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Discard</button>'+
         '</div>'+
-      '</div>'});
+      '</div>'
+    );
   });
 
-  // TIER 0 — Expiring / expired licenses
-  const licAlerts=getLicenseAlerts();
-  if(licAlerts.length){
-    const hasExpired=licAlerts.some(l=>_licStatus(l)==='expired');
-    items.push({priority:0,html:
-      '<div class="tf-card" onclick="goPg(\'pg-licensing\')" style="cursor:pointer">'+
-        '<div class="tf-icon">'+(hasExpired?'🚨':'⚠️')+'</div>'+
-        '<div class="tf-body">'+
-          '<div class="tf-name">'+(hasExpired?licAlerts.filter(l=>_licStatus(l)==='expired').length+' expired license'+(licAlerts.filter(l=>_licStatus(l)==='expired').length>1?'s':''):'')+(hasExpired&&licAlerts.some(l=>_licStatus(l)==='soon')?' · ':'')+( licAlerts.filter(l=>_licStatus(l)==='soon').length&&!hasExpired?licAlerts.filter(l=>_licStatus(l)==='soon').length+' expiring soon':'')+'</div>'+
-          '<div class="tf-sub" style="color:'+(hasExpired?'var(--red)':'var(--amber)')+'">'+licAlerts.slice(0,2).map(l=>escHtml(l.label)).join(', ')+(licAlerts.length>2?' +more':'')+'</div>'+
-        '</div>'+
-        '<div style="font-size:11px;color:var(--blue);font-weight:700;flex-shrink:0">View →</div>'+
-      '</div>'
-    });
-  }
-
-  // TIER 7 — New leads ready for an estimate (zero bids, zero scheduled estimate jobs)
+  // BUILD — New leads with no estimates yet
   const newLeads=clients.filter(c=>{
     if(getClientStage(c.id).stage!=='new')return false;
     if(bids.some(b=>b.client_id===c.id))return false;
@@ -832,37 +849,64 @@ function renderTodayFeed(){
     return true;
   });
   if(newLeads.length){
-    items.push({priority:7,html:
+    buildItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">🙋</div>'+
         '<div class="tf-body">'+
-          '<div class="tf-name">'+(newLeads.length===1?'1 new lead ready for an estimate':newLeads.length+' new leads ready for an estimate')+'</div>'+
-          '<div class="tf-sub" style="color:var(--blue)">Go build estimates to move them forward</div>'+
+          '<div class="tf-name">'+(newLeads.length===1?'1 new lead ready':newLeads.length+' new leads ready')+'</div>'+
+          '<div class="tf-sub" style="color:var(--blue)">Build estimates to move them forward</div>'+
         '</div>'+
-        '<div class="tf-acts">'+
-          '<button onclick="goPg(\'pg-leads\')" class="btn btn-sm btn-p" style="font-size:11px">View leads →</button>'+
-        '</div>'+
-      '</div>'});
+        '<div class="tf-acts"><button onclick="goPg(\'pg-leads\')" class="btn btn-sm btn-p" style="font-size:11px">View leads →</button></div>'+
+      '</div>'
+    );
   }
 
+  // Filter visibility per tab
+  const showCollect=_dashFeedFilter!=='urgent';
+  const showSchedule=_dashFeedFilter!=='urgent';
+  const showClose=_dashFeedFilter!=='money';
+  const showBuild=_dashFeedFilter==='all';
+
+  // Section builder
+  const _sec=(id,icon,label,color,items,show)=>{
+    if(!show||!items.length)return '';
+    const col=!!window['_mmtCol_'+id];
+    return '<div class="mmt-sec">'+
+      '<div class="mmt-sec-hdr" onclick="_mmtToggle(\''+id+'\')">'+
+        '<span style="font-size:14px">'+icon+'</span>'+
+        '<span class="mmt-sec-label" style="color:'+color+'">'+label+'</span>'+
+        '<span class="mmt-sec-badge">'+items.length+'</span>'+
+        '<span class="mmt-sec-chev">'+(col?'›':'⌄')+'</span>'+
+      '</div>'+
+      (col?'':'<div>'+items.join('')+'</div>')+
+    '</div>';
+  };
+
+  const totalShown=(showCollect?collectItems.length:0)+(showSchedule?scheduleItems.length:0)+(showClose?closeItems.length:0)+(showBuild?buildItems.length:0)+alertItems.length;
   const _feedSub=document.getElementById('dash-feed-sub');
-  items.sort((a,b)=>a.priority-b.priority);
 
-  // Apply feed filter
-  let _filtered=items;
-  if(_dashFeedFilter==='money')_filtered=items.filter(i=>i.tags&&i.tags.includes('money'));
-  else if(_dashFeedFilter==='urgent')_filtered=items.filter(i=>i.tags&&i.tags.includes('urgent'));
-
-  if(!_filtered.length){
-    const msg=_dashFeedFilter==='all'?'You\'re caught up — nothing to chase right now.':('No '+(_dashFeedFilter==='money'?'money':'urgent')+' items right now.');
+  if(!totalShown){
+    const msg=_dashFeedFilter==='all'?'You\'re caught up — nothing to chase right now.':_dashFeedFilter==='money'?'No deposits or scheduling needed.':'No follow-ups needed right now.';
     el.innerHTML='<div style="padding:14px;font-size:13px;color:var(--text3)">'+msg+'</div>';
     if(_feedSub)_feedSub.textContent='all caught up';
     return;
   }
 
-  const _shown=_filtered.slice(0,8);
-  if(_feedSub)_feedSub.textContent=_shown.length+' action'+(+_shown.length>1?'s':'')+' · sorted by money on the table';
-  el.innerHTML=_shown.map(i=>i.html).join('');
+  if(_feedSub){
+    const parts=[];
+    if(showCollect&&collectItems.length)parts.push(collectItems.length+' to collect');
+    if(showSchedule&&scheduleItems.length)parts.push(scheduleItems.length+' to schedule');
+    if(showClose&&closeItems.length)parts.push(closeItems.length+' to close');
+    if(showBuild&&buildItems.length)parts.push(buildItems.length+' to build');
+    _feedSub.textContent=parts.join(' · ')||'all caught up';
+  }
+
+  el.innerHTML=
+    (alertItems.length?'<div>'+alertItems.join('')+'</div>':'')+
+    _sec('collect','💰','Collect','#A32D2D',collectItems,showCollect)+
+    _sec('schedule','📅','Schedule','var(--blue)',scheduleItems,showSchedule)+
+    _sec('close','✍️','Close','#7c3aed',closeItems,showClose)+
+    _sec('build','✏️','Build','var(--text2)',buildItems,showBuild);
 }
 
 function checkGoalPrompt(){
