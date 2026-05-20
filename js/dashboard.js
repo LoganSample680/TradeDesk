@@ -880,9 +880,10 @@ function renderTodayFeed(){
   const showPending=_dashFeedFilter!=='money';
   const showBuild=_dashFeedFilter==='all';
 
-  // Section builder
-  const _sec=(id,icon,label,color,items,show)=>{
+  // Section builder — defaultOpen=true makes the section expand on first render
+  const _sec=(id,icon,label,color,items,show,defaultOpen=false)=>{
     if(!show||!items.length)return '';
+    if(defaultOpen&&window['_mmtCol_'+id]===undefined)window['_mmtCol_'+id]=false;
     const col=window['_mmtCol_'+id]!==false;
     return '<div class="mmt-sec">'+
       '<div class="mmt-sec-hdr" onclick="_mmtToggle(\''+id+'\')">'+
@@ -918,8 +919,8 @@ function renderTodayFeed(){
     (alertItems.length?'<div>'+alertItems.join('')+'</div>':'')+
     _sec('build','✏️','Build','var(--text2)',buildItems,showBuild)+
     _sec('pending','📨','Pending','#7c3aed',pendingItems,showPending)+
-    _sec('dep-sched','💳','Deposit & Schedule','var(--blue)',[...depositItems,...scheduleItems],showDepSched)+
-    _sec('collect','💰','Collect','#A32D2D',finalPayItems,showFinalPay);
+    _sec('dep-sched','💳','Deposit & Schedule','var(--blue)',[...depositItems,...scheduleItems],showDepSched,true)+
+    _sec('collect','💰','Collect','#A32D2D',finalPayItems,showFinalPay,true);
 }
 
 function checkGoalPrompt(){
