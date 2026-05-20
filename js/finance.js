@@ -1911,8 +1911,12 @@ async function exportReceiptImages(){
   const filtered=expenses.filter(e=>(e.receipt_img||e.receipt_key)&&(yr==='all'||String(new Date(e.date).getFullYear())===String(yr)))
     .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   if(!filtered.length){zAlert('No stored receipt photos for '+yr+'.',{title:'No receipts'});return;}
-  // Pre-fetch all bucket images as data URLs before opening print window
-  // (signed URLs can expire during long print sessions; data URLs are safe)
+  // Open window synchronously here (inside user gesture) so iOS Safari doesn't block it.
+  // Write a loading placeholder, then replace with real content after async image fetch.
+  const win=window.open('','_blank');
+  if(!win){zAlert('Allow pop-ups to export the PDF.',{title:'Pop-up blocked'});return;}
+  win.document.write('<html><head><title>Loading receipts…</title></head><body style="font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f5f5f3"><p style="font-size:18px;color:#555">Preparing receipt PDF…</p></body></html>');
+  win.document.close();
   showToast('Preparing receipt PDF…','📄',3000);
   const _srcMap={};
   await Promise.all(filtered.map(async e=>{
@@ -1941,8 +1945,7 @@ async function exportReceiptImages(){
       <div class="img-wrap">${_srcMap[e.id]?`<img src="${_srcMap[e.id]}" alt="Receipt ${i+1}">`:'<div style="color:#999;font-size:13px;padding:40px">Image unavailable</div>'}</div>
     </div>`;
   }).join('');
-  const win=window.open('','_blank');
-  if(!win){zAlert('Allow pop-ups to export the PDF.',{title:'Pop-up blocked'});return;}
+  win.document.open();
   win.document.write(`<!DOCTYPE html><html><head>
 <meta charset="utf-8">
 <title>${bname} — Receipts ${yr}</title>
