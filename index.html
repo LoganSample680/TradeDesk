@@ -2450,6 +2450,41 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px" id="dev-trade-grid"></div>
       <div style="font-size:11px;color:var(--text3)">Dev account only — changes business_type in DB immediately.</div>
       <div id="dev-support-section" style="margin-top:14px"></div>
+
+      <!-- Legal Compliance Inspector -->
+      <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px">
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">⚖️ Legal Compliance Inspector</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+          <div class="f" style="margin:0">
+            <label style="font-size:10px">State</label>
+            <select id="dev-legal-state" onchange="renderLegalInspector()" style="font-size:13px;padding:7px">
+              <option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS">KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option>
+            </select>
+          </div>
+          <div class="f" style="margin:0">
+            <label style="font-size:10px">Signing date (deadline test)</label>
+            <input type="date" id="dev-legal-date" onchange="renderLegalInspector()" style="font-size:13px;padding:7px">
+          </div>
+        </div>
+        <div id="dev-legal-inspector">
+          <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px">
+            <div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#1a365d;margin-bottom:4px">Cancellation — State is authority · Federal (16 CFR Part 429) is the floor</div>
+            <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:2px" id="dev-legal-cancel-stat">—</div>
+            <div style="font-size:11px;color:var(--text3)" id="dev-legal-cancel-days">—</div>
+          </div>
+          <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px">
+            <div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#1a365d;margin-bottom:4px">Mechanic's Lien</div>
+            <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:4px" id="dev-legal-lien-stat">—</div>
+            <div style="font-size:11px;color:var(--text2);line-height:1.5" id="dev-legal-lien-txt">—</div>
+          </div>
+          <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:12px">
+            <div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#1a365d;margin-bottom:4px">Cancellation Deadline (from signing date above)</div>
+            <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px" id="dev-legal-deadline">—</div>
+            <div style="font-size:10px;color:var(--text3)" id="dev-legal-steps"></div>
+          </div>
+        </div>
+        <button onclick="renderLegalInspector()" style="margin-top:8px;width:100%;padding:9px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">↻ Refresh preview</button>
+      </div>
     </div>
   </div>
   <!-- Keep legacy id for _renderDevTradeCard compatibility -->
