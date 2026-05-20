@@ -124,6 +124,7 @@ async function sendPaymentLink(bidId){
     const session=await _supa.auth.getSession();
     const token=session?.data?.session?.access_token;
     const baseUrl=window.location.href.split('#')[0];
+    const _depPaid=getBidPaid(bid.id)>0;
     const res=await fetch(SUPA_URL+'/functions/v1/create-checkout',{
       method:'POST',
       headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
@@ -131,6 +132,7 @@ async function sendPaymentLink(bidId){
         amount:Math.round(balance*100),
         currency:'usd',
         paymentMethod:'card',
+        paymentType:_depPaid?'full':'deposit',
         proposalKey:null,
         clientName:c.name,
         businessName:S.bname||'Your Contractor',
@@ -336,7 +338,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.20.26.177';
+const APP_VERSION='05.20.26.178';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
