@@ -895,7 +895,7 @@ function renderTodayFeed(){
     '</div>';
   };
 
-  const totalShown=(showCollect?collectItems.length:0)+(showSchedule?scheduleItems.length:0)+(showClose?closeItems.length:0)+(showBuild?buildItems.length:0)+alertItems.length;
+  const totalShown=(showCollect?collectItems.length:0)+(showClose?closeItems.length:0)+(showSchedule?scheduleItems.length:0)+(showBuild?buildItems.length:0)+alertItems.length;
   const _feedSub=document.getElementById('dash-feed-sub');
 
   if(!totalShown){
@@ -908,8 +908,8 @@ function renderTodayFeed(){
   if(_feedSub){
     const parts=[];
     if(showCollect&&collectItems.length)parts.push(collectItems.length+' to collect');
-    if(showSchedule&&scheduleItems.length)parts.push(scheduleItems.length+' to schedule');
     if(showClose&&closeItems.length)parts.push(closeItems.length+' to close');
+    if(showSchedule&&scheduleItems.length)parts.push(scheduleItems.length+' to schedule');
     if(showBuild&&buildItems.length)parts.push(buildItems.length+' to build');
     _feedSub.textContent=parts.join(' · ')||'all caught up';
   }
@@ -917,8 +917,8 @@ function renderTodayFeed(){
   el.innerHTML=
     (alertItems.length?'<div>'+alertItems.join('')+'</div>':'')+
     _sec('collect','💰','Collect','#A32D2D',collectItems,showCollect)+
-    _sec('schedule','📅','Schedule','var(--blue)',scheduleItems,showSchedule)+
     _sec('close','✍️','Close','#7c3aed',closeItems,showClose)+
+    _sec('schedule','📅','Schedule','var(--blue)',scheduleItems,showSchedule)+
     _sec('build','✏️','Build','var(--text2)',buildItems,showBuild);
 }
 
