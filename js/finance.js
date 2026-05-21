@@ -1936,6 +1936,28 @@ async function exportReceiptImages(){
       catch(err){console.warn('Could not fetch receipt',e.id,err);}
     }
   }));
+  // Canvas-resize every image to safe print dimensions before writing HTML.
+  // iOS Safari ignores CSS max-height constraints in print context, so we must
+  // bake the correct pixel size into the src. 700×840px ≈ 7.3in×8.75in at 96dpi,
+  // leaving ~1.65in for the header and margins on a letter page.
+  await Promise.all(Object.keys(_srcMap).map(id=>new Promise(resolve=>{
+    const src=_srcMap[id];
+    if(!src){resolve();return;}
+    const img=new Image();
+    img.onload=()=>{
+      const maxW=700,maxH=840;
+      if(img.width<=maxW&&img.height<=maxH){resolve();return;}
+      const scale=Math.min(maxW/img.width,maxH/img.height);
+      const w=Math.round(img.width*scale),h=Math.round(img.height*scale);
+      const c=document.createElement('canvas');
+      c.width=w;c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      _srcMap[id]=c.toDataURL('image/jpeg',0.88);
+      resolve();
+    };
+    img.onerror=resolve;
+    img.src=src;
+  })));
   const bname=S.bname||'TradeDesk';
   const pages=filtered.map((e,i)=>{
     const cat=e.catLabel||e.cat||'';
@@ -1981,13 +2003,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .no-print{display:none!important}
   @page{margin:0.3in;size:letter portrait}
-  /* Let .page height be auto — constrain the image directly so it fits within
-     the printable area (10.4in) minus header (~0.9in). No overflow:hidden and
-     no page-break-inside:avoid, both of which caused cutoff or double pages. */
-  .page{padding:4px 0;height:auto;max-height:none;overflow:visible;display:block;page-break-after:always}
+  .page{display:block;padding:4px 0;border:none;height:auto;overflow:visible;page-break-after:always;page-break-inside:auto}
   .page:last-child{page-break-after:auto}
-  .img-wrap{display:block;text-align:center;max-height:9in;overflow:hidden}
-  .img-wrap img{display:block;margin:0 auto;max-width:7.4in;max-height:9in;width:auto;height:auto}
+  .img-wrap{display:block;overflow:visible}
+  .img-wrap img{display:block;margin:0 auto;max-width:100%}
 }
 </style>
 </head><body>
