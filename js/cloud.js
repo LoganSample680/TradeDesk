@@ -26,7 +26,10 @@ async function _fetchStripeConnectStatus(){
 async function loadStripeConnectStatus(){
   const el=document.getElementById('stripe-connect-status-ui');
   if(!supaEnabled()||!_supaUser){
-    if(el)el.innerHTML='<div style="font-size:12px;color:var(--text3)">Sign in to connect Stripe.</div>';return;
+    if(el)el.innerHTML=
+      '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.5">Sign in to your TradeDesk account to connect Stripe and accept card or bank payments.</div>'+
+      '<button onclick="supaShowLogin({force:true})" style="border:none;background:var(--blue);color:#fff;border-radius:20px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Sign in to TradeDesk →</button>';
+    return;
   }
   const data=await _fetchStripeConnectStatus();
   if(!data){if(el)el.innerHTML='<div style="font-size:12px;color:var(--red)">Could not check Stripe status.</div>';return;}
@@ -338,7 +341,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.21.26.195';
+const APP_VERSION='05.21.26.196';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
