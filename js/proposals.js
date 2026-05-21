@@ -1656,9 +1656,10 @@ async function renderCalGrid(){
         (wx?'<div style="font-size:13px;line-height:1" title="'+wx.label+' · '+wx.hi+'°/'+wx.lo+'°F'+'">'+wx.icon+'</div>':'') +
       '</div>'+
       (wx?'<div style="font-size:9px;color:'+(wx.rain?'#A32D2D':'var(--text3)')+';font-weight:600;margin-bottom:1px;line-height:1">'+wx.hi+'°/'+wx.lo+'°'+(wx.precip>20?' · '+wx.precip+'%':'')+'</div>':'')+
-      dj.map(({job,isBuf})=>
-        '<div class="cjob" style="background:'+(isBuf?lighten(job.color):job.color)+';'+(isBuf?'color:'+job.color+';':'')+'">'+(isBuf?'buf':(job.eventType==='estimate'?'📋 ':'')+job.name)+'</div>'
-      ).join('')+
+      dj.map(({job,isBuf})=>{
+        if(job.eventType==='task'){const done=job.status==='done';return'<div class="cjob" style="background:'+(done?'#9CA3AF':'#6366F1')+';font-size:9px">'+(done?'✓ ':'☐ ')+job.name+'</div>';}
+        return'<div class="cjob" style="background:'+(isBuf?lighten(job.color):job.color)+';'+(isBuf?'color:'+job.color+';':'')+'">'+(isBuf?'buf':(job.eventType==='estimate'?'📋 ':'')+job.name)+'</div>';
+      }).join('')+
     '</div>';
   });
   document.getElementById('cal-grid').innerHTML=html;
@@ -1689,17 +1690,44 @@ function expandCalDay(key){
     });
     slots.push({h,timeStr,hKey,jobs:jobsAtHour});
   }
-  const allDay=dj.filter(({job})=>!job.time&&job.eventType!=='estimate');
-  const timedEvents=dj.filter(({job})=>job.time);
+  const tasks=dj.filter(({job})=>job.eventType==='task');
+  const allDay=dj.filter(({job})=>!job.time&&job.eventType!=='estimate'&&job.eventType!=='task');
+  const timedEvents=dj.filter(({job})=>job.time&&job.eventType!=='task');
 
+  const _nonTaskCount=dj.filter(({job})=>job.eventType!=='task').length;
   el.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;padding-bottom:10px;border-bottom:2px solid var(--border)">'+
       '<div>'+
         '<div style="font-size:15px;font-weight:700">'+label+'</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+dj.length+' event'+(dj.length>1?'s':'')+'</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+
+          (_nonTaskCount>0?_nonTaskCount+' event'+(_nonTaskCount>1?'s':'')+(tasks.length?' · ':''):'')+
+          (tasks.length?tasks.length+' task'+(tasks.length>1?'s':''):(!_nonTaskCount?'Nothing scheduled':''))+
+        '</div>'+
       '</div>'+
       '<button onclick="closeCalDay()" style="border:none;background:none;font-size:20px;cursor:pointer;color:var(--text3)">&#10005;</button>'+
     '</div>'+
+    // Tasks
+    (tasks.length?
+      '<div style="margin-bottom:12px">'+
+        '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:6px">Tasks</div>'+
+        tasks.map(({job})=>{
+          const done=job.status==='done';
+          return '<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 10px;background:var(--bg2);border-radius:var(--r);margin-bottom:4px'+(done?';opacity:.6':'')+'">'+
+            '<button onclick="completeCalTask('+job.id+')" style="border:none;background:none;cursor:pointer;padding:0;margin-top:1px;flex-shrink:0;font-size:17px;line-height:1;color:'+(done?'#6366F1':'var(--text3)')+'">'+
+              (done?'☑':'☐')+
+            '</button>'+
+            '<div style="flex:1;min-width:0">'+
+              '<div style="font-size:13px;font-weight:700'+(done?';text-decoration:line-through;color:var(--text3)':'')+'">'+
+                (job.time?'<span style="font-size:10px;color:#6366F1;font-weight:700;margin-right:6px">'+fmtTime(job.time)+'</span>':'')+
+                job.name+
+              '</div>'+
+              (job.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+job.notes+'</div>':'')+
+            '</div>'+
+            '<button onclick="deleteJob('+job.id+');renderCalGrid();expandCalDay(\''+key+'\')" style="border:none;background:none;color:var(--text3);cursor:pointer;font-size:14px;padding:2px 4px;flex-shrink:0;line-height:1">✕</button>'+
+          '</div>';
+        }).join('')+
+      '</div>'
+    :'')+
     // All-day events (paint jobs with no time, or any untimed event)
     (allDay.length?
       '<div style="margin-bottom:12px">'+
@@ -1724,11 +1752,14 @@ function expandCalDay(key){
         }).join('')+
       '</div>'
     :'')+
-    // Hour-by-hour schedule — always shown so Zach can see open slots and book more
+    // Hour-by-hour schedule — always shown so user can see open slots and book more
     '<div>'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
         '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3)">Schedule</div>'+
-        '<button onclick="closeCalDay();schedFromDate(\''+key+'\')" style="border:none;background:var(--blue);color:#fff;border-radius:20px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Book estimate</button>'+
+        '<div style="display:flex;gap:6px">'+
+          '<button onclick="calTaskModal(\''+key+'\')" style="border:none;background:#6366F1;color:#fff;border-radius:20px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Task</button>'+
+          '<button onclick="closeCalDay();schedFromDate(\''+key+'\')" style="border:none;background:var(--blue);color:#fff;border-radius:20px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Estimate</button>'+
+        '</div>'+
       '</div>'+
       slots.map(s=>{
         const hasEvent=s.jobs.length>0;
@@ -1756,6 +1787,67 @@ function expandCalDay(key){
   '';
   el.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
+
+function calTaskModal(dateKey){
+  const d=parseD(dateKey);
+  const label=d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  const ov=document.createElement('div');
+  ov.className='zmodal-overlay';
+  ov.innerHTML=
+    '<div class="zmodal" style="max-width:340px">'+
+      '<div class="zmodal-title" style="color:#6366F1">Add task — '+label+'</div>'+
+      '<div style="margin:14px 0 8px">'+
+        '<input id="_ctask-title" type="text" placeholder="Task title" autocomplete="off" '+
+          'style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text1)">'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;margin-bottom:8px">'+
+        '<div style="flex:1;display:flex;flex-direction:column;gap:4px">'+
+          '<label style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em">Time (optional)</label>'+
+          '<input id="_ctask-time" type="time" '+
+            'style="width:100%;box-sizing:border-box;padding:8px 10px;border:1.5px solid var(--border);border-radius:var(--r);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text1)">'+
+        '</div>'+
+      '</div>'+
+      '<div style="margin-bottom:14px">'+
+        '<textarea id="_ctask-notes" placeholder="Notes (optional)" rows="2" '+
+          'style="width:100%;box-sizing:border-box;padding:8px 12px;border:1.5px solid var(--border);border-radius:var(--r);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text1);resize:none"></textarea>'+
+      '</div>'+
+      '<div class="zmodal-btns">'+
+        '<button onclick="this.closest(\'.zmodal-overlay\').remove()" '+
+          'style="flex:1;padding:10px;border:1.5px solid var(--border);border-radius:var(--r);background:none;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">Cancel</button>'+
+        '<button onclick="_saveCalTask(\''+dateKey+'\')" '+
+          'style="flex:1;padding:10px;border:none;background:#6366F1;color:#fff;border-radius:var(--r);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Add task</button>'+
+      '</div>'+
+    '</div>';
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  document.body.appendChild(ov);
+  setTimeout(()=>{const el=document.getElementById('_ctask-title');if(el)el.focus();},80);
+}
+
+function _saveCalTask(dateKey){
+  const title=(document.getElementById('_ctask-title')?.value||'').trim();
+  if(!title){
+    const el=document.getElementById('_ctask-title');
+    if(el){el.style.borderColor='var(--red)';el.focus();}
+    return;
+  }
+  const time=document.getElementById('_ctask-time')?.value||'';
+  const notes=(document.getElementById('_ctask-notes')?.value||'').trim();
+  document.querySelector('.zmodal-overlay')?.remove();
+  jobs.push({id:Date.now(),bid_id:null,client_id:null,name:title,addr:'',start:dateKey,days:1,buffer:0,value:0,color:'#6366F1',eventType:'task',allowWeekend:true,time,hours:null,notes,status:'upcoming'});
+  saveAll();
+  renderCalGrid();
+  expandCalDay(dateKey);
+}
+
+function completeCalTask(jobId){
+  const j=jobs.find(x=>x.id===jobId);
+  if(!j)return;
+  j.status=j.status==='done'?'upcoming':'done';
+  saveAll();
+  renderCalGrid();
+  expandCalDay(j.start);
+}
+
 function goToVehicleSettings(){
   window._scrollToVehicles=true;
   goPg('pg-settings');
