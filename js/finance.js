@@ -1475,7 +1475,7 @@ async function viewReceipt(expId){
   '</div>';
 }
 function deleteReceiptPhoto(expId){
-  zConfirm('Delete this receipt photo? The expense record stays intact — you can add a new photo anytime.',{title:'Delete photo?',ok:'Delete photo',cancel:'Cancel'},async()=>{
+  zConfirm('Delete this receipt photo? The expense record stays intact — you can add a new photo anytime.',async()=>{
     const exp=expenses.find(e=>e.id==expId);
     if(!exp)return;
     if(exp.receipt_key){
@@ -1489,7 +1489,7 @@ function deleteReceiptPhoto(expId){
     document.querySelector('.rcpt-ov')?.remove();
     renderExpenses();
     showToast('Receipt photo deleted','🗑️');
-  });
+  },{title:'Delete photo?',yes:'Delete photo',danger:true});
 }
 
 // ── State-based tax & lien info ────────────────────────────────────────
@@ -2346,36 +2346,11 @@ function triggerReceiptScan(){_scanAndFillBooksExpense();}
 function processReceiptPhoto(input){input.value='';_scanAndFillBooksExpense();}
 
 function _scanAndFillBooksExpense(){
-  const tokenP=(async()=>{const session=_supa?await _supa.auth.getSession():null;return session?.data?.session?.access_token||null;})();
-  _showReceiptScanner(null,async blob=>{
-    const tip=document.getElementById('scan-tip');
-    const resultArea=document.getElementById('scan-result');
-    if(tip)tip.innerHTML='<strong>Reading receipt...</strong>';
-    if(resultArea)resultArea.style.display='none';
-    const b64=await compressAndEncodeImage(blob);
-    try{
-      const token=await tokenP;
-      const resp=await fetch('https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/scan-receipt',{
-        method:'POST',
-        headers:{'Content-Type':'application/json',...(token?{'Authorization':'Bearer '+token}:{})},
-        body:JSON.stringify({imageBase64:b64,mediaType:'image/jpeg'})
-      });
-      if(!resp.ok)throw new Error('Scan service error '+resp.status);
-      const parsed=await resp.json();
-      if(parsed.vendor)document.getElementById('exp-vendor').value=parsed.vendor;
-      if(parsed.amount)document.getElementById('exp-amount').value=parsed.amount;
-      if(parsed.date)document.getElementById('exp-date').value=parsed.date;
-      if(parsed.category){const sel=document.getElementById('exp-cat');for(let i=0;i<sel.options.length;i++){if(sel.options[i].text.toLowerCase().includes(parsed.category.toLowerCase())){sel.selectedIndex=i;break;}}}
-      if(parsed.notes)document.getElementById('exp-notes').value=parsed.notes;
-      document.getElementById('exp-receipt').value='Yes — photo taken';
-      if(resultArea){resultArea.style.display='block';resultArea.innerHTML='<div class="tip tip-s" style="margin-bottom:8px"><strong>&#10003; Receipt read</strong> — '+(parsed.vendor||'vendor')+' · '+fmt(parsed.amount||0)+'. Review below and save.</div>';}
-      if(tip)tip.textContent='Receipt scanned. Review the details below and tap Save expense.';
-      document.getElementById('exp-vendor')?.scrollIntoView({behavior:'smooth',block:'center'});
-    }catch(e){
-      if(tip)tip.textContent='Could not read receipt. Fill in manually below.';
-      if(resultArea)resultArea.style.display='none';
-    }
-  });
+  // Open the expense modal first, then immediately trigger the scan button inside it.
+  // The old inline books form fields (exp-vendor etc.) no longer exist — the modal
+  // uses em-* fields and expTriggerScan() handles the full scan→AI→fill flow.
+  openExpenseFlow();
+  setTimeout(()=>expTriggerScan(),80);
 }
 
 function populateExpJobSel(){
@@ -2426,7 +2401,7 @@ function renderExpenses(){
   '</div>';
   // Expense rows — table first so rows are visible without scrolling
   try{
-    html+='<div style="overflow-x:auto"><table class="tbl"><thead><tr>'+
+    html+='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl" style="min-width:560px"><thead><tr>'+
       ['Date','Category','Vendor','Amount','Receipt'].map(h=>'<th>'+h+'</th>').join('')+'<th></th></tr></thead><tbody>'+
       [...filtered].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(r=>{
         const info=IRS_EXPENSE_CATS.find(c=>c.id===r.cat);
