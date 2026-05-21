@@ -96,7 +96,7 @@ Deno.serve(async (req) => {
         currency: currency || 'usd',
         automatic_payment_methods: { enabled: true, allow_redirects: 'always' },
         metadata,
-        statement_descriptor: statementDescriptor,
+        statement_descriptor_suffix: statementDescriptor,
         description: piDescription,
       };
       if (stripeAccountId) {
