@@ -649,9 +649,7 @@ async function init(){
     _renderPayTiles();_updatePayButtons();
     if(_prop.isPortfolio)_showPortfolioOffer();
     // Check if returning from Stripe
-    const _retPm=new URLSearchParams(location.search).get('payment');
-    if(_retPm==='success'||_retPm==='card')showDone('card');
-    else if(_retPm==='cashapp')showDone('cashapp');
+    if(new URLSearchParams(location.search).get('payment')==='success')showDone('card');
   }catch(e){
     console.error('[sign.html init error]',e);
     show('pg-err');
@@ -893,20 +891,16 @@ async function submitCash(){
 }
 
 function showDone(method){
-  const isPaid=method==='card'||method==='ach';
-  const isCard=method==='card';
   const isAch=method==='ach';
-  const isVenmo=method==='venmo';
   const isCashApp=method==='cashapp';
+  const isPaid=method==='card'||isAch||isCashApp;
   document.getElementById('done-icon').textContent=isPaid?'🎉':'✅';
   document.getElementById('done-title').textContent=isPaid?'Payment confirmed!':'Proposal signed!';
   document.getElementById('done-msg').textContent=isPaid
     ?'Your deposit has been received. The contractor will be in touch to confirm your start date.'
-    :isVenmo?'Your proposal is signed. The contractor will confirm your Venmo payment and be in touch to schedule.'
-    :isCashApp?'Your proposal is signed. The contractor will confirm your Cash App payment and be in touch to schedule.'
     :'Your proposal is signed. The contractor will collect your deposit on arrival.';
   const _confNum=_prop?'#CONF-'+String(_prop.id).slice(-6).toUpperCase():'';
-  const payLabel=isCard?'💳 Card charged':isAch?'🏦 Bank transfer':isVenmo?'📱 Venmo (pending)':isCashApp?'💚 Cash App (pending)':'💵 Cash on arrival';
+  const payLabel=isAch?'🏦 Bank transfer':isCashApp?'💚 Cash App Pay':method==='card'?'💳 Card charged':'💵 Cash on arrival';
   document.getElementById('done-rows').innerHTML=
     (_confNum?'<div class="row"><span class="rl">Confirmation</span><span class="rv" style="font-weight:700;color:var(--green)">'+_confNum+'</span></div>':'')+
     '<div class="row"><span class="rl">Client</span><span class="rv">'+(_prop?.clientName||'')+'</span></div>'+
@@ -934,22 +928,20 @@ let _manualPayMethod='cash';
 function _renderSignPayBtns(){
   const container=document.getElementById('sign-pay-btns');if(!container)return;
   const stripeOk=_prop?.stripeConnectEnabled!==false;
-  const pct=_prop?.ccSurchargePct||3;
   const surchargeOn=!!(_prop?.ccSurchargeEnabled);
-  const fee=surchargeOn?' <span style="font-size:10px;opacity:.75">(+'+pct+'% fee)</span>':'';
-  const bP='display:block;width:100%;padding:12px;border-radius:10px;border:none;background:#635BFF;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;text-align:center;box-shadow:0 3px 12px rgba(99,91,255,.3);margin-bottom:8px';
-  const bS='display:block;width:100%;padding:11px;border-radius:10px;border:1.5px solid #e2e0da;background:#fff;color:#1b1612;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center;margin-bottom:8px';
+  const pct=_prop?.ccSurchargePct||3;
   let html='';
   if(stripeOk){
-    // Native Apple Pay button — only rendered on devices that support it (Safari/iOS/macOS)
-    if(window.ApplePaySession&&typeof ApplePaySession.canMakePayments==='function'&&ApplePaySession.canMakePayments())
-      html+='<button onclick="_paySign(\'applepay\')" style="-webkit-appearance:-apple-pay-button;-apple-pay-button-type:plain;-apple-pay-button-style:black;width:100%;height:46px;border-radius:10px;margin-bottom:8px;cursor:pointer;border:none"></button>';
-    html+='<button onclick="_paySign(\'ach\')" style="'+bP+'">Bank transfer (ACH) <span style="font-size:11px;font-weight:700;opacity:.85">· No fee</span></button>';
-    html+='<button onclick="_paySign(\'card\')" style="'+bS+'">Credit card'+fee+'</button>';
-    html+='<button onclick="_paySign(\'debit\')" style="'+bS+'">Debit card</button>';
-    html+='<button onclick="_paySign(\'cashapp\')" style="'+bS+'">Cash App Pay</button>';
+    html+=
+      '<button id="_pay-now-btn" onclick="_paySign(\'stripe\')" style="display:block;width:100%;padding:15px;border-radius:12px;border:none;background:#1b1612;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;text-align:center;box-shadow:0 4px 18px rgba(27,22,18,.28);margin-bottom:10px;letter-spacing:-.2px">'+
+        'Pay now — Secured by Stripe'+
+      '</button>'+
+      '<div style="font-size:11px;color:#94a3b8;text-align:center;margin-bottom:16px;line-height:1.6">'+
+        '🍎 Apple Pay &nbsp;·&nbsp; Google Pay &nbsp;·&nbsp; 💳 Card &nbsp;·&nbsp; 🏦 Bank transfer'+
+        (surchargeOn?'<br><span style="color:#b45309">'+pct+'% fee for credit cards &mdash; bank transfer is free</span>':'')+
+      '</div>';
   }
-  html+='<button onclick="_paySign(\'cash\')" style="'+bS+'">Cash</button>';
+  html+='<button onclick="_paySign(\'cash\')" style="display:block;width:100%;padding:10px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">Pay cash in person</button>';
   container.innerHTML=html;
 }
 async function _paySign(method){
@@ -968,62 +960,19 @@ async function _paySign(method){
     if(_payFullAmount){_payFullAmount=false;_renderPayTiles();_updatePayButtons();}
     return;
   }
+  // 'stripe' — open embedded Stripe checkout; auto-surfaces Apple Pay, Google Pay, card, bank transfer
   const depBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round((_prop.deposit||0)*100);
   const fullBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*100):Math.round((_prop.amount||0)*100);
   const amt=_payFullAmount?fullBase:depBase;
-  // applepay and debit both use 'card' in Stripe — Apple Pay auto-surfaces in card checkout
-  const stripeMethod=method==='debit'||method==='applepay'?'card':method==='ach'?'us_bank_account':method;
-  // surcharge only for explicit credit card selection, not debit/applepay/cashapp
-  const surcharge=(method==='card'&&_prop.ccSurchargeEnabled)?Math.round(amt*(_prop.ccSurchargePct||3)/100):0;
-  const btns=document.querySelectorAll('#sign-pay-btns button');
-  btns.forEach(b=>b.disabled=true);
-  const clickedBtn=event?.target?.closest('button');
-  const origText=clickedBtn?.innerHTML;
-  if(clickedBtn)clickedBtn.textContent='Setting up...';
-  // Cash App Pay is redirect-based — it can't run inside an iframe/modal.
-  // Use hosted Stripe Checkout (full-page redirect) for it instead.
-  if(method==='cashapp'){
-    try{await _launchHostedCashApp(amt);}
-    catch(e){
-      console.error(e);
-      document.getElementById('pay-err').textContent='Cash App Pay unavailable. Please try another method.';
-      btns.forEach(b=>b.disabled=false);
-      if(clickedBtn&&origText)clickedBtn.innerHTML=origText;
-    }
-    return;
-  }
+  const btn=document.getElementById('_pay-now-btn');
+  if(btn){btn.disabled=true;btn.textContent='Opening secure checkout…';}
   try{
-    await _launchEmbedded(amt,stripeMethod,surcharge);
+    await _launchEmbedded(amt,'card',0);
   }catch(e){
     console.error(e);
-    document.getElementById('pay-err').textContent='Payment unavailable. Please try another method.';
+    document.getElementById('pay-err').textContent='Could not open payment. Please try again.';
   }
-  btns.forEach(b=>b.disabled=false);
-  if(clickedBtn&&origText)clickedBtn.innerHTML=origText;
-}
-async function _launchHostedCashApp(amount){
-  const _p=new URLSearchParams(location.search);
-  let propKey=_p.get('key');
-  if(!propKey){const t=_p.get('t'),u=_p.get('u'),b=_p.get('b');if(t&&u&&b)propKey=`proposals/${u}/${b}_${t}.json`;}
-  const res=await fetch(SUPA_URL+'/functions/v1/create-checkout',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
-    body:JSON.stringify({
-      amount,currency:'usd',paymentMethod:'cashapp',
-      proposalKey:propKey,clientName:_prop.clientName,businessName:_prop.businessName,
-      bidId:String(_prop.id),contractorUserId:_prop.contractorUserId,
-      notifyEmail:_prop.notifyEmail,signatureDataUrl:_sigData,
-      signerName:document.getElementById('sig-name')?.value.trim()||'',
-      colorChoices:window._colorChoices||[],
-      successUrl:location.href+'&payment=cashapp',
-      cancelUrl:location.href,
-      embedded:false,
-    })
-  });
-  const d=await res.json();
-  if(!res.ok||d.error)throw new Error(d.error||'HTTP '+res.status);
-  if(!d.url)throw new Error('No checkout URL from Stripe');
-  window.location.href=d.url;
+  if(btn){btn.disabled=false;btn.innerHTML='Pay now — Secured by Stripe';}
 }
 async function _launchEmbedded(amount,paymentMethod,surchargeAmount=0){
   const _p=new URLSearchParams(location.search);
@@ -1055,7 +1004,7 @@ async function _launchEmbedded(amount,paymentMethod,surchargeAmount=0){
   const stripe=Stripe(d.publishableKey);
   _stripeInst=await stripe.initEmbeddedCheckout({
     clientSecret:d.clientSecret,
-    onComplete:()=>{_closeStripeModal();showDone(paymentMethod==='card'?'card':paymentMethod==='us_bank_account'?'ach':'cash');}
+    onComplete:()=>{_closeStripeModal();showDone(paymentMethod==='us_bank_account'?'ach':'card');}
   });
   _stripeInst.mount('#sign-embed-container');
 }
