@@ -1145,7 +1145,6 @@ function renderPayments(){
       html+='<div style="background:var(--bg-card);padding:14px 16px;border-bottom:1px solid var(--border)">';
       const surchargeOn=!!h.ccSurchargeEnabled;
       const pct=h.ccSurchargePct||3;
-      const hint='<div style="font-size:11px;color:#94a3b8;text-align:center;margin-bottom:12px;line-height:1.6">🍎 Apple Pay &nbsp;·&nbsp; Google Pay &nbsp;·&nbsp; 💳 Card &nbsp;·&nbsp; 🏦 Bank transfer'+(surchargeOn?'<br><span style="color:#b45309">'+pct+'% fee for credit cards — bank transfer is free</span>':'')+' </div>';
       const bigBtn=(fn,amtCents,label)=>'<button id="pay-btn-'+bid_id+'" onclick="'+fn+'('+bid_id+')" style="display:block;width:100%;padding:14px;border-radius:12px;border:none;background:#1b1612;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 18px rgba(27,22,18,.25);margin-bottom:10px">'+label+' — Secured by Stripe</button>';
       if(!depPaid&&deposit>0.01&&balance>deposit+0.01){
         html+=bigBtn('payBalance',Math.round(balance*100),'Pay in full '+fmt(balance));
@@ -1156,8 +1155,6 @@ function renderPayments(){
       }else{
         html+=bigBtn('payBalance',Math.round(balance*100),'Pay balance '+fmt(balance));
       }
-      html+=hint;
-      html+='<div style="text-align:center;font-size:10px;color:var(--text3)">🔒 Secured by Stripe · SSL encrypted</div>';
       html+='</div>';
     }
 
@@ -1446,7 +1443,7 @@ async function _launchCheckout(bidId,amount,label){
   document.getElementById('stripe-modal-amt').textContent=fmt(amount/100)+' · Secured by Stripe';
   document.getElementById('checkout-embed-container').innerHTML='<div style="padding:32px 20px;text-align:center;color:#9ca3af;font-size:14px">Loading payment options…</div>';
   const submitBtn=document.getElementById('checkout-submit-btn');
-  if(submitBtn){submitBtn.disabled=true;submitBtn.textContent='Pay '+fmt(amount/100)+' — Secured by Stripe';}
+  if(submitBtn){submitBtn.disabled=true;submitBtn.style.display='none';submitBtn.textContent='Pay '+fmt(amount/100)+' — Secured by Stripe';}
   document.getElementById('stripe-overlay').style.display='block';
   document.body.style.overflow='hidden';
   if(btn){if(btnOrig)btn.innerHTML=btnOrig;else btn.textContent=label;btn.disabled=false;}

@@ -422,7 +422,6 @@ input[type=text]:focus{border-color:var(--denim)}
 
       <div id="pay-err" style="color:#A32D2D;font-size:12px;text-align:center;min-height:16px"></div>
 
-      <div class="stripe-footer">🔒 Secured by Stripe · TLS 1.3 · PCI DSS Level 1</div>
     </div>
     <button class="btn btn-sec" onclick="backToSign()">← Back</button>
   </div>
@@ -938,10 +937,7 @@ function _renderSignPayBtns(){
       '<button id="_pay-now-btn" onclick="_paySign(\'stripe\')" style="display:block;width:100%;padding:15px;border-radius:12px;border:none;background:#1b1612;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;text-align:center;box-shadow:0 4px 18px rgba(27,22,18,.28);margin-bottom:10px;letter-spacing:-.2px">'+
         'Pay now — Secured by Stripe'+
       '</button>'+
-      '<div style="font-size:11px;color:#94a3b8;text-align:center;margin-bottom:16px;line-height:1.6">'+
-        '🍎 Apple Pay &nbsp;·&nbsp; Google Pay &nbsp;·&nbsp; 💳 Card &nbsp;·&nbsp; 🏦 Bank &nbsp;·&nbsp; and more'+
-        (surchargeOn?'<br><span style="color:#b45309">'+pct+'% fee on credit cards · debit cards &amp; bank transfer are free</span>':'')+
-      '</div>';
+      (surchargeOn?'<div style="font-size:11px;color:#b45309;text-align:center;margin-bottom:16px">'+pct+'% fee on credit cards · debit cards &amp; bank transfer are free</div>':'');
   }
   html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px">'+
     '<button onclick="_paySign(\'cash\')" style="padding:10px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">💵 Cash</button>'+
@@ -989,7 +985,7 @@ async function _launchEmbedded(amount,paymentMethod,surchargeAmount=0){
   document.getElementById('sign-stripe-amt').textContent=fmt(amount/100)+' · Secured by Stripe';
   document.getElementById('sign-embed-container').innerHTML='<div style="padding:32px 20px;text-align:center;color:#9ca3af;font-size:14px">Loading payment options…</div>';
   const submitBtn=document.getElementById('sign-stripe-submit');
-  if(submitBtn){submitBtn.disabled=true;submitBtn.textContent='Pay '+fmt(amount/100)+' — Secured by Stripe';}
+  if(submitBtn){submitBtn.disabled=true;submitBtn.style.display='none';submitBtn.textContent='Pay '+fmt(amount/100)+' — Secured by Stripe';}
   document.getElementById('sign-stripe-overlay').style.display='flex';
   document.body.style.overflow='hidden';
   try{
