@@ -1530,7 +1530,9 @@ async function payDeposit(bidId){
   if(amount<50){alert('No deposit amount found.');return;}
   await _launchCheckout(bidId,amount,'Pay deposit');
 }
-function _pay4Btns(){return '';} // replaced by inline bigBtn in renderPayments
+function _pay4Btns(bidId,fn,amt,h){
+  return '<button id="pay-btn-'+bidId+'" onclick="'+fn+'('+bidId+')" style="display:block;width:100%;padding:14px;border-radius:12px;border:none;background:#1b1612;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 18px rgba(27,22,18,.25)">Pay '+fmt(amt)+' — Secured by Stripe</button>';
+}
 function _showCashMsg(){
   const biz=escHtml(_hub.contractorName||'your contractor');
   const ov=document.createElement('div');
