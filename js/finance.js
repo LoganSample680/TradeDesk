@@ -1936,23 +1936,26 @@ async function exportReceiptImages(){
       catch(err){console.warn('Could not fetch receipt',e.id,err);}
     }
   }));
-  // Canvas-resize every image to safe print dimensions before writing HTML.
-  // iOS Safari ignores CSS max-height constraints in print context, so we must
-  // bake the correct pixel size into the src. 700×840px ≈ 7.3in×8.75in at 96dpi,
-  // leaving ~1.65in for the header and margins on a letter page.
+  // Canvas-resize every image and record exact output dimensions.
+  // We pass width+height attributes directly into the <img> tag so iOS Safari
+  // cannot reflow the image at any other size in print. Target 620×740px
+  // (≈6.5×7.7in at 96dpi) leaving ~2.7in for header+margins on a letter page.
+  const _sizeMap={};
   await Promise.all(Object.keys(_srcMap).map(id=>new Promise(resolve=>{
     const src=_srcMap[id];
     if(!src){resolve();return;}
     const img=new Image();
     img.onload=()=>{
-      const maxW=700,maxH=840;
-      if(img.width<=maxW&&img.height<=maxH){resolve();return;}
-      const scale=Math.min(maxW/img.width,maxH/img.height);
+      const maxW=620,maxH=740;
+      const scale=Math.min(maxW/img.width,maxH/img.height,1);
       const w=Math.round(img.width*scale),h=Math.round(img.height*scale);
-      const c=document.createElement('canvas');
-      c.width=w;c.height=h;
-      c.getContext('2d').drawImage(img,0,0,w,h);
-      _srcMap[id]=c.toDataURL('image/jpeg',0.88);
+      if(scale<1){
+        const c=document.createElement('canvas');
+        c.width=w;c.height=h;
+        c.getContext('2d').drawImage(img,0,0,w,h);
+        _srcMap[id]=c.toDataURL('image/jpeg',0.88);
+      }
+      _sizeMap[id]={w,h};
       resolve();
     };
     img.onerror=resolve;
@@ -1962,6 +1965,13 @@ async function exportReceiptImages(){
   const pages=filtered.map((e,i)=>{
     const cat=e.catLabel||e.cat||'';
     const d=e.date?new Date(e.date+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):e.date||'';
+    const sz=_sizeMap[e.id];
+    const imgTag=_srcMap[e.id]
+      ?`<img src="${_srcMap[e.id]}"
+           ${sz?`width="${sz.w}" height="${sz.h}"`:''}
+           alt="Receipt ${i+1}"
+           style="display:block;margin:0 auto;border:1px solid #ddd;border-radius:6px;${sz?`width:${sz.w}px;height:${sz.h}px;`:''}max-width:100%">`
+      :'<div style="color:#999;font-size:13px;padding:40px">Image unavailable</div>';
     return `<div class="page">
       <div class="page-hdr">
         <div class="pg-num">Receipt ${i+1} of ${filtered.length}</div>
@@ -1974,7 +1984,7 @@ async function exportReceiptImages(){
           ${e.notes?`<span class="field notes">${e.notes}</span>`:''}
         </div>
       </div>
-      <div class="img-wrap">${_srcMap[e.id]?`<img src="${_srcMap[e.id]}" alt="Receipt ${i+1}">`:'<div style="color:#999;font-size:13px;padding:40px">Image unavailable</div>'}</div>
+      <div class="img-wrap">${imgTag}</div>
     </div>`;
   }).join('');
   win.document.open();
@@ -1986,27 +1996,22 @@ async function exportReceiptImages(){
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#1a1a1a}
 .no-print{background:#185FA5;color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center}
 .no-print button{background:#fff;color:#185FA5;border:none;padding:8px 18px;border-radius:6px;font-weight:700;font-size:14px;cursor:pointer}
-.page{page-break-after:always;page-break-inside:avoid;padding:20px 24px;max-width:800px;margin:0 auto;border-bottom:2px solid #eee;height:calc(100vh - 52px);display:flex;flex-direction:column;overflow:hidden}
-.page:last-child{page-break-after:auto;border-bottom:none}
-.page-hdr{flex-shrink:0;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #ddd}
-.pg-num{font-size:11px;color:#888;margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em}
-.pg-meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.field{font-size:13px;padding:4px 10px;border-radius:4px;background:#f5f5f3}
-.vendor{font-weight:700;font-size:15px;background:#EBF2FB;color:#185FA5}
-.amount{font-weight:800;font-size:16px;background:#F0FBF0;color:#3B8C2A}
+.page{padding:10px 16px;max-width:760px;margin:0 auto;page-break-after:always;page-break-inside:auto}
+.page:last-child{page-break-after:auto}
+.page-hdr{margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #ddd}
+.pg-num{font-size:11px;color:#888;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
+.pg-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.field{font-size:12px;padding:3px 8px;border-radius:4px;background:#f5f5f3}
+.vendor{font-weight:700;font-size:14px;background:#EBF2FB;color:#185FA5}
+.amount{font-weight:800;font-size:14px;background:#F0FBF0;color:#3B8C2A}
 .cat{background:#FEF3C7;color:#92400E}
 .job{background:#F0F0FF;color:#555}
 .notes{background:#f5f5f3;color:#666;font-style:italic}
-.img-wrap{text-align:center;flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
-.img-wrap img{max-width:100%;max-height:100%;object-fit:contain;border:1px solid #ddd;border-radius:8px}
+.img-wrap{margin-top:8px;text-align:center}
 @media print{
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   .no-print{display:none!important}
   @page{margin:0.3in;size:letter portrait}
-  .page{display:block;padding:4px 0;border:none;height:auto;overflow:visible;page-break-after:always;page-break-inside:auto}
-  .page:last-child{page-break-after:auto}
-  .img-wrap{display:block;overflow:visible}
-  .img-wrap img{display:block;margin:0 auto;max-width:100%}
 }
 </style>
 </head><body>
