@@ -577,7 +577,7 @@ async function init(){
       switchView(_VIEWS.includes(_hv)?_hv:'overview');
     }
     showState('hub');
-    try{_supa.from('proposal_views').insert({contractor_user_id:u,client_id:c,user_agent:(navigator.userAgent||'').slice(0,250)}).then(()=>{}).catch(()=>{});}catch(_e){}
+    fetch(SUPA_URL+'/rest/v1/proposal_views',{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Prefer':'return=minimal'},body:JSON.stringify({contractor_user_id:u,client_id:c,user_agent:(navigator.userAgent||'').slice(0,250)})}).catch(()=>{});
     const _paidParam=p.get('paid');
     if(_paidParam){
       const bidId=parseInt(_paidParam);
