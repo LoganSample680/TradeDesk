@@ -1012,20 +1012,30 @@ async function _launchEmbedded(amount,paymentMethod,surchargeAmount=0){
     if(!res.ok||!d.clientSecret||!d.publishableKey)throw new Error(d.error||'Could not set up payment');
     const stripeObj=Stripe(d.publishableKey);
     _stripeInst=stripeObj;
-    _stripeElements=stripeObj.elements({clientSecret:d.clientSecret,appearance:{theme:'stripe',variables:{borderRadius:'8px'}}});
-    const surchargeOn=!!(_prop?.ccSurchargeEnabled);
-    const pct=_prop?.ccSurchargePct||3;
-    const payEl=_stripeElements.create('payment',{
-      layout:{type:'accordion',defaultCollapsed:false,radios:true,spacedAccordionItems:false},
-      ...(surchargeOn?{business:{name:(_prop.businessName||'')}}:{}),
-    });
     document.getElementById('sign-embed-container').innerHTML='';
-    payEl.mount('#sign-embed-container');
-    payEl.on('ready',()=>{if(submitBtn)submitBtn.disabled=false;});
-    payEl.on('loaderror',()=>{
-      _closeStripeModal();
-      document.getElementById('pay-err').textContent='Could not load payment options. Please try again.';
-    });
+    // cs_live_/cs_test_ = Checkout Session → use initEmbeddedCheckout
+    // pi_                = PaymentIntent   → use Payment Element (accordion)
+    if(d.clientSecret.startsWith('cs_')){
+      const inst=await stripeObj.initEmbeddedCheckout({
+        clientSecret:d.clientSecret,
+        onComplete:()=>{_closeStripeModal();showDone(paymentMethod==='us_bank_account'?'ach':'card');}
+      });
+      inst.mount('#sign-embed-container');
+      _stripeInst={destroy:()=>inst.destroy()};
+      _stripeElements=null;
+      if(submitBtn){submitBtn.style.display='none';}// Stripe's own UI has submit built in
+    }else{
+      _stripeElements=stripeObj.elements({clientSecret:d.clientSecret,appearance:{theme:'stripe',variables:{borderRadius:'8px'}}});
+      const payEl=_stripeElements.create('payment',{
+        layout:{type:'accordion',defaultCollapsed:false,radios:true,spacedAccordionItems:false},
+      });
+      payEl.mount('#sign-embed-container');
+      payEl.on('ready',()=>{if(submitBtn){submitBtn.disabled=false;submitBtn.style.display='block';}});
+      payEl.on('loaderror',()=>{
+        _closeStripeModal();
+        document.getElementById('pay-err').textContent='Could not load payment options. Please try again.';
+      });
+    }
   }catch(e){
     console.error('[_launchEmbedded]',e);
     _closeStripeModal();

@@ -1467,17 +1467,30 @@ async function _launchCheckout(bidId,amount,label){
     if(!res.ok||!d.clientSecret||!d.publishableKey)throw new Error(d.error||'Could not set up payment');
     const stripeObj=Stripe(d.publishableKey);
     _stripeCheckoutInstance=stripeObj;
-    _stripeCheckoutElements=stripeObj.elements({clientSecret:d.clientSecret,appearance:{theme:'stripe',variables:{borderRadius:'8px'}}});
-    const payEl=_stripeCheckoutElements.create('payment',{
-      layout:{type:'accordion',defaultCollapsed:false,radios:true,spacedAccordionItems:false}
-    });
     document.getElementById('checkout-embed-container').innerHTML='';
-    payEl.mount('#checkout-embed-container');
-    payEl.on('ready',()=>{if(submitBtn)submitBtn.disabled=false;});
-    payEl.on('loaderror',()=>{
-      closePaymentModal();
-      alert('Could not load payment options. Please try again.');
-    });
+    // cs_ = Checkout Session → initEmbeddedCheckout (deployed backend)
+    // pi_ = PaymentIntent   → Payment Element accordion (updated backend)
+    if(d.clientSecret.startsWith('cs_')){
+      const inst=await stripeObj.initEmbeddedCheckout({
+        clientSecret:d.clientSecret,
+        onComplete:()=>{closePaymentModal();showPaymentSuccess(bidId);}
+      });
+      inst.mount('#checkout-embed-container');
+      _stripeCheckoutInstance={confirmPayment:null,destroy:()=>inst.destroy()};
+      _stripeCheckoutElements=null;
+      if(submitBtn)submitBtn.style.display='none';
+    }else{
+      _stripeCheckoutElements=stripeObj.elements({clientSecret:d.clientSecret,appearance:{theme:'stripe',variables:{borderRadius:'8px'}}});
+      const payEl=_stripeCheckoutElements.create('payment',{
+        layout:{type:'accordion',defaultCollapsed:false,radios:true,spacedAccordionItems:false}
+      });
+      payEl.mount('#checkout-embed-container');
+      payEl.on('ready',()=>{if(submitBtn){submitBtn.disabled=false;submitBtn.style.display='block';}});
+      payEl.on('loaderror',()=>{
+        closePaymentModal();
+        alert('Could not load payment options. Please try again.');
+      });
+    }
   }catch(e){
     console.error('[_launchCheckout]',e);
     closePaymentModal();
@@ -1485,7 +1498,7 @@ async function _launchCheckout(bidId,amount,label){
   }
 }
 async function _submitCheckoutPayment(){
-  if(!_stripeCheckoutInstance||!_stripeCheckoutElements)return;
+  if(!_stripeCheckoutInstance||!_stripeCheckoutElements)return;// cs_ path has no elements — submit button is hidden anyway
   const btn=document.getElementById('checkout-submit-btn');
   if(btn){btn.disabled=true;btn.textContent='Processing…';}
   const hubBase=location.href.split('?')[0];
