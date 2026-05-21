@@ -1131,30 +1131,24 @@ function renderPayments(){
     html+='</div>'; // end header
     html+='<div id="pb-'+bid_id+'" style="display:'+(autoOpen?'block':'none')+'">';
 
-    // Pay buttons — always 4 options: credit card, debit card, ACH, cash
+    // Pay buttons — single "Pay now" opens embedded Stripe modal
     if(!isPaid&&h.stripeEnabled){
       html+='<div style="background:var(--bg-card);padding:14px 16px;border-bottom:1px solid var(--border)">';
+      const surchargeOn=!!h.ccSurchargeEnabled;
+      const pct=h.ccSurchargePct||3;
+      const hint='<div style="font-size:11px;color:#94a3b8;text-align:center;margin-bottom:12px;line-height:1.6">🍎 Apple Pay &nbsp;·&nbsp; Google Pay &nbsp;·&nbsp; 💳 Card &nbsp;·&nbsp; 🏦 Bank transfer'+(surchargeOn?'<br><span style="color:#b45309">'+pct+'% fee for credit cards — bank transfer is free</span>':'')+' </div>';
+      const bigBtn=(fn,amtCents,label)=>'<button id="pay-btn-'+bid_id+'" onclick="'+fn+'('+bid_id+')" style="display:block;width:100%;padding:14px;border-radius:12px;border:none;background:#1b1612;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 18px rgba(27,22,18,.25);margin-bottom:10px">'+label+' — Secured by Stripe</button>';
       if(!depPaid&&deposit>0.01&&balance>deposit+0.01){
-        html+='<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Pay in full</div>';
-        html+=_pay4Btns(bid_id,'payBalance',balance,h);
-        const pct=h.ccSurchargePct||3;
-        const depCC=h.ccSurchargeEnabled?Math.round(deposit*(1+pct/100)):deposit;
-        const depFee=h.ccSurchargeEnabled?' (+'+pct+'%)':'';
-        const sm='flex:1;padding:8px 4px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg);color:var(--text);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;text-align:center';
-        html+='<div style="font-size:10px;color:var(--text3);margin-top:2px;margin-bottom:6px;text-align:center">— or pay deposit only —</div>';
-        html+='<div style="display:flex;gap:6px">'+
-          '<button onclick="payDeposit('+bid_id+',\'us_bank_account\')" style="'+sm+'">🏦 ACH<br>'+fmt(deposit)+'</button>'+
-          '<button onclick="payDeposit('+bid_id+',\'card\')" style="'+sm+'">💳 Credit<br>'+fmt(depCC)+depFee+'</button>'+
-          '<button onclick="payDeposit('+bid_id+',\'debit\')" style="'+sm+'">💳 Debit<br>'+fmt(deposit)+'</button>'+
-          '</div>';
+        html+=bigBtn('payBalance',Math.round(balance*100),'Pay in full '+fmt(balance));
+        html+='<div style="font-size:10px;color:var(--text3);margin-bottom:8px;text-align:center">— or —</div>';
+        html+='<button onclick="payDeposit('+bid_id+')" style="display:block;width:100%;padding:11px;border-radius:10px;border:1.5px solid var(--border2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;margin-bottom:10px">Pay deposit only '+fmt(deposit)+'</button>';
       }else if(!depPaid&&deposit>0.01){
-        html+='<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Pay deposit</div>';
-        html+=_pay4Btns(bid_id,'payDeposit',deposit,h);
+        html+=bigBtn('payDeposit',Math.round(deposit*100),'Pay deposit '+fmt(deposit));
       }else{
-        html+='<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Pay balance</div>';
-        html+=_pay4Btns(bid_id,'payBalance',balance,h);
+        html+=bigBtn('payBalance',Math.round(balance*100),'Pay balance '+fmt(balance));
       }
-      html+='<div style="text-align:center;font-size:10px;color:var(--text3);margin-top:8px">🔒 Secured by Stripe · SSL encrypted</div>';
+      html+=hint;
+      html+='<div style="text-align:center;font-size:10px;color:var(--text3)">🔒 Secured by Stripe · SSL encrypted</div>';
       html+='</div>';
     }
 
@@ -1431,19 +1425,16 @@ function renderInvoices(){
 }
 
 let _stripeCheckoutInstance=null;
-async function _launchCheckout(bidId,amount,label,method='card'){
+async function _launchCheckout(bidId,amount,label){
   const bid=_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const btn=document.getElementById('pay-btn-'+bidId)||document.getElementById('pay-inv-btn-'+bidId);
   const btnOrig=btn?btn.innerHTML:null;
-  if(btn){btn.textContent='Setting up…';btn.disabled=true;}
+  if(btn){btn.textContent='Opening secure checkout…';btn.disabled=true;}
   try{
     const hubBase=location.href.split('#')[0];
-    const stripeMethod=method==='debit'?'card':method;
-    const surchargeAmount=(method==='card'&&_hub.ccSurchargeEnabled)?Math.round(amount*(_hub.ccSurchargePct||3)/100):0;
     const res=await fetch(SUPA_URL+'/functions/v1/create-checkout',{
       method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
-      body:JSON.stringify({amount,currency:'usd',paymentMethod:stripeMethod,
-        surchargeAmount:surchargeAmount||undefined,
+      body:JSON.stringify({amount,currency:'usd',paymentMethod:'card',
         proposalKey:bid.proposalKey||null,clientName:_hub.clientName,
         businessName:_hub.contractorName,bidId:String(bid.id),
         contractorUserId:_hub.contractorUserId,notifyEmail:_hub.notifyEmail,
@@ -1454,8 +1445,7 @@ async function _launchCheckout(bidId,amount,label,method='card'){
     if(btn){if(btnOrig)btn.innerHTML=btnOrig;else btn.textContent=label;btn.disabled=false;}
     if(d.clientSecret&&d.publishableKey){
       document.getElementById('stripe-modal-biz').textContent=_hub.contractorName||'Secure Payment';
-      const _dispTotal=(amount+(surchargeAmount||0))/100;
-      document.getElementById('stripe-modal-amt').textContent='Amount: '+fmt(_dispTotal)+(surchargeAmount?' (incl. '+(_hub.ccSurchargePct||3)+'% card fee)':'')+' · Secured by Stripe';
+      document.getElementById('stripe-modal-amt').textContent='Amount: '+fmt(amount/100)+' · Secured by Stripe';
       document.getElementById('checkout-embed-container').innerHTML='';
       document.getElementById('stripe-overlay').style.display='block';
       document.body.style.overflow='hidden';
@@ -1476,30 +1466,19 @@ function closePaymentModal(){
   if(ov)ov.style.display='none';
   document.body.style.overflow='';
 }
-async function payBalance(bidId,method='card'){
+async function payBalance(bidId){
   const bid=_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const amount=Math.round((bid.balance||0)*100);
   if(amount<50){alert('No balance outstanding.');return;}
-  await _launchCheckout(bidId,amount,'Pay balance',method);
+  await _launchCheckout(bidId,amount,'Pay balance');
 }
-async function payDeposit(bidId,method='card'){
+async function payDeposit(bidId){
   const bid=_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const amount=Math.round((bid.deposit||0)*100);
   if(amount<50){alert('No deposit amount found.');return;}
-  await _launchCheckout(bidId,amount,'Pay deposit',method);
+  await _launchCheckout(bidId,amount,'Pay deposit');
 }
-function _pay4Btns(bidId,payFn,amt,hub){
-  const pct=hub.ccSurchargePct||3;
-  const fee=hub.ccSurchargeEnabled?' <span style="font-size:10px;font-weight:600;opacity:.75">(+'+pct+'% fee)</span>':'';
-  const bP='display:block;width:100%;padding:12px;border-radius:var(--r);border:none;background:#635BFF;color:#fff;font-size:13px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 3px 12px rgba(99,91,255,.3);margin-bottom:7px';
-  const bS='display:block;width:100%;padding:11px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg);color:var(--text);font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;margin-bottom:7px';
-  return '<button id="pay-btn-'+bidId+'" onclick="'+payFn+'('+bidId+',\'us_bank_account\')" style="'+bP+'">Bank transfer (ACH) <span style="font-size:11px;font-weight:700;opacity:.85">· No fee</span></button>'+
-    '<button onclick="'+payFn+'('+bidId+',\'card\')" style="'+bS+'">Credit card'+fee+'</button>'+
-    '<button onclick="'+payFn+'('+bidId+',\'debit\')" style="'+bS+'">Debit card</button>'+
-    '<button onclick="'+payFn+'('+bidId+',\'venmo\')" style="'+bS+'">Venmo</button>'+
-    '<button onclick="'+payFn+'('+bidId+',\'cashapp\')" style="'+bS+'">Cash App</button>'+
-    '<button onclick="_showCashMsg()" style="'+bS+'">Cash</button>';
-}
+function _pay4Btns(){return '';} // replaced by inline bigBtn in renderPayments
 function _showCashMsg(){
   const biz=escHtml(_hub.contractorName||'your contractor');
   const ov=document.createElement('div');
@@ -1561,7 +1540,7 @@ function openInvoice(bidId){
   html+='<div style="background:'+bdBg+';border:2px solid '+bdBrd+';border-radius:8px;padding:16px 20px;margin-top:24px;display:flex;justify-content:space-between;align-items:center">';
   html+='<div><div style="font-size:12px;font-weight:700;color:'+bdClr+';text-transform:uppercase;letter-spacing:.05em">'+(isPaid?'Paid in full ✓':'Balance due')+'</div>';
   html+='<div style="font-size:11px;color:'+bdClr+';margin-top:3px">'+(isPaid?'Thank you for your business!':'Please remit payment at your earliest convenience')+'</div>';
-  if(!isPaid&&h.stripeEnabled)html+='<button id="pay-inv-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" style="margin-top:10px;background:#635BFF;color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">💳 Pay with card</button>';
+  if(!isPaid&&h.stripeEnabled)html+='<button id="pay-inv-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" style="margin-top:10px;background:#1b1612;color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Pay now — Secured by Stripe</button>';
   html+='</div><div style="font-size:28px;font-weight:800;color:'+bdClr+'">'+fmt(balance)+'</div></div>';
   html+='<div class="inv-footer-text">'+esc(h.contractorName)+' · '+(h.contractorPhone?esc(h.contractorPhone)+' · ':'')+'Thank you for choosing us!</div>';
   html+='<div style="margin-top:40px;padding-top:20px;border-top:1px solid #e0e0dc;display:flex;gap:10px" class="no-print">';
