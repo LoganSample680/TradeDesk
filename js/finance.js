@@ -1946,7 +1946,7 @@ async function exportReceiptImages(){
     if(!src){resolve();return;}
     const img=new Image();
     img.onload=()=>{
-      const maxW=620,maxH=740;
+      const maxW=580,maxH=650;
       const scale=Math.min(maxW/img.width,maxH/img.height,1);
       const w=Math.round(img.width*scale),h=Math.round(img.height*scale);
       if(scale<1){
@@ -1958,7 +1958,8 @@ async function exportReceiptImages(){
       _sizeMap[id]={w,h};
       resolve();
     };
-    img.onerror=resolve;
+    // Even if canvas load fails, record a fallback so we can apply CSS max-height
+    img.onerror=()=>{_sizeMap[id]={w:580,h:650,fallback:true};resolve()};
     img.src=src;
   })));
   const bname=S.bname||'TradeDesk';
@@ -1966,11 +1967,14 @@ async function exportReceiptImages(){
     const cat=e.catLabel||e.cat||'';
     const d=e.date?new Date(e.date+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):e.date||'';
     const sz=_sizeMap[e.id];
+    const imgStyle=sz&&!sz.fallback
+      ?`display:block;margin:0 auto;border:1px solid #ddd;border-radius:6px;width:${sz.w}px;height:${sz.h}px;max-width:100%`
+      :`display:block;margin:0 auto;border:1px solid #ddd;border-radius:6px;max-width:100%;max-height:650px`;
     const imgTag=_srcMap[e.id]
       ?`<img src="${_srcMap[e.id]}"
-           ${sz?`width="${sz.w}" height="${sz.h}"`:''}
+           ${sz&&!sz.fallback?`width="${sz.w}" height="${sz.h}"`:''}
            alt="Receipt ${i+1}"
-           style="display:block;margin:0 auto;border:1px solid #ddd;border-radius:6px;${sz?`width:${sz.w}px;height:${sz.h}px;`:''}max-width:100%">`
+           style="${imgStyle}">`
       :'<div style="color:#999;font-size:13px;padding:40px">Image unavailable</div>';
     return `<div class="page">
       <div class="page-hdr">
@@ -1996,7 +2000,7 @@ async function exportReceiptImages(){
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#1a1a1a}
 .no-print{background:#185FA5;color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center}
 .no-print button{background:#fff;color:#185FA5;border:none;padding:8px 18px;border-radius:6px;font-weight:700;font-size:14px;cursor:pointer}
-.page{padding:10px 16px;max-width:760px;margin:0 auto;page-break-after:always;page-break-inside:auto}
+.page{padding:10px 16px;max-width:760px;margin:0 auto;page-break-after:always;page-break-inside:avoid}
 .page:last-child{page-break-after:auto}
 .page-hdr{margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #ddd}
 .pg-num{font-size:11px;color:#888;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
