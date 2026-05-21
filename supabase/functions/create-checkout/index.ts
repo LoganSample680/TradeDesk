@@ -49,6 +49,72 @@ Deno.serve(async (req) => {
       }
     }
 
+    const metadata = {
+      proposalKey, bidId, contractorUserId,
+      notifyEmail, signerName, clientName, businessName,
+      paymentMethod: paymentMethod || 'card',
+    };
+
+    // statement_descriptor → client's card statement (max 22 chars)
+    const _lastName = ((clientName||'').trim().split(/\s+/).pop()||'CLIENT').replace(/[^A-Za-z0-9]/g,'').toUpperCase();
+    const _suffix = paymentType === 'full' ? 'FULL' : 'DEPOSIT';
+    const statementDescriptor = (_lastName + '-' + _suffix).substring(0, 22) || 'PAYMENT';
+
+    // description → contractor's Stripe dashboard
+    const _payLabel = paymentType === 'full' ? 'Full payment' : 'Deposit';
+    const piDescription = `${clientName || 'Client'} — ${_payLabel} — ${businessName || ''}`.trim().replace(/—\s*$/, '');
+
+    // Save signature to storage (called after PI/session creation)
+    async function saveSignature() {
+      if (!signatureDataUrl || !proposalKey) return;
+      try {
+        const { data: existing } = await supabase.storage.from('proposals').download(proposalKey);
+        if (existing) {
+          const text = await existing.text();
+          const proposal = JSON.parse(text);
+          const updated = {
+            ...proposal,
+            signatureDataUrl, signerName,
+            status: 'signed_awaiting_payment',
+            signedAt: new Date().toISOString(),
+            stripeConnectAccountId: stripeAccountId || null,
+          };
+          await supabase.storage.from('proposals').upload(
+            proposalKey, JSON.stringify(updated),
+            { contentType: 'application/json', upsert: true }
+          );
+        }
+      } catch (e) { console.warn('Signature save failed:', e); }
+    }
+
+    // Embedded: PaymentIntent + Payment Element (supports accordion/collapsed layout)
+    if (embedded) {
+      const totalAmt = amount + (surchargeAmount || 0);
+      const piParams: Stripe.PaymentIntentCreateParams = {
+        amount: totalAmt,
+        currency: currency || 'usd',
+        automatic_payment_methods: { enabled: true, allow_redirects: 'always' },
+        metadata,
+        statement_descriptor: statementDescriptor,
+        description: piDescription,
+      };
+      if (stripeAccountId) {
+        piParams.application_fee_amount = 0;
+        piParams.transfer_data = { destination: stripeAccountId };
+      }
+      const pi = await stripe.paymentIntents.create(piParams);
+      await saveSignature();
+      return new Response(
+        JSON.stringify({
+          clientSecret: pi.client_secret,
+          publishableKey: Deno.env.get('STRIPE_PUBLISHABLE_KEY')!,
+          connect_enabled: !!stripeAccountId,
+        }),
+        { headers: { ...CORS, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Non-embedded: hosted Checkout Session
     const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [{
       price_data: {
         currency: currency || 'usd',
@@ -76,57 +142,24 @@ Deno.serve(async (req) => {
       });
     }
 
-    const metadata = {
-      proposalKey, bidId, contractorUserId,
-      notifyEmail, signerName, clientName, businessName,
-      paymentMethod: paymentMethod || 'card',
-    };
-
-    let sessionParams: Stripe.Checkout.SessionCreateParams;
-
-    // ACH and Cash App Pay need explicit method types.
-    // Card/debit/applepay use automatic_payment_methods so Apple Pay, Google Pay,
-    // and Link all surface automatically based on device/browser support.
+    // ACH and Cash App Pay need explicit method types; everything else uses automatic
     const explicitMethodTypes = paymentMethod === 'us_bank_account'
       ? (['us_bank_account'] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[])
       : paymentMethod === 'cashapp'
       ? (['cashapp'] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[])
       : null;
 
-    if (embedded) {
-      sessionParams = {
-        mode: 'payment',
-        line_items: lineItems,
-        metadata,
-        ui_mode: 'embedded',
-        return_url: successUrl,
-        ...(explicitMethodTypes
-          ? { payment_method_types: explicitMethodTypes }
-          : { automatic_payment_methods: { enabled: true, allow_redirects: 'never' } }),
-      };
-    } else {
-      sessionParams = {
-        mode: 'payment',
-        line_items: lineItems,
-        metadata,
-        success_url: successUrl,
-        cancel_url: cancelUrl,
-        ...(explicitMethodTypes
-          ? { payment_method_types: explicitMethodTypes }
-          : { automatic_payment_methods: { enabled: true, allow_redirects: 'never' } }),
-      };
-    }
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
+      mode: 'payment',
+      line_items: lineItems,
+      metadata,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      ...(explicitMethodTypes
+        ? { payment_method_types: explicitMethodTypes }
+        : { automatic_payment_methods: { enabled: true, allow_redirects: 'always' } }),
+    };
 
-    // statement_descriptor → client's card statement: "SAMPLE-DEPOSIT" / "SAMPLE-FULL" (max 22 chars)
-    const _lastName = ((clientName||'').trim().split(/\s+/).pop()||'CLIENT').replace(/[^A-Za-z0-9]/g,'').toUpperCase();
-    const _suffix = paymentType === 'full' ? 'FULL' : 'DEPOSIT';
-    const statementDescriptor = (_lastName + '-' + _suffix).substring(0, 22) || 'PAYMENT';
-
-    // description → contractor's Stripe dashboard: shows client name + payment type
-    const _payLabel = paymentType === 'full' ? 'Full payment' : 'Deposit';
-    const piDescription = `${clientName || 'Client'} — ${_payLabel} — ${businessName || ''}`.trim().replace(/—\s*$/, '');
-
-    // Route payment to contractor's connected account if available
     if (stripeAccountId) {
       sessionParams.payment_intent_data = {
         application_fee_amount: 0,
@@ -142,39 +175,7 @@ Deno.serve(async (req) => {
     }
 
     const session = await stripe.checkout.sessions.create(sessionParams);
-
-    // Save signature to storage now (before payment completes)
-    if (signatureDataUrl && proposalKey) {
-      try {
-        const { data: existing } = await supabase.storage.from('proposals').download(proposalKey);
-        if (existing) {
-          const text = await existing.text();
-          const proposal = JSON.parse(text);
-          const updated = {
-            ...proposal,
-            signatureDataUrl, signerName,
-            status: 'signed_awaiting_payment',
-            signedAt: new Date().toISOString(),
-            stripeConnectAccountId: stripeAccountId || null,
-          };
-          await supabase.storage.from('proposals').upload(
-            proposalKey, JSON.stringify(updated),
-            { contentType: 'application/json', upsert: true }
-          );
-        }
-      } catch (e) { console.warn('Signature save failed:', e); }
-    }
-
-    if (embedded) {
-      return new Response(
-        JSON.stringify({
-          clientSecret: session.client_secret,
-          publishableKey: Deno.env.get('STRIPE_PUBLISHABLE_KEY')!,
-          connect_enabled: !!stripeAccountId,
-        }),
-        { headers: { ...CORS, 'Content-Type': 'application/json' } }
-      );
-    }
+    await saveSignature();
 
     return new Response(
       JSON.stringify({ url: session.url, connect_enabled: !!stripeAccountId }),

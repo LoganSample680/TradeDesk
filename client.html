@@ -393,7 +393,11 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
       </div>
       <button onclick="closePaymentModal()" style="background:rgba(255,255,255,.12);border:none;color:#fff;font-size:18px;line-height:1;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center">✕</button>
     </div>
-    <div id="checkout-embed-container" style="padding:4px 0"></div>
+    <div id="checkout-embed-container" style="padding:12px 12px 0"></div>
+    <div style="padding:12px 18px 18px">
+      <button id="checkout-submit-btn" onclick="_submitCheckoutPayment()" disabled style="display:block;width:100%;padding:14px;border-radius:10px;border:none;background:var(--ink);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 3px 14px rgba(27,22,18,.22)">Pay — Secured by Stripe</button>
+      <div id="checkout-pay-err" style="font-size:12px;color:#c0392b;text-align:center;margin-top:8px;min-height:16px"></div>
+    </div>
   </div>
 </div>
 
@@ -1424,7 +1428,7 @@ function renderInvoices(){
   const el=document.getElementById('view-invoices');if(el)el.innerHTML=html;
 }
 
-let _stripeCheckoutInstance=null;
+let _stripeCheckoutInstance=null,_stripeCheckoutElements=null,_stripeCheckoutBidId=null;
 async function _launchCheckout(bidId,amount,label){
   const bid=_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const btn=document.getElementById('pay-btn-'+bidId)||document.getElementById('pay-inv-btn-'+bidId);
@@ -1445,23 +1449,40 @@ async function _launchCheckout(bidId,amount,label){
     if(btn){if(btnOrig)btn.innerHTML=btnOrig;else btn.textContent=label;btn.disabled=false;}
     if(d.clientSecret&&d.publishableKey){
       document.getElementById('stripe-modal-biz').textContent=_hub.contractorName||'Secure Payment';
-      document.getElementById('stripe-modal-amt').textContent='Amount: '+fmt(amount/100)+' · Secured by Stripe';
+      document.getElementById('stripe-modal-amt').textContent=fmt(amount/100)+' · Secured by Stripe';
       document.getElementById('checkout-embed-container').innerHTML='';
       document.getElementById('stripe-overlay').style.display='block';
       document.body.style.overflow='hidden';
-      const stripe=Stripe(d.publishableKey);
-      _stripeCheckoutInstance=await stripe.initEmbeddedCheckout({
-        clientSecret:d.clientSecret,
-        onComplete:()=>{closePaymentModal();showPaymentSuccess(bidId);}
+      const stripeObj=Stripe(d.publishableKey);
+      _stripeCheckoutInstance=stripeObj;
+      _stripeCheckoutBidId=bidId;
+      _stripeCheckoutElements=stripeObj.elements({clientSecret:d.clientSecret,appearance:{theme:'stripe'}});
+      const payEl=_stripeCheckoutElements.create('payment',{
+        layout:{type:'accordion',defaultCollapsed:true,radios:false,spacedAccordionItems:true}
       });
-      _stripeCheckoutInstance.mount('#checkout-embed-container');
+      payEl.mount('#checkout-embed-container');
+      const submitBtn=document.getElementById('checkout-submit-btn');
+      if(submitBtn){submitBtn.disabled=false;submitBtn.textContent='Pay '+fmt(amount/100)+' — Secured by Stripe';}
     }else{
       alert('Could not set up payment. Please contact us directly.');
     }
   }catch(e){if(btn){if(btnOrig)btn.innerHTML=btnOrig;else btn.textContent=label;btn.disabled=false;}}
 }
+async function _submitCheckoutPayment(){
+  if(!_stripeCheckoutInstance||!_stripeCheckoutElements)return;
+  const btn=document.getElementById('checkout-submit-btn');
+  if(btn){btn.disabled=true;btn.textContent='Processing…';}
+  const returnUrl=location.href.split('#')[0]+'#paid-'+(_stripeCheckoutBidId||'');
+  const{error}=await _stripeCheckoutInstance.confirmPayment({elements:_stripeCheckoutElements,confirmParams:{return_url:returnUrl}});
+  if(error){
+    const errEl=document.getElementById('checkout-pay-err');
+    if(errEl)errEl.textContent=error.message||'Payment failed. Please try again.';
+    if(btn){btn.disabled=false;btn.textContent='Pay now — Secured by Stripe';}
+  }
+}
 function closePaymentModal(){
-  if(_stripeCheckoutInstance){_stripeCheckoutInstance.destroy();_stripeCheckoutInstance=null;}
+  _stripeCheckoutInstance=null;_stripeCheckoutElements=null;_stripeCheckoutBidId=null;
+  document.getElementById('checkout-embed-container').innerHTML='';
   const ov=document.getElementById('stripe-overlay');
   if(ov)ov.style.display='none';
   document.body.style.overflow='';
