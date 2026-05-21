@@ -25,7 +25,16 @@ async function _fetchStripeConnectStatus(){
 }
 async function loadStripeConnectStatus(){
   const el=document.getElementById('stripe-connect-status-ui');
-  if(!supaEnabled()||!_supaUser){
+  if(!supaEnabled()){
+    if(el)el.innerHTML='<div style="font-size:12px;color:var(--text3)">Cloud sync required to use Stripe Connect.</div>';
+    return;
+  }
+  // _supaUser may be null on first settings open if the app loaded from cache (offline mode).
+  // getSession() reads the token from localStorage instantly — no network needed.
+  if(!_supaUser&&_supa){
+    try{const{data:{session}}=await _supa.auth.getSession();if(session?.user)_supaUser=session.user;}catch(_e){}
+  }
+  if(!_supaUser){
     if(el)el.innerHTML=
       '<div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.5">Sign in to your TradeDesk account to connect Stripe and accept card or bank payments.</div>'+
       '<button onclick="supaShowLogin({force:true})" style="border:none;background:var(--blue);color:#fff;border-radius:20px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Sign in to TradeDesk →</button>';
@@ -342,7 +351,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.21.26.197';
+const APP_VERSION='05.21.26.198';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -630,6 +639,8 @@ async function supaInit(){
           _supaUser=session.user;
           _saveSessionBackup(session);
           if(!_supaCloudLoaded||_loadedFromCacheOnly||_mergeOnSignIn)_onReconnect();
+          // Re-render Stripe Connect UI if settings is open (was showing "sign in" while session refreshed)
+          if(document.getElementById('pg-settings')?.classList.contains('active'))loadStripeConnectStatus();
         }
         return;
       } else if(event==='INITIAL_SESSION'){
