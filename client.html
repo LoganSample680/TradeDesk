@@ -578,7 +578,12 @@ async function init(){
     }
     showState('hub');
     try{_supa.from('proposal_views').insert({contractor_user_id:u,client_id:c,user_agent:(navigator.userAgent||'').slice(0,250)}).then(()=>{}).catch(()=>{});}catch(_e){}
-    if(location.hash.startsWith('#paid-')){
+    const _paidParam=p.get('paid');
+    if(_paidParam){
+      const bidId=parseInt(_paidParam);
+      if(bidId)setTimeout(()=>showPaymentSuccess(bidId),300);
+      history.replaceState(null,'',location.pathname+'?'+new URLSearchParams([...p.entries()].filter(([k])=>k!=='paid'&&k!=='payment_intent'&&k!=='payment_intent_client_secret'&&k!=='redirect_status')).toString());
+    }else if(location.hash.startsWith('#paid-')){
       const bidId=parseInt(location.hash.replace('#paid-',''));
       if(bidId)setTimeout(()=>showPaymentSuccess(bidId),300);
       history.replaceState(null,'',location.pathname+location.search);
@@ -1428,61 +1433,77 @@ function renderInvoices(){
   const el=document.getElementById('view-invoices');if(el)el.innerHTML=html;
 }
 
-let _stripeCheckoutInstance=null,_stripeCheckoutElements=null,_stripeCheckoutBidId=null;
+let _stripeCheckoutInstance=null,_stripeCheckoutElements=null,_stripeCheckoutBidId=null,_stripeCheckoutAmt=0;
 async function _launchCheckout(bidId,amount,label){
   const bid=_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const btn=document.getElementById('pay-btn-'+bidId)||document.getElementById('pay-inv-btn-'+bidId);
   const btnOrig=btn?btn.innerHTML:null;
-  if(btn){btn.textContent='Opening secure checkout…';btn.disabled=true;}
+  if(btn){btn.textContent='Opening…';btn.disabled=true;}
+  _stripeCheckoutAmt=amount;
+  _stripeCheckoutBidId=bidId;
+  // Open modal with loading state immediately
+  document.getElementById('stripe-modal-biz').textContent=_hub.contractorName||'Secure Payment';
+  document.getElementById('stripe-modal-amt').textContent=fmt(amount/100)+' · Secured by Stripe';
+  document.getElementById('checkout-embed-container').innerHTML='<div style="padding:32px 20px;text-align:center;color:#9ca3af;font-size:14px">Loading payment options…</div>';
+  const submitBtn=document.getElementById('checkout-submit-btn');
+  if(submitBtn){submitBtn.disabled=true;submitBtn.textContent='Pay '+fmt(amount/100)+' — Secured by Stripe';}
+  document.getElementById('stripe-overlay').style.display='block';
+  document.body.style.overflow='hidden';
+  if(btn){if(btnOrig)btn.innerHTML=btnOrig;else btn.textContent=label;btn.disabled=false;}
   try{
-    const hubBase=location.href.split('#')[0];
+    const hubBase=location.href.split('?')[0];
+    const existingParams=location.search?location.search.slice(1):'';
+    const successUrl=hubBase+'?'+(existingParams?existingParams+'&':'')+'paid='+bid.id;
     const res=await fetch(SUPA_URL+'/functions/v1/create-checkout',{
       method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
       body:JSON.stringify({amount,currency:'usd',paymentMethod:'card',
         proposalKey:bid.proposalKey||null,clientName:_hub.clientName,
         businessName:_hub.contractorName,bidId:String(bid.id),
         contractorUserId:_hub.contractorUserId,notifyEmail:_hub.notifyEmail,
-        successUrl:hubBase+'#paid-'+bid.id,cancelUrl:hubBase,
+        successUrl,cancelUrl:location.href,
         embedded:true})
     });
     const d=await res.json();
-    if(btn){if(btnOrig)btn.innerHTML=btnOrig;else btn.textContent=label;btn.disabled=false;}
-    if(d.clientSecret&&d.publishableKey){
-      document.getElementById('stripe-modal-biz').textContent=_hub.contractorName||'Secure Payment';
-      document.getElementById('stripe-modal-amt').textContent=fmt(amount/100)+' · Secured by Stripe';
-      document.getElementById('checkout-embed-container').innerHTML='';
-      document.getElementById('stripe-overlay').style.display='block';
-      document.body.style.overflow='hidden';
-      const stripeObj=Stripe(d.publishableKey);
-      _stripeCheckoutInstance=stripeObj;
-      _stripeCheckoutBidId=bidId;
-      _stripeCheckoutElements=stripeObj.elements({clientSecret:d.clientSecret,appearance:{theme:'stripe'}});
-      const payEl=_stripeCheckoutElements.create('payment',{
-        layout:{type:'accordion',defaultCollapsed:true,radios:false,spacedAccordionItems:true}
-      });
-      payEl.mount('#checkout-embed-container');
-      const submitBtn=document.getElementById('checkout-submit-btn');
-      if(submitBtn){submitBtn.disabled=false;submitBtn.textContent='Pay '+fmt(amount/100)+' — Secured by Stripe';}
-    }else{
-      alert('Could not set up payment. Please contact us directly.');
-    }
-  }catch(e){if(btn){if(btnOrig)btn.innerHTML=btnOrig;else btn.textContent=label;btn.disabled=false;}}
+    if(!res.ok||!d.clientSecret||!d.publishableKey)throw new Error(d.error||'Could not set up payment');
+    const stripeObj=Stripe(d.publishableKey);
+    _stripeCheckoutInstance=stripeObj;
+    _stripeCheckoutElements=stripeObj.elements({clientSecret:d.clientSecret,appearance:{theme:'stripe',variables:{borderRadius:'8px'}}});
+    const payEl=_stripeCheckoutElements.create('payment',{
+      layout:{type:'accordion',defaultCollapsed:false,radios:true,spacedAccordionItems:false}
+    });
+    document.getElementById('checkout-embed-container').innerHTML='';
+    payEl.mount('#checkout-embed-container');
+    payEl.on('ready',()=>{if(submitBtn)submitBtn.disabled=false;});
+    payEl.on('loaderror',()=>{
+      closePaymentModal();
+      alert('Could not load payment options. Please try again.');
+    });
+  }catch(e){
+    console.error('[_launchCheckout]',e);
+    closePaymentModal();
+    alert((e?.message||'Could not set up payment')+'. Please try again.');
+  }
 }
 async function _submitCheckoutPayment(){
   if(!_stripeCheckoutInstance||!_stripeCheckoutElements)return;
   const btn=document.getElementById('checkout-submit-btn');
   if(btn){btn.disabled=true;btn.textContent='Processing…';}
-  const returnUrl=location.href.split('#')[0]+'#paid-'+(_stripeCheckoutBidId||'');
+  const hubBase=location.href.split('?')[0];
+  const existingParams=location.search?location.search.slice(1):'';
+  const returnUrl=hubBase+'?'+(existingParams?existingParams+'&':'')+'paid='+(_stripeCheckoutBidId||'');
   const{error}=await _stripeCheckoutInstance.confirmPayment({elements:_stripeCheckoutElements,confirmParams:{return_url:returnUrl}});
   if(error){
-    const errEl=document.getElementById('checkout-pay-err');
-    if(errEl)errEl.textContent=error.message||'Payment failed. Please try again.';
-    if(btn){btn.disabled=false;btn.textContent='Pay now — Secured by Stripe';}
+    if(error.type!=='validation_error'){
+      const errEl=document.getElementById('checkout-pay-err');
+      if(errEl)errEl.textContent=error.message||'Payment failed. Please try again.';
+    }
+    if(btn){btn.disabled=false;btn.textContent='Pay '+fmt(_stripeCheckoutAmt/100)+' — Secured by Stripe';}
   }
 }
 function closePaymentModal(){
   _stripeCheckoutInstance=null;_stripeCheckoutElements=null;_stripeCheckoutBidId=null;
   document.getElementById('checkout-embed-container').innerHTML='';
+  const errEl=document.getElementById('checkout-pay-err');if(errEl)errEl.textContent='';
   const ov=document.getElementById('stripe-overlay');
   if(ov)ov.style.display='none';
   document.body.style.overflow='';

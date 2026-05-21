@@ -586,7 +586,7 @@ async function init(){
       const confNum='#CONF-'+String(_prop.id).slice(-6).toUpperCase();
       const signedDate=_sigRecord?.signed_at?new Date(_sigRecord.signed_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'—';
       const payMethod=_sigRecord?.payment_method;
-      const payLabel=payMethod==='card'?'💳 Card charged':payMethod==='ach'?'🏦 Bank transfer':payMethod==='cash'?'💵 Cash on arrival':'—';
+      const payLabel=payMethod==='card'?'💳 Card charged':payMethod==='ach'?'🏦 Bank transfer':payMethod==='cash'?'💵 Cash on arrival':payMethod==='check'?'📝 Check':'—';
       document.getElementById('done-icon').textContent='✅';
       document.getElementById('done-title').textContent='Already signed';
       document.getElementById('done-msg').textContent='This proposal has already been signed. The contractor will be in touch to confirm your start date.';
@@ -893,6 +893,7 @@ async function submitCash(){
 function showDone(method){
   const isAch=method==='ach';
   const isCashApp=method==='cashapp';
+  const isCheck=method==='check';
   const isPaid=method==='card'||isAch||isCashApp;
   document.getElementById('done-icon').textContent=isPaid?'🎉':'✅';
   document.getElementById('done-title').textContent=isPaid?'Payment confirmed!':'Proposal signed!';
@@ -900,7 +901,7 @@ function showDone(method){
     ?'Your deposit has been received. The contractor will be in touch to confirm your start date.'
     :'Your proposal is signed. The contractor will collect your deposit on arrival.';
   const _confNum=_prop?'#CONF-'+String(_prop.id).slice(-6).toUpperCase():'';
-  const payLabel=isAch?'🏦 Bank transfer':isCashApp?'💚 Cash App Pay':method==='card'?'💳 Card charged':'💵 Cash on arrival';
+  const payLabel=isAch?'🏦 Bank transfer':isCashApp?'💚 Cash App Pay':isCheck?'📝 Check':method==='card'?'💳 Card charged':'💵 Cash on arrival';
   document.getElementById('done-rows').innerHTML=
     (_confNum?'<div class="row"><span class="rl">Confirmation</span><span class="rv" style="font-weight:700;color:var(--green)">'+_confNum+'</span></div>':'')+
     '<div class="row"><span class="rl">Client</span><span class="rv">'+(_prop?.clientName||'')+'</span></div>'+
@@ -918,7 +919,7 @@ function showDone(method){
 setTimeout(()=>{const b=document.getElementById('sign-boot-bar');if(b)b.style.width='40%';},55);
 init();
 
-let _stripeInst=null,_stripeElements=null;
+let _stripeInst=null,_stripeElements=null,_stripeAmt=0;
 function _closeStripeModal(){
   _stripeInst=null;_stripeElements=null;
   document.getElementById('sign-stripe-overlay').style.display='none';
@@ -938,26 +939,29 @@ function _renderSignPayBtns(){
         'Pay now — Secured by Stripe'+
       '</button>'+
       '<div style="font-size:11px;color:#94a3b8;text-align:center;margin-bottom:16px;line-height:1.6">'+
-        '🍎 Apple Pay &nbsp;·&nbsp; Google Pay &nbsp;·&nbsp; 💳 Card &nbsp;·&nbsp; 🏦 Bank transfer'+
-        (surchargeOn?'<br><span style="color:#b45309">'+pct+'% fee for credit cards &mdash; bank transfer is free</span>':'')+
+        '🍎 Apple Pay &nbsp;·&nbsp; Google Pay &nbsp;·&nbsp; 💳 Card &nbsp;·&nbsp; 🏦 Bank &nbsp;·&nbsp; and more'+
+        (surchargeOn?'<br><span style="color:#b45309">'+pct+'% fee on credit cards · debit cards &amp; bank transfer are free</span>':'')+
       '</div>';
   }
-  html+='<button onclick="_paySign(\'cash\')" style="display:block;width:100%;padding:10px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">Pay cash in person</button>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px">'+
+    '<button onclick="_paySign(\'cash\')" style="padding:10px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">💵 Cash</button>'+
+    '<button onclick="_paySign(\'check\')" style="padding:10px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">📝 Check</button>'+
+  '</div>';
   container.innerHTML=html;
 }
 async function _paySign(method){
   if(!_prop)return;
-  if(method==='cash'){
-    _manualPayMethod='cash';
+  if(method==='cash'||method==='check'){
+    _manualPayMethod=method;
     document.getElementById('sign-pay-btns').style.display='none';
     const cashSec=document.getElementById('sec-cash');
     cashSec.style.display='block';
     const hdr=document.getElementById('cash-confirm-hdr');
     const msg=document.getElementById('cash-confirm-msg');
     const confirmBtn=document.getElementById('sec-cash-confirm-btn');
-    if(hdr)hdr.textContent='Cash selected.';
-    if(msg)msg.textContent=_payFullAmount?' Your proposal is signed. The contractor will collect the full amount when they arrive.':' Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.';
-    if(confirmBtn)confirmBtn.textContent="Confirm — I'll pay cash in person";
+    if(hdr)hdr.textContent=method==='check'?'Check selected.':'Cash selected.';
+    if(msg)msg.textContent=_payFullAmount?(' Your proposal is signed. The contractor will collect the full amount '+(method==='check'?'when work is complete.':'when they arrive.')):(' Your proposal is signed and your spot is reserved. '+(_prop?.businessName||'The contractor')+' will collect the deposit '+(method==='check'?'before work begins.':'when they arrive.'));
+    if(confirmBtn)confirmBtn.textContent=method==='check'?"Confirm — I'll pay by check":"Confirm — I'll pay cash in person";
     if(_payFullAmount){_payFullAmount=false;_renderPayTiles();_updatePayButtons();}
     return;
   }
@@ -979,38 +983,56 @@ async function _launchEmbedded(amount,paymentMethod,surchargeAmount=0){
   const _p=new URLSearchParams(location.search);
   let propKey=_p.get('key');
   if(!propKey){const t=_p.get('t'),u=_p.get('u'),b=_p.get('b');if(t&&u&&b)propKey=`proposals/${u}/${b}_${t}.json`;}
-  const res=await fetch(SUPA_URL+'/functions/v1/create-checkout',{
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
-    body:JSON.stringify({
-      amount,currency:'usd',paymentMethod,
-      surchargeAmount:surchargeAmount||undefined,
-      proposalKey:propKey,clientName:_prop.clientName,businessName:_prop.businessName,
-      bidId:String(_prop.id),contractorUserId:_prop.contractorUserId,
-      notifyEmail:_prop.notifyEmail,signatureDataUrl:_sigData,
-      signerName:document.getElementById('sig-name').value.trim(),
-      colorChoices:window._colorChoices||[],
-      successUrl:location.href+'&payment=success',cancelUrl:location.href,
-      embedded:true,
-    })
-  });
-  const d=await res.json();
-  if(!res.ok)throw new Error(d.error||'HTTP '+res.status);
-  if(!d.clientSecret||!d.publishableKey)throw new Error(d.error||'No client secret');
+  _stripeAmt=amount;
+  // Open modal with loading state immediately — don't wait for the API call
   document.getElementById('sign-stripe-biz').textContent=_prop.businessName||'Secure Payment';
   document.getElementById('sign-stripe-amt').textContent=fmt(amount/100)+' · Secured by Stripe';
-  document.getElementById('sign-embed-container').innerHTML='';
+  document.getElementById('sign-embed-container').innerHTML='<div style="padding:32px 20px;text-align:center;color:#9ca3af;font-size:14px">Loading payment options…</div>';
+  const submitBtn=document.getElementById('sign-stripe-submit');
+  if(submitBtn){submitBtn.disabled=true;submitBtn.textContent='Pay '+fmt(amount/100)+' — Secured by Stripe';}
   document.getElementById('sign-stripe-overlay').style.display='flex';
   document.body.style.overflow='hidden';
-  const stripeObj=Stripe(d.publishableKey);
-  _stripeInst=stripeObj;
-  _stripeElements=stripeObj.elements({clientSecret:d.clientSecret,appearance:{theme:'stripe'}});
-  const payEl=_stripeElements.create('payment',{
-    layout:{type:'accordion',defaultCollapsed:true,radios:false,spacedAccordionItems:true}
-  });
-  payEl.mount('#sign-embed-container');
-  const submitBtn=document.getElementById('sign-stripe-submit');
-  if(submitBtn){submitBtn.disabled=false;submitBtn.textContent='Pay '+fmt(amount/100)+' — Secured by Stripe';}
+  try{
+    const res=await fetch(SUPA_URL+'/functions/v1/create-checkout',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
+      body:JSON.stringify({
+        amount,currency:'usd',paymentMethod,
+        surchargeAmount:surchargeAmount||undefined,
+        proposalKey:propKey,clientName:_prop.clientName,businessName:_prop.businessName,
+        bidId:String(_prop.id),contractorUserId:_prop.contractorUserId,
+        notifyEmail:_prop.notifyEmail,signatureDataUrl:_sigData,
+        signerName:document.getElementById('sig-name').value.trim(),
+        colorChoices:window._colorChoices||[],
+        successUrl:location.href+'&payment=success',cancelUrl:location.href,
+        embedded:true,
+      })
+    });
+    const d=await res.json();
+    if(!res.ok||!d.clientSecret||!d.publishableKey)throw new Error(d.error||'Could not set up payment');
+    const stripeObj=Stripe(d.publishableKey);
+    _stripeInst=stripeObj;
+    _stripeElements=stripeObj.elements({clientSecret:d.clientSecret,appearance:{theme:'stripe',variables:{borderRadius:'8px'}}});
+    const surchargeOn=!!(_prop?.ccSurchargeEnabled);
+    const pct=_prop?.ccSurchargePct||3;
+    const payEl=_stripeElements.create('payment',{
+      layout:{type:'accordion',defaultCollapsed:false,radios:true,spacedAccordionItems:false},
+      ...(surchargeOn?{business:{name:(_prop.businessName||'')}}:{}),
+    });
+    document.getElementById('sign-embed-container').innerHTML='';
+    payEl.mount('#sign-embed-container');
+    payEl.on('ready',()=>{if(submitBtn)submitBtn.disabled=false;});
+    payEl.on('loaderror',()=>{
+      _closeStripeModal();
+      document.getElementById('pay-err').textContent='Could not load payment options. Please try again.';
+    });
+  }catch(e){
+    console.error('[_launchEmbedded]',e);
+    _closeStripeModal();
+    document.getElementById('pay-err').textContent=(e?.message||'Could not open payment')+'. Please try again.';
+    const btn=document.getElementById('_pay-now-btn');
+    if(btn){btn.disabled=false;btn.innerHTML='Pay now — Secured by Stripe';}
+  }
 }
 async function _submitStripePayment(){
   if(!_stripeInst||!_stripeElements)return;
@@ -1019,8 +1041,11 @@ async function _submitStripePayment(){
   const returnUrl=(()=>{const u=new URL(location.href);u.searchParams.set('payment','success');return u.toString();})();
   const{error}=await _stripeInst.confirmPayment({elements:_stripeElements,confirmParams:{return_url:returnUrl}});
   if(error){
-    document.getElementById('pay-err').textContent=error.message||'Payment failed. Please try again.';
-    if(btn){btn.disabled=false;btn.textContent='Pay now — Secured by Stripe';}
+    // Stripe shows inline validation errors in the element; only surface fatal errors here
+    if(error.type!=='validation_error'){
+      document.getElementById('pay-err').textContent=error.message||'Payment failed. Please try again.';
+    }
+    if(btn){btn.disabled=false;btn.textContent='Pay '+fmt(_stripeAmt/100)+' — Secured by Stripe';}
   }
 }
 </script>
@@ -1035,9 +1060,9 @@ async function _submitStripePayment(){
       </div>
       <button onclick="_closeStripeModal()" style="border:none;background:none;font-size:22px;cursor:pointer;color:#6b7280;padding:4px 8px">×</button>
     </div>
-    <div id="sign-embed-container" style="overflow-y:auto;padding:12px 12px 0"></div>
+    <div id="sign-embed-container" style="overflow-y:auto;padding:4px 4px 0"></div>
     <div style="padding:12px 16px 16px">
-      <button id="sign-stripe-submit" onclick="_submitStripePayment()" disabled style="display:block;width:100%;padding:14px;border-radius:10px;border:none;background:#1b1612;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 3px 14px rgba(27,22,18,.25)">Pay — Secured by Stripe</button>
+      <button id="sign-stripe-submit" onclick="_submitStripePayment()" disabled style="display:block;width:100%;padding:14px;border-radius:10px;border:none;background:#1b1612;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 3px 14px rgba(27,22,18,.25);opacity:.5;transition:opacity .2s" onmouseenter="if(!this.disabled)this.style.opacity='.85'" onmouseleave="this.style.opacity=this.disabled?'.5':'1'">Pay — Secured by Stripe</button>
     </div>
   </div>
 </div>
