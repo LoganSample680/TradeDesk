@@ -1479,7 +1479,8 @@ async function _launchCheckout(bidId,amount,label){
     }else{
       _stripeCheckoutElements=stripeObj.elements({clientSecret:d.clientSecret,appearance:{theme:'stripe',variables:{borderRadius:'8px'}}});
       const payEl=_stripeCheckoutElements.create('payment',{
-        layout:{type:'accordion',defaultCollapsed:false,radios:true,spacedAccordionItems:false}
+        layout:{type:'accordion',defaultCollapsed:false,radios:true,spacedAccordionItems:false},
+        paymentMethodOrder:['us_bank_account','apple_pay','google_pay','card','cashapp','affirm','klarna'],
       });
       payEl.mount('#checkout-embed-container');
       payEl.on('ready',()=>{if(submitBtn){submitBtn.disabled=false;submitBtn.style.display='block';}});
