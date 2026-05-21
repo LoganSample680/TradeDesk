@@ -64,7 +64,7 @@ Deno.serve(async (req) => {
     const _payLabel = paymentType === 'full' ? 'Full payment' : 'Deposit';
     const piDescription = `${clientName || 'Client'} — ${_payLabel} — ${businessName || ''}`.trim().replace(/—\s*$/, '');
 
-    // Save signature to storage (called after PI/session creation)
+    // Signature save helper
     async function saveSignature() {
       if (!signatureDataUrl || !proposalKey) return;
       try {
@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
       } catch (e) { console.warn('Signature save failed:', e); }
     }
 
-    // Embedded: PaymentIntent + Payment Element (supports accordion/collapsed layout)
+    // Embedded: PaymentIntent + Payment Element (accordion layout, all payment methods)
     if (embedded) {
       const totalAmt = amount + (surchargeAmount || 0);
       const piParams: Stripe.PaymentIntentCreateParams = {
@@ -142,7 +142,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // ACH and Cash App Pay need explicit method types; everything else uses automatic
     const explicitMethodTypes = paymentMethod === 'us_bank_account'
       ? (['us_bank_account'] as Stripe.Checkout.SessionCreateParams.PaymentMethodType[])
       : paymentMethod === 'cashapp'
