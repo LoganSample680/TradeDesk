@@ -117,10 +117,14 @@ Deno.serve(async (req) => {
       };
     }
 
-    // Statement descriptor: "SAMPLE-DEPOSIT" or "SAMPLE-FULL" (max 22 chars)
+    // statement_descriptor → client's card statement: "SAMPLE-DEPOSIT" / "SAMPLE-FULL" (max 22 chars)
     const _lastName = ((clientName||'').trim().split(/\s+/).pop()||'CLIENT').replace(/[^A-Za-z0-9]/g,'').toUpperCase();
     const _suffix = paymentType === 'full' ? 'FULL' : 'DEPOSIT';
     const statementDescriptor = (_lastName + '-' + _suffix).substring(0, 22) || 'PAYMENT';
+
+    // description → contractor's Stripe dashboard: shows client name + payment type
+    const _payLabel = paymentType === 'full' ? 'Full payment' : 'Deposit';
+    const piDescription = `${clientName || 'Client'} — ${_payLabel} — ${businessName || ''}`.trim().replace(/—\s*$/, '');
 
     // Route payment to contractor's connected account if available
     if (stripeAccountId) {
@@ -128,9 +132,13 @@ Deno.serve(async (req) => {
         application_fee_amount: 0,
         transfer_data: { destination: stripeAccountId },
         statement_descriptor: statementDescriptor,
+        description: piDescription,
       };
     } else {
-      sessionParams.payment_intent_data = { statement_descriptor: statementDescriptor };
+      sessionParams.payment_intent_data = {
+        statement_descriptor: statementDescriptor,
+        description: piDescription,
+      };
     }
 
     const session = await stripe.checkout.sessions.create(sessionParams);
