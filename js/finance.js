@@ -2301,7 +2301,8 @@ function renderJobSummary(){
 }
 
 function openManualIncomeModal(){
-  const today=new Date().toISOString().slice(0,10);
+  const _td=new Date();const _tm=String(_td.getMonth()+1).padStart(2,'0'),_tdd=String(_td.getDate()).padStart(2,'0'),_ty=_td.getFullYear();
+  const todayMDY=_tm+'/'+_tdd+'/'+_ty;
   const clientOpts=clients.map(c=>'<option value="'+c.id+'">'+escHtml(c.name)+'</option>').join('');
   const ov=document.createElement('div');ov.id='_inc-ov';ov.style.cssText='position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   const sheet=document.createElement('div');sheet.style.cssText='background:var(--bg2);border-radius:14px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;padding:20px 16px 24px;box-sizing:border-box';
@@ -2312,7 +2313,7 @@ function openManualIncomeModal(){
     '</div>'+
     '<div style="display:grid;gap:12px">'+
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Date <span style="color:#A32D2D">*</span></label>'+
-        '<input id="_inc-date" type="date" value="'+today+'" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box"></div>'+
+        '<input id="_inc-date" type="text" inputmode="numeric" value="'+todayMDY+'" placeholder="MM/DD/YYYY" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box"></div>'+
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Amount <span style="color:#A32D2D">*</span></label>'+
         '<input id="_inc-amt" type="number" min="0" step="0.01" placeholder="0.00" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box"></div>'+
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Client</label>'+
@@ -2349,10 +2350,15 @@ function toggleIncDepositWarn(){
   if(w)w.style.display=(t==='Deposit')?'block':'none';
 }
 function saveManualIncome(){
-  const date=document.getElementById('_inc-date')?.value||'';
-  const amtRaw=parseFloat(document.getElementById('_inc-amt')?.value||'');
+  const dateRaw=(document.getElementById('_inc-date')?.value||'').trim();
   const errEl=document.getElementById('_inc-err');
-  if(!date){errEl.textContent='Please select a date.';errEl.style.display='block';return;}
+  const mdy=dateRaw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  const ymd=dateRaw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  let date='';
+  if(mdy){const y=mdy[3].length===2?'20'+mdy[3]:mdy[3];date=y+'-'+mdy[1].padStart(2,'0')+'-'+mdy[2].padStart(2,'0');}
+  else if(ymd)date=dateRaw;
+  if(!date){errEl.textContent='Enter date as MM/DD/YYYY';errEl.style.display='block';return;}
+  const amtRaw=parseFloat(document.getElementById('_inc-amt')?.value||'');
   if(!amtRaw||amtRaw<=0){errEl.textContent='Please enter an amount greater than 0.';errEl.style.display='block';return;}
   errEl.style.display='none';
   const clientId=document.getElementById('_inc-client')?.value||'';
@@ -2380,9 +2386,7 @@ function saveManualIncome(){
 function _bkTogMonth(tab,mo){
   const el=document.getElementById('bk-'+tab+'-mo-'+mo);
   if(!el)return;
-  const open=el.classList.toggle('open');
-  const body=el.querySelector('.bk-month-body');
-  if(body)body.style.display=open?'':'none';
+  el.classList.toggle('open');
 }
 function renderIncome(){
   const el=document.getElementById('inc-table');
@@ -2390,7 +2394,7 @@ function renderIncome(){
   // Normalize any date format (20230601 or 2023-06-01) to YYYY-MM-DD
   const normDate=d=>{if(!d)return'';const c=d.replace(/-/g,'');return c.length>=8?c.slice(0,4)+'-'+c.slice(4,6)+'-'+c.slice(6,8):d;};
   const fmtD2=d=>{const n=normDate(d);const[,y,m,dd]=(n.match(/(\d{4})-(\d{2})-(\d{2})/)||[]);return m&&dd?m+'/'+dd+'/'+y:d||'—';};
-  const incRows=income.filter(r=>r.date&&r.date.replace(/-/g,'').startsWith(yr)).map(r=>({id:r.id,date:normDate(r.date),sortDate:r.date.replace(/-/g,''),client_id:r.client_id,client_name:r.client_name,type:r.type||'Income',amount:r.amount,method:r.pay||'—',_src:'income'}));
+  const incRows=income.filter(r=>r.date&&r.date.replace(/-/g,'').startsWith(yr)).map(r=>({id:r.id,date:normDate(r.date),sortDate:r.date.replace(/-/g,''),client_id:r.client_id,client_name:r.client_name,type:r.type||'Income',amount:r.amount,method:r.method||r.pay||'—',_src:'income'}));
   const payRows=payments.filter(p=>p.date&&p.amount>0&&p.date.replace(/-/g,'').startsWith(yr)).map(p=>({id:p.id,date:normDate(p.date),sortDate:p.date.replace(/-/g,''),client_id:p.client_id,client_name:p.client_name,type:p.type==='deposit'?'Deposit':p.type==='final'?'Final payment':'Payment',amount:p.amount,method:p.method||'—',_src:'payment'}));
   const filtered=[...incRows,...payRows].sort((a,b)=>b.sortDate.localeCompare(a.sortDate));
   const total=filtered.reduce((s,r)=>s+r.amount,0);
@@ -2430,7 +2434,7 @@ function renderIncome(){
           '<div class="bk-month-chev">▸</div>'+
         '</div>'+
       '</button>'+
-      '<div class="bk-month-body"'+(isOpen?'':' style="display:none"')+'>'+
+      '<div class="bk-month-body">'+
         '<div style="overflow-x:auto"><table class="tbl"><thead><tr>'+
           ['Date','Client','Type','Amount','Method'].map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'+rowsHtml+'</tbody></table></div>'+
       '</div>'+
@@ -2531,7 +2535,7 @@ function renderExpenses(){
             '<div class="bk-month-chev">▸</div>'+
           '</div>'+
         '</button>'+
-        '<div class="bk-month-body"'+(isOpen?'':' style="display:none"')+'>'+
+        '<div class="bk-month-body">'+
           '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl" style="min-width:560px"><thead><tr>'+
             ['Date','Category','Vendor','Amount','Receipt'].map(h=>'<th>'+h+'</th>').join('')+'<th></th></tr></thead><tbody>'+
             rows.map(_expRow).join('')+
