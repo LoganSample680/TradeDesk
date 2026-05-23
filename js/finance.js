@@ -65,7 +65,7 @@ function openExpenseFlow(){
     '</div>';
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)closeExpenseFlow();});
-  _expState={imageData:null,imageKey:null};
+  _expState={imageData:null,imageKey:null,hasReceipt:false,editId:null,imagePages:[]};
 }
 
 function closeExpenseFlow(){document.getElementById('expense-modal')?.remove();_expState={imageData:null,imageKey:null,hasReceipt:false,editId:null,imagePages:[]};}
