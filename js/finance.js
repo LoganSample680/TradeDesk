@@ -2300,6 +2300,16 @@ function renderJobSummary(){
     '</div>';
 }
 
+function _incDateFmt(el){
+  const pos=el.selectionStart;
+  let v=el.value.replace(/\D/g,'').slice(0,8);
+  if(v.length>4)v=v.slice(0,2)+'/'+v.slice(2,4)+'/'+v.slice(4);
+  else if(v.length>2)v=v.slice(0,2)+'/'+v.slice(2);
+  el.value=v;
+  // keep cursor from jumping to end when inserting slashes
+  const diff=v.length-el.value.length;
+  try{el.setSelectionRange(pos+diff,pos+diff);}catch(e){}
+}
 function openManualIncomeModal(){
   const _td=new Date();const _tm=String(_td.getMonth()+1).padStart(2,'0'),_tdd=String(_td.getDate()).padStart(2,'0'),_ty=_td.getFullYear();
   const todayMDY=_tm+'/'+_tdd+'/'+_ty;
@@ -2313,7 +2323,7 @@ function openManualIncomeModal(){
     '</div>'+
     '<div style="display:grid;gap:12px">'+
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Date <span style="color:#A32D2D">*</span></label>'+
-        '<input id="_inc-date" type="text" inputmode="numeric" value="'+todayMDY+'" placeholder="MM/DD/YYYY" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box"></div>'+
+        '<input id="_inc-date" type="text" inputmode="numeric" value="'+todayMDY+'" placeholder="MM/DD/YYYY" oninput="_incDateFmt(this)" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box"></div>'+
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Amount <span style="color:#A32D2D">*</span></label>'+
         '<input id="_inc-amt" type="number" min="0" step="0.01" placeholder="0.00" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box"></div>'+
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Client</label>'+
