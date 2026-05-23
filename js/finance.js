@@ -1,8 +1,5 @@
 // ── IRS Schedule C expense categories ────────────────────────────────
 let _expState={imageData:null,imageKey:null,editId:null,imagePages:[]};
-let _expPage=0;
-
-function setExpPage(n){_expPage=n;renderExpenses();const el=document.getElementById('exp-table');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}
 
 function openExpenseFlow(){
   if(document.getElementById('expense-modal'))return;
@@ -1434,7 +1431,6 @@ function populateTrackerYearSel(){
 function setTrackerYear(yr){
   _trackerYearManual=true;
   trackerYear=yr;
-  _expPage=0;
   renderTrackerTab();
 }
 function renderTrackerTab(){
@@ -2466,16 +2462,12 @@ function renderExpenses(){
       '<div style="font-size:10px;color:var(--green-mid);font-weight:700">~'+fmt(deductible)+' deductible</div>'+
     '</div>'+
   '</div>';
-  // Expense rows — paginated, 20 per page
-  const PER_PAGE=20;
+  // Expense rows
   const sorted=[...filtered].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  const totalPages=Math.max(1,Math.ceil(sorted.length/PER_PAGE));
-  if(_expPage>=totalPages)_expPage=totalPages-1;
-  const pageRows=sorted.slice(_expPage*PER_PAGE,(_expPage+1)*PER_PAGE);
   try{
     html+='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl" style="min-width:560px"><thead><tr>'+
       ['Date','Category','Vendor','Amount','Receipt'].map(h=>'<th>'+h+'</th>').join('')+'<th></th></tr></thead><tbody>'+
-      pageRows.map(r=>{
+      sorted.map(r=>{
         const info=IRS_EXPENSE_CATS.find(c=>c.id===r.cat);
         const pageCount=(r.receipt_keys?.length||0)+(r.receipt_key&&!r.receipt_keys?1:0);
         const hasBucket=!!r.receipt_key||pageCount>0,hasInline=!!r.receipt_img,hasImg=hasBucket||hasInline;
@@ -2494,13 +2486,6 @@ function renderExpenses(){
           '<td><button onclick="editExpense('+r.id+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Edit</button></td>'+
         '</tr>';
       }).join('')+'</tbody></table></div>';
-    if(totalPages>1){
-      html+='<div style="display:flex;align-items:center;justify-content:center;gap:12px;padding:12px 0">'+
-        '<button onclick="setExpPage('+(_expPage-1)+')" '+((_expPage===0)?'disabled':'')+' style="padding:7px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit'+((_expPage===0)?';opacity:.4;cursor:not-allowed':'')+'">&larr; Prev</button>'+
-        '<span style="font-size:12px;color:var(--text3);font-weight:700">Page '+(_expPage+1)+' of '+totalPages+'</span>'+
-        '<button onclick="setExpPage('+(_expPage+1)+')" '+((_expPage>=totalPages-1)?'disabled':'')+' style="padding:7px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit'+((_expPage>=totalPages-1)?';opacity:.4;cursor:not-allowed':'')+'">&rarr; Next</button>'+
-      '</div>';
-    }
   }catch(err){
     console.error('renderExpenses table error:',err,{filtered:filtered.slice(0,3)});
     html+='<div class="tip tip-a">Error rendering expense rows — check console. ('+err.message+')</div>';
