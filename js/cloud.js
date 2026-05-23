@@ -351,7 +351,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.23.26.3';
+const APP_VERSION='05.23.26.4';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -387,24 +387,32 @@ const _TD_TABLES=[
 ];
 
 // ── Long-press delete (3s hold on any [data-lp-id] element) ────────────────
-let _lpTimer=null,_lpFired=false;
+let _lpTimer=null,_lpFired=false,_lpStartX=0,_lpStartY=0;
 (function(){
   const s=document.createElement('style');
-  s.textContent='[data-lp-id]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}';
+  s.textContent='[data-lp-id]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;}';
   (document.head||document.documentElement).appendChild(s);
   function _lpStart(e){
     const row=e.target.closest('[data-lp-id]');
     if(!row)return;
     if(e.target.closest('button,select,input,a,label'))return;
     clearTimeout(_lpTimer);_lpFired=false;
+    const t=e.touches?e.touches[0]:e;
+    _lpStartX=t.clientX;_lpStartY=t.clientY;
     _lpTimer=setTimeout(()=>{_lpTimer=null;_lpFired=true;_showLpDeletePopup(row);},3000);
+  }
+  function _lpMove(e){
+    if(!_lpTimer)return;
+    const t=e.touches?e.touches[0]:e;
+    if(Math.abs(t.clientX-_lpStartX)>8||Math.abs(t.clientY-_lpStartY)>8){clearTimeout(_lpTimer);_lpTimer=null;}
   }
   function _lpCancel(){clearTimeout(_lpTimer);_lpTimer=null;}
   document.addEventListener('touchstart',_lpStart,{passive:true});
   document.addEventListener('touchend',_lpCancel);
-  document.addEventListener('touchmove',_lpCancel,{passive:true});
+  document.addEventListener('touchmove',_lpMove,{passive:true});
   document.addEventListener('mousedown',_lpStart);
   document.addEventListener('mouseup',_lpCancel);
+  document.addEventListener('mousemove',_lpMove);
   document.addEventListener('click',e=>{if(_lpFired){_lpFired=false;e.stopPropagation();e.preventDefault();}},true);
   document.addEventListener('contextmenu',e=>{if(e.target.closest('[data-lp-id]'))e.preventDefault();});
 })();

@@ -2377,32 +2377,64 @@ function saveManualIncome(){
     showToast('Income logged','✅');
   }
 }
+function _bkTogMonth(tab,mo){
+  const el=document.getElementById('bk-'+tab+'-mo-'+mo);
+  if(!el)return;
+  const open=el.classList.toggle('open');
+  const body=el.querySelector('.bk-month-body');
+  if(body)body.style.display=open?'':'none';
+}
 function renderIncome(){
   const el=document.getElementById('inc-table');
   const yr=String(trackerYear||new Date().getFullYear());
-  const fmtDateDisp=d=>{if(!d)return'—';const c=d.replace(/-/g,'');return c.slice(0,4)+'-'+c.slice(4,6)+'-'+c.slice(6,8);};
+  const fmtD2=d=>{if(!d)return'—';const[,y,m,dd]=(d.match(/(\d{4})-(\d{2})-(\d{2})/)||[]);return m&&dd?m+'/'+dd+'/'+y:d;};
   const incRows=income.filter(r=>r.date&&r.date.replace(/-/g,'').startsWith(yr)).map(r=>({id:r.id,date:r.date,sortDate:r.date.replace(/-/g,''),client_id:r.client_id,client_name:r.client_name,type:r.type||'Income',amount:r.amount,method:r.pay||'—',_src:'income'}));
   const payRows=payments.filter(p=>p.date&&p.amount>0&&p.date.replace(/-/g,'').startsWith(yr)).map(p=>({id:p.id,date:p.date,sortDate:p.date.replace(/-/g,''),client_id:p.client_id,client_name:p.client_name,type:p.type==='deposit'?'Deposit':p.type==='final'?'Final payment':'Payment',amount:p.amount,method:p.method||'—',_src:'payment'}));
   const filtered=[...incRows,...payRows].sort((a,b)=>b.sortDate.localeCompare(a.sortDate));
   const total=filtered.reduce((s,r)=>s+r.amount,0);
   if(!filtered.length){el.innerHTML='<div class="empty">No income in '+yr+'.</div>';return;}
-  el.innerHTML=
-    '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0 10px;border-bottom:2px solid var(--border);margin-bottom:4px">'+
-      '<span style="font-size:12px;font-weight:700;color:var(--text3)">'+filtered.length+' record'+(filtered.length!==1?'s':'')+' in '+yr+'</span>'+
-      '<span style="font-size:15px;font-weight:800;color:var(--green-mid)">'+fmt(total)+'</span>'+
-    '</div>'+
-    '<div style="overflow-x:auto"><table class="tbl"><thead><tr>'+
-    ['Date','Client','Type','Amount','Method'].map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'+
-    filtered.map(r=>{
+  const byMonth={};
+  filtered.forEach(r=>{const mo=(r.date||'').slice(0,7)||'unknown';if(!byMonth[mo])byMonth[mo]=[];byMonth[mo].push(r);});
+  const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
+  const curMo=new Date().toISOString().slice(0,7);
+  let html='<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0 10px;border-bottom:2px solid var(--border);margin-bottom:8px">'+
+    '<span style="font-size:12px;font-weight:700;color:var(--text3)">'+filtered.length+' record'+(filtered.length!==1?'s':'')+' in '+yr+'</span>'+
+    '<span style="font-size:15px;font-weight:800;color:var(--green-mid)">'+fmt(total)+'</span>'+
+  '</div><div class="bk-months">'+
+  months.map(mo=>{
+    const rows=byMonth[mo];
+    const moTotal=rows.reduce((s,r)=>s+r.amount,0);
+    const[y,m]=mo.split('-');
+    const moLabel=y&&m?new Date(parseInt(y),parseInt(m)-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}):mo;
+    const isOpen=mo>=curMo;
+    const rowsHtml=rows.map(r=>{
       const c=clients.find(x=>x.id===r.client_id);
       return '<tr data-lp-id="'+r.id+'" data-lp-type="'+r._src+'" data-lp-label="'+escHtml((r.client_name||'record')+' · '+fmt(r.amount||0))+'" style="cursor:'+(c?'pointer':'default')+'"'+(c?' onclick="openClientDetail('+c.id+')"':'')+'>'+
-        '<td class="mute">'+fmtDateDisp(r.date)+'</td>'+
+        '<td class="mute">'+fmtD2(r.date)+'</td>'+
         '<td class="bold" style="color:'+(c?'var(--blue)':'inherit')+'">'+(r.client_name||'—')+'</td>'+
         '<td class="mute">'+r.type+'</td>'+
         '<td class="green">'+fmtD(r.amount)+'</td>'+
         '<td class="mute">'+r.method+'</td>'+
       '</tr>';
-    }).join('')+'</tbody></table></div>';
+    }).join('');
+    return '<div id="bk-inc-mo-'+mo+'" class="bk-month'+(isOpen?' open':'')+'">'+
+      '<button class="bk-month-hd" onclick="_bkTogMonth(\'inc\',\''+mo+'\')">'+
+        '<div style="flex:1;text-align:left">'+
+          '<div class="bk-month-title">'+moLabel+'</div>'+
+          '<div class="bk-month-sub">'+rows.length+' record'+(rows.length!==1?'s':'')+'</div>'+
+        '</div>'+
+        '<div style="display:flex;align-items:center;gap:10px">'+
+          '<div style="font-size:16px;font-weight:900;color:var(--green-mid);font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">'+fmt(moTotal)+'</div>'+
+          '<div class="bk-month-chev">▸</div>'+
+        '</div>'+
+      '</button>'+
+      '<div class="bk-month-body"'+(isOpen?'':' style="display:none"')+'>'+
+        '<div style="overflow-x:auto"><table class="tbl"><thead><tr>'+
+          ['Date','Client','Type','Amount','Method'].map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'+rowsHtml+'</tbody></table></div>'+
+      '</div>'+
+    '</div>';
+  }).join('')+'</div>';
+  el.innerHTML=html;
 }
 function triggerReceiptScan(){_scanAndFillBooksExpense();}
 
@@ -2435,7 +2467,6 @@ function renderExpenses(){
   if(purgeable.length){
     html+='<div class="tip tip-w" style="display:flex;justify-content:space-between;align-items:center"><span>'+purgeable.length+' receipt image'+(purgeable.length>1?'s':'')+' past 7 years — images can be deleted, records kept</span><button class="btn btn-sm" onclick="purgeOldReceiptImages()" style="flex-shrink:0;margin-left:8px">Clean up</button></div>';
   }
-  // 1099-NEC alert — aggregate subcontractor expenses by vendor
   const subsFiltered=filtered.filter(e=>e.cat==='subs');
   if(subsFiltered.length){
     const subsBy={};
@@ -2452,45 +2483,73 @@ function renderExpenses(){
   }
   if(!expenses.length){el.innerHTML=html+'<div class="empty-state"><div class="empty-state-icon">🧾</div><h3>No expenses yet</h3><p>Tap the Expense button on the home screen or use the Scan button above to photograph a receipt.</p></div>';return;}
   if(!filtered.length){el.innerHTML=html+'<div class="empty">No expenses in '+yr+'.</div>';return;}
-  // Summary row
-  html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 12px;border-bottom:2px solid var(--border);margin-bottom:4px;flex-wrap:wrap;gap:6px">'+
-    '<div>'+
-      '<span style="font-size:12px;font-weight:700;color:var(--text3)">'+filtered.length+' expense'+(filtered.length!==1?'s':'')+' in '+yr+'</span>'+
-    '</div>'+
+  html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 12px;border-bottom:2px solid var(--border);margin-bottom:8px;flex-wrap:wrap;gap:6px">'+
+    '<div><span style="font-size:12px;font-weight:700;color:var(--text3)">'+filtered.length+' expense'+(filtered.length!==1?'s':'')+' in '+yr+'</span></div>'+
     '<div style="text-align:right">'+
       '<div style="font-size:16px;font-weight:800;color:#A32D2D">('+fmt(total)+')</div>'+
       '<div style="font-size:10px;color:var(--green-mid);font-weight:700">~'+fmt(deductible)+' deductible</div>'+
     '</div>'+
   '</div>';
-  // Expense rows
-  const sorted=[...filtered].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  // Group by month, newest-first within each month
+  const sorted=[...filtered].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const byMonth={};
+  sorted.forEach(r=>{const mo=(r.date||'').slice(0,7)||'unknown';if(!byMonth[mo])byMonth[mo]=[];byMonth[mo].push(r);});
+  const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
+  const curMo=new Date().toISOString().slice(0,7);
+  const _expRow=r=>{
+    const info=IRS_EXPENSE_CATS.find(c=>c.id===r.cat);
+    const pageCount=(r.receipt_keys?.length||0)+(r.receipt_key&&!r.receipt_keys?1:0);
+    const hasBucket=!!r.receipt_key||pageCount>0,hasInline=!!r.receipt_img,hasImg=hasBucket||hasInline;
+    const pgLabel=pageCount>1?' ('+pageCount+'pg)':'';
+    const recLabel=hasImg
+      ?(hasBucket
+        ?'<button onclick="viewReceipt('+r.id+')" style="background:var(--green-lt);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">☁️ View'+pgLabel+'</button>'
+        :'<button onclick="viewReceipt('+r.id+')" style="background:#fff8e1;border:1px solid #f59e0b;color:#b45309;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">💾 View</button>')
+      :'<button onclick="addReceiptToExpense('+r.id+')" style="background:rgba(162,45,45,.08);border:1px solid #A32D2D;color:#A32D2D;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">+ Add</button>';
+    return '<tr data-lp-id="'+r.id+'" data-lp-type="expense" data-lp-label="'+escHtml((r.vendor||'expense')+' · '+fmt(r.amount||0))+'">'+
+      '<td class="mute">'+(r.date||'')+'</td>'+
+      '<td class="mute" style="font-size:10px">'+(info?info.icon+' '+info.label:r.catLabel||r.cat||'—')+'</td>'+
+      '<td class="bold">'+(r.vendor||'—')+(r.job_name?'<div style="font-size:9px;color:var(--text3)">'+r.job_name+'</div>':'')+'</td>'+
+      '<td class="red">('+fmtD(r.amount||0)+')'+(r.meals_50?'<div style="font-size:9px;color:var(--amber)">50% deduct</div>':'')+'</td>'+
+      '<td>'+recLabel+'</td>'+
+      '<td><button onclick="editExpense('+r.id+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Edit</button></td>'+
+    '</tr>';
+  };
   try{
-    html+='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl" style="min-width:560px"><thead><tr>'+
-      ['Date','Category','Vendor','Amount','Receipt'].map(h=>'<th>'+h+'</th>').join('')+'<th></th></tr></thead><tbody>'+
-      sorted.map(r=>{
-        const info=IRS_EXPENSE_CATS.find(c=>c.id===r.cat);
-        const pageCount=(r.receipt_keys?.length||0)+(r.receipt_key&&!r.receipt_keys?1:0);
-        const hasBucket=!!r.receipt_key||pageCount>0,hasInline=!!r.receipt_img,hasImg=hasBucket||hasInline;
-        const pgLabel=pageCount>1?' ('+pageCount+'pg)':'';
-        const recLabel=hasImg
-          ?(hasBucket
-            ?'<button onclick="viewReceipt('+r.id+')" style="background:var(--green-lt);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">☁️ View'+pgLabel+'</button>'
-            :'<button onclick="viewReceipt('+r.id+')" style="background:#fff8e1;border:1px solid #f59e0b;color:#b45309;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">💾 View</button>')
-          :'<button onclick="addReceiptToExpense('+r.id+')" style="background:rgba(162,45,45,.08);border:1px solid #A32D2D;color:#A32D2D;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">+ Add</button>';
-        return '<tr data-lp-id="'+r.id+'" data-lp-type="expense" data-lp-label="'+escHtml((r.vendor||'expense')+' · '+fmt(r.amount||0))+'">'+
-          '<td class="mute">'+(r.date||'')+'</td>'+
-          '<td class="mute" style="font-size:10px">'+(info?info.icon+' '+info.label:r.catLabel||r.cat||'—')+'</td>'+
-          '<td class="bold">'+(r.vendor||'—')+(r.job_name?'<div style="font-size:9px;color:var(--text3)">'+r.job_name+'</div>':'')+'</td>'+
-          '<td class="red">('+fmtD(r.amount||0)+')'+(r.meals_50?'<div style="font-size:9px;color:var(--amber)">50% deduct</div>':'')+'</td>'+
-          '<td>'+recLabel+'</td>'+
-          '<td><button onclick="editExpense('+r.id+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Edit</button></td>'+
-        '</tr>';
-      }).join('')+'</tbody></table></div>';
+    html+='<div class="bk-months">'+months.map(mo=>{
+      const rows=byMonth[mo];
+      const moTotal=rows.reduce((s,r)=>s+r.amount,0);
+      const moDed=rows.filter(r=>r.deductible!==false).reduce((s,r)=>s+(r.meals_50?r.amount*0.5:r.amount),0);
+      const[y,m]=mo.split('-');
+      const moLabel=y&&m?new Date(parseInt(y),parseInt(m)-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}):mo;
+      const isOpen=mo>=curMo;
+      return '<div id="bk-exp-mo-'+mo+'" class="bk-month'+(isOpen?' open':'')+'">'+
+        '<button class="bk-month-hd" onclick="_bkTogMonth(\'exp\',\''+mo+'\')">'+
+          '<div style="flex:1;text-align:left">'+
+            '<div class="bk-month-title">'+moLabel+'</div>'+
+            '<div class="bk-month-sub">'+rows.length+' expense'+(rows.length!==1?'s':'')+'</div>'+
+          '</div>'+
+          '<div style="display:flex;align-items:center;gap:10px">'+
+            '<div style="text-align:right">'+
+              '<div style="font-size:15px;font-weight:900;color:#A32D2D;font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">('+fmt(moTotal)+')</div>'+
+              '<div style="font-size:10px;color:var(--green-mid);font-weight:700">~'+fmt(moDed)+' ded</div>'+
+            '</div>'+
+            '<div class="bk-month-chev">▸</div>'+
+          '</div>'+
+        '</button>'+
+        '<div class="bk-month-body"'+(isOpen?'':' style="display:none"')+'>'+
+          '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl" style="min-width:560px"><thead><tr>'+
+            ['Date','Category','Vendor','Amount','Receipt'].map(h=>'<th>'+h+'</th>').join('')+'<th></th></tr></thead><tbody>'+
+            rows.map(_expRow).join('')+
+          '</tbody></table></div>'+
+        '</div>'+
+      '</div>';
+    }).join('')+'</div>';
   }catch(err){
-    console.error('renderExpenses table error:',err,{filtered:filtered.slice(0,3)});
-    html+='<div class="tip tip-a">Error rendering expense rows — check console. ('+err.message+')</div>';
+    console.error('renderExpenses error:',err);
+    html+='<div class="tip tip-a">Error rendering expenses — check console. ('+err.message+')</div>';
   }
-  // Category breakdown chips — after table so rows are immediately visible
+  // Category breakdown chips
   const byCat={};
   filtered.forEach(e=>{byCat[e.cat||'other']=(byCat[e.cat||'other']||0)+e.amount;});
   const topCats=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,4);
