@@ -2387,9 +2387,11 @@ function _bkTogMonth(tab,mo){
 function renderIncome(){
   const el=document.getElementById('inc-table');
   const yr=String(trackerYear||new Date().getFullYear());
-  const fmtD2=d=>{if(!d)return'—';const[,y,m,dd]=(d.match(/(\d{4})-(\d{2})-(\d{2})/)||[]);return m&&dd?m+'/'+dd+'/'+y:d;};
-  const incRows=income.filter(r=>r.date&&r.date.replace(/-/g,'').startsWith(yr)).map(r=>({id:r.id,date:r.date,sortDate:r.date.replace(/-/g,''),client_id:r.client_id,client_name:r.client_name,type:r.type||'Income',amount:r.amount,method:r.pay||'—',_src:'income'}));
-  const payRows=payments.filter(p=>p.date&&p.amount>0&&p.date.replace(/-/g,'').startsWith(yr)).map(p=>({id:p.id,date:p.date,sortDate:p.date.replace(/-/g,''),client_id:p.client_id,client_name:p.client_name,type:p.type==='deposit'?'Deposit':p.type==='final'?'Final payment':'Payment',amount:p.amount,method:p.method||'—',_src:'payment'}));
+  // Normalize any date format (20230601 or 2023-06-01) to YYYY-MM-DD
+  const normDate=d=>{if(!d)return'';const c=d.replace(/-/g,'');return c.length>=8?c.slice(0,4)+'-'+c.slice(4,6)+'-'+c.slice(6,8):d;};
+  const fmtD2=d=>{const n=normDate(d);const[,y,m,dd]=(n.match(/(\d{4})-(\d{2})-(\d{2})/)||[]);return m&&dd?m+'/'+dd+'/'+y:d||'—';};
+  const incRows=income.filter(r=>r.date&&r.date.replace(/-/g,'').startsWith(yr)).map(r=>({id:r.id,date:normDate(r.date),sortDate:r.date.replace(/-/g,''),client_id:r.client_id,client_name:r.client_name,type:r.type||'Income',amount:r.amount,method:r.pay||'—',_src:'income'}));
+  const payRows=payments.filter(p=>p.date&&p.amount>0&&p.date.replace(/-/g,'').startsWith(yr)).map(p=>({id:p.id,date:normDate(p.date),sortDate:p.date.replace(/-/g,''),client_id:p.client_id,client_name:p.client_name,type:p.type==='deposit'?'Deposit':p.type==='final'?'Final payment':'Payment',amount:p.amount,method:p.method||'—',_src:'payment'}));
   const filtered=[...incRows,...payRows].sort((a,b)=>b.sortDate.localeCompare(a.sortDate));
   const total=filtered.reduce((s,r)=>s+r.amount,0);
   if(!filtered.length){el.innerHTML='<div class="empty">No income in '+yr+'.</div>';return;}
