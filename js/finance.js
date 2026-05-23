@@ -2301,14 +2301,10 @@ function renderJobSummary(){
 }
 
 function _incDateFmt(el){
-  const pos=el.selectionStart;
   let v=el.value.replace(/\D/g,'').slice(0,8);
   if(v.length>4)v=v.slice(0,2)+'/'+v.slice(2,4)+'/'+v.slice(4);
   else if(v.length>2)v=v.slice(0,2)+'/'+v.slice(2);
   el.value=v;
-  // keep cursor from jumping to end when inserting slashes
-  const diff=v.length-el.value.length;
-  try{el.setSelectionRange(pos+diff,pos+diff);}catch(e){}
 }
 function openManualIncomeModal(){
   const _td=new Date();const _tm=String(_td.getMonth()+1).padStart(2,'0'),_tdd=String(_td.getDate()).padStart(2,'0'),_ty=_td.getFullYear();
@@ -2399,57 +2395,63 @@ function _bkTogMonth(tab,mo){
   el.classList.toggle('open');
 }
 function renderIncome(){
-  const el=document.getElementById('inc-table');
+  const el=document.getElementById('inc-table');if(!el)return;
   const yr=String(trackerYear||new Date().getFullYear());
-  // Normalize any date format (20230601 or 2023-06-01) to YYYY-MM-DD
   const normDate=d=>{if(!d)return'';const c=d.replace(/-/g,'');return c.length>=8?c.slice(0,4)+'-'+c.slice(4,6)+'-'+c.slice(6,8):d;};
-  const fmtD2=d=>{const n=normDate(d);const[,y,m,dd]=(n.match(/(\d{4})-(\d{2})-(\d{2})/)||[]);return m&&dd?m+'/'+dd+'/'+y:d||'—';};
   const incRows=income.filter(r=>r.date&&r.date.replace(/-/g,'').startsWith(yr)).map(r=>({id:r.id,date:normDate(r.date),sortDate:r.date.replace(/-/g,''),client_id:r.client_id,client_name:r.client_name,type:r.type||'Income',amount:r.amount,method:r.method||r.pay||'—',_src:'income'}));
   const payRows=payments.filter(p=>p.date&&p.amount>0&&p.date.replace(/-/g,'').startsWith(yr)).map(p=>({id:p.id,date:normDate(p.date),sortDate:p.date.replace(/-/g,''),client_id:p.client_id,client_name:p.client_name,type:p.type==='deposit'?'Deposit':p.type==='final'?'Final payment':'Payment',amount:p.amount,method:p.method||'—',_src:'payment'}));
   const filtered=[...incRows,...payRows].sort((a,b)=>b.sortDate.localeCompare(a.sortDate));
   const total=filtered.reduce((s,r)=>s+r.amount,0);
   if(!filtered.length){el.innerHTML='<div class="empty">No income in '+yr+'.</div>';return;}
+  let html='<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 12px;border-bottom:2px solid var(--border);margin-bottom:8px;flex-wrap:wrap;gap:6px">'+
+    '<div><span style="font-size:12px;font-weight:700;color:var(--text3)">'+filtered.length+' record'+(filtered.length!==1?'s':'')+' in '+yr+'</span></div>'+
+    '<div style="font-size:16px;font-weight:800;color:var(--green-mid)">'+fmt(total)+'</div>'+
+  '</div>';
+  const sorted=[...filtered].sort((a,b)=>b.sortDate.localeCompare(a.sortDate));
   const byMonth={};
-  filtered.forEach(r=>{const mo=(r.date||'').slice(0,7)||'unknown';if(!byMonth[mo])byMonth[mo]=[];byMonth[mo].push(r);});
+  sorted.forEach(r=>{const mo=(r.date||'').slice(0,7)||'unknown';if(!byMonth[mo])byMonth[mo]=[];byMonth[mo].push(r);});
   const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
   const curMo=new Date().toISOString().slice(0,7);
-  let html='<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0 10px;border-bottom:2px solid var(--border);margin-bottom:8px">'+
-    '<span style="font-size:12px;font-weight:700;color:var(--text3)">'+filtered.length+' record'+(filtered.length!==1?'s':'')+' in '+yr+'</span>'+
-    '<span style="font-size:15px;font-weight:800;color:var(--green-mid)">'+fmt(total)+'</span>'+
-  '</div><div class="bk-months">'+
-  months.map(mo=>{
-    const rows=byMonth[mo];
-    const moTotal=rows.reduce((s,r)=>s+r.amount,0);
-    const[y,m]=mo.split('-');
-    const moLabel=y&&m?new Date(parseInt(y),parseInt(m)-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}):mo;
-    const isOpen=mo>=curMo;
-    const rowsHtml=rows.map(r=>{
-      const c=clients.find(x=>x.id===r.client_id);
-      return '<tr data-lp-id="'+r.id+'" data-lp-type="'+r._src+'" data-lp-label="'+escHtml((r.client_name||'record')+' · '+fmt(r.amount||0))+'" style="cursor:'+(c?'pointer':'default')+'"'+(c?' onclick="openClientDetail('+c.id+')"':'')+'>'+
-        '<td class="mute">'+fmtD2(r.date)+'</td>'+
-        '<td class="bold" style="color:'+(c?'var(--blue)':'inherit')+'">'+(r.client_name||'—')+'</td>'+
-        '<td class="mute">'+r.type+'</td>'+
-        '<td class="green">'+fmtD(r.amount)+'</td>'+
-        '<td class="mute">'+r.method+'</td>'+
-      '</tr>';
-    }).join('');
-    return '<div id="bk-inc-mo-'+mo+'" class="bk-month'+(isOpen?' open':'')+'">'+
-      '<button class="bk-month-hd" onclick="_bkTogMonth(\'inc\',\''+mo+'\')">'+
-        '<div style="flex:1;text-align:left">'+
-          '<div class="bk-month-title">'+moLabel+'</div>'+
-          '<div class="bk-month-sub">'+rows.length+' record'+(rows.length!==1?'s':'')+'</div>'+
+  const _incRow=r=>{
+    const c=clients.find(x=>x.id===r.client_id);
+    return '<tr data-lp-id="'+r.id+'" data-lp-type="'+r._src+'" data-lp-label="'+escHtml((r.client_name||'record')+' · '+fmt(r.amount||0))+'" style="cursor:'+(c?'pointer':'default')+'"'+(c?' onclick="openClientDetail('+c.id+')"':'')+'>'+
+      '<td class="mute">'+(r.date||'')+'</td>'+
+      '<td class="bold" style="color:'+(c?'var(--blue)':'inherit')+'">'+(r.client_name||'—')+'</td>'+
+      '<td class="mute">'+r.type+'</td>'+
+      '<td class="green">'+fmtD(r.amount)+'</td>'+
+      '<td class="mute">'+r.method+'</td>'+
+    '</tr>';
+  };
+  try{
+    html+='<div class="bk-months">'+months.map(mo=>{
+      const rows=byMonth[mo];
+      const moTotal=rows.reduce((s,r)=>s+r.amount,0);
+      const[y,m]=mo.split('-');
+      const moLabel=y&&m?new Date(parseInt(y),parseInt(m)-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}):mo;
+      const isOpen=mo>=curMo;
+      return '<div id="bk-inc-mo-'+mo+'" class="bk-month'+(isOpen?' open':'')+'">'+
+        '<button class="bk-month-hd" onclick="_bkTogMonth(\'inc\',\''+mo+'\')">'+
+          '<div style="flex:1;text-align:left">'+
+            '<div class="bk-month-title">'+moLabel+'</div>'+
+            '<div class="bk-month-sub">'+rows.length+' record'+(rows.length!==1?'s':'')+'</div>'+
+          '</div>'+
+          '<div style="display:flex;align-items:center;gap:10px">'+
+            '<div style="font-size:15px;font-weight:900;color:var(--green-mid);font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">'+fmt(moTotal)+'</div>'+
+            '<div class="bk-month-chev">▸</div>'+
+          '</div>'+
+        '</button>'+
+        '<div class="bk-month-body">'+
+          '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl" style="min-width:480px"><thead><tr>'+
+            ['Date','Client','Type','Amount','Method'].map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'+
+            rows.map(_incRow).join('')+
+          '</tbody></table></div>'+
         '</div>'+
-        '<div style="display:flex;align-items:center;gap:10px">'+
-          '<div style="font-size:16px;font-weight:900;color:var(--green-mid);font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">'+fmt(moTotal)+'</div>'+
-          '<div class="bk-month-chev">▸</div>'+
-        '</div>'+
-      '</button>'+
-      '<div class="bk-month-body">'+
-        '<div style="overflow-x:auto"><table class="tbl"><thead><tr>'+
-          ['Date','Client','Type','Amount','Method'].map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'+rowsHtml+'</tbody></table></div>'+
-      '</div>'+
-    '</div>';
-  }).join('')+'</div>';
+      '</div>';
+    }).join('')+'</div>';
+  }catch(err){
+    console.error('renderIncome error:',err);
+    html+='<div class="tip tip-a">Error rendering income — check console. ('+err.message+')</div>';
+  }
   el.innerHTML=html;
 }
 function triggerReceiptScan(){_scanAndFillBooksExpense();}
