@@ -2459,7 +2459,6 @@ function renderExpenses(){
   const yr=String(trackerYear||new Date().getFullYear());
   const filtered=yr==='all'?expenses:expenses.filter(e=>e.date&&e.date.startsWith(yr));
   const total=filtered.reduce((s,e)=>s+e.amount,0);
-  const deductible=filtered.filter(e=>e.deductible!==false).reduce((s,e)=>s+(e.meals_50?e.amount*0.5:e.amount),0);
   const noReceipt=filtered.filter(e=>!e.receipt||typeof e.receipt==='string'&&e.receipt.includes('No')).filter(e=>e.cat!=='fees'&&!e.autoLogged);
   const today=todayKey();
   const purgeable=expenses.filter(e=>e.expires_at&&e.expires_at<today&&e.receipt_img);
@@ -2485,10 +2484,7 @@ function renderExpenses(){
   if(!filtered.length){el.innerHTML=html+'<div class="empty">No expenses in '+yr+'.</div>';return;}
   html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 12px;border-bottom:2px solid var(--border);margin-bottom:8px;flex-wrap:wrap;gap:6px">'+
     '<div><span style="font-size:12px;font-weight:700;color:var(--text3)">'+filtered.length+' expense'+(filtered.length!==1?'s':'')+' in '+yr+'</span></div>'+
-    '<div style="text-align:right">'+
-      '<div style="font-size:16px;font-weight:800;color:#A32D2D">('+fmt(total)+')</div>'+
-      '<div style="font-size:10px;color:var(--green-mid);font-weight:700">~'+fmt(deductible)+' deductible</div>'+
-    '</div>'+
+    '<div style="font-size:16px;font-weight:800;color:#A32D2D">('+fmt(total)+')</div>'+
   '</div>';
   // Group by month, newest-first within each month
   const sorted=[...filtered].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
@@ -2519,7 +2515,6 @@ function renderExpenses(){
     html+='<div class="bk-months">'+months.map(mo=>{
       const rows=byMonth[mo];
       const moTotal=rows.reduce((s,r)=>s+r.amount,0);
-      const moDed=rows.filter(r=>r.deductible!==false).reduce((s,r)=>s+(r.meals_50?r.amount*0.5:r.amount),0);
       const[y,m]=mo.split('-');
       const moLabel=y&&m?new Date(parseInt(y),parseInt(m)-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}):mo;
       const isOpen=mo>=curMo;
@@ -2530,10 +2525,7 @@ function renderExpenses(){
             '<div class="bk-month-sub">'+rows.length+' expense'+(rows.length!==1?'s':'')+'</div>'+
           '</div>'+
           '<div style="display:flex;align-items:center;gap:10px">'+
-            '<div style="text-align:right">'+
-              '<div style="font-size:15px;font-weight:900;color:#A32D2D;font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">('+fmt(moTotal)+')</div>'+
-              '<div style="font-size:10px;color:var(--green-mid);font-weight:700">~'+fmt(moDed)+' ded</div>'+
-            '</div>'+
+            '<div style="font-size:15px;font-weight:900;color:#A32D2D;font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">('+fmt(moTotal)+')</div>'+
             '<div class="bk-month-chev">▸</div>'+
           '</div>'+
         '</button>'+
