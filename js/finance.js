@@ -1,5 +1,5 @@
 // ── IRS Schedule C expense categories ────────────────────────────────
-let _expState={imageData:null,imageKey:null,editId:null};
+let _expState={imageData:null,imageKey:null,editId:null,imagePages:[]};
 let _expPage=0;
 
 function setExpPage(n){_expPage=n;renderExpenses();const el=document.getElementById('exp-table');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}
@@ -71,23 +71,45 @@ function openExpenseFlow(){
   _expState={imageData:null,imageKey:null};
 }
 
-function closeExpenseFlow(){document.getElementById('expense-modal')?.remove();_expState={imageData:null,imageKey:null,hasReceipt:false};}
-function expTriggerAttach(){
+function closeExpenseFlow(){document.getElementById('expense-modal')?.remove();_expState={imageData:null,imageKey:null,hasReceipt:false,editId:null,imagePages:[]};}
+
+function _renderExpPages(){
+  const preview=document.getElementById('exp-preview-img');if(!preview)return;
+  const pages=_expState.imagePages;
+  if(!pages.length){preview.style.display='none';return;}
+  preview.style.display='block';
+  preview.innerHTML=
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">'+
+    pages.map((p,i)=>
+      '<div style="position:relative;text-align:center">'+
+        '<img src="data:image/jpeg;base64,'+p.b64+'" style="width:68px;height:68px;object-fit:cover;border-radius:8px;border:2px solid var(--green);display:block">'+
+        '<button type="button" onclick="_removeExpPage('+i+')" style="position:absolute;top:-7px;right:-7px;width:20px;height:20px;border-radius:50%;border:none;background:#A32D2D;color:#fff;font-size:12px;cursor:pointer;line-height:1;padding:0;font-family:inherit">×</button>'+
+        '<div style="font-size:9px;color:var(--text3);margin-top:3px;font-weight:700">Page '+(i+1)+'</div>'+
+      '</div>'
+    ).join('')+
+    '<div style="display:flex;align-items:center">'+
+      '<button type="button" onclick="expTriggerAttach(true)" style="width:68px;height:68px;border-radius:8px;border:2px dashed var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:22px;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center">+</button>'+
+    '</div>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--green-mid);font-weight:700">'+pages.length+' page'+(pages.length>1?'s':'')+' captured</div>';
+}
+function _removeExpPage(idx){
+  _expState.imagePages.splice(idx,1);
+  _expState.hasReceipt=_expState.imagePages.length>0;
+  _renderExpPages();
+}
+
+function expTriggerAttach(addPage){
   _showReceiptScanner(null,async blob=>{
     const attachArea=document.getElementById('exp-attach-area');
-    const preview=document.getElementById('exp-preview-img');
     if(attachArea)attachArea.style.opacity='.5';
     try{
       const b64=await compressAndEncodeImage(blob,900,0.75);
+      const pageObj={b64,key:null};
+      _expState.imagePages.push(pageObj);
       _expState.imageData={b64,type:'image/jpeg'};_expState.hasReceipt=true;
-      // Pre-upload to Supabase immediately — so the photo is in the bucket even
-      // if the user is interrupted before hitting Save.
-      _expState.preId=Date.now();_expState.imageKey=null;
-      _uploadReceiptToStorage(_expState.preId,b64).then(k=>{if(k)_expState.imageKey=k;}).catch(()=>{});
-      if(preview){
-        preview.style.display='block';
-        preview.innerHTML='<img src="data:image/jpeg;base64,'+b64+'" style="max-height:80px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green-mid);margin-top:4px;font-weight:700">📎 Photo attached</div>';
-      }
+      _uploadReceiptToStorage(Date.now(),b64).then(k=>{if(k)pageObj.key=k;}).catch(()=>{});
+      _renderExpPages();
       if(attachArea){attachArea.style.opacity='1';attachArea.style.borderColor='var(--green-mid)';}
     }catch(e){if(attachArea)attachArea.style.opacity='1';}
   });
@@ -104,11 +126,10 @@ function expTriggerScan(){
     if(status){status.style.display='block';status.innerHTML='<div class="tip"><strong>📡 Reading receipt...</strong></div>';}
     if(scanArea)scanArea.style.opacity='.5';
     const b64=await compressAndEncodeImage(blob);
+    const pageObj={b64,key:null};
+    _expState.imagePages.push(pageObj);
     _expState.imageData={b64,type:'image/jpeg'};
-    // Pre-upload to Supabase immediately so the photo is safely in the bucket
-    // before the user finishes filling in fields and hits Save.
-    _expState.preId=Date.now();_expState.imageKey=null;
-    _uploadReceiptToStorage(_expState.preId,b64).then(k=>{if(k)_expState.imageKey=k;}).catch(()=>{});
+    _uploadReceiptToStorage(Date.now(),b64).then(k=>{if(k)pageObj.key=k;}).catch(()=>{});
     try{
       const resp=await fetch('https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/scan-receipt',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({imageBase64:b64,mediaType:'image/jpeg'})});
       if(!resp.ok)throw new Error('Scan error '+resp.status);
@@ -118,9 +139,8 @@ function expTriggerScan(){
       if(parsed.date)document.getElementById('em-date').value='';  // cleared — set properly after user confirms below
       if(parsed.category)document.getElementById('em-cat').value=parsed.category;
       if(parsed.notes)document.getElementById('em-notes').value=parsed.notes;
-      const preview=document.getElementById('exp-preview-img');
-      if(preview){preview.style.display='block';preview.innerHTML='<img src="data:image/jpeg;base64,'+b64+'" style="max-height:80px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green-mid);margin-top:4px;font-weight:700">✓ Receipt captured</div>';}
       _expState.hasReceipt=true;
+      _renderExpPages();
       if(scanArea){scanArea.style.opacity='1';scanArea.style.borderColor='var(--green-mid)';}
       _confirmReceiptDate(parsed.date||'',status);
     }catch(e){
@@ -694,16 +714,20 @@ async function expSave(){
       const job2=jobId?bids.find(b=>b.id===jobId):null;
       const mealPurpose2=cat==='meals'?(document.getElementById('em-meal-purpose')?.value||'').trim():'';
       const mealAttendees2=cat==='meals'?(document.getElementById('em-meal-attendees')?.value||'').trim():'';
-      let upd_receipt_key=expenses[idx].receipt_key,upd_receipt_img=expenses[idx].receipt_img;
-      if(_expState.imageKey){upd_receipt_key=_expState.imageKey;upd_receipt_img=null;}
-      else if(_expState.imageData){
-        try{upd_receipt_key=await _uploadReceiptToStorage(expenses[idx].id,_expState.imageData.b64);}catch(e){upd_receipt_img='data:image/jpeg;base64,'+_expState.imageData.b64;}
+      const existing_keys=expenses[idx].receipt_keys||([expenses[idx].receipt_key].filter(Boolean));
+      for(let pi=0;pi<_expState.imagePages.length;pi++){
+        const pg=_expState.imagePages[pi];
+        if(pg.key){existing_keys.push(pg.key);}
+        else if(pg.b64){try{const k=await _uploadReceiptToStorage(expenses[idx].id+'_p'+(existing_keys.length+1),pg.b64);if(k)existing_keys.push(k);}catch(e){}}
       }
+      const upd_receipt_key=existing_keys[0]||expenses[idx].receipt_key||null;
+      const upd_receipt_img=existing_keys.length?null:expenses[idx].receipt_img;
       expenses[idx]={...expenses[idx],date,cat,catLabel:catInfo2.label||cat,vendor,amount,notes,
         lead_source:leadSource||undefined,meal_purpose:mealPurpose2||undefined,meal_attendees:mealAttendees2||undefined,
         job_id:jobId,job_name:job2?job2.client_name||job2.name:'',
         receipt:upd_receipt_key||upd_receipt_img?'Yes — photo stored':'No receipt photo',
         receipt_key:upd_receipt_key,receipt_img:upd_receipt_img,
+        receipt_keys:existing_keys.length?existing_keys:undefined,
         deductible:catInfo2.deductible!==false,meals_50:!!(catInfo2.meals_50),
       };
       expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
@@ -734,18 +758,18 @@ async function expSave(){
   const mealPurpose=cat==='meals'?(document.getElementById('em-meal-purpose')?.value||'').trim():'';
   const mealAttendees=cat==='meals'?(document.getElementById('em-meal-attendees')?.value||'').trim():'';
   const expId=_expState.preId||Date.now();
-  let receipt_img=null,receipt_key=null;
-  if(_expState.imageKey){
-    // Early upload completed at capture time — just reference the key
-    receipt_key=_expState.imageKey;
-  } else if(_expState.imageData){
-    try{
-      receipt_key=await _uploadReceiptToStorage(expId,_expState.imageData.b64);
-    }catch(e){
-      receipt_img='data:image/jpeg;base64,'+_expState.imageData.b64;
+  // Upload all pages; each page may already have a key from pre-upload
+  const receipt_keys=[];
+  for(let pi=0;pi<_expState.imagePages.length;pi++){
+    const pg=_expState.imagePages[pi];
+    if(pg.key){receipt_keys.push(pg.key);}
+    else if(pg.b64){
+      try{const k=await _uploadReceiptToStorage(expId+'_p'+(pi+1),pg.b64);if(k)receipt_keys.push(k);}
+      catch(e){}
     }
-    if(!receipt_key&&!receipt_img)receipt_img='data:image/jpeg;base64,'+_expState.imageData.b64;
   }
+  const receipt_key=receipt_keys[0]||null;
+  const receipt_img=_expState.imagePages.length&&!receipt_key?'data:image/jpeg;base64,'+_expState.imagePages[0].b64:null;
   expenses.push({
     id:expId,date,cat,catLabel:catInfo.label||cat,vendor,amount,notes,
     lead_source:leadSource||undefined,
@@ -753,7 +777,7 @@ async function expSave(){
     created_at:new Date().toISOString(),
     job_id:jobId,job_name:job?job.client_name||job.name:'',client_id:job?job.client_id:null,
     receipt:receipt_key||receipt_img?'Yes — photo stored':'No receipt photo',
-    receipt_key,receipt_img,
+    receipt_key,receipt_img,receipt_keys:receipt_keys.length?receipt_keys:undefined,
     deductible:catInfo.deductible!==false,meals_50:!!(catInfo.meals_50),
   });
   expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
@@ -1486,39 +1510,48 @@ function addReceiptToExpense(expId){
 // ── Receipt viewer ────────────────────────────────────────────────────
 async function viewReceipt(expId){
   const exp=expenses.find(e=>e.id==expId);
-  if(!exp?.receipt_img&&!exp?.receipt_key)return zAlert('No receipt photo stored for this expense.',{title:'No photo'});
+  const allKeys=exp?.receipt_keys?.length?exp.receipt_keys:(exp?.receipt_key?[exp.receipt_key]:[]);
+  if(!allKeys.length&&!exp?.receipt_img)return zAlert('No receipt photo stored for this expense.',{title:'No photo'});
   const ov=document.createElement('div');
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   ov.className='rcpt-ov';
-  ov.innerHTML='<div style="max-width:600px;width:100%;text-align:center"><div style="color:#fff;font-size:13px;opacity:.6;margin-bottom:12px">Loading…</div></div>';
+  ov.innerHTML='<div style="color:#fff;font-size:13px;opacity:.6">Loading…</div>';
   document.body.appendChild(ov);
-  let src=exp.receipt_img||null;
-  if(!src&&exp.receipt_key){
-    try{src=await _getReceiptSignedUrl(exp.receipt_key,300);}
-    catch(e){ov.remove();return zAlert('Could not load receipt photo.',{title:'Error'});}
+  // Resolve all keys to URLs
+  const srcs=[];
+  if(allKeys.length){
+    for(const k of allKeys){
+      try{const u=await _getReceiptSignedUrl(k,300);if(u)srcs.push(u);}catch(e){}
+    }
   }
-  const fname='receipt_'+(exp.date||'')+'_'+(exp.vendor||'').replace(/[^a-z0-9]/gi,'_')+'.jpg';
-  ov.innerHTML='<div style="max-width:600px;width:100%;text-align:center">'+
-    '<img src="'+src+'" style="max-width:100%;max-height:80vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5)">'+
-    '<div style="margin-top:12px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">'+
-      '<a href="'+src+'" download="'+fname+'" style="color:#fff;font-size:13px;font-weight:600;text-decoration:none;background:rgba(255,255,255,.15);padding:8px 16px;border-radius:8px">⬇ Save photo</a>'+
-      '<button onclick="deleteReceiptPhoto('+expId+')" style="color:#fff;font-size:13px;font-weight:600;background:rgba(180,30,30,.7);border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-family:inherit">🗑 Delete photo</button>'+
-      '<button onclick="this.closest(\'.rcpt-ov\').remove()" style="color:#fff;font-size:13px;font-weight:600;background:rgba(255,255,255,.15);border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-family:inherit">✕ Close</button>'+
-    '</div>'+
-  '</div>';
+  if(!srcs.length&&exp.receipt_img)srcs.push(exp.receipt_img);
+  if(!srcs.length){ov.remove();return zAlert('Could not load receipt photo.',{title:'Error'});}
+  let _pg=0;
+  const fname=key=>'receipt_'+(exp.date||'')+'_'+(exp.vendor||'').replace(/[^a-z0-9]/gi,'_')+(srcs.length>1?'_p'+(srcs.indexOf(key)+1):'')+'.jpg';
+  const render=()=>{
+    const src=srcs[_pg];
+    ov.innerHTML=
+      (srcs.length>1?'<div style="color:#fff;font-size:12px;font-weight:700;margin-bottom:10px;opacity:.8">Page '+(_pg+1)+' of '+srcs.length+'</div>':'')+
+      '<img src="'+src+'" style="max-width:100%;max-height:72vh;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.5)">'+
+      '<div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap">'+
+        (srcs.length>1&&_pg>0?'<button onclick="_rcptPg(-1)" style="color:#fff;font-size:13px;font-weight:600;background:rgba(255,255,255,.15);border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-family:inherit">← Prev</button>':'')+
+        (srcs.length>1&&_pg<srcs.length-1?'<button onclick="_rcptPg(1)" style="color:#fff;font-size:13px;font-weight:600;background:rgba(255,255,255,.15);border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-family:inherit">Next →</button>':'')+
+        '<a href="'+src+'" download="'+fname(src)+'" style="color:#fff;font-size:13px;font-weight:600;text-decoration:none;background:rgba(255,255,255,.15);padding:8px 14px;border-radius:8px">⬇ Save</a>'+
+        '<button onclick="deleteReceiptPhoto('+expId+')" style="color:#fff;font-size:13px;font-weight:600;background:rgba(180,30,30,.7);border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-family:inherit">🗑 Delete</button>'+
+        '<button onclick="this.closest(\'.rcpt-ov\').remove()" style="color:#fff;font-size:13px;font-weight:600;background:rgba(255,255,255,.15);border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-family:inherit">✕ Close</button>'+
+      '</div>';
+  };
+  window._rcptPg=(d)=>{_pg=Math.max(0,Math.min(srcs.length-1,_pg+d));render();};
+  render();
 }
 function deleteReceiptPhoto(expId){
   zConfirm('Delete this receipt photo? The expense record stays intact — you can add a new photo anytime.',async()=>{
     const exp=expenses.find(e=>e.id==expId);
     if(!exp)return;
-    if(exp.receipt_key){
-      try{await _deleteReceiptFromStorage(exp.receipt_key);}
-      catch(e){console.warn('Storage delete failed:',e);}
-    }
-    exp.receipt_img=null;
-    exp.receipt_key=null;
-    exp.receipt=null;
+    const keysToDelete=[...(exp.receipt_keys||[]),exp.receipt_key].filter(Boolean);
+    for(const k of keysToDelete){try{await _deleteReceiptFromStorage(k);}catch(e){}}
+    exp.receipt_img=null;exp.receipt_key=null;exp.receipt_keys=undefined;exp.receipt=null;
     if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
     document.querySelector('.rcpt-ov')?.remove();
     renderExpenses();
@@ -2444,11 +2477,13 @@ function renderExpenses(){
       ['Date','Category','Vendor','Amount','Receipt'].map(h=>'<th>'+h+'</th>').join('')+'<th></th></tr></thead><tbody>'+
       pageRows.map(r=>{
         const info=IRS_EXPENSE_CATS.find(c=>c.id===r.cat);
-        const hasBucket=!!r.receipt_key,hasInline=!!r.receipt_img,hasImg=hasBucket||hasInline;
+        const pageCount=(r.receipt_keys?.length||0)+(r.receipt_key&&!r.receipt_keys?1:0);
+        const hasBucket=!!r.receipt_key||pageCount>0,hasInline=!!r.receipt_img,hasImg=hasBucket||hasInline;
+        const pgLabel=pageCount>1?' ('+pageCount+'pg)':'';
         const recLabel=hasImg
           ?(hasBucket
-            ?'<button onclick="viewReceipt('+r.id+')" style="background:var(--green-lt);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit" title="Stored in Supabase Storage">☁️ View</button>'
-            :'<button onclick="viewReceipt('+r.id+')" style="background:#fff8e1;border:1px solid #f59e0b;color:#b45309;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit" title="Stored inline — will migrate to cloud on next save">💾 View</button>')
+            ?'<button onclick="viewReceipt('+r.id+')" style="background:var(--green-lt);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">☁️ View'+pgLabel+'</button>'
+            :'<button onclick="viewReceipt('+r.id+')" style="background:#fff8e1;border:1px solid #f59e0b;color:#b45309;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">💾 View</button>')
           :'<button onclick="addReceiptToExpense('+r.id+')" style="background:rgba(162,45,45,.08);border:1px solid #A32D2D;color:#A32D2D;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">+ Add</button>';
         return '<tr data-lp-id="'+r.id+'" data-lp-type="expense" data-lp-label="'+escHtml((r.vendor||'expense')+' · '+fmt(r.amount||0))+'">'+
           '<td class="mute">'+(r.date||'')+'</td>'+
@@ -2521,9 +2556,14 @@ function editExpense(id){
     if(title)title.textContent='Edit expense';
     const saveBtn=document.getElementById('exp-save-btn');
     if(saveBtn)saveBtn.textContent='Save changes';
-    if(exp.receipt_key||exp.receipt_img){
+    if(exp.receipt_keys?.length||exp.receipt_key||exp.receipt_img){
+      const pc=exp.receipt_keys?.length||(exp.receipt_key?1:0);
       const preview=document.getElementById('exp-preview-img');
-      if(preview)preview.innerHTML='<div style="font-size:11px;color:var(--green-mid);font-weight:700">☁️ Receipt on file</div>';
+      if(preview){
+        preview.style.display='block';
+        preview.innerHTML='<div style="font-size:11px;color:var(--green-mid);font-weight:700;margin-bottom:6px">☁️ '+pc+' receipt page'+(pc>1?'s':'')+' on file</div>'+
+          '<button type="button" onclick="expTriggerAttach(true)" style="font-size:11px;padding:5px 10px;border-radius:var(--r);border:1.5px dashed var(--blue);background:var(--blue-lt);color:var(--blue-dk);cursor:pointer;font-family:inherit;font-weight:700">+ Add another page</button>';
+      }
     }
     const saveErr=document.getElementById('exp-save-err');
     if(saveErr){
