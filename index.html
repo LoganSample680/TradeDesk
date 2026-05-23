@@ -2276,16 +2276,16 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
 </div>
 <div class="pg" id="pg-tracker">
-  <div class="tbar">
-    <div class="tbar-l">
-      <div class="tbar-eyebrow" id="tracker-eyebrow">IRS Schedule C ready</div>
-      <div class="tbar-title">Books</div>
-      <div class="tbar-sub">Every payment, receipt, and mile. Categories follow IRS Schedule C buckets so taxes are one tap.</div>
+  <div class="tbar" style="flex-direction:column;align-items:stretch;gap:8px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+      <div>
+        <div class="tbar-eyebrow" id="tracker-eyebrow">IRS Schedule C ready</div>
+        <div class="tbar-title">Books</div>
+      </div>
+      <button class="btn btn-sm" onclick="openExportPanel()" style="flex-shrink:0;margin-top:6px">⬇ Export</button>
     </div>
-    <div class="tbar-r">
-      <button class="btn btn-sm" onclick="openExportPanel()">⬇ Export</button>
-      <select id="tracker-year-sel" onchange="setTrackerYear(parseInt(this.value))" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);cursor:pointer"></select>
-    </div>
+    <div class="tbar-sub">Every payment, receipt, and mile. Categories follow IRS Schedule C buckets so taxes are one tap.</div>
+    <select id="tracker-year-sel" onchange="setTrackerYear(parseInt(this.value))" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);cursor:pointer;width:100%"></select>
   </div>
   <div class="fbar">
     <button type="button" class="fb active" id="tr-t-income" onclick="setTrTab('income',this)">Income</button>
