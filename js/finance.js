@@ -1,5 +1,8 @@
 // ── IRS Schedule C expense categories ────────────────────────────────
-let _expState={imageData:null,imageKey:null};
+let _expState={imageData:null,imageKey:null,editId:null};
+let _expPage=0;
+
+function setExpPage(n){_expPage=n;renderExpenses();const el=document.getElementById('exp-table');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});}
 
 function openExpenseFlow(){
   if(document.getElementById('expense-modal'))return;
@@ -682,6 +685,34 @@ async function expSave(){
   if(cat==='meals'){const mp=(document.getElementById('em-meal-purpose')?.value||'').trim();if(!mp){if(err)err.textContent='IRS requires a business purpose for meal expenses.';document.getElementById('em-meal-purpose')?.focus();return;}}
   const leadSource=cat==='marketing'?(document.getElementById('em-mkt-source')?.value||'').trim():'';
   if(cat==='marketing'&&!leadSource){if(err)err.textContent='Select which marketing channel this belongs to.';document.getElementById('em-mkt-source')?.focus();return;}
+  // Edit mode — update existing record instead of creating new
+  if(_expState.editId){
+    const idx=expenses.findIndex(e=>e.id===_expState.editId);
+    if(idx>-1){
+      btn.disabled=true;btn.textContent='Saving...';if(err)err.textContent='';
+      const catInfo2=IRS_EXPENSE_CATS.find(c=>c.id===cat)||{};
+      const job2=jobId?bids.find(b=>b.id===jobId):null;
+      const mealPurpose2=cat==='meals'?(document.getElementById('em-meal-purpose')?.value||'').trim():'';
+      const mealAttendees2=cat==='meals'?(document.getElementById('em-meal-attendees')?.value||'').trim():'';
+      let upd_receipt_key=expenses[idx].receipt_key,upd_receipt_img=expenses[idx].receipt_img;
+      if(_expState.imageKey){upd_receipt_key=_expState.imageKey;upd_receipt_img=null;}
+      else if(_expState.imageData){
+        try{upd_receipt_key=await _uploadReceiptToStorage(expenses[idx].id,_expState.imageData.b64);}catch(e){upd_receipt_img='data:image/jpeg;base64,'+_expState.imageData.b64;}
+      }
+      expenses[idx]={...expenses[idx],date,cat,catLabel:catInfo2.label||cat,vendor,amount,notes,
+        lead_source:leadSource||undefined,meal_purpose:mealPurpose2||undefined,meal_attendees:mealAttendees2||undefined,
+        job_id:jobId,job_name:job2?job2.client_name||job2.name:'',
+        receipt:upd_receipt_key||upd_receipt_img?'Yes — photo stored':'No receipt photo',
+        receipt_key:upd_receipt_key,receipt_img:upd_receipt_img,
+        deductible:catInfo2.deductible!==false,meals_50:!!(catInfo2.meals_50),
+      };
+      expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
+      if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
+      if(typeof renderExpenses==='function')renderExpenses();
+      showToast('Expense updated — '+vendor+' '+fmt(amount),'✓');
+      closeExpenseFlow();return;
+    }
+  }
   // Duplicate check — same vendor, amount, and date within 2 days
   const dupExp=expenses.find(e=>{
     if(e.vendor&&vendor&&e.vendor.toLowerCase()===vendor.toLowerCase()&&
@@ -1379,6 +1410,7 @@ function populateTrackerYearSel(){
 function setTrackerYear(yr){
   _trackerYearManual=true;
   trackerYear=yr;
+  _expPage=0;
   renderTrackerTab();
 }
 function renderTrackerTab(){
@@ -2401,11 +2433,16 @@ function renderExpenses(){
       '<div style="font-size:10px;color:var(--green-mid);font-weight:700">~'+fmt(deductible)+' deductible</div>'+
     '</div>'+
   '</div>';
-  // Expense rows — table first so rows are visible without scrolling
+  // Expense rows — paginated, 20 per page
+  const PER_PAGE=20;
+  const sorted=[...filtered].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const totalPages=Math.max(1,Math.ceil(sorted.length/PER_PAGE));
+  if(_expPage>=totalPages)_expPage=totalPages-1;
+  const pageRows=sorted.slice(_expPage*PER_PAGE,(_expPage+1)*PER_PAGE);
   try{
     html+='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl" style="min-width:560px"><thead><tr>'+
       ['Date','Category','Vendor','Amount','Receipt'].map(h=>'<th>'+h+'</th>').join('')+'<th></th></tr></thead><tbody>'+
-      [...filtered].sort((a,b)=>(a.date||'').localeCompare(b.date||'')).map(r=>{
+      pageRows.map(r=>{
         const info=IRS_EXPENSE_CATS.find(c=>c.id===r.cat);
         const hasBucket=!!r.receipt_key,hasInline=!!r.receipt_img,hasImg=hasBucket||hasInline;
         const recLabel=hasImg
@@ -2419,9 +2456,16 @@ function renderExpenses(){
           '<td class="bold">'+(r.vendor||'—')+(r.job_name?'<div style="font-size:9px;color:var(--text3)">'+r.job_name+'</div>':'')+'</td>'+
           '<td class="red">('+fmtD(r.amount||0)+')'+(r.meals_50?'<div style="font-size:9px;color:var(--amber)">50% deduct</div>':'')+'</td>'+
           '<td>'+recLabel+'</td>'+
-          '<td><button class="btn-del" onclick="delExpense('+r.id+')">&#10005;</button></td>'+
+          '<td><button onclick="editExpense('+r.id+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Edit</button></td>'+
         '</tr>';
       }).join('')+'</tbody></table></div>';
+    if(totalPages>1){
+      html+='<div style="display:flex;align-items:center;justify-content:center;gap:12px;padding:12px 0">'+
+        '<button onclick="setExpPage('+(_expPage-1)+')" '+((_expPage===0)?'disabled':'')+' style="padding:7px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit'+((_expPage===0)?';opacity:.4;cursor:not-allowed':'')+'">&larr; Prev</button>'+
+        '<span style="font-size:12px;color:var(--text3);font-weight:700">Page '+(_expPage+1)+' of '+totalPages+'</span>'+
+        '<button onclick="setExpPage('+(_expPage+1)+')" '+((_expPage>=totalPages-1)?'disabled':'')+' style="padding:7px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit'+((_expPage>=totalPages-1)?';opacity:.4;cursor:not-allowed':'')+'">&rarr; Next</button>'+
+      '</div>';
+    }
   }catch(err){
     console.error('renderExpenses table error:',err,{filtered:filtered.slice(0,3)});
     html+='<div class="tip tip-a">Error rendering expense rows — check console. ('+err.message+')</div>';
@@ -2456,6 +2500,41 @@ async function purgeOldReceiptImages(){
   },{title:'Purge old receipt images',yes:'Delete images',danger:true});
 }
 function delExpense(id){expenses=expenses.filter(x=>x.id!==id);_flushSaveNow&&_flushSaveNow();renderExpenses();}
+
+function editExpense(id){
+  const exp=expenses.find(e=>e.id===id);if(!exp)return;
+  openExpenseFlow();
+  _expState.editId=id;
+  setTimeout(()=>{
+    const sv=(elId,v)=>{const el=document.getElementById(elId);if(el)el.value=v||'';};
+    sv('em-vendor',exp.vendor);
+    sv('em-amount',exp.amount);
+    if(exp.date){const m=exp.date.match(/(\d{4})-(\d{2})-(\d{2})/);const el=document.getElementById('em-date');if(el)el.value=m?m[2]+'/'+m[3]+'/'+m[1]:exp.date;}
+    sv('em-cat',exp.cat);
+    sv('em-notes',exp.notes);
+    if(exp.job_id)sv('em-job',exp.job_id);
+    toggleExpenseSections();
+    if(exp.lead_source)sv('em-mkt-source',exp.lead_source);
+    if(exp.meal_purpose)sv('em-meal-purpose',exp.meal_purpose);
+    if(exp.meal_attendees)sv('em-meal-attendees',exp.meal_attendees);
+    const title=document.querySelector('#expense-modal [style*="font-size:18px"]');
+    if(title)title.textContent='Edit expense';
+    const saveBtn=document.getElementById('exp-save-btn');
+    if(saveBtn)saveBtn.textContent='Save changes';
+    if(exp.receipt_key||exp.receipt_img){
+      const preview=document.getElementById('exp-preview-img');
+      if(preview)preview.innerHTML='<div style="font-size:11px;color:var(--green-mid);font-weight:700">☁️ Receipt on file</div>';
+    }
+    const saveErr=document.getElementById('exp-save-err');
+    if(saveErr){
+      const delBtn=document.createElement('button');
+      delBtn.type='button';delBtn.textContent='Delete this expense';
+      delBtn.style.cssText='width:100%;margin-top:10px;padding:10px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit';
+      delBtn.onclick=()=>zConfirm('Delete this expense?',()=>{delExpense(id);closeExpenseFlow();},{title:'Delete expense',yes:'Delete',danger:true});
+      saveErr.after(delBtn);
+    }
+  },0);
+}
 
 function renderSummary(){
   const yr=String(trackerYear||new Date().getFullYear());
