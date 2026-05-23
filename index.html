@@ -2380,7 +2380,13 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
 </div>
 <div class="pg" id="pg-taxes">
-  <div class="tbar"><div class="tbar-title">Taxes</div><button class="btn btn-sm btn-p" onclick="openExportPanel()">⬇ Export</button></div>
+  <div class="tbar" style="flex-direction:column;align-items:stretch;gap:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div class="tbar-title">Taxes</div>
+      <button class="btn btn-sm btn-p" onclick="openExportPanel()">⬇ Export</button>
+    </div>
+    <select id="tax-yr-sel" onchange="setTaxYear(parseInt(this.value))" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);cursor:pointer;width:100%"></select>
+  </div>
   <div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-size:11px;color:#92400E;line-height:1.6"><strong>⚠️ Not a licensed tax tool.</strong> These numbers are estimates only — not a substitute for a CPA. Do not file taxes based solely on these figures. Consult a qualified tax professional, especially for self-employment tax and quarterly payments.</div>
   <div class="fbs" style="margin-bottom:14px">
     <button type="button" class="fb active" id="tx-tab-current" onclick="setTaxTab('current',this)">Current year</button>
@@ -2419,7 +2425,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
 
   
-  <div class="card"><div class="card-hd">This year so far</div><div id="tx-inputs"></div></div>
+  <div class="card"><div class="card-hd" id="tx-data-hd">This year so far</div><div id="tx-inputs"></div></div>
   <div class="card"><div class="card-hd">Estimated tax owed</div><div id="tx-results"></div></div>
   <div class="card"><div class="card-hd">Quarterly due dates</div><div id="tx-quarters"></div></div>
 

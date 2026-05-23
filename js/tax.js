@@ -97,14 +97,27 @@ function setTaxTab(tab,btn){
   if(pane)pane.style.display='block';
   calcTax();
 }
+let _taxPageYear=new Date().getFullYear();
+function _populateTaxYearSel(){
+  const sel=document.getElementById('tax-yr-sel');if(!sel)return;
+  const cur=new Date().getFullYear();
+  const dataYears=new Set([cur]);
+  const yr=String(cur);
+  [income,expenses,mileage].forEach(arr=>arr.forEach(r=>{const y=parseInt((r.date||'').slice(0,4));if(y>=2019&&y<=cur)dataYears.add(y);}));
+  const years=[...dataYears].sort((a,b)=>b-a);
+  if(!dataYears.has(_taxPageYear))_taxPageYear=cur;
+  sel.innerHTML=years.map(y=>'<option value="'+y+'"'+(_taxPageYear===y?' selected':'')+'>'+y+'</option>').join('');
+}
+function setTaxYear(yr){_taxPageYear=yr;const hd=document.getElementById('tx-data-hd');if(hd)hd.textContent=yr+' income & deductions';calcTax();}
 function calcTax(){
-  const _taxYr=String(trackerYear||S.taxYear||new Date().getFullYear());
+  const _taxYr=String(_taxPageYear||new Date().getFullYear());
   // Gross income = manually-logged income entries + bid payments (both filtered to selected year)
   const tIn=income.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+r.amount,0)
            +payments.filter(p=>p.amount>0&&p.date&&p.date.startsWith(_taxYr)).reduce((s,p)=>s+p.amount,0);
   const tEx=expenses.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+r.amount,0);
   const tMi=mileage.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+(r.miles||0),0);
-  const mileDed=tMi*IRS();
+  const _yrIrsRate=_getIrsRateForYear(_taxYr);
+  const mileDed=tMi*_yrIrsRate;
   const netSelf=Math.max(0,tIn-tEx-mileDed);
   const spouseInc=nv('tx-spouse');
   const taxPaid=nv('tx-paid');
@@ -117,9 +130,11 @@ function calcTax(){
   const seDed=seTax/2; // deduct half SE tax from income
 
   const agi=netSelf+spouseInc-seDed;
-  const stdDed=STD_DED[status]||14600;
+  // Use historical brackets for the selected year
+  const _yrBkts=_getFedBracketsForYear(_taxYr);
+  const stdDed=_getStdDedForYear(_taxYr,status);
   const fedTaxable=Math.max(0,agi-stdDed);
-  const fedTax=Math.ceil(calcBrackets(fedTaxable,FED_BRACKETS[status]||FED_BRACKETS.single));
+  const fedTax=Math.ceil(calcBrackets(fedTaxable,_yrBkts[status]||_yrBkts.single));
 
   const ksTaxable=Math.max(0,agi-(KS_STD[status]||3500));
   const ksTax=Math.ceil(calcBrackets(ksTaxable,KS_BRACKETS[status]||KS_BRACKETS.single));
@@ -137,6 +152,10 @@ function calcTax(){
 
   const reserveRate=netSelf>0?Math.ceil(totalOwed/netSelf*100):32; // default 32% if no income yet
   const reserveAmt=Math.ceil(netSelf*reserveRate/100);
+
+  // Keep year selector in sync and update dynamic header
+  _populateTaxYearSel();
+  const _hd=document.getElementById('tx-data-hd');if(_hd)_hd.textContent=_taxYr+' income & deductions';
 
   const banner=document.getElementById('tx-reserve-banner');
   if(banner){
