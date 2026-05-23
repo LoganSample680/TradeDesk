@@ -82,7 +82,7 @@ async function swLoadColors(){
 async function swInitFamilyGrid(){
   await swLoadColors();
   const grid=document.getElementById('sw-family-grid');if(!grid)return;
-  grid.innerHTML=SW_FAMILIES.map(f=>{
+  const famHtml=SW_FAMILIES.map(f=>{
     const count=(_swColors||[]).filter(c=>c.family===f.id).length;
     return '<div onclick="swShowFamily(\''+f.id+'\',\''+f.label+'\')" style="cursor:pointer;border-radius:var(--r);overflow:hidden;border:1px solid var(--border2)">'+
       '<div style="height:34px;background:'+f.bg+'"></div>'+
@@ -91,6 +91,26 @@ async function swInitFamilyGrid(){
         '<div style="font-size:9px;color:var(--text3)">'+count+'</div>'+
       '</div></div>';
   }).join('');
+  const recent=S.recentSwColors||[];
+  let recentHtml='';
+  if(recent.length){
+    recentHtml='<div style="grid-column:1/-1;padding-bottom:8px;margin-bottom:4px;border-bottom:1px solid var(--border)">'+
+      '<div style="font-size:9px;font-weight:800;text-transform:uppercase;color:var(--text3);letter-spacing:.06em;margin-bottom:5px">Recently used</div>'+
+      '<div style="display:flex;gap:5px;flex-wrap:wrap" id="sw-recent-chips"></div></div>';
+  }
+  grid.innerHTML=recentHtml+famHtml;
+  const chipsEl=document.getElementById('sw-recent-chips');
+  if(chipsEl){
+    recent.forEach(c=>{
+      const chip=document.createElement('button');
+      chip.type='button';
+      chip.style.cssText='display:flex;align-items:center;gap:5px;padding:5px 10px 5px 5px;border-radius:20px;border:1.5px solid var(--border2);background:var(--bg);cursor:pointer;font-family:inherit';
+      chip.innerHTML='<div style="width:18px;height:18px;border-radius:50%;background:'+c.hex+';border:1px solid rgba(0,0,0,.1);flex-shrink:0"></div>'+
+        '<span style="font-size:11px;font-weight:700;color:var(--text);white-space:nowrap">'+c.name+'</span>';
+      chip.onclick=()=>swSelectColor(c.sw,c.name,c.hex);
+      chipsEl.appendChild(chip);
+    });
+  }
 }
 async function swShowFamily(familyId,familyLabel){
   const colors=await swLoadColors();
@@ -204,6 +224,11 @@ function swSelectColor(sw,name,hex){
   const ss=document.getElementById('sw-state-swatches');if(ss)ss.style.display='none';
   const sf=document.getElementById('sw-state-family');if(sf)sf.style.display='';
   surfColor=cleanName+' ('+sw+')';
+  if(sw&&hex){
+    if(!S.recentSwColors)S.recentSwColors=[];
+    S.recentSwColors=[{sw,name:cleanName,hex},...S.recentSwColors.filter(c=>c.sw!==sw)].slice(0,4);
+    saveAll();
+  }
 }
 function _swResetColorUI(){
   const inp=document.getElementById('surf-color-b');if(inp)inp.value='';
@@ -296,7 +321,7 @@ function swRenderProductGrid(surfType){
   const hdr=document.getElementById('sw-product-grid-hdr');
   if(hdr)hdr.textContent='Choose product for: '+(SURF_NICE[surfType]||surfType);
 
-  const prevProductId=_swLastProductByCategory[category]||null;
+  const prevProductId=_swLastProductByCategory[category]||S.swLastProducts?.[category]||null;
   // If no previous pick, use the property tier recommendation as the default
   const tierProductId=!prevProductId&&estPropertyTier&&estPropertyTier.products
     ?(estPropertyTier.products[category]||estPropertyTier.products.interior)
@@ -393,6 +418,8 @@ function swSelectProduct(p,btn){
   const type=surfBQueue[surfBIdx];
   const cat=SURF_PRODUCT_TYPE[type]||'interior';
   _swLastProductByCategory[cat]=p.id;
+  if(!S.swLastProducts)S.swLastProducts={};
+  S.swLastProducts[cat]=p.id;saveAll();
 }
 
 
@@ -656,6 +683,15 @@ function cleanRoomName(room){
 
 function _sfShow(el,back){if(!el)return;el.classList.remove('sf-enter','sf-enter-back');void el.offsetWidth;el.classList.add(back?'sf-enter-back':'sf-enter');}
 
+function applyStdScopePreset(preset){
+  const INT_IDS=['protect','spackle','tape','caulk','twocoat','cleanup'];
+  const EXT_IDS=['pwash','spackle','tape','caulk','prime','twocoat'];
+  const ids=preset==='exterior'?EXT_IDS:INT_IDS;
+  ids.forEach(id=>{if(!roomScopeOn(surfRoom,id))toggleScopeRoom(id,surfRoom);});
+  // Hide the preset button after use
+  const pb=document.getElementById('_scope-preset-btn');if(pb)pb.style.display='none';
+}
+
 function goSurfStepA(){
   const a=document.getElementById('surf-step-a');
   document.getElementById('surf-step-b').style.display='none';
@@ -704,7 +740,13 @@ function goSurfStepB(){
     // Get sqft for dynamic pricing — recalculates as Zach adds measurements
     const _roomSqFt=estSurfaces.filter(sf=>cleanRoomName(sf.room)===surfRoom&&
       ['walls','ceiling','ext_walls','deck'].includes(sf.type)).reduce((sum,sf)=>sum+(sf.qty||0),0);
-    sg.innerHTML=SCOPE_ITEMS.map(s=>{
+    const _isExtPreset=surfJobType==='exterior';
+    const _hasAnyScope=Object.values(roomScopeMap[surfRoom]||{}).some(v=>v&&v.active);
+    const _presetTxt=_isExtPreset
+      ?'⚡ Std exterior prep — power wash · scrape/sand · tape · caulk · prime · 2 coats'
+      :'⚡ Std interior prep — protect · spackle · tape · caulk · 2 coats · cleanup';
+    const _presetBtnHtml=_hasAnyScope?'':'<button id="_scope-preset-btn" type="button" onclick="applyStdScopePreset(\''+(_isExtPreset?'exterior':'interior')+'\')" style="display:block;width:100%;margin-bottom:10px;padding:10px 12px;border-radius:var(--r);border:1.5px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">'+_presetTxt+'</button>';
+    sg.innerHTML=_presetBtnHtml+SCOPE_ITEMS.map(s=>{
       const isOn=roomScopeOn(surfRoom,s.id);
       const roomAttr=' data-room="'+encodeURIComponent(surfRoom)+'"';
       return '<div class="stog'+(isOn?' on':'')+'" id="est-st-'+s.id+'" onclick="toggleScopeRoom(\''+s.id+'\',decodeURIComponent(this.dataset.room))"'+roomAttr+' style="align-items:center">'+
