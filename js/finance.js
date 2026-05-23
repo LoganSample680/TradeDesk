@@ -7,7 +7,8 @@ function openExpenseFlow(){
   ov.id='expense-modal';
   ov.style.cssText='position:fixed;inset:0;z-index:9990;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;animation:fadein .15s;padding:16px';
   const mktSrcs=[...new Set(clients.map(c=>c.source).filter(Boolean))].sort();
-  const mktSrcOpts=mktSrcs.map(s=>'<option value="'+escHtml(s)+'">'+escHtml(s)+'</option>').join('')+
+  const mktSrcOpts=mktSrcs.filter(s=>s!=='Online leads').map(s=>'<option value="'+escHtml(s)+'">'+escHtml(s)+'</option>').join('')+
+    '<option value="Online leads">Online leads</option>'+
     '<option value="Other">Other</option>';
   const catOpts=IRS_EXPENSE_CATS.map(c=>'<option value="'+c.id+'">'+c.icon+' '+c.label+'</option>').join('');
   const jobOpts='<option value="">— Not tied to a specific job —</option>'+
