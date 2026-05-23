@@ -112,7 +112,7 @@ function expTriggerScan(){
       const parsed=await resp.json();
       if(parsed.vendor)document.getElementById('em-vendor').value=parsed.vendor;
       if(parsed.amount)document.getElementById('em-amount').value=parsed.amount;
-      if(parsed.date)document.getElementById('em-date').value=parsed.date;
+      if(parsed.date)document.getElementById('em-date').value='';  // cleared — set properly after user confirms below
       if(parsed.category)document.getElementById('em-cat').value=parsed.category;
       if(parsed.notes)document.getElementById('em-notes').value=parsed.notes;
       const preview=document.getElementById('exp-preview-img');
@@ -668,10 +668,11 @@ async function expSave(){
   const err=document.getElementById('exp-save-err');
   const vendor=(document.getElementById('em-vendor')?.value||'').trim();
   const amount=parseFloat(document.getElementById('em-amount')?.value||0);
-  // Parse date from MM/DD/YYYY text input → YYYY-MM-DD
+  // Parse date — handle both MM/DD/YYYY input and raw ISO YYYY-MM-DD (safety net)
   const _rawDate=document.getElementById('em-date')?.value||'';
-  const _dm=_rawDate.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-  const date=_dm?(_dm[3].length===2?'20':'')+_dm[3]+'-'+_dm[1].padStart(2,'0')+'-'+_dm[2].padStart(2,'0'):_rawDate;
+  const _isoM=_rawDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const _dm=!_isoM&&_rawDate.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  const date=_isoM?_rawDate:(_dm?(_dm[3].length===2?'20':'')+_dm[3]+'-'+_dm[1].padStart(2,'0')+'-'+_dm[2].padStart(2,'0'):_rawDate);
   const cat=document.getElementById('em-cat')?.value||'other';
   const jobId=parseInt(document.getElementById('em-job')?.value)||null;
   const notes=(document.getElementById('em-notes')?.value||'').trim();
