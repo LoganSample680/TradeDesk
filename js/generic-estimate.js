@@ -518,8 +518,10 @@ function _byoRenderSections(){
           (it.notes?'<div class="byo-meta" style="font-size:11px;color:var(--text-3)">'+escHtml(it.notes)+'</div>':'')+
         '</div>'+
         '<div class="byo-price">$'+it.price.toLocaleString()+'</div>'+
-        '<button class="tm-mat-del" onclick="event.stopPropagation();_byoEditItem('+idx+')" title="Edit" style="color:var(--blue);font-size:13px">✏️</button>'+
-        '<button class="tm-mat-del" onclick="event.stopPropagation();_byoDelItem('+idx+')" title="Remove">×</button>'+
+        '<div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px">'+
+          '<button onclick="event.stopPropagation();_byoEditItem('+idx+')" title="Edit" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--blue);touch-action:manipulation">Edit</button>'+
+          '<button onclick="event.stopPropagation();_byoDelItem('+idx+')" title="Remove" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:#A32D2D;touch-action:manipulation">✕</button>'+
+        '</div>'+
       '</div>';
     }).join(''):
     '<div style="padding:14px 16px;font-size:12px;color:var(--text-3);font-style:italic">No items yet — tap + Add item</div>';
