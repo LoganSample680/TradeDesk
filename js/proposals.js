@@ -1222,7 +1222,7 @@ if(!hasSignature()&&typedSig.length<=2){zAlert('Please type your name or draw yo
         // Fallback: no draft found, create fresh
         const exists=bids.find(b=>b.client_id===estLinkedClientId&&Math.abs(b.amount-final)<0.01&&b.bid_date===todayKey()&&b.status==='Pending');
         if(exists){exists.status='Closed Won';exists.notes=(exists.notes||'')+' Signed in person '+todayKey();lastCreatedBidId=exists.id;}
-        else{const newBid={id:_newBidId(),client_id:estLinkedClientId,client_name:c?c.name:'',name:cname,phone:v('e-cphone'),addr:v('e-caddr'),bid_date:todayKey(),followup:'',amount:final,type:getBidIncomeLabel({surfaces:estSurfaces}),days,status:'Closed Won',notes:v('e-cnotes'),completion_date:'',scope:ss,surfaces:[...estSurfaces],cond:v('e-cond'),paint:v('e-paint'),colors:v('e-colors'),allowWeekend:document.getElementById('e-allow-weekend')?.checked||false};bids.unshift(newBid);lastCreatedBidId=newBid.id;}
+        else{const _newBidWeekendEl=document.getElementById('e-allow-weekend');const _newBidWeekend=_newBidWeekendEl?_newBidWeekendEl.checked||false:false;const newBid={id:_newBidId(),client_id:estLinkedClientId,client_name:c?c.name:'',name:cname,phone:v('e-cphone'),addr:v('e-caddr'),bid_date:todayKey(),followup:'',amount:final,type:getBidIncomeLabel({surfaces:estSurfaces}),days,status:'Closed Won',notes:v('e-cnotes'),completion_date:'',scope:ss,surfaces:[...estSurfaces],cond:v('e-cond'),paint:v('e-paint'),colors:v('e-colors'),allowWeekend:_newBidWeekend};bids.unshift(newBid);lastCreatedBidId=newBid.id;}
       }
     }
     _submitting=true;setTimeout(()=>{_submitting=false;},2000);

@@ -1089,9 +1089,11 @@ function saveQuickExpense(clientId){
   const bidId=bidEl?parseInt(bidEl.value)||null:null;
   const bid=bidId?bids.find(b=>b.id===bidId):null;
   const cat=document.getElementById('qe-cat').value||'Paint & supplies';
+  const _qeDateEl=document.getElementById('qe-date');
+  const _qeDateVal=_qeDateEl?_qeDateEl.value||todayKey():todayKey();
   expenses.unshift({
     id:Date.now(),
-    date:document.getElementById('qe-date')?.value||todayKey(),
+    date:_qeDateVal,
     cat,
     vendor,
     amount,

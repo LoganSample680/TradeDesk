@@ -267,7 +267,9 @@ function openGenericEstimate(c,bidId,_tradePick){
     }
   }
   if(!_geiEditBidId){
-    const draftBid={id:_newBidId(),client_id:_geiClientId,client_name:c?.name||'',bid_date:todayKey(),amount:0,deposit:0,type:(TRADE_META[_geiTrade]?.label||'Trade')+' estimate',notes:'',status:'Draft',draft:true,trade_type:_geiTrade,geiLines:[],geiTaxPct:0};
+    const _draftClientName=c?c.name||'':'';
+    const _draftTypeLabel=(TRADE_META&&TRADE_META[_geiTrade])?TRADE_META[_geiTrade].label||'Trade':'Trade';
+    const draftBid={id:_newBidId(),client_id:_geiClientId,client_name:_draftClientName,bid_date:todayKey(),amount:0,deposit:0,type:_draftTypeLabel+' estimate',notes:'',status:'Draft',draft:true,trade_type:_geiTrade,geiLines:[],geiTaxPct:0};
     bids.unshift(draftBid);_geiEditBidId=draftBid.id;saveAll();
   }
   goPg('pg-est-generic');
@@ -1676,6 +1678,8 @@ function saveGenericEstimate(draft){
   const taxPct=parseFloat(v('gei-tax-pct'))||0;
   // T&M extra fields
   const _tmNteFromNew=parseFloat(v('tm-i-nte'))||0;
+  const _tmNteOnEl=document.getElementById('tm-nte-on');
+  const _tmNteOnChecked=_tmNteOnEl?(_tmNteOnEl.checked||false):false;
   const _tmFields=_geiIsTM?{
     isTM:true,
     tmReason:v('tm-reason'),tmReasonNote:v('tm-reason-note'),
@@ -1685,7 +1689,7 @@ function saveGenericEstimate(draft){
     tmCapAction:v('tm-i-cap-action')||_tmCapAction||'',
     tmDepositPct:parseFloat(v('tm-dep-pct'))||20,
     tmDepositAmt:Math.round(sub*(parseFloat(v('tm-dep-pct'))||20)/100),
-    tmNteEnabled:(_tmNteFromNew>0)||(document.getElementById('tm-nte-on')?.checked||false),
+    tmNteEnabled:(_tmNteFromNew>0)||_tmNteOnChecked,
     tmNteCap:_tmNteFromNew||parseFloat(v('tm-nte-cap'))||0,
   }:{isTM:false};
   const _byoDepPct=_geiIsTM?null:(parseFloat(document.getElementById('byo-deposit-pct')?.value)||25)/100;
