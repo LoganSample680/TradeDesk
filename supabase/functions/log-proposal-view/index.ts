@@ -37,7 +37,11 @@ Deno.serve(async (req: Request) => {
         { onConflict: 'contractor_user_id,bid_id' }
       );
 
-    if (error) throw error;
+    if (error) {
+      const msg = error.message || error.details || error.hint || JSON.stringify(error);
+      console.error('upsert error:', JSON.stringify(error));
+      return json({ error: msg, code: error.code, details: error.details }, 500);
+    }
 
     // ── Push notifications (future) ───────────────────────────────────────────
     // When a contractor opts in, load their push subscription here and fire it.
