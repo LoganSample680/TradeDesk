@@ -351,7 +351,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.24.26.22';
+const APP_VERSION='05.24.26.23';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -1606,7 +1606,14 @@ async function checkNewSignatures(){
         const alreadySeen=seenCache.has(key);
         const bid=bids.find(b=>String(b.id)===key);
         if(!bid){if(!alreadySeen)newSeen.push(key);continue;} // deleted/orphaned
-        if(bid.status!=='Closed Won'){
+        if(s.payment_status==='declined'){
+          // Client declined — mark as Closed Lost, not Closed Won
+          if(bid.status!=='Closed Lost'){
+            bid.status='Closed Lost';bid.draft=false;
+            bid.declinedAt=s.signed_at;
+            changed=true;
+          }
+        } else if(bid.status!=='Closed Won'){
           // Always fix the status regardless of seenCache — data may have been reset
           bid.status='Closed Won';bid.draft=false;
           bid.signedAt=s.signed_at;
