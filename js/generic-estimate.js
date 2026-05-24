@@ -565,7 +565,7 @@ function _byoUpdateRail(){
   setT('byo-rail-sub','$'+total.toLocaleString());
   setT('byo-rail-deposit','$'+deposit.toLocaleString());
   setT('byo-rail-balance','$'+(total-deposit).toLocaleString());
-  _geiLines=selected.map(it=>({desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,_byoSection:it.section}));
+  _geiLines=selected.map(it=>({desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,notes:it.notes||'',_byoSection:it.section}));
 }
 function _byoAddItem(sec){
   document.getElementById('_byo-add-modal')?.remove();
@@ -725,7 +725,7 @@ function _buildComparisonPreview(){
   if(!bidA||!bidB){showToast('Bids not found','⚠️');return;}
   const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const makeCard=(b,label,accentColor)=>{
-    const lineRows=(b.geiLines||[]).filter(l=>l.desc||l.rate).map(l=>`<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:7px 12px;font-size:12px;color:#2d3748">${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</td><td style="padding:7px 8px;text-align:right;font-size:12px;font-weight:600;color:#1a365d">${fmt((l.qty||1)*(l.rate||0))}</td></tr>`).join('');
+    const lineRows=(b.geiLines||[]).filter(l=>l.desc||l.rate).map(l=>`<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:7px 12px;font-size:12px;color:#2d3748"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${l.notes?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:''}</td><td style="padding:7px 8px;text-align:right;font-size:12px;font-weight:600;color:#1a365d">${fmt((l.qty||1)*(l.rate||0))}</td></tr>`).join('');
     const notes=b.notes?`<div style="padding:10px 14px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.5"><strong>Notes:</strong> ${escHtml(b.notes)}</div>`:'';
     return `<div style="background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 2px 12px rgba(0,0,0,.08);margin-bottom:16px"><div style="background:${accentColor};color:#fff;padding:14px 16px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;opacity:.85">Option</div><div style="font-size:20px;font-weight:800;margin-top:2px">${label}</div><div style="font-size:13px;opacity:.85;margin-top:4px">${escHtml(b.type||'Proposal')}</div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><tbody>${lineRows}</tbody><tfoot><tr style="background:${accentColor};color:#fff"><td style="padding:10px 14px;font-weight:800;font-size:14px">TOTAL</td><td style="padding:10px 14px;text-align:right;font-weight:800;font-size:14px">${fmt(b.amount)}</td></tr></tfoot></table>${notes}<div style="padding:12px 14px;background:#f8fafc;text-align:center"><button style="width:100%;padding:12px;border-radius:10px;border:2px solid ${accentColor};background:#fff;color:${accentColor};font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;touch-action:manipulation">✓ I choose this option</button></div></div>`;
   };
@@ -1718,7 +1718,7 @@ async function sendGenericProposal(previewOnly){
     let amt=(l.qty||1)*(l.rate||0);
     // For T&M, bake markup into material prices — client never sees the markup percentage
     if(_geiIsTM&&!l._tmLabor)amt=Math.round(amt*_tmPropMarkupMult);
-    return `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 18px;font-size:12px;color:#2d3748">${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</td><td style="padding:9px 6px;text-align:center;font-size:12px;color:#64748b">${l.qty||1}</td><td style="padding:9px 18px 9px 4px;text-align:right;font-size:12px;font-weight:600;color:#1a365d">$${amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`;
+    return `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 18px;font-size:12px;color:#2d3748"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${l.notes?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:''}</td><td style="padding:9px 6px;text-align:center;font-size:12px;color:#64748b">${l.qty||1}</td><td style="padding:9px 18px 9px 4px;text-align:right;font-size:12px;font-weight:600;color:#1a365d">$${amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`;
   }).join('');
   // Suppress markup/tax row for T&M — markup is already in the line prices
   const taxRow=(!_geiIsTM&&taxPct)?`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td colspan="2" style="padding:8px 18px;font-size:12px;color:#64748b">Tax / markup (${taxPct}%)</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$${(total*(taxPct/(100+taxPct))).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`:'';
