@@ -20,22 +20,25 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { contractorUserId, bidId } = await req.json();
+    const { contractorUserId, bidId, clientId } = await req.json();
 
     if (!contractorUserId || !bidId) {
       return json({ error: 'contractorUserId and bidId required' }, 400);
     }
 
     const now = new Date().toISOString();
+    const row: Record<string, unknown> = {
+      contractor_user_id: contractorUserId,
+      bid_id: String(bidId),
+      opened_at: now,
+    };
+    if (clientId) row.client_id = clientId;
 
     // Upsert: first view = INSERT, repeat view = UPDATE opened_at.
-    // onConflict requires UNIQUE (contractor_user_id, bid_id) — see migration note below.
+    // Requires UNIQUE (contractor_user_id, bid_id) constraint.
     const { error } = await supa
       .from('proposal_views')
-      .upsert(
-        { contractor_user_id: contractorUserId, bid_id: String(bidId), opened_at: now },
-        { onConflict: 'contractor_user_id,bid_id' }
-      );
+      .upsert(row, { onConflict: 'contractor_user_id,bid_id' });
 
     if (error) {
       const msg = error.message || error.details || error.hint || JSON.stringify(error);
