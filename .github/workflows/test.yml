@@ -19,16 +19,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Install Playwright + serve
+        run: npm install --no-save @playwright/test@1.49.0 serve
 
       - name: Install Playwright browsers (WebKit + Chromium)
         run: npx playwright install --with-deps webkit chromium
 
-      - name: Serve app and run Playwright tests
-        run: npm test
+      - name: Run Playwright tests
+        run: npx playwright test
         env:
           CI: true
 
