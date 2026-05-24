@@ -351,7 +351,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.24.26.23';
+const APP_VERSION='05.24.26.24';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -460,6 +460,7 @@ function _lpDeleteClientById(id,fromType){
 }
 
 let _proposalViews={};
+let _proposalViewsByBid={};
 // true when data came from localStorage cache, not a live Supabase fetch.
 // supaSaveToCloud() checks this + runs a sanity guard to prevent pushing
 // incomplete in-memory state over real cloud data.
@@ -1645,12 +1646,16 @@ async function _fetchProposalViews(){
   if(!_supa||!_supaUser)return;
   try{
     const{data}=await _supa.from('proposal_views')
-      .select('client_id,opened_at')
+      .select('bid_id,client_id,opened_at')
       .eq('contractor_user_id',_supaUser.id)
       .order('opened_at',{ascending:false});
     if(data){
       _proposalViews={};
-      data.forEach(v=>{if(!_proposalViews[v.client_id])_proposalViews[v.client_id]=v.opened_at;});
+      _proposalViewsByBid={};
+      data.forEach(v=>{
+        if(v.client_id&&!_proposalViews[v.client_id])_proposalViews[v.client_id]=v.opened_at;
+        if(v.bid_id&&!_proposalViewsByBid[v.bid_id])_proposalViewsByBid[v.bid_id]=v.opened_at;
+      });
       renderDash();
     }
   }catch(e){}
