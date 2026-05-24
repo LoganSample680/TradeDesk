@@ -351,7 +351,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.24.26.21';
+const APP_VERSION='05.24.26.22';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -445,7 +445,7 @@ function _lpDoDelete(id,type){
   else if(type==='expense'){if(typeof delExpense==='function')delExpense(nid);}
   else if(type==='mileage'){if(typeof delMileage==='function')delMileage(nid);}
   else if(type==='lead'||type==='client'){_lpDeleteClientById(nid,type);}
-  else if(type==='bid'){bids=bids.filter(x=>x.id!==nid);_flushSaveNow&&_flushSaveNow();if(typeof renderJobsHistory==='function')renderJobsHistory();if(typeof renderJobsPage==='function')renderJobsPage();if(typeof renderDash==='function')renderDash();}
+  else if(type==='bid'){const _delBid=bids.find(x=>x.id===nid);const _delClientId=_delBid?_delBid.client_id:null;bids=bids.filter(x=>x.id!==nid);_flushSaveNow&&_flushSaveNow();if(typeof renderJobsHistory==='function')renderJobsHistory();if(typeof renderJobsPage==='function')renderJobsPage();if(typeof renderDash==='function')renderDash();if(_delClientId&&typeof _uploadClientHub==='function')_uploadClientHub(_delClientId).catch(()=>{});}
 }
 function _lpDeleteClientById(id,fromType){
   clients=clients.filter(x=>x.id!==id);
