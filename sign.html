@@ -293,6 +293,8 @@ input[type=text]:focus{border-color:var(--denim)}
     <button class="pdf-btn" onclick="window.print()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download PDF</button>
 
     <div class="card"><span class="lbl">Scope &amp; terms</span><div id="prop-html" style="font-size:13px;line-height:1.6"></div></div>
+
+    <button onclick="declineBid()" style="display:block;width:100%;margin-top:8px;padding:13px;border:none;background:none;color:var(--text3);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center;border-radius:var(--r)">Not interested — decline this proposal</button>
   </div>
 
   <!-- Step 2: Color selection (painting only) -->
@@ -443,7 +445,30 @@ input[type=text]:focus{border-color:var(--denim)}
     <div id="pg-err-detail" style="margin-top:12px;font-size:11px;color:#94a3b8;word-break:break-all;text-align:left;background:#f8fafc;border-radius:8px;padding:10px 12px;display:none"></div>
     </div>
   </div>
+
+  <!-- Declined -->
+  <div id="pg-declined" style="display:none">
+    <div class="pg-status">
+      <div class="pg-status-icon">👋</div>
+      <h2>Thanks for letting us know</h2>
+      <p>The contractor has been notified that you're not moving forward at this time. We hope to have the opportunity to work with you in the future.</p>
+    </div>
+  </div>
+
   <div style="text-align:center;padding:28px 16px 12px;font-size:11px;color:var(--text3);font-weight:500">Powered by <strong style="font-weight:700;color:var(--text2)">TradeDesk Pro</strong></div>
+</div>
+
+<!-- Decline confirmation modal -->
+<div id="decline-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:20px">
+  <div style="background:var(--bg);border-radius:16px;padding:24px;width:100%;max-width:320px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.35)">
+    <div style="font-size:36px;margin-bottom:12px">🤔</div>
+    <div style="font-size:17px;font-weight:800;margin-bottom:8px;color:var(--ink)">Decline this proposal?</div>
+    <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:20px">This will notify the contractor that you're not moving forward. You can always reach out to them directly.</div>
+    <div style="display:flex;gap:10px">
+      <button onclick="document.getElementById('decline-modal').style.display='none'" style="flex:1;padding:12px;border:1.5px solid var(--border2);background:var(--bg2);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">Go back</button>
+      <button id="decline-confirm-btn" onclick="_confirmDecline()" style="flex:1;padding:12px;border:none;background:#A32D2D;color:#fff;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Decline</button>
+    </div>
+  </div>
 </div>
 
 <!-- Sticky approve bar -->
@@ -467,7 +492,7 @@ let sigCanvas,sigCtx,signing=false,hasInk=false;
 window._portfolioAccepted=false;
 let _portfolioStep=0;
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const pages=['pg-load','pg-sign','pg-color-pick','pg-sign-action','pg-pay','pg-done','pg-err'];
+const pages=['pg-load','pg-sign','pg-color-pick','pg-sign-action','pg-pay','pg-done','pg-err','pg-declined'];
 let _bootGone=false;
 function _dismissSignBoot(){
   if(_bootGone)return;_bootGone=true;
@@ -569,6 +594,9 @@ async function init(){
       document.querySelector('#pg-err h2').textContent='Proposal Updated';
       document.querySelector('#pg-err p').textContent='Your contractor has updated this proposal. Please request the new link to review and sign.';
       show('pg-err');return;
+    }
+    if(_prop.status==='declined'){
+      show('pg-declined');return;
     }
     // stripeConnectEnabled===false: _renderSignPayBtns() will show cash-only
     // Check proposal JSON status AND signed_proposals table (table is authoritative — storage can be cached)
@@ -912,6 +940,34 @@ function showDone(method){
   const hubCta=document.getElementById('done-hub-cta');
   if(hubCta&&hubUrl){hubCta.href=hubUrl;hubCta.style.display='block';}
   show('pg-done');scrollTo(0,0);
+}
+
+function declineBid(){
+  const modal=document.getElementById('decline-modal');
+  if(modal){modal.style.display='flex';}
+}
+async function _confirmDecline(){
+  const btn=document.getElementById('decline-confirm-btn');
+  if(btn){btn.disabled=true;btn.textContent='Sending...';}
+  const params2=new URLSearchParams(location.search);
+  let key=params2.get('key');
+  if(!key){const t=params2.get('t'),u=params2.get('u'),b=params2.get('b');if(t&&u&&b)key=`proposals/${u}/${b}_${t}.json`;}
+  const ts=new Date().toISOString();
+  try{
+    const updated=Object.assign({},_prop,{status:'declined',declinedAt:ts});
+    await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true});
+    await _supa.from('signed_proposals').upsert({
+      bid_id:String(_prop.id),contractor_user_id:_prop.contractorUserId,
+      client_name:_prop.clientName,client_signed_name:_prop.clientName||'Client',
+      amount:_prop.amount,deposit:_prop.deposit,
+      payment_method:'declined',payment_status:'declined',
+      signed_at:ts,notify_email:_prop.notifyEmail,storage_key:key,
+      portfolio_accepted:false,
+    });
+  }catch(e){console.error('[decline]',e);}
+  const modal=document.getElementById('decline-modal');
+  if(modal)modal.style.display='none';
+  show('pg-declined');scrollTo(0,0);
 }
 
 // Kick the boot bar to feel alive immediately

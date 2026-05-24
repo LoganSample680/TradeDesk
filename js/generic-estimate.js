@@ -1741,7 +1741,7 @@ async function sendGenericProposal(previewOnly){
     if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.');return;}
   }
   if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});
-  const v=id=>document.getElementById(id)?.value||'';
+  const v=id=>{const _e=document.getElementById(id);return _e?(_e.value||''):'';};
   const{total,sub}=calcGeiTotal();
   const trade=_geiTrade||getActiveTrade();
   const taxPct=parseFloat(v('gei-tax-pct'))||0;
@@ -1749,12 +1749,14 @@ async function sendGenericProposal(previewOnly){
   const bphone=escHtml(S.bphone||'');const blic=escHtml(S.blic||'');
   const clientName=escHtml(v('gei-client'));const clientAddr=escHtml(v('gei-addr'));
   const jobDesc=escHtml(v('gei-desc'));const duration=escHtml(v('gei-duration'));
-  const tradeName=TRADE_META[trade]?.label||'Service';const tradeIcon=TRADE_META[trade]?.icon||'🔧';
+  const _tradeM=TRADE_META[trade]||null;
+  const tradeName=(_tradeM&&_tradeM.label)||'Service';const tradeIcon=(_tradeM&&_tradeM.icon)||'🔧';
   const estNum=_geiEditBidId?String(_geiEditBidId).slice(-6):'—';
   const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   const totalFmt='$'+total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const _tmDepPct=parseFloat(v('tm-dep-pct'))||20;
-  const _sendByoDepPct=_geiIsTM?null:(parseFloat(document.getElementById('byo-deposit-pct')?.value)||25)/100;
+  const _byoDepPctEl=document.getElementById('byo-deposit-pct');
+  const _sendByoDepPct=_geiIsTM?null:(parseFloat(_byoDepPctEl?_byoDepPctEl.value:null)||25)/100;
   const _sendByoDepPctLabel=_geiIsTM?null:Math.round(_sendByoDepPct*100);
   const _tmDepAmt=_geiIsTM?Math.round(sub*_tmDepPct/100):Math.round(total*_sendByoDepPct*100)/100;
   const _tmNteCap=parseFloat(v('tm-nte-cap'))||0;
@@ -1764,8 +1766,10 @@ async function sendGenericProposal(previewOnly){
     :`<tr style="background:#2a4a7f;color:rgba(255,255,255,.88)"><td colspan="2" style="padding:6px 18px;font-size:11px;font-weight:600">${_sendByoDepPctLabel}% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr>`;
   const _tmPayTerms=_geiIsTM
     ?`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Contract type:</strong> Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}</div><div>2. <strong>Mobilization deposit:</strong> ${_tmDepPct}% (${depositFmt}) due before work begins.</div><div>3. <strong>Billing:</strong> ${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.</div><div>4. <strong>Change Orders:</strong> Any additional scope not described herein requires a written change order signed by both parties.</div><div>5. <strong>Warranty:</strong> All workmanship warranted for one (1) year from date of completion.</div><div>6. <strong>Limitation of Liability:</strong> Contractor is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>7. <strong>Mechanic&#39;s Lien:</strong> Contractor reserves the right to file a mechanic&#39;s lien for any unpaid amounts under this agreement.</div></div>`
-    :`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> ${_sendByoDepPctLabel}% due before work begins and before a start date is scheduled. Balance due upon completion.</div><div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer has the right to cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[S?.state||'KS'])?STATE_CANCEL[S.state||'KS'].days:3} business days of signing (${_cancelCitation(S?.state||'KS')}). After that, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty.</div><div>3. <strong>Change Orders:</strong> Any additional work not described herein requires a written change order signed by both parties.</div><div>4. <strong>Limitation of Liability:</strong> Contractor is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>5. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(S?.state||'KS')}</div></div>`;
+    :`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> ${_sendByoDepPctLabel}% due before work begins and before a start date is scheduled. Balance due upon completion.</div><div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer has the right to cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}). After that, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty.</div><div>3. <strong>Change Orders:</strong> Any additional work not described herein requires a written change order signed by both parties.</div><div>4. <strong>Limitation of Liability:</strong> Contractor is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>5. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(_stateKey)}</div></div>`;
   const _tmPropMarkupMult=(_geiIsTM&&_tmMatMarkup>0)?(1+_tmMatMarkup/100):1;
+  // Safari: extract ALL optional chaining before template literals / object literals
+  const _stateKey=(S&&S.state)?S.state:'KS';
   // Safari lazy-parses function bodies on first call — extract ?.?? to plain variables
   const _byoTermsEl2=document.getElementById('byo-custom-terms');
   const _byoTermsText=(_byoTermsEl2?_byoTermsEl2.value:(_byoCustomTerms||'')).trim();
@@ -1808,7 +1812,7 @@ async function sendGenericProposal(previewOnly){
     trade_type:trade,
   };
   const _uploadRes=await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true}).catch(e=>({error:e}));
-  if(_uploadRes?.error){showToast('Upload failed — check connection and try again','error');console.error('[proposal upload]',_uploadRes.error);return;}
+  if(_uploadRes&&_uploadRes.error){showToast('Upload failed — check connection and try again','error');console.error('[proposal upload]',_uploadRes.error);return;}
   const b=bids.find(x=>x.id===bidId);
   if(b){
     b.signingToken=token;b.proposalKey=proposalKey;
@@ -1824,19 +1828,19 @@ async function sendGenericProposal(previewOnly){
   const shortUrl=await shortenUrl(signingUrl);
   const signingDirectUrl=shortUrl||signingUrl;
   let shareUrl=signingDirectUrl;
-  if(b?.client_id){
+  if(b&&b.client_id){
     try{const _hu=await _uploadClientHub(b.client_id);if(_hu)shareUrl=_hu;}catch(e){}
   }
   const bar=document.getElementById('proposal-link-bar');
   const input=document.getElementById('proposal-link-input');
-  const _cl=getClientById(b?.client_id);
+  const _cl=getClientById(b?b.client_id:null);
   if(bar){
     bar.dataset.signingUrl=shareUrl;
     bar.dataset.signingDirectUrl=signingDirectUrl;
     bar.dataset.cname=clientName;
     bar.dataset.bname=bname;
-    bar.dataset.cphone=(_cl?.phone||'').replace(/\D/g,'');
-    bar.dataset.cemail=_cl?.email||'';
+    bar.dataset.cphone=((_cl&&_cl.phone)||'').replace(/\D/g,'');
+    bar.dataset.cemail=(_cl&&_cl.email)||'';
   }
   if(input)input.value=shareUrl;
   _pendingSignToken={bidId,token,proposalKey};
