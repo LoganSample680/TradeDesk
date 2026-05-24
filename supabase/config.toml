@@ -3,3 +3,6 @@ verify_jwt = false
 
 [functions.property-lookup]
 verify_jwt = false
+
+[functions.log-proposal-view]
+verify_jwt = false

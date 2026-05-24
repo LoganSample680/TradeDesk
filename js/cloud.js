@@ -351,7 +351,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.24.26.32';
+const APP_VERSION='05.24.26.33';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -1645,15 +1645,17 @@ async function checkNewSignatures(){
 async function _fetchProposalViews(){
   if(!_supa||!_supaUser)return;
   try{
-    // sign.html writes proposals/{uid}/{bidId}_view.json on every proposal open (upsert).
-    // Same folder as proposal JSONs → same anon write policy that makes sign/decline work.
-    // updated_at = most recent open timestamp (Supabase sets this on upsert).
-    const{data:allFiles,error}=await _supa.storage.from('proposals').list('proposals/'+_supaUser.id,{limit:1000,offset:0});
-    if(allFiles&&!error){
+    // Edge Function log-proposal-view writes to proposal_views using service key (bypasses RLS).
+    // Contractor reads back with their authenticated session — RLS allows SELECT on own rows.
+    const{data,error}=await _supa.from('proposal_views')
+      .select('bid_id,opened_at')
+      .eq('contractor_user_id',_supaUser.id)
+      .not('bid_id','is',null)
+      .order('opened_at',{ascending:false});
+    if(data&&!error){
       _proposalViewsByBid={};
-      allFiles.filter(f=>f.name&&f.name.endsWith('_view.json')).forEach(f=>{
-        const bidId=f.name.replace('_view.json','');
-        if(bidId)_proposalViewsByBid[bidId]=f.updated_at||f.created_at;
+      data.forEach(v=>{
+        if(v.bid_id&&!_proposalViewsByBid[v.bid_id])_proposalViewsByBid[v.bid_id]=v.opened_at;
       });
       renderDash();
     }
