@@ -118,7 +118,7 @@ async function processGalleryUpload(input){
         // Fallback: base64 for offline (large but works)
         url=await new Promise(res=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.readAsDataURL(file);});
       }
-      photos.push({id:Date.now()+Math.random(),url,storagePath,type:ptype,caption,job_id:selectedJobId,job_name:job?.name||'',client_id:c?.id||null,client_name:c?.name||'',uploadedAt:new Date().toISOString()});
+      photos.push({id:Date.now()+Math.random(),url,storagePath,type:ptype,caption,job_id:selectedJobId,job_name:(job?job.name:null)||'',client_id:(c?c.id:null)||null,client_name:(c?c.name:null)||'',uploadedAt:new Date().toISOString()});
       uploaded++;
       if(status)status.textContent='Uploaded '+uploaded+'/'+files.length;
     }catch(e){console.warn('photo upload:',e);}
@@ -154,21 +154,29 @@ function _buildClientHubSnapshot(clientId){
   });
   const snapshotPayments=cpayments.map(p=>({date:p.date||'',type:p.type||'',amount:p.amount||0,bid_id:p.bid_id||null,ref:p.ref||'',method:p.method||''}));
   const jobPhotos=clientPhotos.map(p=>({url:p.url,type:p.type,caption:p.caption||'',job_name:p.job_name||'',job_id:p.job_id||null}));
+  // Extract optional chaining BEFORE the return object — Safari crashes on ?. inside { }
+  const _snapUserId=_supaUser?_supaUser.id||'':'';
+  const _snapUserEmail=_supaUser?_supaUser.email||'':'';
+  const _snapStripeOn=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
+  const _snapSurchargeOn=!!(S.ccSurchargeEnabled&&_snapStripeOn);
+  const _snapState=S.state||'KS';
+  const _snapCancelDays=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].days:3;
+  const _snapCancelStatute=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].statute:'16 CFR Part 429';
   return {
     clientId,clientName:c.name,clientPhone:c.phone||'',clientAddr:c.addr||'',
     contractorName:S.bname||'TradeDesk',contractorPhone:S.bphone||'',
     brandColor:S.brandColor||'',logoData:S.logoData||'',bwebsite:S.bwebsite||'',
-    contractorUserId:_supaUser?.id||'',notifyEmail:S.bemail||_supaUser?.email||'',
-    stripeEnabled:!!(_stripeConnectStatus?.charges_enabled),
-    ccSurchargeEnabled:!!(S.ccSurchargeEnabled&&_stripeConnectStatus?.charges_enabled),
+    contractorUserId:_snapUserId,notifyEmail:S.bemail||_snapUserEmail,
+    stripeEnabled:_snapStripeOn,
+    ccSurchargeEnabled:_snapSurchargeOn,
     ccSurchargePct:Math.min(4,Math.max(0.5,parseFloat(S.ccSurchargePct||3)||3)),
     yearBuilt:c.yearBuilt||null,
     epaRequired:!!(c.yearBuilt&&c.yearBuilt<1978&&getActiveTrade()==='painting'),
     epaAck:c.epaAck||false,
     trade:getActiveTrade(),
-    state:S.state||'KS',
-    cancelDays:(STATE_CANCEL&&STATE_CANCEL[S.state||'KS'])?STATE_CANCEL[S.state||'KS'].days:3,
-    cancelStatute:(STATE_CANCEL&&STATE_CANCEL[S.state||'KS'])?STATE_CANCEL[S.state||'KS'].statute:'16 CFR Part 429',
+    state:_snapState,
+    cancelDays:_snapCancelDays,
+    cancelStatute:_snapCancelStatute,
     hubUrl,token:c.clientToken||'',generatedAt:new Date().toISOString(),
     bids:snapshotBids,payments:snapshotPayments,jobs:snapshotJobs,photos:jobPhotos
   };
@@ -496,22 +504,32 @@ async function sendProposalLink(){
       const _caddr=document.getElementById('e-caddr')?.value||'';
       const _days=parseInt(document.getElementById('e-days')?.value)||2;
       const _ss={};SCOPE_ITEMS.forEach(s=>{_ss[s.id]=!!scopeOn(s.id);});
+      // Extract ?. before object literal — Safari crashes on optional chaining inside { }
+      const _fbClientId=estLinkedClientId||(_resolvedBid?_resolvedBid.client_id:null)||null;
+      const _fbPhone=(document.getElementById('e-cphone')?document.getElementById('e-cphone').value:null)||(_resolvedBid?_resolvedBid.phone:null)||'';
+      const _fbAddr=_caddr||(_resolvedBid?_resolvedBid.addr:null)||'';
+      const _fbAmount=final||(_resolvedBid?_resolvedBid.amount:null)||0;
+      const _fbType=getBidIncomeLabel({surfaces:estSurfaces})||(_resolvedBid?_resolvedBid.type:null)||'Painting job';
+      const _fbNotes=(document.getElementById('e-cnotes')?document.getElementById('e-cnotes').value:null)||'';
+      const _fbCond=(document.getElementById('e-cond')?document.getElementById('e-cond').value:null)||'';
+      const _fbPaint=(document.getElementById('e-paint')?document.getElementById('e-paint').value:null)||'';
+      const _fbColors=(document.getElementById('e-colors')?document.getElementById('e-colors').value:null)||'';
       const freshBid={
         id:_newBidId(),
-        client_id:estLinkedClientId||_resolvedBid?.client_id||null,
+        client_id:_fbClientId,
         client_name:cname,name:cname,
-        phone:document.getElementById('e-cphone')?.value||_resolvedBid?.phone||'',
-        addr:_caddr||_resolvedBid?.addr||'',
+        phone:_fbPhone,
+        addr:_fbAddr,
         bid_date:todayKey(),followup:addDays(todayKey(),7),
-        amount:final||_resolvedBid?.amount||0,
-        type:getBidIncomeLabel({surfaces:estSurfaces})||_resolvedBid?.type||'Painting job',
+        amount:_fbAmount,
+        type:_fbType,
         days:_days,status:'Pending',
-        notes:document.getElementById('e-cnotes')?.value||'',
+        notes:_fbNotes,
         completion_date:'',collStage:'none',collHistory:[],
         scope:_ss,surfaces:[...estSurfaces],
-        cond:document.getElementById('e-cond')?.value||'',
-        paint:document.getElementById('e-paint')?.value||'',
-        colors:document.getElementById('e-colors')?.value||'',
+        cond:_fbCond,
+        paint:_fbPaint,
+        colors:_fbColors,
         roomScopeMap:JSON.parse(JSON.stringify(roomScopeMap||{})),
       };
       bids.unshift(freshBid);
@@ -525,28 +543,38 @@ async function sendProposalLink(){
     // Never use bid.amount which may be stale from an earlier step before tier was set.
     const{final:_propFinal}=calcEst();
     if(_bidForProp){_bidForProp.amount=_propFinal;_bidForProp.deposit=_depositAmt;}
+    // Extract ?. BEFORE object literal — Safari crashes on optional chaining inside { }
+    const _pdCaddr=(document.getElementById('e-caddr')?document.getElementById('e-caddr').value:null)||(_bidForProp?_bidForProp.addr:null)||'';
+    const _pdDays=parseInt(document.getElementById('e-days')?document.getElementById('e-days').value:null)||(_bidForProp?_bidForProp.days:null)||2;
+    const _pdStripeOn=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
+    const _pdPortfolioOn=!!(document.getElementById('portfolio-toggle')?document.getElementById('portfolio-toggle').checked:false);
+    const _pdPortfolioPct=parseInt(document.getElementById('portfolio-pct')?document.getElementById('portfolio-pct').value:null)||15;
+    const _pdDiscount=Math.round(_propFinal*(1-_pdPortfolioPct/100)*100)/100;
+    const _pdYbClient=_bidForProp?clients.find(c=>c.id===_bidForProp.client_id):null;
+    const _pdYearBuilt=_pdYbClient?_pdYbClient.yearBuilt||null:null;
+    const _pdEpaRequired=!!(_pdYearBuilt&&_pdYearBuilt<1978&&getActiveTrade()==='painting');
     const proposalData={
       id:bidId,token,clientName:cname,businessName:bname,
       contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
       proposalHtml:proposal.innerHTML,
-      clientAddr:document.getElementById('e-caddr')?.value||_bidForProp?.addr||'',
-      estDays:parseInt(document.getElementById('e-days')?.value)||_bidForProp?.days||2,
+      clientAddr:_pdCaddr,
+      estDays:_pdDays,
       amount:_propFinal,
       deposit:_depositAmt,
       createdAt:new Date().toISOString(),status:'pending',
-      notifyEmail:_supaUser.email,businessPhone:S.bphone||'',stripeConnectEnabled:!!(_stripeConnectStatus?.charges_enabled),ccSurchargeEnabled:!!(S.ccSurchargeEnabled),ccSurchargePct:S.ccSurchargePct||3,
-      isPortfolio:document.getElementById('portfolio-toggle')?.checked||false,
-      portfolioPct:parseInt(document.getElementById('portfolio-pct')?.value)||15,
+      notifyEmail:_supaUser.email,businessPhone:S.bphone||'',stripeConnectEnabled:_pdStripeOn,ccSurchargeEnabled:!!(S.ccSurchargeEnabled),ccSurchargePct:S.ccSurchargePct||3,
+      isPortfolio:_pdPortfolioOn,
+      portfolioPct:_pdPortfolioPct,
       portfolioTarget:5,
       portfolioYears:S.byears||0,
       portfolioOwnerName:getOwnerName()||'',
       fullPrice:_propFinal,
-      discountedPrice:Math.round(_propFinal*(1-(parseInt(document.getElementById('portfolio-pct')?.value)||15)/100)*100)/100,
+      discountedPrice:_pdDiscount,
       adjustmentType:v('adj-type-hidden')||'',
       adjustmentReason:v('adj-reason-hidden')||'',
       adjustmentPct:parseInt(v('est-adj'))||0,
-      yearBuilt:(()=>{const cl=_bidForProp?clients.find(c=>c.id===_bidForProp.client_id):null;return cl?.yearBuilt||null;})(),
-      epaRequired:(()=>{const cl=_bidForProp?clients.find(c=>c.id===_bidForProp.client_id):null;return !!(cl?.yearBuilt&&cl.yearBuilt<1978&&getActiveTrade()==='painting');})(),
+      yearBuilt:_pdYearBuilt,
+      epaRequired:_pdEpaRequired,
       trade:getActiveTrade(),
       surfaces:getActiveTrade()==='painting'?[...estSurfaces]:[],
       state:_st,
