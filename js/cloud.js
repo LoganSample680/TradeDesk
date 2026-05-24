@@ -351,7 +351,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.24.26.19';
+const APP_VERSION='05.24.26.20';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -916,7 +916,13 @@ async function _saveEmployee(idx){
   const perms={};
   Object.keys(PERM_LABELS).forEach(k=>{perms[k]=!!(document.getElementById('emp-p-'+k)?.checked);});
   const isNew=idx==null;
-  const emp={id:isNew?Date.now():(S.employees[idx]?.id||Date.now()),name,email,role:document.getElementById('emp-role')?.value||'employee',phone:document.getElementById('emp-phone')?.value?.trim()||'',permissions:perms};
+  const _empRoleEl=document.getElementById('emp-role');
+  const _empPhoneEl=document.getElementById('emp-phone');
+  const _empId=isNew?Date.now():(S.employees[idx]?S.employees[idx].id||Date.now():Date.now());
+  const _empRole=_empRoleEl?_empRoleEl.value||'employee':'employee';
+  const _empPhoneRaw=_empPhoneEl?_empPhoneEl.value||'':'';
+  const _empPhone=_empPhoneRaw.trim();
+  const emp={id:_empId,name,email,role:_empRole,phone:_empPhone,permissions:perms};
   if(!S.employees)S.employees=[];
   if(!isNew)S.employees[idx]=emp;else S.employees.push(emp);
   saveSettings();document.getElementById('emp-modal-overlay')?.remove();renderTeam();
@@ -975,7 +981,17 @@ function _openSubModal(sub,idx){
 function _saveSub(idx){
   const name=(document.getElementById('sub-name')?.value||'').trim();
   if(!name)return showToast('Enter a name','⚠️');
-  const sub={id:idx==null?Date.now():((S.subcontractors||[])[idx]?.id||Date.now()),name,trade:(document.getElementById('sub-trade')?.value||'').trim(),phone:(document.getElementById('sub-phone')?.value||'').trim(),email:(document.getElementById('sub-email')?.value||'').trim(),rate:(document.getElementById('sub-rate')?.value||'').trim()};
+  const _subExisting=(S.subcontractors||[])[idx];
+  const _subId=idx==null?Date.now():(_subExisting?_subExisting.id||Date.now():Date.now());
+  const _subTradeEl=document.getElementById('sub-trade');
+  const _subPhoneEl=document.getElementById('sub-phone');
+  const _subEmailEl=document.getElementById('sub-email');
+  const _subRateEl=document.getElementById('sub-rate');
+  const _subTrade=(_subTradeEl?_subTradeEl.value||'':'').trim();
+  const _subPhone=(_subPhoneEl?_subPhoneEl.value||'':'').trim();
+  const _subEmail=(_subEmailEl?_subEmailEl.value||'':'').trim();
+  const _subRate=(_subRateEl?_subRateEl.value||'':'').trim();
+  const sub={id:_subId,name,trade:_subTrade,phone:_subPhone,email:_subEmail,rate:_subRate};
   if(!S.subcontractors)S.subcontractors=[];
   if(idx==null)S.subcontractors.push(sub);else S.subcontractors[idx]=sub;
   saveSettings();document.getElementById('_sub-modal-ov')?.remove();renderTeam();

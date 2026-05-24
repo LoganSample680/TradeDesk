@@ -161,19 +161,31 @@ function saveLicenseModal(){
   if(_issueRaw&&document.getElementById('_lic-issue')?.value&&!_issueRaw){zAlert('Issue date format not recognized. Use MM/DD/YYYY.');return;}
   if(_expiryRaw&&document.getElementById('_lic-expiry')?.value&&!_expiryRaw){zAlert('Expiry date format not recognized. Use MM/DD/YYYY.');return;}
   if(_issueRaw&&_expiryRaw&&_issueRaw>=_expiryRaw){zAlert('Issue date must be before expiry date.',{title:'Invalid dates'});return;}
+  const _recCat=t?t.cat||'business':'business';
+  const _recLabel=t?t.label||typeId:typeId;
+  const _recHolder=t?t.holder||'':'';
+  const _recHolderName=_recHolder==='employee'?holderName:(S.bname||getBusinessName()||'Company');
+  const _recNumEl=document.getElementById('_lic-num');
+  const _recIssueEl=document.getElementById('_lic-issue');
+  const _recExpiryEl=document.getElementById('_lic-expiry');
+  const _recNotesEl=document.getElementById('_lic-notes');
+  const _recMakeEl=document.getElementById('_lic-make');
+  const _recModelEl=document.getElementById('_lic-model');
+  const _recSerialEl=document.getElementById('_lic-serial');
+  const _recExistingLic=_editingLicId?licenses.find(l=>l.id===_editingLicId):null;
   const rec={
     id:_editingLicId||(Date.now()*1000+Math.floor(Math.random()*999)),
-    typeId,cat:t?.cat||'business',label:t?.label||typeId,
-    holderName:t?.holder==='employee'?holderName:(S.bname||getBusinessName()||'Company'),
+    typeId,cat:_recCat,label:_recLabel,
+    holderName:_recHolderName,
     holderId:null,
-    licenseNumber:(document.getElementById('_lic-num')?.value||'').trim(),
-    issueDate:_mdYToYmd(document.getElementById('_lic-issue')?.value||''),
-    expiryDate:_mdYToYmd(document.getElementById('_lic-expiry')?.value||''),
-    notes:(document.getElementById('_lic-notes')?.value||'').trim(),
-    make:(document.getElementById('_lic-make')?.value||'').trim(),
-    model:(document.getElementById('_lic-model')?.value||'').trim(),
-    serial:(document.getElementById('_lic-serial')?.value||'').trim(),
-    equipmentLog:_editingLicId?(licenses.find(l=>l.id===_editingLicId)?.equipmentLog||[]):[],
+    licenseNumber:(_recNumEl?_recNumEl.value||'':'').trim(),
+    issueDate:_mdYToYmd(_recIssueEl?_recIssueEl.value||'':''),
+    expiryDate:_mdYToYmd(_recExpiryEl?_recExpiryEl.value||'':''),
+    notes:(_recNotesEl?_recNotesEl.value||'':'').trim(),
+    make:(_recMakeEl?_recMakeEl.value||'':'').trim(),
+    model:(_recModelEl?_recModelEl.value||'':'').trim(),
+    serial:(_recSerialEl?_recSerialEl.value||'':'').trim(),
+    equipmentLog:_editingLicId?(_recExistingLic?_recExistingLic.equipmentLog||[]:[]):[],
   };
   if(_editingLicId){const idx=licenses.findIndex(l=>l.id===_editingLicId);if(idx>-1)licenses[idx]=rec;else licenses.push(rec);}
   else{licenses.push(rec);}
@@ -226,12 +238,20 @@ function openHepaLog(id){
 function _addHepaEntry(licId){
   const lic=licenses.find(l=>l.id===licId);if(!lic)return;
   if(!lic.equipmentLog)lic.equipmentLog=[];
+  const _hepaDateEl=document.getElementById('_hepa-date');
+  const _hepaTypeEl=document.getElementById('_hepa-type-sel');
+  const _hepaWhoEl=document.getElementById('_hepa-who');
+  const _hepaNotesEl2=document.getElementById('_hepa-notes');
+  const _hepaDateVal=_hepaDateEl?_hepaDateEl.value||'':'';
+  const _hepaTypeVal=_hepaTypeEl?_hepaTypeEl.value||'Filter Change':'Filter Change';
+  const _hepaWhoVal=(_hepaWhoEl?_hepaWhoEl.value||'':'').trim();
+  const _hepaNotesVal2=(_hepaNotesEl2?_hepaNotesEl2.value||'':'').trim();
   lic.equipmentLog.push({
     id:Date.now().toString(36),
-    date:_licDateParse(document.getElementById('_hepa-date')?.value||'')||todayKey(),
-    type:document.getElementById('_hepa-type-sel')?.value||'Filter Change',
-    who:(document.getElementById('_hepa-who')?.value||'').trim(),
-    notes:(document.getElementById('_hepa-notes')?.value||'').trim()
+    date:_licDateParse(_hepaDateVal)||todayKey(),
+    type:_hepaTypeVal,
+    who:_hepaWhoVal,
+    notes:_hepaNotesVal2
   });
   saveAll();
   // Refresh just the log entries in the modal
@@ -477,8 +497,8 @@ function saveSettings(){
     smsSecond:gs('set-sms-second')||_smsD.second,
     smsIntent:gs('set-sms-intent')||_smsD.intent,
     txStatus:gs('set-txstatus')||'single',goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',mapboxKey:gs('set-mapbox-key')||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.40,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||'',
-    ccSurchargeEnabled:!!(document.getElementById('set-cc-surcharge-enabled')?.checked),
-    ccSurchargePct:parseFloat(document.getElementById('set-cc-surcharge-pct')?.value||'3')||3};
+    ccSurchargeEnabled:!!(document.getElementById('set-cc-surcharge-enabled')?document.getElementById('set-cc-surcharge-enabled').checked:false),
+    ccSurchargePct:parseFloat((document.getElementById('set-cc-surcharge-pct')?document.getElementById('set-cc-surcharge-pct').value:'3')||'3')||3};
   applySettings();saveAll();
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
   // Propagate branding/settings to all live client hubs in the background

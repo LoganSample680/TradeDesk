@@ -1325,7 +1325,8 @@ function addJobPhoto(jobId,input,type){
           const publicUrl=urlData?.publicUrl||'';
           if(publicUrl){
             const c=clients.find(x=>x.id===j.client_id);
-            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type,caption:'',client_id:j.client_id||null,client_name:c?.name||'',job_id:jobId,job_name:j.name||'',uploadedAt:new Date().toISOString()});
+            const _photoClientName=c?c.name||'':'';
+            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type,caption:'',client_id:j.client_id||null,client_name:_photoClientName,job_id:jobId,job_name:j.name||'',uploadedAt:new Date().toISOString()});
             saveAll();
             typeof _uploadClientHub==='function'&&_uploadClientHub(j.client_id).catch(()=>{});
           }
@@ -1368,7 +1369,8 @@ async function _drainPhotoQueue(){
           const publicUrl=urlData?.publicUrl||'';
           if(publicUrl){
             const c=clients.find(x=>x.id===j.client_id);
-            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type:p.type,caption:'',client_id:j.client_id||null,client_name:c?.name||'',job_id:j.id,job_name:j.name||'',uploadedAt:new Date().toISOString()});
+            const _drainClientName=c?c.name||'':'';
+            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type:p.type,caption:'',client_id:j.client_id||null,client_name:_drainClientName,job_id:j.id,job_name:j.name||'',uploadedAt:new Date().toISOString()});
             typeof _uploadClientHub==='function'&&_uploadClientHub(j.client_id).catch(()=>{});
           }
           delete p.pendingUpload;delete p._uploadExt;delete p._uploadMime;

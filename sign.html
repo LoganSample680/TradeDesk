@@ -954,16 +954,10 @@ async function _confirmDecline(){
   if(!key){const t=params2.get('t'),u=params2.get('u'),b=params2.get('b');if(t&&u&&b)key=`proposals/${u}/${b}_${t}.json`;}
   const ts=new Date().toISOString();
   try{
+    // Only update the proposal JSON — do NOT write to signed_proposals
+    // (that table is for signed bids; writing declined there makes the contractor app think it was signed)
     const updated=Object.assign({},_prop,{status:'declined',declinedAt:ts});
     await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true});
-    await _supa.from('signed_proposals').upsert({
-      bid_id:String(_prop.id),contractor_user_id:_prop.contractorUserId,
-      client_name:_prop.clientName,client_signed_name:_prop.clientName||'Client',
-      amount:_prop.amount,deposit:_prop.deposit,
-      payment_method:'declined',payment_status:'declined',
-      signed_at:ts,notify_email:_prop.notifyEmail,storage_key:key,
-      portfolio_accepted:false,
-    });
   }catch(e){console.error('[decline]',e);}
   const modal=document.getElementById('decline-modal');
   if(modal)modal.style.display='none';
