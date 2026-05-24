@@ -612,7 +612,7 @@ function renderJobsPage(){
     const btnRow=(primaryBtn||clockBtn||checklistBtn)?'<div class="tf-acts">'+(primaryBtn||'')+(clockBtn||'')+(checklistBtn||'')+'</div>':'';
     const amtColor=balance>0.01?'var(--c-red)':paid>0?'var(--c-green)':'var(--text)';
     const amtSub=balance>0.01?'<div style="font-size:10px;font-weight:700;color:var(--c-red);margin-top:1px">'+fmt(balance)+' due</div>':paid>0?'<div style="font-size:10px;font-weight:600;color:var(--c-green);margin-top:1px">Paid ✓</div>':'';
-    return '<div class="tf-card" onclick="openJobSheet('+c.id+')">'+
+    return '<div class="tf-card" onclick="openJobSheet('+c.id+')" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(c.name||'job')+'">'+
       '<div class="tf-icon '+(st.stage==='active'?'t-green':st.stage==='balance_due'?'t-red':'t-blue')+'" style="font-size:14px">'+
         (st.stage==='active'?'🔨':st.stage==='balance_due'?'💰':st.stage==='signed'?'✍️':'📅')+
       '</div>'+
@@ -672,7 +672,7 @@ function _renderJobsKanban(el,tk,wonBidsList){
             chipLabel=paidDate?paidDate+' paid':'Paid';
             chipCls='sf-won';
           }
-          return '<div class="k-card" onclick="openJobSheet('+c.id+')" style="margin-bottom:8px">'+
+          return '<div class="k-card" onclick="openJobSheet('+c.id+')" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(c.name||'job')+'" style="margin-bottom:8px">'+
             '<div class="k-name">'+escHtml(c.name)+'</div>'+
             '<div class="k-sub">'+escHtml(addrShort)+'</div>'+
             '<div class="k-foot">'+
