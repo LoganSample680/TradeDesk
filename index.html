@@ -752,8 +752,8 @@ body.dark .cal-cell.other{background:var(--cream)}
 .bk-month-sub{font-size:11px;color:var(--text-3);font-weight:500;margin-top:2px}
 .bk-month-chev{font-size:12px;color:var(--text-3);width:16px;text-align:center;transition:transform .15s;flex-shrink:0}
 .bk-month.open .bk-month-chev{transform:rotate(90deg)}
-.bk-month-body{border-top:1px solid var(--line);max-height:0;overflow:hidden;transition:max-height .25s ease}
-.bk-month.open .bk-month-body{max-height:4000px}
+.bk-month-body{border-top:1px solid var(--line);overflow:hidden;display:none}
+.bk-month.open .bk-month-body{display:block}
 /* ── Mileage: trip rows ── */
 .mil-day-trip{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line)}
 .mil-day-trip:last-child{border-bottom:none}

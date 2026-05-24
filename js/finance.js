@@ -2298,6 +2298,7 @@ function _incDateFmt(el){
   el.value=v;
 }
 function openManualIncomeModal(){
+  document.getElementById('_inc-ov')?.remove(); // defensive cleanup in case a stale overlay is stuck
   const _td=new Date();const _tm=String(_td.getMonth()+1).padStart(2,'0'),_tdd=String(_td.getDate()).padStart(2,'0'),_ty=_td.getFullYear();
   const todayMDY=_tm+'/'+_tdd+'/'+_ty;
   const clientOpts=clients.map(c=>'<option value="'+c.id+'">'+escHtml(c.name)+'</option>').join('');
@@ -2383,7 +2384,10 @@ function saveManualIncome(){
 function _bkTogMonth(tab,mo){
   const el=document.getElementById('bk-'+tab+'-mo-'+mo);
   if(!el)return;
+  const body=el.querySelector('.bk-month-body');
+  const opening=!el.classList.contains('open');
   el.classList.toggle('open');
+  if(body)body.style.display=opening?'block':'none';
 }
 function renderIncome(){
   const el=document.getElementById('inc-table');if(!el)return;
@@ -2419,7 +2423,7 @@ function renderIncome(){
       const moTotal=rows.reduce((s,r)=>s+r.amount,0);
       const[y,m]=mo.split('-');
       const moLabel=y&&m?new Date(parseInt(y),parseInt(m)-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}):mo;
-      const isOpen=mo>=curMo;
+      const isOpen=mo.match(/^\d{4}-\d{2}$/)&&mo>=curMo;
       return '<div id="bk-inc-mo-'+mo+'" class="bk-month'+(isOpen?' open':'')+'">'+
         '<button class="bk-month-hd" onclick="_bkTogMonth(\'inc\',\''+mo+'\')">'+
           '<div style="flex:1;text-align:left">'+
@@ -2431,7 +2435,7 @@ function renderIncome(){
             '<div class="bk-month-chev">▸</div>'+
           '</div>'+
         '</button>'+
-        '<div class="bk-month-body">'+
+        '<div class="bk-month-body"'+(isOpen?'':' style="display:none"')+'>'+
           '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl" style="min-width:480px"><thead><tr>'+
             ['Date','Client','Type','Amount','Method'].map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'+
             rows.map(_incRow).join('')+
@@ -2526,7 +2530,7 @@ function renderExpenses(){
       const moTotal=rows.reduce((s,r)=>s+r.amount,0);
       const[y,m]=mo.split('-');
       const moLabel=y&&m?new Date(parseInt(y),parseInt(m)-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}):mo;
-      const isOpen=mo>=curMo;
+      const isOpen=mo.match(/^\d{4}-\d{2}$/)&&mo>=curMo;
       return '<div id="bk-exp-mo-'+mo+'" class="bk-month'+(isOpen?' open':'')+'">'+
         '<button class="bk-month-hd" onclick="_bkTogMonth(\'exp\',\''+mo+'\')">'+
           '<div style="flex:1;text-align:left">'+
@@ -2538,7 +2542,7 @@ function renderExpenses(){
             '<div class="bk-month-chev">▸</div>'+
           '</div>'+
         '</button>'+
-        '<div class="bk-month-body">'+
+        '<div class="bk-month-body"'+(isOpen?'':' style="display:none"')+'>'+
           '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl" style="min-width:560px"><thead><tr>'+
             ['Date','Category','Vendor','Amount','Receipt'].map(h=>'<th>'+h+'</th>').join('')+'<th></th></tr></thead><tbody>'+
             rows.map(_expRow).join('')+
