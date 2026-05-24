@@ -644,7 +644,7 @@ async function init(){
       fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
         method:'POST',
         headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-        body:JSON.stringify({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id)})
+        body:JSON.stringify({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),clientId:_prop.clientId||null})
       }).then(r=>r.json()).then(d=>{
         _dbg.textContent=d.ok?'✅ View logged':'❌ '+JSON.stringify(d);
         _dbg.style.background=d.ok?'#15803d':'#dc2626';
