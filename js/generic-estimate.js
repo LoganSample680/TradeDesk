@@ -453,7 +453,8 @@ function _byoShowPage(){
   const p=document.getElementById('gei-byo-page');if(p)p.style.display='';
   // Trade branding in title
   const _bm=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
-  const byoTitle=document.getElementById('byo-tbar-title');if(byoTitle)byoTitle.textContent=_bm.icon+' '+_bm.label+' · Build Your Own';
+  const byoTitle=document.getElementById('byo-tbar-title');
+  if(byoTitle){const _customName=document.getElementById('gei-desc')?.value?.trim();byoTitle.textContent=_customName||(_bm.icon+' '+_bm.label+' · Build Your Own');}
   const c=getClientById(_geiClientId);
   const sub=document.getElementById('byo-page-sub');
   if(sub){const parts=[];if(c?.name)parts.push(c.name);if(c?.addr)parts.push(c.addr.split(',')[0]);sub.textContent=parts.join(' · ')||'New estimate';}
@@ -467,6 +468,36 @@ function _byoShowPage(){
 function _byoHidePage(){
   const p=document.getElementById('gei-byo-page');if(p)p.style.display='none';
   ['gei-old-tbar','gei-step-bar'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='';});
+}
+function _editByoTitle(){
+  const titleEl=document.getElementById('byo-tbar-title');
+  const btn=document.getElementById('byo-edit-title-btn');
+  if(!titleEl||titleEl.querySelector('input'))return; // already editing
+  const prev=titleEl.textContent.trim();
+  const inp=document.createElement('input');
+  inp.type='text';inp.value=prev;
+  inp.style.cssText='font-family:var(--font-display);font-size:inherit;font-weight:900;letter-spacing:-1.2px;color:var(--text);background:transparent;border:none;border-bottom:2px solid var(--blue);outline:none;width:240px;max-width:55vw;padding:0 0 2px;line-height:1';
+  titleEl.textContent='';titleEl.appendChild(inp);
+  if(btn)btn.style.opacity='0';
+  inp.focus();inp.select();
+  let _done=false;
+  const commit=()=>{
+    if(_done)return;_done=true;
+    const val=inp.value.trim()||prev;
+    titleEl.textContent=val;
+    if(btn)btn.style.opacity='';
+    const descEl=document.getElementById('gei-desc');if(descEl)descEl.value=val;
+  };
+  const cancel=()=>{
+    if(_done)return;_done=true;
+    titleEl.textContent=prev;
+    if(btn)btn.style.opacity='';
+  };
+  inp.addEventListener('blur',commit);
+  inp.addEventListener('keydown',e=>{
+    if(e.key==='Enter'){e.preventDefault();inp.removeEventListener('blur',commit);commit();}
+    if(e.key==='Escape'){e.preventDefault();inp.removeEventListener('blur',commit);cancel();}
+  });
 }
 function _byoRenderSections(){
   const wrap=document.getElementById('byo-sections');if(!wrap)return;
