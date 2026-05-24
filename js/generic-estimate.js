@@ -668,14 +668,20 @@ function _byoDuplicateBid(){
   saveGenericEstimate(true);
   const src=bids.find(x=>x.id===_geiEditBidId);
   if(!src){showToast('Bid not found','⚠️');return;}
+  // Label the original "Option A" so both show distinct names in the bid list
+  const baseName=(src.type||'Custom Proposal').replace(/\s*—\s*Option\s+[AB]$/i,'').trim();
+  if(!/option [ab]$/i.test(src.type||'')){
+    src.type=baseName+' — Option A';
+    const descEl=document.getElementById('gei-desc');
+    if(descEl)descEl.value=src.type;
+    const titleEl=document.getElementById('byo-tbar-title');
+    if(titleEl)titleEl.textContent=src.type;
+  }
   const copy=JSON.parse(JSON.stringify(src));
   copy.id=_newBidId();
+  copy.type=baseName+' — Option B';
   copy.status='Draft';copy.draft=true;
   copy.signingToken=undefined;copy.proposalKey=undefined;copy.proposalSentDate=undefined;
-  // Append option label to type so client sees distinct options
-  const baseName=copy.type||'Custom Proposal';
-  const isAlreadyOpt=/option [ab]/i.test(baseName);
-  if(!isAlreadyOpt){copy.type=baseName+' — Option B';}
   bids.unshift(copy);saveAll();
   // Open the copy in the editor
   _byoShowPage({id:copy.client_id,name:copy.client_name||copy.name||''},copy.id);
@@ -1708,7 +1714,7 @@ async function sendGenericProposal(previewOnly){
     :`<tr style="background:#2a4a7f;color:rgba(255,255,255,.88)"><td colspan="2" style="padding:6px 18px;font-size:11px;font-weight:600">${_sendByoDepPctLabel}% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr>`;
   const _tmPayTerms=_geiIsTM
     ?`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Contract type:</strong> Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}</div><div>2. <strong>Mobilization deposit:</strong> ${_tmDepPct}% (${depositFmt}) due before work begins.</div><div>3. <strong>Billing:</strong> ${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.</div><div>4. <strong>Change Orders:</strong> Any additional scope not described herein requires a written change order signed by both parties.</div><div>5. <strong>Warranty:</strong> All workmanship warranted for one (1) year from date of completion.</div><div>6. <strong>Limitation of Liability:</strong> Contractor is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>7. <strong>Mechanic&#39;s Lien:</strong> Contractor reserves the right to file a mechanic&#39;s lien for any unpaid amounts under this agreement.</div></div>`
-    :`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> ${_sendByoDepPctLabel}% due before work begins and before a start date is scheduled. Balance due upon completion.</div><div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer has the right to cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[S?.state||'KS'])?STATE_CANCEL[S.state||'KS'].days:3} business days of signing (${_cancelCitation(S?.state||'KS')}). After that, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. Materials purchased will be made available for pickup.</div><div>3. <strong>Change Orders:</strong> Any additional work not described herein requires a written change order signed by both parties.</div><div>4. <strong>Warranty:</strong> All workmanship warranted for one (1) year from date of completion, covering labor defects and application failures.</div><div>5. <strong>Limitation of Liability:</strong> Contractor is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>6. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(S?.state||'KS')}</div></div>`;
+    :`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> ${_sendByoDepPctLabel}% due before work begins and before a start date is scheduled. Balance due upon completion.</div><div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer has the right to cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[S?.state||'KS'])?STATE_CANCEL[S.state||'KS'].days:3} business days of signing (${_cancelCitation(S?.state||'KS')}). After that, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty.</div><div>3. <strong>Change Orders:</strong> Any additional work not described herein requires a written change order signed by both parties.</div><div>4. <strong>Limitation of Liability:</strong> Contractor is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>5. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(S?.state||'KS')}</div></div>`;
   const _tmPropMarkupMult=(_geiIsTM&&_tmMatMarkup>0)?(1+_tmMatMarkup/100):1;
   const _byoTermsText=(document.getElementById('byo-custom-terms')?.value??(_byoCustomTerms??'')).trim();
   const _customTermsBlock=_byoTermsText
