@@ -1928,7 +1928,10 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar">
       <div class="tbar-l">
         <button class="link-back" onclick="_geiBack()">← Pick a different type</button>
-        <div class="tbar-title" id="byo-tbar-title">Build Your Own proposal</div>
+        <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
+          <span id="byo-tbar-title">Build Your Own proposal</span>
+          <button onclick="_editByoTitle()" id="byo-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">✏️</button>
+        </div>
         <div class="tbar-sub" id="byo-page-sub">—</div>
       </div>
       <div class="tbar-r">
