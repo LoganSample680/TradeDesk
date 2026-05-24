@@ -556,6 +556,7 @@ async function sendProposalLink(){
     const proposalData={
       id:bidId,token,clientName:cname,businessName:bname,
       contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
+      clientId:estLinkedClientId||null,
       proposalHtml:proposal.innerHTML,
       clientAddr:_pdCaddr,
       estDays:_pdDays,

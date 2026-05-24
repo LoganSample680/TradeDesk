@@ -794,12 +794,24 @@ function renderTodayFeed(){
     const days=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
     const urgColor=days>=14?'#A32D2D':days>=7?'var(--amber)':'var(--text3)';
     const daysStr=days===0?'Sent today':days===1?'1 day waiting':days+'d waiting';
+    // Proposal view tracking — bid-level first, fall back to client-level
+    const _pvBid=(typeof _proposalViewsByBid!=='undefined'&&_proposalViewsByBid)?_proposalViewsByBid[String(b.id)]:null;
+    const _pvClient=(typeof _proposalViews!=='undefined'&&_proposalViews)?_proposalViews[b.client_id]:null;
+    const _pvTs=_pvBid||_pvClient||null;
+    let viewedBadge='';
+    if(_pvTs){
+      const _pvDate=new Date(_pvTs);
+      const _pvMins=Math.floor((Date.now()-_pvDate)/60000);
+      const _pvAgo=_pvMins<2?'just now':_pvMins<60?_pvMins+'m ago':_pvMins<1440?Math.floor(_pvMins/60)+'h ago':Math.floor(_pvMins/1440)+'d ago';
+      viewedBadge='<div style="font-size:11px;font-weight:700;color:#2563eb;margin-top:3px">👀 Opened · '+_pvAgo+'</div>';
+    }
     pendingItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">📨</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(c.name)+'</div>'+
           '<div class="tf-sub" style="color:'+urgColor+'">'+fmt(b.amount)+' · '+daysStr+'</div>'+
+          viewedBadge+
         '</div>'+
         '<div class="tf-acts">'+
           (b.proposalHtml?'<button onclick="viewSavedProposal('+b.id+')" class="btn btn-sm" style="font-size:11px">View</button>':'')+

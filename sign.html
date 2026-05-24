@@ -627,6 +627,20 @@ async function init(){
         '<div class="row"><span class="rl">Signed</span><span class="rv">'+signedDate+'</span></div>';
       show('pg-done');return;
     }
+    // Log view — fire and forget, bid-level so contractor sees "👀 Opened" in Make Money Today
+    if(_prop.contractorUserId){
+      const _viewTs=new Date().toISOString();
+      _supa.from('proposal_views').upsert(
+        {contractor_user_id:_prop.contractorUserId,bid_id:String(_prop.id),client_id:_prop.clientId||null,opened_at:_viewTs},
+        {onConflict:'contractor_user_id,bid_id'}
+      ).then(null,()=>{
+        // Fallback: table may not have bid_id column yet — upsert by client_id only
+        if(_prop.clientId)_supa.from('proposal_views').upsert(
+          {contractor_user_id:_prop.contractorUserId,client_id:_prop.clientId,opened_at:_viewTs},
+          {onConflict:'contractor_user_id,client_id'}
+        ).then(null,()=>{});
+      });
+    }
     const _biz=_prop.businessName||'Your Contractor';
     document.title='Review & Sign — '+_biz;
     // Populate business name into decline UI

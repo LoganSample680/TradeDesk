@@ -1808,6 +1808,7 @@ async function sendGenericProposal(previewOnly){
   const proposalData={
     id:bidId,token,clientName:v('gei-client'),businessName:S.bname||getBusinessName(),
     contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
+    clientId:_geiClientId||null,
     proposalHtml,clientAddr:v('gei-addr'),
     amount:total,deposit:_tmDepAmt,
     createdAt:new Date().toISOString(),status:'pending',
