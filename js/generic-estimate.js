@@ -518,6 +518,7 @@ function _byoRenderSections(){
           (it.notes?'<div class="byo-meta" style="font-size:11px;color:var(--text-3)">'+escHtml(it.notes)+'</div>':'')+
         '</div>'+
         '<div class="byo-price">$'+it.price.toLocaleString()+'</div>'+
+        '<button class="tm-mat-del" onclick="event.stopPropagation();_byoEditItem('+idx+')" title="Edit" style="color:var(--blue);font-size:13px">✏️</button>'+
         '<button class="tm-mat-del" onclick="event.stopPropagation();_byoDelItem('+idx+')" title="Remove">×</button>'+
       '</div>';
     }).join(''):
@@ -588,6 +589,34 @@ function _byaConfirm(sec){
   if(!label)return;
   const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
   _byoItems.push({id:nextId,section:sec,label,price,notes,on:true});
+  document.getElementById('_byo-add-modal')?.remove();
+  _byoRenderSections();_byoUpdateRail();
+}
+function _byoEditItem(idx){
+  const it=_byoItems[idx];if(!it)return;
+  document.getElementById('_byo-add-modal')?.remove();
+  const ov=document.createElement('div');ov.id='_byo-add-modal';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
+    '<div style="font-weight:800;font-size:16px;margin-bottom:16px">Edit item</div>'+
+    '<div class="f" style="margin-bottom:10px"><label>What is it?</label><input type="text" id="_bya-label" value="'+escHtml(it.label)+'" placeholder="e.g. Bedroom 3 — walls only"></div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="number" id="_bya-price" value="'+it.price+'" placeholder="0" min="0" step="50"></div></div>'+
+    '<div class="f" style="margin-bottom:16px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><input type="text" id="_bya-notes" value="'+escHtml(it.notes||'')+'" placeholder="e.g. Two coats, ceilings included"></div>'+
+    '<div style="display:flex;gap:10px">'+
+      '<button onclick="document.getElementById(\'_byo-add-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
+      '<button onclick="_byaEditConfirm('+idx+')" class="btn btn-p" style="flex:2">Save changes</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  setTimeout(()=>document.getElementById('_bya-label')?.focus(),50);
+}
+function _byaEditConfirm(idx){
+  const it=_byoItems[idx];if(!it)return;
+  const label=(document.getElementById('_bya-label')?.value||'').trim();
+  const price=parseFloat(document.getElementById('_bya-price')?.value)||0;
+  const notes=(document.getElementById('_bya-notes')?.value||'').trim();
+  if(!label)return;
+  it.label=label;it.price=price;it.notes=notes;
   document.getElementById('_byo-add-modal')?.remove();
   _byoRenderSections();_byoUpdateRail();
 }
