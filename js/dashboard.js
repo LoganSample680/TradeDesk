@@ -794,10 +794,8 @@ function renderTodayFeed(){
     const days=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
     const urgColor=days>=14?'#A32D2D':days>=7?'var(--amber)':'var(--text3)';
     const daysStr=days===0?'Sent today':days===1?'1 day waiting':days+'d waiting';
-    // Proposal view tracking — bid-level first, fall back to client-level
-    const _pvBid=(typeof _proposalViewsByBid!=='undefined'&&_proposalViewsByBid)?_proposalViewsByBid[String(b.id)]:null;
-    const _pvClient=(typeof _proposalViews!=='undefined'&&_proposalViews)?_proposalViews[b.client_id]:null;
-    const _pvTs=_pvBid||_pvClient||null;
+    // Only show opened badge when the actual proposal link (sign.html) was opened — bid-level only
+    const _pvTs=(typeof _proposalViewsByBid!=='undefined'&&_proposalViewsByBid)?_proposalViewsByBid[String(b.id)]:null;
     let viewedBadge='';
     if(_pvTs){
       const _pvDate=new Date(_pvTs);
