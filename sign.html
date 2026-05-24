@@ -638,7 +638,7 @@ async function init(){
     // bucket policy that allows sign/decline writes also covers this upsert.
     if(_prop.contractorUserId&&_prop.id){
       const _viewTs=new Date().toISOString();
-      const _viewKey=_prop.contractorUserId+'/'+String(_prop.id)+'_view.json';
+      const _viewKey='proposals/'+_prop.contractorUserId+'/'+String(_prop.id)+'_view.json';
       _supa.storage.from('proposals').upload(_viewKey,JSON.stringify({viewedAt:_viewTs,bidId:String(_prop.id)}),{contentType:'application/json',upsert:true}).catch(()=>{});
     }
     const _biz=_prop.businessName||'Your Contractor';
