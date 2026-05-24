@@ -351,7 +351,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.24.26.30';
+const APP_VERSION='05.24.26.31';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -1645,14 +1645,14 @@ async function checkNewSignatures(){
 async function _fetchProposalViews(){
   if(!_supa||!_supaUser)return;
   try{
-    // Read storage marker files written by sign.html — bypasses RLS/anon auth entirely.
-    // Each file: proposals/proposal-views/{contractorUserId}/{bidId}.json
-    // updated_at reflects the most recent open (upsert overwrites on every view).
-    const{data:viewFiles,error}=await _supa.storage.from('proposals').list('proposal-views/'+_supaUser.id,{limit:1000,offset:0});
-    if(viewFiles&&!error){
+    // sign.html writes proposals/{uid}/{bidId}_view.json on every proposal open (upsert).
+    // Same folder as proposal JSONs → same anon write policy that makes sign/decline work.
+    // updated_at = most recent open timestamp (Supabase sets this on upsert).
+    const{data:allFiles,error}=await _supa.storage.from('proposals').list(_supaUser.id,{limit:1000,offset:0});
+    if(allFiles&&!error){
       _proposalViewsByBid={};
-      viewFiles.forEach(f=>{
-        const bidId=f.name.replace('.json','');
+      allFiles.filter(f=>f.name&&f.name.endsWith('_view.json')).forEach(f=>{
+        const bidId=f.name.replace('_view.json','');
         if(bidId)_proposalViewsByBid[bidId]=f.updated_at||f.created_at;
       });
       renderDash();
