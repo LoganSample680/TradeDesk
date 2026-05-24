@@ -575,14 +575,41 @@ function _byoAddItem(sec){
     '<div style="font-weight:800;font-size:16px;margin-bottom:16px">Add to '+escHtml(sec)+'</div>'+
     '<div class="f" style="margin-bottom:10px"><label>What is it?</label><input type="text" id="_bya-label" placeholder="e.g. Bedroom 3 — walls only"></div>'+
     '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="number" id="_bya-price" placeholder="0" min="0" step="50"></div></div>'+
-    '<div class="f" style="margin-bottom:16px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><input type="text" id="_bya-notes" placeholder="e.g. Two coats, ceilings included"></div>'+
+    '<div class="f" style="margin-bottom:6px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><input type="text" id="_bya-notes" placeholder="e.g. Two coats, ceilings included"></div>'+
+    '<div style="font-size:11px;color:var(--text-3);margin-bottom:14px">Tab or Enter from Notes to save &amp; add another</div>'+
     '<div style="display:flex;gap:10px">'+
       '<button onclick="document.getElementById(\'_byo-add-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
       '<button onclick="_byaConfirm(\''+escHtml(sec)+'\')" class="btn btn-p" style="flex:2">Add item</button>'+
     '</div></div>';
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  setTimeout(()=>document.getElementById('_bya-label')?.focus(),50);
+  setTimeout(()=>{
+    const labelEl=document.getElementById('_bya-label');
+    const priceEl=document.getElementById('_bya-price');
+    const notesEl=document.getElementById('_bya-notes');
+    if(labelEl)labelEl.focus();
+    // Tab from label → price (default), Tab from price → notes (default)
+    // Tab or Enter from notes → save + open next
+    if(notesEl){
+      notesEl.addEventListener('keydown',e=>{
+        if(e.key==='Enter'||(e.key==='Tab'&&!e.shiftKey)){
+          e.preventDefault();
+          _byaConfirmAndNext(sec);
+        }
+      });
+    }
+    // Enter on label or price → move to next field
+    if(labelEl){
+      labelEl.addEventListener('keydown',e=>{
+        if(e.key==='Enter'){e.preventDefault();priceEl?.focus();}
+      });
+    }
+    if(priceEl){
+      priceEl.addEventListener('keydown',e=>{
+        if(e.key==='Enter'){e.preventDefault();notesEl?.focus();}
+      });
+    }
+  },50);
 }
 function _byaConfirm(sec){
   const label=(document.getElementById('_bya-label')?.value||'').trim();
@@ -593,6 +620,19 @@ function _byaConfirm(sec){
   _byoItems.push({id:nextId,section:sec,label,price,notes,on:true});
   document.getElementById('_byo-add-modal')?.remove();
   _byoRenderSections();_byoUpdateRail();
+}
+function _byaConfirmAndNext(sec){
+  // Save current item (if label is filled) then immediately open a fresh modal for same section
+  const label=(document.getElementById('_bya-label')?.value||'').trim();
+  const price=parseFloat(document.getElementById('_bya-price')?.value)||0;
+  const notes=(document.getElementById('_bya-notes')?.value||'').trim();
+  if(label){
+    const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
+    _byoItems.push({id:nextId,section:sec,label,price,notes,on:true});
+    _byoRenderSections();_byoUpdateRail();
+  }
+  // Open next item modal for the same section
+  _byoAddItem(sec);
 }
 function _byoEditItem(idx){
   const it=_byoItems[idx];if(!it)return;
@@ -610,7 +650,17 @@ function _byoEditItem(idx){
     '</div></div>';
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  setTimeout(()=>document.getElementById('_bya-label')?.focus(),50);
+  setTimeout(()=>{
+    const labelEl=document.getElementById('_bya-label');
+    const priceEl=document.getElementById('_bya-price');
+    const notesEl=document.getElementById('_bya-notes');
+    if(labelEl){
+      labelEl.focus();
+      labelEl.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();priceEl?.focus();}});
+    }
+    if(priceEl){priceEl.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();notesEl?.focus();}});}
+    if(notesEl){notesEl.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();_byaEditConfirm(idx);}});}
+  },50);
 }
 function _byaEditConfirm(idx){
   const it=_byoItems[idx];if(!it)return;
