@@ -634,13 +634,24 @@ async function init(){
       show('pg-done');return;
     }
     // Log view via Edge Function — server-side write using service key, bypasses all RLS.
-    // Fire-and-forget; client never sees success/failure.
     if(_prop.contractorUserId&&_prop.id){
+      // DEBUG badge — remove after confirmed working
+      const _dbg=document.createElement('div');
+      _dbg.id='view-dbg';
+      _dbg.style.cssText='position:fixed;bottom:80px;right:12px;background:#1e40af;color:#fff;font-size:11px;font-weight:700;padding:6px 10px;border-radius:20px;z-index:9999;opacity:0.9';
+      _dbg.textContent='📡 Logging...';
+      document.body.appendChild(_dbg);
       fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
         method:'POST',
         headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
         body:JSON.stringify({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id)})
-      }).catch(()=>{});
+      }).then(r=>r.json()).then(d=>{
+        _dbg.textContent=d.ok?'✅ View logged':'❌ '+JSON.stringify(d);
+        _dbg.style.background=d.ok?'#15803d':'#dc2626';
+      }).catch(e=>{
+        _dbg.textContent='❌ '+e.message;
+        _dbg.style.background='#dc2626';
+      });
     }
     const _biz=_prop.businessName||'Your Contractor';
     document.title='Review & Sign — '+_biz;
