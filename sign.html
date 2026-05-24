@@ -370,12 +370,18 @@ input[type=text]:focus{border-color:var(--denim)}
         <div id="epa-err" style="display:none;color:#A32D2D;font-size:12px;margin-top:6px;font-weight:600">Please confirm receipt of the EPA pamphlet before signing.</div>
       </div>
 
+      <!-- Notice of Cancellation — required by FTC Cooling Off Rule / state equivalents -->
+      <div id="cancel-notice-section" style="display:none;background:#F0F4FF;border:1.5px solid #93B4F0;border-radius:var(--r);padding:14px 16px;margin-bottom:14px">
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--blue-dk);margin-bottom:8px">📋 Notice of Cancellation</div>
+        <div id="cancel-notice-body" style="font-size:13px;color:var(--text);line-height:1.6"></div>
+      </div>
+
       <!-- UETA checkbox -->
       <label class="sig-checkbox">
         <input type="checkbox" id="sig-ueta-ck" onchange="checkReady()">
         <div class="sig-checkbox-text">
           <div class="sig-checkbox-title">I agree to this electronic agreement</div>
-          <div class="sig-checkbox-body">By checking this box, I confirm I have received and read the Notice of Cancellation (3-business-day right to cancel under K.S.A. 50-640), accept the total price, scope of work, and all terms above. This constitutes a binding electronic signature under the Kansas Uniform Electronic Transactions Act (K.S.A. 16-1601 et seq.). A deposit is due before work begins and before a start date is scheduled; remaining balance is due on completion.</div>
+          <div class="sig-checkbox-body">By checking this box, I confirm I have read the Notice of Cancellation above, accept the total price, scope of work, and all terms above. This constitutes a binding electronic signature under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.). A deposit is due before work begins and before a start date is scheduled; remaining balance is due on completion.</div>
         </div>
       </label>
 
@@ -500,6 +506,7 @@ function _dismissSignBoot(){
   const bb=document.getElementById('sign-boot-bar');if(bb)bb.style.width='100%';
   setTimeout(()=>{ov.style.opacity='0';setTimeout(()=>ov.remove(),420);},160);
 }
+function escHtmlN(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function show(id){
   _dismissSignBoot();
   pages.forEach(p=>{
@@ -682,13 +689,27 @@ async function init(){
       const epaSec=document.getElementById('epa-section');
       if(epaSec)epaSec.style.display='block';
     }
-    // Update UETA checkbox with state-specific legal citations from proposal data
+    // Update UETA checkbox and Notice of Cancellation with state-specific citations
     const _uetaBody=document.querySelector('.sig-checkbox-body');
-    if(_uetaBody){
+    const _cancelNotice=document.getElementById('cancel-notice-section');
+    const _cancelNoticeBody=document.getElementById('cancel-notice-body');
+    if(_uetaBody||_cancelNotice){
       const _cd=_prop.cancelDays||3;
       const _cs=_prop.cancelStatute||'16 CFR Part 429';
       const _ls=_prop.lienStatute||'applicable mechanic\'s lien statutes';
-      _uetaBody.textContent='By checking this box, I confirm I have received and read the Notice of Cancellation ('+_cd+'-business-day right to cancel under '+_cs+'), accept the total price, scope of work, and all terms above. This constitutes a binding electronic signature under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.). A deposit is due before work begins and before a start date is scheduled; remaining balance is due on completion. Contractor retains lien rights under '+_ls+'.';
+      const _bizName=_prop.businessName||'Your Contractor';
+      const _bizPhone=_prop.businessPhone||'';
+      if(_uetaBody)_uetaBody.textContent='By checking this box, I confirm I have read the Notice of Cancellation below, accept the total price, scope of work, and all terms above. This constitutes a binding electronic signature under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.). A deposit is due before work begins and before a start date is scheduled; remaining balance is due on completion. Contractor retains lien rights under '+_ls+'.';
+      if(_cancelNoticeBody){
+        const _cancelDeadline=new Date();_cancelDeadline.setDate(_cancelDeadline.getDate()+_cd);
+        const _deadlineStr=_cancelDeadline.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+        _cancelNoticeBody.innerHTML=
+          '<p style="margin-bottom:8px">You may cancel this transaction, without any penalty or obligation, within <strong>'+_cd+' business days</strong> from the date you sign ('+_deadlineStr+' at midnight).</p>'+
+          '<p style="margin-bottom:8px">To cancel, send a written notice — by mail, email, or text — to <strong>'+escHtmlN(_bizName)+'</strong>'+((_bizPhone)?' at <strong>'+escHtmlN(_bizPhone)+'</strong>':'')+' before that deadline. You may also use the cancellation form below.</p>'+
+          '<p style="margin-bottom:8px">If you cancel: any deposit or payment will be refunded within 10 business days. No work will be performed.</p>'+
+          '<p style="font-size:11px;color:var(--text3)">Authority: '+escHtmlN(_cs)+'</p>';
+        if(_cancelNotice)_cancelNotice.style.display='block';
+      }
     }
     show('pg-sign');
     _renderPayTiles();_updatePayButtons();
