@@ -662,7 +662,78 @@ function _byoDeleteSection(sec){
   if(hasItems){zConfirm('Remove the "'+sec+'" section and all its items?',doDelete,{title:'Remove section',yes:'Remove',danger:true});}
   else doDelete();
 }
-function _byoPreviewClient(){showToast('Preview coming soon — save first to get a link','👁');}
+function _byoPreviewClient(){sendGenericProposal(true);}
+function _byoDuplicateBid(){
+  if(!_geiEditBidId){showToast('Save your draft first, then duplicate','⚠️');return;}
+  saveGenericEstimate(true);
+  const src=bids.find(x=>x.id===_geiEditBidId);
+  if(!src){showToast('Bid not found','⚠️');return;}
+  const copy=JSON.parse(JSON.stringify(src));
+  copy.id=_newBidId();
+  copy.status='Draft';copy.draft=true;
+  copy.signingToken=undefined;copy.proposalKey=undefined;copy.proposalSentDate=undefined;
+  // Append option label to type so client sees distinct options
+  const baseName=copy.type||'Custom Proposal';
+  const isAlreadyOpt=/option [ab]/i.test(baseName);
+  if(!isAlreadyOpt){copy.type=baseName+' — Option B';}
+  bids.unshift(copy);saveAll();
+  // Open the copy in the editor
+  _byoShowPage({id:copy.client_id,name:copy.client_name||copy.name||''},copy.id);
+  showToast('Duplicated — edit Option B now','📋');
+}
+function _showProposalPreviewOverlay(proposalHtml){
+  document.getElementById('_prop-preview-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.id='_prop-preview-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:9500;background:#0007;display:flex;flex-direction:column';
+  const hdr=document.createElement('div');
+  hdr.style.cssText='background:#1a365d;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0';
+  hdr.innerHTML='<span style="font-size:15px;font-weight:800">👁 Client preview — how they\'ll see it</span><button onclick="document.getElementById(\'_prop-preview-ov\')?.remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation">✕ Close</button>';
+  const body=document.createElement('div');
+  body.style.cssText='flex:1;overflow-y:auto;padding:16px;box-sizing:border-box;background:#f0f4f8';
+  body.innerHTML=proposalHtml;
+  ov.appendChild(hdr);ov.appendChild(body);
+  document.body.appendChild(ov);
+}
+// ─── Comparison proposal picker ─────────────────────────────────────────────
+// Show a picker so the contractor can send two side-by-side options to a client.
+// The picker lets the contractor preview the comparison before sending.
+function _openComparisonPicker(){
+  if(!_geiClientId){showToast('Open from a client to compare bids','ℹ️');return;}
+  const clientBids=bids.filter(x=>(x.client_id===_geiClientId)&&(x.isFreeForm||x.geiLines));
+  if(clientBids.length<2){showToast('You need at least 2 saved bids for this client to compare','ℹ️');return;}
+  document.getElementById('_cmp-picker-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.id='_cmp-picker-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:9600;background:#0009;display:flex;align-items:flex-end;justify-content:center';
+  const box=document.createElement('div');
+  box.style.cssText='background:#fff;border-radius:18px 18px 0 0;width:100%;max-width:520px;padding:20px 16px 32px;box-sizing:border-box;max-height:80vh;overflow-y:auto';
+  const rows=clientBids.map((b,i)=>{
+    const total=b.amount||0;
+    const label=b.type||('Bid '+(i+1));
+    return `<label style="display:flex;align-items:center;gap:12px;padding:12px;border:1.5px solid var(--border2);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" name="cmp-bid" value="${b.id}" style="width:20px;height:20px;accent-color:var(--blue);flex-shrink:0"><span style="flex:1"><span style="font-size:14px;font-weight:700;display:block">${escHtml(label)}</span><span style="font-size:12px;color:var(--text-3)">$${total.toLocaleString()} · ${b.status||'Draft'}</span></span></label>`;
+  }).join('');
+  box.innerHTML=`<div style="font-size:17px;font-weight:800;margin-bottom:4px">📊 Compare & Send</div><div style="font-size:13px;color:var(--text-3);margin-bottom:16px">Pick exactly 2 bids — your client will see both side by side and can choose one.</div>${rows}<button onclick="_buildComparisonPreview()" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;touch-action:manipulation;margin-top:8px">👁 Preview comparison</button><button onclick="document.getElementById('_cmp-picker-ov')?.remove()" style="width:100%;padding:12px;border-radius:var(--rl);border:none;background:none;color:var(--text-3);font-size:14px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>`;
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function _buildComparisonPreview(){
+  const checked=[...document.querySelectorAll('input[name="cmp-bid"]:checked')].map(x=>x.value);
+  if(checked.length!==2){showToast('Select exactly 2 bids to compare','⚠️');return;}
+  const bidA=bids.find(x=>x.id===checked[0]);
+  const bidB=bids.find(x=>x.id===checked[1]);
+  if(!bidA||!bidB){showToast('Bids not found','⚠️');return;}
+  const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const makeCard=(b,label,accentColor)=>{
+    const lineRows=(b.geiLines||[]).filter(l=>l.desc||l.rate).map(l=>`<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:7px 12px;font-size:12px;color:#2d3748">${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</td><td style="padding:7px 8px;text-align:right;font-size:12px;font-weight:600;color:#1a365d">${fmt((l.qty||1)*(l.rate||0))}</td></tr>`).join('');
+    const notes=b.notes?`<div style="padding:10px 14px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.5"><strong>Notes:</strong> ${escHtml(b.notes)}</div>`:'';
+    return `<div style="background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 2px 12px rgba(0,0,0,.08);margin-bottom:16px"><div style="background:${accentColor};color:#fff;padding:14px 16px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;opacity:.85">Option</div><div style="font-size:20px;font-weight:800;margin-top:2px">${label}</div><div style="font-size:13px;opacity:.85;margin-top:4px">${escHtml(b.type||'Proposal')}</div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><tbody>${lineRows}</tbody><tfoot><tr style="background:${accentColor};color:#fff"><td style="padding:10px 14px;font-weight:800;font-size:14px">TOTAL</td><td style="padding:10px 14px;text-align:right;font-weight:800;font-size:14px">${fmt(b.amount)}</td></tr></tfoot></table>${notes}<div style="padding:12px 14px;background:#f8fafc;text-align:center"><button style="width:100%;padding:12px;border-radius:10px;border:2px solid ${accentColor};background:#fff;color:${accentColor};font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;touch-action:manipulation">✓ I choose this option</button></div></div>`;
+  };
+  const compHtml=`<div style="max-width:560px;margin:0 auto;padding:16px 0"><div style="text-align:center;padding:16px 0 20px"><div style="font-size:18px;font-weight:800;color:#1a365d">Choose your option</div><div style="font-size:13px;color:#718096;margin-top:4px">Both options are from the same contractor. Review each and tap to accept the one that works best for you.</div></div>${makeCard(bidA,'A','#1a365d')}${makeCard(bidB,'B','#2a4a7f')}</div>`;
+  document.getElementById('_cmp-picker-ov')?.remove();
+  _showProposalPreviewOverlay(compHtml);
+}
+// ─── End comparison ──────────────────────────────────────────────────────────
 function _tmCrewStep(delta){
   _tmCrewCount=Math.max(1,Math.min(20,(_tmCrewCount||1)+delta));
   const d=document.getElementById('tm-i-crew-count');if(d)d.textContent=_tmCrewCount;
@@ -1564,6 +1635,10 @@ function saveGenericEstimate(draft){
   const _byoDepPct=_geiIsTM?null:(parseFloat(document.getElementById('byo-deposit-pct')?.value)||25)/100;
   const _deposit=_geiIsTM?(_tmFields.tmDepositAmt||0):Math.round(total*_byoDepPct*100)/100;
   const _typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':(TRADE_META[trade]?.label||'Trade')+' Proposal';
+  // Extract BYO field values before object literals — Safari fails to parse ?.?? inside spread conditionals
+  const _byoTermsEl=document.getElementById('byo-custom-terms');
+  const _byoTermsSave=_byoTermsEl?_byoTermsEl.value:(_byoCustomTerms||'');
+  const _byoSecsSave=[..._byoCustomSections];
   if(_geiEditBidId){
     const b=bids.find(x=>x.id===_geiEditBidId);
     if(b){
@@ -1573,7 +1648,7 @@ function saveGenericEstimate(draft){
       b.geiDuration=v('gei-duration')||'';b.geiNewWork=_geiNewWork||false;
       b.trade_type=trade;b.deposit=_deposit;b.isFreeForm=_geiIsFreeForm||false;
       if(_geiIsFreeForm&&_byoItems.length)b.byoItems=JSON.parse(JSON.stringify(_byoItems));
-      if(_geiIsFreeForm){b.byoCustomSections=[..._byoCustomSections];b.byoCustomTerms=document.getElementById('byo-custom-terms')?.value??_byoCustomTerms;}
+      if(_geiIsFreeForm){b.byoCustomSections=_byoSecsSave;b.byoCustomTerms=_byoTermsSave;}
       if(_panelSched)b.panelSched=JSON.parse(JSON.stringify(_panelSched));else delete b.panelSched;
       Object.assign(b,_tmFields);
       saveAll();
@@ -1589,7 +1664,7 @@ function saveGenericEstimate(draft){
       notes:v('gei-notes'),status:draft?'Draft':'Pending',draft:!!draft,
       isFreeForm:_geiIsFreeForm||false,
       ...(_geiIsFreeForm&&_byoItems.length?{byoItems:JSON.parse(JSON.stringify(_byoItems))}:{}),
-      ...(_geiIsFreeForm?{byoCustomSections:[..._byoCustomSections],byoCustomTerms:document.getElementById('byo-custom-terms')?.value??_byoCustomTerms}:{}),
+      ...(_geiIsFreeForm?{byoCustomSections:_byoSecsSave,byoCustomTerms:_byoTermsSave}:{}),
       geiLines:JSON.parse(JSON.stringify(_geiLines)),geiTaxPct:taxPct,
       geiDuration:v('gei-duration')||'',geiNewWork:_geiNewWork||false,
       trade_type:trade,...(_panelSched?{panelSched:JSON.parse(JSON.stringify(_panelSched))}:{}),..._tmFields,
@@ -1601,12 +1676,14 @@ function saveGenericEstimate(draft){
   if(!draft)goPg('pg-clients');
 }
 
-async function sendGenericProposal(){
+async function sendGenericProposal(previewOnly){
   saveGenericEstimate(true); // draft=true skips navigation — modal shows over estimate page
   _saveToLineHistory();
-  // Build minimal proposal for sign.html
-  if(!navigator.onLine){zAlert('You\'re offline — the proposal link can\'t be activated right now.\n\nYour estimate is saved. Once you\'re back online, open this bid and tap Send to send the link to your client.',{title:'No internet connection'});return;}
-  if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.');return;}
+  if(!previewOnly){
+    // Build minimal proposal for sign.html
+    if(!navigator.onLine){zAlert('You\'re offline — the proposal link can\'t be activated right now.\n\nYour estimate is saved. Once you\'re back online, open this bid and tap Send to send the link to your client.',{title:'No internet connection'});return;}
+    if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.');return;}
+  }
   if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});
   const v=id=>document.getElementById(id)?.value||'';
   const{total,sub}=calcGeiTotal();
@@ -1655,6 +1732,8 @@ async function sendGenericProposal(){
   const _hdrLabel=_geiIsTM?'⏱️ Time &amp; Materials':tradeIcon+' Service Proposal';
   const _nteRow=(_geiIsTM&&_tmNteCap)?`<tr style="background:#075985;color:rgba(255,255,255,.8)"><td colspan="2" style="padding:5px 18px;font-size:11px">Not-to-exceed cap</td><td style="padding:5px 18px;text-align:right;font-size:11px;font-weight:700">$${_tmNteCap.toLocaleString()}</td></tr>`:'';
   const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#1a365d">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#1a365d">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:5px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid 30 days</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th><th style="padding:8px 6px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:40px">Qty</th><th style="padding:8px 18px 8px 4px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:90px">Amount</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${taxRow}<tr style="background:#1a365d;color:#fff"><td colspan="2" style="padding:12px 18px;font-weight:800;font-size:15px">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:15px">${totalFmt}</td></tr>${_tmDepRow}${_nteRow}</tfoot></table>${notesHtml}${_propPanelHtml}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Payment Terms</div>${_tmPayTerms}</div>${_customTermsBlock}</div>`;
+  // Preview-only mode — show proposal in a fullscreen overlay, no upload
+  if(previewOnly){_showProposalPreviewOverlay(proposalHtml);return;}
   const bidId=_geiEditBidId;
   const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
   const proposalKey=`proposals/${_supaUser.id}/${bidId}_${token}.json`;
