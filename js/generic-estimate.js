@@ -1844,18 +1844,15 @@ async function sendGenericProposal(previewOnly){
   }
   if(input)input.value=shareUrl;
   _pendingSignToken={bidId,token,proposalKey};
-  // Show sharing sheet
-  const _gsov=document.createElement('div');
-  _gsov.id='_gei-share-ov';
-  _gsov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
-  const _geiShareName=clientName||'Client';
-  const _geiShareFirst=_geiShareName.split(' ')[0];
-  const _geiShareShort=shareUrl.replace(/^https?:\/\//,'');
-  const _geiSharePreview=_geiShareShort.length>44?_geiShareShort.slice(0,44)+'…':_geiShareShort;
-  _gsov.innerHTML='<div style="background:#fff;border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px"><div style="text-align:center;margin-bottom:16px"><div style="font-size:15px;font-weight:800;color:var(--text1)">📨 Send to client</div></div><button onclick="_commitProposalSent();pwaShare({title:\''+(bname||S.company||'Your Contractor')+' Proposal\',text:\'Hi '+_geiShareFirst+' — '+(bname||S.company||'us')+' sent your estimate. Tap to review and approve.\',url:document.getElementById(\'proposal-link-bar\')?.dataset.signingUrl||document.getElementById(\'proposal-link-input\')?.value||\'\'});document.getElementById(\'_gei-share-ov\')?.remove();" style="width:100%;padding:16px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit">⬆️ Send to client</button></div>';
-  document.body.appendChild(_gsov);
-  _gsov.addEventListener('click',e=>{if(e.target===_gsov){_gsov.remove();goPg('pg-clients');}});
-  showToast('Proposal link ready — tap to send','🔗');
+  _commitProposalSent();
+  // Open iOS/native share sheet immediately — no intermediate overlay
+  const _shareFirst=(clientName||'Client').split(' ')[0];
+  await pwaShare({
+    title:(bname||S.bname||'Your Contractor')+' Proposal',
+    text:'Hi '+_shareFirst+' — tap to review and sign your estimate.',
+    url:shareUrl
+  });
+  goPg('pg-clients');
 }
 function _geiCopyShareLink(btn){
   const url=_proposalShareData().url;
