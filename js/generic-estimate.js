@@ -190,7 +190,7 @@ function openFreeFormEstimate(c,bidId){
 function openGenericEstimate(c,bidId,_tradePick){
   _geiClientId=c?.id||null;
   _geiEditBidId=bidId||null;
-  _geiLines=[];_byoItems=[];_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;
+  _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;
   const _wasTM=_geiIsTM,_wasFF=_geiIsFreeForm;
   _geiIsTM=false;_geiIsFreeForm=false;
   if(_wasTM){_geiIsTM=true;}else{_tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmMatMarkup=0;_tmCapAction='Stop & get re-approval';}
@@ -443,8 +443,8 @@ function _tmHidePage(){
 }
 
 // ── Build Your Own single-page layout ────────────────────────────────────────
-let _byoItems=[];
-const _BYO_DEFAULT_SECTIONS=['Interior','Add-ons','Exterior'];
+let _byoItems=[],_byoCustomSections=[],_byoCustomTerms='';
+const _BYO_DEFAULT_SECTIONS=['Interior','Exterior','Materials','Add-ons'];
 function _byoShowPage(){
   _tmHidePage(); // must run first — _tmHidePage re-shows gei-old-tbar, then we hide it below
   ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id=>{
@@ -462,6 +462,8 @@ function _byoShowPage(){
   const b=bids.find(x=>x.id===_geiEditBidId);
   if(b?.byoItems&&b.byoItems.length){_byoItems=b.byoItems.map(x=>({...x}));}
   else{_byoItems=[];}
+  _byoCustomSections=b?.byoCustomSections?[...b.byoCustomSections]:[];
+  _byoCustomTerms=b?.byoCustomTerms||'';
   _byoRenderSections();
   _byoUpdateRail();
 }
@@ -501,9 +503,12 @@ function _editByoTitle(){
 }
 function _byoRenderSections(){
   const wrap=document.getElementById('byo-sections');if(!wrap)return;
-  const sections=[..._BYO_DEFAULT_SECTIONS,...new Set(_byoItems.map(x=>x.section).filter(s=>!_BYO_DEFAULT_SECTIONS.includes(s)))];
-  wrap.innerHTML=sections.map(sec=>{
+  const extraFromItems=_byoItems.map(x=>x.section).filter(s=>!_BYO_DEFAULT_SECTIONS.includes(s));
+  const allExtra=[..._byoCustomSections,...extraFromItems.filter(s=>!_byoCustomSections.includes(s))];
+  const sections=[..._BYO_DEFAULT_SECTIONS,...new Set(allExtra)];
+  const secHtml=sections.map(sec=>{
     const rows=_byoItems.filter(it=>it.section===sec);
+    const isCustom=!_BYO_DEFAULT_SECTIONS.includes(sec);
     const rowHtml=rows.length?rows.map(it=>{
       const idx=_byoItems.indexOf(it);
       return '<div class="byo-row'+(it.on?' on':'')+'" onclick="_byoToggle('+idx+')">'+
@@ -519,10 +524,26 @@ function _byoRenderSections(){
     '<div style="padding:14px 16px;font-size:12px;color:var(--text-3);font-style:italic">No items yet — tap + Add item</div>';
     return '<div class="card card-pad-0" style="margin-bottom:12px">'+
       '<div class="card-hd"><div class="card-hd-title">'+escHtml(sec)+'</div>'+
-      '<button class="btn btn-sm" onclick="_byoAddItem(\''+escHtml(sec)+'\')">+ Add item</button></div>'+
+      '<div style="display:flex;gap:6px">'+
+        (isCustom?'<button class="btn btn-sm" onclick="_byoDeleteSection(\''+escHtml(sec)+'\')" style="color:#A32D2D;border-color:#A32D2D" title="Remove section">✕</button>':'')+
+        '<button class="btn btn-sm" onclick="_byoAddItem(\''+escHtml(sec)+'\')">+ Add item</button>'+
+      '</div></div>'+
       '<div>'+rowHtml+'</div>'+
     '</div>';
   }).join('');
+  const addSecBtn='<div style="margin-bottom:12px">'+
+    '<button class="btn btn-ghost btn-full" onclick="_byoAddSection()" style="border:1.5px dashed var(--border2)">+ Add section</button>'+
+  '</div>';
+  const tcCard='<div class="card card-pad-0" style="margin-bottom:12px">'+
+    '<div class="card-hd"><div class="card-hd-title">📋 Terms &amp; Conditions</div></div>'+
+    '<div style="padding:12px 14px">'+
+      '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">Custom terms print on the proposal below the standard payment terms.</div>'+
+      '<textarea id="byo-custom-terms" rows="5" placeholder="e.g. All paint supplied by client. Contractor not responsible for pre-existing damage to surfaces..." '+
+        'oninput="_byoCustomTerms=this.value" '+
+        'style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical;box-sizing:border-box;line-height:1.5">'+escHtml(_byoCustomTerms||'')+'</textarea>'+
+    '</div>'+
+  '</div>';
+  wrap.innerHTML=secHtml+addSecBtn+tcCard;
 }
 function _byoToggle(idx){
   if(_byoItems[idx]&&!_byoItems[idx].required){_byoItems[idx].on=!_byoItems[idx].on;_byoRenderSections();_byoUpdateRail();}
@@ -569,6 +590,46 @@ function _byaConfirm(sec){
   _byoItems.push({id:nextId,section:sec,label,price,notes,on:true});
   document.getElementById('_byo-add-modal')?.remove();
   _byoRenderSections();_byoUpdateRail();
+}
+function _byoAddSection(){
+  document.getElementById('_byo-sec-modal')?.remove();
+  const ov=document.createElement('div');ov.id='_byo-sec-modal';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+  ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:380px;padding:20px 16px 24px">'+
+    '<div style="font-weight:800;font-size:16px;margin-bottom:16px">New section</div>'+
+    '<div class="f" style="margin-bottom:16px"><label>Section name</label>'+
+      '<input type="text" id="_byo-sec-name" placeholder="e.g. Prep work, Ceilings, Garage..."></div>'+
+    '<div style="display:flex;gap:10px">'+
+      '<button onclick="document.getElementById(\'_byo-sec-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
+      '<button onclick="_byoConfirmSection()" class="btn btn-p" style="flex:2">Add section</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  setTimeout(()=>document.getElementById('_byo-sec-name')?.focus(),50);
+}
+function _byoConfirmSection(){
+  const name=(document.getElementById('_byo-sec-name')?.value||'').trim();
+  if(!name)return;
+  const all=[..._BYO_DEFAULT_SECTIONS,..._byoCustomSections];
+  if(all.map(s=>s.toLowerCase()).includes(name.toLowerCase())){
+    const inp=document.getElementById('_byo-sec-name');
+    if(inp){inp.style.borderColor='#A32D2D';inp.placeholder='That section already exists';}
+    return;
+  }
+  _byoCustomSections.push(name);
+  document.getElementById('_byo-sec-modal')?.remove();
+  _byoRenderSections();
+}
+function _byoDeleteSection(sec){
+  if(_BYO_DEFAULT_SECTIONS.includes(sec))return;
+  const hasItems=_byoItems.some(x=>x.section===sec);
+  const doDelete=()=>{
+    _byoCustomSections=_byoCustomSections.filter(s=>s!==sec);
+    _byoItems=_byoItems.filter(x=>x.section!==sec);
+    _byoRenderSections();_byoUpdateRail();
+  };
+  if(hasItems){zConfirm('Remove the "'+sec+'" section and all its items?',doDelete,{title:'Remove section',yes:'Remove',danger:true});}
+  else doDelete();
 }
 function _byoPreviewClient(){showToast('Preview coming soon — save first to get a link','👁');}
 function _tmCrewStep(delta){
@@ -1481,6 +1542,7 @@ function saveGenericEstimate(draft){
       b.geiDuration=v('gei-duration')||'';b.geiNewWork=_geiNewWork||false;
       b.trade_type=trade;b.deposit=_deposit;b.isFreeForm=_geiIsFreeForm||false;
       if(_geiIsFreeForm&&_byoItems.length)b.byoItems=JSON.parse(JSON.stringify(_byoItems));
+      if(_geiIsFreeForm){b.byoCustomSections=[..._byoCustomSections];b.byoCustomTerms=document.getElementById('byo-custom-terms')?.value??_byoCustomTerms;}
       if(_panelSched)b.panelSched=JSON.parse(JSON.stringify(_panelSched));else delete b.panelSched;
       Object.assign(b,_tmFields);
       saveAll();
@@ -1496,6 +1558,7 @@ function saveGenericEstimate(draft){
       notes:v('gei-notes'),status:draft?'Draft':'Pending',draft:!!draft,
       isFreeForm:_geiIsFreeForm||false,
       ...(_geiIsFreeForm&&_byoItems.length?{byoItems:JSON.parse(JSON.stringify(_byoItems))}:{}),
+      ...(_geiIsFreeForm?{byoCustomSections:[..._byoCustomSections],byoCustomTerms:document.getElementById('byo-custom-terms')?.value??_byoCustomTerms}:{}),
       geiLines:JSON.parse(JSON.stringify(_geiLines)),geiTaxPct:taxPct,
       geiDuration:v('gei-duration')||'',geiNewWork:_geiNewWork||false,
       trade_type:trade,...(_panelSched?{panelSched:JSON.parse(JSON.stringify(_panelSched))}:{}),..._tmFields,
@@ -1539,6 +1602,10 @@ async function sendGenericProposal(){
     ?`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Contract type:</strong> Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}</div><div>2. <strong>Mobilization deposit:</strong> ${_tmDepPct}% (${depositFmt}) due before work begins.</div><div>3. <strong>Billing:</strong> ${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.</div><div>4. <strong>Change Orders:</strong> Any additional scope not described herein requires a written change order signed by both parties.</div><div>5. <strong>Warranty:</strong> All workmanship warranted for one (1) year from date of completion.</div><div>6. <strong>Limitation of Liability:</strong> Contractor is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>7. <strong>Mechanic&#39;s Lien:</strong> Contractor reserves the right to file a mechanic&#39;s lien for any unpaid amounts under this agreement.</div></div>`
     :`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> ${_sendByoDepPctLabel}% due before work begins and before a start date is scheduled. Balance due upon completion.</div><div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer has the right to cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[S?.state||'KS'])?STATE_CANCEL[S.state||'KS'].days:3} business days of signing (${_cancelCitation(S?.state||'KS')}). After that, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. Materials purchased will be made available for pickup.</div><div>3. <strong>Change Orders:</strong> Any additional work not described herein requires a written change order signed by both parties.</div><div>4. <strong>Warranty:</strong> All workmanship warranted for one (1) year from date of completion, covering labor defects and application failures.</div><div>5. <strong>Limitation of Liability:</strong> Contractor is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>6. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(S?.state||'KS')}</div></div>`;
   const _tmPropMarkupMult=(_geiIsTM&&_tmMatMarkup>0)?(1+_tmMatMarkup/100):1;
+  const _byoTermsText=(document.getElementById('byo-custom-terms')?.value??_byoCustomTerms||'').trim();
+  const _customTermsBlock=_byoTermsText
+    ?`<div style="padding:16px 24px;border-top:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Additional Terms</div><div style="font-size:11px;color:#2d3748;line-height:1.8;white-space:pre-wrap">${escHtml(_byoTermsText)}</div></div>`
+    :'';
   const lineRows=_geiLines.filter(l=>l.desc||l.rate).map(l=>{
     let amt=(l.qty||1)*(l.rate||0);
     // For T&M, bake markup into material prices — client never sees the markup percentage
@@ -1556,7 +1623,7 @@ async function sendGenericProposal(){
   }
   const _hdrLabel=_geiIsTM?'⏱️ Time &amp; Materials':tradeIcon+' Service Proposal';
   const _nteRow=(_geiIsTM&&_tmNteCap)?`<tr style="background:#075985;color:rgba(255,255,255,.8)"><td colspan="2" style="padding:5px 18px;font-size:11px">Not-to-exceed cap</td><td style="padding:5px 18px;text-align:right;font-size:11px;font-weight:700">$${_tmNteCap.toLocaleString()}</td></tr>`:'';
-  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#1a365d">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#1a365d">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:5px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid 30 days</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th><th style="padding:8px 6px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:40px">Qty</th><th style="padding:8px 18px 8px 4px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:90px">Amount</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${taxRow}<tr style="background:#1a365d;color:#fff"><td colspan="2" style="padding:12px 18px;font-weight:800;font-size:15px">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:15px">${totalFmt}</td></tr>${_tmDepRow}${_nteRow}</tfoot></table>${notesHtml}${_propPanelHtml}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Payment Terms</div>${_tmPayTerms}</div></div>`;
+  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#1a365d">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#1a365d">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:5px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid 30 days</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th><th style="padding:8px 6px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:40px">Qty</th><th style="padding:8px 18px 8px 4px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:90px">Amount</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${taxRow}<tr style="background:#1a365d;color:#fff"><td colspan="2" style="padding:12px 18px;font-weight:800;font-size:15px">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:15px">${totalFmt}</td></tr>${_tmDepRow}${_nteRow}</tfoot></table>${notesHtml}${_propPanelHtml}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Payment Terms</div>${_tmPayTerms}</div>${_customTermsBlock}</div>`;
   const bidId=_geiEditBidId;
   const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
   const proposalKey=`proposals/${_supaUser.id}/${bidId}_${token}.json`;
