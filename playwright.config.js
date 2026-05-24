@@ -16,25 +16,35 @@ module.exports = defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     viewport: { width: 390, height: 844 },
-    // Block external resources by default — each test adds route handlers
+    // bypassCSP so inline scripts in the app don't get blocked
     bypassCSP: true,
+    // All external routes are mocked per-test; no real network needed
+    offline: false,
   },
 
   projects: [
     {
       name: 'webkit',
-      use: { ...devices['iPhone 14'] },
+      use: {
+        ...devices['iPhone 14'],
+        // WebKit is the primary target (Safari engine)
+      },
     },
     {
       name: 'chromium',
-      use: { ...devices['Pixel 7'] },
+      use: {
+        ...devices['Pixel 7'],
+      },
     },
   ],
 
   webServer: {
+    // `serve` ships static files; -s enables SPA fallback (serve index.html for unknown routes)
     command: 'npx serve . -p 8899 -s --no-clipboard',
     port: 8899,
     reuseExistingServer: !process.env.CI,
     timeout: 30000,
+    stdout: 'ignore',
+    stderr: 'pipe',
   },
 });
