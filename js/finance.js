@@ -2125,7 +2125,7 @@ function renderJobsHistory(){
       const paid=getBidPaid(b.id);
       const balance=getBidBalance(b);
       const isPaidFull=balance<=0.01;
-      return '<div onclick="openBidHistoryDetail('+b.id+')" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
+      return '<div onclick="openBidHistoryDetail('+b.id+')" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(b.client_name||b.name||'bid')+'" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
         '<div style="flex:1;min-width:0">'+
           '<div style="font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(b.client_name||b.name||'Unknown')+'</div>'+
           '<div style="font-size:11px;color:var(--text3)">'+b.bid_date+(b.addr?' · '+b.addr:'')+'</div>'+

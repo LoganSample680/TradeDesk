@@ -1795,6 +1795,8 @@ async function sendGenericProposal(previewOnly){
   const bidId=_geiEditBidId;
   const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
   const proposalKey=`proposals/${_supaUser.id}/${bidId}_${token}.json`;
+  // Extract optional chaining out of object literal — Safari chokes on ?. inside { }
+  const _stripeEnabled=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
   const proposalData={
     id:bidId,token,clientName:v('gei-client'),businessName:S.bname||getBusinessName(),
     contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
@@ -1802,7 +1804,7 @@ async function sendGenericProposal(previewOnly){
     amount:total,deposit:_tmDepAmt,
     createdAt:new Date().toISOString(),status:'pending',
     notifyEmail:_supaUser.email,businessPhone:S.bphone||'',
-    stripeConnectEnabled:!!(_stripeConnectStatus?.charges_enabled),
+    stripeConnectEnabled:_stripeEnabled,
     trade_type:trade,
   };
   const _uploadRes=await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true}).catch(e=>({error:e}));
@@ -2146,7 +2148,7 @@ async function _sendIndProposal(){
     contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
     proposalHtml,clientAddr:c?.addr||'',amount:midPrice,deposit:Math.round(midPrice*0.25),
     createdAt:new Date().toISOString(),status:'pending',notifyEmail:_supaUser.email,
-    businessPhone:S.bphone||'',stripeConnectEnabled:!!(_stripeConnectStatus?.charges_enabled),
+    businessPhone:S.bphone||'',stripeConnectEnabled:_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false,
     trade_type:'painting',
   };
   showToast('Uploading proposal…','⏳');
