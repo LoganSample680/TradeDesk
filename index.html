@@ -1962,8 +1962,10 @@ body.dark .cal-cell.other{background:var(--cream)}
             </span>
           </div>
           <div class="summary-row" style="color:var(--text-3)"><span>Balance later</span><span id="byo-rail-balance">$0</span></div>
-          <button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">📨 Send pick-your-own proposal</button>
+          <button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">📨 Send proposal</button>
           <button class="btn btn-full" style="margin-top:8px" onclick="_byoPreviewClient()">👁 Preview as client</button>
+          <button class="btn btn-full" style="margin-top:8px;background:var(--bg2);color:var(--text2)" onclick="_byoDuplicateBid()">📋 Copy as Option B</button>
+          <button class="btn btn-full" style="margin-top:8px;background:var(--bg2);color:var(--text2)" onclick="_openComparisonPicker()">📊 Compare & Send</button>
         </div>
       </div>
     </div>
