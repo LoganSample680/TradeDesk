@@ -633,13 +633,14 @@ async function init(){
         '<div class="row"><span class="rl">Signed</span><span class="rv">'+signedDate+'</span></div>';
       show('pg-done');return;
     }
-    // Log view via storage marker — fires before any status/signed checks so it always records.
-    // Writes to proposals/{uid}/{bidId}_view.json — same folder as proposal JSONs, so anon
-    // bucket policy that allows sign/decline writes also covers this upsert.
+    // Log view via Edge Function — server-side write using service key, bypasses all RLS.
+    // Fire-and-forget; client never sees success/failure.
     if(_prop.contractorUserId&&_prop.id){
-      const _viewTs=new Date().toISOString();
-      const _viewKey='proposals/'+_prop.contractorUserId+'/'+String(_prop.id)+'_view.json';
-      _supa.storage.from('proposals').upload(_viewKey,JSON.stringify({viewedAt:_viewTs,bidId:String(_prop.id)}),{contentType:'application/json',upsert:true}).catch(()=>{});
+      fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
+        body:JSON.stringify({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id)})
+      }).catch(()=>{});
     }
     const _biz=_prop.businessName||'Your Contractor';
     document.title='Review & Sign — '+_biz;
