@@ -844,6 +844,7 @@ function renderTodayFeed(){
         '<div class="tf-icon">✏️</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(displayName)+'</div>'+
+          (b.type?'<div class="tf-sub" style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:1px">'+escHtml(b.type)+'</div>':'')+
           '<div class="tf-sub" style="color:var(--text3)">'+subLabel+'</div>'+
         '</div>'+
         '<div class="tf-acts">'+
