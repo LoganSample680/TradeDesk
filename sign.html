@@ -370,10 +370,9 @@ input[type=text]:focus{border-color:var(--denim)}
         <div id="epa-err" style="display:none;color:#A32D2D;font-size:12px;margin-top:6px;font-weight:600">Please confirm receipt of the EPA pamphlet before signing.</div>
       </div>
 
-      <!-- Notice of Cancellation — required by FTC Cooling Off Rule / state equivalents -->
-      <div id="cancel-notice-section" style="display:none;background:#F0F4FF;border:1.5px solid #93B4F0;border-radius:var(--r);padding:14px 16px;margin-bottom:14px">
-        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--blue-dk);margin-bottom:8px">📋 Notice of Cancellation</div>
-        <div id="cancel-notice-body" style="font-size:13px;color:var(--text);line-height:1.6"></div>
+      <!-- Notice of Cancellation — minimum required disclosure (FTC 16 CFR Part 429 / state equiv.) -->
+      <div id="cancel-notice-section" style="display:none;border-top:1px solid var(--border);padding-top:10px;margin-bottom:12px">
+        <div id="cancel-notice-body" style="font-size:11px;color:var(--text3);line-height:1.6"></div>
       </div>
 
       <!-- UETA checkbox -->
@@ -381,7 +380,7 @@ input[type=text]:focus{border-color:var(--denim)}
         <input type="checkbox" id="sig-ueta-ck" onchange="checkReady()">
         <div class="sig-checkbox-text">
           <div class="sig-checkbox-title">I agree to this electronic agreement</div>
-          <div class="sig-checkbox-body">By checking this box, I confirm I have read the Notice of Cancellation above, accept the total price, scope of work, and all terms above. This constitutes a binding electronic signature under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.). A deposit is due before work begins and before a start date is scheduled; remaining balance is due on completion.</div>
+          <div class="sig-checkbox-body">By checking this box, I confirm I have read and understood the cancellation notice above, accept the total price, scope of work, and all terms. This constitutes a binding electronic signature under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.). A deposit is due before work begins; remaining balance is due on completion.</div>
         </div>
       </label>
 
@@ -704,10 +703,7 @@ async function init(){
         const _cancelDeadline=new Date();_cancelDeadline.setDate(_cancelDeadline.getDate()+_cd);
         const _deadlineStr=_cancelDeadline.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
         _cancelNoticeBody.innerHTML=
-          '<p style="margin-bottom:8px">You may cancel this transaction, without any penalty or obligation, within <strong>'+_cd+' business days</strong> from the date you sign ('+_deadlineStr+' at midnight).</p>'+
-          '<p style="margin-bottom:8px">To cancel, send a written notice — by mail, email, or text — to <strong>'+escHtmlN(_bizName)+'</strong>'+((_bizPhone)?' at <strong>'+escHtmlN(_bizPhone)+'</strong>':'')+' before that deadline. You may also use the cancellation form below.</p>'+
-          '<p style="margin-bottom:8px">If you cancel: any deposit or payment will be refunded within 10 business days. No work will be performed.</p>'+
-          '<p style="font-size:11px;color:var(--text3)">Authority: '+escHtmlN(_cs)+'</p>';
+          '<strong>Right to cancel:</strong> You may cancel this contract within '+_cd+' business days of signing (deadline: '+_deadlineStr+'). To cancel, send written notice to '+escHtmlN(_bizName)+((_bizPhone)?' at '+escHtmlN(_bizPhone):'')+'. ('+escHtmlN(_cs)+')';
         if(_cancelNotice)_cancelNotice.style.display='block';
       }
     }
