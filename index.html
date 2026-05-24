@@ -19,6 +19,7 @@
 <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin defer onload="_initMapKit()"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+button{touch-action:manipulation}
 input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
 
 /* ── Design tokens ── */
@@ -166,7 +167,7 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 .met-s.up{color:var(--c-green)}.met-s.dn{color:var(--c-red)}
 
 /* ── Buttons ── */
-.btn{height:36px;padding:0 14px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);font-family:var(--font-ui);font-size:13px;font-weight:700;letter-spacing:-.1px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:transform .08s,box-shadow .12s,background .12s;white-space:nowrap}
+.btn{height:36px;padding:0 14px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);font-family:var(--font-ui);font-size:13px;font-weight:700;letter-spacing:-.1px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:transform .08s,box-shadow .12s,background .12s;white-space:nowrap;touch-action:manipulation}
 .btn:hover{background:var(--cream);border-color:var(--line-2)}
 .btn:active{transform:scale(.97)}
 .btn-p{background:var(--ink);color:#fff;border-color:var(--ink);box-shadow:0 1px 0 rgba(0,0,0,.18) inset,0 -1px 0 rgba(255,255,255,.06) inset,0 2px 6px rgba(27,22,18,.18)}
@@ -221,7 +222,7 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 .fg3{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}
 .f{display:flex;flex-direction:column;gap:5px}
 .f label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3)}
-input,select,textarea{font-family:var(--font-ui);font-size:14px;padding:10px 12px;border:1.5px solid var(--line-2);border-radius:var(--r);background:var(--bg-card);color:var(--text);width:100%;-webkit-appearance:none;transition:border-color .15s,box-shadow .15s}
+input,select,textarea{font-family:var(--font-ui);font-size:14px;padding:10px 12px;border:1.5px solid var(--line-2);border-radius:var(--r);background:var(--bg-card);color:var(--text);width:100%;-webkit-appearance:none;transition:border-color .15s,box-shadow .15s;touch-action:manipulation}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--denim);box-shadow:0 0 0 3px rgba(45,93,168,.16)}
 input[readonly],input:disabled{background:var(--cream);color:var(--text-3)}
 textarea{resize:none;min-height:52px;line-height:1.5}
