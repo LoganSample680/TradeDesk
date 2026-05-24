@@ -1013,6 +1013,7 @@ function openJobSheet(clientId){
   }
 
   // ── Subcontractors on this job ───────────────────────────────
+  const latestJob=allJobs.filter(j=>j.status!=='canceled').sort((a,b)=>b.start.localeCompare(a.start))[0];
   const subsJob=latestJob||allJobs.filter(j=>j.status!=='canceled').sort((a,b)=>b.start.localeCompare(a.start))[0];
   const subsJobId=subsJob?subsJob.id:null;
   const jobSubs=(subsJob&&subsJob.subs)||[];
@@ -1047,7 +1048,6 @@ function openJobSheet(clientId){
   }
 
   // ── Visit notes ──────────────────────────────────────────────
-  const latestJob=allJobs.filter(j=>j.status!=='canceled').sort((a,b)=>b.start.localeCompare(a.start))[0];
   const visitNotesJobId=latestJob?latestJob.id:null;
   const visitNotesVal=latestJob?(latestJob.visitNotes||''):'';
   let visitNotesHtml='';
