@@ -451,7 +451,7 @@ input[type=text]:focus{border-color:var(--denim)}
     <div class="pg-status">
       <div class="pg-status-icon">👋</div>
       <h2>Thanks for letting us know</h2>
-      <p>The contractor has been notified that you're not moving forward at this time. We hope to have the opportunity to work with you in the future.</p>
+      <p id="declined-msg">The contractor has been notified that you're not moving forward at this time. We hope to have the opportunity to work with you in the future.</p>
     </div>
   </div>
 
@@ -463,7 +463,7 @@ input[type=text]:focus{border-color:var(--denim)}
   <div style="background:var(--bg);border-radius:16px;padding:24px;width:100%;max-width:320px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.35)">
     <div style="font-size:36px;margin-bottom:12px">🤔</div>
     <div style="font-size:17px;font-weight:800;margin-bottom:8px;color:var(--ink)">Decline this proposal?</div>
-    <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:20px">This will notify the contractor that you're not moving forward. You can always reach out to them directly.</div>
+    <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:20px">This will notify <span class="decline-biz-name">the contractor</span> that you're not moving forward. You can always reach out to them directly.</div>
     <div style="display:flex;gap:10px">
       <button onclick="document.getElementById('decline-modal').style.display='none'" style="flex:1;padding:12px;border:1.5px solid var(--border2);background:var(--bg2);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">Go back</button>
       <button id="decline-confirm-btn" onclick="_confirmDecline()" style="flex:1;padding:12px;border:none;background:#A32D2D;color:#fff;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Decline</button>
@@ -629,6 +629,10 @@ async function init(){
     }
     const _biz=_prop.businessName||'Your Contractor';
     document.title='Review & Sign — '+_biz;
+    // Populate business name into decline UI
+    const declinedMsg=document.getElementById('declined-msg');
+    if(declinedMsg)declinedMsg.textContent=_biz+' has been notified that you\'re not moving forward at this time. We hope to have the opportunity to work with you in the future.';
+    document.querySelectorAll('.decline-biz-name').forEach(el=>{el.textContent=_biz;});
     // Topbar
     const tbName=document.querySelector('.topbar-name');if(tbName)tbName.textContent=_biz;
     if(_prop.logoData){const tbLogo=document.querySelector('.topbar-logo');if(tbLogo){tbLogo.innerHTML='<img src="'+_prop.logoData+'" style="height:26px;max-width:80px;object-fit:contain;border-radius:4px">';}}
@@ -954,10 +958,19 @@ async function _confirmDecline(){
   if(!key){const t=params2.get('t'),u=params2.get('u'),b=params2.get('b');if(t&&u&&b)key=`proposals/${u}/${b}_${t}.json`;}
   const ts=new Date().toISOString();
   try{
-    // Only update the proposal JSON — do NOT write to signed_proposals
-    // (that table is for signed bids; writing declined there makes the contractor app think it was signed)
+    // Update proposal JSON in storage
     const updated=Object.assign({},_prop,{status:'declined',declinedAt:ts});
     await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true});
+    // Write to signed_proposals with payment_status:'declined' so the contractor app
+    // sees the decline and marks the bid as Closed Lost (not Closed Won)
+    await _supa.from('signed_proposals').upsert({
+      bid_id:String(_prop.id),contractor_user_id:_prop.contractorUserId,
+      client_name:_prop.clientName,client_signed_name:_prop.clientName||'Client',
+      amount:_prop.amount,deposit:_prop.deposit,
+      payment_method:'declined',payment_status:'declined',
+      signed_at:ts,notify_email:_prop.notifyEmail,storage_key:key,
+      portfolio_accepted:false,
+    });
   }catch(e){console.error('[decline]',e);}
   const modal=document.getElementById('decline-modal');
   if(modal)modal.style.display='none';
