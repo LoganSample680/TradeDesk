@@ -801,8 +801,19 @@ function openPayPanel(bidId, autoType){
         '<label id="mpay-date-label">Date received</label>'+
         '<input type="date" id="mpay-date" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit">'+
       '</div>'+
+      '<div id="mpay-method-row" class="f" style="margin-bottom:10px">'+
+        '<label>Payment method</label>'+
+        '<select id="mpay-method" onchange="_mpayMethodChange()" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit">'+
+          '<option value="Check">Check</option>'+
+          '<option value="Cash">Cash</option>'+
+          '<option value="Zelle">Zelle</option>'+
+          '<option value="Venmo">Venmo</option>'+
+          '<option value="Card">Card</option>'+
+          '<option value="Other">Other</option>'+
+        '</select>'+
+      '</div>'+
       '<div class="f" style="margin-bottom:14px">'+
-        '<label>Check # / reference <span style="font-weight:400;color:var(--text3)">(optional)</span></label>'+
+        '<label id="mpay-ref-label">Check # <span style="font-weight:400;color:var(--text3)">(optional)</span></label>'+
         '<input id="mpay-ref" placeholder="Optional" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit">'+
       '</div>'+
       '<div id="mpay-err" style="display:none;font-size:12px;color:#A32D2D;background:#FEE8E8;border-radius:var(--r);padding:8px 10px;margin-bottom:8px"></div>'+
@@ -907,6 +918,7 @@ function selectPayType(btn, bidId){
   const hint=document.getElementById('mpay-max-hint');
   const submitBtn=document.getElementById('mpay-submit-btn');
   const dateLabel=document.getElementById('mpay-date-label');
+  const mRow=document.getElementById('mpay-method-row');
   if(ptype==='deposit'){
     const depositAmt=Math.min(deposit25,balance);
     if(amtEl)amtEl.value=depositAmt.toFixed(2);
@@ -915,6 +927,7 @@ function selectPayType(btn, bidId){
     if(amtEl){amtEl.readOnly=true;amtEl.style.background='var(--bg2)';amtEl.style.color='var(--text3)';}
     if(submitBtn){submitBtn.textContent='Record payment';submitBtn.style.background='var(--green)';}
     if(dateLabel)dateLabel.textContent='Date received';
+    if(mRow)mRow.style.display='';
   } else if(ptype==='final'){
     if(amtEl)amtEl.value=balance.toFixed(2);
     if(amtRow)amtRow.style.display='block';
@@ -922,11 +935,13 @@ function selectPayType(btn, bidId){
     if(amtEl){amtEl.readOnly=true;amtEl.style.background='var(--bg2)';amtEl.style.color='var(--text3)';}
     if(submitBtn){submitBtn.textContent='Record payment';submitBtn.style.background='var(--green)';}
     if(dateLabel)dateLabel.textContent='Date received';
+    if(mRow)mRow.style.display='';
   } else if(ptype==='stripe'){
     if(amtRow)amtRow.style.display='none';
     if(hint)hint.textContent='';
     if(submitBtn){submitBtn.textContent='Send Stripe payment link →';submitBtn.style.background='#635BFF';}
     if(dateLabel)dateLabel.textContent='';
+    const mRow=document.getElementById('mpay-method-row');if(mRow)mRow.style.display='none';
   } else if(ptype==='refund'){
     const rawBidPaid=getBidPaid(bidId);
     const rawBidTotal=(bids.find(b=>b.id==bidId)||{}).amount||0;
@@ -936,6 +951,7 @@ function selectPayType(btn, bidId){
     if(hint)hint.textContent='refund amount';
     if(submitBtn){submitBtn.textContent='Issue refund';submitBtn.style.background='#A32D2D';}
     if(dateLabel)dateLabel.textContent='Date issued';
+    if(mRow)mRow.style.display='';
     setTimeout(()=>amtEl&&amtEl.focus(),50);
   } else {
     if(amtEl){amtEl.value='';amtEl.readOnly=false;amtEl.style.background='';amtEl.style.color='';}
@@ -943,10 +959,20 @@ function selectPayType(btn, bidId){
     if(hint)hint.textContent='max: '+fmt(balance);
     if(submitBtn){submitBtn.textContent='Record payment';submitBtn.style.background='var(--green)';}
     if(dateLabel)dateLabel.textContent='Date received';
+    if(mRow)mRow.style.display='';
     setTimeout(()=>amtEl&&amtEl.focus(),50);
   }
 }
 
+function _mpayMethodChange(){
+  const m=document.getElementById('mpay-method')?.value||'';
+  const lbl=document.getElementById('mpay-ref-label');
+  if(!lbl)return;
+  const isCheck=m==='Check';
+  lbl.innerHTML=(isCheck?'Check #':'Reference')+' <span style="font-weight:400;color:var(--text3)">(optional)</span>';
+  const ref=document.getElementById('mpay-ref');
+  if(ref)ref.placeholder=isCheck?'e.g. 1042':'Optional';
+}
 function _mpayErr(msg){
   const e=document.getElementById('mpay-err');
   if(e){e.textContent=msg;e.style.display='block';}
@@ -980,8 +1006,9 @@ function logPayment(){
   if(!activePayBidId)return;
   const bid=bids.find(b=>b.id===activePayBidId);if(!bid)return;
   const pref=v('mpay-ref')||v('pay-ref');
+  const pmethod=v('mpay-method')||v('pay-method')||'';
   const storedAmount=isRefund?-a:a;
-  payments.push({id:Date.now(),bid_id:activePayBidId,client_id:bid.client_id,client_name:bid.client_name,date:pdate,type:type,amount:storedAmount,method:'',ref:pref});
+  payments.push({id:Date.now(),bid_id:activePayBidId,client_id:bid.client_id,client_name:bid.client_name,date:pdate,type:type,amount:storedAmount,method:pmethod,ref:pref});
   const _savedBidId=activePayBidId;
   saveAll();emitEvent('payment_received',bid.client_id,{bid_id:activePayBidId,amount:storedAmount});closePayPanel();renderCDBids();renderCDTimeline();
 
