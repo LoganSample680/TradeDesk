@@ -231,11 +231,17 @@ function _supabaseShim() {
           from: (bucket) => ({
             upload:   (path, data, opts) => noopResult({ path }),
             download: (path) => {
-              // Return mock hub data for client-hub paths when window.__mockHubData is set
+              // Resolve mock JSON: hub data → proposal override → default stub
+              var mockJson;
               if (path && path.includes('client-hub') && typeof window.__mockHubData !== 'undefined') {
-                return noopResult(new Blob([JSON.stringify(window.__mockHubData)], {type:'application/json'}));
+                mockJson = JSON.stringify(window.__mockHubData);
+              } else if (typeof window.__mockProposalData !== 'undefined') {
+                mockJson = JSON.stringify(window.__mockProposalData);
+              } else {
+                mockJson = JSON.stringify({id:1,status:'pending',businessName:'Test Biz',clientName:'Test Client',amount:1000,deposit:250,estDays:2,createdAt:new Date().toISOString(),signingToken:'tok',proposalHtml:'<p>Test proposal</p>',stripeConnectEnabled:false});
               }
-              return noopResult(new Blob([JSON.stringify({id:1,status:'pending',businessName:'Test Biz',clientName:'Test Client',amount:1000,deposit:250,estDays:2,createdAt:new Date().toISOString(),signingToken:'tok',proposalHtml:'<p>Test proposal</p>',stripeConnectEnabled:false})], {type:'application/json'}));
+              // Return a plain Blob-like object — avoids Blob.text() edge cases in WebKit
+              return noopResult({text:function(){return Promise.resolve(mockJson);},type:'application/json',size:mockJson.length});
             },
             getPublicUrl: (path) => ({ data: { publicUrl: 'data:image/png;base64,iVBORw0KGgo=' } }),
             remove:   (paths) => noopResult(null),
@@ -979,16 +985,22 @@ test.describe('sign.html — proposal signing page', () => {
     });
     page = await ctx.newPage();
 
-    // Extra route to detect log-proposal-view Edge Function call
-    await page.route('**/functions/v1/log-proposal-view', async route => {
-      logProposalViewCalled = true;
-      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
-    });
+    // Inject MOCK_PROPOSAL so the shim's download() returns the correct proposal data.
+    // addInitScript runs before any page script, including the supabase CDN load.
+    await page.addInitScript(data => { window.__mockProposalData = data; }, MOCK_PROPOSAL);
 
+    // Register mockAllExternal FIRST (catch-all **/* registered first).
     await mockAllExternal(page, {
       alreadySigned: false,
       proposalData: MOCK_PROPOSAL,
       bidId: FAKE_BID_ID_1,
+    });
+
+    // Specific log-proposal-view route registered LAST — Playwright uses LIFO so this
+    // takes priority over the catch-all above, allowing us to track whether it was called.
+    await page.route('**/functions/v1/log-proposal-view', async route => {
+      logProposalViewCalled = true;
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
     });
   });
 
@@ -1100,6 +1112,9 @@ test.describe('sign.html — proposal signing page', () => {
     const signedPage = await ctx.newPage();
     signedPage._consoleErrors = [];
 
+    // Inject MOCK_PROPOSAL so the shim download() returns the right data
+    await signedPage.addInitScript(data => { window.__mockProposalData = data; }, MOCK_PROPOSAL);
+
     await mockAllExternal(signedPage, {
       alreadySigned: true,
       proposalData: MOCK_PROPOSAL,
@@ -1112,16 +1127,17 @@ test.describe('sign.html — proposal signing page', () => {
     );
     await signedPage.waitForTimeout(2500);
 
-    // Check if page either shows done state or pg-sign (both are valid)
-    const doneEl = await signedPage.evaluate(() => document.getElementById('pg-done'));
     const doneVisible = await signedPage.evaluate(() => {
       const pg = document.getElementById('pg-done');
       return pg ? pg.style.display === 'block' : false;
     });
 
-    // If done page is shown, verify it has confirmation info
+    // If done page is shown, verify it has confirmation info (evaluate — never hangs)
     if (doneVisible) {
-      const doneTitle = await signedPage.locator('#done-title').textContent();
+      const doneTitle = await signedPage.evaluate(() => {
+        const el = document.getElementById('done-title');
+        return el ? (el.textContent || '') : '';
+      });
       expect(doneTitle.length).toBeGreaterThan(0);
     }
 
@@ -1287,13 +1303,8 @@ test.describe('client.html — project hub', () => {
   });
 
   test('client.html — zero console errors on load', async () => {
-    const errs = (page._consoleErrors || []).filter(e =>
-      !e.includes('favicon') &&
-      !e.includes('net::ERR') &&
-      !e.includes('Failed to load resource') &&
-      !e.includes('supabase')
-    );
-    expect(errs, `client.html errors: ${errs.join('; ')}`).toHaveLength(0);
+    // Use the same filter as assertNoErrors() + supabase noise
+    assertNoErrors(page, 'client.html');
   });
 });
 
@@ -1408,6 +1419,14 @@ test.describe('Edge Function mock — log-proposal-view', () => {
   test('log-proposal-view is called and returns ok:true', async ({ page }) => {
     let called = false;
 
+    // Inject MOCK_PROPOSAL so shim download() returns data with contractorUserId
+    // (sign.html only fires log-proposal-view when contractorUserId is present)
+    await page.addInitScript(data => { window.__mockProposalData = data; }, MOCK_PROPOSAL);
+
+    // mockAllExternal FIRST (catch-all registered first in LIFO stack)
+    await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL });
+
+    // Specific route registered LAST → takes priority over catch-all (LIFO)
     await page.route('**/functions/v1/log-proposal-view', async route => {
       called = true;
       const body = JSON.parse(route.request().postData() || '{}');
@@ -1416,8 +1435,6 @@ test.describe('Edge Function mock — log-proposal-view', () => {
       expect(body).toHaveProperty('bidId');
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
     });
-
-    await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL });
 
     await page.goto(
       `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
