@@ -106,10 +106,13 @@ async function mockAllExternal(page, opts = {}) {
       });
     }
 
-    // ── Fonts / external assets — empty OK ──────────────────────────────────
+    // ── Fonts — must return text/css or WebKit strict mode rejects them ────
+    if (url.includes('fonts.googleapis.com') || url.includes('fonts.gstatic.com')) {
+      return route.fulfill({ status: 200, contentType: 'text/css', body: '' });
+    }
+
+    // ── Other blocked externals — empty plain response ───────────────────────
     if (
-      url.includes('fonts.googleapis.com') ||
-      url.includes('fonts.gstatic.com') ||
       url.includes('favicon') ||
       url.includes('cdn.apple-mapkit') ||
       url.includes('apple-mapkit') ||
@@ -1284,7 +1287,10 @@ test.describe('client.html — project hub', () => {
       if (url.includes('cdn.jsdelivr.net') && url.includes('supabase')) {
         return route.fulfill({ status: 200, contentType: 'application/javascript', body: _supabaseShim() });
       }
-      if (url.includes('fonts.googleapis.com') || url.includes('fonts.gstatic.com') || url.includes('favicon') || url.includes('js.stripe.com')) {
+      if (url.includes('fonts.googleapis.com') || url.includes('fonts.gstatic.com')) {
+        return route.fulfill({ status: 200, contentType: 'text/css', body: '' });
+      }
+      if (url.includes('favicon') || url.includes('js.stripe.com')) {
         return route.fulfill({ status: 200, contentType: 'text/plain', body: '' });
       }
       // Hub data endpoint — client.html fetches a JSON blob from storage via Supabase SDK
@@ -4236,9 +4242,12 @@ test.describe('intake.html — lead capture form', () => {
         return route.fulfill({ status: 200, contentType: 'application/javascript', body: _supabaseShimIntake() });
       }
 
-      // Fonts / externals
-      if (url.includes('fonts.googleapis') || url.includes('fonts.gstatic') ||
-          url.includes('favicon') || url.includes('js.stripe') || url.includes('apple-mapkit')) {
+      // Fonts — text/css required or WebKit strict mode rejects the stylesheet
+      if (url.includes('fonts.googleapis') || url.includes('fonts.gstatic')) {
+        return route.fulfill({ status: 200, contentType: 'text/css', body: '' });
+      }
+      // Other blocked externals
+      if (url.includes('favicon') || url.includes('js.stripe') || url.includes('apple-mapkit')) {
         return route.fulfill({ status: 200, contentType: 'text/plain', body: '' });
       }
 

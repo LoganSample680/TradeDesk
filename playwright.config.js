@@ -1,24 +1,48 @@
 // @ts-check
 const { defineConfig, devices } = require('@playwright/test');
 
+const isCI = !!process.env.CI;
+
 module.exports = defineConfig({
   testDir: './tests',
   fullyParallel: false,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  forbidOnly: isCI,
+
+  // retries: 2 in CI means:
+  //   - 3 total attempts per test
+  //   - Passes on retry → marked FLAKY in report (not a hard failure)
+  //   - Fails all 3 → hard FAILED
+  // This surfaces flaky tests without blocking the whole suite.
+  retries: isCI ? 2 : 0,
+
   workers: 1,
-  reporter: [['list'], ['html', { open: 'never' }]],
+
+  // In CI: github reporter annotates failures inline on the PR diff.
+  // html report is always uploaded as an artifact so failures AND flaky
+  // tests are browsable after every run.
+  reporter: isCI
+    ? [['github'], ['html', { open: 'never', outputFolder: 'playwright-report' }], ['list']]
+    : [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
+
   timeout: 60000,
   expect: { timeout: 10000 },
 
   use: {
     baseURL: 'http://localhost:8899',
+
+    // Capture a trace on first retry — opens as a zip in the Playwright
+    // report and lets you step through every network request, DOM state,
+    // and screenshot at the moment of failure.
     trace: 'on-first-retry',
+
+    // Screenshot on failure for quick visual triage.
     screenshot: 'only-on-failure',
+
+    // Video on first retry — pairs with trace for flaky tests.
+    video: 'on-first-retry',
+
     viewport: { width: 390, height: 844 },
-    // bypassCSP so inline scripts in the app don't get blocked
     bypassCSP: true,
-    // All external routes are mocked per-test; no real network needed
     offline: false,
   },
 
@@ -27,7 +51,6 @@ module.exports = defineConfig({
       name: 'webkit',
       use: {
         ...devices['iPhone 14'],
-        // WebKit is the primary target (Safari engine)
       },
     },
     {
@@ -39,10 +62,9 @@ module.exports = defineConfig({
   ],
 
   webServer: {
-    // `serve` ships static files; -s enables SPA fallback (serve index.html for unknown routes)
     command: 'npx serve . -p 8899 -s --no-clipboard',
     port: 8899,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !isCI,
     timeout: 30000,
     stdout: 'ignore',
     stderr: 'pipe',
