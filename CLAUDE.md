@@ -70,13 +70,28 @@ direct push.
 
 The test suite is the quality gate. **Every new feature gets E2E tests.**
 
-New feature checklist:
-1. Write the feature code on the feature branch
-2. Add tests: happy path + edge cases + `assertNoErrors()` check
-3. Run locally first: `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npx playwright test --project=chromium`
-4. Push → CI runs full WebKit + Chromium suite
-5. Fix any failures before merging to main
+### Tests ship in the same commit as the feature — always
 
-**Console error policy:** Any `console.error` a new feature introduces is
-a test failure. `assertNoErrors()` enforces this across every describe
-block. New code must not introduce new console errors.
+New feature code and its E2E tests are written together and committed
+together. CI sees both at once, so the new tests cover the new code and
+the suite passes. This means:
+
+- **New features are never blocked by CI** — because their tests arrive
+  with them, not after.
+- **CI only fails if something is actually broken** — a real regression,
+  a console error, or a test written incorrectly.
+- **Tests are proof of correctness, not a fence around the code.**
+
+### New feature checklist
+1. Write the feature code on the feature branch
+2. Write E2E tests for it in the **same commit**: happy path + edge cases
+   + an `assertNoErrors()` call to confirm zero console errors
+3. Run locally first: `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npx playwright test --project=chromium`
+4. Push → CI runs the full WebKit + Chromium suite automatically
+5. If CI fails → fix on the feature branch, push again, CI reruns
+6. When CI is green → merge via PR
+
+### Console error policy
+Any `console.error` a new feature introduces is a test failure.
+`assertNoErrors()` enforces this in every describe block. New code must
+not introduce new console errors — if it does, fix the code, not the test.
