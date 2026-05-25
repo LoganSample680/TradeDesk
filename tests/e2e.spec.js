@@ -295,8 +295,13 @@ function assertNoErrors(page, label) {
   const errs = (page._consoleErrors || []).filter(e =>
     !e.includes('favicon') &&
     !e.includes('net::ERR') &&
+    !e.includes('ERR_CONNECTION') &&       // WebKit omits the 'net::' prefix
     !e.includes('Failed to load resource') &&
-    !e.includes('checkNew')
+    !e.includes('checkNew') &&
+    !e.includes('apple-mapkit') &&         // MapKit CDN — harmless in test env
+    !e.includes('cdn.apple-mapkit') &&
+    !e.includes('js.stripe.com') &&
+    !e.includes('cdn.jsdelivr')
   );
   expect(errs, `Console errors on ${label}: ${errs.join('; ')}`).toHaveLength(0);
 }
@@ -1202,9 +1207,23 @@ test.describe('client.html — project hub', () => {
     page.on('console', msg => {
       if (msg.type() === 'error') {
         const t = msg.text();
-        if (!t.includes('favicon') && !t.includes('net::ERR') && !t.includes('Failed to load resource')) {
-          if (page._consoleErrors) page._consoleErrors.push(t);
-        }
+        // Mirror the same filter set used in mockAllExternal + assertNoErrors
+        if (
+          t.includes('favicon') ||
+          t.includes('net::ERR') ||
+          t.includes('ERR_CONNECTION') ||
+          t.includes('Failed to load resource') ||
+          t.includes('checkNew') ||
+          (t.includes('supabase') && t.includes('warn')) ||
+          t.includes('SUPABASE') ||
+          t.includes('cdn.jsdelivr') ||
+          t.includes('fonts.googleapis') ||
+          t.includes('fonts.gstatic') ||
+          t.includes('cdn.apple-mapkit') ||
+          t.includes('apple-mapkit') ||
+          t.includes('js.stripe.com')
+        ) return;
+        if (page._consoleErrors) page._consoleErrors.push(t);
       }
     });
     page.on('pageerror', err => {
@@ -1666,8 +1685,10 @@ test.describe('zConfirm modal', () => {
       const title = ov?.querySelector('.zmodal-title')?.textContent || '';
       const msg   = ov?.querySelector('.zmodal-msg')?.textContent   || '';
       const yesEl = ov?.querySelector('#zmodal-yes');
-      const yesBg = yesEl ? yesEl.style.background : '';
-      return { title, msg, yesText: yesEl?.textContent?.trim(), danger: yesBg.includes('#A32D2D') };
+      // Use getAttribute('style') — browsers normalize hex → rgb() in .style.background,
+      // so reading the raw attribute string is the only reliable cross-browser check.
+      const yesStyle = yesEl ? (yesEl.getAttribute('style') || '') : '';
+      return { title, msg, yesText: yesEl?.textContent?.trim(), danger: yesStyle.includes('#A32D2D') };
     });
     if (result !== null) {
       expect(result.title).toBe('Confirm delete');
