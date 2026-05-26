@@ -23,7 +23,7 @@ begin
     where tablename = 'push_subscriptions' and policyname = 'owner'
   ) then
     execute 'create policy "owner" on push_subscriptions
-      using (auth.uid() = user_id)
-      with check (auth.uid() = user_id)';
+      using (auth.uid()::text = user_id::text)
+      with check (auth.uid()::text = user_id::text)';
   end if;
 end $$;
