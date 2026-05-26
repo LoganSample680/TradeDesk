@@ -287,7 +287,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     assertNoErrors(page, 'different user opens sign.html');
   });
 
-  test('dashboard shows "Client opened" badge when client_opened_at is set', async ({ page }) => {
+  test('dashboard shows "Proposal opened" badge when client_opened_at is set', async ({ page }) => {
     await mockAllExternal(page);
     await page.goto('/');
     await waitForAppBoot(page);
@@ -327,9 +327,9 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     await page.waitForTimeout(300);
 
     const dashText = await page.textContent('#pg-dash');
-    // Should show client opened badge, NOT the generic "Opened" badge
-    expect(dashText).toContain('Client opened');
-    assertNoErrors(page, 'dashboard client opened badge');
+    // client_opened_at (sign.html) renders as "Proposal opened", not "Client opened"
+    expect(dashText).toContain('Proposal opened');
+    assertNoErrors(page, 'dashboard proposal opened badge');
   });
 
   // ── 3. Hub open → tracked per bid ───────────────────────────────────────────
