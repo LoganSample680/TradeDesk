@@ -702,6 +702,7 @@ function _commitProposalSent(){
 function sendProposalViaSms(){
   const d=_proposalShareData();
   if(!d.url){zAlert('Generate the proposal link first.',{title:'No link yet'});return;}
+  if(!d.cphone){zAlert('No phone number on file for this client. Add one in Clients first.',{title:'No client phone'});return;}
   const firstName=d.cname.split(/[\s,&]+/)[0];
   const isPortfolioOn=document.getElementById('portfolio-toggle')?.checked||false;
   const ownerName=getOwnerName()||d.bname;
