@@ -577,7 +577,18 @@ async function init(){
       switchView(_VIEWS.includes(_hv)?_hv:'overview');
     }
     showState('hub');
-    fetch(SUPA_URL+'/rest/v1/proposal_views',{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Prefer':'return=minimal'},body:JSON.stringify({contractor_user_id:u,client_id:c,user_agent:(navigator.userAgent||'').slice(0,250)})}).catch(()=>{});
+    // Log a hub view for each pending proposal visible in this hub.
+    // Uses the same Edge Function as sign.html so client_opened_at is set
+    // correctly and the contractor sees "Client opened" on the dashboard.
+    // (The previous REST POST had no bid_id and sent an integer client_id
+    //  to a uuid column — both were silently dropped by Postgres.)
+    (_hub&&_hub.bids||[]).filter(b=>b.id&&b.signHubUrl).forEach(b=>{
+      fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
+        body:JSON.stringify({contractorUserId:u,bidId:String(b.id),viewerType:'client'})
+      }).catch(()=>{});
+    });
     const _paidParam=p.get('paid');
     if(_paidParam){
       const bidId=parseInt(_paidParam);
@@ -835,7 +846,7 @@ function renderOverview(){
   const job0=activeJobs[0]||h.jobs[0];
   if(job0&&job0.progress!=null&&job0.progress!==undefined) pct=Math.round(Math.min(100,Math.max(0,job0.progress)));
   else if(job0&&job0.days_complete!=null&&job0.days_total) pct=Math.round(Math.min(100,job0.days_complete/job0.days_total*100));
-  const firstName=(h.clientName||'').split(' ')[0]||h.clientName||'';
+  const firstName=(h.clientName||'').trim();
   // PR4: Approvals data (seed if undefined)
   const approvals=_hub.approvals||[
     {type:'color',id:'c1',label:'Exterior color choice',swatches:[
