@@ -11,7 +11,7 @@ on:
     branches: [main]
 
 # Cancel any in-progress run for the same branch/PR when a new commit is
-# pushed. Prevents three 10-minute jobs stacking up when you push quickly.
+# pushed. Prevents stale jobs stacking up while you iterate.
 concurrency:
   group: e2e-${{ github.ref }}
   cancel-in-progress: true
@@ -19,12 +19,12 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     strategy:
-      fail-fast: false   # let both shards finish so we see ALL failures
+      fail-fast: false   # let all shards finish so we see ALL failures
       matrix:
-        shard: [1, 2]    # 2 shards run in parallel — each handles half the tests
+        shard: [1, 2, 3, 4]   # 4 shards run in parallel — each handles 1/4 of tests
 
     steps:
       - name: Checkout
@@ -43,8 +43,8 @@ jobs:
       - name: Install Playwright browsers (WebKit + Chromium)
         run: npx playwright install --with-deps webkit chromium
 
-      - name: Run Playwright tests (shard ${{ matrix.shard }}/2)
-        run: npx playwright test --shard=${{ matrix.shard }}/2
+      - name: Run Playwright tests (shard ${{ matrix.shard }}/4)
+        run: npx playwright test --shard=${{ matrix.shard }}/4
         env:
           CI: true
 

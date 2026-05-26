@@ -18,10 +18,13 @@ module.exports = defineConfig({
   // This surfaces flaky tests without blocking the whole suite.
   retries: isCI ? 2 : 0,
 
-  // CI: 2 workers to saturate both vCPUs on the GitHub Actions runner.
-  // Combined with 2-shard matrix in test.yml this gives 4 parallel workers
-  // across 2 jobs → ~4x faster than the original 1 worker / no sharding.
-  workers: isCI ? 2 : 1,
+  // CI: 4 workers — Playwright tests are I/O-bound (waiting for browser events,
+  // not burning CPU), so 4 workers run efficiently on a 2-vCPU GitHub Actions
+  // runner. With 2 browser projects (webkit + chromium), this gives 2 workers
+  // per browser instead of 1, halving per-browser time within each shard.
+  // Combined with the 4-shard matrix in test.yml the effective parallelism is
+  // 4 shards × 4 workers = 16 streams → target ~1 min wall time.
+  workers: isCI ? 4 : 1,
 
   // In CI: github reporter annotates failures inline on the PR diff.
   // html report is always uploaded as an artifact so failures AND flaky
