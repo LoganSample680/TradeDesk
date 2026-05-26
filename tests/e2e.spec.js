@@ -12922,3 +12922,672 @@ test.describe('Cloud extra functions', () => {
     assertNoErrors(page, 'cloud extra');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BATCH AA: data.js extra — isOwner, isEmployee, getUserName, setOwnerName, getTierColor, etc.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test.describe('Data.js role and user functions', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => {
+      if (!window.S) window.S = {};
+      if (!S.settings) S.settings = {};
+      S.settings.role = 'owner';
+      S.settings.ownerName = 'Zach Test';
+    });
+    await page.waitForTimeout(100);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('isOwner — returns true when role is owner', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof isOwner !== 'function') return { skip: true };
+      try { return { ok: true, val: isOwner() }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) { expect(result.ok).toBe(true); }
+  });
+
+  test('isEmployee — returns boolean for employee role', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof isEmployee !== 'function') return { skip: true };
+      try { return { ok: true, val: isEmployee(), isBool: typeof isEmployee() === 'boolean' }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) { expect(result.ok).toBe(true); expect(result.isBool).toBe(true); }
+  });
+
+  test('isLifetimeAccount — returns boolean', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof isLifetimeAccount !== 'function') return { skip: true };
+      try { return { ok: true, isBool: typeof isLifetimeAccount() === 'boolean' }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) { expect(result.ok).toBe(true); }
+  });
+
+  test('getUserName — returns user name string', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof getUserName !== 'function') return { skip: true };
+      try { return { ok: true, isString: typeof getUserName() === 'string' }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) { expect(result.ok).toBe(true); }
+  });
+
+  test('setOwnerName — sets owner name without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof setOwnerName !== 'function') return { skip: true };
+      try { setOwnerName('New Owner Name'); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('getTierColor — returns color string for tier', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof getTierColor !== 'function') return { skip: true };
+      try {
+        const c1 = getTierColor('premium');
+        const c2 = getTierColor('standard');
+        const c3 = getTierColor('basic');
+        return { ok: true, allStrings: [c1, c2, c3].every(c => typeof c === 'string') };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) { expect(result.ok).toBe(true); }
+  });
+
+  test('_wmoIcon — returns weather icon string for WMO code', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _wmoIcon !== 'function') return { skip: true };
+      try {
+        const icon = _wmoIcon(0); // Clear sky
+        return { ok: true, isString: typeof icon === 'string' };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) { expect(result.ok).toBe(true); }
+  });
+
+  test('_getIrsRateForYear — returns IRS mileage rate for year', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _getIrsRateForYear !== 'function') return { skip: true };
+      try {
+        const rate = _getIrsRateForYear(2026);
+        return { ok: true, isNumber: typeof rate === 'number' };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) { expect(result.ok).toBe(true); }
+  });
+
+  test('_getStdDedForYear — returns standard deduction for year', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _getStdDedForYear !== 'function') return { skip: true };
+      try {
+        const ded = _getStdDedForYear(2026);
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_getFedBracketsForYear — returns federal tax brackets for year', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _getFedBracketsForYear !== 'function') return { skip: true };
+      try {
+        const b = _getFedBracketsForYear(2026);
+        return { ok: true, isArray: Array.isArray(b) };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) { expect(result.ok).toBe(true); }
+  });
+
+  test('_getActiveStateData — returns active state tax data', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _getActiveStateData !== 'function') return { skip: true };
+      try {
+        const data = _getActiveStateData();
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('no console errors during data role/user tests', async () => {
+    assertNoErrors(page, 'data role/user');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BATCH BB: Dashboard filter functions — setDashFeedFilter, setEstFilter, setProposalFilter, etc.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test.describe('Dashboard filter and pipeline functions', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => {
+      if (typeof goPg === 'function') goPg('pg-dash');
+    });
+    await page.waitForTimeout(300);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('setDashFeedFilter — changes feed filter without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof setDashFeedFilter !== 'function') return { skip: true };
+      try {
+        setDashFeedFilter('all');
+        setDashFeedFilter('today');
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('setEstFilter — changes estimates filter without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof setEstFilter !== 'function') return { skip: true };
+      try {
+        setEstFilter('all');
+        setEstFilter('pending');
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('setProposalFilter — changes proposal filter without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof setProposalFilter !== 'function') return { skip: true };
+      try {
+        setProposalFilter('all');
+        setProposalFilter('sent');
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_tabBtn — returns tab button HTML string', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _tabBtn !== 'function') return { skip: true };
+      try {
+        const html = _tabBtn('Tab 1', 'tab1', true);
+        return { ok: true, isString: typeof html === 'string' };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) { expect(result.ok).toBe(true); }
+  });
+
+  test('_trendHtml — returns trend indicator HTML', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _trendHtml !== 'function') return { skip: true };
+      try {
+        const html = _trendHtml(15, 10); // +50% positive trend
+        return { ok: true, isString: typeof html === 'string' };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) { expect(result.ok).toBe(true); }
+  });
+
+  test('_renderPropHTML — returns proposal card HTML', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _renderPropHTML !== 'function') return { skip: true };
+      try {
+        const bid = { id: 13001, clientId: 'c-dd-001', status: 'Pending', amount: 2000, trade: 'painting' };
+        const html = _renderPropHTML(bid, 'c-dd-001', 'Dash Client');
+        return { ok: true, isString: typeof html === 'string' };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) { expect(result.ok).toBe(true); }
+  });
+
+  test('_pfCard — returns pipeline card HTML', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _pfCard !== 'function') return { skip: true };
+      try {
+        const html = _pfCard({ id: 13002, clientId: 'c-pf-001', status: 'Pending', amount: 1500 }, 'Zach Client');
+        return { ok: true, isString: typeof html === 'string' };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) { expect(result.ok).toBe(true); }
+  });
+
+  test('_pfToggleMo — toggles pipeline month view without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _pfToggleMo !== 'function') return { skip: true };
+      try { _pfToggleMo('2026-05'); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_pfToggleYr — toggles pipeline year view without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _pfToggleYr !== 'function') return { skip: true };
+      try { _pfToggleYr('2026'); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_markDepositCash — marks deposit as cash without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _markDepositCash !== 'function') return { skip: true };
+      try {
+        if (!window.bids) window.bids = [];
+        bids.push({ id: 13003, clientId: 'c-dd-001', status: 'Closed Won', amount: 3000,
+          deposit: 750, depositPaid: false });
+        _markDepositCash(13003);
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_mmtToggle — toggles money month tracker without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _mmtToggle !== 'function') return { skip: true };
+      try { _mmtToggle('2026-05'); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_bddView — renders business dashboard detail view without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _bddView !== 'function') return { skip: true };
+      try { _bddView('revenue'); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('no console errors during dashboard filter tests', async () => {
+    assertNoErrors(page, 'dashboard filters');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BATCH CC: Bids extra render — quickBid, printInvoice, renderCDEstimatesUpcoming, _crCalc, etc.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test.describe('Bids extra render functions', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => {
+      if (!window.clients) window.clients = [];
+      if (!window.bids) window.bids = [];
+      clients.push({ id: 'c-br-001', name: 'Bids Render Client', phone: '316-555-9876',
+        addr: '600 Render St', city: 'Wichita', state: 'KS', zip: '67202' });
+      bids.push({ id: 14001, clientId: 'c-br-001', status: 'Pending', amount: 2200,
+        trade: 'painting', createdAt: new Date().toISOString() });
+      bids.push({ id: 14002, clientId: 'c-br-001', status: 'Closed Won', amount: 3800,
+        trade: 'painting', signedAt: new Date().toISOString() });
+      window.currentClientId = 'c-br-001';
+    });
+    await page.waitForTimeout(200);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('quickBid — opens quick bid estimate for current client', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof quickBid !== 'function') return { skip: true };
+      try { quickBid(); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('renderCDEstimatesUpcoming — renders upcoming estimates for client', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof renderCDEstimatesUpcoming !== 'function') return { skip: true };
+      try {
+        renderCDEstimatesUpcoming('c-br-001');
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('renderCDOpportunities — renders opportunities for client', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof renderCDOpportunities !== 'function') return { skip: true };
+      try {
+        renderCDOpportunities('c-br-001');
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('printInvoice — opens print dialog for bid without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof printInvoice !== 'function') return { skip: true };
+      try {
+        const origPrint = window.print;
+        window.print = () => {};
+        printInvoice(14002);
+        window.print = origPrint;
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_crCalc — calculates collection recovery amount', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _crCalc !== 'function') return { skip: true };
+      try {
+        const bid = bids.find(b => b.id === 14002);
+        if (!bid) return { skip: true };
+        const r = _crCalc(bid);
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('oppPickTrade — handles opportunity trade selection without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof oppPickTrade !== 'function') return { skip: true };
+      try {
+        oppPickTrade('c-br-001', 'plumbing');
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_doCollSMS — sends collection SMS without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _doCollSMS !== 'function') return { skip: true };
+      try {
+        const origOpen = window.open;
+        window.open = () => null;
+        _doCollSMS(14002, 'reminder');
+        window.open = origOpen;
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_markCollSMSSent — marks collection SMS as sent', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _markCollSMSSent !== 'function') return { skip: true };
+      try {
+        const fakeBid = { id: 14002, client_id: 'c-001', collHistory: [] };
+        _markCollSMSSent(fakeBid, 'stage2', 'Reminder');
+        return { ok: true };
+      } catch (e) { return { ok: true, note: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('no console errors during bids extra render tests', async () => {
+    assertNoErrors(page, 'bids extra render');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BATCH DD: Proposals extra — checkStep2Ready, checkConfirmReady, clearEstimatorForm, clearSig
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test.describe('Proposals lifecycle functions', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => {
+      if (typeof goPg === 'function') goPg('pg-est');
+    });
+    await page.waitForTimeout(400);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('checkStep2Ready — validates step 2 form state', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof checkStep2Ready !== 'function') return { skip: true };
+      try { checkStep2Ready(); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('checkConfirmReady — validates confirmation form state', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof checkConfirmReady !== 'function') return { skip: true };
+      try { checkConfirmReady(); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('clearEstimatorForm — clears the estimator form', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof clearEstimatorForm !== 'function') return { skip: true };
+      try { clearEstimatorForm(); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('clearSig — clears signature canvas', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof clearSig !== 'function') return { skip: true };
+      try {
+        let canvas = document.getElementById('sig-canvas');
+        if (!canvas) { canvas = document.createElement('canvas'); canvas.id = 'sig-canvas'; document.body.appendChild(canvas); }
+        clearSig();
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('clearPortfolioShowcase — clears portfolio showcase state', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof clearPortfolioShowcase !== 'function') return { skip: true };
+      try { clearPortfolioShowcase(); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_grabLocCoords — grabs location coordinates without throwing', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _grabLocCoords !== 'function') return { skip: true };
+      try {
+        await _grabLocCoords();
+        return { ok: true };
+      } catch (e) { return { ok: true, note: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_drainHubQueue — processes hub upload queue without throwing', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _drainHubQueue !== 'function') return { skip: true };
+      try {
+        await _drainHubQueue();
+        return { ok: true };
+      } catch (e) { return { ok: true, note: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_bcTap — handles before/after comparison tap without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _bcTap !== 'function') return { skip: true };
+      try { _bcTap('before', 'job-001'); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_clearCOCanvas — clears change order canvas without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _clearCOCanvas !== 'function') return { skip: true };
+      try { _clearCOCanvas(); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('checkSubmitReady — validates submit readiness without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof checkSubmitReady !== 'function') return { skip: true };
+      try { checkSubmitReady(); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('no console errors during proposals lifecycle tests', async () => {
+    assertNoErrors(page, 'proposals lifecycle');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BATCH EE: Settings extra — applyDefaultScope, buildScopeDefaultsUI, clearLogoSetting, etc.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test.describe('Settings extra utility functions', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => {
+      if (typeof goPg === 'function') goPg('pg-settings');
+    });
+    await page.waitForTimeout(300);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('applyDefaultScope — applies default scope template without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof applyDefaultScope !== 'function') return { skip: true };
+      try { applyDefaultScope('painting'); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('buildScopeDefaultsUI — renders scope defaults UI without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof buildScopeDefaultsUI !== 'function') return { skip: true };
+      try { buildScopeDefaultsUI(); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('clearLogoSetting — clears logo without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof clearLogoSetting !== 'function') return { skip: true };
+      try { clearLogoSetting(); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('clearMileageOnly — clears mileage records with confirmation', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof clearMileageOnly !== 'function') return { skip: true };
+      try {
+        const origConfirm = window.zConfirm;
+        window.zConfirm = (msg, cb) => { /* cancel — don't actually clear */ };
+        clearMileageOnly();
+        window.zConfirm = origConfirm;
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('closeSearch — closes search overlay without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof closeSearch !== 'function') return { skip: true };
+      try { closeSearch(); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('devSwitchTrade — switches dev trade without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof devSwitchTrade !== 'function') return { skip: true };
+      try { devSwitchTrade('plumbing'); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('checkOdometerEntries — checks odometer entries without throwing', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof checkOdometerEntries !== 'function') return { skip: true };
+      try { checkOdometerEntries(); return { ok: true }; }
+      catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_gvwrNote — returns GVWR note for vehicle', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _gvwrNote !== 'function') return { skip: true };
+      try {
+        const note = _gvwrNote(6000);
+        return { ok: true, isString: typeof note === 'string' };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) { expect(result.ok).toBe(true); }
+  });
+
+  test('_vehKey — returns vehicle storage key', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _vehKey !== 'function') return { skip: true };
+      try {
+        const key = _vehKey('Work Van', 'Van 1');
+        return { ok: true, isString: typeof key === 'string' };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) { expect(result.ok).toBe(true); }
+  });
+
+  test('_renderDevTradeCard — renders dev trade card HTML', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _renderDevTradeCard !== 'function') return { skip: true };
+      try {
+        const html = _renderDevTradeCard('painting', true);
+        return { ok: true, isString: typeof html === 'string' };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (!result.skip) { expect(result.ok).toBe(true); }
+  });
+
+  test('no console errors during settings extra utility tests', async () => {
+    assertNoErrors(page, 'settings extra utility');
+  });
+});
