@@ -922,8 +922,10 @@ function renderOverview(){
     html+='<div class="hub-feed-hd" style="margin-top:4px">Awaiting your signature</div>';
     pendingBids.slice(0,3).forEach(b=>{
       html+='<div class="hub-bid-row">';
-      html+='<div class="hub-bid-top"><div><div class="hub-bid-name">'+esc(b.type||'Proposal')+'</div><div class="hub-bid-date">Sent '+fmtDate(b.bid_date)+'</div></div>';
-      html+='<div class="hub-bid-amt">'+fmt(b.amount)+'</div></div>';
+      html+='<div class="hub-bid-top"><div><div class="hub-bid-name">'+esc(b.type||'Proposal')+'</div><div class="hub-bid-date">Sent '+fmtDate(b.bid_date)+'</div></div></div>';
+      /* Price intentionally hidden from the card — research shows showing a large
+         dollar amount before the client reads the scope triggers loss-aversion and
+         kills conversions. Price is revealed inside the proposal after scope context. */
       if(b.signHubUrl){
         html+='<a href="'+esc(b.signHubUrl)+'" class="hub-btn hub-btn-sign" style="width:100%">✍️ Review &amp; Sign →</a>';
       }else{

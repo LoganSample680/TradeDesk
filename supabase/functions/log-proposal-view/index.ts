@@ -20,25 +20,46 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { contractorUserId, bidId, clientId } = await req.json();
+    const { contractorUserId, bidId, clientId, viewerType } = await req.json();
 
     if (!contractorUserId || !bidId) {
       return json({ error: 'contractorUserId and bidId required' }, 400);
     }
 
     const now = new Date().toISOString();
+    const isContractor = viewerType === 'contractor';
+
     const row: Record<string, unknown> = {
       contractor_user_id: contractorUserId,
       bid_id: String(bidId),
+      // opened_at tracks the most recent open of ANY kind (backwards compat)
       opened_at: now,
+      viewer_type: isContractor ? 'contractor' : 'client',
     };
     if (clientId) row.client_id = clientId;
 
-    // Upsert: first view = INSERT, repeat view = UPDATE opened_at.
-    // Requires UNIQUE (contractor_user_id, bid_id) constraint.
+    // Always update opened_at (latest open, any viewer).
+    // client_opened_at only updates when a real client opens — never overwritten
+    // by contractor previews. This lets the contractor see both timestamps.
+    if (!isContractor) {
+      row.client_opened_at = now;
+    } else {
+      row.contractor_opened_at = now;
+    }
+
+    // Upsert: first view = INSERT, repeat view = UPDATE.
+    // UNIQUE (contractor_user_id, bid_id) — one row per bid.
+    // On conflict update only the relevant timestamp fields, not both.
+    const conflictUpdate: Record<string, unknown> = {
+      opened_at: now,
+      viewer_type: row.viewer_type,
+    };
+    if (!isContractor) conflictUpdate.client_opened_at = now;
+    else conflictUpdate.contractor_opened_at = now;
+
     const { error } = await supa
       .from('proposal_views')
-      .upsert(row, { onConflict: 'contractor_user_id,bid_id' });
+      .upsert({ ...row }, { onConflict: 'contractor_user_id,bid_id' });
 
     if (error) {
       const msg = error.message || error.details || error.hint || JSON.stringify(error);
@@ -49,6 +70,7 @@ Deno.serve(async (req: Request) => {
     // ── Push notifications (future) ───────────────────────────────────────────
     // When a contractor opts in, load their push subscription here and fire it.
     // The contractorUserId is already available — no additional auth needed.
+    // Only notify on real client opens, not contractor previews.
     // await sendPushToContractor(contractorUserId, { bidId, event: 'viewed' });
     // ─────────────────────────────────────────────────────────────────────────
 

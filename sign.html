@@ -634,11 +634,20 @@ async function init(){
       show('pg-done');return;
     }
     // Log view via Edge Function — server-side write using service key, bypasses all RLS.
+    // Detect whether the viewer is the contractor (previewing their own proposal) or
+    // the actual client. Supabase stores the auth session in localStorage — if the
+    // contractor is logged into the main app and opens this link, their session is
+    // present and their user ID matches _prop.contractorUserId.
     if(_prop.contractorUserId&&_prop.id){
+      let _viewerType='client';
+      try{
+        const{data:{session}}=await _supa.auth.getSession();
+        if(session?.user?.id&&session.user.id===_prop.contractorUserId)_viewerType='contractor';
+      }catch(_){}
       fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
         method:'POST',
         headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-        body:JSON.stringify({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),clientId:_prop.clientId||null})
+        body:JSON.stringify({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),clientId:_prop.clientId||null,viewerType:_viewerType})
       }).catch(()=>{});
     }
     const _biz=_prop.businessName||'Your Contractor';
