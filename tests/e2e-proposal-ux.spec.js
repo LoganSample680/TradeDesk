@@ -399,17 +399,22 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
 
     capturedCalls.forEach(call => {
       expect(call.contractorUserId).toBe(FAKE_USER_ID);
-      expect(call.viewerType).toBe('client');
+      // Hub opens must use 'client-hub' viewerType — this writes hub_opened_at,
+      // distinct from client_opened_at (which sign.html sets when the client
+      // opens a specific proposal). Two separate timestamps on the dashboard.
+      expect(call.viewerType).toBe('client-hub');
     });
 
     assertNoErrors(page, 'hub open fires log-proposal-view per bid');
   });
 
-  test('full pipeline: client opens hub → dashboard shows Client opened for those bids', async ({ page }) => {
-    // Simulates the complete contractor-visible result of a client opening the hub:
-    //  Step 1 — load client.html, verify tracking fires
-    //  Step 2 — load contractor dashboard, inject the data the edge function would
-    //            have written, verify "Client opened" appears on the matching bids.
+  test('full pipeline: client opens hub → dashboard shows Hub opened + Proposal opened separately', async ({ page }) => {
+    // Confirms the two-timestamp design end-to-end:
+    //  Step 1 — client.html fires log-proposal-view with viewerType:'client-hub'
+    //            → contractor sees "Hub opened · Xm ago"
+    //  Step 2 — sign.html fires log-proposal-view with viewerType:'client'
+    //            → contractor sees "Proposal opened · Xm ago" (separate line)
+    //  Step 3 — contractor dashboard shows BOTH badges simultaneously
     const HUB = {
       contractorUserId: FAKE_USER_ID,
       contractorName: 'Zach Pro Painting',
@@ -438,19 +443,22 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
     });
 
-    // Step 1: client opens hub
+    // Step 1: client opens hub — should fire with viewerType:'client-hub'
     await page.goto(`/client.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&c=1`);
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(800);
-    expect(capturedCalls.length).toBeGreaterThan(0); // tracking fired
+    expect(capturedCalls.length).toBeGreaterThan(0);
+    expect(capturedCalls[0].viewerType).toBe('client-hub'); // not 'client'
 
-    // Step 2: contractor opens dashboard — inject what the edge function wrote
+    // Step 2: contractor opens dashboard — inject BOTH timestamps as the DB would have them
     await page.goto('/');
     await waitForAppBoot(page);
 
-    const clientOpenTs = new Date(Date.now() - 3 * 60 * 1000).toISOString(); // 3 min ago
-    await page.evaluate(({ bidId, ts }) => {
-      window._proposalViewsByBidClient = { [bidId]: ts };
+    const hubOpenTs      = new Date(Date.now() - 10 * 60 * 1000).toISOString(); // hub: 10 min ago
+    const proposalOpenTs = new Date(Date.now() -  3 * 60 * 1000).toISOString(); // proposal: 3 min ago
+    await page.evaluate(({ bidId, hubTs, proposalTs }) => {
+      window._proposalViewsByBidHubClient  = { [bidId]: hubTs };      // hub opened
+      window._proposalViewsByBidClient     = { [bidId]: proposalTs }; // proposal opened
       window._proposalViewsByBidContractor = {};
       window.clients.push({ id: 1, name: 'Logan Sample', phone: '' });
       window.bids.push({
@@ -464,14 +472,16 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
         signingToken: 'tok-test',
       });
       window._mmtCol_pending = false;
-    }, { bidId: String(FAKE_BID_ID_1), ts: clientOpenTs });
+    }, { bidId: String(FAKE_BID_ID_1), hubTs: hubOpenTs, proposalTs: proposalOpenTs });
 
     await page.evaluate(() => { if (typeof renderDash === 'function') renderDash(); });
     await page.waitForTimeout(300);
 
     const dashText = await page.textContent('#pg-dash');
-    expect(dashText).toContain('Client opened');
-    assertNoErrors(page, 'hub open pipeline: dashboard shows Client opened');
+    // Both events must appear as separate lines
+    expect(dashText).toContain('Hub opened');
+    expect(dashText).toContain('Proposal opened');
+    assertNoErrors(page, 'hub open pipeline: dashboard shows Hub opened + Proposal opened separately');
   });
 
   test('dashboard shows "You previewed" when only contractor_opened_at is set', async ({ page }) => {

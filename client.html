@@ -578,15 +578,14 @@ async function init(){
     }
     showState('hub');
     // Log a hub view for each pending proposal visible in this hub.
-    // Uses the same Edge Function as sign.html so client_opened_at is set
-    // correctly and the contractor sees "Client opened" on the dashboard.
-    // (The previous REST POST had no bid_id and sent an integer client_id
-    //  to a uuid column — both were silently dropped by Postgres.)
+    // viewerType:'client-hub' writes hub_opened_at (distinct from client_opened_at
+    // which sign.html writes when the client opens a specific proposal).
+    // This lets the contractor see two separate timestamps: "Hub opened" and "Proposal opened".
     (_hub&&_hub.bids||[]).filter(b=>b.id&&b.signHubUrl).forEach(b=>{
       fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
         method:'POST',
         headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-        body:JSON.stringify({contractorUserId:u,bidId:String(b.id),viewerType:'client'})
+        body:JSON.stringify({contractorUserId:u,bidId:String(b.id),viewerType:'client-hub'})
       }).catch(()=>{});
     });
     const _paidParam=p.get('paid');
