@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-05.26.26.88';
+const CACHE = 'tradedesk-05.26.26.89';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
 // tries to serve it for a navigation. new Response() always has redirected:false.
@@ -80,7 +80,14 @@ self.addEventListener('fetch', e => {
           caches.open(CACHE).then(c => c.put(e.request, toCache));
         }
         return r;
-      });
+      }).catch(() => Response.error());
+      // .catch(() => Response.error()) — if the network fetch itself fails (offline,
+      // external host unreachable, or Playwright test mock in WebKit), resolve with
+      // a typed network-error response instead of leaving an unhandled rejection.
+      // Without this, WebKit fires a pageerror in the page context for every SW
+      // fetch that fails, even when the page-level code has its own .catch().
+      // Response.error() lets the page's fetch() reject normally so page-level
+      // error handlers (e.g. .catch(()=>null) in mileage.js geocoding) take over.
       return cached || net;
     })
   );
