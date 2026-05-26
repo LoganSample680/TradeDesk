@@ -5,16 +5,19 @@
 **Never merge directly to main.** All changes go through a PR so CI must
 pass before main is updated.
 
-### Step-by-step
+### Step-by-step — do this automatically after every push
 
 1. **Push** all changes to the feature branch:
    ```
    git push -u origin claude/review-app-ux-flow-mRafw
    ```
 
-2. **Open (or update) a PR** from `claude/review-app-ux-flow-mRafw` → `main`.
-   - If no PR exists, create one via the GitHub MCP tool (`mcp__github__create_pull_request`).
-   - If one already exists, the push automatically re-triggers CI.
+2. **Immediately check for an open PR** via `mcp__github__list_pull_requests`
+   (state: open, head: the feature branch).
+   - **No open PR found** → create one immediately via `mcp__github__create_pull_request`.
+     Do not wait for the user to ask. Do not skip this step.
+   - **Open PR already exists** → the push automatically re-triggers CI on it.
+     Note the PR number for the next steps.
 
 3. **Subscribe to PR activity** immediately after opening/finding the PR:
    Use `mcp__github__subscribe_pr_activity` so CI check results, review
@@ -22,6 +25,7 @@ pass before main is updated.
 
 4. **Wait for CI** — GitHub Actions runs Playwright (WebKit + Chromium).
    - ✅ All pass → merge the PR via `mcp__github__merge_pull_request`.
+     Do not wait for the user to ask. Merge automatically when green.
    - ❌ Any fail → read check run output via `mcp__github__pull_request_read`
      with `get_check_runs`, fix on the feature branch, push again.
      CI reruns automatically. Loop until green.
@@ -29,6 +33,11 @@ pass before main is updated.
 
 5. **Merge** only when CI is green:
    Use `mcp__github__merge_pull_request` with `merge_method: squash`.
+
+### Non-negotiable rules
+- **Every push must have an open PR** — create one if it doesn't exist, always.
+- **Green CI = merge immediately** — don't leave a green PR sitting unmerged.
+- Never ask the user "should I create a PR?" or "should I merge?" — just do it.
 
 ### What "CI green" means
 - 0 hard failures across WebKit and Chromium
