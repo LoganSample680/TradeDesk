@@ -2144,8 +2144,18 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="f"><label>Est. duration</label><input type="text" id="gei-duration" placeholder="e.g. 4 hrs, 2 days"></div>
     </div>
     <div id="gei-panel-section" style="margin-bottom:12px"></div>
-    <button class="btn btn-p" onclick="sendGenericProposal()" style="margin-bottom:8px">🔗 Save &amp; get client link</button>
+    <button id="gei-send-btn" class="btn btn-p" onclick="sendGenericProposal()" style="margin-bottom:8px">🔗 Save &amp; get client link</button>
     <button class="btn" onclick="saveGenericEstimate(true)" style="font-size:13px;color:var(--text2)">Save as draft</button>
+  </div>
+  <!-- Send bar — shown after proposal is generated; same buttons as paint estimate -->
+  <div id="gei-send-bar" style="display:none;margin:0 14px 80px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px">
+    <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:8px">✓ Link ready — send to client</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">
+      <button onclick="sendProposalViaSms()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue)">📱 Text</button>
+      <button onclick="sendProposalViaEmail()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue)">✉️ Email</button>
+    </div>
+    <button onclick="shareProposalLink()" class="btn" style="width:100%;padding:10px;font-size:13px;background:var(--bg2);color:var(--text2);border-color:var(--border2)">⬆️ Other app (WhatsApp, AirDrop…)</button>
+    <div style="font-size:11px;color:var(--text3);margin-top:6px">Bid saved as Pending. You'll get a follow-up reminder in 3 days if no response.</div>
   </div>
 </div>
 
