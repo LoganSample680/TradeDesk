@@ -408,6 +408,54 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     assertNoErrors(page, 'hub open fires log-proposal-view per bid');
   });
 
+  test('contractor opening their own hub link does NOT fire hub tracking', async ({ page }) => {
+    // When the contractor is logged in (session.user.id === u) and opens their own
+    // hub link to preview it, tracking must be skipped — same auth guard as sign.html.
+    // Prevents the contractor's own preview from showing "Hub opened" on the dashboard.
+    const HUB = {
+      contractorUserId: FAKE_USER_ID,
+      contractorName: 'Zach Pro Painting',
+      clientName: 'Logan Sample',
+      clientToken: FAKE_TOKEN,
+      bids: [{
+        id: FAKE_BID_ID_1,
+        type: 'Interior Painting',
+        amount: 5000,
+        deposit: 1250,
+        status: 'Pending',
+        bid_date: new Date().toISOString().slice(0, 10),
+        signingToken: FAKE_TOKEN,
+        signHubUrl: `https://tradedeskpro.app/sign.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&b=${FAKE_BID_ID_1}`,
+      }],
+      jobs: [],
+      payments: [],
+    };
+
+    await page.addInitScript(data => { window.__mockHubData = data; }, HUB);
+    await mockAllExternal(page);
+
+    // Override Supabase shim AFTER mockAllExternal (LIFO — checked first).
+    // Returns FAKE_USER_ID as session.user.id so getSession() matches the 'u' URL param.
+    await page.route('**/cdn.jsdelivr.net/**', async route => {
+      if (!route.request().url().includes('supabase')) return route.continue();
+      await route.fulfill({ status: 200, contentType: 'application/javascript', body: _shimWithSession(FAKE_USER_ID) });
+    });
+
+    const capturedCalls = [];
+    await page.route('**/functions/v1/log-proposal-view', async route => {
+      try { capturedCalls.push(route.request().postDataJSON()); } catch(_) {}
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+    });
+
+    await page.goto(`/client.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&c=1`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(800);
+
+    // Contractor's own session → tracking must NOT fire
+    expect(capturedCalls.length).toBe(0);
+    assertNoErrors(page, 'contractor hub preview: tracking skipped');
+  });
+
   test('full pipeline: client opens hub → dashboard shows Hub opened + Proposal opened separately', async ({ page }) => {
     // Confirms the two-timestamp design end-to-end:
     //  Step 1 — client.html fires log-proposal-view with viewerType:'client-hub'

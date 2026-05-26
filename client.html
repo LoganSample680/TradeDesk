@@ -578,16 +578,22 @@ async function init(){
     }
     showState('hub');
     // Log a hub view for each pending proposal visible in this hub.
-    // viewerType:'client-hub' writes hub_opened_at (distinct from client_opened_at
-    // which sign.html writes when the client opens a specific proposal).
-    // This lets the contractor see two separate timestamps: "Hub opened" and "Proposal opened".
-    (_hub&&_hub.bids||[]).filter(b=>b.id&&b.signHubUrl).forEach(b=>{
-      fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-        body:JSON.stringify({contractorUserId:u,bidId:String(b.id),viewerType:'client-hub'})
-      }).catch(()=>{});
-    });
+    // Auth check mirrors sign.html: if the contractor opens their own hub link
+    // while logged in, skip tracking so their preview doesn't show as "Hub opened".
+    // viewerType:'client-hub' writes hub_opened_at — distinct from client_opened_at
+    // (which sign.html writes when the client opens a specific proposal).
+    try{
+      const{data:{session}}=await _supa.auth.getSession();
+      if(!session||session?.user?.id!==u){
+        (_hub&&_hub.bids||[]).filter(b=>b.id&&b.signHubUrl).forEach(b=>{
+          fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
+            method:'POST',
+            headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
+            body:JSON.stringify({contractorUserId:u,bidId:String(b.id),viewerType:'client-hub'})
+          }).catch(()=>{});
+        });
+      }
+    }catch(_){}
     const _paidParam=p.get('paid');
     if(_paidParam){
       const bidId=parseInt(_paidParam);
