@@ -26,6 +26,11 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4, 5, 6]   # 6 shards — each handles 1/6 of tests
 
+    # Opt into Node 24 for action runners (checkout, cache, upload-artifact).
+    # GitHub drops Node 20 from runners on Jun 2 2026 — this gets ahead of it.
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,7 +38,11 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
+        env:
+          # GitHub Actions drops Node 20 for action runners on Jun 2 2026.
+          # Opt into Node 24 now so the upgrade is on our schedule, not GitHub's.
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
       - name: Install Playwright 1.56
         # Pin to 1.56.0 — matches local dev setup and the browser revisions

@@ -194,6 +194,26 @@ async function mockAllExternal(page, opts = {}) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
     }
 
+    // ── Census geocoding API — return a minimal valid match so geo code
+    // doesn't throw an unhandled rejection in WebKit strict mode ────────────────
+    if (url.includes('geocoding.geo.census.gov')) {
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          result: {
+            input: {},
+            addressMatches: [{
+              matchedAddress: '123 Main St, Austin, TX 78701',
+              coordinates: { x: -97.7431, y: 30.2672 },
+              tigerLine: {},
+              addressComponents: {},
+            }],
+          },
+        }),
+      });
+    }
+
     // ── Block everything else ─────────────────────────────────────────────────
     return route.fulfill({ status: 200, contentType: 'text/plain', body: '' });
   });
