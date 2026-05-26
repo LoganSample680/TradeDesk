@@ -122,7 +122,10 @@ Deno.serve(async (req) => {
     to: [to],
     subject,
     html,
-    ...(replyTo ? { reply_to: replyTo } : {}),
+    // reply_to → client replies land in contractor's inbox, not in Resend
+    // bcc      → contractor gets a copy for their records (Resend doesn't
+    //            store sent mail, so this is the only paper trail they get)
+    ...(replyTo ? { reply_to: replyTo, bcc: [replyTo] } : {}),
   };
 
   let resendRes: Response;
