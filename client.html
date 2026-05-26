@@ -922,8 +922,10 @@ function renderOverview(){
     html+='<div class="hub-feed-hd" style="margin-top:4px">Awaiting your signature</div>';
     pendingBids.slice(0,3).forEach(b=>{
       html+='<div class="hub-bid-row">';
-      html+='<div class="hub-bid-top"><div><div class="hub-bid-name">'+esc(b.type||'Proposal')+'</div><div class="hub-bid-date">Sent '+fmtDate(b.bid_date)+'</div></div>';
-      html+='<div class="hub-bid-amt">'+fmt(b.amount)+'</div></div>';
+      html+='<div class="hub-bid-top"><div><div class="hub-bid-name">'+esc(b.type||'Proposal')+'</div><div class="hub-bid-date">Sent '+fmtDate(b.bid_date)+'</div></div></div>';
+      /* Price intentionally hidden from the card — research shows showing a large
+         dollar amount before the client reads the scope triggers loss-aversion and
+         kills conversions. Price is revealed inside the proposal after scope context. */
       if(b.signHubUrl){
         html+='<a href="'+esc(b.signHubUrl)+'" class="hub-btn hub-btn-sign" style="width:100%">✍️ Review &amp; Sign →</a>';
       }else{
@@ -977,7 +979,9 @@ function renderOverview(){
     pendingBids.forEach(b=>{
       html+='<div class="hub-approval-item">';
       html+='<div class="hub-approval-name">'+esc(b.type||'Proposal')+'</div>';
-      html+='<div class="hub-approval-amt">'+fmt(b.amount)+' · '+fmtDate(b.bid_date)+'</div>';
+      /* Amount hidden from sidebar too — price revealed only after the client opens
+         the proposal and reads the full scope (same rationale as the main card). */
+      html+='<div class="hub-approval-amt">'+fmtDate(b.bid_date)+'</div>';
       if(b.signHubUrl)html+='<a href="'+esc(b.signHubUrl)+'" class="hub-approval-link">Review &amp; Sign →</a>';
       html+='</div>';
     });

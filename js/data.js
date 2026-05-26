@@ -1,6 +1,9 @@
 // ── Submit guard — prevents double-tap on any button ─────────────────────
 let _submitting=false,_allowPhoneDupe=false;
 let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[],contracts=[];
+// Expose bids and clients on window so Playwright E2E tests can inject test data
+Object.defineProperty(window,'bids',{get:()=>bids,set:v=>{bids=v;},configurable:true});
+Object.defineProperty(window,'clients',{get:()=>clients,set:v=>{clients=v;},configurable:true});
 function _newBidId(){return Date.now()*1000+Math.floor(Math.random()*999);}
 let currentClientId=null,editClientId=null,clientFilter='all';
 let estSurfaces=[],estSurfId=0,estStep=1,estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;

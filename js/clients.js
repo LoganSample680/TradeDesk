@@ -1575,11 +1575,21 @@ function renderCDBids(){
             ' · '+(b.days||2)+' day'+(b.days!==1?'s':'')+' est.'+
           '</div>'+
           (b.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+b.notes.substring(0,60)+'</div>':'')+
-          (b.status==='Pending'&&b.signingToken&&typeof _proposalViews!=='undefined'?
-            (_proposalViews[String(b.client_id)]?
-              '<div style="font-size:11px;color:var(--green-mid);margin-top:2px">👁 Opened '+_timeAgo(_proposalViews[String(b.client_id)])+'</div>':
-              '<div style="font-size:11px;color:var(--text3);margin-top:2px">Not opened yet</div>'
-            ):'')+
+          (b.status==='Pending'&&b.signingToken&&typeof _proposalViewsByBidClient!=='undefined'?
+            (()=>{
+              const clientTs=_proposalViewsByBidClient&&_proposalViewsByBidClient[String(b.id)];
+              const contractorTs=_proposalViewsByBidContractor&&_proposalViewsByBidContractor[String(b.id)];
+              let badge='';
+              if(clientTs){
+                badge+='<div style="font-size:11px;color:var(--green-mid);margin-top:2px">👁 Client opened · '+_timeAgo(clientTs)+'</div>';
+              }else{
+                badge+='<div style="font-size:11px;color:var(--text3);margin-top:2px">Client hasn\'t opened yet</div>';
+              }
+              if(contractorTs){
+                badge+='<div style="font-size:10px;color:var(--text3);margin-top:1px">You previewed · '+_timeAgo(contractorTs)+'</div>';
+              }
+              return badge;
+            })():'')+
         '</div>'+
         '<div style="text-align:right">'+
           (b.isTM?'<span style="display:inline-block;font-size:10px;font-weight:700;background:#dbeafe;color:#1d4ed8;border-radius:10px;padding:2px 7px;margin-bottom:3px">⏱️ T&M</span><br>':'')+
