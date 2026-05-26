@@ -351,7 +351,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.26.26.91';
+const APP_VERSION='05.26.26.92';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -468,11 +468,16 @@ let _proposalViewsByBid={};
 let _proposalViewsByBidHubClient={};   // client opened the shared hub link (client.html)
 let _proposalViewsByBidClient={};      // client opened a specific proposal (sign.html)
 let _proposalViewsByBidContractor={};  // contractor previewed the proposal
+// View count maps — how many times each event type has occurred per bid
+let _proposalViewsByBidHubCount={};    // number of hub opens
+let _proposalViewsByBidClientCount={}; // number of proposal opens
 // Expose on window so Playwright E2E tests can inject test data via page.evaluate()
 // (let declarations are not window properties in browser scripts)
 Object.defineProperty(window,'_proposalViewsByBidHubClient',{get:()=>_proposalViewsByBidHubClient,set:v=>{_proposalViewsByBidHubClient=v;},configurable:true});
 Object.defineProperty(window,'_proposalViewsByBidClient',{get:()=>_proposalViewsByBidClient,set:v=>{_proposalViewsByBidClient=v;},configurable:true});
 Object.defineProperty(window,'_proposalViewsByBidContractor',{get:()=>_proposalViewsByBidContractor,set:v=>{_proposalViewsByBidContractor=v;},configurable:true});
+Object.defineProperty(window,'_proposalViewsByBidHubCount',{get:()=>_proposalViewsByBidHubCount,set:v=>{_proposalViewsByBidHubCount=v;},configurable:true});
+Object.defineProperty(window,'_proposalViewsByBidClientCount',{get:()=>_proposalViewsByBidClientCount,set:v=>{_proposalViewsByBidClientCount=v;},configurable:true});
 // true when data came from localStorage cache, not a live Supabase fetch.
 // supaSaveToCloud() checks this + runs a sanity guard to prevent pushing
 // incomplete in-memory state over real cloud data.
@@ -1660,7 +1665,7 @@ async function _fetchProposalViews(){
     // Edge Function log-proposal-view writes to proposal_views using service key (bypasses RLS).
     // Contractor reads back with their authenticated session — RLS allows SELECT on own rows.
     const{data,error}=await _supa.from('proposal_views')
-      .select('bid_id,opened_at,hub_opened_at,client_opened_at,contractor_opened_at')
+      .select('bid_id,opened_at,hub_opened_at,hub_view_count,client_opened_at,client_view_count,contractor_opened_at')
       .eq('contractor_user_id',_supaUser.id)
       .not('bid_id','is',null)
       .order('opened_at',{ascending:false});
@@ -1669,12 +1674,16 @@ async function _fetchProposalViews(){
       _proposalViewsByBidHubClient={};
       _proposalViewsByBidClient={};
       _proposalViewsByBidContractor={};
+      _proposalViewsByBidHubCount={};
+      _proposalViewsByBidClientCount={};
       data.forEach(v=>{
         if(!v.bid_id)return;
         if(!_proposalViewsByBid[v.bid_id])_proposalViewsByBid[v.bid_id]=v.opened_at;
         if(v.hub_opened_at&&!_proposalViewsByBidHubClient[v.bid_id])_proposalViewsByBidHubClient[v.bid_id]=v.hub_opened_at;
         if(v.client_opened_at&&!_proposalViewsByBidClient[v.bid_id])_proposalViewsByBidClient[v.bid_id]=v.client_opened_at;
         if(v.contractor_opened_at&&!_proposalViewsByBidContractor[v.bid_id])_proposalViewsByBidContractor[v.bid_id]=v.contractor_opened_at;
+        if(v.hub_view_count)_proposalViewsByBidHubCount[v.bid_id]=(v.hub_view_count||0);
+        if(v.client_view_count)_proposalViewsByBidClientCount[v.bid_id]=(v.client_view_count||0);
       });
       renderDash();
     }

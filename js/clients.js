@@ -1580,18 +1580,36 @@ function renderCDBids(){
               const hubTs=_proposalViewsByBidHubClient&&_proposalViewsByBidHubClient[String(b.id)];
               const clientTs=_proposalViewsByBidClient&&_proposalViewsByBidClient[String(b.id)];
               const contractorTs=_proposalViewsByBidContractor&&_proposalViewsByBidContractor[String(b.id)];
+              const hubCnt=(typeof _proposalViewsByBidHubCount!=='undefined'&&_proposalViewsByBidHubCount)?(_proposalViewsByBidHubCount[String(b.id)]||0):0;
+              const clientCnt=(typeof _proposalViewsByBidClientCount!=='undefined'&&_proposalViewsByBidClientCount)?(_proposalViewsByBidClientCount[String(b.id)]||0):0;
+              // Timezone-aware timestamp: "Today at 2:34 PM", "Yesterday at 9:15 AM", "Mon, May 25 at 3:20 PM"
+              const _localTs=ts=>{
+                if(!ts)return'';
+                const d=new Date(ts);
+                const m=Math.floor((Date.now()-d)/60000);
+                if(m<2)return'just now';
+                if(m<60)return m+'m ago';
+                const t=d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+                const today=new Date();today.setHours(0,0,0,0);
+                const yest=new Date(today-86400000);
+                if(d>=today)return'Today at '+t;
+                if(d>=yest)return'Yesterday at '+t;
+                return d.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'})+' at '+t;
+              };
               let badge='';
               if(hubTs){
-                badge+='<div style="font-size:11px;color:#2563eb;margin-top:2px">🔗 Hub opened · '+_timeAgo(hubTs)+'</div>';
+                const cStr=hubCnt>1?' · '+hubCnt+'×':'';
+                badge+='<div style="font-size:11px;color:#2563eb;margin-top:2px">🔗 Hub opened · '+_localTs(hubTs)+cStr+'</div>';
               }
               if(clientTs){
-                badge+='<div style="font-size:11px;color:var(--green-mid);margin-top:2px">👁 Proposal opened · '+_timeAgo(clientTs)+'</div>';
+                const cStr=clientCnt>1?' · '+clientCnt+'×':'';
+                badge+='<div style="font-size:11px;color:var(--green-mid);margin-top:2px">👁 Proposal opened · '+_localTs(clientTs)+cStr+'</div>';
               }
               if(!hubTs&&!clientTs){
                 badge+='<div style="font-size:11px;color:var(--text3);margin-top:2px">Client hasn\'t opened yet</div>';
               }
               if(contractorTs){
-                badge+='<div style="font-size:10px;color:var(--text3);margin-top:1px">You previewed · '+_timeAgo(contractorTs)+'</div>';
+                badge+='<div style="font-size:10px;color:var(--text3);margin-top:1px">You previewed · '+_localTs(contractorTs)+'</div>';
               }
               return badge;
             })():'')+
