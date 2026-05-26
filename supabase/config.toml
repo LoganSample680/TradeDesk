@@ -6,3 +6,6 @@ verify_jwt = false
 
 [functions.log-proposal-view]
 verify_jwt = false
+
+[functions.send-proposal-email]
+verify_jwt = true

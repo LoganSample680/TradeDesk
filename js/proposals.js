@@ -713,24 +713,47 @@ function sendProposalViaSms(){
   window.location.href=href;
   setTimeout(()=>_commitProposalSent(),400);
 }
-function sendProposalViaEmail(){
+async function sendProposalViaEmail(){
   const d=_proposalShareData();
   if(!d.url){zAlert('Generate the proposal link first.',{title:'No link yet'});return;}
-  const firstName=d.cname.split(/[\s,&]+/)[0];
-  const subject='Your Painting Proposal from '+d.bname+' is Ready!';
-  const body=
-    'Hey '+firstName+',\n\n'+
-    'It was great meeting with you today — I really enjoyed getting a look at the project and I\'m excited to get started!\n\n'+
-    'Your painting proposal is ready to view. Everything we went over is laid out in full detail, and you can sign right from the page when you\'re ready to move forward:\n\n'+
-    '        '+d.url+'\n\n'+
-    'Once you sign, I\'ll get you locked in on the schedule and we\'ll take it from there.\n\n'+
-    'Don\'t hesitate to reach out if you have any questions or want to make any changes — happy to go over anything!\n\n'+
-    'Looking forward to working with you,\n\n'+
-    d.bname;
-  const href='mailto:'+(d.cemail||'')+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
-  // Fire email FIRST while user gesture is fresh, then commit bid as sent
-  window.location.href=href;
-  setTimeout(()=>_commitProposalSent(),400);
+  if(!d.cemail){zAlert('No email on file for this client. Add one in Clients first.',{title:'No client email'});return;}
+  // Try server-sent HTML email first (proper domain auth, no corporate filter issues).
+  // Falls back to mailto: if Resend isn't configured or network fails.
+  let serverSent=false;
+  if(supaEnabled()&&_supaUser){
+    try{
+      const res=await Promise.race([
+        fetch(SUPA_URL+'/functions/v1/send-proposal-email',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
+          body:JSON.stringify({to:d.cemail,clientName:d.cname,businessName:d.bname,proposalUrl:d.url,replyTo:_supaUser.email||''})
+        }),
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000))
+      ]);
+      if(res.ok){
+        serverSent=true;
+        _commitProposalSent();
+        showToast('Proposal emailed to '+d.cname+'!','✉️');
+      }
+    }catch(_){}
+  }
+  if(!serverSent){
+    // Fallback: open native mail client with plain-text body
+    const firstName=d.cname.split(/[\s,&]+/)[0];
+    const subject='Your Painting Proposal from '+d.bname+' is Ready!';
+    const body=
+      'Hey '+firstName+',\n\n'+
+      'It was great meeting with you today — I really enjoyed getting a look at the project and I\'m excited to get started!\n\n'+
+      'Your painting proposal is ready to view. Everything we went over is laid out in full detail, and you can sign right from the page when you\'re ready to move forward:\n\n'+
+      '        '+d.url+'\n\n'+
+      'Once you sign, I\'ll get you locked in on the schedule and we\'ll take it from there.\n\n'+
+      'Don\'t hesitate to reach out if you have any questions or want to make any changes — happy to go over anything!\n\n'+
+      'Looking forward to working with you,\n\n'+
+      d.bname;
+    const href='mailto:'+d.cemail+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
+    window.location.href=href;
+    setTimeout(()=>_commitProposalSent(),400);
+  }
 }
 function buildDescription(){
   const isExt=estSurfaces.some(s=>s.type==='ext_walls'||s.type==='ext_trim'||s.type==='deck');
