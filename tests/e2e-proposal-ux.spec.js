@@ -332,6 +332,148 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     assertNoErrors(page, 'dashboard client opened badge');
   });
 
+  // ── 3. Hub open → tracked per bid ───────────────────────────────────────────
+  //
+  // These tests would have CAUGHT the original bug:
+  //   Old code: POST to /rest/v1/proposal_views with no bid_id + integer client_id
+  //             on a uuid column → Postgres silently drops it. The specific
+  //             log-proposal-view route below would NEVER fire → capturedCalls
+  //             stays empty → expect(capturedCalls.length).toBe(2) FAILS.
+  //   New code: calls /functions/v1/log-proposal-view per bid → route fires →
+  //             test passes.
+
+  test('opening client hub fires log-proposal-view for each pending bid', async ({ page }) => {
+    const HUB = {
+      contractorUserId: FAKE_USER_ID,
+      contractorName: 'Zach Pro Painting',
+      clientName: 'Logan Sample',
+      clientToken: FAKE_TOKEN,
+      bids: [
+        {
+          id: FAKE_BID_ID_1,
+          type: 'Interior Painting',
+          amount: 5000,
+          deposit: 1250,
+          status: 'Pending',
+          bid_date: new Date().toISOString().slice(0, 10),
+          signingToken: FAKE_TOKEN,
+          // signHubUrl must be non-null — client.html filters on b.id && b.signHubUrl
+          signHubUrl: `https://tradedeskpro.app/sign.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&b=${FAKE_BID_ID_1}`,
+        },
+        {
+          id: FAKE_BID_ID_2,
+          type: 'Exterior Painting',
+          amount: 8000,
+          deposit: 2000,
+          status: 'Pending',
+          bid_date: new Date().toISOString().slice(0, 10),
+          signingToken: FAKE_TOKEN_2,
+          signHubUrl: `https://tradedeskpro.app/sign.html?t=${FAKE_TOKEN_2}&u=${FAKE_USER_ID}&b=${FAKE_BID_ID_2}`,
+        },
+      ],
+      jobs: [],
+      payments: [],
+    };
+
+    await page.addInitScript(data => { window.__mockHubData = data; }, HUB);
+    await mockAllExternal(page); // registers broad catch-all FIRST
+
+    // Register specific capture route AFTER mockAllExternal — Playwright checks
+    // routes LIFO so this fires first, captures the body, then fulfills.
+    const capturedCalls = [];
+    await page.route('**/functions/v1/log-proposal-view', async route => {
+      try { capturedCalls.push(route.request().postDataJSON()); } catch(_) {}
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+    });
+
+    await page.goto(`/client.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&c=1`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(800);
+
+    // One call per pending bid with signHubUrl — order may vary
+    expect(capturedCalls.length).toBe(2);
+
+    const sentBidIds = capturedCalls.map(c => c.bidId).sort();
+    expect(sentBidIds).toContain(String(FAKE_BID_ID_1));
+    expect(sentBidIds).toContain(String(FAKE_BID_ID_2));
+
+    capturedCalls.forEach(call => {
+      expect(call.contractorUserId).toBe(FAKE_USER_ID);
+      expect(call.viewerType).toBe('client');
+    });
+
+    assertNoErrors(page, 'hub open fires log-proposal-view per bid');
+  });
+
+  test('full pipeline: client opens hub → dashboard shows Client opened for those bids', async ({ page }) => {
+    // Simulates the complete contractor-visible result of a client opening the hub:
+    //  Step 1 — load client.html, verify tracking fires
+    //  Step 2 — load contractor dashboard, inject the data the edge function would
+    //            have written, verify "Client opened" appears on the matching bids.
+    const HUB = {
+      contractorUserId: FAKE_USER_ID,
+      contractorName: 'Zach Pro Painting',
+      clientName: 'Logan Sample',
+      clientToken: FAKE_TOKEN,
+      bids: [{
+        id: FAKE_BID_ID_1,
+        type: 'Interior Painting',
+        amount: 5000,
+        deposit: 1250,
+        status: 'Pending',
+        bid_date: new Date().toISOString().slice(0, 10),
+        signingToken: FAKE_TOKEN,
+        signHubUrl: `https://tradedeskpro.app/sign.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&b=${FAKE_BID_ID_1}`,
+      }],
+      jobs: [],
+      payments: [],
+    };
+
+    await page.addInitScript(data => { window.__mockHubData = data; }, HUB);
+    await mockAllExternal(page);
+
+    const capturedCalls = [];
+    await page.route('**/functions/v1/log-proposal-view', async route => {
+      try { capturedCalls.push(route.request().postDataJSON()); } catch(_) {}
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+    });
+
+    // Step 1: client opens hub
+    await page.goto(`/client.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&c=1`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(800);
+    expect(capturedCalls.length).toBeGreaterThan(0); // tracking fired
+
+    // Step 2: contractor opens dashboard — inject what the edge function wrote
+    await page.goto('/');
+    await waitForAppBoot(page);
+
+    const clientOpenTs = new Date(Date.now() - 3 * 60 * 1000).toISOString(); // 3 min ago
+    await page.evaluate(({ bidId, ts }) => {
+      window._proposalViewsByBidClient = { [bidId]: ts };
+      window._proposalViewsByBidContractor = {};
+      window.clients.push({ id: 1, name: 'Logan Sample', phone: '' });
+      window.bids.push({
+        id: Number(bidId),
+        type: 'Interior Painting',
+        status: 'Pending',
+        amount: 5000,
+        deposit: 1250,
+        client_id: 1,
+        bid_date: new Date().toISOString().slice(0, 10),
+        signingToken: 'tok-test',
+      });
+      window._mmtCol_pending = false;
+    }, { bidId: String(FAKE_BID_ID_1), ts: clientOpenTs });
+
+    await page.evaluate(() => { if (typeof renderDash === 'function') renderDash(); });
+    await page.waitForTimeout(300);
+
+    const dashText = await page.textContent('#pg-dash');
+    expect(dashText).toContain('Client opened');
+    assertNoErrors(page, 'hub open pipeline: dashboard shows Client opened');
+  });
+
   test('dashboard shows "You previewed" when only contractor_opened_at is set', async ({ page }) => {
     await mockAllExternal(page);
     await page.goto('/');
