@@ -15,6 +15,17 @@
  *     - Contractor shim: session.user.id = FAKE_USER_ID → 'contractor'
  *
  *   Tests intercept the log-proposal-view fetch and inspect the posted body.
+ *
+ * HOW TO TEST CLIENT HUB:
+ *   The Supabase JS shim handles storage.download() internally without making
+ *   real HTTP requests. It reads window.__mockHubData (set via page.addInitScript
+ *   before navigation) rather than from a network route.
+ *
+ * HOW TO TEST DASHBOARD BADGES:
+ *   _proposalViewsByBidClient and _proposalViewsByBidContractor are let-scoped
+ *   module variables in cloud.js. cloud.js exposes them via Object.defineProperty
+ *   on window, so page.evaluate can set them. Similarly, bids and clients are
+ *   exposed on window from data.js.
  */
 
 const { test, expect, mockAllExternal, _supabaseShim, waitForAppBoot, assertNoErrors,
@@ -43,16 +54,15 @@ test.describe('Client hub — price hidden on proposal cards', () => {
       payments: [],
     };
 
+    // Set __mockHubData BEFORE navigation so the shim's download() picks it up.
+    // (The shim handles storage.download() entirely in JS — page.route() for
+    //  storage URLs never fires because no HTTP request is made.)
+    await page.addInitScript(data => { window.__mockHubData = data; }, HUB);
     await mockAllExternal(page);
-    await page.route('**/*.supabase.co/storage/v1/**', route => {
-      if (route.request().url().includes('client-hub')) {
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(HUB) });
-      } else {
-        route.continue();
-      }
-    });
 
-    await page.goto(`/client.html?user=${FAKE_USER_ID}&token=${FAKE_TOKEN}`);
+    // client.html expects ?t=<token>&u=<contractorUserId>&c=<clientId>
+    // (NOT ?user=...&token=... — those params are not read by client.html)
+    await page.goto(`/client.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&c=1`);
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(600);
 
@@ -62,8 +72,7 @@ test.describe('Client hub — price hidden on proposal cards', () => {
     expect(pageText).not.toContain('82,000');
 
     // Proposal name and CTA button SHOULD be visible
-    const body = await page.textContent('body');
-    expect(body).toContain('Interior Painting');
+    expect(pageText).toContain('Interior Painting');
 
     // The Review & Sign button should be present
     const signBtn = page.locator('.hub-btn-sign, a[href*="sign.html"]');
@@ -93,16 +102,12 @@ test.describe('Client hub — price hidden on proposal cards', () => {
       payments: [],
     };
 
+    // Set __mockHubData BEFORE navigation — same reason as above.
+    await page.addInitScript(data => { window.__mockHubData = data; }, HUB);
     await mockAllExternal(page);
-    await page.route('**/*.supabase.co/storage/v1/**', route => {
-      if (route.request().url().includes('client-hub')) {
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(HUB) });
-      } else {
-        route.continue();
-      }
-    });
 
-    await page.goto(`/client.html?user=${FAKE_USER_ID}&token=${FAKE_TOKEN}`);
+    // client.html expects ?t=<token>&u=<contractorUserId>&c=<clientId>
+    await page.goto(`/client.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&c=1`);
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(600);
 
@@ -185,7 +190,11 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
 
   /**
    * Mount all routes for sign.html and capture the body sent to log-proposal-view.
-   * Returns a promise that resolves with the captured request body.
+   * Returns a getter function that resolves with the captured request body.
+   *
+   * IMPORTANT: sign.html resolves the storage key from the URL using ?key=<path>
+   * or ?t=<token>&u=<uid>&b=<bidId>. The ?storage= format is NOT recognised —
+   * always use ?key= or the short-form params.
    */
   async function mountSignRoutes(page, sessionUserId) {
     page._consoleErrors = [];
@@ -224,13 +233,6 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
       if (url.includes('/rest/v1/signed_proposals')) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
       }
-      if (url.includes('/storage/v1/')) {
-        const proposalJson = JSON.stringify({
-          ...MOCK_PROPOSAL,
-          contractorUserId: FAKE_USER_ID,
-        });
-        return route.fulfill({ status: 200, contentType: 'application/json', body: proposalJson });
-      }
       if (url.includes('.supabase.co')) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
       }
@@ -244,7 +246,9 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     // No session — simulates a client opening the link on their own device
     const getBody = await mountSignRoutes(page, null);
 
-    await page.goto(`/sign.html?storage=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`);
+    // Use ?key= format — sign.html reads params.get('key') to resolve the storage path.
+    // The ?storage= format is NOT recognised by sign.html and causes an error page.
+    await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`);
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(800);
 
@@ -258,7 +262,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     // Session userId === FAKE_USER_ID === MOCK_PROPOSAL.contractorUserId → contractor
     const getBody = await mountSignRoutes(page, FAKE_USER_ID);
 
-    await page.goto(`/sign.html?storage=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`);
+    await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`);
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(800);
 
@@ -272,7 +276,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     // Some other authenticated user (e.g. employee) — NOT the contractor
     const getBody = await mountSignRoutes(page, 'some-other-user-id-99999');
 
-    await page.goto(`/sign.html?storage=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`);
+    await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`);
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(800);
 
@@ -290,14 +294,19 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
 
     const clientOpenTs = new Date(Date.now() - 90 * 60 * 1000).toISOString(); // 90 min ago
 
-    // Inject client open data and a pending bid
+    // Inject client open data and a pending bid.
+    // _proposalViewsByBidClient / _proposalViewsByBidContractor are let-vars in cloud.js,
+    // exposed on window via Object.defineProperty in that file — assignment here propagates
+    // back into the module scope so renderDash() reads the updated maps.
+    // bids and clients are similarly exposed via Object.defineProperty in data.js.
     await page.evaluate(({ bidId, ts }) => {
       window._proposalViewsByBidClient = { [bidId]: ts };
       window._proposalViewsByBidContractor = {};
-      // Add a pending bid to the bids array
-      if (!window.bids) window.bids = [];
+      // Inject a matching client so getClientById(1) returns a result
+      window.clients.push({ id: 1, name: 'Test Client', phone: '' });
+      // Inject a pending bid that has a signingToken (required for the "Awaiting signature" row)
       window.bids.push({
-        id: bidId,
+        id: Number(bidId),
         type: 'Test Proposal',
         status: 'Pending',
         amount: 5000,
@@ -306,6 +315,10 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
         bid_date: new Date().toISOString().slice(0,10),
         signingToken: 'tok-test',
       });
+      // The "Pending" section in Make Money Today is collapsed by default
+      // (_mmtCol_pending === undefined → col = true → items hidden from DOM).
+      // Force it open so textContent actually contains the badge text.
+      window._mmtCol_pending = false;
     }, { bidId: String(FAKE_BID_ID_1), ts: clientOpenTs });
 
     await page.evaluate(() => {
@@ -313,7 +326,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     });
     await page.waitForTimeout(300);
 
-    const dashText = await page.textContent('#pg-dashboard, body');
+    const dashText = await page.textContent('#pg-dash');
     // Should show client opened badge, NOT the generic "Opened" badge
     expect(dashText).toContain('Client opened');
     assertNoErrors(page, 'dashboard client opened badge');
@@ -329,9 +342,10 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     await page.evaluate(({ bidId, ts }) => {
       window._proposalViewsByBidClient = {};
       window._proposalViewsByBidContractor = { [bidId]: ts };
-      if (!window.bids) window.bids = [];
+      // Matching client + pending bid
+      window.clients.push({ id: 1, name: 'Test Client', phone: '' });
       window.bids.push({
-        id: bidId,
+        id: Number(bidId),
         type: 'Test Proposal',
         status: 'Pending',
         amount: 5000,
@@ -340,6 +354,8 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
         bid_date: new Date().toISOString().slice(0,10),
         signingToken: 'tok-test',
       });
+      // Force the Pending section open so textContent includes badge text
+      window._mmtCol_pending = false;
     }, { bidId: String(FAKE_BID_ID_1), ts: contractorOpenTs });
 
     await page.evaluate(() => {
@@ -347,7 +363,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     });
     await page.waitForTimeout(300);
 
-    const dashText = await page.textContent('#pg-dashboard, body');
+    const dashText = await page.textContent('#pg-dash');
     expect(dashText).toContain('You previewed');
     // Client hasn't opened → should show that too
     expect(dashText).toContain("Client hasn't opened yet");

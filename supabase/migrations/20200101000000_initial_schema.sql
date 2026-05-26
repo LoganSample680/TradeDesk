@@ -161,6 +161,21 @@ create table if not exists push_subscriptions (
   updated_at timestamptz not null default now()
 );
 
+-- proposal_views: tracks when a proposal link was opened and by whom.
+-- Includes viewer_type + separate timestamps so the contractor can see
+-- client opens vs their own previews independently.
+create table if not exists proposal_views (
+  id                   uuid primary key default gen_random_uuid(),
+  contractor_user_id   uuid,
+  bid_id               text,
+  client_id            uuid,
+  opened_at            timestamptz default now(),
+  viewer_type          text default 'client',
+  client_opened_at     timestamptz,
+  contractor_opened_at timestamptz,
+  unique(contractor_user_id, bid_id)
+);
+
 -- ══════════════════════════════════════════════════════════
 -- SECTION 2: INDEXES
 -- ══════════════════════════════════════════════════════════
@@ -196,6 +211,7 @@ alter table signed_proposals      enable row level security;
 alter table inbound_leads         enable row level security;
 alter table county_assessor_registry enable row level security;
 alter table push_subscriptions    enable row level security;
+alter table proposal_views        enable row level security;
 
 -- ══════════════════════════════════════════════════════════
 -- SECTION 5: POLICIES (all tables exist by this point)
@@ -335,6 +351,24 @@ do $$ begin
   if not exists (select 1 from pg_policies where tablename='push_subscriptions' and policyname='owner') then
     execute $p$ create policy "owner" on push_subscriptions
       using (auth.uid()::text = user_id::text) with check (auth.uid()::text = user_id::text) $p$;
+  end if;
+
+  -- proposal_views: contractor reads own rows; anon/authenticated can insert
+  -- (log-proposal-view Edge Function uses the service role for upsert,
+  --  but these policies cover direct REST inserts from the client too)
+  if not exists (select 1 from pg_policies where tablename='proposal_views' and policyname='Contractor reads own views') then
+    execute $p$ create policy "Contractor reads own views" on proposal_views for select
+      using (contractor_user_id::text = auth.uid()::text) $p$;
+  end if;
+  if not exists (select 1 from pg_policies where tablename='proposal_views' and policyname='anon insert views') then
+    execute $p$ create policy "anon insert views" on proposal_views for insert to anon with check (true) $p$;
+  end if;
+  if not exists (select 1 from pg_policies where tablename='proposal_views' and policyname='auth insert views') then
+    execute $p$ create policy "auth insert views" on proposal_views for insert to authenticated with check (true) $p$;
+  end if;
+  if not exists (select 1 from pg_policies where tablename='proposal_views' and policyname='auth update views') then
+    execute $p$ create policy "auth update views" on proposal_views for update to authenticated
+      using (contractor_user_id::text = auth.uid()::text) $p$;
   end if;
 end $$;
 

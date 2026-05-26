@@ -351,7 +351,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.26.26.74';
+const APP_VERSION='05.26.26.75';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -467,6 +467,10 @@ let _proposalViewsByBid={};
 // Separate maps for client-only and contractor-only opens
 let _proposalViewsByBidClient={};      // timestamp of last CLIENT open per bid_id
 let _proposalViewsByBidContractor={};  // timestamp of last CONTRACTOR preview per bid_id
+// Expose on window so Playwright E2E tests can inject test data via page.evaluate()
+// (let declarations are not window properties in browser scripts)
+Object.defineProperty(window,'_proposalViewsByBidClient',{get:()=>_proposalViewsByBidClient,set:v=>{_proposalViewsByBidClient=v;},configurable:true});
+Object.defineProperty(window,'_proposalViewsByBidContractor',{get:()=>_proposalViewsByBidContractor,set:v=>{_proposalViewsByBidContractor=v;},configurable:true});
 // true when data came from localStorage cache, not a live Supabase fetch.
 // supaSaveToCloud() checks this + runs a sanity guard to prevent pushing
 // incomplete in-memory state over real cloud data.
