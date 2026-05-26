@@ -16,6 +16,14 @@ create index if not exists push_subscriptions_user_idx on push_subscriptions(use
 -- RLS: users can only read/write their own subscriptions
 alter table push_subscriptions enable row level security;
 
-create policy "owner" on push_subscriptions
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where tablename = 'push_subscriptions' and policyname = 'owner'
+  ) then
+    execute 'create policy "owner" on push_subscriptions
+      using (auth.uid() = user_id)
+      with check (auth.uid() = user_id)';
+  end if;
+end $$;

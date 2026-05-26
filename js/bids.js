@@ -584,18 +584,6 @@ function sendBidEmail(bidId){
   if(bphone)body+=bphone+NL;
   const subject=encodeURIComponent('Your painting proposal -- '+fmt(b.amount)+' | '+bname);
   window.location.href='mailto:'+(toEmail?encodeURIComponent(toEmail):'')+'?subject='+subject+'&body='+encodeURIComponent(body);
-  // Show a follow-up prompt so the user knows to fall back to SMS if email doesn't land
-  setTimeout(()=>{
-    const cphone=c?.phone||b.phone||'';
-    if(cphone){
-      const smsMsg='Hi '+firstName+', '+bname+' sent your painting proposal. '+(proposalLink?'Tap to view and sign: '+proposalLink:'Reply to accept.');
-      zConfirm(
-        'Did the email go out?\n\nIf '+firstName+' doesn\'t receive it (corporate filters sometimes block unknown senders), tap "Send via SMS" to deliver the link by text instead.',
-        ()=>{window.location.href='sms:'+cphone.replace(/\D/g,'')+'?body='+encodeURIComponent(smsMsg);},
-        {title:'Email sent',yes:'Send via SMS too',no:'Email is enough'}
-      );
-    }
-  },800);
 }
 
 function toggleBidSummary(bidId){

@@ -12,8 +12,13 @@ create table if not exists county_assessor_registry (
   failure_count int default 0
 );
 
--- Add structured address columns to inbound_leads if they don't exist
-alter table inbound_leads add column if not exists street text;
-alter table inbound_leads add column if not exists city text;
-alter table inbound_leads add column if not exists state text;
-alter table inbound_leads add column if not exists zip text;
+-- Add structured address columns to inbound_leads if the table exists
+do $$
+begin
+  if exists (select 1 from information_schema.tables where table_name = 'inbound_leads') then
+    alter table inbound_leads add column if not exists street text;
+    alter table inbound_leads add column if not exists city text;
+    alter table inbound_leads add column if not exists state text;
+    alter table inbound_leads add column if not exists zip text;
+  end if;
+end $$;
