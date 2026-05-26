@@ -24,7 +24,12 @@ jobs:
     strategy:
       fail-fast: false   # let all shards finish so we see ALL failures
       matrix:
-        shard: [1, 2, 3, 4]   # 4 shards run in parallel — each handles 1/4 of tests
+        shard: [1, 2, 3, 4, 5, 6]   # 6 shards — each handles 1/6 of tests
+
+    # Opt into Node 24 for action runners (checkout, cache, upload-artifact).
+    # GitHub drops Node 20 from runners on Jun 2 2026 — this gets ahead of it.
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout
@@ -33,18 +38,33 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
+        env:
+          # GitHub Actions drops Node 20 for action runners on Jun 2 2026.
+          # Opt into Node 24 now so the upgrade is on our schedule, not GitHub's.
+          FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
       - name: Install Playwright 1.56
         # Pin to 1.56.0 — matches local dev setup and the browser revisions
         # already validated. Bump here when upgrading Playwright.
         run: npm install --no-save @playwright/test@1.56.0 serve
 
+      # Cache browser binaries keyed to the Playwright version.
+      # On cache hit the download (~500 MB) is skipped — saves ~60s per shard.
+      # --with-deps still runs to ensure OS-level system libraries are present
+      # (apt packages can't be cached), but the binaries are already on disk.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-1.56.0
+
       - name: Install Playwright browsers (WebKit + Chromium)
         run: npx playwright install --with-deps webkit chromium
 
-      - name: Run Playwright tests (shard ${{ matrix.shard }}/4)
-        run: npx playwright test --shard=${{ matrix.shard }}/4
+      - name: Run Playwright tests (shard ${{ matrix.shard }}/6)
+        run: npx playwright test --shard=${{ matrix.shard }}/6
         env:
           CI: true
 

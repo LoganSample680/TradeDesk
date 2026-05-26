@@ -28,6 +28,7 @@ Deno.serve(async (req: Request) => {
 
     const now = new Date().toISOString();
     const isContractor = viewerType === 'contractor';
+    const isHubOpen   = viewerType === 'client-hub';
 
     const row: Record<string, unknown> = {
       contractor_user_id: contractorUserId,
@@ -38,10 +39,13 @@ Deno.serve(async (req: Request) => {
     };
     if (clientId) row.client_id = clientId;
 
-    // Always update opened_at (latest open, any viewer).
-    // client_opened_at only updates when a real client opens — never overwritten
-    // by contractor previews. This lets the contractor see both timestamps.
-    if (!isContractor) {
+    // Three distinct open events — each writes its own timestamp column:
+    //   'client-hub'  → hub_opened_at   (client opened the shared hub link)
+    //   'client'      → client_opened_at (client opened a specific proposal)
+    //   'contractor'  → contractor_opened_at
+    if (isHubOpen) {
+      row.hub_opened_at = now;
+    } else if (!isContractor) {
       row.client_opened_at = now;
     } else {
       row.contractor_opened_at = now;
@@ -49,13 +53,14 @@ Deno.serve(async (req: Request) => {
 
     // Upsert: first view = INSERT, repeat view = UPDATE.
     // UNIQUE (contractor_user_id, bid_id) — one row per bid.
-    // On conflict update only the relevant timestamp fields, not both.
+    // On conflict update only the relevant timestamp field.
     const conflictUpdate: Record<string, unknown> = {
       opened_at: now,
       viewer_type: row.viewer_type,
     };
-    if (!isContractor) conflictUpdate.client_opened_at = now;
-    else conflictUpdate.contractor_opened_at = now;
+    if (isHubOpen)        conflictUpdate.hub_opened_at        = now;
+    else if (!isContractor) conflictUpdate.client_opened_at   = now;
+    else                  conflictUpdate.contractor_opened_at  = now;
 
     const { error } = await supa
       .from('proposal_views')

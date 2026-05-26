@@ -29,7 +29,7 @@
  */
 
 const { test, expect, mockAllExternal, _supabaseShim, waitForAppBoot, assertNoErrors,
-        FAKE_BID_ID_1, FAKE_USER_ID, FAKE_TOKEN, MOCK_PROPOSAL } = require('./helpers');
+        FAKE_BID_ID_1, FAKE_BID_ID_2, FAKE_USER_ID, FAKE_TOKEN, FAKE_TOKEN_2, MOCK_PROPOSAL } = require('./helpers');
 
 // ── 1. Client Hub — price hidden from pending proposal cards ─────────────────
 
@@ -287,7 +287,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     assertNoErrors(page, 'different user opens sign.html');
   });
 
-  test('dashboard shows "Client opened" badge when client_opened_at is set', async ({ page }) => {
+  test('dashboard shows "Proposal opened" badge when client_opened_at is set', async ({ page }) => {
     await mockAllExternal(page);
     await page.goto('/');
     await waitForAppBoot(page);
@@ -327,9 +327,207 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     await page.waitForTimeout(300);
 
     const dashText = await page.textContent('#pg-dash');
-    // Should show client opened badge, NOT the generic "Opened" badge
-    expect(dashText).toContain('Client opened');
-    assertNoErrors(page, 'dashboard client opened badge');
+    // client_opened_at (sign.html) renders as "Proposal opened", not "Client opened"
+    expect(dashText).toContain('Proposal opened');
+    assertNoErrors(page, 'dashboard proposal opened badge');
+  });
+
+  // ── 3. Hub open → tracked per bid ───────────────────────────────────────────
+  //
+  // These tests would have CAUGHT the original bug:
+  //   Old code: POST to /rest/v1/proposal_views with no bid_id + integer client_id
+  //             on a uuid column → Postgres silently drops it. The specific
+  //             log-proposal-view route below would NEVER fire → capturedCalls
+  //             stays empty → expect(capturedCalls.length).toBe(2) FAILS.
+  //   New code: calls /functions/v1/log-proposal-view per bid → route fires →
+  //             test passes.
+
+  test('opening client hub fires log-proposal-view for each pending bid', async ({ page }) => {
+    const HUB = {
+      contractorUserId: FAKE_USER_ID,
+      contractorName: 'Zach Pro Painting',
+      clientName: 'Logan Sample',
+      clientToken: FAKE_TOKEN,
+      bids: [
+        {
+          id: FAKE_BID_ID_1,
+          type: 'Interior Painting',
+          amount: 5000,
+          deposit: 1250,
+          status: 'Pending',
+          bid_date: new Date().toISOString().slice(0, 10),
+          signingToken: FAKE_TOKEN,
+          // signHubUrl must be non-null — client.html filters on b.id && b.signHubUrl
+          signHubUrl: `https://tradedeskpro.app/sign.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&b=${FAKE_BID_ID_1}`,
+        },
+        {
+          id: FAKE_BID_ID_2,
+          type: 'Exterior Painting',
+          amount: 8000,
+          deposit: 2000,
+          status: 'Pending',
+          bid_date: new Date().toISOString().slice(0, 10),
+          signingToken: FAKE_TOKEN_2,
+          signHubUrl: `https://tradedeskpro.app/sign.html?t=${FAKE_TOKEN_2}&u=${FAKE_USER_ID}&b=${FAKE_BID_ID_2}`,
+        },
+      ],
+      jobs: [],
+      payments: [],
+    };
+
+    await page.addInitScript(data => { window.__mockHubData = data; }, HUB);
+    await mockAllExternal(page); // registers broad catch-all FIRST
+
+    // Register specific capture route AFTER mockAllExternal — Playwright checks
+    // routes LIFO so this fires first, captures the body, then fulfills.
+    const capturedCalls = [];
+    await page.route('**/functions/v1/log-proposal-view', async route => {
+      try { capturedCalls.push(route.request().postDataJSON()); } catch(_) {}
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+    });
+
+    await page.goto(`/client.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&c=1`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(800);
+
+    // One call per pending bid with signHubUrl — order may vary
+    expect(capturedCalls.length).toBe(2);
+
+    const sentBidIds = capturedCalls.map(c => c.bidId).sort();
+    expect(sentBidIds).toContain(String(FAKE_BID_ID_1));
+    expect(sentBidIds).toContain(String(FAKE_BID_ID_2));
+
+    capturedCalls.forEach(call => {
+      expect(call.contractorUserId).toBe(FAKE_USER_ID);
+      // Hub opens must use 'client-hub' viewerType — this writes hub_opened_at,
+      // distinct from client_opened_at (which sign.html sets when the client
+      // opens a specific proposal). Two separate timestamps on the dashboard.
+      expect(call.viewerType).toBe('client-hub');
+    });
+
+    assertNoErrors(page, 'hub open fires log-proposal-view per bid');
+  });
+
+  test('contractor opening their own hub link does NOT fire hub tracking', async ({ page }) => {
+    // When the contractor is logged in (session.user.id === u) and opens their own
+    // hub link to preview it, tracking must be skipped — same auth guard as sign.html.
+    // Prevents the contractor's own preview from showing "Hub opened" on the dashboard.
+    const HUB = {
+      contractorUserId: FAKE_USER_ID,
+      contractorName: 'Zach Pro Painting',
+      clientName: 'Logan Sample',
+      clientToken: FAKE_TOKEN,
+      bids: [{
+        id: FAKE_BID_ID_1,
+        type: 'Interior Painting',
+        amount: 5000,
+        deposit: 1250,
+        status: 'Pending',
+        bid_date: new Date().toISOString().slice(0, 10),
+        signingToken: FAKE_TOKEN,
+        signHubUrl: `https://tradedeskpro.app/sign.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&b=${FAKE_BID_ID_1}`,
+      }],
+      jobs: [],
+      payments: [],
+    };
+
+    // Set the session user ID to the contractor's ID BEFORE the shim loads.
+    // _supabaseShim in helpers.js checks window.__overrideSessionUserId so
+    // getSession() returns FAKE_USER_ID without replacing the whole CDN shim
+    // (replacing the shim breaks storage.download() and crashes client.html).
+    await page.addInitScript(() => { window.__overrideSessionUserId = 'e2e-user-0000-0000-0000-000000000001'; });
+    await page.addInitScript(data => { window.__mockHubData = data; }, HUB);
+    await mockAllExternal(page);
+
+    const capturedCalls = [];
+    await page.route('**/functions/v1/log-proposal-view', async route => {
+      try { capturedCalls.push(route.request().postDataJSON()); } catch(_) {}
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+    });
+
+    await page.goto(`/client.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&c=1`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(800);
+
+    // Contractor's own session → tracking must NOT fire
+    expect(capturedCalls.length).toBe(0);
+    assertNoErrors(page, 'contractor hub preview: tracking skipped');
+  });
+
+  test('full pipeline: client opens hub → dashboard shows Hub opened + Proposal opened separately', async ({ page }) => {
+    // Confirms the two-timestamp design end-to-end:
+    //  Step 1 — client.html fires log-proposal-view with viewerType:'client-hub'
+    //            → contractor sees "Hub opened · Xm ago"
+    //  Step 2 — sign.html fires log-proposal-view with viewerType:'client'
+    //            → contractor sees "Proposal opened · Xm ago" (separate line)
+    //  Step 3 — contractor dashboard shows BOTH badges simultaneously
+    const HUB = {
+      contractorUserId: FAKE_USER_ID,
+      contractorName: 'Zach Pro Painting',
+      clientName: 'Logan Sample',
+      clientToken: FAKE_TOKEN,
+      bids: [{
+        id: FAKE_BID_ID_1,
+        type: 'Interior Painting',
+        amount: 5000,
+        deposit: 1250,
+        status: 'Pending',
+        bid_date: new Date().toISOString().slice(0, 10),
+        signingToken: FAKE_TOKEN,
+        signHubUrl: `https://tradedeskpro.app/sign.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&b=${FAKE_BID_ID_1}`,
+      }],
+      jobs: [],
+      payments: [],
+    };
+
+    await page.addInitScript(data => { window.__mockHubData = data; }, HUB);
+    await mockAllExternal(page);
+
+    const capturedCalls = [];
+    await page.route('**/functions/v1/log-proposal-view', async route => {
+      try { capturedCalls.push(route.request().postDataJSON()); } catch(_) {}
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+    });
+
+    // Step 1: client opens hub — should fire with viewerType:'client-hub'
+    await page.goto(`/client.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&c=1`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(800);
+    expect(capturedCalls.length).toBeGreaterThan(0);
+    expect(capturedCalls[0].viewerType).toBe('client-hub'); // not 'client'
+
+    // Step 2: contractor opens dashboard — inject BOTH timestamps as the DB would have them
+    await page.goto('/');
+    await waitForAppBoot(page);
+
+    const hubOpenTs      = new Date(Date.now() - 10 * 60 * 1000).toISOString(); // hub: 10 min ago
+    const proposalOpenTs = new Date(Date.now() -  3 * 60 * 1000).toISOString(); // proposal: 3 min ago
+    await page.evaluate(({ bidId, hubTs, proposalTs }) => {
+      window._proposalViewsByBidHubClient  = { [bidId]: hubTs };      // hub opened
+      window._proposalViewsByBidClient     = { [bidId]: proposalTs }; // proposal opened
+      window._proposalViewsByBidContractor = {};
+      window.clients.push({ id: 1, name: 'Logan Sample', phone: '' });
+      window.bids.push({
+        id: Number(bidId),
+        type: 'Interior Painting',
+        status: 'Pending',
+        amount: 5000,
+        deposit: 1250,
+        client_id: 1,
+        bid_date: new Date().toISOString().slice(0, 10),
+        signingToken: 'tok-test',
+      });
+      window._mmtCol_pending = false;
+    }, { bidId: String(FAKE_BID_ID_1), hubTs: hubOpenTs, proposalTs: proposalOpenTs });
+
+    await page.evaluate(() => { if (typeof renderDash === 'function') renderDash(); });
+    await page.waitForTimeout(300);
+
+    const dashText = await page.textContent('#pg-dash');
+    // Both events must appear as separate lines
+    expect(dashText).toContain('Hub opened');
+    expect(dashText).toContain('Proposal opened');
+    assertNoErrors(page, 'hub open pipeline: dashboard shows Hub opened + Proposal opened separately');
   });
 
   test('dashboard shows "You previewed" when only contractor_opened_at is set', async ({ page }) => {

@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-05.26.26.78';
+const CACHE = 'tradedesk-05.26.26.90';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
 // tries to serve it for a navigation. new Response() always has redirected:false.
@@ -80,7 +80,14 @@ self.addEventListener('fetch', e => {
           caches.open(CACHE).then(c => c.put(e.request, toCache));
         }
         return r;
-      });
+      }).catch(() => new Response('', { status: 503, statusText: 'Network Unavailable' }));
+      // .catch(() => new Response(503)) — if the SW's network fetch fails (offline,
+      // external host unreachable, CI environment), resolve with a 503 instead of
+      // leaving an unhandled rejection. Response.error() is NOT used here because
+      // WebKit fires "Response served by service worker is an error" pageerror when
+      // the SW returns Response.error(). A real 503 Response resolves cleanly — the
+      // page's fetch() resolves (non-ok), r.json() throws SyntaxError on empty body,
+      // and the caller's .catch(()=>null) handles it with zero pageerrors.
       return cached || net;
     })
   );

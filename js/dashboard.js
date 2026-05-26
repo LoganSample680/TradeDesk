@@ -794,14 +794,19 @@ function renderTodayFeed(){
     const days=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
     const urgColor=days>=14?'#A32D2D':days>=7?'var(--amber)':'var(--text3)';
     const daysStr=days===0?'Sent today':days===1?'1 day waiting':days+'d waiting';
-    // Show distinct client vs contractor open timestamps
+    // Show three distinct open timestamps per bid
+    const _hubTs=(typeof _proposalViewsByBidHubClient!=='undefined'&&_proposalViewsByBidHubClient)?_proposalViewsByBidHubClient[String(b.id)]:null;
     const _clientTs=(typeof _proposalViewsByBidClient!=='undefined'&&_proposalViewsByBidClient)?_proposalViewsByBidClient[String(b.id)]:null;
     const _contractorTs=(typeof _proposalViewsByBidContractor!=='undefined'&&_proposalViewsByBidContractor)?_proposalViewsByBidContractor[String(b.id)]:null;
     const _ago=ts=>{const m=Math.floor((Date.now()-new Date(ts))/60000);return m<2?'just now':m<60?m+'m ago':m<1440?Math.floor(m/60)+'h ago':Math.floor(m/1440)+'d ago';};
     let viewedBadge='';
+    if(_hubTs){
+      viewedBadge='<div style="font-size:11px;font-weight:700;color:#2563eb;margin-top:3px">🔗 Hub opened · '+_ago(_hubTs)+'</div>';
+    }
     if(_clientTs){
-      viewedBadge='<div style="font-size:11px;font-weight:700;color:#2563eb;margin-top:3px">👁 Client opened · '+_ago(_clientTs)+'</div>';
-    }else{
+      viewedBadge+='<div style="font-size:11px;font-weight:700;color:#16a34a;margin-top:2px">👁 Proposal opened · '+_ago(_clientTs)+'</div>';
+    }
+    if(!_hubTs&&!_clientTs){
       viewedBadge='<div style="font-size:11px;color:var(--text3);margin-top:3px">Client hasn\'t opened yet</div>';
     }
     if(_contractorTs){

@@ -1577,12 +1577,17 @@ function renderCDBids(){
           (b.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+b.notes.substring(0,60)+'</div>':'')+
           (b.status==='Pending'&&b.signingToken&&typeof _proposalViewsByBidClient!=='undefined'?
             (()=>{
+              const hubTs=_proposalViewsByBidHubClient&&_proposalViewsByBidHubClient[String(b.id)];
               const clientTs=_proposalViewsByBidClient&&_proposalViewsByBidClient[String(b.id)];
               const contractorTs=_proposalViewsByBidContractor&&_proposalViewsByBidContractor[String(b.id)];
               let badge='';
+              if(hubTs){
+                badge+='<div style="font-size:11px;color:#2563eb;margin-top:2px">🔗 Hub opened · '+_timeAgo(hubTs)+'</div>';
+              }
               if(clientTs){
-                badge+='<div style="font-size:11px;color:var(--green-mid);margin-top:2px">👁 Client opened · '+_timeAgo(clientTs)+'</div>';
-              }else{
+                badge+='<div style="font-size:11px;color:var(--green-mid);margin-top:2px">👁 Proposal opened · '+_timeAgo(clientTs)+'</div>';
+              }
+              if(!hubTs&&!clientTs){
                 badge+='<div style="font-size:11px;color:var(--text3);margin-top:2px">Client hasn\'t opened yet</div>';
               }
               if(contractorTs){

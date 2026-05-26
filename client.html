@@ -577,7 +577,23 @@ async function init(){
       switchView(_VIEWS.includes(_hv)?_hv:'overview');
     }
     showState('hub');
-    fetch(SUPA_URL+'/rest/v1/proposal_views',{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Prefer':'return=minimal'},body:JSON.stringify({contractor_user_id:u,client_id:c,user_agent:(navigator.userAgent||'').slice(0,250)})}).catch(()=>{});
+    // Log a hub view for each pending proposal visible in this hub.
+    // Auth check mirrors sign.html: if the contractor opens their own hub link
+    // while logged in, skip tracking so their preview doesn't show as "Hub opened".
+    // viewerType:'client-hub' writes hub_opened_at — distinct from client_opened_at
+    // (which sign.html writes when the client opens a specific proposal).
+    try{
+      const{data:{session}}=await _supa.auth.getSession();
+      if(!session||session?.user?.id!==u){
+        (_hub&&_hub.bids||[]).filter(b=>b.id&&b.signHubUrl).forEach(b=>{
+          fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
+            method:'POST',
+            headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
+            body:JSON.stringify({contractorUserId:u,bidId:String(b.id),viewerType:'client-hub'})
+          }).catch(()=>{});
+        });
+      }
+    }catch(_){}
     const _paidParam=p.get('paid');
     if(_paidParam){
       const bidId=parseInt(_paidParam);
@@ -835,7 +851,7 @@ function renderOverview(){
   const job0=activeJobs[0]||h.jobs[0];
   if(job0&&job0.progress!=null&&job0.progress!==undefined) pct=Math.round(Math.min(100,Math.max(0,job0.progress)));
   else if(job0&&job0.days_complete!=null&&job0.days_total) pct=Math.round(Math.min(100,job0.days_complete/job0.days_total*100));
-  const firstName=(h.clientName||'').split(' ')[0]||h.clientName||'';
+  const firstName=(h.clientName||'').trim();
   // PR4: Approvals data (seed if undefined)
   const approvals=_hub.approvals||[
     {type:'color',id:'c1',label:'Exterior color choice',swatches:[
