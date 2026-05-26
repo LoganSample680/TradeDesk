@@ -6235,6 +6235,7 @@ test.describe('Paint estimate — SCOPE_ITEMS pricing structure', () => {
   });
 });
 
+
 // ════════════════════════════════════════════════════════════════════════════
 //  CLIENT MANAGEMENT — form validation, save, list, search, detail
 // ════════════════════════════════════════════════════════════════════════════
