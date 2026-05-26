@@ -1,15 +1,30 @@
 name: E2E Tests
 
 on:
-  push:
-    branches: ['**']
+  # Only run on PRs (covers every commit pushed to the feature branch while
+  # the PR is open). The pull_request event does NOT double-fire alongside
+  # the push event, so we get exactly 1 run per commit — not 2.
   pull_request:
     branches: ['**']
+  # Also run on direct pushes to main (post-merge validation).
+  push:
+    branches: [main]
+
+# Cancel any in-progress run for the same branch/PR when a new commit is
+# pushed. Prevents three 10-minute jobs stacking up when you push quickly.
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false   # let both shards finish so we see ALL failures
+      matrix:
+        shard: [1, 2]    # 2 shards run in parallel — each handles half the tests
 
     steps:
       - name: Checkout
@@ -28,28 +43,26 @@ jobs:
       - name: Install Playwright browsers (WebKit + Chromium)
         run: npx playwright install --with-deps webkit chromium
 
-      - name: Run Playwright tests
-        run: npx playwright test
+      - name: Run Playwright tests (shard ${{ matrix.shard }}/2)
+        run: npx playwright test --shard=${{ matrix.shard }}/2
         env:
           CI: true
 
       # Upload the full HTML report on EVERY run (pass or fail).
-      # This lets Claude read exactly which tests failed, which were flaky
-      # (passed on retry), and the full trace/video for each.
+      # Each shard uploads its own report with a unique name.
       - name: Upload Playwright HTML report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-shard-${{ matrix.shard }}
           path: playwright-report/
           retention-days: 14
 
       # Upload raw test results (traces, screenshots, videos) on failure.
-      # Playwright traces open in https://trace.playwright.dev for step-by-step replay.
       - name: Upload test results on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-traces
+          name: playwright-traces-shard-${{ matrix.shard }}
           path: test-results/
           retention-days: 7

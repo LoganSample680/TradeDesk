@@ -5,6 +5,9 @@ const isCI = !!process.env.CI;
 
 module.exports = defineConfig({
   testDir: './tests',
+  // fullyParallel: false keeps tests within each describe block sequential
+  // (they often share page state). Workers still run DIFFERENT describe blocks
+  // in parallel — safe because each worker gets its own browser context.
   fullyParallel: false,
   forbidOnly: isCI,
 
@@ -15,7 +18,10 @@ module.exports = defineConfig({
   // This surfaces flaky tests without blocking the whole suite.
   retries: isCI ? 2 : 0,
 
-  workers: 1,
+  // CI: 2 workers to saturate both vCPUs on the GitHub Actions runner.
+  // Combined with 2-shard matrix in test.yml this gives 4 parallel workers
+  // across 2 jobs → ~4x faster than the original 1 worker / no sharding.
+  workers: isCI ? 2 : 1,
 
   // In CI: github reporter annotates failures inline on the PR diff.
   // html report is always uploaded as an artifact so failures AND flaky
