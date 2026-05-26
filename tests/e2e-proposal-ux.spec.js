@@ -29,7 +29,7 @@
  */
 
 const { test, expect, mockAllExternal, _supabaseShim, waitForAppBoot, assertNoErrors,
-        FAKE_BID_ID_1, FAKE_USER_ID, FAKE_TOKEN, MOCK_PROPOSAL } = require('./helpers');
+        FAKE_BID_ID_1, FAKE_BID_ID_2, FAKE_USER_ID, FAKE_TOKEN, FAKE_TOKEN_2, MOCK_PROPOSAL } = require('./helpers');
 
 // ── 1. Client Hub — price hidden from pending proposal cards ─────────────────
 
