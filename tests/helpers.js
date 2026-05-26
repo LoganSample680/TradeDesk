@@ -228,8 +228,8 @@ function _supabaseShim() {
     createClient: function(url, key) {
       return {
         auth: {
-          getUser:    () => noopResult({ user: { id: 'e2e-user', email: 'test@test.com' } }),
-          getSession: () => noopResult({ session: { access_token: 'fake-jwt', user: { id: 'e2e-user', email: 'test@test.com' } } }),
+          getUser:    () => { const uid = (typeof window!=='undefined'&&window.__overrideSessionUserId)||'e2e-user'; return noopResult({ user: { id: uid, email: 'test@test.com' } }); },
+          getSession: () => { const uid = (typeof window!=='undefined'&&window.__overrideSessionUserId)||'e2e-user'; return noopResult({ session: { access_token: 'fake-jwt', user: { id: uid, email: 'test@test.com' } } }); },
           signInWithPassword: () => noopResult({ user: { id: 'e2e-user' }, session: { access_token: 'fake-jwt' } }),
           signOut:    () => noopResult(null),
           onAuthStateChange: (cb) => { return { data: { subscription: { unsubscribe: ()=>{} } } }; },

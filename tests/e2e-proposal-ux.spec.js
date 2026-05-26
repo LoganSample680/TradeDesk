@@ -431,15 +431,13 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
       payments: [],
     };
 
+    // Set the session user ID to the contractor's ID BEFORE the shim loads.
+    // _supabaseShim in helpers.js checks window.__overrideSessionUserId so
+    // getSession() returns FAKE_USER_ID without replacing the whole CDN shim
+    // (replacing the shim breaks storage.download() and crashes client.html).
+    await page.addInitScript(() => { window.__overrideSessionUserId = 'e2e-user-0000-0000-0000-000000000001'; });
     await page.addInitScript(data => { window.__mockHubData = data; }, HUB);
     await mockAllExternal(page);
-
-    // Override Supabase shim AFTER mockAllExternal (LIFO — checked first).
-    // Returns FAKE_USER_ID as session.user.id so getSession() matches the 'u' URL param.
-    await page.route('**/cdn.jsdelivr.net/**', async route => {
-      if (!route.request().url().includes('supabase')) return route.continue();
-      await route.fulfill({ status: 200, contentType: 'application/javascript', body: _shimWithSession(FAKE_USER_ID) });
-    });
 
     const capturedCalls = [];
     await page.route('**/functions/v1/log-proposal-view', async route => {
