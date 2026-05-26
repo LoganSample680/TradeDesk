@@ -1,0 +1,13 @@
+tests/
+node_modules/
+.claude/
+test-results/
+playwright-report/
+*.py
+TradeDesk-diagnostic.js
+supabase-setup.sql
+supabase-schema-v2.sql
+stripe-connect-migration.sql
+push.sh
+README.md
+CLAUDE.md
