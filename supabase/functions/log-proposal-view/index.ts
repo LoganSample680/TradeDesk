@@ -26,49 +26,22 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'contractorUserId and bidId required' }, 400);
     }
 
-    const now = new Date().toISOString();
-    const isContractor = viewerType === 'contractor';
-    const isHubOpen   = viewerType === 'client-hub';
-
-    const row: Record<string, unknown> = {
-      contractor_user_id: contractorUserId,
-      bid_id: String(bidId),
-      // opened_at tracks the most recent open of ANY kind (backwards compat)
-      opened_at: now,
-      viewer_type: isContractor ? 'contractor' : 'client',
-    };
-    if (clientId) row.client_id = clientId;
-
-    // Three distinct open events — each writes its own timestamp column:
-    //   'client-hub'  → hub_opened_at   (client opened the shared hub link)
-    //   'client'      → client_opened_at (client opened a specific proposal)
-    //   'contractor'  → contractor_opened_at
-    if (isHubOpen) {
-      row.hub_opened_at = now;
-    } else if (!isContractor) {
-      row.client_opened_at = now;
-    } else {
-      row.contractor_opened_at = now;
-    }
-
-    // Upsert: first view = INSERT, repeat view = UPDATE.
-    // UNIQUE (contractor_user_id, bid_id) — one row per bid.
-    // On conflict update only the relevant timestamp field.
-    const conflictUpdate: Record<string, unknown> = {
-      opened_at: now,
-      viewer_type: row.viewer_type,
-    };
-    if (isHubOpen)        conflictUpdate.hub_opened_at        = now;
-    else if (!isContractor) conflictUpdate.client_opened_at   = now;
-    else                  conflictUpdate.contractor_opened_at  = now;
-
-    const { error } = await supa
-      .from('proposal_views')
-      .upsert({ ...row }, { onConflict: 'contractor_user_id,bid_id' });
+    // Use the atomic Postgres function so view counts are incremented in a single
+    // INSERT ... ON CONFLICT DO UPDATE statement — no race condition.
+    // Three distinct viewer types:
+    //   'client-hub'  → hub_opened_at + hub_view_count++
+    //   'client'      → client_opened_at + client_view_count++
+    //   'contractor'  → contractor_opened_at (no count — not a real client view)
+    const { error } = await supa.rpc('log_proposal_view_with_count', {
+      p_contractor_user_id: contractorUserId,
+      p_bid_id:             String(bidId),
+      p_viewer_type:        viewerType || 'client',
+      p_client_id:          clientId   || null,
+    });
 
     if (error) {
       const msg = error.message || error.details || error.hint || JSON.stringify(error);
-      console.error('upsert error:', JSON.stringify(error));
+      console.error('log_proposal_view_with_count error:', JSON.stringify(error));
       return json({ error: msg, code: error.code, details: error.details }, 500);
     }
 

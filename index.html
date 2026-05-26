@@ -1745,7 +1745,11 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div id="proposal-link-sublabel" style="display:none"></div>
       <div id="proposal-link-shorturl" style="display:none"></div>
       <input id="proposal-link-input" readonly style="display:none">
-      <button onclick="shareProposalLink()" class="btn" style="width:100%;padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue)">⬆️ Send to client</button>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">
+        <button onclick="sendProposalViaSms()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue)">📱 Text</button>
+        <button onclick="sendProposalViaEmail()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue)">✉️ Email</button>
+      </div>
+      <button onclick="shareProposalLink()" class="btn" style="width:100%;padding:10px;font-size:13px;background:var(--bg2);color:var(--text2);border-color:var(--border2)">⬆️ Other app (WhatsApp, AirDrop…)</button>
       <div style="font-size:11px;color:var(--text3);margin-top:6px">Bid saved as Pending. You'll get a follow-up reminder in 3 days if no response.</div>
     </div>
   </div>

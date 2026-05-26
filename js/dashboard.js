@@ -794,23 +794,40 @@ function renderTodayFeed(){
     const days=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
     const urgColor=days>=14?'#A32D2D':days>=7?'var(--amber)':'var(--text3)';
     const daysStr=days===0?'Sent today':days===1?'1 day waiting':days+'d waiting';
-    // Show three distinct open timestamps per bid
+    // Show three distinct open timestamps + view counts per bid
     const _hubTs=(typeof _proposalViewsByBidHubClient!=='undefined'&&_proposalViewsByBidHubClient)?_proposalViewsByBidHubClient[String(b.id)]:null;
     const _clientTs=(typeof _proposalViewsByBidClient!=='undefined'&&_proposalViewsByBidClient)?_proposalViewsByBidClient[String(b.id)]:null;
     const _contractorTs=(typeof _proposalViewsByBidContractor!=='undefined'&&_proposalViewsByBidContractor)?_proposalViewsByBidContractor[String(b.id)]:null;
-    const _ago=ts=>{const m=Math.floor((Date.now()-new Date(ts))/60000);return m<2?'just now':m<60?m+'m ago':m<1440?Math.floor(m/60)+'h ago':Math.floor(m/1440)+'d ago';};
+    const _hubCnt=(typeof _proposalViewsByBidHubCount!=='undefined'&&_proposalViewsByBidHubCount)?(_proposalViewsByBidHubCount[String(b.id)]||0):0;
+    const _clientCnt=(typeof _proposalViewsByBidClientCount!=='undefined'&&_proposalViewsByBidClientCount)?(_proposalViewsByBidClientCount[String(b.id)]||0):0;
+    // Timezone-aware timestamp: "Today at 2:34 PM", "Yesterday at 9:15 AM", "Mon, May 25 at 3:20 PM"
+    const _localTs=ts=>{
+      if(!ts)return'';
+      const d=new Date(ts);
+      const m=Math.floor((Date.now()-d)/60000);
+      if(m<2)return'just now';
+      if(m<60)return m+'m ago';
+      const t=d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+      const today=new Date();today.setHours(0,0,0,0);
+      const yest=new Date(today-86400000);
+      if(d>=today)return'Today at '+t;
+      if(d>=yest)return'Yesterday at '+t;
+      return d.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'})+' at '+t;
+    };
     let viewedBadge='';
     if(_hubTs){
-      viewedBadge='<div style="font-size:11px;font-weight:700;color:#2563eb;margin-top:3px">🔗 Hub opened · '+_ago(_hubTs)+'</div>';
+      const _cStr=_hubCnt>1?' · '+_hubCnt+'×':'';
+      viewedBadge='<div style="font-size:11px;font-weight:700;color:#2563eb;margin-top:3px">🔗 Hub opened · '+_localTs(_hubTs)+_cStr+'</div>';
     }
     if(_clientTs){
-      viewedBadge+='<div style="font-size:11px;font-weight:700;color:#16a34a;margin-top:2px">👁 Proposal opened · '+_ago(_clientTs)+'</div>';
+      const _cStr=_clientCnt>1?' · '+_clientCnt+'×':'';
+      viewedBadge+='<div style="font-size:11px;font-weight:700;color:#16a34a;margin-top:2px">👁 Proposal opened · '+_localTs(_clientTs)+_cStr+'</div>';
     }
     if(!_hubTs&&!_clientTs){
       viewedBadge='<div style="font-size:11px;color:var(--text3);margin-top:3px">Client hasn\'t opened yet</div>';
     }
     if(_contractorTs){
-      viewedBadge+='<div style="font-size:10px;color:var(--text3);margin-top:1px">You previewed · '+_ago(_contractorTs)+'</div>';
+      viewedBadge+='<div style="font-size:10px;color:var(--text3);margin-top:1px">You previewed · '+_localTs(_contractorTs)+'</div>';
     }
     pendingItems.push(
       '<div class="tf-card">'+
