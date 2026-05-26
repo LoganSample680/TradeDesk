@@ -239,11 +239,26 @@ do $$ begin
     execute $p$ create policy "Members read own membership" on account_users for select
       using (user_id::text = auth.uid()::text) $p$;
   end if;
-  if not exists (select 1 from pg_policies where tablename='account_users' and policyname='Owner can manage memberships') then
-    execute $p$ create policy "Owner can manage memberships" on account_users for all
-      using (account_id::text in (
-        select account_id::text from account_users where user_id::text = auth.uid()::text and role = 'owner'
-      )) $p$;
+  -- NOTE: no self-referencing FOR ALL policy here — that causes infinite recursion.
+  -- Write access is handled by the non-recursive INSERT/UPDATE/DELETE policies below
+  -- that check ownership via the accounts table instead of account_users itself.
+  if not exists (select 1 from pg_policies where tablename='account_users' and policyname='Owner inserts memberships') then
+    execute $p$ create policy "Owner inserts memberships" on account_users for insert
+      with check (
+        account_id::text in (select id::text from accounts where owner_id::text = auth.uid()::text)
+      ) $p$;
+  end if;
+  if not exists (select 1 from pg_policies where tablename='account_users' and policyname='Owner updates memberships') then
+    execute $p$ create policy "Owner updates memberships" on account_users for update
+      using (
+        account_id::text in (select id::text from accounts where owner_id::text = auth.uid()::text)
+      ) $p$;
+  end if;
+  if not exists (select 1 from pg_policies where tablename='account_users' and policyname='Owner deletes memberships') then
+    execute $p$ create policy "Owner deletes memberships" on account_users for delete
+      using (
+        account_id::text in (select id::text from accounts where owner_id::text = auth.uid()::text)
+      ) $p$;
   end if;
 
   -- vehicles
