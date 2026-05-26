@@ -540,10 +540,22 @@ function sendBidEmail(bidId){
   }).join(', '):'Sanding, Spackle/patching, Two-coat finish';
   const NL='\n';
   const lineItems=surfs.length?surfs.map(s=>'  - '+s.room+': '+s.qty.toLocaleString()+' sf').join(NL):'  See attached estimate';
-  const SEP='─────────────────────────────────────'+NL;
+  // Use plain ASCII dashes — Unicode box-drawing chars trigger corporate spam filters
+  const SEP='-------------------------------------'+NL;
+  // Build signing link if this bid has already been sent as a proposal
+  const baseUrl=(typeof _clientBaseUrl==='function')?_clientBaseUrl():(window.location.origin+'/');
+  const hubUrl=c?.clientToken?(baseUrl+'client.html?t='+c.clientToken+'&u='+(window._supaUser?.id||'')+'&c='+c.id):null;
+  const sigUrl=b.signingToken?(baseUrl+'sign.html?t='+b.signingToken+'&u='+(window._supaUser?.id||'')+'&b='+bidId):null;
+  const proposalLink=hubUrl||sigUrl;
   let body='Hi '+firstName+','+NL+NL;
   body+='It was great meeting you'+( b.addr?' at '+b.addr:'')+' and I appreciate the opportunity to earn your business.'+NL+NL;
-  body+='Here is your painting proposal:'+NL+NL;
+  if(proposalLink){
+    body+='Your proposal is ready to view and sign online:'+NL+NL;
+    body+='    '+proposalLink+NL+NL;
+    body+='Tap the link to review everything we went over and sign when you\'re ready. If the link doesn\'t come through, just reply and I\'ll send it via text.'+NL+NL;
+  } else {
+    body+='Here is your painting proposal:'+NL+NL;
+  }
   body+=SEP;
   body+='PAINTING PROPOSAL'+NL;
   body+=bname+(bphone?' | '+bphone:'')+NL;
@@ -561,13 +573,29 @@ function sendBidEmail(bidId){
   body+='  - 25% deposit to start: '+fmt(b.amount*.25)+NL;
   body+='  - Balance due on completion: '+fmt(b.amount*.75)+NL;
   body+='  - '+b.days+' day'+(b.days>1?'s':'')+' estimated to complete'+NL+NL;
-  body+='To accept, simply reply to this email or give me a call at '+bphone+'.'+NL;
+  if(proposalLink){
+    body+='To accept, sign the proposal online or reply to this email.'+NL;
+  } else {
+    body+='To accept, simply reply to this email or give me a call at '+bphone+'.'+NL;
+  }
   body+='I will get you on the schedule right away.'+NL+NL;
   body+='Looking forward to working with you,'+NL;
   body+=bname+NL;
   if(bphone)body+=bphone+NL;
-  const subject=encodeURIComponent('Your painting proposal — '+fmt(b.amount)+' | '+bname);
+  const subject=encodeURIComponent('Your painting proposal -- '+fmt(b.amount)+' | '+bname);
   window.location.href='mailto:'+(toEmail?encodeURIComponent(toEmail):'')+'?subject='+subject+'&body='+encodeURIComponent(body);
+  // Show a follow-up prompt so the user knows to fall back to SMS if email doesn't land
+  setTimeout(()=>{
+    const cphone=c?.phone||b.phone||'';
+    if(cphone){
+      const smsMsg='Hi '+firstName+', '+bname+' sent your painting proposal. '+(proposalLink?'Tap to view and sign: '+proposalLink:'Reply to accept.');
+      zConfirm(
+        'Did the email go out?\n\nIf '+firstName+' doesn\'t receive it (corporate filters sometimes block unknown senders), tap "Send via SMS" to deliver the link by text instead.',
+        ()=>{window.location.href='sms:'+cphone.replace(/\D/g,'')+'?body='+encodeURIComponent(smsMsg);},
+        {title:'Email sent',yes:'Send via SMS too',no:'Email is enough'}
+      );
+    }
+  },800);
 }
 
 function toggleBidSummary(bidId){

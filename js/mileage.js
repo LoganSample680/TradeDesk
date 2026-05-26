@@ -410,7 +410,8 @@ function _photonGeocode(addr){
       if(!d||!d.features||!d.features.length)throw new Error('Address not found: "'+addr+'"');
       const[lon,lat]=d.features[0].geometry.coordinates;
       return{lat,lng:lon};
-    });
+    })
+    .catch(()=>null);
 }
 async function _resolveCoords(addrText){
   try{
