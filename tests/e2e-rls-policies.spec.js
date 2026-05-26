@@ -178,16 +178,16 @@ test.describe('App functionality after RLS policy migration', () => {
   });
 
   test('proposals page renders — zj_data read path works', async () => {
-    await goPg(page, 'pg-bids');
-    const bids = await page.$('#pg-bids');
-    expect(bids, 'Proposals page element must exist').not.toBeNull();
+    await goPg(page, 'pg-proposals');
+    const proposals = await page.$('#pg-proposals');
+    expect(proposals, 'Proposals page element must exist').not.toBeNull();
     assertNoErrors(page, 'proposals page after RLS policy migration');
   });
 
   test('finance page renders — cross-table read path works', async () => {
-    await goPg(page, 'pg-finance');
-    const finance = await page.$('#pg-finance');
-    expect(finance, 'Finance page element must exist').not.toBeNull();
+    await goPg(page, 'pg-money');
+    const money = await page.$('#pg-money');
+    expect(money, 'Finance page element must exist').not.toBeNull();
     assertNoErrors(page, 'finance page after RLS policy migration');
   });
 

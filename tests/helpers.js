@@ -86,7 +86,13 @@ async function mockAllExternal(page, opts = {}) {
     }
   });
   page.on('pageerror', err => {
-    if (page._consoleErrors) page._consoleErrors.push('PAGE ERROR: ' + err.message);
+    const msg = err.message;
+    // WebKit emits unhandledrejection pageerrors for fetch failures that ARE
+    // caught in app code (e.g. geocoding.geo.census.gov has .catch(()=>null)).
+    // The app handles these gracefully — filter so assertNoErrors stays clean.
+    if (msg.includes('geocoding.geo.census.gov')) return;
+    if (msg.includes('photon.komoot.io')) return;
+    if (page._consoleErrors) page._consoleErrors.push('PAGE ERROR: ' + msg);
   });
 
   await page.route('**/*', async (route) => {
