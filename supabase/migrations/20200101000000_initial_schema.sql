@@ -178,7 +178,7 @@ create index if not exists push_subscriptions_user_idx
 
 create or replace view my_signed_proposals as
   select * from signed_proposals
-  where contractor_user_id = auth.uid()
+  where contractor_user_id::text = auth.uid()::text
   order by signed_at desc;
 
 -- ══════════════════════════════════════════════════════════
@@ -203,84 +203,85 @@ alter table push_subscriptions    enable row level security;
 
 do $$ begin
   -- zj_data
+  -- Cast both sides to text so policy works whether user_id is uuid or text on production
   if not exists (select 1 from pg_policies where tablename='zj_data' and policyname='Users manage own data') then
     execute $p$ create policy "Users manage own data" on zj_data
-      for all using (user_id = auth.uid()) with check (user_id = auth.uid()) $p$;
+      for all using (user_id::text = auth.uid()::text) with check (user_id::text = auth.uid()::text) $p$;
   end if;
 
   -- accounts
   if not exists (select 1 from pg_policies where tablename='accounts' and policyname='Account members can read') then
     execute $p$ create policy "Account members can read" on accounts for select
-      using (id in (select account_id from account_users where user_id = auth.uid())) $p$;
+      using (id::text in (select account_id::text from account_users where user_id::text = auth.uid()::text)) $p$;
   end if;
   if not exists (select 1 from pg_policies where tablename='accounts' and policyname='Account owner can insert') then
     execute $p$ create policy "Account owner can insert" on accounts for insert
-      with check (owner_id = auth.uid()) $p$;
+      with check (owner_id::text = auth.uid()::text) $p$;
   end if;
   if not exists (select 1 from pg_policies where tablename='accounts' and policyname='Account owner can update') then
     execute $p$ create policy "Account owner can update" on accounts for update
-      using (owner_id = auth.uid()) $p$;
+      using (owner_id::text = auth.uid()::text) $p$;
   end if;
 
   -- users
   if not exists (select 1 from pg_policies where tablename='users' and policyname='Users read own row') then
-    execute $p$ create policy "Users read own row" on users for select using (id = auth.uid()) $p$;
+    execute $p$ create policy "Users read own row" on users for select using (id::text = auth.uid()::text) $p$;
   end if;
   if not exists (select 1 from pg_policies where tablename='users' and policyname='Users insert own row') then
-    execute $p$ create policy "Users insert own row" on users for insert with check (id = auth.uid()) $p$;
+    execute $p$ create policy "Users insert own row" on users for insert with check (id::text = auth.uid()::text) $p$;
   end if;
   if not exists (select 1 from pg_policies where tablename='users' and policyname='Users update own row') then
-    execute $p$ create policy "Users update own row" on users for update using (id = auth.uid()) $p$;
+    execute $p$ create policy "Users update own row" on users for update using (id::text = auth.uid()::text) $p$;
   end if;
 
   -- account_users
   if not exists (select 1 from pg_policies where tablename='account_users' and policyname='Members read own membership') then
     execute $p$ create policy "Members read own membership" on account_users for select
-      using (user_id = auth.uid()) $p$;
+      using (user_id::text = auth.uid()::text) $p$;
   end if;
   if not exists (select 1 from pg_policies where tablename='account_users' and policyname='Owner can manage memberships') then
     execute $p$ create policy "Owner can manage memberships" on account_users for all
-      using (account_id in (
-        select account_id from account_users where user_id = auth.uid() and role = 'owner'
+      using (account_id::text in (
+        select account_id::text from account_users where user_id::text = auth.uid()::text and role = 'owner'
       )) $p$;
   end if;
 
   -- vehicles
   if not exists (select 1 from pg_policies where tablename='vehicles' and policyname='Account members read vehicles') then
     execute $p$ create policy "Account members read vehicles" on vehicles for select
-      using (account_id in (select account_id from account_users where user_id = auth.uid())) $p$;
+      using (account_id::text in (select account_id::text from account_users where user_id::text = auth.uid()::text)) $p$;
   end if;
   if not exists (select 1 from pg_policies where tablename='vehicles' and policyname='Account owner manages vehicles') then
     execute $p$ create policy "Account owner manages vehicles" on vehicles for all
-      using (account_id in (
-        select account_id from account_users where user_id = auth.uid() and role = 'owner'
+      using (account_id::text in (
+        select account_id::text from account_users where user_id::text = auth.uid()::text and role = 'owner'
       )) $p$;
   end if;
 
   -- account_config
   if not exists (select 1 from pg_policies where tablename='account_config' and policyname='Account members read config') then
     execute $p$ create policy "Account members read config" on account_config for select
-      using (account_id in (select account_id from account_users where user_id = auth.uid())) $p$;
+      using (account_id::text in (select account_id::text from account_users where user_id::text = auth.uid()::text)) $p$;
   end if;
   if not exists (select 1 from pg_policies where tablename='account_config' and policyname='Account owner manages config') then
     execute $p$ create policy "Account owner manages config" on account_config for all
-      using (account_id in (
-        select account_id from account_users where user_id = auth.uid() and role = 'owner'
+      using (account_id::text in (
+        select account_id::text from account_users where user_id::text = auth.uid()::text and role = 'owner'
       )) $p$;
   end if;
 
   -- team_members
   if not exists (select 1 from pg_policies where tablename='team_members' and policyname='Contractor manages own team') then
     execute $p$ create policy "Contractor manages own team" on team_members for all
-      using (contractor_user_id = auth.uid()) $p$;
+      using (contractor_user_id::text = auth.uid()::text) $p$;
   end if;
   if not exists (select 1 from pg_policies where tablename='team_members' and policyname='Employee reads own record') then
     execute $p$ create policy "Employee reads own record" on team_members for select
-      using (employee_user_id = auth.uid()) $p$;
+      using (employee_user_id::text = auth.uid()::text) $p$;
   end if;
   if not exists (select 1 from pg_policies where tablename='team_members' and policyname='Employee updates own record') then
     execute $p$ create policy "Employee updates own record" on team_members for update
-      using (employee_user_id = auth.uid()) $p$;
+      using (employee_user_id::text = auth.uid()::text) $p$;
   end if;
 
   -- signed_proposals
@@ -295,30 +296,30 @@ do $$ begin
   end if;
   if not exists (select 1 from pg_policies where tablename='signed_proposals' and policyname='auth_select_own') then
     execute $p$ create policy "auth_select_own" on signed_proposals for select to authenticated
-      using (contractor_user_id = auth.uid()) $p$;
+      using (contractor_user_id::text = auth.uid()::text) $p$;
   end if;
   if not exists (select 1 from pg_policies where tablename='signed_proposals' and policyname='auth_update_own') then
     execute $p$ create policy "auth_update_own" on signed_proposals for update to authenticated
-      using (contractor_user_id = auth.uid()) with check (contractor_user_id = auth.uid()) $p$;
+      using (contractor_user_id::text = auth.uid()::text) with check (contractor_user_id::text = auth.uid()::text) $p$;
   end if;
 
   -- inbound_leads
   if not exists (select 1 from pg_policies where tablename='inbound_leads' and policyname='Contractor reads own leads') then
     execute $p$ create policy "Contractor reads own leads" on inbound_leads for select
-      using (account_id in (select id from accounts where owner_id = auth.uid())) $p$;
+      using (account_id::text in (select id::text from accounts where owner_id::text = auth.uid()::text)) $p$;
   end if;
   if not exists (select 1 from pg_policies where tablename='inbound_leads' and policyname='Anon can submit lead') then
     execute $p$ create policy "Anon can submit lead" on inbound_leads for insert to anon with check (true) $p$;
   end if;
   if not exists (select 1 from pg_policies where tablename='inbound_leads' and policyname='Contractor updates own leads') then
     execute $p$ create policy "Contractor updates own leads" on inbound_leads for update
-      using (account_id in (select id from accounts where owner_id = auth.uid())) $p$;
+      using (account_id::text in (select id::text from accounts where owner_id::text = auth.uid()::text)) $p$;
   end if;
 
   -- push_subscriptions
   if not exists (select 1 from pg_policies where tablename='push_subscriptions' and policyname='owner') then
     execute $p$ create policy "owner" on push_subscriptions
-      using (auth.uid() = user_id) with check (auth.uid() = user_id) $p$;
+      using (auth.uid()::text = user_id::text) with check (auth.uid()::text = user_id::text) $p$;
   end if;
 end $$;
 

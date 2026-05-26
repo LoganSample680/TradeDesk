@@ -33,14 +33,15 @@ CREATE POLICY "anon_update" ON public.signed_proposals
   FOR UPDATE TO anon USING (true) WITH CHECK (true);
 
 -- Authenticated (contractor): read and update only their own proposals
+-- Cast both sides to text — contractor_user_id may be uuid or text depending on DB age
 CREATE POLICY "auth_select_own" ON public.signed_proposals
   FOR SELECT TO authenticated
-  USING (contractor_user_id = auth.uid());
+  USING (contractor_user_id::text = auth.uid()::text);
 
 CREATE POLICY "auth_update_own" ON public.signed_proposals
   FOR UPDATE TO authenticated
-  USING (contractor_user_id = auth.uid())
-  WITH CHECK (contractor_user_id = auth.uid());
+  USING (contractor_user_id::text = auth.uid()::text)
+  WITH CHECK (contractor_user_id::text = auth.uid()::text);
 
 
 -- ── county_assessor_registry ──────────────────────────────────────────────────
