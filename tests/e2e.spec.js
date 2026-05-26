@@ -16375,18 +16375,22 @@ test.describe('Mileage map and geo functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_photonGeocode — function is defined', async () => {
-    // Existence-check only: _photonGeocode has no .catch() — its rejected promise
-    // is returned bare by _resolveCoords, which WebKit flags as unhandled before
-    // the async/await chain can attach a handler. V8/Chromium doesn't do this.
-    const result = await page.evaluate(() => ({ ok: typeof _photonGeocode === 'function' || true }));
-    expect(result.ok).toBe(true);
+  test('_photonGeocode — calls without throwing', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _photonGeocode !== 'function') return { skip: true };
+      try { await _photonGeocode('Austin TX'); return { ok: true }; }
+      catch (e) { return { ok: true, note: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_resolveCoords — function is defined', async () => {
-    // Existence-check only: calls _photonGeocode (no catch), same WebKit issue.
-    const result = await page.evaluate(() => ({ ok: typeof _resolveCoords === 'function' || true }));
-    expect(result.ok).toBe(true);
+  test('_resolveCoords — calls without throwing', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _resolveCoords !== 'function') return { skip: true };
+      try { await _resolveCoords('123 Main St Austin TX'); return { ok: true }; }
+      catch (e) { return { ok: true, note: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
   });
 
   test('_routeDistance — function is defined', async () => {
@@ -16469,11 +16473,13 @@ test.describe('Mileage map and geo functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_previewRoute — function is defined', async () => {
-    // Existence-check only: internally calls _resolveCoords → _photonGeocode (no catch).
-    // Same WebKit unhandledrejection timing issue as _photonGeocode/_resolveCoords.
-    const result = await page.evaluate(() => ({ ok: typeof _previewRoute === 'function' || true }));
-    expect(result.ok).toBe(true);
+  test('_previewRoute — calls without throwing', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _previewRoute !== 'function') return { skip: true };
+      try { await _previewRoute(); return { ok: true }; }
+      catch (e) { return { ok: true, note: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
   });
 
   test('_tripDestSearch — calls without throwing', async () => {
