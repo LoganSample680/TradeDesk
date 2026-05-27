@@ -193,17 +193,27 @@ function _fleetDownDays(v, year) {
 
 /* ── P&L calculation ─────────────────────────────────────────────────────────── */
 function _fleetPnLCalc(v, maintRecords, trips, year) {
+  const method = v.deductionMethod || 'mileage';
   const totalMiles = trips.reduce((s,t)=>s+(t.miles||0),0);
-  const irsDeduction = +(totalMiles * (S.irsRate||0.725)).toFixed(2);
   const maintCostYTD = maintRecords.filter(m=>(m.date||'').startsWith(year)).reduce((s,m)=>s+(m.cost||0),0);
   const purchasePrice = v.purchasePrice || 0;
-  // 5-year straight-line depreciation on the business-use portion
   const bizPct = (v.bizUse||100)/100;
-  const annualDeprec = purchasePrice > 0 ? +(purchasePrice * bizPct / 5).toFixed(2) : 0;
-  const totalCost = maintCostYTD + annualDeprec;
-  const costPerMile = totalMiles > 0 ? +(totalCost/totalMiles).toFixed(2) : 0;
-  const netPosition = +(irsDeduction - totalCost).toFixed(2);
-  return {totalMiles,irsDeduction,maintCostYTD,annualDeprec,totalCost,costPerMile,netPosition};
+
+  if(method === 'actual') {
+    // Actual expense method: deduct actual costs at the business-use %
+    // 5-year straight-line depreciation on the business-use portion
+    const annualDeprec = purchasePrice > 0 ? +(purchasePrice * bizPct / 5).toFixed(2) : 0;
+    const deductibleMaint = +(maintCostYTD * bizPct).toFixed(2);
+    const totalDeduction = +(deductibleMaint + annualDeprec).toFixed(2);
+    const costPerMile = totalMiles > 0 ? +(totalDeduction / totalMiles).toFixed(2) : 0;
+    return {method:'actual',totalMiles,irsDeduction:0,maintCostYTD,deductibleMaint,annualDeprec,totalDeduction,totalCost:totalDeduction,costPerMile,netPosition:totalDeduction};
+  } else {
+    // Standard mileage method: IRS rate × miles × biz% = deduction; maintenance is records-only
+    const irsDeduction = +(totalMiles * (S.irsRate||0.67) * bizPct).toFixed(2);
+    // "Real" cost per mile based on actual maintenance spend (for awareness, not deduction)
+    const costPerMile = totalMiles > 0 ? +(maintCostYTD / totalMiles).toFixed(2) : 0;
+    return {method:'mileage',totalMiles,irsDeduction,maintCostYTD,deductibleMaint:0,annualDeprec:0,totalDeduction:irsDeduction,totalCost:maintCostYTD,costPerMile,netPosition:irsDeduction};
+  }
 }
 
 /* ── Vehicle detail modal ────────────────────────────────────────────────────── */
@@ -387,29 +397,57 @@ function _fleetDetailPnLHtml(v, pnl, maint, trips) {
     ...maint.map(m=>(m.date||'').slice(0,4)),
   ].filter(Boolean))].sort().reverse();
   if(!yrs.length) yrs.push(new Date().getFullYear().toString());
+  const method = v.deductionMethod || 'mileage';
+
+  const methodBadge = method === 'actual'
+    ? `<span style="font-size:10px;background:var(--blue);color:#fff;border-radius:4px;padding:2px 6px;margin-left:6px;font-weight:700">Actual Expenses</span>`
+    : `<span style="font-size:10px;background:var(--green);color:#fff;border-radius:4px;padding:2px 6px;margin-left:6px;font-weight:700">Standard Mileage</span>`;
 
   return yrs.map(yr => {
     const yrTrips = trips.filter(t=>(t.date||'').startsWith(yr));
     const yrMaint = maint.filter(m=>(m.date||'').startsWith(yr));
     const p = _fleetPnLCalc(v, yrMaint, yrTrips, yr);
-    return `
-      <div style="border:1px solid var(--border);border-radius:var(--r);padding:12px;margin-bottom:12px">
-        <div style="font-size:13px;font-weight:800;margin-bottom:10px">${yr}</div>
-        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--text3)">Business miles</span><span style="font-size:12px;font-weight:600">${Math.round(p.totalMiles).toLocaleString()} mi</span></div>
-        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--text3)">IRS deduction (${S.irsRate||0.725}¢/mi)</span><span style="font-size:12px;font-weight:600;color:var(--green)">+$${p.irsDeduction.toLocaleString()}</span></div>
-        <div style="border-top:1px solid var(--border);margin:6px 0"></div>
-        <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--text3)">Maintenance costs</span><span style="font-size:12px;color:var(--red)">−$${p.maintCostYTD.toLocaleString()}</span></div>
-        ${p.annualDeprec>0?`<div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--text3)">Depreciation (5yr/biz%)</span><span style="font-size:12px;color:var(--red)">−$${p.annualDeprec.toLocaleString()}</span></div>`:''}
-        <div style="border-top:1px solid var(--border);margin:6px 0"></div>
-        <div style="display:flex;justify-content:space-between">
-          <span style="font-size:13px;font-weight:700">Net position</span>
-          <span style="font-size:14px;font-weight:800;color:${p.netPosition>=0?'var(--green)':'var(--red)'}">
-            ${p.netPosition>=0?'+':''}$${Math.abs(p.netPosition).toLocaleString()}
-          </span>
+
+    if(method === 'actual') {
+      return `
+        <div style="border:1px solid var(--border);border-radius:var(--r);padding:12px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;margin-bottom:10px"><span style="font-size:13px;font-weight:800">${yr}</span>${methodBadge}</div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--text3)">Business miles</span><span style="font-size:12px;font-weight:600">${Math.round(p.totalMiles).toLocaleString()} mi</span></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--text3)">Business use</span><span style="font-size:12px;font-weight:600">${v.bizUse||100}%</span></div>
+          <div style="border-top:1px solid var(--border);margin:6px 0"></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--text3)">Maintenance costs</span><span style="font-size:12px">$${p.maintCostYTD.toLocaleString()}</span></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--text3)">Deductible portion (×${v.bizUse||100}%)</span><span style="font-size:12px;color:var(--red)">−$${p.deductibleMaint.toLocaleString()}</span></div>
+          ${p.annualDeprec>0?`<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--text3)">Depreciation (5-yr straight-line)</span><span style="font-size:12px;color:var(--red)">−$${p.annualDeprec.toLocaleString()}</span></div>`:''}
+          <div style="border-top:1px solid var(--border);margin:6px 0"></div>
+          <div style="display:flex;justify-content:space-between">
+            <span style="font-size:13px;font-weight:700">Vehicle deduction</span>
+            <span style="font-size:14px;font-weight:800;color:var(--green)">$${p.totalDeduction.toLocaleString()}</span>
+          </div>
+          ${p.costPerMile>0?`<div style="font-size:11px;color:var(--text3);text-align:center;margin-top:6px">Cost per mile: $${p.costPerMile}</div>`:''}
         </div>
-        ${p.costPerMile>0?`<div style="font-size:11px;color:var(--text3);text-align:center;margin-top:6px">Real cost per mile: $${p.costPerMile}</div>`:''}
-      </div>
-    `;
+      `;
+    } else {
+      // Standard mileage method
+      return `
+        <div style="border:1px solid var(--border);border-radius:var(--r);padding:12px;margin-bottom:12px">
+          <div style="display:flex;align-items:center;margin-bottom:10px"><span style="font-size:13px;font-weight:800">${yr}</span>${methodBadge}</div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--text3)">Business miles</span><span style="font-size:12px;font-weight:600">${Math.round(p.totalMiles).toLocaleString()} mi</span></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--text3)">IRS rate (${((S.irsRate||0.67)*100).toFixed(0)}¢/mi × ${v.bizUse||100}% biz)</span><span style="font-size:12px;font-weight:600;color:var(--green)">$${p.irsDeduction.toLocaleString()}</span></div>
+          <div style="border-top:1px solid var(--border);margin:6px 0"></div>
+          <div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px;margin-bottom:8px">
+            <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:3px">📋 Maintenance — records only</div>
+            <div style="font-size:11px;color:var(--text3)">Under the standard mileage method, maintenance costs are included in the IRS rate — they are not deducted separately.</div>
+            <div style="display:flex;justify-content:space-between;margin-top:6px"><span style="font-size:12px;color:var(--text3)">Actual maintenance spend</span><span style="font-size:12px;color:var(--text3)">$${p.maintCostYTD.toLocaleString()}</span></div>
+          </div>
+          <div style="border-top:1px solid var(--border);margin:6px 0"></div>
+          <div style="display:flex;justify-content:space-between">
+            <span style="font-size:13px;font-weight:700">Vehicle deduction</span>
+            <span style="font-size:14px;font-weight:800;color:var(--green)">$${p.irsDeduction.toLocaleString()}</span>
+          </div>
+          ${p.costPerMile>0?`<div style="font-size:11px;color:var(--text3);text-align:center;margin-top:6px">Real cost per mile (actual): $${p.costPerMile}</div>`:''}
+        </div>
+      `;
+    }
   }).join('');
 }
 
@@ -467,12 +505,12 @@ function openAddVehicleModal(idx) {
         <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Purchase info</div>
         <div class="fg fg2">
           <div class="f"><label>Purchase date</label><input type="date" id="fv-pdate" value="${v.purchaseDate||''}"></div>
-          <div class="f"><label>Purchase price ($)</label><input type="number" id="fv-pprice" min="0" step="100" placeholder="0" value="${v.purchasePrice||''}"></div>
+          <div class="f"><label>Purchase price ($)</label><input type="number" id="fv-pprice" min="0" step="100" placeholder="Optional" value="${v.purchasePrice>0?v.purchasePrice:''}"></div>
         </div>
         <div class="f"><label>Odometer at purchase (mi)</label>
-          <input type="number" id="fv-podo" min="0" step="100" placeholder="0" value="${v.purchaseOdo||''}">
+          <input type="number" id="fv-podo" min="0" step="1" placeholder="Optional" value="${v.purchaseOdo>0?v.purchaseOdo:''}">
         </div>
-        <div style="font-size:11px;color:var(--text3);margin-top:4px">Entering a purchase price automatically logs it as an expense.</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Purchase price is logged as a vehicle expense (actual expense method only).</div>
       </div>
       <div class="card" style="margin-bottom:12px">
         <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">IRS settings</div>
@@ -488,6 +526,25 @@ function openAddVehicleModal(idx) {
               <option value="heavy_suv" ${v.gvwr==='heavy_suv'?'selected':''}>Over 6k lbs — Large SUV</option>
               <option value="commercial" ${v.gvwr==='commercial'?'selected':''}>Over 14,000 lbs (box truck)</option>
             </select>
+          </div>
+        </div>
+        <div class="f" style="margin-top:8px">
+          <label>Tax deduction method <span style="font-size:10px;font-weight:400;color:var(--text3)">(pick one per vehicle — IRS doesn't allow both)</span></label>
+          <div style="display:grid;gap:6px;margin-top:6px">
+            <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1.5px solid ${(v.deductionMethod||'mileage')==='mileage'?'var(--blue)':'var(--border2)'};border-radius:var(--r);cursor:pointer;background:${(v.deductionMethod||'mileage')==='mileage'?'rgba(45,93,168,.06)':'var(--bg2)'}">
+              <input type="radio" name="fv-deduct" value="mileage" style="margin-top:2px;accent-color:var(--blue)" ${(v.deductionMethod||'mileage')==='mileage'?'checked':''}>
+              <div>
+                <div style="font-size:13px;font-weight:700">Standard mileage rate</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:2px">Deduct ${((S.irsRate||0.67)*100).toFixed(0)}¢ per business mile. Simpler — no need to track every expense. Maintenance records are for your info only.</div>
+              </div>
+            </label>
+            <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1.5px solid ${v.deductionMethod==='actual'?'var(--blue)':'var(--border2)'};border-radius:var(--r);cursor:pointer;background:${v.deductionMethod==='actual'?'rgba(45,93,168,.06)':'var(--bg2)'}">
+              <input type="radio" name="fv-deduct" value="actual" style="margin-top:2px;accent-color:var(--blue)" ${v.deductionMethod==='actual'?'checked':''}>
+              <div>
+                <div style="font-size:13px;font-weight:700">Actual expenses</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:2px">Deduct real costs — fuel, maintenance, depreciation at your business-use %. Requires keeping all receipts.</div>
+              </div>
+            </label>
           </div>
         </div>
       </div>
@@ -524,6 +581,7 @@ function saveFleetVehicle() {
   const isEdit = _fleetEditIdx >= 0;
   const oldV = isEdit ? (vehs[_fleetEditIdx]||{}) : {};
 
+  const deductEl = document.querySelector('input[name="fv-deduct"]:checked');
   const newV = {
     ...oldV,
     name,
@@ -533,6 +591,7 @@ function saveFleetVehicle() {
     vin:      (document.getElementById('fv-vin')?document.getElementById('fv-vin').value:'').trim().toUpperCase(),
     bizUse:   parseFloat(document.getElementById('fv-biz')?document.getElementById('fv-biz').value:100)||100,
     gvwr:     document.getElementById('fv-gvwr')?document.getElementById('fv-gvwr').value:'',
+    deductionMethod: deductEl ? deductEl.value : (oldV.deductionMethod||'mileage'),
     purchaseDate:  document.getElementById('fv-pdate')?document.getElementById('fv-pdate').value:'',
     purchasePrice: parseFloat(document.getElementById('fv-pprice')?document.getElementById('fv-pprice').value:0)||0,
     purchaseOdo:   parseInt(document.getElementById('fv-podo')?document.getElementById('fv-podo').value:0)||0,
@@ -541,16 +600,16 @@ function saveFleetVehicle() {
     addedDate: oldV.addedDate||todayKey(),
   };
 
-  // Auto-create expense if purchase price is new or changed
+  // Auto-create expense if purchase price is new or changed — only for actual expense method
   const newPrice = newV.purchasePrice;
   const oldPrice = oldV.purchasePrice||0;
-  if(newPrice > 0 && newPrice !== oldPrice) {
+  if(newPrice > 0 && newPrice !== oldPrice && newV.deductionMethod === 'actual') {
     const expId = Date.now();
     expenses.unshift({
       id: expId,
       date: newV.purchaseDate||todayKey(),
-      cat: 'equipment',
-      catLabel: 'Vehicle / Equipment',
+      cat: 'vehicle_purchase',
+      catLabel: 'Vehicle purchase',
       vendor: name,
       amount: newPrice,
       notes: 'Vehicle purchase: '+name,
@@ -558,6 +617,9 @@ function saveFleetVehicle() {
       created_at: new Date().toISOString(),
     });
     newV.purchaseExpenseId = expId;
+  } else if(newV.deductionMethod === 'mileage') {
+    // Clear any previously-linked purchase expense if user switched to mileage method
+    newV.purchaseExpenseId = null;
   }
 
   if(isEdit) vehs[_fleetEditIdx] = newV;
@@ -701,6 +763,7 @@ function _renderMaintModal(savedType) {
   if(!v) return;
   const editRec = _maintEditId ? maintenance.find(m=>m.id===_maintEditId) : null;
   const selType = savedType || (editRec&&editRec.type) || 'oil_change';
+  const isActualMethod = v.deductionMethod === 'actual';
 
   const ov = document.getElementById('fleet-maint-overlay') || _createMaintOverlay();
   const box = document.getElementById('fleet-maint-box');
@@ -722,10 +785,10 @@ function _renderMaintModal(savedType) {
         </div>
         <div class="fg fg2">
           <div class="f"><label>Date</label><input type="date" id="maint-date" value="${(editRec&&editRec.date)||todayKey()}"></div>
-          <div class="f"><label>Odometer (mi)</label><input type="number" id="maint-odo" min="0" step="100" placeholder="0" value="${(editRec&&editRec.odo)||''}"></div>
+          <div class="f"><label>Odometer (mi)</label><input type="number" id="maint-odo" min="0" step="1" placeholder="Optional" value="${(editRec&&editRec.odo)||''}"></div>
         </div>
         <div class="fg fg2">
-          <div class="f"><label>Cost ($)</label><input type="number" id="maint-cost" min="0" step="1" placeholder="0" value="${(editRec&&editRec.cost)||''}"></div>
+          <div class="f"><label>Cost ($)</label><input type="number" id="maint-cost" min="0" step="1" placeholder="0.00" value="${(editRec&&editRec.cost)||''}"></div>
           <div class="f"><label>Vendor / shop</label><input id="maint-vendor" placeholder="Jiffy Lube, AutoZone..." value="${(editRec&&editRec.vendor)||''}"></div>
         </div>
       </div>
@@ -734,10 +797,16 @@ function _renderMaintModal(savedType) {
         <div class="f"><label>Notes</label>
           <textarea id="maint-notes" rows="2" placeholder="Any details..." style="width:100%;padding:8px;font-size:13px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical">${(editRec&&editRec.notes)||''}</textarea>
         </div>
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:4px">
-          <input type="checkbox" id="maint-make-expense" style="width:16px;height:16px;accent-color:var(--blue)" ${editRec&&editRec.expenseId?'':'checked'}>
-          Log cost as an expense
-        </label>
+        ${isActualMethod
+          ? `<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:8px">
+               <input type="checkbox" id="maint-make-expense" style="width:16px;height:16px;accent-color:var(--blue)" ${editRec&&editRec.expenseId?'':'checked'}>
+               Log cost as a deductible expense
+             </label>`
+          : `<div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px;margin-top:8px">
+               <div style="font-size:11px;font-weight:700;color:var(--text3)">📋 Records only — standard mileage method</div>
+               <div style="font-size:11px;color:var(--text3);margin-top:2px">Maintenance costs are not deducted separately. The IRS mileage rate already covers them. Switch to actual expenses in vehicle settings to deduct real costs.</div>
+             </div>`
+        }
       </div>
       <button class="btn btn-p" onclick="saveMaintRecord()" style="width:100%;padding:14px;font-size:16px;font-weight:700">Save service record</button>
     </div>
@@ -868,8 +937,6 @@ function saveMaintRecord() {
   const vendor = vendorEl ? (vendorEl.value||'').trim() : '';
   const notesEl = document.getElementById('maint-notes');
   const notes = notesEl ? (notesEl.value||'').trim() : '';
-  const makeExpEl = document.getElementById('maint-make-expense');
-  const makeExpense = makeExpEl ? makeExpEl.checked !== false : true;
 
   const rec = {
     id: _maintEditId || Date.now(),
@@ -924,14 +991,17 @@ function saveMaintRecord() {
     rec.partNum = pnEl ? (pnEl.value||'').trim() : '';
   }
 
-  // Auto-create expense
+  // Auto-create expense — only for actual expense method
+  const isActualMethod = v.deductionMethod === 'actual';
+  const makeExpEl = document.getElementById('maint-make-expense');
+  const makeExpense = isActualMethod && makeExpEl ? makeExpEl.checked : false;
   if(makeExpense && cost > 0) {
     const expId = Date.now() + 1;
     expenses.unshift({
       id: expId,
       date,
-      cat: 'equipment',
-      catLabel: 'Vehicle Maintenance',
+      cat: 'vehicle',
+      catLabel: 'Vehicle — maintenance',
       vendor: vendor||(v.nickname||v.name),
       amount: cost,
       notes: (MAINT_TYPES[type]?MAINT_TYPES[type].label:type)+(notes?' — '+notes:''),

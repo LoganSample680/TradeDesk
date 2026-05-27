@@ -374,9 +374,9 @@ test.describe('Fleet Management', () => {
     await page.waitForTimeout(300);
 
     const content = await page.locator('#fleet-detail-content').textContent();
-    // P&L tab should show year and net position
+    // P&L tab should show year and vehicle deduction line
     expect(content).toMatch(/202[56]/);
-    expect(content).toContain('Net position');
+    expect(content).toContain('Vehicle deduction');
 
     await page.evaluate(() => _closeFleetDetail());
     await page.waitForTimeout(200);
@@ -444,6 +444,12 @@ test.describe('Fleet Management', () => {
     await page.locator('#fv-pprice').fill('28000');
     const dateVal = await page.evaluate(() => todayKey());
     await page.locator('#fv-pdate').fill(dateVal);
+    // Select actual expense method so purchase price creates an expense
+    await page.evaluate(() => {
+      const radio = document.querySelector('input[name="fv-deduct"][value="actual"]');
+      if(radio) radio.click();
+    });
+    await page.waitForTimeout(100);
 
     await page.evaluate(() => saveFleetVehicle());
     await page.waitForTimeout(300);
