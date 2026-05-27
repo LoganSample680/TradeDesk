@@ -1738,19 +1738,19 @@ body.dark .cal-cell.other{background:var(--cream)}
         💾 Save bid &amp; exit — I'll get the signature later
       </button>
     </div>
-    <div id="proposal-link-bar" style="display:none;margin-top:8px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px">
-      <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:8px">✓ Link ready — send to client</div>
+    <div id="proposal-link-bar" style="display:none;margin-top:8px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:12px 14px">
+      <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:10px;text-align:center">✓ Link ready — send to client</div>
       <a id="proposal-link-anchor" href="#" target="_blank" style="display:none"></a>
       <div id="proposal-link-label" style="display:none"></div>
       <div id="proposal-link-sublabel" style="display:none"></div>
       <div id="proposal-link-shorturl" style="display:none"></div>
       <input id="proposal-link-input" readonly style="display:none">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">
-        <button onclick="sendProposalViaSms()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue)">📱 Text</button>
-        <button onclick="sendProposalViaEmail()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue)">✉️ Email</button>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <button onclick="sendProposalViaSms()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">📱 Text</button>
+        <button onclick="sendProposalViaEmail()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">✉️ Email</button>
       </div>
-      <button onclick="shareProposalLink()" class="btn" style="width:100%;padding:10px;font-size:13px;background:var(--bg2);color:var(--text2);border-color:var(--border2)">⬆️ Other app (WhatsApp, AirDrop…)</button>
-      <div style="font-size:11px;color:var(--text3);margin-top:6px">Bid saved as Pending. You'll get a follow-up reminder in 3 days if no response.</div>
+      <button onclick="shareProposalLink()" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">⬆️ Other app (WhatsApp, AirDrop…)</button>
+      <div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">Bid saved as Pending. You'll get a follow-up reminder in 3 days if no response.</div>
     </div>
   </div>
   <div id="est-s6" style="display:none">
@@ -2148,14 +2148,14 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button class="btn" onclick="saveGenericEstimate(true)" style="font-size:13px;color:var(--text2)">Save as draft</button>
   </div>
   <!-- Send bar — shown after proposal is generated; same buttons as paint estimate -->
-  <div id="gei-send-bar" style="display:none;margin:0 14px 80px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px">
-    <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:8px">✓ Link ready — send to client</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">
-      <button onclick="sendProposalViaSms()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue)">📱 Text</button>
-      <button onclick="sendProposalViaEmail()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue)">✉️ Email</button>
+  <div id="gei-send-bar" style="display:none;margin:0 14px 80px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:12px 14px">
+    <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:10px;text-align:center">✓ Link ready — send to client</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <button onclick="sendProposalViaSms()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">📱 Text</button>
+      <button onclick="sendProposalViaEmail()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">✉️ Email</button>
     </div>
-    <button onclick="shareProposalLink()" class="btn" style="width:100%;padding:10px;font-size:13px;background:var(--bg2);color:var(--text2);border-color:var(--border2)">⬆️ Other app (WhatsApp, AirDrop…)</button>
-    <div style="font-size:11px;color:var(--text3);margin-top:6px">Bid saved as Pending. You'll get a follow-up reminder in 3 days if no response.</div>
+    <button onclick="shareProposalLink()" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">⬆️ Other app (WhatsApp, AirDrop…)</button>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">Bid saved as Pending. You'll get a follow-up reminder in 3 days if no response.</div>
   </div>
 </div>
 
@@ -2287,24 +2287,39 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div style="padding:0 12px 80px" id="lic-page-body"></div>
 </div>
 <div class="pg" id="pg-team">
-  <div class="tbar"><div class="tbar-title">Fleet & Team</div><button class="btn btn-sm btn-p" onclick="openAddEmployeeModal()">+ Add member</button></div>
-  <div class="card">
-    <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Employees</div>
-    <div id="team-page-list"></div>
-  </div>
-  <div class="card" style="margin-top:12px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Subcontractors</div>
-      <button onclick="openAddSubModal()" class="btn btn-sm btn-p" style="font-size:11px">+ Add sub</button>
+  <div class="tbar">
+    <div class="tbar-title">Fleet &amp; Team</div>
+    <div style="display:flex;gap:6px">
+      <button id="fleet-add-btn" class="btn btn-sm btn-p" onclick="openAddVehicleModal(-1)" style="display:none">+ Vehicle</button>
+      <button id="team-add-btn" class="btn btn-sm btn-p" onclick="openAddEmployeeModal()">+ Add member</button>
     </div>
-    <div id="team-page-subs"></div>
   </div>
-  <div class="card" style="margin-top:12px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Devices</div>
-      <button onclick="registerDevice(true);renderTeam()" class="btn btn-sm" style="font-size:10px;padding:3px 8px">📍 Update my location</button>
+  <div class="fbar" style="margin-bottom:0">
+    <button type="button" class="fb active" id="ft-t-fleet" onclick="setFleetTab('fleet')">🚗 Fleet</button>
+    <button type="button" class="fb" id="ft-t-team" onclick="setFleetTab('team')">👷 Team</button>
+  </div>
+  <div id="ft-fleet">
+    <div id="fleet-vehicle-list" style="padding-top:8px"></div>
+  </div>
+  <div id="ft-team" style="display:none">
+    <div class="card">
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Employees</div>
+      <div id="team-page-list"></div>
     </div>
-    <div id="team-page-devices"></div>
+    <div class="card" style="margin-top:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Subcontractors</div>
+        <button onclick="openAddSubModal()" class="btn btn-sm btn-p" style="font-size:11px">+ Add sub</button>
+      </div>
+      <div id="team-page-subs"></div>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Devices</div>
+        <button onclick="registerDevice(true);renderTeam()" class="btn btn-sm" style="font-size:10px;padding:3px 8px">📍 Update my location</button>
+      </div>
+      <div id="team-page-devices"></div>
+    </div>
   </div>
 </div>
 <div class="pg" id="pg-tracker">
@@ -3203,6 +3218,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 <script src="js/generic-estimate.js"></script>
 <script src="js/contracts.js"></script>
 <script src="js/settings.js"></script>
+<script src="js/fleet.js"></script>
 <script src="js/e2e.js"></script>
 <script src="js/pwa.js"></script>
 <script>

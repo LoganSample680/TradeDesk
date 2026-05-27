@@ -714,47 +714,107 @@ function sendProposalViaSms(){
   window.location.href=href;
   setTimeout(()=>_commitProposalSent(),400);
 }
-async function sendProposalViaEmail(){
+function sendProposalViaEmail(){
   const d=_proposalShareData();
   if(!d.url){zAlert('Generate the proposal link first.',{title:'No link yet'});return;}
-  if(!d.cemail){zAlert('No email on file for this client. Add one in Clients first.',{title:'No client email'});return;}
-  // Try server-sent HTML email first (proper domain auth, no corporate filter issues).
-  // Falls back to mailto: if Resend isn't configured or network fails.
-  let serverSent=false;
+  // Open compose modal — lets user review/edit subject+body and add email if missing
+  _showEmailComposeModal(d);
+}
+function _showEmailComposeModal(d){
+  // Remove any existing compose modal
+  document.getElementById('_email-compose-overlay')?.remove();
+  const firstName=d.cname.split(/[\s,&]+/)[0];
+  const defSubject='Your Proposal from '+d.bname+' is Ready!';
+  const defBody='Hey '+firstName+',\n\nIt was great meeting with you — I\'m looking forward to your project!\n\nYour proposal is ready to view. Everything we went over is laid out in full detail, and you can sign right from the page when you\'re ready to move forward:\n\n'+d.url+'\n\nOnce you sign, I\'ll get you locked in on the schedule and we\'ll take it from there.\n\nDon\'t hesitate to reach out with any questions — happy to go over anything!\n\nLooking forward to working with you,\n'+d.bname;
+  const ov=document.createElement('div');
+  ov.id='_email-compose-overlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;padding:0';
+  ov.innerHTML=
+    '<div style="width:100%;max-height:90vh;overflow-y:auto;background:var(--bg);border-radius:var(--r) var(--r) 0 0;padding:20px 16px 32px;box-sizing:border-box">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'+
+        '<div style="font-size:17px;font-weight:800">✉️ Email proposal</div>'+
+        '<button onclick="document.getElementById(\'_email-compose-overlay\').remove()" style="background:none;border:none;font-size:22px;color:var(--text3);cursor:pointer;padding:0 4px;font-family:inherit">✕</button>'+
+      '</div>'+
+      '<div style="margin-bottom:10px">'+
+        '<label style="font-size:12px;font-weight:700;color:var(--text2);display:block;margin-bottom:4px">To</label>'+
+        '<input id="_ec-to" type="email" value="'+escHtml(d.cemail||'')+'" placeholder="client@email.com" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r);font-size:15px;background:var(--bg2);color:var(--text);font-family:inherit">'+
+      '</div>'+
+      '<div style="margin-bottom:10px">'+
+        '<label style="font-size:12px;font-weight:700;color:var(--text2);display:block;margin-bottom:4px">Subject</label>'+
+        '<input id="_ec-subj" type="text" value="'+escHtml(defSubject)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r);font-size:14px;background:var(--bg2);color:var(--text);font-family:inherit">'+
+      '</div>'+
+      '<div style="margin-bottom:14px">'+
+        '<label style="font-size:12px;font-weight:700;color:var(--text2);display:block;margin-bottom:4px">Message</label>'+
+        '<textarea id="_ec-body" rows="8" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--border2);border-radius:var(--r);font-size:13px;line-height:1.5;background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical">'+escHtml(defBody)+'</textarea>'+
+      '</div>'+
+      '<div id="_ec-status" style="display:none;font-size:13px;color:var(--blue);margin-bottom:10px;text-align:center"></div>'+
+      '<button id="_ec-send-btn" onclick="_sendEmailFromCompose()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:8px">Send Email →</button>'+
+      '<button onclick="document.getElementById(\'_email-compose-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>'+
+    '</div>';
+  document.body.appendChild(ov);
+  // Focus email field if empty
+  if(!d.cemail){setTimeout(()=>document.getElementById('_ec-to')?.focus(),100);}
+}
+async function _sendEmailFromCompose(){
+  const toEl=document.getElementById('_ec-to');
+  const subjEl=document.getElementById('_ec-subj');
+  const bodyEl=document.getElementById('_ec-body');
+  const statusEl=document.getElementById('_ec-status');
+  const sendBtn=document.getElementById('_ec-send-btn');
+  if(!toEl||!subjEl||!bodyEl)return;
+  const toVal=(toEl.value||'').trim();
+  if(!toVal||!toVal.includes('@')){zAlert('Please enter a valid email address.',{title:'Email required'});toEl.focus();return;}
+  const d=_proposalShareData();
+  if(!d.url){zAlert('Generate the proposal link first.',{title:'No link yet'});return;}
+  // Save email to client record if it was missing
+  if(!d.cemail&&estLinkedClientId){
+    const c=clients.find(x=>x.id===estLinkedClientId);
+    if(c){c.email=toVal;saveAll();}
+    // Also update the bar dataset so future sends work
+    const bar=document.getElementById('proposal-link-bar');
+    if(bar)bar.dataset.cemail=toVal;
+    const geiBar=document.getElementById('gei-send-bar');
+    if(geiBar)geiBar.dataset.cemail=toVal;
+  }
+  const subject=(subjEl.value||'').trim()||'Your Proposal is Ready!';
+  const bodyText=(bodyEl.value||'').trim();
+  if(sendBtn){sendBtn.disabled=true;sendBtn.textContent='Sending…';}
+  if(statusEl){statusEl.style.display='block';statusEl.textContent='Sending…';}
+  // Try server-sent email (Resend). No mailto fallback — avoids double-send confusion.
   if(supaEnabled()&&_supaUser){
     try{
       const res=await Promise.race([
         fetch(SUPA_URL+'/functions/v1/send-proposal-email',{
           method:'POST',
           headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
-          body:JSON.stringify({to:d.cemail,clientName:d.cname,businessName:d.bname,proposalUrl:d.url,replyTo:_supaUser.email||''})
+          body:JSON.stringify({to:toVal,clientName:d.cname,businessName:d.bname,proposalUrl:d.url,replyTo:_supaUser.email||'',customSubject:subject,customBody:bodyText})
         }),
-        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000))
+        new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),15000))
       ]);
       if(res.ok){
-        serverSent=true;
+        document.getElementById('_email-compose-overlay')?.remove();
         _commitProposalSent();
         showToast('Proposal emailed to '+d.cname+'!','✉️');
+        return;
       }
-    }catch(_){}
+      // Non-ok response — show error detail
+      let errMsg='Send failed — check your internet and try again.';
+      try{const ej=await res.clone().json();errMsg=ej.error||errMsg;}catch(_){}
+      if(statusEl){statusEl.style.color='#A32D2D';statusEl.textContent='⚠️ '+errMsg;}
+      if(sendBtn){sendBtn.disabled=false;sendBtn.textContent='Retry →';}
+      return;
+    }catch(err){
+      const isTimeout=err?.message==='timeout';
+      if(statusEl){statusEl.style.color='#A32D2D';statusEl.textContent=isTimeout?'⚠️ Request timed out — check your connection and retry.':'⚠️ Could not reach server. Check your internet connection.';}
+      if(sendBtn){sendBtn.disabled=false;sendBtn.textContent='Retry →';}
+      return;
+    }
   }
-  if(!serverSent){
-    // Fallback: open native mail client with plain-text body
-    const firstName=d.cname.split(/[\s,&]+/)[0];
-    const subject='Your Painting Proposal from '+d.bname+' is Ready!';
-    const body=
-      'Hey '+firstName+',\n\n'+
-      'It was great meeting with you today — I really enjoyed getting a look at the project and I\'m excited to get started!\n\n'+
-      'Your painting proposal is ready to view. Everything we went over is laid out in full detail, and you can sign right from the page when you\'re ready to move forward:\n\n'+
-      '        '+d.url+'\n\n'+
-      'Once you sign, I\'ll get you locked in on the schedule and we\'ll take it from there.\n\n'+
-      'Don\'t hesitate to reach out if you have any questions or want to make any changes — happy to go over anything!\n\n'+
-      'Looking forward to working with you,\n\n'+
-      d.bname;
-    const href='mailto:'+d.cemail+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
-    window.location.href=href;
-    setTimeout(()=>_commitProposalSent(),400);
-  }
+  // No Supabase — open native mail with the composed text
+  const href='mailto:'+encodeURIComponent(toVal)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(bodyText);
+  window.location.href=href;
+  document.getElementById('_email-compose-overlay')?.remove();
+  setTimeout(()=>_commitProposalSent(),400);
 }
 function buildDescription(){
   const isExt=estSurfaces.some(s=>s.type==='ext_walls'||s.type==='ext_trim'||s.type==='deck');

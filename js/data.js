@@ -1,6 +1,6 @@
 // ── Submit guard — prevents double-tap on any button ─────────────────────
 let _submitting=false,_allowPhoneDupe=false;
-let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[],contracts=[];
+let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],maintenance=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[],contracts=[];
 // Expose bids and clients on window so Playwright E2E tests can inject test data
 Object.defineProperty(window,'bids',{get:()=>bids,set:v=>{bids=v;},configurable:true});
 Object.defineProperty(window,'clients',{get:()=>clients,set:v=>{clients=v;},configurable:true});
@@ -170,6 +170,7 @@ function saveAll(){if(_devSupportMode){_flushSaveNow();return;}if(_isEmployee){s
   localStorage.setItem('zp3_photos',JSON.stringify(photos.slice(-300)));
   localStorage.setItem('zp3_lic',JSON.stringify(licenses));
   localStorage.setItem('zp3_contracts',JSON.stringify(contracts));
+  localStorage.setItem('zp3_maint',JSON.stringify(maintenance));
   // Offline-pending: write synchronously so a force-quit can never outrun a timer
   if(typeof _mergeOnSignIn!=='undefined'&&_mergeOnSignIn&&!_supaUser){
     localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,ts:Date.now()}));
@@ -188,6 +189,7 @@ function loadAll(){
     photos=lp('zp3_photos',[]);
     licenses=lp('zp3_lic',[]);
     contracts=lp('zp3_contracts',[]);
+    maintenance=lp('zp3_maint',[]);
     // Tax bracket migrations
     if(S.fedMFS===14600)S.fedMFS=15000;
     if(S.fedSingle===14600)S.fedSingle=15000;

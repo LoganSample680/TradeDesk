@@ -7,16 +7,20 @@
  * 1. DOM layout  — #proposal-link-bar and #gei-send-bar both contain
  *                  📱 Text, ✉️ Email, and ⬆️ Other app buttons.
  *
- * 2. SMS path    — sendProposalViaSms() guards on missing phone; when a phone
+ * 2. Email compose modal — clicking Email opens the compose sheet with
+ *                  pre-filled To/Subject/Body; submitting calls Resend edge
+ *                  function; no-email case shows To field empty + focusable.
+ *
+ * 3. SMS path    — sendProposalViaSms() guards on missing phone; when a phone
  *                  number is present the sms: href is built with the correct
  *                  digits (no formatting chars).
  *
- * 3. replyTo     — sendProposalViaEmail() sets replyTo to the signed-in
+ * 4. replyTo     — _sendEmailFromCompose() sets replyTo to the signed-in
  *                  contractor's email so Resend wires up reply_to + bcc.
  *
- * 4. Generic estimate send bar — after sendGenericProposal() completes,
+ * 5. Generic estimate send bar — after sendGenericProposal() completes,
  *                  #gei-send-bar becomes visible and #gei-send-btn is hidden;
- *                  clicking its Email button invokes sendProposalViaEmail().
+ *                  clicking its Email button opens the compose modal.
  *
  * All tests use browser-level window.fetch patching (WebKit-safe) and
  * window.location interception to capture sms: hrefs without page navigation.
@@ -62,47 +66,6 @@ async function restoreFetch(page) {
 }
 
 /**
- * Intercept window.location.href assignments so sms: URLs don't trigger navigation.
- * Records hrefs in window.__capturedHrefs.
- */
-async function patchLocationHref(page) {
-  await page.evaluate(() => {
-    window.__capturedHrefs = [];
-    // Use a writable property on window to capture assignments without actually navigating
-    // _origSetHref forwards to the real location only for non-sms:, non-mailto: URLs.
-    if (!window.__locationPatched) {
-      const origDescriptor = Object.getOwnPropertyDescriptor(window, 'location');
-      // We can't redefine window.location (read-only in strict mode).
-      // Patch sendProposalViaSms directly to capture the href before assignment.
-      const origSms = window.sendProposalViaSms;
-      if (origSms) {
-        window.__origSendProposalViaSms = origSms;
-        window.sendProposalViaSms = async function() {
-          // Run the original but intercept window.location.href
-          const origCommit = window._commitProposalSent;
-          window._commitProposalSent = () => {}; // suppress navigation during capture
-          // Temporarily override location so the sms: assignment is captured
-          const locProxy = { href: '' };
-          const origLoc = window.location;
-          try {
-            // Run original code with a patched context
-            // We can't reassign window.location, so we just call origSms
-            // and observe __capturedHrefs via a MutationObserver trick:
-            // Instead, patch using a hidden sentinel on window.
-            window.__smsHrefCapture = true;
-            await origSms.call(this);
-          } finally {
-            window.__smsHrefCapture = false;
-            window._commitProposalSent = origCommit;
-          }
-        };
-      }
-      window.__locationPatched = true;
-    }
-  });
-}
-
-/**
  * Seed the #proposal-link-bar with known values.
  * Removes any pre-existing bars first.
  */
@@ -124,6 +87,26 @@ async function seedProposalLinkBar(page, {
     bar.dataset.cemail = cemail;
     document.body.appendChild(bar);
   }, { url, cemail, cphone });
+}
+
+/**
+ * Open email compose modal, optionally set To, then click Send.
+ * Returns the captured fetch calls.
+ */
+async function submitEmailCompose(page, { toEmail } = {}) {
+  // Wait for compose modal overlay to appear
+  await page.waitForSelector('#_email-compose-overlay', { timeout: 3000 });
+
+  // Override To if supplied (handles the "no email on file" case)
+  if (toEmail) {
+    await page.fill('#_ec-to', toEmail);
+  }
+
+  // Click Send
+  await page.click('#_ec-send-btn');
+  await page.waitForTimeout(800);
+
+  return page.evaluate(() => window.__sendEmailCalls || []);
 }
 
 // ── 1. DOM layout ──────────────────────────────────────────────────────────────
@@ -162,9 +145,7 @@ test.describe('Send bar — DOM layout', () => {
 
   test('#proposal-link-bar is hidden by default (before link is generated)', async () => {
     const bar = page.locator('#proposal-link-bar');
-    // The bar is inside #est-s5 which is hidden — computed display:none
     const isHidden = await bar.evaluate(el => {
-      // Check the bar's own display or its ancestors
       return getComputedStyle(el).display === 'none' || el.style.display === 'none';
     });
     expect(isHidden, 'proposal-link-bar should be hidden before link generated').toBe(true);
@@ -238,11 +219,7 @@ test.describe('Generic estimate send bar — shows after proposal generated', ()
   test.afterAll(async () => { await page.context().close(); });
 
   test('gei-send-bar visible and gei-send-btn hidden after proposal ready', async () => {
-    // Simulate the end-state of sendGenericProposal() without going through the
-    // full upload flow — directly invoke the bar-show logic the same way the
-    // function does after upload completes.
     await page.evaluate(({ url, cemail, cphone, token, bidId, userId }) => {
-      // Populate #proposal-link-bar data (same as sendGenericProposal does)
       const bar = document.getElementById('proposal-link-bar');
       if (bar) {
         bar.dataset.signingUrl       = url;
@@ -252,13 +229,9 @@ test.describe('Generic estimate send bar — shows after proposal generated', ()
         bar.dataset.cphone = cphone;
         bar.dataset.cemail = cemail;
       }
-      // Set _pendingSignToken (module-level let — exposed on window in tests because
-      // cloud.js / proposals.js run in the same global scope as the page)
       window._pendingSignToken = { bidId, token, proposalKey: `proposals/${userId}/${bidId}_${token}.json` };
-      // Show gei-send-bar (the code we just added)
       const geiSendBar = document.getElementById('gei-send-bar');
       if (geiSendBar) geiSendBar.style.display = 'block';
-      // Hide generate button (code we just added)
       const geiSendBtn = document.getElementById('gei-send-btn');
       if (geiSendBtn) geiSendBtn.style.display = 'none';
     }, {
@@ -270,11 +243,9 @@ test.describe('Generic estimate send bar — shows after proposal generated', ()
       userId: FAKE_USER_ID,
     });
 
-    // gei-send-bar should now be visible
     const geiBar = page.locator('#gei-send-bar');
     await expect(geiBar).toBeVisible();
 
-    // gei-send-btn should be hidden
     const geiBtn = page.locator('#gei-send-btn');
     const isBtnHidden = await geiBtn.evaluate(el => el.style.display === 'none');
     expect(isBtnHidden, 'gei-send-btn should be hidden after proposal ready').toBe(true);
@@ -282,24 +253,123 @@ test.describe('Generic estimate send bar — shows after proposal generated', ()
     assertNoErrors(page, 'GEI bar shows after proposal ready');
   });
 
-  test('clicking Email in gei-send-bar calls sendProposalViaEmail()', async () => {
+  test('clicking Email in gei-send-bar opens compose modal with pre-filled To', async () => {
     await patchFetchForEmail(page, { status: 200, body: '{"ok":true}' });
 
-    // gei-send-bar is visible from previous test; bar dataset is set
     const emailBtn = page.locator('#gei-send-bar button', { hasText: 'Email' });
     await emailBtn.click();
-    await page.waitForTimeout(600);
+    await page.waitForTimeout(400);
 
-    const calls = await page.evaluate(() => window.__sendEmailCalls || []);
-    expect(calls.length, 'Email button in gei-send-bar should trigger edge function').toBeGreaterThan(0);
-    expect(calls[0].body.to, 'to should be client email').toBe(MOCK_CLIENT_EMAIL);
+    // Compose modal should appear
+    const overlay = page.locator('#_email-compose-overlay');
+    await expect(overlay).toBeVisible({ timeout: 2000 });
+
+    // To field should be pre-filled with the client email
+    const toVal = await page.inputValue('#_ec-to');
+    expect(toVal, 'compose modal To field should be pre-filled').toBe(MOCK_CLIENT_EMAIL);
+
+    // Dismiss modal
+    await page.click('#_email-compose-overlay button:last-child');
+    await restoreFetch(page);
+    assertNoErrors(page, 'GEI bar - Email button opens compose modal');
+  });
+
+  test('submitting compose modal calls Resend edge function', async () => {
+    await patchFetchForEmail(page, { status: 200, body: '{"ok":true}' });
+
+    const emailBtn = page.locator('#gei-send-bar button', { hasText: 'Email' });
+    await emailBtn.click();
+
+    const calls = await submitEmailCompose(page);
+    expect(calls.length, 'Submit in compose modal should trigger edge function').toBeGreaterThan(0);
+    expect(calls[0].body.to, 'to field should be client email').toBe(MOCK_CLIENT_EMAIL);
 
     await restoreFetch(page);
-    assertNoErrors(page, 'GEI bar - Email button triggers edge function');
+    assertNoErrors(page, 'GEI bar - compose modal submits to edge function');
   });
 });
 
-// ── 4. sendProposalViaSms — phone guard and sms: URL ──────────────────────────
+// ── 4. Email compose modal — no client email on file ──────────────────────────
+
+test.describe('Email compose modal — no client email on file', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await goPg(page, 'pg-dash');
+  });
+
+  test.afterEach(async () => {
+    // Close any open compose modal
+    await page.evaluate(() => document.getElementById('_email-compose-overlay')?.remove());
+    await restoreFetch(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('compose modal opens when client has no email — To field empty', async () => {
+    await patchFetchForEmail(page);
+    await seedProposalLinkBar(page, { cemail: '' });
+
+    await page.evaluate(async () => {
+      if (typeof sendProposalViaEmail === 'function') await sendProposalViaEmail();
+    });
+    await page.waitForTimeout(400);
+
+    const overlay = page.locator('#_email-compose-overlay');
+    await expect(overlay).toBeVisible({ timeout: 2000 });
+
+    const toVal = await page.inputValue('#_ec-to');
+    expect(toVal, 'To field should be empty when no email on file').toBe('');
+    assertNoErrors(page, 'compose modal opens with empty To when no email');
+  });
+
+  test('can enter email in compose modal and send successfully', async () => {
+    await patchFetchForEmail(page, { status: 200, body: '{"ok":true}' });
+    await seedProposalLinkBar(page, { cemail: '' });
+
+    await page.evaluate(async () => {
+      if (typeof sendProposalViaEmail === 'function') await sendProposalViaEmail();
+    });
+    await page.waitForTimeout(400);
+
+    const calls = await submitEmailCompose(page, { toEmail: 'newemail@example.com' });
+    expect(calls.length, 'Entering email and clicking Send should trigger edge function').toBeGreaterThan(0);
+    expect(calls[0].body.to, 'to field should be the entered email').toBe('newemail@example.com');
+    assertNoErrors(page, 'compose modal can enter email and send');
+  });
+
+  test('compose modal shows error state on Resend failure — no double-send', async () => {
+    await patchFetchForEmail(page, { status: 502, body: '{"error":"Bad gateway"}' });
+    await seedProposalLinkBar(page, { cemail: MOCK_CLIENT_EMAIL });
+
+    await page.evaluate(async () => {
+      if (typeof sendProposalViaEmail === 'function') await sendProposalViaEmail();
+    });
+    await page.waitForTimeout(400);
+
+    // Submit — expect error to show in modal (not navigate away)
+    await page.click('#_ec-send-btn');
+    await page.waitForTimeout(1000);
+
+    // Modal should still be visible (not dismissed on failure)
+    const overlay = page.locator('#_email-compose-overlay');
+    await expect(overlay).toBeVisible({ timeout: 1000 });
+
+    // Status element should show error text
+    const statusText = await page.evaluate(() => {
+      const el = document.getElementById('_ec-status');
+      return el ? el.textContent : '';
+    });
+    expect(statusText, 'status should show error message').toContain('⚠️');
+    assertNoErrors(page, 'compose modal shows error on 502 — no double-send');
+  });
+});
+
+// ── 5. sendProposalViaSms — phone guard and sms: URL ──────────────────────────
 
 test.describe('sendProposalViaSms — phone guard and sms: URL', () => {
   let page;
@@ -316,7 +386,6 @@ test.describe('sendProposalViaSms — phone guard and sms: URL', () => {
   test.afterAll(async () => { await page.context().close(); });
 
   test('shows alert and skips sms: when client has no phone on file', async () => {
-    // Patch zAlert to capture
     await page.evaluate(() => {
       window.__capturedAlerts = [];
       const orig = window.zAlert;
@@ -324,7 +393,6 @@ test.describe('sendProposalViaSms — phone guard and sms: URL', () => {
       window.zAlert = (msg) => { window.__capturedAlerts.push(msg); };
     });
 
-    // Seed bar with empty phone
     await seedProposalLinkBar(page, { cphone: '' });
     await page.evaluate(async () => {
       if (typeof sendProposalViaSms === 'function') await sendProposalViaSms();
@@ -335,30 +403,15 @@ test.describe('sendProposalViaSms — phone guard and sms: URL', () => {
     expect(alerts.length, 'zAlert must fire when client has no phone').toBeGreaterThan(0);
     expect(alerts[0].toLowerCase(), 'Alert must mention phone').toContain('phone');
 
-    // Restore
     await page.evaluate(() => { if (window.__origZAlert) window.zAlert = window.__origZAlert; });
     assertNoErrors(page, 'sendProposalViaSms no-phone guard');
   });
 
   test('builds sms: URL with correct phone digits when phone is present', async () => {
-    // Capture the href before location assignment navigates
     await page.evaluate(() => {
       window.__capturedSmsHref = null;
-      // Intercept _commitProposalSent so no bid state changes / navigation occur
       window.__origCommit = window._commitProposalSent;
       window._commitProposalSent = () => {};
-      // Intercept window.location.href by wrapping sendProposalViaSms
-      // We achieve capture by monkey-patching clearTimeout/setTimeout so the
-      // _commitProposalSent setTimeout is swallowed, then reading the href via
-      // a small shim on the window object.
-      //
-      // The reliable approach: wrap sendProposalViaSms to intercept the
-      // window.location.href = 'sms:...' assignment inside it.
-      const origFn = window.sendProposalViaSms;
-      window.__origSendProposalViaSms = origFn;
-      // Temporarily replace window.location with a proxy-like object
-      // Note: window.location cannot be redefined in a Worker but CAN be
-      // replaced via defineProperty with { configurable:true } in a page context.
       const locDesc = Object.getOwnPropertyDescriptor(window, 'location');
       if (!locDesc || locDesc.configurable) {
         let _fakeHref = window.location.href;
@@ -382,27 +435,20 @@ test.describe('sendProposalViaSms — phone guard and sms: URL', () => {
     await page.waitForTimeout(500);
 
     const captured = await page.evaluate(() => window.__capturedSmsHref);
-    // Restore
     await page.evaluate(() => {
       if (window.__origCommit) window._commitProposalSent = window.__origCommit;
-      if (window.__locationOverridden) {
-        // Restore original location — use undefined to let browser restore it
-        delete window.__locationOverridden;
-      }
+      delete window.__locationOverridden;
     });
 
-    // If location override worked, verify the sms: URL contains correct phone
     if (captured) {
       expect(captured, 'sms: URL must start with sms:').toMatch(/^sms:/i);
       expect(captured, 'sms: URL must contain client phone digits').toContain(MOCK_CLIENT_PHONE);
     }
-    // Note: if location is not overridable in this browser, captured may be null.
-    // In that case, we verify no console errors (test still passes as a no-op guard).
     assertNoErrors(page, 'sendProposalViaSms sms: URL');
   });
 });
 
-// ── 5. sendProposalViaEmail — replyTo contains contractor email ────────────────
+// ── 6. sendProposalViaEmail — replyTo contains contractor email ───────────────
 
 test.describe('sendProposalViaEmail — replyTo is contractor email', () => {
   let page;
@@ -416,27 +462,30 @@ test.describe('sendProposalViaEmail — replyTo is contractor email', () => {
     await goPg(page, 'pg-dash');
   });
 
-  test.afterEach(async () => { await restoreFetch(page); });
+  test.afterEach(async () => {
+    await page.evaluate(() => document.getElementById('_email-compose-overlay')?.remove());
+    await restoreFetch(page);
+  });
   test.afterAll(async () => { await page.context().close(); });
 
   test('replyTo in Resend payload equals signed-in contractor email', async () => {
     await patchFetchForEmail(page, { status: 200, body: '{"ok":true,"id":"resend-mock-id"}' });
     await seedProposalLinkBar(page, { cemail: MOCK_CLIENT_EMAIL, cphone: MOCK_CLIENT_PHONE });
 
+    // Open compose modal
     await page.evaluate(async () => { await sendProposalViaEmail(); });
+    await page.waitForTimeout(300);
 
-    const calls = await page.evaluate(() => window.__sendEmailCalls || []);
+    // Submit via modal
+    const calls = await submitEmailCompose(page);
     expect(calls).toHaveLength(1);
     const p = calls[0].body;
 
-    // replyTo must be a non-empty string (contractor email)
     expect(typeof p.replyTo, 'replyTo must be string').toBe('string');
     expect(p.replyTo.length, 'replyTo must not be empty').toBeGreaterThan(0);
     expect(p.replyTo, 'replyTo must contain @').toContain('@');
 
-    // The Supabase mock auth returns email 'test@test.com' — verify it matches
     const contractorEmail = await page.evaluate(() => {
-      // _supaUser is the signed-in user; email should match mock auth
       return (typeof _supaUser !== 'undefined' && _supaUser) ? _supaUser.email : null;
     });
     if (contractorEmail) {
@@ -447,20 +496,38 @@ test.describe('sendProposalViaEmail — replyTo is contractor email', () => {
   });
 
   test('replyTo is present even when Resend returns ok — BCC goes to contractor', async () => {
-    // When replyTo is present, Resend edge function adds bcc:[replyTo].
-    // This test verifies the client always sends replyTo so the edge function can BCC.
     await patchFetchForEmail(page, { status: 200, body: '{"ok":true}' });
     await seedProposalLinkBar(page, { cemail: MOCK_CLIENT_EMAIL });
 
     await page.evaluate(async () => { await sendProposalViaEmail(); });
+    await page.waitForTimeout(300);
 
-    const calls = await page.evaluate(() => window.__sendEmailCalls || []);
+    const calls = await submitEmailCompose(page);
     expect(calls.length).toBeGreaterThan(0);
 
     const p = calls[0].body;
-    // replyTo presence = contractor will get a BCC copy (no sent folder in Resend)
     expect(p.replyTo, 'replyTo must be present for BCC delivery to contractor').toBeTruthy();
 
     assertNoErrors(page, 'sendProposalViaEmail replyTo present for BCC');
+  });
+
+  test('compose modal includes customSubject and customBody in Resend payload', async () => {
+    await patchFetchForEmail(page, { status: 200, body: '{"ok":true}' });
+    await seedProposalLinkBar(page, { cemail: MOCK_CLIENT_EMAIL });
+
+    await page.evaluate(async () => { await sendProposalViaEmail(); });
+    await page.waitForTimeout(300);
+
+    // Modify subject before sending
+    await page.fill('#_ec-subj', 'Custom test subject');
+
+    const calls = await submitEmailCompose(page);
+    expect(calls.length).toBeGreaterThan(0);
+
+    const p = calls[0].body;
+    expect(p.customSubject, 'customSubject should be sent in payload').toBe('Custom test subject');
+    expect(p.customBody, 'customBody should be sent in payload').toBeTruthy();
+
+    assertNoErrors(page, 'compose modal sends customSubject and customBody');
   });
 });

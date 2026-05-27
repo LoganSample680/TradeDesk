@@ -351,7 +351,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.26.26.96';
+const APP_VERSION='05.27.26.98';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -483,6 +483,7 @@ Object.defineProperty(window,'_proposalViewsByBidClientCount',{get:()=>_proposal
 // incomplete in-memory state over real cloud data.
 let _loadedFromCacheOnly=false;
 let _mergeOnSignIn=false; // true when offline data in memory needs merging after SIGNED_IN
+let _cloudTimersStarted=false; // prevent duplicate setInterval/addEventListener on PTR re-load
 let _sessionRestoreInProgress=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -1950,12 +1951,8 @@ async function supaLoadFromCloud({silent=false}={}){
       setTimeout(()=>{if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});},500);
       _removeBootOverlay();goPg('pg-dash');
     }
-    renderDash();buildScopeGrid();
-    renderClientList&&renderClientList();renderLeadsPage&&renderLeadsPage();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
-    if(typeof renderIncome==='function')renderIncome();
-    if(typeof renderExpenses==='function')renderExpenses();
-    if(typeof renderAllMileage==='function')renderAllMileage();
 
+    // De-duplicate and filter BEFORE rendering — prevents flash of duplicate bids on PTR
     const _dedupById=(arr)=>{const seen=new Set();return arr.filter(x=>{if(seen.has(x.id))return false;seen.add(x.id);return true;});};
     const _preLen=clients.length+bids.length+jobs.length;
     clients=_dedupById(clients);bids=_dedupById(bids);jobs=_dedupById(jobs);
@@ -1963,15 +1960,24 @@ async function supaLoadFromCloud({silent=false}={}){
     bids=bids.filter(b=>!(b.draft===true&&b.status==='Draft'&&b.geiLines===undefined&&(!b.surfaces||!b.surfaces.length)&&!b.signingToken&&!b.amount));
     const _geiSeen=new Set();
     bids=bids.filter(b=>{if(b.geiLines===undefined||b.signingToken||b.amount||(b.geiLines||[]).length)return true;if(b.status!=='Draft'&&b.status!=='Pending')return true;const key=b.client_id+'|'+(b.trade_type||'general');if(_geiSeen.has(key))return false;_geiSeen.add(key);return true;});
+
+    renderDash();buildScopeGrid();
+    renderClientList&&renderClientList();renderLeadsPage&&renderLeadsPage();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
+    if(typeof renderIncome==='function')renderIncome();
+    if(typeof renderExpenses==='function')renderExpenses();
+    if(typeof renderAllMileage==='function')renderAllMileage();
     clients.forEach(c=>{if(!c.clientToken)_ensureClientToken(c.id);});
 
-    if(!silent){
+    // Always fetch proposal views on every load so PTR gets fresh timestamps immediately
+    setTimeout(()=>{checkNewSignatures();_fetchProposalViews();if(!window._showingScheduleAlert&&!silent)showScheduleAlerts();},1500);
+
+    if(!silent&&!_cloudTimersStarted){
+      _cloudTimersStarted=true;
       setTimeout(()=>{
         if(_supaUser)clients.filter(c=>c.clientToken).forEach(c=>{_uploadClientHub(c.id).catch(()=>{});});
         autoRefreshRates();autoRefreshTaxBrackets();autoRefreshLienRules();
       },4000);
       setTimeout(()=>_checkOdometerPrompt(),3500);
-      setTimeout(async()=>{await checkNewSignatures();_fetchProposalViews();if(!window._showingScheduleAlert)showScheduleAlerts();},2000);
       setInterval(()=>{checkNewSignatures();_fetchProposalViews();},30000);
       try{
         _supa.channel('sig-feed-'+_supaUser.id)
