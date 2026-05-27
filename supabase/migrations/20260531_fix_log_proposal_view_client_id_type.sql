@@ -1,32 +1,13 @@
--- Add view count columns to proposal_views.
--- These are incremented atomically by the log_proposal_view_with_count() function below.
--- hub_view_count   — number of times client opened the shared hub link (client.html)
--- client_view_count — number of times client opened a specific proposal (sign.html)
-
-ALTER TABLE proposal_views
-  ADD COLUMN IF NOT EXISTS hub_view_count    int NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS client_view_count int NOT NULL DEFAULT 0;
-
--- Backfill: any row that already has hub_opened_at set gets a count of 1
--- (we know it was opened at least once — we just never counted before)
-UPDATE proposal_views
-   SET hub_view_count = 1
- WHERE hub_opened_at IS NOT NULL
-   AND hub_view_count = 0;
-
-UPDATE proposal_views
-   SET client_view_count = 1
- WHERE client_opened_at IS NOT NULL
-   AND client_view_count = 0;
-
--- ────────────────────────────────────────────────────────────────────────────────
--- Atomic upsert-with-increment function.
+-- Fix log_proposal_view_with_count: p_client_id was declared uuid but
+-- client IDs in the app are numeric integers stored as text (e.g. "901").
+-- This caused "COALESCE types text and uuid cannot be matched" when the
+-- migration tried to compile the function.
 --
--- Called by the log-proposal-view Edge Function (service role).
--- Uses INSERT ... ON CONFLICT DO UPDATE so the counter increment and the
--- timestamp update are a single atomic statement — no race condition between
--- a separate SELECT + UPDATE.
--- ────────────────────────────────────────────────────────────────────────────────
+-- Drop the old signature first (different parameter types = different function
+-- in PostgreSQL), then recreate with the correct types.
+
+DROP FUNCTION IF EXISTS log_proposal_view_with_count(uuid, text, text, uuid);
+
 CREATE OR REPLACE FUNCTION log_proposal_view_with_count(
   p_contractor_user_id uuid,
   p_bid_id             text,
@@ -86,3 +67,19 @@ $$;
 
 -- Grant execute to service_role (used by the Edge Function)
 GRANT EXECUTE ON FUNCTION log_proposal_view_with_count(uuid, text, text, text) TO service_role;
+
+-- Ensure the client_id column accepts text (numeric IDs like "901")
+-- If it was created as uuid, alter it to text.
+-- IF it's already text this is a no-op (ALTER TYPE to same type).
+DO $$
+BEGIN
+  -- Only alter if the column is currently uuid
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'proposal_views'
+      AND column_name = 'client_id'
+      AND data_type = 'uuid'
+  ) THEN
+    ALTER TABLE proposal_views ALTER COLUMN client_id TYPE text USING client_id::text;
+  END IF;
+END $$;

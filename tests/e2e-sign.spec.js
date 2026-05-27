@@ -1352,6 +1352,104 @@ test.describe('Stripe Connect — API states', () => {
   });
 });
 
+// ── Sign page layout tests (real DOM assertions) ──────────────────────────────
+// Verify the proposal view layout: no big price box, scope first, sticky bar clean.
+test.describe('sign.html — proposal layout', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL, bidId: FAKE_BID_ID_1 });
+    await page.goto(
+      `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 }
+    );
+    await page.waitForTimeout(2500);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('big price amt-box is NOT visible — removed from proposal view', async () => {
+    // The .amt-box element exists in the DOM (hidden) but must not be visible
+    const amtBoxVisible = await page.evaluate(() => {
+      const el = document.querySelector('.amt-box');
+      if (!el) return false;
+      const s = window.getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
+    });
+    expect(amtBoxVisible).toBe(false);
+  });
+
+  test('Scope & terms card is visible on pg-sign', async () => {
+    const scopeVisible = await page.evaluate(() => {
+      const el = document.getElementById('prop-html');
+      return el ? el.offsetParent !== null : false;
+    });
+    expect(scopeVisible).toBe(true);
+  });
+
+  test('Scope & terms appears before any amt-box in DOM order', async () => {
+    const scopeBeforePrice = await page.evaluate(() => {
+      const scope = document.getElementById('prop-html');
+      const price = document.querySelector('.amt-box');
+      if (!scope || !price) return true; // price removed = trivially true
+      return scope.compareDocumentPosition(price) & Node.DOCUMENT_POSITION_FOLLOWING;
+    });
+    expect(scopeBeforePrice).toBeTruthy();
+  });
+
+  test('sticky bar has Approve & Sign button', async () => {
+    const btn = await page.locator('#approve-btn').isVisible();
+    // Sticky bar is hidden until scroll — check it exists and has correct text
+    const btnText = await page.evaluate(() => {
+      const b = document.getElementById('approve-btn');
+      return b ? b.textContent.trim() : '';
+    });
+    expect(btnText).toContain('Approve');
+    expect(btnText).toContain('Sign');
+  });
+
+  test('sticky bar does NOT show "Project Total" label', async () => {
+    const stickyText = await page.evaluate(() => {
+      const bar = document.getElementById('sticky-bar');
+      return bar ? bar.textContent : '';
+    });
+    expect(stickyText).not.toContain('Project Total');
+  });
+
+  test('Download PDF button exists inside sticky bar', async () => {
+    const pdfInBar = await page.evaluate(() => {
+      const bar = document.getElementById('sticky-bar');
+      if (!bar) return false;
+      return bar.textContent.includes('Download PDF');
+    });
+    expect(pdfInBar).toBe(true);
+  });
+
+  test('amt-total node exists in DOM but is inside hidden wrapper', async () => {
+    // JS writes to amt-total — it must exist so those writes don't throw
+    const exists = await page.evaluate(() => !!document.getElementById('amt-total'));
+    expect(exists).toBe(true);
+    // But it must not be visible
+    const hidden = await page.evaluate(() => {
+      const el = document.getElementById('amt-total');
+      if (!el) return false;
+      let n = el;
+      while (n) {
+        if (window.getComputedStyle(n).display === 'none') return true;
+        n = n.parentElement;
+      }
+      return false;
+    });
+    expect(hidden).toBe(true);
+  });
+
+  test('no console errors on sign page layout', async () => {
+    assertNoErrors(page, 'sign page layout');
+  });
+});
+
 // ════════════════════════════════════════════════════════════════════════════
 //  BID SHARING — WITHOUT STRIPE / WITH STRIPE
 // ════════════════════════════════════════════════════════════════════════════

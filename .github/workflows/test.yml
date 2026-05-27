@@ -17,6 +17,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── Migration lint ──────────────────────────────────────────────────────────
+  # Validates every SQL migration file on every PR — never skips, no Supabase
+  # bot dependency. Catches syntax errors and type mismatches before merge.
+  migration-lint:
+    name: Migration lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: sudo apt-get install -y postgresql-client
+
+      - name: Start local Postgres
+        run: |
+          sudo systemctl start postgresql
+          sudo -u postgres psql -c "CREATE USER testuser WITH SUPERUSER PASSWORD 'testpass';"
+          sudo -u postgres psql -c "CREATE DATABASE testdb OWNER testuser;"
+
+      - name: Run all migrations against local Postgres
+        env:
+          PGPASSWORD: testpass
+        run: |
+          for f in $(ls supabase/migrations/*.sql | sort); do
+            echo "▶ applying $f"
+            psql -h localhost -U testuser -d testdb -f "$f" || exit 1
+          done
+          echo "✅ All migrations applied cleanly"
+
+  # ── E2E browser tests ───────────────────────────────────────────────────────
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10

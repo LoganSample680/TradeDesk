@@ -36,7 +36,7 @@ Deno.serve(async (req: Request) => {
       p_contractor_user_id: contractorUserId,
       p_bid_id:             String(bidId),
       p_viewer_type:        viewerType || 'client',
-      p_client_id:          clientId   || null,
+      p_client_id:          clientId != null ? String(clientId) : null,  // numeric IDs stored as text
     });
 
     if (error) {
