@@ -1510,6 +1510,55 @@ test.describe('sign.html — cancellation clause patch for old proposals', () =>
   });
 });
 
+// ── Cancellation clause patch — generic trade proposals (HVAC, roofing, etc.) ─
+// Generic proposals use a different end anchor ("not a penalty.</div>") so a
+// second replacement handles them. Same mutual-obligation clause, business name.
+test.describe('sign.html — cancellation clause patch for generic trade proposals', () => {
+  let page;
+
+  const OLD_GENERIC_CANCEL_HTML =
+    '<div style="font-size:11px;color:#2d3748;line-height:2">' +
+    '<div>1. <strong>Deposit:</strong> 25% due before work begins.</div>' +
+    '<div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer has the right to cancel within 3 business days of signing (K.S.A. §50-640). After that, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty.</div>' +
+    '<div>3. <strong>Change Orders:</strong> Written change order required.</div>' +
+    '</div>';
+
+  const OLD_GENERIC_PROPOSAL = { ...MOCK_PROPOSAL, proposalHtml: OLD_GENERIC_CANCEL_HTML, trade: 'plumbing' };
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await page.addInitScript((data) => { window.__mockProposalData = data; }, OLD_GENERIC_PROPOSAL);
+    await mockAllExternal(page, { alreadySigned: false, proposalData: OLD_GENERIC_PROPOSAL, bidId: FAKE_BID_ID_1 });
+    await page.goto(
+      `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 }
+    );
+    await page.waitForTimeout(2500);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('generic proposal: old "Buyer has the right to cancel" is NOT shown', async () => {
+    const text = await page.evaluate(() => document.getElementById('prop-html')?.textContent || '');
+    expect(text).not.toContain('Buyer has the right to cancel');
+  });
+
+  test('generic proposal: patched text shows "Buyer may cancel within"', async () => {
+    const text = await page.evaluate(() => document.getElementById('prop-html')?.textContent || '');
+    expect(text).toContain('Buyer may cancel within');
+  });
+
+  test('generic proposal: patched text includes business name performance obligation', async () => {
+    const text = await page.evaluate(() => document.getElementById('prop-html')?.textContent || '');
+    expect(text).toContain("Zach Pro Painting's right to retain the deposit is conditioned on Zach Pro Painting's readiness and willingness to perform");
+  });
+
+  test('generic proposal: no console errors after patch', async () => {
+    assertNoErrors(page, 'generic cancellation clause patch');
+  });
+});
+
 // ════════════════════════════════════════════════════════════════════════════
 //  BID SHARING — WITHOUT STRIPE / WITH STRIPE
 // ════════════════════════════════════════════════════════════════════════════
