@@ -1450,6 +1450,65 @@ test.describe('sign.html — proposal layout', () => {
   });
 });
 
+// ── Cancellation clause patch — old proposals upgraded on-the-fly ────────────
+// sign.html patches legacy proposalHtml (old "Buyer has the right to cancel"
+// language) so unsigned in-flight proposals show the updated mutual-obligation
+// clause without a manual re-send. Signed proposals return early at pg-done
+// and never reach this code path.
+test.describe('sign.html — cancellation clause patch for old proposals', () => {
+  let page;
+
+  // Build a mock proposal whose proposalHtml contains the OLD one-sided
+  // cancellation language that was live before this fix.
+  const OLD_CANCEL_HTML =
+    '<p>Scope: paint living room.</p>' +
+    '<br><br>2. <strong>Cancellation &amp; Deposits:</strong> Buyer has the right to cancel within 3 business days of signing (K.S.A. §50-640). After that period, the deposit is retained as liquidated damages covering: (a) mobilization &amp; scheduling costs — crew reservation and declined projects for those dates; (b) administrative costs — site measurements, color consulting, scope preparation; and (c) material procurement — specific paint colors and supplies that may not be returnable. These represent a reasonable estimate of actual damages, not a penalty. Materials purchased will be made available for pickup upon cancellation.' +
+    '<br><br>3. <strong>Change Orders:</strong> Requires written change order.';
+
+  const OLD_PROPOSAL = { ...MOCK_PROPOSAL, proposalHtml: OLD_CANCEL_HTML };
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    // Inject OLD_PROPOSAL into window.__mockProposalData before any script runs.
+    // The Supabase shim's storage.download() reads this window var, so the page
+    // sees the old-style proposalHtml and the patch logic can be exercised.
+    await page.addInitScript((data) => { window.__mockProposalData = data; }, OLD_PROPOSAL);
+    await mockAllExternal(page, { alreadySigned: false, proposalData: OLD_PROPOSAL, bidId: FAKE_BID_ID_1 });
+    await page.goto(
+      `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 }
+    );
+    await page.waitForTimeout(2500);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('old "Buyer has the right to cancel" text is NOT shown after patch', async () => {
+    const text = await page.evaluate(() => document.getElementById('prop-html')?.textContent || '');
+    expect(text).not.toContain('Buyer has the right to cancel');
+  });
+
+  test('patched text shows "Buyer may cancel within"', async () => {
+    const text = await page.evaluate(() => document.getElementById('prop-html')?.textContent || '');
+    expect(text).toContain('Buyer may cancel within');
+  });
+
+  test('patched text includes contractor performance obligation', async () => {
+    const text = await page.evaluate(() => document.getElementById('prop-html')?.textContent || '');
+    expect(text).toContain("Contractor's right to retain the deposit is conditioned on Contractor's readiness and willingness to perform");
+  });
+
+  test('patched text includes "If Contractor fails to substantially complete"', async () => {
+    const text = await page.evaluate(() => document.getElementById('prop-html')?.textContent || '');
+    expect(text).toContain('If Contractor fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full');
+  });
+
+  test('no console errors after cancellation patch', async () => {
+    assertNoErrors(page, 'cancellation clause patch');
+  });
+});
+
 // ════════════════════════════════════════════════════════════════════════════
 //  BID SHARING — WITHOUT STRIPE / WITH STRIPE
 // ════════════════════════════════════════════════════════════════════════════

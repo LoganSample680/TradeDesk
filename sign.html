@@ -680,7 +680,17 @@ async function init(){
     const _days=_prop.estDays;
     document.getElementById('sum-rows').innerHTML=
       (_days?'<div class="row"><span class="rl">Est. duration</span><span class="rv">'+_days+' day'+(_days!==1?'s':'')+'</span></div>':'');
-    document.getElementById('prop-html').innerHTML=_prop.proposalHtml||'';
+    // Patch old cancellation clause in unsigned proposals — adds mutual obligation so contractor
+    // can't keep the deposit without performing. alreadySigned proposals return early at pg-done,
+    // so this code only ever runs for proposals the client hasn't signed yet.
+    let _proposalHtml=_prop.proposalHtml||'';
+    if(_proposalHtml.includes('Buyer has the right to cancel within')){
+      _proposalHtml=_proposalHtml.replace(
+        /2\. <strong>Cancellation &amp; Deposits:<\/strong> Buyer has the right to cancel within (\d+) business days of signing \(([^)]+)\)\..*?Materials purchased will be made available for pickup upon cancellation\./s,
+        '2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within $1 business days of signing ($2) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages covering: (a) mobilization &amp; scheduling costs — crew reservation and declined projects for those dates; (b) administrative costs — site measurements, color consulting, scope preparation; and (c) material procurement — specific paint colors and supplies that may not be returnable. These represent a reasonable estimate of actual damages, not a penalty. Materials purchased will be made available for pickup upon cancellation. Contractor\'s right to retain the deposit is conditioned on Contractor\'s readiness and willingness to perform. If Contractor fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.'
+      );
+    }
+    document.getElementById('prop-html').innerHTML=_proposalHtml;
     // Remove the embedded signature block from the proposal HTML — signing happens in sig-card below
     document.querySelectorAll('#prop-html .sig-block, #prop-html [class*="sig-block"], #prop-html .signature-section').forEach(el=>el.remove());
     // Show EPA section for pre-1978 painting proposals
