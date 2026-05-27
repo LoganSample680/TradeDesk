@@ -104,3 +104,60 @@ the suite passes. This means:
 Any `console.error` a new feature introduces is a test failure.
 `assertNoErrors()` enforces this in every describe block. New code must
 not introduce new console errors — if it does, fix the code, not the test.
+
+---
+
+## Code Removal & Cleanup Policy
+
+**Dead code must be deleted, never hidden.**
+
+When a feature is moved, replaced, or refactored:
+
+- **Delete** the old code — functions, HTML elements, CSS, event handlers.
+  Do not comment it out. Do not set `display:none`. Do not add `if(false)`.
+- **Remove** every call site that referenced the deleted code.
+  Search across all JS files and HTML before committing.
+- **Never** leave orphaned functions defined but uncalled.
+
+### Tests must verify the deletion
+
+Every PR that removes or moves something must include E2E tests that
+**assert the old thing no longer exists**:
+
+```js
+// Function removed → assert it's gone
+const fnExists = await page.evaluate(() => typeof oldFunction === 'function');
+expect(fnExists).toBe(false);
+
+// HTML element removed → assert it's absent from the DOM
+const count = await page.locator('#old-element-id').count();
+expect(count).toBe(0);
+```
+
+These tests are not optional. CI must prove the old entry point is gone,
+not just that the new one works.
+
+### No data loss — verify before removing UI
+
+Before removing any UI that wrote to storage (`S.*`, localStorage,
+Supabase), confirm:
+1. The underlying data key (`S.vehicles`, `maintenance`, etc.) is still
+   read and written by the replacement code.
+2. No migration is needed — existing user data loads correctly without
+   the old UI present.
+3. Call out in the PR description which data stores are affected and
+   confirm no records are dropped.
+
+### One commit per PR
+
+Squash all work for a PR into **one commit** before pushing. Multiple
+commits pushed in quick succession trigger `concurrency: cancel-in-progress`
+and kill earlier shard runs — meaning CI results never appear in the PR.
+
+**Workflow:**
+1. Do all the work locally across as many commits as needed.
+2. Before the final push: `git reset --soft HEAD~N` then recommit as one.
+3. If already pushed: squash with `git reset --soft`, recommit, then
+   `git push --force-with-lease`.
+4. After a squash force-push, rebase onto `origin/main` if conflicts
+   appear: `git checkout -B <branch> origin/main && git cherry-pick <sha>`.
