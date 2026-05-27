@@ -1494,14 +1494,15 @@ test.describe('sign.html — cancellation clause patch for old proposals', () =>
     expect(text).toContain('Buyer may cancel within');
   });
 
-  test('patched text includes contractor performance obligation', async () => {
+  test('patched text includes business name performance obligation', async () => {
     const text = await page.evaluate(() => document.getElementById('prop-html')?.textContent || '');
-    expect(text).toContain("Contractor's right to retain the deposit is conditioned on Contractor's readiness and willingness to perform");
+    // Business name (Zach Pro Painting from MOCK_PROPOSAL) replaces generic "Contractor"
+    expect(text).toContain("Zach Pro Painting's right to retain the deposit is conditioned on Zach Pro Painting's readiness and willingness to perform");
   });
 
-  test('patched text includes "If Contractor fails to substantially complete"', async () => {
+  test('patched text includes "fails to substantially complete" with business name', async () => {
     const text = await page.evaluate(() => document.getElementById('prop-html')?.textContent || '');
-    expect(text).toContain('If Contractor fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full');
+    expect(text).toContain('If Zach Pro Painting fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full');
   });
 
   test('no console errors after cancellation patch', async () => {
