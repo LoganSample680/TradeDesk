@@ -1962,8 +1962,8 @@ function completeCalTask(jobId){
 }
 
 function goToVehicleSettings(){
-  window._scrollToVehicles=true;
-  goPg('pg-settings');
+  goPg('pg-team');
+  if(typeof setFleetTab==='function') setFleetTab('fleet');
 }
 
 function toggleRefField(sel){

@@ -67,7 +67,8 @@ test.describe('Fleet Management', () => {
 
     const list = page.locator('#fleet-vehicle-list');
     const text = await list.textContent();
-    expect(text).toContain('No vehicles yet');
+    expect(text).toContain('Set up your first vehicle');
+    expect(text).toContain('Add your first vehicle');
 
     assertNoErrors(page, 'Empty fleet state');
   });
@@ -805,5 +806,135 @@ test.describe('Fleet Management', () => {
   // ── Test 27: Zero console errors for all new features ────────────────────
   test('Zero console errors after all new fleet feature tests', async () => {
     assertNoErrors(page, 'Fleet new features — zero console errors');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  VEHICLE SECTION REMOVAL — Settings & Mileage regression suite
+//  Verifies that removing the vehicle section from Settings and moving
+//  vehicle management to Fleet doesn't break Settings, mileage, or Supabase.
+// ════════════════════════════════════════════════════════════════════════════
+test.describe('Vehicle management consolidation — removal regression', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  // ── Settings: old vehicle inputs are gone ────────────────────────────────
+  test('Settings page does not contain old vehicle add inputs', async () => {
+    await goPg(page, 'pg-settings');
+    await page.waitForTimeout(400);
+
+    // The old add-from-settings form inputs must be absent
+    const hasNewVehInput = await page.locator('#set-new-veh').count();
+    expect(hasNewVehInput).toBe(0);
+
+    const hasNickInput = await page.locator('#set-new-veh-nick').count();
+    expect(hasNickInput).toBe(0);
+
+    const hasVehList = await page.locator('#set-vehicles-list').count();
+    expect(hasVehList).toBe(0);
+
+    const hasVehSection = await page.locator('#settings-vehicles-section').count();
+    expect(hasVehSection).toBe(0);
+
+    assertNoErrors(page, 'Settings has no old vehicle inputs');
+  });
+
+  // ── Settings: page loads without errors after renderVehicleSettings removed
+  test('Settings page loads without console errors (no renderVehicleSettings call)', async () => {
+    await goPg(page, 'pg-settings');
+    await page.waitForTimeout(500);
+
+    // renderVehicleSettings should no longer exist
+    const fnExists = await page.evaluate(() => typeof renderVehicleSettings === 'function');
+    expect(fnExists).toBe(false);
+
+    // addVehicle and removeVehicle should no longer exist (removed)
+    const addVehExists = await page.evaluate(() => typeof addVehicle === 'function');
+    expect(addVehExists).toBe(false);
+
+    const removeVehExists = await page.evaluate(() => typeof removeVehicle === 'function');
+    expect(removeVehExists).toBe(false);
+
+    assertNoErrors(page, 'Settings loads cleanly after vehicle section removal');
+  });
+
+  // ── Mileage: no-vehicle prompt appears when there are no vehicles ─────────
+  test('Mileage page shows no-vehicle onboarding prompt when no vehicles added', async () => {
+    await page.evaluate(() => {
+      S.vehicles = [];
+      mileage = [];
+    });
+    await goPg(page, 'pg-tracker');
+    await page.waitForTimeout(400);
+
+    await page.evaluate(() => renderAllMileage());
+    await page.waitForTimeout(300);
+
+    const heroText = await page.locator('#mil-hero-wrap').textContent();
+    expect(heroText).toContain('Add a vehicle to start logging');
+    expect(heroText).toContain('Add vehicle in Fleet');
+
+    assertNoErrors(page, 'Mileage no-vehicle prompt');
+  });
+
+  // ── Mileage: renders normally when vehicles exist (no regression) ─────────
+  test('Mileage page renders hero and trip log normally when vehicles present', async () => {
+    const yr = new Date().getFullYear().toString();
+    await page.evaluate((yr) => {
+      S.vehicles = [{ name: '2019 F-150', nickname: 'Work Truck', status: 'active', downtimeLog: [], addedDate: '2024-01-01', bizUse: 80 }];
+      mileage = [
+        { id: 1, vehicle: '2019 F-150', date: yr+'-04-10', miles: 45, purpose: 'Client visit' },
+        { id: 2, vehicle: '2019 F-150', date: yr+'-04-15', miles: 30 },
+      ];
+    }, yr);
+    await page.waitForTimeout(200);
+
+    await page.evaluate(() => renderAllMileage());
+    await page.waitForTimeout(300);
+
+    // Hero should show a mileage deduction figure, not the no-vehicle prompt
+    const heroText = await page.locator('#mil-hero-wrap').textContent();
+    expect(heroText).not.toContain('Add a vehicle to start logging');
+    expect(heroText).toContain('business miles');
+
+    assertNoErrors(page, 'Mileage renders normally with vehicles');
+  });
+
+  // ── Fleet: openAddVehicleModal called from anywhere navigates to Fleet ────
+  test('openAddVehicleModal(-1) is the sole vehicle add entry point', async () => {
+    await page.evaluate(() => { S.vehicles = []; });
+    await goPg(page, 'pg-team');
+    await page.waitForTimeout(200);
+
+    await page.evaluate(() => openAddVehicleModal(-1));
+    await page.waitForTimeout(300);
+
+    const overlay = await page.locator('#fleet-veh-overlay').isVisible();
+    expect(overlay).toBe(true);
+
+    // Modal should be titled "Add vehicle"
+    const title = await page.evaluate(() => {
+      const box = document.getElementById('fleet-veh-box');
+      const hdr = box?.querySelector('[style*="font-size:20px"]');
+      return hdr?.textContent?.trim() || '';
+    });
+    expect(title).toBe('Add vehicle');
+
+    await page.evaluate(() => _closeFleetVehModal());
+    assertNoErrors(page, 'openAddVehicleModal is sole vehicle add entry point');
+  });
+
+  // ── Zero console errors throughout ───────────────────────────────────────
+  test('Zero console errors across vehicle consolidation tests', async () => {
+    assertNoErrors(page, 'Vehicle consolidation — zero console errors');
   });
 });

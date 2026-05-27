@@ -55,11 +55,18 @@ function renderFleetVehicles() {
   if(!el) return;
   const vehs = getVehicles();
   if(!vehs.length) {
-    el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3)">' +
-      '<div style="font-size:32px;margin-bottom:8px">🚗</div>' +
-      '<div style="font-size:14px;font-weight:600;margin-bottom:4px">No vehicles yet</div>' +
-      '<div style="font-size:12px;margin-bottom:16px">Add your first vehicle to start tracking maintenance, costs and mileage.</div>' +
-      '<button class="btn btn-p" onclick="openAddVehicleModal(-1)" style="font-size:14px;padding:12px 24px">+ Add vehicle</button>' +
+    el.innerHTML =
+      '<div style="padding:28px 20px 24px;text-align:center">' +
+        '<div style="font-size:40px;margin-bottom:10px">🚛</div>' +
+        '<div style="font-size:18px;font-weight:800;margin-bottom:6px;color:var(--text)">Set up your first vehicle</div>' +
+        '<div style="font-size:13px;color:var(--text3);margin-bottom:20px;line-height:1.5;max-width:300px;margin-left:auto;margin-right:auto">The IRS requires a vehicle description on every business trip log. Add one here to unlock mileage tracking, maintenance records, and tax deductions.</div>' +
+        '<button class="btn btn-p" onclick="openAddVehicleModal(-1)" style="font-size:15px;padding:13px 28px;margin-bottom:24px">+ Add your first vehicle</button>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;max-width:340px;margin:0 auto">' +
+          '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px"><div style="font-size:15px;margin-bottom:3px">🗺️</div><div style="font-size:12px;font-weight:700;color:var(--text)">IRS mileage log</div><div style="font-size:11px;color:var(--text3)">Per-vehicle trip log the IRS requires</div></div>' +
+          '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px"><div style="font-size:15px;margin-bottom:3px">🔧</div><div style="font-size:12px;font-weight:700;color:var(--text)">Maintenance records</div><div style="font-size:11px;color:var(--text3)">Service log + cost per mile</div></div>' +
+          '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px"><div style="font-size:15px;margin-bottom:3px">📊</div><div style="font-size:12px;font-weight:700;color:var(--text)">Business use %</div><div style="font-size:11px;color:var(--text3)">Auto-calculated from odometer</div></div>' +
+          '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px"><div style="font-size:15px;margin-bottom:3px">💰</div><div style="font-size:12px;font-weight:700;color:var(--text)">P&L per vehicle</div><div style="font-size:11px;color:var(--text3)">Deductions vs. actual costs</div></div>' +
+        '</div>' +
       '</div>';
     return;
   }
@@ -640,13 +647,14 @@ function openAddVehicleModal(idx) {
         <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">IRS settings</div>
         <div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px;margin-bottom:10px;font-size:11px;color:var(--text3)">💡 Business use % is calculated automatically from your year-end odometer report — no manual entry needed.</div>
         <div class="f"><label>IRS weight class (GVWR)</label>
-          <select id="fv-gvwr">
+          <select id="fv-gvwr" onchange="_renderGvwrNote(this.value)">
             <option value="">— Select —</option>
             <option value="light" ${v.gvwr==='light'?'selected':''}>Under 6,000 lbs (car, crossover)</option>
             <option value="heavy_truck" ${v.gvwr==='heavy_truck'?'selected':''}>Over 6k lbs — Truck/Van</option>
             <option value="heavy_suv" ${v.gvwr==='heavy_suv'?'selected':''}>Over 6k lbs — Large SUV</option>
             <option value="commercial" ${v.gvwr==='commercial'?'selected':''}>Over 14,000 lbs (box truck)</option>
           </select>
+          <div id="fv-gvwr-note" style="margin-top:4px">${_gvwrNote(v.gvwr||'')}</div>
         </div>
         <div class="f" style="margin-top:8px">
           <label>Tax deduction method <span style="font-size:10px;font-weight:400;color:var(--text3)">(pick one per vehicle — IRS doesn't allow both)</span></label>
@@ -748,8 +756,20 @@ function saveFleetVehicle() {
   saveAll();
   _closeFleetVehModal();
   renderFleetVehicles();
-  if(typeof renderVehicleSettings === 'function') renderVehicleSettings();
   showToast(isEdit?'Vehicle updated':'Vehicle added','🚗');
+  if(!isEdit) setTimeout(()=>{ if(typeof _checkOdometerPrompt==='function') _checkOdometerPrompt(); }, 500);
+}
+
+function _gvwrNote(gvwr){
+  if(gvwr==='light')return '<div style="font-size:11px;background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:6px 8px;color:#92400E">⚠️ <strong>Section 280F applies:</strong> first-year depreciation capped ~$12,200. Standard mileage rate often beats actual expenses for these vehicles.</div>';
+  if(gvwr==='heavy_truck')return '<div style="font-size:11px;background:#F0FDF4;border:1px solid #16A34A;border-radius:var(--r);padding:6px 8px;color:#166534">✓ <strong>No 280F limits.</strong> Full Section 179 or bonus depreciation (up to $70,000). Keep mileage log proving &gt;50% business use every year.</div>';
+  if(gvwr==='heavy_suv')return '<div style="font-size:11px;background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:6px 8px;color:#92400E">⚠️ <strong>Section 179 SUV cap:</strong> max $31,300 in 2025. A pickup truck with a bed doesn\'t have this cap.</div>';
+  if(gvwr==='commercial')return '<div style="font-size:11px;background:#F0FDF4;border:1px solid #16A34A;border-radius:var(--r);padding:6px 8px;color:#166534">✓ <strong>Commercial vehicle:</strong> no Section 280F limits. Full Section 179 deductible. Maintain &gt;50% business use documentation.</div>';
+  return '<div style="font-size:10px;color:var(--text3)">Set weight class above — determines how much depreciation you can deduct (IRS §280F).</div>';
+}
+function _renderGvwrNote(val) {
+  const el = document.getElementById('fv-gvwr-note');
+  if(el) el.innerHTML = _gvwrNote(val||'');
 }
 
 function _confirmRemoveVehicle(idx) {

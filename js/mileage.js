@@ -97,7 +97,6 @@ function _showOdometerModal(tasks,hardBlock){
   function _odoFinish(){
     ov.remove();
     showToast('Odometer records saved — mileage deduction verified ✓','📋');
-    renderVehicleSettings();
   }
 }
 
@@ -1067,6 +1066,16 @@ function renderAllMileage(){
   const heroEl=document.getElementById('mil-hero-wrap');
   if(heroEl){
     const vehs=getVehicles();
+    if(!vehs.length){
+      heroEl.innerHTML=
+        '<div style="background:var(--bg2);border-radius:var(--r);padding:20px;text-align:center;margin-bottom:12px">'+
+          '<div style="font-size:28px;margin-bottom:8px">🚛</div>'+
+          '<div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:4px">Add a vehicle to start logging</div>'+
+          '<div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.5">The IRS requires a vehicle description on every mileage entry. You\'re one tap away from tracking deductible trips.</div>'+
+          '<button class="btn btn-p" onclick="goPg(\'pg-team\');setFleetTab(\'fleet\')" style="font-size:14px;padding:11px 22px">+ Add vehicle in Fleet</button>'+
+        '</div>';
+      return;
+    }
     const pVeh=vehs[0]||null;
     const odoLog=(S.vehicleOdoLog||{})[yr]||{};
     const pKey=pVeh?_vehKey(pVeh):'default';
