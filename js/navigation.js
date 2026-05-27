@@ -42,15 +42,11 @@ function goPg(id){
   if(id==='pg-tracker'){trackerYear=new Date().getFullYear();_trackerYearManual=false;renderTrackerTab();populateExpJobSel();}
   if(id==='pg-taxes'){_taxPageYear=new Date().getFullYear();calcTax();}
   if(id==='pg-settings'){buildScopeDefaultsUI();
-    loadSettingsForm();renderVehicleSettings();updateLocationBtn();renderTeam();loadStripeConnectStatus();_renderSettingsTradeSections();_renderDevTradeCard();renderSettingsTrades();
+    loadSettingsForm();updateLocationBtn();renderTeam();loadStripeConnectStatus();_renderSettingsTradeSections();_renderDevTradeCard();renderSettingsTrades();
     if(window._scrollToVehicles){
       window._scrollToVehicles=false;
-      setTimeout(()=>{
-        const el=document.getElementById('settings-vehicles-section');
-        if(el)el.scrollIntoView({behavior:'smooth',block:'center'});
-        const inp=document.getElementById('set-new-veh');
-        if(inp){inp.focus();inp.style.borderColor='var(--blue)';inp.style.boxShadow='0 0 0 3px rgba(24,95,165,.2)';setTimeout(()=>{inp.style.borderColor='';inp.style.boxShadow='';},2500);}
-      },150);
+      // Vehicles now managed in Fleet & Team — redirect there
+      setTimeout(()=>{ goPg('pg-team'); setFleetTab('fleet'); },150);
     }
   }
   if(id==='pg-team'){renderTeam();renderFleetVehicles();}
