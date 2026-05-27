@@ -728,10 +728,11 @@ async function expSave(){
         deductible:catInfo2.deductible!==false,meals_50:!!(catInfo2.meals_50),
       };
       expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
-      if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
-      if(typeof renderExpenses==='function')renderExpenses();
       showToast('Expense updated — '+vendor+' '+fmt(amount),'✓');
-      closeExpenseFlow();return;
+      closeExpenseFlow();
+      setTimeout(()=>{if(typeof renderExpenses==='function')renderExpenses();},0);
+      if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
+      return;
     }
   }
   // Duplicate check — same vendor, amount, and date within 2 days
@@ -778,13 +779,12 @@ async function expSave(){
     deductible:catInfo.deductible!==false,meals_50:!!(catInfo.meals_50),
   });
   expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
-  if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
-  if(typeof renderExpenses==='function')renderExpenses();
   showToast((new Date(date).getFullYear()<new Date().getFullYear()?'Back-tax expense':'Expense')+' saved — '+vendor+' '+fmt(amount),receipt_img?'📎':'🧾');
   if(cat==='tools'&&amount>=500)setTimeout(()=>showToast('💡 Equipment $'+amount.toFixed(0)+'+ may qualify for Section 179 immediate deduction — flag for your CPA','📋'),900);
   closeExpenseFlow();
   goPg('pg-tracker');
   setTimeout(()=>{const b=document.getElementById('tr-t-expenses');if(b)b.click();},200);
+  if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
 }
 
 function quickAction(type){
@@ -2383,17 +2383,18 @@ function saveManualIncome(){
   }
   const entry={id:Date.now(),bid_id:null,client_id:client?client.id:null,client_name:client?client.name:(notes||'Other'),date:date.replace(/-/g,'').slice(0,8),type,amount:amtRaw,method,notes,created_at:new Date().toISOString()};
   income.push(entry);
-  saveAll();
   document.getElementById('_inc-ov')?.remove();
   const entryYear=parseInt(date.slice(0,4));
-  if(entryYear!==trackerYear){
-    setTrackerYear(entryYear);
-    const sel=document.getElementById('tracker-year-sel');if(sel)sel.value=entryYear;
-    showToast('Income logged for '+entryYear,'📅');
-  } else {
-    renderIncome();
-    showToast('Income logged','✅');
-  }
+  showToast(entryYear!==trackerYear?'Income logged for '+entryYear:'Income logged',entryYear!==trackerYear?'📅':'✅');
+  setTimeout(()=>{
+    if(entryYear!==trackerYear){
+      setTrackerYear(entryYear);
+      const sel=document.getElementById('tracker-year-sel');if(sel)sel.value=entryYear;
+    } else {
+      if(typeof renderIncome==='function')renderIncome();
+    }
+    saveAll();
+  },0);
 }
 function _bkTogMonth(tab,mo){
   const el=document.getElementById('bk-'+tab+'-mo-'+mo);
