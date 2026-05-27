@@ -1849,15 +1849,12 @@ async function sendGenericProposal(previewOnly){
   }
   if(input)input.value=shareUrl;
   _pendingSignToken={bidId,token,proposalKey};
-  _commitProposalSent();
-  // Open iOS/native share sheet immediately — no intermediate overlay
-  const _shareFirst=(clientName||'Client').split(' ')[0];
-  await pwaShare({
-    title:(bname||S.bname||'Your Contractor')+' Proposal',
-    text:'Hi '+_shareFirst+' — tap to review and sign your estimate.',
-    url:shareUrl
-  });
-  goPg('pg-clients');
+  // Show send bar — let user choose Text / Email / Other app (same as paint estimate)
+  const geiSendBar=document.getElementById('gei-send-bar');
+  if(geiSendBar){geiSendBar.style.display='block';geiSendBar.scrollIntoView({behavior:'smooth',block:'nearest'});}
+  // Hide the generate button so user can't double-submit
+  const geiSendBtn=document.getElementById('gei-send-btn');
+  if(geiSendBtn)geiSendBtn.style.display='none';
 }
 function _geiCopyShareLink(btn){
   const url=_proposalShareData().url;
