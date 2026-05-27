@@ -1675,6 +1675,21 @@ function exportAllDataCSV(){
     rows.forEach(r=>sections.push(r));
     sections.push('');
   };
+  // Year-grouped variant — used for income, expenses, mileage
+  const secByYear=(title,headers,records,getDate,buildRow)=>{
+    const sorted=[...records].sort((a,b)=>(getDate(b)||'').localeCompare(getDate(a)||''));
+    const byYear={};
+    sorted.forEach(r=>{const yr=(getDate(r)||'').slice(0,4)||'Unknown';if(!byYear[yr])byYear[yr]=[];byYear[yr].push(r);});
+    const years=Object.keys(byYear).sort((a,b)=>b.localeCompare(a));
+    sections.push('"=== '+title+' ('+records.length+' records) ==="');
+    sections.push('');
+    years.forEach(yr=>{
+      sections.push('"--- '+yr+' ('+byYear[yr].length+' records) ---"');
+      sections.push(headers.map(q).join(','));
+      byYear[yr].forEach(r=>sections.push(buildRow(r)));
+      sections.push('');
+    });
+  };
 
   // Clients
   sec('CLIENTS',
@@ -1720,33 +1735,30 @@ function exportAllDataCSV(){
     ].join(','))
   );
 
-  // Income
-  sec('INCOME',
+  // Income — grouped by year, newest first
+  secByYear('INCOME',
     ['Date','Source / Client','Category','Job','Amount','Notes'],
-    income.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(r=>[
-      q(r.date),q(r.client_name||r.source),q(r.cat||r.category||'Revenue'),
-      q(r.job_name),(r.amount||0).toFixed(2),q(r.note||r.notes)
-    ].join(','))
+    income, r=>r.date,
+    r=>[q(r.date),q(r.client_name||r.source),q(r.cat||r.category||'Revenue'),
+        q(r.job_name),(r.amount||0).toFixed(2),q(r.note||r.notes)].join(',')
   );
 
-  // Expenses
-  sec('EXPENSES',
+  // Expenses — grouped by year, newest first
+  secByYear('EXPENSES',
     ['Date','Vendor','IRS Category','Amount','Deductible','Job','Receipt'],
-    expenses.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(e=>{
-      const cat=IRS_EXPENSE_CATS.find(c=>c.id===e.cat)||{label:e.cat||'Other'};
-      return[q(e.date),q(e.vendor),q(cat.label),(e.amount||0).toFixed(2),
-        e.deductible===false?'No':'Yes',q(e.job_name),e.receipt_img||e.receipt_key?'Yes':'No'].join(',');
-    })
+    expenses, e=>e.date,
+    e=>{const cat=IRS_EXPENSE_CATS.find(c=>c.id===e.cat)||{label:e.cat||'Other'};
+        return[q(e.date),q(e.vendor),q(cat.label),(e.amount||0).toFixed(2),
+          e.deductible===false?'No':'Yes',q(e.job_name),e.receipt_img||e.receipt_key?'Yes':'No'].join(',');}
   );
 
-  // Mileage
+  // Mileage — grouped by year, newest first
   const rate=IRS();
-  sec('MILEAGE',
+  secByYear('MILEAGE',
     ['Date','Vehicle','From','To','Miles','IRS Deduction','Purpose','Client'],
-    mileage.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(m=>[
-      q(m.date),q(m.vehicle),q(m.from),q(m.to),
-      (m.miles||0).toFixed(1),((m.miles||0)*rate).toFixed(2),q(m.purpose),q(m.client_name)
-    ].join(','))
+    mileage, m=>m.date,
+    m=>[q(m.date),q(m.vehicle),q(m.from),q(m.to),
+        (m.miles||0).toFixed(1),((m.miles||0)*rate).toFixed(2),q(m.purpose),q(m.client_name)].join(',')
   );
 
   // Time Entries
