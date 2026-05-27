@@ -2386,6 +2386,9 @@ function saveManualIncome(){
   document.getElementById('_inc-ov')?.remove();
   const entryYear=parseInt(date.slice(0,4));
   showToast(entryYear!==trackerYear?'Income logged for '+entryYear:'Income logged',entryYear!==trackerYear?'📅':'✅');
+  // Save fires synchronously so data hits localStorage before the call stack empties
+  if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
+  // Render deferred — table rebuild doesn't block the current frame
   setTimeout(()=>{
     if(entryYear!==trackerYear){
       setTrackerYear(entryYear);
@@ -2393,7 +2396,6 @@ function saveManualIncome(){
     } else {
       if(typeof renderIncome==='function')renderIncome();
     }
-    saveAll();
   },0);
 }
 function _bkTogMonth(tab,mo){
