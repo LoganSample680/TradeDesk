@@ -590,4 +590,220 @@ test.describe('Fleet Management', () => {
   test('Zero console errors throughout fleet tests', async () => {
     assertNoErrors(page, 'Fleet overall — zero console errors');
   });
+
+  // ── Test 21: Edit vehicle modal uses compact header, no tbar ─────────────
+  test('Edit vehicle modal has compact header title, no tbar class', async () => {
+    await goPg(page, 'pg-team');
+
+    await page.evaluate(() => {
+      S.vehicles = [{
+        name: '2019 F-150', nickname: 'Work Truck',
+        status: 'active', downtimeLog: [], addedDate: '2024-01-01', bizUse: 100,
+      }];
+      renderFleetVehicles();
+    });
+    await page.waitForTimeout(200);
+
+    await page.evaluate(() => openAddVehicleModal(0));
+    await page.waitForTimeout(300);
+
+    // Header should NOT use tbar class (font-size:30px)
+    const hasTbar = await page.evaluate(() => {
+      const box = document.getElementById('fleet-veh-box');
+      return box ? box.querySelector('.tbar') !== null : false;
+    });
+    expect(hasTbar).toBe(false);
+
+    // Title text should be visible and readable
+    const titleText = await page.evaluate(() => {
+      const box = document.getElementById('fleet-veh-box');
+      if(!box) return '';
+      const hdr = box.querySelector('[style*="font-size:20px"]');
+      return hdr ? hdr.textContent.trim() : '';
+    });
+    expect(titleText).toBe('Edit vehicle');
+
+    await page.evaluate(() => _closeFleetVehModal());
+    assertNoErrors(page, 'Edit vehicle compact header');
+  });
+
+  // ── Test 22: Edit vehicle modal has NO business use % field ──────────────
+  test('Edit vehicle modal does not contain business use % input', async () => {
+    await goPg(page, 'pg-team');
+
+    await page.evaluate(() => {
+      S.vehicles = [{
+        name: '2019 F-150', nickname: 'Work Truck',
+        status: 'active', downtimeLog: [], addedDate: '2024-01-01', bizUse: 100,
+      }];
+      renderFleetVehicles();
+    });
+    await page.waitForTimeout(200);
+
+    await page.evaluate(() => openAddVehicleModal(0));
+    await page.waitForTimeout(300);
+
+    const hasBizInput = await page.locator('#fv-biz').count();
+    expect(hasBizInput).toBe(0);
+
+    // Should still have GVWR select
+    const hasGvwr = await page.locator('#fv-gvwr').isVisible();
+    expect(hasGvwr).toBe(true);
+
+    // Should have hint about year-end report
+    const boxText = await page.locator('#fleet-veh-box').textContent();
+    expect(boxText).toContain('year-end odometer report');
+
+    await page.evaluate(() => _closeFleetVehModal());
+    assertNoErrors(page, 'No biz% field in edit vehicle modal');
+  });
+
+  // ── Test 23: Year-end odometer report opens and calculates bizUse ─────────
+  test('Year-end odometer report opens, calculates and saves business use %', async () => {
+    await goPg(page, 'pg-team');
+
+    const yr = new Date().getFullYear().toString();
+
+    await page.evaluate((yr) => {
+      S.vehicles = [{
+        name: '2019 F-150', nickname: 'Work Truck',
+        status: 'active', downtimeLog: [], addedDate: '2024-01-01', bizUse: 100,
+      }];
+      // 3 business trips this year totalling 600 miles
+      mileage = [
+        { id: 1, vehicle: '2019 F-150', date: yr+'-03-15', miles: 250 },
+        { id: 2, vehicle: '2019 F-150', date: yr+'-06-20', miles: 200 },
+        { id: 3, vehicle: '2019 F-150', date: yr+'-09-10', miles: 150 },
+      ];
+      renderFleetVehicles();
+    }, yr);
+    await page.waitForTimeout(200);
+
+    // Open vehicle detail then odometer report
+    await page.evaluate(() => openFleetVehicleDetail(0));
+    await page.waitForTimeout(300);
+
+    await page.evaluate(() => openOdometerReport(0));
+    await page.waitForTimeout(300);
+
+    const reportVisible = await page.locator('#odo-report-overlay').isVisible();
+    expect(reportVisible).toBe(true);
+
+    // Enter odometer readings: start=10000, end=11000 → 1000 total miles
+    await page.locator('#odo-start').fill('10000');
+    await page.locator('#odo-end').fill('11000');
+    await page.waitForTimeout(200);
+
+    // Save
+    await page.evaluate(() => saveOdometerReport());
+    await page.waitForTimeout(300);
+
+    // Vehicle bizUse should now be 60
+    const bizUse = await page.evaluate(() => getVehicles()[0].bizUse);
+    expect(bizUse).toBe(60);
+
+    // Odometer log should be saved
+    const odoLog = await page.evaluate((yr) => {
+      const key = _vehKey(getVehicles()[0]);
+      return S.vehicleOdoLog?.[yr]?.[key] || null;
+    }, yr);
+    expect(odoLog).not.toBeNull();
+    expect(odoLog.start).toBe(10000);
+    expect(odoLog.end).toBe(11000);
+
+    assertNoErrors(page, 'Year-end odometer report calculates bizUse');
+  });
+
+  // ── Test 24: Maintenance modal has receipt scan button ───────────────────
+  test('Maintenance modal contains receipt scan button', async () => {
+    await goPg(page, 'pg-team');
+
+    await page.evaluate(() => {
+      S.vehicles = [{
+        name: '2019 F-150', nickname: 'Work Truck',
+        status: 'active', downtimeLog: [], addedDate: '2024-01-01', bizUse: 100,
+      }];
+      maintenance = [];
+      renderFleetVehicles();
+    });
+    await page.waitForTimeout(200);
+
+    await page.evaluate(() => openAddMaintenanceModal(0));
+    await page.waitForTimeout(400);
+
+    // Should have scan receipt label/button
+    const scanText = await page.locator('#fleet-maint-box').textContent();
+    expect(scanText).toContain('Scan receipt');
+
+    // Photo preview should be hidden initially
+    const previewHidden = await page.evaluate(() => {
+      const el = document.getElementById('maint-photo-preview');
+      return el ? el.style.display === 'none' : true;
+    });
+    expect(previewHidden).toBe(true);
+
+    await page.evaluate(() => _closeMaintModal());
+    assertNoErrors(page, 'Maintenance modal has receipt scan');
+  });
+
+  // ── Test 25: Vehicle detail shows lifetime miles ──────────────────────────
+  test('Vehicle detail overview shows lifetime miles across all years', async () => {
+    await goPg(page, 'pg-team');
+
+    await page.evaluate(() => {
+      S.vehicles = [{
+        name: '2019 F-150', nickname: 'Work Truck',
+        status: 'active', downtimeLog: [], addedDate: '2024-01-01', bizUse: 100,
+      }];
+      mileage = [
+        { id: 1, vehicle: '2019 F-150', date: '2024-06-15', miles: 400 },
+        { id: 2, vehicle: '2019 F-150', date: '2025-03-10', miles: 350 },
+        { id: 3, vehicle: '2019 F-150', date: '2026-01-20', miles: 250 },
+      ];
+      maintenance = [];
+      renderFleetVehicles();
+    });
+    await page.waitForTimeout(200);
+
+    await page.evaluate(() => openFleetVehicleDetail(0));
+    await page.waitForTimeout(300);
+
+    const content = await page.locator('#fleet-detail-content').textContent();
+    // 400 + 350 + 250 = 1,000 lifetime miles
+    expect(content).toContain('1,000');
+    expect(content).toContain('Lifetime miles logged');
+
+    await page.evaluate(() => _closeFleetDetail());
+    assertNoErrors(page, 'Vehicle detail shows lifetime miles');
+  });
+
+  // ── Test 26: Year-end report button visible in vehicle detail overview ────
+  test('Vehicle detail overview shows year-end mileage report button', async () => {
+    await goPg(page, 'pg-team');
+
+    await page.evaluate(() => {
+      S.vehicles = [{
+        name: '2019 F-150', nickname: 'Work Truck',
+        status: 'active', downtimeLog: [], addedDate: '2024-01-01', bizUse: 100,
+      }];
+      mileage = [];
+      maintenance = [];
+      renderFleetVehicles();
+    });
+    await page.waitForTimeout(200);
+
+    await page.evaluate(() => openFleetVehicleDetail(0));
+    await page.waitForTimeout(300);
+
+    const content = await page.locator('#fleet-detail-content').textContent();
+    expect(content).toContain('Year-end mileage report');
+
+    await page.evaluate(() => _closeFleetDetail());
+    assertNoErrors(page, 'Year-end report button in detail');
+  });
+
+  // ── Test 27: Zero console errors for all new features ────────────────────
+  test('Zero console errors after all new fleet feature tests', async () => {
+    assertNoErrors(page, 'Fleet new features — zero console errors');
+  });
 });

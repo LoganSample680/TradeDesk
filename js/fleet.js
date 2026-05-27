@@ -298,6 +298,9 @@ function setFleetDetailTab(tab) {
 function _fleetDetailOverviewHtml(v, pnl, maint, downDays, allDownDays, yr) {
   const due = _fleetDueAlerts(v, maint);
   const status = v.status || 'active';
+  const allTrips = mileage.filter(t=>t.vehicle===v.name);
+  const lifetimeMi = Math.round(allTrips.reduce((s,t)=>s+(t.miles||0),0));
+  const bizPct = v.bizUse||100;
 
   return `
     ${due.length?`<div style="background:var(--amber-lt);border:1px solid #F59E0B;border-radius:var(--r);padding:10px 12px;margin-bottom:12px">${due.map(d=>`<div style="font-size:12px;color:#92400E;font-weight:600">⚠️ ${d}</div>`).join('')}</div>`:''}
@@ -315,10 +318,14 @@ function _fleetDetailOverviewHtml(v, pnl, maint, downDays, allDownDays, yr) {
         <div style="font-size:10px;color:var(--text3)">Maintenance YTD</div>
       </div>
       <div style="background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center">
-        <div style="font-size:20px;font-weight:800;color:${downDays>0?'var(--red)':'var(--green)'}">${downDays||0}</div>
-        <div style="font-size:10px;color:var(--text3)">Days down this year</div>
+        <div style="font-size:20px;font-weight:800;color:${lifetimeMi>0?'var(--text)':'var(--text3)'}">${lifetimeMi>0?lifetimeMi.toLocaleString():'—'}</div>
+        <div style="font-size:10px;color:var(--text3)">Lifetime miles logged</div>
       </div>
     </div>
+    <button onclick="openOdometerReport(${_fleetDetailIdx})" class="btn" style="width:100%;margin-bottom:12px;background:var(--bg2);border-color:var(--border2);font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px">
+      📊 Year-end mileage report
+      ${bizPct<100?`<span style="font-size:10px;background:var(--blue);color:#fff;border-radius:99px;padding:1px 7px;font-weight:700">${bizPct}% biz</span>`:''}
+    </button>
 
     ${v.purchasePrice||v.purchaseDate||v.plate||v.vin?`
     <div style="border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;margin-bottom:12px">
@@ -384,7 +391,11 @@ function _fleetDetailServiceHtml(v, maint) {
             ${m.nextOilMiles?`<div style="font-size:11px;color:var(--text3);margin-top:3px">Next at: ${m.nextOilMiles.toLocaleString()} mi${m.nextOilDate?' / '+_fleetFmtDate(m.nextOilDate):''}</div>`:''}
             ${m.notes?`<div style="font-size:11px;color:var(--text3);margin-top:3px;font-style:italic">${m.notes}</div>`:''}
           </div>
-          <button onclick="deleteMaintenanceRecord(${m.id})" style="background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer;padding:0 0 0 8px;line-height:1">×</button>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;margin-left:8px">
+            ${m.photo?`<img src="${m.photo}" style="width:52px;height:52px;object-fit:cover;border-radius:var(--r);border:1px solid var(--border);cursor:pointer" onclick="_showMaintPhoto('${m.id}')" title="View receipt">`:''}
+            <button onclick="openAddMaintenanceModal(${_fleetDetailIdx},${m.id})" style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;padding:0;line-height:1;white-space:nowrap">Edit</button>
+            <button onclick="deleteMaintenanceRecord(${m.id})" style="background:none;border:none;color:var(--red);font-size:12px;cursor:pointer;padding:0;line-height:1">Delete</button>
+          </div>
         </div>
       </div>
     `).join('')}
@@ -463,6 +474,123 @@ function _fleetDowntimeDays(d) {
   return Math.max(0, days + 1);
 }
 
+/* ── Odometer year-end report ────────────────────────────────────────────────── */
+let _odoReportVehIdx = -1;
+let _odoReportYear = new Date().getFullYear();
+
+function openOdometerReport(vehIdx) {
+  const vehs = getVehicles();
+  const v = vehs[vehIdx];
+  if(!v) return;
+  _odoReportVehIdx = vehIdx;
+  _odoReportYear = new Date().getFullYear();
+  _renderOdometerReport();
+}
+
+function _renderOdometerReport() {
+  const vehs = getVehicles();
+  const v = vehs[_odoReportVehIdx];
+  if(!v) return;
+  const yr = String(_odoReportYear);
+  const log = S.vehicleOdoLog || {};
+  const key = _vehKey(v);
+  const rec = (log[yr] && log[yr][key]) || {};
+  const loggedMiles = mileage.filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
+                             .reduce((s,t)=>s+(t.miles||0),0);
+  const startOdo = rec.start || 0;
+  const endOdo = rec.end || 0;
+  const totalDriven = endOdo > startOdo ? endOdo - startOdo : 0;
+  const bizPct = totalDriven > 0 ? Math.min(100, Math.round((loggedMiles / totalDriven) * 100)) : 0;
+  const curYr = new Date().getFullYear();
+
+  let ov = document.getElementById('odo-report-overlay');
+  if(!ov) {
+    ov = document.createElement('div');
+    ov.id = 'odo-report-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:3003;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center';
+    ov.addEventListener('click', e=>{ if(e.target===ov) ov.remove(); });
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML = `
+    <div style="background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;width:100%;max-width:520px">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 14px;border-bottom:1px solid var(--border)">
+        <div style="font-size:20px;font-weight:800">📊 Mileage report</div>
+        <button onclick="document.getElementById('odo-report-overlay').remove()" style="font-size:22px;background:none;border:none;color:var(--text3);cursor:pointer;padding:4px">×</button>
+      </div>
+      <div style="padding:14px 16px 40px;overflow-y:auto;max-height:75vh">
+        <div style="font-size:13px;font-weight:700;color:var(--text3);margin-bottom:12px">${v.nickname||v.name}</div>
+        <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+          ${[0,1,2,3].map(d=>{const y=curYr-d;return`<button onclick="_odoReportYear=${y};_renderOdometerReport()" style="padding:6px 12px;border-radius:99px;border:1.5px solid ${y===_odoReportYear?'var(--blue)':'var(--border2)'};background:${y===_odoReportYear?'var(--blue-lt)':'var(--bg2)'};color:${y===_odoReportYear?'var(--blue)':'var(--text3)'};font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">${y}</button>`;}).join('')}
+        </div>
+        <div class="card" style="margin-bottom:12px">
+          <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">Odometer readings (IRS Pub. 463)</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="f"><label>Jan 1 reading (mi)</label>
+              <input type="number" id="odo-start" min="0" step="1" placeholder="Start of year" value="${rec.start||''}">
+            </div>
+            <div class="f"><label>Dec 31 reading (mi)</label>
+              <input type="number" id="odo-end" min="0" step="1" placeholder="End of year" value="${rec.end||''}">
+            </div>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom:16px;background:var(--bg2)">
+          <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">Calculated business use — ${yr}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+            <div style="text-align:center">
+              <div style="font-size:18px;font-weight:800">${totalDriven>0?totalDriven.toLocaleString():'—'}</div>
+              <div style="font-size:10px;color:var(--text3)">Total miles driven</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:18px;font-weight:800;color:var(--blue)">${loggedMiles>0?Math.round(loggedMiles).toLocaleString():'—'}</div>
+              <div style="font-size:10px;color:var(--text3)">Business miles</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:18px;font-weight:800;color:${bizPct>0?'var(--green)':'var(--text3)'}">${bizPct>0?bizPct+'%':'—'}</div>
+              <div style="font-size:10px;color:var(--text3)">Business use</div>
+            </div>
+          </div>
+          ${totalDriven===0?'<div style="font-size:11px;color:var(--text3)">Enter odometer readings above to calculate business use %.</div>':''}
+          ${totalDriven>0&&loggedMiles===0?'<div style="font-size:11px;color:var(--text3)">No trips logged yet for '+yr+' — log them in the mileage tab.</div>':''}
+          ${bizPct>0?`<div style="font-size:11px;color:var(--text3);margin-top:4px">Saving will apply ${bizPct}% business use to this vehicle's deduction calculations.</div>`:''}
+        </div>
+        <button onclick="saveOdometerReport()" class="btn btn-p" style="width:100%;padding:14px;font-size:16px;font-weight:700">Save readings</button>
+      </div>
+    </div>
+  `;
+  ov.style.display = 'flex';
+}
+
+function saveOdometerReport() {
+  const startEl = document.getElementById('odo-start');
+  const endEl = document.getElementById('odo-end');
+  const start = parseInt(startEl&&startEl.value)||0;
+  const end   = parseInt(endEl&&endEl.value)||0;
+  if(end>0 && start>0 && end<start) { zAlert('End odometer must be greater than start odometer.'); return; }
+  const vehs = getVehicles();
+  const v = vehs[_odoReportVehIdx];
+  if(!v) return;
+  const yr = String(_odoReportYear);
+  const key = _vehKey(v);
+  if(!S.vehicleOdoLog) S.vehicleOdoLog = {};
+  if(!S.vehicleOdoLog[yr]) S.vehicleOdoLog[yr] = {};
+  if(!S.vehicleOdoLog[yr][key]) S.vehicleOdoLog[yr][key] = {};
+  if(start>0) S.vehicleOdoLog[yr][key].start = start;
+  if(end>0)   S.vehicleOdoLog[yr][key].end   = end;
+  // Auto-calculate and save business use %
+  const loggedMiles = mileage.filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
+                             .reduce((s,t)=>s+(t.miles||0),0);
+  const totalDriven = end>start ? end-start : 0;
+  if(totalDriven>0 && loggedMiles>0) {
+    v.bizUse = Math.min(100, Math.round((loggedMiles/totalDriven)*100));
+    vehs[_odoReportVehIdx] = v;
+    S.vehicles = vehs;
+  }
+  saveAll();
+  document.getElementById('odo-report-overlay')?.remove();
+  showToast('Mileage report saved'+(totalDriven>0&&loggedMiles>0?' — '+v.bizUse+'% business use':''),'📊');
+  if(_fleetDetailIdx>=0) _renderFleetDetailModal();
+}
+
 /* ── Add/edit vehicle modal ──────────────────────────────────────────────────── */
 let _fleetEditIdx = -1;
 
@@ -477,13 +605,9 @@ function openAddVehicleModal(idx) {
   if(!box) return;
 
   box.innerHTML = `
-    <div class="tbar">
-      <div class="tbar-l">
-        <div class="tbar-title">${isEdit?'Edit vehicle':'Add vehicle'}</div>
-      </div>
-      <div class="tbar-r">
-        <button class="btn btn-ghost" onclick="_closeFleetVehModal()">Cancel</button>
-      </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 14px;border-bottom:1px solid var(--border)">
+      <div style="font-size:20px;font-weight:800;color:var(--text)">${isEdit?'Edit vehicle':'Add vehicle'}</div>
+      <button class="btn btn-ghost" onclick="_closeFleetVehModal()">Cancel</button>
     </div>
     <div style="padding:14px 16px 100px;overflow-y:auto;max-height:80vh">
       <div class="card" style="margin-bottom:12px">
@@ -514,19 +638,15 @@ function openAddVehicleModal(idx) {
       </div>
       <div class="card" style="margin-bottom:12px">
         <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">IRS settings</div>
-        <div class="fg fg2">
-          <div class="f"><label>Business use %</label>
-            <input type="number" id="fv-biz" min="1" max="100" value="${v.bizUse||100}">
-          </div>
-          <div class="f"><label>IRS weight class (GVWR)</label>
-            <select id="fv-gvwr">
-              <option value="">— Select —</option>
-              <option value="light" ${v.gvwr==='light'?'selected':''}>Under 6,000 lbs (car, crossover)</option>
-              <option value="heavy_truck" ${v.gvwr==='heavy_truck'?'selected':''}>Over 6k lbs — Truck/Van</option>
-              <option value="heavy_suv" ${v.gvwr==='heavy_suv'?'selected':''}>Over 6k lbs — Large SUV</option>
-              <option value="commercial" ${v.gvwr==='commercial'?'selected':''}>Over 14,000 lbs (box truck)</option>
-            </select>
-          </div>
+        <div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px;margin-bottom:10px;font-size:11px;color:var(--text3)">💡 Business use % is calculated automatically from your year-end odometer report — no manual entry needed.</div>
+        <div class="f"><label>IRS weight class (GVWR)</label>
+          <select id="fv-gvwr">
+            <option value="">— Select —</option>
+            <option value="light" ${v.gvwr==='light'?'selected':''}>Under 6,000 lbs (car, crossover)</option>
+            <option value="heavy_truck" ${v.gvwr==='heavy_truck'?'selected':''}>Over 6k lbs — Truck/Van</option>
+            <option value="heavy_suv" ${v.gvwr==='heavy_suv'?'selected':''}>Over 6k lbs — Large SUV</option>
+            <option value="commercial" ${v.gvwr==='commercial'?'selected':''}>Over 14,000 lbs (box truck)</option>
+          </select>
         </div>
         <div class="f" style="margin-top:8px">
           <label>Tax deduction method <span style="font-size:10px;font-weight:400;color:var(--text3)">(pick one per vehicle — IRS doesn't allow both)</span></label>
@@ -589,7 +709,7 @@ function saveFleetVehicle() {
     color:    (document.getElementById('fv-color')?document.getElementById('fv-color').value:'').trim(),
     plate:    (document.getElementById('fv-plate')?document.getElementById('fv-plate').value:'').trim().toUpperCase(),
     vin:      (document.getElementById('fv-vin')?document.getElementById('fv-vin').value:'').trim().toUpperCase(),
-    bizUse:   parseFloat(document.getElementById('fv-biz')?document.getElementById('fv-biz').value:100)||100,
+    bizUse:   oldV.bizUse||100, // updated by year-end odometer report, not manual entry
     gvwr:     document.getElementById('fv-gvwr')?document.getElementById('fv-gvwr').value:'',
     deductionMethod: deductEl ? deductEl.value : (oldV.deductionMethod||'mileage'),
     purchaseDate:  document.getElementById('fv-pdate')?document.getElementById('fv-pdate').value:'',
@@ -750,10 +870,16 @@ function saveFleetSale(idx) {
 /* ── Add maintenance record modal ────────────────────────────────────────────── */
 let _maintModalVehIdx = -1;
 let _maintEditId = null;
+let _maintPhotoB64 = null;
 
-function openAddMaintenanceModal(vehIdx) {
+function openAddMaintenanceModal(vehIdx, editId) {
   _maintModalVehIdx = vehIdx;
-  _maintEditId = null;
+  _maintEditId = editId || null;
+  _maintPhotoB64 = null;
+  if(_maintEditId) {
+    const rec = maintenance.find(m=>m.id===_maintEditId);
+    if(rec && rec.photo) _maintPhotoB64 = rec.photo;
+  }
   _renderMaintModal();
 }
 
@@ -807,6 +933,17 @@ function _renderMaintModal(savedType) {
                <div style="font-size:11px;color:var(--text3);margin-top:2px">Maintenance costs are not deducted separately. The IRS mileage rate already covers them. Switch to actual expenses in vehicle settings to deduct real costs.</div>
              </div>`
         }
+        <div style="margin-top:12px">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">Receipt / service record photo</div>
+          <div id="maint-photo-preview" style="${_maintPhotoB64?'':'display:none;'}margin-bottom:8px">
+            <img id="maint-photo-img" src="${_maintPhotoB64||''}" style="width:100%;max-height:180px;object-fit:cover;border-radius:var(--r);border:1px solid var(--border)">
+            <button onclick="_clearMaintPhoto()" style="width:100%;margin-top:4px;padding:6px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--red);font-size:12px;cursor:pointer;font-family:inherit">Remove photo</button>
+          </div>
+          <label style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 12px;border:1.5px dashed var(--border2);border-radius:var(--r);cursor:pointer;font-size:13px;font-weight:600;color:var(--blue)">
+            📷 Scan receipt
+            <input type="file" accept="image/*" capture="environment" style="display:none" onchange="_handleMaintPhoto(this)">
+          </label>
+        </div>
       </div>
       <button class="btn btn-p" onclick="saveMaintRecord()" style="width:100%;padding:14px;font-size:16px;font-weight:700">Save service record</button>
     </div>
@@ -832,6 +969,38 @@ function _createMaintOverlay() {
 function _closeMaintModal() {
   const ov = document.getElementById('fleet-maint-overlay');
   if(ov) ov.style.display = 'none';
+  _maintPhotoB64 = null;
+}
+
+function _handleMaintPhoto(input) {
+  const file = input.files && input.files[0];
+  if(!file) return;
+  // Compress to ~800px wide JPEG before storing
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 800;
+      const scale = img.width > MAX ? MAX/img.width : 1;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width*scale);
+      canvas.height = Math.round(img.height*scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      _maintPhotoB64 = canvas.toDataURL('image/jpeg', 0.8);
+      const preview = document.getElementById('maint-photo-preview');
+      const imgEl = document.getElementById('maint-photo-img');
+      if(preview) preview.style.display = '';
+      if(imgEl) imgEl.src = _maintPhotoB64;
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function _clearMaintPhoto() {
+  _maintPhotoB64 = null;
+  const preview = document.getElementById('maint-photo-preview');
+  if(preview) preview.style.display = 'none';
 }
 
 function refreshMaintTypeFields() {
@@ -948,6 +1117,7 @@ function saveMaintRecord() {
     cost,
     vendor,
     notes,
+    photo: _maintPhotoB64 || ((_maintEditId && maintenance.find(m=>m.id===_maintEditId))||{}).photo || null,
     created_at: new Date().toISOString(),
   };
 
@@ -1038,6 +1208,16 @@ function deleteMaintenanceRecord(id) {
     _renderFleetDetailModal();
     renderFleetVehicles();
   }, {title:'Delete record', yes:'Delete'});
+}
+
+function _showMaintPhoto(id) {
+  const rec = maintenance.find(m=>String(m.id)===String(id));
+  if(!rec || !rec.photo) return;
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;cursor:pointer';
+  ov.innerHTML = `<img src="${rec.photo}" style="max-width:95vw;max-height:90vh;border-radius:var(--r);object-fit:contain">`;
+  ov.addEventListener('click', ()=>ov.remove());
+  document.body.appendChild(ov);
 }
 
 /* ── Utility helpers ─────────────────────────────────────────────────────────── */

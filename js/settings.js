@@ -666,10 +666,7 @@ function renderVehicleSettings(){
       '</div>'+
       (sub?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+sub+'</div>':'')+
       '<input placeholder="Nickname (optional — e.g. Work Truck)" data-veh-idx="'+i+'" oninput="updateVehicleNick('+i+',this.value)" style="margin-top:6px;font-size:12px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit">'+
-      '<div style="display:flex;align-items:center;gap:8px;margin-top:6px">'+
-        '<input type="number" min="1" max="100" data-biz-idx="'+i+'" value="'+(v.bizUse||100)+'" oninput="updateVehicleBizUse('+i+',this.value)" style="width:58px;font-size:12px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;box-sizing:border-box">'+
-        '<span style="font-size:11px;color:var(--text3)">% business use (affects mileage deduction)</span>'+
-      '</div>'+
+      (v.bizUse&&v.bizUse<100?'<div style="margin-top:5px;font-size:11px;color:var(--text3)">📊 Business use: <strong>'+v.bizUse+'%</strong> (set from year-end mileage report)</div>':'')+
       '<select data-gvwr-idx="'+i+'" oninput="updateVehicleGVWR('+i+',this.value)" style="margin-top:4px;font-size:11px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit">'+
         '<option value="">IRS Weight Class (GVWR) — tap to set for depreciation</option>'+
         '<option value="light">Under 6,000 lbs (car, crossover, small SUV)</option>'+
