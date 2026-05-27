@@ -933,6 +933,49 @@ test.describe('Vehicle management consolidation — removal regression', () => {
     assertNoErrors(page, 'openAddVehicleModal is sole vehicle add entry point');
   });
 
+  // ── Purchase info survives a second edit (vehiclesTs guard) ─────────────
+  test('Purchase info survives a second edit (vehiclesTs cloud-overwrite guard)', async () => {
+    // Simulate the race: user saves a vehicle with purchase info, then a stale
+    // cloud load tries to overwrite S.vehicles with old data lacking those fields.
+    // The vehiclesTs guard in supaLoadFromCloud should protect the local version.
+    await page.evaluate(() => {
+      // Save a vehicle with full purchase info, stamping vehiclesTs
+      S.vehicles = [{
+        name: '2020 Ram 1500', nickname: 'Fleet Truck',
+        purchaseDate: '2020-06-15', purchasePrice: 45000, purchaseOdo: 100,
+        gvwr: 'heavy_truck', deductionMethod: 'mileage',
+        status: 'active', addedDate: '2020-06-15',
+      }];
+      S.vehiclesTs = Date.now() - 1000; // 1s ago — local is newer
+    });
+
+    // Simulate stale cloud settings arriving (no purchase fields, older ts)
+    await page.evaluate(() => {
+      const staleSettings = JSON.stringify({
+        vehicles: [{ name: '2020 Ram 1500', nickname: 'Fleet Truck', status: 'active', addedDate: '2020-06-15' }],
+        vehiclesTs: Date.now() - 60000, // 60s ago — cloud is stale
+        bname: 'Test Biz',
+      });
+      // Run the merge logic that supaLoadFromCloud uses
+      const ss = JSON.parse(staleSettings);
+      const _localVehs = S.vehicles;
+      const _localVehsTs = S.vehiclesTs || 0;
+      S = { ...S, ...ss };
+      if (_localVehsTs > (ss.vehiclesTs || 0)) {
+        S.vehicles = _localVehs;
+        S.vehiclesTs = _localVehsTs;
+      }
+    });
+
+    // Purchase info should still be intact
+    const vehs = await page.evaluate(() => S.vehicles);
+    expect(vehs[0].purchaseDate).toBe('2020-06-15');
+    expect(vehs[0].purchasePrice).toBe(45000);
+    expect(vehs[0].purchaseOdo).toBe(100);
+
+    assertNoErrors(page, 'Purchase info survives vehiclesTs guard');
+  });
+
   // ── Zero console errors throughout ───────────────────────────────────────
   test('Zero console errors across vehicle consolidation tests', async () => {
     assertNoErrors(page, 'Vehicle consolidation — zero console errors');

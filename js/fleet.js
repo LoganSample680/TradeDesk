@@ -590,7 +590,7 @@ function saveOdometerReport() {
   if(totalDriven>0 && loggedMiles>0) {
     v.bizUse = Math.min(100, Math.round((loggedMiles/totalDriven)*100));
     vehs[_odoReportVehIdx] = v;
-    S.vehicles = vehs;
+    S.vehicles = vehs; S.vehiclesTs = Date.now();
   }
   saveAll();
   document.getElementById('odo-report-overlay')?.remove();
@@ -752,7 +752,7 @@ function saveFleetVehicle() {
 
   if(isEdit) vehs[_fleetEditIdx] = newV;
   else vehs.push(newV);
-  S.vehicles = vehs;
+  S.vehicles = vehs; S.vehiclesTs = Date.now();
   saveAll();
   _closeFleetVehModal();
   renderFleetVehicles();
@@ -778,7 +778,7 @@ function _confirmRemoveVehicle(idx) {
   if(!v) return;
   zConfirm('Remove '+(v.nickname||v.name)+'? This will not delete service records.', () => {
     vehs.splice(idx, 1);
-    S.vehicles = vehs;
+    S.vehicles = vehs; S.vehiclesTs = Date.now();
     saveAll();
     _closeFleetVehModal();
     renderFleetVehicles();
@@ -794,7 +794,7 @@ function openFleetStatusModal(idx, toStatus) {
     v.status = 'active';
     const open = (v.downtimeLog||[]).find(d=>!d.end);
     if(open) open.end = todayKey();
-    S.vehicles = vehs;
+    S.vehicles = vehs; S.vehiclesTs = Date.now();
     saveAll();
     _closeFleetDetail();
     renderFleetVehicles();
@@ -806,7 +806,7 @@ function openFleetStatusModal(idx, toStatus) {
     v.status = 'down';
     v.downtimeLog = v.downtimeLog||[];
     v.downtimeLog.push({start: todayKey(), end: null, reason: reason||''});
-    S.vehicles = vehs;
+    S.vehicles = vehs; S.vehiclesTs = Date.now();
     saveAll();
     _closeFleetDetail();
     renderFleetVehicles();
@@ -879,7 +879,7 @@ function saveFleetSale(idx) {
     v.saleIncomeId = incId;
   }
 
-  S.vehicles = vehs;
+  S.vehicles = vehs; S.vehiclesTs = Date.now();
   saveAll();
   const saleOv = document.getElementById('fleet-sale-overlay');
   if(saleOv) saleOv.remove();
