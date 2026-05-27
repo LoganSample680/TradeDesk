@@ -90,6 +90,32 @@ function zAlert(msg, opts={}){
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
 }
 
+function zPrompt(msg, onOk, opts={}){
+  const title=opts.title||'Enter value';
+  const placeholder=opts.placeholder||'';
+  const overlay=document.createElement('div');
+  overlay.className='zmodal-overlay';
+  overlay.innerHTML=
+    '<div class="zmodal">'+
+      '<div class="zmodal-title">'+title+'</div>'+
+      '<div class="zmodal-msg" style="margin-bottom:10px">'+msg+'</div>'+
+      '<input id="zprompt-inp" placeholder="'+placeholder+'" style="width:100%;padding:10px;font-size:14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;margin-bottom:12px">'+
+      '<div class="zmodal-btns">'+
+        '<button class="btn zmodal-cancel" style="font-size:14px;padding:10px 16px">Cancel</button>'+
+        '<button id="zprompt-ok" class="btn btn-p" style="font-size:14px;padding:10px 16px">OK</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(overlay);
+  const inp=overlay.querySelector('#zprompt-inp');
+  const ok=overlay.querySelector('#zprompt-ok');
+  const cancel=overlay.querySelector('.zmodal-cancel');
+  cancel.onclick=()=>overlay.remove();
+  ok.onclick=()=>{overlay.remove();onOk(inp.value||'');};
+  inp.addEventListener('keydown',e=>{if(e.key==='Enter'){overlay.remove();onOk(inp.value||'');}});
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  setTimeout(()=>inp.focus(),100);
+}
+
 function showToast(msg,icon,duration){
   icon=icon||'✓';duration=duration||3500;
   const t=document.createElement('div');

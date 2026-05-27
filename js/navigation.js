@@ -53,7 +53,7 @@ function goPg(id){
       },150);
     }
   }
-  if(id==='pg-team')renderTeam();
+  if(id==='pg-team'){renderTeam();renderFleetVehicles();}
   if(id==='pg-licensing')renderLicensing();
   if(id==='pg-checklist')renderChecklist();
   if(id==='pg-leads')renderLeadsPage();

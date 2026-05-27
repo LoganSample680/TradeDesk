@@ -2,11 +2,13 @@
  * send-proposal-email — sends a branded HTML proposal email via Resend.
  *
  * POST body (JSON):
- *   to          string   — client email address
- *   clientName  string   — full client name (used for personalisation)
- *   businessName string  — contractor business name
- *   proposalUrl string   — signing URL (sign.html?t=…)
- *   replyTo     string   — contractor's email (so client can reply directly)
+ *   to           string   — client email address
+ *   clientName   string   — full client name (used for personalisation)
+ *   businessName string   — contractor business name
+ *   proposalUrl  string   — signing URL (sign.html?t=…)
+ *   replyTo      string   — contractor's email (so client can reply directly)
+ *   customSubject string? — override default subject line
+ *   customBody   string?  — plain-text body override (newlines → HTML paragraphs)
  *
  * Environment secrets (set via `supabase secrets set`):
  *   RESEND_API_KEY — your Resend API key (re_xxxx...)
@@ -24,17 +26,37 @@
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
 const FROM_ADDRESS   = 'proposals@tradedeskpro.app';
 
-function htmlTemplate(clientName: string, businessName: string, proposalUrl: string): string {
+function escHtml(s: string): string {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function bodyToHtml(text: string): string {
+  // Convert plain text paragraphs (double newline) and lines (single newline) to HTML
+  return text
+    .split(/\n\n+/)
+    .map(para => '<p>' + para.replace(/\n/g,'<br>').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</p>')
+    .join('');
+}
+
+function htmlTemplate(
+  clientName: string,
+  businessName: string,
+  proposalUrl: string,
+  customBody?: string,
+): string {
   const firstName = clientName.split(/[\s,&]+/)[0] || clientName;
-  // Strip protocol for display (looks cleaner in the link text)
   const displayUrl = proposalUrl.replace(/^https?:\/\//, '');
+
+  const bodyHtml = customBody
+    ? bodyToHtml(customBody)
+    : `<p>It was great meeting with you. I've put together your full proposal — everything we went over is laid out in detail and you can sign directly from the page when you're ready to move forward.</p>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Your Proposal from ${businessName}</title>
+<title>Your Proposal from ${escHtml(businessName)}</title>
 <style>
   body{margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;}
   .wrap{max-width:600px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08);}
@@ -59,21 +81,20 @@ function htmlTemplate(clientName: string, businessName: string, proposalUrl: str
 <body>
 <div class="wrap">
   <div class="header">
-    <p class="header-title">📋 ${businessName}</p>
+    <p class="header-title">📋 ${escHtml(businessName)}</p>
   </div>
   <div class="body">
-    <h1>Hey ${firstName} — your proposal is ready!</h1>
-    <p>It was great meeting with you. I've put together your full painting proposal — everything we went over is laid out in detail and you can sign directly from the page when you're ready to move forward.</p>
-    <a class="cta" href="${proposalUrl}">View & Sign Proposal →</a>
+    <h1>Hey ${escHtml(firstName)} — your proposal is ready!</h1>
+    ${bodyHtml}
+    <a class="cta" href="${escHtml(proposalUrl)}">View &amp; Sign Proposal →</a>
     <hr class="divider">
-    <p>Once you sign I'll get you locked in on the schedule and we'll take it from there. Don't hesitate to reach out if you have any questions — happy to go over anything!</p>
-    <p>Looking forward to working with you,<br><strong>${businessName}</strong></p>
+    <p>Looking forward to working with you,<br><strong>${escHtml(businessName)}</strong></p>
   </div>
   <div class="footer">
     <p>If the button above doesn't work, copy and paste this link into your browser:</p>
-    <p><a class="plain-link" href="${proposalUrl}">${displayUrl}</a></p>
+    <p><a class="plain-link" href="${escHtml(proposalUrl)}">${escHtml(displayUrl)}</a></p>
     <hr class="divider">
-    <p>This proposal was sent to you by ${businessName} via TradeDeskPro. If you weren't expecting this, you can safely ignore it.</p>
+    <p>This proposal was sent to you by ${escHtml(businessName)} via TradeDeskPro. If you weren't expecting this, you can safely ignore it.</p>
   </div>
 </div>
 </body>
@@ -101,21 +122,31 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: 'RESEND_API_KEY not configured' }), { status: 503 });
   }
 
-  let body: { to?: string; clientName?: string; businessName?: string; proposalUrl?: string; replyTo?: string };
+  let body: {
+    to?: string;
+    clientName?: string;
+    businessName?: string;
+    proposalUrl?: string;
+    replyTo?: string;
+    customSubject?: string;
+    customBody?: string;
+  };
   try {
     body = await req.json();
   } catch {
     return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400 });
   }
 
-  const { to, clientName, businessName, proposalUrl, replyTo } = body;
+  const { to, clientName, businessName, proposalUrl, replyTo, customSubject, customBody } = body;
   if (!to || !clientName || !businessName || !proposalUrl) {
     return new Response(JSON.stringify({ error: 'Missing required fields: to, clientName, businessName, proposalUrl' }), { status: 400 });
   }
 
-  const html = htmlTemplate(clientName, businessName, proposalUrl);
+  const html = htmlTemplate(clientName, businessName, proposalUrl, customBody);
   const firstName = clientName.split(/[\s,&]+/)[0] || clientName;
-  const subject = `Your ${businessName} Proposal is Ready, ${firstName}!`;
+  const subject = customSubject?.trim()
+    ? customSubject.trim()
+    : `Your ${businessName} Proposal is Ready, ${firstName}!`;
 
   const resendPayload = {
     from: `${businessName} via TradeDeskPro <${FROM_ADDRESS}>`,
