@@ -1459,11 +1459,10 @@ test.describe('sign.html — cancellation clause patch for old proposals', () =>
   let page;
 
   // Build a mock proposal whose proposalHtml contains the OLD one-sided
-  // cancellation language that was live before this fix.
+  // cancellation language — using the ACTUAL format from proposals.js #est-proposal
+  // (full <p> tags with <em> formatting), NOT the compact est-terms sidebar text.
   const OLD_CANCEL_HTML =
-    '<p>Scope: paint living room.</p>' +
-    '<br><br>2. <strong>Cancellation &amp; Deposits:</strong> Buyer has the right to cancel within 3 business days of signing (K.S.A. §50-640). After that period, the deposit is retained as liquidated damages covering: (a) mobilization &amp; scheduling costs — crew reservation and declined projects for those dates; (b) administrative costs — site measurements, color consulting, scope preparation; and (c) material procurement — specific paint colors and supplies that may not be returnable. These represent a reasonable estimate of actual damages, not a penalty. Materials purchased will be made available for pickup upon cancellation.' +
-    '<br><br>3. <strong>Change Orders:</strong> Requires written change order.';
+    '<p style="margin:0 0 9px"><strong>2. Cancellation &amp; Deposits:</strong> Buyer has the right to cancel this transaction without penalty within 3 business days of signing (K.S.A. §50-640). After the three-business-day cancellation period, the deposit is retained as liquidated damages to compensate for: (a) <em>Mobilization &amp; Scheduling</em> — reserving crew availability and declining other projects for the contracted dates; (b) <em>Administrative Costs</em> — time invested in site measurements, color consulting, and preparation of this written scope; and (c) <em>Material Procurement</em> — sourcing specific paint colors and materials that may not be returnable or transferable to other jobs. These represent a reasonable good-faith estimate of actual damages, not a penalty. If cancellation occurs after materials have been purchased, contractor will make all materials available for client pickup at no additional charge.</p>';
 
   const OLD_PROPOSAL = { ...MOCK_PROPOSAL, proposalHtml: OLD_CANCEL_HTML };
 
@@ -1484,14 +1483,14 @@ test.describe('sign.html — cancellation clause patch for old proposals', () =>
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('old "Buyer has the right to cancel" text is NOT shown after patch', async () => {
+  test('old "Buyer has the right to cancel this transaction" text is NOT shown after patch', async () => {
     const text = await page.evaluate(() => document.getElementById('prop-html')?.textContent || '');
-    expect(text).not.toContain('Buyer has the right to cancel');
+    expect(text).not.toContain('Buyer has the right to cancel this transaction');
   });
 
-  test('patched text shows "Buyer may cancel within"', async () => {
+  test('patched text shows "Buyer may cancel this transaction within"', async () => {
     const text = await page.evaluate(() => document.getElementById('prop-html')?.textContent || '');
-    expect(text).toContain('Buyer may cancel within');
+    expect(text).toContain('Buyer may cancel this transaction within');
   });
 
   test('patched text includes business name performance obligation', async () => {
