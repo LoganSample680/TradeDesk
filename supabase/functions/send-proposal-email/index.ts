@@ -101,25 +101,26 @@ function htmlTemplate(
 </html>`;
 }
 
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+const JSON_CORS = { ...CORS, 'Content-Type': 'application/json' };
+
 Deno.serve(async (req) => {
   // CORS preflight
   if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      },
-    });
+    return new Response(null, { headers: CORS });
   }
 
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: JSON_CORS });
   }
 
   if (!RESEND_API_KEY) {
     // Resend key not configured — caller falls back to mailto:
-    return new Response(JSON.stringify({ error: 'RESEND_API_KEY not configured' }), { status: 503 });
+    return new Response(JSON.stringify({ error: 'RESEND_API_KEY not configured' }), { status: 503, headers: JSON_CORS });
   }
 
   let body: {
@@ -134,12 +135,12 @@ Deno.serve(async (req) => {
   try {
     body = await req.json();
   } catch {
-    return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400 });
+    return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400, headers: JSON_CORS });
   }
 
   const { to, clientName, businessName, proposalUrl, replyTo, customSubject, customBody } = body;
   if (!to || !clientName || !businessName || !proposalUrl) {
-    return new Response(JSON.stringify({ error: 'Missing required fields: to, clientName, businessName, proposalUrl' }), { status: 400 });
+    return new Response(JSON.stringify({ error: 'Missing required fields: to, clientName, businessName, proposalUrl' }), { status: 400, headers: JSON_CORS });
   }
 
   const html = htmlTemplate(clientName, businessName, proposalUrl, customBody);
@@ -170,7 +171,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify(resendPayload),
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: 'Resend network error', detail: String(err) }), { status: 502 });
+    return new Response(JSON.stringify({ error: 'Resend network error', detail: String(err) }), { status: 502, headers: JSON_CORS });
   }
 
   const resendData = await resendRes.json().catch(() => ({}));
@@ -179,11 +180,11 @@ Deno.serve(async (req) => {
     console.error('Resend error:', resendRes.status, resendData);
     return new Response(
       JSON.stringify({ error: 'Resend API error', status: resendRes.status, detail: resendData }),
-      { status: 502 }
+      { status: 502, headers: JSON_CORS }
     );
   }
 
   return new Response(JSON.stringify({ ok: true, id: resendData.id }), {
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_CORS,
   });
 });

@@ -39,15 +39,24 @@ pass before main is updated.
 - **Every push must have an open PR** — create one if it doesn't exist, always.
 - **NEVER merge to main without explicit user permission** — not even when CI is
   fully green. Always ask first. This is non-negotiable.
+- **NEVER merge until Cloudflare Preview is confirmed working** — CI (Playwright)
+  only tests mocked browser behaviour. Real integration bugs (CORS, edge function
+  errors, RPC 404s, Stripe validation) only surface in the Cloudflare preview
+  deployment. The user must manually verify the feature works end-to-end in the
+  preview URL before a merge is on the table.
 - Always verify CI by re-polling `get_check_runs` and confirming every shard ID
   shows `status: completed, conclusion: success` before reporting green.
   Do not rely solely on webhook events — they can arrive out of order or
   with duplicate IDs.
 
-### What "CI green" means
-- 0 hard failures across WebKit and Chromium
-- Flaky tests are resolved before merge
-- Zero new console errors introduced by the change
+### What "ready to merge" means
+1. 0 hard CI failures across WebKit and Chromium shards
+2. Flaky tests resolved before merge
+3. Zero new console errors introduced by the change
+4. **Cloudflare preview manually verified by the user** — real network calls,
+   edge functions, Supabase RPCs, and payment flows tested end-to-end
+   When reporting CI green, always remind the user to verify the preview URL
+   before approving a merge.
 
 ---
 

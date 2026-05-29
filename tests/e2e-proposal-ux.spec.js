@@ -179,6 +179,17 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
         functions: { invoke: (name, opts) => noopResult({ ok: true }) },
         channel: (name) => ({ on: function(){ return this; }, subscribe: function(cb){ if(cb) cb('SUBSCRIBED'); return this; }, unsubscribe: ()=>{} }),
         removeChannel: () => {},
+        rpc: function(funcName, params) {
+          var fetchUrl = url + '/rest/v1/rpc/' + funcName;
+          return fetch(fetchUrl, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},
+            body: JSON.stringify(params||{})
+          }).then(function(r){return r.text();}).then(function(text){
+            try{var d=JSON.parse(text);return {data:d,error:null};}
+            catch(e){return {data:null,error:null};}
+          }).catch(function(e){return {data:null,error:{message:e.message}};});
+        },
       };
     }
   };
