@@ -19,6 +19,21 @@ UPDATE proposal_views
  WHERE client_opened_at IS NOT NULL
    AND client_view_count = 0;
 
+-- client_id stores numeric IDs like "901", not real UUIDs.
+-- The initial schema created it as uuid; alter it to text before creating
+-- the function so the INSERT type-check passes on fresh installs.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'proposal_views'
+      AND column_name = 'client_id'
+      AND data_type = 'uuid'
+  ) THEN
+    ALTER TABLE proposal_views ALTER COLUMN client_id TYPE text USING client_id::text;
+  END IF;
+END $$;
+
 -- ────────────────────────────────────────────────────────────────────────────────
 -- Atomic upsert-with-increment function.
 --

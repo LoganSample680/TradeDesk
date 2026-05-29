@@ -614,7 +614,7 @@ async function init(){
     if(_prop.contractorUserId&&_signingToken){
       const{data:sigRows}=await _supa.rpc('get_signed_proposal_status',{p_bid_id:String(_prop.id),p_contractor_user_id:_prop.contractorUserId,p_signing_token:_signingToken});
       const sigRow=sigRows&&sigRows[0]||null;
-      if(sigRow){alreadySigned=true;_sigRecord=sigRow;}
+      if(sigRow&&sigRow.signed_at){alreadySigned=true;_sigRecord=sigRow;}
     }
     if(alreadySigned){
       const confNum='#CONF-'+String(_prop.id).slice(-6).toUpperCase();

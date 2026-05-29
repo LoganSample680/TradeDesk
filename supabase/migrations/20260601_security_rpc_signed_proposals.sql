@@ -1,6 +1,6 @@
 -- Security hardening: replace permissive anon RLS on signed_proposals with
 -- security-definer RPCs. Clients (sign.html, client.html) now call named
--- functions instead of querying the table directly — preventing the full
+-- functions instead of querying the table directly, preventing the full
 -- cross-tenant data-dump and client-side payment_status injection.
 --
 -- Also adds missing columns (portfolio_accepted, portfolio_pct, notified_at),
