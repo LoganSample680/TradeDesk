@@ -1283,7 +1283,7 @@ function collSendSMS(bid,stageKey){
   const defKey={reminder:'reminder',second:'second',intent:'intent'}[stageKey];
   const msg=tplKey&&S[tplKey]
     ?_smsApply(S[tplKey],{name:c.name,business:biz,amount:fmt(bal),address:addr})
-    :(COLL_SMS[stageKey]?COLL_SMS[stageKey](c.name,bal,addr,biz,(typeof STATE_LIEN!=='undefined'&&STATE_LIEN[S?.state])?STATE_LIEN[S.state].statute:'applicable state law'):_smsApply(defaults[defKey]||'',{name:c.name,business:biz,amount:fmt(bal),address:addr}));
+    :(COLL_SMS[stageKey]?COLL_SMS[stageKey](c.name,bal,addr,biz,(typeof detectStateFromAddr==='function'&&typeof STATE_LIEN!=='undefined'&&STATE_LIEN[detectStateFromAddr(bid.addr||c.addr||'')||S?.state])?STATE_LIEN[detectStateFromAddr(bid.addr||c.addr||'')||S.state].statute:'applicable state law'):_smsApply(defaults[defKey]||'',{name:c.name,business:biz,amount:fmt(bal),address:addr}));
   const phone=c.phone.replace(/\D/g,'');
   const newStage=stageKey==='reminder'?'reminder':stageKey==='second'?'second':'intent';
   const stageLabel={reminder:'Reminder',second:'2nd Notice',intent:'Intent to Lien'}[stageKey]||stageKey;
