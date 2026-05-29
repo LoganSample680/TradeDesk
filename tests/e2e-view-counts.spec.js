@@ -89,14 +89,26 @@ test.describe('Dashboard — view counts and timezone timestamps', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('shows "Today at H:MM" for hub opened timestamp from today', async () => {
-    // 90 minutes ago — past the "Xm ago" cutoff (60m), into "Today at H:MM" territory
-    const ts = new Date(Date.now() - 90 * 60 * 1000).toISOString();
+  test('shows time-relative label for hub opened timestamp from 90 minutes ago', async () => {
+    // Compute timestamp and expected label inside the browser so both use the same
+    // local timezone as _localTs() in dashboard.js. Near midnight UTC the 90-min-ago
+    // timestamp crosses a date boundary, making "Today at" wrong but "Yesterday at" correct.
+    const { ts, expectedLabel } = await page.evaluate(() => {
+      const d = new Date(Date.now() - 90 * 60 * 1000);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const yest  = new Date(today.getTime() - 86400000);
+      let label;
+      if (d >= today) label = 'Today at';
+      else if (d >= yest) label = 'Yesterday at';
+      else label = d.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+      return { ts: d.toISOString(), expectedLabel: label };
+    });
+
     await injectViewsAndRender(page, { hubTs: ts, hubCount: 1 });
 
     const text = await page.textContent('#pg-dash');
     expect(text, 'Dashboard must say "Hub opened"').toContain('Hub opened');
-    expect(text, 'Dashboard must show "Today at" for 90-min-old timestamp').toContain('Today at');
+    expect(text, `Dashboard must show "${expectedLabel}" for 90-min-old timestamp`).toContain(expectedLabel);
 
     assertNoErrors(page, 'dashboard today timestamp');
   });

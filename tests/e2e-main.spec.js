@@ -550,14 +550,9 @@ test.describe('TradeDesk main app', () => {
   test('Phase 16 — settings save and restore IRS rate', async () => {
     await goPg(page, 'pg-settings');
 
-    // #set-irs lives inside the acc-taxes accordion (collapsed by default)
-    // Open it first so the field becomes visible.
+    // #set-irs lives inside the Tax setup detail panel — open it first.
     await page.evaluate(() => {
-      const sec = document.getElementById('acc-taxes');
-      if (sec && !sec.classList.contains('open')) {
-        if (typeof toggleAccSection === 'function') toggleAccSection('acc-taxes');
-        else sec.querySelector('.acc-hd')?.click();
-      }
+      if (typeof _openSetDetail === 'function') _openSetDetail('taxes');
     });
     await page.waitForTimeout(200);
 
@@ -1076,20 +1071,8 @@ test.describe('Settings — save and restore', () => {
 
     await goPg(page, 'pg-settings');
 
-    // Open both accordions via evaluate (no visibility waiting needed for DOM manipulation)
-    await page.evaluate(() => {
-      ['acc-biz', 'acc-taxes'].forEach(id => {
-        const sec = document.getElementById(id);
-        if (sec && !sec.classList.contains('open')) {
-          if (typeof toggleAccSection === 'function') toggleAccSection(id);
-          else sec.querySelector('.acc-hd')?.click();
-        }
-      });
-    });
-    await page.waitForTimeout(300);
-
-    // Set ALL fields via evaluate — no locator visibility checks at all.
-    // getElementById works on hidden elements; value= works regardless of display state.
+    // Set ALL fields via evaluate — getElementById works on hidden elements inside
+    // detail panels; value= works regardless of display state.
     await page.evaluate(() => {
       const setField = (id, val) => {
         const el = document.getElementById(id);

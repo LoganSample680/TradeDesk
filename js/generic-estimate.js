@@ -121,10 +121,12 @@ function applyPermissions(){
   const avatarEl=document.getElementById('nav-user-avatar');
   const _meta=_supaUser?.user_metadata;
   const _metaName=_meta?.full_name||_meta?.name||'';
-  const name=_isEmployee?(_employeeRecord?.name||'Employee'):(getOwnerName()||_metaName||'My Account');
+  const _rawName=_isEmployee?(_employeeRecord?.name||'Employee'):(getOwnerName()||_metaName||'');
+  // Never display an email address as the nav name — fall back to business name
+  const name=(_rawName&&!_rawName.includes('@'))?_rawName:(S.bname||'My Account');
   if(nameEl)nameEl.textContent=name;
   if(roleEl)roleEl.textContent=_isEmployee?'Employee':getRole().charAt(0).toUpperCase()+getRole().slice(1);
-  if(avatarEl)avatarEl.textContent=name.charAt(0).toUpperCase();
+  if(avatarEl)avatarEl.textContent=(name==='My Account'?'👤':name.charAt(0).toUpperCase());
 }
 
 // ── Multi-trade support ───────────────────────────────────────────────
