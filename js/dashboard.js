@@ -466,8 +466,7 @@ function printKansasLien(bidId){
   // Auto-detect county if not already set on the lien record
   const {stateCode:detectedState,county:detectedCounty}=getCountyForBid(bid);
   const stateName=(typeof STATE_TAX!=='undefined'&&STATE_TAX[detectedState]?.name)||detectedState;
-  const isKS=detectedState==='KS';
-  const statuteRef=isKS?'K.S.A. 60-1101 et seq.':(detectedState+' mechanic\'s lien statutes');
+  const statuteRef=(typeof STATE_LIEN!=='undefined'&&STATE_LIEN[detectedState])?STATE_LIEN[detectedState].statute:(detectedState+' mechanic\'s lien statutes');
   const county=lien.county||(detectedCounty+', '+detectedState);
   const countyShort=county.replace(/,\s*[A-Z]{2}$/,'');
   const filingInfo=getCountyFilingInfo(detectedState);

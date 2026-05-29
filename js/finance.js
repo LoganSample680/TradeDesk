@@ -2920,6 +2920,9 @@ function setMoneyFilter(f,btn){
 }
 function renderMoneyPage(){
   const el=document.getElementById('money-list');if(!el)return;
+  const _lienSub=document.getElementById('money-lien-sub');
+  if(_lienSub){const _ls=(typeof STATE_LIEN!=='undefined'&&STATE_LIEN[S?.state])?STATE_LIEN[S.state].statute:'applicable state law';_lienSub.textContent='Pre-written SMS for each escalation stage. Lien deadlines auto-tracked under '+_ls+'.';}
+
   const summEl=document.getElementById('money-summary');
   const tk=todayKey();
   const allItems=[];
