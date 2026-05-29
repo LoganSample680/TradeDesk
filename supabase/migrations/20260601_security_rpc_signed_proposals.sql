@@ -1,5 +1,5 @@
 -- Security hardening: replace permissive anon RLS on signed_proposals with
--- security-definer RPCs. Clients (sign.html, client.html) now call named
+-- security-definer RPCs. Clients (sign.html, client.html) call named
 -- functions instead of querying the table directly, preventing the full
 -- cross-tenant data-dump and client-side payment_status injection.
 --
