@@ -6,15 +6,18 @@ on:
     paths:
       - 'supabase/functions/**'
       - 'supabase/migrations/**'
+  # Allow manual deploys from the GitHub Actions UI (Actions → Deploy Supabase → Run workflow)
+  workflow_dispatch:
+
+# The paths: filter is the authoritative gate for push events — if this workflow
+# triggered, those paths changed. Per-job if: conditions using
+# github.event.commits.*.modified were unreliable for PR merge commits
+# (GitHub doesn't populate those arrays) and caused jobs to skip silently.
 
 jobs:
   deploy-migrations:
     name: Apply DB migrations
     runs-on: ubuntu-latest
-    # Only run when migration files changed.
-    if: >
-      contains(join(github.event.commits.*.modified, ','), 'supabase/migrations/')
-      || contains(join(github.event.commits.*.added, ','), 'supabase/migrations/')
     steps:
       - uses: actions/checkout@v4
 
@@ -30,10 +33,6 @@ jobs:
   deploy-functions:
     name: Deploy edge functions
     runs-on: ubuntu-latest
-    # Only run when function files changed.
-    if: >
-      contains(join(github.event.commits.*.modified, ','), 'supabase/functions/')
-      || contains(join(github.event.commits.*.added, ','), 'supabase/functions/')
     steps:
       - uses: actions/checkout@v4
 
