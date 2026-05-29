@@ -54,7 +54,7 @@ jobs:
   # ── E2E browser tests ───────────────────────────────────────────────────────
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
 
     strategy:
       fail-fast: false   # let all shards finish so we see ALL failures

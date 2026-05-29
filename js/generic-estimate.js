@@ -1829,12 +1829,6 @@ async function sendGenericProposal(previewOnly){
     b.draft=false;
     if(!b.proposalSentDate)b.proposalSentDate=todayKey();
     saveAll();
-    // Pre-register signing token so the RLS-protected get_signed_proposal_status
-    // RPC can validate on first client visit (before any row exists).
-    if(_supa&&_supaUser){_supa.from('signed_proposals').upsert(
-      {bid_id:String(bidId),contractor_user_id:_supaUser.id,signing_token:token},
-      {onConflict:'bid_id,contractor_user_id'}
-    ).then(null,e=>console.warn('[sign-token-reg]',e));}
   }
   const baseUrl=_clientBaseUrl();
   const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;

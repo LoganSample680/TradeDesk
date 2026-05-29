@@ -393,8 +393,8 @@ function showSupplyList(bidId){
     sec.items.forEach((item,idx)=>{
       const row=document.createElement('label');
       row.style.cssText='display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:background .1s;margin-bottom:4px;background:var(--bg)';
-      row.onmouseenter=()=>row.style.background='var(--bg2)';
-      row.onmouseleave=()=>row.style.background='var(--bg)';
+      row.onmouseover=()=>row.style.background='var(--bg2)';
+      row.onmouseout=()=>row.style.background='var(--bg)';
       // Paint items get a richer layout with swatch
       if(item.cat==='paint'){
         const swatchSize=36;

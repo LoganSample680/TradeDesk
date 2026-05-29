@@ -552,14 +552,14 @@ async function init(){
     const bidIds=_hub.bids.map(b=>String(b.id));
     if(u&&bidIds.length){
       try{
-        const{data:sigs}=await _supa.rpc('get_hub_proposal_statuses',{p_contractor_user_id:u,p_bid_ids:bidIds});
+        const{data:sigs}=await _supa.from('signed_proposals')
+          .select('bid_id,payment_status,payment_method,signed_at,deposit')
+          .eq('contractor_user_id',u).in('bid_id',bidIds);
         if(sigs)sigs.forEach(sp=>{
           const bid=_hub.bids.find(b=>String(b.id)===sp.bid_id);
           if(!bid)return;
-          if(bid.status==='Pending'&&sp.signed_at){
+          if(bid.status==='Pending'){
             bid.status='Closed Won';bid.signedAt=sp.signed_at;bid.paymentStatus=sp.payment_status;
-          } else if(bid.status==='Closed Won'&&!sp.signed_at){
-            bid.status='Pending';bid.signedAt=null;bid.paymentStatus=null;
           }
           if(sp.payment_status==='paid'){
             const amtPaid=sp.deposit||bid.deposit||0;
@@ -901,7 +901,7 @@ function renderOverview(){
   // Pay CTA or paid banner
   if(payableBids.length){
     const bid=payableBids[0];
-    const depPaid=(bid.paid||0)>=(bid.deposit||0)-0.01;
+    const depPaid=(bid.deposit||0)>0.01&&(bid.paid||0)>=(bid.deposit||0)-0.01;
     const ctaSub=!depPaid&&(bid.deposit||0)>0.01?'Deposit '+fmt(bid.deposit||0)+' due now':'Balance '+fmt(bid.balance||0)+' due';
     html+='<div class="hub-pay-cta">';
     html+='<div>';
@@ -1129,7 +1129,7 @@ function renderPayments(){
     const paid=bid.paid||0;
     const isPaid=balance<0.01;
     const deposit=bid.deposit||0;
-    const depPaid=paid>=(deposit-0.01);
+    const depPaid=deposit>0.01&&paid>=(deposit-0.01);
     const pct=total>0?Math.min(100,Math.round(paid/total*100)):0;
     const bidPmts=h.payments.filter(p=>p.bid_id===bid.id||(!p.bid_id&&h.bids.length===1)).filter(p=>p.amount>0);
     const bid_id=bid.id;
@@ -1325,7 +1325,7 @@ function renderDocuments(){
     html+='<div style="flex:1;min-width:0">';
     html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:3px">'+esc(bid.type||'Estimate')+(isPaid?' · Paid ✓':' · Balance due')+'</div>';
     html+='<div style="font-size:16px;font-weight:800;color:#fff;line-height:1.2">'+esc(bid.type||'Project')+'</div>';
-    html+='<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:3px">Signed '+fmtDate(bid.bid_date)+' · '+fmt(bid.amount||0)+' · '+docCount+' doc'+(docCount!==1?'s':'')+'</div>';
+    html+='<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:3px">Signed '+fmtDate(bid.signedAt||bid.bid_date)+' · '+fmt(bid.amount||0)+' · '+docCount+' doc'+(docCount!==1?'s':'')+'</div>';
     html+='</div>';
     html+='<span id="dc-'+bid.id+'" style="font-size:20px;color:rgba(255,255,255,.3);transition:transform .2s;flex-shrink:0;'+(autoOpen?'transform:rotate(90deg)':'')+'">›</span>';
     html+='</div>';
@@ -1641,7 +1641,22 @@ async function openProposal(bidId){
     const{data,error}=await _supa.storage.from('proposals').download(bid.proposalKey);
     if(error||!data)throw new Error('not found');
     const propData=JSON.parse(await data.text());
-    ct.innerHTML=(propData.proposalHtml||'<p style="color:#999;padding:20px">Proposal content not available.</p>')+
+    let sigBlock='';
+    if(propData.status==='signed'&&propData.signerName){
+      const sigDate=propData.signedAt?new Date(propData.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
+      const payLabel=(propData.paymentMethod||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+      sigBlock='<div style="margin-top:32px;border-top:2px solid var(--ink,#1a1a18);padding-top:24px">'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#666;margin-bottom:16px">Client Signature</div>'+
+        (propData.signatureDataUrl?'<div style="background:#fff;border:1.5px solid #e0e0dc;border-radius:10px;padding:12px;margin-bottom:16px;text-align:center"><img src="'+propData.signatureDataUrl+'" style="max-width:100%;max-height:120px" alt="Client signature"></div>':'')+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:8px">'+
+          '<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:4px">Signed By</div><div style="font-size:14px;font-weight:700;color:#1a1a18">'+escHtml(propData.signerName)+'</div></div>'+
+          '<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:4px">Date</div><div style="font-size:14px;font-weight:700;color:#1a1a18">'+escHtml(sigDate)+'</div></div>'+
+          '<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:4px">Amount</div><div style="font-size:14px;font-weight:700;color:#1a1a18">$'+(propData.finalAmount||propData.amount||0).toLocaleString('en-US',{minimumFractionDigits:2})+'</div></div>'+
+          (payLabel?'<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:4px">Payment Method</div><div style="font-size:14px;font-weight:700;color:#1a1a18">'+escHtml(payLabel)+'</div></div>':'')+
+        '</div>'+
+      '</div>';
+    }
+    ct.innerHTML=(propData.proposalHtml||'<p style="color:#999;padding:20px">Proposal content not available.</p>')+sigBlock+
       '<div style="margin-top:40px;padding-top:20px;border-top:1px solid #e0e0dc;display:flex;gap:10px" class="no-print">'+
       '<button onclick="closeProp()" class="btn btn-sec" style="width:auto;padding:12px 24px">← Back to hub</button></div>';
   }catch(e){
@@ -1888,13 +1903,14 @@ async function _recheckSigned(){
   const bidIds=_hub.bids.map(b=>String(b.id));
   if(!bidIds.length)return;
   try{
-    const{data:sigs}=await _supa.rpc('get_hub_proposal_statuses',{p_contractor_user_id:u,p_bid_ids:bidIds});
+    const{data:sigs}=await _supa.from('signed_proposals')
+      .select('bid_id,payment_status,payment_method,signed_at')
+      .eq('contractor_user_id',u).in('bid_id',bidIds);
     if(!sigs)return;
     let changed=false;
     sigs.forEach(sp=>{
       const bid=_hub.bids.find(b=>String(b.id)===sp.bid_id);
-      if(bid&&bid.status==='Pending'&&sp.signed_at){bid.status='Closed Won';bid.signedAt=sp.signed_at;changed=true;}
-      else if(bid&&bid.status==='Closed Won'&&!sp.signed_at){bid.status='Pending';bid.signedAt=null;changed=true;}
+      if(bid&&bid.status==='Pending'){bid.status='Closed Won';bid.signedAt=sp.signed_at;changed=true;}
     });
     if(changed)renderAll();
   }catch(e){}

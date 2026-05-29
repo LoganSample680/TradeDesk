@@ -135,8 +135,8 @@ async function swShowFamily(familyId,familyLabel){
         '<div style="font-size:6.5px;font-weight:700;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:-.1px">'+c.name+'</div>'+
         '<div style="font-size:6px;color:rgba(255,255,255,.75);white-space:nowrap">'+c.sw+'</div>'+
       '</div>';
-    tile.onmouseenter=()=>tile.style.borderColor='rgba(255,255,255,.9)';
-    tile.onmouseleave=()=>tile.style.borderColor='transparent';
+    tile.onmouseover=()=>tile.style.borderColor='rgba(255,255,255,.9)';
+    tile.onmouseout=()=>tile.style.borderColor='transparent';
     tile.onclick=()=>swOpenFullscreenColor(c.hex,c.name,c.sw);
     grid.appendChild(tile);
   });
@@ -188,8 +188,8 @@ async function swSearch(val,target){
   matches.forEach(c=>{
     const row=document.createElement('div');
     row.style.cssText='display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--border)';
-    row.onmouseenter=()=>row.style.background='var(--bg2)';
-    row.onmouseleave=()=>row.style.background='';
+    row.onmouseover=()=>row.style.background='var(--bg2)';
+    row.onmouseout=()=>row.style.background='';
     const swatch=document.createElement('div');
     swatch.style.cssText='width:44px;height:44px;border-radius:8px;background:'+c.hex+';flex-shrink:0;border:1px solid rgba(0,0,0,.1);cursor:zoom-in';
     swatch.title='Tap to preview full screen';
