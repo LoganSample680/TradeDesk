@@ -1279,8 +1279,8 @@ function _showCancelForm(bidId){
   const open=dl&&new Date()<dl;
   const daysWord=cancelDays===3?'THREE':cancelDays===5?'FIVE':String(cancelDays).toUpperCase();
   const ov=document.createElement('div');
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
-  ov.innerHTML='<div style="background:#fff;border-radius:14px 14px 0 0;padding:22px 20px 32px;max-width:480px;width:100%;max-height:88vh;overflow-y:auto">'+
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px 20px 32px;max-width:480px;width:100%;max-height:88vh;overflow-y:auto">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
       '<div style="font-size:13px;font-weight:800;color:#1a365d">Notice of Cancellation</div>'+
       '<button onclick="this.closest(\'div[style*=inset]\').remove()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1">✕</button>'+
