@@ -295,7 +295,14 @@ function _supabaseShim() {
           startAutoRefresh: () => {},
           stopAutoRefresh:  () => {},
         },
-        from: (table) => queryBuilder(),
+        from: (table) => {
+          // window.__mockFromTable[tableName] = () => queryChain — lets tests
+          // control what _supa.from(table) returns without HTTP route mocking.
+          if (typeof window !== 'undefined' && window.__mockFromTable && window.__mockFromTable[table]) {
+            return window.__mockFromTable[table]();
+          }
+          return queryBuilder();
+        },
         storage: {
           from: (bucket) => ({
             upload:   (path, data, opts) => noopResult({ path }),
