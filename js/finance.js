@@ -1606,7 +1606,7 @@ function openExportPanel(){
 }
 
 function exportOptionHTML(onclick,icon,title,desc){
-  return '<div style="border:1.5px solid var(--border2);border-radius:var(--rl);padding:16px;margin-bottom:10px;cursor:pointer;transition:border-color .15s" onclick="'+onclick+'" onmouseenter="this.style.borderColor=\'var(--blue)\'" onmouseleave="this.style.borderColor=\'var(--border2)\'">'+
+  return '<div style="border:1.5px solid var(--border2);border-radius:var(--rl);padding:16px;margin-bottom:10px;cursor:pointer;transition:border-color .15s" onclick="'+onclick+'" onmouseover="this.style.borderColor=\'var(--blue)\'" onmouseout="this.style.borderColor=\'var(--border2)\'">'+
     '<div style="display:flex;align-items:center;gap:12px">'+
       '<div style="font-size:28px;flex-shrink:0">'+icon+'</div>'+
       '<div style="flex:1">'+

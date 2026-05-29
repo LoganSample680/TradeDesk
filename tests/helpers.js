@@ -141,40 +141,7 @@ async function mockAllExternal(page, opts = {}) {
       });
     }
 
-    // ── Supabase RPC calls (security-definer functions) ─────────────────────
-    // sign.html and client.html now use RPCs instead of direct table queries.
-    if (url.includes('/rest/v1/rpc/')) {
-      if (url.includes('get_signed_proposal_status')) {
-        const rows = alreadySigned
-          ? [{
-              signed_at: new Date().toISOString(),
-              client_signed_name: 'Alice Smith',
-              payment_method: 'cash',
-              payment_status: 'pending_cash',
-              deposit: 625,
-            }]
-          : [];
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(rows) });
-      }
-      if (url.includes('get_hub_proposal_statuses')) {
-        const rows = alreadySigned
-          ? [{
-              bid_id: String(bidId),
-              payment_status: 'pending_cash',
-              payment_method: 'cash',
-              signed_at: new Date().toISOString(),
-              deposit: 625,
-            }]
-          : [];
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(rows) });
-      }
-      // submit_signed_proposal, update_proposal_notified — void, return null
-      return route.fulfill({ status: 200, contentType: 'application/json', body: 'null' });
-    }
-
-    // ── Supabase REST — signed_proposals (contractor authenticated path) ─────
-    // cloud.js checkNewSignatures() reads this with an authenticated session.
-    // Client-facing pages (sign.html, client.html) now use RPCs above.
+    // ── Supabase REST — signed_proposals ────────────────────────────────────
     if (url.includes('/rest/v1/signed_proposals')) {
       if (route.request().method() === 'GET' || url.includes('select')) {
         const rows = alreadySigned
@@ -183,7 +150,7 @@ async function mockAllExternal(page, opts = {}) {
               client_name: 'Alice Smith',
               client_signed_name: 'Alice Smith',
               payment_method: 'cash',
-              payment_status: 'pending_cash',
+              payment_status: 'pending',
               signed_at: new Date().toISOString(),
             }]
           : [];
@@ -193,7 +160,7 @@ async function mockAllExternal(page, opts = {}) {
           body: JSON.stringify(rows),
         });
       }
-      // INSERT / UPSERT (contractor pre-registration of signing token)
+      // INSERT / UPSERT
       return route.fulfill({ status: 201, contentType: 'application/json', body: '[]' });
     }
 
@@ -295,14 +262,7 @@ function _supabaseShim() {
           startAutoRefresh: () => {},
           stopAutoRefresh:  () => {},
         },
-        from: (table) => {
-          // window.__mockFromTable[tableName] = () => queryChain — lets tests
-          // control what _supa.from(table) returns without HTTP route mocking.
-          if (typeof window !== 'undefined' && window.__mockFromTable && window.__mockFromTable[table]) {
-            return window.__mockFromTable[table]();
-          }
-          return queryBuilder();
-        },
+        from: (table) => queryBuilder(),
         storage: {
           from: (bucket) => ({
             upload:   (path, data, opts) => noopResult({ path }),
@@ -333,18 +293,6 @@ function _supabaseShim() {
           unsubscribe: () => {},
         }),
         removeChannel: () => {},
-        rpc: function(funcName, params) {
-          // POST to the real-looking RPC URL so Playwright route mocks can intercept it.
-          var fetchUrl = url + '/rest/v1/rpc/' + funcName;
-          return fetch(fetchUrl, {
-            method: 'POST',
-            headers: {'Content-Type':'application/json','apikey':key,'Authorization':'Bearer '+key},
-            body: JSON.stringify(params||{})
-          }).then(function(r){return r.text();}).then(function(text){
-            try{var d=JSON.parse(text);return {data:d,error:null};}
-            catch(e){return {data:null,error:null};}
-          }).catch(function(e){return {data:null,error:{message:e.message}};});
-        },
       };
     }
   };
