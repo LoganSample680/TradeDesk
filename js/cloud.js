@@ -351,7 +351,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.27.26.118';
+const APP_VERSION='05.28.26.144';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -2612,6 +2612,18 @@ async function _autoSaveAndReload(){
   // guarantees the latest data is in the cloud before reload.
   if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
   try{await supaSaveToCloud();}catch(e){}
+  // Clear ALL service-worker caches before reloading. The SW serves JS/CSS
+  // subresources cache-first (cached||net), so a plain reload of fresh HTML
+  // still pulls js/cloud.js — and therefore APP_VERSION — from the stale cache,
+  // leaving the app pinned to the old version forever. Deleting the caches here
+  // forces every subresource on the next load to miss and fetch fresh from the
+  // network, so the new code actually takes effect.
+  try{
+    if(window.caches){
+      const keys=await caches.keys();
+      await Promise.all(keys.map(k=>caches.delete(k)));
+    }
+  }catch(e){}
   // Navigate to a timestamped URL so Chrome's HTTP cache has no entry to serve.
   // location.reload() respects the HTTP cache and can serve stale HTML forever.
   window.location.replace('/?_v='+Date.now());
@@ -2661,18 +2673,16 @@ document.addEventListener('visibilitychange',()=>{
 });
 
 // ── Persistent version check: fires every time app comes to foreground ────────
-// Fetches the FULL HTML page with cache:'reload' — this bypasses the browser
-// cache AND the SW's own cache (SW checks e.request.cache==='reload' and goes
-// straight to network). The fresh HTML is stored into the SW cache so that the
-// subsequent location.reload() is instant. We then extract the version string
-// embedded in the fetched HTML and compare to the running APP_VERSION.
+// Fetches version.json (never cached by the SW, and with no-store to bypass the
+// browser HTTP cache) and compares the live server version to the running
+// APP_VERSION. version.json is the single source of truth — APP_VERSION lives in
+// js/cloud.js, not in index.html, so grepping the HTML never worked.
 async function _checkVersionOnResume(){
   try{
-    const r=await fetch(location.pathname,{cache:'reload'});
+    const r=await fetch('version.json?_='+Date.now(),{cache:'no-store'});
     if(!r.ok)return;
-    const html=await r.text();
-    const m=html.match(/const APP_VERSION='([^']+)'/);
-    if(m&&m[1]!==APP_VERSION)await _autoSaveAndReload();
+    const d=await r.json();
+    if(d&&d.version&&d.version!==APP_VERSION)await _autoSaveAndReload();
   }catch(e){}
 }
 // Fires on foreground resume — SW navigate handler covers fresh opens

@@ -1,3 +1,185 @@
+// ── Settings index / detail panel navigation ────────────────────────────────
+
+function _openSetDetail(key) {
+  document.querySelectorAll('.set-detail').forEach(d => d.classList.remove('active'));
+  const el = document.getElementById('setd-' + key);
+  if (el) el.classList.add('active');
+  const iv = document.getElementById('set-index-view');
+  if (iv) iv.classList.add('hidden');
+  window.scrollTo({top:0,behavior:'instant'});
+  document.body.scrollTop = 0;
+  document.documentElement.scrollTop = 0;
+  _renderSetIndex();
+  if (key === 'integrations') _renderIntegrations();
+  if (key === 'branding') _renderBrandSwatches(S.brandColor||'#2D5DA8');
+}
+
+function _closeSetDetail() {
+  document.querySelectorAll('.set-detail').forEach(d => d.classList.remove('active'));
+  const iv = document.getElementById('set-index-view');
+  if (iv) iv.classList.remove('hidden');
+  window.scrollTo({top:0,behavior:'instant'});
+  document.body.scrollTop = 0;
+  document.documentElement.scrollTop = 0;
+  _renderSetIndex();
+}
+
+function _renderSetIndex() {
+  // Business info meta
+  const bizMeta = document.getElementById('set-meta-biz');
+  if (bizMeta) {
+    const name = S.bname || getOwnerName() || '';
+    const city = S.bcity || '';
+    const state = S.state || '';
+    const loc = [city, state].filter(Boolean).join(', ');
+    bizMeta.innerHTML = name ? `<strong>${name}</strong>${loc ? '<br>' + loc : ''}` : '';
+  }
+  // Branding meta
+  const brandMeta = document.getElementById('set-meta-branding');
+  if (brandMeta) {
+    const color = S.brandColor || '#2D5DA8';
+    const colorName = _brandColorName(color);
+    const hasLogo = !!S.logoData;
+    brandMeta.innerHTML = `<strong style="color:${color}">●</strong> ${colorName}${hasLogo ? '<br>Logo set' : ''}`;
+  }
+  // Rates meta
+  const ratesMeta = document.getElementById('set-meta-rates');
+  if (ratesMeta) {
+    const lr = S.laborRate || S.p1 || '';
+    const dep = S.mm || '';
+    ratesMeta.innerHTML = lr ? `<strong>$${lr}/hr</strong>${dep ? '<br>' + dep + '% deposit' : ''}` : '';
+  }
+  // Legal & terms meta
+  const legalMeta = document.getElementById('set-meta-legal');
+  if (legalMeta) legalMeta.innerHTML = '';
+  // Taxes meta
+  const taxMeta = document.getElementById('set-meta-taxes');
+  if (taxMeta) {
+    const state = S.state || '';
+    const status = {single:'Single',mfj:'MFJ',mfs:'MFS',hoh:'HOH',qss:'QSS'}[S.txStatus||'single']||'';
+    taxMeta.innerHTML = state ? `<strong>${state}</strong>${status ? '<br>' + status : ''}` : '';
+  }
+  // Cloud sync meta
+  const cloudMeta = document.getElementById('set-meta-cloud');
+  if (cloudMeta) {
+    const synced = typeof supaEnabled === 'function' && supaEnabled() && typeof _supaUser !== 'undefined' && _supaUser;
+    cloudMeta.innerHTML = synced ? '<strong style="color:var(--green)">● Synced</strong>' : '<span style="color:var(--text3)">Not synced</span>';
+  }
+  // Notifications meta (count SMS templates that have content)
+  const notifMeta = document.getElementById('set-meta-notifications');
+  if (notifMeta) {
+    const templates = [S.smsHub, S.smsFollowup, S.smsReminder, S.smsSecond, S.smsIntent].filter(Boolean).length;
+    notifMeta.innerHTML = templates ? `<strong>${templates} of 5</strong><br>on` : '';
+  }
+  // Integrations meta (count connected services)
+  const intMeta = document.getElementById('set-meta-integrations');
+  if (intMeta) {
+    const stripeOk = typeof _stripeConnectStatus !== 'undefined' && _stripeConnectStatus?.connected;
+    const count = stripeOk ? 1 : 0;
+    intMeta.innerHTML = count ? `<strong>Stripe</strong><br>connected` : '';
+  }
+  // Header meta
+  const headerMeta = document.getElementById('set-index-meta');
+  if (headerMeta) {
+    const rawName = getOwnerName() || S.bname || '';
+    const name = (rawName && !rawName.includes('@')) ? rawName : (S.bname || '');
+    headerMeta.textContent = name ? name + ' · TradeDesk Pro' : 'TradeDesk Pro';
+  }
+  // About version
+  const verEl = document.getElementById('set-about-ver');
+  if (verEl && typeof APP_VERSION !== 'undefined') verEl.textContent = APP_VERSION;
+  const verSub = document.getElementById('set-about-version-sub');
+  if (verSub && typeof APP_VERSION !== 'undefined') verSub.textContent = 'v' + APP_VERSION;
+  // Dev row visibility
+  const devRow = document.getElementById('set-idx-row-dev');
+  if (devRow) devRow.style.display = _config?.is_dev ? 'flex' : 'none';
+}
+
+const _BRAND_SWATCHES = ['#2D5DA8','#166534','#92400e','#991b1b','#6d28d9','#18181b'];
+const _BRAND_SWATCH_NAMES = {
+  '#2d5da8':'Denim','#166534':'Forest','#92400e':'Amber','#991b1b':'Crimson','#6d28d9':'Violet','#18181b':'Charcoal'
+};
+function _brandColorName(hex) {
+  return _BRAND_SWATCH_NAMES[(hex||'').toLowerCase()] || 'Custom';
+}
+function _renderBrandSwatches(selected) {
+  const container = document.getElementById('set-brand-swatches');
+  if (!container) return;
+  const cur = (selected || document.getElementById('set-brandcolor')?.value || '#2D5DA8').toLowerCase();
+  const isPreset = _BRAND_SWATCHES.some(c => c.toLowerCase() === cur);
+  container.innerHTML = _BRAND_SWATCHES.map(c => {
+    const active = c.toLowerCase() === cur;
+    return `<button class="set-swatch${active ? ' active' : ''}" style="background:${c}" onclick="_pickedBrandColor('${c}')" title="${c}">${active ? '<span style="font-size:18px;color:#fff;line-height:1">✓</span>' : ''}</button>`;
+  }).join('') +
+  `<button class="set-swatch${!isPreset ? ' active' : ''}" style="background:${!isPreset ? cur : 'var(--bg2)'};border:2px dashed var(--border2)" onclick="document.getElementById('set-brandcolor').click()" title="Custom color"><span style="font-size:18px;${!isPreset ? 'color:#fff' : 'color:var(--text3)'};line-height:1">${!isPreset ? '✓' : '+'}</span></button>`;
+  const selEl = document.getElementById('set-brand-selected');
+  if (selEl) selEl.textContent = 'Selected · ' + (selected || '#2D5DA8').toUpperCase();
+}
+function _pickedBrandColor(hex) {
+  const inp = document.getElementById('set-brandcolor');
+  if (inp) inp.value = hex;
+  _renderBrandSwatches(hex);
+  _updateBootPreview();
+}
+function _checkSubdomain(val) {
+  const el = document.getElementById('set-subdomain-status');
+  if (!el) return;
+  if (!val) { el.textContent = ''; return; }
+  if (/^[a-z0-9-]{3,30}$/.test(val)) {
+    el.innerHTML = '<span style="color:var(--green)">✓ Available</span>';
+  } else {
+    el.innerHTML = '<span style="color:var(--text3)">Use lowercase letters, numbers, hyphens (3–30 chars)</span>';
+  }
+}
+function _manageSubscription() {
+  // Will trigger iOS in-app purchase sheet when native wrapper is added
+  zAlert('Subscription management will be available in the TradeDesk iOS app.', {title: 'Manage plan'});
+}
+function _renderIntegrations() {
+  const el = document.getElementById('integrations-list');
+  if (!el) return;
+  const stripeOk = typeof _stripeConnectStatus !== 'undefined' && _stripeConnectStatus?.connected && _stripeConnectStatus?.charges_enabled;
+  const stripeAcct = _stripeConnectStatus?.stripe_account_id || '';
+  const rows = [
+    {
+      icon: '<span style="font-size:16px;font-weight:900;color:#fff">$</span>',
+      iconBg: '#635BFF',
+      name: 'Stripe',
+      badge: stripeOk ? 'ok' : 'off',
+      badgeText: stripeOk ? 'Connected' : 'Not connected',
+      desc: stripeOk ? `Card + ACH payments · ${stripeAcct ? stripeAcct.slice(0,12) + '…' : ''}` : 'Accept card + ACH payments from clients',
+      action: stripeOk ? 'Manage' : 'Connect',
+      onclick: `_openStripeConnect()`,
+    },
+  ];
+  el.innerHTML = rows.map(r => `
+    <div class="set-int-row">
+      <div class="set-int-icon" style="background:${r.iconBg}">${r.icon}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:800;color:var(--text)">${r.name}<span class="set-int-badge ${r.badge}">${r.badgeText}</span></div>
+        <div style="font-size:11px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${r.desc}</div>
+      </div>
+      <button class="btn btn-sm" onclick="${r.onclick}" style="flex-shrink:0;font-size:12px">${r.action}</button>
+    </div>`).join('');
+  // Show Stripe surcharge wrap when Stripe is connected
+  const sw = document.getElementById('stripe-surcharge-wrap');
+  if (sw) sw.style.display = stripeOk ? 'block' : 'none';
+}
+function _openStripeConnect() {
+  const el = document.getElementById('stripe-connect-status-ui');
+  if (el) { el.style.display = 'block'; el.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+  if (typeof _renderStripeConnectUI === 'function') _renderStripeConnectUI();
+}
+
+function _filterSetRows(q) {
+  const rows = document.querySelectorAll('#set-index-view .set-idx-row');
+  const term = q.toLowerCase().trim();
+  rows.forEach(r => {
+    const text = (r.dataset.search || '') + ' ' + (r.textContent || '');
+    r.style.display = (!term || text.toLowerCase().includes(term)) ? '' : 'none';
+  });
+}
+
 // ── Licensing & Compliance ──────────────────────────────────────────────────
 
 function _licDaysUntil(lic){
@@ -470,10 +652,19 @@ function loadSettingsForm(){
   sf('set-goal-monthly',S.goalMonthly||'');
   sf('set-labor-rate',S.laborRate||45);sf('set-owner-name',getOwnerName()||'');sf('set-bname',S.bname);sf('set-state',S.state||'KS');
   _renderLogoPreview();
-  if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-bitly-key',S.bitlyKey||'');sf('set-mapbox-key',S.mapboxKey||'');sf('set-subdomain',S.subdomain||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-byears',S.byears||'');sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
+  if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-subdomain',S.subdomain||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-byears',S.byears||'');sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
   sf('set-margin',S.margin);sf('set-cov',S.cov);sf('set-mm',S.mm);sf('set-supplies-rate',S.suppliesRate||0.12);sf('set-r-walls',S.rWalls||1.30);sf('set-r-ceil',S.rCeil||1.00);sf('set-r-trim',S.rTrim||4.00);sf('set-r-door',S.rDoor||95);sf('set-r-win',S.rWin||50);sf('set-r-ext',S.rExt||1.10);sf('set-r-deck',S.rDeck||1.00);
   sf('set-review-url',S.reviewUrl||'');
-  sf('set-brandcolor',S.brandColor||'#2D5DA8');
+  const brandColor=S.brandColor||'#2D5DA8';
+  sf('set-brandcolor',brandColor);
+  _renderBrandSwatches(brandColor);
+  sf('set-baddr',S.baddr||'');
+  sf('set-bcity',S.bcity||'');
+  sf('set-bzip',S.bzip||'');
+  const bstateEl=document.getElementById('set-bstate-display');if(bstateEl)bstateEl.value=S.state||'KS';
+  const powEl=document.getElementById('set-powered-by');if(powEl)powEl.checked=S.poweredBy!==false;
+  const ctEl=document.getElementById('set-custom-terms');if(ctEl)ctEl.value=S.customTerms||'';
+  const coEl=document.getElementById('set-co-terms');if(coEl)coEl.value=S.coTerms||'';
   const _smsDefaults=_getSmsDefaults();
   sf('set-sms-hub',S.smsHub||_smsDefaults.hub);
   sf('set-sms-followup',S.smsFollowup||_smsDefaults.followup);
@@ -485,6 +676,8 @@ function loadSettingsForm(){
   const hoEl=document.getElementById('set-home-office');if(hoEl)hoEl.checked=!!S.homeOffice;
   const ccEl=document.getElementById('set-cc-surcharge-enabled');if(ccEl){ccEl.checked=!!S.ccSurchargeEnabled;const pctWrap=document.getElementById('set-cc-surcharge-pct-wrap');if(pctWrap)pctWrap.style.display=S.ccSurchargeEnabled?'block':'none';}
   const ccPctEl=document.getElementById('set-cc-surcharge-pct');if(ccPctEl)ccPctEl.value=S.ccSurchargePct||3;
+  _renderLogoPreviewBiz();
+  _renderSetIndex();
 }
 function saveSettings(){
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
@@ -496,10 +689,16 @@ function saveSettings(){
     smsReminder:gs('set-sms-reminder')||_smsD.reminder,
     smsSecond:gs('set-sms-second')||_smsD.second,
     smsIntent:gs('set-sms-intent')||_smsD.intent,
-    txStatus:gs('set-txstatus')||'single',goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:gs('set-bitly-key')||'',mapboxKey:gs('set-mapbox-key')||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.40,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||'',
+    txStatus:gs('set-txstatus')||'single',goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:S.bitlyKey||'',mapboxKey:S.mapboxKey||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.40,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||'',
+    baddr:gs('set-baddr')||'',bcity:gs('set-bcity')||'',bzip:gs('set-bzip')||'',state:gs('set-bstate-display')||gs('set-state')||S.state||'',
+    poweredBy:document.getElementById('set-powered-by')?.checked!==false,
+    customTerms:gs('set-custom-terms')||'',coTerms:gs('set-co-terms')||'',
     ccSurchargeEnabled:!!(document.getElementById('set-cc-surcharge-enabled')?document.getElementById('set-cc-surcharge-enabled').checked:false),
     ccSurchargePct:parseFloat((document.getElementById('set-cc-surcharge-pct')?document.getElementById('set-cc-surcharge-pct').value:'3')||'3')||3};
   applySettings();saveAll();
+  // Refresh the nav user card so a freshly entered name shows immediately
+  // (applyPermissions owns the nav-user-name/avatar/role render).
+  if(typeof applyPermissions==='function')applyPermissions();
   const el=document.getElementById('set-saved');if(el){el.style.display='block';setTimeout(()=>el.style.display='none',3000);}
   // Propagate branding/settings to all live client hubs in the background
   if(supaEnabled()&&_supaUser)clients.filter(c=>c.clientToken).forEach(c=>{_uploadClientHub(c.id).catch(()=>{});});
@@ -510,6 +709,22 @@ function _renderLogoPreview(){
   el.innerHTML=src
     ?'<img src="'+src+'" style="height:48px;max-width:180px;object-fit:contain;display:block" alt="Logo preview">'
     :'<span style="font-size:11px;color:rgba(255,255,255,.5)">No logo</span>';
+  _renderLogoPreviewBiz();
+}
+function _renderLogoPreviewBiz(){
+  const el=document.getElementById('set-logo-preview-biz');if(!el)return;
+  const fn=document.getElementById('set-logo-filename');
+  const btn=document.getElementById('set-logo-btn');
+  const src=S.logoData||'';
+  if(src){
+    el.innerHTML='<img src="'+src+'" style="width:100%;height:100%;object-fit:contain;display:block" alt="Logo">';
+    if(fn)fn.textContent='Logo uploaded';
+    if(btn)btn.textContent='Replace';
+  }else{
+    el.innerHTML='<span style="font-size:12px;font-weight:800;color:rgba(255,255,255,.5)">'+(S.bname||'SP').split(' ').map(w=>w[0]||'').slice(0,2).join('')+'</span>';
+    if(fn)fn.textContent='';
+    if(btn)btn.textContent='Upload image';
+  }
 }
 function applyBrandLogo(){
   document.querySelectorAll('.brand-logo-slot').forEach(el=>{
@@ -554,7 +769,7 @@ function _updateBootPreview(){
 }
 function handleLogoUpload(input){
   const file=input.files&&input.files[0];if(!file)return;
-  if(!file.type.includes('png')){zAlert('Please upload a PNG file only. PNG works best for logos with transparency.');input.value='';return;}
+  if(!file.type.match(/^image\/(png|jpeg|svg\+xml)$/)){zAlert('Please upload a PNG, JPG, or SVG file.');input.value='';return;}
   const reader=new FileReader();
   reader.onload=e=>{
     S.logoData=e.target.result;saveAll();_renderLogoPreview();applyBrandLogo();_updateBootPreview();
@@ -586,6 +801,22 @@ function clearMileageOnly(){
     mileage=[];saveAll();_flushSaveNow();renderAllMileage();renderDash();
     zAlert('Mileage cleared.',{title:'Done'});
   },{title:'Clear mileage',yes:'Delete mileage',danger:true});
+}
+
+function clearClientsOnly(){
+  zConfirm('Delete all clients, bids, jobs, and payments? This cannot be undone.',()=>{
+    clients=[];bids=[];jobs=[];income=[];payments=[];liens=[];
+    estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;
+    saveAll();renderDash();
+    zAlert('Clients and all related records cleared.',{title:'Done'});
+  },{title:'Clear clients',yes:'Delete clients',danger:true});
+}
+
+function clearExpensesOnly(){
+  zConfirm('Delete all expense records? This cannot be undone.',()=>{
+    expenses=[];saveAll();renderDash();
+    zAlert('Expenses cleared.',{title:'Done'});
+  },{title:'Clear expenses',yes:'Delete expenses',danger:true});
 }
 
 function resetSettings(){zConfirm('Reset all settings to defaults?',()=>{S={irsRate:.700,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:83,p2:65,p3:95,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00};applySettings();loadSettingsForm();},{title:'Reset settings',yes:'Reset',danger:false});}
@@ -700,13 +931,9 @@ window.checkOdometerEntries=checkOdometerEntries;
 
 // ── Stripe Connect ─────────────────────────────────────────────────────────
 
-function toggleAccSection(id){
-  const sec=document.getElementById(id);
-  if(sec)sec.classList.toggle('open');
-}
 function renderSettingsTrades(){
   const el=document.getElementById('set-trades-content');
-  const sub=document.getElementById('acc-trades-sub');
+  const sub=document.getElementById('set-idx-trades-sub');
   if(!el)return;
   const lines=_getTradeLines();
   if(sub)sub.textContent=lines.map(t=>TRADE_META[t]?.label||t).join(', ');
@@ -763,10 +990,10 @@ async function removeTradeFromSettings(trade){
 function _renderSettingsTradeSections(){
   const trade=getActiveTrade();
   const isPainting=trade==='painting';
-  const sw=document.getElementById('acc-sw');
-  const lp=document.getElementById('acc-labor-painting');
-  const lg=document.getElementById('acc-labor-generic');
-  const lgTitle=document.getElementById('acc-labor-generic-title');
+  const sw=document.getElementById('set-rates-sw');
+  const lp=document.getElementById('set-rates-lp');
+  const lg=document.getElementById('set-rates-lg');
+  const lgTitle=document.getElementById('set-rates-lg-title');
   if(sw)sw.style.display=isPainting?'':'none';
   if(lp)lp.style.display=isPainting?'':'none';
   if(lg){
@@ -775,9 +1002,7 @@ function _renderSettingsTradeSections(){
   }
 }
 function _renderDevTradeCard(){
-  const accDev=document.getElementById('acc-dev');
-  if(!_config?.is_dev){if(accDev)accDev.style.display='none';return;}
-  if(accDev)accDev.style.display='';
+  if(!_config?.is_dev)return;
   const current=_config?.business_type||'painting';
   const trades=[
     {id:'painting',icon:'🎨',label:'Painting'},
@@ -1323,7 +1548,7 @@ function openSearch(){
     '<div class="search-box">'+
       '<div class="search-input-wrap">'+
         '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>'+
-        '<input id="global-search-input" placeholder="Search clients, jobs, bids..." autocomplete="off" oninput="runSearch(this.value)">'+
+        '<input id="global-search-input" placeholder="Search clients, bids, expenses, jobs…" autocomplete="off" oninput="runSearch(this.value)">'+
         '<button onclick="closeSearch()" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:20px;padding:0;line-height:1">×</button>'+
       '</div>'+
       '<div class="search-results" id="search-results"><div class="search-empty">Start typing to search...</div></div>'+
@@ -1340,36 +1565,88 @@ function runSearch(q){
   q=(q||'').toLowerCase().trim();
   if(!q){el.innerHTML='<div class="search-empty">Start typing to search...</div>';return;}
   const results=[];
-  // Search clients
-  clients.forEach(c=>{
-    if(c.name?.toLowerCase().includes(q)||c.addr?.toLowerCase().includes(q)||c.phone?.includes(q)){
+
+  // Clients
+  (clients||[]).forEach(c=>{
+    if([c.name,c.addr,c.phone,c.email].some(f=>f?.toLowerCase().includes(q))){
       const st=getClientStage(c.id);
       results.push({type:'client',icon:'👤',bg:'var(--blue-lt)',name:c.name,meta:c.addr?.split(',')[0]||c.phone||'',sub:st.label,action:()=>{closeSearch();openClientDetail(c.id);}});
     }
   });
-  // Search bids
-  bids.forEach(b=>{
-    if(b.client_name?.toLowerCase().includes(q)||b.name?.toLowerCase().includes(q)){
-      results.push({type:'bid',icon:'📋',bg:'var(--amber-lt)',name:b.client_name||b.name,meta:'Bid · '+fmt(b.amount||0),sub:b.status||'Pending',action:()=>{closeSearch();goPg('pg-clients');}});
+
+  // Bids
+  (bids||[]).forEach(b=>{
+    if([b.client_name,b.name,b.notes,b.addr,b.type].some(f=>f?.toLowerCase().includes(q))){
+      results.push({type:'bid',icon:'📋',bg:'var(--amber-lt)',name:b.client_name||b.name,meta:'Bid · '+fmt(b.amount||0),sub:b.status||'Pending',action:()=>{closeSearch();goPg('pg-leads');}});
     }
   });
-  // Search by amount
-  if(/^\$?[\d,]+$/.test(q.replace(/\s/g,''))){
+
+  // Expenses — the main event for "Sherwin Williams" etc.
+  (expenses||[]).forEach(e=>{
+    if([e.vendor,e.notes,e.catLabel,e.job_name].some(f=>f?.toLowerCase().includes(q))){
+      const dateStr=e.date?fmtDateShort(e.date):'';
+      results.push({type:'expense',icon:'🧾',bg:'#FEF2F2',name:e.vendor||'Expense',meta:fmt(e.amount||0)+(dateStr?' · '+dateStr:''),sub:e.catLabel||e.cat||'',action:()=>{closeSearch();goPg('pg-tracker');setTimeout(()=>{const b=document.getElementById('tr-t-expenses');if(b)b.click();},200);}});
+    }
+  });
+
+  // Jobs
+  (jobs||[]).filter(j=>j.eventType!=='task').forEach(j=>{
+    if([j.name,j.addr,j.notes].some(f=>f?.toLowerCase().includes(q))){
+      const dateStr=j.start?new Date(j.start+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+      results.push({type:'job',icon:'🔨',bg:'var(--green-lt)',name:j.name,meta:fmt(j.value||0)+(dateStr?' · '+dateStr:''),sub:j.status||'',action:()=>{closeSearch();goPg('pg-jobs');}});
+    }
+  });
+
+  // Mileage
+  (mileage||[]).forEach(m=>{
+    if([m.purpose,m.client_name,m.to,m.from,m.to_name].some(f=>f?.toLowerCase().includes(q))){
+      const dateStr=m.date?fmtDateShort(m.date):'';
+      results.push({type:'mileage',icon:'🚗',bg:'var(--bg2)',name:m.purpose||m.client_name||'Trip',meta:(m.miles||0).toFixed(1)+' mi'+(dateStr?' · '+dateStr:''),sub:m.client_name||'',action:()=>{closeSearch();goPg('pg-tracker');setTimeout(()=>{const b=document.getElementById('tr-t-mileage');if(b)b.click();},200);}});
+    }
+  });
+
+  // Income + payments
+  [...(income||[]),...(payments||[])].forEach(r=>{
+    if([r.client_name,r.type,r.notes,r.method].some(f=>f?.toLowerCase().includes(q))){
+      const dateStr=r.date?fmtDateShort(r.date):'';
+      results.push({type:'income',icon:'💰',bg:'var(--green-lt)',name:r.client_name||'Payment',meta:fmt(r.amount||0)+(dateStr?' · '+dateStr:''),sub:r.type||r.method||'',action:()=>{closeSearch();goPg('pg-tracker');setTimeout(()=>{const b=document.getElementById('tr-t-income');if(b)b.click();},200);}});
+    }
+  });
+
+  // Amount search across bids and expenses
+  if(/^\$?[\d,.]+$/.test(q.replace(/\s/g,''))){
     const amt=parseFloat(q.replace(/[$,]/g,''));
-    bids.filter(b=>Math.abs((b.amount||0)-amt)<50).forEach(b=>{
-      results.push({type:'bid',icon:'💰',bg:'var(--green-lt)',name:b.client_name,meta:fmt(b.amount),sub:b.status,action:()=>{closeSearch();goPg('pg-clients');}});
+    (expenses||[]).filter(e=>Math.abs((e.amount||0)-amt)<1&&!results.find(r=>r.type==='expense'&&r.name===(e.vendor||'')&&r.meta.startsWith(fmt(e.amount)))).forEach(e=>{
+      results.push({type:'expense',icon:'🧾',bg:'#FEF2F2',name:e.vendor||'Expense',meta:fmt(e.amount)+(e.date?' · '+fmtDateShort(e.date):''),sub:e.catLabel||'',action:()=>{closeSearch();goPg('pg-tracker');setTimeout(()=>{const b=document.getElementById('tr-t-expenses');if(b)b.click();},200);}});
     });
   }
-  if(!results.length){el.innerHTML='<div class="search-empty">No results for "'+q.slice(0,30)+'"</div>';return;}
-  el.innerHTML=results.slice(0,8).map((r,i)=>`
-    <div class="search-result-item" onclick="_searchResults[${i}].action()">
-      <div class="search-result-icon" style="background:${r.bg}">${r.icon}</div>
-      <div style="min-width:0;flex:1">
-        <div class="search-result-name">${r.name||''}</div>
-        <div class="search-result-meta">${r.meta||''} ${r.sub?'· '+r.sub:''}</div>
-      </div>
-    </div>
-  `).join('');
-  window._searchResults=results;
+
+  if(!results.length){el.innerHTML='<div class="search-empty">No results for "'+escHtml(q.slice(0,30))+'"</div>';return;}
+
+  // Group by type with section headers
+  const TYPE_ORDER=['client','bid','expense','job','income','mileage'];
+  const TYPE_LABEL={client:'Clients',bid:'Bids',expense:'Expenses',job:'Jobs',income:'Payments',mileage:'Mileage'};
+  const MAX_PER=10;
+  const byType={};
+  results.forEach(r=>{(byType[r.type]=byType[r.type]||[]).push(r);});
+  window._searchResults=[];
+  let html='',flatIdx=0;
+  TYPE_ORDER.filter(t=>byType[t]).forEach(t=>{
+    const grp=byType[t];
+    html+=`<div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);padding:8px 18px 4px;background:var(--bg2)">${TYPE_LABEL[t]} (${grp.length})</div>`;
+    grp.slice(0,MAX_PER).forEach(r=>{
+      window._searchResults.push(r);
+      html+=`<div class="search-result-item" onclick="_searchResults[${flatIdx}].action()">
+        <div class="search-result-icon" style="background:${r.bg}">${r.icon}</div>
+        <div style="min-width:0;flex:1">
+          <div class="search-result-name">${escHtml(r.name||'')}</div>
+          <div class="search-result-meta">${escHtml(r.meta||'')}${r.sub?' · '+escHtml(r.sub):''}</div>
+        </div>
+      </div>`;
+      flatIdx++;
+    });
+    if(grp.length>MAX_PER)html+=`<div style="font-size:11px;color:var(--text3);padding:5px 18px 8px;font-style:italic">…and ${grp.length-MAX_PER} more</div>`;
+  });
+  el.innerHTML=html;
 }
 

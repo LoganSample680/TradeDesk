@@ -6630,3 +6630,220 @@ test.describe('Offline sync — bulk data created offline syncs completely', () 
     assertNoErrors(page, 'bulk offline sync');
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+//  XLSX EXPORT + INTEGRATIONS CLEANUP
+// ════════════════════════════════════════════════════════════════════════════
+test.describe('Excel export and integrations', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('XLSX library is loaded globally', async () => {
+    const loaded = await page.evaluate(() => typeof XLSX !== 'undefined' && typeof XLSX.utils === 'object');
+    expect(loaded).toBe(true);
+  });
+
+  test('exportAllXLSX produces single .xlsx workbook with 3 sheets', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof exportAllXLSX !== 'function' || typeof XLSX === 'undefined') return { skip: true };
+      const downloads = [];
+      const origCreate = document.createElement.bind(document);
+      document.createElement = (tag) => {
+        const el = origCreate(tag);
+        if (tag === 'a') {
+          Object.defineProperty(el, 'click', { value: () => downloads.push(el.download) });
+        }
+        return el;
+      };
+      try { exportAllXLSX(); } catch(e) { document.createElement = origCreate; return { ok: false, error: e.message }; }
+      document.createElement = origCreate;
+      return { ok: true, filename: downloads[0] || '', count: downloads.length };
+    });
+    if (!result.skip) {
+      expect(result.ok).toBe(true);
+      expect(result.filename).toMatch(/\.xlsx$/i);
+      expect(result.count).toBe(1);
+    }
+  });
+
+  test('_xlsClean normalises curly apostrophes', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _xlsClean !== 'function') return { skip: true };
+      return {
+        lowes: _xlsClean('Lowe’s'),
+        oreilly: _xlsClean('O’Reilly'),
+        normal: _xlsClean('Normal text'),
+      };
+    });
+    if (!result.skip) {
+      expect(result.lowes).toBe("Lowe's");
+      expect(result.oreilly).toBe("O'Reilly");
+      expect(result.normal).toBe('Normal text');
+    }
+  });
+
+  test('integrations panel shows only Stripe — no ntfy, Bitly, Mapbox rows', async () => {
+    await page.evaluate(() => { goPg('pg-settings'); });
+    await page.evaluate(() => _openSetDetail && _openSetDetail('integrations'));
+    await page.waitForTimeout(300);
+    const result = await page.evaluate(() => {
+      const list = document.getElementById('integrations-list');
+      if (!list) return { skip: true };
+      const text = list.textContent || '';
+      return {
+        hasStripe: text.includes('Stripe'),
+        hasNtfy: text.toLowerCase().includes('ntfy'),
+        hasBitly: text.toLowerCase().includes('bitly'),
+        hasMapbox: text.toLowerCase().includes('mapbox'),
+        rowCount: list.querySelectorAll('.set-int-row').length,
+      };
+    });
+    if (!result.skip) {
+      expect(result.hasStripe).toBe(true);
+      expect(result.hasNtfy).toBe(false);
+      expect(result.hasBitly).toBe(false);
+      expect(result.hasMapbox).toBe(false);
+      expect(result.rowCount).toBe(1);
+    }
+  });
+
+  test('_openSetNtfy is not defined', async () => {
+    const exists = await page.evaluate(() => typeof _openSetNtfy === 'function');
+    expect(exists).toBe(false);
+  });
+
+  test('_checkVersionOnResume reads version.json — not an APP_VERSION HTML grep', async () => {
+    // The bug: it fetched index.html and grepped for `const APP_VERSION='...'`,
+    // which only exists in js/cloud.js — so the match always failed and the
+    // auto-update never fired. It must hit version.json instead.
+    const result = await page.evaluate(async () => {
+      if (typeof _checkVersionOnResume !== 'function') return { skip: true };
+      const fetched = [];
+      const origFetch = window.fetch;
+      window.fetch = (url, opts) => {
+        fetched.push(String(url));
+        return origFetch(url, opts);
+      };
+      try { await _checkVersionOnResume(); } catch (e) { /* network errors are fine */ }
+      window.fetch = origFetch;
+      return {
+        hitVersionJson: fetched.some(u => u.includes('version.json')),
+        grepsHtml: fetched.some(u => /\/$|index\.html/.test(u) && !u.includes('version.json')),
+      };
+    });
+    if (!result.skip) {
+      expect(result.hitVersionJson).toBe(true);
+      expect(result.grepsHtml).toBe(false);
+    }
+  });
+
+  test('saveSettings refreshes nav user name (no stale email/name)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof saveSettings !== 'function') return { skip: true };
+      const nameInput = document.getElementById('set-owner-name');
+      if (!nameInput) return { skip: true };
+      // Stub network-y side effects so the save stays local
+      const _origSaveAll = window.saveAll;
+      window.saveAll = () => {};
+      nameInput.value = 'Logan Sample';
+      try { saveSettings(); } catch (e) { window.saveAll = _origSaveAll; return { error: e.message }; }
+      window.saveAll = _origSaveAll;
+      const navName = document.getElementById('nav-user-name')?.textContent || '';
+      return { navName };
+    });
+    if (!result.skip && !result.error) {
+      expect(result.navName).not.toContain('@');
+      expect(result.navName).toBe('Logan Sample');
+    }
+  });
+
+  test('_xS fill styles all include patternType:solid', async () => {
+    const ok = await page.evaluate(() => {
+      if (typeof _xS === 'undefined') return null;
+      return Object.values(_xS)
+        .filter(s => s.fill)
+        .every(s => s.fill.patternType === 'solid');
+    });
+    if (ok !== null) expect(ok).toBe(true);
+  });
+
+  test('S.ntfyTopic is not in default settings', async () => {
+    const exists = await page.evaluate(() => 'ntfyTopic' in S);
+    expect(exists).toBe(false);
+  });
+
+  test('_xlsByYear groups data by year and emits year-band and subtotal rows', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _xlsByYear !== 'function' || typeof XLSX === 'undefined') return { skip: true };
+      const items = [
+        { date: '2024-06-01', amount: 100 },
+        { date: '2025-03-15', amount: 200 },
+      ];
+      const ws = _xlsByYear(
+        ['Date', 'Amount'],
+        [{ wch: 12 }, { wch: 10 }],
+        items,
+        item => item.date,
+        item => [
+          { v: item.date, t: 's', s: {} },
+          { v: item.amount, t: 'n', s: {} },
+        ],
+        [1]
+      );
+      const vals = Object.entries(ws)
+        .filter(([k]) => !k.startsWith('!'))
+        .map(([, cell]) => cell.v)
+        .filter(v => typeof v === 'string');
+      return {
+        has2025: vals.includes('2025'),
+        has2024: vals.includes('2024'),
+        hasSubtotal: vals.some(v => v.includes('Total')),
+        hasGrandTotal: vals.includes('GRAND TOTAL'),
+      };
+    });
+    if (!result.skip) {
+      expect(result.has2025).toBe(true);
+      expect(result.has2024).toBe(true);
+      expect(result.hasSubtotal).toBe(true);
+      expect(result.hasGrandTotal).toBe(true);
+    }
+  });
+
+  test('no console errors in xlsx export and integrations tests', async () => {
+    assertNoErrors(page, 'xlsx export and integrations');
+  });
+});
+
+test.describe('Version consistency', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('APP_VERSION matches version.json', async () => {
+    const result = await page.evaluate(async () => {
+      const r = await fetch('/version.json?_=' + Date.now(), { cache: 'no-store' });
+      const { version } = await r.json();
+      return { version, appVersion: typeof APP_VERSION !== 'undefined' ? APP_VERSION : null };
+    });
+    expect(result.appVersion).toBeTruthy();
+    expect(result.version).toBe(result.appVersion);
+  });
+
+  test('APP_VERSION format is MM.DD.YY.NN', async () => {
+    const v = await page.evaluate(() => typeof APP_VERSION !== 'undefined' ? APP_VERSION : null);
+    expect(v).toMatch(/^\d{2}\.\d{2}\.\d{2}\.\d+$/);
+  });
+});

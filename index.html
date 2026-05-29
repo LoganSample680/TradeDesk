@@ -225,6 +225,27 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 input,select,textarea{font-family:var(--font-ui);font-size:14px;padding:10px 12px;border:1.5px solid var(--line-2);border-radius:var(--r);background:var(--bg-card);color:var(--text);width:100%;-webkit-appearance:none;transition:border-color .15s,box-shadow .15s;touch-action:manipulation}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--denim);box-shadow:0 0 0 3px rgba(45,93,168,.16)}
 input[readonly],input:disabled{background:var(--cream);color:var(--text-3)}
+/* ── Settings two-column form layout ── */
+.set-form-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:14px}
+.set-form-card-hd{display:flex;align-items:center;gap:12px;padding:16px;background:var(--bg2);border-bottom:1px solid var(--border)}
+.set-form-row{display:grid;grid-template-columns:170px 1fr;gap:0;padding:14px 16px;border-bottom:1px solid var(--border);align-items:start}
+.set-form-row:last-child{border-bottom:0}
+.set-form-lbl{font-size:13px;font-weight:700;color:var(--text);padding-right:12px;padding-top:2px}
+.set-form-hint{font-size:11px;color:var(--blue);margin-top:3px;line-height:1.4;padding-right:12px}
+.set-form-ctrl input,.set-form-ctrl select,.set-form-ctrl textarea{margin-bottom:6px}
+.set-form-ctrl input:last-child,.set-form-ctrl select:last-child,.set-form-ctrl textarea:last-child{margin-bottom:0}
+/* ── Brand color swatches ── */
+.set-swatch{width:38px;height:38px;border-radius:10px;border:2px solid transparent;cursor:pointer;position:relative;padding:0;flex-shrink:0;transition:transform .12s;display:inline-flex;align-items:center;justify-content:center}
+.set-swatch:active{transform:scale(.9)}
+.set-swatch.active{border-color:var(--text)!important;box-shadow:0 0 0 2px var(--bg-card),0 0 0 4px var(--text)}
+/* ── Integration service rows ── */
+.set-int-row{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)}
+.set-int-row:last-child{border-bottom:0}
+.set-int-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:15px;flex-shrink:0;letter-spacing:-.02em}
+.set-int-badge{display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:10px;margin-left:5px;vertical-align:1px}
+.set-int-badge.ok{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
+.set-int-badge.warn{background:#fffbeb;color:#92400e;border:1px solid #fde68a}
+.set-int-badge.off{background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0}
 textarea{resize:none;min-height:52px;line-height:1.5}
 select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239a9890' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
 input[type=range]{-webkit-appearance:none;appearance:none;background:transparent}
@@ -491,6 +512,22 @@ hr{border:none;border-top:1px solid var(--line);margin:10px 0}
 .acc-sec.open>.acc-hd .acc-hd-arrow{transform:rotate(180deg)}
 .acc-body{display:none;padding:0 16px 16px}
 .acc-sec.open>.acc-body{display:block}
+/* Settings redesign */
+.set-idx-row{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .1s}
+.set-idx-row:last-child{border-bottom:0}
+.set-idx-row:active{background:var(--bg2)}
+.set-idx-icon{width:36px;height:36px;border-radius:9px;background:var(--bg2);color:var(--text2);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.set-idx-body{flex:1;min-width:0}
+.set-idx-title{font-size:14px;font-weight:800;letter-spacing:-.1px;color:var(--text);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.set-idx-sub{font-size:12px;color:var(--text3);margin-top:2px;font-weight:500}
+.set-idx-meta{font-size:11px;font-weight:700;color:var(--text3);text-align:right;flex-shrink:0;line-height:1.3}
+.set-idx-meta strong{display:block;color:var(--text);font-size:13px;font-weight:800;letter-spacing:-.1px}
+.set-idx-chev{color:var(--text3);font-size:18px;font-weight:800;flex-shrink:0}
+.set-detail{display:none}
+.set-detail.active{display:block}
+.set-detail-hd{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border);background:var(--bg-card);position:sticky;top:0;z-index:10}
+.set-detail-back{background:none;border:none;font-size:22px;font-weight:800;color:var(--blue);cursor:pointer;padding:0 6px 0 0;line-height:1;font-family:inherit}
+#set-index-view.hidden{display:none}
 .tax-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px;border-bottom:1px solid var(--line)}
 .tax-row:last-child{border:none}
 .tax-blk{background:var(--cream);border-radius:var(--r);padding:11px;margin-bottom:8px}
@@ -2474,35 +2511,661 @@ body.dark .cal-cell.other{background:var(--cream)}
 
 </div>
 <div class="pg" id="pg-settings">
-  <div class="tbar"><div class="tbar-title">Settings &amp; rates</div></div>
 
-  <!-- Dark mode toggle — always visible -->
-  <div class="card" style="margin-bottom:10px">
-    <div class="dm-toggle">
-      <div>
-        <div style="font-size:13px;font-weight:700">Dark mode</div>
-        <div style="font-size:11px;color:var(--text3);margin-top:2px">Easier on the eyes at night or in the truck</div>
+  <!-- ── INDEX VIEW ──────────────────────────────── -->
+  <div id="set-index-view">
+
+    <!-- page header -->
+    <div style="padding:18px 16px 10px">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:4px">Account</div>
+      <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px">
+        <div>
+          <div style="font-family:Geist,sans-serif;font-size:28px;font-weight:900;letter-spacing:-1px;line-height:1">Settings</div>
+          <div id="set-index-meta" style="font-size:12px;color:var(--text3);margin-top:5px;font-weight:500"></div>
+        </div>
+        <button class="btn btn-sm" onclick="if(supaEnabled())supaSignOut()" style="flex-shrink:0">Sign out</button>
       </div>
-      <label class="dm-switch"><input type="checkbox" id="dm-toggle" onchange="toggleDarkMode(this.checked)"><span class="dm-slider"></span></label>
+    </div>
+
+    <!-- search -->
+    <div style="display:flex;align-items:center;gap:8px;background:var(--bg-card);border:1.5px solid var(--border2);border-radius:12px;padding:10px 14px;margin:0 16px 14px;color:var(--text3)">
+      <span>🔍</span>
+      <input id="set-search-input" placeholder="Search settings…" oninput="_filterSetRows(this.value)" style="flex:1;border:0;background:transparent;outline:none;font-family:inherit;font-size:13px;color:var(--text);padding:0;width:auto">
+    </div>
+
+    <!-- TradeDesk Pro subscription card -->
+    <div style="background:linear-gradient(135deg,#1B1612 0%,#1F2230 100%);border-radius:14px;padding:16px;margin:0 0 14px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
+          <span style="font-family:Geist,sans-serif;font-size:16px;font-weight:900;color:#fff;letter-spacing:-.5px">TradeDesk</span>
+          <span style="font-size:10px;font-weight:800;color:#5C8FD4;background:rgba(45,93,168,.18);border:1px solid rgba(45,93,168,.36);padding:2px 6px;border-radius:4px;text-transform:uppercase;letter-spacing:.06em">Pro</span>
+        </div>
+        <div id="set-sub-line" style="font-size:11px;color:rgba(255,255,255,.4)">1 user</div>
+      </div>
+      <button onclick="_manageSubscription()" class="btn btn-sm" style="background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.18);flex-shrink:0;font-size:12px">Manage plan</button>
+    </div>
+
+    <!-- dark mode toggle -->
+    <div class="card" style="margin:0 0 14px;padding:14px 16px">
+      <div class="dm-toggle">
+        <div>
+          <div style="font-size:13px;font-weight:700">Dark mode</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px">Easier on the eyes at night or in the truck</div>
+        </div>
+        <label class="dm-switch"><input type="checkbox" id="dm-toggle" onchange="toggleDarkMode(this.checked)"><span class="dm-slider"></span></label>
+      </div>
+    </div>
+
+    <!-- YOUR BUSINESS group -->
+    <div style="margin-bottom:20px">
+      <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;padding-left:4px">Your business</div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div class="set-idx-row" data-search="business info name phone email license contact address" onclick="_openSetDetail('biz')">
+          <div class="set-idx-icon">🏢</div>
+          <div class="set-idx-body">
+            <div class="set-idx-title">Business info</div>
+            <div class="set-idx-sub">Name, address, phone, email, license #</div>
+          </div>
+          <div class="set-idx-meta" id="set-meta-biz"></div>
+          <div class="set-idx-chev">›</div>
+        </div>
+        <div class="set-idx-row" data-search="branding logo color hub subdomain preview powered" onclick="_openSetDetail('branding')">
+          <div class="set-idx-icon">🎨</div>
+          <div class="set-idx-body">
+            <div class="set-idx-title">Branding</div>
+            <div class="set-idx-sub">Logo, brand color, white-label client hub</div>
+          </div>
+          <div class="set-idx-meta" id="set-meta-branding"></div>
+          <div class="set-idx-chev">›</div>
+        </div>
+        <div class="set-idx-row" data-search="rates pricing labor margin deposit estimator goals" onclick="_openSetDetail('rates')">
+          <div class="set-idx-icon">💵</div>
+          <div class="set-idx-body">
+            <div class="set-idx-title">Rates &amp; pricing</div>
+            <div class="set-idx-sub">Default labor rate, deposit %, IRS mileage rate</div>
+          </div>
+          <div class="set-idx-meta" id="set-meta-rates"></div>
+          <div class="set-idx-chev">›</div>
+        </div>
+        <div class="set-idx-row" data-search="legal terms conditions UETA change order clause proposal" onclick="_openSetDetail('legal')">
+          <div class="set-idx-icon">📋</div>
+          <div class="set-idx-body">
+            <div class="set-idx-title">Legal &amp; terms</div>
+            <div class="set-idx-sub">Proposal terms, change-order clause, UETA disclosure</div>
+          </div>
+          <div class="set-idx-meta" id="set-meta-legal"></div>
+          <div class="set-idx-chev">›</div>
+        </div>
+        <div class="set-idx-row" data-search="trades painting roofing flooring business type" onclick="_openSetDetail('trades')">
+          <div class="set-idx-icon">🏗️</div>
+          <div class="set-idx-body">
+            <div class="set-idx-title" id="set-idx-trades-title">Your trades</div>
+            <div class="set-idx-sub" id="set-idx-trades-sub">Manage your trade lines</div>
+          </div>
+          <div class="set-idx-chev">›</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- OPERATIONS group -->
+    <div style="margin-bottom:20px">
+      <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;padding-left:4px">Operations</div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div class="set-idx-row" data-search="integrations stripe payments" onclick="_openSetDetail('integrations')">
+          <div class="set-idx-icon">🔌</div>
+          <div class="set-idx-body">
+            <div class="set-idx-title">Integrations</div>
+            <div class="set-idx-sub">Stripe payments</div>
+          </div>
+          <div class="set-idx-meta" id="set-meta-integrations"></div>
+          <div class="set-idx-chev">›</div>
+        </div>
+        <div class="set-idx-row" data-search="tax setup taxes mileage rate federal state brackets filing" onclick="_openSetDetail('taxes')">
+          <div class="set-idx-icon">📄</div>
+          <div class="set-idx-body">
+            <div class="set-idx-title">Tax setup</div>
+            <div class="set-idx-sub">State, filing status, quarterly schedule</div>
+          </div>
+          <div class="set-idx-meta" id="set-meta-taxes"></div>
+          <div class="set-idx-chev">›</div>
+        </div>
+        <div class="set-idx-row" data-search="cloud sync backup restore location" onclick="_openSetDetail('cloud')">
+          <div class="set-idx-icon">☁️</div>
+          <div class="set-idx-body">
+            <div class="set-idx-title">Cloud sync</div>
+            <div class="set-idx-sub">Backup, restore, device list</div>
+          </div>
+          <div class="set-idx-meta" id="set-meta-cloud"></div>
+          <div class="set-idx-chev">›</div>
+        </div>
+        <div class="set-idx-row" data-search="sms notifications templates messages follow up email push" onclick="_openSetDetail('notifications')">
+          <div class="set-idx-icon">💬</div>
+          <div class="set-idx-body">
+            <div class="set-idx-title">Notifications</div>
+            <div class="set-idx-sub">Email + push for new leads, signed proposals, payments</div>
+          </div>
+          <div class="set-idx-meta" id="set-meta-notifications"></div>
+          <div class="set-idx-chev">›</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADVANCED group -->
+    <div style="margin-bottom:20px">
+      <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;padding-left:4px">Advanced</div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <div class="set-idx-row" data-search="data export download reset factory danger" onclick="_openSetDetail('data')">
+          <div class="set-idx-icon">📦</div>
+          <div class="set-idx-body">
+            <div class="set-idx-title">Data &amp; export</div>
+            <div class="set-idx-sub">Download data, factory reset</div>
+          </div>
+          <div class="set-idx-chev">›</div>
+        </div>
+        <div class="set-idx-row" id="set-idx-row-dev" style="display:none" data-search="developer dev tools debug api" onclick="_openSetDetail('dev')">
+          <div class="set-idx-icon">🛠️</div>
+          <div class="set-idx-body">
+            <div class="set-idx-title">Developer</div>
+            <div class="set-idx-sub">Trade switcher, debug tools, legal inspector</div>
+          </div>
+          <div class="set-idx-chev">›</div>
+        </div>
+        <div class="set-idx-row" data-search="about version app info terms privacy" onclick="_openSetDetail('about')">
+          <div class="set-idx-icon">ℹ️</div>
+          <div class="set-idx-body">
+            <div class="set-idx-title">About TradeDesk</div>
+            <div class="set-idx-sub" id="set-about-version-sub">Version info, privacy, terms</div>
+          </div>
+          <div class="set-idx-chev">›</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end #set-index-view -->
+
+
+  <!-- ── DETAIL PANELS ────────────────────────────── -->
+
+  <!-- Business info detail -->
+  <div class="set-detail" id="setd-biz">
+    <div class="set-detail-hd">
+      <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
+      <div class="set-idx-icon" style="flex-shrink:0">🏢</div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Business info</div><div style="font-size:11px;color:var(--text3)">Shown on proposals, invoices, and your client hub</div></div>
+    </div>
+    <div style="padding:16px">
+      <div class="set-form-card">
+        <div class="set-form-card-hd">
+          <div style="font-size:28px;line-height:1">🏢</div>
+          <div><div style="font-size:15px;font-weight:800">Business info</div><div style="font-size:11px;color:var(--text3);margin-top:1px">Shown on proposals, invoices, and your client hub</div></div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Your name</div></div>
+          <div class="set-form-ctrl"><input id="set-owner-name" placeholder="Logan Sample"></div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Business name</div><div class="set-form-hint">Used on every proposal and invoice header.</div></div>
+          <div class="set-form-ctrl"><input id="set-bname" placeholder="Sample Painting LLC"></div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Logo</div><div class="set-form-hint">Square PNG works best. Drop in here or paste from clipboard.</div></div>
+          <div class="set-form-ctrl">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+              <div id="set-logo-preview-biz" style="width:56px;height:56px;background:linear-gradient(135deg,#1a365d,#2a4a7f);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden"></div>
+              <div>
+                <input type="file" id="set-logo-file" accept="image/png,image/jpeg,image/svg+xml" style="display:none" onchange="handleLogoUpload(this)">
+                <div id="set-logo-filename" style="font-size:11px;color:var(--text3);margin-bottom:6px"></div>
+                <button class="btn btn-sm" onclick="document.getElementById('set-logo-file').click()" id="set-logo-btn">Upload image</button>
+                <button class="btn btn-sm" onclick="clearLogoSetting()" style="margin-left:6px">Remove</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Address</div><div class="set-form-hint">Required for invoicing.</div></div>
+          <div class="set-form-ctrl">
+            <input id="set-baddr" placeholder="1242 N Saint Francis">
+            <div style="display:grid;grid-template-columns:1fr 60px 80px;gap:6px">
+              <input id="set-bcity" placeholder="Wichita">
+              <input id="set-bstate-display" placeholder="KS" maxlength="2" style="text-transform:uppercase">
+              <input id="set-bzip" placeholder="67214" inputmode="numeric" maxlength="5">
+            </div>
+          </div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Phone &amp; email</div></div>
+          <div class="set-form-ctrl">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+              <input id="set-bphone" type="tel" maxlength="12" oninput="fmtPhone(this)" placeholder="(316) 555-0182">
+              <input type="email" id="set-bemail" placeholder="logan@samplepaint.com">
+            </div>
+          </div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">License #</div><div class="set-form-hint">State contractor license. Shown in your client hub footer.</div></div>
+          <div class="set-form-ctrl"><input id="set-blic" placeholder="KS-PNT-2024-08812"></div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Years in business</div></div>
+          <div class="set-form-ctrl"><input type="number" id="set-byears" min="1" max="50" placeholder="e.g. 12"></div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Google review link</div><div class="set-form-hint">Sent to clients after job completion.</div></div>
+          <div class="set-form-ctrl"><input type="url" id="set-review-url" placeholder="https://g.page/r/…"></div>
+        </div>
+      </div>
+      <button class="btn btn-p" onclick="saveSettings()" style="width:100%;margin-top:4px;padding:13px">Save</button>
     </div>
   </div>
 
-  <!-- Dev Tools — only visible on dev accounts -->
-  <div class="acc-sec" id="acc-dev" style="display:none">
-    <div class="acc-hd" onclick="toggleAccSection('acc-dev')">
-      <div class="acc-hd-left">
-        <div class="acc-hd-title">🛠 Dev Tools</div>
-        <div class="acc-hd-sub">Switch trade to test all workflows</div>
-      </div>
-      <span class="acc-hd-arrow">▼</span>
+  <!-- Branding detail -->
+  <div class="set-detail" id="setd-branding">
+    <div class="set-detail-hd">
+      <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
+      <div class="set-idx-icon" style="flex-shrink:0">🎨</div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Branding</div><div style="font-size:11px;color:var(--text3)">Applied to client hub, intake, proposals, and signature pages</div></div>
     </div>
-    <div class="acc-body">
+    <div style="padding:16px">
+      <div class="set-form-card">
+        <div class="set-form-card-hd">
+          <div style="font-size:28px;line-height:1">🎨</div>
+          <div><div style="font-size:15px;font-weight:800">Branding</div><div style="font-size:11px;color:var(--text3);margin-top:1px">Applied to client hub, intake, proposals, and signature pages</div></div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Brand color</div><div class="set-form-hint">Used for primary buttons, links, and accents in client-facing surfaces.</div></div>
+          <div class="set-form-ctrl">
+            <div id="set-brand-swatches" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px"></div>
+            <div id="set-brand-selected" style="font-size:11px;color:var(--text3)">Selected · #2D5DA8</div>
+            <!-- hidden native picker for custom color -->
+            <input type="color" id="set-brandcolor" value="#2D5DA8" oninput="_pickedBrandColor(this.value)" style="position:absolute;opacity:0;width:0;height:0;pointer-events:none">
+          </div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Client hub subdomain</div><div class="set-form-hint">Your homeowners will see this on every link.</div></div>
+          <div class="set-form-ctrl">
+            <div style="display:flex;align-items:center;gap:0;border:1.5px solid var(--border2);border-radius:var(--r);overflow:hidden;background:var(--bg-card)">
+              <input id="set-subdomain" placeholder="samplepainting" autocomplete="off" style="font-family:monospace;font-size:12px;border:0;border-radius:0;box-shadow:none;flex:1;background:transparent;width:auto" oninput="_checkSubdomain(this.value)">
+              <span style="font-size:11px;color:var(--text3);padding:0 10px;border-left:1px solid var(--border);background:var(--bg2);height:100%;display:flex;align-items:center;white-space:nowrap">.tradedeskpro.app</span>
+            </div>
+            <div id="set-subdomain-status" style="font-size:11px;margin-top:4px"></div>
+          </div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Website URL</div></div>
+          <div class="set-form-ctrl"><input type="url" id="set-bwebsite" placeholder="https://yourwebsite.com"></div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Show "Powered by"</div><div class="set-form-hint">Small TradeDesk credit at the bottom of client-facing pages.</div></div>
+          <div class="set-form-ctrl" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+            <span style="font-size:12px;color:var(--text3)">"Powered by TradeDesk Pro" footer</span>
+            <label class="dm-switch" style="flex-shrink:0"><input type="checkbox" id="set-powered-by" checked onchange="saveSettings()"><span class="dm-slider"></span></label>
+          </div>
+        </div>
+        <div class="set-form-row" style="border-bottom:0;padding-bottom:0">
+          <div><div class="set-form-lbl">Loading splash</div><div class="set-form-hint">What clients see while the hub loads — uses your brand color &amp; logo.</div></div>
+          <div class="set-form-ctrl">
+            <div id="boot-preview-wrap" style="border-radius:12px;overflow:hidden;height:90px;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px" aria-label="Boot screen preview">
+              <div id="boot-preview-bg" style="position:absolute;inset:0;background:radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)"></div>
+              <div id="boot-preview-logo" style="position:relative;display:flex;align-items:baseline;gap:0"><span id="boot-preview-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:20px;color:#fff;letter-spacing:-1px">TradeDesk</span><span id="boot-preview-pro" style="font-size:7px;font-weight:800;color:#5C8FD4;background:rgba(45,93,168,.18);border:1px solid rgba(45,93,168,.36);padding:2px 5px;border-radius:4px;text-transform:uppercase;letter-spacing:.06em;margin-left:5px;vertical-align:3px">Pro</span></div>
+              <div style="position:relative;width:80px;height:2px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden"><div id="boot-preview-bar" style="width:60%;height:100%;background:#2D5DA8;border-radius:2px"></div></div>
+            </div>
+            <div style="font-size:11px;color:var(--blue);text-align:center;margin-top:6px">Live preview · what your clients see when their hub loads</div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-bottom:12px;padding:12px 14px;background:var(--bg2);border-radius:var(--r);border:1px solid var(--border)">
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none">
+          <input type="checkbox" id="set-home-office" onchange="S.homeOffice=this.checked;saveAll()" style="width:18px;height:18px;margin-top:1px;accent-color:var(--blue);flex-shrink:0">
+          <div>
+            <div style="font-size:13px;font-weight:700">I have a dedicated home office</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">A room used ONLY for business — unlocks the commuting deduction. (IRS §280A)</div>
+          </div>
+        </label>
+      </div>
+      <button class="btn btn-p" onclick="saveSettings()" style="width:100%;padding:13px">Save</button>
+    </div>
+  </div>
+
+  <!-- Rates & pricing detail -->
+  <div class="set-detail" id="setd-rates">
+    <div class="set-detail-hd">
+      <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
+      <div class="set-idx-icon" style="flex-shrink:0">💵</div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Rates &amp; pricing</div><div style="font-size:11px;color:var(--text3)">Labor rate, deposit, margin &amp; estimator defaults</div></div>
+    </div>
+    <div style="padding:16px">
+      <div class="fg fg2" style="margin-top:4px">
+        <div class="f"><label>Monthly revenue goal ($)</label><input type="number" id="set-goal-monthly" placeholder="e.g. 8000" min="0" step="500"><div style="font-size:10px;color:var(--text3);margin-top:3px">What do you want to bring in each month?</div></div>
+        <div class="f"><label>Default labor rate ($/hr)</label><input id="set-labor-rate" type="number" placeholder="45" min="0" step="5"></div>
+        <div class="f"><label>Profit margin target (%)</label><input type="number" id="set-margin"></div>
+        <div class="f"><label>Paint coverage (sq ft/gal)</label><input type="number" id="set-cov"></div>
+        <div class="f"><label>Materials markup (%)</label><input type="number" id="set-mm"></div>
+        <div class="f"><label>Supplies rate ($/sq ft)</label><input type="number" id="set-supplies-rate" step="0.01" placeholder="0.40"></div>
+      </div>
+      <!-- Painting labor rates (shown for painting trade) -->
+      <div id="set-rates-lp" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">🎨 Painting labor rates</div>
+        <div class="tip" style="margin-bottom:10px">Base labor rates before scope add-ons. If a $2,500 job feels like it should show more profit, raise these to match your real pricing.</div>
+        <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
+          <div class="f"><label>Walls ($/actual wall sqft)</label><input type="number" id="set-r-walls" step="0.05"></div>
+          <div class="f"><label>Ceiling ($/sqft)</label><input type="number" id="set-r-ceil" step="0.05"></div>
+          <div class="f"><label>Trim ($/lin ft)</label><input type="number" id="set-r-trim" step="0.05"></div>
+          <div class="f"><label>Doors ($/door)</label><input type="number" id="set-r-door" step="1"></div>
+          <div class="f"><label>Windows ($/window)</label><input type="number" id="set-r-win" step="1"></div>
+          <div class="f"><label>Exterior walls ($/sf)</label><input type="number" id="set-r-ext" step="0.05"></div>
+          <div class="f"><label>Deck/fence ($/sf)</label><input type="number" id="set-r-deck" step="0.05"></div>
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.6">Walls rate is per room sq ft (L×W floor area). Trim is per linear foot. Add-ons (sand, spackle, primer) stack automatically.</div>
+      </div>
+      <!-- Generic labor rates -->
+      <div id="set-rates-lg" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px" id="set-rates-lg-title">Labor rates</div>
+        <div class="fg fg2">
+          <div class="f"><label>Default hourly rate ($/hr)</label><input id="set-labor-rate-generic" type="number" placeholder="75" min="0" step="5"><div style="font-size:10px;color:var(--text3);margin-top:3px">Used as default rate in line-item estimates for this trade.</div></div>
+        </div>
+      </div>
+      <!-- Sherwin-Williams prices (painting trade only) -->
+      <div id="set-rates-sw" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:6px">Sherwin-Williams paint prices</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:8px" id="sw-price-updated">Last updated: Apr 2025</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6">Contractor pricing used in material cost calculations. PRO+ account estimated rates.</div>
+        <div id="sw-price-table" style="display:grid;grid-template-columns:1fr auto auto;gap:4px 12px;font-size:11px;margin-bottom:12px">
+          <span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Product</span><span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Contractor</span><span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Retail</span>
+          <span>ProMar 700</span><span style="color:var(--green-mid)" id="spp-pm700">$20/gal</span><span style="color:var(--text3)">$55</span>
+          <span>ProMar 200</span><span style="color:var(--green-mid)" id="spp-pm200">$32/gal</span><span style="color:var(--text3)">$83</span>
+          <span>SuperPaint</span><span style="color:var(--green-mid)" id="spp-sp">$37/gal</span><span style="color:var(--text3)">$65</span>
+          <span>Cashmere</span><span style="color:var(--green-mid)" id="spp-cash">$40/gal</span><span style="color:var(--text3)">$60</span>
+          <span>Duration Home</span><span style="color:var(--green-mid)" id="spp-dur">$46/gal</span><span style="color:var(--text3)">$70</span>
+          <span>Emerald</span><span style="color:var(--green-mid)" id="spp-em">$52/gal</span><span style="color:var(--text3)">$74</span>
+          <span>SuperPaint Ext.</span><span style="color:var(--green-mid)" id="spp-spe">$38/gal</span><span style="color:var(--text3)">$63</span>
+          <span>Duration Ext.</span><span style="color:var(--green-mid)" id="spp-dure">$48/gal</span><span style="color:var(--text3)">$81</span>
+          <span>Emerald Urethane</span><span style="color:var(--green-mid)" id="spp-emure">$58/gal</span><span style="color:var(--text3)">$95</span>
+        </div>
+        <button class="btn btn-p" id="sw-price-refresh-btn" onclick="swRefreshPrices()" style="font-size:13px">🔄 Refresh SW prices via AI</button>
+        <div id="sw-price-refresh-status" style="font-size:12px;color:var(--text3);margin-top:8px;display:none"></div>
+      </div>
+      <button class="btn btn-p" onclick="saveSettings()" style="width:100%;margin-top:16px;padding:13px">Save</button>
+    </div>
+  </div>
+
+  <!-- Notifications detail -->
+  <div class="set-detail" id="setd-notifications">
+    <div class="set-detail-hd">
+      <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
+      <div class="set-idx-icon" style="flex-shrink:0">💬</div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Notifications</div><div style="font-size:11px;color:var(--text3)">SMS templates sent to clients</div></div>
+    </div>
+    <div style="padding:16px">
+      <div style="font-size:11px;color:var(--text3);margin:0 0 14px;line-height:1.5">Variables: <code>{name}</code> first name &nbsp;·&nbsp; <code>{business}</code> your biz name &nbsp;·&nbsp; <code>{url}</code> proposal/hub link &nbsp;·&nbsp; <code>{amount}</code> balance &nbsp;·&nbsp; <code>{address}</code> job address</div>
+      <div class="f" style="margin-bottom:12px">
+        <label style="display:flex;justify-content:space-between;align-items:center">Hub send <button type="button" onclick="_resetSmsTemplate('set-sms-hub')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
+        <textarea id="set-sms-hub" rows="2" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box" placeholder="Hi {name}, here's your project hub from {business}: {url}"></textarea>
+      </div>
+      <div class="f" style="margin-bottom:12px">
+        <label style="display:flex;justify-content:space-between;align-items:center">Proposal follow-up <button type="button" onclick="_resetSmsTemplate('set-sms-followup')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
+        <textarea id="set-sms-followup" rows="4" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box"></textarea>
+      </div>
+      <div class="f" style="margin-bottom:12px">
+        <label style="display:flex;justify-content:space-between;align-items:center">Collection — Reminder <button type="button" onclick="_resetSmsTemplate('set-sms-reminder')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
+        <textarea id="set-sms-reminder" rows="3" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box"></textarea>
+      </div>
+      <div class="f" style="margin-bottom:12px">
+        <label style="display:flex;justify-content:space-between;align-items:center">Collection — 2nd Notice <button type="button" onclick="_resetSmsTemplate('set-sms-second')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
+        <textarea id="set-sms-second" rows="3" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box"></textarea>
+      </div>
+      <div class="f" style="margin-bottom:12px">
+        <label style="display:flex;justify-content:space-between;align-items:center">Collection — Intent to Lien <button type="button" onclick="_resetSmsTemplate('set-sms-intent')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
+        <textarea id="set-sms-intent" rows="4" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box"></textarea>
+      </div>
+      <button class="btn btn-p" onclick="saveSettings()" style="width:100%;margin-top:4px;padding:13px">Save</button>
+    </div>
+  </div>
+
+  <!-- Legal & terms detail -->
+  <div class="set-detail" id="setd-legal">
+    <div class="set-detail-hd">
+      <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
+      <div class="set-idx-icon" style="flex-shrink:0">📋</div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Legal &amp; terms</div><div style="font-size:11px;color:var(--text3)">Proposal terms, change-order clause, UETA disclosure</div></div>
+    </div>
+    <div style="padding:16px">
+      <div class="tip" style="margin-bottom:14px">These terms appear on every proposal and are required for enforceable contracts in most states. Keep them up to date each year.</div>
+      <div class="set-form-card">
+        <div class="set-form-card-hd">
+          <div style="font-size:24px;line-height:1">📋</div>
+          <div><div style="font-size:15px;font-weight:800">Proposal terms</div><div style="font-size:11px;color:var(--text3)">Shown at the bottom of every estimate before signing</div></div>
+        </div>
+        <div style="padding:14px 16px">
+          <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Custom terms</div>
+          <textarea id="set-custom-terms" rows="5" style="font-size:12px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box" placeholder="Add any custom terms that will appear after the standard template…"></textarea>
+          <div style="font-size:10px;color:var(--text3);margin-top:4px">Standard UETA disclosure and payment terms are always included. This field adds to them.</div>
+        </div>
+      </div>
+      <div class="set-form-card">
+        <div class="set-form-card-hd">
+          <div style="font-size:24px;line-height:1">🔄</div>
+          <div><div style="font-size:15px;font-weight:800">Change-order clause</div><div style="font-size:11px;color:var(--text3)">Appended to every change order document</div></div>
+        </div>
+        <div style="padding:14px 16px">
+          <textarea id="set-co-terms" rows="4" style="font-size:12px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box" placeholder="Changes to the original scope are subject to additional charges…"></textarea>
+        </div>
+      </div>
+      <div class="set-form-card" style="margin-bottom:16px">
+        <div class="set-form-card-hd">
+          <div style="font-size:24px;line-height:1">✍️</div>
+          <div><div style="font-size:15px;font-weight:800">UETA disclosure</div><div style="font-size:11px;color:var(--text3)">Electronic signature consent statement</div></div>
+        </div>
+        <div style="padding:14px 16px">
+          <div id="set-ueta-preview" style="font-size:11px;color:var(--text3);line-height:1.6;padding:10px;background:var(--bg2);border-radius:var(--r);border:1px solid var(--border)">By clicking "I Agree," you consent to the use of electronic records and signatures in accordance with the Electronic Signatures in Global and National Commerce Act (ESIGN) and applicable state law (UETA).</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:6px">Standard UETA text — required in all 50 states. Automatically included on every proposal.</div>
+        </div>
+      </div>
+      <button class="btn btn-p" onclick="saveSettings()" style="width:100%;padding:13px">Save</button>
+    </div>
+  </div>
+
+  <!-- Your trades detail -->
+  <div class="set-detail" id="setd-trades">
+    <div class="set-detail-hd">
+      <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
+      <div class="set-idx-icon" style="flex-shrink:0">🏗️</div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px" id="set-trades-det-title">Your trades</div><div style="font-size:11px;color:var(--text3)">Manage which trades you offer</div></div>
+    </div>
+    <div style="padding:16px">
+      <div id="set-trades-content" style="margin-top:4px"></div>
+    </div>
+  </div>
+
+  <!-- Integrations detail -->
+  <div class="set-detail" id="setd-integrations">
+    <div class="set-detail-hd">
+      <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
+      <div class="set-idx-icon" style="flex-shrink:0">🔌</div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Integrations</div><div style="font-size:11px;color:var(--text3)">External services connected to your account</div></div>
+    </div>
+    <div style="padding:16px">
+      <div style="font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.5">Third-party services you opt into. Each shows its connection status and a tap-target to connect or manage.</div>
+      <div class="set-form-card" style="margin-bottom:14px">
+        <div class="set-form-card-hd">
+          <div style="font-size:24px;line-height:1">🔌</div>
+          <div><div style="font-size:15px;font-weight:800">Connected services</div><div style="font-size:11px;color:var(--text3)">at a glance</div></div>
+        </div>
+        <div id="integrations-list">
+          <div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">Loading…</div>
+        </div>
+      </div>
+      <!-- Stripe CC surcharge settings (shown when Stripe is connected) -->
+      <div id="stripe-surcharge-wrap" style="display:none">
+        <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Stripe settings</div>
+        <div class="set-form-card">
+          <div style="padding:14px 16px">
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none">
+              <input type="checkbox" id="set-cc-surcharge-enabled" onchange="document.getElementById('set-cc-surcharge-pct-wrap').style.display=this.checked?'block':'none'" style="width:18px;height:18px;margin-top:1px;accent-color:var(--blue);flex-shrink:0">
+              <div>
+                <div style="font-size:13px;font-weight:700">Pass credit card fee to client</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:2px">Clients see a fee breakdown and confirm total before paying online. Credit cards only — debit and ACH are unaffected.</div>
+              </div>
+            </label>
+            <div id="set-cc-surcharge-pct-wrap" style="display:none;margin-top:10px;padding-left:28px">
+              <div style="display:flex;align-items:center;gap:8px">
+                <input type="number" id="set-cc-surcharge-pct" min="0.5" max="4" step="0.1" style="width:72px;padding:7px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-family:inherit" value="3">
+                <span style="font-size:12px;color:var(--text3)">% fee added (max 4% per card network rules)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-p" onclick="saveSettings()" style="width:100%;margin-top:8px;padding:13px">Save</button>
+      </div>
+      <!-- Legacy Stripe Connect status div (used by existing cloud.js) -->
+      <div id="stripe-connect-status-ui" style="display:none"></div>
+    </div>
+  </div>
+
+  <!-- Tax setup detail -->
+  <div class="set-detail" id="setd-taxes">
+    <div class="set-detail-hd">
+      <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
+      <div class="set-idx-icon" style="flex-shrink:0">📄</div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Tax setup</div><div style="font-size:11px;color:var(--text3)">Mileage rate, federal brackets, state rates</div></div>
+    </div>
+    <div style="padding:16px">
+      <div class="tip" style="margin-bottom:12px"><strong>Auto-updated each January</strong> via IRS data. IRS ref: <a href="https://www.irs.gov/tax-professionals/standard-mileage-rates" style="color:var(--blue-dk)">irs.gov</a> &nbsp;·&nbsp; KS ref: <a href="https://ksrevenue.gov" style="color:var(--blue-dk)">ksrevenue.gov</a></div>
+      <input type="hidden" id="set-fs"><input type="hidden" id="set-fm"><input type="hidden" id="set-fms"><input type="hidden" id="set-fh">
+      <input type="hidden" id="set-b10"><input type="hidden" id="set-b12"><input type="hidden" id="set-b22"><input type="hidden" id="set-b24"><input type="hidden" id="set-b32"><input type="hidden" id="set-b35">
+      <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">Mileage &amp; year</div>
+      <div class="fg fg2">
+        <div class="f"><label>IRS mileage rate ($/mile)</label><input type="number" id="set-irs" step="0.001"><div style="font-size:10px;color:var(--text3);margin-top:3px">Auto-updated each January · Override manually if needed</div></div>
+        <input type="hidden" id="set-year">
+      </div>
+      <div style="font-size:12px;font-weight:700;color:var(--text2);margin:14px 0 6px">Federal standard deductions <span id="set-bracket-yr-note" style="font-size:10px;font-weight:400;color:var(--text3)">· IRS published · auto-updated</span></div>
+      <div style="background:var(--bg2);border-radius:var(--r);padding:10px 14px;margin-bottom:10px;display:grid;grid-template-columns:1fr 1fr;gap:4px 20px">
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Single</span><span id="set-fs-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Married jointly</span><span id="set-fm-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Married separately</span><span id="set-fms-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Head of household</span><span id="set-fh-disp" style="font-weight:700"></span></div>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:6px">Federal bracket tops <span style="font-size:10px;font-weight:400;color:var(--text3)">· single filer · MFJ auto-doubles</span></div>
+      <div style="background:var(--bg2);border-radius:var(--r);padding:10px 14px;margin-bottom:10px;display:grid;grid-template-columns:repeat(3,1fr);gap:4px 12px">
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">10%</span><span id="set-b10-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">12%</span><span id="set-b12-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">22%</span><span id="set-b22-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">24%</span><span id="set-b24-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">32%</span><span id="set-b32-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">35%</span><span id="set-b35-disp" style="font-weight:700"></span></div>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">
+        <span id="set-state-label">State tax rates</span>
+        <select id="set-state" onchange="onStateChange(this.value)" style="font-size:12px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);margin-left:8px;font-weight:400"><option value="">— Select state —</option><option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS">KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option></select>
+      </div>
+      <div id="set-state-info" style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.5;display:none"></div>
+      <input type="hidden" id="set-ksl"><input type="hidden" id="set-ksh"><input type="hidden" id="set-kst"><input type="hidden" id="set-kss"><input type="hidden" id="set-ksm">
+      <div style="background:var(--bg2);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:grid;grid-template-columns:1fr 1fr;gap:4px 20px">
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Lower rate</span><span id="set-ksl-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Upper rate</span><span id="set-ksh-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Bracket top (single)</span><span id="set-kst-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Std deduction — single</span><span id="set-kss-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Std deduction — MFJ</span><span id="set-ksm-disp" style="font-weight:700"></span></div>
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px;margin-bottom:12px">Auto-updated annually from IRS &amp; state data.</div>
+      <div class="fg fg2">
+        <div class="f"><label>Filing status</label>
+          <select id="set-txstatus" onchange="S.txStatus=this.value;saveAll();applySettings();const s1=document.getElementById('sum-tx-status');if(s1)s1.value=this.value;const s2=document.getElementById('tx-status');if(s2)s2.value=this.value;" style="font-size:13px">
+            <option value="single">Single</option>
+            <option value="mfj">Married filing jointly</option>
+            <option value="mfs">Married filing separately</option>
+            <option value="hoh">Head of household</option>
+            <option value="qss">Qualifying surviving spouse</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-p" onclick="saveSettings()" style="width:100%;margin-top:16px;padding:13px">Save</button>
+    </div>
+  </div>
+
+  <!-- Cloud sync detail -->
+  <div class="set-detail" id="setd-cloud">
+    <div class="set-detail-hd">
+      <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
+      <div class="set-idx-icon" style="flex-shrink:0">☁️</div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Cloud sync</div><div style="font-size:11px;color:var(--text3)">Backup, restore, and device access</div></div>
+    </div>
+    <div style="padding:16px">
+      <div id="set-cloud-status-ui" style="margin-bottom:16px">
+        <div style="font-size:12px;color:var(--text3);padding:8px 0">Loading sync status…</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-p" onclick="if(supaEnabled())supaSignOut()" style="width:100%;padding:13px">Sign out of cloud sync</button>
+        <button id="location-settings-btn" class="btn" onclick="resetLocationPermission()" style="width:100%;padding:13px;font-size:13px">📍 Location access</button>
+        <button class="btn" onclick="resetSettings()" style="width:100%;padding:13px;font-size:13px">Reset all settings to defaults</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Data & export detail -->
+  <div class="set-detail" id="setd-data">
+    <div class="set-detail-hd">
+      <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
+      <div class="set-idx-icon" style="flex-shrink:0">📦</div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Data &amp; export</div><div style="font-size:11px;color:var(--text3)">Delete by category or factory reset</div></div>
+    </div>
+    <div style="padding:16px">
+
+      <!-- Per-category delete -->
+      <div style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--text3);margin-bottom:10px">Delete by category</div>
+      <div class="card" style="padding:0;overflow:hidden;margin-bottom:20px">
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)">
+          <div>
+            <div style="font-size:14px;font-weight:700">Clients &amp; bids</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">All leads, proposals, jobs, and payments</div>
+          </div>
+          <button class="btn btn-sm" onclick="clearClientsOnly()" style="color:var(--c-red);border-color:var(--c-red);flex-shrink:0;white-space:nowrap">Delete</button>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)">
+          <div>
+            <div style="font-size:14px;font-weight:700">Expenses</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">All recorded business expenses</div>
+          </div>
+          <button class="btn btn-sm" onclick="clearExpensesOnly()" style="color:var(--c-red);border-color:var(--c-red);flex-shrink:0;white-space:nowrap">Delete</button>
+        </div>
+
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px">
+          <div>
+            <div style="font-size:14px;font-weight:700">Mileage</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">All drive logs and GPS trips</div>
+          </div>
+          <button class="btn btn-sm" onclick="clearMileageOnly()" style="color:var(--c-red);border-color:var(--c-red);flex-shrink:0;white-space:nowrap">Delete</button>
+        </div>
+
+      </div>
+
+      <!-- Nuclear option -->
+      <div style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--c-red);margin-bottom:10px">Danger zone</div>
+      <div style="background:var(--bg-card);border-radius:var(--r);border:1px solid var(--c-red);padding:16px">
+        <div style="font-size:13px;font-weight:700;color:var(--c-red);margin-bottom:4px">Factory reset</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Wipes everything — clients, bids, mileage, expenses, fleet, settings. Cannot be undone.</div>
+        <button class="btn btn-r" onclick="clearAllData()" style="width:100%;padding:12px;font-size:13px">🗑️ Clear ALL data — start fresh</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Developer detail (hidden unless dev account) -->
+  <div class="set-detail" id="setd-dev">
+    <div class="set-detail-hd">
+      <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
+      <div class="set-idx-icon" style="flex-shrink:0">🛠️</div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Developer</div><div style="font-size:11px;color:var(--text3)">Trade switcher, debug tools</div></div>
+    </div>
+    <div style="padding:16px">
+      <!-- Dev trade switcher grid -->
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px" id="dev-trade-grid"></div>
-      <div style="font-size:11px;color:var(--text3)">Dev account only — changes business_type in DB immediately.</div>
-      <div id="dev-support-section" style="margin-top:14px"></div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:14px">Dev account only — changes business_type in DB immediately.</div>
+      <div id="dev-support-section" style="margin-bottom:14px"></div>
 
       <!-- Legal Compliance Inspector -->
-      <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:14px">
+      <div style="border-top:1px solid var(--border);padding-top:14px">
         <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">⚖️ Legal Compliance Inspector</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
           <div class="f" style="margin:0">
@@ -2537,320 +3200,30 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
     </div>
   </div>
-  <!-- Keep legacy id for _renderDevTradeCard compatibility -->
+  <!-- Legacy compat ID kept for _renderDevTradeCard -->
   <div id="dev-trade-card" style="display:none"></div>
 
-  <!-- Your Trades -->
-  <div class="acc-sec" id="acc-trades">
-    <div class="acc-hd" onclick="toggleAccSection('acc-trades')">
-      <div class="acc-hd-left">
-        <div class="acc-hd-title">Your Trades</div>
-        <div class="acc-hd-sub" id="acc-trades-sub">Tap to manage</div>
-      </div>
-      <span class="acc-hd-arrow">▼</span>
+  <!-- About detail -->
+  <div class="set-detail" id="setd-about">
+    <div class="set-detail-hd">
+      <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
+      <div class="set-idx-icon" style="flex-shrink:0">ℹ️</div>
+      <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">About TradeDesk</div><div id="set-about-version-detail" style="font-size:11px;color:var(--text3)">Version info</div></div>
     </div>
-    <div class="acc-body">
-      <div id="set-trades-content" style="margin-top:8px"></div>
-    </div>
-  </div>
-
-  <!-- Business Info -->
-  <div class="acc-sec" id="acc-biz">
-    <div class="acc-hd" onclick="toggleAccSection('acc-biz')">
-      <div class="acc-hd-left">
-        <div class="acc-hd-title">Business Info</div>
-        <div class="acc-hd-sub">Name, contact, logo, payments</div>
+    <div style="padding:16px">
+      <div class="card" style="margin-bottom:12px">
+        <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:4px">Version</div>
+        <div id="set-about-ver" style="font-family:monospace;font-size:14px;color:var(--text);font-weight:700"></div>
       </div>
-      <span class="acc-hd-arrow">▼</span>
-    </div>
-    <div class="acc-body">
-      <div class="fg fg2" style="margin-top:8px">
-        <div class="f"><label>Your name</label><input id="set-owner-name" placeholder="Your name"></div>
-        <div class="f"><label>Business name</label><input id="set-bname"></div>
-        <div class="f"><label>Phone</label><input id="set-bphone" type="tel" maxlength="12" oninput="fmtPhone(this)"></div>
-        <div class="f"><label>Reply-to email</label><input type="email" id="set-bemail" placeholder="you@yourcompany.com"></div>
-        <div class="f"><label>License / insured</label><input id="set-blic"></div>
-        <div class="f"><label>Years of experience</label><input type="number" id="set-byears" min="1" max="50" placeholder="e.g. 12"></div>
-        <div class="f"><label>Google review link <span style="font-size:10px;font-weight:400;color:var(--text3)">(sent after job completion)</span></label><input type="url" id="set-review-url" placeholder="https://g.page/r/..."></div>
-        <div class="f" style="grid-column:1/-1"><label>Mapbox API key <span style="font-size:10px;font-weight:400;color:var(--text3)">(address autocomplete — free account at mapbox.com)</span></label><input id="set-mapbox-key" placeholder="pk.ey..." autocomplete="off" style="font-family:monospace;font-size:12px"></div>
-        <div class="f" style="grid-column:1/-1"><label>Your client hub subdomain <span style="font-size:10px;font-weight:400;color:var(--text3)">(e.g. "loganspainting" → loganspainting.tradedeskpro.app)</span></label><input id="set-subdomain" placeholder="loganspainting" autocomplete="off" style="font-family:monospace;font-size:12px"></div>
-        <div class="f" style="grid-column:1/-1">
-          <label>Proposal logo <span style="font-size:10px;font-weight:400;color:var(--text3)">(replaces business name text on proposals)</span></label>
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <div id="set-logo-preview" style="height:60px;min-width:120px;background:linear-gradient(135deg,#1a365d,#2a4a7f);border-radius:6px;display:flex;align-items:center;justify-content:center;padding:0 10px;box-sizing:border-box;flex-shrink:0"></div>
-            <div style="flex:1;min-width:160px">
-              <input type="file" id="set-logo-file" accept="image/png" style="display:none" onchange="handleLogoUpload(this)">
-              <button class="btn btn-sm" onclick="document.getElementById('set-logo-file').click()">Upload image</button>
-              <button class="btn btn-sm" onclick="clearLogoSetting()" style="margin-left:6px">Remove</button>
-              <div style="font-size:10px;color:var(--text3);margin-top:5px">PNG, JPG, or SVG. Shown on every proposal header.</div>
-            </div>
-          </div>
-        </div>
-        <div class="f"><label>Hub accent color <span style="font-size:10px;font-weight:400;color:var(--text3)">(buttons &amp; links in client hub)</span></label><input type="color" id="set-brandcolor" value="#2D5DA8" oninput="_updateBootPreview()"></div>
-        <div id="boot-preview-wrap" style="grid-column:1/-1;border-radius:12px;overflow:hidden;height:100px;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px" aria-label="Boot screen preview">
-          <div id="boot-preview-bg" style="position:absolute;inset:0;background:radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)"></div>
-          <div id="boot-preview-logo" style="position:relative;display:flex;align-items:baseline;gap:0"><span id="boot-preview-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:22px;color:#fff;letter-spacing:-1px">TradeDesk</span><span id="boot-preview-pro" style="font-size:8px;font-weight:800;color:#5C8FD4;background:rgba(45,93,168,.18);border:1px solid rgba(45,93,168,.36);padding:2px 5px;border-radius:4px;text-transform:uppercase;letter-spacing:.06em;margin-left:5px;vertical-align:4px">Pro</span></div>
-          <div style="position:relative;width:80px;height:2px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden"><div id="boot-preview-bar" style="width:60%;height:100%;background:#2D5DA8;border-radius:2px"></div></div>
-        </div>
-        <div class="f"><label>Website URL <span style="font-size:10px;font-weight:400;color:var(--text3)">(shown in client hub footer)</span></label><input type="url" id="set-bwebsite" placeholder="https://yourwebsite.com"></div>
-        <div class="f" style="grid-column:1/-1">
-          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none">
-            <input type="checkbox" id="set-home-office" onchange="S.homeOffice=this.checked;saveAll()" style="width:18px;height:18px;margin-top:1px;accent-color:var(--blue);flex-shrink:0">
-            <div>
-              <div style="font-size:13px;font-weight:700">I have a dedicated home office</div>
-              <div style="font-size:11px;color:var(--text3);margin-top:2px">A room used ONLY for business — scheduling, estimating, billing. Unlocks the commuting deduction: drives from home to first job site become deductible business miles instead of non-deductible commutes. (IRS §280A)</div>
-            </div>
-          </label>
-        </div>
-      </div>
-      <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
-        <div style="font-size:13px;font-weight:700;margin-bottom:8px">💳 Stripe Connect <span style="font-size:10px;font-weight:400;color:var(--text3)">Accept card &amp; bank payments directly</span></div>
-        <div id="stripe-connect-status-ui">
-          <div style="font-size:12px;color:var(--text3);padding:4px 0">Checking Stripe status…</div>
-        </div>
-        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
-          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none">
-            <input type="checkbox" id="set-cc-surcharge-enabled" onchange="document.getElementById('set-cc-surcharge-pct-wrap').style.display=this.checked?'block':'none'" style="width:18px;height:18px;margin-top:1px;accent-color:var(--blue);flex-shrink:0">
-            <div>
-              <div style="font-size:13px;font-weight:700">Pass credit card fee to client</div>
-              <div style="font-size:11px;color:var(--text3);margin-top:2px">Clients see a fee breakdown and confirm total before paying online. Credit cards only — debit and ACH are unaffected.</div>
-            </div>
-          </label>
-          <div id="set-cc-surcharge-pct-wrap" style="display:none;margin-top:10px;padding-left:28px">
-            <div style="display:flex;align-items:center;gap:8px">
-              <input type="number" id="set-cc-surcharge-pct" min="0.5" max="4" step="0.1" style="width:72px;padding:7px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-family:inherit" value="3">
-              <span style="font-size:12px;color:var(--text3)">% fee added (max 4% per card network rules)</span>
-            </div>
-          </div>
-        </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn" onclick="resetSettings()" style="width:100%;padding:12px;font-size:13px">Reset all settings to defaults</button>
       </div>
     </div>
   </div>
 
-  <!-- SMS Templates -->
-  <div class="acc-sec" id="acc-sms">
-    <div class="acc-hd" onclick="toggleAccSection('acc-sms')">
-      <div class="acc-hd-left">
-        <div class="acc-hd-title">SMS Templates</div>
-        <div class="acc-hd-sub">Customize every message sent to clients</div>
-      </div>
-      <span class="acc-hd-arrow">▼</span>
-    </div>
-    <div class="acc-body">
-      <div style="font-size:11px;color:var(--text3);margin:8px 0 14px;line-height:1.5">Variables: <code>{name}</code> first name &nbsp;·&nbsp; <code>{business}</code> your biz name &nbsp;·&nbsp; <code>{url}</code> proposal/hub link &nbsp;·&nbsp; <code>{amount}</code> balance &nbsp;·&nbsp; <code>{address}</code> job address</div>
-      <div class="f" style="margin-bottom:12px">
-        <label style="display:flex;justify-content:space-between;align-items:center">Hub send <button type="button" onclick="_resetSmsTemplate('set-sms-hub')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
-        <textarea id="set-sms-hub" rows="2" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box" placeholder="Hi {name}, here's your project hub from {business}: {url}"></textarea>
-      </div>
-      <div class="f" style="margin-bottom:12px">
-        <label style="display:flex;justify-content:space-between;align-items:center">Proposal follow-up <button type="button" onclick="_resetSmsTemplate('set-sms-followup')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
-        <textarea id="set-sms-followup" rows="4" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box"></textarea>
-      </div>
-      <div class="f" style="margin-bottom:12px">
-        <label style="display:flex;justify-content:space-between;align-items:center">Collection — Reminder <button type="button" onclick="_resetSmsTemplate('set-sms-reminder')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
-        <textarea id="set-sms-reminder" rows="3" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box"></textarea>
-      </div>
-      <div class="f" style="margin-bottom:12px">
-        <label style="display:flex;justify-content:space-between;align-items:center">Collection — 2nd Notice <button type="button" onclick="_resetSmsTemplate('set-sms-second')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
-        <textarea id="set-sms-second" rows="3" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box"></textarea>
-      </div>
-      <div class="f" style="margin-bottom:12px">
-        <label style="display:flex;justify-content:space-between;align-items:center">Collection — Intent to Lien <button type="button" onclick="_resetSmsTemplate('set-sms-intent')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
-        <textarea id="set-sms-intent" rows="4" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box"></textarea>
-      </div>
-    </div>
-  </div>
+  <!-- Saved notification (kept for compatibility) -->
+  <div id="set-saved" style="display:none;margin:8px 16px" class="tip tip-s">Settings saved!</div>
 
-  <!-- Goals -->
-  <div class="acc-sec" id="acc-goals">
-    <div class="acc-hd" onclick="toggleAccSection('acc-goals')">
-      <div class="acc-hd-left">
-        <div class="acc-hd-title">Goals</div>
-        <div class="acc-hd-sub">Monthly revenue target</div>
-      </div>
-      <span class="acc-hd-arrow">▼</span>
-    </div>
-    <div class="acc-body">
-      <div class="fg fg2" style="margin-top:8px">
-        <div class="f">
-          <label>Monthly revenue goal ($)</label>
-          <input type="number" id="set-goal-monthly" placeholder="e.g. 8000" min="0" step="500">
-          <div style="font-size:10px;color:var(--text3);margin-top:3px">What do you want to bring in each month?</div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Estimator Defaults -->
-  <div class="acc-sec" id="acc-est">
-    <div class="acc-hd" onclick="toggleAccSection('acc-est')">
-      <div class="acc-hd-left">
-        <div class="acc-hd-title">Estimator Defaults</div>
-        <div class="acc-hd-sub">Margin, coverage, markup</div>
-      </div>
-      <span class="acc-hd-arrow">▼</span>
-    </div>
-    <div class="acc-body">
-      <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px;margin-top:8px">
-        <div class="f"><label>Default labor rate ($/hr)</label><input id="set-labor-rate" type="number" placeholder="45" min="0" step="5"></div>
-        <div class="f"><label>Profit margin target (%)</label><input type="number" id="set-margin"></div>
-        <div class="f"><label>Paint coverage (sq ft/gal)</label><input type="number" id="set-cov"></div>
-        <div class="f"><label>Materials markup (%)</label><input type="number" id="set-mm"></div>
-        <div class="f"><label>Supplies rate ($/sq ft)</label><input type="number" id="set-supplies-rate" step="0.01" placeholder="0.40"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Taxes -->
-  <div class="acc-sec" id="acc-taxes">
-    <div class="acc-hd" onclick="toggleAccSection('acc-taxes')">
-      <div class="acc-hd-left">
-        <div class="acc-hd-title">Taxes</div>
-        <div class="acc-hd-sub">Mileage rate, federal brackets, state rates</div>
-      </div>
-      <span class="acc-hd-arrow">▼</span>
-    </div>
-    <div class="acc-body">
-      <div class="tip" style="margin-top:8px"><strong>Auto-updated each January</strong> via IRS data. IRS ref: <a href="https://www.irs.gov/tax-professionals/standard-mileage-rates" style="color:var(--blue-dk)">irs.gov</a> &nbsp;·&nbsp; KS ref: <a href="https://ksrevenue.gov" style="color:var(--blue-dk)">ksrevenue.gov</a></div>
-      <input type="hidden" id="set-fs"><input type="hidden" id="set-fm"><input type="hidden" id="set-fms"><input type="hidden" id="set-fh">
-      <input type="hidden" id="set-b10"><input type="hidden" id="set-b12"><input type="hidden" id="set-b22"><input type="hidden" id="set-b24"><input type="hidden" id="set-b32"><input type="hidden" id="set-b35">
-      <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 8px">Mileage &amp; year</div>
-      <div class="fg fg2">
-        <div class="f"><label>IRS mileage rate ($/mile)</label><input type="number" id="set-irs" step="0.001"><div style="font-size:10px;color:var(--text3);margin-top:3px">Auto-updated each January · Override manually if needed</div></div>
-        <input type="hidden" id="set-year">
-      </div>
-      <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 6px">Federal standard deductions <span id="set-bracket-yr-note" style="font-size:10px;font-weight:400;color:var(--text3)">· IRS published · auto-updated</span></div>
-      <div style="background:var(--bg2);border-radius:var(--r);padding:10px 14px;margin-bottom:10px;display:grid;grid-template-columns:1fr 1fr;gap:4px 20px">
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Single</span><span id="set-fs-disp" style="font-weight:700"></span></div>
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Married jointly</span><span id="set-fm-disp" style="font-weight:700"></span></div>
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Married separately</span><span id="set-fms-disp" style="font-weight:700"></span></div>
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Head of household</span><span id="set-fh-disp" style="font-weight:700"></span></div>
-      </div>
-      <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 6px">Federal bracket tops <span style="font-size:10px;font-weight:400;color:var(--text3)">· single filer · MFJ auto-doubles</span></div>
-      <div style="background:var(--bg2);border-radius:var(--r);padding:10px 14px;margin-bottom:10px;display:grid;grid-template-columns:repeat(3,1fr);gap:4px 12px">
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">10%</span><span id="set-b10-disp" style="font-weight:700"></span></div>
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">12%</span><span id="set-b12-disp" style="font-weight:700"></span></div>
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">22%</span><span id="set-b22-disp" style="font-weight:700"></span></div>
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">24%</span><span id="set-b24-disp" style="font-weight:700"></span></div>
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">32%</span><span id="set-b32-disp" style="font-weight:700"></span></div>
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">35%</span><span id="set-b35-disp" style="font-weight:700"></span></div>
-      </div>
-      <div style="font-size:12px;font-weight:700;color:var(--text2);margin:12px 0 8px">
-        <span id="set-state-label">State tax rates</span>
-        <select id="set-state" onchange="onStateChange(this.value)" style="font-size:12px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);margin-left:8px;font-weight:400"><option value="">— Select state —</option><option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS">KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option></select>
-      </div>
-      <div id="set-state-info" style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.5;display:none"></div>
-      <input type="hidden" id="set-ksl"><input type="hidden" id="set-ksh"><input type="hidden" id="set-kst"><input type="hidden" id="set-kss"><input type="hidden" id="set-ksm">
-      <div style="background:var(--bg2);border-radius:var(--r);padding:10px 14px;margin-bottom:6px;display:grid;grid-template-columns:1fr 1fr;gap:4px 20px">
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Lower rate</span><span id="set-ksl-disp" style="font-weight:700"></span></div>
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Upper rate</span><span id="set-ksh-disp" style="font-weight:700"></span></div>
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Bracket top (single)</span><span id="set-kst-disp" style="font-weight:700"></span></div>
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Std deduction — single</span><span id="set-kss-disp" style="font-weight:700"></span></div>
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Std deduction — MFJ</span><span id="set-ksm-disp" style="font-weight:700"></span></div>
-      </div>
-      <div style="font-size:10px;color:var(--text3);margin-top:4px">Auto-updated annually from IRS &amp; state data. Rates auto-fill when you select a state.</div>
-      <div class="fg fg2" style="margin-top:12px">
-        <div class="f"><label>Filing status</label>
-          <select id="set-txstatus" onchange="S.txStatus=this.value;saveAll();applySettings();const s1=document.getElementById('sum-tx-status');if(s1)s1.value=this.value;const s2=document.getElementById('tx-status');if(s2)s2.value=this.value;" style="font-size:13px">
-            <option value="single">Single</option>
-            <option value="mfj">Married filing jointly</option>
-            <option value="mfs">Married filing separately</option>
-            <option value="hoh">Head of household</option>
-            <option value="qss">Qualifying surviving spouse</option>
-          </select>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Sherwin-Williams — painting trade only -->
-  <div class="acc-sec" id="acc-sw" style="display:none">
-    <div class="acc-hd" onclick="toggleAccSection('acc-sw')">
-      <div class="acc-hd-left">
-        <div class="acc-hd-title">Sherwin-Williams Paint Prices</div>
-        <div class="acc-hd-sub" id="sw-price-updated">Last updated: Apr 2025</div>
-      </div>
-      <span class="acc-hd-arrow">▼</span>
-    </div>
-    <div class="acc-body">
-      <div style="font-size:12px;color:var(--text2);margin:8px 0 10px;line-height:1.6">Contractor pricing used in material cost calculations. PRO+ account estimated rates — actual price depends on your discount tier.</div>
-      <div id="sw-price-table" style="display:grid;grid-template-columns:1fr auto auto;gap:4px 12px;font-size:11px;margin-bottom:12px">
-        <span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Product</span><span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Contractor</span><span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Retail</span>
-        <span>ProMar 700</span><span style="color:var(--green-mid)" id="spp-pm700">$20/gal</span><span style="color:var(--text3)">$55</span>
-        <span>ProMar 200</span><span style="color:var(--green-mid)" id="spp-pm200">$32/gal</span><span style="color:var(--text3)">$83</span>
-        <span>SuperPaint</span><span style="color:var(--green-mid)" id="spp-sp">$37/gal</span><span style="color:var(--text3)">$65</span>
-        <span>Cashmere</span><span style="color:var(--green-mid)" id="spp-cash">$40/gal</span><span style="color:var(--text3)">$60</span>
-        <span>Duration Home</span><span style="color:var(--green-mid)" id="spp-dur">$46/gal</span><span style="color:var(--text3)">$70</span>
-        <span>Emerald</span><span style="color:var(--green-mid)" id="spp-em">$52/gal</span><span style="color:var(--text3)">$74</span>
-        <span>SuperPaint Ext.</span><span style="color:var(--green-mid)" id="spp-spe">$38/gal</span><span style="color:var(--text3)">$63</span>
-        <span>Duration Ext.</span><span style="color:var(--green-mid)" id="spp-dure">$48/gal</span><span style="color:var(--text3)">$81</span>
-        <span>Emerald Urethane</span><span style="color:var(--green-mid)" id="spp-emure">$58/gal</span><span style="color:var(--text3)">$95</span>
-      </div>
-      <button class="btn btn-p" id="sw-price-refresh-btn" onclick="swRefreshPrices()" style="font-size:13px">🔄 Refresh SW prices via AI</button>
-      <div id="sw-price-refresh-status" style="font-size:12px;color:var(--text3);margin-top:8px;display:none"></div>
-    </div>
-  </div>
-
-  <!-- Labor Rates — painting trade -->
-  <div class="acc-sec" id="acc-labor-painting" style="display:none">
-    <div class="acc-hd" onclick="toggleAccSection('acc-labor-painting')">
-      <div class="acc-hd-left">
-        <div class="acc-hd-title">🎨 Painting Labor Rates</div>
-        <div class="acc-hd-sub">$/sq ft or flat rate by surface type</div>
-      </div>
-      <span class="acc-hd-arrow">▼</span>
-    </div>
-    <div class="acc-body">
-      <div class="tip" style="margin-top:8px">Base labor rates before scope add-ons. If a $2,500 job feels like it should show more profit, raise these to match your real pricing.</div>
-      <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px;margin-top:8px">
-        <div class="f"><label>Walls ($/actual wall sqft)</label><input type="number" id="set-r-walls" step="0.05"></div>
-        <div class="f"><label>Ceiling ($/sqft)</label><input type="number" id="set-r-ceil" step="0.05"></div>
-        <div class="f"><label>Trim ($/lin ft)</label><input type="number" id="set-r-trim" step="0.05"></div>
-        <div class="f"><label>Doors ($/door)</label><input type="number" id="set-r-door" step="1"></div>
-        <div class="f"><label>Windows ($/window)</label><input type="number" id="set-r-win" step="1"></div>
-        <div class="f"><label>Exterior walls ($/sf)</label><input type="number" id="set-r-ext" step="0.05"></div>
-        <div class="f"><label>Deck/fence ($/sf)</label><input type="number" id="set-r-deck" step="0.05"></div>
-      </div>
-      <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.6">
-        Walls rate is per room sq ft (L×W floor area). Trim is per linear foot. Add-ons (sand, spackle, primer) stack automatically. Defaults target Topeka, KS at ~$1,200 for a full 11×11 dining room.
-      </div>
-    </div>
-  </div>
-
-
-  <!-- Labor Rates — other trades (generic) -->
-  <div class="acc-sec" id="acc-labor-generic" style="display:none">
-    <div class="acc-hd" onclick="toggleAccSection('acc-labor-generic')">
-      <div class="acc-hd-left">
-        <div class="acc-hd-title" id="acc-labor-generic-title">Labor Rates</div>
-        <div class="acc-hd-sub">Hourly rate for line-item estimates</div>
-      </div>
-      <span class="acc-hd-arrow">▼</span>
-    </div>
-    <div class="acc-body">
-      <div class="fg fg2" style="margin-top:8px">
-        <div class="f"><label>Default hourly rate ($/hr)</label><input id="set-labor-rate-generic" type="number" placeholder="75" min="0" step="5"><div style="font-size:10px;color:var(--text3);margin-top:3px">Used as default rate in line-item estimates for this trade.</div></div>
-      </div>
-    </div>
-  </div>
-
-
-  <div class="brow">
-    <button class="btn btn-p" onclick="saveSettings()">Save all settings</button>
-    <button class="btn" onclick="if(supaEnabled())supaSignOut()" style="font-size:12px;color:var(--text3)">Sign out of cloud sync</button>
-    <button class="btn" onclick="resetSettings()">Reset defaults</button>
-    <button class="btn" id="location-settings-btn" onclick="resetLocationPermission()" style="font-size:12px">📍 Location access</button>
-  </div>
-  <div id="set-saved" style="display:none;margin-top:8px" class="tip tip-s">Settings saved!</div>
-
-  <div class="card" style="margin-top:16px;border:1px solid var(--c-red)">
-    <div class="card-hd" style="color:var(--c-red)">Danger zone</div>
-    <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Use this to wipe all test data and start fresh. Cannot be undone.</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-r" onclick="clearAllData()" style="font-size:13px">&#128465; Clear ALL data — start fresh</button>
-      <button class="btn" onclick="clearMileageOnly()" style="font-size:13px;color:var(--c-red);border-color:var(--c-red)">Clear mileage only</button>
-    </div>
-  </div>
 </div>
 <div class="pg" id="pg-checklist">
   <div class="tbar">
@@ -3188,6 +3561,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     </button>
   </div>
 </div>
+<script src="js/lib/xlsx.min.js"></script>
 <script src="js/constants.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/data.js"></script>

@@ -24,20 +24,25 @@ pass before main is updated.
    comments, and failures are delivered directly to Claude without polling.
 
 4. **Wait for CI** — GitHub Actions runs Playwright (WebKit + Chromium).
-   - ✅ All pass → merge the PR via `mcp__github__merge_pull_request`.
-     Do not wait for the user to ask. Merge automatically when green.
+   - ✅ All pass → report green to the user and **wait for explicit merge approval**.
    - ❌ Any fail → read check run output via `mcp__github__pull_request_read`
      with `get_check_runs`, fix on the feature branch, push again.
      CI reruns automatically. Loop until green.
    - ⚠️ Flaky (fails then passes on retry) → investigate and fix before merging.
 
-5. **Merge** only when CI is green:
-   Use `mcp__github__merge_pull_request` with `merge_method: squash`.
+5. **Merge only with explicit user approval.**
+   Never call `mcp__github__merge_pull_request` unless the user has said
+   "merge it", "ship it", "go ahead", or equivalent in this session.
+   Report CI results and ask: "All shards green — OK to merge?"
 
 ### Non-negotiable rules
 - **Every push must have an open PR** — create one if it doesn't exist, always.
-- **Green CI = merge immediately** — don't leave a green PR sitting unmerged.
-- Never ask the user "should I create a PR?" or "should I merge?" — just do it.
+- **NEVER merge to main without explicit user permission** — not even when CI is
+  fully green. Always ask first. This is non-negotiable.
+- Always verify CI by re-polling `get_check_runs` and confirming every shard ID
+  shows `status: completed, conclusion: success` before reporting green.
+  Do not rely solely on webhook events — they can arrive out of order or
+  with duplicate IDs.
 
 ### What "CI green" means
 - 0 hard failures across WebKit and Chromium
@@ -48,10 +53,19 @@ pass before main is updated.
 
 ## Version Bumps
 
-Every commit must bump the version in all three places simultaneously:
-- `js/cloud.js` — `APP_VERSION='MM.DD.YY.NN'`
-- `sw.js` — `CACHE = 'tradedesk-MM.DD.YY.NN'`
-- `version.json` — `{"version":"MM.DD.YY.NN"}`
+The pre-commit hook (`scripts/bump-version.js`) handles this automatically.
+**Do not manually edit version files** — the hook stages them as part of every
+`git commit`. Zero token cost.
+
+Run once after cloning: `bash scripts/install-hooks.sh`
+
+### Fallback — only if hook didn't fire
+
+If `git commit` output does NOT include `[bump-version]`, the hook is missing.
+Run `node scripts/bump-version.js` manually, then re-commit.
+
+Version format `MM.DD.YY.NN` — date in US Central Time (`TZ='America/Chicago'`),
+`NN` resets to `1` at midnight CT, increments each push same day.
 
 ---
 

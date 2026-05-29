@@ -980,4 +980,112 @@ test.describe('Vehicle management consolidation — removal regression', () => {
   test('Zero console errors across vehicle consolidation tests', async () => {
     assertNoErrors(page, 'Vehicle consolidation — zero console errors');
   });
+
+  // ── Service log UX: card link, no inline Delete, Delete in edit modal ────
+  test('Fleet card last-service row is a button that opens service log tab', async () => {
+    await goPg(page, 'pg-team');
+
+    await page.evaluate(() => {
+      S.vehicles = [{
+        name: '2022 Silverado', nickname: 'Van',
+        status: 'active', downtimeLog: [], addedDate: '2024-01-01',
+        bizUse: 100,
+      }];
+      maintenance = [{ id: 9001, vehicleName: '2022 Silverado', type: 'oil', typeLabel: 'Oil Change', date: '2025-05-01', cost: 75, odo: 42000 }];
+      renderFleetVehicles();
+    });
+    await page.waitForTimeout(200);
+
+    // The last-service row must be a <button> (not a plain <div>)
+    // Fleet cards use class "card"; the service link button contains "Oil Change"
+    const serviceBtn = page.locator('.card button').filter({ hasText: /Oil Change/ });
+    await expect(serviceBtn).toHaveCount(1);
+
+    // Clicking it should open the fleet detail modal at the service tab
+    await serviceBtn.click();
+    await page.waitForTimeout(500);
+
+    const activeTab = await page.evaluate(() => {
+      return typeof _fleetDetailTab !== 'undefined' ? _fleetDetailTab : null;
+    });
+    expect(activeTab).toBe('service');
+
+    const detailVisible = await page.evaluate(() => {
+      const el = document.getElementById('fleet-detail-overlay');
+      return !!el;
+    });
+    expect(detailVisible).toBe(true);
+
+    await page.evaluate(() => _closeFleetDetail());
+    await page.waitForTimeout(200);
+
+    assertNoErrors(page, 'Fleet card service button');
+  });
+
+  test('Service log table rows have no inline Delete link', async () => {
+    await goPg(page, 'pg-team');
+
+    await page.evaluate(() => {
+      S.vehicles = [{
+        name: '2022 Silverado', nickname: 'Van',
+        status: 'active', downtimeLog: [], addedDate: '2024-01-01',
+        bizUse: 100,
+      }];
+      maintenance = [{ id: 9002, vehicleName: '2022 Silverado', type: 'oil', typeLabel: 'Oil Change', date: '2025-05-10', cost: 80, odo: 43000 }];
+      renderFleetVehicles();
+      openFleetVehicleDetail(0);
+    });
+    await page.waitForTimeout(300);
+
+    await page.evaluate(() => setFleetDetailTab('service'));
+    await page.waitForTimeout(300);
+
+    const content = await page.locator('#fleet-detail-content').innerHTML();
+    // "Delete" must NOT appear inline in the service log rows
+    // (it lives inside the edit modal only)
+    expect(content).not.toMatch(/\bDelete\b/);
+
+    await page.evaluate(() => _closeFleetDetail());
+    await page.waitForTimeout(200);
+
+    assertNoErrors(page, 'No inline Delete in service log');
+  });
+
+  test('Edit maintenance modal shows Delete button when editing existing record', async () => {
+    await goPg(page, 'pg-team');
+
+    await page.evaluate(() => {
+      S.vehicles = [{
+        name: '2022 Silverado', nickname: 'Van',
+        status: 'active', downtimeLog: [], addedDate: '2024-01-01',
+        bizUse: 100,
+      }];
+      maintenance = [{ id: 9003, vehicleName: '2022 Silverado', type: 'oil', typeLabel: 'Oil Change', date: '2025-05-15', cost: 90, odo: 44000 }];
+      renderFleetVehicles();
+      openAddMaintenanceModal(0, 9003);
+    });
+    await page.waitForTimeout(400);
+
+    // Delete button must exist in the edit modal (ID: fleet-maint-overlay)
+    const deleteBtn = page.locator('#fleet-maint-overlay button').filter({ hasText: /Delete this record/i });
+    await expect(deleteBtn).toBeVisible();
+
+    // New record modal must NOT show Delete
+    await page.evaluate(() => { _closeMaintModal(); });
+    await page.waitForTimeout(200);
+    await page.evaluate(() => openAddMaintenanceModal(0));
+    await page.waitForTimeout(400);
+
+    const deleteBtnNew = page.locator('#fleet-maint-overlay button').filter({ hasText: /Delete this record/i });
+    await expect(deleteBtnNew).toHaveCount(0);
+
+    await page.evaluate(() => _closeMaintModal());
+    await page.waitForTimeout(200);
+
+    assertNoErrors(page, 'Delete button in edit modal only');
+  });
+
+  test('Zero console errors across service log UX tests', async () => {
+    assertNoErrors(page, 'Service log UX — zero console errors');
+  });
 });

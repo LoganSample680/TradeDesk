@@ -363,6 +363,15 @@ async function waitForAppBoot(page, timeout = 12000) {
   } catch (_) { /* no overlay — that's fine */ }
 
   await page.waitForSelector('#dash-greet', { timeout });
+
+  // Suppress day-of-week auto-modals (e.g. Friday "Week in Review") for the
+  // entire test session. The Friday summary is triggered via setTimeout(checkFridaySummary, 800)
+  // inside renderDash(). Replacing the function with a no-op means the pending timer
+  // fires harmlessly, and no modal is ever shown — regardless of which day CI runs.
+  await page.evaluate(() => {
+    if (typeof checkFridaySummary === 'function') window.checkFridaySummary = () => {};
+    document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+  });
 }
 
 /** Helper: navigate to a page and wait. */

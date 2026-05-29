@@ -463,7 +463,11 @@ test.describe('sendProposalViaEmail — replyTo is contractor email', () => {
   });
 
   test.afterEach(async () => {
-    await page.evaluate(() => document.getElementById('_email-compose-overlay')?.remove());
+    await page.evaluate(() => {
+      document.getElementById('_email-compose-overlay')?.remove();
+      // Also clear any zmodal overlays (success alerts etc) left by the send flow
+      document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+    });
     await restoreFetch(page);
   });
   test.afterAll(async () => { await page.context().close(); });

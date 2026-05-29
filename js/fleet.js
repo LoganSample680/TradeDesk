@@ -139,7 +139,12 @@ function _fleetCard(v, idx) {
       </div>
     </div>
     ${downDays>0?`<div style="margin-top:8px;font-size:11px;color:var(--red)">⏱ Down ${downDays} day${downDays===1?'':'s'} this year</div>`:''}
-    ${lastMaint?`<div style="margin-top:6px;font-size:11px;color:var(--text3)">Last: ${lastMaint.typeLabel||lastMaint.type} · ${_fleetFmtDate(lastMaint.date)}</div>`:'<div style="margin-top:6px;font-size:11px;color:var(--text3)">No service records yet</div>'}
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;gap:8px">
+      <button onclick="event.stopPropagation();openFleetVehicleDetail(${idx});setTimeout(()=>setFleetDetailTab('service'),80)" style="background:none;border:none;padding:0;cursor:pointer;text-align:left;font-size:11px;color:var(--blue);font-family:inherit;flex:1;min-width:0">
+        ${lastMaint?`🔧 ${lastMaint.typeLabel||lastMaint.type} <span style="color:var(--text3)">${_fleetFmtDate(lastMaint.date)}</span> <span style="color:var(--text3)">›</span>`:'<span style="color:var(--text3)">No service records</span>'}
+      </button>
+      <button onclick="event.stopPropagation();openAddMaintenanceModal(${idx})" class="btn btn-sm" style="font-size:11px;padding:3px 10px;flex-shrink:0">+ Log service</button>
+    </div>
     ${v.purchasePrice?`<div style="font-size:11px;color:var(--text3);margin-top:2px">Purchased: $${v.purchasePrice.toLocaleString()}${v.purchaseDate?' · '+_fleetFmtDate(v.purchaseDate):''}</div>`:''}
   </div>`;
 }
@@ -384,28 +389,47 @@ function _fleetDetailServiceHtml(v, maint) {
       <button class="btn btn-p" onclick="openAddMaintenanceModal(${_fleetDetailIdx})" style="font-size:14px;padding:12px 24px">+ Log first service</button>
     </div>`;
 
+  const _svcParts = m => {
+    const parts = [];
+    if(m.oilBrand||m.oilType) parts.push((m.oilBrand?m.oilBrand+' ':'')+m.oilType);
+    if(m.oilFilterPart) parts.push('Filter: '+m.oilFilterPart);
+    if(m.tireBrand) parts.push(m.tireBrand+(m.tireSize?' '+m.tireSize:'')+(m.tireCount?' ×'+m.tireCount:''));
+    if(m.vendor) parts.push(m.vendor);
+    return parts.join(' · ');
+  };
+
   return `
-    <button class="btn btn-p" onclick="openAddMaintenanceModal(${_fleetDetailIdx})" style="width:100%;margin-bottom:12px;font-size:14px;padding:12px">+ Log service</button>
-    ${maint.map(m=>`
-      <div style="border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;margin-bottom:8px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start">
-          <div style="flex:1">
-            <div style="font-size:13px;font-weight:700">${MAINT_TYPES[m.type]?MAINT_TYPES[m.type].icon:'🔧'} ${m.typeLabel||m.type}</div>
-            <div style="font-size:11px;color:var(--text3);margin-top:2px">${_fleetFmtDate(m.date)}${m.odo?' · '+m.odo.toLocaleString()+' mi':''}${m.vendor?' · '+m.vendor:''}</div>
-            ${m.cost?`<div style="font-size:12px;font-weight:700;color:var(--blue);margin-top:3px">$${m.cost.toLocaleString()}</div>`:''}
-            ${m.oilType?`<div style="font-size:11px;color:var(--text3);margin-top:3px">${m.oilBrand?m.oilBrand+' ':''}${m.oilType}${m.oilFilterPart?' · Filter: '+m.oilFilterPart:''}</div>`:''}
-            ${m.tireBrand?`<div style="font-size:11px;color:var(--text3);margin-top:3px">${m.tireBrand}${m.tireSize?' '+m.tireSize:''}${m.tireCount?' ×'+m.tireCount:''}</div>`:''}
-            ${m.nextOilMiles?`<div style="font-size:11px;color:var(--text3);margin-top:3px">Next at: ${m.nextOilMiles.toLocaleString()} mi${m.nextOilDate?' / '+_fleetFmtDate(m.nextOilDate):''}</div>`:''}
-            ${m.notes?`<div style="font-size:11px;color:var(--text3);margin-top:3px;font-style:italic">${m.notes}</div>`:''}
-          </div>
-          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;margin-left:8px">
-            ${m.photo?`<img src="${m.photo}" style="width:52px;height:52px;object-fit:cover;border-radius:var(--r);border:1px solid var(--border);cursor:pointer" onclick="_showMaintPhoto('${m.id}')" title="View receipt">`:''}
-            <button onclick="openAddMaintenanceModal(${_fleetDetailIdx},${m.id})" style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;padding:0;line-height:1;white-space:nowrap">Edit</button>
-            <button onclick="deleteMaintenanceRecord(${m.id})" style="background:none;border:none;color:var(--red);font-size:12px;cursor:pointer;padding:0;line-height:1">Delete</button>
-          </div>
-        </div>
+    <button class="btn btn-p" onclick="openAddMaintenanceModal(${_fleetDetailIdx})" style="width:100%;margin-bottom:10px;font-size:14px;padding:12px">+ Log service</button>
+    <div style="border:1px solid var(--border);border-radius:var(--r);overflow:hidden">
+      <!-- header row -->
+      <div style="display:grid;grid-template-columns:72px 1fr 64px 44px;gap:0;background:var(--bg2);border-bottom:1px solid var(--border);padding:6px 10px">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Date</div>
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Service / Parts</div>
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);text-align:right">Mi</div>
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);text-align:right">Cost</div>
       </div>
-    `).join('')}
+      ${maint.map((m,i)=>{
+        const parts=_svcParts(m);
+        const icon=MAINT_TYPES[m.type]?MAINT_TYPES[m.type].icon:'🔧';
+        const dateShort=m.date?new Date(m.date+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';
+        const nextInfo=m.nextOilMiles?`<div style="font-size:10px;color:var(--text3);margin-top:1px">Next: ${m.nextOilMiles.toLocaleString()} mi</div>`:'';
+        const notesInfo=m.notes?`<div style="font-size:10px;color:var(--text3);font-style:italic;margin-top:1px">${m.notes}</div>`:'';
+        return `<div style="display:grid;grid-template-columns:72px 1fr 64px 44px;gap:0;padding:8px 10px;border-bottom:1px solid var(--border);align-items:start;${i%2===1?'background:var(--bg2)':''}">
+          <div style="font-size:12px;font-weight:700;color:var(--text);padding-right:6px">${dateShort}</div>
+          <div style="min-width:0">
+            <div style="font-size:12px;font-weight:700">${icon} ${m.typeLabel||m.type}</div>
+            ${parts?`<div style="font-size:11px;color:var(--text3);margin-top:1px;word-break:break-word">${parts}</div>`:''}
+            ${nextInfo}${notesInfo}
+            <div style="margin-top:4px;display:flex;gap:10px">
+              ${m.photo?`<span style="font-size:10px;color:var(--blue);cursor:pointer" onclick="_showMaintPhoto('${m.id}')">📷 Receipt</span>`:''}
+              <span style="font-size:10px;color:var(--text3);cursor:pointer" onclick="openAddMaintenanceModal(${_fleetDetailIdx},${m.id})">Edit</span>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--text3);text-align:right;padding-left:4px">${m.odo?m.odo.toLocaleString():'—'}</div>
+          <div style="font-size:12px;font-weight:700;color:${m.cost?'var(--blue)':'var(--text3)'};text-align:right">${m.cost?'$'+m.cost.toLocaleString():'—'}</div>
+        </div>`;
+      }).join('')}
+    </div>
   `;
 }
 
@@ -635,7 +659,7 @@ function openAddVehicleModal(idx) {
       <div class="card" style="margin-bottom:12px">
         <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Purchase info</div>
         <div class="fg fg2">
-          <div class="f"><label>Purchase date</label><input type="date" id="fv-pdate" value="${v.purchaseDate||''}"></div>
+          <div class="f"><label>Purchase date</label><input type="text" id="fv-pdate" inputmode="numeric" placeholder="MM/DD/YYYY" maxlength="10" value="${v.purchaseDate?_ymdToMdY(v.purchaseDate):''}" oninput="_fmtExpDate(this)"></div>
           <div class="f"><label>Purchase price ($)</label><input type="number" id="fv-pprice" min="0" step="100" placeholder="Optional" value="${v.purchasePrice>0?v.purchasePrice:''}"></div>
         </div>
         <div class="f"><label>Odometer at purchase (mi)</label>
@@ -660,15 +684,15 @@ function openAddVehicleModal(idx) {
           <label>Tax deduction method <span style="font-size:10px;font-weight:400;color:var(--text3)">(pick one per vehicle — IRS doesn't allow both)</span></label>
           <div style="display:grid;gap:6px;margin-top:6px">
             <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1.5px solid ${(v.deductionMethod||'mileage')==='mileage'?'var(--blue)':'var(--border2)'};border-radius:var(--r);cursor:pointer;background:${(v.deductionMethod||'mileage')==='mileage'?'rgba(45,93,168,.06)':'var(--bg2)'}">
-              <input type="radio" name="fv-deduct" value="mileage" style="margin-top:2px;accent-color:var(--blue)" ${(v.deductionMethod||'mileage')==='mileage'?'checked':''}>
-              <div>
+              <input type="radio" name="fv-deduct" value="mileage" style="margin-top:2px;accent-color:var(--blue);flex-shrink:0" ${(v.deductionMethod||'mileage')==='mileage'?'checked':''}>
+              <div style="flex:1;min-width:0">
                 <div style="font-size:13px;font-weight:700">Standard mileage rate</div>
                 <div style="font-size:11px;color:var(--text3);margin-top:2px">Deduct ${((S.irsRate||0.67)*100).toFixed(0)}¢ per business mile. Simpler — no need to track every expense. Maintenance records are for your info only.</div>
               </div>
             </label>
             <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1.5px solid ${v.deductionMethod==='actual'?'var(--blue)':'var(--border2)'};border-radius:var(--r);cursor:pointer;background:${v.deductionMethod==='actual'?'rgba(45,93,168,.06)':'var(--bg2)'}">
-              <input type="radio" name="fv-deduct" value="actual" style="margin-top:2px;accent-color:var(--blue)" ${v.deductionMethod==='actual'?'checked':''}>
-              <div>
+              <input type="radio" name="fv-deduct" value="actual" style="margin-top:2px;accent-color:var(--blue);flex-shrink:0" ${v.deductionMethod==='actual'?'checked':''}>
+              <div style="flex:1;min-width:0">
                 <div style="font-size:13px;font-weight:700">Actual expenses</div>
                 <div style="font-size:11px;color:var(--text3);margin-top:2px">Deduct real costs — fuel, maintenance, depreciation at your business-use %. Requires keeping all receipts.</div>
               </div>
@@ -720,7 +744,7 @@ function saveFleetVehicle() {
     bizUse:   oldV.bizUse||100, // updated by year-end odometer report, not manual entry
     gvwr:     document.getElementById('fv-gvwr')?document.getElementById('fv-gvwr').value:'',
     deductionMethod: deductEl ? deductEl.value : (oldV.deductionMethod||'mileage'),
-    purchaseDate:  document.getElementById('fv-pdate')?document.getElementById('fv-pdate').value:'',
+    purchaseDate:  _mdYToYmd(document.getElementById('fv-pdate')?document.getElementById('fv-pdate').value:'')||'',
     purchasePrice: parseFloat(document.getElementById('fv-pprice')?document.getElementById('fv-pprice').value:0)||0,
     purchaseOdo:   parseInt(document.getElementById('fv-podo')?document.getElementById('fv-podo').value:0)||0,
     status: oldV.status||'active',
@@ -919,9 +943,12 @@ function _renderMaintModal(savedType) {
     .map(([k,d])=>`<option value="${k}"${k===selType?' selected':''}>${d.icon} ${d.label}</option>`).join('');
 
   box.innerHTML = `
-    <div class="tbar">
-      <div class="tbar-l"><div class="tbar-title">Log service — ${v.nickname||v.name}</div></div>
-      <div class="tbar-r"><button class="btn btn-ghost" onclick="_closeMaintModal()">Cancel</button></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 14px;border-bottom:1px solid var(--border)">
+      <div style="min-width:0;flex:1">
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:2px">${v.nickname||v.name}</div>
+        <div style="font-size:18px;font-weight:800;color:var(--text)">${_maintEditId?'Edit service record':'Log service'}</div>
+      </div>
+      <button class="btn btn-ghost" onclick="_closeMaintModal()" style="flex-shrink:0">Cancel</button>
     </div>
     <div style="padding:14px 16px 100px;overflow-y:auto;max-height:80vh">
       <div class="card" style="margin-bottom:12px">
@@ -930,7 +957,7 @@ function _renderMaintModal(savedType) {
           <select id="maint-type" onchange="refreshMaintTypeFields()" style="font-size:14px;font-weight:700">${typeOptions}</select>
         </div>
         <div class="fg fg2">
-          <div class="f"><label>Date</label><input type="date" id="maint-date" value="${(editRec&&editRec.date)||todayKey()}"></div>
+          <div class="f"><label>Date</label><input type="text" id="maint-date" inputmode="numeric" placeholder="MM/DD/YYYY" maxlength="10" value="${_ymdToMdY((editRec&&editRec.date)||todayKey())}" oninput="_fmtExpDate(this)"></div>
           <div class="f"><label>Odometer (mi)</label><input type="number" id="maint-odo" min="0" step="1" placeholder="Optional" value="${(editRec&&editRec.odo)||''}"></div>
         </div>
         <div class="fg fg2">
@@ -966,6 +993,7 @@ function _renderMaintModal(savedType) {
         </div>
       </div>
       <button class="btn btn-p" onclick="saveMaintRecord()" style="width:100%;padding:14px;font-size:16px;font-weight:700">Save service record</button>
+      ${_maintEditId?`<button onclick="deleteMaintenanceRecord(${_maintEditId})" style="width:100%;margin-top:8px;padding:11px;background:none;border:none;color:var(--red);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Delete this record</button>`:''}
     </div>
   `;
 
@@ -1054,8 +1082,8 @@ function _renderMaintTypeFields(type, rec) {
           <input id="m-oil-filter" placeholder="Part number" value="${(rec&&rec.oilFilterPart)||''}">
         </div>
         <div class="fg fg2">
-          <div class="f"><label>Next change (mi)</label><input type="number" id="m-next-mi" placeholder="${defaultNext||'e.g. 92000'}" value="${(rec&&rec.nextOilMiles)||defaultNext}"></div>
-          <div class="f"><label>Next change (date)</label><input type="date" id="m-next-date" value="${(rec&&rec.nextOilDate)||defaultNextDate}"></div>
+          <div class="f"><label>Next change (mi) <span style="font-size:10px;font-weight:400;color:var(--text3)">optional</span></label><input type="number" id="m-next-mi" placeholder="e.g. 92000" value="${(rec&&rec.nextOilMiles)||''}"></div>
+          <div class="f"><label>Next change (date) <span style="font-size:10px;font-weight:400;color:var(--text3)">optional</span></label><input type="text" id="m-next-date" inputmode="numeric" placeholder="MM/DD/YYYY" maxlength="10" value="${(rec&&rec.nextOilDate)?_ymdToMdY(rec.nextOilDate):''}" oninput="_fmtExpDate(this)"></div>
         </div>
       </div>`;
   } else if(type === 'brakes') {
@@ -1117,7 +1145,7 @@ function saveMaintRecord() {
   const typeEl = document.getElementById('maint-type');
   const type = typeEl ? typeEl.value : 'other';
   const dateEl = document.getElementById('maint-date');
-  const date = dateEl ? dateEl.value||todayKey() : todayKey();
+  const date = _mdYToYmd(dateEl?dateEl.value:'') || todayKey();
   const odoEl = document.getElementById('maint-odo');
   const odo = odoEl ? parseInt(odoEl.value)||0 : 0;
   const costEl = document.getElementById('maint-cost');
@@ -1152,7 +1180,7 @@ function saveMaintRecord() {
     rec.oilBrand = oilBrandEl ? (oilBrandEl.value||'').trim() : '';
     rec.oilFilterPart = oilFilterEl ? (oilFilterEl.value||'').trim() : '';
     rec.nextOilMiles = nextMiEl ? parseInt(nextMiEl.value)||0 : 0;
-    rec.nextOilDate = nextDateEl ? nextDateEl.value||'' : '';
+    rec.nextOilDate = nextDateEl ? (_mdYToYmd(nextDateEl.value)||'') : '';
   } else if(type==='brakes') {
     const axleEl = document.getElementById('m-brake-axle');
     const brandEl = document.getElementById('m-brake-brand');
@@ -1225,9 +1253,10 @@ function deleteMaintenanceRecord(id) {
     const idx = maintenance.findIndex(m=>m.id===id);
     if(idx>=0) maintenance.splice(idx,1);
     saveAll();
+    _closeMaintModal();
     _renderFleetDetailModal();
     renderFleetVehicles();
-  }, {title:'Delete record', yes:'Delete'});
+  }, {title:'Delete record', yes:'Delete', danger:true});
 }
 
 function _showMaintPhoto(id) {
