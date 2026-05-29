@@ -109,10 +109,13 @@ the suite passes. This means:
 1. Write the feature code on the feature branch
 2. Write E2E tests for it in the **same commit**: happy path + edge cases
    + an `assertNoErrors()` call to confirm zero console errors
-3. Run locally first: `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npx playwright test --project=chromium`
-4. Push → CI runs the full WebKit + Chromium suite automatically
-5. If CI fails → fix on the feature branch, push again, CI reruns
-6. When CI is green → merge via PR
+3. Push → CI runs the full WebKit + Chromium suite automatically
+4. If CI fails → fix on the feature branch, push again, CI reruns
+5. When CI is green → merge via PR
+
+**Never run tests locally.** Push and let CI handle everything.
+Local test runs dump hundreds of lines into context for no benefit —
+CI runs the same browsers and reports back via webhook.
 
 ### Console error policy
 Any `console.error` a new feature introduces is a test failure.
