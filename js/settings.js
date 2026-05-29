@@ -204,12 +204,81 @@ function _licStatusBadge(lic){
   return '';
 }
 
+// ── Service States ────────────────────────────────────────────────────────────
+const _STATE_ABBRS=['AL','AK','AZ','AR','CA','CO','CT','DC','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
+const _STATE_RE=/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/;
+function _stateNameOf(st){return(typeof STATE_TAX!=='undefined'&&STATE_TAX[st])?STATE_TAX[st].name:st;}
+function detectStateFromAddr(addr){if(!addr)return null;const m=addr.toUpperCase().match(_STATE_RE);return m?m[1]:null;}
+function _initServiceStates(){
+  // Auto-populate from existing client + bid addresses on first use
+  const found=new Set();
+  if(S.state)found.add(S.state);
+  (typeof clients!=='undefined'?clients:[]).forEach(c=>{const st=detectStateFromAddr(c.addr||'');if(st)found.add(st);});
+  (typeof bids!=='undefined'?bids:[]).forEach(b=>{const st=detectStateFromAddr(b.addr||'');if(st)found.add(st);});
+  S.serviceStates=[...found];
+  saveAll();
+}
+function _getServiceStates(){
+  if(!S.serviceStates||!S.serviceStates.length)_initServiceStates();
+  return S.serviceStates;
+}
+function addServiceState(st){
+  if(!_STATE_ABBRS.includes(st))return;
+  if(!S.serviceStates)S.serviceStates=[];
+  if(!S.serviceStates.includes(st)){S.serviceStates.push(st);S.serviceStates.sort();saveAll();}
+  document.getElementById('_svc-state-ov')?.remove();
+  renderLicensing();
+}
+function removeServiceState(st){
+  if(st===S.state)return;
+  S.serviceStates=(S.serviceStates||[]).filter(s=>s!==st);
+  saveAll();renderLicensing();
+}
+function checkAddrServiceState(addrVal){
+  const st=detectStateFromAddr(addrVal);
+  if(!st)return;
+  const states=_getServiceStates();
+  if(states.includes(st))return;
+  const stName=_stateNameOf(st);
+  document.getElementById('_svc-state-ov')?.remove();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_svc-state-ov';
+  ov.innerHTML='<div class="zmodal" style="max-width:360px"><div style="font-size:17px;font-weight:800;margin-bottom:8px">Add '+escHtml(stName)+' to Service States?</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:20px">This job is in '+escHtml(stName)+'. Adding it ensures the correct lien rights, cancellation notice, and sales tax language are applied to your documents for this state.</div>'+
+    '<div style="display:flex;gap:10px">'+
+    '<button class="btn btn-p" onclick="addServiceState(\''+escHtml(st)+'\')">Add '+escHtml(stName)+'</button>'+
+    '<button class="btn" onclick="document.getElementById(\'_svc-state-ov\')?.remove()">Not now</button>'+
+    '</div></div>';
+  document.body.appendChild(ov);
+}
+
 let _licFilter='all';
 function renderLicensing(){
   const body=document.getElementById('lic-page-body');if(!body)return;
   const expired=licenses.filter(l=>_licStatus(l)==='expired').length;
   const soon=licenses.filter(l=>_licStatus(l)==='soon').length;
   let html='';
+  // ── Service States section ────────────────────────────────────────────────
+  const _svcStates=_getServiceStates();
+  html+='<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px;margin-bottom:18px">';
+  html+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:10px">Service States</div>';
+  html+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">';
+  _svcStates.forEach(st=>{
+    const isPrimary=st===S.state;
+    const stName=_stateNameOf(st);
+    html+='<span style="display:inline-flex;align-items:center;gap:5px;background:'+(isPrimary?'var(--blue)':'var(--bg3,#e8eef7)')+';color:'+(isPrimary?'#fff':'var(--text)')+';border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700">'+escHtml(stName);
+    if(isPrimary)html+=' <span style="font-size:10px;opacity:.75;font-weight:600">(home)</span>';
+    else html+='<button onclick="removeServiceState(\''+st+'\')" style="background:none;border:none;color:inherit;opacity:.6;cursor:pointer;font-size:15px;line-height:1;padding:0 0 1px 2px;margin:0" title="Remove">×</button>';
+    html+='</span>';
+  });
+  const _addableStates=_STATE_ABBRS.filter(s=>!_svcStates.includes(s));
+  if(_addableStates.length){
+    html+='<select onchange="if(this.value){addServiceState(this.value);this.value=\'\'}" style="padding:5px 10px;border-radius:20px;border:1.5px dashed var(--border2);background:var(--bg);color:var(--text3);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit"><option value="">+ Add state</option>';
+    _addableStates.forEach(s=>{html+='<option value="'+s+'">'+escHtml(_stateNameOf(s))+'</option>';});
+    html+='</select>';
+  }
+  html+='</div>';
+  html+='<div style="font-size:11px;color:var(--text3)">Documents (lien rights, cancellation notices, sales tax) use the law for the state where the job is located. Auto-detected from client addresses.</div>';
+  html+='</div>';
   // Summary bar
   if(expired||soon){
     html+='<div style="background:'+(expired?'#fef2f2':'#fffbeb')+';border:1px solid '+(expired?'#fecaca':'#fde68a')+';border-radius:var(--r);padding:10px 14px;margin:10px 0 14px;font-size:13px;font-weight:700;color:'+(expired?'#991b1b':'#92400e')+'">'+(expired?'⚠️ '+expired+' expired':'')+(expired&&soon?' · ':'')+( soon?'🟡 '+soon+' expiring within 30 days':'')+'</div>';

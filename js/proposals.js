@@ -159,7 +159,8 @@ function _buildClientHubSnapshot(clientId){
   const _snapUserEmail=_supaUser?_supaUser.email||'':'';
   const _snapStripeOn=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
   const _snapSurchargeOn=!!(S.ccSurchargeEnabled&&_snapStripeOn);
-  const _snapState=S.state||'KS';
+  const _snapAddrM=(c.addr||'').toUpperCase().match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
+  const _snapState=(_snapAddrM?_snapAddrM[1]:null)||S.state||'KS';
   const _snapCancelDays=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].days:3;
   const _snapCancelStatute=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].statute:'16 CFR Part 429';
   return {
@@ -913,7 +914,9 @@ function buildProposal(){
   const allowWeekend=document.getElementById('e-allow-weekend')?.checked||false;
   const _depositPct=(parseFloat(document.getElementById('e-deposit-pct')?.value)||0)/100;
   const _depositAmt=Math.round(_propFinal*_depositPct*100)/100;
-  const _st=S?.state||'KS';
+  const _caddrVal=document.getElementById('e-caddr')?.value||'';
+  const _addrStateM=_caddrVal.toUpperCase().match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
+  const _st=(_addrStateM?_addrStateM[1]:null)||S?.state||'KS';
   const _cancelRule=(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_st])||{days:3,statute:'16 CFR Part 429'};
   const _cancelStat=_cancelRule.statute;
   const _cancelDays=_cancelRule.days;

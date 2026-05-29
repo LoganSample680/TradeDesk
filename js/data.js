@@ -77,7 +77,7 @@ let gps={active:false,startCoords:null,endCoords:null,startTime:null,clientId:nu
 let _activeTimer=null; // {jobId,jobName,clientName,startTime,timerInterval}
 
 
-let S={bitlyKey:'',mapboxKey:'',goalMonthly:0,laborRate:45,irsRate:.725,irsRateYear:2026,bracketYear:0,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],subcontractors:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{},baddr:'',bcity:'',bzip:'',poweredBy:true,customTerms:'',coTerms:''};
+let S={bitlyKey:'',mapboxKey:'',goalMonthly:0,laborRate:45,irsRate:.725,irsRateYear:2026,bracketYear:0,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],subcontractors:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{},baddr:'',bcity:'',bzip:'',poweredBy:true,customTerms:'',coTerms:'',serviceStates:[]};
 
 // ZJ's logo — SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
 // Only shown for ZJ's Painting account — other accounts see plain business name text.
