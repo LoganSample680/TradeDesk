@@ -351,7 +351,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const APP_VERSION='05.29.26.1';
+const APP_VERSION='05.29.26.27';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -471,6 +471,7 @@ let _proposalViewsByBidContractor={};  // contractor previewed the proposal
 // View count maps — how many times each event type has occurred per bid
 let _proposalViewsByBidHubCount={};    // number of hub opens
 let _proposalViewsByBidClientCount={}; // number of proposal opens
+let _proposalViewsSig=''; // JSON signature of last fetch — skip renderDash() when data is unchanged
 // Expose on window so Playwright E2E tests can inject test data via page.evaluate()
 // (let declarations are not window properties in browser scripts)
 Object.defineProperty(window,'_proposalViewsByBidHubClient',{get:()=>_proposalViewsByBidHubClient,set:v=>{_proposalViewsByBidHubClient=v;},configurable:true});
@@ -478,6 +479,7 @@ Object.defineProperty(window,'_proposalViewsByBidClient',{get:()=>_proposalViews
 Object.defineProperty(window,'_proposalViewsByBidContractor',{get:()=>_proposalViewsByBidContractor,set:v=>{_proposalViewsByBidContractor=v;},configurable:true});
 Object.defineProperty(window,'_proposalViewsByBidHubCount',{get:()=>_proposalViewsByBidHubCount,set:v=>{_proposalViewsByBidHubCount=v;},configurable:true});
 Object.defineProperty(window,'_proposalViewsByBidClientCount',{get:()=>_proposalViewsByBidClientCount,set:v=>{_proposalViewsByBidClientCount=v;},configurable:true});
+Object.defineProperty(window,'_proposalViewsSig',{get:()=>_proposalViewsSig,set:v=>{_proposalViewsSig=v;},configurable:true});
 // true when data came from localStorage cache, not a live Supabase fetch.
 // supaSaveToCloud() checks this + runs a sanity guard to prevent pushing
 // incomplete in-memory state over real cloud data.
@@ -1260,6 +1262,16 @@ function _saveSessionBackup(session){
 }
 async function supaSignOut(){
   _deliberateSignOut=true;
+  // Security: explicitly purge the persisted session tokens and the plaintext PII/
+  // financial cache on deliberate sign-out. Without this, zp3_session_backup could
+  // be used to silently re-auth and zp3_cloud_cache left all business data readable
+  // from browser storage after logout. Supabase remains the source of truth, so the
+  // data re-syncs on next login — nothing is lost. zp3_offline_pending is preserved
+  // so any not-yet-synced offline edits survive.
+  try{
+    localStorage.removeItem('zp3_session_backup');
+    localStorage.removeItem('zp3_cloud_cache');
+  }catch(_e){}
   // scope:'local' clears this device only — refresh token stays valid server-side.
   // scope:'global' (the default) revokes the token on the server, so the backup key
   // can't be used to silently re-auth when the user comes back online.
@@ -1671,6 +1683,9 @@ async function _fetchProposalViews(){
       .not('bid_id','is',null)
       .order('opened_at',{ascending:false});
     if(data&&!error){
+      const _newSig=JSON.stringify(data.map(v=>({b:v.bid_id,o:v.opened_at,h:v.hub_opened_at,c:v.client_opened_at,k:v.contractor_opened_at,hc:v.hub_view_count,cc:v.client_view_count})));
+      if(_newSig===_proposalViewsSig)return;
+      _proposalViewsSig=_newSig;
       _proposalViewsByBid={};
       _proposalViewsByBidHubClient={};
       _proposalViewsByBidClient={};

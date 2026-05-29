@@ -490,6 +490,9 @@ const SUPA_URL='https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
 const _supa=supabase.createClient(SUPA_URL,SUPA_KEY);
 let _prop=null,_sigData=null,_payOpt='card',_payFullAmount=false;
+// Signing token extracted from URL (?t=) or from the storage key path.
+// Set once in init() and reused by all RPC calls so we never re-parse the URL.
+let _signingToken='';
 let sigCanvas,sigCtx,signing=false,hasInk=false;
 window._portfolioAccepted=false;
 let _portfolioStep=0;
@@ -586,8 +589,10 @@ async function init(){
   let key=params.get('key');
   if(!key){
     const t=params.get('t'),u=params.get('u'),b=params.get('b');
-    if(t&&u&&b)key=`proposals/${u}/${b}_${t}.json`;
+    if(t&&u&&b){key=`proposals/${u}/${b}_${t}.json`;_signingToken=t;}
   }
+  // When ?key= is used, extract token from the filename (everything after last _ before .json)
+  if(key&&!_signingToken){const li=key.lastIndexOf('_');if(li!==-1)_signingToken=key.slice(li+1).replace(/\.json$/i,'');}
   if(!key){show('pg-err');return;}
   try{
     const{data,error}=await _supa.storage.from('proposals').download(key);
@@ -602,15 +607,14 @@ async function init(){
       show('pg-declined');return;
     }
     // stripeConnectEnabled===false: _renderSignPayBtns() will show cash-only
-    // Check proposal JSON status AND signed_proposals table (table is authoritative — storage can be cached)
+    // Check proposal JSON status AND signed_proposals via token-gated RPC
+    // (table is authoritative — storage can be cached; RPC validates signing_token)
     let alreadySigned=_prop.status==='signed'||_prop.status==='paid';
     let _sigRecord=null;
-    if(!alreadySigned){
-      const{data:sigRow}=await _supa.from('signed_proposals').select('signed_at,client_signed_name,payment_method').eq('bid_id',String(_prop.id)).maybeSingle();
+    if(_prop.contractorUserId&&_signingToken){
+      const{data:sigRows}=await _supa.rpc('get_signed_proposal_status',{p_bid_id:String(_prop.id),p_contractor_user_id:_prop.contractorUserId,p_signing_token:_signingToken});
+      const sigRow=sigRows&&sigRows[0]||null;
       if(sigRow){alreadySigned=true;_sigRecord=sigRow;}
-    } else {
-      const{data:sigRow}=await _supa.from('signed_proposals').select('signed_at,client_signed_name,payment_method').eq('bid_id',String(_prop.id)).maybeSingle();
-      _sigRecord=sigRow;
     }
     if(alreadySigned){
       const confNum='#CONF-'+String(_prop.id).slice(-6).toUpperCase();
@@ -949,15 +953,16 @@ async function submitCash(){
   try{
     const updated={..._prop,status:'signed',signedAt:ts,signerName:name,paymentMethod:method,signatureDataUrl:_sigData,portfolioAccepted:window._portfolioAccepted,finalAmount:_subAmt,colorChoices:window._colorChoices||[]};
     await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true});
-    await _supa.from('signed_proposals').upsert({
-      bid_id:String(_prop.id),contractor_user_id:_prop.contractorUserId,
-      client_name:_prop.clientName,client_signed_name:name,
-      amount:_subAmt,deposit:_subDep,
-      payment_method:method,payment_status:'pending_'+method,
-      signed_at:ts,notify_email:_prop.notifyEmail,storage_key:key,
-      portfolio_accepted:window._portfolioAccepted||false,
-      portfolio_pct:window._portfolioAccepted?(_prop.portfolioPct||null):null,
+    const{error:_rpcErr}=await _supa.rpc('submit_signed_proposal',{
+      p_bid_id:String(_prop.id),p_contractor_user_id:_prop.contractorUserId,p_signing_token:_signingToken,
+      p_client_name:_prop.clientName,p_client_signed_name:name,
+      p_amount:_subAmt,p_deposit:_subDep,
+      p_payment_method:method,p_notify_email:_prop.notifyEmail,p_storage_key:key,
+      p_portfolio_accepted:window._portfolioAccepted||false,
+      p_portfolio_pct:window._portfolioAccepted?(_prop.portfolioPct||null):null,
+      p_is_decline:false,
     });
+    if(_rpcErr)throw new Error(_rpcErr.message||'Could not save signature');
     showDone(method);
   }catch(e){
     console.error(e);
@@ -965,7 +970,7 @@ async function submitCash(){
     btn.disabled=false;btn.textContent=origLabel;
     return;
   }
-  _supa.from('signed_proposals').update({notified_at:new Date().toISOString()}).eq('bid_id',String(_prop.id)).then(null,e=>console.warn('notified_at:',e));
+  _supa.rpc('update_proposal_notified',{p_bid_id:String(_prop.id),p_contractor_user_id:_prop.contractorUserId,p_signing_token:_signingToken}).then(null,e=>console.warn('notified_at:',e));
 }
 
 function showDone(method){
@@ -1008,16 +1013,16 @@ async function _confirmDecline(){
     // Update proposal JSON in storage
     const updated=Object.assign({},_prop,{status:'declined',declinedAt:ts});
     await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true});
-    // Write to signed_proposals with payment_status:'declined' so the contractor app
-    // sees the decline and marks the bid as Closed Lost (not Closed Won)
-    await _supa.from('signed_proposals').upsert({
-      bid_id:String(_prop.id),contractor_user_id:_prop.contractorUserId,
-      client_name:_prop.clientName,client_signed_name:_prop.clientName||'Client',
-      amount:_prop.amount,deposit:_prop.deposit,
-      payment_method:'declined',payment_status:'declined',
-      signed_at:ts,notify_email:_prop.notifyEmail,storage_key:key,
-      portfolio_accepted:false,
+    // Write to signed_proposals via RPC so the contractor app sees the decline
+    // and marks the bid Closed Lost. payment_status='declined' set server-side.
+    const{error:_decRpcErr}=await _supa.rpc('submit_signed_proposal',{
+      p_bid_id:String(_prop.id),p_contractor_user_id:_prop.contractorUserId,p_signing_token:_signingToken,
+      p_client_name:_prop.clientName,p_client_signed_name:_prop.clientName||'Client',
+      p_amount:_prop.amount,p_deposit:_prop.deposit,
+      p_payment_method:'declined',p_notify_email:_prop.notifyEmail,p_storage_key:key,
+      p_portfolio_accepted:false,p_portfolio_pct:null,p_is_decline:true,
     });
+    if(_decRpcErr)throw new Error(_decRpcErr.message||'Could not record decline');
   }catch(e){console.error('[decline]',e);}
   const modal=document.getElementById('decline-modal');
   if(modal)modal.style.display='none';
@@ -1076,6 +1081,10 @@ async function _paySign(method){
   const fullBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*100):Math.round((_prop.amount||0)*100);
   const amt=_payFullAmount?fullBase:depBase;
   const btn=document.getElementById('_pay-now-btn');
+  if(amt<50){
+    document.getElementById('pay-err').textContent='Payment amount is below the $0.50 minimum — please contact the contractor.';
+    return;
+  }
   if(btn){btn.disabled=true;btn.textContent='Opening secure checkout…';}
   try{
     await _launchEmbedded(amt,'card',0);

@@ -552,9 +552,7 @@ async function init(){
     const bidIds=_hub.bids.map(b=>String(b.id));
     if(u&&bidIds.length){
       try{
-        const{data:sigs}=await _supa.from('signed_proposals')
-          .select('bid_id,payment_status,payment_method,signed_at,deposit')
-          .eq('contractor_user_id',u).in('bid_id',bidIds);
+        const{data:sigs}=await _supa.rpc('get_hub_proposal_statuses',{p_contractor_user_id:u,p_bid_ids:bidIds});
         if(sigs)sigs.forEach(sp=>{
           const bid=_hub.bids.find(b=>String(b.id)===sp.bid_id);
           if(!bid)return;
@@ -1888,9 +1886,7 @@ async function _recheckSigned(){
   const bidIds=_hub.bids.map(b=>String(b.id));
   if(!bidIds.length)return;
   try{
-    const{data:sigs}=await _supa.from('signed_proposals')
-      .select('bid_id,payment_status,payment_method,signed_at')
-      .eq('contractor_user_id',u).in('bid_id',bidIds);
+    const{data:sigs}=await _supa.rpc('get_hub_proposal_statuses',{p_contractor_user_id:u,p_bid_ids:bidIds});
     if(!sigs)return;
     let changed=false;
     sigs.forEach(sp=>{

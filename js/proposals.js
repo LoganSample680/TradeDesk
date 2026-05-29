@@ -470,6 +470,11 @@ async function shortenUrl(url){
   // TODO: swap baseUrl to Cloudflare Pages domain (zjspainting.pages.dev) tomorrow
   return url;
 }
+// Cryptographically strong 128-bit token (32 hex chars) used to gate anonymous
+// access to a proposal. Uses crypto.getRandomValues (CSPRNG); Math.random is not.
+function _genProposalToken(){
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
+}
 async function sendProposalLink(){
   const proposal=document.getElementById('est-proposal');
   if(!proposal||!proposal.innerHTML.trim()){zAlert('Generate the proposal first.',{title:'Nothing to print'});return;}
@@ -536,7 +541,7 @@ async function sendProposalLink(){
       lastCreatedBidId=freshBid.id;
       bidId=freshBid.id;
     }
-    const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
+    const token=_genProposalToken();
     const proposalKey=`proposals/${_supaUser.id}/${bidId}_${token}.json`;
     const _bidForProp=bids.find(b=>b.id===bidId);
     // Always use live calcEst().final for amount — captures tier multiplier, adjustments, etc.
@@ -690,6 +695,12 @@ function _commitProposalSent(){
     const proposalEl=document.getElementById('est-proposal');
     if(proposalEl&&proposalEl.innerHTML.trim())bid.proposalHtml=proposalEl.innerHTML;
     saveAll();
+    // Pre-register the signing token so the client-side get_signed_proposal_status
+    // RPC can validate it on first visit (before the client signs, no row exists yet).
+    if(_supa&&_supaUser){_supa.from('signed_proposals').upsert(
+      {bid_id:String(bidId),contractor_user_id:_supaUser.id,signing_token:token},
+      {onConflict:'bid_id,contractor_user_id'}
+    ).then(null,e=>console.warn('[sign-token-reg]',e));}
     // Re-upload hub now that signingToken is committed — snapshot gets correct signHubUrl
     if(bid.client_id)_uploadClientHub(bid.client_id).catch(()=>{});
   }
@@ -1157,7 +1168,7 @@ function buildProposal(){
     </div>
   </div>
 </div>`;
-  document.getElementById('est-sig-sum').innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><div style="font-size:15px;font-weight:700">${cname}</div><div style="font-size:12px;color:var(--text2)">${caddr}</div></div><div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--blue)">${fmt(proposalTotal)}</div><div style="font-size:11px;color:var(--text3)">${estNum}</div></div></div>`;
+  document.getElementById('est-sig-sum').innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><div style="font-size:15px;font-weight:700">${escHtml(cname)}</div><div style="font-size:12px;color:var(--text2)">${escHtml(caddr)}</div></div><div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--blue)">${fmt(proposalTotal)}</div><div style="font-size:11px;color:var(--text3)">${escHtml(estNum)}</div></div></div>`;
   document.getElementById('est-terms').innerHTML='<div style="background:#FEF3C7;border-left:3px solid #92400E;padding:8px 10px;margin-bottom:10px;font-size:10px;font-weight:700;color:#92400E">⚠ '+_stName+' / FTC Notice: Buyer may cancel within '+_cancelDays+' business days of signing ('+_cancelStat+'). See Notice of Cancellation on signed proposal.</div><strong style="color:#1a365d">Terms &amp; Conditions</strong><br><br>1. <strong>Payment:</strong> '+(_depositPct===0?'Full balance due upon completion. No deposit required.':Math.round(_depositPct*100)+'% deposit ('+fmt(_depositAmt)+') required before any work begins and before a start date will be scheduled. The remaining balance is due upon completion of work.')+'<br><br>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within '+_cancelDays+' business days of signing ('+_cancelStat+') for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages covering: (a) mobilization &amp; scheduling costs — crew reservation and declined projects for those dates; (b) administrative costs — site measurements, color consulting, scope preparation; and (c) material procurement — specific paint colors and supplies that may not be returnable. These represent a reasonable estimate of actual damages, not a penalty. Materials purchased will be made available for pickup upon cancellation. '+bname+'\'s right to retain the deposit is conditioned on '+bname+'\'s readiness and willingness to perform. If '+bname+' fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.<br><br>3. <strong>Change Orders:</strong> This proposal covers only the scope described herein. Any additional work, surfaces, or materials not listed require a written change order signed by both parties and may be billed at the current rate.<br><br>4. <strong>Warranty:</strong> All workmanship is warranted for one (1) year from the date of completion. This warranty covers labor defects and application failures. It does not cover pre-existing surface conditions, substrate failure, moisture damage, or damage caused by events outside the contractor\'s control.<br><br>5. <strong>Limitation of Liability:</strong> Contractor is not responsible for damage to surfaces, structures, or contents that existed prior to the start of work, or for conditions not disclosed at the time of walkthrough. Client assumes all risk associated with pressure washing services on their property.<br><br>6. <strong>Materials &amp; Sales Tax:</strong> Contractor purchases all materials and pays applicable Kansas sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.<br><br>7. <strong>Mechanic\'s Lien Notice:</strong> '+_lienNotice(_st)+' Contractor will pursue all available legal remedies for non-payment, including lien filing.<br><br>By signing below, client acknowledges receipt of the Notice of Cancellation, full agreement with all scope, pricing, and terms, and that this constitutes a legally binding electronic agreement under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.)';
   document.getElementById('sig-date').value=ds;
   document.getElementById('sig-pname').value=cname;
