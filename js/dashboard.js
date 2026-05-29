@@ -1567,7 +1567,7 @@ function renderProposalsPage(){
   const rows=filtered.map(b=>{
     const c=getClientById(b.client_id)||{name:b.client_name||b.name||'Unknown'};
     const proj=b.addr||b.type||'—';
-    const deposit=b.status==='Closed Won'&&b.deposit?'<div style="font-size:10px;color:var(--green);font-weight:700;margin-top:2px">Deposit '+fmt(b.deposit)+' received</div>':'';
+    const _depPaid=getBidPaid(b.id);const deposit=b.status==='Closed Won'&&(b.deposit||0)>0.01&&_depPaid>=(b.deposit-0.01)?'<div style="font-size:10px;color:var(--green);font-weight:700;margin-top:2px">Deposit '+fmt(b.deposit)+' received</div>':'';
     const amt=b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'—');
     const revFn=b.status==='Closed Won'?'openBidDetail('+b.id+',\'bid\')':(b.geiLines!==undefined?'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')':'openEditBid('+b.id+')');
     return '<tr style="cursor:pointer" onclick="'+revFn+'">'+
