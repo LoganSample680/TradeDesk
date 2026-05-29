@@ -556,7 +556,7 @@ async function init(){
         if(sigs)sigs.forEach(sp=>{
           const bid=_hub.bids.find(b=>String(b.id)===sp.bid_id);
           if(!bid)return;
-          if(bid.status==='Pending'){
+          if(bid.status==='Pending'&&sp.signed_at){
             bid.status='Closed Won';bid.signedAt=sp.signed_at;bid.paymentStatus=sp.payment_status;
           }
           if(sp.payment_status==='paid'){
@@ -1891,7 +1891,7 @@ async function _recheckSigned(){
     let changed=false;
     sigs.forEach(sp=>{
       const bid=_hub.bids.find(b=>String(b.id)===sp.bid_id);
-      if(bid&&bid.status==='Pending'){bid.status='Closed Won';bid.signedAt=sp.signed_at;changed=true;}
+      if(bid&&bid.status==='Pending'&&sp.signed_at){bid.status='Closed Won';bid.signedAt=sp.signed_at;changed=true;}
     });
     if(changed)renderAll();
   }catch(e){}
