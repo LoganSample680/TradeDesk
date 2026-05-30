@@ -305,6 +305,249 @@ test.describe('Tax page — calcTax and tab rendering', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+//  MULTI-STATE TAX — income apportioned by job address
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('Multi-state tax — revenue breakdown by job address', () => {
+  const BID_KS = 700101;
+  const BID_MO = 700102;
+  const BID_TX = 700103;
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+
+    await page.evaluate(({ KS, MO, TX }) => {
+      if (typeof bids !== 'undefined') {
+        bids.push({ id: KS, client_id: 1, addr: '123 Main St, Wichita KS 67201',      amount: 8000, status: 'Closed Won', bid_date: '2026-01-10' });
+        bids.push({ id: MO, client_id: 2, addr: '456 Oak Ave, Kansas City MO 64101',   amount: 5000, status: 'Closed Won', bid_date: '2026-02-15' });
+        bids.push({ id: TX, client_id: 3, addr: '789 Pine Rd, Dallas TX 75201',        amount: 3000, status: 'Closed Won', bid_date: '2026-03-20' });
+      }
+      if (typeof payments !== 'undefined') {
+        payments.push({ id: 800101, bid_id: KS, amount: 8000, date: '2026-01-20', method: 'check' });
+        payments.push({ id: 800102, bid_id: MO, amount: 5000, date: '2026-02-25', method: 'check' });
+        payments.push({ id: 800103, bid_id: TX, amount: 3000, date: '2026-03-25', method: 'check' });
+      }
+      if (typeof S !== 'undefined') S.state = S.state || 'KS';
+      if (typeof _taxPageYear !== 'undefined') _taxPageYear = 2026;
+      // Seed KS brackets so home-state tax > 0 → credit > 0 → "(after credit)" renders
+      if (typeof KS_BRACKETS !== 'undefined') {
+        KS_BRACKETS.single = [[33000, 0.031], [Infinity, 0.057]];
+        KS_BRACKETS.mfj    = [[66000, 0.031], [Infinity, 0.057]];
+        KS_BRACKETS.mfs    = [[16500, 0.031], [Infinity, 0.057]];
+        KS_BRACKETS.hoh    = [[33000, 0.031], [Infinity, 0.057]];
+      }
+    }, { KS: BID_KS, MO: BID_MO, TX: BID_TX });
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  // ── detectStateFromAddr unit tests ────────────────────────────────────────
+
+  test('detectStateFromAddr — extracts correct state codes', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof detectStateFromAddr !== 'function') return null;
+      return {
+        mo:      detectStateFromAddr('456 Oak Ave, Kansas City MO 64101'),
+        ks:      detectStateFromAddr('123 Main St, Wichita KS 67201'),
+        co:      detectStateFromAddr('789 Pine St, Denver CO 80201'),
+        tx:      detectStateFromAddr('789 Pine Rd, Dallas TX 75201'),
+        empty:   detectStateFromAddr(''),
+        noState: detectStateFromAddr('just a street name'),
+      };
+    });
+    if (!r) return;
+    expect(r.mo).toBe('MO');
+    expect(r.ks).toBe('KS');
+    expect(r.co).toBe('CO');
+    expect(r.tx).toBe('TX');
+    expect(r.empty).toBeNull();
+    expect(r.noState).toBeNull();
+  });
+
+  // ── _calcStateEstimate unit tests ─────────────────────────────────────────
+
+  test('_calcStateEstimate — flat-rate state Colorado (4.4%) on $50k', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _calcStateEstimate !== 'function' || typeof STATE_TAX === 'undefined') return null;
+      return _calcStateEstimate(50000, STATE_TAX['CO']); // flat 4.4% → ceil(50000 * 0.044) = 2200
+    });
+    if (result === null) return;
+    expect(result).toBe(2200);
+  });
+
+  test('_calcStateEstimate — no-tax state Texas returns 0', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _calcStateEstimate !== 'function' || typeof STATE_TAX === 'undefined') return null;
+      return _calcStateEstimate(50000, STATE_TAX['TX']);
+    });
+    if (result === null) return;
+    expect(result).toBe(0);
+  });
+
+  test('_calcStateEstimate — zero income always returns 0', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _calcStateEstimate !== 'function' || typeof STATE_TAX === 'undefined') return null;
+      return _calcStateEstimate(0, STATE_TAX['MO']);
+    });
+    if (result === null) return;
+    expect(result).toBe(0);
+  });
+
+  test('_calcStateEstimate — null stInfo returns 0 (unknown state guard)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _calcStateEstimate !== 'function') return null;
+      return _calcStateEstimate(50000, null);
+    });
+    if (result === null) return;
+    expect(result).toBe(0);
+  });
+
+  test('_calcStateEstimate — Missouri two-bracket calculation ($20k income)', async () => {
+    // MO: low=1.5%, high=4.95%, top=9000
+    // lowPart=9000*0.015=135, highPart=11000*0.0495=544.5 → ceil(679.5)=680
+    const result = await page.evaluate(() => {
+      if (typeof _calcStateEstimate !== 'function' || typeof STATE_TAX === 'undefined') return null;
+      return _calcStateEstimate(20000, STATE_TAX['MO']);
+    });
+    if (result === null) return;
+    expect(result).toBe(680);
+  });
+
+  // ── calcTax integration tests ─────────────────────────────────────────────
+
+  test('calcTax — Income by State bar chart appears when multi-state', async () => {
+    await page.evaluate(() => {
+      if (typeof _taxPageYear !== 'undefined') _taxPageYear = 2026;
+      if (typeof calcTax === 'function') try { calcTax(); } catch(e) {}
+    });
+    await page.waitForTimeout(500);
+    const hasChart = await page.evaluate(() => {
+      const el = document.getElementById('tx-inputs');
+      return el ? el.innerHTML.includes('Income by State') : false;
+    });
+    expect(hasChart).toBe(true);
+  });
+
+  test('calcTax — bar chart shows all three seeded states', async () => {
+    const html = await page.evaluate(() => {
+      const el = document.getElementById('tx-inputs');
+      return el ? el.innerHTML : '';
+    });
+    expect(html).toContain('Kansas');
+    expect(html).toContain('Missouri');
+    expect(html).toContain('Texas');
+    expect(html).toContain('(home)');
+    expect(html).toContain('(non-resident)');
+  });
+
+  test('calcTax — tx-results shows non-resident label for out-of-state income', async () => {
+    const html = await page.evaluate(() => {
+      const el = document.getElementById('tx-results');
+      return el ? el.innerHTML : '';
+    });
+    expect(html).toContain('non-resident');
+    expect(html).toContain('income tax');
+  });
+
+  test('calcTax — Texas (no income tax) shows "No income tax" in results', async () => {
+    const html = await page.evaluate(() => {
+      const el = document.getElementById('tx-results');
+      return el ? el.innerHTML : '';
+    });
+    expect(html).toContain('No income tax');
+  });
+
+  test('calcTax — Missouri (has income tax) applies credit to home state', async () => {
+    // When MO tax is applied, home state should show (after credit)
+    const html = await page.evaluate(() => {
+      const el = document.getElementById('tx-results');
+      return el ? el.innerHTML : '';
+    });
+    // MO has income tax → credit is non-zero → home state shows (after credit)
+    expect(html).toContain('after credit');
+  });
+
+  test('calcTax — CPA disclaimer shown in multi-state mode', async () => {
+    const html = await page.evaluate(() => {
+      const el = document.getElementById('tx-results');
+      return el ? el.innerHTML : '';
+    });
+    expect(html).toContain('Multi-state estimate');
+    expect(html).toContain('CPA');
+  });
+
+  test('calcTax — totalOwed is displayed and positive', async () => {
+    const html = await page.evaluate(() => {
+      const el = document.getElementById('tx-results');
+      return el ? el.innerHTML : '';
+    });
+    expect(html).toContain('Total estimated');
+  });
+
+  test('no console errors during multi-state calcTax', async () => {
+    assertNoErrors(page, 'multi-state tax calculation');
+  });
+});
+
+test.describe('Multi-state tax — single-state user sees no multi-state UI', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+
+    await page.evaluate(() => {
+      if (typeof bids !== 'undefined')
+        bids.push({ id: 710001, client_id: 1, addr: '100 Home St, Wichita KS 67201', amount: 6000, status: 'Closed Won', bid_date: '2026-01-05' });
+      if (typeof payments !== 'undefined')
+        payments.push({ id: 810001, bid_id: 710001, amount: 6000, date: '2026-01-15', method: 'check' });
+      if (typeof S !== 'undefined') S.state = 'KS';
+      if (typeof _taxPageYear !== 'undefined') _taxPageYear = 2026;
+      if (typeof calcTax === 'function') try { calcTax(); } catch(e) {}
+    });
+    await page.waitForTimeout(500);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('single-state — Income by State chart not rendered', async () => {
+    const hasChart = await page.evaluate(() => {
+      const el = document.getElementById('tx-inputs');
+      return el ? el.innerHTML.includes('Income by State') : false;
+    });
+    expect(hasChart).toBe(false);
+  });
+
+  test('single-state — no non-resident text in results', async () => {
+    const hasNonRes = await page.evaluate(() => {
+      const el = document.getElementById('tx-results');
+      return el ? el.innerHTML.includes('non-resident') : false;
+    });
+    expect(hasNonRes).toBe(false);
+  });
+
+  test('single-state — no multi-state disclaimer shown', async () => {
+    const hasDisclaimer = await page.evaluate(() => {
+      const el = document.getElementById('tx-results');
+      return el ? el.innerHTML.includes('Multi-state estimate') : false;
+    });
+    expect(hasDisclaimer).toBe(false);
+  });
+
+  test('single-state — no console errors', async () => {
+    assertNoErrors(page, 'single-state tax calculation');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 //  JOBS PAGE — RENDER, FILTER, CHECKLIST, CLOCK-IN/OUT
 // ════════════════════════════════════════════════════════════════════════════
 

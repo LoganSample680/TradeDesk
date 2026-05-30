@@ -247,7 +247,7 @@ function _pickEstStyle(style){
     else if(style==='tm'){openTMEstimate(c);}
     else if(style==='freeform'){openFreeFormEstimate(c);}
   };
-  if(ov){ov.style.opacity='0';ov.style.transform='translateY(10px)';setTimeout(()=>{ov.remove();doIt();},200);}
+  if(ov){doIt();ov.style.opacity='0';ov.style.transform='translateY(10px)';setTimeout(()=>ov.remove(),220);}
   else{doIt();}
 }
 function _doOpenScopeEstimate(c,overrideAddr){

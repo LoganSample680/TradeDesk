@@ -466,8 +466,7 @@ function printKansasLien(bidId){
   // Auto-detect county if not already set on the lien record
   const {stateCode:detectedState,county:detectedCounty}=getCountyForBid(bid);
   const stateName=(typeof STATE_TAX!=='undefined'&&STATE_TAX[detectedState]?.name)||detectedState;
-  const isKS=detectedState==='KS';
-  const statuteRef=isKS?'K.S.A. 60-1101 et seq.':(detectedState+' mechanic\'s lien statutes');
+  const statuteRef=(typeof STATE_LIEN!=='undefined'&&STATE_LIEN[detectedState])?STATE_LIEN[detectedState].statute:(detectedState+' mechanic\'s lien statutes');
   const county=lien.county||(detectedCounty+', '+detectedState);
   const countyShort=county.replace(/,\s*[A-Z]{2}$/,'');
   const filingInfo=getCountyFilingInfo(detectedState);
@@ -1404,12 +1403,34 @@ function openBidDetail(bidId,view){
   // Proposal pane — what the client received
   const propPane=document.getElementById('bdd-proposal-pane');
   const storageKey=b.signingKey||b.proposalKey||null;
-  const signedBadge=b.signedAt?'<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">✓</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>':'';
+  function _sigBadge(){
+    if(!b.signedAt)return '';
+    return '<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">✓</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>';
+  }
+  function _sigFooter(sigUrl){
+    if(!b.signedAt||!sigUrl)return '';
+    const sigDate=new Date(b.signedAt);
+    const dateStr=sigDate.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+    const timeStr=sigDate.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
+    return '<div style="margin-top:20px;padding:16px 18px;border-top:2px solid #e2e8f0;background:#f8fafc">'+
+      '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:10px">Client Signature</div>'+
+      '<img src="'+sigUrl+'" alt="Client signature" style="display:block;max-width:240px;height:auto;border:1px solid #e2e8f0;border-radius:4px;background:#fff;margin-bottom:10px">'+
+      '<div style="font-size:13px;font-weight:700;color:#1a365d">'+(b.signedName?escHtml(b.signedName):'')+'</div>'+
+      '<div style="font-size:11px;color:#64748b;margin-top:2px">Signed '+dateStr+' at '+timeStr+'</div>'+
+      '</div>';
+  }
   function _renderPropHTML(html,extraTop){
-    propPane.innerHTML=(extraTop||'')+signedBadge+html;
+    propPane.innerHTML=(extraTop||'')+_sigBadge()+html+_sigFooter(b.signatureDataUrl||'');
   }
   if(b.proposalHtml){
     _renderPropHTML(b.proposalHtml);
+    // Background-fetch signature image if not yet cached
+    if(b.signedAt&&b.signatureDataUrl===undefined&&storageKey&&typeof _supa!=='undefined'){
+      _supa.storage.from('proposals').download(storageKey).then(({data})=>{
+        if(!data)return;
+        data.text().then(txt=>{try{const p=JSON.parse(txt);b.signatureDataUrl=p.signatureDataUrl||'';_renderPropHTML(b.proposalHtml);}catch(e){}});
+      }).catch(()=>{});
+    }
   }else if(storageKey&&typeof _supa!=='undefined'){
     propPane.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--text3);font-size:13px">Loading proposal…</div>';
     _supa.storage.from('proposals').download(storageKey).then(({data,error})=>{
@@ -1419,8 +1440,9 @@ function openBidDetail(bidId,view){
           const prop=JSON.parse(txt);
           const html=prop.proposalHtml||'';
           if(!html){propPane.innerHTML='<div style="padding:40px;text-align:center;color:var(--text3);font-style:italic">No HTML found in stored proposal.</div>';return;}
-          // Cache it on the bid so future opens are instant
+          // Cache on bid so future opens are instant
           b.proposalHtml=html;
+          b.signatureDataUrl=prop.signatureDataUrl||'';
           let colorTop='';
           const choices=prop.colorChoices||[];
           if(choices.length)colorTop='<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 16px;margin-bottom:16px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">🎨 Client Color Selections</div>'+choices.map(ch=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px"><span style="font-weight:600;color:#1E3A5F">'+escHtml(ch.room)+'</span><span style="color:#1E40AF;font-weight:700">'+escHtml(ch.colorName)+(ch.swCode?' <span style="font-size:11px;opacity:.7">('+escHtml(ch.swCode)+')</span>':'')+'</span></div>').join('')+'</div>';
@@ -1568,7 +1590,7 @@ function renderProposalsPage(){
   const rows=filtered.map(b=>{
     const c=getClientById(b.client_id)||{name:b.client_name||b.name||'Unknown'};
     const proj=b.addr||b.type||'—';
-    const deposit=b.status==='Closed Won'&&b.deposit?'<div style="font-size:10px;color:var(--green);font-weight:700;margin-top:2px">Deposit '+fmt(b.deposit)+' received</div>':'';
+    const _depPaid=getBidPaid(b.id);const deposit=b.status==='Closed Won'&&(b.deposit||0)>0.01&&_depPaid>=(b.deposit-0.01)?'<div style="font-size:10px;color:var(--green);font-weight:700;margin-top:2px">Deposit '+fmt(b.deposit)+' received</div>':'';
     const amt=b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'—');
     const revFn=b.status==='Closed Won'?'openBidDetail('+b.id+',\'bid\')':(b.geiLines!==undefined?'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')':'openEditBid('+b.id+')');
     return '<tr style="cursor:pointer" onclick="'+revFn+'">'+

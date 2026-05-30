@@ -159,7 +159,8 @@ function _buildClientHubSnapshot(clientId){
   const _snapUserEmail=_supaUser?_supaUser.email||'':'';
   const _snapStripeOn=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
   const _snapSurchargeOn=!!(S.ccSurchargeEnabled&&_snapStripeOn);
-  const _snapState=S.state||'KS';
+  const _snapAddrM=(c.addr||'').toUpperCase().match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
+  const _snapState=(_snapAddrM?_snapAddrM[1]:null)||S.state||'KS';
   const _snapCancelDays=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].days:3;
   const _snapCancelStatute=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].statute:'16 CFR Part 429';
   return {
@@ -669,6 +670,30 @@ function shareProposalLink(){
     url:d.url
   });
 }
+function _showGeiSendOverlay(){
+  document.getElementById('_gei-send-overlay')?.remove();
+  const ov=document.createElement('div');
+  ov.id='_gei-send-overlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  ov.innerHTML=
+    '<div style="width:100%;max-width:420px;background:var(--bg);border-radius:var(--r);padding:22px 16px 24px;box-sizing:border-box">'+
+      '<div style="font-size:15px;font-weight:800;color:var(--blue-dk);margin-bottom:16px;text-align:center">✓ Link ready — send to client</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'+
+        '<button onclick="_doGeiSend(\'sms\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">📱 Text</button>'+
+        '<button onclick="_doGeiSend(\'email\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">✉️ Email</button>'+
+      '</div>'+
+      '<button onclick="_doGeiSend(\'other\')" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">⬆️ Other app (WhatsApp, AirDrop…)</button>'+
+      '<div style="font-size:11px;color:var(--text3);margin-top:10px;text-align:center">Bid saved as Pending. You\'ll get a follow-up reminder in 3 days if no response.</div>'+
+    '</div>';
+  document.body.appendChild(ov);
+}
+function _doGeiSend(type){
+  document.getElementById('_gei-send-overlay')?.remove();
+  if(type==='sms')sendProposalViaSms();
+  else if(type==='email')sendProposalViaEmail();
+  else shareProposalLink();
+}
 function _proposalShareData(){
   const bar=document.getElementById('proposal-link-bar');
   const defBname=S.bname||'TradeDesk';
@@ -728,9 +753,10 @@ function _showEmailComposeModal(d){
   const defBody='Hey '+firstName+',\n\nIt was great meeting with you — I\'m looking forward to your project!\n\nYour proposal is ready to view. Everything we went over is laid out in full detail, and you can sign right from the page when you\'re ready to move forward:\n\n'+d.url+'\n\nOnce you sign, I\'ll get you locked in on the schedule and we\'ll take it from there.\n\nDon\'t hesitate to reach out with any questions — happy to go over anything!\n\nLooking forward to working with you,\n'+d.bname;
   const ov=document.createElement('div');
   ov.id='_email-compose-overlay';
-  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;padding:0';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   ov.innerHTML=
-    '<div style="width:100%;max-height:90vh;overflow-y:auto;background:var(--bg);border-radius:var(--r) var(--r) 0 0;padding:20px 16px 32px;box-sizing:border-box">'+
+    '<div style="width:100%;max-width:520px;max-height:90vh;overflow-y:auto;background:var(--bg);border-radius:var(--r);padding:20px 16px 28px;box-sizing:border-box">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'+
         '<div style="font-size:17px;font-weight:800">✉️ Email proposal</div>'+
         '<button onclick="document.getElementById(\'_email-compose-overlay\').remove()" style="background:none;border:none;font-size:22px;color:var(--text3);cursor:pointer;padding:0 4px;font-family:inherit">✕</button>'+
@@ -773,8 +799,6 @@ async function _sendEmailFromCompose(){
     // Also update the bar dataset so future sends work
     const bar=document.getElementById('proposal-link-bar');
     if(bar)bar.dataset.cemail=toVal;
-    const geiBar=document.getElementById('gei-send-bar');
-    if(geiBar)geiBar.dataset.cemail=toVal;
   }
   const subject=(subjEl.value||'').trim()||'Your Proposal is Ready!';
   const bodyText=(bodyEl.value||'').trim();
@@ -913,7 +937,9 @@ function buildProposal(){
   const allowWeekend=document.getElementById('e-allow-weekend')?.checked||false;
   const _depositPct=(parseFloat(document.getElementById('e-deposit-pct')?.value)||0)/100;
   const _depositAmt=Math.round(_propFinal*_depositPct*100)/100;
-  const _st=S?.state||'KS';
+  const _caddrVal=document.getElementById('e-caddr')?.value||'';
+  const _addrStateM=_caddrVal.toUpperCase().match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
+  const _st=(_addrStateM?_addrStateM[1]:null)||S?.state||'KS';
   const _cancelRule=(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_st])||{days:3,statute:'16 CFR Part 429'};
   const _cancelStat=_cancelRule.statute;
   const _cancelDays=_cancelRule.days;
@@ -1116,7 +1142,6 @@ function buildProposal(){
         ?'<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">1.</span><span><strong>Payment:</strong> Full balance due upon completion. No deposit required.</span></div>'
         :'<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">1.</span><span><strong>Deposit:</strong> '+Math.round(_depositPct*100)+'% ('+fmt(_depositAmt)+') due before work begins and before a start date is confirmed.</span></div>'+
          '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">2.</span><span><strong>Balance:</strong> Remainder due upon completion.</span></div>'}
-      <div style="display:flex;align-items:baseline;gap:8px"><span style="color:#1a365d;font-weight:700;min-width:16px">${_depositPct===0?'2.':'3.'}</span><span><strong>Warranty:</strong> All workmanship warranted for 1 year.</span></div>
     </div>
     <div style="margin-top:10px;font-size:10px;color:#94a3b8;line-height:1.5">Full terms &amp; conditions — including cancellation, lien rights, and liability — are on the signing page.</div>
     <canvas id="proposal-notes-canvas" style="display:none"></canvas>
@@ -1136,10 +1161,9 @@ function buildProposal(){
       ${_depositPct===0?'<p style="margin:0 0 7px"><strong>1. Payment:</strong> Full balance due upon completion. No deposit required.</p>':'<p style="margin:0 0 7px"><strong>1. Payment:</strong> A '+Math.round(_depositPct*100)+'% deposit ('+fmt(_depositAmt)+') is required before any work begins and before a start date will be scheduled. The remaining balance is due upon completion of work.</p>'}
       <p style="margin:0 0 9px"><strong>2. Cancellation &amp; Deposits:</strong> Buyer may cancel this transaction within ${_cancelDays} business days of signing (${_cancelStat}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages to compensate for: (a) <em>Mobilization &amp; Scheduling</em> — reserving crew availability and declining other projects for the contracted dates; (b) <em>Administrative Costs</em> — time invested in site measurements, color consulting, and preparation of this written scope; and (c) <em>Material Procurement</em> — sourcing specific paint colors and materials that may not be returnable or transferable to other jobs. These represent a reasonable good-faith estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</p>
       <p style="margin:0 0 7px"><strong>3. Change Orders:</strong> This proposal covers only the scope described herein. Any additional work, surfaces, or materials not listed require a written change order signed by both parties and may be billed at the current rate.</p>
-      <p style="margin:0 0 7px"><strong>4. Warranty:</strong> All workmanship is warranted for one (1) year from the date of completion. This warranty covers labor defects and application failures. It does not cover pre-existing surface conditions, substrate failure, moisture damage, or damage caused by events outside the contractor's control.</p>
-      <p style="margin:0 0 7px"><strong>5. Limitation of Liability:</strong> Contractor is not responsible for damage to surfaces, structures, or contents that existed prior to the start of work, or for conditions not disclosed at the time of walkthrough. Client assumes all risk associated with pressure washing services on their property.</p>
-      <p style="margin:0 0 7px"><strong>6. Materials &amp; Sales Tax:</strong> Contractor purchases all materials and pays applicable sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.</p>
-      <p style="margin:0 0 7px"><strong>7. Mechanic's Lien Notice:</strong> ${_lienNotice(_st)}</p>
+      <p style="margin:0 0 7px"><strong>4. Limitation of Liability:</strong> Contractor is not responsible for damage to surfaces, structures, or contents that existed prior to the start of work, or for conditions not disclosed at the time of walkthrough. Client assumes all risk associated with pressure washing services on their property.</p>
+      <p style="margin:0 0 7px"><strong>5. Materials &amp; Sales Tax:</strong> Contractor purchases all materials and pays applicable sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.</p>
+      <p style="margin:0 0 7px"><strong>6. Mechanic's Lien Notice:</strong> ${_lienNotice(_st)}</p>
       <p style="margin:0">By signing, client acknowledges receipt of the Notice of Cancellation form below, full agreement with all scope, pricing, and terms, and that this constitutes a legally binding electronic agreement under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.).</p>
     </div>
   </div>
@@ -1158,7 +1182,7 @@ function buildProposal(){
   </div>
 </div>`;
   document.getElementById('est-sig-sum').innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><div style="font-size:15px;font-weight:700">${cname}</div><div style="font-size:12px;color:var(--text2)">${caddr}</div></div><div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--blue)">${fmt(proposalTotal)}</div><div style="font-size:11px;color:var(--text3)">${estNum}</div></div></div>`;
-  document.getElementById('est-terms').innerHTML='<div style="background:#FEF3C7;border-left:3px solid #92400E;padding:8px 10px;margin-bottom:10px;font-size:10px;font-weight:700;color:#92400E">⚠ '+_stName+' / FTC Notice: Buyer may cancel within '+_cancelDays+' business days of signing ('+_cancelStat+'). See Notice of Cancellation on signed proposal.</div><strong style="color:#1a365d">Terms &amp; Conditions</strong><br><br>1. <strong>Payment:</strong> '+(_depositPct===0?'Full balance due upon completion. No deposit required.':Math.round(_depositPct*100)+'% deposit ('+fmt(_depositAmt)+') required before any work begins and before a start date will be scheduled. The remaining balance is due upon completion of work.')+'<br><br>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within '+_cancelDays+' business days of signing ('+_cancelStat+') for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages covering: (a) mobilization &amp; scheduling costs — crew reservation and declined projects for those dates; (b) administrative costs — site measurements, color consulting, scope preparation; and (c) material procurement — specific paint colors and supplies that may not be returnable. These represent a reasonable estimate of actual damages, not a penalty. Materials purchased will be made available for pickup upon cancellation. '+bname+'\'s right to retain the deposit is conditioned on '+bname+'\'s readiness and willingness to perform. If '+bname+' fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.<br><br>3. <strong>Change Orders:</strong> This proposal covers only the scope described herein. Any additional work, surfaces, or materials not listed require a written change order signed by both parties and may be billed at the current rate.<br><br>4. <strong>Warranty:</strong> All workmanship is warranted for one (1) year from the date of completion. This warranty covers labor defects and application failures. It does not cover pre-existing surface conditions, substrate failure, moisture damage, or damage caused by events outside the contractor\'s control.<br><br>5. <strong>Limitation of Liability:</strong> Contractor is not responsible for damage to surfaces, structures, or contents that existed prior to the start of work, or for conditions not disclosed at the time of walkthrough. Client assumes all risk associated with pressure washing services on their property.<br><br>6. <strong>Materials &amp; Sales Tax:</strong> Contractor purchases all materials and pays applicable Kansas sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.<br><br>7. <strong>Mechanic\'s Lien Notice:</strong> '+_lienNotice(_st)+' Contractor will pursue all available legal remedies for non-payment, including lien filing.<br><br>By signing below, client acknowledges receipt of the Notice of Cancellation, full agreement with all scope, pricing, and terms, and that this constitutes a legally binding electronic agreement under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.)';
+  document.getElementById('est-terms').innerHTML='<div style="background:#FEF3C7;border-left:3px solid #92400E;padding:8px 10px;margin-bottom:10px;font-size:10px;font-weight:700;color:#92400E">⚠ '+_stName+' / FTC Notice: Buyer may cancel within '+_cancelDays+' business days of signing ('+_cancelStat+'). See Notice of Cancellation on signed proposal.</div><strong style="color:#1a365d">Terms &amp; Conditions</strong><br><br>1. <strong>Payment:</strong> '+(_depositPct===0?'Full balance due upon completion. No deposit required.':Math.round(_depositPct*100)+'% deposit ('+fmt(_depositAmt)+') required before any work begins and before a start date will be scheduled. The remaining balance is due upon completion of work.')+'<br><br>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within '+_cancelDays+' business days of signing ('+_cancelStat+') for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages covering: (a) mobilization &amp; scheduling costs — crew reservation and declined projects for those dates; (b) administrative costs — site measurements, color consulting, scope preparation; and (c) material procurement — specific paint colors and supplies that may not be returnable. These represent a reasonable estimate of actual damages, not a penalty. Materials purchased will be made available for pickup upon cancellation. '+bname+'\'s right to retain the deposit is conditioned on '+bname+'\'s readiness and willingness to perform. If '+bname+' fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.<br><br>3. <strong>Change Orders:</strong> This proposal covers only the scope described herein. Any additional work, surfaces, or materials not listed require a written change order signed by both parties and may be billed at the current rate.<br><br>4. <strong>Limitation of Liability:</strong> Contractor is not responsible for damage to surfaces, structures, or contents that existed prior to the start of work, or for conditions not disclosed at the time of walkthrough. Client assumes all risk associated with pressure washing services on their property.<br><br>5. <strong>Materials &amp; Sales Tax:</strong> Contractor purchases all materials and pays applicable '+_stName+' sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.<br><br>6. <strong>Mechanic\'s Lien Notice:</strong> '+_lienNotice(_st)+' Contractor will pursue all available legal remedies for non-payment, including lien filing.<br><br>By signing below, client acknowledges receipt of the Notice of Cancellation, full agreement with all scope, pricing, and terms, and that this constitutes a legally binding electronic agreement under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.)';
   document.getElementById('sig-date').value=ds;
   document.getElementById('sig-pname').value=cname;
   initSigPad();
@@ -2262,7 +2286,7 @@ function _showCOSignDocument(b,c,coData,clientId){
       '</div>'+
       // Legal
       '<div style="font-size:11px;color:#6b7280;line-height:1.5;margin-bottom:20px;padding:12px;background:#f9fafb;border-radius:8px">'+
-        'By signing below, both parties agree to modify the original painting contract to reflect the scope and price changes described above. All other terms of the original contract remain in effect. This change order is legally binding upon signature per K.S.A. 16-1601 et seq.'+
+        'By signing below, both parties agree to modify the original painting contract to reflect the scope and price changes described above. All other terms of the original contract remain in effect. This change order is legally binding upon signature per applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.).'+
       '</div>'+
       // Signature canvas
       '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:6px">Client signature</div>'+

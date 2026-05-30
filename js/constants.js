@@ -255,7 +255,7 @@ const COLL_STAGES={
 const COLL_SMS={
   reminder: (name,bal,addr,biz)=>`Hi ${name}, this is ${biz}. Just a friendly reminder that a balance of ${fmt(bal)} is outstanding for the painting work at ${addr}. Please let us know when you're ready to take care of this. Thank you!`,
   second:   (name,bal,addr,biz)=>`Hi ${name}, this is a second notice from ${biz}. A balance of ${fmt(bal)} remains outstanding for work completed at ${addr}. Please respond within 5 business days to arrange payment and avoid further collection steps.`,
-  intent:   (name,bal,addr,biz)=>`${name}, this is formal written notice from ${biz} of our intent to file a Mechanic's Lien against the property at ${addr} for unpaid services totaling ${fmt(bal)}. Under Kansas law (K.S.A. 60-1105), you have 7 days to remit full payment before we proceed with filing. Please contact us immediately.`,
+  intent:   (name,bal,addr,biz,statute)=>`${name}, this is formal written notice from ${biz} of our intent to file a Mechanic's Lien against the property at ${addr} for unpaid services totaling ${fmt(bal)}. Under ${statute||'applicable state law'}, you have 7 days to remit full payment before we proceed with filing. Please contact us immediately.`,
 };
 
 // Collection, risk, lien, and county helpers moved to bids.js (load-order fix)

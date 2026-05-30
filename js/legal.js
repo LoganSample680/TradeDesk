@@ -30,7 +30,7 @@ const STATE_CANCEL={
   MI:{days:3,statute:'MCL §445.111'},
   MN:{days:3,statute:'Minn. Stat. §325G.06'},
   MS:{days:3,statute:'Miss. Code §75-66-5'},
-  MO:{days:3,statute:'Mo. Rev. Stat. §407.675'},
+  MO:{days:3,statute:'Mo. Rev. Stat. §407.705'},
   MT:{days:3,statute:'MCA §30-14-502'},
   NE:{days:3,statute:'Neb. Rev. Stat. §69-1602'},
   NV:{days:3,statute:'NRS §598.2825'},
@@ -56,6 +56,20 @@ const STATE_CANCEL={
   WV:{days:3,statute:'W.Va. Code §46A-2-501'},
   WI:{days:3,statute:'Wis. Stat. §423.203'},
   WY:{days:3,statute:'Wyo. Stat. §40-12-201'},
+};
+
+// ── State Names (self-contained — legal.js loads on sign.html where tax.js is absent) ──────
+const STATE_NAMES={
+  AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',
+  CO:'Colorado',CT:'Connecticut',DE:'Delaware',FL:'Florida',GA:'Georgia',
+  HI:'Hawaii',ID:'Idaho',IL:'Illinois',IN:'Indiana',IA:'Iowa',
+  KS:'Kansas',KY:'Kentucky',LA:'Louisiana',ME:'Maine',MD:'Maryland',
+  MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',MS:'Mississippi',MO:'Missouri',
+  MT:'Montana',NE:'Nebraska',NV:'Nevada',NH:'New Hampshire',NJ:'New Jersey',
+  NM:'New Mexico',NY:'New York',NC:'North Carolina',ND:'North Dakota',OH:'Ohio',
+  OK:'Oklahoma',OR:'Oregon',PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',
+  SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',
+  VA:'Virginia',WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',
 };
 
 // ── Mechanic's Lien Rights ─────────────────────────────────────────────────
@@ -117,7 +131,7 @@ const STATE_LIEN={
 function _lienNotice(state){
   const st=state||'KS';
   const lien=STATE_LIEN[st];
-  const stateName=(typeof STATE_TAX!=='undefined'&&STATE_TAX[st])?STATE_TAX[st].name:st;
+  const stateName=STATE_NAMES[st]||(typeof STATE_TAX!=='undefined'&&STATE_TAX[st]?STATE_TAX[st].name:st);
   const statute=lien?lien.statute:'applicable mechanic\'s lien statutes';
   return 'Under '+stateName+' law ('+statute+'), contractor has the right to file a mechanic\'s lien against this property for any amounts unpaid under this agreement. Client is hereby notified of this right.';
 }
@@ -138,7 +152,7 @@ function renderLegalInspector(){
   const st=document.getElementById('dev-legal-state')?.value||S?.state||'KS';
   const cancel=STATE_CANCEL[st]||{days:3,statute:'16 CFR Part 429'};
   const lien=STATE_LIEN[st]||{statute:'applicable mechanic\'s lien statutes'};
-  const stateName=(typeof STATE_TAX!=='undefined'&&STATE_TAX[st])?STATE_TAX[st].name:st;
+  const stateName=STATE_NAMES[st]||(typeof STATE_TAX!=='undefined'&&STATE_TAX[st]?STATE_TAX[st].name:st);
   const lienTxt=_lienNotice(st);
   const cancelTxt=_cancelCitation(st);
 
