@@ -835,6 +835,67 @@ test.describe('sign.html — proposal signing page', () => {
     assertNoErrors(signedPage, 'sign.html already-signed');
     await signedPage.close();
   });
+
+  test('sign.html — Missouri address shows MO statute not KS', async () => {
+    const ctx = page.context();
+    const moPage = await ctx.newPage();
+    moPage._consoleErrors = [];
+    const moProposal = {
+      ...MOCK_PROPOSAL,
+      clientAddr: '456 Oak Ave, St. Louis MO 63101',
+      cancelStatute: 'K.S.A. §50-640',   // wrong KS statute stored in old proposal JSON
+      lienStatute: 'K.S.A. §60-1101 et seq.',
+      cancelDays: 3,
+    };
+    await moPage.addInitScript(data => { window.__mockProposalData = data; }, moProposal);
+    await mockAllExternal(moPage, { alreadySigned: false, proposalData: moProposal, bidId: FAKE_BID_ID_1 });
+    await moPage.goto(
+      `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 }
+    );
+    await moPage.waitForTimeout(2000);
+    const noticeText = await moPage.evaluate(() => {
+      const el = document.getElementById('cancel-notice-body');
+      return el ? (el.textContent || '') : '';
+    });
+    if (noticeText && noticeText.length > 0) {
+      expect(noticeText).toContain('Mo. Rev. Stat.');
+      expect(noticeText).not.toContain('K.S.A.');
+    }
+    assertNoErrors(moPage, 'sign.html MO statute');
+    await moPage.close();
+  });
+
+  test('sign.html — cancel deadline skips Sundays (FTC 16 CFR Part 429)', async () => {
+    // Fix clock to Friday 2026-05-29 so the test is deterministic.
+    // FTC 3 business days from Friday: Sat May 30 (1), Sun May 31 skip, Mon Jun 1 (2), Tue Jun 2 (3) → deadline Tuesday June 2.
+    const ctx = page.context();
+    const bdPage = await ctx.newPage();
+    bdPage._consoleErrors = [];
+    await bdPage.clock.setFixedTime('2026-05-29T18:00:00.000Z');
+    const bdProposal = { ...MOCK_PROPOSAL, cancelDays: 3 };
+    await bdPage.addInitScript(data => { window.__mockProposalData = data; }, bdProposal);
+    await mockAllExternal(bdPage, { alreadySigned: false, proposalData: bdProposal, bidId: FAKE_BID_ID_1 });
+    await bdPage.goto(
+      `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 }
+    );
+    await bdPage.waitForTimeout(2000);
+    const noticeText = await bdPage.evaluate(() => {
+      const el = document.getElementById('cancel-notice-body');
+      return el ? (el.textContent || '') : '';
+    });
+    if (noticeText && noticeText.includes('deadline:')) {
+      // Deadline must fall on Tuesday June 2 (Sunday May 31 is skipped)
+      expect(noticeText).toContain('Tuesday');
+      expect(noticeText).toContain('June 2');
+      // Must not be Sunday or Monday (those would mean the loop didn't skip Sunday)
+      expect(noticeText).not.toContain('Sunday');
+      expect(noticeText).not.toContain('Monday, June');
+    }
+    assertNoErrors(bdPage, 'sign.html FTC business day');
+    await bdPage.close();
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════

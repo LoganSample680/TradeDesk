@@ -2090,8 +2090,32 @@ function exportTaxPDF(){
   const fedBkts=_getFedBracketsForYear(yr);
   const fedTax=Math.ceil(calcBrackets(fedTaxable,fedBkts[status]||fedBkts.single));
   const ksTaxable=Math.max(0,agi-(KS_STD[status]||3500));
-  const ksTax=Math.ceil(calcBrackets(ksTaxable,KS_BRACKETS[status]||KS_BRACKETS.single));
-  const totalTax=seTax+fedTax+ksTax;
+  const ksTaxGross=Math.ceil(calcBrackets(ksTaxable,KS_BRACKETS[status]||KS_BRACKETS.single));
+  // Multi-state: build revenue by state from bid addresses
+  const _pdfHome=S.state||'KS';
+  const _pdfRev={};
+  payments.filter(p=>p.amount>0&&p.date&&p.date.startsWith(yr)).forEach(p=>{
+    const bid=bids.find(b=>b.id===p.bid_id);
+    const st=(bid&&typeof detectStateFromAddr==='function'?detectStateFromAddr(bid.addr||''):null)||_pdfHome;
+    _pdfRev[st]=(_pdfRev[st]||0)+p.amount;
+  });
+  yrIncome.forEach(r=>{_pdfRev[_pdfHome]=(_pdfRev[_pdfHome]||0)+r.amount;});
+  const _pdfMulti=tInc>0&&Object.keys(_pdfRev).some(st=>st!==_pdfHome);
+  const _pdfNonHome=[];
+  let _pdfNonHomeTax=0;
+  if(_pdfMulti){
+    Object.entries(_pdfRev).filter(([st])=>st!==_pdfHome).forEach(([st,rev])=>{
+      const stInfo=STATE_TAX[st];
+      const stTax=_calcStateEstimate(agi*(rev/tInc),stInfo);
+      _pdfNonHome.push({name:(stInfo?.name||st),rev,stTax,noTax:!!(stInfo?.noTax)});
+      _pdfNonHomeTax+=stTax;
+    });
+    _pdfNonHome.sort((a,b)=>b.rev-a.rev);
+  }
+  const _pdfNonHomeInc=_pdfNonHome.reduce((s,t)=>s+t.rev,0);
+  const _pdfCredit=Math.min(_pdfNonHomeTax,ksTaxGross*(tInc>0?_pdfNonHomeInc/tInc:0));
+  const ksTax=Math.max(0,Math.ceil(ksTaxGross-_pdfCredit));
+  const totalTax=seTax+fedTax+ksTax+_pdfNonHomeTax;
   const byCat={};
   yrExp.forEach(e=>{
     const cat=IRS_EXPENSE_CATS.find(c=>c.id===e.cat)||{label:e.cat||'Other',icon:'',line:'Part II Line 27'};
@@ -2146,7 +2170,8 @@ function exportTaxPDF(){
   h+='<div class="box"><div class="bl">IRS Rate</div><div class="bv">$'+IRS().toFixed(3)+'/mi</div></div>';
   h+='</div></div>';
   // Tax breakdown
-  h+='<div class="sec"><div class="sec-t">Tax Liability — Federal vs '+(S.state||'State')+' State</div>';
+  const _pdfHomeStateName=(STATE_TAX[_pdfHome]?.name||_pdfHome||'State');
+  h+='<div class="sec"><div class="sec-t">Tax Liability — Federal vs '+(_pdfMulti?'Multi-State':_pdfHomeStateName+' State')+'</div>';
   h+='<div class="two">';
   // Federal
   h+='<div class="ts">';
@@ -2161,20 +2186,26 @@ function exportTaxPDF(){
   h+='<div class="tr2"><span>Federal income tax<span class="tsub">Form 1040 brackets</span></span><span class="red">'+fmt(fedTax)+'</span></div>';
   h+='<div class="ttot"><span>Total Federal</span><span class="red">'+fmt(seTax+fedTax)+'</span></div>';
   h+='</div>';
-  // State
+  // State (single or multi)
   h+='<div class="ts">';
-  h+='<div class="th" style="background:#EAF3DE;color:#27500A">'+(S.state||'State')+' Tax</div>';
-  h+='<div class="tr2"><span>State AGI</span><span>'+fmt(agi)+'</span></div>';
-  h+='<div class="tr2"><span>Standard deduction<span class="tsub">'+statusLabel+'</span></span><span class="green">('+fmt(KS_STD[status]||3500)+')</span></div>';
-  h+='<div class="tr2"><span>State taxable income</span><span style="font-weight:700">'+fmt(ksTaxable)+'</span></div>';
-  h+='<div class="tr2"><span>State income tax</span><span class="red">'+fmt(ksTax)+'</span></div>';
-  h+='<div class="ttot"><span>Total State</span><span class="red">'+fmt(ksTax)+'</span></div>';
+  h+='<div class="th" style="background:#EAF3DE;color:#27500A">'+(_pdfMulti?'State Tax (apportioned by job location)':_pdfHomeStateName+' Tax')+'</div>';
+  if(_pdfMulti){
+    h+='<div class="tr2"><span>'+escHtml(_pdfHomeStateName)+' income tax (home, after credit)</span><span class="red">'+fmt(ksTax)+'</span></div>';
+    _pdfNonHome.forEach(t=>{h+='<div class="tr2"><span>'+escHtml(t.name)+' (non-resident)</span><span class="red">'+(t.noTax?'No income tax':fmt(t.stTax))+'</span></div>';});
+    h+='<div class="tr2" style="font-size:9px;color:#666;font-style:italic"><span>Income apportioned by job address · credits applied · verify with CPA</span><span></span></div>';
+  } else {
+    h+='<div class="tr2"><span>State AGI</span><span>'+fmt(agi)+'</span></div>';
+    h+='<div class="tr2"><span>Standard deduction<span class="tsub">'+statusLabel+'</span></span><span class="green">('+fmt(KS_STD[status]||3500)+')</span></div>';
+    h+='<div class="tr2"><span>State taxable income</span><span style="font-weight:700">'+fmt(ksTaxable)+'</span></div>';
+    h+='<div class="tr2"><span>State income tax</span><span class="red">'+fmt(ksTax)+'</span></div>';
+  }
+  h+='<div class="ttot"><span>Total State</span><span class="red">'+fmt(ksTax+_pdfNonHomeTax)+'</span></div>';
   h+='</div></div>';
   // Combined
   h+='<div class="ts">';
   h+='<div class="tr2"><span>Self-employment tax</span><span class="red">'+fmt(seTax)+'</span></div>';
   h+='<div class="tr2"><span>Federal income tax</span><span class="red">'+fmt(fedTax)+'</span></div>';
-  h+='<div class="tr2"><span>'+(S.state||'State')+' state income tax</span><span class="red">'+fmt(ksTax)+'</span></div>';
+  h+='<div class="tr2"><span>'+(_pdfMulti?'State income tax (all states)':_pdfHomeStateName+' state income tax')+'</span><span class="red">'+fmt(ksTax+_pdfNonHomeTax)+'</span></div>';
   h+='<div class="tall"><span>Total Estimated Tax Liability</span><span class="red">'+fmt(totalTax)+'</span></div>';
   h+='</div></div>';
   // Income table

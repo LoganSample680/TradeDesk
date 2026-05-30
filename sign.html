@@ -7,6 +7,7 @@
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://js.stripe.com/v3/"></script>
+<script src="js/legal.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -315,11 +316,6 @@ input[type=text]:focus{border-color:var(--denim)}
     <div class="card" id="sig-card">
       <span class="sig-eyebrow">Agreement</span>
       <h1 class="sig-title">Review &amp; Sign</h1>
-
-      <div class="sig-summary">
-        <div class="sig-summary-lbl">Signing for</div>
-        <div id="sign-act-total" class="sig-summary-amt"></div>
-      </div>
 
       <!-- Name field -->
       <div class="sig-field">
@@ -680,10 +676,20 @@ async function init(){
     const _days=_prop.estDays;
     document.getElementById('sum-rows').innerHTML=
       (_days?'<div class="row"><span class="rl">Est. duration</span><span class="rv">'+_days+' day'+(_days!==1?'s':'')+'</span></div>':'');
+    // Detect state from client address for statute lookups.
+    // Priority: 2-letter code in address → full state name in address → _prop.state fallback.
+    // Multi-word state names are listed first so "WEST VIRGINIA" matches before "VIRGINIA".
+    const _propAddrUpper=(_prop.clientAddr||'').toUpperCase();
+    const _propAddrMatch=_propAddrUpper.match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
+    const _STNAMES={'WEST VIRGINIA':'WV','NORTH CAROLINA':'NC','NORTH DAKOTA':'ND','SOUTH CAROLINA':'SC','SOUTH DAKOTA':'SD','NEW HAMPSHIRE':'NH','NEW JERSEY':'NJ','NEW MEXICO':'NM','NEW YORK':'NY','RHODE ISLAND':'RI','ALABAMA':'AL','ALASKA':'AK','ARIZONA':'AZ','ARKANSAS':'AR','CALIFORNIA':'CA','COLORADO':'CO','CONNECTICUT':'CT','DELAWARE':'DE','FLORIDA':'FL','GEORGIA':'GA','HAWAII':'HI','IDAHO':'ID','ILLINOIS':'IL','INDIANA':'IN','IOWA':'IA','KANSAS':'KS','KENTUCKY':'KY','LOUISIANA':'LA','MAINE':'ME','MARYLAND':'MD','MASSACHUSETTS':'MA','MICHIGAN':'MI','MINNESOTA':'MN','MISSISSIPPI':'MS','MISSOURI':'MO','MONTANA':'MT','NEBRASKA':'NE','NEVADA':'NV','OHIO':'OH','OKLAHOMA':'OK','OREGON':'OR','PENNSYLVANIA':'PA','TENNESSEE':'TN','TEXAS':'TX','UTAH':'UT','VERMONT':'VT','VIRGINIA':'VA','WASHINGTON':'WA','WISCONSIN':'WI','WYOMING':'WY'};
+    let _propSt=(_propAddrMatch&&_propAddrMatch[1])||null;
+    if(!_propSt){const _nm=Object.entries(_STNAMES).find(([n])=>_propAddrUpper.includes(n));if(_nm)_propSt=_nm[1];}
+    if(!_propSt&&_prop.state)_propSt=_prop.state;
     // Patch old cancellation clause in unsigned proposals — adds mutual obligation so contractor
     // can't keep the deposit without performing. alreadySigned proposals return early at pg-done,
     // so this code only ever runs for proposals the client hasn't signed yet.
-    let _proposalHtml=_prop.proposalHtml||'';
+    const _proposalHtmlOrig=_prop.proposalHtml||'';
+    let _proposalHtml=_proposalHtmlOrig;
     if(_proposalHtml.includes('Buyer has the right to cancel')){
       // Painting proposals (proposals.js): full <p> tag with <em> formatting, ends with "at no additional charge.</p>"
       _proposalHtml=_proposalHtml.replace(
@@ -696,7 +702,83 @@ async function init(){
         (_,days,statute)=>'<div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within '+days+' business days of signing ('+statute+') for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. '+_biz+'\'s right to retain the deposit is conditioned on '+_biz+'\'s readiness and willingness to perform. If '+_biz+' fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div>'
       );
     }
+    // Upgrade old generic mechanic's lien text → state-specific _lienNotice() sentence.
+    // Pre-sprint T&M and Scope proposals used a generic placeholder rather than a state-aware sentence.
+    // Old template literals stored the HTML entity &#39; for apostrophe, so check both forms.
+    if(_propSt&&typeof _lienNotice==='function'){
+      const _newLienSentence=_lienNotice(_propSt);
+      const _genericForms=['Contractor reserves the right to file a mechanic&#39;s lien for any unpaid amounts under this agreement.','Contractor reserves the right to file a mechanic\'s lien for any unpaid amounts under this agreement.'];
+      _genericForms.forEach(f=>{if(_proposalHtml.includes(f))_proposalHtml=_proposalHtml.split(f).join(_newLienSentence);});
+    }
+    // Inject Cancellation & Deposits clause into old T&M proposals that never had it.
+    // Old T&M format: Billing was item 3 (no Cancellation). New format: Cancellation is item 3, Billing is item 4.
+    if(_proposalHtml.includes('<div>3. <strong>Billing:</strong>')&&
+       !_proposalHtml.includes('Cancellation')&&
+       _propSt&&typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_propSt]&&
+       typeof _cancelCitation==='function'){
+      const _injCd=(_prop.cancelDays||STATE_CANCEL[_propSt]?.days||3);
+      const _injCs=_cancelCitation(_propSt);
+      const _injBiz=escHtmlN(_prop.businessName||'Contractor');
+      const _injCancel='<div>3. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within '+_injCd+' business days of signing ('+_injCs+') for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. '+_injBiz+'\'s right to retain the deposit is conditioned on '+_injBiz+'\'s readiness and willingness to perform. If '+_injBiz+' fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div>';
+      // Renumber old items 3-7 → 4-8 first (high→low to avoid double-renaming)
+      _proposalHtml=_proposalHtml
+        .replace(/<div>7\. <strong>Mechanic/g,'<div>8. <strong>Mechanic')
+        .replace(/<div>6\. <strong>Limitation/g,'<div>7. <strong>Limitation')
+        .replace(/<div>5\. <strong>Warranty/g,'<div>6. <strong>Warranty')
+        .replace(/<div>4\. <strong>Change Orders/g,'<div>5. <strong>Change Orders')
+        .replace('<div>3. <strong>Billing',_injCancel+'<div>4. <strong>Billing');
+    }
+    // Remove Warranty clause from all proposal types and renumber subsequent items.
+    // Must run after Cancellation injection so numbering is consistent.
+    // T&M (after injection): Warranty at 6 → renumber Limitation 7→6, Mechanic 8→7.
+    // Painting: Warranty at 4 → renumber Limitation 5→4, Materials 6→5, Mechanic 7→6.
+    _proposalHtml=_proposalHtml
+      .replace(/<div>\d+\. <strong>Warranty:<\/strong>[^<]*<\/div>/g,'')
+      .replace(/<p[^>]*><strong>\d+\. Warranty:<\/strong>[\s\S]*?<\/p>/g,'')
+      .replace(/<div>8\. <strong>Mechanic/g,'<div>7. <strong>Mechanic')
+      .replace(/<div>7\. <strong>Limitation/g,'<div>6. <strong>Limitation')
+      .replace(/<strong>7\. Mechanic/g,'<strong>6. Mechanic')
+      .replace(/<strong>6\. Materials/g,'<strong>5. Materials')
+      .replace(/<strong>5\. Limitation/g,'<strong>4. Limitation');
+    // Replace wrong cancelStatute / lienStatute baked into proposal HTML body at creation time.
+    // If _prop.cancelStatute is missing (older proposals), scan all known statutes to find one in the HTML.
+    if(_propSt&&typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_propSt]){
+      const _cs2=STATE_CANCEL[_propSt].statute;
+      let _csOld=_prop.cancelStatute||null;
+      if(!_csOld){const _found=Object.entries(STATE_CANCEL).find(([_s,_i])=>_s!==_propSt&&_i.statute&&_proposalHtml.includes(_i.statute));if(_found)_csOld=_found[1].statute;}
+      if(_csOld&&_cs2!==_csOld)_proposalHtml=_proposalHtml.split(_csOld).join(_cs2);
+    }
+    if(_propSt&&typeof STATE_LIEN!=='undefined'&&STATE_LIEN[_propSt]&&typeof _lienNotice==='function'){
+      const _newLienTxt=_lienNotice(_propSt);
+      let _replaced=false;
+      // New proposals store _prop.state — reconstruct old lien notice for full replacement (state name + statute)
+      if(_prop.state&&_prop.state!==_propSt){
+        const _oldLienTxt=_lienNotice(_prop.state);
+        if(_proposalHtml.includes(_oldLienTxt)){_proposalHtml=_proposalHtml.split(_oldLienTxt).join(_newLienTxt);_replaced=true;}
+      }
+      // Legacy: scan all states for a full lien notice embedded in the HTML
+      if(!_replaced){
+        for(const [_s] of Object.entries(STATE_LIEN)){
+          if(_s===_propSt)continue;
+          const _candidate=_lienNotice(_s);
+          if(_proposalHtml.includes(_candidate)){_proposalHtml=_proposalHtml.split(_candidate).join(_newLienTxt);_replaced=true;break;}
+        }
+      }
+      // Last resort: replace just the statute citation (edge cases where notice text was customised)
+      if(!_replaced){
+        const _ls2=STATE_LIEN[_propSt].statute;
+        let _lsOld=_prop.lienStatute||null;
+        if(!_lsOld){const _found=Object.entries(STATE_LIEN).find(([_s,_i])=>_s!==_propSt&&_i.statute&&_proposalHtml.includes(_i.statute));if(_found)_lsOld=_found[1].statute;}
+        if(_lsOld&&_ls2!==_lsOld)_proposalHtml=_proposalHtml.split(_lsOld).join(_ls2);
+      }
+    }
     document.getElementById('prop-html').innerHTML=_proposalHtml;
+    // If any legacy patches were applied, silently re-upload the corrected proposal to Supabase storage
+    // so hub preview and all future views (client.html) reflect the correct state-specific terms.
+    if(!alreadySigned&&_proposalHtml!==_proposalHtmlOrig&&key){
+      const _patchedProp=Object.assign({},_prop,{proposalHtml:_proposalHtml,state:_propSt||_prop.state||'KS'});
+      _supa.storage.from('proposals').upload(key,JSON.stringify(_patchedProp),{contentType:'application/json',upsert:true}).catch(()=>{});
+    }
     // Remove the embedded signature block from the proposal HTML — signing happens in sig-card below
     document.querySelectorAll('#prop-html .sig-block, #prop-html [class*="sig-block"], #prop-html .signature-section').forEach(el=>el.remove());
     // Show EPA section for pre-1978 painting proposals
@@ -710,14 +792,20 @@ async function init(){
     const _cancelNoticeBody=document.getElementById('cancel-notice-body');
     if(_uetaBody||_cancelNotice){
       const _cd=_prop.cancelDays||3;
-      const _cs=_prop.cancelStatute||'16 CFR Part 429';
-      const _ls=_prop.lienStatute||'applicable mechanic\'s lien statutes';
+      const _cancelRule=(typeof STATE_CANCEL!=='undefined'&&_propSt&&STATE_CANCEL[_propSt])||null;
+      const _lienRule=(typeof STATE_LIEN!=='undefined'&&_propSt&&STATE_LIEN[_propSt])||null;
+      const _cs=_cancelRule?_cancelRule.statute:(_prop.cancelStatute||'16 CFR Part 429');
+      const _ls=_lienRule?_lienRule.statute:(_prop.lienStatute||'applicable mechanic\'s lien statutes');
       const _bizName=_prop.businessName||'Your Contractor';
       const _bizPhone=_prop.businessPhone||'';
-      if(_uetaBody)_uetaBody.textContent='By checking this box, I confirm I have read the Notice of Cancellation below, accept the total price, scope of work, and all terms above. This constitutes a binding electronic signature under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.). A deposit is due before work begins and before a start date is scheduled; remaining balance is due on completion. Contractor retains lien rights under '+_ls+'.';
+      if(_uetaBody)_uetaBody.textContent='By checking this box, I confirm I have read the Notice of Cancellation below, accept the total price, scope of work, and all terms above. This constitutes a binding electronic signature under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.). A deposit is due before work begins and before a start date is scheduled; remaining balance is due on completion. Contractor retains lien rights under '+_ls.replace(/\.+$/,'')+'.';
       if(_cancelNoticeBody){
-        const _cancelDeadline=new Date();_cancelDeadline.setDate(_cancelDeadline.getDate()+_cd);
-        const _deadlineStr=_cancelDeadline.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+        // FTC 16 CFR Part 429: business day = any day except Sunday and federal legal holidays (Saturdays count)
+        // Use local calendar dates — avoids UTC offset shifting the date for US timezones
+        const _liso=d=>{const y=d.getFullYear(),mo=String(d.getMonth()+1).padStart(2,'0'),dy=String(d.getDate()).padStart(2,'0');return y+'-'+mo+'-'+dy;};
+        const _signFedHols=yr=>{const obs=d=>{const w=d.getDay();if(w===0)d.setDate(d.getDate()+1);else if(w===6)d.setDate(d.getDate()-1);return _liso(d);};const nth=(m,n,wd)=>{const d=new Date(yr,m,1);d.setDate(1+((wd-d.getDay()+7)%7)+(n-1)*7);return _liso(d);};const last=(m,wd)=>{const d=new Date(yr,m+1,0);d.setDate(d.getDate()-((d.getDay()-wd+7)%7));return _liso(d);};return[obs(new Date(yr,0,1)),nth(0,3,1),nth(1,3,1),last(4,1),obs(new Date(yr,5,19)),obs(new Date(yr,6,4)),nth(8,1,1),nth(9,2,1),obs(new Date(yr,10,11)),nth(10,4,4),obs(new Date(yr,11,25))];};
+        const _now=new Date();_now.setHours(0,0,0,0);const _dl=new Date(_now);const _hols=[..._signFedHols(_now.getFullYear()),..._signFedHols(_now.getFullYear()+1)];let _bc=0;while(_bc<_cd){_dl.setDate(_dl.getDate()+1);const _ymd=_liso(_dl);if(_dl.getDay()!==0&&!_hols.includes(_ymd))_bc++;}
+        const _deadlineStr=_dl.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
         _cancelNoticeBody.innerHTML=
           '<strong>Right to cancel:</strong> You may cancel this contract within '+_cd+' business days of signing (deadline: '+_deadlineStr+'). To cancel, send written notice to '+escHtmlN(_bizName)+((_bizPhone)?' at '+escHtmlN(_bizPhone):'')+'. ('+escHtmlN(_cs)+')';
         if(_cancelNotice)_cancelNotice.style.display='block';

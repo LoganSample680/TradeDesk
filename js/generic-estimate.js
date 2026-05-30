@@ -274,6 +274,11 @@ function openGenericEstimate(c,bidId,_tradePick){
     const draftBid={id:_newBidId(),client_id:_geiClientId,client_name:_draftClientName,bid_date:todayKey(),amount:0,deposit:0,type:_draftTypeLabel+' estimate',notes:'',status:'Draft',draft:true,trade_type:_geiTrade,geiLines:[],geiTaxPct:0};
     bids.unshift(draftBid);_geiEditBidId=draftBid.id;saveAll();
   }
+  // Restore scope title from saved description when reopening an existing bid
+  if(!_geiIsTM&&!_geiIsFreeForm){
+    const _descVal=document.getElementById('gei-desc')?.value?.trim();
+    if(_descVal){const _tEl=document.getElementById('gei-trade-title');if(_tEl)_tEl.textContent=_descVal;}
+  }
   goPg('pg-est-generic');
   goGeiStep(1);
 }
@@ -415,7 +420,7 @@ function _tmShowPage(){
   const p=document.getElementById('gei-tm-page');if(p)p.style.display='';
   // Trade branding in title
   const _tm=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
-  const titleEl=document.getElementById('tm-tbar-title');if(titleEl)titleEl.textContent=_tm.icon+' '+_tm.label+' · Time & Materials';
+  const titleEl=document.getElementById('tm-tbar-title');if(titleEl){const _customName=document.getElementById('gei-desc')?.value?.trim();titleEl.textContent=_customName||(_tm.icon+' '+_tm.label+' · Time & Materials');}
   // Sub-header: client name · address
   const c=getClientById(_geiClientId);
   const sub=document.getElementById('tm-page-sub');
@@ -475,10 +480,10 @@ function _byoHidePage(){
   const p=document.getElementById('gei-byo-page');if(p)p.style.display='none';
   ['gei-old-tbar','gei-step-bar'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='';});
 }
-function _editByoTitle(){
-  const titleEl=document.getElementById('byo-tbar-title');
-  const btn=document.getElementById('byo-edit-title-btn');
-  if(!titleEl||titleEl.querySelector('input'))return; // already editing
+function _editEstTitle(titleId,btnId){
+  const titleEl=document.getElementById(titleId);
+  const btn=document.getElementById(btnId);
+  if(!titleEl||titleEl.querySelector('input'))return;
   const prev=titleEl.textContent.trim();
   const inp=document.createElement('input');
   inp.type='text';inp.value=prev;
@@ -505,6 +510,9 @@ function _editByoTitle(){
     if(e.key==='Escape'){e.preventDefault();inp.removeEventListener('blur',commit);cancel();}
   });
 }
+function _editByoTitle(){_editEstTitle('byo-tbar-title','byo-edit-title-btn');}
+function _editTMTitle(){_editEstTitle('tm-tbar-title','tm-edit-title-btn');}
+function _editScopeTitle(){_editEstTitle('gei-trade-title','scope-edit-title-btn');}
 function _byoRenderSections(){
   const wrap=document.getElementById('byo-sections');if(!wrap)return;
   const extraFromItems=_byoItems.map(x=>x.section).filter(s=>!_BYO_DEFAULT_SECTIONS.includes(s));
@@ -1768,12 +1776,13 @@ async function sendGenericProposal(previewOnly){
   const _tmNteCap=parseFloat(v('tm-nte-cap'))||0;
   const depositFmt='$'+_tmDepAmt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   // MUST be declared before the template literals below that use it — TDZ if declared after
-  const _stateKey=(S&&S.state)?S.state:'KS';
+  // Use the client's job address state, not the contractor's home state
+  const _stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(v('gei-addr')):null)||(S&&S.state)||'KS';
   const _tmDepRow=_geiIsTM
     ?`<tr style="background:#0369a1;color:rgba(255,255,255,.88)"><td colspan="2" style="padding:6px 18px;font-size:11px;font-weight:600">Mobilization Deposit (${_tmDepPct}%) Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr>`
     :`<tr style="background:#2a4a7f;color:rgba(255,255,255,.88)"><td colspan="2" style="padding:6px 18px;font-size:11px;font-weight:600">${_sendByoDepPctLabel}% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr>`;
   const _tmPayTerms=_geiIsTM
-    ?`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Contract type:</strong> Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}</div><div>2. <strong>Mobilization deposit:</strong> ${_tmDepPct}% (${depositFmt}) due before work begins.</div><div>3. <strong>Billing:</strong> ${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.</div><div>4. <strong>Change Orders:</strong> Any additional scope not described herein requires a written change order signed by both parties.</div><div>5. <strong>Warranty:</strong> All workmanship warranted for one (1) year from date of completion.</div><div>6. <strong>Limitation of Liability:</strong> Contractor is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>7. <strong>Mechanic&#39;s Lien:</strong> Contractor reserves the right to file a mechanic&#39;s lien for any unpaid amounts under this agreement.</div></div>`
+    ?`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Contract type:</strong> Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}</div><div>2. <strong>Mobilization deposit:</strong> ${_tmDepPct}% (${depositFmt}) due before work begins and before a start date is scheduled.</div><div>3. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div><div>4. <strong>Billing:</strong> ${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.</div><div>5. <strong>Change Orders:</strong> Any additional scope not described herein requires a written change order signed by both parties.</div><div>6. <strong>Limitation of Liability:</strong> Contractor is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>7. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(_stateKey)}</div></div>`
     :`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> ${_sendByoDepPctLabel}% due before work begins and before a start date is scheduled. Balance due upon completion.</div><div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div><div>3. <strong>Change Orders:</strong> Any additional work not described herein requires a written change order signed by both parties.</div><div>4. <strong>Limitation of Liability:</strong> ${bname} is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>5. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(_stateKey)}</div></div>`;
   const _tmPropMarkupMult=(_geiIsTM&&_tmMatMarkup>0)?(1+_tmMatMarkup/100):1;
   // Safari lazy-parses function bodies on first call — extract ?.?? to plain variables
@@ -1817,6 +1826,10 @@ async function sendGenericProposal(previewOnly){
     notifyEmail:_supaUser.email,businessPhone:S.bphone||'',
     stripeConnectEnabled:_stripeEnabled,
     trade_type:trade,
+    state:_stateKey,
+    cancelDays:(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3,
+    cancelStatute:_cancelCitation(_stateKey),
+    lienStatute:(typeof STATE_LIEN!=='undefined'&&STATE_LIEN[_stateKey])?STATE_LIEN[_stateKey].statute:'applicable mechanic\'s lien statutes',
   };
   const _uploadRes=await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true}).catch(e=>({error:e}));
   if(_uploadRes&&_uploadRes.error){showToast('Upload failed — check connection and try again','error');console.error('[proposal upload]',_uploadRes.error);return;}
@@ -1851,9 +1864,8 @@ async function sendGenericProposal(previewOnly){
   }
   if(input)input.value=shareUrl;
   _pendingSignToken={bidId,token,proposalKey};
-  // Show send bar — let user choose Text / Email / Other app (same as paint estimate)
-  const geiSendBar=document.getElementById('gei-send-bar');
-  if(geiSendBar){geiSendBar.style.display='block';geiSendBar.scrollIntoView({behavior:'smooth',block:'nearest'});}
+  // Show send overlay (centered modal) — lets user choose Text / Email / Other app
+  _showGeiSendOverlay();
   // Hide the generate button so user can't double-submit
   const geiSendBtn=document.getElementById('gei-send-btn');
   if(geiSendBtn)geiSendBtn.style.display='none';

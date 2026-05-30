@@ -109,6 +109,19 @@ function _populateTaxYearSel(){
   sel.innerHTML=years.map(y=>'<option value="'+y+'"'+(_taxPageYear===y?' selected':'')+'>'+y+'</option>').join('');
 }
 function setTaxYear(yr){_taxPageYear=yr;const hd=document.getElementById('tx-data-hd');if(hd)hd.textContent=yr+' income & deductions';calcTax();}
+
+// Estimate state income tax on an apportioned income amount using STATE_TAX data.
+// Used for non-resident (out-of-state job) portions — no standard deduction applied
+// since deduction is pro-rated to near-zero for small income fractions.
+function _calcStateEstimate(stateAgi,stInfo){
+  if(!stInfo||stInfo.noTax||stateAgi<=0)return 0;
+  if(stInfo.low===stInfo.high||stInfo.top>=999999)
+    return Math.ceil(parseFloat((stateAgi*stInfo.high/100).toFixed(2)));
+  const lowPart=Math.min(stateAgi,stInfo.top);
+  const highPart=Math.max(0,stateAgi-stInfo.top);
+  return Math.ceil(parseFloat((lowPart*stInfo.low/100+highPart*stInfo.high/100).toFixed(2)));
+}
+
 function calcTax(){
   const _taxYr=String(_taxPageYear||new Date().getFullYear());
   // Gross income = manually-logged income entries + bid payments (both filtered to selected year)
@@ -136,10 +149,40 @@ function calcTax(){
   const fedTaxable=Math.max(0,agi-stdDed);
   const fedTax=Math.ceil(calcBrackets(fedTaxable,_yrBkts[status]||_yrBkts.single));
 
+  // ── Multi-state revenue breakdown ────────────────────────────────────────
+  // Scan payments → detect job state from bid.addr; manual income → home state
+  const _homeState=S.state||'KS';
+  const _stateRev={};
+  payments.filter(p=>p.amount>0&&p.date&&p.date.startsWith(_taxYr)).forEach(p=>{
+    const bid=bids.find(b=>b.id===p.bid_id);
+    const st=(bid&&typeof detectStateFromAddr==='function'?detectStateFromAddr(bid.addr||''):null)||_homeState;
+    _stateRev[st]=(_stateRev[st]||0)+p.amount;
+  });
+  income.filter(r=>r.date&&r.date.startsWith(_taxYr)).forEach(r=>{_stateRev[_homeState]=(_stateRev[_homeState]||0)+r.amount;});
+  const _isMultiState=tIn>0&&Object.keys(_stateRev).some(st=>st!==_homeState);
+  // Calculate non-home state taxes (non-resident, apportioned by revenue fraction)
+  const _nonHomeTaxes=[];
+  let _totalNonHomeTax=0;
+  if(_isMultiState){
+    Object.entries(_stateRev).filter(([st])=>st!==_homeState).forEach(([st,rev])=>{
+      const stInfo=STATE_TAX[st];
+      const stateAgi=agi*(rev/tIn);
+      const stTax=_calcStateEstimate(stateAgi,stInfo);
+      _nonHomeTaxes.push({st,name:(stInfo?.name||st),rev,stTax,noTax:!!(stInfo?.noTax)});
+      _totalNonHomeTax+=stTax;
+    });
+    _nonHomeTaxes.sort((a,b)=>b.rev-a.rev);
+  }
+  // Home state: tax on full AGI, then credit for taxes paid to other states
+  // Credit = min(non-home tax paid, home tax that would have applied to same income)
   const ksTaxable=Math.max(0,agi-(KS_STD[status]||3500));
-  const ksTax=Math.ceil(calcBrackets(ksTaxable,KS_BRACKETS[status]||KS_BRACKETS.single));
+  const ksTaxGross=Math.ceil(calcBrackets(ksTaxable,KS_BRACKETS[status]||KS_BRACKETS.single));
+  const _nonHomeIncome=_nonHomeTaxes.reduce((s,t)=>s+t.rev,0);
+  const _nonHomeFraction=tIn>0?_nonHomeIncome/tIn:0;
+  const _credit=Math.min(_totalNonHomeTax,ksTaxGross*_nonHomeFraction);
+  const ksTax=Math.max(0,Math.ceil(ksTaxGross-_credit));
 
-  const totalOwed=seTax+fedTax+ksTax;
+  const totalOwed=seTax+fedTax+ksTax+_totalNonHomeTax;
   const stillOwed=Math.max(0,totalOwed-taxPaid);
   const perQ=Math.ceil(stillOwed/4);
   // Prior-year safe harbor: pay 100% of last year's tax (110% if AGI > $150K) to avoid underpayment penalty
@@ -183,6 +226,30 @@ function calcTax(){
     }
   }
 
+  // ── Income by state bar chart (shown when multi-state) ───────────────────
+  let _stateBarHtml='';
+  if(_isMultiState&&tIn>0){
+    const _maxRev=Math.max(...Object.values(_stateRev));
+    _stateBarHtml='<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">'+
+      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">Income by State</div>';
+    Object.entries(_stateRev).sort((a,b)=>b[1]-a[1]).forEach(([st,rev])=>{
+      const pct=Math.round(rev/tIn*100);
+      const barW=Math.round(rev/_maxRev*100);
+      const stName=(STATE_TAX[st]?.name||st);
+      const isHome=st===_homeState;
+      _stateBarHtml+='<div style="margin-bottom:10px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px">'+
+          '<div style="font-size:12px;font-weight:700">'+escHtml(stName)+'<span style="font-size:10px;font-weight:500;color:var(--text3);margin-left:4px">'+(isHome?'(home)':'(non-resident)')+'</span></div>'+
+          '<div style="font-size:12px;font-weight:700">'+fmt(rev)+'&nbsp;<span style="color:var(--text3);font-size:11px">'+pct+'%</span></div>'+
+        '</div>'+
+        '<div style="height:6px;background:var(--bg3,#e8eef7);border-radius:3px;overflow:hidden">'+
+          '<div style="height:100%;width:'+barW+'%;background:'+(isHome?'var(--blue)':'#5B7FA6')+';border-radius:3px;transition:width .3s"></div>'+
+        '</div>'+
+      '</div>';
+    });
+    _stateBarHtml+='</div>';
+  }
+
   document.getElementById('tx-inputs').innerHTML=
     '<div class="tax-row"><span style="color:var(--text2)">Gross income</span><span style="font-weight:700">'+fmt(tIn)+'</span></div>'+
     '<div class="tax-row"><span style="color:var(--text2)">Business expenses</span><span style="color:#A32D2D">('+fmt(tEx)+')</span></div>'+
@@ -191,13 +258,25 @@ function calcTax(){
       '<span style="font-weight:700">Net SE income</span><span style="font-weight:700">'+fmt(netSelf)+'</span>'+
     '</div>'+
     (spouseInc?'<div class="tax-row"><span style="color:var(--text2)">Spouse / other income</span><span>'+fmt(spouseInc)+'</span></div>':'')+
-    '<div class="tax-row"><span style="color:var(--text2)">Effective AGI</span><span>'+fmt(agi)+'</span></div>';
+    '<div class="tax-row"><span style="color:var(--text2)">Effective AGI</span><span>'+fmt(agi)+'</span></div>'+
+    _stateBarHtml;
 
-  const _stateTaxLabel=(STATE_TAX[S.state]?.name||S.state||'State')+' tax';
+  // ── State tax rows — single state keeps old display, multi-state shows breakdown
+  const _homeStateName=STATE_TAX[_homeState]?.name||_homeState||'State';
+  let _stateRows='';
+  if(_isMultiState&&_nonHomeTaxes.length){
+    _stateRows=
+      '<div class="tax-row"><span>'+escHtml(_homeStateName)+' income tax'+(_credit>0?' <span style="font-size:10px;color:var(--text3)">(after credit)</span>':'')+'</span><span style="color:#A32D2D">'+fmt(ksTax)+'</span></div>'+
+      _nonHomeTaxes.map(t=>'<div class="tax-row"><span style="padding-left:14px;color:var(--text2)">'+escHtml(t.name)+(t.noTax?'':' non-resident')+'</span><span style="color:#A32D2D">'+(t.noTax?'No income tax':fmt(t.stTax))+'</span></div>').join('')+
+      '<div style="font-size:10px;color:var(--text3);margin:4px 0 2px;font-style:italic">⚠ Multi-state estimate — verify with your CPA. Credit applied for taxes paid to other states.</div>';
+  } else {
+    _stateRows='<div class="tax-row"><span>'+escHtml(_homeStateName)+' income tax</span><span style="color:#A32D2D">'+fmt(ksTax)+'</span></div>';
+  }
+
   document.getElementById('tx-results').innerHTML=
     '<div class="tax-row"><span>Self-employment tax (15.3%)</span><span style="color:#A32D2D">'+fmt(seTax)+'</span></div>'+
     '<div class="tax-row"><span>Federal income tax</span><span style="color:#A32D2D">'+fmt(fedTax)+'</span></div>'+
-    '<div class="tax-row"><span>'+_stateTaxLabel+'</span><span style="color:#A32D2D">'+fmt(ksTax)+'</span></div>'+
+    _stateRows+
     '<div class="tax-row" style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px;font-size:15px;font-weight:700">'+
       '<span>Total estimated</span><span style="color:#A32D2D">'+fmt(totalOwed)+'</span>'+
     '</div>'+

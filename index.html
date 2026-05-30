@@ -84,6 +84,8 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 @keyframes td-spin{to{transform:rotate(360deg)}}
 @keyframes td-logoin{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}
 @keyframes td-bar{from{width:0}to{width:68%}}
+@keyframes td-pg-enter{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+@keyframes td-dash-enter{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
 
 /* ── Sidebar ── */
 #nav{position:fixed;top:0;left:0;bottom:0;width:var(--nav-w);background:var(--ink);color:var(--text-cream);display:flex;flex-direction:column;border-right:1px solid var(--ink-line);z-index:1000;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;-ms-overflow-style:none}
@@ -114,7 +116,9 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 #supa-status{left:var(--nav-w);transition:opacity 0.8s ease;opacity:0}
 .drive-banner{left:var(--nav-w)}
 .pg{display:none;padding:24px 28px 32px;max-width:1320px}
-.pg.active{display:block}
+.pg.active{display:block;animation:td-pg-enter .2s cubic-bezier(.22,1,.36,1) both}
+#pg-dash.active{animation:td-dash-enter .5s cubic-bezier(.22,1,.36,1) both}
+#pg-cal.active{animation:td-pg-enter 5s cubic-bezier(.22,1,.36,1) both}
 #pg-est.active{position:fixed;inset:0;z-index:1100;overflow-y:auto;padding:0;background:var(--bg)}
 #pg-leads,#pg-jobs,#pg-money{padding-top:8px}
 .drive-active .pg{padding-top:70px}
@@ -594,7 +598,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 .toast{position:fixed;bottom:24px;right:24px;background:var(--ink);color:var(--text-cream);border-radius:12px;padding:14px 18px;font-size:13px;font-weight:600;box-shadow:var(--shadow-modal);z-index:9997;display:flex;align-items:center;gap:10px;max-width:320px;animation:toast-in .25s ease;transform-origin:bottom right}
 .toast-icon{font-size:18px;flex-shrink:0}
 .toast-close{background:none;border:none;color:var(--text-cream-2);cursor:pointer;font-size:16px;margin-left:8px;padding:0;line-height:1}
-#supa-boot-overlay.td-fadeout{opacity:0;transition:opacity .35s ease}
+#supa-boot-overlay.td-fadeout{opacity:0;transition:opacity .65s cubic-bezier(.4,0,.2,1)}
 
 /* ── Dark mode ── */
 body.dark{
@@ -1836,8 +1840,12 @@ body.dark .cal-cell.other{background:var(--cream)}
 <div class="pg" id="pg-est-generic">
   <div class="tbar" id="gei-old-tbar">
     <div class="tbar-l">
+      <button class="link-back" onclick="goPg('pg-dash')">← Home</button>
       <div class="tbar-eyebrow" id="gei-tbar-eyebrow">General estimate</div>
-      <div class="tbar-title" id="gei-trade-title">Estimate</div>
+      <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
+        <span id="gei-trade-title">Estimate</span>
+        <button onclick="_editScopeTitle()" id="scope-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">✏️</button>
+      </div>
     </div>
     <div class="tbar-r">
       <button class="btn" onclick="_geiBack()" style="color:var(--text2)">← Back</button>
@@ -1851,8 +1859,12 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div id="gei-tm-page" style="display:none">
     <div class="tbar">
       <div class="tbar-l">
-        <button class="link-back" onclick="_geiBack()">← Pick a different type</button>
-        <div class="tbar-title" id="tm-tbar-title">Time &amp; Materials proposal</div>
+        <button class="link-back" onclick="goPg('pg-dash')">← Home</button>
+        <button class="link-back" onclick="_geiBack()" style="margin-left:14px">← Pick a different type</button>
+        <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
+          <span id="tm-tbar-title">Time &amp; Materials proposal</span>
+          <button onclick="_editTMTitle()" id="tm-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">✏️</button>
+        </div>
         <div class="tbar-sub" id="tm-page-sub">—</div>
       </div>
       <div class="tbar-r">
@@ -1968,7 +1980,8 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div id="gei-byo-page" style="display:none">
     <div class="tbar">
       <div class="tbar-l">
-        <button class="link-back" onclick="_geiBack()">← Pick a different type</button>
+        <button class="link-back" onclick="goPg('pg-dash')">← Home</button>
+        <button class="link-back" onclick="_geiBack()" style="margin-left:14px">← Pick a different type</button>
         <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
           <span id="byo-tbar-title">Build Your Own proposal</span>
           <button onclick="_editByoTitle()" id="byo-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">✏️</button>

@@ -59,7 +59,7 @@ function htmlTemplate(
 <title>Your Proposal from ${escHtml(businessName)}</title>
 <style>
   body{margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;}
-  .wrap{max-width:600px;margin:32px auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08);}
+  .wrap{max-width:600px;width:100%;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08);}
   .header{background:#1a1a1a;padding:28px 32px;text-align:center;}
   .header-title{color:#fff;font-size:20px;font-weight:700;letter-spacing:-.02em;margin:0;}
   .body{padding:36px 32px 28px;}
@@ -69,6 +69,13 @@ function htmlTemplate(
   .divider{border:none;border-top:1px solid #eee;margin:24px 0;}
   .footer{padding:0 32px 28px;font-size:12px;color:#999;line-height:1.5;}
   .plain-link{color:#0070f3;word-break:break-all;font-size:13px;}
+  @media only screen and (max-width:640px){
+    .wrap{border-radius:0!important;}
+    .body{padding:24px 20px 20px!important;}
+    .footer{padding:0 20px 20px!important;}
+    h1{font-size:19px!important;}
+    .cta{padding:14px 24px!important;font-size:16px!important;}
+  }
   @media(prefers-color-scheme:dark){
     .wrap{background:#1c1c1e;box-shadow:0 2px 16px rgba(0,0,0,.4);}
     h1{color:#f5f5f5;}
@@ -79,6 +86,9 @@ function htmlTemplate(
 </style>
 </head>
 <body>
+<!-- Table wrapper: margin:auto is unreliable in mobile email clients; align="center" on td is the industry-standard fix -->
+<table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="background:#f5f5f5">
+<tr><td align="center" valign="top" style="padding:32px 16px">
 <div class="wrap">
   <div class="header">
     <p class="header-title">📋 ${escHtml(businessName)}</p>
@@ -97,6 +107,8 @@ function htmlTemplate(
     <p>This proposal was sent to you by ${escHtml(businessName)} via TradeDeskPro. If you weren't expecting this, you can safely ignore it.</p>
   </div>
 </div>
+</td></tr>
+</table>
 </body>
 </html>`;
 }
