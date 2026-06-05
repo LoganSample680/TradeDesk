@@ -386,4 +386,15 @@ Survives conversation compacting so context is not lost between sessions.
 - Debounced call on description entry, result cached by description hash
 - Feeds sales tax calculation automatically
 - Files: `js/ai-classify.js` (new) + Supabase Edge Function `classify-line-item`
-- Do not skip a transition because it seems fast enough without one.
+
+### 9.4 TradeDesk Comms (SMS Infrastructure)
+
+**Own the messaging layer — no Twilio, no SendBlue subscription**
+- Build on Bandwidth API (Tier 1 carrier, not a reseller — ~$0.003-0.004/msg wholesale)
+- TradeDesk provisions and manages contractor phone numbers via Bandwidth API
+- Contractors see "TradeDesk Messaging," Bandwidth is invisible infrastructure
+- Automation triggers: proposal sent, 24h unopened follow-up, signed confirmation,
+  job day-before reminder, change order approval request, invoice overdue
+- iMessage delivery: Mac Mini on TradeDesk infra handles Apple protocol (no SendBlue)
+- Files: `js/messaging/engine.js`, `templates.js`, `numbers.js`, `webhooks.js`
+  + Supabase Edge Functions: `send-sms/`, `sms-webhook/`
