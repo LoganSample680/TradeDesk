@@ -332,4 +332,58 @@ reasons (see per-page overrides table above).
 - Do not add `transition: all` — always specify the exact property.
 - Do not animate `display`, `visibility`, or `height` from `auto` — use
   `opacity`, `transform`, or `max-height` with a known value.
+
+---
+
+## 9. Feature Backlog
+
+Features discussed and deferred — do not build unless user explicitly asks.
+Survives conversation compacting so context is not lost between sessions.
+
+### 9.1 Platform Expansion (Future)
+
+**TradeDesk Comms (CRM Texting)**
+- SMS layer via Telnyx or Bandwidth (wholesale rates, bundled into subscription)
+- iMessage delivery via Mac Mini on TradeDesk infra (no SendBlue dependency)
+- Automation triggers: proposal sent → auto-text, job day-before reminder, invoice overdue, change order approval request, deposit confirmed
+- Number provisioning per contractor account
+
+**TradeDesk Payroll**
+- W-2 employee payroll via Check (checkhq.com) for compliance/tax filing layer
+- 1099 subcontractor payments via Stripe Payouts (ACH direct deposit)
+- Payroll UI: employee management, hours entry, pay runs, pay stubs
+- Replaces QuickBooks Payroll — contractor pays one TradeDesk bill
+- Must handle: federal withholding, SS/Medicare, FUTA/SUTA, quarterly 941s, annual W-2s
+
+### 9.2 Proposal & Job Document Chain
+
+**Change Order Document**
+- New document type linked to existing bid
+- Native change order button in bid detail panel (biggest gap vs. ServiceTitan/Jobber/HCP)
+- Client approval via new `change-order.html` signing portal (mirrors sign.html pattern)
+- Numbered, dated, shows delta from original contract value
+- Files: `js/change-orders.js` (new) + `change-order.html` (new) + `js/bids.js` + `js/data.js`
+
+**Completion Invoice**
+- Final document after work done — shows estimate vs. actual side by side
+- Client signs off on final amount
+- Files: `js/completion-invoice.js` (new) + `completion-invoice.html` (new) + `js/jobs.js`
+
+**Range Estimate**
+- Low/high price fields + "depends on" explanatory text on any proposal type
+- No new files — touches `js/proposals.js`, `js/generic-estimate.js`, `sign.html`
+- Client sees: "Estimated range: $X–$Y | Final price depends on: {notes}"
+
+**NTE (Not-to-Exceed) Cap**
+- T&M jobs only — contractor sets spending ceiling
+- Alert at 90% of cap, hard stop + re-approval flow at 100%
+- Partial code already exists: `_tmCalcNte()` in `js/generic-estimate.js`
+
+### 9.3 AI Feature Layer
+
+**Line Item Classification (Claude API)**
+- Classifies each proposal line item: labor / materials / taxable service / equipment rental
+- Debounced call on description entry, result cached by description hash
+- Feeds sales tax calculation automatically
+- Files: `js/ai-classify.js` (new) + Supabase Edge Function `classify-line-item`
 - Do not skip a transition because it seems fast enough without one.
