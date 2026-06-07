@@ -1160,6 +1160,7 @@ function openEditBid(bidId,startStep){
     sf('e-cname',c?c.name:b.name||'');
     sf('e-cphone',c?c.phone:b.phone||'');
     sf('e-caddr',c?c.addr:b.addr||'');
+    if((c?.addr||b?.addr)&&typeof _paintLookupClientTaxRate==='function')_paintLookupClientTaxRate();
     sf('e-cnotes',b.notes||'');
     ['e-cname','e-cphone','e-caddr'].forEach(id=>{const el=document.getElementById(id);if(el&&el.value)markFieldFilled(el);});
     if(c&&c.ptype){const el=document.getElementById('e-cprop');if(el)el.value=c.ptype;}

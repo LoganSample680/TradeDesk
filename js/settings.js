@@ -731,6 +731,7 @@ function loadSettingsForm(){
   sf('set-bcity',S.bcity||'');
   sf('set-bzip',S.bzip||'');
   const bstateEl=document.getElementById('set-bstate-display');if(bstateEl)bstateEl.value=S.state||'KS';
+  sf('set-sales-tax-rate',S.salesTaxRate||'');
   const powEl=document.getElementById('set-powered-by');if(powEl)powEl.checked=S.poweredBy!==false;
   const ctEl=document.getElementById('set-custom-terms');if(ctEl)ctEl.value=S.customTerms||'';
   const coEl=document.getElementById('set-co-terms');if(coEl)coEl.value=S.coTerms||'';
@@ -763,7 +764,9 @@ function saveSettings(){
     poweredBy:document.getElementById('set-powered-by')?.checked!==false,
     customTerms:gs('set-custom-terms')||'',coTerms:gs('set-co-terms')||'',
     ccSurchargeEnabled:!!(document.getElementById('set-cc-surcharge-enabled')?document.getElementById('set-cc-surcharge-enabled').checked:false),
-    ccSurchargePct:parseFloat((document.getElementById('set-cc-surcharge-pct')?document.getElementById('set-cc-surcharge-pct').value:'3')||'3')||3};
+    ccSurchargePct:parseFloat((document.getElementById('set-cc-surcharge-pct')?document.getElementById('set-cc-surcharge-pct').value:'3')||'3')||3,
+    salesTaxRate:gf('set-sales-tax-rate')||S.salesTaxRate||0,
+    salesTaxRateSource:S.salesTaxRateSource||''};
   applySettings();saveAll();
   // Refresh the nav user card so a freshly entered name shows immediately
   // (applyPermissions owns the nav-user-name/avatar/role render).
@@ -1363,6 +1366,10 @@ function obNext4(){
   _ob.state=document.getElementById('ob-state')?.value||'';
   if(!_ob.state){if(err)err.textContent='Please select your state.';return;}
   _ob.licenseInfo=document.getElementById('ob-blic')?.value.trim()||'';
+  // Pre-fill sales tax rate from state base — contractor refines later via openSalesTaxSetup
+  if(_ob.state&&typeof lookupSalesTaxRate==='function'&&!(parseFloat(S.salesTaxRate)>0)){
+    lookupSalesTaxRate('',_ob.state).then(r=>{if(r.rate>0){S.salesTaxRate=r.rate;S.salesTaxRateSource='onboarding';}}).catch(()=>{});
+  }
   _ob.step=5;renderObStep();
 }
 

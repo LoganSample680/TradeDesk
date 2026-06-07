@@ -1,5 +1,6 @@
 import Stripe from 'npm:stripe@14';
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { getServiceRoleKey } from '../_shared/keys.ts';
 
 const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2023-10-16' });
 const CORS = {
@@ -21,7 +22,7 @@ Deno.serve(async (req) => {
     // Use service role client to verify token — works with both HS256 and ES256
     const supaAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+      getServiceRoleKey()
     );
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: authErr } = await supaAdmin.auth.getUser(token);

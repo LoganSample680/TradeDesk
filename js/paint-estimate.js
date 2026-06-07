@@ -2202,6 +2202,20 @@ function renderEstReview(){
     (suppliesCost>0?'<div class="met" style="padding-left:12px"><div class="met-l" style="color:var(--text3);font-size:11px">Supplies</div><div class="met-v" style="color:var(--text3);font-size:11px">'+fmtShort(suppliesCost)+'</div></div>':'')+
     (_tierPremium>0?'<div class="met"><div class="met-l" style="color:var(--amber)">'+(estPropertyTier?.label||'Tier')+' +'+_tierPct+'%</div><div class="met-v" style="color:var(--amber)">+'+fmtShort(_tierPremium)+'</div></div>':'')+
     '<div class="met"><div class="met-l">Total</div><div class="met-v" style="color:var(--green-mid);font-size:18px">'+fmtShort(final)+'</div></div>'+
+  (() => {
+    const _stR=_paintClientTaxRate!==null?(_paintClientTaxRate.rate??0):(parseFloat(S&&S.salesTaxRate)||0);
+    const _st=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('e-caddr')?.value||''):null)||(S&&S.state)||'KS';
+    if((typeof ST_NO_TAX!=='undefined')&&ST_NO_TAX.has&&ST_NO_TAX.has(_st))return '<div class="met"><div class="met-l" style="color:var(--text3)">Sales tax</div><div class="met-v" style="color:var(--text3);font-size:12px">No sales tax state</div></div>';
+    if(_paintWorkScope==='improvement')return '<div class="met"><div class="met-l" style="color:var(--text3)">Sales tax</div><div class="met-v" style="color:var(--text3);font-size:12px">$0 — capital improvement</div></div>';
+    if(!_stR)return '<div class="met" style="cursor:pointer" onclick="openSalesTaxSetup()"><div class="met-l" style="color:var(--amber)">⚠ Sales tax</div><div class="met-v" style="color:var(--blue);font-size:12px;font-weight:700">Set rate →</div></div>';
+    if(typeof calcSalesTax==='function'){
+      const _prop=_paintIsCommercial?'commercial':'residential';
+      const r=calcSalesTax({state:_st,tradeType:'painting',scope:'repair',propertyType:_prop,taxRate:_stR,lineItems:[{desc:'Painting services',total:final,lineType:'service'}]});
+      if(r.treatment&&!r.treatment.customerTax)return '<div class="met"><div class="met-l" style="color:var(--text3)">Sales tax</div><div class="met-v" style="color:var(--text3);font-size:12px">Exempt in '+_st+'</div></div>';
+      if(r.taxAmount>0)return '<div class="met"><div class="met-l">Sales tax</div><div class="met-v" style="color:var(--blue)">+'+fmtShort(r.taxAmount)+'</div></div>';
+    }
+    return '';
+  })() +
   '</div>';
 
   // ── Pricing health indicator ──────────────────────────────

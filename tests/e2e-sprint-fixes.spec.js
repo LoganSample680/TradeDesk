@@ -393,16 +393,15 @@ test.describe('Estimate toolbars — ← Home button and pencil rename icon', ()
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('T&M toolbar has a ← Home button (onclick pg-dash)', async () => {
+  test('T&M toolbar has a ← Pick a different type button', async () => {
     const result = await page.evaluate(() => {
-      // T&M toolbar contains a button with text including Home or ← that goes to pg-dash
       const allBtns = [...document.querySelectorAll('.tbar button, .tbar .link-back, .tbar a')];
       return allBtns.some(b =>
-        (b.textContent.includes('Home') || b.textContent.includes('←')) &&
-        (b.getAttribute('onclick') || '').includes('pg-dash')
+        b.textContent.includes('Pick a different type') &&
+        (b.getAttribute('onclick') || '').includes('_geiToStylePicker')
       );
     });
-    expect(result, 'T&M toolbar must have a ← Home button linking to pg-dash').toBe(true);
+    expect(result, 'T&M toolbar must have a ← Pick a different type button').toBe(true);
   });
 
   test('#tm-edit-title-btn exists (T&M pencil rename)', async () => {
@@ -410,18 +409,18 @@ test.describe('Estimate toolbars — ← Home button and pencil rename icon', ()
     expect(exists, '#tm-edit-title-btn must be in DOM').toBe(true);
   });
 
-  test('Scope toolbar (#gei-old-tbar) has a ← Home button', async () => {
+  test('Scope toolbar (#gei-old-tbar) has a ← Pick a different type button', async () => {
     const result = await page.evaluate(() => {
       const tbar = document.getElementById('gei-old-tbar');
       if (!tbar) return null;
       const btns = [...tbar.querySelectorAll('button, a, .link-back')];
       return btns.some(b =>
-        (b.textContent.includes('Home') || b.textContent.includes('←')) &&
-        (b.getAttribute('onclick') || '').includes('pg-dash')
+        b.textContent.includes('Pick a different type') &&
+        (b.getAttribute('onclick') || '').includes('_geiToStylePicker')
       );
     });
     if (result !== null) {
-      expect(result, 'Scope toolbar must have a ← Home button').toBe(true);
+      expect(result, 'Scope toolbar must have a ← Pick a different type button').toBe(true);
     }
   });
 
