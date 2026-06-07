@@ -3,6 +3,20 @@
 -- hub_view_count   — number of times client opened the shared hub link (client.html)
 -- client_view_count — number of times client opened a specific proposal (sign.html)
 
+-- client_id was originally uuid but app uses numeric integer IDs like "901".
+-- Convert before adding columns so the function below can insert text values.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name  = 'proposal_views'
+      AND column_name = 'client_id'
+      AND data_type   = 'uuid'
+  ) THEN
+    ALTER TABLE proposal_views ALTER COLUMN client_id TYPE text USING client_id::text;
+  END IF;
+END $$;
+
 ALTER TABLE proposal_views
   ADD COLUMN IF NOT EXISTS hub_view_count    int NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS client_view_count int NOT NULL DEFAULT 0;

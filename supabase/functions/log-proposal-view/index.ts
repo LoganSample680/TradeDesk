@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { getServiceRoleKey } from '../_shared/keys.ts';
 
 // CORS headers — sign.html is served from a different origin than the function
 const cors = {
@@ -10,7 +11,7 @@ const cors = {
 // The anon caller supplies only contractorUserId + bidId; we do the write.
 const supa = createClient(
   Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  getServiceRoleKey()
 );
 
 Deno.serve(async (req: Request) => {

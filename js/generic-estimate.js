@@ -174,11 +174,27 @@ function _renderNavTradeSwitcher(){
 }
 
 // ── Generic estimate (non-painting trades) ────────────────────────────
-let _geiClientId=null,_geiEditBidId=null,_geiLines=[],_geiTrade=null,_geiIsCommercial=false,_geiEmergency=false,_geiStep=1,_geiNewWork=false;
+let _geiClientId=null,_geiEditBidId=null,_geiLines=[],_geiTrade=null,_geiIsCommercial=false,_geiEmergency=false,_geiStep=1,_geiNewWork=false,_geiJobScope='repair';
 let _panelSched=null; // null = not active, obj = panel schedule data
 let _geiIsTM=false,_tmCrewCount=1,_tmRatePerMan=0,_tmEstHours=0,_tmBillingCycle='weekly';
 let _tmMatMarkup=0,_tmCapAction='Stop & get re-approval';
 let _geiIsFreeForm=false;
+let _geiClientTaxRate=null,_geiTaxLookupTimer=null;
+
+function _geiOnAddrInput(){
+  clearTimeout(_geiTaxLookupTimer);
+  _geiTaxLookupTimer=setTimeout(_geiLookupClientTaxRate,700);
+}
+async function _geiLookupClientTaxRate(){
+  const addr=(document.getElementById('gei-addr')?.value||'').trim();
+  const zip=typeof _extractZip==='function'?_extractZip(addr):null;
+  const state=typeof detectStateFromAddr==='function'?detectStateFromAddr(addr):null;
+  if(!zip&&!state){_geiClientTaxRate=null;calcGeiTotal();return;}
+  if(typeof lookupSalesTaxRate==='function'){
+    _geiClientTaxRate=await lookupSalesTaxRate(zip||'',state||(S&&S.state)||'KS');
+    calcGeiTotal();
+  }
+}
 
 function openTMEstimate(c,bidId){
   _geiIsTM=true;_geiIsFreeForm=false;
@@ -192,11 +208,10 @@ function openFreeFormEstimate(c,bidId){
 function openGenericEstimate(c,bidId,_tradePick){
   _geiClientId=c?.id||null;
   _geiEditBidId=bidId||null;
-  _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;
-  const _wasTM=_geiIsTM,_wasFF=_geiIsFreeForm;
-  _geiIsTM=false;_geiIsFreeForm=false;
-  if(_wasTM){_geiIsTM=true;}else{_tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmMatMarkup=0;_tmCapAction='Stop & get re-approval';}
-  if(_wasFF)_geiIsFreeForm=true;
+  _geiClientTaxRate=null;
+  _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;_geiJobScope='repair';
+  // Callers set _geiIsTM / _geiIsFreeForm before calling; reset TM defaults only when entering scope mode
+  if(!_geiIsTM){_tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmMatMarkup=0;_tmCapAction='Stop & get re-approval';}
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
@@ -209,6 +224,7 @@ function openGenericEstimate(c,bidId,_tradePick){
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val||'';};
   sf('gei-client',c?.name||'');
   sf('gei-addr',c?.addr||'');
+  if(c?.addr)setTimeout(_geiLookupClientTaxRate,0);
   const DESC_PH={electrical:'e.g. Panel upgrade, add EV charger in garage',plumbing:'e.g. Replace water heater, install shutoff valves',hvac:'e.g. Replace AC unit, charge refrigerant',roofing:'e.g. Full shingle replacement, fix ridge flashing',landscaping:'e.g. Weekly mowing, spring cleanup, new mulch',general:'e.g. Drywall repair, power washing, handyman'};
   sf('gei-desc','');sf('gei-notes','');sf('gei-tax-pct','0');sf('gei-duration','');
   const descEl=document.getElementById('gei-desc');
@@ -222,6 +238,7 @@ function openGenericEstimate(c,bidId,_tradePick){
       sf('gei-desc',b.type||'');sf('gei-notes',b.notes||'');
       if(b.geiLines&&b.geiLines.length)_geiLines=JSON.parse(JSON.stringify(b.geiLines));
       if(b.geiTaxPct)sf('gei-tax-pct',b.geiTaxPct);
+      if(b.jobScope)_geiJobScope=b.jobScope;
       if(b.geiDuration)sf('gei-duration',b.geiDuration);
       if(b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(b.panelSched)_panelSched=JSON.parse(JSON.stringify(b.panelSched));
@@ -254,7 +271,7 @@ function openGenericEstimate(c,bidId,_tradePick){
       _existingGei.trade_type=_geiTrade; // heal legacy bids
       _geiEditBidId=_existingGei.id;
       const _b=_existingGei;
-      sf('gei-desc',_b.type||'');sf('gei-notes',_b.notes||'');
+      sf('gei-desc',_b.geiDesc||'');sf('gei-notes',_b.notes||'');
       if(_b.geiLines&&_b.geiLines.length)_geiLines=JSON.parse(JSON.stringify(_b.geiLines));
       if(_b.geiTaxPct)sf('gei-tax-pct',_b.geiTaxPct);
       if(_b.geiDuration)sf('gei-duration',_b.geiDuration);
@@ -284,72 +301,59 @@ function openGenericEstimate(c,bidId,_tradePick){
 }
 
 function goGeiStep(n){
-  // T&M mode — single-page layout
+  // T&M mode — step 1: job type picker (same as scope), step 2+: single-page T&M layout
   if(_geiIsTM){
+    if(n===1){
+      _tmHidePage(); // hides gei-tm-page, re-shows gei-old-tbar + gei-step-bar
+      const byoP=document.getElementById('gei-byo-page');if(byoP)byoP.style.display='none';
+      _geiStep=1;
+      [1,2,3].forEach(i=>{const el=document.getElementById('gei-s'+i);if(el)el.style.display=(i===1)?'':'none';});
+      _geiSyncJobTypeButtons();
+      window.scrollTo({top:0,behavior:'instant'});
+      return;
+    }
+    const byoP=document.getElementById('gei-byo-page');if(byoP)byoP.style.display='none';
     _geiStep=n;
     _tmShowPage();
     window.scrollTo({top:0,behavior:'instant'});
     return;
   }
-  // BYO / free-form mode — single-page layout
+  // BYO / free-form mode — step 1: job type picker (same as scope), step 2+: BYO page
   if(_geiIsFreeForm){
+    if(n===1){
+      _byoHidePage(); // hides gei-byo-page, re-shows gei-old-tbar + gei-step-bar
+      const tmP=document.getElementById('gei-tm-page');if(tmP)tmP.style.display='none';
+      _geiStep=1;
+      [1,2,3].forEach(i=>{const el=document.getElementById('gei-s'+i);if(el)el.style.display=(i===1)?'':'none';});
+      _geiSyncJobTypeButtons();
+      window.scrollTo({top:0,behavior:'instant'});
+      return;
+    }
+    const tmP=document.getElementById('gei-tm-page');if(tmP)tmP.style.display='none';
     _geiStep=n;
     _byoShowPage();
     window.scrollTo({top:0,behavior:'instant'});
     return;
   }
-  // If going to Step 2 and no bundles are set, show the onboarding picker first (skip for free-form)
-  if(n===2&&(!S.myBundles||!S.myBundles.length)&&!_geiIsFreeForm){
-    showGeiOnboarding();return;
-  }
+  // Scope & Price (step-based) — hide both single-page layouts before showing wizard steps
+  const _tmP=document.getElementById('gei-tm-page');if(_tmP)_tmP.style.display='none';
+  const _byoP=document.getElementById('gei-byo-page');if(_byoP)_byoP.style.display='none';
+  // If going to Step 2 and no bundles are set, show the onboarding picker first
+  if(n===2&&(!S.myBundles||!S.myBundles.length)){showGeiOnboarding();return;}
   _geiStep=n;
   [1,2,3].forEach(i=>{const el=document.getElementById('gei-s'+i);if(el)el.style.display=(i===n)?'':'none';});
   window.scrollTo({top:0,behavior:'instant'});
   _geiRenderStepBar();
   _geiSyncScopeButtons();
-  const show=v=>id=>{const d=document.getElementById(id);if(d)d.style.display=v;};
-  // Always hide all mode chips/sections first
   ['gei-tm-chip','gei-tm-reason-wrap','gei-tm-crew','gei-tm-terms','gei-ff-chip'].forEach(id=>{
     const d=document.getElementById(id);if(d)d.style.display='none';
   });
   const svcWrap=document.getElementById('gei-svc-wrap');
-  if(_geiIsTM){
-    show('block')('gei-tm-chip');show('block')('gei-tm-reason-wrap');
-    if(n===2)show('block')('gei-tm-crew');
-    if(n===3){show('block')('gei-tm-terms');_tmSyncCycleButtons();_tmCalcDeposit();_tmCalcNte();}
-    const titleEl=document.getElementById('gei-trade-title');
-    if(titleEl)titleEl.textContent='⏱️ Time & Materials';
-    const eyebrowEl=document.getElementById('gei-tbar-eyebrow');
-    if(eyebrowEl)eyebrowEl.textContent='T&M estimate';
-    if(svcWrap)svcWrap.style.display='none';
-    if(n===2){
-      const cd=document.getElementById('tm-crew-display');if(cd)cd.textContent=_tmCrewCount;
-      const ri=document.getElementById('tm-rate');if(ri&&_tmRatePerMan)ri.value=_tmRatePerMan;
-      const hi=document.getElementById('tm-hours');if(hi&&_tmEstHours)hi.value=_tmEstHours;
-      if(_tmRatePerMan||_tmEstHours)_tmRecalc();
-    }
-    if(n===1){
-      const b=bids.find(x=>x.id===_geiEditBidId);
-      if(b?.tmReason){const rs=document.getElementById('tm-reason');if(rs)rs.value=b.tmReason;}
-      if(b?.tmReasonNote){const rn=document.getElementById('tm-reason-note');if(rn)rn.value=b.tmReasonNote;}
-    }
-  } else if(_geiIsFreeForm){
-    show('block')('gei-ff-chip');
-    if(svcWrap)svcWrap.style.display='none';
-    const titleEl=document.getElementById('gei-trade-title');
-    if(titleEl)titleEl.textContent='✏️ Build Your Own';
-    const eyebrowEl=document.getElementById('gei-tbar-eyebrow');
-    if(eyebrowEl)eyebrowEl.textContent='Free-form estimate';
-  } else {
-    if(svcWrap)svcWrap.style.display='flex';
-  }
+  if(svcWrap)svcWrap.style.display='flex';
   const bar=document.getElementById('gei-cart-bar');
   if(bar)bar.style.display=(n===2&&_geiLines.length)?'flex':'none';
-  if(n===2){
-    if(_geiIsFreeForm)_geiRenderFreeFormBuilder();
-    else if(!_geiIsTM)_geiRenderTemplates();
-    _geiRenderCartBar();
-  }
+  if(n===2){_geiRenderTemplates();_geiRenderCartBar();}
+  if(n===1){_geiSyncJobTypeButtons();}
   if(n===3){renderGeiLines();calcGeiTotal();_panelRenderSection();}
 }
 
@@ -947,8 +951,14 @@ function _tmPreviewClient(){
 }
 
 function _geiBack(){
-  if(_geiStep>1)goGeiStep(_geiStep-1);
-  else{document.getElementById('gei-cart-bar')?.remove();goPg('pg-clients');}
+  if(_geiStep>1){goGeiStep(_geiStep-1);return;}
+  _geiToStylePicker();
+}
+function _geiToStylePicker(){
+  document.getElementById('gei-cart-bar')?.remove();
+  const c=getClientById(_geiClientId);
+  if(c&&typeof _showEstimateStylePicker==='function')_showEstimateStylePicker(c);
+  else goPg('pg-client-detail');
 }
 
 // ── Free-form (Build Your Own) builder ───────────────────────────────────────
@@ -1344,6 +1354,75 @@ function _geiSetScope(commercial){
   if(_geiStep===2)_geiRenderTemplates();
 }
 
+function _geiSetPropertyType(type){
+  _geiIsCommercial=(type==='commercial');
+  _geiSyncJobTypeButtons();
+  if(_geiStep===2)_geiRenderTemplates();
+  calcGeiTotal();
+}
+function _geiSetWorkType(scope){
+  _geiJobScope=scope;
+  _geiNewWork=(scope==='improvement');
+  _geiSyncJobTypeButtons();
+  if(_geiStep===2)_geiRenderTemplates();
+  calcGeiTotal();
+}
+function _geiSyncJobTypeButtons(){
+  const _propActive=_geiIsCommercial?'comm':'res';
+  ['res','comm'].forEach(k=>{
+    const btn=document.getElementById('gei-prop-'+k);if(!btn)return;
+    const on=k===_propActive;
+    btn.style.border='2px solid '+(on?'var(--blue)':'var(--border2)');
+    btn.style.background=on?'var(--blue-lt)':'var(--bg2)';
+    btn.style.color=on?'var(--blue-dk)':'var(--text2)';
+  });
+  const _workActive=_geiJobScope==='improvement'?'newbuild':'repair';
+  ['repair','newbuild'].forEach(k=>{
+    const btn=document.getElementById('gei-work-'+k);if(!btn)return;
+    const on=k===_workActive;
+    btn.style.border='2px solid '+(on?'var(--blue)':'var(--border2)');
+    btn.style.background=on?'var(--blue-lt)':'var(--bg2)';
+    btn.style.color=on?'var(--blue-dk)':'var(--text2)';
+  });
+  const noteEl=document.getElementById('gei-jtype-note');
+  if(!noteEl)return;
+  if(_geiJobScope==='improvement'&&typeof getJobTaxTreatment==='function'){
+    const st=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
+    const t=getJobTaxTreatment(st,_geiTrade||'general','improvement',_geiIsCommercial?'commercial':'residential');
+    noteEl.textContent=t.certificate?'⚠ '+t.certificate.form+' required — client must sign before work begins.':'Capital improvement: no sales tax charged to client.';
+    noteEl.style.color=t.certificate?'var(--amber-dk)':'var(--text3)';
+  } else {
+    noteEl.textContent='';
+  }
+}
+
+function _geiSetJobScope(scope){
+  _geiJobScope=scope;
+  _geiSyncJobScopeButtons();
+  calcGeiTotal();
+}
+
+function _geiSyncJobScopeButtons(){
+  ['improvement','repair'].forEach(s=>{
+    const btn=document.getElementById('gei-jscope-'+s);
+    if(!btn)return;
+    const active=_geiJobScope===s;
+    btn.style.border='2px solid '+(active?'var(--blue)':'var(--border2)');
+    btn.style.background=active?'var(--blue-lt)':'var(--bg2)';
+    btn.style.color=active?'var(--blue-dk)':'var(--text2)';
+  });
+  // Show certificate note if improvement + state requires cert
+  const noteEl=document.getElementById('gei-jscope-note');
+  if(noteEl&&_geiJobScope==='improvement'&&typeof getJobTaxTreatment==='function'){
+    const stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
+    const t=getJobTaxTreatment(stateKey,_geiTrade||'general','improvement',_geiIsCommercial?'commercial':'residential');
+    noteEl.textContent=t.certificate?'⚠ '+t.certificate.form+' required — client must sign before work begins.':'Capital improvement: no sales tax charged to client.';
+    noteEl.style.color=t.certificate?'var(--amber-dk)':'var(--text3)';
+  } else if(noteEl){
+    noteEl.textContent='';
+  }
+}
+
 function _geiToggleEmergency(){
   _geiEmergency=!_geiEmergency;
   _geiSyncScopeButtons();
@@ -1673,12 +1752,68 @@ function _panelPrint(){
 function calcGeiTotal(){
   const sub=_geiLines.reduce((s,l)=>s+(l.qty||1)*(l.rate||0),0);
   const pct=parseFloat(document.getElementById('gei-tax-pct')?.value)||0;
-  const tax=sub*pct/100;
-  const total=sub+tax;
+  const markup=sub*pct/100;
+
+  // Sales tax — separate from markup, based on state rules and job scope
+  let salesTax=0,salesTaxTreatment=null;
+  const _stKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
+  const _stScope=_geiJobScope||(_geiIsTM?'tm':'repair');
+  // Rate: always use client address ZIP/state lookup; fall back to contractor setting only when no address yet
+  const _stRate=_geiClientTaxRate!==null?(_geiClientTaxRate.rate??0):(parseFloat(S.salesTaxRate)||0);
+  if(typeof calcSalesTax==='function'&&_stRate>0){
+    const _liItems=_geiLines.map(l=>({desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:l._tmLabor?'labor':null}));
+    const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,
+      propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRate,lineItems:_liItems});
+    salesTax=_stResult.taxAmount||0;
+    salesTaxTreatment=_stResult.treatment;
+  }
+
+  const total=sub+markup+salesTax;
   const fmt=n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
-  set('gei-subtotal',fmt(sub));set('gei-tax-amt',fmt(tax));set('gei-total',fmt(total));
-  return{sub,tax,total};
+  set('gei-subtotal',fmt(sub));set('gei-tax-amt',fmt(markup));set('gei-total',fmt(total));
+
+  // Update sales tax row
+  const stRow=document.getElementById('gei-sales-tax-row');
+  const stAmt=document.getElementById('gei-sales-tax-amt');
+  const stLbl=document.getElementById('gei-sales-tax-lbl');
+  if(stRow&&stAmt&&stLbl){
+    if(!_stRate){
+      stRow.style.display='none';
+    } else if(salesTaxTreatment&&!salesTaxTreatment.customerTax){
+      stRow.style.display='flex';
+      stAmt.textContent='$0.00';
+      stLbl.textContent=_stScope==='improvement'?'Sales tax — capital improvement':'Sales tax (exempt)';
+      stAmt.style.color='var(--text3)';
+    } else if(salesTax>0){
+      stRow.style.display='flex';
+      stAmt.textContent=fmt(salesTax);
+      stAmt.style.color='var(--text2)';
+      const isGR=salesTaxTreatment?.type==='gross_receipts';
+      const isFull=salesTaxTreatment?.type==='service'||salesTaxTreatment?.laborTaxable;
+      stLbl.textContent=(isGR?(salesTaxTreatment.label||'Tax'):('Sales tax'))
+        +' ('+_stRate+'%'+(isFull?'':' on materials')+')';
+    } else {
+      stRow.style.display='none';
+    }
+  }
+
+  // Rate-not-set prompt: only show when no client address lookup has been done yet
+  const prompt=document.getElementById('gei-tax-rate-prompt');
+  if(prompt)prompt.style.display=(_geiClientTaxRate===null&&!_stRate&&sub>0&&_stScope!=='improvement')?'flex':'none';
+  // Rate note: show when lookup returned a fallback warning or confirm client-ZIP rate
+  const rateNote=document.getElementById('gei-tax-rate-note');
+  if(rateNote){
+    if(_geiClientTaxRate?.warning&&sub>0&&_stScope!=='improvement'){
+      rateNote.textContent='⚠ '+_geiClientTaxRate.warning;rateNote.style.color='var(--amber-dk,#b45309)';rateNote.style.display='block';
+    } else if(_geiClientTaxRate?.source==='db_zip'&&_stRate>0){
+      rateNote.textContent='Rate: '+_stRate+'% (client address ZIP)';rateNote.style.color='var(--text3)';rateNote.style.display='block';
+    } else {
+      rateNote.style.display='none';
+    }
+  }
+
+  return{sub,tax:markup+salesTax,markup,salesTax,total};
 }
 
 function saveGenericEstimate(draft){
@@ -1712,9 +1847,9 @@ function saveGenericEstimate(draft){
   if(_geiEditBidId){
     const b=bids.find(x=>x.id===_geiEditBidId);
     if(b){
-      b.amount=total;b.type=v('gei-desc')||_typeLabel;
+      b.amount=total;b.type=v('gei-desc')||_typeLabel;b.geiDesc=v('gei-desc')||'';
       b.notes=v('gei-notes');b.geiLines=JSON.parse(JSON.stringify(_geiLines));
-      b.geiTaxPct=taxPct;b.status=draft?'Draft':'Pending';b.draft=!!draft;
+      b.geiTaxPct=taxPct;b.jobScope=_geiJobScope||'repair';b.salesTaxRate=parseFloat(S.salesTaxRate)||0;b.status=draft?'Draft':'Pending';b.draft=!!draft;
       b.geiDuration=v('gei-duration')||'';b.geiNewWork=_geiNewWork||false;
       b.trade_type=trade;b.deposit=_deposit;b.isFreeForm=_geiIsFreeForm||false;
       if(_geiIsFreeForm&&_byoItems.length)b.byoItems=JSON.parse(JSON.stringify(_byoItems));
@@ -1730,7 +1865,7 @@ function saveGenericEstimate(draft){
       phone:'',addr:v('gei-addr'),
       bid_date:v('gei-date')||todayKey(),
       amount:total,deposit:_deposit,
-      type:v('gei-desc')||_typeLabel,
+      type:v('gei-desc')||_typeLabel,geiDesc:v('gei-desc')||'',
       notes:v('gei-notes'),status:draft?'Draft':'Pending',draft:!!draft,
       isFreeForm:_geiIsFreeForm||false,
       ...(_geiIsFreeForm&&_byoItems.length?{byoItems:JSON.parse(JSON.stringify(_byoItems))}:{}),
@@ -1799,6 +1934,23 @@ async function sendGenericProposal(previewOnly){
   }).join('');
   // Suppress markup/tax row for T&M — markup is already in the line prices
   const taxRow=(!_geiIsTM&&taxPct)?`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td colspan="2" style="padding:8px 18px;font-size:12px;color:#64748b">Tax / markup (${taxPct}%)</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$${(total*(taxPct/(100+taxPct))).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`:'';
+  // Sales tax row — shown on proposal when applicable
+  const _stRateP=_geiClientTaxRate!==null?(_geiClientTaxRate.rate??0):(parseFloat(S.salesTaxRate)||0);
+  const _stScopeP=_geiJobScope||'repair';
+  const _stStateP=(typeof detectStateFromAddr==='function'?detectStateFromAddr(v('gei-addr')):null)||(S&&S.state)||'KS';
+  let _stRowHtml='';
+  if(typeof calcSalesTax==='function'&&_stRateP>0){
+    const _stLiP=_geiLines.map(l=>({desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:l._tmLabor?'labor':null}));
+    const _stRes=calcSalesTax({state:_stStateP,tradeType:_geiTrade||'general',scope:_stScopeP,
+      propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRateP,lineItems:_stLiP});
+    if(_stRes.treatment.customerTax&&_stRes.taxAmount>0){
+      const _stLblP=(_stRes.treatment.type==='gross_receipts'?(_stRes.treatment.label||'Tax'):
+        'Sales tax')+' ('+_stRateP+'%'+(_stRes.treatment.laborTaxable||_stRes.treatment.type==='service'?'':' on materials')+')';
+      _stRowHtml=`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td colspan="2" style="padding:8px 18px;font-size:12px;color:#64748b">${_stLblP}</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$${_stRes.taxAmount.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`;
+    } else if(_stScopeP==='improvement'&&!_stRes.treatment.customerTax){
+      _stRowHtml=`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td colspan="2" style="padding:8px 18px;font-size:12px;color:#64748b">Sales tax — capital improvement</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$0.00</td></tr>`;
+    }
+  }
   const notesHtml=v('gei-notes')?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6"><strong style="color:#1a365d">Notes:</strong> ${escHtml(v('gei-notes'))}</div>`:'';
   let _propPanelHtml='';
   if(_panelSched){
@@ -1808,7 +1960,7 @@ async function sendGenericProposal(previewOnly){
   }
   const _hdrLabel=_geiIsTM?'⏱️ Time &amp; Materials':tradeIcon+' Service Proposal';
   const _nteRow=(_geiIsTM&&_tmNteCap)?`<tr style="background:#075985;color:rgba(255,255,255,.8)"><td colspan="2" style="padding:5px 18px;font-size:11px">Not-to-exceed cap</td><td style="padding:5px 18px;text-align:right;font-size:11px;font-weight:700">$${_tmNteCap.toLocaleString()}</td></tr>`:'';
-  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#1a365d">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#1a365d">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:5px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid 30 days</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th><th style="padding:8px 6px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:40px">Qty</th><th style="padding:8px 18px 8px 4px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:90px">Amount</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${taxRow}<tr style="background:#1a365d;color:#fff"><td colspan="2" style="padding:12px 18px;font-weight:800;font-size:15px">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:15px">${totalFmt}</td></tr>${_tmDepRow}${_nteRow}</tfoot></table>${notesHtml}${_propPanelHtml}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Payment Terms</div>${_tmPayTerms}</div>${_customTermsBlock}</div>`;
+  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#1a365d">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#1a365d">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:5px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid 30 days</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th><th style="padding:8px 6px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:40px">Qty</th><th style="padding:8px 18px 8px 4px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:90px">Amount</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${taxRow}${_stRowHtml}<tr style="background:#1a365d;color:#fff"><td colspan="2" style="padding:12px 18px;font-weight:800;font-size:15px">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:15px">${totalFmt}</td></tr>${_tmDepRow}${_nteRow}</tfoot></table>${notesHtml}${_propPanelHtml}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Payment Terms</div>${_tmPayTerms}</div>${_customTermsBlock}</div>`;
   // Preview-only mode — show proposal in a fullscreen overlay, no upload
   if(previewOnly){_showProposalPreviewOverlay(proposalHtml);return;}
   const bidId=_geiEditBidId;
@@ -2182,3 +2334,61 @@ async function _sendIndProposal(){
   if(typeof renderCDBids==='function')setTimeout(renderCDBids,120);
 }
 // ─── End Industrial Equipment Estimate ───────────────────────────────────────
+
+// ── Sales Tax Rate Setup Modal ────────────────────────────────────────────────
+function openSalesTaxSetup(){
+  if(document.getElementById('sales-tax-setup-overlay'))return;
+  const ov=document.createElement('div');
+  ov.id='sales-tax-setup-overlay';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const stCode=(S&&S.state)||'KS';
+  const stName=(typeof STATE_NAMES!=='undefined'&&STATE_NAMES[stCode])||stCode;
+  const curRate=parseFloat(S&&S.salesTaxRate)||0;
+  ov.innerHTML=
+    '<div style="background:var(--bg1);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:480px;animation:td-pg-enter .22s cubic-bezier(.22,1,.36,1) both">'+
+      '<div style="font-size:16px;font-weight:700;color:var(--text1);margin-bottom:4px">Sales Tax Rate</div>'+
+      '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">'+stName+' — rate charged on taxable materials on your proposals</div>'+
+      '<div style="display:flex;gap:8px;margin-bottom:10px">'+
+        '<input id="stsu-zip" placeholder="ZIP code" maxlength="5" inputmode="numeric"'+
+          ' style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:14px;background:var(--bg2);color:var(--text1)">'+
+        '<button onclick="_stsuLookup()" style="padding:10px 14px;background:var(--blue);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Look up</button>'+
+      '</div>'+
+      '<div id="stsu-lookup-result" style="font-size:11px;color:var(--text3);min-height:16px;margin-bottom:10px"></div>'+
+      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:6px">Or enter manually</div>'+
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:20px">'+
+        '<input id="stsu-rate" type="number" step="0.001" min="0" max="20" placeholder="e.g. 9.350"'+
+          ' value="'+(curRate||'')+'"'+
+          ' style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:14px;background:var(--bg2);color:var(--text1)">'+
+        '<span style="font-size:14px;color:var(--text2);font-weight:600">%</span>'+
+      '</div>'+
+      '<button onclick="_stsuSave()" style="width:100%;padding:13px;background:var(--blue);color:#fff;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">Save rate</button>'+
+      '<button onclick="document.getElementById(\'sales-tax-setup-overlay\')?.remove()" style="width:100%;padding:10px;background:none;color:var(--text3);border:none;font-size:13px;cursor:pointer;margin-top:6px">Cancel</button>'+
+    '</div>';
+  document.body.appendChild(ov);
+}
+
+async function _stsuLookup(){
+  const zipEl=document.getElementById('stsu-zip');
+  const res=document.getElementById('stsu-lookup-result');
+  if(!res||!zipEl)return;
+  const zip=(zipEl.value||'').trim();
+  if(!/^\d{5}$/.test(zip)){res.textContent='Enter a valid 5-digit ZIP code';res.style.color='var(--amber-dk,#b45309)';return;}
+  res.textContent='Looking up…';res.style.color='var(--text3)';
+  if(typeof lookupSalesTaxRate==='function'){
+    const r=await lookupSalesTaxRate(zip,(S&&S.state)||'KS');
+    const rateEl=document.getElementById('stsu-rate');
+    if(rateEl)rateEl.value=r.rate;
+    if(r.warning){res.textContent=r.warning;res.style.color='var(--amber-dk,#b45309)';}
+    else{res.textContent='Rate found for ZIP '+zip+': '+r.rate+'%';res.style.color='var(--green-dk,#15803d)';}
+  }
+}
+
+function _stsuSave(){
+  const rate=parseFloat(document.getElementById('stsu-rate')?.value)||0;
+  if(S){S.salesTaxRate=rate;S.salesTaxRateSource='manual';}
+  if(typeof saveAll==='function')saveAll();
+  document.getElementById('sales-tax-setup-overlay')?.remove();
+  if(typeof calcGeiTotal==='function')calcGeiTotal();
+  if(typeof showToast==='function')showToast(rate?'Sales tax rate set to '+rate+'%':'Sales tax rate cleared','✓');
+}

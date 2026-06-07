@@ -1,0 +1,35 @@
+name: Update Tax Rates
+
+on:
+  # Run on the 1st of every month at 06:00 UTC (midnight CT / 1 AM CT in summer)
+  schedule:
+    - cron: '0 6 1 * *'
+  # Allow manual trigger from GitHub Actions UI for immediate re-seed
+  workflow_dispatch:
+
+jobs:
+  update:
+    name: Seed tax_rates table
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install Supabase JS client
+        run: npm install --no-save @supabase/supabase-js@2
+
+      - name: Run tax rate updater
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/update-tax-rates.js

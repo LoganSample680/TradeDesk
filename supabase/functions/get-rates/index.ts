@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { getAnonKey } from '../_shared/keys.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -32,7 +33,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
+      getAnonKey(),
       { global: { headers: { Authorization: authHeader } } }
     );
     const { data: { user }, error } = await supabase.auth.getUser();

@@ -1347,8 +1347,12 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div style="padding:20px 16px 24px;max-width:900px;margin:0 auto;box-sizing:border-box;width:100%">
   <div class="tbar">
     <div class="tbar-l">
+      <button class="link-back" onclick="_estCancelToStylePicker()">← Pick a different type</button>
       <div class="tbar-eyebrow">Paint estimate</div>
-      <div class="tbar-title">Estimate builder</div>
+      <div class="tbar-title" id="est-tbar-title">Estimate builder</div>
+    </div>
+    <div class="tbar-r">
+      <button class="btn btn-p btn-sm" onclick="saveEstFullDraft()">Save draft</button>
     </div>
   </div>
   <div class="steps" id="est-steps">
@@ -1365,6 +1369,20 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="step" id="est-st-6" onclick="goEstStep(6)"><div class="snum">5</div><span class="slbl">Sign</span></div>
   </div>
   <div id="est-s1">
+    <!-- Job type — drives tax treatment from the start -->
+    <div class="card" style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Property type</div>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-bottom:10px">
+        <button id="paint-prop-res"  onclick="_paintSetPropertyType('residential')" class="btn btn-sm" style="border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)">🏠 Residential</button>
+        <button id="paint-prop-comm" onclick="_paintSetPropertyType('commercial')"  class="btn btn-sm" style="border:2px solid var(--border2);background:var(--bg2);color:var(--text2)">🏢 Commercial</button>
+      </div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Work type</div>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-bottom:8px">
+        <button id="paint-work-repair"   onclick="_paintSetWorkScope('repair')"      class="btn btn-sm" style="border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)">🔧 Repair / Remodel</button>
+        <button id="paint-work-newbuild" onclick="_paintSetWorkScope('improvement')" class="btn btn-sm" style="border:2px solid var(--border2);background:var(--bg2);color:var(--text2)">🏗️ New Build / Addition</button>
+      </div>
+      <div id="paint-jscope-note" style="font-size:11px;color:var(--text3)"></div>
+    </div>
     <div class="card"><div class="card-hd">Your business</div>
       <div class="fg fg2">
         <div class="f"><label>Business name</label><input id="e-bname" placeholder="Your business name"></div>
@@ -1378,7 +1396,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="fg fg2">
         <div class="f"><label>Client name <span style="color:var(--c-red)">*</span></label><input id="e-cname" placeholder="John &amp; Sarah Smith" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
         <div class="f"><label>Phone <span style="color:var(--c-red)">*</span></label><input id="e-cphone" type="tel" maxlength="12" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="fmtPhone(this);markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
-        <div class="f" style="grid-column:1/-1"><label>Property address <span style="color:var(--c-red)">*</span></label><input id="e-caddr" placeholder="1234 Maple St, Wichita KS 67201" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft()" onblur="typeof checkAddrServiceState==='function'&&checkAddrServiceState(this.value)"></div>
+        <div class="f" style="grid-column:1/-1"><label>Property address <span style="color:var(--c-red)">*</span></label><input id="e-caddr" placeholder="1234 Maple St, Wichita KS 67201" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft();_paintOnAddrInput()" onblur="typeof checkAddrServiceState==='function'&&checkAddrServiceState(this.value)"></div>
         <div style="grid-column:1/-1"><button type="button" class="btn btn-sm" style="width:100%;background:var(--bg2);border-color:var(--border2);color:var(--text2);font-size:12px" onclick="openLogTripModal({purpose:'Estimate',toAddress:document.getElementById('e-caddr').value,clientName:document.getElementById('e-cname').value})">🚗 Log drive to this estimate</button></div>
         <div class="f"><label>Property type</label><select id="e-cprop" onchange="_onEstPropTypeChange(this)"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>
         <div id="_est-industrial-banner" style="display:none;grid-column:1/-1;padding:10px 12px;border-radius:var(--r);border:1.5px dashed #ea580c;background:#fff7ed">
@@ -1840,7 +1858,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 <div class="pg" id="pg-est-generic">
   <div class="tbar" id="gei-old-tbar">
     <div class="tbar-l">
-      <button class="link-back" onclick="goPg('pg-dash')">← Home</button>
+      <button class="link-back" onclick="_geiToStylePicker()">← Pick a different type</button>
       <div class="tbar-eyebrow" id="gei-tbar-eyebrow">General estimate</div>
       <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
         <span id="gei-trade-title">Estimate</span>
@@ -1859,8 +1877,8 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div id="gei-tm-page" style="display:none">
     <div class="tbar">
       <div class="tbar-l">
-        <button class="link-back" onclick="goPg('pg-dash')">← Home</button>
-        <button class="link-back" onclick="_geiBack()" style="margin-left:14px">← Pick a different type</button>
+        <button class="link-back" onclick="_geiBack()">← Job type</button>
+        <button class="link-back" onclick="_geiToStylePicker()" style="margin-left:14px">← Pick a different type</button>
         <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
           <span id="tm-tbar-title">Time &amp; Materials proposal</span>
           <button onclick="_editTMTitle()" id="tm-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">✏️</button>
@@ -1980,8 +1998,8 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div id="gei-byo-page" style="display:none">
     <div class="tbar">
       <div class="tbar-l">
-        <button class="link-back" onclick="goPg('pg-dash')">← Home</button>
-        <button class="link-back" onclick="_geiBack()" style="margin-left:14px">← Pick a different type</button>
+        <button class="link-back" onclick="_geiBack()">← Job type</button>
+        <button class="link-back" onclick="_geiToStylePicker()" style="margin-left:14px">← Pick a different type</button>
         <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
           <span id="byo-tbar-title">Build Your Own proposal</span>
           <button onclick="_editByoTitle()" id="byo-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">✏️</button>
@@ -2027,6 +2045,23 @@ body.dark .cal-cell.other{background:var(--cream)}
 
   <!-- Step 1: Job Info -->
   <div id="gei-s1" style="padding:10px 14px 80px">
+    <!-- Job type — drives tax treatment, templates, and terms -->
+    <div class="card" style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Property type</div>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-bottom:10px">
+        <button id="gei-prop-res"  onclick="_geiSetPropertyType('residential')" class="btn btn-sm" style="border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)">🏠 Residential</button>
+        <button id="gei-prop-comm" onclick="_geiSetPropertyType('commercial')"  class="btn btn-sm" style="border:2px solid var(--border2);background:var(--bg2);color:var(--text2)">🏢 Commercial</button>
+      </div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Work type</div>
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-bottom:8px">
+        <button id="gei-work-repair"   onclick="_geiSetWorkType('repair')"      class="btn btn-sm" style="border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)">🔧 Repair / Remodel</button>
+        <button id="gei-work-newbuild" onclick="_geiSetWorkType('improvement')" class="btn btn-sm" style="border:2px solid var(--border2);background:var(--bg2);color:var(--text2)">🏗️ New Build / Addition</button>
+      </div>
+      <div id="gei-jtype-note" style="font-size:11px;color:var(--text3)"></div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button id="gei-emrg-btn" onclick="_geiToggleEmergency()" class="btn btn-sm" style="flex:1;font-size:12px;border:2px solid var(--border2);background:var(--bg2);color:var(--text2)">🚨 Emergency / after-hours</button>
+      </div>
+    </div>
     <div class="card" style="margin-bottom:12px">
       <!-- T&M chip (shown in T&M mode) -->
       <div id="gei-tm-chip" style="display:none;margin-bottom:12px">
@@ -2036,20 +2071,10 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div id="gei-ff-chip" style="display:none;margin-bottom:12px">
         <span style="display:inline-flex;align-items:center;gap:6px;background:#f0fdf4;color:#166534;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px">✏️ Build Your Own Proposal</span>
       </div>
-      <!-- Scope toggles -->
-      <div style="display:flex;gap:8px;margin-bottom:14px">
-        <button id="gei-resi-btn" onclick="_geiSetScope(false)" class="btn" style="flex:1;padding:10px 6px;font-size:13px;font-weight:700;border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)">🏠 Residential</button>
-        <button id="gei-comm-btn" onclick="_geiSetScope(true)" class="btn" style="flex:1;padding:10px 6px;font-size:13px;font-weight:700;border:2px solid var(--border2);background:var(--bg2);color:var(--text2)">🏢 Commercial</button>
-        <button id="gei-emrg-btn" onclick="_geiToggleEmergency()" class="btn" style="flex:1;padding:10px 6px;font-size:13px;font-weight:700;border:2px solid var(--border2);background:var(--bg2);color:var(--text2)">🚨 Emergency</button>
-      </div>
       <div class="f" style="margin-bottom:8px"><label>Client name</label><input type="text" id="gei-client" placeholder="Client name"></div>
-      <div class="f" style="margin-bottom:8px"><label>Job address</label><input type="text" id="gei-addr" placeholder="123 Main St"></div>
+      <div class="f" style="margin-bottom:8px"><label>Job address</label><input type="text" id="gei-addr" placeholder="123 Main St, Wichita KS 67201" oninput="_geiOnAddrInput()"></div>
       <div class="f" style="margin-bottom:8px"><label>Describe the job</label><input type="text" id="gei-desc" placeholder="e.g. Replace water heater, install shutoff valve"></div>
       <div class="f" style="margin-bottom:8px"><label>Date</label><input type="date" id="gei-date"></div>
-      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);cursor:pointer;margin-top:2px">
-        <input type="checkbox" id="gei-new-work" style="width:16px;height:16px;accent-color:var(--blue)" onchange="_geiNewWork=this.checked;if(_geiStep===2)_geiRenderTemplates()">
-        New construction <span style="color:var(--text3);font-size:11px">(open walls — lower labor rates)</span>
-      </label>
       <!-- T&M reason (shown in T&M mode) -->
       <div id="gei-tm-reason-wrap" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
         <div class="f" style="margin-bottom:8px">
@@ -2181,6 +2206,18 @@ body.dark .cal-cell.other{background:var(--cream)}
           <span style="font-size:12px;color:var(--text3)">%</span>
         </div>
         <span id="gei-tax-amt" style="font-size:13px;color:var(--text2)">$0.00</span>
+      </div>
+      <!-- Sales tax row — shown/hidden by calcGeiTotal() based on state rules -->
+      <div id="gei-sales-tax-row" style="display:none;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span id="gei-sales-tax-lbl" style="font-size:13px;color:var(--text2)">Sales tax</span>
+        <span id="gei-sales-tax-amt" style="font-size:13px;color:var(--text2)">$0.00</span>
+      </div>
+      <!-- Rate source note: shown when lookup returns a warning or confirms ZIP-based rate -->
+      <div id="gei-tax-rate-note" style="display:none;font-size:11px;margin-bottom:6px;padding:0 2px"></div>
+      <!-- Prompt shown when no sales tax rate configured and no address entered -->
+      <div id="gei-tax-rate-prompt" style="display:none;align-items:center;gap:6px;padding:7px 10px;background:var(--amber-lt,#fffbeb);border:1px solid var(--amber,#f59e0b);border-radius:var(--r);margin-bottom:8px;font-size:12px">
+        <span style="color:var(--amber-dk,#92400e)">⚠ Sales tax rate not set</span>
+        <button onclick="openSalesTaxSetup()" style="margin-left:auto;background:none;border:none;color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;padding:0">Set rate →</button>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid var(--border)">
         <span style="font-size:15px;font-weight:800">Total</span>
@@ -2761,6 +2798,15 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="set-form-row">
           <div><div class="set-form-lbl">Years in business</div></div>
           <div class="set-form-ctrl"><input type="number" id="set-byears" min="1" max="50" placeholder="e.g. 12"></div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Sales tax rate</div><div class="set-form-hint">Default rate charged on taxable materials. ZIP lookup available from any estimate.</div></div>
+          <div class="set-form-ctrl">
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="number" id="set-sales-tax-rate" step="0.001" min="0" max="20" placeholder="e.g. 9.350" style="flex:1">
+              <span style="font-size:13px;color:var(--text2);font-weight:600">%</span>
+            </div>
+          </div>
         </div>
         <div class="set-form-row">
           <div><div class="set-form-lbl">Google review link</div><div class="set-form-hint">Sent to clients after job completion.</div></div>
@@ -3588,6 +3634,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 <script src="js/paint-estimate.js"></script>
 <script src="js/legal.js"></script>
 <script src="js/proposals.js"></script>
+<script src="js/sales-tax.js"></script>
 <script src="js/tax.js"></script>
 <script src="js/finance.js"></script>
 <script src="js/generic-estimate.js"></script>

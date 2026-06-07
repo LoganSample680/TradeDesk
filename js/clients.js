@@ -251,7 +251,9 @@ function _pickEstStyle(style){
   else{doIt();}
 }
 function _doOpenScopeEstimate(c,overrideAddr){
-  // Trade already confirmed before 3-type picker — go straight to open
+  // Explicitly reset TM/BYO flags so switching types doesn't carry over the previous mode
+  if(typeof _geiIsTM!=='undefined')_geiIsTM=false;
+  if(typeof _geiIsFreeForm!=='undefined')_geiIsFreeForm=false;
   _doOpenEstimate(c,overrideAddr,getActiveTrade());
 }
 
@@ -331,6 +333,7 @@ function _doOpenEstimate(c,_overrideAddr,_forceTrade){
     sf('e-cname',c.name||'');
     sf('e-cphone',c.phone||'');
     sf('e-caddr',_overrideAddr||c.addr||'');
+    if((_overrideAddr||c.addr)&&typeof _paintLookupClientTaxRate==='function')_paintLookupClientTaxRate();
     // If client has multiple addresses, show a picker hint below the address field (skip if override provided)
     _estAddrOptions=_overrideAddr?[{label:'New property',addr:_overrideAddr}]:[{label:'Primary',addr:c.addr||''},...(c.extraAddresses||[])];
     const _addrField=document.getElementById('e-caddr');

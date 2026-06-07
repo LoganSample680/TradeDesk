@@ -1,5 +1,65 @@
 // ── Gallery ──────────────────────────────────────────────────────────────────
 let _galleryFilter='all';
+
+// ── Painting estimator job classification ────────────────────────────────────
+let _paintIsCommercial=false,_paintWorkScope='repair';
+let _paintClientTaxRate=null,_paintTaxLookupTimer=null;
+
+function _paintOnAddrInput(){
+  clearTimeout(_paintTaxLookupTimer);
+  _paintTaxLookupTimer=setTimeout(_paintLookupClientTaxRate,700);
+}
+async function _paintLookupClientTaxRate(){
+  const addr=(document.getElementById('e-caddr')?.value||'').trim();
+  const zip=typeof _extractZip==='function'?_extractZip(addr):null;
+  const state=typeof detectStateFromAddr==='function'?detectStateFromAddr(addr):null;
+  if(!zip&&!state){_paintClientTaxRate=null;return;}
+  if(typeof lookupSalesTaxRate==='function'){
+    _paintClientTaxRate=await lookupSalesTaxRate(zip||'',state||(S&&S.state)||'KS');
+  }
+}
+
+function _paintSetPropertyType(type){
+  _paintIsCommercial=(type==='commercial');
+  _paintSyncJobTypeButtons();
+  if(typeof renderEstReview==='function')renderEstReview();
+  if(typeof buildProposal==='function'&&document.getElementById('est-s5')?.style.display==='block')buildProposal();
+}
+function _paintSetWorkScope(scope){
+  _paintWorkScope=scope;
+  _paintSyncJobTypeButtons();
+  if(typeof renderEstReview==='function')renderEstReview();
+  if(typeof buildProposal==='function'&&document.getElementById('est-s5')?.style.display==='block')buildProposal();
+}
+function _paintSyncJobTypeButtons(){
+  const _propActive=_paintIsCommercial?'comm':'res';
+  ['res','comm'].forEach(k=>{
+    const btn=document.getElementById('paint-prop-'+k);if(!btn)return;
+    const on=k===_propActive;
+    btn.style.border='2px solid '+(on?'var(--blue)':'var(--border2)');
+    btn.style.background=on?'var(--blue-lt)':'var(--bg2)';
+    btn.style.color=on?'var(--blue-dk)':'var(--text2)';
+  });
+  const _workActive=_paintWorkScope==='improvement'?'newbuild':'repair';
+  ['repair','newbuild'].forEach(k=>{
+    const btn=document.getElementById('paint-work-'+k);if(!btn)return;
+    const on=k===_workActive;
+    btn.style.border='2px solid '+(on?'var(--blue)':'var(--border2)');
+    btn.style.background=on?'var(--blue-lt)':'var(--bg2)';
+    btn.style.color=on?'var(--blue-dk)':'var(--text2)';
+  });
+  const noteEl=document.getElementById('paint-jscope-note');
+  if(!noteEl)return;
+  if(_paintWorkScope==='improvement'&&typeof getJobTaxTreatment==='function'){
+    const addr=document.getElementById('e-caddr')?.value||'';
+    const st=(typeof detectStateFromAddr==='function'?detectStateFromAddr(addr):null)||(S&&S.state)||'KS';
+    const t=getJobTaxTreatment(st,'painting','improvement',_paintIsCommercial?'commercial':'residential');
+    noteEl.textContent=t.certificate?'⚠ '+t.certificate.form+' required — client must sign before work begins.':'Capital improvement: no sales tax charged to client.';
+    noteEl.style.color=t.certificate?'var(--amber-dk)':'var(--text3)';
+  } else {
+    noteEl.textContent='';
+  }
+}
 function setGalleryFilter(f,btn){
   _galleryFilter=f;
   document.querySelectorAll('#pg-gallery .fb').forEach(b=>{b.classList.remove('active');});
@@ -1021,6 +1081,28 @@ function buildProposal(){
   const scaledMatLine=Math.round((matLine)*_propTierMult*100)/100;
   // Use final from calcEst directly — row breakdown is display only, final is authoritative
   const proposalTotal=final;
+  // Sales tax — rate from client address ZIP; fall back to contractor setting only when no address
+  const _stRate=_paintClientTaxRate!==null?(_paintClientTaxRate.rate??0):(parseFloat(S.salesTaxRate)||0);
+  let _stTax=0,_stLabel='Sales tax',_stTreatment=null;
+  if(typeof calcSalesTax==='function'&&_stRate>0&&_paintWorkScope!=='improvement'){
+    const _stScope='repair';
+    const _stPropType=_paintIsCommercial?'commercial':'residential';
+    const _stResult=calcSalesTax({state:_st,tradeType:'painting',scope:_stScope,
+      propertyType:_stPropType,taxRate:_stRate,
+      lineItems:[{desc:'Painting services',total:proposalTotal,lineType:'service'}]});
+    _stTreatment=_stResult.treatment;
+    _stTax=(_stTreatment&&_stTreatment.customerTax)?(_stResult.taxAmount||0):0;
+    if(_stTax>0){const isFull=_stTreatment?.type==='service'||_stTreatment?.laborTaxable;_stLabel='Sales tax ('+_stRate+'%'+(isFull?'':' on materials')+')';}
+  }
+  // HI GET / NM GRT — gross receipts tax (overrides regular sales tax)
+  const _grInfo=(typeof ST_GROSS_RECEIPTS!=='undefined')?ST_GROSS_RECEIPTS[_st]:null;
+  const _grRate=_grInfo?(parseFloat(S.salesTaxRate)||(typeof ST_BASE_RATE!=='undefined'?ST_BASE_RATE[_st]||0:0)):0;
+  const _grTax=_grRate>0?Math.round(proposalTotal*_grRate/100*100)/100:0;
+  const _grLabel=_grInfo?(_grInfo.label||'Tax'):'';
+  // Use GRT if applicable, otherwise regular sales tax
+  const _appliedTax=_grTax>0?_grTax:_stTax;
+  const _appliedTaxLabel=_grTax>0?_grLabel:_stLabel;
+  const _paintFinalTotal=proposalTotal+_appliedTax;
 
   // Compute per-room customer paint flags
   const anyRoomCustomerPaint=roomNames.some(r=>roomScopeMap[r]?._customerPaint===true);
@@ -1124,9 +1206,11 @@ function buildProposal(){
       ${adj?`<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 18px;color:#718096;font-style:italic">${adjReason||'Price adjustment'}</td><td style="padding:9px 18px;text-align:right;color:#718096">${adj>0?'+':''}${fmt(adj)}</td></tr>`:''}
     </tbody>
     <tfoot>
+      ${_paintWorkScope==='improvement'?`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td style="padding:8px 18px;font-size:12px;color:#64748b">Sales tax — capital improvement (contractor pays, not client)</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$0.00</td></tr>`:''}
+      ${_appliedTax>0?`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td style="padding:8px 18px;font-size:12px;color:#64748b">${_appliedTaxLabel}</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">${fmt(_appliedTax)}</td></tr>`:''}
       <tr style="background:#1a365d;color:#fff">
         <td style="padding:13px 18px;text-align:left;font-weight:800;font-size:15px;letter-spacing:.02em">TOTAL</td>
-        <td style="padding:13px 18px;text-align:right;font-weight:800;font-size:15px">${fmt(proposalTotal)}</td>
+        <td style="padding:13px 18px;text-align:right;font-weight:800;font-size:15px">${fmt(_paintFinalTotal)}</td>
       </tr>
       ${_depositPct>0?`<tr style="background:#2a4a7f;color:rgba(255,255,255,.88)"><td style="padding:7px 18px;font-size:11px;font-weight:600">${Math.round(_depositPct*100)}% Deposit Due Before Work Begins</td><td style="padding:7px 18px;text-align:right;font-size:12px;font-weight:700">${fmt(_depositAmt)}</td></tr>`:''}
     </tfoot>
@@ -1162,7 +1246,7 @@ function buildProposal(){
       <p style="margin:0 0 9px"><strong>2. Cancellation &amp; Deposits:</strong> Buyer may cancel this transaction within ${_cancelDays} business days of signing (${_cancelStat}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages to compensate for: (a) <em>Mobilization &amp; Scheduling</em> — reserving crew availability and declining other projects for the contracted dates; (b) <em>Administrative Costs</em> — time invested in site measurements, color consulting, and preparation of this written scope; and (c) <em>Material Procurement</em> — sourcing specific paint colors and materials that may not be returnable or transferable to other jobs. These represent a reasonable good-faith estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</p>
       <p style="margin:0 0 7px"><strong>3. Change Orders:</strong> This proposal covers only the scope described herein. Any additional work, surfaces, or materials not listed require a written change order signed by both parties and may be billed at the current rate.</p>
       <p style="margin:0 0 7px"><strong>4. Limitation of Liability:</strong> Contractor is not responsible for damage to surfaces, structures, or contents that existed prior to the start of work, or for conditions not disclosed at the time of walkthrough. Client assumes all risk associated with pressure washing services on their property.</p>
-      <p style="margin:0 0 7px"><strong>5. Materials &amp; Sales Tax:</strong> Contractor purchases all materials and pays applicable sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.</p>
+      <p style="margin:0 0 7px"><strong>5. ${_grTax>0?_grLabel+':':' Materials &amp; Sales Tax:'}</strong> ${_grTax>0?`${_grLabel} of ${_grRate}% is charged on the full contract value and is itemized separately on this proposal. Client is responsible for this amount.`:'Contractor purchases all materials and pays applicable sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.'}</p>
       <p style="margin:0 0 7px"><strong>6. Mechanic's Lien Notice:</strong> ${_lienNotice(_st)}</p>
       <p style="margin:0">By signing, client acknowledges receipt of the Notice of Cancellation form below, full agreement with all scope, pricing, and terms, and that this constitutes a legally binding electronic agreement under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.).</p>
     </div>
@@ -1181,7 +1265,7 @@ function buildProposal(){
     </div>
   </div>
 </div>`;
-  document.getElementById('est-sig-sum').innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><div style="font-size:15px;font-weight:700">${cname}</div><div style="font-size:12px;color:var(--text2)">${caddr}</div></div><div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--blue)">${fmt(proposalTotal)}</div><div style="font-size:11px;color:var(--text3)">${estNum}</div></div></div>`;
+  document.getElementById('est-sig-sum').innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><div style="font-size:15px;font-weight:700">${cname}</div><div style="font-size:12px;color:var(--text2)">${caddr}</div></div><div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--blue)">${fmt(_paintFinalTotal)}</div><div style="font-size:11px;color:var(--text3)">${estNum}</div></div></div>`;
   document.getElementById('est-terms').innerHTML='<div style="background:#FEF3C7;border-left:3px solid #92400E;padding:8px 10px;margin-bottom:10px;font-size:10px;font-weight:700;color:#92400E">⚠ '+_stName+' / FTC Notice: Buyer may cancel within '+_cancelDays+' business days of signing ('+_cancelStat+'). See Notice of Cancellation on signed proposal.</div><strong style="color:#1a365d">Terms &amp; Conditions</strong><br><br>1. <strong>Payment:</strong> '+(_depositPct===0?'Full balance due upon completion. No deposit required.':Math.round(_depositPct*100)+'% deposit ('+fmt(_depositAmt)+') required before any work begins and before a start date will be scheduled. The remaining balance is due upon completion of work.')+'<br><br>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within '+_cancelDays+' business days of signing ('+_cancelStat+') for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages covering: (a) mobilization &amp; scheduling costs — crew reservation and declined projects for those dates; (b) administrative costs — site measurements, color consulting, scope preparation; and (c) material procurement — specific paint colors and supplies that may not be returnable. These represent a reasonable estimate of actual damages, not a penalty. Materials purchased will be made available for pickup upon cancellation. '+bname+'\'s right to retain the deposit is conditioned on '+bname+'\'s readiness and willingness to perform. If '+bname+' fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.<br><br>3. <strong>Change Orders:</strong> This proposal covers only the scope described herein. Any additional work, surfaces, or materials not listed require a written change order signed by both parties and may be billed at the current rate.<br><br>4. <strong>Limitation of Liability:</strong> Contractor is not responsible for damage to surfaces, structures, or contents that existed prior to the start of work, or for conditions not disclosed at the time of walkthrough. Client assumes all risk associated with pressure washing services on their property.<br><br>5. <strong>Materials &amp; Sales Tax:</strong> Contractor purchases all materials and pays applicable '+_stName+' sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.<br><br>6. <strong>Mechanic\'s Lien Notice:</strong> '+_lienNotice(_st)+' Contractor will pursue all available legal remedies for non-payment, including lien filing.<br><br>By signing below, client acknowledges receipt of the Notice of Cancellation, full agreement with all scope, pricing, and terms, and that this constitutes a legally binding electronic agreement under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.)';
   document.getElementById('sig-date').value=ds;
   document.getElementById('sig-pname').value=cname;
@@ -1384,6 +1468,7 @@ function clearEstimatorForm(){
     const orphanIdx=bids.findIndex(b=>b.id===lastCreatedBidId&&b.draft===true&&b.status!=='Pending');
     if(orphanIdx>-1){bids.splice(orphanIdx,1);saveAll();}
   }
+  _paintIsCommercial=false;_paintWorkScope='repair';_paintClientTaxRate=null;
   estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;lastCreatedBidId=null;
   scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
   estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200',products:{interior:'pm200',exterior:'spe',trim:'pm200t'}};
@@ -1559,17 +1644,17 @@ function checkStep1Ready(){
   const nm=(document.getElementById('e-cname')?.value||'').trim();
   const ph=(document.getElementById('e-cphone')?.value||'').trim();
   const addr=(document.getElementById('e-caddr')?.value||'').trim();
-  // Default paint to 'interior' if not yet set (Zach supplies by default)
-  const paintEl=document.getElementById('e-paint');
-  if(paintEl&&!paintEl.value)paintEl.value='interior';
-  const paint=paintEl?.value||'';
-  const days=parseInt(document.getElementById('e-days')?.value)||0;
-  const ready=!!(nm&&ph&&addr&&paint&&days>=1);
+  const ready=!!(nm&&ph&&addr);
   const btn=document.getElementById('est-s1-next');
   if(!btn)return;
   btn.disabled=!ready;
   if(ready){btn.style.background='var(--blue)';btn.style.color='#fff';btn.style.borderColor='var(--blue)';btn.style.cursor='pointer';}
   else{btn.style.background='var(--border2)';btn.style.color='var(--text3)';btn.style.borderColor='var(--border2)';btn.style.cursor='not-allowed';}
+}
+function _estCancelToStylePicker(){
+  const c=typeof estLinkedClientId!=='undefined'&&estLinkedClientId?getClientById(estLinkedClientId):null;
+  if(c&&typeof _showEstimateStylePicker==='function')_showEstimateStylePicker(c);
+  else goPg('pg-clients');
 }
 function checkStep2Ready(){
   // Condition now defaults to 1.0 (good) — always ready
@@ -1644,9 +1729,9 @@ function goEstStep(n){
       selectPropertyTier(key);
     },80);
   }
+  if(n===1){_paintSyncJobTypeButtons();}
   if(n===4){
     if(!estSurfaces.length){zAlert('Add at least one room and surface before reviewing.',{title:'No surfaces yet'});return;}
-    // Ensure paint supply defaults to interior if not yet set
     const pVal=document.getElementById('e-paint')?.value;
     if(!pVal){const pEl=document.getElementById('e-paint');if(pEl)pEl.value='interior';}
     renderEstReview();

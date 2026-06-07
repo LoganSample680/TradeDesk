@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { getServiceRoleKey } from '../_shared/keys.ts';
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -7,7 +8,7 @@ const CORS = {
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  getServiceRoleKey()
 );
 
 // ── Apify Zillow detail scraper ───────────────────────────────────────────────
@@ -128,7 +129,7 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get('authorization');
     if (!authHeader) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...CORS, 'Content-Type': 'application/json' } });
     const token = authHeader.replace('Bearer ', '');
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const serviceKey = getServiceRoleKey();
     let authorized = token === serviceKey;
     if (!authorized) {
       const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
