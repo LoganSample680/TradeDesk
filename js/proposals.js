@@ -15,7 +15,8 @@ async function _paintLookupClientTaxRate(){
   const state=typeof detectStateFromAddr==='function'?detectStateFromAddr(addr):null;
   if(!zip&&!state){_paintClientTaxRate=null;return;}
   if(typeof lookupSalesTaxRate==='function'){
-    _paintClientTaxRate=await lookupSalesTaxRate(zip||'',state||(S&&S.state)||'KS');
+    const r=await lookupSalesTaxRate(zip||'',state||(S&&S.state)||'KS');
+    _paintClientTaxRate=(r&&r.source&&r.source!=='hardcoded')?r:null;
   }
 }
 

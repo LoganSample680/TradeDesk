@@ -1396,7 +1396,8 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="fg fg2">
         <div class="f"><label>Client name <span style="color:var(--c-red)">*</span></label><input id="e-cname" placeholder="John &amp; Sarah Smith" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
         <div class="f"><label>Phone <span style="color:var(--c-red)">*</span></label><input id="e-cphone" type="tel" maxlength="12" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="fmtPhone(this);markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
-        <div class="f" style="grid-column:1/-1"><label>Property address <span style="color:var(--c-red)">*</span></label><input id="e-caddr" placeholder="1234 Maple St, Wichita KS 67201" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft();_paintOnAddrInput()" onblur="typeof checkAddrServiceState==='function'&&checkAddrServiceState(this.value)"></div>
+        <div class="f" style="grid-column:1/-1"><label>Property address <span style="color:var(--c-red)">*</span></label><input id="e-caddr" placeholder="1234 Maple St, Wichita KS 67201" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft();_paintOnAddrInput();_lookupProperty(this.value,'ecaddr')" onblur="typeof checkAddrServiceState==='function'&&checkAddrServiceState(this.value)"></div>
+        <div id="prop-card-ecaddr" style="display:none;margin-top:8px;padding:10px 12px;background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r);font-size:12px;grid-column:1/-1"></div>
         <div style="grid-column:1/-1"><button type="button" class="btn btn-sm" style="width:100%;background:var(--bg2);border-color:var(--border2);color:var(--text2);font-size:12px" onclick="openLogTripModal({purpose:'Estimate',toAddress:document.getElementById('e-caddr').value,clientName:document.getElementById('e-cname').value})">🚗 Log drive to this estimate</button></div>
         <div class="f"><label>Property type</label><select id="e-cprop" onchange="_onEstPropTypeChange(this)"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>
         <div id="_est-industrial-banner" style="display:none;grid-column:1/-1;padding:10px 12px;border-radius:var(--r);border:1.5px dashed #ea580c;background:#fff7ed">
@@ -2021,6 +2022,8 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="summary-rail">
         <div class="summary-card">
           <div class="td-micro" style="margin-bottom:8px">Client total · live</div>
+          <div class="summary-row" style="color:var(--text-3);margin-bottom:2px"><span>Subtotal</span><span id="byo-rail-sub">$0</span></div>
+          <div id="byo-rail-tax-row" class="summary-row" style="color:var(--text-3);display:none"><span id="byo-rail-tax-lbl">Sales tax</span><span id="byo-rail-tax-amt">$0.00</span></div>
           <div class="td-display summary-total" id="byo-rail-total">$0</div>
           <div class="summary-meta" id="byo-rail-meta">0 of 0 items selected</div>
           <div class="summary-divider"></div>
@@ -2072,7 +2075,8 @@ body.dark .cal-cell.other{background:var(--cream)}
         <span style="display:inline-flex;align-items:center;gap:6px;background:#f0fdf4;color:#166534;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px">✏️ Build Your Own Proposal</span>
       </div>
       <div class="f" style="margin-bottom:8px"><label>Client name</label><input type="text" id="gei-client" placeholder="Client name"></div>
-      <div class="f" style="margin-bottom:8px"><label>Job address</label><input type="text" id="gei-addr" placeholder="123 Main St, Wichita KS 67201" oninput="_geiOnAddrInput()"></div>
+      <div class="f" style="margin-bottom:8px"><label>Job address</label><input type="text" id="gei-addr" placeholder="123 Main St, Wichita KS 67201" oninput="_geiOnAddrInput();_lookupProperty(this.value,'geiaddr')"></div>
+      <div id="prop-card-geiaddr" style="display:none;margin-top:6px;padding:10px 12px;background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r);font-size:12px"></div>
       <div class="f" style="margin-bottom:8px"><label>Describe the job</label><input type="text" id="gei-desc" placeholder="e.g. Replace water heater, install shutoff valve"></div>
       <div class="f" style="margin-bottom:8px"><label>Date</label><input type="date" id="gei-date"></div>
       <!-- T&M reason (shown in T&M mode) -->

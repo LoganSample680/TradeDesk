@@ -640,7 +640,7 @@ function openAddVehicleModal(idx) {
       <div style="font-size:20px;font-weight:800;color:var(--text)">${isEdit?'Edit vehicle':'Add vehicle'}</div>
       <button class="btn btn-ghost" onclick="_closeFleetVehModal()">Cancel</button>
     </div>
-    <div style="padding:14px 16px 100px;overflow-y:auto;max-height:80vh">
+    <div style="padding:14px 16px 100px;overflow-y:auto;overflow-x:hidden;max-height:80vh">
       <div class="card" style="margin-bottom:12px">
         <div class="f"><label>Year, make, model <span style="color:var(--red)">*</span></label>
           <input id="fv-name" placeholder="e.g. 2019 F-150" value="${v.name||''}">
@@ -680,23 +680,23 @@ function openAddVehicleModal(idx) {
           </select>
           <div id="fv-gvwr-note" style="margin-top:4px">${_gvwrNote(v.gvwr||'')}</div>
         </div>
-        <div class="f" style="margin-top:8px">
-          <label>Tax deduction method <span style="font-size:10px;font-weight:400;color:var(--text3)">(pick one per vehicle — IRS doesn't allow both)</span></label>
-          <div style="display:grid;gap:6px;margin-top:6px">
-            <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1.5px solid ${(v.deductionMethod||'mileage')==='mileage'?'var(--blue)':'var(--border2)'};border-radius:var(--r);cursor:pointer;background:${(v.deductionMethod||'mileage')==='mileage'?'rgba(45,93,168,.06)':'var(--bg2)'}">
-              <input type="radio" name="fv-deduct" value="mileage" style="margin-top:2px;accent-color:var(--blue);flex-shrink:0" ${(v.deductionMethod||'mileage')==='mileage'?'checked':''}>
-              <div style="flex:1;min-width:0">
-                <div style="font-size:13px;font-weight:700">Standard mileage rate</div>
-                <div style="font-size:11px;color:var(--text3);margin-top:2px">Deduct ${((S.irsRate||0.67)*100).toFixed(0)}¢ per business mile. Simpler — no need to track every expense. Maintenance records are for your info only.</div>
+        <div style="margin-top:12px">
+          <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:8px">Tax deduction method <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0">(pick one — IRS doesn't allow both)</span></div>
+          <div>
+            <div onclick="this.querySelector('input').click()" style="display:grid;grid-template-columns:18px 1fr;align-items:start;column-gap:10px;padding:10px 12px;border:1.5px solid ${(v.deductionMethod||'mileage')==='mileage'?'var(--blue)':'var(--border2)'};border-radius:var(--r);cursor:pointer;background:${(v.deductionMethod||'mileage')==='mileage'?'rgba(45,93,168,.06)':'var(--bg2)'};margin-bottom:6px">
+              <input type="radio" name="fv-deduct" value="mileage" style="margin-top:3px;accent-color:var(--blue);pointer-events:none;width:16px;height:16px" ${(v.deductionMethod||'mileage')==='mileage'?'checked':''}>
+              <div>
+                <div style="font-size:13px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;line-height:1.3">Standard mileage rate</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:2px;text-transform:none;letter-spacing:0;line-height:1.4">Deduct ${((S.irsRate||0.67)*100).toFixed(0)}¢ per business mile. Simpler — no need to track every expense. Maintenance records are for your info only.</div>
               </div>
-            </label>
-            <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border:1.5px solid ${v.deductionMethod==='actual'?'var(--blue)':'var(--border2)'};border-radius:var(--r);cursor:pointer;background:${v.deductionMethod==='actual'?'rgba(45,93,168,.06)':'var(--bg2)'}">
-              <input type="radio" name="fv-deduct" value="actual" style="margin-top:2px;accent-color:var(--blue);flex-shrink:0" ${v.deductionMethod==='actual'?'checked':''}>
-              <div style="flex:1;min-width:0">
-                <div style="font-size:13px;font-weight:700">Actual expenses</div>
-                <div style="font-size:11px;color:var(--text3);margin-top:2px">Deduct real costs — fuel, maintenance, depreciation at your business-use %. Requires keeping all receipts.</div>
+            </div>
+            <div onclick="this.querySelector('input').click()" style="display:grid;grid-template-columns:18px 1fr;align-items:start;column-gap:10px;padding:10px 12px;border:1.5px solid ${v.deductionMethod==='actual'?'var(--blue)':'var(--border2)'};border-radius:var(--r);cursor:pointer;background:${v.deductionMethod==='actual'?'rgba(45,93,168,.06)':'var(--bg2)'}">
+              <input type="radio" name="fv-deduct" value="actual" style="margin-top:3px;accent-color:var(--blue);pointer-events:none;width:16px;height:16px" ${v.deductionMethod==='actual'?'checked':''}>
+              <div>
+                <div style="font-size:13px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;line-height:1.3">Actual expenses</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:2px;text-transform:none;letter-spacing:0;line-height:1.4">Deduct real costs — fuel, maintenance, depreciation at your business-use %. Requires keeping all receipts.</div>
               </div>
-            </label>
+            </div>
           </div>
         </div>
       </div>

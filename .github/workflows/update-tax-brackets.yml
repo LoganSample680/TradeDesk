@@ -1,0 +1,28 @@
+name: Update Tax Brackets
+
+on:
+  # Run Nov 15 at noon UTC — after IRS typically publishes COLA adjustments in October/November
+  schedule:
+    - cron: '0 12 15 11 *'
+  workflow_dispatch:
+
+jobs:
+  update:
+    name: Scrape IRS and update brackets
+    # Self-hosted Proxmox runner — home IP bypasses IRS WAF that blocks Azure/cloud IPs
+    runs-on: self-hosted
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "TradeDesk Bot"
+          git config user.email "bot@tradedesk.app"
+
+      - name: Run bracket updater
+        run: node scripts/update-tax-brackets.js

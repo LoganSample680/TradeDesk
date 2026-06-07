@@ -231,3 +231,39 @@ function getClientBids(cid){return bids.filter(b=>b.client_id===cid&&b.status!==
 function getClientJobs(cid){return jobs.filter(j=>j.client_id===cid);}
 function getClientIncome(cid){return income.filter(i=>i.client_id===cid);}
 
+// ── Property lookup (Redfin via Cloudflare Tunnel proxy) ─────────────────────
+const _propLookupTimers={};
+async function _lookupProperty(addr,cardId){
+  clearTimeout(_propLookupTimers[cardId]);
+  const card=document.getElementById('prop-card-'+cardId);
+  if(!card)return;
+  // Need a reasonably complete address before firing
+  const hasZip=/\b\d{5}\b/.test(addr);
+  const hasCityState=/[A-Za-z]{2,},?\s+[A-Z]{2}\b/.test(addr);
+  if(!hasZip&&!hasCityState){card.style.display='none';return;}
+  _propLookupTimers[cardId]=setTimeout(async()=>{
+    card.style.display='block';
+    card.innerHTML='<div style="color:var(--text3);font-size:11px">Looking up property…</div>';
+    try{
+      const res=await fetch('/api/property?addr='+encodeURIComponent(addr));
+      if(res.status===204||!res.ok){card.style.display='none';return;}
+      const d=await res.json();
+      if(d.error){card.style.display='none';return;}
+      const fmt=n=>n?'$'+Number(n).toLocaleString():'—';
+      const leadPaint=d.yearBuilt&&d.yearBuilt<1978;
+      card.innerHTML=
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
+          '<span style="font-weight:600;color:var(--text)">Property Info</span>'+
+          (leadPaint?'<span style="font-size:10px;background:#fef2f2;color:#991b1b;padding:2px 8px;border-radius:4px;font-weight:700">⚠ Pre-1978</span>':'')+
+        '</div>'+
+        (leadPaint?'<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:6px 10px;margin-bottom:8px;color:#991b1b;font-size:11px;font-weight:600;line-height:1.4">Lead paint protocol required — EPA RRP Rule applies to renovation work</div>':'')+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">'+
+          '<div><div style="color:var(--text3);font-size:11px">Est. value</div><div style="font-weight:600">'+fmt(d.estValue)+'</div></div>'+
+          '<div><div style="color:var(--text3);font-size:11px">Sq ft</div><div style="font-weight:600">'+(d.sqft?Number(d.sqft).toLocaleString()+'  sqft':'—')+'</div></div>'+
+          '<div><div style="color:var(--text3);font-size:11px">Year built</div><div style="font-weight:600">'+(d.yearBuilt||'—')+'</div></div>'+
+          '<div><div style="color:var(--text3);font-size:11px">Last sale</div><div style="font-weight:600">'+fmt(d.lastSalePrice)+'</div></div>'+
+        '</div>';
+    }catch(e){card.style.display='none';}
+  },1200);
+}
+

@@ -189,10 +189,13 @@ async function _geiLookupClientTaxRate(){
   const addr=(document.getElementById('gei-addr')?.value||'').trim();
   const zip=typeof _extractZip==='function'?_extractZip(addr):null;
   const state=typeof detectStateFromAddr==='function'?detectStateFromAddr(addr):null;
-  if(!zip&&!state){_geiClientTaxRate=null;calcGeiTotal();return;}
+  if(!zip&&!state){_geiClientTaxRate=null;calcGeiTotal();if(_geiIsFreeForm)_byoUpdateRail();return;}
   if(typeof lookupSalesTaxRate==='function'){
-    _geiClientTaxRate=await lookupSalesTaxRate(zip||'',state||(S&&S.state)||'KS');
+    const r=await lookupSalesTaxRate(zip||'',state||(S&&S.state)||'KS');
+    // Only use DB-sourced rates (db_zip or db_state) — never show hardcoded base rate
+    _geiClientTaxRate=(r&&r.source&&r.source!=='hardcoded')?r:null;
     calcGeiTotal();
+    if(_geiIsFreeForm)_byoUpdateRail();
   }
 }
 
@@ -572,16 +575,49 @@ function _byoDelItem(idx){
 }
 function _byoUpdateRail(){
   const selected=_byoItems.filter(it=>it.on);
-  const total=selected.reduce((s,it)=>s+it.price,0);
+  const sub=selected.reduce((s,it)=>s+it.price,0);
+  _geiLines=selected.map(it=>({desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,notes:it.notes||'',_byoSection:it.section}));
+
+  // Sales tax
+  let salesTax=0;
+  const _stKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
+  const _stRate=_geiClientTaxRate!==null?(_geiClientTaxRate.rate??0):(parseFloat(S&&S.salesTaxRate)||0);
+  const taxRow=document.getElementById('byo-rail-tax-row');
+  const taxAmt=document.getElementById('byo-rail-tax-amt');
+  const taxLbl=document.getElementById('byo-rail-tax-lbl');
+  if(_stRate>0&&typeof calcSalesTax==='function'&&sub>0){
+    const _stScope=_geiJobScope||'repair';
+    const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,
+      propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRate,lineItems:_geiLines.map(l=>({desc:l.desc,total:l.total,lineType:null}))});
+    salesTax=_stResult.taxAmount||0;
+    if(taxRow&&taxAmt&&taxLbl){
+      if(salesTax>0){
+        const isFull=_stResult.treatment?.type==='service'||_stResult.treatment?.laborTaxable;
+        taxLbl.textContent='Sales tax ('+_stRate+'%'+(isFull?'':' on materials')+')';
+        taxAmt.textContent='$'+salesTax.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+        taxRow.style.display='';
+      } else if(_stResult.treatment&&!_stResult.treatment.customerTax){
+        taxLbl.textContent=_stScope==='improvement'?'Sales tax — capital improvement':'Sales tax (exempt)';
+        taxAmt.textContent='$0.00';
+        taxRow.style.display='';
+      } else {
+        if(taxRow)taxRow.style.display='none';
+      }
+    }
+  } else {
+    if(taxRow)taxRow.style.display='none';
+  }
+
+  const total=sub+salesTax;
   const depPct=(parseFloat(document.getElementById('byo-deposit-pct')?.value)||30)/100;
   const deposit=Math.round(total*depPct);
   const setT=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
-  setT('byo-rail-total','$'+total.toLocaleString());
+  const fmt=n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  setT('byo-rail-sub',fmt(sub));
+  setT('byo-rail-total',fmt(total));
   setT('byo-rail-meta',selected.length+' of '+_byoItems.length+' items');
-  setT('byo-rail-sub','$'+total.toLocaleString());
-  setT('byo-rail-deposit','$'+deposit.toLocaleString());
-  setT('byo-rail-balance','$'+(total-deposit).toLocaleString());
-  _geiLines=selected.map(it=>({desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,notes:it.notes||'',_byoSection:it.section}));
+  setT('byo-rail-deposit',fmt(deposit));
+  setT('byo-rail-balance',fmt(total-deposit));
 }
 function _byoAddItem(sec){
   document.getElementById('_byo-add-modal')?.remove();

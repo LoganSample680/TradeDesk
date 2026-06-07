@@ -13,8 +13,8 @@ const https         = require('https');
 const fs            = require('fs');
 const path          = require('path');
 const os            = require('os');
+const readline      = require('readline');
 const { execFile }  = require('child_process');
-const { createClient } = require('@supabase/supabase-js');
 
 // Accept either explicit URL+key OR project-ref+access-token (matches existing CI secrets)
 const SUPABASE_URL         = process.env.SUPABASE_URL
@@ -44,7 +44,53 @@ async function resolveServiceKey() {
   SUPABASE_SERVICE_KEY = svcKey.api_key;
 }
 
-let supa; // initialized after resolveServiceKey()
+// Direct REST upsert with retry — avoids native fetch which fails on Proxmox TLS
+function _supaPostOnce(apiPath, bodyStr, extraHeaders) {
+  return new Promise((resolve) => {
+    const host = SUPABASE_URL.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    const options = {
+      hostname: host,
+      path: apiPath,
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_SERVICE_KEY,
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(bodyStr),
+        ...extraHeaders,
+      },
+    };
+    const req = https.request(options, res => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve({ error: null });
+        } else {
+          resolve({ error: { message: `HTTP ${res.statusCode}: ${data.slice(0, 200)}` } });
+        }
+      });
+    });
+    req.on('error', err => resolve({ error: { message: err.message } }));
+    req.write(bodyStr);
+    req.end();
+  });
+}
+
+async function supaPost(apiPath, body, extraHeaders = {}) {
+  const bodyStr = JSON.stringify(body);
+  const delays = [2000, 4000, 8000, 16000];
+  let result;
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    result = await _supaPostOnce(apiPath, bodyStr, extraHeaders);
+  if (!result.error || !(/EAI_AGAIN|ENOTFOUND/.test(result.error.message))) return result;
+    if (attempt < delays.length) {
+      process.stdout.write(`[DNS retry in ${delays[attempt]/1000}s] `);
+      await new Promise(r => setTimeout(r, delays[attempt]));
+    }
+  }
+  return result;
+}
 
 // ── State base rates ─────────────────────────────────────────────────────────
 const STATE_BASE_RATES = {
@@ -93,8 +139,9 @@ const SST_STATES = [
 function fetchText(url, headers = {}) {
   return new Promise((resolve, reject) => {
     const get = (u, redirects = 0) => {
+      const parsed = new URL(u);
       const opts = Object.keys(headers).length
-        ? Object.assign(require('url').parse(u), { headers })
+        ? { hostname: parsed.hostname, port: parsed.port || 443, path: parsed.pathname + parsed.search, headers }
         : u;
       https.get(opts, res => {
         if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location && redirects < 5) {
@@ -113,22 +160,29 @@ function fetchText(url, headers = {}) {
   });
 }
 
-function downloadFile(url, destPath) {
+function downloadFile(url, destPath, timeoutMs = 300000) {
   return new Promise((resolve, reject) => {
+    let done = false;
+    const timer = setTimeout(() => { done = true; reject(new Error(`Download timeout (${timeoutMs/1000}s)`)); }, timeoutMs);
     const get = (u, redirects = 0) => {
-      https.get(u, res => {
+      if (done) return;
+      const req = https.get(u, res => {
+        if (done) return;
         if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location && redirects < 5) {
           return get(res.headers.location, redirects + 1);
         }
         if (res.statusCode !== 200) {
           res.resume();
+          clearTimeout(timer);
           return reject(new Error(`HTTP ${res.statusCode} for ${u}`));
         }
         const out = fs.createWriteStream(destPath);
         res.pipe(out);
-        out.on('finish', () => out.close(resolve));
-        out.on('error', reject);
-      }).on('error', reject);
+        out.on('finish', () => { clearTimeout(timer); out.close(resolve); });
+        out.on('error', e => { clearTimeout(timer); reject(e); });
+      });
+      req.on('error', e => { if (!done) { clearTimeout(timer); reject(e); } });
+      req.setTimeout(timeoutMs, () => { req.destroy(); });
     };
     get(url);
   });
@@ -162,7 +216,7 @@ async function upsertBatch(rows) {
   let inserted = 0;
   for (let i = 0; i < rows.length; i += BATCH) {
     const batch = rows.slice(i, i + BATCH);
-    const { error } = await supa.from('tax_rates').upsert(batch, { onConflict: 'zip' });
+    const { error } = await supaPost('/rest/v1/tax_rates?on_conflict=zip', batch, { Prefer: 'resolution=merge-duplicates,return=minimal' });
     if (error) { console.error('  Upsert error:', error.message); return false; }
     inserted += batch.length;
     process.stdout.write(`\r  ${inserted}/${rows.length} rows`);
@@ -198,99 +252,304 @@ async function seedFloridaCountyRates() {
 // ── Phase 2: SST member state ZIP files ─────────────────────────────────────
 // SST publishes quarterly boundary (ZIP→jurisdiction) + rate (jurisdiction→rates) files.
 // Files are free, no API key required.
-// URL pattern: https://www.streamlinedsalestax.org/files/docs/rates/{ST}RateBoundary{YYYYMMDD}.zip
-// Effective dates: Jan 1, Apr 1, Jul 1, Oct 1 of each year.
-// Verify current filenames at: https://www.streamlinedsalestax.org/Shared-Pages/rate-and-boundary-files
+// Directory: https://www.streamlinedsalestax.org/ratesandboundry/Rates/
+// The script scrapes the directory listing to find the current filename for each state
+// rather than guessing — SST changes naming conventions and publication dates unpredictably.
 
-function getSSTQuarterDate() {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth() + 1; // 1-12
-  // Find the most recently past effective date
-  const quarters = [
-    new Date(y, 0, 1),   // Jan 1
-    new Date(y, 3, 1),   // Apr 1
-    new Date(y, 6, 1),   // Jul 1
-    new Date(y, 9, 1),   // Oct 1
-    new Date(y - 1, 9, 1), // Oct 1 previous year (fallback)
-  ].filter(d => d <= now).sort((a, b) => b - a);
-  const d = quarters[0];
-  const yy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yy}${mm}${dd}`;
+const SST_RATE_DIR     = 'https://www.streamlinedsalestax.org/ratesandboundry/Rates/';
+const SST_BOUNDARY_DIR = 'https://www.streamlinedsalestax.org/ratesandboundry/Boundary/';
+let _sstRateDirCache     = null;
+let _sstBoundaryDirCache = null;
+
+async function getSSTDirectory(dirUrl, cacheRef) {
+  if (cacheRef.v) return cacheRef.v;
+  const html = await fetchText(dirUrl);
+  const files = [];
+  const re = /href="([^"]+\.(zip|csv))"/gi;
+  let m;
+  while ((m = re.exec(html)) !== null) {
+    const raw = m[1];
+    const url = raw.startsWith('http') ? raw : dirUrl + raw.split('/').pop();
+    const name = raw.split('/').pop();
+    files.push({ name, url });
+  }
+  cacheRef.v = files;
+  return files;
 }
 
-async function updateSSTState(st, dateStr, tmpDir) {
-  const url = `https://www.streamlinedsalestax.org/files/docs/rates/${st}RateBoundary${dateStr}.zip`;
-  const zipPath = path.join(tmpDir, `${st}.zip`);
+const _rateDirRef     = {};
+const _boundaryDirRef = {};
+
+function getSSTRateDir()     { return getSSTDirectory(SST_RATE_DIR,     _rateDirRef); }
+function getSSTBoundaryDir() { return getSSTDirectory(SST_BOUNDARY_DIR, _boundaryDirRef); }
+
+const MAX_RATE_FILE_MB = 30; // rate files are small; boundary files are streamed
+
+async function _downloadAndExtract(fileEntry, destPath, stateDir) {
+  await downloadFile(fileEntry.url, destPath);
+  const isZip = fileEntry.name.toLowerCase().endsWith('.zip');
+  if (isZip) {
+    fs.mkdirSync(stateDir, { recursive: true });
+    await unzipTo(destPath, stateDir);
+    const innerFiles = fs.readdirSync(stateDir);
+    return innerFiles.filter(f => /\.(csv|txt)$/i.test(f)).map(f => path.join(stateDir, f));
+  }
+  return [destPath];
+}
+
+async function updateSSTState(st, _unused, tmpDir) {
+  const [rateFiles, boundaryFiles] = await Promise.all([
+    getSSTRateDir().then(files => files.filter(f => f.name.toUpperCase().startsWith(st + 'R'))),
+    getSSTBoundaryDir().catch(() => []).then(files => files.filter(f => f.name.toUpperCase().startsWith(st + 'B'))),
+  ]);
+
+  if (!rateFiles.length) throw new Error(`No rate file for ${st} in SST directory`);
+  rateFiles.sort((a, b) => b.name.localeCompare(a.name));
+  boundaryFiles.sort((a, b) => b.name.localeCompare(a.name));
+
+  const rateEntry = rateFiles[0];
+  const boundaryEntry = boundaryFiles[0] || null;
+
   const stateDir = path.join(tmpDir, st);
+  const ratePath = path.join(tmpDir, `${st}_R${rateEntry.name.toLowerCase().endsWith('.zip') ? '.zip' : '.csv'}`);
 
-  await downloadFile(url, zipPath);
-  fs.mkdirSync(stateDir, { recursive: true });
-  await unzipTo(zipPath, stateDir);
+  // If we have a separate boundary file — download both and join on jurisdiction code
+  if (boundaryEntry) {
+    const boundaryPath = path.join(tmpDir, `${st}_B${boundaryEntry.name.toLowerCase().endsWith('.zip') ? '.zip' : '.csv'}`);
+    const bdirPath = path.join(stateDir, 'boundary');
 
-  // Find boundary and rate files — naming varies slightly by state
-  const files = fs.readdirSync(stateDir);
-  const boundaryFile = files.find(f => /boundary/i.test(f) && /\.(csv|txt)$/i.test(f));
-  const rateFile     = files.find(f => /rate/i.test(f) && !/boundary/i.test(f) && /\.(csv|txt)$/i.test(f));
-
-  if (!boundaryFile || !rateFile) {
-    throw new Error(`Could not find boundary/rate files in ${stateDir}: [${files.join(', ')}]`);
+    // Download rate file first (small), then boundary
+    const rateCsvs = await _downloadAndExtract(rateEntry, ratePath, path.join(stateDir, 'rate'));
+    const boundaryCsvs = await _downloadAndExtract(boundaryEntry, boundaryPath, bdirPath);
+    process.stdout.write(`    → ${rateEntry.name} + ${boundaryEntry.name}\n`);
+    if (rateCsvs.length && boundaryCsvs.length) {
+      return _processSSTFiles(st, boundaryCsvs[0], rateCsvs[0]);
+    }
   }
 
-  // Determine delimiter — SST uses pipe (|) for most states, some use comma
-  const sampleBoundary = fs.readFileSync(path.join(stateDir, boundaryFile), 'utf8').slice(0, 500);
-  const delim = sampleBoundary.includes('|') ? '|' : ',';
+  // No boundary file available — download rate file and attempt combined parse
+  const rateCsvs = await _downloadAndExtract(rateEntry, ratePath, stateDir);
+  process.stdout.write(`    → ${rateEntry.name}\n`);
 
-  const boundary = parseDelimited(fs.readFileSync(path.join(stateDir, boundaryFile), 'utf8'), delim);
-  const rates    = parseDelimited(fs.readFileSync(path.join(stateDir, rateFile), 'utf8'), delim);
+  // Check if a single rate ZIP contained both boundary + rate CSVs
+  if (rateCsvs.length >= 2) {
+    const boundaryFile = rateCsvs.find(f => /boundary/i.test(path.basename(f)));
+    const rateFile     = rateCsvs.find(f => !/boundary/i.test(path.basename(f)));
+    if (boundaryFile && rateFile) return _processSSTFiles(st, boundaryFile, rateFile);
+  }
 
-  // Build jurisdiction code → rates map
-  // Rate file columns (SST standard): STATECODE, JURISDICTIONCODE, JURISDICTIONNAME, STATETAXRATE, LOCALTAXRATE, COMBINEDTAXRATE
-  // Column names vary — find them case-insensitively
+  if (rateCsvs.length >= 1) return _processSSTCombinedCsv(st, rateCsvs[0]);
+  throw new Error(`No CSVs extracted for ${st}`);
+}
+
+function _processSSTCombinedCsv(st, filePath) {
+  const fSize = fs.statSync(filePath).size / (1024 * 1024);
+  if (fSize > MAX_RATE_FILE_MB) {
+    process.stdout.write(`[skip: rate-only ${fSize.toFixed(1)}MB > ${MAX_RATE_FILE_MB}MB] `);
+    return [];
+  }
+  let text = fs.readFileSync(filePath, 'utf8');
+  text = text.replace(/^﻿/, ''); // strip UTF-8 BOM
+  const delim = text.slice(0, 500).includes('|') ? '|' : ',';
+  const rows_raw = parseDelimited(text, delim);
+  if (!rows_raw.length) return [];
   const col = (row, ...names) => {
     for (const n of names) {
-      const k = Object.keys(row).find(k => k.toLowerCase().replace(/[_\s]/g,'') === n.toLowerCase().replace(/[_\s]/g,''));
+      const k = Object.keys(row).find(k => k.toLowerCase().replace(/[_\s-]/g,'') === n.toLowerCase().replace(/[_\s-]/g,''));
       if (k !== undefined && row[k] !== undefined) return row[k];
     }
     return '';
   };
-
-  const rateMap = {};
-  for (const r of rates) {
-    const jCode = col(r, 'JURISDICTIONCODE', 'JURISCD', 'JURCODE', 'CODE');
-    const stRate = parseFloat(col(r, 'STATETAXRATE', 'STATERATE', 'STATE_RATE')) || 0;
-    const lcRate = parseFloat(col(r, 'LOCALTAXRATE', 'LOCALRATE', 'LOCAL_RATE')) || 0;
-    const combined = parseFloat(col(r, 'COMBINEDTAXRATE', 'COMBINEDRATE', 'COMBINED_RATE')) || (stRate + lcRate);
-    if (jCode) rateMap[jCode] = { state_rate: stRate * 100, local_rate: (combined - stRate) * 100 };
-  }
-
-  // Build ZIP → rate rows from boundary file
-  // Boundary columns (SST standard): ZIPCODE (or ZIP5), JURISDICTIONCODE, STATECODE
   const rows = [];
   const seen = new Set();
-  for (const b of boundary) {
-    const zip = (col(b, 'ZIPCODE', 'ZIP5', 'ZIP', 'POSTALCODE') || '').replace(/\D/g, '').slice(0, 5);
-    const jCode = col(b, 'JURISDICTIONCODE', 'JURISCD', 'JURCODE', 'CODE');
-    if (!zip || zip.length !== 5 || !jCode || seen.has(zip)) continue;
-    const r = rateMap[jCode];
-    if (!r) continue;
+  for (const r of rows_raw) {
+    const zip = (col(r,
+      'ZIPCODE','ZIP5','ZIP','POSTALCODE','ZIPCODES','ZIPCD','ZIP_CODE','POSTAL'
+    ) || '').replace(/\D/g, '').slice(0, 5);
+    if (!zip || zip.length !== 5 || seen.has(zip)) continue;
+    const stRate = parseFloat(col(r,
+      'STATETAXRATE','STATERATE','STATE_RATE','STATESALESTAXRATE',
+      'STATE_SALES_TAX_RATE','STATETAX','STRATE','STATRATE'
+    )) || 0;
+    const lcRate = parseFloat(col(r,
+      'LOCALTAXRATE','LOCALRATE','LOCAL_RATE','LOCALSALESTAXRATE',
+      'LOCAL_SALES_TAX_RATE','LOCALTAX','LCRATE','LOCALRATE'
+    )) || 0;
+    const combined = parseFloat(col(r,
+      'COMBINEDTAXRATE','COMBINEDRATE','COMBINED_RATE','TOTALTAXRATE',
+      'TOTAL_RATE','TOTALSALESTAXRATE','TOTAL_SALES_TAX_RATE','TOTALRATE','COMBINEDTOTAL'
+    )) || (stRate + lcRate);
     seen.add(zip);
     rows.push({
       zip, state: st,
-      state_rate: Math.round(r.state_rate * 10000) / 10000,
-      local_rate: Math.round(r.local_rate * 10000) / 10000,
+      state_rate: Math.round(stRate * 100 * 10000) / 10000,
+      local_rate: Math.round((combined - stRate) * 100 * 10000) / 10000,
       source: `SST_${st}`, updated_at: new Date().toISOString(),
     });
   }
+  if (!rows.length && rows_raw.length > 0) {
+    process.stdout.write(`[cols: ${Object.keys(rows_raw[0]).join('|')}] `);
+  }
+  return rows;
+}
 
+async function _processSSTFiles(st, boundaryPath, ratePath) {
+  const rSize = fs.statSync(ratePath).size / (1024 * 1024);
+  if (rSize > MAX_RATE_FILE_MB) {
+    process.stdout.write(`[skip: rate ${rSize.toFixed(1)}MB too large] `);
+    return [];
+  }
+
+  // Rate file is small — load fully to build jCode → {state_rate, local_rate}
+  let rText = fs.readFileSync(ratePath, 'utf8').replace(/^﻿/, '');
+  const rDelim = rText.slice(0, 500).includes('|') ? '|' : ',';
+  const rLines = rText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().split('\n').filter(l => l.trim());
+  rText = null;
+
+  if (!rLines.length) return [];
+
+  // Build rate map keyed by jCode as integer string (no leading zeros) for fuzzy match
+  const rateMap = {}; // key = parseInt(jCode).toString()
+
+  const firstRField = rLines[0].split(rDelim)[0].replace(/["']/g, '').trim();
+  if (!/^\d+$/.test(firstRField)) {
+    // Has headers
+    const parsed = parseDelimited(rLines.join('\n'), rDelim);
+    const col = (row, ...names) => {
+      for (const n of names) {
+        const k = Object.keys(row).find(k => k.toLowerCase().replace(/[_\s-]/g,'') === n.toLowerCase().replace(/[_\s-]/g,''));
+        if (k !== undefined && row[k] !== undefined) return row[k];
+      }
+      return '';
+    };
+    for (const r of parsed) {
+      const jc = col(r,'JURISDICTIONCODE','COMPOSITESERCODE','JURISCD','JURCODE','SERIALIZEDCOMPOSITE','COMPOSITECODE');
+      const stRate = parseFloat(col(r,'STATETAXRATE','GENERALRATESTATEPORTION','STATERATE','STATE_RATE')) || 0;
+      const combined = parseFloat(col(r,'COMBINEDTAXRATE','GENERALRATE','COMBINEDRATE','TOTALRATE')) || stRate;
+      const k = jc ? String(parseInt(jc, 10)) : null;
+      if (k && k !== 'NaN') rateMap[k] = { state_rate: stRate * 100, local_rate: Math.max(0, combined - stRate) * 100 };
+    }
+  } else {
+    // Headerless positional format. SST R files use two layouts:
+    // Layout A (2-digit state FIPS first): stateFIPS|startDate|endDate|countyType|jCode|rate
+    // Layout B (large serial first):       jSerial|startDate|endDate|stateFIPS|localType|rate
+    // In both cases: find rate fields (0.0–0.2 with decimal), derive jCode from remaining cols.
+    const jCodeCandidatesBySerial = {}; // for Layout B: serial → rate
+    for (const line of rLines) {
+      const fields = line.split(rDelim).map(f => f.replace(/["']/g, '').trim());
+      const rateFields = fields.filter(f => {
+        const v = parseFloat(f);
+        return f.includes('.') && !isNaN(v) && v >= 0 && v <= 0.25;
+      });
+      // Skip lines with no rate
+      if (!rateFields.length) continue;
+      const total = rateFields.reduce((a,b) => a + parseFloat(b), 0);
+
+      // Find all numeric non-date non-state-FIPS fields as candidate jCodes
+      for (let fi = 0; fi < fields.length; fi++) {
+        const f = fields[fi];
+        if (!/^\d+$/.test(f)) continue;          // must be all digits
+        if (/^\d{8}$/.test(f)) continue;          // skip dates
+        if (f.includes('.')) continue;            // skip rates
+        const n = parseInt(f, 10);
+        if (n < 1) continue;                      // skip zero
+        const k = String(n);
+        if (!rateMap[k]) {
+          const stRate = rateFields.length >= 2 ? parseFloat(rateFields[0]) : 0;
+          rateMap[k] = { state_rate: stRate * 100, local_rate: Math.max(0, total - stRate) * 100 };
+        }
+      }
+    }
+  }
+
+  // Stream boundary file line-by-line — handles 300MB+ without OOM
+  const rows = [];
+  const seen = new Set();
+  let bDelim = ',', lineCount = 0, bHasHeaders = false;
+  let zipCol = -1, jCodeCol = -1;
+
+  const rl = readline.createInterface({ input: fs.createReadStream(boundaryPath, { encoding: 'utf8' }), crlfDelay: Infinity });
+
+  for await (const rawLine of rl) {
+    const line = lineCount === 0 ? rawLine.replace(/^﻿/, '') : rawLine;
+    if (!line.trim()) { lineCount++; continue; }
+
+    if (lineCount === 0) {
+      bDelim = line.includes('|') ? '|' : ',';
+      const f0 = line.split(bDelim)[0].replace(/["']/g, '').trim();
+      bHasHeaders = !/^[A-Za-z0-9]{1}$/.test(f0) && !/^\d+$/.test(f0);
+    }
+
+    const fields = line.split(bDelim).map(f => f.replace(/["']/g, '').trim());
+
+    if (lineCount === 0 && bHasHeaders) {
+      const lower = fields.map(f => f.toLowerCase().replace(/[_\s-]/g,''));
+      zipCol = lower.findIndex(h => ['zipcode','zip5','zip','postalcode'].includes(h));
+      jCodeCol = lower.findIndex(h => ['compositesercode','jurisdictioncode','compositecode','serializedcomposite','juriscd'].includes(h));
+      lineCount++;
+      continue;
+    }
+
+    // Headerless SST boundary: detect record type from col 0
+    // SST standard column layout (applies to both old and new format files):
+    //   A-type (street address):  ZIP at col 15, jCode candidates at col 24 and col 25
+    //   Z/z/4-type (ZIP range):   ZIP at col 17 (new) or col 14 (old), jCode at col 24
+    if (!bHasHeaders) {
+      const recType = fields[0].toLowerCase();
+      if (recType === 'a') {
+        // Street-level record
+        zipCol = 15;
+        // Try col 24, 25 as jCode candidates (col 24 = county juris code, col 25 = composite serial)
+        const jc24 = fields[24] || '';
+        const jc25 = fields[25] || '';
+        const k24 = jc24 ? String(parseInt(jc24, 10)) : '';
+        const k25 = jc25 ? String(parseInt(jc25, 10)) : '';
+        const rEntry = (k24 && rateMap[k24]) || (k25 && rateMap[k25]);
+        const zip = (fields[15] || '').replace(/\D/g,'').slice(0,5);
+        if (zip && zip.length === 5 && !seen.has(zip) && rEntry) {
+          seen.add(zip);
+          rows.push({ zip, state: st, state_rate: Math.round(rEntry.state_rate*10000)/10000, local_rate: Math.round(rEntry.local_rate*10000)/10000, source:`SST_${st}`, updated_at: new Date().toISOString() });
+        }
+      } else if (recType === 'z' || recType === '4') {
+        // ZIP-range record: ZIP at col 17 (new format) or col 14 (old format)
+        const zip17 = (fields[17] || '').replace(/\D/g,'').slice(0,5);
+        const zip14 = (fields[14] || '').replace(/\D/g,'').slice(0,5);
+        const zip = /^\d{5}$/.test(zip17) ? zip17 : /^\d{5}$/.test(zip14) ? zip14 : '';
+        if (zip && !seen.has(zip)) {
+          const jc24 = fields[24] || '';
+          const k24 = jc24 ? String(parseInt(jc24, 10)) : '';
+          const rEntry = k24 && rateMap[k24];
+          if (rEntry) {
+            seen.add(zip);
+            rows.push({ zip, state: st, state_rate: Math.round(rEntry.state_rate*10000)/10000, local_rate: Math.round(rEntry.local_rate*10000)/10000, source:`SST_${st}`, updated_at: new Date().toISOString() });
+          }
+        }
+      }
+    } else if (zipCol >= 0) {
+      // Has headers — use detected column positions
+      const zip = (fields[zipCol] || '').replace(/\D/g,'').slice(0,5);
+      const jc = jCodeCol >= 0 ? (fields[jCodeCol] || '') : '';
+      const k = jc ? String(parseInt(jc, 10)) : '';
+      const rEntry = k && rateMap[k];
+      if (zip && zip.length === 5 && !seen.has(zip) && rEntry) {
+        seen.add(zip);
+        rows.push({ zip, state: st, state_rate: Math.round(rEntry.state_rate*10000)/10000, local_rate: Math.round(rEntry.local_rate*10000)/10000, source:`SST_${st}`, updated_at: new Date().toISOString() });
+      }
+    }
+
+    lineCount++;
+  }
+
+  if (!rows.length && lineCount > 5) {
+    // Log what jCode candidates from B matched (or didn't) in rateMap for debugging
+    const rKeys = Object.keys(rateMap).slice(0, 5).join(',');
+    process.stdout.write(`[rateMap(${Object.keys(rateMap).length}):${rKeys}] `);
+  }
   return rows;
 }
 
 async function updateSSTStates() {
-  const dateStr = getSSTQuarterDate();
-  console.log(`SST member state ZIP files (quarter: ${dateStr})...`);
+  console.log(`SST member state ZIP files (scraping directory listing)...`);
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sst-'));
 
   let totalRows = 0;
@@ -299,7 +558,7 @@ async function updateSSTStates() {
   for (const st of SST_STATES) {
     process.stdout.write(`  ${st}... `);
     try {
-      const rows = await updateSSTState(st, dateStr, tmpDir);
+      const rows = await updateSSTState(st, null, tmpDir);
       if (rows.length) {
         const ok = await upsertBatch(rows);
         if (ok) { totalRows += rows.length; process.stdout.write(`${rows.length} ZIPs\n`); }
@@ -318,7 +577,7 @@ async function updateSSTStates() {
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
 
   console.log(`  SST complete: ${totalRows} ZIP rows across ${SST_STATES.length - skipped.length} states`);
-  if (skipped.length) console.log(`  Skipped (check URLs at streamlinedsalestax.org): ${skipped.join(', ')}`);
+  if (skipped.length) console.log(`  Skipped states (not found in SST directory): ${skipped.join(', ')}`);
 }
 
 // ── Phase 2: Texas Comptroller ───────────────────────────────────────────────
@@ -569,10 +828,97 @@ async function updateColoradoRates() {
   if (ok) console.log(`  Seeded ${rows.length} CO jurisdiction rate rows`);
 }
 
+// ── Kansas city rates (KDOR published — state 6.5% + local) ─────────────────
+// ZIP ranges sourced from KDOR rate tables. Combined = state + county + city.
+// Update when KDOR publishes rate changes (typically Jan 1 each year).
+const KS_ZIP_RATES = [
+  // Wichita / Sedgwick County (6.5% + 1% county + 1% city = 8.5%)
+  // Outer Wichita and unincorporated Sedgwick: 7.5% (no city tax)
+  {zip:'67201',combined:8.5},{zip:'67202',combined:8.5},{zip:'67203',combined:8.5},
+  {zip:'67204',combined:8.5},{zip:'67205',combined:8.5},{zip:'67206',combined:8.5},
+  {zip:'67207',combined:8.5},{zip:'67208',combined:8.5},{zip:'67209',combined:8.5},
+  {zip:'67210',combined:8.5},{zip:'67211',combined:8.5},{zip:'67212',combined:8.5},
+  {zip:'67213',combined:8.5},{zip:'67214',combined:8.5},{zip:'67215',combined:8.5},
+  {zip:'67216',combined:8.5},{zip:'67217',combined:8.5},{zip:'67218',combined:8.5},
+  {zip:'67219',combined:8.5},{zip:'67220',combined:8.5},{zip:'67221',combined:8.5},
+  {zip:'67223',combined:8.5},{zip:'67226',combined:8.5},{zip:'67227',combined:8.5},
+  {zip:'67228',combined:8.5},{zip:'67230',combined:8.5},{zip:'67232',combined:8.5},
+  {zip:'67235',combined:8.5},{zip:'67260',combined:8.5},
+  // Derby (Sedgwick Co): 8.5%
+  {zip:'67037',combined:8.5},
+  // Andover (Butler Co): 8.5%
+  {zip:'67002',combined:8.5},
+  // Kansas City KS / Wyandotte County (6.5% + 1% county + 2.975% city = ~10.475%)
+  {zip:'66101',combined:10.475},{zip:'66102',combined:10.475},{zip:'66103',combined:10.475},
+  {zip:'66104',combined:10.475},{zip:'66105',combined:10.475},{zip:'66106',combined:10.475},
+  {zip:'66109',combined:10.475},{zip:'66111',combined:10.475},{zip:'66112',combined:10.475},
+  {zip:'66115',combined:10.475},{zip:'66118',combined:10.475},{zip:'66119',combined:10.475},
+  // Overland Park / Johnson County (6.5% + 1.475% county + 1.125% city = 9.1%)
+  {zip:'66061',combined:9.1},{zip:'66062',combined:9.1},{zip:'66062',combined:9.1},
+  {zip:'66063',combined:9.1},{zip:'66083',combined:9.1},{zip:'66085',combined:9.1},
+  {zip:'66210',combined:9.1},{zip:'66211',combined:9.1},{zip:'66212',combined:9.1},
+  {zip:'66213',combined:9.1},{zip:'66214',combined:9.1},{zip:'66215',combined:9.1},
+  {zip:'66216',combined:9.1},{zip:'66217',combined:9.1},{zip:'66218',combined:9.1},
+  {zip:'66219',combined:9.1},{zip:'66220',combined:9.1},{zip:'66221',combined:9.1},
+  {zip:'66223',combined:9.1},{zip:'66224',combined:9.1},{zip:'66225',combined:9.1},
+  {zip:'66226',combined:9.1},{zip:'66227',combined:9.1},{zip:'66251',combined:9.1},
+  // Shawnee / Johnson County: 9.1%
+  {zip:'66203',combined:9.1},{zip:'66204',combined:9.1},{zip:'66205',combined:9.1},
+  {zip:'66206',combined:9.1},{zip:'66207',combined:9.1},{zip:'66208',combined:9.1},
+  {zip:'66209',combined:9.1},
+  // Lenexa / Johnson County: 9.475%
+  {zip:'66215',combined:9.475},{zip:'66219',combined:9.475},{zip:'66220',combined:9.475},
+  // Olathe / Johnson County: 9.475%
+  {zip:'66051',combined:9.475},{zip:'66061',combined:9.475},{zip:'66062',combined:9.475},
+  // Topeka / Shawnee County (6.5% + 1.15% county + 1.5% city = 9.15%)
+  {zip:'66601',combined:9.15},{zip:'66603',combined:9.15},{zip:'66604',combined:9.15},
+  {zip:'66605',combined:9.15},{zip:'66606',combined:9.15},{zip:'66607',combined:9.15},
+  {zip:'66608',combined:9.15},{zip:'66609',combined:9.15},{zip:'66610',combined:9.15},
+  {zip:'66611',combined:9.15},{zip:'66612',combined:9.15},{zip:'66614',combined:9.15},
+  {zip:'66615',combined:9.15},{zip:'66616',combined:9.15},{zip:'66617',combined:9.15},
+  {zip:'66618',combined:9.15},{zip:'66619',combined:9.15},{zip:'66621',combined:9.15},
+  // Lawrence / Douglas County (6.5% + 1.25% county + 1.3% city = 9.05%)
+  {zip:'66044',combined:9.05},{zip:'66045',combined:9.05},{zip:'66046',combined:9.05},
+  {zip:'66047',combined:9.05},{zip:'66049',combined:9.05},
+  // Manhattan / Riley County (6.5% + 1% county + 1% city = 8.5%)
+  {zip:'66502',combined:8.5},{zip:'66503',combined:8.5},{zip:'66505',combined:8.5},
+  {zip:'66506',combined:8.5},
+  // Salina / Saline County (6.5% + 1% county + 1.25% city = 8.75%)
+  {zip:'67401',combined:8.75},{zip:'67402',combined:8.75},
+  // Hutchinson / Reno County (6.5% + 1% county + 1.5% city = 9%)
+  {zip:'67501',combined:9.0},{zip:'67502',combined:9.0},{zip:'67504',combined:9.0},
+  // Garden City / Finney County (6.5% + 1% county + 1.5% city = 9%)
+  {zip:'67846',combined:9.0},
+  // Dodge City / Ford County (6.5% + 1% county + 1.5% city = 9%)
+  {zip:'67801',combined:9.0},
+  // Emporia / Lyon County (6.5% + 0.75% county + 1.5% city = 8.75%)
+  {zip:'66801',combined:8.75},
+  // Hays / Ellis County (6.5% + 0.75% county + 1.5% city = 8.75%)
+  {zip:'67601',combined:8.75},
+  // Liberal / Seward County (6.5% + 0.5% county + 1.5% city = 8.5%)
+  {zip:'67901',combined:8.5},
+  // Pittsburg / Crawford County (6.5% + 1% county + 1.5% city = 9%)
+  {zip:'66762',combined:9.0},
+];
+
+async function seedKansasRates() {
+  console.log('Kansas city rates (hardcoded KDOR)...');
+  // Dedupe by ZIP — later entries override earlier ones (more specific wins)
+  const seen = new Map();
+  for (const r of KS_ZIP_RATES) seen.set(r.zip, r.combined);
+  const KS_STATE_RATE = 6.5;
+  const rows = Array.from(seen.entries()).map(([zip, combined]) => ({
+    zip, state: 'KS', state_rate: KS_STATE_RATE,
+    local_rate: Math.round((combined - KS_STATE_RATE) * 10000) / 10000,
+    source: 'KDOR_HARDCODED', updated_at: new Date().toISOString(),
+  }));
+  const ok = await upsertBatch(rows);
+  console.log(ok ? `  Seeded ${rows.length} Kansas ZIP rows` : '  Kansas seed failed (upsert error)');
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
   await resolveServiceKey();
-  supa = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
   console.log('=== TradeDesk Tax Rate Updater ===');
   console.log('Run date:', new Date().toISOString());
@@ -581,6 +927,9 @@ async function main() {
   // Phase 1 — always runs (hardcoded data, never fails)
   await seedStateBaseRates();
   await seedFloridaCountyRates();
+
+  // Phase 1.5 — hardcoded Kansas city rates (reliable fallback; SST URLs change frequently)
+  await seedKansasRates();
 
   // Phase 2 — SST member states (23 states) + Texas
   await updateSSTStates();
