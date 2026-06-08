@@ -928,12 +928,12 @@ async function main() {
   await seedStateBaseRates();
   await seedFloridaCountyRates();
 
-  // Phase 1.5 — hardcoded Kansas city rates (reliable fallback; SST URLs change frequently)
-  await seedKansasRates();
-
   // Phase 2 — SST member states (23 states) + Texas
   await updateSSTStates();
   await updateTexasRates();
+
+  // Phase 2.5 — Kansas KDOR hardcoded rates (runs after SST so KDOR wins over SST for KS ZIPs)
+  await seedKansasRates();
 
   // Phase 3 — large non-SST states with DOR CSV files
   await updateCaliforniaRates();

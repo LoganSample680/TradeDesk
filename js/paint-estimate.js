@@ -2210,7 +2210,7 @@ function renderEstReview(){
     if(!_stR)return '<div class="met" style="cursor:pointer" onclick="openSalesTaxSetup()"><div class="met-l" style="color:var(--amber)">⚠ Sales tax</div><div class="met-v" style="color:var(--blue);font-size:12px;font-weight:700">Set rate →</div></div>';
     if(typeof calcSalesTax==='function'){
       const _prop=_paintIsCommercial?'commercial':'residential';
-      const r=calcSalesTax({state:_st,tradeType:'painting',scope:'repair',propertyType:_prop,taxRate:_stR,lineItems:[{desc:'Painting services',total:final,lineType:'service'}]});
+      const r=calcSalesTax({state:_st,tradeType:'painting',scope:'repair',propertyType:_prop,taxRate:_stR,laborTotal,materialsTotal:matTotal+suppliesCost});
       if(r.treatment&&!r.treatment.customerTax)return '<div class="met"><div class="met-l" style="color:var(--text3)">Sales tax</div><div class="met-v" style="color:var(--text3);font-size:12px">Exempt in '+_st+'</div></div>';
       if(r.taxAmount>0)return '<div class="met"><div class="met-l">Sales tax</div><div class="met-v" style="color:var(--blue)">+'+fmtShort(r.taxAmount)+'</div></div>';
     }

@@ -1090,7 +1090,7 @@ function buildProposal(){
     const _stPropType=_paintIsCommercial?'commercial':'residential';
     const _stResult=calcSalesTax({state:_st,tradeType:'painting',scope:_stScope,
       propertyType:_stPropType,taxRate:_stRate,
-      lineItems:[{desc:'Painting services',total:proposalTotal,lineType:'service'}]});
+      laborTotal:Math.round(laborTotal*_propTierMult*100)/100,materialsTotal:scaledMatLine});
     _stTreatment=_stResult.treatment;
     _stTax=(_stTreatment&&_stTreatment.customerTax)?(_stResult.taxAmount||0):0;
     if(_stTax>0){const isFull=_stTreatment?.type==='service'||_stTreatment?.laborTaxable;_stLabel='Sales tax ('+_stRate+'%'+(isFull?'':' on materials')+')';}

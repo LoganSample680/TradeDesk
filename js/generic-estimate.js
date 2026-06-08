@@ -588,7 +588,11 @@ function _byoUpdateRail(){
   if(_stRate>0&&typeof calcSalesTax==='function'&&sub>0){
     const _stScope=_geiJobScope||'repair';
     const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,
-      propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRate,lineItems:_geiLines.map(l=>({desc:l.desc,total:l.total,lineType:null}))});
+      propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRate,lineItems:_geiLines.map(l=>{
+        const sec=(l._byoSection||'').toLowerCase();
+        const lineType=sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
+        return {desc:l.desc,total:l.total,lineType};
+      })});
     salesTax=_stResult.taxAmount||0;
     if(taxRow&&taxAmt&&taxLbl){
       if(salesTax>0){
@@ -1797,7 +1801,12 @@ function calcGeiTotal(){
   // Rate: always use client address ZIP/state lookup; fall back to contractor setting only when no address yet
   const _stRate=_geiClientTaxRate!==null?(_geiClientTaxRate.rate??0):(parseFloat(S.salesTaxRate)||0);
   if(typeof calcSalesTax==='function'&&_stRate>0){
-    const _liItems=_geiLines.map(l=>({desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:l._tmLabor?'labor':null}));
+    const _liItems=_geiLines.map(l=>{
+      if(l._tmLabor)return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:'labor'};
+      const sec=(l._byoSection||'').toLowerCase();
+      const lineType=sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
+      return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType};
+    });
     const _stResult=calcSalesTax({state:_stKey,tradeType:_geiTrade||'general',scope:_stScope,
       propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRate,lineItems:_liItems});
     salesTax=_stResult.taxAmount||0;
@@ -1976,7 +1985,12 @@ async function sendGenericProposal(previewOnly){
   const _stStateP=(typeof detectStateFromAddr==='function'?detectStateFromAddr(v('gei-addr')):null)||(S&&S.state)||'KS';
   let _stRowHtml='';
   if(typeof calcSalesTax==='function'&&_stRateP>0){
-    const _stLiP=_geiLines.map(l=>({desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:l._tmLabor?'labor':null}));
+    const _stLiP=_geiLines.map(l=>{
+      if(l._tmLabor)return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:'labor'};
+      const sec=(l._byoSection||'').toLowerCase();
+      const lineType=sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
+      return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType};
+    });
     const _stRes=calcSalesTax({state:_stStateP,tradeType:_geiTrade||'general',scope:_stScopeP,
       propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRateP,lineItems:_stLiP});
     if(_stRes.treatment.customerTax&&_stRes.taxAmount>0){
