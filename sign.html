@@ -283,6 +283,7 @@ input[type=text]:focus{border-color:var(--denim)}
       </div>
     </div>
 
+    <div id="epa-doc1-label" style="display:none;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px">Document 1 of 2</div>
     <div class="step-dots"><div class="dot active" id="d1"></div><div class="dot" id="d2"></div><div class="dot" id="d3"></div><div class="dot" id="d4"></div></div>
 
     <!-- Estimate data nodes kept hidden — JS writes to them, nothing visible -->
@@ -353,15 +354,10 @@ input[type=text]:focus{border-color:var(--denim)}
         </div>
       </div>
 
-      <!-- EPA Lead Paint Disclosure — shown only for pre-1978 painting jobs -->
-      <div id="epa-section" style="display:none;background:var(--amber-lt);border:1.5px solid var(--amber);border-radius:var(--r);padding:14px;margin-bottom:14px">
-        <div style="font-size:13px;font-weight:800;color:#78350f;margin-bottom:8px">⚠️ EPA Lead Paint Disclosure — Required by Federal Law</div>
-        <p style="font-size:13px;color:#78350f;line-height:1.55;margin-bottom:12px">This property was built before 1978. Before renovation work begins, we are required to provide you with the EPA pamphlet <em>Renovate Right: Important Lead Hazard Information for Families, Child Care Facilities and Schools</em>. <a href="https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools" target="_blank" rel="noopener" style="color:var(--amber)">View pamphlet →</a></p>
-        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
-          <input type="checkbox" id="epa-ack" onchange="checkReady()" style="margin-top:2px;width:18px;height:18px;min-width:18px;accent-color:var(--amber)">
-          <span style="font-size:13px;color:#78350f;line-height:1.5">I confirm that I have received or reviewed the <em>Renovate Right</em> pamphlet and understand the lead paint safety information.</span>
-        </label>
-        <div id="epa-err" style="display:none;color:#A32D2D;font-size:12px;margin-top:6px;font-weight:600">Please confirm receipt of the EPA pamphlet before signing.</div>
+      <!-- EPA Lead Paint Notice — pre-1978 homes require separate EPA disclosure (Document 2 of 2) after payment -->
+      <div id="epa-section" style="display:none;background:var(--amber-lt);border:1.5px solid var(--amber);border-radius:var(--r);padding:12px 14px;margin-bottom:14px">
+        <div style="font-size:12px;font-weight:800;color:#78350f;margin-bottom:4px">⚠️ Pre-1978 Home — EPA Lead Paint Disclosure Required</div>
+        <div style="font-size:12px;color:#92400e;line-height:1.5">Federal law requires a signed EPA Pre-Renovation Disclosure. After signing this proposal you will complete <strong>Document 2 of 2</strong> — the EPA disclosure. <a href="https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools" target="_blank" rel="noopener" style="color:#92400e;font-weight:700">Renovate Right pamphlet →</a></div>
       </div>
 
       <!-- Notice of Cancellation — minimum required disclosure (FTC 16 CFR Part 429 / state equiv.) -->
@@ -427,6 +423,33 @@ input[type=text]:focus{border-color:var(--denim)}
     <button class="btn btn-sec" onclick="backToSign()">← Back</button>
   </div>
 
+  <!-- EPA Pre-Renovation Disclosure (Document 2 of 2) -->
+  <div id="pg-epa" style="display:none;padding:24px 16px;max-width:480px;margin:0 auto">
+    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px">Document 2 of 2</div>
+    <div style="font-size:20px;font-weight:800;margin-bottom:16px">EPA Pre-Renovation Disclosure</div>
+    <div style="background:#fef9ec;border:1px solid #f59e0b;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px;line-height:1.6">
+      <div style="font-weight:700;margin-bottom:6px">Lead Paint Hazard Information</div>
+      <div>This property was built before 1978. Federal law (40 CFR Part 745) requires your contractor to provide you with the <a href="https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools" target="_blank" style="color:#92400e;font-weight:700">Renovate Right pamphlet</a> before renovation work begins.</div>
+    </div>
+    <div id="epa-prop-address" style="font-size:13px;color:var(--text2);margin-bottom:12px"></div>
+    <div style="background:var(--card-bg,#fff);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:16px;font-size:13px;line-height:1.7">
+      <div style="font-weight:700;margin-bottom:8px">Pre-Renovation Acknowledgment</div>
+      <div id="epa-disclosure-text">I acknowledge that I have received the <em>Renovate Right</em> pamphlet informing me of the potential risk of lead hazard exposure from renovation activity to be performed at the property listed above. I understand that the contractor performing this work is an EPA Lead-Safe Certified Firm.</div>
+      <div id="epa-cert-info" style="margin-top:10px;font-size:11px;color:var(--text3)"></div>
+    </div>
+    <div style="font-size:12px;font-weight:700;margin-bottom:6px">Your Signature</div>
+    <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:8px;position:relative;background:#fff">
+      <canvas id="epa-sig-canvas" width="340" height="100" style="width:100%;height:100px;display:block;touch-action:none"></canvas>
+      <div id="epa-sig-placeholder" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#ccc;font-size:13px;pointer-events:none">Sign here</div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <input id="epa-typed-name" type="text" placeholder="Or type your full name" style="flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px" oninput="updateEpaSigPreview()">
+      <button onclick="clearEpaSig()" style="padding:8px 12px;border:1px solid var(--border);background:none;border-radius:6px;font-size:12px;cursor:pointer">Clear</button>
+    </div>
+    <div id="epa-err" style="display:none;background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:8px 12px;font-size:12px;color:#991b1b;margin-bottom:12px"></div>
+    <button onclick="submitEpaAck()" style="width:100%;padding:14px;background:#1a1a18;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer">I Acknowledge — Complete Signing</button>
+  </div>
+
   <!-- Complete -->
   <div id="pg-done" style="display:none">
     <div class="pg-status">
@@ -490,7 +513,7 @@ let sigCanvas,sigCtx,signing=false,hasInk=false;
 window._portfolioAccepted=false;
 let _portfolioStep=0;
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const pages=['pg-load','pg-sign','pg-color-pick','pg-sign-action','pg-pay','pg-done','pg-err','pg-declined'];
+const pages=['pg-load','pg-sign','pg-color-pick','pg-sign-action','pg-pay','pg-epa','pg-done','pg-err','pg-declined'];
 let _bootGone=false;
 function _dismissSignBoot(){
   if(_bootGone)return;_bootGone=true;
@@ -781,10 +804,12 @@ async function init(){
     }
     // Remove the embedded signature block from the proposal HTML — signing happens in sig-card below
     document.querySelectorAll('#prop-html .sig-block, #prop-html [class*="sig-block"], #prop-html .signature-section').forEach(el=>el.remove());
-    // Show EPA section for pre-1978 painting proposals
-    if(_prop.epaRequired&&_prop.trade==='painting'){
+    // Show EPA notice banner and "Document 1 of 2" label for pre-1978 proposals (all trades)
+    if(_prop.epaRequired){
       const epaSec=document.getElementById('epa-section');
       if(epaSec)epaSec.style.display='block';
+      const _d1Lbl=document.getElementById('epa-doc1-label');
+      if(_d1Lbl)_d1Lbl.style.display='block';
     }
     // Update UETA checkbox and Notice of Cancellation with state-specific citations
     const _uetaBody=document.querySelector('.sig-checkbox-body');
@@ -946,23 +971,15 @@ function _openSignPad(){
   setTimeout(()=>document.getElementById('sig-name')?.focus(),300);
 }
 
-function _epaRequired(){return _prop?.epaRequired&&_prop?.trade==='painting';}
 function checkReady(){
   const typedOk=document.getElementById('sig-name')?.value.trim().length>2;
-  const epaOk=!_epaRequired()||document.getElementById('epa-ack')?.checked;
   const uetaOk=!!(document.getElementById('sig-ueta-ck')?.checked);
-  document.getElementById('sign-btn').disabled=!(typedOk||hasInk)||!epaOk||!uetaOk;
+  document.getElementById('sign-btn').disabled=!(typedOk||hasInk)||!uetaOk;
 }
 
 function goToPayment(){
   const typedOk=document.getElementById('sig-name')?.value.trim().length>2;
   if(!typedOk&&!hasInk){document.getElementById('sign-err').textContent='Type your full name or draw your signature above.';return;}
-  if(_epaRequired()&&!document.getElementById('epa-ack')?.checked){
-    document.getElementById('epa-err').style.display='block';
-    document.getElementById('epa-section').scrollIntoView({behavior:'smooth',block:'center'});
-    return;
-  }
-  if(_epaRequired())document.getElementById('epa-err').style.display='none';
   _sigData=sigCanvas.toDataURL('image/png');
   show('pg-pay');scrollTo(0,0);
   _renderPayTiles();
@@ -1078,6 +1095,74 @@ function showDone(method){
   const hubUrl=new URLSearchParams(location.search).get('hub')||'';
   const hubCta=document.getElementById('done-hub-cta');
   if(hubCta&&hubUrl){hubCta.href=hubUrl;hubCta.style.display='block';}
+  if(_prop?.epaRequired){showEpaPage();}else{show('pg-done');scrollTo(0,0);}
+}
+
+// ── EPA Pre-Renovation Disclosure (Document 2 of 2) ──────────────────────
+let _epaHasInk=false;
+let _epaSigData=null;
+
+function initEpaCanvas(){
+  const c=document.getElementById('epa-sig-canvas');if(!c)return;
+  const ctx=c.getContext('2d');
+  const dpr=window.devicePixelRatio||1;
+  c.width=c.offsetWidth*dpr;c.height=c.offsetHeight*dpr;
+  ctx.scale(dpr,dpr);ctx.lineWidth=2.5;ctx.strokeStyle='#1a1a18';ctx.lineCap='round';ctx.lineJoin='round';
+  let drawing=false,lx=0,ly=0;
+  function pos(e){const r=c.getBoundingClientRect();const t=e.touches?e.touches[0]:e;return{x:(t.clientX-r.left),y:(t.clientY-r.top)};}
+  c.addEventListener('mousedown',e=>{drawing=true;const p=pos(e);lx=p.x;ly=p.y;});
+  c.addEventListener('mousemove',e=>{if(!drawing)return;const p=pos(e);ctx.beginPath();ctx.moveTo(lx,ly);ctx.lineTo(p.x,p.y);ctx.stroke();lx=p.x;ly=p.y;_epaHasInk=true;document.getElementById('epa-sig-placeholder').style.display='none';});
+  c.addEventListener('mouseup',()=>{drawing=false;});
+  c.addEventListener('touchstart',e=>{e.preventDefault();drawing=true;const p=pos(e);lx=p.x;ly=p.y;},{passive:false});
+  c.addEventListener('touchmove',e=>{e.preventDefault();if(!drawing)return;const p=pos(e);ctx.beginPath();ctx.moveTo(lx,ly);ctx.lineTo(p.x,p.y);ctx.stroke();lx=p.x;ly=p.y;_epaHasInk=true;document.getElementById('epa-sig-placeholder').style.display='none';},{passive:false});
+  c.addEventListener('touchend',()=>{drawing=false;});
+}
+
+function clearEpaSig(){
+  const c=document.getElementById('epa-sig-canvas');if(!c)return;
+  c.getContext('2d').clearRect(0,0,c.width,c.height);
+  _epaHasInk=false;_epaSigData=null;
+  document.getElementById('epa-sig-placeholder').style.display='block';
+  document.getElementById('epa-typed-name').value='';
+}
+
+function updateEpaSigPreview(){
+  const name=document.getElementById('epa-typed-name').value.trim();
+  const c=document.getElementById('epa-sig-canvas');if(!c)return;
+  const ctx=c.getContext('2d');
+  ctx.clearRect(0,0,c.width,c.height);
+  if(!name){_epaHasInk=false;document.getElementById('epa-sig-placeholder').style.display='block';return;}
+  document.getElementById('epa-sig-placeholder').style.display='none';
+  ctx.font='italic 38px "Dancing Script",cursive';ctx.fillStyle='#1a1a18';
+  ctx.fillText(name,12,60);_epaHasInk=true;
+}
+
+function showEpaPage(){
+  show('pg-epa');scrollTo(0,0);
+  initEpaCanvas();
+  const addr=_prop.clientAddr||'';
+  document.getElementById('epa-prop-address').textContent='Property: '+addr;
+  const certLines=[];
+  if(_prop.rrpFirmCertNum)certLines.push('EPA Firm Cert #: '+_prop.rrpFirmCertNum);
+  if(_prop.rrpRenovatorName)certLines.push('Certified Renovator: '+_prop.rrpRenovatorName+(_prop.rrpRenovatorCertNum?' (Cert #'+_prop.rrpRenovatorCertNum+')':''));
+  document.getElementById('epa-cert-info').textContent=certLines.join(' · ');
+}
+
+async function submitEpaAck(){
+  const name=document.getElementById('epa-typed-name').value.trim();
+  if(!_epaHasInk&&name.length<2){
+    const err=document.getElementById('epa-err');err.textContent='Please sign or type your name to acknowledge.';err.style.display='block';return;
+  }
+  document.getElementById('epa-err').style.display='none';
+  const c=document.getElementById('epa-sig-canvas');
+  _epaSigData=c?c.toDataURL('image/png'):null;
+  const ts=new Date().toISOString();
+  try{
+    await _supa.from('signed_proposals')
+      .update({epa_ack_at:ts,epa_required:true,rrp_firm_cert:_prop.rrpFirmCertNum||null,rrp_renovator_name:_prop.rrpRenovatorName||null})
+      .eq('bid_id',String(_prop.id));
+  }catch(e){console.warn('EPA ack store failed:',e);}
+  document.getElementById('done-msg').textContent='Proposal and EPA disclosure signed. Your contractor will be in touch shortly.';
   show('pg-done');scrollTo(0,0);
 }
 

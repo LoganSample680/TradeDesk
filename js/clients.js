@@ -1498,6 +1498,8 @@ function renderCDBids(){
   }
   if(!cbids.length){el.innerHTML='<div class="empty">No bids yet. Tap "+ Add bid" above.</div>';return;}
   const latestBidId=cbids.length?cbids[0].id:null;
+  const _rrpClient=getClientById(currentClientId);
+  const _rrpRequired=!!(_rrpClient&&_rrpClient.yearBuilt&&_rrpClient.yearBuilt<1978);
   el.innerHTML=cbids.map(b=>{
     const ps=payStatus(b);
     const paid=getBidPaid(b.id);
@@ -1622,6 +1624,7 @@ function renderCDBids(){
           '<div style="font-size:16px;font-weight:700;color:var(--green-mid)">'+(b.isTM&&b.tmNteCap?'Est. '+fmt(b.amount)+' / NTE '+fmt(b.tmNteCap):fmt(b.amount))+'</div>'+
           (b.isTM&&b.tmDepositAmt?'<div style="font-size:11px;color:var(--text3)">Deposit: '+fmt(b.tmDepositAmt)+'</div>':'')+
           '<span class="bdg '+(SBADGE[b.status]||'')+'">'+b.status+'</span>'+
+          (_rrpRequired?'<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:4px;padding:2px 6px;font-weight:700;margin-left:4px">RRP</span>':'')+
           (b.handshake?'<br><span style="font-size:10px;font-weight:700;background:#FFF8E8;color:#856404;border:1px solid var(--amber);border-radius:4px;padding:1px 6px;white-space:nowrap;display:inline-block;margin-top:3px">🤝 Handshake</span>':'')+
         '</div>'+
       '</div>'+

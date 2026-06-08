@@ -15,8 +15,7 @@ async function _paintLookupClientTaxRate(){
   const state=typeof detectStateFromAddr==='function'?detectStateFromAddr(addr):null;
   if(!zip&&!state){_paintClientTaxRate=null;return;}
   if(typeof lookupSalesTaxRate==='function'){
-    const r=await lookupSalesTaxRate(zip||'',state||(S&&S.state)||'KS');
-    _paintClientTaxRate=(r&&r.source&&r.source!=='hardcoded')?r:null;
+    _paintClientTaxRate=await lookupSalesTaxRate(zip||'',state||(S&&S.state)||'KS');
   }
 }
 
@@ -233,7 +232,10 @@ function _buildClientHubSnapshot(clientId){
     ccSurchargeEnabled:_snapSurchargeOn,
     ccSurchargePct:Math.min(4,Math.max(0.5,parseFloat(S.ccSurchargePct||3)||3)),
     yearBuilt:c.yearBuilt||null,
-    epaRequired:!!(c.yearBuilt&&c.yearBuilt<1978&&getActiveTrade()==='painting'),
+    epaRequired:!!(c.yearBuilt&&c.yearBuilt<1978),
+    rrpFirmCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_firm'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
+    rrpRenovatorName:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.holderName||'';})(),
+    rrpRenovatorCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
     epaAck:c.epaAck||false,
     trade:getActiveTrade(),
     state:_snapState,
@@ -536,6 +538,19 @@ async function sendProposalLink(){
   const proposal=document.getElementById('est-proposal');
   if(!proposal||!proposal.innerHTML.trim()){zAlert('Generate the proposal first.',{title:'Nothing to print'});return;}
   if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.',{title:'Sign in required'});return;}
+  {
+    const _pdYbClientChk=estLinkedClientId?clients.find(c=>c.id===estLinkedClientId):null;
+    const _pdYearBuiltChk=_pdYbClientChk?_pdYbClientChk.yearBuilt||null:null;
+    if(_pdYearBuiltChk&&_pdYearBuiltChk<1978){
+      const _today=todayKey();
+      const _hasRRP=(typeof licenses!=='undefined')&&licenses.some(l=>
+        ['epa_firm','epa_renovator'].includes(l.typeId)&&(!l.expiryDate||l.expiryDate>=_today));
+      if(!_hasRRP){
+        zAlert('This property requires EPA RRP certification — you cannot send a proposal for pre-1978 homes without it. Add your RRP certification under Settings → Licensing.');
+        return;
+      }
+    }
+  }
   const btn=document.getElementById('send-proposal-btn');
   if(btn){btn.textContent='⏳ Saving...';btn.disabled=true;}
   try{
@@ -614,7 +629,7 @@ async function sendProposalLink(){
     const _pdDiscount=Math.round(_propFinal*(1-_pdPortfolioPct/100)*100)/100;
     const _pdYbClient=_bidForProp?clients.find(c=>c.id===_bidForProp.client_id):null;
     const _pdYearBuilt=_pdYbClient?_pdYbClient.yearBuilt||null:null;
-    const _pdEpaRequired=!!(_pdYearBuilt&&_pdYearBuilt<1978&&getActiveTrade()==='painting');
+    const _pdEpaRequired=!!(_pdYearBuilt&&_pdYearBuilt<1978);
     const proposalData={
       id:bidId,token,clientName:cname,businessName:bname,
       contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
@@ -638,6 +653,9 @@ async function sendProposalLink(){
       adjustmentPct:parseInt(v('est-adj'))||0,
       yearBuilt:_pdYearBuilt,
       epaRequired:_pdEpaRequired,
+      rrpFirmCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_firm'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
+      rrpRenovatorName:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.holderName||'';})(),
+      rrpRenovatorCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
       trade:getActiveTrade(),
       surfaces:getActiveTrade()==='painting'?[...estSurfaces]:[],
       state:_st,
@@ -1090,7 +1108,7 @@ function buildProposal(){
     const _stPropType=_paintIsCommercial?'commercial':'residential';
     const _stResult=calcSalesTax({state:_st,tradeType:'painting',scope:_stScope,
       propertyType:_stPropType,taxRate:_stRate,
-      laborTotal:Math.round(laborTotal*_propTierMult*100)/100,materialsTotal:scaledMatLine});
+      lineItems:[{desc:'Painting services',total:proposalTotal,lineType:'service'}]});
     _stTreatment=_stResult.treatment;
     _stTax=(_stTreatment&&_stTreatment.customerTax)?(_stResult.taxAmount||0):0;
     if(_stTax>0){const isFull=_stTreatment?.type==='service'||_stTreatment?.laborTaxable;_stLabel='Sales tax ('+_stRate+'%'+(isFull?'':' on materials')+')';}
