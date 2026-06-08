@@ -1877,6 +1877,30 @@ test.describe('RRP gate — pre-1978 estimate entry', () => {
     }
   });
 
+  test('_rrpGateThenEstimate — landscaping skips modal (exempt trade)', async () => {
+    const result = await page.evaluate(() => {
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      if (typeof _rrpGateThenEstimate !== 'function') return null;
+      // Patch _gateAddressThenEstimate to detect it was called
+      const orig = window._gateAddressThenEstimate;
+      window._gateAddressThenEstimate = () => { window._gateCalled = true; };
+      window._gateCalled = false;
+      // Force landscaping trade
+      const origTrade = typeof _activeTrade !== 'undefined' ? _activeTrade : null;
+      if (typeof _activeTrade !== 'undefined') _activeTrade = 'landscaping';
+      _rrpGateThenEstimate({ id: 99991, name: 'Test', yearBuilt: 1940, addr: '123 Old St' });
+      const modalShown = !!document.getElementById('_rrp-gate-overlay');
+      // Restore
+      if (typeof _activeTrade !== 'undefined') _activeTrade = origTrade;
+      if (orig) window._gateAddressThenEstimate = orig;
+      return { modalShown, gateCalled: window._gateCalled };
+    });
+    if (result !== null) {
+      expect(result.modalShown).toBe(false);
+      expect(result.gateCalled).toBe(true);
+    }
+  });
+
   test('no console errors from RRP gate', async () => {
     assertNoErrors(page, 'RRP gate modal');
   });

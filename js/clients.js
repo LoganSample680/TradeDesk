@@ -21,8 +21,11 @@ function openEstimateForClient(){
   }
   _rrpGateThenEstimate(c);
 }
+// Trades that categorically never disturb painted surfaces — skip RRP question
+const _RRP_EXEMPT_TRADES=['landscaping'];
 function _rrpGateThenEstimate(c){
-  if(c.yearBuilt&&c.yearBuilt<1978){
+  const _trade=typeof getActiveTrade==='function'?getActiveTrade():'painting';
+  if(c.yearBuilt&&c.yearBuilt<1978&&!_RRP_EXEMPT_TRADES.includes(_trade)){
     _showRrpModal(c,()=>_gateAddressThenEstimate(c));
     return;
   }
