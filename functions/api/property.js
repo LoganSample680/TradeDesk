@@ -1,3 +1,8 @@
+// Round-robins across comma-separated PROPERTY_TUNNEL_URL values.
+// Single server: PROPERTY_TUNNEL_URL=https://abc.cfargotunnel.com
+// Multiple:      PROPERTY_TUNNEL_URL=https://abc.cfargotunnel.com,https://def.cfargotunnel.com
+let _rr = 0;
+
 export async function onRequest(context) {
   const { searchParams } = new URL(context.request.url);
   const addr = (searchParams.get('addr') || '').trim();
@@ -9,11 +14,15 @@ export async function onRequest(context) {
     });
   }
 
-  const tunnelUrl = context.env.PROPERTY_TUNNEL_URL;
-  if (!tunnelUrl) {
-    // Return empty 204 rather than 503 so the UI silently skips the card
+  const urls = (context.env.PROPERTY_TUNNEL_URL || '')
+    .split(',').map(s => s.trim()).filter(Boolean);
+
+  if (!urls.length) {
     return new Response(null, { status: 204 });
   }
+
+  const tunnelUrl = urls[_rr % urls.length];
+  _rr++;
 
   try {
     const upstream = await fetch(
