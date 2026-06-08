@@ -2350,3 +2350,30 @@ async function _lookupPropertyData(clientId,addrParts){
   }catch(e){console.warn('Property lookup failed:',e);}
 }
 
+// ── Background property data queue ────────────────────────────────────────────
+// Processes all clients with addresses but no Zillow data, one every 6.5s.
+// Fires automatically after login — handles onboarding imports and existing accounts.
+let _propQueue=[];
+let _propQueueTimer=null;
+
+function _startPropQueue(){
+  if(_propQueueTimer)return;
+  _propQueue=clients.filter(c=>(c.addr||c.street)&&!c.propDataFetchedAt).map(c=>c.id);
+  if(!_propQueue.length)return;
+  _propQueueTimer=setTimeout(_tickPropQueue,3000);
+}
+
+function _tickPropQueue(){
+  _propQueueTimer=null;
+  const id=_propQueue.shift();
+  if(id===undefined)return;
+  const c=clients.find(x=>x.id===id);
+  if(c&&(c.addr||c.street)&&!c.propDataFetchedAt){
+    const parts=c.street&&c.city
+      ?{street:c.street,city:c.city,state:c.state||'',zip:c.zip||''}
+      :(typeof _parseAddrParts==='function'?_parseAddrParts(c.addr||''):{street:c.addr||'',city:'',state:'',zip:''});
+    if(parts.street)_lookupPropertyData(id,parts);
+  }
+  if(_propQueue.length)_propQueueTimer=setTimeout(_tickPropQueue,6500);
+}
+

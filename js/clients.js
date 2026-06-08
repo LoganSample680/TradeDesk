@@ -1189,6 +1189,12 @@ function setCDTab(tab,btn){
 }
 function renderClientDetail(){
   const c=getClientById(currentClientId);if(!c)return;
+  // Lazy-load property data for this client if not yet fetched
+  if((c.addr||c.street)&&!c.propDataFetchedAt&&typeof _lookupPropertyData==='function'){
+    const _lp=c.street&&c.city?{street:c.street,city:c.city,state:c.state||'',zip:c.zip||''}
+      :(typeof _parseAddrParts==='function'?_parseAddrParts(c.addr||''):{street:c.addr||'',city:'',state:'',zip:''});
+    if(_lp.street)setTimeout(()=>_lookupPropertyData(c.id,_lp),500);
+  }
   // Compute financials up front so hero tiles can use them
   const _cbids=getClientBids(currentClientId);
   const _wonBids=_cbids.filter(b=>b.status==='Closed Won');

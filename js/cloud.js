@@ -1963,6 +1963,7 @@ async function supaLoadFromCloud({silent=false}={}){
 
     renderDash();buildScopeGrid();
     renderClientList&&renderClientList();renderLeadsPage&&renderLeadsPage();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
+    if(typeof _startPropQueue==='function')setTimeout(_startPropQueue,5000);
     if(typeof renderIncome==='function')renderIncome();
     if(typeof renderExpenses==='function')renderExpenses();
     if(typeof renderAllMileage==='function')renderAllMileage();
