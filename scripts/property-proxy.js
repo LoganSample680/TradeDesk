@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Property lookup proxy — runs on Proxmox (home IP bypasses Redfin WAF)
+// Property lookup proxy — runs on Proxmox (home IP bypasses Zillow bot detection)
 // Expose via: cloudflared tunnel --url http://127.0.0.1:3001
 // Then set PROPERTY_TUNNEL_URL in Cloudflare Pages environment variables
 
@@ -9,90 +9,126 @@ const https = require('https');
 
 const PORT = process.env.PORT || 3001;
 
-const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Referer': 'https://www.zillow.com/',
+};
 
-function get(url) {
+// Single request — no redirect following
+function getOnce(url) {
   return new Promise((resolve, reject) => {
-    const follow = (u, hops = 0) => {
-      const req = https.get(u, {
-        headers: { 'User-Agent': UA, 'Accept': 'application/json, */*', 'Referer': 'https://www.redfin.com/' }
-      }, res => {
-        if ([301,302,303].includes(res.statusCode) && res.headers.location && hops < 5) {
-          res.resume();
-          const next = res.headers.location.startsWith('http') ? res.headers.location
-            : new URL(res.headers.location, u).toString();
-          return follow(next, hops + 1);
-        }
-        let body = '';
-        res.on('data', c => body += c);
-        res.on('end', () => resolve({ status: res.statusCode, body }));
-      });
-      req.on('error', reject);
-      req.setTimeout(8000, () => { req.destroy(); reject(new Error('timeout')); });
-    };
-    follow(url);
+    const req = https.get(url, { headers: HEADERS }, res => {
+      res.resume();
+      resolve({ status: res.statusCode, location: res.headers.location || null });
+    });
+    req.on('error', reject);
+    req.setTimeout(8000, () => { req.destroy(); reject(new Error('timeout')); });
   });
 }
 
-function parseRedfin(body) {
-  // Redfin prepends "{}&&" as XSSI protection
-  return JSON.parse(body.replace(/^\{\}&&/, '').replace(/^[^{[]*/, ''));
+// Full request with redirect following
+function get(url, hops = 0) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers: HEADERS }, res => {
+      if ([301, 302, 303].includes(res.statusCode) && res.headers.location && hops < 5) {
+        res.resume();
+        const next = res.headers.location.startsWith('http')
+          ? res.headers.location
+          : new URL(res.headers.location, url).toString();
+        return resolve(get(next, hops + 1));
+      }
+      let body = '';
+      res.on('data', c => body += c);
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    });
+    req.on('error', reject);
+    req.setTimeout(12000, () => { req.destroy(); reject(new Error('timeout')); });
+  });
 }
 
-function v(obj, ...keys) {
-  if (!obj || typeof obj !== 'object') return null;
-  for (const key of keys) {
-    if (key in obj) {
-      const val = obj[key];
-      return (val && typeof val === 'object' && 'value' in val) ? val.value : val;
-    }
+function extractNum(html, key) {
+  const m = html.match(new RegExp(`${key}[^0-9]{0,6}([0-9]+(?:\\.[0-9]+)?)`));
+  return m ? parseFloat(m[1]) : null;
+}
+
+function extractStr(html, key) {
+  const m = html.match(new RegExp(`"${key}"\\s*:\\s*"([^"]+)"`));
+  return m ? m[1] : null;
+}
+
+// Format address into Zillow URL path: "123 Main St Topeka KS 66604"
+// → "123-Main-St,-Topeka,-KS-66604"
+function formatAddrForZillow(addr) {
+  const s = addr.trim().replace(/,\s*/g, ' ').replace(/\s+/g, ' ');
+
+  // Extract state and zip from end
+  const m = s.match(/^(.*?)\s+([A-Z]{2})\s+(\d{5})\s*$/);
+  if (!m) return s.replace(/\s+/g, '-');
+
+  const [, streetCity, state, zip] = m;
+
+  // Find last street type to split street from city
+  const stPat = /\b(Ave|Avenue|St|Street|Rd|Road|Dr|Drive|Blvd|Ln|Lane|Ct|Court|Pl|Place|Way|Pkwy|Hwy|Loop|Cir|Ter|Terrace|Trl|Trail|Run|Pass|Xing)\b/gi;
+  let lastMatch, cur;
+  while ((cur = stPat.exec(streetCity)) !== null) lastMatch = cur;
+
+  if (lastMatch) {
+    const splitIdx = lastMatch.index + lastMatch[0].length;
+    const street = streetCity.slice(0, splitIdx).trim().replace(/\s+/g, '-');
+    const city = streetCity.slice(splitIdx).trim().replace(/\s+/g, '-');
+    if (city) return `${street},-${city},-${state}-${zip}`;
   }
-  return null;
+
+  return `${streetCity.replace(/\s+/g, '-')},-${state}-${zip}`;
 }
 
 async function lookupProperty(addr) {
-  const q = encodeURIComponent(addr);
-  const { status, body } = await get(
-    `https://www.redfin.com/stingray/api/gis?al=1&market=us&query=${q}&num_homes=1`
-  );
-  if (status !== 200) throw new Error(`Redfin HTTP ${status}`);
+  // Step 1: Address → zpid via Zillow redirect
+  const zAddr = formatAddrForZillow(addr);
+  const { status, location } = await getOnce(`https://www.zillow.com/homes/${zAddr}_rb/`);
 
-  const data = parseRedfin(body);
-  const homes = data?.payload?.homes;
-  if (!homes?.length) return null;
+  if (![301, 302].includes(status) || !location) return null;
+  const zpidMatch = location.match(/(\d+)_zpid/);
+  if (!zpidMatch) return null;
+  const zpid = zpidMatch[1];
 
-  const h = homes[0];
-  let yearBuilt = v(h, 'yearBuilt', 'yearBuiltRaw');
+  // Step 2: Fetch property detail page
+  const detailUrl = `https://www.zillow.com/homedetails/${zpid}_zpid/`;
+  const { body: html } = await get(detailUrl);
+  if (!html || html.length < 5000) return null;
 
-  // Fetch property detail page for year built if not in search result
-  if (!yearBuilt && h.url) {
-    try {
-      const detUrl = `https://www.redfin.com/stingray/api/home/details/aboveTheFold?url=${encodeURIComponent(h.url)}&accessLevel=1`;
-      const { body: db } = await get(detUrl);
-      const det = parseRedfin(db);
-      const info = det?.payload?.mainHouseInfo;
-      yearBuilt = v(info, 'yearBuilt', 'yearBuiltRaw');
-      if (!yearBuilt) {
-        // Also check publicRecordsInfo
-        const pub = det?.payload?.publicRecordsInfo;
-        yearBuilt = v(pub, 'yearBuilt');
-      }
-    } catch (_) {}
-  }
+  const yearBuilt = extractNum(html, 'yearBuilt');
+  const beds      = extractNum(html, 'bedrooms');
+  const baths     = extractNum(html, 'bathrooms');
+  const sqft      = extractNum(html, 'livingArea');
+
+  // Zestimate preferred over list price
+  const zest  = html.match(/zestimate[^0-9]{0,12}([0-9]{5,8})/i);
+  const price = html.match(/[^a-z]price[^0-9]{0,6}([0-9]{5,8})/i);
+  const estValue = zest ? parseInt(zest[1]) : (price ? parseInt(price[1]) : null);
+
+  // Last sale
+  const lastSalePrice = (() => {
+    const m = html.match(/lastSoldPrice[^0-9]{0,6}([0-9]{5,8})/i);
+    return m ? parseInt(m[1]) : null;
+  })();
+  const lastSaleDate = extractStr(html, 'dateSold') || extractStr(html, 'lastSoldDate');
 
   return {
-    address: v(h, 'streetLine') || addr,
-    city: h.city || null,
-    state: h.state || null,
-    zip: String(h.zip || '').slice(0, 5) || null,
-    beds: h.beds || null,
-    baths: h.baths || null,
-    sqft: v(h, 'sqFt') || null,
-    estValue: v(h, 'price') || null,
-    yearBuilt: yearBuilt ? parseInt(yearBuilt) : null,
-    lastSalePrice: v(h, 'lastSalePrice') || null,
-    lastSaleDate: h.lastSaleDate || null,
-    propertyUrl: h.url ? `https://www.redfin.com${h.url}` : null,
+    address:       extractStr(html, 'streetAddress') || addr,
+    city:          extractStr(html, 'addressLocality') || null,
+    state:         extractStr(html, 'addressRegion') || null,
+    zip:           (extractStr(html, 'postalCode') || '').slice(0, 5) || null,
+    beds:          beds   ? Math.round(beds)   : null,
+    baths:         baths  || null,
+    sqft:          sqft   ? Math.round(sqft)   : null,
+    estValue:      estValue || null,
+    yearBuilt:     yearBuilt ? Math.round(yearBuilt) : null,
+    lastSalePrice: lastSalePrice || null,
+    lastSaleDate:  lastSaleDate || null,
+    propertyUrl:   detailUrl,
   };
 }
 
@@ -131,5 +167,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`[property-proxy] running on 127.0.0.1:${PORT}`);
-  console.log(`Test: curl "http://127.0.0.1:${PORT}/property?addr=1234+N+Main+St+Wichita+KS+67203"`);
+  console.log(`Test: curl "http://127.0.0.1:${PORT}/property?addr=2015+SW+Randolph+Ave+Topeka+KS+66604"`);
 });
