@@ -2327,25 +2327,23 @@ ${proposal.innerHTML}
 
 // ── Property data auto-lookup ───────────────────────────────────────────────
 async function _lookupPropertyData(clientId,addrParts){
-  if(!supaEnabled()||!_supaUser)return;
   try{
-    const{data:{session}}=await _supa.auth.getSession();
-    if(!session)return;
-    const res=await fetch(SUPA_URL+'/functions/v1/property-lookup',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
-      body:JSON.stringify(addrParts)
-    });
-    if(!res.ok)return;
+    const addr=[addrParts.street,addrParts.city,addrParts.state,addrParts.zip].filter(Boolean).join(' ');
+    const res=await fetch('/api/property?addr='+encodeURIComponent(addr));
+    if(!res.ok||res.status===204)return;
     const d=await res.json();
     if(d.error)return;
     const c=clients.find(x=>x.id===clientId);if(!c)return;
     if(d.yearBuilt&&!c.yearBuilt)c.yearBuilt=d.yearBuilt;
-    ['sqft','estimatedValue','propertyType','stories','exteriorMaterial',
-     'lastSaleDate','lastSalePrice','lotSize','roofType','garage',
-     'bedrooms','bathrooms','isRental','assessorUrl',
-     'propDataSource','propDataExact',
-     'zestimate','rentZestimate','zipMedian','propertyTier'].forEach(k=>{if(d[k]!=null)c[k]=d[k];});
+    if(d.sqft)c.sqft=d.sqft;
+    if(d.estValue)c.estimatedValue=d.estValue;
+    if(d.beds)c.bedrooms=d.beds;
+    if(d.baths)c.bathrooms=d.baths;
+    if(d.lastSalePrice)c.lastSalePrice=d.lastSalePrice;
+    if(d.lastSaleDate)c.lastSaleDate=d.lastSaleDate;
+    if(d.propertyUrl)c.assessorUrl=d.propertyUrl;
+    c.propDataSource='zillow';
+    c.propDataExact=true;
     c.propDataFetchedAt=new Date().toISOString();
     saveAll();
     if(currentClientId===clientId)renderClientDetail();
