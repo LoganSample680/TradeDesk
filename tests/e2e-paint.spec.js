@@ -1743,6 +1743,146 @@ test.describe('Paint estimate — SCOPE_ITEMS pricing structure', () => {
 
 
 // ════════════════════════════════════════════════════════════════════════════
+//  RRP GATE — pre-1978 paint disturbance question + cert check
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('RRP gate — pre-1978 estimate entry', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('_showRrpModal renders Yes/No question for pre-1978 client', async () => {
+    const html = await page.evaluate(() => {
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      if (typeof _showRrpModal !== 'function') return null;
+      _showRrpModal({ yearBuilt: 1955, name: 'Test Client' }, () => {});
+      const ov = document.getElementById('_rrp-gate-overlay');
+      return ov ? ov.innerHTML : null;
+    });
+    if (html !== null) {
+      expect(html).toContain('Pre-1978 Home');
+      expect(html).toContain('1955');
+      expect(html).toContain('6 sq ft');
+      expect(html).toContain('20 sq ft');
+    }
+    await page.evaluate(() => document.getElementById('_rrp-gate-overlay')?.remove());
+  });
+
+  test('_rrpModalNo — sets _rrpPaintAnswer to no and calls onProceed', async () => {
+    const result = await page.evaluate(() => {
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      if (typeof _showRrpModal !== 'function') return null;
+      window._rrpProceedCalled = false;
+      _showRrpModal({ yearBuilt: 1960, name: 'Test' }, () => { window._rrpProceedCalled = true; });
+      if (typeof _rrpModalNo === 'function') _rrpModalNo();
+      return { answer: typeof _rrpPaintAnswer !== 'undefined' ? _rrpPaintAnswer : null, called: window._rrpProceedCalled };
+    });
+    if (result !== null) {
+      expect(result.answer).toBe('no');
+      expect(result.called).toBe(true);
+    }
+  });
+
+  test('_rrpModalYes — with no cert shows cert-required message', async () => {
+    const result = await page.evaluate(() => {
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      if (typeof _showRrpModal !== 'function') return null;
+      // Ensure no EPA certs in licenses
+      const _origLicenses = typeof licenses !== 'undefined' ? [...licenses] : [];
+      if (typeof licenses !== 'undefined') licenses.splice(0, licenses.length);
+      window._rrpProceedCalled = false;
+      _showRrpModal({ yearBuilt: 1960, name: 'Test' }, () => { window._rrpProceedCalled = true; });
+      if (typeof _rrpModalYes === 'function') _rrpModalYes();
+      const msg = document.getElementById('_rrp-cert-msg');
+      const visible = msg ? msg.style.display !== 'none' : false;
+      const hasWhyBtn = msg ? msg.innerHTML.includes('Why am I being stopped') : false;
+      if (typeof licenses !== 'undefined') { licenses.splice(0); _origLicenses.forEach(l => licenses.push(l)); }
+      return { visible, hasWhyBtn, proceedNotCalled: !window._rrpProceedCalled };
+    });
+    if (result !== null) {
+      expect(result.visible).toBe(true);
+      expect(result.hasWhyBtn).toBe(true);
+      expect(result.proceedNotCalled).toBe(true);
+    }
+    await page.evaluate(() => document.getElementById('_rrp-gate-overlay')?.remove());
+  });
+
+  test('_rrpShowWhy — toggles EPA fine explainer visibility', async () => {
+    const result = await page.evaluate(() => {
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      if (typeof _showRrpModal !== 'function') return null;
+      if (typeof licenses !== 'undefined') licenses.splice(0, licenses.length);
+      _showRrpModal({ yearBuilt: 1960, name: 'Test' }, () => {});
+      if (typeof _rrpModalYes === 'function') _rrpModalYes();
+      if (typeof _rrpShowWhy === 'function') _rrpShowWhy();
+      const detail = document.getElementById('_rrp-why-detail');
+      const visible = detail ? detail.style.display !== 'none' : false;
+      const hasFines = detail ? detail.textContent.includes('37,500') : false;
+      return { visible, hasFines };
+    });
+    if (result !== null) {
+      expect(result.visible).toBe(true);
+      expect(result.hasFines).toBe(true);
+    }
+    await page.evaluate(() => document.getElementById('_rrp-gate-overlay')?.remove());
+  });
+
+  test('_rrpModalYes — with valid cert calls onProceed immediately', async () => {
+    const result = await page.evaluate(() => {
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      if (typeof _showRrpModal !== 'function') return null;
+      const fakeEpaCert = { typeId: 'epa_firm', licenseNumber: 'NAT-F99999', expiryDate: '2099-12-31', holderName: 'Test Firm' };
+      if (typeof licenses !== 'undefined') licenses.push(fakeEpaCert);
+      window._rrpProceedCalled = false;
+      _showRrpModal({ yearBuilt: 1940, name: 'Test' }, () => { window._rrpProceedCalled = true; });
+      if (typeof _rrpModalYes === 'function') _rrpModalYes();
+      const answer = typeof _rrpPaintAnswer !== 'undefined' ? _rrpPaintAnswer : null;
+      const overlayGone = !document.getElementById('_rrp-gate-overlay');
+      if (typeof licenses !== 'undefined') { const idx = licenses.indexOf(fakeEpaCert); if (idx > -1) licenses.splice(idx, 1); }
+      return { answer, called: window._rrpProceedCalled, overlayGone };
+    });
+    if (result !== null) {
+      expect(result.answer).toBe('yes');
+      expect(result.called).toBe(true);
+      expect(result.overlayGone).toBe(true);
+    }
+  });
+
+  test('client pre-1978 banner shows for all trades (not painting-only)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof renderClientDetail !== 'function') return null;
+      const testClient = { id: 88881, name: 'Pre78 Test', addr: '123 Old St', yearBuilt: 1955, phone: '555-0001' };
+      if (typeof clients !== 'undefined') clients.unshift(testClient);
+      if (typeof currentClientId !== 'undefined') window._savedClientId = currentClientId;
+      currentClientId = 88881;
+      renderClientDetail();
+      const mets = document.getElementById('cd-client-mets');
+      const bannerText = mets ? mets.textContent : '';
+      // Cleanup
+      if (typeof clients !== 'undefined') { const idx = clients.findIndex(c => c.id === 88881); if (idx > -1) clients.splice(idx, 1); }
+      currentClientId = window._savedClientId || null;
+      return bannerText;
+    });
+    if (result !== null) {
+      expect(result).toContain('Pre-1978');
+      expect(result).toContain('RRP');
+    }
+  });
+
+  test('no console errors from RRP gate', async () => {
+    assertNoErrors(page, 'RRP gate modal');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 //  CLIENT MANAGEMENT — form validation, save, list, search, detail
 // ════════════════════════════════════════════════════════════════════════════
 

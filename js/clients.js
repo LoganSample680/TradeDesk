@@ -16,10 +16,63 @@ function openEstimateForClient(){
   if(r==='blacklisted'){zAlert('This client is blacklisted. Estimates are blocked.',{title:'🚫 Blocked'});return;}
   if(r==='high_risk'){
     zConfirm('⚠️ This client previously required a lien for payment. Continue with estimate?',
-      ()=>_gateAddressThenEstimate(c),{title:'High risk client',yes:'Proceed',danger:true});
+      ()=>_rrpGateThenEstimate(c),{title:'High risk client',yes:'Proceed',danger:true});
     return;
   }
+  _rrpGateThenEstimate(c);
+}
+function _rrpGateThenEstimate(c){
+  if(c.yearBuilt&&c.yearBuilt<1978){
+    _showRrpModal(c,()=>_gateAddressThenEstimate(c));
+    return;
+  }
+  if(typeof _rrpPaintAnswer!=='undefined')_rrpPaintAnswer='no';
   _gateAddressThenEstimate(c);
+}
+function _showRrpModal(c,onProceed){
+  document.getElementById('_rrp-gate-overlay')?.remove();
+  const hasCert=(typeof licenses!=='undefined')&&licenses.some(l=>
+    ['epa_firm','epa_renovator'].includes(l.typeId)&&(!l.expiryDate||l.expiryDate>=todayKey()));
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_rrp-gate-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:16px;font-weight:800;margin-bottom:4px">⚠️ Pre-1978 Home — Built '+c.yearBuilt+'</div>'+
+    '<div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.5">Will more than <strong>6 sq ft of interior</strong> or <strong>20 sq ft of exterior</strong> painted surfaces be disturbed?</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">'+
+      '<button onclick="_rrpModalNo()" style="padding:13px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);color:var(--text1);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">No</button>'+
+      '<button onclick="_rrpModalYes()" style="padding:13px;border-radius:var(--r);border:2px solid #d97706;background:#fef3c7;color:#92400e;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Yes</button>'+
+    '</div>'+
+    '<div id="_rrp-cert-msg" style="display:none"></div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  window._rrpModalNo=function(){
+    if(typeof _rrpPaintAnswer!=='undefined')_rrpPaintAnswer='no';
+    document.getElementById('_rrp-gate-overlay')?.remove();
+    onProceed();
+  };
+  window._rrpModalYes=function(){
+    if(typeof _rrpPaintAnswer!=='undefined')_rrpPaintAnswer='yes';
+    if(hasCert){document.getElementById('_rrp-gate-overlay')?.remove();onProceed();return;}
+    const msg=document.getElementById('_rrp-cert-msg');
+    if(!msg)return;
+    msg.style.display='block';
+    msg.innerHTML=
+      '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:12px;margin-bottom:10px">'+
+        '<div style="font-size:13px;font-weight:800;color:#a32d2d;margin-bottom:6px">RRP certification required before this estimate can proceed.</div>'+
+        '<button onclick="_rrpShowWhy()" style="background:none;border:none;color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;padding:0;font-family:inherit;text-decoration:underline">Why am I being stopped? →</button>'+
+        '<div id="_rrp-why-detail" style="display:none;margin-top:12px">'+
+          '<div style="font-size:12px;font-weight:800;color:#92400e;margin-bottom:6px">EPA RRP Rule — 40 CFR Part 745</div>'+
+          '<div style="font-size:12px;color:var(--text1);margin-bottom:6px;line-height:1.6">Any contractor disturbing painted surfaces in a pre-1978 home must hold an EPA Firm Certification and have a certified Renovator on the job — <strong>before work begins</strong>, not at proposal time.</div>'+
+          '<div style="font-size:13px;font-weight:800;color:#a32d2d;margin-bottom:6px">Fines: up to $37,500 per violation, per day.</div>'+
+          '<div style="font-size:12px;color:var(--text2);line-height:1.5">Getting certified: one-day course, ~$200–$300, valid 5 years. Search "EPA RRP certification [your state]" to find a local provider.</div>'+
+        '</div>'+
+      '</div>'+
+      '<button onclick="document.getElementById(\'_rrp-gate-overlay\')?.remove();goPg(\'settings\');setTimeout(()=>{const t=document.querySelector(\'[data-settings-tab=licensing],[data-tab=licensing]\');if(t)t.click();},350)" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:#92400e;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Add my RRP cert → Settings → Licensing</button>'+
+      '<button onclick="document.getElementById(\'_rrp-gate-overlay\')?.remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Cancel</button>';
+    window._rrpShowWhy=function(){
+      const d=document.getElementById('_rrp-why-detail');
+      if(d)d.style.display=d.style.display==='none'?'block':'none';
+    };
+  };
 }
 function _gateAddressThenEstimate(c){
   if(!(c.addr||'').trim()){
@@ -1232,7 +1285,7 @@ function renderClientDetail(){
       <div style="font-size:14px;font-weight:700;color:var(--green-mid)">${fmt(totalPaidAll)}</div>
     </div>`:'';
   const intakeInfoHTML=(c.callTime||c.notes)?`<div style="padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📞 Best time to call:</span> ${c.callTime}</div>`:''}${c.notes?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📋 Intake notes:</span> ${c.notes}</div>`:''}</div>`:'';
-  const epaHTML=(c.yearBuilt&&c.yearBuilt<1978&&getActiveTrade()==='painting')?`<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 12px;${balanceHTML||intakeInfoHTML?'margin-top:10px;':''}font-size:12px;font-weight:700;color:#856404">⚠️ Pre-1978 home — Lead paint disclosure required before work begins</div>`:'';
+  const epaHTML=(c.yearBuilt&&c.yearBuilt<1978)?`<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 12px;${balanceHTML||intakeInfoHTML?'margin-top:10px;':''}font-size:12px;font-weight:700;color:#856404">⚠️ Pre-1978 — EPA RRP applies if &gt;6 sq ft interior or &gt;20 sq ft exterior paint disturbed</div>`:'';
   const _metsContent=balanceHTML+intakeInfoHTML+epaHTML;
   const _metsEl=document.getElementById('cd-client-mets');
   _metsEl.innerHTML=_metsContent;

@@ -1,5 +1,7 @@
 // ── Gallery ──────────────────────────────────────────────────────────────────
 let _galleryFilter='all';
+// ── RRP compliance ────────────────────────────────────────────────────────────
+let _rrpPaintAnswer=''; // 'yes' | 'no' | '' (unanswered)
 
 // ── Painting estimator job classification ────────────────────────────────────
 let _paintIsCommercial=false,_paintWorkScope='repair';
@@ -232,7 +234,7 @@ function _buildClientHubSnapshot(clientId){
     ccSurchargeEnabled:_snapSurchargeOn,
     ccSurchargePct:Math.min(4,Math.max(0.5,parseFloat(S.ccSurchargePct||3)||3)),
     yearBuilt:c.yearBuilt||null,
-    epaRequired:!!(c.yearBuilt&&c.yearBuilt<1978),
+    epaRequired:!!(c.yearBuilt&&c.yearBuilt<1978&&_rrpPaintAnswer==='yes'),
     rrpFirmCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_firm'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
     rrpRenovatorName:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.holderName||'';})(),
     rrpRenovatorCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
@@ -538,17 +540,13 @@ async function sendProposalLink(){
   const proposal=document.getElementById('est-proposal');
   if(!proposal||!proposal.innerHTML.trim()){zAlert('Generate the proposal first.',{title:'Nothing to print'});return;}
   if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.',{title:'Sign in required'});return;}
-  {
-    const _pdYbClientChk=estLinkedClientId?clients.find(c=>c.id===estLinkedClientId):null;
-    const _pdYearBuiltChk=_pdYbClientChk?_pdYbClientChk.yearBuilt||null:null;
-    if(_pdYearBuiltChk&&_pdYearBuiltChk<1978){
-      const _today=todayKey();
-      const _hasRRP=(typeof licenses!=='undefined')&&licenses.some(l=>
-        ['epa_firm','epa_renovator'].includes(l.typeId)&&(!l.expiryDate||l.expiryDate>=_today));
-      if(!_hasRRP){
-        zAlert('This property requires EPA RRP certification — you cannot send a proposal for pre-1978 homes without it. Add your RRP certification under Settings → Licensing.');
-        return;
-      }
+  if(_rrpPaintAnswer==='yes'){
+    const _today=todayKey();
+    const _hasRRP=(typeof licenses!=='undefined')&&licenses.some(l=>
+      ['epa_firm','epa_renovator'].includes(l.typeId)&&(!l.expiryDate||l.expiryDate>=_today));
+    if(!_hasRRP){
+      zAlert('EPA RRP certification required. Add your cert under Settings → Licensing before sending.',{title:'RRP cert required'});
+      return;
     }
   }
   const btn=document.getElementById('send-proposal-btn');
@@ -629,7 +627,7 @@ async function sendProposalLink(){
     const _pdDiscount=Math.round(_propFinal*(1-_pdPortfolioPct/100)*100)/100;
     const _pdYbClient=_bidForProp?clients.find(c=>c.id===_bidForProp.client_id):null;
     const _pdYearBuilt=_pdYbClient?_pdYbClient.yearBuilt||null:null;
-    const _pdEpaRequired=!!(_pdYearBuilt&&_pdYearBuilt<1978);
+    const _pdEpaRequired=!!(_pdYearBuilt&&_pdYearBuilt<1978&&_rrpPaintAnswer==='yes');
     const proposalData={
       id:bidId,token,clientName:cname,businessName:bname,
       contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
@@ -1488,6 +1486,7 @@ function clearEstimatorForm(){
     if(orphanIdx>-1){bids.splice(orphanIdx,1);saveAll();}
   }
   _paintIsCommercial=false;_paintWorkScope='repair';_paintClientTaxRate=null;
+  _rrpPaintAnswer='';
   estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;lastCreatedBidId=null;
   scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
   estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200',products:{interior:'pm200',exterior:'spe',trim:'pm200t'}};
