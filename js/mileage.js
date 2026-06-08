@@ -376,7 +376,7 @@ let _tripDestTimer=null;
 let _tripGpsCoords=null; // cached GPS fix for search bias
 let _fromBiasCache={val:null,coords:null}; // MapKit-geocoded From coords for To-field bias
 
-// ── Shared geocoding — Mapbox (with key) or Photon+Census parallel ───────────
+// ── Shared geocoding — Photon (primary) + Census (fallback) ─────────────────
 const _MAPKIT_TOKEN='eyJhbGciOiJFUzI1NiIsImtpZCI6IjU1TjkyUTVQWkQiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzc4MDc2NTgxLCJleHAiOjE4NDExNDg1ODF9.PgQ2btzlf0EH-QJg_fX8dcsw2eR1yyx-o0K7Kckvn3D_bzdEI2hUMuz3iH2c9t2DtUY2fTtP08r7aEQCsYvQ3w';
 let _mapkitReady=false;
 function _initMapKit(){
@@ -495,23 +495,7 @@ async function _geocodeAddress(val,limit,biasLat,biasLon){
       });
     });
   }
-  if(S.mapboxKey){
-    const _mbProx=(biasLat&&biasLon)?biasLon+','+biasLat:'ip';
-    const r=await fetch('https://api.mapbox.com/geocoding/v5/mapbox.places/'+encodeURIComponent(val)+'.json?access_token='+S.mapboxKey+'&country=US&types=address&limit='+limit+'&proximity='+_mbProx);
-    const d=await r.json();
-    return(d.features||[]).map(f=>{
-      const ctx=f.context||[];
-      const zip=(ctx.find(c=>c.id.startsWith('postcode'))||{}).text||'';
-      const city=(ctx.find(c=>c.id.startsWith('place'))||{}).text||'';
-      const stateRaw=(ctx.find(c=>c.id.startsWith('region'))||{}).short_code||'';
-      const state=stateRaw.replace('US-','');
-      const street=(f.address?f.address+' ':'')+f.text;
-      const[lon,lat]=f.center;
-      const name=f.place_type?.includes('poi')?f.text:'';
-      return{name,line1:street,line2:[city,state,zip].filter(Boolean).join(', '),street,city,state,zip,lat,lon};
-    });
-  }
-  // No Mapbox key — Photon + Census in parallel
+  // Photon + Census in parallel
   const _bLat=biasLat||S?.weatherLat||37.6922,_bLon=biasLon||S?.weatherLon||-97.3375;
   const bias='&lat='+_bLat+'&lon='+_bLon;
   const photonP=fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit='+(limit+1)+bias+'&lang=en').then(r=>r.json()).catch(()=>null);
