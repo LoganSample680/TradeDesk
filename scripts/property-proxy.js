@@ -49,7 +49,9 @@ function get(url, hops = 0) {
 }
 
 function extractNum(html, key) {
-  const m = html.match(new RegExp(`${key}[^0-9]{0,6}([0-9]+(?:\\.[0-9]+)?)`));
+  // Try escaped JSON first: \"key\":value (Zillow embeds JSON-in-JSON)
+  const m = html.match(new RegExp(`\\\\"${key}\\\\":\\s*([0-9]+(?:\\.[0-9]+)?)`))
+         || html.match(new RegExp(`"${key}":\\s*([0-9]+(?:\\.[0-9]+)?)`));
   return m ? parseFloat(m[1]) : null;
 }
 
@@ -105,13 +107,16 @@ async function lookupProperty(addr) {
   const sqft      = extractNum(html, 'livingArea');
 
   // Zestimate preferred over list price
-  const zest  = html.match(/zestimate[^0-9]{0,12}([0-9]{5,8})/i);
-  const price = html.match(/[^a-z]price[^0-9]{0,6}([0-9]{5,8})/i);
+  const zest  = html.match(/\\"zestimate\\":\s*([0-9]{5,8})/)
+             || html.match(/"zestimate":\s*([0-9]{5,8})/);
+  const price = html.match(/\\"price\\":\s*([0-9]{5,8})/)
+             || html.match(/"price":\s*([0-9]{5,8})/);
   const estValue = zest ? parseInt(zest[1]) : (price ? parseInt(price[1]) : null);
 
   // Last sale
   const lastSalePrice = (() => {
-    const m = html.match(/lastSoldPrice[^0-9]{0,6}([0-9]{5,8})/i);
+    const m = html.match(/\\"lastSoldPrice\\":\s*([0-9]{5,8})/)
+           || html.match(/"lastSoldPrice":\s*([0-9]{5,8})/);
     return m ? parseInt(m[1]) : null;
   })();
   const lastSaleDate = extractStr(html, 'dateSold') || extractStr(html, 'lastSoldDate');
