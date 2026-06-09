@@ -99,7 +99,17 @@ function _gateAddressThenEstimate(c){
       const addr=(document.getElementById('_addr-gate-inp')?.value||'').trim();
       if(!addr){const inp=document.getElementById('_addr-gate-inp');if(inp){inp.style.borderColor='#A32D2D';inp.placeholder='Enter address to continue';}return;}
       const idx=clients.findIndex(x=>x.id===c.id);
-      if(idx>=0){clients[idx].addr=addr;saveAll();}
+      if(idx>=0){
+        const _p=typeof _parseAddrParts==='function'?_parseAddrParts(addr):{street:addr,city:'',state:'',zip:''};
+        clients[idx].addr=addr;
+        if(_p.street)clients[idx].street=_p.street;
+        if(_p.city)clients[idx].city=_p.city;
+        if(_p.state)clients[idx].state=_p.state;
+        if(_p.zip)clients[idx].zip=_p.zip;
+        saveAll();
+        if(_p.street&&_p.city&&typeof _lookupPropertyData==='function')
+          _lookupPropertyData(clients[idx].id,{street:_p.street,city:_p.city,state:_p.state||'',zip:_p.zip||''});
+      }
       ov.remove();
       _checkMultiPropertyThenOpen(clients.find(x=>x.id===c.id)||c);
     };
