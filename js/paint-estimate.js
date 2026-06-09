@@ -2329,7 +2329,9 @@ ${proposal.innerHTML}
 async function _lookupPropertyData(clientId,addrParts){
   try{
     const addr=[addrParts.street,addrParts.city,addrParts.state,addrParts.zip].filter(Boolean).join(' ');
-    const res=await fetch('/api/property?addr='+encodeURIComponent(addr));
+    const _ctrl=new AbortController();
+    const _t=setTimeout(()=>_ctrl.abort(),12000);
+    let res;try{res=await fetch('/api/property?addr='+encodeURIComponent(addr),{signal:_ctrl.signal});}finally{clearTimeout(_t);}
     if(!res.ok||res.status===204)return;
     const d=await res.json();
     if(d.error)return;
