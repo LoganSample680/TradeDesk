@@ -696,7 +696,7 @@ test.describe('sign.html — complete cash signing flow', () => {
 //  SIGN.HTML — EPA LEAD PAINT DISCLOSURE
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('sign.html — EPA lead paint disclosure', () => {
+test.describe('sign.html — EPA RRP lead paint disclosure (Document 2 of 2)', () => {
   let page;
 
   const MOCK_PROPOSAL_EPA = {
@@ -705,6 +705,10 @@ test.describe('sign.html — EPA lead paint disclosure', () => {
     epaRequired: true,
     trade: 'painting',
     surfaces: [], // no surfaces → skips color picker
+    clientAddr: '123 Old House Ln, Springfield, IL',
+    rrpFirmCertNum: 'NAT-F12345',
+    rrpRenovatorName: 'Jane Doe',
+    rrpRenovatorCertNum: 'NAT-R67890',
     signingToken: 'tok-epa',
   };
 
@@ -722,7 +726,7 @@ test.describe('sign.html — EPA lead paint disclosure', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('EPA section is visible when epaRequired=true and trade=painting', async () => {
+  test('EPA banner is visible when epaRequired=true (any trade)', async () => {
     // Advance to sign-action page
     await page.evaluate(() => {
       if (typeof approveAndSign === 'function') approveAndSign();
@@ -736,48 +740,82 @@ test.describe('sign.html — EPA lead paint disclosure', () => {
     if (epaSec !== null) expect(epaSec).toBe(true);
   });
 
-  test('checkReady — sign-btn blocked without epa-ack', async () => {
+  test('Document 1 of 2 label is visible when epaRequired=true', async () => {
+    const visible = await page.evaluate(() => {
+      const el = document.getElementById('epa-doc1-label');
+      if (!el) return null;
+      return el.style.display !== 'none';
+    });
+    if (visible !== null) expect(visible).toBe(true);
+  });
+
+  test('epa-ack checkbox does not exist in DOM (replaced by pg-epa page)', async () => {
+    const count = await page.locator('#epa-ack').count();
+    expect(count).toBe(0);
+  });
+
+  test('checkReady — sign-btn enabled with name + ueta (no EPA checkbox required)', async () => {
     await page.evaluate(() => {
       const nameEl = document.getElementById('sig-name');
       const uetaEl = document.getElementById('sig-ueta-ck');
-      const epaEl  = document.getElementById('epa-ack');
       if (nameEl) { nameEl.value = 'Alice Smith'; nameEl.dispatchEvent(new Event('input', { bubbles: true })); }
       if (uetaEl) { uetaEl.checked = true; uetaEl.dispatchEvent(new Event('change', { bubbles: true })); }
-      if (epaEl)  { epaEl.checked = false; epaEl.dispatchEvent(new Event('change', { bubbles: true })); }
-      if (typeof checkReady === 'function') checkReady();
-    });
-    const disabled = await page.evaluate(() => document.getElementById('sign-btn')?.disabled ?? null);
-    if (disabled !== null) expect(disabled).toBe(true);
-  });
-
-  test('checkReady — sign-btn enabled after epa-ack checked', async () => {
-    await page.evaluate(() => {
-      const epaEl = document.getElementById('epa-ack');
-      if (epaEl) { epaEl.checked = true; epaEl.dispatchEvent(new Event('change', { bubbles: true })); }
       if (typeof checkReady === 'function') checkReady();
     });
     const disabled = await page.evaluate(() => document.getElementById('sign-btn')?.disabled ?? null);
     if (disabled !== null) expect(disabled).toBe(false);
   });
 
-  test('goToPayment — blocked and shows epa-err if epa-ack unchecked', async () => {
+  test('pg-epa page exists in DOM', async () => {
+    const count = await page.locator('#pg-epa').count();
+    expect(count).toBe(1);
+  });
+
+  test('showEpaPage — pg-epa becomes visible and fills address/cert info', async () => {
     await page.evaluate(() => {
-      const epaEl = document.getElementById('epa-ack');
-      if (epaEl) { epaEl.checked = false; epaEl.dispatchEvent(new Event('change', { bubbles: true })); }
-      if (typeof goToPayment === 'function') goToPayment();
+      if (typeof showEpaPage === 'function') showEpaPage();
     });
-    await page.waitForTimeout(200);
-    const onPay = await page.evaluate(() => {
-      const pg = document.getElementById('pg-pay');
+    await page.waitForTimeout(300);
+    const onEpa = await page.evaluate(() => {
+      const pg = document.getElementById('pg-epa');
       return pg ? pg.style.display !== 'none' : false;
     });
-    const epaErr = await page.evaluate(() => {
-      const el = document.getElementById('epa-err');
-      return el ? el.style.display !== 'none' : null;
+    expect(onEpa).toBe(true);
+    const addrText = await page.evaluate(() => document.getElementById('epa-prop-address')?.textContent || '');
+    expect(addrText).toContain('123 Old House Ln');
+    const certText = await page.evaluate(() => document.getElementById('epa-cert-info')?.textContent || '');
+    expect(certText).toContain('NAT-F12345');
+  });
+
+  test('submitEpaAck — requires signature or typed name', async () => {
+    await page.evaluate(() => {
+      if (typeof submitEpaAck === 'function') submitEpaAck();
     });
-    // Should NOT advance to pay, and should show epa-err
-    if (onPay !== null) expect(onPay).toBe(false);
-    if (epaErr !== null) expect(epaErr).toBe(true);
+    await page.waitForTimeout(200);
+    const errVisible = await page.evaluate(() => {
+      const el = document.getElementById('epa-err');
+      return el ? el.style.display !== 'none' : false;
+    });
+    expect(errVisible).toBe(true);
+  });
+
+  test('submitEpaAck — proceeds to pg-done after typed name provided', async () => {
+    await page.evaluate(() => {
+      const nameEl = document.getElementById('epa-typed-name');
+      if (nameEl) { nameEl.value = 'Alice Smith'; if (typeof updateEpaSigPreview === 'function') updateEpaSigPreview(); }
+      if (typeof submitEpaAck === 'function') submitEpaAck();
+    });
+    await page.waitForTimeout(500);
+    const onDone = await page.evaluate(() => {
+      const pg = document.getElementById('pg-done');
+      return pg ? pg.style.display !== 'none' : false;
+    });
+    expect(onDone).toBe(true);
+  });
+
+  test('assertNoErrors — no console errors introduced by EPA RRP flow', async () => {
+    const errors = await page.evaluate(() => window.__consoleErrors || []);
+    expect(errors.filter(e => !/supabase|storage|fetch/i.test(e))).toHaveLength(0);
   });
 });
 

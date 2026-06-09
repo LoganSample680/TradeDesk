@@ -10,11 +10,9 @@ on:
 jobs:
   update:
     name: Seed tax_rates table
-    runs-on: ubuntu-latest
+    # Runs on self-hosted Proxmox runner — home IP bypasses SST WAF that blocks Azure/GitHub cloud IPs
+    runs-on: self-hosted
     timeout-minutes: 10
-
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
       - name: Checkout
@@ -24,9 +22,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-
-      - name: Install Supabase JS client
-        run: npm install --no-save @supabase/supabase-js@2
 
       - name: Run tax rate updater
         env:

@@ -2210,7 +2210,7 @@ function renderEstReview(){
     if(!_stR)return '<div class="met" style="cursor:pointer" onclick="openSalesTaxSetup()"><div class="met-l" style="color:var(--amber)">⚠ Sales tax</div><div class="met-v" style="color:var(--blue);font-size:12px;font-weight:700">Set rate →</div></div>';
     if(typeof calcSalesTax==='function'){
       const _prop=_paintIsCommercial?'commercial':'residential';
-      const r=calcSalesTax({state:_st,tradeType:'painting',scope:'repair',propertyType:_prop,taxRate:_stR,lineItems:[{desc:'Painting services',total:final,lineType:'service'}]});
+      const r=calcSalesTax({state:_st,tradeType:'painting',scope:'repair',propertyType:_prop,taxRate:_stR,laborTotal,materialsTotal:matTotal+suppliesCost});
       if(r.treatment&&!r.treatment.customerTax)return '<div class="met"><div class="met-l" style="color:var(--text3)">Sales tax</div><div class="met-v" style="color:var(--text3);font-size:12px">Exempt in '+_st+'</div></div>';
       if(r.taxAmount>0)return '<div class="met"><div class="met-l">Sales tax</div><div class="met-v" style="color:var(--blue)">+'+fmtShort(r.taxAmount)+'</div></div>';
     }
@@ -2327,28 +2327,53 @@ ${proposal.innerHTML}
 
 // ── Property data auto-lookup ───────────────────────────────────────────────
 async function _lookupPropertyData(clientId,addrParts){
-  if(!supaEnabled()||!_supaUser)return;
   try{
-    const{data:{session}}=await _supa.auth.getSession();
-    if(!session)return;
-    const res=await fetch(SUPA_URL+'/functions/v1/property-lookup',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
-      body:JSON.stringify(addrParts)
-    });
-    if(!res.ok)return;
+    const addr=[addrParts.street,addrParts.city,addrParts.state,addrParts.zip].filter(Boolean).join(' ');
+    const res=await fetch('/api/property?addr='+encodeURIComponent(addr));
+    if(!res.ok||res.status===204)return;
     const d=await res.json();
     if(d.error)return;
     const c=clients.find(x=>x.id===clientId);if(!c)return;
     if(d.yearBuilt&&!c.yearBuilt)c.yearBuilt=d.yearBuilt;
-    ['sqft','estimatedValue','propertyType','stories','exteriorMaterial',
-     'lastSaleDate','lastSalePrice','lotSize','roofType','garage',
-     'bedrooms','bathrooms','isRental','assessorUrl',
-     'propDataSource','propDataExact',
-     'zestimate','rentZestimate','zipMedian','propertyTier'].forEach(k=>{if(d[k]!=null)c[k]=d[k];});
+    if(d.sqft)c.sqft=d.sqft;
+    if(d.estValue)c.estimatedValue=d.estValue;
+    if(d.beds)c.bedrooms=d.beds;
+    if(d.baths)c.bathrooms=d.baths;
+    if(d.lastSalePrice)c.lastSalePrice=d.lastSalePrice;
+    if(d.lastSaleDate)c.lastSaleDate=d.lastSaleDate;
+    if(d.propertyUrl)c.assessorUrl=d.propertyUrl;
+    c.propDataSource='zillow';
+    c.propDataExact=true;
     c.propDataFetchedAt=new Date().toISOString();
     saveAll();
     if(currentClientId===clientId)renderClientDetail();
   }catch(e){console.warn('Property lookup failed:',e);}
+}
+
+// ── Background property data queue ────────────────────────────────────────────
+// Processes all clients with addresses but no Zillow data, one every 6.5s.
+// Fires automatically after login — handles onboarding imports and existing accounts.
+let _propQueue=[];
+let _propQueueTimer=null;
+
+function _startPropQueue(){
+  if(_propQueueTimer)return;
+  _propQueue=clients.filter(c=>(c.addr||c.street)&&!c.propDataFetchedAt).map(c=>c.id);
+  if(!_propQueue.length)return;
+  _propQueueTimer=setTimeout(_tickPropQueue,3000);
+}
+
+function _tickPropQueue(){
+  _propQueueTimer=null;
+  const id=_propQueue.shift();
+  if(id===undefined)return;
+  const c=clients.find(x=>x.id===id);
+  if(c&&(c.addr||c.street)&&!c.propDataFetchedAt){
+    const parts=c.street&&c.city
+      ?{street:c.street,city:c.city,state:c.state||'',zip:c.zip||''}
+      :(typeof _parseAddrParts==='function'?_parseAddrParts(c.addr||''):{street:c.addr||'',city:'',state:'',zip:''});
+    if(parts.street)_lookupPropertyData(id,parts);
+  }
+  if(_propQueue.length)_propQueueTimer=setTimeout(_tickPropQueue,6500);
 }
 
