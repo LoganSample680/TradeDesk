@@ -344,7 +344,10 @@ function setLicFilter(cat){_licFilter=cat;renderLicensing();}
 function _licDateDisp(iso){if(!iso)return'';try{const[y,m,d]=iso.split('-');return m+'/'+d+'/'+y;}catch(e){return iso;}}
 function _licDateParse(s){if(!s||!s.trim())return'';const t=s.trim();if(/^\d{4}-\d{2}-\d{2}$/.test(t))return t;const m1=t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);if(m1)return m1[3]+'-'+m1[1].padStart(2,'0')+'-'+m1[2].padStart(2,'0');const m2=t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);if(m2)return(parseInt(m2[3])>50?'19':'20')+m2[3]+'-'+m2[1].padStart(2,'0')+'-'+m2[2].padStart(2,'0');return'';}
 let _editingLicId=null;
-function openAddLicense(){_editingLicId=null;_showLicModal(null);}
+function openAddLicense(prefillTypeId){
+  _editingLicId=null;_showLicModal(null);
+  if(prefillTypeId){const sel=document.getElementById('_lic-type-sel');if(sel){sel.value=prefillTypeId;_licTypeChanged(sel);}}
+}
 function openEditLicense(id){_editingLicId=id;_showLicModal(licenses.find(l=>l.id===id));}
 
 function _showLicModal(lic){

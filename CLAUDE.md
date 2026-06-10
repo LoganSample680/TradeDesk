@@ -77,7 +77,32 @@ Always ask first: *"All shards green — OK to merge?"*
 
 ---
 
-### 1.2 Non-Negotiable Rules
+### 1.2 Webhook Noise — Silence Non-Failure Events
+
+**Do not narrate infrastructure events that require no action.**
+
+The following webhook events are expected and informational only — acknowledge them
+with silence:
+
+- Cloudflare Pages "build in progress" and "deploy successful" notifications
+- Supabase preview ⏸️ (no migrations) and ✅ (all tasks passed)
+- "Waiting on shards" status updates
+- Any CI shard with `status: in_progress`
+
+**Only surface a webhook event if it requires action:**
+
+| Event | Action |
+|-------|--------|
+| Shard `conclusion: failure` | Fetch logs, diagnose, fix, push |
+| Review comment requesting a change | Investigate and respond or fix |
+| CI shard stays `in_progress` beyond 15 minutes | Check for stuck runner |
+
+Staying silent on passing/in-progress events saves context and keeps the
+conversation focused on real issues.
+
+---
+
+### 1.4 Non-Negotiable Rules
 
 - **Every push must have an open PR.** Create one if it does not exist. Always.
 
@@ -90,7 +115,7 @@ Always ask first: *"All shards green — OK to merge?"*
 
 ---
 
-### 1.3 What "CI Green" Means
+### 1.5 What "CI Green" Means
 
 | Requirement | Standard |
 |-------------|----------|

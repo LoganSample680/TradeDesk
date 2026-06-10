@@ -1012,8 +1012,8 @@ function executeQuickAction(actionType,clientId,bidId,jobId){
     showQuickExpenseModal(clientId,bidId);
   } else if(actionType==='estimate'){
     closeTopModal();
-    openClientDetail(clientId);
-    setTimeout(()=>openEstimateForClient(),200);
+    currentClientId=clientId;
+    openEstimateForClient();
   } else if(actionType==='schedule'){
     closeTopModal();
     if(bidId){schedFromBid(bidId);}

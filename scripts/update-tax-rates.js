@@ -79,13 +79,14 @@ function _supaPostOnce(apiPath, bodyStr, extraHeaders) {
 
 async function supaPost(apiPath, body, extraHeaders = {}) {
   const bodyStr = JSON.stringify(body);
-  const delays = [2000, 4000, 8000, 16000];
+  // Longer backoff for DNS failures — gives the resolver time to recover
+  const delays = [2000, 4000, 8000, 16000, 30000, 30000];
   let result;
   for (let attempt = 0; attempt <= delays.length; attempt++) {
     result = await _supaPostOnce(apiPath, bodyStr, extraHeaders);
-  if (!result.error || !(/EAI_AGAIN|ENOTFOUND/.test(result.error.message))) return result;
+    if (!result.error || !(/EAI_AGAIN|ENOTFOUND|ETIMEDOUT/.test(result.error.message))) return result;
     if (attempt < delays.length) {
-      process.stdout.write(`[DNS retry in ${delays[attempt]/1000}s] `);
+      process.stdout.write(`[DNS retry ${attempt+1}/${delays.length} in ${delays[attempt]/1000}s] `);
       await new Promise(r => setTimeout(r, delays[attempt]));
     }
   }
@@ -828,93 +829,6 @@ async function updateColoradoRates() {
   if (ok) console.log(`  Seeded ${rows.length} CO jurisdiction rate rows`);
 }
 
-// ── Kansas city rates (KDOR published — state 6.5% + local) ─────────────────
-// ZIP ranges sourced from KDOR rate tables. Combined = state + county + city.
-// Update when KDOR publishes rate changes (typically Jan 1 each year).
-const KS_ZIP_RATES = [
-  // Wichita / Sedgwick County (6.5% + 1% county + 1% city = 8.5%)
-  // Outer Wichita and unincorporated Sedgwick: 7.5% (no city tax)
-  {zip:'67201',combined:8.5},{zip:'67202',combined:8.5},{zip:'67203',combined:8.5},
-  {zip:'67204',combined:8.5},{zip:'67205',combined:8.5},{zip:'67206',combined:8.5},
-  {zip:'67207',combined:8.5},{zip:'67208',combined:8.5},{zip:'67209',combined:8.5},
-  {zip:'67210',combined:8.5},{zip:'67211',combined:8.5},{zip:'67212',combined:8.5},
-  {zip:'67213',combined:8.5},{zip:'67214',combined:8.5},{zip:'67215',combined:8.5},
-  {zip:'67216',combined:8.5},{zip:'67217',combined:8.5},{zip:'67218',combined:8.5},
-  {zip:'67219',combined:8.5},{zip:'67220',combined:8.5},{zip:'67221',combined:8.5},
-  {zip:'67223',combined:8.5},{zip:'67226',combined:8.5},{zip:'67227',combined:8.5},
-  {zip:'67228',combined:8.5},{zip:'67230',combined:8.5},{zip:'67232',combined:8.5},
-  {zip:'67235',combined:8.5},{zip:'67260',combined:8.5},
-  // Derby (Sedgwick Co): 8.5%
-  {zip:'67037',combined:8.5},
-  // Andover (Butler Co): 8.5%
-  {zip:'67002',combined:8.5},
-  // Kansas City KS / Wyandotte County (6.5% + 1% county + 2.975% city = ~10.475%)
-  {zip:'66101',combined:10.475},{zip:'66102',combined:10.475},{zip:'66103',combined:10.475},
-  {zip:'66104',combined:10.475},{zip:'66105',combined:10.475},{zip:'66106',combined:10.475},
-  {zip:'66109',combined:10.475},{zip:'66111',combined:10.475},{zip:'66112',combined:10.475},
-  {zip:'66115',combined:10.475},{zip:'66118',combined:10.475},{zip:'66119',combined:10.475},
-  // Overland Park / Johnson County (6.5% + 1.475% county + 1.125% city = 9.1%)
-  {zip:'66061',combined:9.1},{zip:'66062',combined:9.1},{zip:'66062',combined:9.1},
-  {zip:'66063',combined:9.1},{zip:'66083',combined:9.1},{zip:'66085',combined:9.1},
-  {zip:'66210',combined:9.1},{zip:'66211',combined:9.1},{zip:'66212',combined:9.1},
-  {zip:'66213',combined:9.1},{zip:'66214',combined:9.1},{zip:'66215',combined:9.1},
-  {zip:'66216',combined:9.1},{zip:'66217',combined:9.1},{zip:'66218',combined:9.1},
-  {zip:'66219',combined:9.1},{zip:'66220',combined:9.1},{zip:'66221',combined:9.1},
-  {zip:'66223',combined:9.1},{zip:'66224',combined:9.1},{zip:'66225',combined:9.1},
-  {zip:'66226',combined:9.1},{zip:'66227',combined:9.1},{zip:'66251',combined:9.1},
-  // Shawnee / Johnson County: 9.1%
-  {zip:'66203',combined:9.1},{zip:'66204',combined:9.1},{zip:'66205',combined:9.1},
-  {zip:'66206',combined:9.1},{zip:'66207',combined:9.1},{zip:'66208',combined:9.1},
-  {zip:'66209',combined:9.1},
-  // Lenexa / Johnson County: 9.475%
-  {zip:'66215',combined:9.475},{zip:'66219',combined:9.475},{zip:'66220',combined:9.475},
-  // Olathe / Johnson County: 9.475%
-  {zip:'66051',combined:9.475},{zip:'66061',combined:9.475},{zip:'66062',combined:9.475},
-  // Topeka / Shawnee County (6.5% + 1.15% county + 1.5% city = 9.15%)
-  {zip:'66601',combined:9.15},{zip:'66603',combined:9.15},{zip:'66604',combined:9.15},
-  {zip:'66605',combined:9.15},{zip:'66606',combined:9.15},{zip:'66607',combined:9.15},
-  {zip:'66608',combined:9.15},{zip:'66609',combined:9.15},{zip:'66610',combined:9.15},
-  {zip:'66611',combined:9.15},{zip:'66612',combined:9.15},{zip:'66614',combined:9.15},
-  {zip:'66615',combined:9.15},{zip:'66616',combined:9.15},{zip:'66617',combined:9.15},
-  {zip:'66618',combined:9.15},{zip:'66619',combined:9.15},{zip:'66621',combined:9.15},
-  // Lawrence / Douglas County (6.5% + 1.25% county + 1.3% city = 9.05%)
-  {zip:'66044',combined:9.05},{zip:'66045',combined:9.05},{zip:'66046',combined:9.05},
-  {zip:'66047',combined:9.05},{zip:'66049',combined:9.05},
-  // Manhattan / Riley County (6.5% + 1% county + 1% city = 8.5%)
-  {zip:'66502',combined:8.5},{zip:'66503',combined:8.5},{zip:'66505',combined:8.5},
-  {zip:'66506',combined:8.5},
-  // Salina / Saline County (6.5% + 1% county + 1.25% city = 8.75%)
-  {zip:'67401',combined:8.75},{zip:'67402',combined:8.75},
-  // Hutchinson / Reno County (6.5% + 1% county + 1.5% city = 9%)
-  {zip:'67501',combined:9.0},{zip:'67502',combined:9.0},{zip:'67504',combined:9.0},
-  // Garden City / Finney County (6.5% + 1% county + 1.5% city = 9%)
-  {zip:'67846',combined:9.0},
-  // Dodge City / Ford County (6.5% + 1% county + 1.5% city = 9%)
-  {zip:'67801',combined:9.0},
-  // Emporia / Lyon County (6.5% + 0.75% county + 1.5% city = 8.75%)
-  {zip:'66801',combined:8.75},
-  // Hays / Ellis County (6.5% + 0.75% county + 1.5% city = 8.75%)
-  {zip:'67601',combined:8.75},
-  // Liberal / Seward County (6.5% + 0.5% county + 1.5% city = 8.5%)
-  {zip:'67901',combined:8.5},
-  // Pittsburg / Crawford County (6.5% + 1% county + 1.5% city = 9%)
-  {zip:'66762',combined:9.0},
-];
-
-async function seedKansasRates() {
-  console.log('Kansas city rates (hardcoded KDOR)...');
-  // Dedupe by ZIP — later entries override earlier ones (more specific wins)
-  const seen = new Map();
-  for (const r of KS_ZIP_RATES) seen.set(r.zip, r.combined);
-  const KS_STATE_RATE = 6.5;
-  const rows = Array.from(seen.entries()).map(([zip, combined]) => ({
-    zip, state: 'KS', state_rate: KS_STATE_RATE,
-    local_rate: Math.round((combined - KS_STATE_RATE) * 10000) / 10000,
-    source: 'KDOR_HARDCODED', updated_at: new Date().toISOString(),
-  }));
-  const ok = await upsertBatch(rows);
-  console.log(ok ? `  Seeded ${rows.length} Kansas ZIP rows` : '  Kansas seed failed (upsert error)');
-}
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
@@ -932,8 +846,9 @@ async function main() {
   await updateSSTStates();
   await updateTexasRates();
 
-  // Phase 2.5 — Kansas KDOR hardcoded rates (runs after SST so KDOR wins over SST for KS ZIPs)
-  await seedKansasRates();
+  // Phase 2.5 — Kansas KDOR hardcoded rates removed — KS is an SST member state and SST data
+  // is authoritative. The hardcoded override was causing stale rates (e.g. Shawnee County
+  // went 1.15% → 1.35% but hardcoded table wasn't updated). SST now wins for all KS ZIPs.
 
   // Phase 3 — large non-SST states with DOR CSV files
   await updateCaliforniaRates();

@@ -234,7 +234,7 @@ function _buildClientHubSnapshot(clientId){
     ccSurchargeEnabled:_snapSurchargeOn,
     ccSurchargePct:Math.min(4,Math.max(0.5,parseFloat(S.ccSurchargePct||3)||3)),
     yearBuilt:c.yearBuilt||null,
-    epaRequired:!!(c.yearBuilt&&c.yearBuilt<1978&&_rrpPaintAnswer==='yes'),
+    epaRequired:!!(c.yearBuilt&&c.yearBuilt<1978&&(c.rrpDisturb==='yes'||_rrpPaintAnswer==='yes')),
     rrpFirmCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_firm'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
     rrpRenovatorName:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.holderName||'';})(),
     rrpRenovatorCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
@@ -627,7 +627,7 @@ async function sendProposalLink(){
     const _pdDiscount=Math.round(_propFinal*(1-_pdPortfolioPct/100)*100)/100;
     const _pdYbClient=_bidForProp?clients.find(c=>c.id===_bidForProp.client_id):null;
     const _pdYearBuilt=_pdYbClient?_pdYbClient.yearBuilt||null:null;
-    const _pdEpaRequired=!!(_pdYearBuilt&&_pdYearBuilt<1978&&_rrpPaintAnswer==='yes');
+    const _pdEpaRequired=!!(_pdYearBuilt&&_pdYearBuilt<1978&&((_pdYbClient&&_pdYbClient.rrpDisturb==='yes')||_rrpPaintAnswer==='yes'));
     const proposalData={
       id:bidId,token,clientName:cname,businessName:bname,
       contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
@@ -660,6 +660,8 @@ async function sendProposalLink(){
       cancelDays:_cancelDays,
       cancelStatute:_cancelStat,
       lienStatute:(typeof STATE_LIEN!=='undefined'&&STATE_LIEN[_st])?STATE_LIEN[_st].statute:'applicable mechanic\'s lien statutes',
+      bwebsite:S.bwebsite||'',
+      baddr:S.baddr||'',
     };
     // Set signing info BEFORE hub upload so snapshot captures correct signHubUrl
     const _bidForHub=bids.find(b=>b.id===bidId);
@@ -1237,7 +1239,7 @@ function buildProposal(){
     <div style="font-size:11px;color:#92400E;line-height:1.7">Exterior painting is weather-dependent. Start dates and completion timelines may shift based on temperature, rain, or high winds. Paint will not be applied to wet or damp surfaces. If surfaces were pressure washed, a minimum 48-hour dry time is required before painting begins. ${getBusinessName()} will communicate any weather-related delays promptly and reschedule at the earliest suitable date at no additional charge.</div>
   </div>`:''}
   <div style="padding:20px 24px;border-top:3px solid #1a365d;background:#f8fafc">
-    <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Payment Terms</div>
+    <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div>
     <div style="font-size:11.5px;color:#2d3748;line-height:2">
       ${_depositPct===0
         ?'<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px"><span style="color:#1a365d;font-weight:700;min-width:16px">1.</span><span><strong>Payment:</strong> Full balance due upon completion. No deposit required.</span></div>'

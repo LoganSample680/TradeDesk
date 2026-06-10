@@ -26,7 +26,16 @@ const _RRP_EXEMPT_TRADES=['landscaping'];
 function _rrpGateThenEstimate(c){
   const _trade=typeof getActiveTrade==='function'?getActiveTrade():'painting';
   if(c.yearBuilt&&c.yearBuilt<1978&&!_RRP_EXEMPT_TRADES.includes(_trade)){
-    _showRrpModal(c,()=>_gateAddressThenEstimate(c));
+    if((c.addr||'').trim()){
+      // Open estimate picker first so it's the backdrop behind the RRP modal
+      _gateAddressThenEstimate(c);
+      // Force-show picker instantly (skip fade-in) so it's fully visible when RRP modal overlays
+      const _spOv=document.getElementById('_style-pick-ov');
+      if(_spOv){_spOv.style.transition='none';_spOv.style.opacity='1';_spOv.style.transform='translateY(0)';}
+      _showRrpModal(c,()=>{});
+    } else {
+      _showRrpModal(c,()=>_gateAddressThenEstimate(c));
+    }
     return;
   }
   if(typeof _rrpPaintAnswer!=='undefined')_rrpPaintAnswer='no';
@@ -49,11 +58,14 @@ function _showRrpModal(c,onProceed){
   ov.appendChild(box);document.body.appendChild(ov);
   window._rrpModalNo=function(){
     if(typeof _rrpPaintAnswer!=='undefined')_rrpPaintAnswer='no';
+    // Persist on the client — proposal send may happen in a later session
+    c.rrpDisturb='no';if(typeof saveAll==='function')saveAll();
     document.getElementById('_rrp-gate-overlay')?.remove();
     onProceed();
   };
   window._rrpModalYes=function(){
     if(typeof _rrpPaintAnswer!=='undefined')_rrpPaintAnswer='yes';
+    c.rrpDisturb='yes';if(typeof saveAll==='function')saveAll();
     if(hasCert){document.getElementById('_rrp-gate-overlay')?.remove();onProceed();return;}
     const msg=document.getElementById('_rrp-cert-msg');
     if(!msg)return;
@@ -61,20 +73,16 @@ function _showRrpModal(c,onProceed){
     msg.innerHTML=
       '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:12px;margin-bottom:10px">'+
         '<div style="font-size:13px;font-weight:800;color:#a32d2d;margin-bottom:6px">RRP certification required before this estimate can proceed.</div>'+
-        '<button onclick="_rrpShowWhy()" style="background:none;border:none;color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;padding:0;font-family:inherit;text-decoration:underline">Why am I being stopped? →</button>'+
-        '<div id="_rrp-why-detail" style="display:none;margin-top:12px">'+
+        '<div style="margin-top:8px">'+
           '<div style="font-size:12px;font-weight:800;color:#92400e;margin-bottom:6px">EPA RRP Rule — 40 CFR Part 745</div>'+
           '<div style="font-size:12px;color:var(--text1);margin-bottom:6px;line-height:1.6">Any contractor disturbing painted surfaces in a pre-1978 home must hold an EPA Firm Certification and have a certified Renovator on the job — <strong>before work begins</strong>, not at proposal time.</div>'+
           '<div style="font-size:13px;font-weight:800;color:#a32d2d;margin-bottom:6px">Fines: up to $37,500 per violation, per day.</div>'+
           '<div style="font-size:12px;color:var(--text2);line-height:1.5">Getting certified: one-day course, ~$200–$300, valid 5 years. Search "EPA RRP certification [your state]" to find a local provider.</div>'+
         '</div>'+
       '</div>'+
-      '<button onclick="document.getElementById(\'_rrp-gate-overlay\')?.remove();goPg(\'settings\');setTimeout(()=>{const t=document.querySelector(\'[data-settings-tab=licensing],[data-tab=licensing]\');if(t)t.click();},350)" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:#92400e;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Add my RRP cert → Settings → Licensing</button>'+
+      '<button onclick="typeof _closeStylePicker===\'function\'&&_closeStylePicker();document.getElementById(\'_rrp-gate-overlay\')?.remove();goPg(\'pg-licensing\');setTimeout(()=>openAddLicense(\'epa_firm\'),200)" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:#92400e;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Add my RRP cert → Licensing</button>'+
       '<button onclick="document.getElementById(\'_rrp-gate-overlay\')?.remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Cancel</button>';
-    window._rrpShowWhy=function(){
-      const d=document.getElementById('_rrp-why-detail');
-      if(d)d.style.display=d.style.display==='none'?'block':'none';
-    };
+
   };
 }
 function _gateAddressThenEstimate(c){
@@ -233,7 +241,7 @@ function _pickTrade(id){
 let _stylePickState=null;
 function _closeStylePicker(){
   const ov=document.getElementById('_style-pick-ov');
-  if(ov){ov.style.opacity='0';ov.style.transform='translateY(14px)';setTimeout(()=>ov.remove(),220);}
+  if(ov){ov.style.opacity='0';ov.style.transform='translateY(14px)';setTimeout(()=>ov.remove(),380);}
 }
 function _showEstimateStylePicker(c,overrideAddr){
   _stylePickState={c,overrideAddr};
@@ -260,8 +268,7 @@ function _showEstimateStylePicker(c,overrideAddr){
   const tipText=_TIPS[trade]||_TIPS.general;
   const ov=document.createElement('div');
   ov.id='_style-pick-ov';
-  ov.style.cssText='position:fixed;inset:0;z-index:9000;background:var(--bg2);overflow-y:auto;opacity:0;transform:translateY(18px);transition:opacity .22s ease,transform .25s cubic-bezier(.22,.8,.2,1)';
-  const clientLine=c?(escHtml(c.name)+(c.addr?' · '+escHtml((c.addr||'').split(',')[0]):'')):'Pick client after';
+  ov.style.cssText='position:fixed;inset:0;z-index:9000;background:var(--bg2);overflow-y:auto;opacity:0;transform:translateY(22px);transition:opacity .38s ease,transform .42s cubic-bezier(.22,.8,.2,1)';
   const card=(id,tone,icon,eyebrow,title,sub,desc,bullets)=>{
     const bul=bullets.map(b=>'<li><span>✓</span>'+b+'</li>').join('');
     return `<button class="chooser-card chooser-${tone}" onclick="_pickEstStyle('${id}')">
@@ -280,7 +287,6 @@ function _showEstimateStylePicker(c,overrideAddr){
         '<div>'+
           '<div class="tbar-eyebrow">Pick estimate type</div>'+
           '<div class="tbar-title">How are you billing this job?</div>'+
-          '<div class="tbar-sub">'+clientLine+' — you can change this later, but the proposal template changes per type.</div>'+
         '</div>'+
         '<button class="btn btn-ghost" onclick="_closeStylePicker()">Cancel</button>'+
       '</div>'+
@@ -2086,7 +2092,7 @@ function renderCDAddresses(){
       ${c.isRental?`<span style="font-size:11px;background:rgba(233,123,0,.12);border:1px solid rgba(233,123,0,.3);border-radius:20px;padding:3px 8px;color:#E97B00;font-weight:700">🔑 Rental</span>`:''}
     </div>`:''}
     ${c.lastSaleDate||c.lastSalePrice?`<div style="font-size:12px;color:var(--text3);padding-top:6px;border-top:1px solid var(--border);margin-bottom:${c.assessorUrl?'6px':'0'}">Last sold ${c.lastSaleDate?new Date(c.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${c.lastSalePrice?' · <strong style="color:var(--text)">'+fmt(c.lastSalePrice)+'</strong>':''}</div>`:''}
-    ${c.assessorUrl?`<a href="${escHtml(c.assessorUrl)}" target="_blank" style="font-size:11px;color:var(--blue)">County record →</a>`:''}
+    ${c.assessorUrl?`<a href="${escHtml(c.assessorUrl)}" target="_blank" style="font-size:11px;color:var(--blue)">${c.propDataSource==='zillow'?'View on Zillow →':'County record →'}</a>`:''}
   </div>`:''
   let html=`<div style="padding:9px 0${extras.length?';border-bottom:1px solid var(--border)':''}">
     <div onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()" style="display:flex;justify-content:space-between;align-items:flex-start;cursor:${hasProp?'pointer':'default'}">

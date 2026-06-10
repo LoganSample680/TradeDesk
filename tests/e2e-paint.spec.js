@@ -1791,11 +1791,10 @@ test.describe('RRP gate — pre-1978 estimate entry', () => {
     }
   });
 
-  test('_rrpModalYes — with no cert shows cert-required message', async () => {
+  test('_rrpModalYes — with no cert shows cert-required message with EPA info', async () => {
     const result = await page.evaluate(() => {
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
       if (typeof _showRrpModal !== 'function') return null;
-      // Ensure no EPA certs in licenses
       const _origLicenses = typeof licenses !== 'undefined' ? [...licenses] : [];
       if (typeof licenses !== 'undefined') licenses.splice(0, licenses.length);
       window._rrpProceedCalled = false;
@@ -1803,34 +1802,33 @@ test.describe('RRP gate — pre-1978 estimate entry', () => {
       if (typeof _rrpModalYes === 'function') _rrpModalYes();
       const msg = document.getElementById('_rrp-cert-msg');
       const visible = msg ? msg.style.display !== 'none' : false;
-      const hasWhyBtn = msg ? msg.innerHTML.includes('Why am I being stopped') : false;
+      const hasEpaInfo = msg ? msg.innerHTML.includes('37,500') : false;
       if (typeof licenses !== 'undefined') { licenses.splice(0); _origLicenses.forEach(l => licenses.push(l)); }
-      return { visible, hasWhyBtn, proceedNotCalled: !window._rrpProceedCalled };
+      return { visible, hasEpaInfo, proceedNotCalled: !window._rrpProceedCalled };
     });
     if (result !== null) {
       expect(result.visible).toBe(true);
-      expect(result.hasWhyBtn).toBe(true);
+      expect(result.hasEpaInfo).toBe(true);
       expect(result.proceedNotCalled).toBe(true);
     }
     await page.evaluate(() => document.getElementById('_rrp-gate-overlay')?.remove());
   });
 
-  test('_rrpShowWhy — toggles EPA fine explainer visibility', async () => {
+  test('EPA fine explainer always visible when Yes tapped (no toggle required)', async () => {
     const result = await page.evaluate(() => {
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
       if (typeof _showRrpModal !== 'function') return null;
       if (typeof licenses !== 'undefined') licenses.splice(0, licenses.length);
       _showRrpModal({ yearBuilt: 1960, name: 'Test' }, () => {});
       if (typeof _rrpModalYes === 'function') _rrpModalYes();
-      if (typeof _rrpShowWhy === 'function') _rrpShowWhy();
-      const detail = document.getElementById('_rrp-why-detail');
-      const visible = detail ? detail.style.display !== 'none' : false;
-      const hasFines = detail ? detail.textContent.includes('37,500') : false;
-      return { visible, hasFines };
+      const msg = document.getElementById('_rrp-cert-msg');
+      const hasFines = msg ? msg.textContent.includes('37,500') : false;
+      const noToggleBtn = msg ? !msg.innerHTML.includes('Why am I being stopped') : true;
+      return { hasFines, noToggleBtn };
     });
     if (result !== null) {
-      expect(result.visible).toBe(true);
       expect(result.hasFines).toBe(true);
+      expect(result.noToggleBtn).toBe(true);
     }
     await page.evaluate(() => document.getElementById('_rrp-gate-overlay')?.remove());
   });
@@ -1901,8 +1899,610 @@ test.describe('RRP gate — pre-1978 estimate entry', () => {
     }
   });
 
+  test('pre-1978 with address — style picker visible behind RRP modal (opacity 1)', async () => {
+    const result = await page.evaluate(() => {
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      document.getElementById('_style-pick-ov')?.remove();
+      if (typeof _rrpGateThenEstimate !== 'function') return null;
+      const testClient = { id: 99992, name: 'Backdrop Test', addr: '123 Old St, Topeka, KS 66604', yearBuilt: 1955 };
+      const origTrade = typeof _activeTrade !== 'undefined' ? _activeTrade : null;
+      if (typeof _activeTrade !== 'undefined') _activeTrade = 'painting';
+      _rrpGateThenEstimate(testClient);
+      const picker = document.getElementById('_style-pick-ov');
+      const rrp = document.getElementById('_rrp-gate-overlay');
+      const pickerOpacity = picker ? picker.style.opacity : null;
+      const pickerInDom = !!picker;
+      const rrpInDom = !!rrp;
+      if (typeof _activeTrade !== 'undefined') _activeTrade = origTrade;
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      document.getElementById('_style-pick-ov')?.remove();
+      return { pickerInDom, rrpInDom, pickerOpacity };
+    });
+    if (result !== null) {
+      expect(result.pickerInDom).toBe(true);
+      expect(result.rrpInDom).toBe(true);
+      expect(result.pickerOpacity).toBe('1');
+    }
+  });
+
+  test('estimate style picker has no client name or "you can change this later" text', async () => {
+    const result = await page.evaluate(() => {
+      document.getElementById('_style-pick-ov')?.remove();
+      if (typeof _showEstimateStylePicker !== 'function') return null;
+      const testClient = { id: 99993, name: 'Logan Sample', addr: '2015 SW Randolph Ave, Topeka, KS 66604' };
+      _showEstimateStylePicker(testClient, null);
+      const ov = document.getElementById('_style-pick-ov');
+      const html = ov ? ov.innerHTML : '';
+      ov?.remove();
+      return {
+        hasClientName: html.includes('Logan Sample'),
+        hasChangeLater: html.includes('you can change this later'),
+        hasTitle: html.includes('How are you billing this job'),
+      };
+    });
+    if (result !== null) {
+      expect(result.hasClientName).toBe(false);
+      expect(result.hasChangeLater).toBe(false);
+      expect(result.hasTitle).toBe(true);
+    }
+  });
+
   test('no console errors from RRP gate', async () => {
     assertNoErrors(page, 'RRP gate modal');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SIGN.HTML — contact footer, collapsible lists, approval stamp, maps/call
+// ════════════════════════════════════════════════════════════════════════════
+test.describe('sign.html — HCP-beating proposal UX features', () => {
+  const SIGN_PROPOSAL = Object.assign({}, MOCK_PROPOSAL, {
+    businessPhone: '316-555-0100',
+    notifyEmail: 'zach@zachpropainting.com',
+    bwebsite: 'zachpropainting.com',
+    baddr: '500 N Poplar St, Wichita KS 67214',
+    proposalHtml: '<p>Scope of work</p><ol><li>Prep walls</li><li>Tape trim</li><li>Prime surfaces</li><li>First coat</li><li>Second coat</li><li>Touch-ups</li><li>Final walkthrough</li></ol>',
+  });
+
+  async function mountSignPage(page, propData) {
+    page._consoleErrors = [];
+    page.on('console', msg => {
+      if (msg.type() === 'error') {
+        const t = msg.text();
+        if (t.includes('favicon') || t.includes('net::ERR') || t.includes('Failed to load resource') ||
+            t.includes('supabase') || t.includes('cdn.jsdelivr') || t.includes('fonts.') || t.includes('apple-mapkit') || t.includes('js.stripe.com')) return;
+        page._consoleErrors.push(t);
+      }
+    });
+    page.on('pageerror', err => {
+      if (page._consoleErrors) page._consoleErrors.push('PAGE ERROR: ' + err.message);
+    });
+    await page.route('**/*', async route => {
+      const url = route.request().url();
+      if (url.startsWith('http://localhost') || url.startsWith('data:')) return route.continue();
+      if (url.includes('cdn.jsdelivr.net') && url.includes('supabase')) {
+        const shim = `(function(g){const noop=d=>Promise.resolve({data:d,error:null});function qb(){const q={select:()=>q,insert:()=>q,upsert:()=>q,update:()=>q,delete:()=>q,eq:()=>q,neq:()=>q,not:()=>q,or:()=>q,filter:()=>q,order:()=>q,limit:()=>q,single:()=>noop(null),maybeSingle:()=>noop(null),then:(cb)=>noop([]).then(cb),catch:(cb)=>Promise.resolve([])};return q;}const propJson=JSON.stringify(window.__mockPropData||{});g.supabase={createClient:function(u,k){return{auth:{getUser:()=>noop({user:null}),getSession:()=>noop({session:null}),signInWithPassword:()=>noop(null),signOut:()=>noop(null),onAuthStateChange:(cb)=>({data:{subscription:{unsubscribe:()=>{}}}}),startAutoRefresh:()=>{},stopAutoRefresh:()=>{}},from:(t)=>qb(),storage:{from:(b)=>({upload:(p,d,o)=>noop({path:p}),download:(p)=>noop({text:function(){return Promise.resolve(propJson);},type:'application/json',size:propJson.length}),getPublicUrl:(p)=>({data:{publicUrl:''}}),remove:(ps)=>noop(null),list:(pr)=>noop([])})},functions:{invoke:(n,o)=>noop({ok:true})},channel:(n)=>({on:function(){return this;},subscribe:function(cb){if(cb)cb('SUBSCRIBED');return this;},unsubscribe:()=>{}}),removeChannel:()=>{}};}};if(typeof module!=='undefined')module.exports=g.supabase;})(typeof window!=='undefined'?window:global);`;
+        return route.fulfill({ status: 200, contentType: 'application/javascript', body: shim });
+      }
+      if (url.includes('fonts.googleapis.com') || url.includes('fonts.gstatic.com')) return route.fulfill({ status: 200, contentType: 'text/css', body: '' });
+      if (url.includes('favicon') || url.includes('cdn.apple-mapkit') || url.includes('js.stripe.com')) return route.fulfill({ status: 200, contentType: 'text/plain', body: '' });
+      if (url.includes('/functions/v1/log-proposal-view')) return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+      if (url.includes('/rest/v1/signed_proposals')) return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      if (url.includes('.supabase.co')) return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      return route.fulfill({ status: 200, contentType: 'text/plain', body: '' });
+    });
+    await page.addInitScript(data => { window.__mockPropData = data; }, propData);
+    await page.goto(`/sign.html?key=proposals/${propData.contractorUserId}/${propData.id}_${propData.signingToken}.json`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(800);
+  }
+
+  test('contractor contact footer renders with phone, email, website', async ({ page }) => {
+    await mountSignPage(page, SIGN_PROPOSAL);
+    const result = await page.evaluate(() => {
+      const footer = document.getElementById('prop-contact-footer');
+      if (!footer) return null;
+      const html = footer.innerHTML;
+      return {
+        hasPhone: html.includes('tel:3165550100'),
+        hasEmail: html.includes('mailto:zach@zachpropainting.com'),
+        hasWebsite: html.includes('zachpropainting.com'),
+        hasLabel: html.toUpperCase().includes('CONTACT'),
+      };
+    });
+    if (result !== null) {
+      expect(result.hasPhone).toBe(true);
+      expect(result.hasEmail).toBe(true);
+      expect(result.hasWebsite).toBe(true);
+      expect(result.hasLabel).toBe(true);
+    }
+    assertNoErrors(page, 'contact footer');
+  });
+
+  test('collapsible list — 7-item ol shows only 4 items initially', async ({ page }) => {
+    await mountSignPage(page, SIGN_PROPOSAL);
+    const result = await page.evaluate(() => {
+      const ol = document.querySelector('#prop-html ol');
+      if (!ol) return null;
+      const all = ol.querySelectorAll('li');
+      const visible = Array.from(all).filter(li => li.style.display !== 'none');
+      const hidden = Array.from(all).filter(li => li.style.display === 'none');
+      const btn = document.querySelector('button[data-collapse-ol]');
+      return {
+        totalItems: all.length,
+        visibleCount: visible.length,
+        hiddenCount: hidden.length,
+        hasBtnWithCount: btn ? btn.textContent.includes('3') : false,
+      };
+    });
+    if (result !== null) {
+      expect(result.totalItems).toBe(7);
+      expect(result.visibleCount).toBe(4);
+      expect(result.hiddenCount).toBe(3);
+      expect(result.hasBtnWithCount).toBe(true);
+    }
+    assertNoErrors(page, 'collapsible list initial state');
+  });
+
+  test('collapsible list — clicking expand shows all items and changes button text', async ({ page }) => {
+    await mountSignPage(page, SIGN_PROPOSAL);
+    await page.click('button[data-collapse-ol]');
+    await page.waitForTimeout(100);
+    const result = await page.evaluate(() => {
+      const ol = document.querySelector('#prop-html ol');
+      if (!ol) return null;
+      const all = ol.querySelectorAll('li');
+      const visible = Array.from(all).filter(li => li.style.display !== 'none');
+      const btn = document.querySelector('button[data-collapse-ol]');
+      return {
+        allVisible: visible.length === all.length,
+        btnSaysLess: btn ? btn.textContent.toLowerCase().includes('less') : false,
+      };
+    });
+    if (result !== null) {
+      expect(result.allVisible).toBe(true);
+      expect(result.btnSaysLess).toBe(true);
+    }
+    assertNoErrors(page, 'collapsible list expanded');
+  });
+
+  test('done-stamp renders with approval text when showDone is called', async ({ page }) => {
+    await mountSignPage(page, SIGN_PROPOSAL);
+    await page.evaluate(() => {
+      if (typeof showDone === 'function') showDone('cash');
+    });
+    await page.waitForTimeout(200);
+    const result = await page.evaluate(() => {
+      const stamp = document.getElementById('done-stamp');
+      if (!stamp) return null;
+      return {
+        visible: stamp.style.display !== 'none',
+        hasSigned: stamp.textContent.toLowerCase().includes('signed'),
+        hasApproved: stamp.textContent.toLowerCase().includes('approved'),
+      };
+    });
+    if (result !== null) {
+      expect(result.visible).toBe(true);
+      expect(result.hasSigned).toBe(true);
+      expect(result.hasApproved).toBe(true);
+    }
+    assertNoErrors(page, 'approval stamp');
+  });
+
+  test('done-rows includes Google Maps link for client address', async ({ page }) => {
+    await mountSignPage(page, SIGN_PROPOSAL);
+    await page.evaluate(() => {
+      if (typeof showDone === 'function') showDone('cash');
+    });
+    await page.waitForTimeout(200);
+    const result = await page.evaluate(() => {
+      const rows = document.getElementById('done-rows');
+      if (!rows) return null;
+      const html = rows.innerHTML;
+      return {
+        hasMapsLink: html.includes('maps.google.com'),
+        hasEncodedAddr: html.includes('123%20Main'),
+      };
+    });
+    if (result !== null) {
+      expect(result.hasMapsLink).toBe(true);
+    }
+    assertNoErrors(page, 'done maps link');
+  });
+
+  test('done-rows includes call contractor link', async ({ page }) => {
+    await mountSignPage(page, SIGN_PROPOSAL);
+    await page.evaluate(() => {
+      if (typeof showDone === 'function') showDone('cash');
+    });
+    await page.waitForTimeout(200);
+    const result = await page.evaluate(() => {
+      const rows = document.getElementById('done-rows');
+      if (!rows) return null;
+      const html = rows.innerHTML;
+      return {
+        hasTelLink: html.includes('tel:3165550100'),
+        hasCallText: html.includes('Call'),
+      };
+    });
+    if (result !== null) {
+      expect(result.hasTelLink).toBe(true);
+      expect(result.hasCallText).toBe(true);
+    }
+    assertNoErrors(page, 'done call button');
+  });
+
+  test('no console errors during sign.html proposal UX features', async ({ page }) => {
+    await mountSignPage(page, SIGN_PROPOSAL);
+    assertNoErrors(page, 'sign.html HCP features');
+  });
+
+  // ── Terms accordion tests ──────────────────────────────────────────────────
+  const TERMS_PROPOSAL = Object.assign({}, MOCK_PROPOSAL, {
+    proposalHtml: [
+      // Top layout labels — uppercase + bold like real templates. Must NOT get toggles.
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em">Service Proposal</div>',
+      '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8">Customer</div>',
+      '<div>Alice Smith</div>',
+      '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8">Project</div>',
+      '<div>Painting service</div>',
+      '<div style="padding:20px 24px;border-top:3px solid #1a365d;background:#f8fafc">',
+        '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Payment Terms</div>',
+        '<div style="font-size:11.5px;color:#2d3748;line-height:2">',
+          '<div>1. Deposit: 25% ($500) due before work begins.</div>',
+          '<div>2. Balance: Remainder due upon completion.</div>',
+        '</div>',
+      '</div>',
+      '<div style="padding:18px 24px;border-top:1px solid #e2e8f0;background:#f8fafc">',
+        '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div>',
+        '<div style="font-size:10.5px;color:#4a5568;line-height:1.85" id="tc-body">',
+          '<p>1. Payment: Full deposit required.</p>',
+          '<p>2. Cancellation: 3 business days.</p>',
+          '<p>3. Change Orders: Written only.</p>',
+        '</div>',
+      '</div>',
+      '<div style="padding:16px 24px;border-top:2px dashed #94a3b8;background:#fff" id="cancel-form">',
+        '<div style="font-size:9px;font-weight:700;text-transform:uppercase;">✂ Detach &amp; Retain — Notice of Cancellation</div>',
+        '<div>You may cancel within 3 business days.</div>',
+      '</div>',
+    ].join(''),
+  });
+
+  // Generic-estimate template — ONLY a Payment Terms section, no T&C header.
+  // The accordion must give its body a standalone "Terms & Conditions" toggle.
+  const GENERIC_TERMS_PROPOSAL = Object.assign({}, MOCK_PROPOSAL, {
+    proposalHtml: [
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em">Service Proposal</div>',
+      '<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc">',
+        '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Payment Terms</div>',
+        '<div style="font-size:11px;color:#2d3748;line-height:2" id="generic-pt-body">',
+          '<div>1. <strong>Deposit:</strong> 25% due before work begins.</div>',
+          '<div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within 3 business days.</div>',
+          '<div>3. <strong>Change Orders:</strong> Written change order required.</div>',
+        '</div>',
+      '</div>',
+    ].join(''),
+  });
+
+  test('generic proposal (Payment Terms only) gets a standalone Terms & Conditions toggle', async ({ page }) => {
+    await mountSignPage(page, GENERIC_TERMS_PROPOSAL);
+    const result = await page.evaluate(() => {
+      const ph = document.getElementById('prop-html');
+      if (!ph) return null;
+      const ptBody = ph.querySelector('#generic-pt-body');
+      const btns = Array.from(ph.querySelectorAll('button[data-terms-toggle]'));
+      const tcBtn = btns.find(b => b.textContent.includes('Terms & Conditions'));
+      return {
+        ptBodyHidden: ptBody ? ptBody.style.display === 'none' : false,
+        hasTcBtn: !!tcBtn,
+        toggleCount: btns.length,
+      };
+    });
+    if (result !== null) {
+      expect(result.ptBodyHidden).toBe(true);
+      expect(result.hasTcBtn).toBe(true);
+      expect(result.toggleCount).toBe(1);
+    }
+    assertNoErrors(page, 'generic terms accordion');
+  });
+
+  test('generic proposal toggle expands the payment terms body', async ({ page }) => {
+    await mountSignPage(page, GENERIC_TERMS_PROPOSAL);
+    await page.evaluate(() => {
+      const ph = document.getElementById('prop-html');
+      if (!ph) return;
+      const btn = Array.from(ph.querySelectorAll('button[data-terms-toggle]'))
+        .find(b => b.textContent.includes('Terms & Conditions'));
+      if (btn) btn.click();
+    });
+    await page.waitForTimeout(100);
+    const result = await page.evaluate(() => {
+      const ph = document.getElementById('prop-html');
+      if (!ph) return null;
+      const ptBody = ph.querySelector('#generic-pt-body');
+      return { ptBodyVisible: ptBody ? ptBody.style.display !== 'none' : false };
+    });
+    if (result !== null) expect(result.ptBodyVisible).toBe(true);
+    assertNoErrors(page, 'generic terms accordion expand');
+  });
+
+  test('payment terms body is hidden initially — merged under T&C toggle', async ({ page }) => {
+    await mountSignPage(page, TERMS_PROPOSAL);
+    const result = await page.evaluate(() => {
+      const ph = document.getElementById('prop-html');
+      if (!ph) return null;
+      // Payment Terms body is hidden and merged under the "Terms & Conditions" button
+      const bodies = Array.from(ph.querySelectorAll('[data-terms-body]'));
+      const btns = Array.from(ph.querySelectorAll('button[data-terms-toggle]'));
+      const tcBtn = btns.find(b => b.textContent.includes('Terms & Conditions'));
+      return { allBodiesHidden: bodies.every(b => b.style.display === 'none'), hasTcBtn: !!tcBtn };
+    });
+    if (result !== null) {
+      expect(result.allBodiesHidden).toBe(true);
+      expect(result.hasTcBtn).toBe(true);
+    }
+    assertNoErrors(page, 'terms accordion payment hidden');
+  });
+
+  test('terms & conditions body is hidden initially', async ({ page }) => {
+    await mountSignPage(page, TERMS_PROPOSAL);
+    const result = await page.evaluate(() => {
+      const ph = document.getElementById('prop-html');
+      if (!ph) return null;
+      // T&C body has id="tc-body" in the mock; button is the combined "Terms & Conditions" toggle
+      const tcBody = ph.querySelector('#tc-body');
+      const btns = Array.from(ph.querySelectorAll('button[data-terms-toggle]'));
+      const tcBtn = btns.find(b => b.textContent.includes('Terms & Conditions'));
+      return {
+        tcBodyHidden: tcBody ? tcBody.style.display === 'none' : false,
+        hasViewBtn: !!tcBtn,
+        btnText: tcBtn ? tcBtn.textContent : '',
+      };
+    });
+    if (result !== null) {
+      expect(result.tcBodyHidden).toBe(true);
+      expect(result.hasViewBtn).toBe(true);
+      expect(result.btnText).toContain('Terms & Conditions');
+    }
+    assertNoErrors(page, 'terms accordion hidden');
+  });
+
+  test('notice of cancellation form is hidden initially', async ({ page }) => {
+    await mountSignPage(page, TERMS_PROPOSAL);
+    const result = await page.evaluate(() => {
+      const ph = document.getElementById('prop-html');
+      if (!ph) return null;
+      let cancelFormHidden = false;
+      ph.querySelectorAll('div').forEach(div => {
+        const fc = div.firstElementChild;
+        if (fc && fc.textContent.includes('✂')) cancelFormHidden = div.style.display === 'none';
+      });
+      const btns = Array.from(ph.querySelectorAll('button[data-terms-toggle]'));
+      const cancelBtn = btns.find(b => b.textContent.toLowerCase().includes('cancellation'));
+      return { cancelFormHidden, hasCancelBtn: !!cancelBtn };
+    });
+    if (result !== null) {
+      expect(result.cancelFormHidden).toBe(true);
+      expect(result.hasCancelBtn).toBe(true);
+    }
+    assertNoErrors(page, 'cancel form hidden');
+  });
+
+  test('clicking view terms button expands the body', async ({ page }) => {
+    await mountSignPage(page, TERMS_PROPOSAL);
+    await page.evaluate(() => {
+      const ph = document.getElementById('prop-html');
+      if (!ph) return;
+      const btn = Array.from(ph.querySelectorAll('button[data-terms-toggle]'))
+        .find(b => b.textContent.includes('Terms & Conditions'));
+      if (btn) btn.click();
+    });
+    await page.waitForTimeout(100);
+    const result = await page.evaluate(() => {
+      const ph = document.getElementById('prop-html');
+      if (!ph) return null;
+      const tcBody = ph.querySelector('#tc-body');
+      return { tcBodyVisible: tcBody ? tcBody.style.display !== 'none' : false };
+    });
+    if (result !== null) expect(result.tcBodyVisible).toBe(true);
+    assertNoErrors(page, 'terms accordion expand');
+  });
+
+  test('epaRequired proposal shows EPA notice and Document 1 of 2 label', async ({ page }) => {
+    await mountSignPage(page, Object.assign({}, TERMS_PROPOSAL, { epaRequired: true, yearBuilt: 1965 }));
+    const result = await page.evaluate(() => {
+      const sec = document.getElementById('epa-section');
+      const lbl = document.getElementById('epa-doc1-label');
+      if (!sec || !lbl) return null;
+      return {
+        epaSectionVisible: sec.style.display !== 'none',
+        doc1LabelVisible: lbl.style.display !== 'none',
+        mentionsDoc2: sec.textContent.includes('Document 2 of 2'),
+      };
+    });
+    if (result !== null) {
+      expect(result.epaSectionVisible).toBe(true);
+      expect(result.doc1LabelVisible).toBe(true);
+      expect(result.mentionsDoc2).toBe(true);
+    }
+    assertNoErrors(page, 'epa document labels');
+  });
+
+  test('non-EPA proposal hides EPA notice and Document 1 of 2 label', async ({ page }) => {
+    await mountSignPage(page, TERMS_PROPOSAL);
+    const result = await page.evaluate(() => {
+      const sec = document.getElementById('epa-section');
+      const lbl = document.getElementById('epa-doc1-label');
+      if (!sec || !lbl) return null;
+      return {
+        epaSectionHidden: sec.style.display === 'none' || getComputedStyle(sec).display === 'none',
+        doc1LabelHidden: lbl.style.display === 'none' || getComputedStyle(lbl).display === 'none',
+      };
+    });
+    if (result !== null) {
+      expect(result.epaSectionHidden).toBe(true);
+      expect(result.doc1LabelHidden).toBe(true);
+    }
+    assertNoErrors(page, 'epa hidden when not required');
+  });
+
+  test('approveAndSign routes to EPA review page (pg-epa) when epaRequired', async ({ page }) => {
+    await mountSignPage(page, Object.assign({}, TERMS_PROPOSAL, { epaRequired: true, yearBuilt: 1965 }));
+    const result = await page.evaluate(() => {
+      if (typeof approveAndSign !== 'function') return null;
+      approveAndSign();
+      const epa = document.getElementById('pg-epa');
+      const sign = document.getElementById('pg-sign');
+      const signAction = document.getElementById('pg-sign-action');
+      return {
+        epaVisible: epa ? epa.style.display !== 'none' : false,
+        signHidden: sign ? sign.style.display === 'none' : true,
+        signActionHidden: signAction ? signAction.style.display === 'none' : true,
+      };
+    });
+    if (result !== null) {
+      expect(result.epaVisible).toBe(true);
+      expect(result.signActionHidden).toBe(true);
+    }
+    assertNoErrors(page, 'epa review routing');
+  });
+
+  test('EPA review page shows Document 2 of 2 header and Continue button', async ({ page }) => {
+    await mountSignPage(page, Object.assign({}, TERMS_PROPOSAL, {
+      epaRequired: true, yearBuilt: 1965,
+      rrpFirmCertNum: 'NAT-F12345', rrpRenovatorName: 'Jane Doe',
+      clientAddr: '123 Old House Ln, Wichita KS 66604',
+    }));
+    await page.evaluate(() => { if (typeof approveAndSign === 'function') approveAndSign(); });
+    await page.waitForTimeout(100);
+    const result = await page.evaluate(() => {
+      const epa = document.getElementById('pg-epa');
+      if (!epa || epa.style.display === 'none') return null;
+      const hasDoc2 = epa.textContent.includes('Document 2 of 2');
+      const hasEpaTitle = epa.textContent.includes('EPA Pre-Renovation Disclosure');
+      const hasAddress = document.getElementById('epa-prop-address')?.textContent.includes('123 Old House');
+      const hasCertInfo = document.getElementById('epa-cert-info')?.textContent.includes('NAT-F12345');
+      const continueBtn = Array.from(epa.querySelectorAll('button')).find(b => b.textContent.includes('Sign Both Documents'));
+      return { hasDoc2, hasEpaTitle, hasAddress, hasCertInfo, hasContinueBtn: !!continueBtn };
+    });
+    if (result !== null) {
+      expect(result.hasDoc2).toBe(true);
+      expect(result.hasEpaTitle).toBe(true);
+      expect(result.hasAddress).toBe(true);
+      expect(result.hasCertInfo).toBe(true);
+      expect(result.hasContinueBtn).toBe(true);
+    }
+    assertNoErrors(page, 'epa review page content');
+  });
+
+  test('_continueFromEpaReview routes to sign pad for non-painting EPA proposal', async ({ page }) => {
+    await mountSignPage(page, Object.assign({}, TERMS_PROPOSAL, { epaRequired: true, yearBuilt: 1965, trade: 'roofing' }));
+    const result = await page.evaluate(() => {
+      if (typeof approveAndSign !== 'function' || typeof _continueFromEpaReview !== 'function') return null;
+      approveAndSign(); // goes to pg-epa
+      _continueFromEpaReview(); // should go to sign pad
+      const signAction = document.getElementById('pg-sign-action');
+      const epa = document.getElementById('pg-epa');
+      return {
+        signActionVisible: signAction ? signAction.style.display !== 'none' : false,
+        epaHidden: epa ? epa.style.display === 'none' : true,
+      };
+    });
+    if (result !== null) {
+      expect(result.signActionVisible).toBe(true);
+      expect(result.epaHidden).toBe(true);
+    }
+    assertNoErrors(page, 'epa review continue to sign');
+  });
+
+  test('UETA checkbox text mentions both documents for EPA proposal', async ({ page }) => {
+    await mountSignPage(page, Object.assign({}, TERMS_PROPOSAL, { epaRequired: true, yearBuilt: 1965 }));
+    const result = await page.evaluate(() => {
+      const uetaBody = document.querySelector('.sig-checkbox-body');
+      if (!uetaBody) return null;
+      return {
+        mentionsDoc1: uetaBody.textContent.includes('Document 1 of 2'),
+        mentionsDoc2: uetaBody.textContent.includes('Document 2 of 2'),
+        mentionsEpa: uetaBody.textContent.toLowerCase().includes('epa'),
+      };
+    });
+    if (result !== null) {
+      expect(result.mentionsDoc1).toBe(true);
+      expect(result.mentionsDoc2).toBe(true);
+      expect(result.mentionsEpa).toBe(true);
+    }
+    assertNoErrors(page, 'epa ueta text');
+  });
+
+  test('showDone goes directly to pg-done for EPA proposal (no intermediate EPA page)', async ({ page }) => {
+    await mountSignPage(page, Object.assign({}, TERMS_PROPOSAL, { epaRequired: true, yearBuilt: 1965 }));
+    await page.evaluate(() => { if (typeof showDone === 'function') showDone('cash'); });
+    await page.waitForTimeout(200);
+    const result = await page.evaluate(() => {
+      const done = document.getElementById('pg-done');
+      const epa = document.getElementById('pg-epa');
+      return {
+        doneVisible: done ? done.style.display !== 'none' : false,
+        epaHidden: epa ? epa.style.display === 'none' : true,
+      };
+    });
+    if (result !== null) {
+      expect(result.doneVisible).toBe(true);
+      expect(result.epaHidden).toBe(true);
+    }
+    assertNoErrors(page, 'epa showDone direct');
+  });
+
+  test('submitEpaAck removed — function no longer exists', async ({ page }) => {
+    await mountSignPage(page, TERMS_PROPOSAL);
+    const exists = await page.evaluate(() => typeof submitEpaAck === 'function');
+    expect(exists).toBe(false);
+    assertNoErrors(page, 'submitEpaAck removed');
+  });
+
+  test('collapsed terms become visible in print mode (PDF download)', async ({ page }) => {
+    await mountSignPage(page, TERMS_PROPOSAL);
+    await page.emulateMedia({ media: 'print' });
+    const result = await page.evaluate(() => {
+      const bodies = Array.from(document.querySelectorAll('#prop-html [data-terms-body]'));
+      if (!bodies.length) return null;
+      return { allVisible: bodies.every(b => getComputedStyle(b).display !== 'none') };
+    });
+    await page.emulateMedia({ media: 'screen' });
+    if (result !== null) expect(result.allVisible).toBe(true);
+    assertNoErrors(page, 'terms print visibility');
+  });
+
+  test('top layout labels (Service Proposal, Customer, Project) get NO toggle button', async ({ page }) => {
+    await mountSignPage(page, TERMS_PROPOSAL);
+    const result = await page.evaluate(() => {
+      const ph = document.getElementById('prop-html');
+      if (!ph) return null;
+      // No toggle button should sit next to any layout/header label
+      const btns = Array.from(ph.querySelectorAll('button[data-terms-toggle]'));
+      // Layout-only labels (not legal sections) must never get a toggle button
+      const layoutLabels = ['Service Proposal', 'Customer', 'Project'];
+      let labelWithToggle = null;
+      ph.querySelectorAll('div').forEach(d => {
+        if (d.children.length) return;
+        const t = d.textContent.trim();
+        if (layoutLabels.includes(t)) {
+          const sib = d.nextElementSibling;
+          if (sib && sib.dataset && sib.dataset.termsToggle === '1') labelWithToggle = t;
+        }
+      });
+      // Two legal toggles: "Terms & Conditions" (combined) + "View notice of cancellation"
+      return {
+        labelWithToggle,
+        toggleCount: btns.length,
+        toggleTexts: btns.map(b => b.textContent),
+      };
+    });
+    if (result !== null) {
+      expect(result.labelWithToggle).toBeNull();
+      expect(result.toggleCount).toBe(2);
+    }
+    assertNoErrors(page, 'terms accordion no false toggles');
   });
 });
 

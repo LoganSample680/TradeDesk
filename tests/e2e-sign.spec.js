@@ -787,30 +787,42 @@ test.describe('sign.html — EPA RRP lead paint disclosure (Document 2 of 2)', (
     expect(certText).toContain('NAT-F12345');
   });
 
-  test('submitEpaAck — requires signature or typed name', async () => {
-    await page.evaluate(() => {
-      if (typeof submitEpaAck === 'function') submitEpaAck();
-    });
-    await page.waitForTimeout(200);
-    const errVisible = await page.evaluate(() => {
-      const el = document.getElementById('epa-err');
-      return el ? el.style.display !== 'none' : false;
-    });
-    expect(errVisible).toBe(true);
+  test('submitEpaAck removed — function no longer exists (unified signing flow)', async () => {
+    const exists = await page.evaluate(() => typeof submitEpaAck === 'function');
+    expect(exists).toBe(false);
   });
 
-  test('submitEpaAck — proceeds to pg-done after typed name provided', async () => {
+  test('_continueFromEpaReview — navigates from EPA review page to sign pad', async () => {
     await page.evaluate(() => {
-      const nameEl = document.getElementById('epa-typed-name');
-      if (nameEl) { nameEl.value = 'Alice Smith'; if (typeof updateEpaSigPreview === 'function') updateEpaSigPreview(); }
-      if (typeof submitEpaAck === 'function') submitEpaAck();
+      if (typeof showEpaPage === 'function') showEpaPage(); // ensure pg-epa shown first
     });
-    await page.waitForTimeout(500);
-    const onDone = await page.evaluate(() => {
-      const pg = document.getElementById('pg-done');
+    await page.waitForTimeout(200);
+    await page.evaluate(() => {
+      if (typeof _continueFromEpaReview === 'function') _continueFromEpaReview();
+    });
+    await page.waitForTimeout(300);
+    const onSignAction = await page.evaluate(() => {
+      const pg = document.getElementById('pg-sign-action');
       return pg ? pg.style.display !== 'none' : false;
     });
-    expect(onDone).toBe(true);
+    expect(onSignAction).toBe(true);
+  });
+
+  test('showDone — routes directly to pg-done for EPA proposals (no EPA page redirect)', async () => {
+    await page.evaluate(() => {
+      if (typeof showDone === 'function') showDone('cash');
+    });
+    await page.waitForTimeout(300);
+    const result = await page.evaluate(() => {
+      const done = document.getElementById('pg-done');
+      const epa = document.getElementById('pg-epa');
+      return {
+        doneVisible: done ? done.style.display !== 'none' : false,
+        epaHidden: epa ? epa.style.display === 'none' : true,
+      };
+    });
+    expect(result.doneVisible).toBe(true);
+    expect(result.epaHidden).toBe(true);
   });
 
   test('assertNoErrors — no console errors introduced by EPA RRP flow', async () => {
