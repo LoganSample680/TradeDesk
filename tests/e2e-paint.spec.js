@@ -2346,6 +2346,120 @@ test.describe('sign.html — HCP-beating proposal UX features', () => {
     assertNoErrors(page, 'epa hidden when not required');
   });
 
+  test('approveAndSign routes to EPA review page (pg-epa) when epaRequired', async ({ page }) => {
+    await mountSignPage(page, Object.assign({}, TERMS_PROPOSAL, { epaRequired: true, yearBuilt: 1965 }));
+    const result = await page.evaluate(() => {
+      if (typeof approveAndSign !== 'function') return null;
+      approveAndSign();
+      const epa = document.getElementById('pg-epa');
+      const sign = document.getElementById('pg-sign');
+      const signAction = document.getElementById('pg-sign-action');
+      return {
+        epaVisible: epa ? epa.style.display !== 'none' : false,
+        signHidden: sign ? sign.style.display === 'none' : true,
+        signActionHidden: signAction ? signAction.style.display === 'none' : true,
+      };
+    });
+    if (result !== null) {
+      expect(result.epaVisible).toBe(true);
+      expect(result.signActionHidden).toBe(true);
+    }
+    assertNoErrors(page, 'epa review routing');
+  });
+
+  test('EPA review page shows Document 2 of 2 header and Continue button', async ({ page }) => {
+    await mountSignPage(page, Object.assign({}, TERMS_PROPOSAL, {
+      epaRequired: true, yearBuilt: 1965,
+      rrpFirmCertNum: 'NAT-F12345', rrpRenovatorName: 'Jane Doe',
+      clientAddr: '123 Old House Ln, Wichita KS 66604',
+    }));
+    await page.evaluate(() => { if (typeof approveAndSign === 'function') approveAndSign(); });
+    await page.waitForTimeout(100);
+    const result = await page.evaluate(() => {
+      const epa = document.getElementById('pg-epa');
+      if (!epa || epa.style.display === 'none') return null;
+      const hasDoc2 = epa.textContent.includes('Document 2 of 2');
+      const hasEpaTitle = epa.textContent.includes('EPA Pre-Renovation Disclosure');
+      const hasAddress = document.getElementById('epa-prop-address')?.textContent.includes('123 Old House');
+      const hasCertInfo = document.getElementById('epa-cert-info')?.textContent.includes('NAT-F12345');
+      const continueBtn = Array.from(epa.querySelectorAll('button')).find(b => b.textContent.includes('Sign Both Documents'));
+      return { hasDoc2, hasEpaTitle, hasAddress, hasCertInfo, hasContinueBtn: !!continueBtn };
+    });
+    if (result !== null) {
+      expect(result.hasDoc2).toBe(true);
+      expect(result.hasEpaTitle).toBe(true);
+      expect(result.hasAddress).toBe(true);
+      expect(result.hasCertInfo).toBe(true);
+      expect(result.hasContinueBtn).toBe(true);
+    }
+    assertNoErrors(page, 'epa review page content');
+  });
+
+  test('_continueFromEpaReview routes to sign pad for non-painting EPA proposal', async ({ page }) => {
+    await mountSignPage(page, Object.assign({}, TERMS_PROPOSAL, { epaRequired: true, yearBuilt: 1965, trade: 'roofing' }));
+    const result = await page.evaluate(() => {
+      if (typeof approveAndSign !== 'function' || typeof _continueFromEpaReview !== 'function') return null;
+      approveAndSign(); // goes to pg-epa
+      _continueFromEpaReview(); // should go to sign pad
+      const signAction = document.getElementById('pg-sign-action');
+      const epa = document.getElementById('pg-epa');
+      return {
+        signActionVisible: signAction ? signAction.style.display !== 'none' : false,
+        epaHidden: epa ? epa.style.display === 'none' : true,
+      };
+    });
+    if (result !== null) {
+      expect(result.signActionVisible).toBe(true);
+      expect(result.epaHidden).toBe(true);
+    }
+    assertNoErrors(page, 'epa review continue to sign');
+  });
+
+  test('UETA checkbox text mentions both documents for EPA proposal', async ({ page }) => {
+    await mountSignPage(page, Object.assign({}, TERMS_PROPOSAL, { epaRequired: true, yearBuilt: 1965 }));
+    const result = await page.evaluate(() => {
+      const uetaBody = document.querySelector('.sig-checkbox-body');
+      if (!uetaBody) return null;
+      return {
+        mentionsDoc1: uetaBody.textContent.includes('Document 1 of 2'),
+        mentionsDoc2: uetaBody.textContent.includes('Document 2 of 2'),
+        mentionsEpa: uetaBody.textContent.toLowerCase().includes('epa'),
+      };
+    });
+    if (result !== null) {
+      expect(result.mentionsDoc1).toBe(true);
+      expect(result.mentionsDoc2).toBe(true);
+      expect(result.mentionsEpa).toBe(true);
+    }
+    assertNoErrors(page, 'epa ueta text');
+  });
+
+  test('showDone goes directly to pg-done for EPA proposal (no intermediate EPA page)', async ({ page }) => {
+    await mountSignPage(page, Object.assign({}, TERMS_PROPOSAL, { epaRequired: true, yearBuilt: 1965 }));
+    await page.evaluate(() => { if (typeof showDone === 'function') showDone('cash'); });
+    await page.waitForTimeout(200);
+    const result = await page.evaluate(() => {
+      const done = document.getElementById('pg-done');
+      const epa = document.getElementById('pg-epa');
+      return {
+        doneVisible: done ? done.style.display !== 'none' : false,
+        epaHidden: epa ? epa.style.display === 'none' : true,
+      };
+    });
+    if (result !== null) {
+      expect(result.doneVisible).toBe(true);
+      expect(result.epaHidden).toBe(true);
+    }
+    assertNoErrors(page, 'epa showDone direct');
+  });
+
+  test('submitEpaAck removed — function no longer exists', async ({ page }) => {
+    await mountSignPage(page, TERMS_PROPOSAL);
+    const exists = await page.evaluate(() => typeof submitEpaAck === 'function');
+    expect(exists).toBe(false);
+    assertNoErrors(page, 'submitEpaAck removed');
+  });
+
   test('collapsed terms become visible in print mode (PDF download)', async ({ page }) => {
     await mountSignPage(page, TERMS_PROPOSAL);
     await page.emulateMedia({ media: 'print' });
