@@ -1,0 +1,14 @@
+[Unit]
+Description=TradeDesk Property Proxy (Zillow scraper on :3001)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/node /root/TradeDesk/scripts/property-proxy.js
+Restart=always
+RestartSec=5
+Environment=PORT=3001
+
+[Install]
+WantedBy=multi-user.target

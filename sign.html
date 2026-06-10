@@ -188,6 +188,8 @@ input[type=text]:focus{border-color:var(--denim)}
 
 @media print{
   .topbar,#sticky-bar,#float-call,.step-dots,#portfolio-offer-card,.sig-pad,.btn,.btn-sec,button,.pdf-btn{display:none!important}
+  /* Accordion-collapsed terms must always appear in the printed/PDF contract */
+  #prop-html [data-terms-hdr],#prop-html [data-terms-body]{display:block!important}
   .wrap{padding:8px;max-width:100%}
   body{background:#fff}
   .card{box-shadow:none;border:1px solid #ddd;break-inside:avoid;margin-bottom:10px}
@@ -456,6 +458,7 @@ input[type=text]:focus{border-color:var(--denim)}
       <div class="pg-status-icon" id="done-icon">✅</div>
       <h2 id="done-title">You're all set!</h2>
       <p id="done-msg">Your proposal has been signed. The contractor will be in touch to confirm your start date.</p>
+      <div id="done-stamp" style="display:none;text-align:center;margin-bottom:12px"></div>
       <div class="done-box"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--green-mid);margin-bottom:10px">Confirmation</div><div id="done-rows"></div></div>
       <a id="done-hub-cta" href="#" style="display:none;margin-top:20px;padding:14px;background:var(--ink);border-radius:12px;font-size:14px;font-weight:700;color:#fff;text-align:center;text-decoration:none">View your project hub →</a>
     </div>
@@ -642,11 +645,15 @@ async function init(){
       document.getElementById('done-rows').innerHTML=
         '<div class="row"><span class="rl">Confirmation</span><span class="rv" style="font-weight:700;color:var(--green)">'+confNum+'</span></div>'+
         '<div class="row"><span class="rl">Client</span><span class="rv">'+(_prop.clientName||_sigRecord?.client_signed_name||'')+'</span></div>'+
-        (_prop.clientAddr?'<div class="row"><span class="rl">Address</span><span class="rv" style="text-align:right;max-width:220px">'+_prop.clientAddr+'</span></div>':'')+
+        (_prop.clientAddr?'<div class="row"><span class="rl">Address</span><span class="rv" style="text-align:right;max-width:220px">'+_prop.clientAddr+'</span></div>'+
+          '<div class="row"><span class="rl">Directions</span><span class="rv"><a href="https://maps.google.com/?q='+encodeURIComponent(_prop.clientAddr)+'" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700;text-decoration:none">Open in Maps →</a></span></div>':'')+
         '<div class="row"><span class="rl">Total</span><span class="rv">'+fmt(_prop.amount)+'</span></div>'+
         '<div class="row"><span class="rl">Deposit</span><span class="rv">'+fmt(_prop.deposit)+'</span></div>'+
         (payMethod?'<div class="row"><span class="rl">Payment</span><span class="rv">'+payLabel+'</span></div>':'')+
-        '<div class="row"><span class="rl">Signed</span><span class="rv">'+signedDate+'</span></div>';
+        '<div class="row"><span class="rl">Signed</span><span class="rv">'+signedDate+'</span></div>'+
+        (_prop.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none">📞 Call '+(_prop.businessName||'us')+'</a></span></div>':'');
+      const _stamp=document.getElementById('done-stamp');
+      if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">✓ Signed &amp; Approved</div>';_stamp.style.display='block';}
       show('pg-done');return;
     }
     // Log view via Edge Function — server-side write using service key, bypasses all RLS.
@@ -796,6 +803,72 @@ async function init(){
       }
     }
     document.getElementById('prop-html').innerHTML=_proposalHtml;
+    // Contractor contact footer
+    (function(){
+      const _ctct=[];
+      if(_prop.businessPhone)_ctct.push('<a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);text-decoration:none;font-weight:600">'+_prop.businessPhone+'</a>');
+      const _em=_prop.notifyEmail||'';if(_em.includes('@'))_ctct.push('<a href="mailto:'+_em+'" style="color:var(--accent);text-decoration:none;font-weight:600">'+_em+'</a>');
+      const _ws=(_prop.bwebsite||'').trim();
+      if(_ws){const _wh=/^https?:\/\//.test(_ws)?_ws:'https://'+_ws;_ctct.push('<a href="'+_wh+'" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-weight:600">'+_ws.replace(/^https?:\/\//,'')+'</a>');}
+      if(_ctct.length){const _ftr=document.createElement('div');_ftr.id='prop-contact-footer';_ftr.style.cssText='margin-top:18px;padding-top:14px;border-top:1px solid var(--bdr);font-size:11px;color:var(--text3);text-align:center;line-height:2';_ftr.innerHTML='<div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px">Contact us</div>'+_ctct.join('<span style="margin:0 5px;opacity:.35"> · </span>');document.getElementById('prop-html').appendChild(_ftr);}
+    })();
+    // Collapsible scope lists — collapse any <ol> with 5+ items, show first 4 + expand button
+    document.querySelectorAll('#prop-html ol').forEach(function(ol){
+      const lis=ol.querySelectorAll('li');if(lis.length<5)return;
+      const all=Array.from(lis);
+      all.slice(4).forEach(function(li){li.style.display='none';li.dataset.colHide='1';});
+      const btn=document.createElement('button');btn.dataset.collapseOl='1';
+      btn.textContent='Show '+(lis.length-4)+' more items…';
+      btn.style.cssText='display:block;background:none;border:none;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;padding:4px 0;font-family:inherit';
+      btn.onclick=function(){
+        const hidden=all.slice(4).filter(function(li){return li.dataset.colHide==='1';});
+        if(hidden.length){all.slice(4).forEach(function(li){li.style.display='';li.dataset.colHide='0';});btn.textContent='Show less';}
+        else{all.slice(4).forEach(function(li){li.style.display='none';li.dataset.colHide='1';});btn.textContent='Show '+(lis.length-4)+' more items…';}
+      };
+      ol.after(btn);
+    });
+    // Terms accordion — every terms section ("Terms & Conditions" + legacy "Payment Terms"
+    // headers) merges under ONE "Terms & Conditions" toggle at the first section's position.
+    // Match by exact header text (whitelist) — layout labels never get toggles.
+    // The Required Notice (home solicitation law) keeps its own separate toggle.
+    (function(){
+      const ph=document.getElementById('prop-html');if(!ph)return;
+      function mkToggle(label,bodies){
+        const btn=document.createElement('button');btn.dataset.termsToggle='1';
+        btn.style.cssText='display:block;width:100%;background:none;border:none;border-bottom:1px solid #e2e8f0;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;cursor:pointer;padding:0 0 6px;margin:0 0 10px;font-family:inherit;text-align:left';
+        btn.textContent=label+' ▾';
+        btn.onclick=function(){
+          const open=bodies[0].style.display!=='none';
+          bodies.forEach(function(b){b.style.display=open?'none':'';});
+          btn.textContent=open?(label+' ▾'):(label+' ▴');
+        };
+        return btn;
+      }
+      const termsHdrs=[],termsBodies=[];
+      ph.querySelectorAll('div').forEach(function(hdr){
+        if(hdr.children.length)return;
+        const lc=hdr.textContent.trim().toLowerCase();
+        const isTerms=(lc==='payment terms'||lc==='terms & conditions'||lc==='terms and conditions');
+        const isNotice=(lc.includes('required notice')||lc.includes('solicitation law'));
+        if(!isTerms&&!isNotice)return;
+        const body=hdr.nextElementSibling;if(!body||body.tagName==='BUTTON')return;
+        hdr.style.display='none';hdr.dataset.termsHdr='1';
+        body.style.display='none';body.dataset.termsBody='1';
+        if(isNotice){hdr.after(mkToggle('Required Notice',[body]));return;}
+        termsHdrs.push(hdr);termsBodies.push(body);
+      });
+      if(termsHdrs.length)termsHdrs[0].after(mkToggle('Terms & Conditions',termsBodies));
+      // Collapse entire Notice of Cancellation form (dashed-border detach section)
+      ph.querySelectorAll('div').forEach(function(div){
+        const fc=div.firstElementChild;if(!fc||!fc.textContent.includes('✂'))return;
+        div.style.display='none';div.dataset.termsBody='1';
+        const btn=document.createElement('button');btn.dataset.termsToggle='1';
+        btn.textContent='View notice of cancellation ▾';
+        btn.style.cssText='display:block;width:100%;background:none;border:none;color:var(--accent);font-size:11px;font-weight:700;cursor:pointer;padding:6px 24px 2px;font-family:inherit;text-align:left';
+        btn.onclick=function(){const open=div.style.display!=='none';div.style.display=open?'none':'';btn.textContent=open?'View notice of cancellation ▾':'Hide cancellation notice ▴';};
+        div.before(btn);
+      });
+    })();
     // If any legacy patches were applied, silently re-upload the corrected proposal to Supabase storage
     // so hub preview and all future views (client.html) reflect the correct state-specific terms.
     if(!alreadySigned&&_proposalHtml!==_proposalHtmlOrig&&key){
@@ -1088,10 +1161,14 @@ function showDone(method){
   document.getElementById('done-rows').innerHTML=
     (_confNum?'<div class="row"><span class="rl">Confirmation</span><span class="rv" style="font-weight:700;color:var(--green)">'+_confNum+'</span></div>':'')+
     '<div class="row"><span class="rl">Client</span><span class="rv">'+(_prop?.clientName||'')+'</span></div>'+
-    (_prop?.clientAddr?'<div class="row"><span class="rl">Address</span><span class="rv" style="text-align:right;max-width:220px">'+_prop.clientAddr+'</span></div>':'')+
+    (_prop?.clientAddr?'<div class="row"><span class="rl">Address</span><span class="rv" style="text-align:right;max-width:220px">'+_prop.clientAddr+'</span></div>'+
+      '<div class="row"><span class="rl">Directions</span><span class="rv"><a href="https://maps.google.com/?q='+encodeURIComponent(_prop.clientAddr)+'" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700;text-decoration:none">Open in Maps →</a></span></div>':'')+
     '<div class="row"><span class="rl">Total</span><span class="rv">'+fmt(_prop?.amount)+'</span></div>'+
     '<div class="row"><span class="rl">Deposit</span><span class="rv">'+fmt(_prop?.deposit)+'</span></div>'+
-    '<div class="row"><span class="rl">Payment</span><span class="rv">'+payLabel+'</span></div>';
+    '<div class="row"><span class="rl">Payment</span><span class="rv">'+payLabel+'</span></div>'+
+    (_prop?.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none">📞 Call '+(_prop.businessName||'us')+'</a></span></div>':'');
+  const _stamp=document.getElementById('done-stamp');
+  if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">✓ Signed &amp; Approved</div>';_stamp.style.display='block';}
   const hubUrl=new URLSearchParams(location.search).get('hub')||'';
   const hubCta=document.getElementById('done-hub-cta');
   if(hubCta&&hubUrl){hubCta.href=hubUrl;hubCta.style.display='block';}

@@ -181,7 +181,7 @@
     buildProposal();
     const prop=document.getElementById('est-proposal');
     !prop?.innerHTML?.includes('Paint Order Summary')?ok('Proposal has NO Paint Order Summary (correct)'):er('Proposal still has Paint Order Summary');
-    prop?.innerHTML?.includes('Payment Terms')?ok('Proposal has Payment Terms'):er('Payment Terms missing from proposal');
+    prop?.innerHTML?.includes('Terms &amp; Conditions')?ok('Proposal has Terms & Conditions'):er('Terms & Conditions missing from proposal');
     prop?.innerHTML?.includes('Client Acceptance')?ok('Proposal has Client Acceptance'):er('Client Acceptance missing');
     estSurfaces=_s;
   }catch(e){er('buildProposal: '+e.message);}

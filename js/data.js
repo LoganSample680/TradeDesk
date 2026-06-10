@@ -245,7 +245,9 @@ async function _lookupProperty(addr,cardId){
     card.style.display='block';
     card.innerHTML='<div style="color:var(--text3);font-size:11px">Looking up property…</div>';
     try{
-      const res=await fetch('/api/property?addr='+encodeURIComponent(addr));
+      const _ctrl=new AbortController();
+      const _t=setTimeout(()=>_ctrl.abort(),12000);
+      let res;try{res=await fetch('/api/property?addr='+encodeURIComponent(addr),{signal:_ctrl.signal});}finally{clearTimeout(_t);}
       if(res.status===204||!res.ok){card.style.display='none';return;}
       const d=await res.json();
       if(d.error){card.style.display='none';return;}
