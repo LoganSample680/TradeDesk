@@ -408,10 +408,9 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     assertNoErrors(page, 'hub open fires log-proposal-view per bid');
   });
 
-  test('contractor opening their own hub link does NOT fire hub tracking', async ({ page }) => {
-    // When the contractor is logged in (session.user.id === u) and opens their own
-    // hub link to preview it, tracking must be skipped — same auth guard as sign.html.
-    // Prevents the contractor's own preview from showing "Hub opened" on the dashboard.
+  test('contractor opening their own hub link does NOT fire hub tracking (session guard)', async ({ page }) => {
+    // Belt-and-suspenders: if contractor opens direct hub URL while logged in,
+    // session check (session.user.id === u) also suppresses tracking.
     const HUB = {
       contractorUserId: FAKE_USER_ID,
       contractorName: 'Zach Pro Painting',
@@ -431,10 +430,6 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
       payments: [],
     };
 
-    // Set the session user ID to the contractor's ID BEFORE the shim loads.
-    // _supabaseShim in helpers.js checks window.__overrideSessionUserId so
-    // getSession() returns FAKE_USER_ID without replacing the whole CDN shim
-    // (replacing the shim breaks storage.download() and crashes client.html).
     await page.addInitScript(() => { window.__overrideSessionUserId = 'e2e-user-0000-0000-0000-000000000001'; });
     await page.addInitScript(data => { window.__mockHubData = data; }, HUB);
     await mockAllExternal(page);
@@ -449,9 +444,92 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(800);
 
-    // Contractor's own session → tracking must NOT fire
     expect(capturedCalls.length).toBe(0);
-    assertNoErrors(page, 'contractor hub preview: tracking skipped');
+    assertNoErrors(page, 'contractor hub preview: session guard skips tracking');
+  });
+
+  test('client.html does NOT fire log-proposal-view when ?preview=1 is in URL', async ({ page }) => {
+    // _previewClientHub() in clients.js always appends &preview=1 when opening the
+    // iframe. This is the primary guard — no session needed, no origin-specific
+    // localStorage timing issues in iframe context.
+    const HUB = {
+      contractorUserId: FAKE_USER_ID,
+      contractorName: 'Zach Pro Painting',
+      clientName: 'Logan Sample',
+      clientToken: FAKE_TOKEN,
+      bids: [{
+        id: FAKE_BID_ID_1,
+        type: 'Interior Painting',
+        amount: 5000,
+        deposit: 1250,
+        status: 'Pending',
+        bid_date: new Date().toISOString().slice(0, 10),
+        signingToken: FAKE_TOKEN,
+        signHubUrl: `https://tradedeskpro.app/sign.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&b=${FAKE_BID_ID_1}`,
+      }],
+      jobs: [],
+      payments: [],
+    };
+
+    await page.addInitScript(data => { window.__mockHubData = data; }, HUB);
+    await mockAllExternal(page);
+
+    const capturedCalls = [];
+    await page.route('**/functions/v1/log-proposal-view', async route => {
+      try { capturedCalls.push(route.request().postDataJSON()); } catch(_) {}
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+    });
+
+    // preview=1 — no logged-in session, simulates iframe context
+    await page.goto(`/client.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&c=1&preview=1`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(800);
+
+    expect(capturedCalls.length, 'log-proposal-view must NOT fire when preview=1').toBe(0);
+    assertNoErrors(page, 'client.html preview=1 skips hub tracking');
+  });
+
+  test('client.html with preview=1 renders "Review & Sign" links with &preview=1 appended', async ({ page }) => {
+    // Prevents contractor clicking "Review & Sign" inside the hub preview from
+    // logging a client view in sign.html — the link carries preview=1 through.
+    const SIGN_URL = `https://tradedeskpro.app/sign.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&b=${FAKE_BID_ID_1}`;
+    const HUB = {
+      contractorUserId: FAKE_USER_ID,
+      contractorName: 'Zach Pro Painting',
+      clientName: 'Logan Sample',
+      clientToken: FAKE_TOKEN,
+      bids: [{
+        id: FAKE_BID_ID_1,
+        type: 'Interior Painting',
+        amount: 5000,
+        deposit: 1250,
+        status: 'Pending',
+        bid_date: new Date().toISOString().slice(0, 10),
+        signingToken: FAKE_TOKEN,
+        signHubUrl: SIGN_URL,
+      }],
+      jobs: [],
+      payments: [],
+    };
+
+    await page.addInitScript(data => { window.__mockHubData = data; }, HUB);
+    await mockAllExternal(page);
+
+    await page.goto(`/client.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&c=1&preview=1`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(800);
+
+    // All "Review & Sign" anchor hrefs must include preview=1
+    const signLinks = await page.evaluate(() => {
+      return [...document.querySelectorAll('a.hub-btn-sign, a.hub-approval-link')]
+        .map(a => a.getAttribute('href'));
+    });
+
+    expect(signLinks.length, 'at least one sign link must be rendered').toBeGreaterThan(0);
+    signLinks.forEach(href => {
+      expect(href, 'sign link must contain preview=1').toContain('preview=1');
+    });
+    assertNoErrors(page, 'client.html preview=1 propagates to sign links');
   });
 
   test('full pipeline: client opens hub → dashboard shows Hub opened + Proposal opened separately', async ({ page }) => {
@@ -528,6 +606,21 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     expect(dashText).toContain('Hub opened');
     expect(dashText).toContain('Proposal opened');
     assertNoErrors(page, 'hub open pipeline: dashboard shows Hub opened + Proposal opened separately');
+  });
+
+  test('does NOT fire log-proposal-view when ?preview=1 is in the URL', async ({ page }) => {
+    // ?preview=1 means the contractor used the Preview button — skip all view tracking
+    // regardless of auth state, so the badge on the dashboard is never polluted.
+    const getBody = await mountSignRoutes(page, null); // no session
+
+    await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json&preview=1`);
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(800);
+
+    // log-proposal-view must NOT have been called
+    const body = getBody();
+    expect(body, 'log-proposal-view must NOT be called when preview=1').toBeNull();
+    assertNoErrors(page, 'preview=1 skips log-proposal-view');
   });
 
   test('dashboard shows "You previewed" when only contractor_opened_at is set', async ({ page }) => {

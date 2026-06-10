@@ -1952,7 +1952,9 @@ async function sendGenericProposal(previewOnly){
   const _byoDepPctEl=document.getElementById('byo-deposit-pct');
   const _sendByoDepPct=_geiIsTM?null:(parseFloat(_byoDepPctEl?_byoDepPctEl.value:null)||25)/100;
   const _sendByoDepPctLabel=_geiIsTM?null:Math.round(_sendByoDepPct*100);
-  const _tmDepAmt=_geiIsTM?Math.round(sub*_tmDepPct/100):Math.round(total*_sendByoDepPct*100)/100;
+  // Deposit is a % of the client-facing TOTAL (incl. tax) — the label says "(N%)" next
+  // to the estimated total, so computing from the pre-tax subtotal reads as a math error.
+  const _tmDepAmt=_geiIsTM?Math.round(total*_tmDepPct)/100:Math.round(total*_sendByoDepPct*100)/100;
   const _tmNteCap=parseFloat(v('tm-nte-cap'))||0;
   const depositFmt='$'+_tmDepAmt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   // MUST be declared before the template literals below that use it — TDZ if declared after

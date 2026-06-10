@@ -351,7 +351,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = location.origin + '/api';
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.09.26.22';
+const APP_VERSION='06.10.26.37';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -1612,8 +1612,10 @@ async function checkNewSignatures(){
   try{
     // Use localStorage as the seen-list — no DB column dependency
     const seenCache=new Set(JSON.parse(localStorage.getItem('zp3_seen_sigs')||'[]'));
+    // select('*') — optional columns (epa_*, cancelled_*) may not exist in every
+    // environment; an explicit column list would fail the whole query on drift.
     const{data,error}=await _supa.from('signed_proposals')
-      .select('bid_id,client_name,payment_method,payment_status,signed_at,client_signed_name')
+      .select('*')
       .eq('contractor_user_id',_supaUser.id)
       .order('signed_at',{ascending:false})
       .limit(100);
@@ -1625,6 +1627,29 @@ async function checkNewSignatures(){
         const alreadySeen=seenCache.has(key);
         const bid=bids.find(b=>String(b.id)===key);
         if(!bid){if(!alreadySeen)newSeen.push(key);continue;} // deleted/orphaned
+        // Client cancelled within the rescission window (e-signed Notice of Cancellation).
+        // Runs before the signed/declined branches and regardless of seenCache — the
+        // cancellation always arrives after the signature row was already seen.
+        if(s.cancelled_at&&!bid.clientCancelled){
+          bid.clientCancelled=true;
+          bid.cancelledAt=s.cancelled_at;
+          bid.cancelledName=s.cancelled_signed_name||'';
+          bid.status='Closed Lost';bid.draft=false;
+          const _cj=(typeof jobs!=='undefined'?jobs:[]).find(j=>j.bid_id===bid.id);
+          if(_cj)_cj.clientCancelled=true;
+          // Clawback: reverse every recorded payment on this bid so the books reflect
+          // the legally required refund (K.S.A. 50-640 / 16 CFR 429: within 10 business days)
+          const _cpaid=(typeof payments!=='undefined'?payments:[]).filter(p=>p.bid_id===bid.id&&p.amount>0);
+          const _ctotal=_cpaid.reduce((t,p)=>t+p.amount,0);
+          const _hasRefund=(typeof payments!=='undefined'?payments:[]).some(p=>p.bid_id===bid.id&&p._cancelRefund);
+          if(_ctotal>0&&!_hasRefund){
+            payments.push({id:Date.now(),bid_id:bid.id,amount:-_ctotal,date:todayKey(),method:'refund',type:'refund',_cancelRefund:true,note:'Refund — client cancelled within rescission window'});
+          }
+          changed=true;
+          if(typeof showToast==='function')showToast('🚫 '+(s.client_name||'Client')+' cancelled — refund'+(_ctotal>0?' '+fmt(_ctotal):'')+' within 10 business days','⚠️');
+          if(!alreadySeen)newSeen.push(key);
+          continue;
+        }
         if(s.payment_status==='declined'){
           // Client declined — mark as Closed Lost, not Closed Won
           if(bid.status!=='Closed Lost'){
@@ -1632,16 +1657,24 @@ async function checkNewSignatures(){
             bid.declinedAt=s.signed_at;
             changed=true;
           }
-        } else if(bid.status!=='Closed Won'){
-          // Always fix the status regardless of seenCache — data may have been reset
-          bid.status='Closed Won';bid.draft=false;
-          bid.signedAt=s.signed_at;
-          bid.signedName=s.client_signed_name||s.client_name;
-          bid.paymentMethod=s.payment_method;
-          changed=true;
-          if(!alreadySeen){
-            alerts.push({name:s.client_name||'Client',bidId:bid.id,clientId:bid.client_id,isPaid:s.payment_status==='paid'});
+        } else {
+          if(bid.status!=='Closed Won'){
+            // Always fix the status regardless of seenCache — data may have been reset
+            bid.status='Closed Won';bid.draft=false;
+            bid.signedAt=s.signed_at;
+            bid.signedName=s.client_signed_name||s.client_name;
+            bid.paymentMethod=s.payment_method;
+            changed=true;
+            if(!alreadySeen){
+              alerts.push({name:s.client_name||'Client',bidId:bid.id,clientId:bid.client_id,isPaid:s.payment_status==='paid'});
+            }
           }
+          // Refresh signature metadata even when already won — the signature image and
+          // EPA ack can land after the status flip (or the DB columns were added later).
+          if(s.signature_data&&bid.signatureData!==s.signature_data){bid.signatureData=s.signature_data;changed=true;}
+          if(s.epa_ack_at&&bid.epaAckAt!==s.epa_ack_at){bid.epaAckAt=s.epa_ack_at;changed=true;}
+          if(s.client_signed_name&&!bid.signedName){bid.signedName=s.client_signed_name;changed=true;}
+          if(s.signed_at&&!bid.signedAt){bid.signedAt=s.signed_at;changed=true;}
         }
         if(!alreadySeen)newSeen.push(key);
       }
@@ -1990,6 +2023,9 @@ async function supaLoadFromCloud({silent=false}={}){
       setTimeout(()=>_fetchStripeConnectStatus(),3000);
       setTimeout(()=>_loadPendingInbound(),2000);
       document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){checkNewSignatures();_fetchProposalViews();if(_supaUser)_loadPendingInbound();checkNearbyJob();}});
+      // Cross-tab signal: sign.html writes zp3_sig_notify after a successful cash/check save.
+      // This fires immediately in the contractor's open TradeDesk tab — no polling delay.
+      window.addEventListener('storage',e=>{if(e.key==='zp3_sig_notify'&&e.newValue)checkNewSignatures();});
       setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
       setTimeout(()=>checkNearbyJob(),4000);
     }

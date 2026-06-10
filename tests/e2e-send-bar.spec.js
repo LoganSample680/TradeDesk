@@ -143,6 +143,12 @@ test.describe('Send bar — DOM layout', () => {
     assertNoErrors(page, 'paint bar - Other app button');
   });
 
+  test('#proposal-link-bar does NOT have a Preview button (preview lives in Client Hub)', async () => {
+    const btn = page.locator('#proposal-link-bar button', { hasText: 'Preview' });
+    await expect(btn).toHaveCount(0);
+    assertNoErrors(page, 'paint bar - no Preview button');
+  });
+
   test('#proposal-link-bar is hidden by default (before link is generated)', async () => {
     const bar = page.locator('#proposal-link-bar');
     const isHidden = await bar.evaluate(el => {
@@ -533,5 +539,94 @@ test.describe('sendProposalViaEmail — replyTo is contractor email', () => {
     expect(p.customBody, 'customBody should be sent in payload').toBeTruthy();
 
     assertNoErrors(page, 'compose modal sends customSubject and customBody');
+  });
+});
+
+// ── 7. _previewClientHub — logs contractor view, opens iframe with preview=1 ─────
+
+test.describe('_previewClientHub — contractor view logging', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await goPg(page, 'pg-dash');
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('_previewClientHub logs viewerType=contractor for each pending bid', async () => {
+    // Patch window.fetch (WebKit-safe — page.route does not reliably intercept
+    // same-page fetch() calls in WebKit; see file header) to capture the call.
+    await page.evaluate(() => {
+      window.__viewCalls = [];
+      const orig = window.__origViewFetch || window.fetch;
+      window.__origViewFetch = orig;
+      window.fetch = async (input, opts) => {
+        const url = typeof input === 'string' ? input : (input?.url || '');
+        if (url.includes('/functions/v1/log-proposal-view')) {
+          try { window.__viewCalls.push(opts?.body ? JSON.parse(opts.body) : null); } catch(_) {}
+          return new Response('{"ok":true}', { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        return orig(input, opts);
+      };
+    });
+
+    // Inject a pending bid for the client we'll preview
+    await page.evaluate(({ bidId, userId, clientId }) => {
+      window.bids = window.bids || [];
+      window.bids.push({
+        id: bidId,
+        client_id: clientId,
+        signingToken: 'tok-preview-test',
+        status: 'Pending',
+        amount: 5000,
+        type: 'Interior Painting',
+      });
+      window._supaUser = window._supaUser || { id: userId, email: 'test@test.com' };
+    }, { bidId: FAKE_BID_ID_1, userId: FAKE_USER_ID, clientId: 9001 });
+
+    const hubUrl = `https://tradedeskpro.app/client.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&c=9001`;
+
+    await page.evaluate(({ url, clientId }) => {
+      if (typeof _previewClientHub === 'function') _previewClientHub(url, 'Test Client', clientId);
+    }, { url: hubUrl, clientId: 9001 });
+    await page.waitForTimeout(400);
+
+    const capturedCalls = await page.evaluate(() => window.__viewCalls || []);
+    await page.evaluate(() => {
+      if (window.__origViewFetch) { window.fetch = window.__origViewFetch; delete window.__origViewFetch; }
+      document.getElementById('_hub-preview-ov')?.remove();
+    });
+
+    // Must have logged the bid as contractor view
+    expect(capturedCalls.length, '_previewClientHub must call log-proposal-view').toBeGreaterThan(0);
+    expect(capturedCalls[0].viewerType, 'viewerType must be contractor').toBe('contractor');
+    expect(capturedCalls[0].bidId, 'bidId must match pending bid').toBe(String(FAKE_BID_ID_1));
+
+    assertNoErrors(page, '_previewClientHub logs contractor view');
+  });
+
+  test('_previewClientHub opens iframe with preview=1 appended to URL', async () => {
+    const hubUrl = `https://tradedeskpro.app/client.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&c=9001`;
+
+    await page.evaluate(({ url }) => {
+      if (typeof _previewClientHub === 'function') _previewClientHub(url, 'Test Client', 9001);
+    }, { url: hubUrl });
+    await page.waitForTimeout(200);
+
+    const iframeSrc = await page.evaluate(() => {
+      const ov = document.getElementById('_hub-preview-ov');
+      return ov ? ov.querySelector('iframe')?.src : null;
+    });
+
+    expect(iframeSrc, 'iframe must exist').not.toBeNull();
+    expect(iframeSrc, 'iframe src must contain preview=1').toContain('preview=1');
+
+    await page.evaluate(() => document.getElementById('_hub-preview-ov')?.remove());
+    assertNoErrors(page, '_previewClientHub iframe uses preview=1');
   });
 });

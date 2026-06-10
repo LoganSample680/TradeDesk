@@ -551,7 +551,7 @@ function renderClientHubPage(){
     const smsBody=_smsApply(S.smsHub||_getSmsDefaults().hub,{name:firstName,business:bname,url});
     const addrLine=c.addr?c.addr.split(',')[0]:'';
     const metaParts=[addrLine?escHtml(addrLine):'',c.phone?escHtml(c.phone):''].filter(Boolean).join(' · ');
-    const actions='<button class="btn btn-sm" onclick="event.stopPropagation();_previewClientHub(\''+url+'\',\''+escHtml(c.name||'')+'\')" >👁 Preview</button>'+
+    const actions='<button class="btn btn-sm" onclick="event.stopPropagation();_previewClientHub(\''+url+'\',\''+escHtml(c.name||'')+'\','+c.id+')" >👁 Preview</button>'+
       '<button class="btn btn-sm" onclick="event.stopPropagation();_clientHubCopy(\''+url+'\',this)">📋 Copy</button>'+
       (phone?'<button class="btn btn-sm btn-p" onclick="event.stopPropagation();window.location.href=\'sms:'+phone+'?body='+encodeURIComponent(smsBody)+'\'">📱 Send</button>':'');
     return '<div class="hub-dir-row" onclick="openClientDetail('+c.id+',\'clients\')">'+
@@ -567,7 +567,21 @@ function renderClientHubPage(){
   };
   el.innerHTML='<div class="card card-pad-0">'+sorted.map(rowHtml).join('')+'</div>';
 }
-function _previewClientHub(url,clientName){
+function _previewClientHub(url,clientName,clientId){
+  // Log as contractor preview so "You previewed" badge appears on the dashboard.
+  // We make the call from here (main app context) where _supaUser and bids[] are live,
+  // then open the iframe with &preview=1 so client.html skips its own hub tracking.
+  if(_supaUser&&clientId){
+    const _pvBids=bids.filter(b=>b.client_id===clientId&&b.signingToken);
+    _pvBids.forEach(b=>{
+      fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
+        body:JSON.stringify({contractorUserId:_supaUser.id,bidId:String(b.id),viewerType:'contractor'})
+      }).catch(()=>{});
+    });
+  }
+  const previewUrl=url+(url.includes('?')?'&':'?')+'preview=1';
   let ov=document.getElementById('_hub-preview-ov');
   if(!ov){
     ov=document.createElement('div');
@@ -582,7 +596,7 @@ function _previewClientHub(url,clientName){
       '</button>'+
       '<div style="font-size:13px;color:rgba(255,255,255,.6);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(clientName?escHtml(clientName)+' — Hub preview':'Hub preview')+'</div>'+
     '</div>'+
-    '<iframe src="'+url+'" style="flex:1;border:none;width:100%" allow="payment"></iframe>';
+    '<iframe src="'+previewUrl+'" style="flex:1;border:none;width:100%" allow="payment"></iframe>';
   ov.style.display='flex';
 }
 function _clientHubCopy(url,btn){
@@ -1897,12 +1911,31 @@ function _cpOpen(bidId,view){
   const propPane=document.getElementById('cp-prop-pane');
   const _cpStorageKey=b.signingKey||b.proposalKey||null;
   const _cpSignedBadge=b.signedAt?'<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">✓</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>':'';
-  function _cpRenderProp(html,colorTop){propPane.innerHTML=(colorTop||'')+_cpSignedBadge+html;}
+  // Signature block pinned at the bottom of the client view — image from the stored
+  // proposal JSON when available, falling back to the name/timestamp on the bid so the
+  // block still shows when the storage write was missed at signing time.
+  function _cpSigBlock(prop){
+    const name=(prop&&prop.signerName)||b.signedName||'';
+    const at=(prop&&prop.signedAt)||b.signedAt||'';
+    if(!at)return '';
+    const dt=new Date(at).toLocaleString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+    const _sigUrl=(prop&&prop.signatureDataUrl)||b.signatureData||null;
+    const img=_sigUrl?'<div style="background:#fff;border:1.5px solid var(--border2);border-radius:10px;padding:12px;margin:10px 0;text-align:center"><img src="'+_sigUrl+'" style="max-width:100%;max-height:110px" alt="Client signature"></div>':'';
+    return '<div id="cp-sig-block" style="margin-top:20px;border-top:2px solid var(--border2);padding-top:14px">'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:8px">Client Signature</div>'+img+
+      '<div style="font-size:13px;color:var(--text2)"><strong>'+escHtml(name||'—')+'</strong> · '+dt+'</div>'+
+    '</div>';
+  }
+  function _cpRenderProp(html,colorTop){propPane.innerHTML=(colorTop||'')+_cpSignedBadge+html+_cpSigBlock(null);}
   if(b.proposalHtml){
     _cpRenderProp(b.proposalHtml);
-    // Also fetch color choices if signed
+    // Also fetch color choices + signature image if signed
     if(_cpStorageKey&&b.signedAt&&typeof _supa!=='undefined'){
-      _supa.storage.from('proposals').download(_cpStorageKey).then(({data})=>{if(!data)return;data.text().then(txt=>{try{const prop=JSON.parse(txt);const choices=prop.colorChoices||[];if(!choices.length)return;const cd=document.createElement('div');cd.style.cssText='background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 16px;margin-bottom:16px';cd.innerHTML='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">🎨 Client Color Selections</div>'+choices.map(ch=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px"><span style="font-weight:600;color:#1E3A5F">'+escHtml(ch.room)+'</span><span style="color:#1E40AF;font-weight:700">'+escHtml(ch.colorName)+(ch.swCode?' <span style="font-size:11px;opacity:.7">('+escHtml(ch.swCode)+')</span>':'')+'</span></div>').join('');propPane.insertBefore(cd,propPane.firstChild);}catch(e){}});}).catch(()=>{});
+      _supa.storage.from('proposals').download(_cpStorageKey).then(({data})=>{if(!data)return;data.text().then(txt=>{try{
+        const prop=JSON.parse(txt);
+        // Upgrade the signature block with the drawn signature image
+        if(prop.signatureDataUrl||prop.signerName){const old=document.getElementById('cp-sig-block');const wrap=document.createElement('div');wrap.innerHTML=_cpSigBlock(prop);if(old&&wrap.firstChild)old.replaceWith(wrap.firstChild);else if(wrap.firstChild)propPane.appendChild(wrap.firstChild);}
+        const choices=prop.colorChoices||[];if(!choices.length)return;const cd=document.createElement('div');cd.style.cssText='background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 16px;margin-bottom:16px';cd.innerHTML='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">🎨 Client Color Selections</div>'+choices.map(ch=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px"><span style="font-weight:600;color:#1E3A5F">'+escHtml(ch.room)+'</span><span style="color:#1E40AF;font-weight:700">'+escHtml(ch.colorName)+(ch.swCode?' <span style="font-size:11px;opacity:.7">('+escHtml(ch.swCode)+')</span>':'')+'</span></div>').join('');propPane.insertBefore(cd,propPane.firstChild);}catch(e){}});}).catch(()=>{});
     }
   }else if(_cpStorageKey&&typeof _supa!=='undefined'){
     propPane.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--text3);font-size:13px">Loading proposal…</div>';
@@ -1916,7 +1949,7 @@ function _cpOpen(bidId,view){
         let colorTop='';
         const choices=prop.colorChoices||[];
         if(choices.length)colorTop='<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 16px;margin-bottom:16px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">🎨 Client Color Selections</div>'+choices.map(ch=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px"><span style="font-weight:600;color:#1E3A5F">'+escHtml(ch.room)+'</span><span style="color:#1E40AF;font-weight:700">'+escHtml(ch.colorName)+(ch.swCode?' <span style="font-size:11px;opacity:.7">('+escHtml(ch.swCode)+')</span>':'')+'</span></div>').join('')+'</div>';
-        _cpRenderProp(html,colorTop);
+        propPane.innerHTML=colorTop+_cpSignedBadge+html+_cpSigBlock(prop);
       }catch(e){propPane.innerHTML='<div style="padding:40px;text-align:center;color:var(--text3);font-style:italic">Error parsing proposal.</div>';}});
     }).catch(()=>{propPane.innerHTML='<div style="padding:40px;text-align:center;color:var(--text3);font-style:italic">Could not load proposal.</div>';});
   }else{

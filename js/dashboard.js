@@ -1576,6 +1576,7 @@ function renderProposalsPage(){
 
   // All other tabs — flat table
   const statusChip=b=>{
+    if(b.clientCancelled)return '<span class="bdg-soft sf-lost">🚫 CLIENT CANCELLED</span>';
     if(b.status==='Closed Won')return '<span class="bdg-soft sf-won">SIGNED</span>';
     if(b.status==='Closed Lost'||b.status==='Abandoned')return '<span class="bdg-soft sf-lost">DECLINED</span>';
     if(b.draft||b.status==='Draft')return '<span class="bdg-soft sf-done">DRAFT</span>';
@@ -1642,6 +1643,7 @@ function renderEstimatesPage(){
     return '<span class="bdg-soft sf-deposit">Scope &amp; Price</span>';
   };
   const statusChip=b=>{
+    if(b.clientCancelled)return '<span class="bdg-soft sf-lost">🚫 CLIENT CANCELLED</span>';
     if(b.status==='Closed Won')return '<span class="bdg-soft sf-won">SIGNED</span>';
     if(b.status==='Closed Lost'||b.status==='Abandoned')return '<span class="bdg-soft sf-lost">DECLINED</span>';
     if(b.draft||b.status==='Draft')return '<span class="bdg-soft sf-done">DRAFT</span>';

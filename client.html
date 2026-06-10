@@ -526,13 +526,27 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
 <script>
 const SUPA_URL='https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const _supa=supabase.createClient(SUPA_URL,SUPA_KEY);
+// Session-isolated: never inherits a TradeDesk login from the same browser. All hub
+// data calls run as `anon` — the role real clients use — so a logged-in contractor
+// previewing the hub exercises the exact same RLS/storage paths as a client.
+// (Authenticated role lacks storage download + update policies → "Could not load proposal".)
+const _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{auth:{persistSession:false,autoRefreshToken:false,storageKey:'sb-hub-isolated'}});
+// _supaAuth exists only to read the contractor's session for view-tracking suppression.
+const _supaAuth=supabase.createClient(SUPA_URL,SUPA_KEY);
 // Kick off the boot bar pulse so it feels alive immediately
 setTimeout(()=>{const b=document.getElementById('boot-bar');if(b)b.style.width='35%';},60);
-let _hub=null,_activeView='overview';
+// Set at parse time — renderAll() runs before init() finishes, so the flag must
+// exist before the first render or Review & Sign links miss the preview param.
+let _hub=null,_activeView='overview',_isContractorPreview=new URLSearchParams(location.search).get('preview')==='1';
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtDate=s=>{if(!s)return'';try{const d=s.includes('T')?new Date(s):new Date(s+'T12:00:00');if(isNaN(d.getTime()))return'';return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}};
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+// Alias — app pages define escHtml; code copied from them (signature block, etc.)
+// references it. Without this alias those paths throw ReferenceError at render.
+const escHtml=esc;
+// When open via _previewClientHub (preview=1), append &preview=1 to sign.html links so
+// clicking "Review & Sign" doesn't log a client view — the contractor is just previewing.
+const _signHref=url=>url?((_isContractorPreview?(url+(url.includes('?')?'&':'?')+'preview=1'):url)):url;
 async function init(){
   const p=new URLSearchParams(location.search);
   const t=p.get('t'),u=p.get('u'),c=p.get('c'),mode=p.get('mode');
@@ -552,8 +566,10 @@ async function init(){
     const bidIds=_hub.bids.map(b=>String(b.id));
     if(u&&bidIds.length){
       try{
+        // select('*') — resilient to schema drift; optional columns (epa_*, cancelled_*)
+        // may not exist in every environment and an explicit list would fail the whole query.
         const{data:sigs}=await _supa.from('signed_proposals')
-          .select('bid_id,payment_status,payment_method,signed_at,deposit')
+          .select('*')
           .eq('contractor_user_id',u).in('bid_id',bidIds);
         if(sigs)sigs.forEach(sp=>{
           const bid=_hub.bids.find(b=>String(b.id)===sp.bid_id);
@@ -561,6 +577,14 @@ async function init(){
           if(bid.status==='Pending'){
             bid.status='Closed Won';bid.signedAt=sp.signed_at;bid.paymentStatus=sp.payment_status;
           }
+          bid.signedAt=bid.signedAt||sp.signed_at;
+          bid.signerName=sp.client_signed_name||bid.signerName||'';
+          if(sp.signature_data)bid.signatureData=sp.signature_data;
+          if(sp.epa_required)bid.epaRequired=true;
+          if(sp.epa_ack_at)bid.epaAckAt=sp.epa_ack_at;
+          if(sp.rrp_firm_cert)bid.rrpFirmCert=sp.rrp_firm_cert;
+          if(sp.rrp_renovator_name)bid.rrpRenovatorName=sp.rrp_renovator_name;
+          if(sp.cancelled_at){bid.cancelledAt=sp.cancelled_at;bid.cancelledName=sp.cancelled_signed_name||'';}
           if(sp.payment_status==='paid'){
             const amtPaid=sp.deposit||bid.deposit||0;
             bid.paid=Math.min(bid.amount||0,(bid.paid||0)+amtPaid);
@@ -578,22 +602,25 @@ async function init(){
     }
     showState('hub');
     // Log a hub view for each pending proposal visible in this hub.
-    // Auth check mirrors sign.html: if the contractor opens their own hub link
-    // while logged in, skip tracking so their preview doesn't show as "Hub opened".
+    // Two layers of contractor detection so previews never pollute client analytics:
+    //   1. ?preview=1 — set by _previewClientHub() in clients.js (iframe opens always use this)
+    //   2. Session check — belt-and-suspenders for direct URL opens while logged in
     // viewerType:'client-hub' writes hub_opened_at — distinct from client_opened_at
     // (which sign.html writes when the client opens a specific proposal).
-    try{
-      const{data:{session}}=await _supa.auth.getSession();
-      if(!session||session?.user?.id!==u){
-        (_hub&&_hub.bids||[]).filter(b=>b.id&&b.signHubUrl).forEach(b=>{
-          fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
-            method:'POST',
-            headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-            body:JSON.stringify({contractorUserId:u,bidId:String(b.id),viewerType:'client-hub'})
-          }).catch(()=>{});
-        });
-      }
-    }catch(_){}
+    if(!_isContractorPreview){
+      try{
+        const{data:{session}}=await _supaAuth.auth.getSession();
+        if(!session||session?.user?.id!==u){
+          (_hub&&_hub.bids||[]).filter(b=>b.id&&b.signHubUrl).forEach(b=>{
+            fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
+              method:'POST',
+              headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
+              body:JSON.stringify({contractorUserId:u,bidId:String(b.id),viewerType:'client-hub'})
+            }).catch(()=>{});
+          });
+        }
+      }catch(_){}
+    }
     const _paidParam=p.get('paid');
     if(_paidParam){
       const bidId=parseInt(_paidParam);
@@ -943,7 +970,7 @@ function renderOverview(){
          dollar amount before the client reads the scope triggers loss-aversion and
          kills conversions. Price is revealed inside the proposal after scope context. */
       if(b.signHubUrl){
-        html+='<a href="'+esc(b.signHubUrl)+'" class="hub-btn hub-btn-sign" style="width:100%">✍️ Review &amp; Sign →</a>';
+        html+='<a href="'+esc(_signHref(b.signHubUrl))+'" class="hub-btn hub-btn-sign" style="width:100%">✍️ Review &amp; Sign →</a>';
       }else{
         html+='<div class="hub-bid-pending-msg">Sign link on the way — check back soon</div>';
       }
@@ -998,7 +1025,7 @@ function renderOverview(){
       /* Amount hidden from sidebar too — price revealed only after the client opens
          the proposal and reads the full scope (same rationale as the main card). */
       html+='<div class="hub-approval-amt">'+fmtDate(b.bid_date)+'</div>';
-      if(b.signHubUrl)html+='<a href="'+esc(b.signHubUrl)+'" class="hub-approval-link">Review &amp; Sign →</a>';
+      if(b.signHubUrl)html+='<a href="'+esc(_signHref(b.signHubUrl))+'" class="hub-approval-link">Review &amp; Sign →</a>';
       html+='</div>';
     });
     html+='</div>';
@@ -1293,13 +1320,84 @@ function _showCancelForm(bidId){
       '<p style="margin:0 0 8px"><strong>Date of Transaction:</strong> '+txDate+'</p>'+
       '<p style="margin:0 0 10px;font-weight:700">YOU MAY CANCEL THIS TRANSACTION, WITHOUT ANY PENALTY OR OBLIGATION, WITHIN '+daysWord+' BUSINESS DAYS FROM THE ABOVE DATE.</p>'+
       '<p style="margin:0 0 8px">If you cancel, any payments made under this contract will be returned within 10 business days following receipt of your cancellation notice, and any security interest arising out of this transaction will be cancelled.</p>'+
-      '<p style="margin:0 0 8px">To cancel, deliver or mail a signed and dated copy of this notice to your contractor (contact info on your signed agreement).</p>'+
-      '<p style="margin:0 0 20px">I hereby cancel this transaction.</p>'+
-      '<p style="margin:0;border-top:1px solid #e2e8f0;padding-top:12px">Buyer\'s Signature: _________________________ &nbsp; Date: ___________</p>'+
+      '<p style="margin:0 0 8px">To cancel, sign below — your contractor is notified instantly and any payments will be refunded within 10 business days.</p>'+
+      '<p style="margin:0 0 16px">I hereby cancel this transaction.</p>'+
+    '</div>'+
+    (bid.cancelledAt
+      ?'<div style="border-top:1px solid #e2e8f0;padding-top:14px"><div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:12px 14px;font-size:12px;color:#991B1B"><strong>🚫 Cancellation submitted</strong><br>Signed by '+esc(bid.cancelledName||'you')+' · '+new Date(bid.cancelledAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})+'<br>Your contractor has been notified. Any payments will be refunded within 10 business days.</div></div>'
+      :(open
+        ?'<div style="border-top:1px solid #e2e8f0;padding-top:14px">'+
+          '<div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px">Buyer\'s Signature (type your full legal name)</div>'+
+          '<input id="cancel-sig-name" type="text" placeholder="Your full name" style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:15px;font-family:inherit;margin-bottom:8px">'+
+          '<div style="font-size:11px;color:#64748b;margin-bottom:12px">Date: '+new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+'</div>'+
+          '<div id="cancel-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:4px"></div>'+
+          '<button id="cancel-submit-btn" onclick="_submitCancellation('+bid.id+')" style="width:100%;padding:13px;border:none;border-radius:10px;background:#991B1B;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">Submit Cancellation Notice</button>'+
+        '</div>'
+        :'<p style="margin:0;border-top:1px solid #e2e8f0;padding-top:12px;font-size:12px;color:#64748b">The cancellation window for this agreement has closed.</p>'))+
+  '</div>';
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  ov.id='cancel-notice-ov';
+  document.body.appendChild(ov);
+}
+// EPA Renovate Right pre-renovation disclosure — rendered as a signed document
+// with the client's actual signature image + date/time at the bottom.
+function _showEpaDoc(bidId){
+  const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
+  const ackTs=bid.epaAckAt||bid.signedAt;
+  const dt=ackTs?new Date(ackTs).toLocaleString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
+  const sigImg=bid.signatureData?'<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:12px;margin:12px 0;text-align:center"><img src="'+bid.signatureData+'" style="max-width:100%;max-height:110px" alt="Client signature"></div>':'';
+  const ov=document.createElement('div');
+  ov.id='epa-doc-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px 20px 26px;max-width:520px;width:100%;max-height:88vh;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
+      '<div style="font-size:13px;font-weight:800;color:#92400E">⚠️ EPA Renovate Right Disclosure</div>'+
+      '<button onclick="document.getElementById(\'epa-doc-ov\').remove()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1">✕</button>'+
+    '</div>'+
+    '<div style="text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;margin-bottom:10px">EPA 40 CFR Part 745 — Pre-Renovation Disclosure</div>'+
+    '<div style="text-align:center;font-size:14px;font-weight:800;text-transform:uppercase;color:#92400E;margin-bottom:14px">Confirmation of Receipt</div>'+
+    '<div style="font-size:12px;color:#2d3748;line-height:1.8">'+
+      '<p style="margin:0 0 10px">I confirm that I received a copy of the EPA pamphlet <em>"Renovate Right: Important Lead Hazard Information for Families, Child Care Providers and Schools"</em> informing me of the potential risk of lead hazard exposure from renovation activity to be performed in my dwelling. I received this pamphlet before the work began.</p>'+
+      (bid.rrpFirmCert?'<p style="margin:0 0 6px"><strong>EPA Certified Firm #:</strong> '+esc(bid.rrpFirmCert)+'</p>':'')+
+      (bid.rrpRenovatorName?'<p style="margin:0 0 10px"><strong>Certified Renovator:</strong> '+esc(bid.rrpRenovatorName)+'</p>':'')+
+      '<p style="margin:0 0 4px"><a href="https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools" target="_blank" rel="noopener" style="color:#1d4ed8;font-weight:700">📄 View the Renovate Right pamphlet →</a></p>'+
+    '</div>'+
+    '<div style="border-top:2px solid #1a1a18;margin-top:18px;padding-top:14px">'+
+      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#666;margin-bottom:8px">Acknowledged &amp; Signed</div>'+
+      sigImg+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+        '<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:3px">Signed By</div><div style="font-size:13px;font-weight:700;color:#1a1a18">'+esc(bid.signerName||'Client')+'</div></div>'+
+        '<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:3px">Date &amp; Time</div><div style="font-size:13px;font-weight:700;color:#1a1a18">'+esc(dt||'—')+'</div></div>'+
+      '</div>'+
     '</div>'+
   '</div>';
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   document.body.appendChild(ov);
+}
+async function _submitCancellation(bidId){
+  const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
+  const name=(document.getElementById('cancel-sig-name')?.value||'').trim();
+  const errEl=document.getElementById('cancel-err');
+  if(name.length<3){if(errEl)errEl.textContent='Type your full name to sign this notice.';return;}
+  const btn=document.getElementById('cancel-submit-btn');
+  if(btn){btn.disabled=true;btn.textContent='Submitting…';}
+  const ts=new Date().toISOString();
+  try{
+    const{error}=await _supa.from('signed_proposals')
+      .update({cancelled_at:ts,cancelled_signed_name:name})
+      .eq('bid_id',String(bidId));
+    if(error)throw error;
+    // Instant contractor-tab refresh (same-browser) — cloud.js listens for this key
+    try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(bidId),ts,cancelled:true}));}catch(_){}
+    bid.cancelledAt=ts;bid.cancelledName=name;
+    document.getElementById('cancel-notice-ov')?.remove();
+    renderDocuments();
+    _showCancelForm(bidId); // reopen in confirmed state
+  }catch(e){
+    console.error('cancellation:',e);
+    if(errEl)errEl.textContent='Could not submit — '+(e.message||'please try again or contact your contractor directly.');
+    if(btn){btn.disabled=false;btn.textContent='Submit Cancellation Notice';}
+  }
 }
 
 function renderDocuments(){
@@ -1316,14 +1414,16 @@ function renderDocuments(){
   wonBids.forEach((bid,i)=>{
     const isPaid=(bid.balance||0)<0.01;
     const autoOpen=i===0;
-    const docCount=1+(bid.proposalKey?1:0);
-    const hdrBg=isPaid?'linear-gradient(135deg,#14532D,#1A6B3A)':'linear-gradient(135deg,#1B1612,#24202C)';
+    const _hasEpaDoc=!!(bid.epaAckAt||(h.epaRequired&&bid.signedAt));
+    const docCount=1+(bid.proposalKey?1:0)+(_hasEpaDoc?1:0);
+    const _isCancelled=!!bid.cancelledAt;
+    const hdrBg=_isCancelled?'linear-gradient(135deg,#7F1D1D,#991B1B)':(isPaid?'linear-gradient(135deg,#14532D,#1A6B3A)':'linear-gradient(135deg,#1B1612,#24202C)');
     html+='<div style="border-radius:var(--rl);overflow:hidden;margin-bottom:12px;box-shadow:0 1px 6px rgba(27,22,18,.1),0 0 0 1px rgba(27,22,18,.06)">';
     // Tappable header
     html+='<div onclick="_toggleDoc('+bid.id+')" style="background:'+hdrBg+';padding:14px 16px;cursor:pointer">';
     html+='<div style="display:flex;align-items:center;gap:10px">';
     html+='<div style="flex:1;min-width:0">';
-    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:3px">'+esc(bid.type||'Estimate')+(isPaid?' · Paid ✓':' · Balance due')+'</div>';
+    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:3px">'+esc(bid.type||'Estimate')+(_isCancelled?' · Cancelled 🚫':(isPaid?' · Paid ✓':' · Balance due'))+'</div>';
     html+='<div style="font-size:16px;font-weight:800;color:#fff;line-height:1.2">'+esc(bid.type||'Project')+'</div>';
     html+='<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:3px">Signed '+fmtDate(bid.signedAt||bid.bid_date)+' · '+fmt(bid.amount||0)+' · '+docCount+' doc'+(docCount!==1?'s':'')+'</div>';
     html+='</div>';
@@ -1335,23 +1435,38 @@ function renderDocuments(){
     html+='<div style="padding:0 16px">';
     html+=_docRow('📄','Invoice','View or print a detailed invoice','<span class="hub-doc-tag hub-doc-tag-invoice" style="margin-left:6px">Invoice</span>','openInvoice('+bid.id+')','');
     if(bid.proposalKey){
-      html+=_docRow('📋','Signed Agreement','Tap to view signed proposal','<span class="hub-doc-tag hub-doc-tag-contract" style="margin-left:6px">Contract</span>','openProposal('+bid.id+')','');
+      const _sigMeta=bid.signedAt
+        ?'✍️ Signed by '+esc(bid.signerName||'client')+' · '+new Date(bid.signedAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
+        :'Tap to view signed proposal';
+      html+=_docRow('📋','Signed Agreement',_sigMeta,'<span class="hub-doc-tag hub-doc-tag-contract" style="margin-left:6px">Contract</span>','openProposal('+bid.id+')','');
     }
-    // Cancellation notice — shown while window open, greys out silently after threshold passes
+    // EPA RRP disclosure — doc 2 of the signing flow on pre-1978 homes. Acknowledged
+    // with the same signature as the agreement, so it shows the same signer + timestamp.
+    if(_hasEpaDoc){
+      const _epaTs=bid.epaAckAt||bid.signedAt;
+      const _epaMeta='✍️ Acknowledged by '+esc(bid.signerName||'client')+' · '+new Date(_epaTs).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+      html+=_docRow('⚠️','EPA Renovate Right Disclosure',_epaMeta,'<span class="hub-doc-tag hub-doc-tag-epa" style="margin-left:6px">EPA</span>','_showEpaDoc('+bid.id+')','');
+    }
+    // Cancellation notice — e-signable while window open; shows submitted state after
+    // cancellation; greys out silently after the window passes.
     const _cd=_hub&&_hub.cancelDays||3;
     const _cancelOpen=_cancelWindowOpen(bid.signedAt||bid.bid_date,_cd);
     const _cancelDl=_cancelDeadline(bid.signedAt||bid.bid_date,_cd);
-    const _cancelMeta=_cancelOpen
-      ?'Window open — expires '+(_cancelDl?_cancelDl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'')
-      :'Window closed '+(_cancelDl?_cancelDl.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'');
-    const _cancelTag='<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:'+(_cancelOpen?'#FEF3C7':'#f1f5f9')+';color:'+(_cancelOpen?'#92400E':'#94a3b8')+'">'+(_cancelOpen?'Active':'Expired')+'</span>';
-    html+='<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer;'+ (_cancelOpen?'':'opacity:.45;pointer-events:none')+'" onclick="_showCancelForm('+bid.id+')">'+
+    const _cancelMeta=_isCancelled
+      ?'Submitted '+fmtDate(bid.cancelledAt)+(bid.cancelledName?' by '+esc(bid.cancelledName):'')
+      :(_cancelOpen
+        ?'Window open — expires '+(_cancelDl?_cancelDl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'')
+        :'Window closed '+(_cancelDl?_cancelDl.toLocaleDateString('en-US',{month:'short',day:'numeric'}):''));
+    const _cancelTag=_isCancelled
+      ?'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#FEE2E2;color:#991B1B">Cancelled</span>'
+      :'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:'+(_cancelOpen?'#FEF3C7':'#f1f5f9')+';color:'+(_cancelOpen?'#92400E':'#94a3b8')+'">'+(_cancelOpen?'Active':'Expired')+'</span>';
+    html+='<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer;'+ ((_cancelOpen||_isCancelled)?'':'opacity:.45;pointer-events:none')+'" onclick="_showCancelForm('+bid.id+')">'+
       '<div style="width:36px;height:36px;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⚖️</div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:13px;font-weight:700;color:var(--text)">'+_cd+'-Day Cancellation Right'+_cancelTag+'</div>'+
         '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+_cancelMeta+'</div>'+
       '</div>'+
-      '<div style="font-size:18px;color:var(--text3);flex-shrink:0">'+(_cancelOpen?'›':'')+'</div>'+
+      '<div style="font-size:18px;color:var(--text3);flex-shrink:0">'+((_cancelOpen||_isCancelled)?'›':'')+'</div>'+
     '</div>';
     html+='</div>';
     html+='</div>'; // end body
@@ -1639,8 +1754,17 @@ async function openProposal(bidId){
   ov.style.opacity='0';ov.style.display='block';requestAnimationFrame(()=>ov.style.opacity='1');scrollTo(0,0);
   try{
     const{data,error}=await _supa.storage.from('proposals').download(bid.proposalKey);
-    if(error||!data)throw new Error('not found');
+    if(error||!data)throw new Error(error?.message||'document not found in storage');
     const propData=JSON.parse(await data.text());
+    // Fall back to the bid's DB-sourced fields when the storage JSON missed the
+    // signing update — the signature block must still show name + timestamp.
+    if(propData.status!=='signed'&&bid.signedAt){
+      propData.status='signed';
+      propData.signerName=propData.signerName||bid.signerName||'Client';
+      propData.signedAt=propData.signedAt||bid.signedAt;
+    }
+    // DB-stored signature image fills in when the storage JSON copy is missing
+    if(!propData.signatureDataUrl&&bid.signatureData)propData.signatureDataUrl=bid.signatureData;
     let sigBlock='';
     if(propData.status==='signed'&&propData.signerName){
       const sigDate=propData.signedAt?new Date(propData.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
@@ -1660,8 +1784,30 @@ async function openProposal(bidId){
       '<div style="margin-top:40px;padding-top:20px;border-top:1px solid #e0e0dc;display:flex;gap:10px" class="no-print">'+
       '<button onclick="closeProp()" class="btn btn-sec" style="width:auto;padding:12px 24px">← Back to hub</button></div>';
   }catch(e){
-    ct.innerHTML='<p style="color:#A32D2D;padding:20px;font-size:14px">Could not load proposal. Please contact us.</p>'+
-      '<button onclick="closeProp()" class="btn btn-sec" style="margin:0 20px 20px;width:auto;padding:12px 24px">← Back</button>';
+    console.error('openProposal:',e);
+    // Fall back to a signature certificate built from DB-sourced bid fields — the
+    // client should never hit a dead end on a document they already signed.
+    if(bid.signedAt){
+      const dt=new Date(bid.signedAt).toLocaleString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+      const img=bid.signatureData?'<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:12px;margin:14px 0;text-align:center"><img src="'+bid.signatureData+'" style="max-width:100%;max-height:120px" alt="Client signature"></div>':'';
+      ct.innerHTML='<div style="padding:24px 20px">'+
+        '<div style="font-size:18px;font-weight:800;margin-bottom:4px">'+esc(bid.type||'Signed Agreement')+'</div>'+
+        '<div style="font-size:12px;color:#64748b;margin-bottom:18px">The full document is temporarily unavailable — here is your signature record.</div>'+
+        '<div style="font-size:10px;color:#94a3b8;margin:-10px 0 16px;word-break:break-all">'+esc((e&&e.message?e.message:'unknown error')+(bid.proposalKey?' · key: '+bid.proposalKey:' · no proposalKey on bid'))+'</div>'+
+        '<div style="border-top:2px solid #1a1a18;padding-top:14px">'+
+          '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#666;margin-bottom:8px">Client Signature</div>'+img+
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
+            '<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#999;margin-bottom:3px">Signed By</div><div style="font-size:14px;font-weight:700">'+esc(bid.signerName||'Client')+'</div></div>'+
+            '<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#999;margin-bottom:3px">Date &amp; Time</div><div style="font-size:14px;font-weight:700">'+esc(dt)+'</div></div>'+
+            '<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#999;margin-bottom:3px">Amount</div><div style="font-size:14px;font-weight:700">'+fmt(bid.amount||0)+'</div></div>'+
+          '</div>'+
+        '</div>'+
+        '<button onclick="closeProp()" class="btn btn-sec" style="margin-top:24px;width:auto;padding:12px 24px">← Back to hub</button>'+
+      '</div>';
+    }else{
+      ct.innerHTML='<p style="color:#A32D2D;padding:20px;font-size:14px">Could not load proposal'+(e&&e.message?' — '+esc(e.message):'')+'. Please contact us.</p>'+
+        '<button onclick="closeProp()" class="btn btn-sec" style="margin:0 20px 20px;width:auto;padding:12px 24px">← Back</button>';
+    }
   }
 }
 function closeProp(){const _ov=document.getElementById('prop-overlay');_ov.style.opacity='0';setTimeout(()=>_ov.style.display='none',250);}
