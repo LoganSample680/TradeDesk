@@ -19,6 +19,23 @@ alter table signed_proposals
 alter table signed_proposals
   add column if not exists signature_data text;
 
+-- Storage bucket: allow anon (the signing client) to write the proposal JSON.
+-- sign.html runs with a session-isolated anon Supabase client so the contractor's
+-- session never contaminates the signature flow — but that means the storage upload
+-- needs an explicit anon INSERT + UPDATE policy or it silently fails, which means
+-- the signatureDataUrl never lands in the stored JSON.
+drop policy if exists "anon_upsert_proposal_json" on storage.objects;
+drop policy if exists "anon_update_proposal_json" on storage.objects;
+
+create policy "anon_upsert_proposal_json" on storage.objects
+  for insert to anon
+  with check (bucket_id = 'proposals');
+
+create policy "anon_update_proposal_json" on storage.objects
+  for update to anon
+  using  (bucket_id = 'proposals')
+  with check (bucket_id = 'proposals');
+
 -- Re-assert the COMPLETE policy set for signed_proposals (idempotent).
 -- The live DB rejected inserts from BOTH anon and authenticated roles with
 -- "new row violates row-level security policy" — RLS is enabled there but the
