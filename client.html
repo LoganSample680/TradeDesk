@@ -584,7 +584,7 @@ async function init(){
           if(sp.epa_ack_at)bid.epaAckAt=sp.epa_ack_at;
           if(sp.rrp_firm_cert)bid.rrpFirmCert=sp.rrp_firm_cert;
           if(sp.rrp_renovator_name)bid.rrpRenovatorName=sp.rrp_renovator_name;
-          if(sp.cancelled_at){bid.cancelledAt=sp.cancelled_at;bid.cancelledName=sp.cancelled_signed_name||'';}
+          if(sp.cancelled_at){bid.cancelledAt=sp.cancelled_at;bid.cancelledName=sp.cancelled_signed_name||'';bid.balance=0;}
           if(sp.payment_status==='paid'){
             const amtPaid=sp.deposit||bid.deposit||0;
             bid.paid=Math.min(bid.amount||0,(bid.paid||0)+amtPaid);
@@ -872,7 +872,7 @@ function renderOverview(){
   const totalBalance=wonBids.reduce((s,b)=>s+(b.balance||0),0);
   const totalPaid=wonBids.reduce((s,b)=>s+(b.paid||0),0);
   const activeJobs=h.jobs.filter(j=>j.status!=='done');
-  const payableBids=wonBids.filter(b=>(b.balance||0)>0.01);
+  const payableBids=wonBids.filter(b=>(b.balance||0)>0.01&&!b.cancelledAt);
   // PR9: Real progress % from job data
   let pct=null;
   const job0=activeJobs[0]||h.jobs[0];
@@ -1389,9 +1389,9 @@ async function _submitCancellation(bidId){
     if(error)throw error;
     // Instant contractor-tab refresh (same-browser) — cloud.js listens for this key
     try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(bidId),ts,cancelled:true}));}catch(_){}
-    bid.cancelledAt=ts;bid.cancelledName=name;
+    bid.cancelledAt=ts;bid.cancelledName=name;bid.balance=0;
     document.getElementById('cancel-notice-ov')?.remove();
-    renderDocuments();
+    renderDocuments();renderOverview();
     _showCancelForm(bidId); // reopen in confirmed state
   }catch(e){
     console.error('cancellation:',e);

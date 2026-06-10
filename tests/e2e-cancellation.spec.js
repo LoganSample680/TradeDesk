@@ -146,4 +146,14 @@ test.describe('Notice of Cancellation — e-sign flow', () => {
     expect(await page.locator('#cancel-sig-name').count()).toBe(0);
     assertNoErrors(page, 'cancelled state renders confirmation');
   });
+
+  test('cancelled bid shows $0 balance and no payment CTA in overview', async ({ page }) => {
+    await bootHub(page, hubWith({ cancelledAt: new Date().toISOString(), cancelledName: 'Logan Sample' }));
+    const overview = await page.textContent('#view-overview');
+    // Balance widget must show $0, not the contract amount
+    expect(overview).toContain('$0');
+    // No Stripe payment button should appear
+    expect(overview).not.toContain('Secured by Stripe');
+    assertNoErrors(page, 'cancelled bid clears balance in overview');
+  });
 });
