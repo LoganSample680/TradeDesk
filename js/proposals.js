@@ -205,8 +205,9 @@ function _buildClientHubSnapshot(clientId){
     const propKey=b.proposalKey||b.signingKey||(_pendingSignToken?.bidId===b.id?_pendingSignToken.proposalKey:null)||null;
     const signBase=signToken?baseUrl+'sign.html?t='+signToken+'&u='+(_supaUser?.id||'')+'&b='+b.id:null;
     const _hubType=(b.type==='Build Your Own Estimate'?'Custom Estimate':b.type)||'Estimate';
+    const _hubCOs=(b.changeOrders||[]).map(co=>({id:co.id,coNum:co.coNum,desc:co.desc,type:co.type,amount:co.amount,delta:co.delta,originalAmount:co.originalAmount,newAmount:co.newAmount,status:co.status||(co.signedAt?'signed':'pending_client'),sentAt:co.sentAt||'',signedAt:co.signedAt||'',signerName:co.signerName||'',sigData:co.sigData||''}));
     return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,signedAt:b.signedAt||'',
-      proposalKey:propKey,signingToken:signToken||null,
+      proposalKey:propKey,signingToken:signToken||null,changeOrders:_hubCOs,
       signHubUrl:signBase?(signBase+(hubUrl?'&hub='+encodeURIComponent(hubUrl):'')):null};
   });
   const clientPhotos=photos.filter(p=>p.client_id===clientId);
@@ -267,7 +268,7 @@ async function _uploadClientHub(clientId){
     if(!snapshot)return;
     snapshot.token=c.clientToken;
     const key='client-hub/'+_supaUser.id+'/'+clientId+'_'+c.clientToken+'.json';
-    const{error}=await _supa.storage.from('proposals').upload(key,JSON.stringify(snapshot),{contentType:'application/json',upsert:true});
+    const{error}=await _supa.storage.from('proposals').upload(key,JSON.stringify(snapshot),{contentType:'application/json',upsert:true,cacheControl:'0'});
     if(error)throw error;
     c.clientHubKey=key;
     saveAll();
@@ -359,7 +360,7 @@ async function _refreshClientHub(clientId){
   snapshot.token=c.clientToken;
   const key='client-hub/'+_supaUser.id+'/'+clientId+'_'+c.clientToken+'.json';
   try{
-    const{error}=await _supa.storage.from('proposals').upload(key,JSON.stringify(snapshot),{contentType:'application/json',upsert:true});
+    const{error}=await _supa.storage.from('proposals').upload(key,JSON.stringify(snapshot),{contentType:'application/json',upsert:true,cacheControl:'0'});
     if(error)throw error;
     c.clientHubKey=key;saveAll();
   }catch(e){console.warn('hub refresh:',e);}
@@ -678,7 +679,7 @@ async function sendProposalLink(){
     // Run proposal and hub uploads in parallel, each capped at 6s
     const _hubClientId=estLinkedClientId||bids.find(b=>b.id===bidId)?.client_id;
     const[uploadResult,_hu]=await Promise.all([
-      Promise.race([_supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true}),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timed out')),6000))]).catch(e=>({error:e})),
+      Promise.race([_supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true,cacheControl:'0'}),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timed out')),6000))]).catch(e=>({error:e})),
       _hubClientId?Promise.race([_uploadClientHub(_hubClientId),new Promise(r=>setTimeout(r,6000,null))]).catch(()=>null):Promise.resolve(null)
     ]);
     if(uploadResult?.error)console.warn('Storage upload issue (link may still work):',uploadResult.error?.message);
@@ -2391,7 +2392,7 @@ function _showCOSignDocument(b,c,coData,clientId){
       '</div>'+
       // Legal
       '<div style="font-size:11px;color:#6b7280;line-height:1.5;margin-bottom:20px;padding:12px;background:#f9fafb;border-radius:8px">'+
-        'By signing below, both parties agree to modify the original painting contract to reflect the scope and price changes described above. All other terms of the original contract remain in effect. This change order is legally binding upon signature per applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.).'+
+        'By signing below, both parties agree to modify the original contract to reflect the scope and price changes described above. All other terms of the original contract remain in effect. This change order is legally binding upon signature per applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.).'+
       '</div>'+
       // Signature canvas
       '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:6px">Client signature</div>'+
@@ -2411,6 +2412,8 @@ function _showCOSignDocument(b,c,coData,clientId){
         '<button onclick="this.closest(\'[style*=fixed]\').remove();showChangeOrderModal('+b.id+','+clientId+')" style="padding:13px;border-radius:8px;border:1.5px solid #d1d5db;background:#f9fafb;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:#374151">← Back</button>'+
         '<button onclick="_submitCOSign('+b.id+','+clientId+')" style="padding:13px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">✓ Sign Change Order</button>'+
       '</div>'+
+      // Remote option — client reviews & signs from their hub instead of in person
+      '<button id="co-send-hub-btn" onclick="_sendCOToHub('+b.id+','+clientId+')" style="width:100%;margin-top:10px;padding:13px;border-radius:8px;border:1.5px solid #2563eb;background:#EFF6FF;color:#1d4ed8;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">📤 Send to Client Hub — client signs remotely</button>'+
     '</div>';
   ov.appendChild(doc);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -2464,6 +2467,83 @@ function _submitCOSign(bidId,clientId){
   ov?.remove();
   showToast('CO #'+coNum+' signed — new total '+fmt(newAmount),'📋');
   setTimeout(()=>openJobSheet(clientId),300);
+}
+
+// Remote signing: save the CO as pending, write it onto the bid's signed_proposals
+// row (jsonb change_orders), and refresh the hub JSON so the client sees it.
+// The client signs in client.html; cloud.js checkNewSignatures() applies the
+// signature back to the local bid (same bookkeeping as _submitCOSign).
+async function _sendCOToHub(bidId,clientId){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  const ov=document.getElementById('co-sign-canvas')?.closest('[style*=fixed]');
+  const coData=ov?.dataset?.coData?JSON.parse(ov.dataset.coData):null;
+  if(!coData)return;
+  const{desc,type,amount,delta,originalAmount,newAmount,coNum}=coData;
+  if(!b.changeOrders)b.changeOrders=[];
+  const co={id:Date.now(),coNum,date:todayKey(),desc,type,amount,delta,originalAmount,newAmount,status:'pending_client',sentAt:new Date().toISOString()};
+  b.changeOrders.push(co);
+  saveAll();renderDash();renderJobsPage();
+  ov?.remove();
+  if(!supaEnabled()||!_supaUser){
+    showToast('CO #'+coNum+' sent to client hub — awaiting signature','📤');
+    setTimeout(()=>openJobSheet(clientId),300);
+    return;
+  }
+  // Notify step: the client never sees the pending CO unless they open their
+  // hub — prompt the contractor to text them the link (after openJobSheet so
+  // the notify modal stacks on top).
+  setTimeout(()=>{openJobSheet(clientId);_showCONotifyModal(clientId,coNum);},300);
+  try{
+    const entry={coNum,desc,type,amount,delta,originalAmount,newAmount,sentAt:co.sentAt,signedAt:null,signerName:null,signatureData:null};
+    // One signed_proposals row per bid — append to it, or create it for bids
+    // signed before the table existed (in-person/cash signings).
+    const{data:rows}=await _supa.from('signed_proposals').select('id,change_orders')
+      .eq('bid_id',String(bidId)).eq('contractor_user_id',_supaUser.id).limit(1);
+    const row=rows&&rows[0];
+    if(row){
+      const arr=(Array.isArray(row.change_orders)?row.change_orders:[]).filter(x=>x&&x.coNum!==coNum);
+      arr.push(entry);
+      const{error}=await _supa.from('signed_proposals').update({change_orders:arr}).eq('id',row.id);
+      if(error)throw error;
+    }else{
+      const c=getClientById(b.client_id)||{};
+      const{error}=await _supa.from('signed_proposals').insert({
+        bid_id:String(bidId),contractor_user_id:_supaUser.id,
+        client_name:c.name||b.client_name||'Client',
+        amount:b.amount,deposit:b.deposit||0,change_orders:[entry]
+      });
+      if(error)throw error;
+    }
+  }catch(e){console.warn('CO hub send:',e);}
+  _refreshClientHub(clientId).catch(()=>{});
+}
+
+// "Notify the client" modal shown after a CO lands in the hub — mirrors the
+// sendClientHubLink share modal (sms: deep link with prefilled message + copy
+// fallback). Without this the client would only find the pending CO by
+// happening to open their hub.
+function _showCONotifyModal(clientId,coNum){
+  const c=getClientById(clientId);
+  if(!c||!_supaUser)return;
+  if(!c.clientToken){
+    c.clientToken=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
+    saveAll();
+  }
+  const url=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+  const firstName=c.name?.split(' ')[0]||'there';
+  const biz=S.bname||'us';
+  const msg='Hi '+firstName+', a change order from '+biz+' for your project needs your signature — review and sign it in your project hub: '+url;
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='co-notify-ov';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">📤 Change Order sent — notify '+firstName+'</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">CO #'+coNum+' is waiting in the hub — '+(c.name||'the client')+' won\'t see it until you send the link</div>'+
+    '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:11px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+url+'</div>'+
+    (c.phone?'<a id="co-notify-sms" href="sms:'+c.phone.replace(/\D/g,'')+'?body='+encodeURIComponent(msg)+'" onclick="autoLogContact('+clientId+',\'change_order_sent\');this.closest(\'.zmodal-overlay\').remove()" style="display:block;box-sizing:border-box;text-align:center;width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none;margin-bottom:8px">📱 Send via Messages</a>':'')+
+    '<button onclick="navigator.clipboard.writeText(\''+url+'\').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">📋 Copy link</button>'+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 
 // legacy alias kept so any old calls still work

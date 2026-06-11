@@ -37,14 +37,14 @@ function renderDash(){
   const yrStr=String(yr);
   initDashYear();
   const _incomeSum=income.filter(r=>r.date&&_dashInRange(r.date)).reduce((s,r)=>s+r.amount,0);
-  const _paymentsSum=payments.filter(p=>p.date&&_dashInRange(p.date)&&p.amount>0).reduce((s,p)=>s+p.amount,0);
+  const _paymentsSum=payments.filter(p=>p.date&&_dashInRange(p.date)&&p.amount!==0).reduce((s,p)=>s+p.amount,0);
   const tInc=_incomeSum+_paymentsSum;
   const tExp=expenses.filter(e=>e.date&&_dashInRange(e.date)).reduce((s,e)=>s+e.amount,0);
   const tMi=mileage.filter(m=>m.date&&_dashInRange(m.date)).reduce((s,m)=>s+(m.miles||0),0);
   // Prior-year totals for trend arrows (year mode only)
   const prevYrStr=String(yr-1);
   const _pInc=income.filter(r=>r.date&&r.date.startsWith(prevYrStr)).reduce((s,r)=>s+r.amount,0);
-  const _pPay=payments.filter(p=>p.date&&p.date.startsWith(prevYrStr)&&p.amount>0).reduce((s,p)=>s+p.amount,0);
+  const _pPay=payments.filter(p=>p.date&&p.date.startsWith(prevYrStr)&&p.amount!==0).reduce((s,p)=>s+p.amount,0);
   const prevInc=_pInc+_pPay;
   const prevExp=expenses.filter(e=>e.date&&e.date.startsWith(prevYrStr)).reduce((s,e)=>s+e.amount,0);
   const prevMi=mileage.filter(m=>m.date&&m.date.startsWith(prevYrStr)).reduce((s,m)=>s+(m.miles||0),0);
@@ -69,14 +69,14 @@ function renderDash(){
   // Attention sub-text for tbar
   const _subEl=document.getElementById('dash-sub');
   if(_subEl&&!_isEmployee){
-    const _collectItems=bids.filter(b=>b.status==='Closed Won'&&getBidBalance(b)>0.01&&b.completion_date);
+    const _collectItems=bids.filter(b=>b.status==='Closed Won'&&!b.clientCancelled&&getBidBalance(b)>0.01&&b.completion_date);
     const _collectOwed=_collectItems.reduce((s,b)=>s+getBidBalance(b),0);
     const _urgFu=bids.filter(b=>b.status==='Pending'&&!b.signingToken&&b.followup&&b.followup<=tk).length;
     const _pendingBids=bids.filter(b=>b.status==='Pending').length;
     const _licAlerts=getLicenseAlerts().filter(l=>_licStatus(l)==='expired').length;
     // Closed Won bids that still need a job scheduled and/or deposit collected
     const _wonNeedAction=bids.filter(b=>{
-      if(b.status!=='Closed Won'||b.completion_date)return false;
+      if(b.status!=='Closed Won'||b.completion_date||b.clientCancelled)return false;
       const depositPaid=getBidPaid(b.id)>0;
       const hasJob=jobs.some(j=>(j.bid_id===b.id||(j.client_id===b.client_id&&!j.bid_id))&&j.eventType!=='estimate');
       return!(hasJob&&depositPaid);
@@ -209,7 +209,7 @@ function renderDash(){
   const subLeads=leadCount===0?'No active leads':(urgentLeads?urgentLeads+' need follow-up · '+leadCount+' total':leadCount+' active lead'+(leadCount!==1?'s':''));
   const lsub=document.getElementById('dash-leads-sub');
   if(lsub)lsub.textContent=subLeads;
-  const collectItems=bids.filter(b=>b.status==='Closed Won'&&getBidBalance(b)>0.01&&b.completion_date);
+  const collectItems=bids.filter(b=>b.status==='Closed Won'&&!b.clientCancelled&&getBidBalance(b)>0.01&&b.completion_date);
   const collectOwed=collectItems.reduce((s,b)=>s+getBidBalance(b),0);
   const subCollect=collectItems.length===0?'Nothing to collect 🎉':collectItems.length+' job'+(collectItems.length!==1?'s':'')+' · '+fmt(collectOwed)+' owed';
   const csub=document.getElementById('dash-collect-sub');
@@ -242,7 +242,7 @@ function renderDash(){
     }else{_nearbyEl.style.display='none';}
   }
   // Update new nav badges
-  const _owing=bids.filter(b=>b.status==='Closed Won'&&getBidBalance(b)>0.01);
+  const _owing=bids.filter(b=>b.status==='Closed Won'&&!b.clientCancelled&&getBidBalance(b)>0.01);
   const _cl=document.getElementById('qa-collect-label');
   if(_cl)_cl.textContent=_owing.length?'Collect ('+_owing.length+')':'Collect';
   const _qb=document.getElementById('qa-collect-btn');
@@ -640,6 +640,7 @@ function _markDepositCash(bidId){
     payments.push({id:Date.now(),bid_id:bidId,client_id:bid.client_id,client_name:bid.client_name,
       date:todayKey(),type:'deposit',amount:depAmt,method:'cash',ref:'Cash — recorded from feed'});
     saveAll();renderDash();showToast('Cash deposit recorded','💰');
+    _refreshClientHub(bid.client_id); // keep client hub balance in sync
   });
 }
 
@@ -697,7 +698,7 @@ function renderTodayFeed(){
   });
 
   // COLLECT + SCHEDULE — Won bids not yet completed
-  bids.filter(b=>b.status==='Closed Won'&&!b.completion_date).forEach(b=>{
+  bids.filter(b=>b.status==='Closed Won'&&!b.completion_date&&!b.clientCancelled).forEach(b=>{
     // If no deposit was required treat as paid — $0-deposit and cash-upfront jobs
     const depositRequired=(b.deposit||0)>0;
     const depositPaid=!depositRequired||getBidPaid(b.id)>0;
@@ -1593,7 +1594,7 @@ function renderProposalsPage(){
     const proj=b.addr||b.type||'—';
     const _depPaid=getBidPaid(b.id);const deposit=b.status==='Closed Won'&&(b.deposit||0)>0.01&&_depPaid>=(b.deposit-0.01)?'<div style="font-size:10px;color:var(--green);font-weight:700;margin-top:2px">Deposit '+fmt(b.deposit)+' received</div>':'';
     const amt=b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'—');
-    const revFn=b.status==='Closed Won'?'openBidDetail('+b.id+',\'bid\')':(b.geiLines!==undefined?'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')':'openEditBid('+b.id+')');
+    const revFn=(b.status==='Closed Won'||b.clientCancelled)?'openBidDetail('+b.id+',\'bid\')':(b.geiLines!==undefined?'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')':'openEditBid('+b.id+')');
     return '<tr style="cursor:pointer" onclick="'+revFn+'">'+
       '<td><div style="font-weight:800">'+escHtml(c.name)+'</div>'+
       '<div style="font-size:10px;color:var(--text3);font-weight:500;margin-top:2px">'+typeChip(b)+escHtml((proj+'').split(',')[0])+'</div>'+deposit+'</td>'+

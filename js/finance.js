@@ -1440,7 +1440,7 @@ function renderMonthlyPL(){
   // Normalize date to YYYY-MM regardless of whether stored as YYYYMMDD or YYYY-MM-DD
   const mKey=d=>{if(!d)return'';const c=d.replace(/-/g,'');return c.slice(0,4)+'-'+c.slice(4,6);};
   income.forEach(r=>{if(r.date)addMonth(mKey(r.date),'inc',r.amount);});
-  payments.filter(p=>p.amount>0&&p.date).forEach(p=>{addMonth(mKey(p.date),'inc',p.amount);});
+  payments.filter(p=>p.amount!==0&&p.date).forEach(p=>{addMonth(mKey(p.date),'inc',p.amount);});
   expenses.forEach(r=>{if(r.date)addMonth(mKey(r.date),'exp',r.amount);});
   mileage.forEach(r=>{if(r.date)addMonth(mKey(r.date),'miles',r.miles||0);});
 
@@ -2044,7 +2044,7 @@ function exportPLCSV(){
   const yrInc=filterYr(income).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const yrExp=filterYr(expenses).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const yrMil=filterYr(mileage);
-  const yrPay=filterYr(payments).filter(p=>p.amount>0).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const yrPay=filterYr(payments).filter(p=>p.amount!==0).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const tIncBase=yrInc.reduce((s,r)=>s+(r.amount||0),0);
   const tIncPay=yrPay.reduce((s,p)=>s+(p.amount||0),0);
   const tInc=tIncBase+tIncPay;
@@ -2094,7 +2094,7 @@ function exportTaxPDF(){
   // Multi-state: build revenue by state from bid addresses
   const _pdfHome=S.state||'KS';
   const _pdfRev={};
-  payments.filter(p=>p.amount>0&&p.date&&p.date.startsWith(yr)).forEach(p=>{
+  payments.filter(p=>p.amount!==0&&p.date&&p.date.startsWith(yr)).forEach(p=>{
     const bid=bids.find(b=>b.id===p.bid_id);
     const st=(bid&&typeof detectStateFromAddr==='function'?detectStateFromAddr(bid.addr||''):null)||_pdfHome;
     _pdfRev[st]=(_pdfRev[st]||0)+p.amount;
@@ -2679,7 +2679,7 @@ function renderIncome(){
   const yr=String(trackerYear||new Date().getFullYear());
   const normDate=d=>{if(!d)return'';const c=d.replace(/-/g,'');return c.length>=8?c.slice(0,4)+'-'+c.slice(4,6)+'-'+c.slice(6,8):d;};
   const incRows=income.filter(r=>r.date&&r.date.replace(/-/g,'').startsWith(yr)).map(r=>({id:r.id,date:normDate(r.date),sortDate:r.date.replace(/-/g,''),client_id:r.client_id,client_name:r.client_name,type:r.type||'Income',amount:r.amount,method:r.method||r.pay||'—',_src:'income'}));
-  const payRows=payments.filter(p=>p.date&&p.amount>0&&p.date.replace(/-/g,'').startsWith(yr)).map(p=>({id:p.id,date:normDate(p.date),sortDate:p.date.replace(/-/g,''),client_id:p.client_id,client_name:p.client_name,type:p.type==='deposit'?'Deposit':p.type==='final'?'Final payment':'Payment',amount:p.amount,method:p.method||'—',_src:'payment'}));
+  const payRows=payments.filter(p=>p.date&&p.amount!==0&&p.date.replace(/-/g,'').startsWith(yr)).map(p=>({id:p.id,date:normDate(p.date),sortDate:p.date.replace(/-/g,''),client_id:p.client_id,client_name:p.client_name,type:p.amount<0?'Refund':(p.type==='deposit'?'Deposit':p.type==='final'?'Final payment':'Payment'),amount:p.amount,method:p.method||'—',_src:'payment'}));
   const filtered=[...incRows,...payRows].sort((a,b)=>b.sortDate.localeCompare(a.sortDate));
   const total=filtered.reduce((s,r)=>s+r.amount,0);
   if(!filtered.length){el.innerHTML='<div class="empty">No income in '+yr+'.</div>';return;}
@@ -2698,7 +2698,7 @@ function renderIncome(){
       '<td class="mute">'+(r.date||'')+'</td>'+
       '<td class="bold" style="color:'+(c?'var(--blue)':'inherit')+'">'+(r.client_name||'—')+'</td>'+
       '<td class="mute">'+r.type+'</td>'+
-      '<td class="green">'+fmtD(r.amount)+'</td>'+
+      '<td class="'+(r.amount<0?'red':'green')+'">'+(r.amount<0?'('+fmtD(Math.abs(r.amount))+')':fmtD(r.amount))+'</td>'+
       '<td class="mute">'+r.method+'</td>'+
     '</tr>';
   };

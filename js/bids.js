@@ -913,6 +913,7 @@ function _submitCancellationRefund(bidId){
   saveAll();
   document.getElementById('_cr-overlay')?.remove();
   renderDash();
+  _refreshClientHub(bid.client_id); // keep client hub balance in sync
   showToast(refund>0?'Refund of '+fmt(refund)+' issued · Job cancelled':'Job cancelled','↩');
 }
 function selectPayType(btn, bidId){

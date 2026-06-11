@@ -601,6 +601,24 @@ function portfolioDecline(){
   document.getElementById('po-btns').style.display='none';
   document.getElementById('po-declined').style.display='block';
 }
+// Proposal JSON is rewritten in place (signing, voiding, legal-text patches), but
+// Supabase storage serves it with cache-control: max-age=3600 — the browser HTTP
+// cache could show a stale status for up to an hour. Fetch the public object URL
+// with cache:'no-store' plus a cb= cache-buster (defeats CDN/edge caches too);
+// fall back to storage.download() on any failure so the error UI is unchanged.
+async function _fetchStorageJson(key){
+  try{
+    const pub=_supa.storage.from('proposals').getPublicUrl(key)?.data?.publicUrl;
+    if(!pub)throw new Error('no public url');
+    const res=await fetch(pub+(pub.includes('?')?'&':'?')+'cb='+Date.now(),{cache:'no-store'});
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    return{data:await res.json(),error:null};
+  }catch(e){
+    const{data,error}=await _supa.storage.from('proposals').download(key);
+    if(error||!data)return{data:null,error:error||e};
+    try{return{data:JSON.parse(await data.text()),error:null};}catch(pe){return{data:null,error:pe};}
+  }
+}
 async function init(){
   const params=new URLSearchParams(location.search);
   const _hubReturnUrl=params.get('hub')||'';
@@ -616,9 +634,9 @@ async function init(){
   }
   if(!key){show('pg-err');return;}
   try{
-    const{data,error}=await _supa.storage.from('proposals').download(key);
+    const{data,error}=await _fetchStorageJson(key);
     if(error||!data)throw error||new Error('no data returned');
-    _prop=JSON.parse(await data.text());
+    _prop=data;
     if(_prop.status==='voided'){
       document.querySelector('#pg-err h2').textContent='Proposal Updated';
       document.querySelector('#pg-err p').textContent='Your contractor has updated this proposal. Please request the new link to review and sign.';
@@ -891,7 +909,7 @@ async function init(){
     // so hub preview and all future views (client.html) reflect the correct state-specific terms.
     if(!alreadySigned&&_proposalHtml!==_proposalHtmlOrig&&key){
       const _patchedProp=Object.assign({},_prop,{proposalHtml:_proposalHtml,state:_propSt||_prop.state||'KS'});
-      _supa.storage.from('proposals').upload(key,JSON.stringify(_patchedProp),{contentType:'application/json',upsert:true}).catch(()=>{});
+      _supa.storage.from('proposals').upload(key,JSON.stringify(_patchedProp),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(()=>{});
     }
     // Remove the embedded signature block from the proposal HTML — signing happens in sig-card below
     document.querySelectorAll('#prop-html .sig-block, #prop-html [class*="sig-block"], #prop-html .signature-section').forEach(el=>el.remove());
@@ -1171,7 +1189,7 @@ async function submitCash(){
     const updated={..._prop,status:'signed',signedAt:ts,signerName:name,paymentMethod:method,signatureDataUrl:_sigData,portfolioAccepted:window._portfolioAccepted,finalAmount:_subAmt,colorChoices:window._colorChoices||[]};
     // Storage failure must not block the signature (DB row is the source of truth),
     // but it means the drawn-signature image won't render on the proposal — log it.
-    const{error:_storErr}=await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true});
+    const{error:_storErr}=await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true,cacheControl:'0'});
     if(_storErr)console.warn('proposal JSON update failed — signature image will not show on stored proposal:',_storErr.message);
     // Core columns exist in every deployment. Optional compliance/analytics columns
     // may lag behind where newer migrations haven't been applied — if PostgREST
@@ -1274,7 +1292,7 @@ async function _confirmDecline(){
   try{
     // Update proposal JSON in storage
     const updated=Object.assign({},_prop,{status:'declined',declinedAt:ts});
-    await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true});
+    await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true,cacheControl:'0'});
     // Write to signed_proposals with payment_status:'declined' so the contractor app
     // sees the decline and marks the bid as Closed Lost (not Closed Won)
     await _supa.from('signed_proposals').upsert({

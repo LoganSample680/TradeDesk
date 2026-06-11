@@ -6,9 +6,11 @@
  *    sig-check populates out of signed_proposals).
  * 2. EPA Renovate Right Disclosure appears as its own document row with the
  *    acknowledgement signature metadata (doc 2 of the unified signing flow).
- * 3. Notice of Cancellation is e-signable while the rescission window is open:
- *    typed-name input + submit button, short-name guard, and the submitted
- *    (cancelled) state once cancelled_at is set.
+ * 3. Notice of Cancellation is a 3-step friction flow:
+ *    Step 1 — reason picker (must select before continuing)
+ *    Step 2 — "talk to contractor first" interstitial with call/text links
+ *    Step 3 — timed signature form (5-second countdown before submit enables)
+ *    Confirmed state once cancelled_at is set.
  */
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors,
@@ -18,6 +20,7 @@ function hubWith(bidExtra = {}, hubExtra = {}) {
   return {
     contractorUserId: FAKE_USER_ID,
     contractorName: 'Zach Pro Painting',
+    contractorPhone: '(913) 555-1234',
     clientName: 'Logan Sample',
     clientToken: FAKE_TOKEN,
     epaRequired: true,
@@ -48,11 +51,25 @@ async function bootHub(page, hub) {
   await page.waitForTimeout(600);
 }
 
+/** Jump directly to the Step 3 signature form and skip the countdown. */
+async function skipToCancelForm(page) {
+  await page.evaluate((id) => {
+    window._cancelBidId = id;
+    window._cancelReason = 'Price concerns';
+    document.getElementById('cancel-notice-ov')?.remove();
+    const ov = document.createElement('div');
+    ov.id = 'cancel-notice-ov';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+    document.body.appendChild(ov);
+    _cancelShowStep3();
+    if (window._cancelTimer) { clearInterval(window._cancelTimer); window._cancelTimer = null; }
+    const btn = document.getElementById('cancel-submit-btn');
+    if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.style.cursor = 'pointer'; btn.textContent = 'Permanently Cancel Agreement'; }
+  }, FAKE_BID_ID_1);
+}
+
 test.describe('Hub Documents — signature metadata + EPA disclosure doc', () => {
   test('client.html defines escHtml — signature block renders without ReferenceError', async ({ page }) => {
-    // openProposal's signature block calls escHtml(); client.html historically only
-    // defined esc(). The ReferenceError surfaced as "Could not load proposal" on
-    // every SIGNED proposal (unsigned ones skip the block).
     await bootHub(page, hubWith());
     const fnType = await page.evaluate(() => typeof escHtml);
     expect(fnType, 'escHtml must be defined in client.html').toBe('function');
@@ -100,10 +117,48 @@ test.describe('Hub Documents — signature metadata + EPA disclosure doc', () =>
   });
 });
 
-test.describe('Notice of Cancellation — e-sign flow', () => {
-  test('cancellation form has typed-name signature input while window open', async ({ page }) => {
+test.describe('Notice of Cancellation — 3-step friction flow', () => {
+  test('step 1 shows reason picker — Continue disabled until a reason is selected', async ({ page }) => {
     await bootHub(page, hubWith());
     await page.evaluate(id => _showCancelForm(id), FAKE_BID_ID_1);
+    // Reason buttons present
+    const reasonCount = await page.locator('#cancel-notice-ov .cancel-reason-opt').count();
+    expect(reasonCount, 'must show at least 4 reason options').toBeGreaterThanOrEqual(4);
+    // Continue button starts disabled
+    const nextBtn = page.locator('#cancel-next1-btn');
+    await expect(nextBtn).toBeVisible();
+    expect(await nextBtn.isDisabled()).toBe(true);
+    assertNoErrors(page, 'step 1 reason picker');
+  });
+
+  test('selecting a reason enables Continue and advances to step 2', async ({ page }) => {
+    await bootHub(page, hubWith());
+    await page.evaluate(id => _showCancelForm(id), FAKE_BID_ID_1);
+    await page.locator('#cancel-notice-ov .cancel-reason-opt').first().click();
+    const nextBtn = page.locator('#cancel-next1-btn');
+    expect(await nextBtn.isDisabled()).toBe(false);
+    await nextBtn.click();
+    // Step 2: contractor contact interstitial
+    const body = await page.textContent('#cancel-notice-ov');
+    expect(body).toContain('Zach Pro Painting');
+    // Proceed link present
+    await expect(page.locator('#cancel-proceed-btn')).toBeVisible();
+    assertNoErrors(page, 'step 2 contractor contact');
+  });
+
+  test('step 2 has call and text links for the contractor', async ({ page }) => {
+    await bootHub(page, hubWith());
+    await page.evaluate(id => _showCancelForm(id), FAKE_BID_ID_1);
+    await page.locator('#cancel-notice-ov .cancel-reason-opt').first().click();
+    await page.locator('#cancel-next1-btn').click();
+    const callLink = await page.locator('#cancel-notice-ov a[href^="tel:"]').getAttribute('href');
+    expect(callLink).toContain('9135551234');
+    assertNoErrors(page, 'step 2 call link');
+  });
+
+  test('cancellation form has typed-name signature input while window open', async ({ page }) => {
+    await bootHub(page, hubWith());
+    await skipToCancelForm(page);
     await expect(page.locator('#cancel-sig-name')).toBeVisible();
     await expect(page.locator('#cancel-submit-btn')).toBeVisible();
     assertNoErrors(page, 'cancel form e-signable');
@@ -111,7 +166,7 @@ test.describe('Notice of Cancellation — e-sign flow', () => {
 
   test('short name is rejected with a clear error', async ({ page }) => {
     await bootHub(page, hubWith());
-    await page.evaluate(id => _showCancelForm(id), FAKE_BID_ID_1);
+    await skipToCancelForm(page);
     await page.fill('#cancel-sig-name', 'ab');
     await page.click('#cancel-submit-btn');
     const err = await page.textContent('#cancel-err');
@@ -121,7 +176,7 @@ test.describe('Notice of Cancellation — e-sign flow', () => {
 
   test('submitting the cancellation shows the confirmed state and Cancelled tag', async ({ page }) => {
     await bootHub(page, hubWith());
-    await page.evaluate(id => _showCancelForm(id), FAKE_BID_ID_1);
+    await skipToCancelForm(page);
     await page.fill('#cancel-sig-name', 'Logan Sample');
     await page.click('#cancel-submit-btn');
     await page.waitForTimeout(600);
@@ -155,5 +210,84 @@ test.describe('Notice of Cancellation — e-sign flow', () => {
     // No Stripe payment button should appear
     expect(overview).not.toContain('Secured by Stripe');
     assertNoErrors(page, 'cancelled bid clears balance in overview');
+  });
+});
+
+// ── Hub snapshot freshness — HTTP cache bypass (stale-balance fix) ────────────
+// The hub snapshot JSON is rewritten in storage whenever the contractor logs a
+// payment, but Supabase storage's default cache-control: max-age=3600 let the
+// browser serve a stale copy (old balance + "Pay" CTA) for up to an hour.
+// client.html now fetches the public object URL with cache:'no-store' plus a
+// cb= cache-buster. The Supabase shim's in-page fetch interceptor records every
+// such request in window.__storageFetches (WebKit-safe — no page.route needed).
+test.describe('Hub snapshot — HTTP cache bypass', () => {
+  test('hub snapshot is fetched with cache:no-store and a cb= cache-buster', async ({ page }) => {
+    await bootHub(page, hubWith());
+    const calls = await page.evaluate(() => window.__storageFetches || []);
+    const hubCall = calls.find(c => c.url.includes('client-hub/' + FAKE_USER_ID));
+    expect(hubCall, 'hub snapshot must be read via the public-URL fetch path; saw: ' + JSON.stringify(calls)).toBeTruthy();
+    expect(hubCall.cache, 'hub snapshot fetch must use cache:no-store').toBe('no-store');
+    expect(hubCall.url, 'hub snapshot fetch must carry a cache-buster param').toMatch(/[?&]cb=\d+/);
+    // And the hub actually rendered from the fresh fetch
+    const body = await page.textContent('body');
+    expect(body).toContain('Logan Sample');
+    assertNoErrors(page, 'hub cache-bypass fetch');
+  });
+
+  test('opening a proposal fetches the proposal JSON with cache:no-store + cb=', async ({ page }) => {
+    await page.addInitScript(d => { window.__mockProposalData = d; }, {
+      id: FAKE_BID_ID_1, status: 'signed', signerName: 'Logan Sample',
+      signedAt: new Date().toISOString(), amount: 5000,
+      proposalHtml: '<p>Interior painting scope</p>', clientName: 'Logan Sample',
+    });
+    await bootHub(page, hubWith());
+    await page.evaluate(id => openProposal(id), FAKE_BID_ID_1);
+    await page.waitForTimeout(500);
+    const calls = await page.evaluate(() => (window.__storageFetches || []).filter(c => c.url.includes('proposals/') && !c.url.includes('client-hub')));
+    expect(calls.length, 'proposal JSON must be read via the public-URL fetch path').toBeGreaterThan(0);
+    expect(calls[0].cache).toBe('no-store');
+    expect(calls[0].url).toMatch(/[?&]cb=\d+/);
+    const propText = await page.textContent('#prop-content');
+    expect(propText).toContain('Interior painting scope');
+    assertNoErrors(page, 'proposal cache-bypass fetch');
+  });
+
+  test('boot watchdog reveals the error page when every storage request hangs', async ({ page }) => {
+    // Dead-network simulation: fetch AND download() never settle. Without the
+    // watchdog the boot overlay (fixed, z-9999) would sit on screen forever.
+    await page.addInitScript(() => { window.__storageFetchHang = true; window.__BOOT_WATCHDOG_MS = 1500; });
+    await bootHub(page, hubWith());
+    await page.waitForTimeout(2600); // watchdog (1.5s) + overlay fade-out (~.5s)
+    await expect(page.locator('#pg-err')).toBeVisible();
+    await expect(page.locator('#boot-overlay')).toBeHidden();
+  });
+
+  test('quote-in-progress screen dismisses the boot overlay', async ({ page }) => {
+    // Hub JSON missing on both read paths, but onboarding was completed on this
+    // device → showQuoteInProgress() must not leave the loader covering the page.
+    await page.addInitScript(() => {
+      window.__storageFetchFail = true;
+      window.__storageDownloadFail = true;
+      try { localStorage.setItem('td_onb_done_1', '1'); } catch (_e) {}
+    });
+    await bootHub(page, hubWith());
+    await page.waitForTimeout(800); // overlay fade-out
+    const body = await page.textContent('#pg-hub');
+    expect(body).toContain('Quote in progress');
+    await expect(page.locator('#boot-overlay')).toBeHidden();
+    assertNoErrors(page, 'quote-in-progress dismisses boot overlay');
+  });
+
+  test('hub still renders via storage.download() fallback when the fresh fetch fails', async ({ page }) => {
+    // Simulate a CDN/public-URL failure — the app must fall back to download()
+    // and render normally (identical to the pre-fix read path).
+    await page.addInitScript(() => { window.__storageFetchFail = true; });
+    await bootHub(page, hubWith());
+    const calls = await page.evaluate(() => window.__storageFetches || []);
+    expect(calls.length, 'fresh fetch must have been attempted first').toBeGreaterThan(0);
+    const body = await page.textContent('body');
+    expect(body).toContain('Logan Sample');
+    expect(body).toContain('Interior Painting');
+    assertNoErrors(page, 'hub fallback after fetch failure');
   });
 });

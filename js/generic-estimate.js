@@ -2046,7 +2046,7 @@ async function sendGenericProposal(previewOnly){
     bwebsite:S.bwebsite||'',
     baddr:S.baddr||'',
   };
-  const _uploadRes=await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true}).catch(e=>({error:e}));
+  const _uploadRes=await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(e=>({error:e}));
   if(_uploadRes&&_uploadRes.error){showToast('Upload failed — check connection and try again','error');console.error('[proposal upload]',_uploadRes.error);return;}
   const b=bids.find(x=>x.id===bidId);
   if(b){
@@ -2391,7 +2391,7 @@ async function _sendIndProposal(){
     rrpRenovatorCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
   };
   showToast('Uploading proposal…','⏳');
-  await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true}).catch(e=>console.error('[ind proposal upload]',e));
+  await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(e=>console.error('[ind proposal upload]',e));
   const b=bids.find(x=>x.id===_indBidId);
   if(b){b.signingToken=token;b.proposalKey=proposalKey;b.proposalHtml=proposalHtml;saveAll();}
   const baseUrl=_clientBaseUrl();

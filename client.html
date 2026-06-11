@@ -155,6 +155,8 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-timeline-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;margin-top:4px;background:var(--border2)}
 .hub-timeline-dot.done{background:var(--green-mid)}
 .hub-timeline-dot.active{background:var(--denim)}
+.hub-timeline-dot.cancelled{background:#991B1B}
+.hub-badge-cancelled{background:#FEE2E2;color:#991B1B}
 .hub-timeline-body{flex:1;min-width:0}
 .hub-timeline-title{font-size:13px;font-weight:700}
 .hub-timeline-meta{font-size:11px;color:var(--text3);margin-top:2px}
@@ -339,6 +341,12 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-swatch.selected{border-color:var(--denim);box-shadow:0 0 0 2px rgba(45,93,168,.25)}
 .hub-co-btn-approve{padding:7px 12px;border-radius:8px;background:var(--ink);color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer;font-family:inherit}
 .hub-co-btn-decline{padding:7px 12px;border-radius:8px;background:transparent;color:var(--text2);border:1.5px solid var(--border2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+
+/* ── Change order signing modal ── */
+@keyframes hub-ov-fade{from{opacity:0}to{opacity:1}}
+@keyframes hub-modal-enter{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+#co-hub-ov{animation:hub-ov-fade .22s ease both}
+#co-hub-ov>div{animation:hub-modal-enter .22s cubic-bezier(.22,1,.36,1) both}
 
 /* ── Photo lightbox (PR5) ── */
 #hub-lightbox{position:fixed;inset:0;background:rgba(0,0,0,.94);z-index:600;display:none;align-items:center;justify-content:center}
@@ -547,6 +555,123 @@ const escHtml=esc;
 // When open via _previewClientHub (preview=1), append &preview=1 to sign.html links so
 // clicking "Review & Sign" doesn't log a client view — the contractor is just previewing.
 const _signHref=url=>url?((_isContractorPreview?(url+(url.includes('?')?'&':'?')+'preview=1'):url)):url;
+// Hub snapshots and proposal JSONs are rewritten in place (payments, signatures),
+// but Supabase storage serves them with cache-control: max-age=3600 — the browser
+// HTTP cache could show a stale balance / "Pay" CTA for up to an hour after the
+// contractor logs a payment. Fetch the public object URL with cache:'no-store'
+// plus a cb= cache-buster (defeats CDN/edge caches too); fall back to
+// storage.download() on any failure so the existing error UI is unchanged.
+async function _fetchStorageJson(key){
+  try{
+    const pub=_supa.storage.from('proposals').getPublicUrl(key)?.data?.publicUrl;
+    if(!pub)throw new Error('no public url');
+    // 10s abort — a hung request on a weak connection must fall through to the
+    // download() path instead of freezing the boot screen forever.
+    const ac=new AbortController();
+    const tm=setTimeout(()=>ac.abort(),10000);
+    let res;
+    try{res=await fetch(pub+(pub.includes('?')?'&':'?')+'cb='+Date.now(),{cache:'no-store',signal:ac.signal});}
+    finally{clearTimeout(tm);}
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    return{data:await res.json(),error:null};
+  }catch(e){
+    const{data,error}=await _supa.storage.from('proposals').download(key);
+    if(error||!data)return{data:null,error:error||e};
+    try{return{data:JSON.parse(await data.text()),error:null};}catch(pe){return{data:null,error:pe};}
+  }
+}
+// Merge authoritative signing state from signed_proposals over a hub snapshot.
+// Single merge path — used by init() and the live refresher (_refreshHub).
+async function _mergeSignedProposals(hub,u){
+  const bidIds=hub.bids.map(b=>String(b.id));
+  if(!u||!bidIds.length)return;
+  try{
+    // select('*') — resilient to schema drift; optional columns (epa_*, cancelled_*)
+    // may not exist in every environment and an explicit list would fail the whole query.
+    const{data:sigs}=await _supa.from('signed_proposals')
+      .select('*')
+      .eq('contractor_user_id',u).in('bid_id',bidIds);
+    if(sigs)sigs.forEach(sp=>{
+      const bid=hub.bids.find(b=>String(b.id)===sp.bid_id);
+      if(!bid)return;
+      if(bid.status==='Pending'){
+        bid.status='Closed Won';bid.signedAt=sp.signed_at;bid.paymentStatus=sp.payment_status;
+      }
+      bid.signedAt=bid.signedAt||sp.signed_at;
+      bid.signerName=sp.client_signed_name||bid.signerName||'';
+      if(sp.signature_data)bid.signatureData=sp.signature_data;
+      if(sp.epa_required)bid.epaRequired=true;
+      if(sp.epa_ack_at)bid.epaAckAt=sp.epa_ack_at;
+      if(sp.rrp_firm_cert)bid.rrpFirmCert=sp.rrp_firm_cert;
+      if(sp.rrp_renovator_name)bid.rrpRenovatorName=sp.rrp_renovator_name;
+      if(sp.cancelled_at){bid.cancelledAt=sp.cancelled_at;bid.cancelledName=sp.cancelled_signed_name||'';bid.balance=0;}
+      // Change orders: the signed_proposals row is authoritative for signing
+      // state — merge it over the snapshot (which may predate the signature)
+      if(Array.isArray(sp.change_orders)&&sp.change_orders.length){
+        bid.changeOrders=bid.changeOrders||[];
+        sp.change_orders.forEach(dbCo=>{
+          if(!dbCo)return;
+          const local=bid.changeOrders.find(x=>x.coNum===dbCo.coNum);
+          if(local)Object.assign(local,dbCo,{status:dbCo.signedAt?'signed':(local.status||'pending_client')});
+          else bid.changeOrders.push(Object.assign({},dbCo,{status:dbCo.signedAt?'signed':'pending_client'}));
+        });
+      }
+      if(sp.payment_status==='paid'){
+        const amtPaid=sp.deposit||bid.deposit||0;
+        bid.paid=Math.min(bid.amount||0,(bid.paid||0)+amtPaid);
+        bid.balance=Math.max(0,(bid.balance||0)-amtPaid);
+        bid.paymentStatus='paid';
+      }
+    });
+  }catch(e){console.warn('sig check:',e);}
+}
+// ── Live refresh ──────────────────────────────────────────────────────────────
+// The snapshot is only fetched on load — payments, change orders, and
+// cancellations the contractor logs while the hub sits open would never appear.
+// Re-fetch + re-render the current view every 30s while visible, and immediately
+// on tab focus. Postponed (next tick retries) while the client is mid-flow in a
+// modal or typing, so in-progress input is never clobbered.
+let _hubRefreshTimer=null,_hubRefreshBusy=false;
+function _hubInteractionOpen(){
+  // Appended-to-body modals: cancel flow, change order, EPA doc
+  if(document.getElementById('cancel-notice-ov')||document.getElementById('co-hub-ov')||document.getElementById('epa-doc-ov'))return true;
+  // Inline overlays shown via style.display: Stripe checkout, proposal, invoice
+  for(const id of['stripe-overlay','prop-overlay','inv-overlay']){
+    const el=document.getElementById(id);
+    if(el&&el.style.display&&el.style.display!=='none')return true;
+  }
+  // Client is typing (chat input, etc.) — re-rendering would eat the text
+  const ae=document.activeElement;
+  if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'))return true;
+  return false;
+}
+function _renderActiveView(){
+  if(_activeView==='project')renderProject();
+  else if(_activeView==='payments')renderPayments();
+  else if(_activeView==='documents')renderDocuments();
+  else if(_activeView==='messages')renderMessages();
+  else renderOverview();
+}
+async function _refreshHub(){
+  if(_hubRefreshBusy||!_hub||document.visibilityState==='hidden')return;
+  if(_hubInteractionOpen())return;
+  _hubRefreshBusy=true;
+  try{
+    const p=new URLSearchParams(location.search);
+    const t=p.get('t'),u=p.get('u'),c=p.get('c');
+    if(!t||!u||!c)return;
+    const{data,error}=await _fetchStorageJson('client-hub/'+u+'/'+c+'_'+t+'.json');
+    if(error||!data)return; // transient fetch failure — keep showing current data
+    await _mergeSignedProposals(data,u);
+    if(_hubInteractionOpen())return; // modal opened mid-fetch — drop this cycle
+    _hub=data;
+    _renderActiveView();
+  }catch(e){}finally{_hubRefreshBusy=false;}
+}
+function _startHubRefresh(){
+  if(_hubRefreshTimer)clearInterval(_hubRefreshTimer); // never stack timers
+  _hubRefreshTimer=setInterval(_refreshHub,30000);
+}
 async function init(){
   const p=new URLSearchParams(location.search);
   const t=p.get('t'),u=p.get('u'),c=p.get('c'),mode=p.get('mode');
@@ -554,7 +679,7 @@ async function init(){
   if(!t||!u||!c){showState('err');return;}
   try{
     const key='client-hub/'+u+'/'+c+'_'+t+'.json';
-    const{data,error}=await _supa.storage.from('proposals').download(key);
+    const{data,error}=await _fetchStorageJson(key);
     if(error||!data){
       // Hub JSON not ready yet — check if they completed onboarding on this device
       const p2=new URLSearchParams(location.search);
@@ -562,39 +687,13 @@ async function init(){
       if(cid&&localStorage.getItem('td_onb_done_'+cid)){showQuoteInProgress(null);return;}
       showState('err');return;
     }
-    _hub=JSON.parse(await data.text());
-    const bidIds=_hub.bids.map(b=>String(b.id));
-    if(u&&bidIds.length){
-      try{
-        // select('*') — resilient to schema drift; optional columns (epa_*, cancelled_*)
-        // may not exist in every environment and an explicit list would fail the whole query.
-        const{data:sigs}=await _supa.from('signed_proposals')
-          .select('*')
-          .eq('contractor_user_id',u).in('bid_id',bidIds);
-        if(sigs)sigs.forEach(sp=>{
-          const bid=_hub.bids.find(b=>String(b.id)===sp.bid_id);
-          if(!bid)return;
-          if(bid.status==='Pending'){
-            bid.status='Closed Won';bid.signedAt=sp.signed_at;bid.paymentStatus=sp.payment_status;
-          }
-          bid.signedAt=bid.signedAt||sp.signed_at;
-          bid.signerName=sp.client_signed_name||bid.signerName||'';
-          if(sp.signature_data)bid.signatureData=sp.signature_data;
-          if(sp.epa_required)bid.epaRequired=true;
-          if(sp.epa_ack_at)bid.epaAckAt=sp.epa_ack_at;
-          if(sp.rrp_firm_cert)bid.rrpFirmCert=sp.rrp_firm_cert;
-          if(sp.rrp_renovator_name)bid.rrpRenovatorName=sp.rrp_renovator_name;
-          if(sp.cancelled_at){bid.cancelledAt=sp.cancelled_at;bid.cancelledName=sp.cancelled_signed_name||'';bid.balance=0;}
-          if(sp.payment_status==='paid'){
-            const amtPaid=sp.deposit||bid.deposit||0;
-            bid.paid=Math.min(bid.amount||0,(bid.paid||0)+amtPaid);
-            bid.balance=Math.max(0,(bid.balance||0)-amtPaid);
-            bid.paymentStatus='paid';
-          }
-        });
-      }catch(e){console.warn('sig check:',e);}
-    }
+    _hub=data;
+    // Cap the merge at 6s — it's an enhancement over the snapshot, not a boot
+    // requirement. A hung postgrest query must not freeze the loading screen;
+    // _refreshHub() and _recheckSigned() re-merge shortly after anyway.
+    await Promise.race([_mergeSignedProposals(_hub,u),new Promise(r=>setTimeout(r,6000))]);
     applyBranding(_hub);renderAll();
+    _startHubRefresh();
     // Activate the correct view BEFORE revealing pg-hub so there's no flash
     const _hv=location.hash.slice(1);
     if(!location.hash.startsWith('#paid-')&&!location.hash.startsWith('#invoice-')){
@@ -641,8 +740,8 @@ async function initOnboard(t,u,c){
   // Load hub data for branding + client name
   try{
     const key='client-hub/'+u+'/'+c+'_'+t+'.json';
-    const{data,error}=await _supa.storage.from('proposals').download(key);
-    if(!error&&data){_hub=JSON.parse(await data.text());}
+    const{data,error}=await _fetchStorageJson(key);
+    if(!error&&data){_hub=data;}
   }catch(e){}
   // Apply branding if hub loaded, else minimal topbar
   if(_hub){
@@ -788,6 +887,7 @@ async function submitOnboard(userId,clientId){
   }
 }
 function showQuoteInProgress(h){
+  _stateShown=true; // boot resolved — keep the watchdog from overriding this screen
   const name=h?.contractorName||'Your contractor';
   const phone=h?.contractorPhone||'';
   document.getElementById('pg-hub').innerHTML=
@@ -799,6 +899,7 @@ function showQuoteInProgress(h){
     '</div>';
   const pgLoad=document.getElementById('pg-load');if(pgLoad)pgLoad.style.display='none';
   document.getElementById('pg-hub').style.display='block';
+  _dismissBootOverlay(true); // overlay is fixed + z-9999 — without this the screen stays stuck on the loader
 }
 function _dismissBootOverlay(fast){
   const ov=document.getElementById('boot-overlay');if(!ov)return;
@@ -806,7 +907,9 @@ function _dismissBootOverlay(fast){
   const delay=fast?0:220;
   setTimeout(()=>{ov.style.opacity='0';setTimeout(()=>ov.style.display='none',450);},delay);
 }
+let _stateShown=false; // watchdog guard — set once boot resolves either way
 function showState(s){
+  _stateShown=true;
   document.getElementById('pg-err').style.display=s==='err'?'block':'none';
   document.getElementById('pg-hub').style.display=s==='hub'?'block':'none';
   if(s==='hub'){_dismissBootOverlay(false);}
@@ -871,7 +974,8 @@ function renderOverview(){
   const wonBids=h.bids.filter(b=>b.status==='Closed Won');
   const totalBalance=wonBids.reduce((s,b)=>s+(b.balance||0),0);
   const totalPaid=wonBids.reduce((s,b)=>s+(b.paid||0),0);
-  const activeJobs=h.jobs.filter(j=>j.status!=='done');
+  const _cancelledBidIds=new Set(h.bids.filter(b=>b.cancelledAt).map(b=>b.id));
+  const activeJobs=h.jobs.filter(j=>j.status!=='done'&&!_cancelledBidIds.has(j.bid_id));
   const payableBids=wonBids.filter(b=>(b.balance||0)>0.01&&!b.cancelledAt);
   // PR9: Real progress % from job data
   let pct=null;
@@ -924,6 +1028,27 @@ function renderOverview(){
   // PR4: Approvals mobile card
   const approvalsHtml=_renderApprovalsCard(approvals);
   if(approvalsHtml)html+='<div class="hub-approv-mobile">'+approvalsHtml+'</div>';
+
+  // Change orders awaiting the client's signature — prominent approval card
+  const pendingCOs=[];
+  h.bids.forEach(b=>{if(b.cancelledAt)return;(b.changeOrders||[]).forEach(co=>{if(!co.signedAt)pendingCOs.push({bid:b,co});});});
+  pendingCOs.forEach(({bid,co})=>{
+    const deltaLabel=(co.type==='sub'?'−':'+')+fmt(co.amount);
+    const deltaColor=co.type==='sub'?'var(--red)':'var(--denim)';
+    html+='<div class="card" id="co-card-'+bid.id+'-'+co.coNum+'" style="border:2px solid var(--denim)">';
+    html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
+    html+='<span style="background:#EEF2FF;color:#4338CA;font-size:11px;font-weight:800;padding:3px 10px;border-radius:20px;flex-shrink:0">CO #'+co.coNum+'</span>';
+    html+='<span class="hub-feed-hd" style="margin:0">Change Order needs your signature</span>';
+    html+='</div>';
+    if(co.desc)html+='<div style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:10px">'+esc(co.desc)+'</div>';
+    html+='<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:13px;flex-wrap:wrap">';
+    html+='<span style="color:var(--text3)">'+fmt(co.originalAmount)+'</span>';
+    html+='<span style="font-weight:800;color:'+deltaColor+'">'+deltaLabel+'</span>';
+    html+='<span style="font-weight:800">= '+fmt(co.newAmount)+'</span>';
+    html+='</div>';
+    html+='<button class="hub-btn hub-btn-sign" style="width:100%" onclick="_showCODoc('+bid.id+','+co.coNum+')">✍️ Review &amp; sign Change Order #'+co.coNum+'</button>';
+    html+='</div>';
+  });
 
   // Pay CTA or paid banner
   if(payableBids.length){
@@ -984,15 +1109,19 @@ function renderOverview(){
     html+='<div class="hub-feed-hd">Project timeline</div>';
     html+='<div class="hub-timeline">';
     wonBids.forEach(b=>{
-      const isPaid=(b.balance||0)<0.01;
+      const isCancelled=!!b.cancelledAt;
+      const isPaid=!isCancelled&&(b.balance||0)<0.01;
+      const dotCls=isCancelled?'cancelled':(isPaid?'done':'active');
+      const badgeCls=isCancelled?'hub-badge-cancelled':(isPaid?'hub-badge-paid':'hub-badge-due');
+      const badgeTxt=isCancelled?'Cancelled 🚫':(isPaid?'Paid ✓':'Balance due');
       html+='<div class="hub-timeline-item">';
-      html+='<div class="hub-timeline-dot '+(isPaid?'done':'active')+'"></div>';
+      html+='<div class="hub-timeline-dot '+dotCls+'"></div>';
       html+='<div class="hub-timeline-body">';
       html+='<div class="hub-timeline-title">'+esc(b.type||'Project')+'</div>';
       html+='<div class="hub-timeline-meta">Signed '+fmtDate(b.signedAt||b.bid_date)+'</div>';
       html+='<div class="hub-timeline-status">';
       html+='<div class="hub-timeline-amt">'+fmt(b.amount)+'</div>';
-      html+='<span class="hub-badge '+(isPaid?'hub-badge-paid':'hub-badge-due')+'">'+(isPaid?'Paid ✓':'Balance due')+'</span>';
+      html+='<span class="hub-badge '+badgeCls+'">'+badgeTxt+'</span>';
       html+='</div></div></div>';
     });
     html+='</div></div>';
@@ -1297,47 +1426,160 @@ function _cancelDeadline(signedAt,days){
 function _cancelWindowOpen(signedAt,days){
   const dl=_cancelDeadline(signedAt,days);return dl&&new Date()<dl;
 }
+// Legally required refund = everything the client ACTUALLY PAID, not the deposit
+// line on the bid. The hub snapshot carries per-bid paid; fall back to summing
+// the payments ledger for the bid when the field is absent (older snapshots).
+function _bidRefundDue(bid){
+  if(bid.paid!=null)return bid.paid||0;
+  return((_hub&&_hub.payments)||[]).filter(p=>p&&p.bid_id===bid.id&&(p.amount||0)>0).reduce((s,p)=>s+p.amount,0);
+}
+// ── 3-step friction flow: reason → contractor contact → timed signature ──────
+function _cancelClose(){
+  if(_cancelTimer){clearInterval(_cancelTimer);_cancelTimer=null;}
+  document.getElementById('cancel-notice-ov')?.remove();
+}
+function _cancelSetContent(html){
+  const ov=document.getElementById('cancel-notice-ov');if(!ov)return;
+  ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px 20px 28px;max-width:480px;width:100%;max-height:88vh;overflow-y:auto">'+html+'</div>';
+}
+function _cancelHdr(title){
+  return '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
+    '<div style="font-size:13px;font-weight:800;color:#1a365d">'+title+'</div>'+
+    '<button onclick="_cancelClose()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1">✕</button>'+
+  '</div>';
+}
 function _showCancelForm(bidId){
+  if(_cancelTimer){clearInterval(_cancelTimer);_cancelTimer=null;}
+  _cancelBidId=bidId;
   const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
-  const cancelDays=_hub&&_hub.cancelDays||3;
+  document.getElementById('cancel-notice-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.id='cancel-notice-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
+  ov.addEventListener('click',e=>{if(e.target===ov)_cancelClose();});
+  document.body.appendChild(ov);
+  const cancelDays=(_hub&&_hub.cancelDays)||3;
+  const dl=_cancelDeadline(bid.signedAt||bid.bid_date,cancelDays);
+  const open=dl&&new Date()<dl;
+  if(bid.cancelledAt){_cancelShowConfirmed(bid);return;}
+  if(!open){
+    _cancelSetContent(_cancelHdr('Notice of Cancellation')+
+      '<div style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:11px;color:#64748b;font-weight:700">🔒 Cancellation window closed '+dl.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</div>'+
+      '<p style="margin:0;font-size:12px;color:#64748b">The cancellation window for this agreement has closed.</p>');
+    return;
+  }
+  _cancelReason='';
+  _cancelShowStep1(dl);
+}
+function _cancelShowStep1(dl){
+  const contractorName=esc((_hub&&_hub.contractorName)||'your contractor');
+  const reasons=['Price concerns','Schedule conflict','Found another contractor','Changed my mind','Other'];
+  let h=_cancelHdr('Notice of Cancellation');
+  h+='<div style="background:#FEF3C7;border:1px solid #92400E;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:11px;color:#92400E;font-weight:700">⏳ Cancellation window open — expires '+dl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' at midnight</div>';
+  h+='<div style="font-size:15px;font-weight:800;color:#1a1a18;margin-bottom:6px">Why are you considering cancelling?</div>';
+  h+='<div style="font-size:13px;color:#64748b;margin-bottom:14px">Helps '+contractorName+' improve their service.</div>';
+  reasons.forEach(r=>{h+='<button class="cancel-reason-opt" data-reason="'+r+'" onclick="_cancelPickReason(this)" style="display:block;width:100%;text-align:left;padding:11px 14px;margin-bottom:8px;border:1.5px solid #e2e8f0;border-radius:10px;background:#fff;font-size:14px;cursor:pointer;font-family:inherit;color:#1a1a18;transition:border-color .15s,background .15s">'+r+'</button>';});
+  h+='<div id="cancel-other-wrap" style="display:none;margin-bottom:8px"><textarea id="cancel-other-text" oninput="_cancelCheckStep1()" placeholder="Please describe your concern..." style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;resize:none;height:64px;color:#1a1a18"></textarea></div>';
+  h+='<button id="cancel-next1-btn" disabled onclick="_cancelGoStep2()" style="width:100%;padding:13px;border:none;border-radius:10px;background:#1a1a18;color:#fff;font-size:14px;font-weight:800;cursor:default;font-family:inherit;opacity:.35;margin-top:4px;transition:opacity .2s">Continue →</button>';
+  _cancelSetContent(h);
+}
+function _cancelPickReason(btn){
+  document.querySelectorAll('#cancel-notice-ov .cancel-reason-opt').forEach(b=>{b.style.borderColor='#e2e8f0';b.style.background='#fff';b.style.fontWeight='';});
+  btn.style.borderColor='#1a1a18';btn.style.background='#f1f5f9';btn.style.fontWeight='800';
+  _cancelReason=btn.dataset.reason;
+  const ow=document.getElementById('cancel-other-wrap');
+  if(ow)ow.style.display=_cancelReason==='Other'?'block':'none';
+  _cancelCheckStep1();
+}
+function _cancelCheckStep1(){
+  const btn=document.getElementById('cancel-next1-btn');if(!btn)return;
+  const otherOk=_cancelReason!=='Other'||((document.getElementById('cancel-other-text')?.value||'').trim().length>2);
+  const ready=_cancelReason.length>0&&otherOk;
+  btn.disabled=!ready;btn.style.opacity=ready?'1':'.35';btn.style.cursor=ready?'pointer':'default';
+}
+function _cancelGoStep2(){
+  if(_cancelReason==='Other'){const t=(document.getElementById('cancel-other-text')?.value||'').trim();if(t)_cancelReason='Other: '+t;}
+  _cancelShowStep2();
+}
+function _cancelShowStep2(){
+  const phone=((_hub&&_hub.contractorPhone)||'').replace(/\D/g,'');
+  const contractorName=esc((_hub&&_hub.contractorName)||'your contractor');
+  let h=_cancelHdr('Notice of Cancellation');
+  h+='<div style="text-align:center;padding:4px 0 16px">';
+  h+='<div style="font-size:36px;margin-bottom:12px">📞</div>';
+  h+='<div style="font-size:16px;font-weight:800;color:#1a1a18;margin-bottom:10px">Have you spoken with '+contractorName+' first?</div>';
+  h+='<div style="font-size:13px;color:#64748b;line-height:1.65;margin-bottom:20px">Most concerns — pricing, scheduling, scope — can be resolved with a quick conversation. Once you cancel, the contract is voided and <strong>cannot be reinstated</strong>.</div>';
+  if(phone){
+    h+='<a href="tel:'+phone+'" style="display:block;width:100%;padding:13px;border-radius:10px;background:#1b1612;color:#fff;font-size:15px;font-weight:800;text-decoration:none;text-align:center;margin-bottom:10px;box-sizing:border-box">📞 Call '+contractorName+'</a>';
+    h+='<a href="sms:'+phone+'" style="display:block;width:100%;padding:12px;border:1.5px solid #1b1612;border-radius:10px;background:#fff;color:#1b1612;font-size:14px;font-weight:700;text-decoration:none;text-align:center;margin-bottom:20px;box-sizing:border-box">💬 Text '+contractorName+'</a>';
+  }
+  h+='<button id="cancel-proceed-btn" onclick="_cancelShowStep3()" style="background:none;border:none;font-size:12px;color:#94a3b8;cursor:pointer;font-family:inherit;text-decoration:underline;padding:4px">I\'ve already tried — I still want to cancel</button>';
+  h+='</div>';
+  _cancelSetContent(h);
+}
+function _cancelShowStep3(){
+  const bid=_hub&&_hub.bids.find(b=>b.id===_cancelBidId);if(!bid)return;
+  const cancelDays=(_hub&&_hub.cancelDays)||3;
   const cancelStatute=(_hub&&_hub.cancelStatute)||'16 CFR Part 429';
   const dl=_cancelDeadline(bid.signedAt||bid.bid_date,cancelDays);
   const txDate=bid.signedAt?new Date(bid.signedAt).toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'numeric'}):bid.bid_date||'';
-  const open=dl&&new Date()<dl;
   const daysWord=cancelDays===3?'THREE':cancelDays===5?'FIVE':String(cancelDays).toUpperCase();
-  const ov=document.createElement('div');
-  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
-  ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px 20px 32px;max-width:480px;width:100%;max-height:88vh;overflow-y:auto">'+
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
-      '<div style="font-size:13px;font-weight:800;color:#1a365d">Notice of Cancellation</div>'+
-      '<button onclick="this.closest(\'div[style*=inset]\').remove()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1">✕</button>'+
-    '</div>'+
-    (open?'<div style="background:#FEF3C7;border:1px solid #92400E;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:11px;color:#92400E;font-weight:700">⏳ Cancellation window open — expires '+dl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' at midnight</div>':
-          '<div style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:11px;color:#64748b;font-weight:700">🔒 Cancellation window closed '+dl.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</div>')+
-    '<div style="text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;margin-bottom:10px">'+cancelStatute+' — Detach &amp; Retain</div>'+
-    '<div style="text-align:center;font-size:14px;font-weight:800;text-transform:uppercase;color:#1a365d;margin-bottom:14px">NOTICE OF CANCELLATION</div>'+
-    '<div style="font-size:12px;color:#2d3748;line-height:1.8">'+
-      '<p style="margin:0 0 8px"><strong>Date of Transaction:</strong> '+txDate+'</p>'+
-      '<p style="margin:0 0 10px;font-weight:700">YOU MAY CANCEL THIS TRANSACTION, WITHOUT ANY PENALTY OR OBLIGATION, WITHIN '+daysWord+' BUSINESS DAYS FROM THE ABOVE DATE.</p>'+
-      '<p style="margin:0 0 8px">If you cancel, any payments made under this contract will be returned within 10 business days following receipt of your cancellation notice, and any security interest arising out of this transaction will be cancelled.</p>'+
-      '<p style="margin:0 0 8px">To cancel, sign below — your contractor is notified instantly and any payments will be refunded within 10 business days.</p>'+
-      '<p style="margin:0 0 16px">I hereby cancel this transaction.</p>'+
-    '</div>'+
-    (bid.cancelledAt
-      ?'<div style="border-top:1px solid #e2e8f0;padding-top:14px"><div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:12px 14px;font-size:12px;color:#991B1B"><strong>🚫 Cancellation submitted</strong><br>Signed by '+esc(bid.cancelledName||'you')+' · '+new Date(bid.cancelledAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})+'<br>Your contractor has been notified. Any payments will be refunded within 10 business days.</div></div>'
-      :(open
-        ?'<div style="border-top:1px solid #e2e8f0;padding-top:14px">'+
-          '<div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px">Buyer\'s Signature (type your full legal name)</div>'+
-          '<input id="cancel-sig-name" type="text" placeholder="Your full name" style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:15px;font-family:inherit;margin-bottom:8px">'+
-          '<div style="font-size:11px;color:#64748b;margin-bottom:12px">Date: '+new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+'</div>'+
-          '<div id="cancel-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:4px"></div>'+
-          '<button id="cancel-submit-btn" onclick="_submitCancellation('+bid.id+')" style="width:100%;padding:13px;border:none;border-radius:10px;background:#991B1B;color:#fff;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit">Submit Cancellation Notice</button>'+
-        '</div>'
-        :'<p style="margin:0;border-top:1px solid #e2e8f0;padding-top:12px;font-size:12px;color:#64748b">The cancellation window for this agreement has closed.</p>'))+
-  '</div>';
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  ov.id='cancel-notice-ov';
-  document.body.appendChild(ov);
+  const refundDue=_bidRefundDue(bid);
+  const isStripe=bid.paymentMethod&&bid.paymentMethod!=='cash'&&bid.paymentMethod!=='check';
+  let refundNote='';
+  if(refundDue>0.01){
+    if(isStripe)refundNote='Your payment of '+fmt(refundDue)+' will be refunded within <strong>5–7 business days</strong> to your original payment method.';
+    else refundNote='Contact your contractor to arrange your refund of '+fmt(refundDue)+'. Cash and check refunds are due within 10 business days.';
+  }
+  let h=_cancelHdr('Notice of Cancellation');
+  h+='<div style="text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;margin-bottom:10px">'+cancelStatute+' — Detach &amp; Retain</div>';
+  h+='<div style="text-align:center;font-size:14px;font-weight:800;text-transform:uppercase;color:#1a365d;margin-bottom:14px">NOTICE OF CANCELLATION</div>';
+  h+='<div style="font-size:12px;color:#2d3748;line-height:1.8">';
+  h+='<p style="margin:0 0 8px"><strong>Date of Transaction:</strong> '+txDate+'</p>';
+  h+='<p style="margin:0 0 10px;font-weight:700">YOU MAY CANCEL THIS TRANSACTION, WITHOUT ANY PENALTY OR OBLIGATION, WITHIN '+daysWord+' BUSINESS DAYS FROM THE ABOVE DATE.</p>';
+  if(refundNote)h+='<div style="background:#FEF3C7;border:1px solid #D97706;border-radius:8px;padding:10px 12px;margin:0 0 10px;font-size:12px;color:#92400E">'+refundNote+'</div>';
+  h+='<p style="margin:0 0 8px">If you cancel, any security interest arising out of this transaction will be cancelled.</p>';
+  h+='<p style="margin:0 0 16px">I hereby cancel this transaction.</p>';
+  h+='</div>';
+  h+='<div style="border-top:1px solid #e2e8f0;padding-top:14px">';
+  h+='<div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px">Buyer\'s Signature (type your full legal name)</div>';
+  h+='<input id="cancel-sig-name" type="text" placeholder="Your full name" style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:15px;font-family:inherit;margin-bottom:8px">';
+  h+='<div style="font-size:11px;color:#64748b;margin-bottom:12px">Date: '+new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+'</div>';
+  h+='<div id="cancel-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:4px"></div>';
+  h+='<button id="cancel-submit-btn" disabled onclick="_submitCancellation('+bid.id+')" style="width:100%;padding:13px;border:none;border-radius:10px;background:#991B1B;color:#fff;font-size:14px;font-weight:800;cursor:default;font-family:inherit;opacity:.5;transition:opacity .2s">Submitting in 5…</button>';
+  h+='</div>';
+  _cancelSetContent(h);
+  // 5-second delay before the submit button enables — gives time to reconsider
+  let secs=5;
+  _cancelTimer=setInterval(()=>{
+    secs--;
+    const btn=document.getElementById('cancel-submit-btn');
+    if(!btn){clearInterval(_cancelTimer);_cancelTimer=null;return;}
+    if(secs<=0){clearInterval(_cancelTimer);_cancelTimer=null;btn.disabled=false;btn.style.opacity='1';btn.style.cursor='pointer';btn.textContent='Permanently Cancel Agreement';}
+    else btn.textContent='Submitting in '+secs+'…';
+  },1000);
+}
+function _cancelShowConfirmed(bid){
+  const dt=bid.cancelledAt?new Date(bid.cancelledAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
+  const cancelDays=(_hub&&_hub.cancelDays)||3;
+  const cancelStatute=(_hub&&_hub.cancelStatute)||'16 CFR Part 429';
+  const txDate=bid.signedAt?new Date(bid.signedAt).toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'numeric'}):bid.bid_date||'';
+  const daysWord=cancelDays===3?'THREE':cancelDays===5?'FIVE':String(cancelDays).toUpperCase();
+  const refundDue=_bidRefundDue(bid);
+  const isStripe=bid.paymentMethod&&bid.paymentMethod!=='cash'&&bid.paymentMethod!=='check';
+  let refundNote='';
+  if(refundDue>0.01){
+    if(isStripe)refundNote='Your payment of '+fmt(refundDue)+' will be refunded within 5–7 business days to your original payment method.';
+    else refundNote='Contact your contractor to arrange your refund of '+fmt(refundDue)+' within 10 business days.';
+  }
+  let h=_cancelHdr('Notice of Cancellation');
+  h+='<div style="text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;margin-bottom:10px">'+cancelStatute+' — Detach &amp; Retain</div>';
+  h+='<div style="text-align:center;font-size:14px;font-weight:800;text-transform:uppercase;color:#1a365d;margin-bottom:14px">NOTICE OF CANCELLATION</div>';
+  h+='<div style="font-size:12px;color:#2d3748;line-height:1.8"><p style="margin:0 0 8px"><strong>Date of Transaction:</strong> '+txDate+'</p><p style="margin:0 0 10px;font-weight:700">YOU MAY CANCEL THIS TRANSACTION, WITHOUT ANY PENALTY OR OBLIGATION, WITHIN '+daysWord+' BUSINESS DAYS FROM THE ABOVE DATE.</p></div>';
+  h+='<div style="border-top:1px solid #e2e8f0;padding-top:14px"><div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:12px 14px;font-size:12px;color:#991B1B"><strong>🚫 Cancellation submitted</strong><br>Signed by '+esc(bid.cancelledName||'you')+' · '+dt;
+  if(refundNote)h+='<br><span style="color:#92400E">'+refundNote+'</span>';
+  h+='<br>Your contractor has been notified.</div></div>';
+  _cancelSetContent(h);
 }
 // EPA Renovate Right pre-renovation disclosure — rendered as a signed document
 // with the client's actual signature image + date/time at the bottom.
@@ -1374,6 +1616,135 @@ function _showEpaDoc(bidId){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   document.body.appendChild(ov);
 }
+// ── Change Order — remote review & e-signature ───────────────────────────────
+// Pending: CO badge, original contract, change requested, adjustment, new total,
+// legal paragraph, signature canvas + typed name. Signed: renders as a signed
+// document (signature image + signer + date/time), like the EPA disclosure.
+let _coHubCanvas=null,_coHubCtx=null,_coHubDrawing=false;
+function _showCODoc(bidId,coNum){
+  const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
+  const co=(bid.changeOrders||[]).find(x=>x.coNum===coNum);if(!co)return;
+  document.getElementById('co-hub-ov')?.remove();
+  const signed=!!co.signedAt;
+  const deltaLabel=(co.type==='sub'?'−':'+')+fmt(co.amount);
+  const deltaColor=co.type==='sub'?'#A32D2D':'#2563eb';
+  const sigImgData=co.sigData||co.signatureData||'';
+  const dt=co.signedAt?new Date(co.signedAt).toLocaleString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
+  let h='<div style="background:#fff;border-radius:14px;max-width:520px;width:100%;margin:auto;padding:22px 20px 26px;box-sizing:border-box;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">';
+  h+='<div style="font-size:13px;font-weight:800;color:#1a365d">📋 Change Order</div>';
+  h+='<button onclick="document.getElementById(\'co-hub-ov\').remove()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1" aria-label="Close">✕</button>';
+  h+='</div>';
+  // CO number badge
+  h+='<div style="display:inline-block;background:#EBF2FB;color:#1a365d;font-size:12px;font-weight:800;padding:4px 12px;border-radius:20px;margin-bottom:16px">CO #'+co.coNum+'</div>';
+  // Original contract
+  h+='<div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1.5px solid #e5e7eb">';
+  h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:8px">Original Contract</div>';
+  h+='<div style="font-size:24px;font-weight:800;color:#111">'+fmt(co.originalAmount)+'</div>';
+  h+='</div>';
+  // Change requested
+  h+='<div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1.5px solid #e5e7eb">';
+  h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:8px">Change Requested</div>';
+  h+='<div style="font-size:14px;color:#111;line-height:1.5;margin-bottom:10px">'+esc(co.desc||'')+'</div>';
+  h+='<div style="display:flex;align-items:center;gap:8px">';
+  h+='<span style="font-size:13px;color:#6b7280">Adjustment:</span>';
+  h+='<span style="font-size:16px;font-weight:800;color:'+deltaColor+'">'+deltaLabel+'</span>';
+  h+='</div></div>';
+  // New total
+  h+='<div style="background:#f0fdf4;border:2px solid #86efac;border-radius:10px;padding:14px 18px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">';
+  h+='<div style="font-size:13px;font-weight:700;color:#166534">New Contract Total</div>';
+  h+='<div style="font-size:26px;font-weight:800;color:#166534">'+fmt(co.newAmount)+'</div>';
+  h+='</div>';
+  // Legal
+  h+='<div id="co-hub-legal" style="font-size:11px;color:#6b7280;line-height:1.5;margin-bottom:18px;padding:12px;background:#f9fafb;border-radius:8px">'+
+    'By signing below, both parties agree to modify the original contract to reflect the scope and price changes described above. All other terms of the original contract remain in effect. This change order is legally binding upon signature per applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.).'+
+  '</div>';
+  if(signed){
+    h+='<div style="border-top:2px solid #1a1a18;padding-top:14px">';
+    h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#666;margin-bottom:8px">Approved &amp; Signed</div>';
+    if(sigImgData)h+='<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:12px;margin:12px 0;text-align:center"><img src="'+sigImgData+'" style="max-width:100%;max-height:110px" alt="Client signature"></div>';
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
+    h+='<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:3px">Signed By</div><div style="font-size:13px;font-weight:700;color:#1a1a18">'+esc(co.signerName||'Client')+'</div></div>';
+    h+='<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:3px">Date &amp; Time</div><div style="font-size:13px;font-weight:700;color:#1a1a18">'+esc(dt||'—')+'</div></div>';
+    h+='</div></div>';
+  }else{
+    h+='<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:6px">Your signature</div>';
+    h+='<canvas id="co-hub-canvas" width="500" height="140" style="width:100%;height:140px;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;touch-action:none;cursor:crosshair;display:block;margin-bottom:4px"></canvas>';
+    h+='<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button onclick="_clearCOHubCanvas()" style="font-size:11px;color:#6b7280;background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear</button></div>';
+    h+='<div style="margin-bottom:14px">';
+    h+='<label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:6px">Type full name to confirm</label>';
+    h+='<input type="text" id="co-hub-sign-name" placeholder="Full name" autocomplete="off" style="width:100%;box-sizing:border-box;font-size:16px;padding:10px 12px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-family:inherit;color:#111">';
+    h+='</div>';
+    h+='<div id="co-hub-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:6px"></div>';
+    h+='<button id="co-hub-sign-btn" onclick="_submitCOHubSign('+bid.id+','+co.coNum+')" style="width:100%;padding:13px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">✓ Sign Change Order</button>';
+  }
+  h+='</div>';
+  const ov=document.createElement('div');
+  ov.id='co-hub-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px';
+  ov.innerHTML=h;
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  document.body.appendChild(ov);
+  if(!signed)setTimeout(()=>{
+    const canvas=document.getElementById('co-hub-canvas');if(!canvas)return;
+    _coHubCanvas=canvas;_coHubCtx=canvas.getContext('2d');
+    _coHubCtx.strokeStyle='#111';_coHubCtx.lineWidth=2;_coHubCtx.lineCap='round';_coHubCtx.lineJoin='round';
+    const getPos=(e)=>{const r=canvas.getBoundingClientRect();const src=e.touches?e.touches[0]:e;return{x:(src.clientX-r.left)*(canvas.width/r.width),y:(src.clientY-r.top)*(canvas.height/r.height)};};
+    canvas.addEventListener('mousedown',e=>{_coHubDrawing=true;const p=getPos(e);_coHubCtx.beginPath();_coHubCtx.moveTo(p.x,p.y);});
+    canvas.addEventListener('mousemove',e=>{if(!_coHubDrawing)return;const p=getPos(e);_coHubCtx.lineTo(p.x,p.y);_coHubCtx.stroke();});
+    canvas.addEventListener('mouseup',()=>_coHubDrawing=false);
+    canvas.addEventListener('touchstart',e=>{e.preventDefault();_coHubDrawing=true;const p=getPos(e);_coHubCtx.beginPath();_coHubCtx.moveTo(p.x,p.y);},{passive:false});
+    canvas.addEventListener('touchmove',e=>{e.preventDefault();if(!_coHubDrawing)return;const p=getPos(e);_coHubCtx.lineTo(p.x,p.y);_coHubCtx.stroke();},{passive:false});
+    canvas.addEventListener('touchend',()=>_coHubDrawing=false);
+  },100);
+}
+function _clearCOHubCanvas(){
+  if(_coHubCanvas&&_coHubCtx)_coHubCtx.clearRect(0,0,_coHubCanvas.width,_coHubCanvas.height);
+}
+async function _submitCOHubSign(bidId,coNum){
+  const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
+  const co=(bid.changeOrders||[]).find(x=>x.coNum===coNum);if(!co||co.signedAt)return;
+  const errEl=document.getElementById('co-hub-err');
+  const name=(document.getElementById('co-hub-sign-name')?.value||'').trim();
+  if(name.length<3){if(errEl)errEl.textContent='Type your full name to sign this change order.';return;}
+  let sigData='';
+  if(_coHubCanvas&&_coHubCtx){
+    const d=_coHubCtx.getImageData(0,0,_coHubCanvas.width,_coHubCanvas.height).data;
+    let hasSig=false;for(let i=3;i<d.length;i+=4){if(d[i]>0){hasSig=true;break;}}
+    if(!hasSig){if(errEl)errEl.textContent='Please sign in the box above.';return;}
+    sigData=_coHubCanvas.toDataURL('image/png');
+  }
+  const btn=document.getElementById('co-hub-sign-btn');
+  if(btn){btn.disabled=true;btn.textContent='Submitting…';}
+  const ts=new Date().toISOString();
+  try{
+    // The DB row is authoritative — re-read it, sign the matching entry, write back.
+    // Falls back to the hub snapshot's CO list if the read returns nothing.
+    let arr=null;
+    try{
+      const{data:rows}=await _supa.from('signed_proposals').select('change_orders').eq('bid_id',String(bidId)).limit(1);
+      if(rows&&rows[0]&&Array.isArray(rows[0].change_orders))arr=rows[0].change_orders;
+    }catch(_){}
+    if(!arr)arr=(bid.changeOrders||[]).map(c=>({coNum:c.coNum,desc:c.desc,type:c.type,amount:c.amount,delta:c.delta,originalAmount:c.originalAmount,newAmount:c.newAmount,sentAt:c.sentAt||'',signedAt:c.signedAt||null,signerName:c.signerName||null,signatureData:c.sigData||c.signatureData||null}));
+    let entry=arr.find(x=>x&&x.coNum===coNum);
+    if(!entry){entry={coNum,desc:co.desc,type:co.type,amount:co.amount,delta:co.delta,originalAmount:co.originalAmount,newAmount:co.newAmount,sentAt:co.sentAt||''};arr.push(entry);}
+    entry.signedAt=ts;entry.signerName=name;entry.signatureData=sigData;
+    const{error}=await _supa.from('signed_proposals').update({change_orders:arr}).eq('bid_id',String(bidId));
+    if(error)throw error;
+    // Instant contractor-tab refresh (same-browser) — cloud.js listens for this key
+    try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(bidId),ts,changeOrder:coNum}));}catch(_){}
+    co.signedAt=ts;co.signerName=name;co.sigData=sigData;co.status='signed';
+    const _newAmt=co.newAmount!=null?co.newAmount:(bid.amount||0)+(co.delta||0);
+    bid.balance=Math.max(0,(bid.balance||0)+(_newAmt-(bid.amount||0)));
+    bid.amount=_newAmt;
+    renderOverview();renderDocuments();renderPayments();
+    _showCODoc(bidId,coNum); // reopen in the signed-document state
+  }catch(e){
+    console.warn('change order sign:',e);
+    if(errEl)errEl.textContent='Could not submit — '+(e.message||'please try again or contact your contractor.');
+    if(btn){btn.disabled=false;btn.textContent='✓ Sign Change Order';}
+  }
+}
 async function _submitCancellation(bidId){
   const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const name=(document.getElementById('cancel-sig-name')?.value||'').trim();
@@ -1393,6 +1764,10 @@ async function _submitCancellation(bidId){
     document.getElementById('cancel-notice-ov')?.remove();
     renderDocuments();renderOverview();
     _showCancelForm(bidId); // reopen in confirmed state
+    // Fire-and-forget Stripe refund — non-blocking, cancellation is already recorded
+    _supa.functions.invoke('cancel-refund',{body:{bidId:String(bidId)}})
+      .then(({data,error})=>{if(error||data?.error)console.warn('Stripe auto-refund:',error||data?.error);})
+      .catch(()=>{});
   }catch(e){
     console.error('cancellation:',e);
     if(errEl)errEl.textContent='Could not submit — '+(e.message||'please try again or contact your contractor directly.');
@@ -1403,7 +1778,7 @@ async function _submitCancellation(bidId){
 function renderDocuments(){
   if(!_hub)return;
   const h=_hub;
-  const wonBids=h.bids.filter(b=>b.status==='Closed Won');
+  const wonBids=h.bids.filter(b=>b.status==='Closed Won'||!!b.cancelledAt);
   let html='<div class="view-title">Documents</div>';
 
   if(!wonBids.length&&!h.epaRequired&&!(_hub._clientDocs&&_hub._clientDocs.length)){
@@ -1415,7 +1790,8 @@ function renderDocuments(){
     const isPaid=(bid.balance||0)<0.01;
     const autoOpen=i===0;
     const _hasEpaDoc=!!(bid.epaAckAt||(h.epaRequired&&bid.signedAt));
-    const docCount=1+(bid.proposalKey?1:0)+(_hasEpaDoc?1:0);
+    const _bidCOs=bid.changeOrders||[];
+    const docCount=1+(bid.proposalKey?1:0)+(_hasEpaDoc?1:0)+_bidCOs.length;
     const _isCancelled=!!bid.cancelledAt;
     const hdrBg=_isCancelled?'linear-gradient(135deg,#7F1D1D,#991B1B)':(isPaid?'linear-gradient(135deg,#14532D,#1A6B3A)':'linear-gradient(135deg,#1B1612,#24202C)');
     html+='<div style="border-radius:var(--rl);overflow:hidden;margin-bottom:12px;box-shadow:0 1px 6px rgba(27,22,18,.1),0 0 0 1px rgba(27,22,18,.06)">';
@@ -1447,27 +1823,40 @@ function renderDocuments(){
       const _epaMeta='✍️ Acknowledged by '+esc(bid.signerName||'client')+' · '+new Date(_epaTs).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
       html+=_docRow('⚠️','EPA Renovate Right Disclosure',_epaMeta,'<span class="hub-doc-tag hub-doc-tag-epa" style="margin-left:6px">EPA</span>','_showEpaDoc('+bid.id+')','');
     }
-    // Cancellation notice — e-signable while window open; shows submitted state after
-    // cancellation; greys out silently after the window passes.
+    // Change orders — signed ones render like the EPA doc (signature + metadata);
+    // pending ones open the review & sign modal.
+    _bidCOs.forEach(co=>{
+      const _coMeta=co.signedAt
+        ?'✍️ Signed by '+esc(co.signerName||'client')+' · '+new Date(co.signedAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
+        :'Review &amp; sign — '+(co.type==='sub'?'−':'+')+fmt(co.amount)+' adjustment';
+      const _coTag=co.signedAt
+        ?'<span class="hub-doc-tag hub-doc-tag-contract" style="margin-left:6px">Signed</span>'
+        :'<span class="hub-doc-tag" style="margin-left:6px;background:#FEF3C7;color:#92400E">Action needed</span>';
+      html+=_docRow('📋','Change Order #'+co.coNum,_coMeta,_coTag,'_showCODoc('+bid.id+','+co.coNum+')','');
+    });
+    // Cancellation notice — e-signable while the rescission window is open
+    // (_cancelWindowOpen is the authority); the row removes itself entirely once
+    // the window closes. Exception: a submitted cancellation stays visible
+    // permanently as the legal record.
     const _cd=_hub&&_hub.cancelDays||3;
     const _cancelOpen=_cancelWindowOpen(bid.signedAt||bid.bid_date,_cd);
-    const _cancelDl=_cancelDeadline(bid.signedAt||bid.bid_date,_cd);
-    const _cancelMeta=_isCancelled
-      ?'Submitted '+fmtDate(bid.cancelledAt)+(bid.cancelledName?' by '+esc(bid.cancelledName):'')
-      :(_cancelOpen
-        ?'Window open — expires '+(_cancelDl?_cancelDl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'')
-        :'Window closed '+(_cancelDl?_cancelDl.toLocaleDateString('en-US',{month:'short',day:'numeric'}):''));
-    const _cancelTag=_isCancelled
-      ?'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#FEE2E2;color:#991B1B">Cancelled</span>'
-      :'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:'+(_cancelOpen?'#FEF3C7':'#f1f5f9')+';color:'+(_cancelOpen?'#92400E':'#94a3b8')+'">'+(_cancelOpen?'Active':'Expired')+'</span>';
-    html+='<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer;'+ ((_cancelOpen||_isCancelled)?'':'opacity:.45;pointer-events:none')+'" onclick="_showCancelForm('+bid.id+')">'+
-      '<div style="width:36px;height:36px;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⚖️</div>'+
-      '<div style="flex:1;min-width:0">'+
-        '<div style="font-size:13px;font-weight:700;color:var(--text)">'+_cd+'-Day Cancellation Right'+_cancelTag+'</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+_cancelMeta+'</div>'+
-      '</div>'+
-      '<div style="font-size:18px;color:var(--text3);flex-shrink:0">'+((_cancelOpen||_isCancelled)?'›':'')+'</div>'+
-    '</div>';
+    if(_cancelOpen||_isCancelled){
+      const _cancelDl=_cancelDeadline(bid.signedAt||bid.bid_date,_cd);
+      const _cancelMeta=_isCancelled
+        ?'Submitted '+fmtDate(bid.cancelledAt)+(bid.cancelledName?' by '+esc(bid.cancelledName):'')
+        :'Window open — expires '+(_cancelDl?_cancelDl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'');
+      const _cancelTag=_isCancelled
+        ?'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#FEE2E2;color:#991B1B">Cancelled</span>'
+        :'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#FEF3C7;color:#92400E">Active</span>';
+      html+='<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="_showCancelForm('+bid.id+')">'+
+        '<div style="width:36px;height:36px;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⚖️</div>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:13px;font-weight:700;color:var(--text)">'+_cd+'-Day Cancellation Right'+_cancelTag+'</div>'+
+          '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+_cancelMeta+'</div>'+
+        '</div>'+
+        '<div style="font-size:18px;color:var(--text3);flex-shrink:0">›</div>'+
+      '</div>';
+    }
     html+='</div>';
     html+='</div>'; // end body
     html+='</div>'; // end card
@@ -1566,6 +1955,7 @@ function renderInvoices(){
 }
 
 let _stripeCheckoutInstance=null,_stripeCheckoutElements=null,_stripeCheckoutBidId=null,_stripeCheckoutAmt=0;
+let _cancelReason='',_cancelBidId=null,_cancelTimer=null;
 async function _launchCheckout(bidId,amount,label){
   const bid=_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const btn=document.getElementById('pay-btn-'+bidId)||document.getElementById('pay-inv-btn-'+bidId);
@@ -1753,9 +2143,8 @@ async function openProposal(bidId){
   ct.innerHTML='<div style="text-align:center;padding:60px 20px;color:#999;font-size:16px">Loading proposal…</div>';
   ov.style.opacity='0';ov.style.display='block';requestAnimationFrame(()=>ov.style.opacity='1');scrollTo(0,0);
   try{
-    const{data,error}=await _supa.storage.from('proposals').download(bid.proposalKey);
-    if(error||!data)throw new Error(error?.message||'document not found in storage');
-    const propData=JSON.parse(await data.text());
+    const{data:propData,error}=await _fetchStorageJson(bid.proposalKey);
+    if(error||!propData)throw new Error(error?.message||'document not found in storage');
     // Fall back to the bid's DB-sourced fields when the storage JSON missed the
     // signing update — the signature block must still show name + timestamp.
     if(propData.status!=='signed'&&bid.signedAt){
@@ -2041,6 +2430,14 @@ function closeAcctMenu(){
 document.addEventListener('click',()=>{closeNotifPanel();closeAcctMenu();});
 
 init();
+// Boot watchdog — if neither the hub nor the error state has been shown after
+// 20s (hung request, dead network, unexpected stall), stop pretending to load:
+// reveal the hub if we have data, otherwise the error page with its retry path.
+setTimeout(()=>{
+  if(_stateShown)return;
+  if(_hub){try{applyBranding(_hub);renderAll();}catch(e){}}
+  showState(_hub?'hub':'err');
+},window.__BOOT_WATCHDOG_MS||20000);
 // Re-check signed status when returning from sign.html via browser back / bfcache restore
 async function _recheckSigned(){
   if(!_hub||!_supa)return;
@@ -2067,7 +2464,8 @@ window.addEventListener('pageshow',e=>{
   // in case sign.html's write hadn't propagated when init() queried.
   setTimeout(_recheckSigned,3000);
 });
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')_recheckSigned();});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){_recheckSigned();_refreshHub();}});
+window.addEventListener('focus',()=>_refreshHub());
 </script>
 </body>
 </html>

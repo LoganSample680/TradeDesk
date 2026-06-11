@@ -83,7 +83,7 @@ Deno.serve(async (req) => {
           };
           await supabase.storage.from('proposals').upload(
             proposalKey, JSON.stringify(updated),
-            { contentType: 'application/json', upsert: true }
+            { contentType: 'application/json', upsert: true, cacheControl: '0' }
           );
         }
       } catch (e) { console.warn('Signature save failed:', e); }

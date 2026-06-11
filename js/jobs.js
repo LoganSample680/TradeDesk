@@ -1092,6 +1092,7 @@ function openJobSheet(clientId){
             '<div style="display:flex;align-items:center;gap:6px">'+
               '<span style="font-size:13px;font-weight:800;color:'+deltaColor+'">'+deltaLabel+'</span>'+
               (co.signedAt?'<span style="font-size:10px;font-weight:700;background:#D1FAE5;color:#065F46;padding:2px 7px;border-radius:10px">Signed</span>':
+               co.status==='pending_client'?'<span style="font-size:10px;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 7px;border-radius:10px">⏳ Awaiting client signature</span>':
                            '<span style="font-size:10px;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 7px;border-radius:10px">Unsigned</span>')+
             '</div>'+
           '</div>'+
