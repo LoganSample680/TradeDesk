@@ -206,7 +206,12 @@ function _buildClientHubSnapshot(clientId){
     const signBase=signToken?baseUrl+'sign.html?t='+signToken+'&u='+(_supaUser?.id||'')+'&b='+b.id:null;
     const _hubType=(b.type==='Build Your Own Estimate'?'Custom Estimate':b.type)||'Estimate';
     const _hubCOs=(b.changeOrders||[]).map(co=>({id:co.id,coNum:co.coNum,desc:co.desc,type:co.type,amount:co.amount,delta:co.delta,originalAmount:co.originalAmount,newAmount:co.newAmount,status:co.status||(co.signedAt?'signed':'pending_client'),sentAt:co.sentAt||'',signedAt:co.signedAt||'',signerName:co.signerName||'',sigData:co.sigData||''}));
-    return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,signedAt:b.signedAt||'',
+    const _fcDaysElapsed=Math.floor((Date.now()-new Date(b.completion_date||b.signedAt||Date.now()).getTime())/86400000);
+    const _fcDaysOverdue=Math.max(0,_fcDaysElapsed-30);
+    const _fcRate=(S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5)/100/30;
+    const financeCharge=balance>0.01&&_fcDaysOverdue>0?Math.round(balance*_fcRate*_fcDaysOverdue*100)/100:0;
+    const daysOverdue=balance>0.01?_fcDaysOverdue:0;
+    return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',
       proposalKey:propKey,signingToken:signToken||null,changeOrders:_hubCOs,
       signHubUrl:signBase?(signBase+(hubUrl?'&hub='+encodeURIComponent(hubUrl):'')):null};
   });

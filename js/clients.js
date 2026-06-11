@@ -786,6 +786,12 @@ function renderClientList(){
     const hasBal=totalOwed>0.01;
     const ltv=wonBids.reduce((sum,b)=>sum+(b.amount||0),0);
     const addrPart=(c.addr||'').split(',')[0];
+    // Overdue 30+ days badge
+    const _overduebal=hasBal&&wonBids.some(b=>{
+      const bal=getBidBalance(b);if(bal<0.01)return false;
+      const startDate=new Date(b.completion_date||b.signedAt||Date.now());
+      return Math.floor((Date.now()-startDate.getTime())/86400000)>=30;
+    });
 
     // Status badge
     const bdgMap={
@@ -813,6 +819,7 @@ function renderClientList(){
               (ltv>0?'<span class="cc-stat">'+fmt(ltv)+' LTV</span>':'')+
               (c.source?'<span class="cc-stat">'+escHtml(c.source)+'</span>':'')+
               (hasBal?'<span class="cc-stat" style="color:var(--c-red);background:var(--c-red-soft);border-color:var(--c-red-edge)">'+fmt(totalOwed)+' owed</span>':'')+
+              (_overduebal?'<span class="cc-stat" style="color:#fff;background:#A32D2D;border-color:#A32D2D;font-weight:800">30+ days overdue</span>':'')+
               (pendBids.length&&!hasBal?'<span class="cc-stat">'+pendBids.length+' bid'+(pendBids.length>1?'s':'')+' out</span>':'')+
             '</div>'+
           '</div>'+
@@ -1323,9 +1330,32 @@ function renderClientDetail(){
       <div style="font-size:12px;font-weight:700;color:var(--green-mid)">✓ Paid in full</div>
       <div style="font-size:14px;font-weight:700;color:var(--green-mid)">${fmt(totalPaidAll)}</div>
     </div>`:'';
+  // Lien alert — any won bid with balance overdue 30+ days
+  const _lienBid=_wonBids.find(b=>{
+    const bal=getBidBalance(b);if(bal<0.01)return false;
+    const startDate=new Date(b.completion_date||b.signedAt||Date.now());
+    const daysElapsed=Math.floor((Date.now()-startDate.getTime())/86400000);
+    return daysElapsed>=30;
+  });
+  let lienAlertHTML='';
+  if(_lienBid){
+    const _lienBal=getBidBalance(_lienBid);
+    const _lienFC=typeof _calcFinanceCharge==='function'?_calcFinanceCharge(_lienBid):0;
+    const _lienTotal=_lienBal+_lienFC;
+    lienAlertHTML=`<div style="background:#3D0000;border:2px solid #A32D2D;border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#FFB3B3;margin-bottom:8px">⚠️ Balance overdue 30+ days</div>
+      <div style="font-size:12px;color:rgba(255,179,179,.75);line-height:1.9;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between"><span>Contract balance:</span><span style="font-weight:700;color:#FFB3B3">${fmt(_lienBal)}</span></div>
+        ${_lienFC>0.01?`<div style="display:flex;justify-content:space-between"><span>Finance charge:</span><span style="font-weight:700;color:#FFB3B3">${fmt(_lienFC)}</span></div>`:''}
+        <div style="border-top:1px solid rgba(163,45,45,.5);margin:4px 0"></div>
+        <div style="display:flex;justify-content:space-between;font-weight:800;color:#FFB3B3"><span>Total lienable:</span><span>${fmt(_lienTotal)}</span></div>
+      </div>
+      <button onclick="showFileLienDirect(${_lienBid.id})" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:#A32D2D;color:#FFB3B3;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">📋 Prepare Lien Document</button>
+    </div>`;
+  }
   const intakeInfoHTML=(c.callTime||c.notes)?`<div style="padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📞 Best time to call:</span> ${c.callTime}</div>`:''}${c.notes?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📋 Intake notes:</span> ${c.notes}</div>`:''}</div>`:'';
   const epaHTML=(c.yearBuilt&&c.yearBuilt<1978)?`<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 12px;${balanceHTML||intakeInfoHTML?'margin-top:10px;':''}font-size:12px;font-weight:700;color:#856404">⚠️ Pre-1978 — EPA RRP applies if &gt;6 sq ft interior or &gt;20 sq ft exterior paint disturbed</div>`:'';
-  const _metsContent=balanceHTML+intakeInfoHTML+epaHTML;
+  const _metsContent=balanceHTML+lienAlertHTML+intakeInfoHTML+epaHTML;
   const _metsEl=document.getElementById('cd-client-mets');
   _metsEl.innerHTML=_metsContent;
   _metsEl.style.display=_metsContent?'':'none';

@@ -749,6 +749,7 @@ function loadSettingsForm(){
   const hoEl=document.getElementById('set-home-office');if(hoEl)hoEl.checked=!!S.homeOffice;
   const ccEl=document.getElementById('set-cc-surcharge-enabled');if(ccEl){ccEl.checked=!!S.ccSurchargeEnabled;const pctWrap=document.getElementById('set-cc-surcharge-pct-wrap');if(pctWrap)pctWrap.style.display=S.ccSurchargeEnabled?'block':'none';}
   const ccPctEl=document.getElementById('set-cc-surcharge-pct');if(ccPctEl)ccPctEl.value=S.ccSurchargePct||3;
+  const fcPctEl=document.getElementById('set-finance-charge-pct');if(fcPctEl)fcPctEl.value=S.financeChargePct!=null?S.financeChargePct:1.5;
   _renderLogoPreviewBiz();
   _renderSetIndex();
 }
@@ -768,6 +769,7 @@ function saveSettings(){
     customTerms:gs('set-custom-terms')||'',coTerms:gs('set-co-terms')||'',
     ccSurchargeEnabled:!!(document.getElementById('set-cc-surcharge-enabled')?document.getElementById('set-cc-surcharge-enabled').checked:false),
     ccSurchargePct:parseFloat((document.getElementById('set-cc-surcharge-pct')?document.getElementById('set-cc-surcharge-pct').value:'3')||'3')||3,
+    financeChargePct:parseFloat((document.getElementById('set-finance-charge-pct')?document.getElementById('set-finance-charge-pct').value:'1.5')||'1.5')||1.5,
     salesTaxRate:gf('set-sales-tax-rate')||S.salesTaxRate||0,
     salesTaxRateSource:S.salesTaxRateSource||''};
   applySettings();saveAll();

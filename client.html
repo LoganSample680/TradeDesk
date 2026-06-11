@@ -1054,15 +1054,30 @@ function renderOverview(){
   if(payableBids.length){
     const bid=payableBids[0];
     const depPaid=(bid.deposit||0)>0.01&&(bid.paid||0)>=(bid.deposit||0)-0.01;
+    const _isBalanceDue=depPaid||(bid.deposit||0)<=0.01;
+    const fc=(_isBalanceDue&&(bid.financeCharge||0)>0.01)?(bid.financeCharge||0):0;
     const ctaSub=!depPaid&&(bid.deposit||0)>0.01?'Deposit '+fmt(bid.deposit||0)+' due now':'Balance '+fmt(bid.balance||0)+' due';
     html+='<div class="hub-pay-cta">';
-    html+='<div>';
+    html+='<div style="flex:1">';
     html+='<div class="hub-pay-cta-tag">'+(bid.type||'Project')+'</div>';
     html+='<div class="hub-pay-cta-amt">'+fmt(bid.amount||0)+'</div>';
-    html+='<div class="hub-pay-cta-sub">'+ctaSub+'</div>';
+    if(fc>0.01){
+      const totalDue=(bid.balance||0)+fc;
+      html+='<div style="margin-top:10px;font-size:12px;color:rgba(255,255,255,.55);line-height:1.8">';
+      html+='<div style="display:flex;justify-content:space-between;gap:16px"><span>Contract balance:</span><span style="font-weight:700;color:rgba(255,255,255,.75)">'+fmt(bid.balance||0)+'</span></div>';
+      html+='<div style="display:flex;justify-content:space-between;gap:16px"><span>Finance charge ('+(bid.daysOverdue||0)+' days overdue):</span><span style="font-weight:700;color:#FCA5A5">'+fmt(fc)+'</span></div>';
+      html+='<div style="border-top:1px solid rgba(255,255,255,.15);margin:4px 0"></div>';
+      html+='<div style="display:flex;justify-content:space-between;gap:16px;font-weight:800;color:#fff"><span>Total due:</span><span>'+fmt(totalDue)+'</span></div>';
+      html+='</div>';
+    }else{
+      html+='<div class="hub-pay-cta-sub">'+ctaSub+'</div>';
+    }
     html+='</div>';
     html+='<div class="hub-pay-cta-r">'+_payBtn(bid,h)+'</div>';
     html+='</div>';
+    if(fc>0.01){
+      html+='<div style="font-size:11px;color:rgba(255,255,255,.4);text-align:center;margin:-8px 0 14px;line-height:1.5">Finance charges accrue at 1.5%/month on balances 30+ days overdue.</div>';
+    }
   }else if(totalPaid>0.01){
     html+='<div class="hub-paid-banner"><div style="font-size:28px">✅</div><div><div class="hub-paid-title">Paid in full</div><div class="hub-paid-sub">'+fmt(totalPaid)+' received — thank you!</div></div></div>';
   }
@@ -2046,7 +2061,7 @@ function closePaymentModal(){
 }
 async function payBalance(bidId){
   const bid=_hub.bids.find(b=>b.id===bidId);if(!bid)return;
-  const amount=Math.round((bid.balance||0)*100);
+  const amount=Math.round(((bid.balance||0)+(bid.financeCharge||0))*100);
   if(amount<50){alert('No balance outstanding.');return;}
   await _launchCheckout(bidId,amount,'Pay balance');
 }
@@ -2076,8 +2091,11 @@ function _showCashMsg(){
 function _payBtn(bid,h){
   if(!h.stripeEnabled||(bid.balance||0)<0.01)return '';
   const depositPaid=(bid.paid||0)>=(bid.deposit||0)-0.01;
-  const amt=(!depositPaid&&(bid.deposit||0)>0.01)?bid.deposit:bid.balance;
-  const fn=(!depositPaid&&(bid.deposit||0)>0.01)?'payDeposit':'payBalance';
+  const isDeposit=(!depositPaid&&(bid.deposit||0)>0.01);
+  const baseAmt=isDeposit?bid.deposit:bid.balance;
+  const fc=(!isDeposit&&(bid.financeCharge||0)>0.01)?(bid.financeCharge||0):0;
+  const amt=baseAmt+(isDeposit?0:fc);
+  const fn=isDeposit?'payDeposit':'payBalance';
   return _pay4Btns(bid.id,fn,amt,h);
 }
 function showPaymentSuccess(bidId){
