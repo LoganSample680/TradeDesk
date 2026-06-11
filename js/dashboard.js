@@ -1376,7 +1376,19 @@ function openBidDetail(bidId,view){
   const surfs=b.surfaces||[];
   const scope=b.scope?Object.entries(b.scope).filter(([,v])=>v).map(([k])=>{const s=typeof SCOPE_ITEMS!=='undefined'?SCOPE_ITEMS.find(x=>x.id===k):null;return s?s.label:k;}):[];
   const SURF={'walls':'Walls','ceiling':'Ceiling','trim':'Trim','doors':'Doors','windows':'Windows','cabinets':'Cabinets','ext_walls':'Siding','ext_trim':'Ext trim','deck':'Deck','fence':'Fence','epoxy':'Epoxy floor'};
+  // Change order quick-action — only for active signed contracts
   let bidHTML='';
+  if(b.status==='Closed Won'&&!b.clientCancelled){
+    const _bidCOs=(b.changeOrders||[]);
+    const _coLabel=_bidCOs.length?'Change Orders ('+_bidCOs.length+')':'Change Order';
+    bidHTML+='<div class="card" style="margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:12px">'+
+      '<div>'+
+        '<div style="font-size:13px;font-weight:700">📋 '+_coLabel+'</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:2px">Adjust scope or price — sends to client hub for signing</div>'+
+      '</div>'+
+      '<button onclick="document.querySelector(\'[data-bdov]\').remove();showChangeOrderModal('+b.id+','+b.client_id+')" class="btn btn-sm btn-p" style="white-space:nowrap;flex-shrink:0">+ New CO</button>'+
+    '</div>';
+  }
   if(b.geiLines&&b.geiLines.length){
     bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">Line items</div>'+
       b.geiLines.map(l=>'<div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span style="flex:1;padding-right:12px">'+escHtml(l.desc||l.name||'')+'</span><span style="font-weight:700;color:var(--green-mid);white-space:nowrap">'+fmt(l.total||l.amount||0)+'</span></div>').join('')+
@@ -1396,6 +1408,24 @@ function openBidDetail(bidId,view){
     bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Payment history</div>'+
       pays.map(p=>{const ref=p.type==='refund';return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+(ref?'REFUND':(p.method||p.type)+(p.ref?' #'+p.ref:''))+'</span><span style="font-weight:700;color:'+(ref?'#A32D2D':'var(--green-mid)')+'">'+( ref?'↩ -':'+' )+fmt(Math.abs(p.amount))+'</span></div>';}).join('')+
       '<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:8px 0 0"><span>Total paid</span><span style="color:var(--green-mid)">'+fmt(paid)+'</span></div>'+
+    '</div>';
+  }
+  // Change order history
+  const _bidCOsHistory=b.changeOrders||[];
+  if(_bidCOsHistory.length){
+    bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Change Orders</div>'+
+      _bidCOsHistory.map(co=>{
+        const _signed=!!co.signedAt;
+        const _delta=(co.type==='sub'?'−':'+')+fmt(co.amount);
+        const _color=co.type==='sub'?'#A32D2D':'var(--green-mid)';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:7px 0;border-bottom:1px solid var(--border)">'+
+          '<div><span style="font-weight:700;background:var(--border2);padding:1px 7px;border-radius:10px;font-size:10px;margin-right:6px">CO #'+co.coNum+'</span>'+escHtml(co.desc||'')+'</div>'+
+          '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'+
+            '<span style="font-weight:700;color:'+_color+'">'+_delta+'</span>'+
+            '<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;background:'+(_signed?'#D1FAE5':'#FEF3C7')+';color:'+(_signed?'#065F46':'#92400E')+'">'+(_signed?'Signed':'Pending')+'</span>'+
+          '</div>'+
+        '</div>';
+      }).join('')+
     '</div>';
   }
   bidHTML+='<div style="height:24px"></div>';
