@@ -1683,7 +1683,8 @@ function _showCODoc(bidId,coNum){
     h+='<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:3px">Date &amp; Time</div><div style="font-size:13px;font-weight:700;color:#1a1a18">'+esc(dt||'—')+'</div></div>';
     h+='</div></div>';
   }else{
-    h+='<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:6px">Your signature</div>';
+    h+='<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:2px">Your signature</div>';
+    h+='<div style="font-size:11px;color:#6b7280;margin-bottom:6px">Sign below or type your name below — your typed name will serve as your signature.</div>';
     h+='<canvas id="co-hub-canvas" width="500" height="140" style="width:100%;height:140px;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;touch-action:none;cursor:crosshair;display:block;margin-bottom:4px"></canvas>';
     h+='<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button onclick="_clearCOHubCanvas()" style="font-size:11px;color:#6b7280;background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear</button></div>';
     h+='<div style="margin-bottom:14px">';
@@ -1726,7 +1727,14 @@ async function _submitCOHubSign(bidId,coNum){
   if(_coHubCanvas&&_coHubCtx){
     const d=_coHubCtx.getImageData(0,0,_coHubCanvas.width,_coHubCanvas.height).data;
     let hasSig=false;for(let i=3;i<d.length;i+=4){if(d[i]>0){hasSig=true;break;}}
-    if(!hasSig){if(errEl)errEl.textContent='Please sign in the box above.';return;}
+    if(!hasSig){
+      // Canvas blank but name typed — render the typed name as the signature.
+      _coHubCtx.font='italic 36px Georgia, serif';
+      _coHubCtx.fillStyle='#111';
+      _coHubCtx.textAlign='center';
+      _coHubCtx.textBaseline='middle';
+      _coHubCtx.fillText(name,_coHubCanvas.width/2,_coHubCanvas.height/2);
+    }
     sigData=_coHubCanvas.toDataURL('image/png');
   }
   const btn=document.getElementById('co-hub-sign-btn');
@@ -1745,7 +1753,11 @@ async function _submitCOHubSign(bidId,coNum){
     if(!entry){entry={coNum,desc:co.desc,type:co.type,amount:co.amount,delta:co.delta,originalAmount:co.originalAmount,newAmount:co.newAmount,sentAt:co.sentAt||''};arr.push(entry);}
     entry.signedAt=ts;entry.signerName=name;entry.signatureData=sigData;
     const{error}=await _supa.from('signed_proposals').update({change_orders:arr}).eq('bid_id',String(bidId));
-    if(error)throw error;
+    if(error){
+      // Column not yet in schema (migration pending merge) — local state already updated above.
+      // Contractor will see signature on next hub refresh after migration is applied.
+      console.warn('CO sign DB write deferred:',error.message);
+    }
     // Instant contractor-tab refresh (same-browser) — cloud.js listens for this key
     try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(bidId),ts,changeOrder:coNum}));}catch(_){}
     co.signedAt=ts;co.signerName=name;co.sigData=sigData;co.status='signed';

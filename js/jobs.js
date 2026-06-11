@@ -1071,7 +1071,7 @@ function openJobSheet(clientId){
         (jobActions.length?
           jobActions.map(j=>'<button onclick="this.closest(\'.zmodal-overlay\').remove();markJobDone('+j.id+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green-mid);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">✓ Mark job complete — '+j.name+'</button>').join('')
         :'')+
-        (bid?'<button onclick="this.closest(\'.zmodal-overlay\').remove();showChangeOrderModal('+bid.id+','+clientId+')" style="padding:12px;border-radius:var(--r);border:1.5px solid var(--blue);background:var(--blue-lt);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--blue-dk);text-align:left">📋 Change order — adjust scope or price</button>':'')+
+        (bid?'<button onclick="this.closest(\'.zmodal-overlay\').remove();showChangeOrderModal('+bid.id+','+clientId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">📋 Change order — adjust scope or price</button>':'')+
         '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+clientId+')" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text);text-align:left">📋 Full client record & history</button>'+
       '</div>'+
     '</div>';
