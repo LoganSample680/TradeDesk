@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
     const {
       amount, currency, paymentMethod, paymentType,
       surchargeAmount,
-      proposalKey, clientName, businessName,
+      proposalKey, clientName, clientEmail, businessName,
       bidId, contractorUserId, notifyEmail,
       signatureDataUrl, signerName,
       successUrl, cancelUrl,
@@ -99,6 +99,7 @@ Deno.serve(async (req) => {
         metadata,
         statement_descriptor_suffix: statementDescriptor,
         description: piDescription,
+        ...(clientEmail ? { receipt_email: clientEmail } : {}),
       };
       if (stripeAccountId) {
         piParams.application_fee_amount = 0;
@@ -156,6 +157,7 @@ Deno.serve(async (req) => {
       metadata,
       success_url: successUrl,
       cancel_url: cancelUrl,
+      ...(clientEmail ? { customer_email: clientEmail } : {}),
       ...(explicitMethodTypes
         ? { payment_method_types: explicitMethodTypes }
         : { automatic_payment_methods: { enabled: true, allow_redirects: 'always' } }),

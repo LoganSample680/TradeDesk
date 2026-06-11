@@ -227,7 +227,7 @@ function _buildClientHubSnapshot(clientId){
   const _snapCancelDays=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].days:3;
   const _snapCancelStatute=(STATE_CANCEL&&STATE_CANCEL[_snapState])?STATE_CANCEL[_snapState].statute:'16 CFR Part 429';
   return {
-    clientId,clientName:c.name,clientPhone:c.phone||'',clientAddr:c.addr||'',
+    clientId,clientName:c.name,clientEmail:c.email||'',clientPhone:c.phone||'',clientAddr:c.addr||'',
     contractorName:S.bname||'TradeDesk',contractorPhone:S.bphone||'',
     brandColor:S.brandColor||'',logoData:S.logoData||'',bwebsite:S.bwebsite||'',
     contractorUserId:_snapUserId,notifyEmail:S.bemail||_snapUserEmail,

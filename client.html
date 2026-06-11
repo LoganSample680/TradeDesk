@@ -1980,6 +1980,7 @@ async function _launchCheckout(bidId,amount,label){
       method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPA_KEY},
       body:JSON.stringify({amount,currency:'usd',paymentMethod:'card',
         proposalKey:bid.proposalKey||null,clientName:_hub.clientName,
+        clientEmail:_hub.clientEmail||'',
         businessName:_hub.contractorName,bidId:String(bid.id),
         contractorUserId:_hub.contractorUserId,notifyEmail:_hub.notifyEmail,
         successUrl,cancelUrl:location.href,
