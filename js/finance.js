@@ -2692,6 +2692,17 @@ function renderIncome(){
   sorted.forEach(r=>{const mo=(r.date||'').slice(0,7)||'unknown';if(!byMonth[mo])byMonth[mo]=[];byMonth[mo].push(r);});
   const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
   const curMo=new Date().toISOString().slice(0,7);
+  const _methodBadge=m=>{
+    const v=(m||'').toLowerCase();
+    if(!m||m==='—')return '<span style="color:var(--text3)">—</span>';
+    if(v==='cash')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#D1FAE5;color:#065F46;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">💵 Cash</span>';
+    if(v==='check')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#DBEAFE;color:#1E40AF;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">✓ Check</span>';
+    if(v==='zelle')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#EDE9FE;color:#5B21B6;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">⚡ Zelle</span>';
+    if(v==='venmo')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#DBEAFE;color:#1D4ED8;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">V Venmo</span>';
+    if(v==='refund')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#FEE2E2;color:#991B1B;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">↩ Refund</span>';
+    if(v==='card'||v==='us_bank_account'||v==='cashapp'||v==='ach')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#F3F0FF;color:#5B21B6;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">⚡ Stripe</span>';
+    return '<span style="display:inline-flex;align-items:center;gap:3px;background:var(--bg3);color:var(--text2);font-size:10px;font-weight:600;padding:2px 7px;border-radius:99px;white-space:nowrap">'+escHtml(m)+'</span>';
+  };
   const _incRow=r=>{
     const c=clients.find(x=>x.id===r.client_id);
     return '<tr data-lp-id="'+r.id+'" data-lp-type="'+r._src+'" data-lp-label="'+escHtml((r.client_name||'record')+' · '+fmt(r.amount||0))+'" style="cursor:'+(c?'pointer':'default')+'"'+(c?' onclick="openClientDetail('+c.id+')"':'')+'>'+
@@ -2699,7 +2710,7 @@ function renderIncome(){
       '<td class="bold" style="color:'+(c?'var(--blue)':'inherit')+'">'+(r.client_name||'—')+'</td>'+
       '<td class="mute">'+r.type+'</td>'+
       '<td class="'+(r.amount<0?'red':'green')+'">'+(r.amount<0?'('+fmtD(Math.abs(r.amount))+')':fmtD(r.amount))+'</td>'+
-      '<td class="mute">'+r.method+'</td>'+
+      '<td>'+_methodBadge(r.method)+'</td>'+
     '</tr>';
   };
   try{
