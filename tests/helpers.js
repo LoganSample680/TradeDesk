@@ -236,6 +236,34 @@ function _supabaseShim() {
   // simulate Supabase being unreachable without touching real network.
   function offlineResult(){ return Promise.resolve({data:null,error:{message:'Simulated offline',code:'offline'}}); }
   function maybeOffline(ok){ return global.__offlineMode ? offlineResult() : ok; }
+  // ── Public-URL fetch interception ──────────────────────────────────────────
+  // client.html / sign.html read mutable storage JSON (hub snapshot, proposal)
+  // by fetching the PUBLIC object URL with cache:'no-store' + a cb= cache-buster
+  // (stale-balance fix — bypasses the browser HTTP cache that storage's default
+  // max-age=3600 would otherwise populate). Serve those fetches from the same
+  // in-page mocks download() uses — fully offline, no page.route dependency
+  // (WebKit-safe). Every intercepted call is recorded in __storageFetches so
+  // specs can assert the cache-bypass behavior.
+  var _origFetch = global.fetch ? global.fetch.bind(global) : null;
+  global.fetch = function(input, init){
+    var u = '';
+    try{ u = typeof input === 'string' ? input : (input && input.url) || String(input || ''); }catch(_e){}
+    if(u.indexOf('/storage/v1/object/public/') > -1){
+      (global.__storageFetches = global.__storageFetches || []).push({ url: u, cache: (init && init.cache) || '' });
+      // __storageFetchFail forces the app's download() fallback path; __offlineMode
+      // simulates full Supabase outage (download() fails too → error UI).
+      // __storageFetchHang simulates a request that never settles (dead network) —
+      // exercises the boot watchdog.
+      if(global.__storageFetchHang) return new Promise(function(){});
+      if(global.__offlineMode || global.__storageFetchFail) return Promise.resolve(new Response('unavailable', { status: 503 }));
+      var mockJson;
+      if(u.indexOf('client-hub') > -1 && typeof global.__mockHubData !== 'undefined') mockJson = JSON.stringify(global.__mockHubData);
+      else if(typeof global.__mockProposalData !== 'undefined') mockJson = JSON.stringify(global.__mockProposalData);
+      if(mockJson !== undefined) return Promise.resolve(new Response(mockJson, { status: 200, headers: { 'Content-Type': 'application/json' } }));
+      return Promise.resolve(new Response('not found', { status: 404 })); // → app falls back to storage.download()
+    }
+    return _origFetch ? _origFetch(input, init) : Promise.reject(new TypeError('fetch unavailable'));
+  };
   function queryBuilder(){
     const q={
       select:()=>q, insert:()=>q, upsert:()=>q, update:()=>q, delete:()=>q,
@@ -267,6 +295,10 @@ function _supabaseShim() {
           from: (bucket) => ({
             upload:   (path, data, opts) => noopResult({ path }),
             download: (path) => {
+              // Mirror the in-page fetch interceptor's failure modes so the app's
+              // fallback path behaves like production when storage is down/hung.
+              if (window.__storageFetchHang) return new Promise(function(){});
+              if (window.__storageDownloadFail) return Promise.resolve({ data: null, error: new Error('Object not found') });
               // Resolve mock JSON: hub data → proposal override → default stub
               var mockJson;
               if (path && path.includes('client-hub') && typeof window.__mockHubData !== 'undefined') {
@@ -279,7 +311,9 @@ function _supabaseShim() {
               // Return a plain Blob-like object — avoids Blob.text() edge cases in WebKit
               return noopResult({text:function(){return Promise.resolve(mockJson);},type:'application/json',size:mockJson.length});
             },
-            getPublicUrl: (path) => ({ data: { publicUrl: 'data:image/png;base64,iVBORw0KGgo=' } }),
+            // Real-shaped public URL so the fresh-fetch path in client.html/sign.html
+            // hits the in-page fetch interceptor above (download() stays the fallback).
+            getPublicUrl: (path) => { var base = String(url || 'https://mock.supabase.co'); if (base.charAt(base.length - 1) === '/') base = base.slice(0, -1); return { data: { publicUrl: base + '/storage/v1/object/public/' + bucket + '/' + path } }; },
             remove:   (paths) => noopResult(null),
             list:     (prefix) => noopResult([]),
           }),

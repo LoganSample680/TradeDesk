@@ -126,7 +126,7 @@ function calcTax(){
   const _taxYr=String(_taxPageYear||new Date().getFullYear());
   // Gross income = manually-logged income entries + bid payments (both filtered to selected year)
   const tIn=income.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+r.amount,0)
-           +payments.filter(p=>p.amount>0&&p.date&&p.date.startsWith(_taxYr)).reduce((s,p)=>s+p.amount,0);
+           +payments.filter(p=>p.amount!==0&&p.date&&p.date.startsWith(_taxYr)).reduce((s,p)=>s+p.amount,0);
   const tEx=expenses.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+r.amount,0);
   const tMi=mileage.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+(r.miles||0),0);
   const _yrIrsRate=_getIrsRateForYear(_taxYr);
@@ -153,7 +153,7 @@ function calcTax(){
   // Scan payments → detect job state from bid.addr; manual income → home state
   const _homeState=S.state||'KS';
   const _stateRev={};
-  payments.filter(p=>p.amount>0&&p.date&&p.date.startsWith(_taxYr)).forEach(p=>{
+  payments.filter(p=>p.amount!==0&&p.date&&p.date.startsWith(_taxYr)).forEach(p=>{
     const bid=bids.find(b=>b.id===p.bid_id);
     const st=(bid&&typeof detectStateFromAddr==='function'?detectStateFromAddr(bid.addr||''):null)||_homeState;
     _stateRev[st]=(_stateRev[st]||0)+p.amount;

@@ -452,6 +452,14 @@ const SW_PRODUCTS={
     {id:'wc_solid',name:'WoodClassics Solid',sub:'Solid stain · full hide on wood trim/doors', price:'$$',retail:58, contractor:38, cov:300},
   ],
 };
+// Effective SW product price — applies user overrides from S.swPrices
+// (Settings → Rates & pricing). S.swPrices is keyed by product id, each entry
+// {contractor:Number, retail:Number} and only stores values that differ from
+// the hardcoded defaults above. cov is never overridden.
+function swEffectivePrice(p){
+  const o=(typeof S!=='undefined'&&S.swPrices&&S.swPrices[p.id])||null;
+  return o?{...p,contractor:o.contractor!=null?o.contractor:p.contractor,retail:o.retail!=null?o.retail:p.retail}:p;
+}
 const SW_PRODUCT_INFO={
   pm700:{name:'ProMar 700',when:'Bare-bones budget jobs — apartment turnovers, storage units, basic new construction where the owner plans to repaint soon.',good:'Cheap, fast, acceptable coverage on fresh drywall.',notFor:'Anywhere a client expects to keep the paint long-term. Won\'t hold up to cleaning or scuffs.',jobs:'Rental flips, storage units, builder-grade new construction.'},
   pm400:{name:'ProMar 400',when:'Slightly better than 700, still budget. Being phased out — hard to find in sheens other than flat.',good:'Fast application, economical on large commercial repaint.',notFor:'Any residential job where durability matters. Avoid on trim or high-touch surfaces.',jobs:'Large commercial spaces on tight budget, basic wall repaints.'},

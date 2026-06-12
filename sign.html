@@ -393,6 +393,7 @@ input[type=text]:focus{border-color:var(--denim)}
         </div>
       </div>
 
+      <div id="sign-ready-hint" style="display:block;font-size:12px;color:var(--text3);text-align:center;margin-bottom:8px">Type your name or draw your signature above to continue.</div>
       <button class="btn" id="sign-btn" disabled onclick="goToPayment()">Continue to payment →</button>
       <div id="sign-err" style="color:#A32D2D;font-size:12px;text-align:center;min-height:16px"></div>
     </div>
@@ -505,11 +506,19 @@ input[type=text]:focus{border-color:var(--denim)}
 <script>
 const SUPA_URL='https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
-const _supa=supabase.createClient(SUPA_URL,SUPA_KEY);
+// _supa is session-isolated: it never loads a stored login, so every data call on
+// this page runs as `anon` — the exact role real clients sign with. Without this,
+// a contractor opening their own link while logged into TradeDesk (same domain)
+// silently runs as `authenticated` and hits RLS paths clients never exercise
+// ("new row violates row-level security policy" on the cash/check confirm).
+const _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{auth:{persistSession:false,autoRefreshToken:false,storageKey:'sb-sign-isolated'}});
+// _supaAuth exists only to read the contractor's session for viewer detection.
+const _supaAuth=supabase.createClient(SUPA_URL,SUPA_KEY);
 let _prop=null,_sigData=null,_payOpt='card',_payFullAmount=false;
 let sigCanvas,sigCtx,signing=false,hasInk=false;
 window._portfolioAccepted=false;
 let _portfolioStep=0;
+let _isPreview=new URLSearchParams(location.search).get('preview')==='1';
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const pages=['pg-load','pg-sign','pg-color-pick','pg-sign-action','pg-pay','pg-epa','pg-done','pg-err','pg-declined'];
 let _bootGone=false;
@@ -592,6 +601,24 @@ function portfolioDecline(){
   document.getElementById('po-btns').style.display='none';
   document.getElementById('po-declined').style.display='block';
 }
+// Proposal JSON is rewritten in place (signing, voiding, legal-text patches), but
+// Supabase storage serves it with cache-control: max-age=3600 — the browser HTTP
+// cache could show a stale status for up to an hour. Fetch the public object URL
+// with cache:'no-store' plus a cb= cache-buster (defeats CDN/edge caches too);
+// fall back to storage.download() on any failure so the error UI is unchanged.
+async function _fetchStorageJson(key){
+  try{
+    const pub=_supa.storage.from('proposals').getPublicUrl(key)?.data?.publicUrl;
+    if(!pub)throw new Error('no public url');
+    const res=await fetch(pub+(pub.includes('?')?'&':'?')+'cb='+Date.now(),{cache:'no-store'});
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    return{data:await res.json(),error:null};
+  }catch(e){
+    const{data,error}=await _supa.storage.from('proposals').download(key);
+    if(error||!data)return{data:null,error:error||e};
+    try{return{data:JSON.parse(await data.text()),error:null};}catch(pe){return{data:null,error:pe};}
+  }
+}
 async function init(){
   const params=new URLSearchParams(location.search);
   const _hubReturnUrl=params.get('hub')||'';
@@ -607,9 +634,9 @@ async function init(){
   }
   if(!key){show('pg-err');return;}
   try{
-    const{data,error}=await _supa.storage.from('proposals').download(key);
+    const{data,error}=await _fetchStorageJson(key);
     if(error||!data)throw error||new Error('no data returned');
-    _prop=JSON.parse(await data.text());
+    _prop=data;
     if(_prop.status==='voided'){
       document.querySelector('#pg-err h2').textContent='Proposal Updated';
       document.querySelector('#pg-err p').textContent='Your contractor has updated this proposal. Please request the new link to review and sign.';
@@ -651,15 +678,21 @@ async function init(){
       if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">✓ Signed &amp; Approved</div>';_stamp.style.display='block';}
       show('pg-done');return;
     }
-    // Log view via Edge Function — server-side write using service key, bypasses all RLS.
-    // Detect whether the viewer is the contractor (previewing their own proposal) or
-    // the actual client. Supabase stores the auth session in localStorage — if the
-    // contractor is logged into the main app and opens this link, their session is
-    // present and their user ID matches _prop.contractorUserId.
-    if(_prop.contractorUserId&&_prop.id){
+    // Log view via Edge Function — skip entirely when preview=1 (contractor previewing, not a real client open).
+    // Also detects contractor via active session — belt-and-suspenders so logged-in previews
+    // never increment client view counts even without the preview param.
+    if(_isPreview){
+      const _pvBanner=document.createElement('div');
+      _pvBanner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:#1d4ed8;color:#fff;font-size:13px;font-weight:700;text-align:center;padding:10px 16px;letter-spacing:.01em';
+      _pvBanner.textContent='👁 Preview mode — navigate freely to QA the flow. Final submission is disabled.';
+      document.body.prepend(_pvBanner);
+      // Shift page content down so banner doesn't cover anything
+      document.body.style.paddingTop='44px';
+    }
+    if(!_isPreview&&_prop.contractorUserId&&_prop.id){
       let _viewerType='client';
       try{
-        const{data:{session}}=await _supa.auth.getSession();
+        const{data:{session}}=await _supaAuth.auth.getSession();
         if(session?.user?.id&&session.user.id===_prop.contractorUserId)_viewerType='contractor';
       }catch(_){}
       fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
@@ -876,7 +909,7 @@ async function init(){
     // so hub preview and all future views (client.html) reflect the correct state-specific terms.
     if(!alreadySigned&&_proposalHtml!==_proposalHtmlOrig&&key){
       const _patchedProp=Object.assign({},_prop,{proposalHtml:_proposalHtml,state:_propSt||_prop.state||'KS'});
-      _supa.storage.from('proposals').upload(key,JSON.stringify(_patchedProp),{contentType:'application/json',upsert:true}).catch(()=>{});
+      _supa.storage.from('proposals').upload(key,JSON.stringify(_patchedProp),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(()=>{});
     }
     // Remove the embedded signature block from the proposal HTML — signing happens in sig-card below
     document.querySelectorAll('#prop-html .sig-block, #prop-html [class*="sig-block"], #prop-html .signature-section').forEach(el=>el.remove());
@@ -1059,13 +1092,22 @@ function _openSignPad(){
   show('pg-sign-action');
   scrollTo(0,0);
   initCanvas();
+  checkReady();
   setTimeout(()=>document.getElementById('sig-name')?.focus(),300);
 }
 
 function checkReady(){
   const typedOk=document.getElementById('sig-name')?.value.trim().length>2;
   const uetaOk=!!(document.getElementById('sig-ueta-ck')?.checked);
-  document.getElementById('sign-btn').disabled=!(typedOk||hasInk)||!uetaOk;
+  const hasSig=typedOk||hasInk;
+  const btn=document.getElementById('sign-btn');
+  if(btn)btn.disabled=!hasSig||!uetaOk;
+  const hint=document.getElementById('sign-ready-hint');
+  if(hint){
+    if(!hasSig){hint.textContent='Type your name or draw your signature above to continue.';hint.style.display='block';}
+    else if(!uetaOk){hint.textContent='Check the agreement box above to continue.';hint.style.display='block';}
+    else{hint.style.display='none';}
+  }
 }
 
 function goToPayment(){
@@ -1133,6 +1175,7 @@ function _updatePayButtons(){
 
 
 async function submitCash(){
+  if(_isPreview){document.getElementById('pay-err').textContent='Preview mode — payments are disabled.';return;}
   const btn=event.target;btn.disabled=true;
   const method=_manualPayMethod||'cash';
   const origLabel=btn.textContent;
@@ -1144,27 +1187,50 @@ async function submitCash(){
   const _subDep=Math.round(_subAmt*0.25*100)/100;
   try{
     const updated={..._prop,status:'signed',signedAt:ts,signerName:name,paymentMethod:method,signatureDataUrl:_sigData,portfolioAccepted:window._portfolioAccepted,finalAmount:_subAmt,colorChoices:window._colorChoices||[]};
-    await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true});
-    await _supa.from('signed_proposals').upsert({
+    // Storage failure must not block the signature (DB row is the source of truth),
+    // but it means the drawn-signature image won't render on the proposal — log it.
+    const{error:_storErr}=await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true,cacheControl:'0'});
+    if(_storErr)console.warn('proposal JSON update failed — signature image will not show on stored proposal:',_storErr.message);
+    // Core columns exist in every deployment. Optional compliance/analytics columns
+    // may lag behind where newer migrations haven't been applied — if PostgREST
+    // rejects the row with an unknown-column error (PGRST204), retry with core only
+    // so the signature is never lost to a schema mismatch.
+    const _core={
       bid_id:String(_prop.id),contractor_user_id:_prop.contractorUserId,
       client_name:_prop.clientName,client_signed_name:name,
       amount:_subAmt,deposit:_subDep,
       payment_method:method,payment_status:'pending_'+method,
       signed_at:ts,notify_email:_prop.notifyEmail,storage_key:key,
+    };
+    const _optional={
       portfolio_accepted:window._portfolioAccepted||false,
       portfolio_pct:window._portfolioAccepted?(_prop.portfolioPct||null):null,
       epa_required:_prop.epaRequired||false,
       epa_ack_at:_prop.epaRequired?ts:null,
       rrp_firm_cert:_prop.epaRequired?(_prop.rrpFirmCertNum||null):null,
       rrp_renovator_name:_prop.epaRequired?(_prop.rrpRenovatorName||null):null,
-    });
-    showDone(method);
+      // Drawn signature image — stored in the DB so documents can always render it,
+      // even when the storage-JSON update was missed at signing time.
+      signature_data:_sigData||null,
+    };
+    let{error:_upsertErr}=await _supa.from('signed_proposals').upsert({..._core,..._optional});
+    if(_upsertErr&&(_upsertErr.code==='PGRST204'||/column/i.test(_upsertErr.message||''))){
+      console.warn('signed_proposals: optional column rejected, retrying core only —',_upsertErr.message);
+      ({error:_upsertErr}=await _supa.from('signed_proposals').upsert(_core));
+    }
+    if(_upsertErr)throw _upsertErr;
+    // Signal the contractor's open TradeDesk tab to refresh immediately
+    try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(_prop.id),ts}));}catch(_){}
   }catch(e){
     console.error(e);
-    document.getElementById('pay-err').textContent='Something went wrong. Try again.';
+    const _det=e?.message||e?.details||'';
+    document.getElementById('pay-err').textContent='Something went wrong'+(_det?' — '+_det:'')+'. Try again.';
     btn.disabled=false;btn.textContent=origLabel;
     return;
   }
+  // Outside the try — a confirmation-screen render hiccup must not report a
+  // successfully saved signature as a failure.
+  showDone(method);
   _supa.from('signed_proposals').update({notified_at:new Date().toISOString()}).eq('bid_id',String(_prop.id)).then(null,e=>console.warn('notified_at:',e));
 }
 
@@ -1226,7 +1292,7 @@ async function _confirmDecline(){
   try{
     // Update proposal JSON in storage
     const updated=Object.assign({},_prop,{status:'declined',declinedAt:ts});
-    await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true});
+    await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true,cacheControl:'0'});
     // Write to signed_proposals with payment_status:'declined' so the contractor app
     // sees the decline and marks the bid as Closed Lost (not Closed Won)
     await _supa.from('signed_proposals').upsert({
@@ -1290,6 +1356,7 @@ async function _paySign(method){
     return;
   }
   // 'stripe' — open embedded Stripe checkout; auto-surfaces Apple Pay, Google Pay, card, bank transfer
+  if(_isPreview){document.getElementById('pay-err').textContent='Preview mode — card payment is disabled. Your client will see a real checkout here.';return;}
   const depBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round((_prop.deposit||0)*100);
   const fullBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*100):Math.round((_prop.amount||0)*100);
   const amt=_payFullAmount?fullBase:depBase;

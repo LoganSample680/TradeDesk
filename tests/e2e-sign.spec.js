@@ -1612,3 +1612,30 @@ test.describe('sign.html — cancellation clause patch for generic trade proposa
 //  BID SHARING — WITHOUT STRIPE / WITH STRIPE
 // ════════════════════════════════════════════════════════════════════════════
 
+
+// ════════════════════════════════════════════════════════════════════════════
+//  PROPOSAL JSON FRESHNESS — HTTP cache bypass (stale-status fix)
+// ════════════════════════════════════════════════════════════════════════════
+// The proposal JSON is rewritten in storage on signing/voiding/payment, but
+// Supabase storage's default cache-control: max-age=3600 let the browser serve
+// a stale copy for up to an hour. sign.html now fetches the public object URL
+// with cache:'no-store' + a cb= cache-buster; the shim's in-page fetch
+// interceptor records the call in window.__storageFetches (WebKit-safe).
+test.describe('sign.html — proposal JSON cache bypass', () => {
+  test('proposal load uses cache:no-store and a cb= cache-buster', async ({ page }) => {
+    await page.addInitScript(data => { window.__mockProposalData = data; }, MOCK_PROPOSAL);
+    await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL, bidId: FAKE_BID_ID_1 });
+    await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(1500);
+    const calls = await page.evaluate(() => window.__storageFetches || []);
+    const propCall = calls.find(c => c.url.includes(`proposals/${FAKE_USER_ID}/`));
+    expect(propCall, 'proposal JSON must be read via the public-URL fetch path; saw: ' + JSON.stringify(calls)).toBeTruthy();
+    expect(propCall.cache, 'proposal fetch must use cache:no-store').toBe('no-store');
+    expect(propCall.url, 'proposal fetch must carry a cache-buster param').toMatch(/[?&]cb=\d+/);
+    // The proposal rendered from the fresh fetch
+    const body = await page.textContent('body');
+    expect(body).toContain('Alice Smith');
+    assertNoErrors(page, 'sign.html cache-bypass fetch');
+  });
+});

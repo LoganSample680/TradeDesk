@@ -377,8 +377,9 @@ function swRenderProductGrid(surfType){
 function swShowProductInfo(id){
   const info=SW_PRODUCT_INFO[id];if(!info)return;
   // Enrich with contractor price + coverage from product catalog
-  const _pd=Object.values(SW_PRODUCTS).flat().find(p=>p.id===id);
-  if(_pd){info.contractorPrice=_pd.contractor;info.retailPrice=_pd.retail;info.coverage=_pd.cov;info.hasPrice=true;info.updated='Apr 2025';}
+  const _pd0=Object.values(SW_PRODUCTS).flat().find(p=>p.id===id);
+  const _pd=_pd0?swEffectivePrice(_pd0):null;
+  if(_pd){info.contractorPrice=_pd.contractor;info.retailPrice=_pd.retail;info.coverage=_pd.cov;info.hasPrice=true;info.updated=S.swPricesUpdated||'Apr 2025';}
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px';
   const sheet=document.createElement('div');
@@ -413,7 +414,8 @@ function swSelectProduct(p,btn){
   _swProduct=p;
   const h=document.getElementById('sw-selected-product');if(h)h.value=p.id;
   const lbl=document.getElementById('sw-product-selected');if(lbl)lbl.textContent=p.name;
-  if(p.retail)sf('e-paint-rate',p.retail);
+  const _effP=swEffectivePrice(p);
+  if(_effP.retail)sf('e-paint-rate',_effP.retail);
   // Remember this product for this category so next surface can suggest it
   const type=surfBQueue[surfBIdx];
   const cat=SURF_PRODUCT_TYPE[type]||'interior';
@@ -574,16 +576,23 @@ async function swRefreshPrices(){
     if(!resp.ok)throw new Error('HTTP '+resp.status);
     const prices=await resp.json();
     let updated=0;
+    // Merge fetched prices into S.swPrices overrides ({contractor,retail} per id,
+    // only values that differ from the hardcoded SW_PRODUCTS defaults) — the
+    // same shape the Settings → Rates & pricing editor writes. All price math
+    // reads through swEffectivePrice(), so these persist across reloads.
+    const _ov={...(S.swPrices||{})};
     Object.values(SW_PRODUCTS).flat().forEach(p=>{
-      const pd=prices[p.id];
-      if(pd){p.contractor=pd.c||pd.contractor;p.retail=pd.r||pd.retail;updated++;}
-    });
-    ['pm700','pm200','sp','cash','dur','em','spe','dure','emure'].forEach(id=>{
-      const el=document.getElementById('spp-'+id);const pd=prices[id];
-      if(el&&pd)el.textContent='$'+(pd.c||pd.contractor)+'/gal';
+      const pd=prices[p.id];if(!pd)return;
+      const c=pd.c!=null?pd.c:pd.contractor,r=pd.r!=null?pd.r:pd.retail;
+      const entry={...(_ov[p.id]||{})};
+      if(c!=null){if(c!==p.contractor)entry.contractor=c;else delete entry.contractor;}
+      if(r!=null){if(r!==p.retail)entry.retail=r;else delete entry.retail;}
+      if(Object.keys(entry).length)_ov[p.id]=entry;else delete _ov[p.id];
+      updated++;
     });
     const now=new Date().toLocaleDateString('en-US',{month:'short',year:'numeric'});
-    S.swPricesUpdated=now;S.swPrices=prices;saveAll();
+    S.swPricesUpdated=now;S.swPrices=_ov;saveAll();
+    if(typeof _renderSwPriceRows==='function')_renderSwPriceRows();
     const upd=document.getElementById('sw-price-updated');if(upd)upd.textContent='Last updated: '+now;
     if(status)status.textContent='Updated '+updated+' prices as of '+now;
   }catch(e){
@@ -2018,7 +2027,7 @@ function calcEst(){
     const prodName=spec.split(' · ')[0].trim();
     if(!prodName)return paintCostPerGal;
     const p=_allSwProds.find(x=>x.name===prodName||x.name.toLowerCase()===prodName.toLowerCase());
-    return p?.retail||paintCostPerGal;
+    return (p?swEffectivePrice(p).retail:null)||paintCostPerGal;
   }
 
   let matTotal=0;const paintLines=[];

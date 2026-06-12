@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-06.09.26.22';
+const CACHE = 'tradedesk-06.11.26.24';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
 // tries to serve it for a navigation. new Response() always has redirected:false.
@@ -68,8 +68,10 @@ self.addEventListener('fetch', e => {
   // Never cache .well-known — Apple Pay domain verification must always be fetched fresh
   if (url.pathname.startsWith('/.well-known/')) return;
 
-  // Don't cache client-hub snapshots — they change every time a new proposal is sent.
-  if (url.hostname.endsWith('supabase.co') && url.pathname.includes('/client-hub/')) return;
+  // Never intercept Supabase requests — REST and storage responses mutate (proposal
+  // JSON is rewritten at signing). Cache-first here serves stale documents and can
+  // pin failures. Let the network handle all of it.
+  if (url.hostname.endsWith('supabase.co')) return;
 
   // Static assets (JS, CSS, images) — cache-first, update in background
   e.respondWith(

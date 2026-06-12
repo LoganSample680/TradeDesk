@@ -1440,7 +1440,7 @@ function renderMonthlyPL(){
   // Normalize date to YYYY-MM regardless of whether stored as YYYYMMDD or YYYY-MM-DD
   const mKey=d=>{if(!d)return'';const c=d.replace(/-/g,'');return c.slice(0,4)+'-'+c.slice(4,6);};
   income.forEach(r=>{if(r.date)addMonth(mKey(r.date),'inc',r.amount);});
-  payments.filter(p=>p.amount>0&&p.date).forEach(p=>{addMonth(mKey(p.date),'inc',p.amount);});
+  payments.filter(p=>p.amount!==0&&p.date).forEach(p=>{addMonth(mKey(p.date),'inc',p.amount);});
   expenses.forEach(r=>{if(r.date)addMonth(mKey(r.date),'exp',r.amount);});
   mileage.forEach(r=>{if(r.date)addMonth(mKey(r.date),'miles',r.miles||0);});
 
@@ -2044,7 +2044,7 @@ function exportPLCSV(){
   const yrInc=filterYr(income).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const yrExp=filterYr(expenses).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const yrMil=filterYr(mileage);
-  const yrPay=filterYr(payments).filter(p=>p.amount>0).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const yrPay=filterYr(payments).filter(p=>p.amount!==0).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const tIncBase=yrInc.reduce((s,r)=>s+(r.amount||0),0);
   const tIncPay=yrPay.reduce((s,p)=>s+(p.amount||0),0);
   const tInc=tIncBase+tIncPay;
@@ -2094,7 +2094,7 @@ function exportTaxPDF(){
   // Multi-state: build revenue by state from bid addresses
   const _pdfHome=S.state||'KS';
   const _pdfRev={};
-  payments.filter(p=>p.amount>0&&p.date&&p.date.startsWith(yr)).forEach(p=>{
+  payments.filter(p=>p.amount!==0&&p.date&&p.date.startsWith(yr)).forEach(p=>{
     const bid=bids.find(b=>b.id===p.bid_id);
     const st=(bid&&typeof detectStateFromAddr==='function'?detectStateFromAddr(bid.addr||''):null)||_pdfHome;
     _pdfRev[st]=(_pdfRev[st]||0)+p.amount;
@@ -2679,7 +2679,7 @@ function renderIncome(){
   const yr=String(trackerYear||new Date().getFullYear());
   const normDate=d=>{if(!d)return'';const c=d.replace(/-/g,'');return c.length>=8?c.slice(0,4)+'-'+c.slice(4,6)+'-'+c.slice(6,8):d;};
   const incRows=income.filter(r=>r.date&&r.date.replace(/-/g,'').startsWith(yr)).map(r=>({id:r.id,date:normDate(r.date),sortDate:r.date.replace(/-/g,''),client_id:r.client_id,client_name:r.client_name,type:r.type||'Income',amount:r.amount,method:r.method||r.pay||'—',_src:'income'}));
-  const payRows=payments.filter(p=>p.date&&p.amount>0&&p.date.replace(/-/g,'').startsWith(yr)).map(p=>({id:p.id,date:normDate(p.date),sortDate:p.date.replace(/-/g,''),client_id:p.client_id,client_name:p.client_name,type:p.type==='deposit'?'Deposit':p.type==='final'?'Final payment':'Payment',amount:p.amount,method:p.method||'—',_src:'payment'}));
+  const payRows=payments.filter(p=>p.date&&p.amount!==0&&p.date.replace(/-/g,'').startsWith(yr)).map(p=>({id:p.id,date:normDate(p.date),sortDate:p.date.replace(/-/g,''),client_id:p.client_id,client_name:p.client_name,type:p.amount<0?'Refund':(p.type==='deposit'?'Deposit':p.type==='final'?'Final payment':'Payment'),amount:p.amount,method:p.method||'—',_src:'payment'}));
   const filtered=[...incRows,...payRows].sort((a,b)=>b.sortDate.localeCompare(a.sortDate));
   const total=filtered.reduce((s,r)=>s+r.amount,0);
   if(!filtered.length){el.innerHTML='<div class="empty">No income in '+yr+'.</div>';return;}
@@ -2692,14 +2692,25 @@ function renderIncome(){
   sorted.forEach(r=>{const mo=(r.date||'').slice(0,7)||'unknown';if(!byMonth[mo])byMonth[mo]=[];byMonth[mo].push(r);});
   const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
   const curMo=new Date().toISOString().slice(0,7);
+  const _methodBadge=m=>{
+    const v=(m||'').toLowerCase();
+    if(!m||m==='—')return '<span style="color:var(--text3)">—</span>';
+    if(v==='cash')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#D1FAE5;color:#065F46;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">💵 Cash</span>';
+    if(v==='check')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#DBEAFE;color:#1E40AF;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">✓ Check</span>';
+    if(v==='zelle')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#EDE9FE;color:#5B21B6;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">⚡ Zelle</span>';
+    if(v==='venmo')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#DBEAFE;color:#1D4ED8;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">V Venmo</span>';
+    if(v==='refund')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#FEE2E2;color:#991B1B;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">↩ Refund</span>';
+    if(v==='card'||v==='us_bank_account'||v==='cashapp'||v==='ach')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#F3F0FF;color:#5B21B6;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">⚡ Stripe</span>';
+    return '<span style="display:inline-flex;align-items:center;gap:3px;background:var(--bg3);color:var(--text2);font-size:10px;font-weight:600;padding:2px 7px;border-radius:99px;white-space:nowrap">'+escHtml(m)+'</span>';
+  };
   const _incRow=r=>{
     const c=clients.find(x=>x.id===r.client_id);
-    return '<tr data-lp-id="'+r.id+'" data-lp-type="'+r._src+'" data-lp-label="'+escHtml((r.client_name||'record')+' · '+fmt(r.amount||0))+'" style="cursor:'+(c?'pointer':'default')+'"'+(c?' onclick="openClientDetail('+c.id+')"':'')+'>'+
+    return '<tr data-lp-id="'+r.id+'" data-lp-type="'+r._src+'" data-lp-label="'+escHtml((r.client_name||'record')+' · '+fmt(r.amount||0))+'">'+
       '<td class="mute">'+(r.date||'')+'</td>'+
-      '<td class="bold" style="color:'+(c?'var(--blue)':'inherit')+'">'+(r.client_name||'—')+'</td>'+
+      '<td class="bold">'+(r.client_name||'—')+'</td>'+
       '<td class="mute">'+r.type+'</td>'+
-      '<td class="green">'+fmtD(r.amount)+'</td>'+
-      '<td class="mute">'+r.method+'</td>'+
+      '<td class="'+(r.amount<0?'red':'green')+'">'+(r.amount<0?'('+fmtD(Math.abs(r.amount))+')':fmtD(r.amount))+'</td>'+
+      '<td>'+_methodBadge(r.method)+'</td>'+
     '</tr>';
   };
   try{

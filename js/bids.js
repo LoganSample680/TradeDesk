@@ -522,6 +522,18 @@ function schedFromDate(dateKey){
 function getBidPayments(bidId){return payments.filter(p=>p.bid_id===bidId);}
 function getBidPaid(bidId){return payments.filter(p=>p.bid_id===bidId).reduce((s,p)=>s+p.amount,0);}
 function getBidBalance(bid){return Math.max(0,(bid.amount||0)-getBidPaid(bid.id));}
+function _calcFinanceCharge(bid){
+  if(!bid||(!bid.completion_date&&!bid.signedAt))return 0;
+  const balance=getBidBalance(bid);
+  if(balance<0.01)return 0;
+  const startDate=new Date(bid.completion_date||bid.signedAt);
+  // window._fcTestDays lets you simulate overdue in the console: window._fcTestDays=35
+  const daysElapsed=typeof window._fcTestDays==='number'?window._fcTestDays:Math.floor((Date.now()-startDate.getTime())/86400000);
+  const daysOverdue=Math.max(0,daysElapsed-30);
+  if(daysOverdue===0)return 0;
+  const rate=(typeof S!=='undefined'&&S.financeChargePct?parseFloat(S.financeChargePct):1.5)/100/30;
+  return Math.round(balance*rate*daysOverdue*100)/100;
+}
 
 function sendBidEmail(bidId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
@@ -913,6 +925,7 @@ function _submitCancellationRefund(bidId){
   saveAll();
   document.getElementById('_cr-overlay')?.remove();
   renderDash();
+  _refreshClientHub(bid.client_id); // keep client hub balance in sync
   showToast(refund>0?'Refund of '+fmt(refund)+' issued · Job cancelled':'Job cancelled','↩');
 }
 function selectPayType(btn, bidId){

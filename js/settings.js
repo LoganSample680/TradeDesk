@@ -749,8 +749,64 @@ function loadSettingsForm(){
   const hoEl=document.getElementById('set-home-office');if(hoEl)hoEl.checked=!!S.homeOffice;
   const ccEl=document.getElementById('set-cc-surcharge-enabled');if(ccEl){ccEl.checked=!!S.ccSurchargeEnabled;const pctWrap=document.getElementById('set-cc-surcharge-pct-wrap');if(pctWrap)pctWrap.style.display=S.ccSurchargeEnabled?'block':'none';}
   const ccPctEl=document.getElementById('set-cc-surcharge-pct');if(ccPctEl)ccPctEl.value=S.ccSurchargePct||3;
+  const fcPctEl=document.getElementById('set-finance-charge-pct');if(fcPctEl)fcPctEl.value=S.financeChargePct!=null?S.financeChargePct:1.5;
+  _renderSwPriceRows();
   _renderLogoPreviewBiz();
   _renderSetIndex();
+}
+// ── Sherwin-Williams price editor (Rates & pricing panel) ────────────────────
+// Rows are rendered dynamically (30+ products) into #set-sw-prices-list.
+// Inputs use id pattern set-swp-<productId> and show the effective contractor
+// price (hardcoded default + any S.swPrices override). Products without a
+// default price show an empty input with placeholder "—".
+const _SW_CAT_LABELS={interior:'Interior',ceiling:'Ceiling',exterior:'Exterior',deck:'Deck & Stain',trim:'Trim & Cabinet'};
+function _renderSwPriceRows(){
+  const wrap=document.getElementById('set-sw-prices-list');
+  if(!wrap||typeof SW_PRODUCTS==='undefined')return;
+  let html='';
+  Object.entries(SW_PRODUCTS).forEach(([cat,prods])=>{
+    html+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:10px 0 3px">'+(_SW_CAT_LABELS[cat]||cat)+'</div>';
+    prods.forEach(p=>{
+      const eff=typeof swEffectivePrice==='function'?swEffectivePrice(p):p;
+      html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 0;font-size:12px;border-bottom:1px solid var(--border)">'+
+        '<span style="color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+p.name+'</span>'+
+        '<input type="number" id="set-swp-'+p.id+'" min="0" step="1" inputmode="decimal" placeholder="—" value="'+(eff.contractor!=null?eff.contractor:'')+'" style="width:70px;flex-shrink:0;padding:4px 6px;font-size:12px;text-align:right;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit">'+
+      '</div>';
+    });
+  });
+  wrap.innerHTML=html;
+}
+// Refill all SW price inputs with the hardcoded defaults. Display-only — the
+// cleared overrides are persisted when the user hits the panel's Save button.
+function _resetSwPriceInputs(){
+  if(typeof SW_PRODUCTS==='undefined')return;
+  Object.values(SW_PRODUCTS).flat().forEach(p=>{
+    const el=document.getElementById('set-swp-'+p.id);
+    if(el)el.value=p.contractor!=null?p.contractor:'';
+  });
+}
+// Rebuild S.swPrices from the set-swp-* inputs. Only stores values that differ
+// from the hardcoded SW_PRODUCTS defaults; an empty input removes the override.
+// If the editor isn't rendered (settings saved from another panel before the
+// rates panel ever loaded), existing overrides are carried over untouched.
+function _collectSwPriceOverrides(){
+  const out={};
+  if(typeof SW_PRODUCTS==='undefined')return S.swPrices||out;
+  Object.values(SW_PRODUCTS).flat().forEach(p=>{
+    const prev=(S.swPrices&&S.swPrices[p.id])||null;
+    const entry={};
+    // Retail isn't editable in this UI — preserve any existing retail override (AI refresh)
+    if(prev&&prev.retail!=null&&prev.retail!==p.retail)entry.retail=prev.retail;
+    const el=document.getElementById('set-swp-'+p.id);
+    if(el){
+      const n=parseFloat(el.value);
+      if(el.value.trim()!==''&&!isNaN(n)&&n>=0&&n!==p.contractor)entry.contractor=n;
+    }else if(prev&&prev.contractor!=null&&prev.contractor!==p.contractor){
+      entry.contractor=prev.contractor;
+    }
+    if(Object.keys(entry).length)out[p.id]=entry;
+  });
+  return out;
 }
 function saveSettings(){
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
@@ -768,9 +824,16 @@ function saveSettings(){
     customTerms:gs('set-custom-terms')||'',coTerms:gs('set-co-terms')||'',
     ccSurchargeEnabled:!!(document.getElementById('set-cc-surcharge-enabled')?document.getElementById('set-cc-surcharge-enabled').checked:false),
     ccSurchargePct:parseFloat((document.getElementById('set-cc-surcharge-pct')?document.getElementById('set-cc-surcharge-pct').value:'3')||'3')||3,
+    financeChargePct:parseFloat((document.getElementById('set-finance-charge-pct')?document.getElementById('set-finance-charge-pct').value:'1.5')||'1.5')||1.5,
     salesTaxRate:gf('set-sales-tax-rate')||S.salesTaxRate||0,
-    salesTaxRateSource:S.salesTaxRateSource||''};
+    salesTaxRateSource:S.salesTaxRateSource||'',
+    swPrices:_collectSwPriceOverrides(),
+    // Last explicit settings save — lets cloud/cache loads detect a stale
+    // incoming copy and keep local (see _mergeIncomingSettings in cloud.js)
+    settingsTs:Date.now()};
   applySettings();saveAll();
+  // Flush settings to Supabase immediately (don't rely on 2s debounce — user may refresh first)
+  if(typeof supaSaveToCloud==='function')supaSaveToCloud();
   // Refresh the nav user card so a freshly entered name shows immediately
   // (applyPermissions owns the nav-user-name/avatar/role render).
   if(typeof applyPermissions==='function')applyPermissions();

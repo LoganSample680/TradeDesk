@@ -1952,7 +1952,9 @@ async function sendGenericProposal(previewOnly){
   const _byoDepPctEl=document.getElementById('byo-deposit-pct');
   const _sendByoDepPct=_geiIsTM?null:(parseFloat(_byoDepPctEl?_byoDepPctEl.value:null)||25)/100;
   const _sendByoDepPctLabel=_geiIsTM?null:Math.round(_sendByoDepPct*100);
-  const _tmDepAmt=_geiIsTM?Math.round(sub*_tmDepPct/100):Math.round(total*_sendByoDepPct*100)/100;
+  // Deposit is a % of the client-facing TOTAL (incl. tax) — the label says "(N%)" next
+  // to the estimated total, so computing from the pre-tax subtotal reads as a math error.
+  const _tmDepAmt=_geiIsTM?Math.round(total*_tmDepPct)/100:Math.round(total*_sendByoDepPct*100)/100;
   const _tmNteCap=parseFloat(v('tm-nte-cap'))||0;
   const depositFmt='$'+_tmDepAmt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   // MUST be declared before the template literals below that use it — TDZ if declared after
@@ -1961,9 +1963,11 @@ async function sendGenericProposal(previewOnly){
   const _tmDepRow=_geiIsTM
     ?`<tr style="background:#0369a1;color:rgba(255,255,255,.88)"><td colspan="2" style="padding:6px 18px;font-size:11px;font-weight:600">Mobilization Deposit (${_tmDepPct}%) Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr>`
     :`<tr style="background:#2a4a7f;color:rgba(255,255,255,.88)"><td colspan="2" style="padding:6px 18px;font-size:11px;font-weight:600">${_sendByoDepPctLabel}% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr>`;
+  const _fcPct=(S&&S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5);
+  const _fcApr=Math.round(_fcPct*12*10)/10;
   const _tmPayTerms=_geiIsTM
-    ?`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Contract type:</strong> Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}</div><div>2. <strong>Mobilization deposit:</strong> ${_tmDepPct}% (${depositFmt}) due before work begins and before a start date is scheduled.</div><div>3. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div><div>4. <strong>Billing:</strong> ${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.</div><div>5. <strong>Change Orders:</strong> Any additional scope not described herein requires a written change order signed by both parties.</div><div>6. <strong>Limitation of Liability:</strong> Contractor is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>7. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(_stateKey)}</div></div>`
-    :`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> ${_sendByoDepPctLabel}% due before work begins and before a start date is scheduled. Balance due upon completion.</div><div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div><div>3. <strong>Change Orders:</strong> Any additional work not described herein requires a written change order signed by both parties.</div><div>4. <strong>Limitation of Liability:</strong> ${bname} is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>5. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(_stateKey)}</div></div>`;
+    ?`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Contract type:</strong> Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}</div><div>2. <strong>Mobilization deposit:</strong> ${_tmDepPct}% (${depositFmt}) due before work begins and before a start date is scheduled.</div><div>3. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div><div>4. <strong>Billing:</strong> ${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.</div><div>5. <strong>Change Orders:</strong> Any additional scope not described herein requires a written change order approved and signed by the client.</div><div>6. <strong>Limitation of Liability:</strong> Contractor is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>7. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(_stateKey)}</div><div>8. <strong>Finance Charges:</strong> Unpaid balances remaining 30 days after job completion are subject to a finance charge of ${_fcPct}% per month (${_fcApr}% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.</div></div>`
+    :`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> ${_sendByoDepPctLabel}% due before work begins and before a start date is scheduled. Balance due upon completion.</div><div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div><div>3. <strong>Change Orders:</strong> Any additional work not described herein requires a written change order approved and signed by the client.</div><div>4. <strong>Limitation of Liability:</strong> ${bname} is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>5. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(_stateKey)}</div><div>6. <strong>Finance Charges:</strong> Unpaid balances remaining 30 days after job completion are subject to a finance charge of ${_fcPct}% per month (${_fcApr}% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.</div></div>`;
   const _tmPropMarkupMult=(_geiIsTM&&_tmMatMarkup>0)?(1+_tmMatMarkup/100):1;
   // Safari lazy-parses function bodies on first call — extract ?.?? to plain variables
   const _byoTermsEl2=document.getElementById('byo-custom-terms');
@@ -2044,7 +2048,7 @@ async function sendGenericProposal(previewOnly){
     bwebsite:S.bwebsite||'',
     baddr:S.baddr||'',
   };
-  const _uploadRes=await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true}).catch(e=>({error:e}));
+  const _uploadRes=await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(e=>({error:e}));
   if(_uploadRes&&_uploadRes.error){showToast('Upload failed — check connection and try again','error');console.error('[proposal upload]',_uploadRes.error);return;}
   const b=bids.find(x=>x.id===bidId);
   if(b){
@@ -2389,7 +2393,7 @@ async function _sendIndProposal(){
     rrpRenovatorCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
   };
   showToast('Uploading proposal…','⏳');
-  await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true}).catch(e=>console.error('[ind proposal upload]',e));
+  await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(e=>console.error('[ind proposal upload]',e));
   const b=bids.find(x=>x.id===_indBidId);
   if(b){b.signingToken=token;b.proposalKey=proposalKey;b.proposalHtml=proposalHtml;saveAll();}
   const baseUrl=_clientBaseUrl();
@@ -2459,4 +2463,163 @@ function _stsuSave(){
   document.getElementById('sales-tax-setup-overlay')?.remove();
   if(typeof calcGeiTotal==='function')calcGeiTotal();
   if(typeof showToast==='function')showToast(rate?'Sales tax rate set to '+rate+'%':'Sales tax rate cleared','✓');
+}
+
+// ─── Sign in person — T&M and Build Your Own ─────────────────────────────────
+function _geiSignInPerson(){
+  saveGenericEstimate(true);
+  const bid=bids.find(x=>x.id===_geiEditBidId);
+  if(!bid){showToast('Save your estimate first','⚠️');return;}
+  if(!bid.client_id){showToast('Link this estimate to a client first','⚠️');return;}
+  const{total}=calcGeiTotal();
+  if(!total){showToast('Add items to your estimate before signing','⚠️');return;}
+  const cname=document.getElementById('gei-client')?.value||bid.client_name||'Client';
+  const depPct=_geiIsTM
+    ?(parseFloat(document.getElementById('tm-dep-pct')?.value)||20)
+    :(parseFloat(document.getElementById('byo-deposit-pct')?.value)||25);
+  const depAmt=Math.round(total*depPct/100*100)/100;
+  const bal=Math.round((total-depAmt)*100)/100;
+  const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const depLabel=_geiIsTM?'Mobilization deposit ('+depPct+'%)':'Deposit ('+depPct+'%)';
+  document.getElementById('_gei-ip-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.id='_gei-ip-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:9700;background:#0008;display:flex;align-items:flex-end;justify-content:center;padding:0';
+  ov.innerHTML=
+    '<div style="background:var(--bg-card,#fff);border-radius:18px 18px 0 0;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;box-sizing:border-box">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px;border-bottom:1px solid var(--border)">'+
+        '<div style="font-size:17px;font-weight:800">✍️ Sign in person</div>'+
+        '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null" style="background:none;border:none;font-size:22px;color:var(--text3);cursor:pointer;padding:0;line-height:1">×</button>'+
+      '</div>'+
+      '<div style="padding:14px 18px 28px">'+
+        '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-bottom:16px">'+
+          '<div style="font-size:13px;font-weight:700;margin-bottom:8px">'+cname+'</div>'+
+          '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">Contract total</span><strong style="color:var(--blue)">'+fmt(total)+'</strong></div>'+
+          (depAmt>0
+            ?'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">'+depLabel+'</span><strong style="color:var(--green)">'+fmt(depAmt)+'</strong></div>'+
+              '<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text3)">Balance on completion</span><strong>'+fmt(bal)+'</strong></div>'
+            :'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text3)">Due on completion</span><strong>'+fmt(total)+'</strong></div>'
+          )+
+        '</div>'+
+        '<div style="margin-bottom:14px">'+
+          '<label style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);display:block;margin-bottom:5px">Client name &amp; signature <span style="font-weight:400">(required)</span></label>'+
+          '<input id="gei-ip-pname" placeholder="Type full name to sign..." oninput="_geiIpUpdateTypedSig()" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:var(--r);border:1.5px solid var(--border2);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
+          '<div id="gei-ip-typed-preview" style="font-family:\'Dancing Script\',cursive;font-size:36px;color:#185FA5;min-height:52px;display:flex;align-items:center;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r);margin-top:6px;background:var(--bg)"></div>'+
+        '</div>'+
+        '<details style="margin-bottom:14px">'+
+          '<summary style="font-size:11px;color:var(--text3);cursor:pointer;padding:4px 0">Or draw signature instead</summary>'+
+          '<div style="margin-top:8px">'+
+            '<canvas id="gei-ip-canvas" style="width:100%;border:1.5px solid var(--border2);border-radius:var(--r);background:#fff;touch-action:none;display:block"></canvas>'+
+            '<div style="font-size:10px;color:var(--text3);text-align:center;margin-top:4px">Draw with finger or stylus</div>'+
+            '<div style="margin-top:6px"><button class="btn btn-sm" onclick="_geiIpClearSig()">Clear</button></div>'+
+          '</div>'+
+        '</details>'+
+        '<button id="gei-ip-confirm-btn" onclick="_geiConfirmInPerson()" disabled style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--bg2);color:var(--text3);font-size:16px;font-weight:700;cursor:not-allowed;font-family:inherit;margin-bottom:10px;transition:background .15s,color .15s">Confirm &amp; close job</button>'+
+        '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null" style="width:100%;padding:11px;border-radius:var(--rl,12px);border:none;background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(ov);
+  setTimeout(()=>{
+    const canvas=document.getElementById('gei-ip-canvas');
+    if(!canvas)return;
+    sigCanvas=canvas;
+    const dpr=window.devicePixelRatio||1;
+    const w=canvas.offsetWidth||300;
+    canvas.width=w*dpr;canvas.height=120*dpr;
+    canvas.style.width=w+'px';canvas.style.height='120px';
+    sigCtx=canvas.getContext('2d');
+    sigCtx.scale(dpr,dpr);
+    sigCtx.strokeStyle='#185FA5';sigCtx.lineWidth=2.5;sigCtx.lineCap='round';sigCtx.lineJoin='round';
+    let _ipDn=false;
+    const gp=e=>{const r=canvas.getBoundingClientRect(),s=e.touches?e.touches[0]:e;return{x:s.clientX-r.left,y:s.clientY-r.top};};
+    canvas.onmousedown=canvas.ontouchstart=e=>{e.preventDefault();_ipDn=true;const p=gp(e);sigCtx.beginPath();sigCtx.moveTo(p.x,p.y);};
+    canvas.onmousemove=canvas.ontouchmove=e=>{e.preventDefault();if(!_ipDn)return;const p=gp(e);sigCtx.lineTo(p.x,p.y);sigCtx.stroke();};
+    canvas.onmouseup=canvas.ontouchend=()=>{_ipDn=false;_geiIpCheckReady();};
+  },150);
+}
+function _geiIpUpdateTypedSig(){
+  const val=(document.getElementById('gei-ip-pname')?.value||'').trim();
+  const prev=document.getElementById('gei-ip-typed-preview');
+  if(prev)prev.textContent=val;
+  _geiIpCheckReady();
+}
+function _geiIpClearSig(){
+  if(sigCtx&&sigCanvas){const d=window.devicePixelRatio||1;sigCtx.clearRect(0,0,sigCanvas.width/d,sigCanvas.height/d);}
+  _geiIpCheckReady();
+}
+function _geiIpCheckReady(){
+  const btn=document.getElementById('gei-ip-confirm-btn');
+  if(!btn)return;
+  const nameOk=(document.getElementById('gei-ip-pname')?.value||'').trim().length>2;
+  const sigOk=nameOk||(typeof hasSignature==='function'&&hasSignature());
+  const ready=sigOk;
+  btn.disabled=!ready;
+  btn.style.background=ready?'var(--green)':'var(--bg2)';
+  btn.style.color=ready?'#fff':'var(--text3)';
+  btn.style.cursor=ready?'pointer':'not-allowed';
+}
+async function _geiConfirmInPerson(){
+  const pname=(document.getElementById('gei-ip-pname')?.value||'').trim();
+  const typed=pname;
+  if(!pname&&!(typeof hasSignature==='function'&&hasSignature())){showToast('Type your name or draw a signature above','⚠️');return;}
+  const bid=bids.find(x=>x.id===_geiEditBidId);
+  if(!bid){showToast('Bid not found','⚠️');return;}
+  const{total}=calcGeiTotal();
+  const depPct=_geiIsTM
+    ?(parseFloat(document.getElementById('tm-dep-pct')?.value)||20)
+    :(parseFloat(document.getElementById('byo-deposit-pct')?.value)||25);
+  const depAmt=Math.round(total*depPct/100*100)/100;
+  const ts=new Date().toISOString();
+  bid.amount=total;bid.deposit=depAmt;bid.status='Closed Won';bid.draft=false;
+  bid.signedAt=ts;bid.estStatus='signed';
+  const clientName=document.getElementById('gei-client')?.value||bid.client_name||'Client';
+  bid.client_name=bid.client_name||clientName;
+  saveAll();
+  renderDash();
+  // Queue schedule alert — fires after user taps "Back to home" and lands on dashboard
+  const _alerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
+  _alerts.push({name:clientName,bidId:bid.id,clientId:bid.client_id,isPaid:false});
+  localStorage.setItem('zp3_schedule_alerts',JSON.stringify(_alerts));
+  // Generate signature image for DB record
+  let sigData='';
+  if(sigCanvas&&typeof hasSignature==='function'&&hasSignature()){sigData=sigCanvas.toDataURL('image/png');}
+  else if(typed){
+    const tc=document.createElement('canvas');tc.width=400;tc.height=100;
+    const tx=tc.getContext('2d');tx.font='46px "Dancing Script",cursive';
+    tx.fillStyle='#1a1a18';tx.textAlign='center';tx.textBaseline='middle';
+    tx.fillText(typed,200,50);sigData=tc.toDataURL('image/png');
+  }
+  // Show confirmation screen immediately
+  const ov=document.getElementById('_gei-ip-ov');
+  const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const dtFmt=new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+  if(ov){
+    ov.innerHTML='<div style="background:var(--bg-card,#fff);border-radius:18px 18px 0 0;width:100%;max-width:520px;padding:32px 24px 40px;box-sizing:border-box;text-align:center">'+
+      '<div style="font-size:48px;margin-bottom:12px">✅</div>'+
+      '<div style="font-size:20px;font-weight:900;color:var(--text);margin-bottom:8px">You\'re all set!</div>'+
+      '<div style="font-size:14px;color:var(--text3);margin-bottom:24px">The contract has been signed.</div>'+
+      '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:16px;margin-bottom:24px;text-align:left">'+
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#15803d;margin-bottom:10px">Confirmation</div>'+
+        '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #dcfce7"><span style="color:#374151">Contract total</span><strong style="color:#15803d">'+fmt(total)+'</strong></div>'+
+        (depAmt>0?'<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #dcfce7"><span style="color:#374151">Deposit due</span><strong>'+fmt(depAmt)+'</strong></div>':'')+
+        '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #dcfce7"><span style="color:#374151">Signed by</span><strong>'+pname+'</strong></div>'+
+        '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0"><span style="color:#374151">Date &amp; time</span><span>'+dtFmt+'</span></div>'+
+      '</div>'+
+      '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null;goPg(\'pg-dash\');setTimeout(showScheduleAlerts,400)" style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit">🏠 Back to home</button>'+
+    '</div>';
+  }
+  // Background: write to signed_proposals + upload client hub
+  if(typeof supaEnabled==='function'&&supaEnabled()&&typeof _supaUser!=='undefined'&&_supaUser&&bid.client_id){(async()=>{
+    const row={bid_id:String(bid.id),contractor_user_id:_supaUser.id,
+      client_name:bid.client_name,client_signed_name:pname||typed,
+      signed_at:ts,signature_data:sigData,
+      payment_status:'pending',deposit:depAmt,amount:total};
+    try{
+      const{data:rows}=await _supa.from('signed_proposals').select('id')
+        .eq('bid_id',String(bid.id)).eq('contractor_user_id',_supaUser.id).limit(1);
+      if(rows&&rows[0])await _supa.from('signed_proposals').update(row).eq('id',rows[0].id);
+      else await _supa.from('signed_proposals').insert(row);
+      if(typeof _uploadClientHub==='function')_uploadClientHub(bid.client_id).catch(()=>{});
+    }catch(e){console.warn('gei in-person sign save:',e);}
+  })();}
 }

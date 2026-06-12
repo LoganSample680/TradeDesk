@@ -351,7 +351,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = location.origin + '/api';
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.09.26.22';
+const APP_VERSION='06.11.26.24';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -484,6 +484,7 @@ Object.defineProperty(window,'_proposalViewsByBidClientCount',{get:()=>_proposal
 let _loadedFromCacheOnly=false;
 let _mergeOnSignIn=false; // true when offline data in memory needs merging after SIGNED_IN
 let _cloudTimersStarted=false; // prevent duplicate setInterval/addEventListener on PTR re-load
+let _checkSigsBusy=false;      // prevent concurrent clawback writes
 let _sessionRestoreInProgress=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _removeBootOverlay(){
@@ -587,7 +588,7 @@ async function supaInit(){
           if(_cd.contracts?.length)contracts=_cd.contracts;
           if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
-          if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
+          if(_cd.settings){_mergeIncomingSettings(_cd.settings);applySettings();loadSettingsForm();}
           _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
           _loadedFromCacheOnly=true;
           _mergeOnSignIn=true;
@@ -723,7 +724,7 @@ async function supaInit(){
         if(_cd.contracts?.length)contracts=_cd.contracts;
         if(_cd.photos?.length)photos=_cd.photos;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
-        if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
+        if(_cd.settings){_mergeIncomingSettings(_cd.settings);applySettings();loadSettingsForm();}
         _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
         _supaCloudLoaded=true;
         _loadedFromCacheOnly=true;
@@ -1180,7 +1181,7 @@ function _enterOfflineMode(){
       if(_cd.contracts?.length)contracts=_cd.contracts;
       if(_cd.photos?.length)photos=_cd.photos;
       if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
-      if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
+      if(_cd.settings){_mergeIncomingSettings(_cd.settings);applySettings();loadSettingsForm();}
     }catch(_ce){}
   }
   _mergeOfflinePendingToMemory(); // show any records created since the last cloud sync
@@ -1300,6 +1301,23 @@ async function _deleteReceiptFromStorage(receiptKey){
   if(!_supa||!receiptKey)return;
   const{error}=await _supa.storage.from('receipts').remove([receiptKey]);
   if(error)throw error;
+}
+// Merge an incoming settings object (cloud row or local cache snapshot) into S.
+// If local S carries a newer settingsTs, the incoming copy is stale — e.g. the
+// user hit Save then refreshed before the cloud flush finished (settings are
+// written LAST in supaSaveToCloud, after all table upserts). Local wins and we
+// flag a pending sync so the newer local settings get pushed up.
+function _mergeIncomingSettings(ss){
+  if(!ss)return false;
+  if((S.settingsTs||0)>(ss.settingsTs||0)){
+    try{localStorage.setItem('zp3_pending_sync','1');}catch(_e){}
+    if(typeof supaSaveDebounced==='function')supaSaveDebounced();
+    return false;
+  }
+  const _localVehs=S.vehicles,_localVehsTs=S.vehiclesTs||0;
+  S={...S,...ss};
+  if(_localVehsTs>(ss.vehiclesTs||0)){S.vehicles=_localVehs;S.vehiclesTs=_localVehsTs;}
+  return true;
 }
 function supaSaveDebounced(){
   if(!supaEnabled())return;
@@ -1608,23 +1626,77 @@ async function supaSaveToCloud(){
 }
 
 async function checkNewSignatures(){
-  if(!_supa||!_supaUser)return;
+  if(_checkSigsBusy||!_supa||!_supaUser)return;
+  _checkSigsBusy=true;
   try{
     // Use localStorage as the seen-list — no DB column dependency
     const seenCache=new Set(JSON.parse(localStorage.getItem('zp3_seen_sigs')||'[]'));
+    // select('*') — optional columns (epa_*, cancelled_*) may not exist in every
+    // environment; an explicit column list would fail the whole query on drift.
     const{data,error}=await _supa.from('signed_proposals')
-      .select('bid_id,client_name,payment_method,payment_status,signed_at,client_signed_name')
+      .select('*')
       .eq('contractor_user_id',_supaUser.id)
       .order('signed_at',{ascending:false})
       .limit(100);
     if(error)throw error;
     if(data&&data.length){
-      let changed=false;const alerts=[];const newSeen=[];
+      let changed=false;const alerts=[];const newSeen=[];const coSignedAlerts=[];
       for(const s of data){
         const key=String(s.bid_id);
         const alreadySeen=seenCache.has(key);
         const bid=bids.find(b=>String(b.id)===key);
         if(!bid){if(!alreadySeen)newSeen.push(key);continue;} // deleted/orphaned
+        // Client cancelled within the rescission window (e-signed Notice of Cancellation).
+        // Runs before the signed/declined branches and regardless of seenCache — the
+        // cancellation always arrives after the signature row was already seen.
+        if(s.cancelled_at){
+          if(!bid.clientCancelled){
+            bid.clientCancelled=true;
+            bid.cancelledAt=s.cancelled_at;
+            bid.cancelledName=s.cancelled_signed_name||'';
+            bid.status='Closed Lost';bid.draft=false;
+            // Cancel the linked job too — 'canceled' removes it from every active-job
+            // query (today feed, schedule, collect) while keeping the record.
+            const _cj=(typeof jobs!=='undefined'?jobs:[]).find(j=>j.bid_id===bid.id);
+            if(_cj){_cj.clientCancelled=true;_cj.status='canceled';}
+            // Clawback: reverse every recorded payment on this bid so the books reflect
+            // the legally required refund (K.S.A. 50-640 / 16 CFR 429: within 10 business days)
+            const _cpaid=(typeof payments!=='undefined'?payments:[]).filter(p=>p.bid_id===bid.id&&p.amount>0);
+            const _ctotal=_cpaid.reduce((t,p)=>t+p.amount,0);
+            const _hasRefund=(typeof payments!=='undefined'?payments:[]).some(p=>p.bid_id===bid.id&&p._cancelRefund);
+            if(_ctotal>0&&!_hasRefund){
+              payments.push({id:Date.now(),bid_id:bid.id,amount:-_ctotal,date:todayKey(),method:'refund',type:'refund',_cancelRefund:true,note:'Refund — client cancelled within rescission window'});
+            }
+            changed=true;
+            const _isStripe=s.payment_method&&s.payment_method!=='cash'&&s.payment_method!=='check';
+            const _refundDays=_isStripe?'5–7':'10';
+            if(typeof showToast==='function')showToast('🚫 '+(s.client_name||'Client')+' cancelled — refund'+(_ctotal>0?' '+fmt(_ctotal):'')+' within '+_refundDays+' business days','⚠️');
+          }else if(bid.status!=='Closed Lost'){
+            // Re-assert the terminal state if a later sync path flipped it back
+            bid.status='Closed Lost';changed=true;
+          }
+          // Always stop here: a cancelled row must never fall through to the signed
+          // branch below, which would resurrect the bid to Closed Won on every sync.
+          if(!alreadySeen)newSeen.push(key);
+          continue;
+        }
+        // Change orders signed remotely in the client hub — apply to the local bid.
+        // Mirrors _submitCOSign bookkeeping: mark the CO signed and roll bid.amount
+        // to the new contract total (balance derives from payments via getBidBalance).
+        // Runs regardless of seenCache — the signature lands after the row was seen.
+        if(Array.isArray(s.change_orders)&&s.change_orders.length&&bid.changeOrders&&bid.changeOrders.length){
+          for(const rc of s.change_orders){
+            if(!rc||!rc.signedAt)continue;
+            const lc=bid.changeOrders.find(x=>x.coNum===rc.coNum);
+            if(!lc||lc.signedAt)continue;
+            lc.signedAt=rc.signedAt;lc.signerName=rc.signerName||'Client';
+            if(rc.signatureData)lc.sigData=rc.signatureData;
+            lc.status='signed';
+            bid.amount=rc.newAmount!=null?rc.newAmount:Math.max(0,Math.round((bid.amount+(lc.delta||0))*100)/100);
+            changed=true;
+            coSignedAlerts.push({client:s.client_name||'Client',coNum:lc.coNum,newTotal:bid.amount,clientId:bid.client_id});
+          }
+        }
         if(s.payment_status==='declined'){
           // Client declined — mark as Closed Lost, not Closed Won
           if(bid.status!=='Closed Lost'){
@@ -1632,16 +1704,24 @@ async function checkNewSignatures(){
             bid.declinedAt=s.signed_at;
             changed=true;
           }
-        } else if(bid.status!=='Closed Won'){
-          // Always fix the status regardless of seenCache — data may have been reset
-          bid.status='Closed Won';bid.draft=false;
-          bid.signedAt=s.signed_at;
-          bid.signedName=s.client_signed_name||s.client_name;
-          bid.paymentMethod=s.payment_method;
-          changed=true;
-          if(!alreadySeen){
-            alerts.push({name:s.client_name||'Client',bidId:bid.id,clientId:bid.client_id,isPaid:s.payment_status==='paid'});
+        } else {
+          if(bid.status!=='Closed Won'){
+            // Always fix the status regardless of seenCache — data may have been reset
+            bid.status='Closed Won';bid.draft=false;
+            bid.signedAt=s.signed_at;
+            bid.signedName=s.client_signed_name||s.client_name;
+            bid.paymentMethod=s.payment_method;
+            changed=true;
+            if(!alreadySeen){
+              alerts.push({name:s.client_name||'Client',bidId:bid.id,clientId:bid.client_id,isPaid:s.payment_status==='paid'});
+            }
           }
+          // Refresh signature metadata even when already won — the signature image and
+          // EPA ack can land after the status flip (or the DB columns were added later).
+          if(s.signature_data&&bid.signatureData!==s.signature_data){bid.signatureData=s.signature_data;changed=true;}
+          if(s.epa_ack_at&&bid.epaAckAt!==s.epa_ack_at){bid.epaAckAt=s.epa_ack_at;changed=true;}
+          if(s.client_signed_name&&!bid.signedName){bid.signedName=s.client_signed_name;changed=true;}
+          if(s.signed_at&&!bid.signedAt){bid.signedAt=s.signed_at;changed=true;}
         }
         if(!alreadySeen)newSeen.push(key);
       }
@@ -1651,14 +1731,17 @@ async function checkNewSignatures(){
       }
       if(changed){
         saveAll();
-        [...new Set(alerts.map(a=>a.clientId))].forEach(cid=>_refreshClientHub(cid));
+        [...new Set([...alerts.map(a=>a.clientId),...coSignedAlerts.map(a=>a.clientId)])].forEach(cid=>_refreshClientHub(cid));
+        coSignedAlerts.forEach(a=>{if(typeof showToast==='function')showToast('✍️ '+a.client+' signed Change Order #'+a.coNum+' — contract now '+fmt(a.newTotal),'📋');});
         const existing=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
         localStorage.setItem('zp3_schedule_alerts',JSON.stringify([...existing,...alerts]));
         renderDash();
+        if(coSignedAlerts.length&&typeof renderJobsPage==='function')renderJobsPage();
+        if(typeof renderClientDetail==='function'&&typeof currentClientId!=='undefined'&&currentClientId)renderClientDetail();
         if(!window._showingScheduleAlert)setTimeout(showScheduleAlerts,400);
       }
     }
-  }catch(e){console.warn('checkNewSignatures:',e);}
+  }catch(e){console.warn('checkNewSignatures:',e);}finally{_checkSigsBusy=false;}
 }
 async function _fetchProposalViews(){
   if(!_supa||!_supaUser)return;
@@ -1862,7 +1945,7 @@ function editSentBid(bidId){
     _supa.storage.from('proposals').download(b.signingKey).then(({data})=>{
       if(!data)return;
       data.text().then(txt=>{
-        try{const p=JSON.parse(txt);_supa.storage.from('proposals').upload(b.signingKey,JSON.stringify({...p,status:'voided'}),{contentType:'application/json',upsert:true});}catch(e){}
+        try{const p=JSON.parse(txt);_supa.storage.from('proposals').upload(b.signingKey,JSON.stringify({...p,status:'voided'}),{contentType:'application/json',upsert:true,cacheControl:'0'});}catch(e){}
       });
     });
   }
@@ -1929,7 +2012,7 @@ async function supaLoadFromCloud({silent=false}={}){
     if(sd){
       if(sd.checks_state){const cc=(()=>{try{return JSON.parse(sd.checks_state);}catch{return null;}})();if(cc&&Object.keys(cc).length)checksState=cc;}
       if(sd.settings){const ss=(()=>{try{return JSON.parse(sd.settings);}catch{return null;}})();
-        if(ss){const _localVehs=S.vehicles,_localVehsTs=S.vehiclesTs||0;S={...S,...ss};if(_localVehsTs>(ss.vehiclesTs||0)){S.vehicles=_localVehs;S.vehiclesTs=_localVehsTs;}
+        if(ss){_mergeIncomingSettings(ss);
           if(S.fedMFS===14600)S.fedMFS=15000;if(S.fedSingle===14600)S.fedSingle=15000;
           if(S.fedMFJ===29200)S.fedMFJ=30000;if(S.fedHOH===21900)S.fedHOH=22500;
           if(S.b10===11600)S.b10=11925;if(S.b12===47150)S.b12=48475;
@@ -1969,6 +2052,19 @@ async function supaLoadFromCloud({silent=false}={}){
     if(typeof renderAllMileage==='function')renderAllMileage();
     clients.forEach(c=>{if(!c.clientToken)_ensureClientToken(c.id);});
 
+    // Remove any duplicate clawback payments created by the concurrent-run race fixed in
+    // this commit (two _cancelRefund entries per bid_id — keep the first, drop extras).
+    (function _dedupeClawbacks(){
+      const seen=new Set();let dirty=false;
+      for(let i=payments.length-1;i>=0;i--){
+        const p=payments[i];
+        if(!p||!p._cancelRefund)continue;
+        if(seen.has(p.bid_id)){payments.splice(i,1);dirty=true;}
+        else seen.add(p.bid_id);
+      }
+      if(dirty){saveAll();if(typeof renderDash==='function')renderDash();}
+    })();
+
     // Always fetch proposal views on every load so PTR gets fresh timestamps immediately
     setTimeout(()=>{checkNewSignatures();_fetchProposalViews();if(!window._showingScheduleAlert&&!silent)showScheduleAlerts();},1500);
 
@@ -1990,6 +2086,9 @@ async function supaLoadFromCloud({silent=false}={}){
       setTimeout(()=>_fetchStripeConnectStatus(),3000);
       setTimeout(()=>_loadPendingInbound(),2000);
       document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){checkNewSignatures();_fetchProposalViews();if(_supaUser)_loadPendingInbound();checkNearbyJob();}});
+      // Cross-tab signal: sign.html writes zp3_sig_notify after a successful cash/check save.
+      // This fires immediately in the contractor's open TradeDesk tab — no polling delay.
+      window.addEventListener('storage',e=>{if(e.key==='zp3_sig_notify'&&e.newValue)checkNewSignatures();});
       setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
       setTimeout(()=>checkNearbyJob(),4000);
     }
@@ -2028,7 +2127,7 @@ async function supaLoadFromCloud({silent=false}={}){
         if(_cd.licenses?.length)licenses=_cd.licenses;if(_cd.events?.length)events=_cd.events;
         if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.photos?.length)photos=_cd.photos;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
-        if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
+        if(_cd.settings){_mergeIncomingSettings(_cd.settings);applySettings();loadSettingsForm();}
         _loadedFromCacheOnly=true;_supaCloudLoaded=true;
         try{
           const _op=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');
@@ -2286,7 +2385,7 @@ function checkFridaySummary(){
   localStorage.setItem(fridayKey,monday);
 
   // Revenue this week (payments)
-  const weekPay=payments.filter(p=>p.amount>0&&p.date>=monday&&p.date<=tk);
+  const weekPay=payments.filter(p=>p.amount!==0&&p.date>=monday&&p.date<=tk);
   const weekRev=weekPay.reduce((s,p)=>s+p.amount,0);
   // Jobs completed this week
   const weekDone=jobs.filter(j=>j.completion_date&&j.completion_date>=monday&&j.completion_date<=tk&&j.status==='done').length;
