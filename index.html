@@ -3324,7 +3324,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar-r">
       <button class="btn btn-sm" onclick="openIntakeFormModal()">📋 Intake form</button>
       <button class="btn btn-sm" onclick="openImportContacts()">Import</button>
-      <button class="btn btn-p btn-sm" onclick="openNewClient()">+ New lead</button>
+      <button class="btn btn-p btn-sm" onclick="goPg('pg-clients');setTimeout(()=>openNewClient(),100)">+ New lead</button>
     </div>
   </div>
   <div class="fbar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:12px">
