@@ -2464,3 +2464,162 @@ function _stsuSave(){
   if(typeof calcGeiTotal==='function')calcGeiTotal();
   if(typeof showToast==='function')showToast(rate?'Sales tax rate set to '+rate+'%':'Sales tax rate cleared','✓');
 }
+
+// ─── Sign in person — T&M and Build Your Own ─────────────────────────────────
+function _geiSignInPerson(){
+  saveGenericEstimate(true);
+  const bid=bids.find(x=>x.id===_geiEditBidId);
+  if(!bid){showToast('Save your estimate first','⚠️');return;}
+  if(!bid.client_id){showToast('Link this estimate to a client first','⚠️');return;}
+  const{total}=calcGeiTotal();
+  if(!total){showToast('Add items to your estimate before signing','⚠️');return;}
+  const cname=document.getElementById('gei-client')?.value||bid.client_name||'Client';
+  const depPct=_geiIsTM
+    ?(parseFloat(document.getElementById('tm-dep-pct')?.value)||20)
+    :(parseFloat(document.getElementById('byo-deposit-pct')?.value)||25);
+  const depAmt=Math.round(total*depPct/100*100)/100;
+  const bal=Math.round((total-depAmt)*100)/100;
+  const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const depLabel=_geiIsTM?'Mobilization deposit ('+depPct+'%)':'Deposit ('+depPct+'%)';
+  document.getElementById('_gei-ip-ov')?.remove();
+  const ov=document.createElement('div');
+  ov.id='_gei-ip-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:9700;background:#0008;display:flex;align-items:flex-end;justify-content:center;padding:0';
+  ov.innerHTML=
+    '<div style="background:var(--bg-card,#fff);border-radius:18px 18px 0 0;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;box-sizing:border-box">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px;border-bottom:1px solid var(--border)">'+
+        '<div style="font-size:17px;font-weight:800">✍️ Sign in person</div>'+
+        '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null" style="background:none;border:none;font-size:22px;color:var(--text3);cursor:pointer;padding:0;line-height:1">×</button>'+
+      '</div>'+
+      '<div style="padding:14px 18px 28px">'+
+        '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-bottom:16px">'+
+          '<div style="font-size:13px;font-weight:700;margin-bottom:8px">'+cname+'</div>'+
+          '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">Contract total</span><strong style="color:var(--blue)">'+fmt(total)+'</strong></div>'+
+          (depAmt>0
+            ?'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">'+depLabel+'</span><strong style="color:var(--green)">'+fmt(depAmt)+'</strong></div>'+
+              '<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text3)">Balance on completion</span><strong>'+fmt(bal)+'</strong></div>'
+            :'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text3)">Due on completion</span><strong>'+fmt(total)+'</strong></div>'
+          )+
+        '</div>'+
+        '<div style="margin-bottom:14px">'+
+          '<label style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);display:block;margin-bottom:5px">Client name &amp; signature <span style="font-weight:400">(required)</span></label>'+
+          '<input id="gei-ip-pname" placeholder="Type full name to sign..." oninput="_geiIpUpdateTypedSig()" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:var(--r);border:1.5px solid var(--border2);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
+          '<div id="gei-ip-typed-preview" style="font-family:\'Dancing Script\',cursive;font-size:36px;color:#185FA5;min-height:52px;display:flex;align-items:center;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r);margin-top:6px;background:var(--bg)"></div>'+
+        '</div>'+
+        '<details style="margin-bottom:14px">'+
+          '<summary style="font-size:11px;color:var(--text3);cursor:pointer;padding:4px 0">Or draw signature instead</summary>'+
+          '<div style="margin-top:8px">'+
+            '<canvas id="gei-ip-canvas" style="width:100%;border:1.5px solid var(--border2);border-radius:var(--r);background:#fff;touch-action:none;display:block"></canvas>'+
+            '<div style="font-size:10px;color:var(--text3);text-align:center;margin-top:4px">Draw with finger or stylus</div>'+
+            '<div style="margin-top:6px"><button class="btn btn-sm" onclick="_geiIpClearSig()">Clear</button></div>'+
+          '</div>'+
+        '</details>'+
+        '<button id="gei-ip-confirm-btn" onclick="_geiConfirmInPerson()" disabled style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--bg2);color:var(--text3);font-size:16px;font-weight:700;cursor:not-allowed;font-family:inherit;margin-bottom:10px;transition:background .15s,color .15s">Confirm &amp; close job</button>'+
+        '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null" style="width:100%;padding:11px;border-radius:var(--rl,12px);border:none;background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(ov);
+  setTimeout(()=>{
+    const canvas=document.getElementById('gei-ip-canvas');
+    if(!canvas)return;
+    sigCanvas=canvas;
+    const dpr=window.devicePixelRatio||1;
+    const w=canvas.offsetWidth||300;
+    canvas.width=w*dpr;canvas.height=120*dpr;
+    canvas.style.width=w+'px';canvas.style.height='120px';
+    sigCtx=canvas.getContext('2d');
+    sigCtx.scale(dpr,dpr);
+    sigCtx.strokeStyle='#185FA5';sigCtx.lineWidth=2.5;sigCtx.lineCap='round';sigCtx.lineJoin='round';
+    let _ipDn=false;
+    const gp=e=>{const r=canvas.getBoundingClientRect(),s=e.touches?e.touches[0]:e;return{x:s.clientX-r.left,y:s.clientY-r.top};};
+    canvas.onmousedown=canvas.ontouchstart=e=>{e.preventDefault();_ipDn=true;const p=gp(e);sigCtx.beginPath();sigCtx.moveTo(p.x,p.y);};
+    canvas.onmousemove=canvas.ontouchmove=e=>{e.preventDefault();if(!_ipDn)return;const p=gp(e);sigCtx.lineTo(p.x,p.y);sigCtx.stroke();};
+    canvas.onmouseup=canvas.ontouchend=()=>{_ipDn=false;_geiIpCheckReady();};
+  },150);
+}
+function _geiIpUpdateTypedSig(){
+  const val=(document.getElementById('gei-ip-pname')?.value||'').trim();
+  const prev=document.getElementById('gei-ip-typed-preview');
+  if(prev)prev.textContent=val;
+  _geiIpCheckReady();
+}
+function _geiIpClearSig(){
+  if(sigCtx&&sigCanvas){const d=window.devicePixelRatio||1;sigCtx.clearRect(0,0,sigCanvas.width/d,sigCanvas.height/d);}
+  _geiIpCheckReady();
+}
+function _geiIpCheckReady(){
+  const btn=document.getElementById('gei-ip-confirm-btn');
+  if(!btn)return;
+  const nameOk=(document.getElementById('gei-ip-pname')?.value||'').trim().length>2;
+  const sigOk=nameOk||(typeof hasSignature==='function'&&hasSignature());
+  const ready=sigOk;
+  btn.disabled=!ready;
+  btn.style.background=ready?'var(--green)':'var(--bg2)';
+  btn.style.color=ready?'#fff':'var(--text3)';
+  btn.style.cursor=ready?'pointer':'not-allowed';
+}
+async function _geiConfirmInPerson(){
+  const pname=(document.getElementById('gei-ip-pname')?.value||'').trim();
+  const typed=pname;
+  if(!pname&&!(typeof hasSignature==='function'&&hasSignature())){showToast('Type your name or draw a signature above','⚠️');return;}
+  const bid=bids.find(x=>x.id===_geiEditBidId);
+  if(!bid){showToast('Bid not found','⚠️');return;}
+  const{total}=calcGeiTotal();
+  const depPct=_geiIsTM
+    ?(parseFloat(document.getElementById('tm-dep-pct')?.value)||20)
+    :(parseFloat(document.getElementById('byo-deposit-pct')?.value)||25);
+  const depAmt=Math.round(total*depPct/100*100)/100;
+  const ts=new Date().toISOString();
+  bid.amount=total;bid.deposit=depAmt;bid.status='Closed Won';bid.draft=false;
+  bid.signedAt=ts;bid.estStatus='signed';
+  const clientName=document.getElementById('gei-client')?.value||bid.client_name||'Client';
+  bid.client_name=bid.client_name||clientName;
+  saveAll();
+  renderDash();
+  // Queue schedule alert — fires after user taps "Back to home" and lands on dashboard
+  const _alerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
+  _alerts.push({name:clientName,bidId:bid.id,clientId:bid.client_id,isPaid:false});
+  localStorage.setItem('zp3_schedule_alerts',JSON.stringify(_alerts));
+  // Generate signature image for DB record
+  let sigData='';
+  if(sigCanvas&&typeof hasSignature==='function'&&hasSignature()){sigData=sigCanvas.toDataURL('image/png');}
+  else if(typed){
+    const tc=document.createElement('canvas');tc.width=400;tc.height=100;
+    const tx=tc.getContext('2d');tx.font='46px "Dancing Script",cursive';
+    tx.fillStyle='#1a1a18';tx.textAlign='center';tx.textBaseline='middle';
+    tx.fillText(typed,200,50);sigData=tc.toDataURL('image/png');
+  }
+  // Show confirmation screen immediately
+  const ov=document.getElementById('_gei-ip-ov');
+  const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const dtFmt=new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+  if(ov){
+    ov.innerHTML='<div style="background:var(--bg-card,#fff);border-radius:18px 18px 0 0;width:100%;max-width:520px;padding:32px 24px 40px;box-sizing:border-box;text-align:center">'+
+      '<div style="font-size:48px;margin-bottom:12px">✅</div>'+
+      '<div style="font-size:20px;font-weight:900;color:var(--text);margin-bottom:8px">You\'re all set!</div>'+
+      '<div style="font-size:14px;color:var(--text3);margin-bottom:24px">The contract has been signed.</div>'+
+      '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:16px;margin-bottom:24px;text-align:left">'+
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#15803d;margin-bottom:10px">Confirmation</div>'+
+        '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #dcfce7"><span style="color:#374151">Contract total</span><strong style="color:#15803d">'+fmt(total)+'</strong></div>'+
+        (depAmt>0?'<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #dcfce7"><span style="color:#374151">Deposit due</span><strong>'+fmt(depAmt)+'</strong></div>':'')+
+        '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #dcfce7"><span style="color:#374151">Signed by</span><strong>'+pname+'</strong></div>'+
+        '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0"><span style="color:#374151">Date &amp; time</span><span>'+dtFmt+'</span></div>'+
+      '</div>'+
+      '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null;goPg(\'pg-dash\');setTimeout(showScheduleAlerts,400)" style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit">🏠 Back to home</button>'+
+    '</div>';
+  }
+  // Background: write to signed_proposals + upload client hub
+  if(typeof supaEnabled==='function'&&supaEnabled()&&typeof _supaUser!=='undefined'&&_supaUser&&bid.client_id){(async()=>{
+    const row={bid_id:String(bid.id),contractor_user_id:_supaUser.id,
+      client_name:bid.client_name,client_signed_name:pname||typed,
+      signed_at:ts,signature_data:sigData,
+      payment_status:'pending',deposit:depAmt,amount:total};
+    try{
+      const{data:rows}=await _supa.from('signed_proposals').select('id')
+        .eq('bid_id',String(bid.id)).eq('contractor_user_id',_supaUser.id).limit(1);
+      if(rows&&rows[0])await _supa.from('signed_proposals').update(row).eq('id',rows[0].id);
+      else await _supa.from('signed_proposals').insert(row);
+      if(typeof _uploadClientHub==='function')_uploadClientHub(bid.client_id).catch(()=>{});
+    }catch(e){console.warn('gei in-person sign save:',e);}
+  })();}
+}

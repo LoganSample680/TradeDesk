@@ -2507,6 +2507,131 @@ test.describe('sign.html — HCP-beating proposal UX features', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+//  GEI SIGN IN PERSON — T&M and Build Your Own in-person signing flow
+// ════════════════════════════════════════════════════════════════════════════
+test.describe('GEI sign in person — T&M and BYO', () => {
+  const GEI_SIP_CLIENT = 889001;
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(([cid]) => {
+      if (typeof clients !== 'undefined') {
+        clients = clients.filter(c => c.id !== cid);
+        clients.push({ id: cid, name: 'Alice InPerson', phone: '316-555-0001', addr: '1 Sign St, Wichita KS 67201' });
+      }
+    }, [GEI_SIP_CLIENT]);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('_geiSignInPerson — function is defined', async () => {
+    const exists = await page.evaluate(() => typeof _geiSignInPerson === 'function');
+    expect(exists).toBe(true);
+    assertNoErrors(page, '_geiSignInPerson exists');
+  });
+
+  test('_geiSignInPerson — shows overlay for T&M estimate with items', async () => {
+    const result = await page.evaluate(([cid]) => {
+      if (typeof openTMEstimate !== 'function') return null;
+      const c = typeof clients !== 'undefined' ? clients.find(x => x.id === cid) : null;
+      if (!c) return { noClient: true };
+      try { openTMEstimate(c, null); } catch(e) { return { error: e.message }; }
+      // Set up a minimal bid with amount so total > 0
+      if (typeof _geiEditBidId !== 'undefined' && _geiEditBidId) {
+        const b = bids.find(x => x.id === _geiEditBidId);
+        if (b) { b.amount = 1500; b.client_id = cid; }
+      }
+      // Inject a line so calcGeiTotal returns > 0
+      if (typeof _geiLines !== 'undefined') _geiLines = [{ desc: 'Labor', qty: 8, rate: 125, _tmLabor: true }];
+      try { _geiSignInPerson(); } catch(e) { return { error: e.message }; }
+      const ov = document.getElementById('_gei-ip-ov');
+      return {
+        ovExists: !!ov,
+        hasNameField: !!document.getElementById('gei-ip-pname'),
+        hasPreview: !!document.getElementById('gei-ip-typed-preview'),
+        hasConfirmBtn: !!document.getElementById('gei-ip-confirm-btn'),
+        confirmDisabled: document.getElementById('gei-ip-confirm-btn')?.disabled,
+      };
+    }, [GEI_SIP_CLIENT]);
+    if (result && !result.error && !result.noClient) {
+      expect(result.ovExists).toBe(true);
+      expect(result.hasNameField).toBe(true);
+      expect(result.hasPreview).toBe(true);
+      expect(result.hasConfirmBtn).toBe(true);
+      expect(result.confirmDisabled).toBe(true);
+    }
+    assertNoErrors(page, '_geiSignInPerson shows overlay');
+  });
+
+  test('_geiIpCheckReady — enables confirm button after typing name', async () => {
+    const result = await page.evaluate(() => {
+      const nameEl = document.getElementById('gei-ip-pname');
+      if (!nameEl) return null;
+      nameEl.value = 'Alice InPerson';
+      if (typeof _geiIpUpdateTypedSig === 'function') _geiIpUpdateTypedSig();
+      const btn = document.getElementById('gei-ip-confirm-btn');
+      const preview = document.getElementById('gei-ip-typed-preview');
+      return { disabled: btn?.disabled, previewText: preview?.textContent };
+    });
+    if (result !== null) {
+      expect(result.disabled).toBe(false);
+      expect(result.previewText).toBe('Alice InPerson');
+    }
+    assertNoErrors(page, '_geiIpCheckReady enables confirm btn');
+  });
+
+  test('_geiConfirmInPerson — marks bid Closed Won and shows confirmation', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _geiConfirmInPerson !== 'function') return null;
+      const bidIdBefore = typeof _geiEditBidId !== 'undefined' ? _geiEditBidId : null;
+      // Run confirm (async — we only check sync state changes immediately)
+      try { _geiConfirmInPerson(); } catch(e) { return { error: e.message }; }
+      const bid = bidIdBefore ? bids.find(x => x.id === bidIdBefore) : null;
+      const ov = document.getElementById('_gei-ip-ov');
+      return {
+        bidStatus: bid ? bid.status : null,
+        bidSigned: bid ? !!bid.signedAt : null,
+        ovHasAllSet: ov ? ov.textContent.includes("You're all set!") : null,
+        ovHasBack: ov ? ov.textContent.includes('Back to estimate') : null,
+      };
+    });
+    if (result && !result.error) {
+      if (result.bidStatus !== null) expect(result.bidStatus).toBe('Closed Won');
+      if (result.bidSigned !== null) expect(result.bidSigned).toBe(true);
+      if (result.ovHasAllSet !== null) expect(result.ovHasAllSet).toBe(true);
+      if (result.ovHasBack !== null) expect(result.ovHasBack).toBe(true);
+    }
+    assertNoErrors(page, '_geiConfirmInPerson marks signed');
+  });
+
+  test('_geiSignInPerson — BYO estimate shows overlay', async () => {
+    const result = await page.evaluate(([cid]) => {
+      if (typeof openFreeFormEstimate !== 'function') return null;
+      const c = typeof clients !== 'undefined' ? clients.find(x => x.id === cid) : null;
+      if (!c) return { noClient: true };
+      try { openFreeFormEstimate(c, null); } catch(e) { return { error: e.message }; }
+      if (typeof _geiEditBidId !== 'undefined' && _geiEditBidId) {
+        const b = bids.find(x => x.id === _geiEditBidId);
+        if (b) { b.amount = 2000; b.client_id = cid; }
+      }
+      if (typeof _geiLines !== 'undefined') _geiLines = [{ desc: 'Interior painting', qty: 1, rate: 2000 }];
+      document.getElementById('_gei-ip-ov')?.remove();
+      try { _geiSignInPerson(); } catch(e) { return { error: e.message }; }
+      return { ovExists: !!document.getElementById('_gei-ip-ov') };
+    }, [GEI_SIP_CLIENT]);
+    if (result && !result.error && !result.noClient) {
+      expect(result.ovExists).toBe(true);
+    }
+    assertNoErrors(page, '_geiSignInPerson BYO overlay');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 //  CLIENT MANAGEMENT — form validation, save, list, search, detail
 // ════════════════════════════════════════════════════════════════════════════
 

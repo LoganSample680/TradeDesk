@@ -238,6 +238,7 @@ input[readonly],input:disabled{background:var(--cream);color:var(--text-3)}
 .set-form-hint{font-size:11px;color:var(--blue);margin-top:3px;line-height:1.4;padding-right:12px}
 .set-form-ctrl input,.set-form-ctrl select,.set-form-ctrl textarea{margin-bottom:6px}
 .set-form-ctrl input:last-child,.set-form-ctrl select:last-child,.set-form-ctrl textarea:last-child{margin-bottom:0}
+@media(max-width:480px){.set-form-row{grid-template-columns:1fr;padding:10px 14px}.set-form-lbl{padding-right:0}}
 /* ── Brand color swatches ── */
 .set-swatch{width:38px;height:38px;border-radius:10px;border:2px solid transparent;cursor:pointer;position:relative;padding:0;flex-shrink:0;transition:transform .12s;display:inline-flex;align-items:center;justify-content:center}
 .set-swatch:active{transform:scale(.9)}
@@ -1990,6 +1991,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           </div>
           <button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">📨 Send T&amp;M proposal</button>
           <button class="btn btn-full" style="margin-top:8px" onclick="_tmPreviewClient()">👁 Preview as client</button>
+          <button class="btn btn-full" style="margin-top:8px;background:var(--green);color:#fff;border-color:var(--green)" onclick="_geiSignInPerson()">✍️ Sign in person</button>
         </div>
       </div>
     </div>
@@ -2038,6 +2040,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           </div>
           <div class="summary-row" style="color:var(--text-3)"><span>Balance later</span><span id="byo-rail-balance">$0</span></div>
           <button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">📨 Send proposal</button>
+          <button class="btn btn-full" style="margin-top:8px;background:var(--green);color:#fff;border-color:var(--green)" onclick="_geiSignInPerson()">✍️ Sign in person</button>
           <button class="btn btn-full" style="margin-top:8px" onclick="_byoPreviewClient()">👁 Preview as client</button>
           <button class="btn btn-full" style="margin-top:8px;background:var(--bg2);color:var(--text2)" onclick="_byoDuplicateBid()">📋 Copy as Option B</button>
           <button class="btn btn-full" style="margin-top:8px;background:var(--bg2);color:var(--text2)" onclick="_openComparisonPicker()">📊 Compare & Send</button>
