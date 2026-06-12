@@ -520,7 +520,7 @@ function schedFromDate(dateKey){
 }
 
 function getBidPayments(bidId){return payments.filter(p=>p.bid_id===bidId);}
-function getBidPaid(bidId){return payments.filter(p=>p.bid_id===bidId).reduce((s,p)=>s+p.amount,0);}
+function getBidPaid(bidId){return payments.filter(p=>p.bid_id===bidId).reduce((s,p)=>s+(p.amount||0),0);}
 function getBidBalance(bid){return Math.max(0,(bid.amount||0)-getBidPaid(bid.id));}
 function _calcFinanceCharge(bid){
   if(!bid||(!bid.completion_date&&!bid.signedAt))return 0;
@@ -551,7 +551,7 @@ function sendBidEmail(bidId){
     const item=SCOPE_ITEMS.find(s=>s.id===k);return item?item.label:k;
   }).join(', '):'Sanding, Spackle/patching, Two-coat finish';
   const NL='\n';
-  const lineItems=surfs.length?surfs.map(s=>'  - '+s.room+': '+s.qty.toLocaleString()+' sf').join(NL):'  See attached estimate';
+  const lineItems=surfs.length?surfs.map(s=>'  - '+s.room+': '+(s.qty||0).toLocaleString()+' sf').join(NL):'  See attached estimate';
   // Use plain ASCII dashes — Unicode box-drawing chars trigger corporate spam filters
   const SEP='-------------------------------------'+NL;
   // Build signing link if this bid has already been sent as a proposal
@@ -611,7 +611,7 @@ function toggleBidSummary(bidId){
   panel=document.createElement('div');
   panel.id='bid-summary-'+bidId;
   panel.style.cssText='background:var(--bg2);border-radius:var(--r);padding:12px;margin-top:10px;border-top:1px solid var(--border)';
-  const surfRows=surfs.length?surfs.map(s=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+(SURF_LABELS[s.type]||s.type)+' — '+escHtml(s.room||'')+'</span><span style="font-weight:600">'+s.qty.toLocaleString()+' '+(s.type==='walls'||s.type==='ceiling'||s.type==='ext_walls'||s.type==='deck'?'sf':'')+'</span></div>').join(''):'<div style="font-size:12px;color:var(--text3)">No surface data saved</div>';
+  const surfRows=surfs.length?surfs.map(s=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+(SURF_LABELS[s.type]||s.type)+' — '+escHtml(s.room||'')+'</span><span style="font-weight:600">'+(s.qty||0).toLocaleString()+' '+(s.type==='walls'||s.type==='ceiling'||s.type==='ext_walls'||s.type==='deck'?'sf':'')+'</span></div>').join(''):'<div style="font-size:12px;color:var(--text3)">No surface data saved</div>';
   panel.innerHTML=
     '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Bid details</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">'+
@@ -1057,8 +1057,8 @@ function logPayment(){
     return;
   }
 
-  const tIn=income.reduce((s,r)=>s+r.amount,0)+a;
-  const tEx=expenses.reduce((s,r)=>s+r.amount,0);
+  const tIn=income.reduce((s,r)=>s+(r.amount||0),0)+a;
+  const tEx=expenses.reduce((s,r)=>s+(r.amount||0),0);
   const tMi=mileage.reduce((s,r)=>s+(r.miles||0),0);
   const netSelf=Math.max(0,tIn-tEx-(tMi*IRS()));
   const seBase=netSelf*.9235,seTax=seBase*.153,seDed=seTax/2;

@@ -750,7 +750,7 @@ function openJobSheet(clientId){
   // Aggregate payment totals across all won bids (for multi-property clients)
   const paid=wonBids.reduce((s,b)=>s+getBidPaid(b.id),0);
   const balance=wonBids.reduce((s,b)=>s+getBidBalance(b),0);
-  const total=wonBids.reduce((s,b)=>s+b.amount,0);
+  const total=wonBids.reduce((s,b)=>s+(b.amount||0),0);
   const depositDue=bid?Math.round(bid.amount*.25*100)/100:0;
   const st=getClientStage(clientId);
 
@@ -920,7 +920,7 @@ function openJobSheet(clientId){
   let scopeHtml=wonBids.map(b=>_buildBidScopeHtml(b,_multiWon)).join('');
 
   // ── Before / After photos ────────────────────────────────────
-  const jobForPhotos=allJobs.sort((a,b)=>b.start.localeCompare(a.start))[0];
+  const jobForPhotos=allJobs.sort((a,b)=>(b.start||'').localeCompare(a.start||''))[0];
   const photoJobId=jobForPhotos?jobForPhotos.id:null;
   const existingPhotos=jobForPhotos?(jobForPhotos.photos||[]):[];
   const beforePhotos=existingPhotos.filter(p=>p.type==='before');
@@ -1013,8 +1013,8 @@ function openJobSheet(clientId){
   }
 
   // ── Subcontractors on this job ───────────────────────────────
-  const latestJob=allJobs.filter(j=>j.status!=='canceled').sort((a,b)=>b.start.localeCompare(a.start))[0];
-  const subsJob=latestJob||allJobs.filter(j=>j.status!=='canceled').sort((a,b)=>b.start.localeCompare(a.start))[0];
+  const latestJob=allJobs.filter(j=>j.status!=='canceled').sort((a,b)=>(b.start||'').localeCompare(a.start||''))[0];
+  const subsJob=latestJob||allJobs.filter(j=>j.status!=='canceled').sort((a,b)=>(b.start||'').localeCompare(a.start||''))[0];
   const subsJobId=subsJob?subsJob.id:null;
   const jobSubs=(subsJob&&subsJob.subs)||[];
   const subRoster=S.subcontractors||[];
@@ -1117,7 +1117,7 @@ function openJobSheet(clientId){
 async function _shareBeforeAfterCard(clientId){
   const c=getClientById(clientId);
   const allJobs=getClientJobs(clientId).filter(j=>j.eventType!=='estimate'&&j.status!=='canceled');
-  const job=allJobs.sort((a,b)=>b.start.localeCompare(a.start))[0];
+  const job=allJobs.sort((a,b)=>(b.start||'').localeCompare(a.start||''))[0];
   if(!job)return;
   const before=(job.photos||[]).filter(p=>p.type==='before');
   const after=(job.photos||[]).filter(p=>p.type==='after');
@@ -1265,7 +1265,7 @@ function openPushBackModal(jobId,clientId,parentOverlay){
 }
 function _updatePushBackMsg(clientId){
   const c=getClientById(clientId);if(!c)return;
-  const firstName=c.name.split(' ')[0];
+  const firstName=(c.name||'').split(' ')[0];
   const biz=S.bname||'your contractor';
   const newDateEl=document.getElementById('pb-new-date');
   const msgEl=document.getElementById('pb-msg');
@@ -1301,7 +1301,7 @@ function openMapsForClient(clientId){
 function sendOMWText(clientId){
   const c=getClientById(clientId);
   if(!c||!c.phone)return;
-  const firstName=c.name.split(' ')[0];
+  const firstName=(c.name||'').split(' ')[0];
   const biz=S.bname||'TradeDesk';
   const msg='Hi '+firstName+', this is '+biz+' — I\'m on my way! I\'ll be there shortly.';
   window.location.href='sms:'+c.phone.replace(/\D/g,'')+'&body='+encodeURIComponent(msg);

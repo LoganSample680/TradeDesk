@@ -716,7 +716,6 @@ function applySettings(){
 // another device appear live.
 function _refillSettingsFormUnlessEditing(){
   if(document.getElementById('pg-settings')?.classList.contains('active')&&window._settingsFormDirty){
-    if(typeof _setLog==='function')_setLog('RENDER SKIPPED — user has unsaved Settings edits; refusing to overwrite them');
     return;
   }
   loadSettingsForm();
@@ -728,7 +727,6 @@ function _refillSettingsFormUnlessEditing(){
   if(_pg)_pg.addEventListener('input',()=>{window._settingsFormDirty=true;});
 })();
 function loadSettingsForm(){
-  if(typeof _setLog==='function')_setLog('RENDER — loadSettingsForm() filling form fields from S');
   window._settingsFormFilled=true; // saveSettings() may now safely harvest the form
   window._settingsFormDirty=false; // fresh render — no in-progress edits
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
@@ -836,10 +834,7 @@ function saveSettings(){
   // never filled this session (loadSettingsForm not yet run), harvesting would
   // rebuild S from empty inputs and wipe every saved value — exactly the bug
   // where registerDevice() wiped settings on every boot. Persist S as-is instead.
-  if(!window._settingsFormFilled){
-    if(typeof _setLog==='function')_setLog('SAVE BLOCKED — saveSettings() called before the form was filled; persisting S without harvesting');
-    saveAll();return;
-  }
+  if(!window._settingsFormFilled){saveAll();return;}
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
   setOwnerName(gs('set-owner-name')||getOwnerName()||'');
   const _smsD=_getSmsDefaults();
@@ -862,7 +857,6 @@ function saveSettings(){
     // Last explicit settings save — lets cloud/cache loads detect a stale
     // incoming copy and keep local (see _mergeIncomingSettings in cloud.js)
     settingsTs:Date.now()};
-  if(typeof _setLog==='function')_setLog('SAVE — user hit Save, S rebuilt from form + new settingsTs stamped');
   window._settingsFormDirty=false; // edits are now saved — background refills are safe again
   applySettings();saveAll();
   // Flush settings to Supabase immediately (don't rely on 2s debounce — user may refresh first)

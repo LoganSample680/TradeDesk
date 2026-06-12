@@ -200,9 +200,6 @@ async function loadAccountData(){
       if(_account?.phone&&!S.bphone){S.bphone=_account.phone;_seeded.push('bphone');}
       if(_account?.license_info&&!S.blic){S.blic=_account.license_info;_seeded.push('blic');}
       if(_account?.state&&!S.state){S.state=_account.state;_seeded.push('state');}
-      try{console.log('%c[td-settings] BOOT 2/4 — accounts table row','color:#2D5DA8;font-weight:bold',
-        {business_name:_account?.business_name,phone:_account?.phone,state:_account?.state,
-         seededIntoS:_seeded.length?_seeded:'(nothing — S already has values, accounts row IGNORED)'});}catch(_e){}
       _activeTrade=_config?.business_type||'painting';
       _renderNavTradeSwitcher();
       applyPermissions();
@@ -358,7 +355,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = location.origin + '/api';
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.12.26.38';
+const APP_VERSION='06.12.26.50';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -632,7 +629,6 @@ async function supaInit(){
           _devSupportMode=false;_devSupportName='';_devSavedState=null;
           // Previous user's settings timestamp must never beat this user's cloud copy
           S.settingsTs=0;
-          if(typeof _setLog==='function')_setLog('ACCOUNT SWITCH — different user signed in, settingsTs zeroed so their cloud copy wins');
         }
         _supaUser=session.user;
         _saveSessionBackup(session);
@@ -705,7 +701,6 @@ async function supaInit(){
           // cloud copy in _mergeIncomingSettings and then get pushed up, wiping
           // their saved business info.
           S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],weatherLat:null,weatherLon:null,locationDenied:false,settingsTs:0};
-          if(typeof _setLog==='function')_setLog('SIGN-OUT — business fields blanked, settingsTs zeroed');
           saveAll();
           _deliberateSignOut=false;
           supaSetStatus('local');
@@ -1184,12 +1179,14 @@ function _mergeOfflinePendingToMemory(){
   try{
     const _op=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');
     if(!_op)return;
-    const _cSet=new Set(clients.map(c=>c.id));
-    const _bSet=new Set(bids.map(b=>b.id));
-    const _jSet=new Set(jobs.map(j=>j.id));
-    (_op.clients||[]).filter(c=>!_cSet.has(c.id)).forEach(c=>clients.push(c));
-    (_op.bids||[]).filter(b=>!_bSet.has(b.id)).forEach(b=>bids.push(b));
-    (_op.jobs||[]).filter(j=>!_jSet.has(j.id)).forEach(j=>jobs.push(j));
+    for(const{t,get}of _TD_TABLES){
+      const key=t.replace(/^td_/,'').replace(/_([a-z])/g,(_m,c)=>c.toUpperCase());
+      const pending=_op[key]||[];
+      if(pending.length){
+        const arr=get();const existingIds=new Set(arr.map(r=>String(r.id)));
+        pending.filter(r=>!existingIds.has(String(r.id))).forEach(r=>arr.push(r));
+      }
+    }
   }catch(_e){}
 }
 function _enterOfflineMode(){
@@ -1335,9 +1332,7 @@ async function _deleteReceiptFromStorage(receiptKey){
 // flag a pending sync so the newer local settings get pushed up.
 function _mergeIncomingSettings(ss,src){
   if(!ss)return false;
-  if(typeof _setLog==='function')_setLog('MERGE — incoming copy from '+(src||'unknown source'),ss);
   if((S.settingsTs||0)>(ss.settingsTs||0)){
-    if(typeof _setLog==='function')_setLog('MERGE RESULT — LOCAL KEPT (local ts '+(S.settingsTs||0)+' > incoming ts '+(ss.settingsTs||0)+') — pushing local up');
     try{localStorage.setItem('zp3_pending_sync','1');}catch(_e){}
     if(typeof supaSaveDebounced==='function')supaSaveDebounced();
     return false;
@@ -1350,7 +1345,6 @@ function _mergeIncomingSettings(ss,src){
   // the merge boots from a stale zp3_S (cleared values resurrect as their old rate
   // until the next cloud merge; permanently if that boot happens offline).
   try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(_e){}
-  if(typeof _setLog==='function')_setLog('MERGE RESULT — INCOMING WON (incoming ts '+(ss.settingsTs||0)+' >= local ts '+_localTsBefore+') — S is now');
   return true;
 }
 function supaSaveDebounced(){
@@ -1363,7 +1357,7 @@ function supaSaveDebounced(){
   // localStorage write completes atomically and survives any force-quit.
   // Cleared by supaSaveToCloud() on a successful push. Drain deduplicates on reload.
   if(_supaCloudLoaded||_mergeOnSignIn){
-    try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,ts:Date.now()}));}catch(_e){}
+    try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
   }
   _syncTimer=setTimeout(()=>{_syncTimer=null;supaSaveToCloud();},2000);
   if(_supaUser)supaSetStatus('syncing');
@@ -1434,6 +1428,9 @@ async function _onReconnect(){
     // _mergeOnSignIn via SIGNED_OUT but TOKEN_REFRESHED confirms we're still online.
     // Clear the flag and cancel/hide the banner so it doesn't linger.
     _mergeOnSignIn=false;clearTimeout(window._offlineBannerTimer);_hideOfflineBanner();
+    // Pull latest state immediately — realtime sockets don't replay missed events,
+    // so any changes from other devices during the outage need an explicit pull.
+    if(_supaUser&&!_loadInProgress)supaLoadFromCloud({silent:true});
     return;
   }
   _showOfflineBanner(true);
@@ -1502,7 +1499,7 @@ function _startOfflineWatcher(){
     if(document.visibilityState==='hidden'){
       const _hasUnsaved=_syncTimer||_mergeOnSignIn||localStorage.getItem('zp3_pending_sync')==='1';
       if(_hasUnsaved){
-        try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,ts:Date.now()}));}catch(_e){}
+        try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
       }
     }
     if(document.visibilityState==='visible'&&_isOfflineState())_probeAndSync();
@@ -1536,7 +1533,7 @@ function _writeLocalCache(){
 async function supaSaveToCloud(){
   if(!_supa||!_supaUser){
     if(_mergeOnSignIn){
-      try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,ts:Date.now()}));}catch(_e){}
+      try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
     }
     _logSave('skip','no _supa or _supaUser');return;
   }
@@ -1561,7 +1558,7 @@ async function supaSaveToCloud(){
   _logSave('start',{id:_attemptId,mileage:_mileCount,page:document.querySelector('.pg.active')?.id});
 
   // Force-quit safety net — written before any async work
-  try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,ts:Date.now()}));}catch(_e){}
+  try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
   _writeLocalCache();
 
   // Lazy-migrate up to 3 inline receipt_img → Supabase Storage
@@ -1601,15 +1598,8 @@ async function supaSaveToCloud(){
         {user_id:uid,settings:JSON.stringify(sForCloudFirst),checks_state:JSON.stringify(checksState),updated_at:ts},
         {onConflict:'user_id'}
       ).select('updated_at').single();
-      if(_se0){
-        if(typeof _setLog==='function')_setLog('CLOUD PUSH FAILED — zj_data upsert error: '+(_se0.message||_se0.code||_se0));
-        throw _se0; // treat settings write failure as a real error so catch sets zp3_pending_sync
-      }
-      // Store exactly what Postgres returned so the change poll's string comparison works.
-      // JS Date.toISOString() uses 'Z' suffix; Postgres returns '+00:00' — a mismatch would
-      // make the saving device always detect its own writes as "remote" and re-pull needlessly.
+      if(_se0){throw _se0;}
       window._lastZjUpdatedAt=_zjRow?.updated_at||ts;
-      if(typeof _setLog==='function')_setLog('CLOUD PUSH OK — settings written to zj_data (Supabase)');
     }
 
     // Batch upsert helper: upserts all live records, soft-deletes any that vanished
@@ -1663,7 +1653,7 @@ async function supaSaveToCloud(){
     _logSave('throw',{id:_attemptId,name:e?.name,code:e?.code,msg:e?.message||String(e)});
     console.warn('Cloud save failed:',e);
     localStorage.setItem('zp3_pending_sync','1');
-    try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,ts:Date.now()}));}catch(_e){}
+    try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
     _showOfflineBanner();
     supaSetStatus('error');
   }
@@ -2080,7 +2070,6 @@ async function supaLoadFromCloud({silent=false}={}){
     // debounced save (2 s). Flush it immediately now that _supaCloudLoaded=true so
     // a force-quit right after boot can't outrun the timer and lose settings.
     if(localStorage.getItem('zp3_pending_sync')==='1'){
-      if(typeof _setLog==='function')_setLog('BOOT 4/4 — local was newer than cloud, flushing local up to Supabase NOW');
       clearTimeout(_syncTimer);_syncTimer=null;
       setTimeout(()=>supaSaveToCloud(),50);
     }
@@ -2105,6 +2094,12 @@ async function supaLoadFromCloud({silent=false}={}){
     if(typeof renderIncome==='function')renderIncome();
     if(typeof renderExpenses==='function')renderExpenses();
     if(typeof renderAllMileage==='function')renderAllMileage();
+    if(typeof renderFleet==='function')renderFleet();
+    if(typeof renderGallery==='function')renderGallery();
+    if(typeof renderLicensing==='function')renderLicensing();
+    if(typeof renderCalendar==='function')renderCalendar();
+    if(typeof renderDashActiveLiens==='function')renderDashActiveLiens();
+    if(typeof renderClientDetail==='function'&&typeof currentClientId!=='undefined'&&currentClientId&&document.querySelector('.pg.active')?.id==='pg-client-detail')renderClientDetail();
     clients.forEach(c=>{if(!c.clientToken)_ensureClientToken(c.id);});
 
     // Remove any duplicate clawback payments created by the concurrent-run race fixed in
@@ -2142,7 +2137,6 @@ async function supaLoadFromCloud({silent=false}={}){
           const _puid=_devSupportMode?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id):(_isEmployee?_contractorUserId:_supaUser.id);
           const{data:_zr}=await _supa.from('zj_data').select('updated_at').eq('user_id',_puid).maybeSingle();
           if(_zr?.updated_at&&window._lastZjUpdatedAt&&_zr.updated_at!==window._lastZjUpdatedAt){
-            if(typeof _setLog==='function')_setLog('REMOTE CHANGE detected (zj_data.updated_at moved) — pulling latest from cloud');
             supaLoadFromCloud({silent:true});
           }
         }catch(_e){}
@@ -2292,6 +2286,12 @@ function _applyRealtimeRecord(tbl,payload){
   if(typeof renderIncome==='function')renderIncome();
   if(typeof renderExpenses==='function')renderExpenses();
   if(typeof renderAllMileage==='function')renderAllMileage();
+  if(typeof renderFleet==='function')renderFleet();
+  if(typeof renderGallery==='function')renderGallery();
+  if(typeof renderLicensing==='function')renderLicensing();
+  if(typeof renderCalendar==='function')renderCalendar();
+  if(typeof renderDashActiveLiens==='function')renderDashActiveLiens();
+  if(typeof renderClientDetail==='function'&&typeof currentClientId!=='undefined'&&currentClientId&&document.querySelector('.pg.active')?.id==='pg-client-detail')renderClientDetail();
 }
 
 // ── Inbound leads (onboarding form + QR intake) ───────────────────────────

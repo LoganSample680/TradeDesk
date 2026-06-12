@@ -246,7 +246,7 @@ function confirmStartDrive(){
   window._wakeLockRequest&&window._wakeLockRequest();
   if(c&&c.phone){
     const phone=c.phone.replace(/\D/g,'');
-    const msg='Hi '+c.name.split(' ')[0]+', this is '+(S.bname||'TradeDesk')+' — I\'m on my way! I\'ll be there shortly.';
+    const msg='Hi '+(c.name||'').split(' ')[0]+', this is '+(S.bname||'TradeDesk')+' — I\'m on my way! I\'ll be there shortly.';
     const smsLink='sms:'+phone+'&body='+encodeURIComponent(msg);
     window.location.href=smsLink;
   }

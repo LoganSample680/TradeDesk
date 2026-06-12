@@ -628,7 +628,7 @@ function onClientSearch(inp){
     const tk=todayKey();
     const ql=q.toLowerCase();
     const matched=clients.filter(c=>
-      c.name.toLowerCase().includes(ql)||
+      (c.name||'').toLowerCase().includes(ql)||
       (c.addr||'').toLowerCase().includes(ql)||
       (c.phone||'').replace(/\D/g,'').includes(q.replace(/\D/g,''))||
       (c.source||'').toLowerCase().includes(ql)
@@ -851,7 +851,7 @@ function checkClientDupe(val){
   const name=val.trim().toLowerCase().replace(/\s+/g,' ');
   const match=clients.find(c=>{
     if(editClientId&&c.id===editClientId)return false;
-    return c.name.toLowerCase().replace(/\s+/g,' ')===name;
+    return (c.name||'').toLowerCase().replace(/\s+/g,' ')===name;
   });
   if(match){warn.style.display='';warn.textContent='⚠ '+match.name+' is already in your records — is this a different client?';}
   else{warn.style.display='none';}
@@ -960,7 +960,7 @@ function saveClient(){
     const nameLow=name.toLowerCase().replace(/\s+/g,' ');
     const realPhone=ph.length===10&&!/^(\d)\1+$/.test(ph);
     // Name match = hard block (almost certainly a re-entry of the same person)
-    const nameDupe=clients.find(x=>x.id!==editClientId&&x.name.toLowerCase().replace(/\s+/g,' ')===nameLow);
+    const nameDupe=clients.find(x=>x.id!==editClientId&&(x.name||'').toLowerCase().replace(/\s+/g,' ')===nameLow);
     if(nameDupe){_submitting=false;showFErr('cf-name','err-cf-name',nameDupe.name+' is already in your list. Is this a different person with the same name?');return;}
     // Phone match = soft warning — two people can share a number (family), allow override
     const phoneDupe=realPhone?clients.find(x=>x.id!==editClientId&&(x.phone||'').replace(/\D/g,'')===ph):null;
@@ -1164,7 +1164,7 @@ function _showImportPreview(parsed){
   const existingNames=new Set(clients.map(c=>(c.name||'').toLowerCase().trim()));
   const toImport=parsed.filter(c=>{
     const ph=c.phone.replace(/\D/g,'');
-    return ph.length>=7&&!existingPhones.has(ph)&&!existingNames.has(c.name.toLowerCase().trim());
+    return ph.length>=7&&!existingPhones.has(ph)&&!existingNames.has((c.name||'').toLowerCase().trim());
   });
   const skipped=parsed.length-toImport.length;
   _importContacts=toImport;
@@ -1530,7 +1530,7 @@ function toggleTlGroup(id){
 function renderCDExpenses(){
   const el=document.getElementById('cdt-expenses-list');if(!el)return;
   const cexp=getClientExpenses(currentClientId);
-  const total=cexp.reduce((s,e)=>s+e.amount,0);
+  const total=cexp.reduce((s,e)=>s+(e.amount||0),0);
   if(!cexp.length){
     el.innerHTML='<div class="empty">No expenses logged for this client yet.<br><br>Tap + Log expense to add one.</div>';
     return;
@@ -1666,7 +1666,7 @@ function renderCDBids(){
       if(!b.completion_date){const linkedJob=jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id);const jid=linkedJob?.id;if(jid)actBtns.push('<button class="btn btn-sm" onclick="markJobDone('+jid+')" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid)">✓ Close job</button>');}
       if(balance>0.01)actBtns.push('<button class="btn btn-sm btn-g" onclick="openPayPanel('+b.id+')">+ Log payment</button>');
       if(balance>0.01&&_stripeConnectStatus?.charges_enabled)actBtns.push('<button class="btn btn-sm" onclick="sendPaymentLink('+b.id+')" style="background:#635BFF;color:#fff;border-color:#635BFF;font-size:11px">💳 Send pay link</button>');
-      if(balance>0.01&&b.completion_date){const _c=getClientById(b.client_id);if(_c&&_c.phone){const _msg=encodeURIComponent('Hi '+_c.name.split(' ')[0]+', this is '+(S.bname||'your contractor')+'. Just a friendly reminder that a balance of '+fmt(balance)+' is outstanding for your job at '+(b.addr||_c.addr||'your property')+'. Please let us know when you can take care of this. Thank you!');actBtns.push('<a href="sms:'+_c.phone.replace(/\D/g,'')+'&body='+_msg+'" onclick="autoLogContact('+b.client_id+',\'payment_request\')" class="btn btn-sm" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid);text-decoration:none">📲 Request pay</a>');}}
+      if(balance>0.01&&b.completion_date){const _c=getClientById(b.client_id);if(_c&&_c.phone){const _msg=encodeURIComponent('Hi '+(_c.name||'').split(' ')[0]+', this is '+(S.bname||'your contractor')+'. Just a friendly reminder that a balance of '+fmt(balance)+' is outstanding for your job at '+(b.addr||_c.addr||'your property')+'. Please let us know when you can take care of this. Thank you!');actBtns.push('<a href="sms:'+_c.phone.replace(/\D/g,'')+'&body='+_msg+'" onclick="autoLogContact('+b.client_id+',\'payment_request\')" class="btn btn-sm" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid);text-decoration:none">📲 Request pay</a>');}}
       if(getBidPaid(b.id)>(b.amount||0)+0.01)actBtns.push('<button class="btn btn-sm" onclick="openPayPanel('+b.id+')" style="background:#FFF0F0;color:#A32D2D;border-color:#A32D2D">↩ Issue refund</button>');
       actBtns.push('<button class="btn btn-sm" onclick="toggleBidSummary('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128196; View bid</button>');
       actBtns.push('<button class="btn btn-sm" onclick="printInvoice('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128438; Print invoice</button>');

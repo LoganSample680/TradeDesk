@@ -623,6 +623,14 @@ async function sendProposalLink(){
     // Always use live calcEst().final for amount — captures tier multiplier, adjustments, etc.
     // Never use bid.amount which may be stale from an earlier step before tier was set.
     const{final:_propFinal}=calcEst();
+    const _depositPct=(parseFloat(document.getElementById('e-deposit-pct')?.value)||0)/100;
+    const _depositAmt=Math.round(_propFinal*_depositPct*100)/100;
+    const _caddrValSpl=document.getElementById('e-caddr')?.value||'';
+    const _addrStateSpl=_caddrValSpl.toUpperCase().match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
+    const _st=(_addrStateSpl?_addrStateSpl[1]:null)||S?.state||'KS';
+    const _cancelRuleSpl=(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_st])||{days:3,statute:'16 CFR Part 429'};
+    const _cancelStat=_cancelRuleSpl.statute;
+    const _cancelDays=_cancelRuleSpl.days;
     if(_bidForProp){_bidForProp.amount=_propFinal;_bidForProp.deposit=_depositAmt;}
     // Extract ?. BEFORE object literal — Safari crashes on optional chaining inside { }
     const _pdCaddr=(document.getElementById('e-caddr')?document.getElementById('e-caddr').value:null)||(_bidForProp?_bidForProp.addr:null)||'';
@@ -630,7 +638,7 @@ async function sendProposalLink(){
     const _pdStripeOn=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
     const _pdPortfolioOn=!!(document.getElementById('portfolio-toggle')?document.getElementById('portfolio-toggle').checked:false);
     const _pdPortfolioPct=parseInt(document.getElementById('portfolio-pct')?document.getElementById('portfolio-pct').value:null)||15;
-    const _pdDiscount=Math.round(_propFinal*(1-_pdPortfolioPct/100)*100)/100;
+    const _pdRawPrice=_pdPortfolioOn&&_pdPortfolioPct>0?Math.round(_propFinal/(1-_pdPortfolioPct/100)*100)/100:_propFinal;
     const _pdYbClient=_bidForProp?clients.find(c=>c.id===_bidForProp.client_id):null;
     const _pdYearBuilt=_pdYbClient?_pdYbClient.yearBuilt||null:null;
     const _pdEpaRequired=!!(_pdYearBuilt&&_pdYearBuilt<1978&&((_pdYbClient&&_pdYbClient.rrpDisturb==='yes')||_rrpPaintAnswer==='yes'));
@@ -650,8 +658,8 @@ async function sendProposalLink(){
       portfolioTarget:5,
       portfolioYears:S.byears||0,
       portfolioOwnerName:getOwnerName()||'',
-      fullPrice:_propFinal,
-      discountedPrice:_pdDiscount,
+      fullPrice:_pdRawPrice,
+      discountedPrice:_propFinal,
       adjustmentType:v('adj-type-hidden')||'',
       adjustmentReason:v('adj-reason-hidden')||'',
       adjustmentPct:parseInt(v('est-adj'))||0,
@@ -1030,7 +1038,7 @@ function buildProposal(){
   const balance=Math.round(final*.75*100)/100;
   const allowWeekend=document.getElementById('e-allow-weekend')?.checked||false;
   const _depositPct=(parseFloat(document.getElementById('e-deposit-pct')?.value)||0)/100;
-  const _depositAmt=Math.round(_propFinal*_depositPct*100)/100;
+  const _depositAmt=Math.round(final*_depositPct*100)/100;
   const _caddrVal=document.getElementById('e-caddr')?.value||'';
   const _addrStateM=_caddrVal.toUpperCase().match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
   const _st=(_addrStateM?_addrStateM[1]:null)||S?.state||'KS';
@@ -1430,7 +1438,7 @@ if(!hasSignature()&&typedSig.length<=2){zAlert('Please type your name or draw yo
     if(editingBidId){
       const b=bids.find(x=>x.id===editingBidId);
       if(b){
-        b.amount=final;b.days=days;b.status='Closed Won';b.draft=false;
+        b.amount=final;b.deposit=Math.round(final*((parseFloat(document.getElementById('e-deposit-pct')?.value)||0)/100)*100)/100;b.days=days;b.status='Closed Won';b.draft=false;
         b.notes=v('e-cnotes');b.addr=v('e-caddr');
         b.name=cname;b.phone=v('e-cphone');
         b.scope=ss;b.roomScopeMap=savedRoomScopeMap;b.surfaces=[...estSurfaces];

@@ -166,20 +166,7 @@ function _buildStateBrackets(data,status){
   return[[Math.round(top*mult),low],[Infinity,high]];
 }
 
-// Settings audit trail — every read/write/merge of settings logs its source and
-// the key business fields so a refresh shows exactly which store won and why.
-// Filter the console by "[td-settings]" to follow the chain.
-function _setLog(stage,src){
-  try{
-    const s=src||S;
-    console.log('%c[td-settings] '+stage,'color:#2D5DA8;font-weight:bold',{
-      bname:s.bname,baddr:s.baddr,bcity:s.bcity,bzip:s.bzip,bphone:s.bphone,
-      bemail:s.bemail,state:s.state,
-      settingsTs:s.settingsTs||0,
-      tsHuman:s.settingsTs?new Date(s.settingsTs).toLocaleString():'(never saved)'
-    });
-  }catch(_e){}
-}
+
 // Persist S after a direct in-memory mutation (S.devices, S.timeOff, S.employees…).
 // Bumps settingsTs so the change wins the cloud merge — WITHOUT reading the
 // settings form. saveSettings() harvests the form and must only ever be called
