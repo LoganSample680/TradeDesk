@@ -7,7 +7,7 @@
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://js.stripe.com/v3/"></script>
-<link href="https://fonts.googleapis.com/css2?family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
@@ -616,6 +616,20 @@ async function _mergeSignedProposals(hub,u){
           else bid.changeOrders.push(Object.assign({},dbCo,{status:dbCo.signedAt?'signed':'pending_client'}));
         });
       }
+      // Roll signed COs into the contract total/balance when the snapshot
+      // predates them — otherwise the 30s live refresh snaps the balance back
+      // to the pre-CO amount. Each CO chains from the total it was written
+      // against, so only apply COs whose originalAmount matches the current
+      // total (idempotent once the contractor republishes the snapshot).
+      (bid.changeOrders||[]).filter(x=>x&&x.signedAt&&x.newAmount!=null)
+        .sort((a,b)=>(a.coNum||0)-(b.coNum||0))
+        .forEach(co=>{
+          if(Math.abs((bid.amount||0)-(co.originalAmount||0))<0.01){
+            const d=co.newAmount-(bid.amount||0);
+            bid.amount=co.newAmount;
+            bid.balance=Math.max(0,(bid.balance||0)+d);
+          }
+        });
       if(sp.payment_status==='paid'){
         const amtPaid=sp.deposit||bid.deposit||0;
         bid.paid=Math.min(bid.amount||0,(bid.paid||0)+amtPaid);
@@ -662,6 +676,17 @@ async function _refreshHub(){
     if(!t||!u||!c)return;
     const{data,error}=await _fetchStorageJson('client-hub/'+u+'/'+c+'_'+t+'.json');
     if(error||!data)return; // transient fetch failure — keep showing current data
+    // Carry forward in-memory signed CO state into the fresh snapshot.
+    // DB column may not exist yet so the DB merge can't restore it — without
+    // this the 30s refresh wipes the just-signed CO amount back to original.
+    if(_hub)_hub.bids.forEach(lb=>{
+      const fb=data.bids.find(b=>b.id===lb.id);if(!fb)return;
+      (lb.changeOrders||[]).forEach(lc=>{
+        if(!lc.signedAt)return;
+        const fc=(fb.changeOrders||[]).find(c=>c.coNum===lc.coNum);
+        if(fc&&!fc.signedAt){fc.signedAt=lc.signedAt;fc.signerName=lc.signerName||'';}
+      });
+    });
     await _mergeSignedProposals(data,u);
     if(_hubInteractionOpen())return; // modal opened mid-fetch — drop this cycle
     _hub=data;
@@ -1383,12 +1408,14 @@ function renderPayments(){
       html+='</div>';
     }
 
-    // Invoice link
-    html+='<button onclick="openInvoice('+bid_id+')" style="display:flex;align-items:center;gap:10px;width:100%;padding:12px 16px;background:var(--bg-card);border:none;border-top:0;cursor:pointer;font-family:inherit;text-align:left">';
-    html+='<div style="width:32px;height:32px;background:var(--bg);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">📄</div>';
-    html+='<div style="flex:1;font-size:13px;font-weight:700;color:var(--text)">View invoice</div>';
-    html+='<div style="font-size:18px;color:var(--text3)">›</div>';
-    html+='</button>';
+    // Invoice link — only once the job is marked complete (same gate as Documents)
+    if(bid.completion_date){
+      html+='<button onclick="openInvoice('+bid_id+')" style="display:flex;align-items:center;gap:10px;width:100%;padding:12px 16px;background:var(--bg-card);border:none;border-top:0;cursor:pointer;font-family:inherit;text-align:left">';
+      html+='<div style="width:32px;height:32px;background:var(--bg);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">📄</div>';
+      html+='<div style="flex:1;font-size:13px;font-weight:700;color:var(--text)">View invoice</div>';
+      html+='<div style="font-size:18px;color:var(--text3)">›</div>';
+      html+='</button>';
+    }
 
     html+='</div>'; // end accordion body
     html+='</div>'; // end card
@@ -1635,7 +1662,21 @@ function _showEpaDoc(bidId){
 // Pending: CO badge, original contract, change requested, adjustment, new total,
 // legal paragraph, signature canvas + typed name. Signed: renders as a signed
 // document (signature image + signer + date/time), like the EPA disclosure.
-let _coHubCanvas=null,_coHubCtx=null,_coHubDrawing=false;
+let _coHubCanvas=null,_coHubCtx=null,_coHubDrawing=false,_coHubInk=false;
+// Live typed-signature preview — exact same UX as sign.html: typing the name
+// renders it in the canvas as a cursive signature; drawing replaces it.
+function _coHubTypedPreview(){
+  if(!_coHubCtx||_coHubInk)return;
+  const val=(document.getElementById('co-hub-sign-name')?.value||'').trim();
+  _coHubCtx.clearRect(0,0,_coHubCanvas.width,_coHubCanvas.height);
+  if(val.length>2){
+    _coHubCtx.font='46px Dancing Script, cursive';
+    _coHubCtx.fillStyle='#1a1a18';
+    _coHubCtx.textAlign='center';
+    _coHubCtx.textBaseline='middle';
+    _coHubCtx.fillText(val,_coHubCanvas.width/2,_coHubCanvas.height/2);
+  }
+}
 function _showCODoc(bidId,coNum){
   const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const co=(bid.changeOrders||[]).find(x=>x.coNum===coNum);if(!co)return;
@@ -1683,14 +1724,14 @@ function _showCODoc(bidId,coNum){
     h+='<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:3px">Date &amp; Time</div><div style="font-size:13px;font-weight:700;color:#1a1a18">'+esc(dt||'—')+'</div></div>';
     h+='</div></div>';
   }else{
+    h+='<div style="margin-bottom:14px">';
+    h+='<label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:6px">Full name *</label>';
+    h+='<input type="text" id="co-hub-sign-name" placeholder="Type your full legal name" autocomplete="off" oninput="_coHubTypedPreview()" style="width:100%;box-sizing:border-box;font-size:16px;padding:10px 12px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-family:inherit;color:#111">';
+    h+='</div>';
     h+='<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:2px">Your signature</div>';
-    h+='<div style="font-size:11px;color:#6b7280;margin-bottom:6px">Sign below or type your name below — your typed name will serve as your signature.</div>';
+    h+='<div style="font-size:11px;color:#6b7280;margin-bottom:6px">Your typed name becomes your signature — or draw it below.</div>';
     h+='<canvas id="co-hub-canvas" width="500" height="140" style="width:100%;height:140px;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;touch-action:none;cursor:crosshair;display:block;margin-bottom:4px"></canvas>';
     h+='<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button onclick="_clearCOHubCanvas()" style="font-size:11px;color:#6b7280;background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear</button></div>';
-    h+='<div style="margin-bottom:14px">';
-    h+='<label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:6px">Type full name to confirm</label>';
-    h+='<input type="text" id="co-hub-sign-name" placeholder="Full name" autocomplete="off" style="width:100%;box-sizing:border-box;font-size:16px;padding:10px 12px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-family:inherit;color:#111">';
-    h+='</div>';
     h+='<div id="co-hub-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:6px"></div>';
     h+='<button id="co-hub-sign-btn" onclick="_submitCOHubSign('+bid.id+','+co.coNum+')" style="width:100%;padding:13px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">✓ Sign Change Order</button>';
   }
@@ -1706,16 +1747,21 @@ function _showCODoc(bidId,coNum){
     _coHubCanvas=canvas;_coHubCtx=canvas.getContext('2d');
     _coHubCtx.strokeStyle='#111';_coHubCtx.lineWidth=2;_coHubCtx.lineCap='round';_coHubCtx.lineJoin='round';
     const getPos=(e)=>{const r=canvas.getBoundingClientRect();const src=e.touches?e.touches[0]:e;return{x:(src.clientX-r.left)*(canvas.width/r.width),y:(src.clientY-r.top)*(canvas.height/r.height)};};
-    canvas.addEventListener('mousedown',e=>{_coHubDrawing=true;const p=getPos(e);_coHubCtx.beginPath();_coHubCtx.moveTo(p.x,p.y);});
+    _coHubInk=false;
+    const _startInk=()=>{if(!_coHubInk){_coHubInk=true;_coHubCtx.clearRect(0,0,canvas.width,canvas.height);}};
+    canvas.addEventListener('mousedown',e=>{_coHubDrawing=true;_startInk();const p=getPos(e);_coHubCtx.beginPath();_coHubCtx.moveTo(p.x,p.y);});
     canvas.addEventListener('mousemove',e=>{if(!_coHubDrawing)return;const p=getPos(e);_coHubCtx.lineTo(p.x,p.y);_coHubCtx.stroke();});
     canvas.addEventListener('mouseup',()=>_coHubDrawing=false);
-    canvas.addEventListener('touchstart',e=>{e.preventDefault();_coHubDrawing=true;const p=getPos(e);_coHubCtx.beginPath();_coHubCtx.moveTo(p.x,p.y);},{passive:false});
+    canvas.addEventListener('touchstart',e=>{e.preventDefault();_coHubDrawing=true;_startInk();const p=getPos(e);_coHubCtx.beginPath();_coHubCtx.moveTo(p.x,p.y);},{passive:false});
     canvas.addEventListener('touchmove',e=>{e.preventDefault();if(!_coHubDrawing)return;const p=getPos(e);_coHubCtx.lineTo(p.x,p.y);_coHubCtx.stroke();},{passive:false});
     canvas.addEventListener('touchend',()=>_coHubDrawing=false);
+    setTimeout(()=>document.getElementById('co-hub-sign-name')?.focus(),300);
   },100);
 }
 function _clearCOHubCanvas(){
   if(_coHubCanvas&&_coHubCtx)_coHubCtx.clearRect(0,0,_coHubCanvas.width,_coHubCanvas.height);
+  _coHubInk=false;
+  _coHubTypedPreview(); // re-render the typed name, matching sign.html behavior
 }
 async function _submitCOHubSign(bidId,coNum){
   const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
@@ -1728,9 +1774,10 @@ async function _submitCOHubSign(bidId,coNum){
     const d=_coHubCtx.getImageData(0,0,_coHubCanvas.width,_coHubCanvas.height).data;
     let hasSig=false;for(let i=3;i<d.length;i+=4){if(d[i]>0){hasSig=true;break;}}
     if(!hasSig){
-      // Canvas blank but name typed — render the typed name as the signature.
-      _coHubCtx.font='italic 36px Georgia, serif';
-      _coHubCtx.fillStyle='#111';
+      // Canvas blank but name typed — render the typed name as the signature
+      // (same cursive face the live preview and sign.html use).
+      _coHubCtx.font='46px Dancing Script, cursive';
+      _coHubCtx.fillStyle='#1a1a18';
       _coHubCtx.textAlign='center';
       _coHubCtx.textBaseline='middle';
       _coHubCtx.fillText(name,_coHubCanvas.width/2,_coHubCanvas.height/2);
@@ -1765,7 +1812,25 @@ async function _submitCOHubSign(bidId,coNum){
     bid.balance=Math.max(0,(bid.balance||0)+(_newAmt-(bid.amount||0)));
     bid.amount=_newAmt;
     renderOverview();renderDocuments();renderPayments();
-    _showCODoc(bidId,coNum); // reopen in the signed-document state
+    // Replace overlay with "You're all set!" confirmation (mirrors sign.html pg-done)
+    const _ovEl=document.getElementById('co-hub-ov');
+    if(_ovEl){
+      const _deltaLabel=(co.type==='sub'?'−':'+')+fmt(co.amount);
+      const _dtFmt=new Date(ts).toLocaleString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+      _ovEl.innerHTML='<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;margin:auto;padding:32px 24px 28px;box-sizing:border-box;text-align:center">'+
+        '<div style="font-size:48px;margin-bottom:12px">✅</div>'+
+        '<div style="font-size:20px;font-weight:900;color:#1a1a18;margin-bottom:8px">You\'re all set!</div>'+
+        '<div style="font-size:14px;color:#475569;margin-bottom:24px">Change Order #'+co.coNum+' has been signed.</div>'+
+        '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:16px;margin-bottom:24px;text-align:left">'+
+          '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#16a34a;margin-bottom:12px">Confirmation</div>'+
+          '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #d1fae5"><span style="font-size:12px;color:#475569">Adjustment</span><span style="font-size:12px;font-weight:700;color:#1a1a18">'+_deltaLabel+'</span></div>'+
+          '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #d1fae5"><span style="font-size:12px;color:#475569">New contract total</span><span style="font-size:12px;font-weight:800;color:#166534">'+fmt(co.newAmount)+'</span></div>'+
+          '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #d1fae5"><span style="font-size:12px;color:#475569">Signed by</span><span style="font-size:12px;font-weight:700;color:#1a1a18">'+esc(name)+'</span></div>'+
+          '<div style="display:flex;justify-content:space-between;padding:6px 0"><span style="font-size:12px;color:#475569">Date &amp; time</span><span style="font-size:12px;font-weight:700;color:#1a1a18">'+_dtFmt+'</span></div>'+
+        '</div>'+
+        '<button onclick="document.getElementById(\'co-hub-ov\').remove()" style="width:100%;padding:13px;border-radius:10px;border:none;background:#1a1a18;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">← Back to hub</button>'+
+      '</div>';
+    }
   }catch(e){
     console.warn('change order sign:',e);
     if(errEl)errEl.textContent='Could not submit — '+(e.message||'please try again or contact your contractor.');
@@ -1836,7 +1901,7 @@ function renderDocuments(){
     // Collapsible body
     html+='<div id="db-'+bid.id+'" style="background:var(--bg-card);display:'+(autoOpen?'block':'none')+'">';
     html+='<div style="padding:0 16px">';
-    html+=_docRow('📄','Invoice','View or print a detailed invoice','<span class="hub-doc-tag hub-doc-tag-invoice" style="margin-left:6px">Invoice</span>','openInvoice('+bid.id+')','');
+    if(bid.completion_date){html+=_docRow('📄','Invoice','View or print a detailed invoice','<span class="hub-doc-tag hub-doc-tag-invoice" style="margin-left:6px">Invoice</span>','openInvoice('+bid.id+')','');}
     if(bid.proposalKey){
       const _sigMeta=bid.signedAt
         ?'✍️ Signed by '+esc(bid.signerName||'client')+' · '+new Date(bid.signedAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
@@ -1976,7 +2041,8 @@ function renderInvoices(){
     html+='<div style="font-size:18px;font-weight:800;flex-shrink:0;margin-left:10px;color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">'+fmt(b.amount)+'</div></div>';
     html+='<div style="margin-bottom:10px"><span class="badge" style="background:'+(isPaid?'var(--green-lt)':'var(--red-lt)')+';color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">'+( isPaid?'Paid in full':'Balance: '+fmt(b.balance))+'</span></div>';
     if(!isPaid)html+=_payBtn(b,_hub);
-    html+='<button onclick="openInvoice('+b.id+')" class="btn btn-sec">📄 View Invoice</button></div>';
+    if(b.completion_date||(job&&job.completion_date))html+='<button onclick="openInvoice('+b.id+')" class="btn btn-sec">📄 View Invoice</button>';
+    html+='</div>';
   });
   const el=document.getElementById('view-invoices');if(el)el.innerHTML=html;
 }

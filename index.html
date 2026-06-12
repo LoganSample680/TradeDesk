@@ -90,7 +90,7 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 /* ── Sidebar ── */
 #nav{position:fixed;top:0;left:0;bottom:0;width:var(--nav-w);background:var(--ink);color:var(--text-cream);display:flex;flex-direction:column;border-right:1px solid var(--ink-line);z-index:1000;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;-ms-overflow-style:none}
 #nav::-webkit-scrollbar{display:none}
-#nav::before{content:'';position:absolute;inset:auto 0 -80% 0;height:340px;background:radial-gradient(60% 50% at 50% 0%,rgba(45,93,168,.22),transparent 65%);pointer-events:none}
+#nav::before{content:'';position:absolute;bottom:0;left:0;right:0;height:340px;background:radial-gradient(60% 50% at 50% 100%,rgba(45,93,168,.22),transparent 65%);pointer-events:none}
 #nav-logo{position:relative;display:flex;align-items:center;gap:11px;padding:22px 20px 18px;border-bottom:1px solid var(--ink-line);flex-shrink:0}
 #nav-logo-icon{width:32px;height:32px;border-radius:var(--r-mark);background:var(--grad-mark);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 4px 10px rgba(45,93,168,.32)}
 #nav-logo-icon svg{width:18px;height:18px;stroke:#FFF1E6;fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
@@ -2931,19 +2931,12 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div id="set-rates-sw" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:6px">Sherwin-Williams paint prices</div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:8px" id="sw-price-updated">Last updated: Apr 2025</div>
-        <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6">Contractor pricing used in material cost calculations. PRO+ account estimated rates.</div>
-        <div id="sw-price-table" style="display:grid;grid-template-columns:1fr auto auto;gap:4px 12px;font-size:11px;margin-bottom:12px">
-          <span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Product</span><span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Contractor</span><span style="font-weight:700;color:var(--text3);font-size:10px;text-transform:uppercase">Retail</span>
-          <span>ProMar 700</span><span style="color:var(--green-mid)" id="spp-pm700">$20/gal</span><span style="color:var(--text3)">$55</span>
-          <span>ProMar 200</span><span style="color:var(--green-mid)" id="spp-pm200">$32/gal</span><span style="color:var(--text3)">$83</span>
-          <span>SuperPaint</span><span style="color:var(--green-mid)" id="spp-sp">$37/gal</span><span style="color:var(--text3)">$65</span>
-          <span>Cashmere</span><span style="color:var(--green-mid)" id="spp-cash">$40/gal</span><span style="color:var(--text3)">$60</span>
-          <span>Duration Home</span><span style="color:var(--green-mid)" id="spp-dur">$46/gal</span><span style="color:var(--text3)">$70</span>
-          <span>Emerald</span><span style="color:var(--green-mid)" id="spp-em">$52/gal</span><span style="color:var(--text3)">$74</span>
-          <span>SuperPaint Ext.</span><span style="color:var(--green-mid)" id="spp-spe">$38/gal</span><span style="color:var(--text3)">$63</span>
-          <span>Duration Ext.</span><span style="color:var(--green-mid)" id="spp-dure">$48/gal</span><span style="color:var(--text3)">$81</span>
-          <span>Emerald Urethane</span><span style="color:var(--green-mid)" id="spp-emure">$58/gal</span><span style="color:var(--text3)">$95</span>
-        </div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6">Contractor pricing used in material cost calculations. Edit any price to match your PRO+ account rates.</div>
+        <details id="set-sw-prices-details" style="border:1px solid var(--border2);border-radius:var(--r);padding:8px 10px;margin-bottom:12px">
+          <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--text);user-select:none;-webkit-user-select:none">Edit contractor prices ($/gal)</summary>
+          <div id="set-sw-prices-list" style="margin-top:6px"></div>
+          <button type="button" onclick="_resetSwPriceInputs()" style="background:none;border:none;color:var(--blue);font-size:11px;font-weight:600;cursor:pointer;padding:8px 0 2px;font-family:inherit">Reset to defaults</button>
+        </details>
         <button class="btn btn-p" id="sw-price-refresh-btn" onclick="swRefreshPrices()" style="font-size:13px">🔄 Refresh SW prices via AI</button>
         <div id="sw-price-refresh-status" style="font-size:12px;color:var(--text3);margin-top:8px;display:none"></div>
       </div>

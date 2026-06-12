@@ -156,10 +156,11 @@ test.describe('Client hub — pending change order surfaces for approval', () =>
     await page.fill('#co-hub-sign-name', 'Logan Sample');
     await page.click('#co-hub-sign-btn');
     await page.waitForTimeout(600);
-    // Modal reopens in the signed-document state
+    // Modal shows "You're all set!" confirmation screen
     const modal = await page.textContent('#co-hub-ov');
-    expect(modal).toContain('Approved & Signed');
+    expect(modal).toContain("You're all set!");
     expect(modal).toContain('Logan Sample');
+    expect(modal).toContain('Back to hub');
     // Approval card is gone from Overview
     const overview = await page.textContent('#view-overview');
     expect(overview).not.toContain('Change Order needs your signature');
@@ -244,7 +245,7 @@ test.describe('TradeDesk — in-person CO flow still works and offers hub sendin
     assertNoErrors(page, 'CO function presence');
   });
 
-  test('Send to Client Hub opens the notify-client modal with an sms hub link', async () => {
+  test('Send to Client Hub opens the proposal-style send modal (Text / Email / Other)', async () => {
     await page.evaluate(() => {
       document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
       // Sign-in state may not survive the mocked boot — _sendCOToHub and the
@@ -257,26 +258,30 @@ test.describe('TradeDesk — in-person CO flow still works and offers hub sendin
     });
     await page.waitForTimeout(300);
     await page.click('#co-send-hub-btn');
-    // _sendCOToHub opens the job sheet + notify modal after 300ms
-    await page.waitForSelector('#co-notify-ov', { timeout: 5000 });
-    const body = await page.textContent('#co-notify-ov');
-    expect(body, 'modal must announce the CO and name the client').toContain('Change Order sent — notify Norah');
-    expect(body).toContain('CO #1');
-    expect(body, 'copy-link fallback must be offered').toContain('Copy link');
-    // sms: deep link carries the prefilled message with the hub URL
-    const href = await page.getAttribute('#co-notify-sms', 'href');
-    expect(href.startsWith('sms:3165557777?body='), 'sms link must target the client phone').toBe(true);
-    const smsBody = decodeURIComponent(href.split('?body=')[1]);
-    expect(smsBody.toLowerCase()).toContain('change order');
-    expect(smsBody).toContain('needs your signature');
-    expect(smsBody, 'message must carry the client hub URL').toContain('client.html?t=tok-co-notify-e2e');
+    // _sendCOToHub opens the job sheet + send modal after 300ms — the EXACT
+    // same Text / Email / Other-app overlay proposals use (_showGeiSendOverlay)
+    await page.waitForSelector('#_co-send-overlay', { timeout: 5000 });
+    const body = await page.textContent('#_co-send-overlay');
+    expect(body, 'modal must announce the CO').toContain('CO #1');
+    expect(body, 'must offer the same send options as proposals').toContain('Text');
+    expect(body).toContain('Email');
+    expect(body).toContain('Other app');
+    // Old custom notify modal was replaced — assert it is gone, not duplicated
+    const oldCount = await page.locator('#co-notify-ov').count();
+    expect(oldCount, 'old co-notify-ov modal must be deleted').toBe(0);
+    // Share data drives the same sms/email senders proposals use
+    const share = await page.evaluate(() => _coShareData);
+    expect(share.cphone, 'sms path must target the client phone').toBe('3165557777');
+    expect(share.coNum).toBe(1);
+    expect(share.url, 'must carry the client hub URL').toContain('client.html?t=tok-co-notify-e2e');
     // Cleanup: close modals and drop seeded records
     await page.evaluate(() => {
+      document.getElementById('_co-send-overlay')?.remove();
       document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
       let i = bids.findIndex(b => b.id === 990011); if (i >= 0) bids.splice(i, 1);
       i = clients.findIndex(c => c.id === 990077); if (i >= 0) clients.splice(i, 1);
       saveAll();
     });
-    assertNoErrors(page, 'CO notify modal after hub send');
+    assertNoErrors(page, 'CO send modal after hub send');
   });
 });

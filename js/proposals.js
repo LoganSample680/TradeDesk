@@ -206,7 +206,7 @@ function _buildClientHubSnapshot(clientId){
     const signBase=signToken?baseUrl+'sign.html?t='+signToken+'&u='+(_supaUser?.id||'')+'&b='+b.id:null;
     const _hubType=(b.type==='Build Your Own Estimate'?'Custom Estimate':b.type)||'Estimate';
     const _hubCOs=(b.changeOrders||[]).map(co=>({id:co.id,coNum:co.coNum,desc:co.desc,type:co.type,amount:co.amount,delta:co.delta,originalAmount:co.originalAmount,newAmount:co.newAmount,status:co.status||(co.signedAt?'signed':'pending_client'),sentAt:co.sentAt||'',signedAt:co.signedAt||'',signerName:co.signerName||'',sigData:co.sigData||''}));
-    const _fcDaysElapsed=Math.floor((Date.now()-new Date(b.completion_date||b.signedAt||Date.now()).getTime())/86400000);
+    const _fcDaysElapsed=typeof window._fcTestDays==="number"?window._fcTestDays:Math.floor((Date.now()-new Date(b.completion_date||b.signedAt||Date.now()).getTime())/86400000);
     const _fcDaysOverdue=Math.max(0,_fcDaysElapsed-30);
     const _fcRate=(S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5)/100/30;
     const financeCharge=balance>0.01&&_fcDaysOverdue>0?Math.round(balance*_fcRate*_fcDaysOverdue*100)/100:0;
@@ -830,12 +830,18 @@ function sendProposalViaEmail(){
   // Open compose modal — lets user review/edit subject+body and add email if missing
   _showEmailComposeModal(d);
 }
-function _showEmailComposeModal(d){
+// Shared compose modal — proposals use the defaults; other senders (change
+// orders) pass opts {title, subject, body, clientId, onSent} to reuse the
+// exact same send path (Resend edge function, same error/retry handling).
+let _ecContext=null;
+function _showEmailComposeModal(d,opts){
   // Remove any existing compose modal
   document.getElementById('_email-compose-overlay')?.remove();
+  opts=opts||null;
+  _ecContext=opts?{d,opts}:null;
   const firstName=d.cname.split(/[\s,&]+/)[0];
-  const defSubject='Your Proposal from '+d.bname+' is Ready!';
-  const defBody='Hey '+firstName+',\n\nIt was great meeting with you — I\'m looking forward to your project!\n\nYour proposal is ready to view. Everything we went over is laid out in full detail, and you can sign right from the page when you\'re ready to move forward:\n\n'+d.url+'\n\nOnce you sign, I\'ll get you locked in on the schedule and we\'ll take it from there.\n\nDon\'t hesitate to reach out with any questions — happy to go over anything!\n\nLooking forward to working with you,\n'+d.bname;
+  const defSubject=(opts&&opts.subject)||('Your Proposal from '+d.bname+' is Ready!');
+  const defBody=(opts&&opts.body)||('Hey '+firstName+',\n\nIt was great meeting with you — I\'m looking forward to your project!\n\nYour proposal is ready to view. Everything we went over is laid out in full detail, and you can sign right from the page when you\'re ready to move forward:\n\n'+d.url+'\n\nOnce you sign, I\'ll get you locked in on the schedule and we\'ll take it from there.\n\nDon\'t hesitate to reach out with any questions — happy to go over anything!\n\nLooking forward to working with you,\n'+d.bname);
   const ov=document.createElement('div');
   ov.id='_email-compose-overlay';
   ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px';
@@ -843,7 +849,7 @@ function _showEmailComposeModal(d){
   ov.innerHTML=
     '<div style="width:100%;max-width:520px;max-height:90vh;overflow-y:auto;background:var(--bg);border-radius:var(--r);padding:20px 16px 28px;box-sizing:border-box">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'+
-        '<div style="font-size:17px;font-weight:800">✉️ Email proposal</div>'+
+        '<div style="font-size:17px;font-weight:800">'+((opts&&opts.title)||'✉️ Email proposal')+'</div>'+
         '<button onclick="document.getElementById(\'_email-compose-overlay\').remove()" style="background:none;border:none;font-size:22px;color:var(--text3);cursor:pointer;padding:0 4px;font-family:inherit">✕</button>'+
       '</div>'+
       '<div style="margin-bottom:10px">'+
@@ -875,15 +881,17 @@ async function _sendEmailFromCompose(){
   if(!toEl||!subjEl||!bodyEl)return;
   const toVal=(toEl.value||'').trim();
   if(!toVal||!toVal.includes('@')){zAlert('Please enter a valid email address.',{title:'Email required'});toEl.focus();return;}
-  const d=_proposalShareData();
+  const _ctx=_ecContext;
+  const d=_ctx?_ctx.d:_proposalShareData();
   if(!d.url){zAlert('Generate the proposal link first.',{title:'No link yet'});return;}
   // Save email to client record if it was missing
-  if(!d.cemail&&estLinkedClientId){
-    const c=clients.find(x=>x.id===estLinkedClientId);
+  const _emailClientId=(_ctx&&_ctx.opts.clientId)||estLinkedClientId;
+  if(!d.cemail&&_emailClientId){
+    const c=clients.find(x=>x.id===_emailClientId);
     if(c){c.email=toVal;saveAll();}
     // Also update the bar dataset so future sends work
     const bar=document.getElementById('proposal-link-bar');
-    if(bar)bar.dataset.cemail=toVal;
+    if(bar&&!_ctx)bar.dataset.cemail=toVal;
   }
   const subject=(subjEl.value||'').trim()||'Your Proposal is Ready!';
   const bodyText=(bodyEl.value||'').trim();
@@ -902,8 +910,8 @@ async function _sendEmailFromCompose(){
       ]);
       if(res.ok){
         document.getElementById('_email-compose-overlay')?.remove();
-        _commitProposalSent();
-        showToast('Proposal emailed to '+d.cname+'!','✉️');
+        if(_ctx&&_ctx.opts.onSent){_ecContext=null;_ctx.opts.onSent();}
+        else{_commitProposalSent();showToast('Proposal emailed to '+d.cname+'!','✉️');}
         return;
       }
       // Non-ok response — show error detail
@@ -923,7 +931,8 @@ async function _sendEmailFromCompose(){
   const href='mailto:'+encodeURIComponent(toVal)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(bodyText);
   window.location.href=href;
   document.getElementById('_email-compose-overlay')?.remove();
-  setTimeout(()=>_commitProposalSent(),400);
+  if(_ctx&&_ctx.opts.onSent){_ecContext=null;setTimeout(()=>_ctx.opts.onSent(),400);}
+  else setTimeout(()=>_commitProposalSent(),400);
 }
 function buildDescription(){
   const isExt=estSurfaces.some(s=>s.type==='ext_walls'||s.type==='ext_trim'||s.type==='deck');
@@ -1271,7 +1280,7 @@ function buildProposal(){
     <div style="font-size:10.5px;color:#4a5568;line-height:1.85">
       ${_depositPct===0?'<p style="margin:0 0 7px"><strong>1. Payment:</strong> Full balance due upon completion. No deposit required.</p>':'<p style="margin:0 0 7px"><strong>1. Payment:</strong> A '+Math.round(_depositPct*100)+'% deposit ('+fmt(_depositAmt)+') is required before any work begins and before a start date will be scheduled. The remaining balance is due upon completion of work.</p>'}
       <p style="margin:0 0 9px"><strong>2. Cancellation &amp; Deposits:</strong> Buyer may cancel this transaction within ${_cancelDays} business days of signing (${_cancelStat}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages to compensate for: (a) <em>Mobilization &amp; Scheduling</em> — reserving crew availability and declining other projects for the contracted dates; (b) <em>Administrative Costs</em> — time invested in site measurements, color consulting, and preparation of this written scope; and (c) <em>Material Procurement</em> — sourcing specific paint colors and materials that may not be returnable or transferable to other jobs. These represent a reasonable good-faith estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</p>
-      <p style="margin:0 0 7px"><strong>3. Change Orders:</strong> This proposal covers only the scope described herein. Any additional work, surfaces, or materials not listed require a written change order signed by both parties and may be billed at the current rate.</p>
+      <p style="margin:0 0 7px"><strong>3. Change Orders:</strong> This proposal covers only the scope described herein. Any additional work, surfaces, or materials not listed require a written change order approved and signed by the client and may be billed at the current rate.</p>
       <p style="margin:0 0 7px"><strong>4. Limitation of Liability:</strong> Contractor is not responsible for damage to surfaces, structures, or contents that existed prior to the start of work, or for conditions not disclosed at the time of walkthrough. Client assumes all risk associated with pressure washing services on their property.</p>
       <p style="margin:0 0 7px"><strong>5. ${_grTax>0?_grLabel+':':' Materials &amp; Sales Tax:'}</strong> ${_grTax>0?`${_grLabel} of ${_grRate}% is charged on the full contract value and is itemized separately on this proposal. Client is responsible for this amount.`:'Contractor purchases all materials and pays applicable sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.'}</p>
       <p style="margin:0 0 7px"><strong>6. Mechanic's Lien Notice:</strong> ${_lienNotice(_st)}</p>
@@ -1293,8 +1302,18 @@ function buildProposal(){
     </div>
   </div>
 </div>`;
-  document.getElementById('est-sig-sum').innerHTML=`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><div><div style="font-size:15px;font-weight:700">${cname}</div><div style="font-size:12px;color:var(--text2)">${caddr}</div></div><div style="text-align:right"><div style="font-size:22px;font-weight:700;color:var(--blue)">${fmt(_paintFinalTotal)}</div><div style="font-size:11px;color:var(--text3)">${estNum}</div></div></div>`;
-  document.getElementById('est-terms').innerHTML='<div style="background:#FEF3C7;border-left:3px solid #92400E;padding:8px 10px;margin-bottom:10px;font-size:10px;font-weight:700;color:#92400E">⚠ '+_stName+' / FTC Notice: Buyer may cancel within '+_cancelDays+' business days of signing ('+_cancelStat+'). See Notice of Cancellation on signed proposal.</div><strong style="color:#1a365d">Terms &amp; Conditions</strong><br><br>1. <strong>Payment:</strong> '+(_depositPct===0?'Full balance due upon completion. No deposit required.':Math.round(_depositPct*100)+'% deposit ('+fmt(_depositAmt)+') required before any work begins and before a start date will be scheduled. The remaining balance is due upon completion of work.')+'<br><br>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within '+_cancelDays+' business days of signing ('+_cancelStat+') for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages covering: (a) mobilization &amp; scheduling costs — crew reservation and declined projects for those dates; (b) administrative costs — site measurements, color consulting, scope preparation; and (c) material procurement — specific paint colors and supplies that may not be returnable. These represent a reasonable estimate of actual damages, not a penalty. Materials purchased will be made available for pickup upon cancellation. '+bname+'\'s right to retain the deposit is conditioned on '+bname+'\'s readiness and willingness to perform. If '+bname+' fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.<br><br>3. <strong>Change Orders:</strong> This proposal covers only the scope described herein. Any additional work, surfaces, or materials not listed require a written change order signed by both parties and may be billed at the current rate.<br><br>4. <strong>Limitation of Liability:</strong> Contractor is not responsible for damage to surfaces, structures, or contents that existed prior to the start of work, or for conditions not disclosed at the time of walkthrough. Client assumes all risk associated with pressure washing services on their property.<br><br>5. <strong>Materials &amp; Sales Tax:</strong> Contractor purchases all materials and pays applicable '+_stName+' sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.<br><br>6. <strong>Mechanic\'s Lien Notice:</strong> '+_lienNotice(_st)+' Contractor will pursue all available legal remedies for non-payment, including lien filing.<br><br>7. <strong>Finance Charges:</strong> Unpaid balances remaining 30 days after job completion are subject to a finance charge of '+_fcPct+'% per month ('+_fcApr+'% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.<br><br>By signing below, client acknowledges receipt of the Notice of Cancellation, full agreement with all scope, pricing, and terms, and that this constitutes a legally binding electronic agreement under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.)';
+  const _sigDepPct=Math.round(_depositPct*100);
+  const _sigBal=Math.round((_paintFinalTotal-_depositAmt)*100)/100;
+  document.getElementById('est-sig-sum').innerHTML=
+    `<div style="margin-bottom:10px"><div style="font-size:15px;font-weight:700">${cname}</div>${caddr?'<div style="font-size:12px;color:var(--text2);margin-top:2px">'+caddr+'</div>':''}</div>`+
+    `<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px;display:grid;gap:4px">`+
+      `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)"><span style="font-size:12px;color:var(--text2)">Contract total</span><strong style="font-size:14px;color:var(--blue)">${fmt(_paintFinalTotal)}</strong></div>`+
+      (_depositPct>0
+        ?`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)"><span style="font-size:12px;color:var(--text2)">Deposit due (${_sigDepPct}%)</span><strong style="font-size:13px;color:var(--green)">${fmt(_depositAmt)}</strong></div>`+
+          `<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="font-size:12px;color:var(--text2)">Balance on completion</span><strong style="font-size:13px">${fmt(_sigBal)}</strong></div>`
+        :`<div style="display:flex;justify-content:space-between;padding:4px 0"><span style="font-size:12px;color:var(--text2)">Due on completion</span><strong style="font-size:13px">${fmt(_paintFinalTotal)}</strong></div>`)+
+    `</div>`;
+  document.getElementById('est-terms').innerHTML='<div style="background:#FEF3C7;border-left:3px solid #92400E;padding:8px 10px;margin-bottom:10px;font-size:10px;font-weight:700;color:#92400E">⚠ '+_stName+' / FTC Notice: Buyer may cancel within '+_cancelDays+' business days of signing ('+_cancelStat+'). See Notice of Cancellation on signed proposal.</div><strong style="color:#1a365d">Terms &amp; Conditions</strong><br><br>1. <strong>Payment:</strong> '+(_depositPct===0?'Full balance due upon completion. No deposit required.':Math.round(_depositPct*100)+'% deposit ('+fmt(_depositAmt)+') required before any work begins and before a start date will be scheduled. The remaining balance is due upon completion of work.')+'<br><br>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within '+_cancelDays+' business days of signing ('+_cancelStat+') for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages covering: (a) mobilization &amp; scheduling costs — crew reservation and declined projects for those dates; (b) administrative costs — site measurements, color consulting, scope preparation; and (c) material procurement — specific paint colors and supplies that may not be returnable. These represent a reasonable estimate of actual damages, not a penalty. Materials purchased will be made available for pickup upon cancellation. '+bname+'\'s right to retain the deposit is conditioned on '+bname+'\'s readiness and willingness to perform. If '+bname+' fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.<br><br>3. <strong>Change Orders:</strong> This proposal covers only the scope described herein. Any additional work, surfaces, or materials not listed require a written change order approved and signed by the client and may be billed at the current rate.<br><br>4. <strong>Limitation of Liability:</strong> Contractor is not responsible for damage to surfaces, structures, or contents that existed prior to the start of work, or for conditions not disclosed at the time of walkthrough. Client assumes all risk associated with pressure washing services on their property.<br><br>5. <strong>Materials &amp; Sales Tax:</strong> Contractor purchases all materials and pays applicable '+_stName+' sales tax at the point of purchase. Sales tax on materials is incorporated into the project price and is not itemized separately on this proposal.<br><br>6. <strong>Mechanic\'s Lien Notice:</strong> '+_lienNotice(_st)+' Contractor will pursue all available legal remedies for non-payment, including lien filing.<br><br>7. <strong>Finance Charges:</strong> Unpaid balances remaining 30 days after job completion are subject to a finance charge of '+_fcPct+'% per month ('+_fcApr+'% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.<br><br>By signing below, client acknowledges receipt of the Notice of Cancellation, full agreement with all scope, pricing, and terms, and that this constitutes a legally binding electronic agreement under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.)';
   document.getElementById('sig-date').value=ds;
   document.getElementById('sig-pname').value=cname;
   initSigPad();
@@ -1455,6 +1474,34 @@ if(!hasSignature()&&typedSig.length<=2){zAlert('Please type your name or draw yo
   clearEstFullDraft();
   // Restore so step 7 deposit button can find the bid
   if(_finalBidId)lastCreatedBidId=_finalBidId;
+  // Write to signed_proposals + refresh hub so the client hub shows the signed agreement.
+  // Runs in background — UI advances to step 7 immediately.
+  if(_finalBidId&&supaEnabled()&&_supaUser){(async()=>{
+    const _ipBid=bids.find(b=>b.id===_finalBidId);
+    if(!_ipBid||!_ipBid.client_id)return;
+    const _ipTyped=document.getElementById('sig-typed')?.value?.trim()||'';
+    let _ipSig='';
+    if(sigCanvas){
+      if(hasSignature()){_ipSig=sigCanvas.toDataURL('image/png');}
+      else if(_ipTyped){
+        const _tc=document.createElement('canvas');_tc.width=400;_tc.height=100;
+        const _tx=_tc.getContext('2d');_tx.font='46px "Dancing Script",cursive';
+        _tx.fillStyle='#1a1a18';_tx.textAlign='center';_tx.textBaseline='middle';
+        _tx.fillText(_ipTyped,200,50);_ipSig=_tc.toDataURL('image/png');
+      }
+    }
+    const _ipRow={bid_id:String(_finalBidId),contractor_user_id:_supaUser.id,
+      client_name:_ipBid.client_name||cname,client_signed_name:pname||_ipTyped,
+      signed_at:_ipBid.signedAt||new Date().toISOString(),signature_data:_ipSig,
+      payment_status:'pending',deposit:_ipBid.deposit||0,amount:_ipBid.amount||0};
+    try{
+      const{data:rows}=await _supa.from('signed_proposals').select('id')
+        .eq('bid_id',String(_finalBidId)).eq('contractor_user_id',_supaUser.id).limit(1);
+      if(rows&&rows[0])await _supa.from('signed_proposals').update(_ipRow).eq('id',rows[0].id);
+      else await _supa.from('signed_proposals').insert(_ipRow);
+      _uploadClientHub(_ipBid.client_id).catch(()=>{});
+    }catch(e){console.warn('in-person sign save:',e);}
+  })();}
   goEstStep(7);
 }
 function goBackToClient(){
@@ -2526,10 +2573,10 @@ async function _sendCOToHub(bidId,clientId){
   _refreshClientHub(clientId).catch(()=>{});
 }
 
-// "Notify the client" modal shown after a CO lands in the hub — mirrors the
-// sendClientHubLink share modal (sms: deep link with prefilled message + copy
-// fallback). Without this the client would only find the pending CO by
-// happening to open their hub.
+// "Send to client" modal shown after a CO lands in the hub — the EXACT same
+// send path as proposals: Text / Email / Other-app, same overlay layout as
+// _showGeiSendOverlay, email goes through the shared compose modal + Resend.
+let _coShareData=null;
 function _showCONotifyModal(clientId,coNum){
   const c=getClientById(clientId);
   if(!c||!_supaUser)return;
@@ -2538,19 +2585,58 @@ function _showCONotifyModal(clientId,coNum){
     saveAll();
   }
   const url=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
-  const firstName=c.name?.split(' ')[0]||'there';
-  const biz=S.bname||'us';
-  const msg='Hi '+firstName+', a change order from '+biz+' for your project needs your signature — review and sign it in your project hub: '+url;
-  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='co-notify-ov';
-  const box=document.createElement('div');box.className='zmodal';
-  box.innerHTML=
-    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">📤 Change Order sent — notify '+firstName+'</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">CO #'+coNum+' is waiting in the hub — '+(c.name||'the client')+' won\'t see it until you send the link</div>'+
-    (c.phone?'<a id="co-notify-sms" href="sms:'+c.phone.replace(/\D/g,'')+'?body='+encodeURIComponent(msg)+'" onclick="autoLogContact('+clientId+',\'change_order_sent\');this.closest(\'.zmodal-overlay\').remove()" style="display:block;box-sizing:border-box;text-align:center;width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none;margin-bottom:8px">📱 Send via Messages</a>':'')+
-    '<button onclick="navigator.clipboard.writeText(\''+url+'\').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">📋 Copy link</button>'+
-    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
-  ov.appendChild(box);document.body.appendChild(ov);
+  _coShareData={url,cname:c.name||'Client',bname:S.bname||'TradeDesk',cphone:(c.phone||'').replace(/\D/g,''),cemail:c.email||'',coNum,clientId};
+  document.getElementById('_co-send-overlay')?.remove();
+  const ov=document.createElement('div');
+  ov.id='_co-send-overlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px';
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  ov.innerHTML=
+    '<div style="width:100%;max-width:420px;background:var(--bg);border-radius:var(--r);padding:22px 16px 24px;box-sizing:border-box">'+
+      '<div style="font-size:15px;font-weight:800;color:var(--blue-dk);margin-bottom:16px;text-align:center">✓ CO #'+coNum+' ready — send to client</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'+
+        '<button onclick="_doCOSend(\'sms\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">📱 Text</button>'+
+        '<button onclick="_doCOSend(\'email\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">✉️ Email</button>'+
+      '</div>'+
+      '<button onclick="_doCOSend(\'other\')" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">⬆️ Other app (WhatsApp, AirDrop…)</button>'+
+      '<div style="font-size:11px;color:var(--text3);margin-top:10px;text-align:center">'+escHtml(c.name||'The client')+' signs the change order in their project hub.</div>'+
+    '</div>';
+  document.body.appendChild(ov);
+}
+function _doCOSend(type){
+  document.getElementById('_co-send-overlay')?.remove();
+  if(type==='sms')_sendCOViaSms();
+  else if(type==='email')_sendCOViaEmail();
+  else _shareCOLink();
+}
+function _sendCOViaSms(){
+  const d=_coShareData;if(!d)return;
+  if(!d.cphone){zAlert('No phone number on file for this client. Add one in Clients first.',{title:'No client phone'});return;}
+  const firstName=d.cname.split(/[\s,&]+/)[0];
+  const msg='Hey '+firstName+'!\n\nQuick update on your project — Change Order #'+d.coNum+' is ready for your review. Tap the link below to see the details and sign when you\'re ready:\n\n'+d.url+'\n\nAny questions at all, just shoot me a text!\n\n— '+d.bname;
+  // Fire SMS FIRST while the user gesture is fresh (same as sendProposalViaSms)
+  window.location.href='sms:'+d.cphone+'?body='+encodeURIComponent(msg);
+  setTimeout(()=>autoLogContact(d.clientId,'change_order_sent'),400);
+}
+function _sendCOViaEmail(){
+  const d=_coShareData;if(!d)return;
+  const firstName=d.cname.split(/[\s,&]+/)[0];
+  _showEmailComposeModal(d,{
+    title:'✉️ Email change order',
+    subject:'Change Order #'+d.coNum+' from '+d.bname+' — signature needed',
+    body:'Hey '+firstName+',\n\nQuick update on your project — Change Order #'+d.coNum+' is ready for your review. It lays out the change in scope and the updated contract total, and you can sign it right from your project hub:\n\n'+d.url+'\n\nDon\'t hesitate to reach out with any questions!\n\n'+d.bname,
+    clientId:d.clientId,
+    onSent:()=>{autoLogContact(d.clientId,'change_order_sent');showToast('Change order emailed to '+d.cname+'!','✉️');}
+  });
+}
+function _shareCOLink(){
+  const d=_coShareData;if(!d)return;
+  autoLogContact(d.clientId,'change_order_sent');
+  pwaShare({
+    title:d.bname+' Change Order',
+    text:'Hi '+d.cname.split(' ')[0]+' — Change Order #'+d.coNum+' from '+d.bname+' needs your signature. Review and sign in your project hub.',
+    url:d.url
+  });
 }
 
 // legacy alias kept so any old calls still work

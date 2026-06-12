@@ -351,7 +351,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = location.origin + '/api';
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.11.26.8';
+const APP_VERSION='06.11.26.19';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -588,7 +588,7 @@ async function supaInit(){
           if(_cd.contracts?.length)contracts=_cd.contracts;
           if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
-          if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
+          if(_cd.settings){_mergeIncomingSettings(_cd.settings);applySettings();loadSettingsForm();}
           _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
           _loadedFromCacheOnly=true;
           _mergeOnSignIn=true;
@@ -724,7 +724,7 @@ async function supaInit(){
         if(_cd.contracts?.length)contracts=_cd.contracts;
         if(_cd.photos?.length)photos=_cd.photos;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
-        if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
+        if(_cd.settings){_mergeIncomingSettings(_cd.settings);applySettings();loadSettingsForm();}
         _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
         _supaCloudLoaded=true;
         _loadedFromCacheOnly=true;
@@ -1181,7 +1181,7 @@ function _enterOfflineMode(){
       if(_cd.contracts?.length)contracts=_cd.contracts;
       if(_cd.photos?.length)photos=_cd.photos;
       if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
-      if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
+      if(_cd.settings){_mergeIncomingSettings(_cd.settings);applySettings();loadSettingsForm();}
     }catch(_ce){}
   }
   _mergeOfflinePendingToMemory(); // show any records created since the last cloud sync
@@ -1301,6 +1301,23 @@ async function _deleteReceiptFromStorage(receiptKey){
   if(!_supa||!receiptKey)return;
   const{error}=await _supa.storage.from('receipts').remove([receiptKey]);
   if(error)throw error;
+}
+// Merge an incoming settings object (cloud row or local cache snapshot) into S.
+// If local S carries a newer settingsTs, the incoming copy is stale — e.g. the
+// user hit Save then refreshed before the cloud flush finished (settings are
+// written LAST in supaSaveToCloud, after all table upserts). Local wins and we
+// flag a pending sync so the newer local settings get pushed up.
+function _mergeIncomingSettings(ss){
+  if(!ss)return false;
+  if((S.settingsTs||0)>(ss.settingsTs||0)){
+    try{localStorage.setItem('zp3_pending_sync','1');}catch(_e){}
+    if(typeof supaSaveDebounced==='function')supaSaveDebounced();
+    return false;
+  }
+  const _localVehs=S.vehicles,_localVehsTs=S.vehiclesTs||0;
+  S={...S,...ss};
+  if(_localVehsTs>(ss.vehiclesTs||0)){S.vehicles=_localVehs;S.vehiclesTs=_localVehsTs;}
+  return true;
 }
 function supaSaveDebounced(){
   if(!supaEnabled())return;
@@ -1995,7 +2012,7 @@ async function supaLoadFromCloud({silent=false}={}){
     if(sd){
       if(sd.checks_state){const cc=(()=>{try{return JSON.parse(sd.checks_state);}catch{return null;}})();if(cc&&Object.keys(cc).length)checksState=cc;}
       if(sd.settings){const ss=(()=>{try{return JSON.parse(sd.settings);}catch{return null;}})();
-        if(ss){const _localVehs=S.vehicles,_localVehsTs=S.vehiclesTs||0;S={...S,...ss};if(_localVehsTs>(ss.vehiclesTs||0)){S.vehicles=_localVehs;S.vehiclesTs=_localVehsTs;}
+        if(ss){_mergeIncomingSettings(ss);
           if(S.fedMFS===14600)S.fedMFS=15000;if(S.fedSingle===14600)S.fedSingle=15000;
           if(S.fedMFJ===29200)S.fedMFJ=30000;if(S.fedHOH===21900)S.fedHOH=22500;
           if(S.b10===11600)S.b10=11925;if(S.b12===47150)S.b12=48475;
@@ -2110,7 +2127,7 @@ async function supaLoadFromCloud({silent=false}={}){
         if(_cd.licenses?.length)licenses=_cd.licenses;if(_cd.events?.length)events=_cd.events;
         if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.photos?.length)photos=_cd.photos;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
-        if(_cd.settings){S={...S,..._cd.settings};applySettings();loadSettingsForm();}
+        if(_cd.settings){_mergeIncomingSettings(_cd.settings);applySettings();loadSettingsForm();}
         _loadedFromCacheOnly=true;_supaCloudLoaded=true;
         try{
           const _op=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');

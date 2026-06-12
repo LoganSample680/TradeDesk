@@ -2705,9 +2705,9 @@ function renderIncome(){
   };
   const _incRow=r=>{
     const c=clients.find(x=>x.id===r.client_id);
-    return '<tr data-lp-id="'+r.id+'" data-lp-type="'+r._src+'" data-lp-label="'+escHtml((r.client_name||'record')+' · '+fmt(r.amount||0))+'" style="cursor:'+(c?'pointer':'default')+'"'+(c?' onclick="openClientDetail('+c.id+')"':'')+'>'+
+    return '<tr data-lp-id="'+r.id+'" data-lp-type="'+r._src+'" data-lp-label="'+escHtml((r.client_name||'record')+' · '+fmt(r.amount||0))+'">'+
       '<td class="mute">'+(r.date||'')+'</td>'+
-      '<td class="bold" style="color:'+(c?'var(--blue)':'inherit')+'">'+(r.client_name||'—')+'</td>'+
+      '<td class="bold">'+(r.client_name||'—')+'</td>'+
       '<td class="mute">'+r.type+'</td>'+
       '<td class="'+(r.amount<0?'red':'green')+'">'+(r.amount<0?'('+fmtD(Math.abs(r.amount))+')':fmtD(r.amount))+'</td>'+
       '<td>'+_methodBadge(r.method)+'</td>'+

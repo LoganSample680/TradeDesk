@@ -54,15 +54,15 @@ async function bootHub(page, hub) {
 /** Jump directly to the Step 3 signature form and skip the countdown. */
 async function skipToCancelForm(page) {
   await page.evaluate((id) => {
-    window._cancelBidId = id;
-    window._cancelReason = 'Price concerns';
+    _cancelBidId = id;
+    _cancelReason = 'Price concerns';
     document.getElementById('cancel-notice-ov')?.remove();
     const ov = document.createElement('div');
     ov.id = 'cancel-notice-ov';
     ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
     document.body.appendChild(ov);
     _cancelShowStep3();
-    if (window._cancelTimer) { clearInterval(window._cancelTimer); window._cancelTimer = null; }
+    if (_cancelTimer) { clearInterval(_cancelTimer); _cancelTimer = null; }
     const btn = document.getElementById('cancel-submit-btn');
     if (btn) { btn.disabled = false; btn.style.opacity = '1'; btn.style.cursor = 'pointer'; btn.textContent = 'Permanently Cancel Agreement'; }
   }, FAKE_BID_ID_1);

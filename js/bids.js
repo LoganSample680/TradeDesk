@@ -527,7 +527,8 @@ function _calcFinanceCharge(bid){
   const balance=getBidBalance(bid);
   if(balance<0.01)return 0;
   const startDate=new Date(bid.completion_date||bid.signedAt);
-  const daysElapsed=Math.floor((Date.now()-startDate.getTime())/86400000);
+  // window._fcTestDays lets you simulate overdue in the console: window._fcTestDays=35
+  const daysElapsed=typeof window._fcTestDays==='number'?window._fcTestDays:Math.floor((Date.now()-startDate.getTime())/86400000);
   const daysOverdue=Math.max(0,daysElapsed-30);
   if(daysOverdue===0)return 0;
   const rate=(typeof S!=='undefined'&&S.financeChargePct?parseFloat(S.financeChargePct):1.5)/100/30;
