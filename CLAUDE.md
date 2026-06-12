@@ -423,3 +423,29 @@ Survives conversation compacting so context is not lost between sessions.
 - iMessage delivery: Mac Mini on TradeDesk infra handles Apple protocol (no SendBlue)
 - Files: `js/messaging/engine.js`, `templates.js`, `numbers.js`, `webhooks.js`
   + Supabase Edge Functions: `send-sms/`, `sms-webhook/`
+
+---
+
+## 10. Credentials & Token Renewal Calendar
+
+Tokens that expire and must be rotated before the expiry date.
+
+### 10.1 Apple MapKit JS Tokens
+
+Both tokens are in **two files**: `js/mileage.js` and `intake.html`.
+Token selection is hostname-based: `pages.dev` → preview token, else → production token.
+
+| Environment | Domain | Expires | Key ID |
+|-------------|--------|---------|--------|
+| Preview | `*.tradedesk-cyp.pages.dev` | **~June 2028** | `MMPPZP26DK` |
+| Production | `tradedeskpro.app` | **~June 2028** | `MMPPZP26DK` |
+
+**To renew:** Go to [developer.apple.com](https://developer.apple.com) → Maps → Tokens → create new MapKit JS token with Domain restriction. Swap both the preview and production JWT strings in `js/mileage.js` and `intake.html`. Commit and push — no other files need changing.
+
+**Renew by: June 2028.** Set a calendar reminder for May 2028 to avoid a gap.
+
+### 10.2 Supabase Anon Key
+
+The anon key in `index.html`, `intake.html`, `client.html`, and `sign.html` does not expire on its own but should be rotated if ever exposed in a breach. Rotation requires updating all four files.
+
+---

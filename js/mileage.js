@@ -377,9 +377,10 @@ let _tripGpsCoords=null; // cached GPS fix for search bias
 let _fromBiasCache={val:null,coords:null}; // MapKit-geocoded From coords for To-field bias
 
 // ── Shared geocoding — Photon (primary) + Census (fallback) ─────────────────
+// MapKit tokens are domain-locked — renew by June 2028 (see CLAUDE.md §10.1)
 const _MAPKIT_TOKEN=location.hostname.includes('pages.dev')
-  ?'eyJraWQiOiJNTVBQWlAyNkRLIiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzgxMzAwNjk0LCJvcmlnaW4iOiIqLnRyYWRlZGVzay1jeXAucGFnZXMuZGV2Iiwic2NvcGUiOiJtYXBraXRfanMiLCJleHAiOjE4NDQzOTg4MDB9.6LsxZ38saES3NSPxrTSWiBfOTZ5DCCwROhl5NRHbOyTXY_ghcRTuVL8S3BXDn92Rqk-olu6eAt2gCSvdPpLzdg'
-  :'eyJhbGciOiJFUzI1NiIsImtpZCI6IjU1TjkyUTVQWkQiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzc4MDc2NTgxLCJleHAiOjE4NDExNDg1ODF9.PgQ2btzlf0EH-QJg_fX8dcsw2eR1yyx-o0K7Kckvn3D_bzdEI2hUMuz3iH2c9t2DtUY2fTtP08r7aEQCsYvQ3w'; // TODO: swap for production domain-locked token
+  ?'eyJraWQiOiJNTVBQWlAyNkRLIiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzgxMzAwNjk0LCJvcmlnaW4iOiIqLnRyYWRlZGVzay1jeXAucGFnZXMuZGV2Iiwic2NvcGUiOiJtYXBraXRfanMiLCJleHAiOjE4NDQzOTg4MDB9.6LsxZ38saES3NSPxrTSWiBfOTZ5DCCwROhl5NRHbOyTXY_ghcRTuVL8S3BXDn92Rqk-olu6eAt2gCSvdPpLzdg' // *.tradedesk-cyp.pages.dev
+  :'PRODUCTION_MAPKIT_TOKEN_tradedeskpro.app'; // TODO: paste token for tradedeskpro.app
 let _mapkitReady=false;
 function _initMapKit(){
   if(typeof mapkit==='undefined')return;
