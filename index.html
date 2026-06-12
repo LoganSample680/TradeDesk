@@ -4044,15 +4044,12 @@ if(supaEnabled()){
         const cityEl=document.getElementById('set-bcity');if(cityEl)cityEl.value=city||'';
         const zipEl=document.getElementById('set-bzip');if(zipEl)zipEl.value=zip||'';
         const stateEl=document.getElementById('set-bstate-display');if(stateEl)stateEl.value=state||'';
-        if(typeof saveSettings==='function')saveSettings();
+        // No auto-save — settings commit via the explicit Save button like every other field
       });
   }
-  // Wait for all scripts to finish loading, then wire
+  // All four inputs are static HTML — one wire-up after scripts load is enough
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',tryWire,{once:true});
   else tryWire();
-  // Re-wire when pages with these fields become active (inputs exist in DOM the whole time)
-  const _pgHook=()=>{if(typeof goPg==='function'){const _orig=window.goPg;window.goPg=function(id,...a){const r=_orig.call(this,id,...a);setTimeout(tryWire,60);return r;};}};
-  setTimeout(_pgHook,500);
 })();
 </script>
 </body>

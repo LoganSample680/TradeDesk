@@ -1722,53 +1722,39 @@ test.describe('_addrAutoFull — shared address autocomplete utility', () => {
     expect(result.autocomplete).toBe('off');
   });
 
-  test('e-caddr — typing triggers suggestion dropdown', async () => {
+  test('e-caddr — typing shows dropdown and clicking a suggestion fills the input', async () => {
     await goPg(page, 'pg-est');
     await page.waitForTimeout(300);
-    let photonCalled = false;
-    await page.route('**/photon.komoot.io/**', async route => {
-      photonCalled = true;
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(PHOTON_MOCK) });
-    });
-    await page.evaluate(() => {
-      const el = document.getElementById('e-caddr');
-      if (!el) return;
-      el.value = '123 Main';
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    await page.waitForTimeout(500);
-    const suggVisible = await page.evaluate(() => {
-      const el = document.getElementById('e-caddr');
-      if (!el) return false;
-      // suggestion box is inserted immediately after the input
-      const next = el.nextElementSibling;
-      return next && next.style.display !== 'none' && next.children.length > 0;
-    });
-    // Photon may or may not be called depending on network mock order — validate no errors
-    assertNoErrors(page, 'e-caddr autocomplete');
-  });
-
-  test('e-caddr — selecting suggestion fills input and fires callbacks', async () => {
-    await goPg(page, 'pg-est');
-    await page.waitForTimeout(200);
+    // Stub the geocoder so the real bound dropdown renders a known suggestion.
     const result = await page.evaluate(async () => {
       const el = document.getElementById('e-caddr');
-      if (!el || typeof _addrAutoFull !== 'function') return null;
-      let cbFull = null;
-      // Re-bind with a test callback (only if not already bound)
-      if (!el._addrAutoFullBound) {
-        _addrAutoFull(el, (full, street, city, state, zip) => { cbFull = { full, street, city, state, zip }; });
-      }
-      // Directly simulate a geocode result by calling _geocodeAddress and injecting
-      // a suggestion item via synthetic click
-      el.value = '123 Main St, Wichita KS 67202';
+      if (!el || !el._addrAutoFullBound) return null;
+      const _origGeo = window._geocodeAddress;
+      window._geocodeAddress = async () => [{
+        line1: '123 Main St', line2: 'Wichita, KS 67202',
+        street: '123 Main St', city: 'Wichita', state: 'KS', zip: '67202',
+      }];
+      const _prevVal = el.value;
+      el.value = '123 Main';
       el.dispatchEvent(new Event('input', { bubbles: true }));
-      await new Promise(r => setTimeout(r, 400));
-      return { inputValue: el.value };
+      await new Promise(r => setTimeout(r, 600));
+      const box = el.nextElementSibling;
+      const suggestion = box && box.firstElementChild;
+      const dropdownShown = !!(box && box.style.display === 'block' && suggestion);
+      if (suggestion) suggestion.click();
+      const filledValue = el.value;
+      window._geocodeAddress = _origGeo;
+      el.value = _prevVal;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      await new Promise(r => setTimeout(r, 100));
+      return { dropdownShown, filledValue };
     });
-    // Input should have the value we set
-    if (result) expect(result.inputValue.length).toBeGreaterThan(0);
-    assertNoErrors(page, 'e-caddr selection');
+    if (result) {
+      expect(result.dropdownShown, 'dropdown must appear after typing in e-caddr').toBe(true);
+      expect(result.filledValue).toContain('123 Main St');
+      expect(result.filledValue).toContain('Wichita');
+    }
+    assertNoErrors(page, 'e-caddr autocomplete');
   });
 
   // ── Field: gei-addr (generic estimate job address) ───────────────────────
@@ -1810,49 +1796,54 @@ test.describe('_addrAutoFull — shared address autocomplete utility', () => {
     expect(result.autocomplete).toBe('off');
   });
 
-  test('set-baddr — selecting suggestion fills split fields and calls saveSettings', async () => {
+  test('set-baddr — typing shows suggestions and clicking one fills the split fields', async () => {
     await goPg(page, 'pg-settings');
     await page.waitForTimeout(400);
-    const result = await page.evaluate(() => {
-      if (typeof _addrAutoFull !== 'function') return null;
+    // Stub the geocoder so the REAL bound dropdown renders a known suggestion,
+    // then drive the real input → dropdown → click path end-to-end.
+    const result = await page.evaluate(async () => {
       const el = document.getElementById('set-baddr');
-      if (!el) return null;
-      let saveSettingsCalled = false;
-      const _orig = window.saveSettings;
-      window.saveSettings = () => { saveSettingsCalled = true; if (_orig) _orig(); };
-      // Force-fire the onSelect callback directly to test split-fill logic
-      // by re-creating a fresh (unbound) hidden input
-      const tmp = document.createElement('input');
-      tmp.style.cssText = 'position:absolute;opacity:0;pointer-events:none';
-      document.body.appendChild(tmp);
-      _addrAutoFull(tmp, (full, street, city, state, zip) => {
-        const baddr = document.getElementById('set-baddr');
-        if (baddr) baddr.value = street || full;
-        const cityEl = document.getElementById('set-bcity'); if (cityEl) cityEl.value = city || '';
-        const zipEl  = document.getElementById('set-bzip');  if (zipEl)  zipEl.value  = zip  || '';
-        const stEl   = document.getElementById('set-bstate-display'); if (stEl) stEl.value = state || '';
-        if (typeof saveSettings === 'function') saveSettings();
-      });
-      // Simulate the select callback
-      const baddr = document.getElementById('set-baddr');
-      if (baddr) baddr.value = '123 Main St';
-      const cityEl = document.getElementById('set-bcity'); if (cityEl) cityEl.value = 'Wichita';
-      const zipEl  = document.getElementById('set-bzip');  if (zipEl)  zipEl.value  = '67202';
-      const stEl   = document.getElementById('set-bstate-display'); if (stEl) stEl.value = 'KS';
-      saveSettingsCalled = true; // mark as tested
-      tmp.remove();
-      window.saveSettings = _orig;
-      return {
-        baddr: document.getElementById('set-baddr')?.value,
+      if (!el || !el._addrAutoFullBound) return null;
+      const _origGeo = window._geocodeAddress;
+      window._geocodeAddress = async () => [{
+        line1: '1242 N Saint Francis', line2: 'Wichita, KS 67214',
+        street: '1242 N Saint Francis', city: 'Wichita', state: 'KS', zip: '67214',
+      }];
+      const _prev = {
+        baddr: el.value,
         bcity: document.getElementById('set-bcity')?.value,
-        bzip:  document.getElementById('set-bzip')?.value,
+        bzip: document.getElementById('set-bzip')?.value,
         bstate: document.getElementById('set-bstate-display')?.value,
-        saveSettingsCalled,
       };
+      el.value = '1242 N Saint';
+      el.dispatchEvent(new Event('input'));
+      // Wait out the 280ms debounce + async geocode
+      await new Promise(r => setTimeout(r, 600));
+      const box = el.nextElementSibling;
+      const suggestion = box && box.firstElementChild;
+      const dropdownShown = !!(box && box.style.display === 'block' && suggestion);
+      if (suggestion) suggestion.click();
+      const after = {
+        dropdownShown,
+        baddr: el.value,
+        bcity: document.getElementById('set-bcity')?.value,
+        bzip: document.getElementById('set-bzip')?.value,
+        bstate: document.getElementById('set-bstate-display')?.value,
+      };
+      // Restore
+      window._geocodeAddress = _origGeo;
+      el.value = _prev.baddr;
+      const c = document.getElementById('set-bcity'); if (c) c.value = _prev.bcity || '';
+      const z = document.getElementById('set-bzip'); if (z) z.value = _prev.bzip || '';
+      const s = document.getElementById('set-bstate-display'); if (s) s.value = _prev.bstate || '';
+      return after;
     });
     if (result) {
-      expect(result.baddr).toBeTruthy();
-      expect(result.saveSettingsCalled).toBe(true);
+      expect(result.dropdownShown, 'suggestion dropdown must appear after typing').toBe(true);
+      expect(result.baddr).toBe('1242 N Saint Francis');
+      expect(result.bcity).toBe('Wichita');
+      expect(result.bzip).toBe('67214');
+      expect(result.bstate).toBe('KS');
     }
     assertNoErrors(page, 'set-baddr split fill');
   });
