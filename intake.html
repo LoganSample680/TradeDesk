@@ -150,10 +150,10 @@ function v(id){return(document.getElementById(id)||{}).value||''}
 function show(id){document.getElementById(id).style.display=''}
 function hide(id){document.getElementById(id).style.display='none'}
 
-// MapKit tokens are domain-locked — renew by June 2028 (see CLAUDE.md §10.1)
+// MapKit tokens are domain-locked with no expiry (see CLAUDE.md §10.1)
 const _MAPKIT_TOKEN=location.hostname.includes('pages.dev')
-  ?'eyJraWQiOiJNTVBQWlAyNkRLIiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzgxMzAwNjk0LCJvcmlnaW4iOiIqLnRyYWRlZGVzay1jeXAucGFnZXMuZGV2Iiwic2NvcGUiOiJtYXBraXRfanMiLCJleHAiOjE4NDQzOTg4MDB9.6LsxZ38saES3NSPxrTSWiBfOTZ5DCCwROhl5NRHbOyTXY_ghcRTuVL8S3BXDn92Rqk-olu6eAt2gCSvdPpLzdg' // *.tradedesk-cyp.pages.dev
-  :'PRODUCTION_MAPKIT_TOKEN_tradedeskpro.app'; // TODO: paste token for tradedeskpro.app
+  ?'eyJraWQiOiI3S0E5WDhVUjZMIiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzgxMzAxNTIyLCJvcmlnaW4iOiIqLnRyYWRlZGVzay1jeXAucGFnZXMuZGV2Iiwic2NvcGUiOiJtYXBraXRfanMifQ.ehafZ1SO_50PLbz_-5iwhPJXKZpPXSJrNAALFhHmetxrVKOpCYzBHR9viL6Nl8Kor0yCIFJcvKiGrtrlNSgN7Q' // *.tradedesk-cyp.pages.dev — no expiry
+  :'eyJraWQiOiJXQzYzOFM2M0c0IiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzgxMzAxNDcwLCJvcmlnaW4iOiJ0cmFkZWRlc2twcm8uYXBwIiwic2NvcGUiOiJtYXBraXRfanMifQ.0hmtYgvSGLHMZcnHnEGMsaJDg6tXEtzfp3aS-tLdGbTjocZDQLP6VlrPl9l29tV-T5SgNXQycqUJO_T1b_rFWQ'; // tradedeskpro.app — no expiry
 let _intakeMkReady=false;
 function _intakeInitMapKit(){
   if(typeof mapkit==='undefined')return;

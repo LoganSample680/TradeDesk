@@ -437,12 +437,10 @@ Token selection is hostname-based: `pages.dev` → preview token, else → produ
 
 | Environment | Domain | Expires | Key ID |
 |-------------|--------|---------|--------|
-| Preview | `*.tradedesk-cyp.pages.dev` | **~June 2028** | `MMPPZP26DK` |
-| Production | `tradedeskpro.app` | **~June 2028** | `MMPPZP26DK` |
+| Preview | `*.tradedesk-cyp.pages.dev` | No expiry | `7KA9X8UR6L` |
+| Production | `tradedeskpro.app` | No expiry | `WC638S63G4` |
 
-**To renew:** Go to [developer.apple.com](https://developer.apple.com) → Maps → Tokens → create new MapKit JS token with Domain restriction. Swap both the preview and production JWT strings in `js/mileage.js` and `intake.html`. Commit and push — no other files need changing.
-
-**Renew by: June 2028.** Set a calendar reminder for May 2028 to avoid a gap.
+**To rotate:** Go to [developer.apple.com](https://developer.apple.com) → Maps → Tokens → create new MapKit JS token with Domain restriction. Swap both the preview and production JWT strings in `js/mileage.js` and `intake.html`. Commit and push — no other files need changing. Revoke the old token from the portal after confirming the new one works.
 
 ### 10.2 Supabase Anon Key
 
