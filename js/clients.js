@@ -2139,14 +2139,14 @@ function renderCDAddresses(){
     :(c.street&&c.city?`<button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_lookupPropertyData(${c.id},{street:'${escHtml(c.street||'')}',city:'${escHtml(c.city||'')}',state:'${escHtml(c.state||'')}',zip:'${escHtml(c.zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:11px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;margin-left:6px">🏠 Look up</button>`:'');
   const chevron=hasProp?`<span style="font-size:9px;color:var(--text3);display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s;margin-right:2px">▶</span>`:'';
   const propPanel=hasProp&&isOpen?`<div style="padding:10px 0 4px;border-top:1px solid var(--border);margin-top:8px">
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:8px${c.exteriorMaterial||c.roofType||c.garage||c.isRental||c.lastSaleDate||c.lastSalePrice||c.assessorUrl?';margin-bottom:8px':''}">
-      ${c.yearBuilt?`<div><div style="font-size:15px;font-weight:800">${c.yearBuilt}</div><div style="font-size:10px;color:var(--text3)">📅 Year built</div></div>`:''}
-      ${c.sqft?`<div><div style="font-size:15px;font-weight:800">${Number(c.sqft).toLocaleString()}</div><div style="font-size:10px;color:var(--text3)">📐 Sq ft</div></div>`:''}
-      ${c.estimatedValue?`<div><div style="font-size:15px;font-weight:800">${fmt(c.estimatedValue)}</div><div style="font-size:10px;color:var(--text3)">💰 Est. value</div></div>`:''}
-      ${c.stories?`<div><div style="font-size:15px;font-weight:800">${c.stories}</div><div style="font-size:10px;color:var(--text3)">🏢 Stories</div></div>`:''}
-      ${c.bedrooms?`<div><div style="font-size:15px;font-weight:800">${c.bedrooms}</div><div style="font-size:10px;color:var(--text3)">🛏 Beds</div></div>`:''}
-      ${c.bathrooms?`<div><div style="font-size:15px;font-weight:800">${c.bathrooms}</div><div style="font-size:10px;color:var(--text3)">🛁 Baths</div></div>`:''}
-      ${c.lotSize?`<div><div style="font-size:15px;font-weight:800">${escHtml(String(c.lotSize))}</div><div style="font-size:10px;color:var(--text3)">🌳 Lot</div></div>`:''}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px${c.exteriorMaterial||c.roofType||c.garage||c.isRental||c.lastSaleDate||c.lastSalePrice||c.assessorUrl?';margin-bottom:8px':''}">
+      ${c.yearBuilt?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.yearBuilt}</div><div style="font-size:10px;color:var(--text3)">📅 Year built</div></div>`:''}
+      ${c.sqft?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Number(c.sqft).toLocaleString()}</div><div style="font-size:10px;color:var(--text3)">📐 Sq ft</div></div>`:''}
+      ${c.estimatedValue?`<div style="min-width:0"><div style="font-size:14px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fmt(c.estimatedValue)}</div><div style="font-size:10px;color:var(--text3)">💰 Est. value</div></div>`:''}
+      ${c.stories?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.stories}</div><div style="font-size:10px;color:var(--text3)">🏢 Stories</div></div>`:''}
+      ${c.bedrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.bedrooms}</div><div style="font-size:10px;color:var(--text3)">🛏 Beds</div></div>`:''}
+      ${c.bathrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.bathrooms}</div><div style="font-size:10px;color:var(--text3)">🛁 Baths</div></div>`:''}
+      ${c.lotSize?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(String(c.lotSize))}</div><div style="font-size:10px;color:var(--text3)">🌳 Lot</div></div>`:''}
     </div>
     ${c.exteriorMaterial||c.roofType||c.garage||c.isRental?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:${c.lastSaleDate||c.lastSalePrice||c.assessorUrl?'8px':'0'}">
       ${c.exteriorMaterial?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🏠 ${escHtml(String(c.exteriorMaterial))}</span>`:''}
