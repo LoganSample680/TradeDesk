@@ -95,14 +95,14 @@ function _gateAddressThenEstimate(c){
       '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">Add '+escHtml(c.name)+'\'s property address before starting an estimate. You can\'t measure or quote without it.</div>'+
       '<div style="position:relative;margin-bottom:14px">'+
 '<input id="_addr-gate-inp" type="text" placeholder="123 Main St, City, ST" autocomplete="off" '+
-  'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)" '+
-  'oninput="_agSearch(this.value)" onblur="setTimeout(()=>{const b=document.getElementById(\'_ag-sugg\');if(b)b.style.display=\'none\'},150)">'+
-'<div id="_ag-sugg" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r);box-shadow:0 6px 20px rgba(0,0,0,.15);z-index:9999;max-height:220px;overflow-y:auto"></div>'+
+  'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
 '</div>'+
       '<button id="_addr-gate-ok" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Save &amp; start estimate</button>'+
       '<button onclick="document.getElementById(\'_addr-gate-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
     ov.appendChild(box);document.body.appendChild(ov);
-    setTimeout(()=>document.getElementById('_addr-gate-inp')?.focus(),100);
+    const _agInp=document.getElementById('_addr-gate-inp');
+    if(_agInp&&typeof _addrAutoFull==='function')_addrAutoFull(_agInp,null);
+    setTimeout(()=>_agInp?.focus(),100);
     document.getElementById('_addr-gate-ok').onclick=()=>{
       const addr=(document.getElementById('_addr-gate-inp')?.value||'').trim();
       if(!addr){const inp=document.getElementById('_addr-gate-inp');if(inp){inp.style.borderColor='#A32D2D';inp.placeholder='Enter address to continue';}return;}
@@ -124,35 +124,6 @@ function _gateAddressThenEstimate(c){
     return;
   }
   _checkMultiPropertyThenOpen(c);
-}
-let _agTimer=null;
-function _agSearch(val){
-  clearTimeout(_agTimer);
-  const box=document.getElementById('_ag-sugg');if(!box)return;
-  if(!val||val.length<3){box.style.display='none';return;}
-  _agTimer=setTimeout(async()=>{
-    try{
-      const r=await fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit=6&lang=en');
-      const d=await r.json();
-      if(!d?.features?.length){box.style.display='none';return;}
-      box.innerHTML=d.features.filter(f=>{const p=f.properties||{};return p.housenumber&&p.street&&(p.city||p.town||p.village);}).slice(0,5).map(f=>{
-        const p=f.properties||{};
-        const street=(p.housenumber?p.housenumber+' ':'')+p.street;
-        const city=p.city||p.town||p.village||'';
-        const state=({'Alabama':'AL','Alaska':'AK','Arizona':'AZ','Arkansas':'AR','California':'CA','Colorado':'CO','Connecticut':'CT','Delaware':'DE','Florida':'FL','Georgia':'GA','Hawaii':'HI','Idaho':'ID','Illinois':'IL','Indiana':'IN','Iowa':'IA','Kansas':'KS','Kentucky':'KY','Louisiana':'LA','Maine':'ME','Maryland':'MD','Massachusetts':'MA','Michigan':'MI','Minnesota':'MN','Mississippi':'MS','Missouri':'MO','Montana':'MT','Nebraska':'NE','Nevada':'NV','New Hampshire':'NH','New Jersey':'NJ','New Mexico':'NM','New York':'NY','North Carolina':'NC','North Dakota':'ND','Ohio':'OH','Oklahoma':'OK','Oregon':'OR','Pennsylvania':'PA','Rhode Island':'RI','South Carolina':'SC','South Dakota':'SD','Tennessee':'TN','Texas':'TX','Utah':'UT','Vermont':'VT','Virginia':'VA','Washington':'WA','West Virginia':'WV','Wisconsin':'WI','Wyoming':'WY','District of Columbia':'DC'})[p.state]||p.state||'';
-        const zip=p.postcode||'';
-        const full=[street,city,[state,zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-        const disp=full.replace(/&/g,'&amp;').replace(/</g,'&lt;');
-        const s=full.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        return '<div onmousedown="event.preventDefault()" onclick="_agPick(\''+s+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;font-size:14px">'+disp+'</div>';
-      }).join('');
-      box.style.display=box.innerHTML?'block':'none';
-    }catch(e){const box=document.getElementById('_ag-sugg');if(box)box.style.display='none';}
-  },220);
-}
-function _agPick(addr){
-  const inp=document.getElementById('_addr-gate-inp');if(inp)inp.value=addr;
-  const box=document.getElementById('_ag-sugg');if(box)box.style.display='none';
 }
 function _checkMultiPropertyThenOpen(c){
   // If client already has any in-progress bid (Pending+draft), offer to resume it
@@ -190,12 +161,13 @@ function _askNewPropertyAddress(c){
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">New property address</div>'+
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">Enter the address for this job</div>'+
-    '<input id="_new-prop-addr" type="text" placeholder="123 Main St, City, ST" autocomplete="street-address" '+
-      'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);margin-bottom:14px">'+
+    '<div style="position:relative;margin-bottom:14px"><input id="_new-prop-addr" type="text" placeholder="123 Main St, City, ST" autocomplete="off" '+
+      'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
     '<button id="_new-prop-ok" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Open estimate</button>'+
     '<button onclick="document.getElementById(\'_new-prop-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   const inp=document.getElementById('_new-prop-addr');
+  if(inp&&typeof _addrAutoFull==='function')_addrAutoFull(inp,null);
   if(inp)setTimeout(()=>inp.focus(),80);
   const go=()=>{
     const addr=(inp?inp.value.trim():'')||c.addr||'';
@@ -2186,13 +2158,15 @@ function openAddAddressModal(){
   overlay.innerHTML='<div class="zmodal" style="max-width:360px"><div class="zmodal-title">Add property address</div>'+
     '<div class="f" style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;display:block;margin-bottom:4px">Label (e.g. Vacation home, Rental)</label>'+
     '<input id="_aa-label" placeholder="Vacation home" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit"></div>'+
-    '<div class="f" style="margin-bottom:14px"><label style="font-size:11px;font-weight:700;display:block;margin-bottom:4px">Address <span style="color:#A32D2D">*</span></label>'+
-    '<input id="_aa-addr" placeholder="5678 Oak Ave, Wichita KS 67206" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit"></div>'+
+    '<div class="f" style="margin-bottom:14px;position:relative"><label style="font-size:11px;font-weight:700;display:block;margin-bottom:4px">Address <span style="color:#A32D2D">*</span></label>'+
+    '<input id="_aa-addr" placeholder="5678 Oak Ave, Wichita KS 67206" autocomplete="off" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit"></div>'+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="saveAddClientAddress()" class="btn btn-g" style="flex:1">Add</button>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Cancel</button>'+
     '</div></div>';
   document.body.appendChild(overlay);
+  const _aaInp=document.getElementById('_aa-addr');
+  if(_aaInp&&typeof _addrAutoFull==='function')_addrAutoFull(_aaInp,null);
   setTimeout(()=>{const el=document.getElementById('_aa-label');if(el)el.focus();},80);
 }
 function saveAddClientAddress(){
