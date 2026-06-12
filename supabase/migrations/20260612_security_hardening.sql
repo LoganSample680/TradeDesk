@@ -10,6 +10,7 @@ DROP POLICY IF EXISTS "Public can update signed proposals" ON signed_proposals;
 
 -- Replace with token-scoped update: anon can only update a row they can identify by storage_key
 -- This prevents an attacker from setting cancelled_at on an arbitrary bid_id they guessed
+DROP POLICY IF EXISTS "anon_update_by_token" ON signed_proposals;
 CREATE POLICY "anon_update_by_token" ON signed_proposals
   FOR UPDATE TO anon
   USING (storage_key IS NOT NULL)
