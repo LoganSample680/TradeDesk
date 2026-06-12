@@ -147,21 +147,20 @@ async function _pwaHandleSharedPhoto(){
     if(!file||!(file instanceof File))return;
     openExpenseFlow();
     setTimeout(()=>{
-        // Pre-fill the photo in the expense modal
-        const blob=new Blob([file],{type:file.type||'image/jpeg'});
-        _showReceiptScanner(blob,async b=>{
-          let b64;
-          try{b64=await compressAndEncodeImage(b,900,0.75);}
-          catch(_ce){showToast('Could not read that image','⚠️');return;}
-          _expState.imageData={b64,type:'image/jpeg'};_expState.hasReceipt=true;
-          const preview=document.getElementById('exp-preview-img');
-          if(preview){
-            preview.style.display='block';
-            preview.innerHTML='<img src="data:image/jpeg;base64,'+b64+'" style="max-height:80px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green-mid);margin-top:4px;font-weight:700">📎 Photo attached</div>';
-          }
-        });
-      },300);
-    },400);
+      // Pre-fill the photo in the expense modal
+      const blob=new Blob([file],{type:file.type||'image/jpeg'});
+      _showReceiptScanner(blob,async b=>{
+        let b64;
+        try{b64=await compressAndEncodeImage(b,900,0.75);}
+        catch(_ce){showToast('Could not read that image','⚠️');return;}
+        _expState.imageData={b64,type:'image/jpeg'};_expState.hasReceipt=true;
+        const preview=document.getElementById('exp-preview-img');
+        if(preview){
+          preview.style.display='block';
+          preview.innerHTML='<img src="data:image/jpeg;base64,'+b64+'" style="max-height:80px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green-mid);margin-top:4px;font-weight:700">📎 Photo attached</div>';
+        }
+      });
+    },300);
   }catch(e){}
 }
 
