@@ -109,8 +109,7 @@ function _pwaHandleShortcut(){
       setTimeout(()=>typeof newEstimate==='function'&&newEstimate(),200);
     }
     else if(sc==='expense'){
-      goPg('pg-finance');
-      setTimeout(()=>typeof openExpenseFlow==='function'&&openExpenseFlow(),200);
+      if(typeof openExpenseFlow==='function')openExpenseFlow();
     }
     else if(sc==='clockin'){
       goPg('pg-jobs');
@@ -146,10 +145,8 @@ async function _pwaHandleSharedPhoto(){
     const file=formData.get('photo');
     await cache.delete(keys[0]);
     if(!file||!(file instanceof File))return;
-    goPg('pg-finance');
+    openExpenseFlow();
     setTimeout(()=>{
-      openExpenseFlow();
-      setTimeout(()=>{
         // Pre-fill the photo in the expense modal
         const blob=new Blob([file],{type:file.type||'image/jpeg'});
         _showReceiptScanner(blob,async b=>{
