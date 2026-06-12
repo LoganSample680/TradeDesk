@@ -1866,20 +1866,22 @@ async function _submitCancellation(bidId){
   if(btn){btn.disabled=true;btn.textContent='Submitting…';}
   const ts=new Date().toISOString();
   try{
-    const{error}=await _supa.from('signed_proposals')
-      .update({cancelled_at:ts,cancelled_signed_name:name})
-      .eq('bid_id',String(bidId));
+    // cancelled_at can't be written directly from the hub anymore — an anonymous
+    // PATCH by bid_id is indistinguishable from a forced-cancel attack. cancel-proposal
+    // re-validates the hub link's secret token server-side, sets cancelled_at, and
+    // issues any Stripe refund in one privileged call.
+    const _p=new URLSearchParams(location.search);
+    const{data,error}=await _supa.functions.invoke('cancel-proposal',{body:{
+      bidId:String(bidId),u:_p.get('u'),c:_p.get('c'),t:_p.get('t'),signerName:name
+    }});
     if(error)throw error;
+    if(data?.error)throw new Error(data.error);
     // Instant contractor-tab refresh (same-browser) — cloud.js listens for this key
     try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(bidId),ts,cancelled:true}));}catch(_){}
     bid.cancelledAt=ts;bid.cancelledName=name;bid.balance=0;
     document.getElementById('cancel-notice-ov')?.remove();
     renderDocuments();renderOverview();
     _showCancelForm(bidId); // reopen in confirmed state
-    // Fire-and-forget Stripe refund — non-blocking, cancellation is already recorded
-    _supa.functions.invoke('cancel-refund',{body:{bidId:String(bidId)}})
-      .then(({data,error})=>{if(error||data?.error)console.warn('Stripe auto-refund:',error||data?.error);})
-      .catch(()=>{});
   }catch(e){
     console.error('cancellation:',e);
     if(errEl)errEl.textContent='Could not submit — '+(e.message||'please try again or contact your contractor directly.');
