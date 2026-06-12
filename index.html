@@ -2550,6 +2550,10 @@ body.dark .cal-cell.other{background:var(--cream)}
         <label>Last year's total tax bill ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">From your prior year return — unlocks safe harbor</span></label>
         <input type="number" id="tx-prior-yr" value="0" oninput="calcTax()" placeholder="0 — enter from last year's return">
       </div>
+      <div class="f">
+        <label>Last year's AGI ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">Used for 110% safe harbor threshold — leave 0 if unknown</span></label>
+        <input type="number" id="tx-prior-yr-agi" value="0" oninput="calcTax()" placeholder="0 — from last year's return line 11">
+      </div>
     </div>
   </div>
 

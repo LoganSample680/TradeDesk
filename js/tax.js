@@ -111,6 +111,15 @@ function _populateTaxYearSel(){
 }
 function setTaxYear(yr){_taxPageYear=yr;const hd=document.getElementById('tx-data-hd');if(hd)hd.textContent=yr+' income & deductions';calcTax();}
 
+// Social Security wage base by year — SS portion (12.4%) is capped, Medicare (2.9%) is not
+const _SS_WAGE_BASE={2019:132900,2020:137700,2021:142800,2022:147000,2023:160200,2024:168600,2025:176100,2026:176100};
+function _getSsWageBase(yr){return _SS_WAGE_BASE[parseInt(yr)]||176100;}
+function _calcSeTax(netSelf,yr){
+  const seBase=netSelf*0.9235;
+  const ssBase=Math.min(seBase,_getSsWageBase(yr));
+  return Math.ceil(ssBase*0.124+seBase*0.029); // SS capped + Medicare uncapped
+}
+
 // Estimate state income tax on an apportioned income amount using STATE_TAX data.
 // Used for non-resident (out-of-state job) portions — no standard deduction applied
 // since deduction is pro-rated to near-zero for small income fractions.
@@ -139,8 +148,7 @@ function calcTax(){
   S.txStatus=status;
   const sumSel=document.getElementById('sum-tx-status');if(sumSel)sumSel.value=status;
 
-  const seBase=netSelf*.9235;
-  const seTax=Math.ceil(seBase*.153); // round UP — never short
+  const seTax=_calcSeTax(netSelf,_taxYr);
   const seDed=seTax/2; // deduct half SE tax from income
 
   const agi=netSelf+spouseInc-seDed;
@@ -188,7 +196,8 @@ function calcTax(){
   const perQ=Math.ceil(stillOwed/4);
   // Prior-year safe harbor: pay 100% of last year's tax (110% if AGI > $150K) to avoid underpayment penalty
   const priorYrTax=nv('tx-prior-yr')||0;
-  const safeHarborRate=agi>150000?1.10:1.00;
+  const priorYrAgi=nv('tx-prior-yr-agi')||0;
+  const safeHarborRate=(priorYrAgi>0?priorYrAgi:agi)>150000?1.10:1.00;
   const safeHarborTotal=Math.ceil(priorYrTax*safeHarborRate);
   const safeHarborQ=priorYrTax>0?Math.ceil(safeHarborTotal/4):0;
   // SEP-IRA: 20% of net self-employment income (after SE deduction), max $70,000
@@ -396,8 +405,7 @@ function calcTax(){
 function estimateTax(netSelf,yr){
   if(netSelf<=0)return 0;
   const status=S.txStatus||'single';
-  const seBase=netSelf*.9235;
-  const seTax=Math.ceil(seBase*.153);
+  const seTax=_calcSeTax(netSelf,yr||new Date().getFullYear());
   const seDed=seTax/2;
   const bkts=yr?_getFedBracketsForYear(yr):FED_BRACKETS;
   const stdDed=yr?_getStdDedForYear(yr,status):(STD_DED[status]||14600);
