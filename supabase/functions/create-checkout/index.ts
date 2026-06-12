@@ -1,4 +1,4 @@
-// v206
+// v207 — redeploy: ship server-side amount validation (was never deployed; deploy workflow had been failing)
 import Stripe from 'npm:stripe@14';
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { getServiceRoleKey } from '../_shared/keys.ts';
