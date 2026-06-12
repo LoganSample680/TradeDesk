@@ -1260,6 +1260,31 @@ function renderPipeline(){
       (action?'<div style="font-size:12px;color:var(--text2);line-height:1.6">'+action+'</div>':'')+
     '</div>';
 }
+function openIntakeFormModal(){
+  const base=typeof _clientBaseUrl==='function'?_clientBaseUrl():window.location.origin+window.location.pathname.split('index.html')[0];
+  const url=base+'intake.html';
+  const ov=document.createElement('div');ov.className='zmodal-overlay';
+  ov.innerHTML='<div class="zmodal" style="max-width:360px">'+
+    '<div class="zmodal-title">📋 Client Intake Form</div>'+
+    '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">Share this link with prospects so they can submit their info before you arrive. New submissions appear automatically at the top of Leads.</div>'+
+    '<div style="display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;margin-bottom:14px">'+
+      '<div style="font-size:12px;color:var(--text3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(url)+'</div>'+
+      '<button id="_intake-copy-btn" onclick="_copyIntakeUrl(\''+escHtml(url)+'\')" style="flex-shrink:0;padding:6px 12px;border-radius:6px;border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">Copy</button>'+
+    '</div>'+
+    '<div style="display:flex;gap:8px">'+
+      '<button onclick="window.open(\''+escHtml(url)+'\',\'_blank\')" class="btn btn-g" style="flex:1">Open form ↗</button>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Done</button>'+
+    '</div>'+
+  '</div>';
+  document.body.appendChild(ov);
+}
+function _copyIntakeUrl(url){
+  navigator.clipboard.writeText(url).then(()=>{
+    const btn=document.getElementById('_intake-copy-btn');
+    if(btn){const orig=btn.textContent;btn.textContent='✓ Copied';setTimeout(()=>{btn.textContent=orig;},1600);}
+    if(typeof showToast==='function')showToast('Intake form link copied','📋');
+  }).catch(()=>{if(typeof showToast==='function')showToast('Could not copy link','⚠️');});
+}
 function renderLeadsPage(){
   const el=document.getElementById('leads-list');if(!el)return;
   const LEAD_STAGES=['incomplete','new','est_scheduled','est_ready','bid_out','bid_urgent','abandoned'];
@@ -1291,7 +1316,7 @@ function renderLeadsPage(){
   if(leadsEyebrow){
     const allLeadCount=clients.filter(c=>LEAD_STAGES.includes(getClientStage(c.id).stage)).length;
     const fuCount=clients.filter(c=>{const s=getClientStage(c.id).stage;return s==='bid_urgent'||s==='abandoned';}).length;
-    leadsEyebrow.textContent=allLeadCount+' lead'+(allLeadCount!==1?'s':''+(fuCount?' · '+fuCount+' need follow-up':''));
+    leadsEyebrow.textContent=allLeadCount+' lead'+(allLeadCount!==1?'s':'')+(fuCount?' · '+fuCount+' need follow-up':'');
   }
 
   if(!filtered.length){el.innerHTML=_inboundReviewHTML()+'<div class="empty"><div class="em-emoji">🎯</div><h3>No '+( leadFilter==='all'?'active leads':leadFilter.replace('_',' '))+' right now</h3><p>Add a lead above to start tracking prospects.</p></div>';return;}

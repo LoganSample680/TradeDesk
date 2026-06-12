@@ -95,14 +95,14 @@ function _gateAddressThenEstimate(c){
       '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">Add '+escHtml(c.name)+'\'s property address before starting an estimate. You can\'t measure or quote without it.</div>'+
       '<div style="position:relative;margin-bottom:14px">'+
 '<input id="_addr-gate-inp" type="text" placeholder="123 Main St, City, ST" autocomplete="off" '+
-  'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)" '+
-  'oninput="_agSearch(this.value)" onblur="setTimeout(()=>{const b=document.getElementById(\'_ag-sugg\');if(b)b.style.display=\'none\'},150)">'+
-'<div id="_ag-sugg" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r);box-shadow:0 6px 20px rgba(0,0,0,.15);z-index:9999;max-height:220px;overflow-y:auto"></div>'+
+  'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
 '</div>'+
       '<button id="_addr-gate-ok" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Save &amp; start estimate</button>'+
       '<button onclick="document.getElementById(\'_addr-gate-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
     ov.appendChild(box);document.body.appendChild(ov);
-    setTimeout(()=>document.getElementById('_addr-gate-inp')?.focus(),100);
+    const _agInp=document.getElementById('_addr-gate-inp');
+    if(_agInp&&typeof _addrAutoFull==='function')_addrAutoFull(_agInp,null);
+    setTimeout(()=>_agInp?.focus(),100);
     document.getElementById('_addr-gate-ok').onclick=()=>{
       const addr=(document.getElementById('_addr-gate-inp')?.value||'').trim();
       if(!addr){const inp=document.getElementById('_addr-gate-inp');if(inp){inp.style.borderColor='#A32D2D';inp.placeholder='Enter address to continue';}return;}
@@ -124,35 +124,6 @@ function _gateAddressThenEstimate(c){
     return;
   }
   _checkMultiPropertyThenOpen(c);
-}
-let _agTimer=null;
-function _agSearch(val){
-  clearTimeout(_agTimer);
-  const box=document.getElementById('_ag-sugg');if(!box)return;
-  if(!val||val.length<3){box.style.display='none';return;}
-  _agTimer=setTimeout(async()=>{
-    try{
-      const r=await fetch('https://photon.komoot.io/api/?q='+encodeURIComponent(val)+'&limit=6&lang=en');
-      const d=await r.json();
-      if(!d?.features?.length){box.style.display='none';return;}
-      box.innerHTML=d.features.filter(f=>{const p=f.properties||{};return p.housenumber&&p.street&&(p.city||p.town||p.village);}).slice(0,5).map(f=>{
-        const p=f.properties||{};
-        const street=(p.housenumber?p.housenumber+' ':'')+p.street;
-        const city=p.city||p.town||p.village||'';
-        const state=({'Alabama':'AL','Alaska':'AK','Arizona':'AZ','Arkansas':'AR','California':'CA','Colorado':'CO','Connecticut':'CT','Delaware':'DE','Florida':'FL','Georgia':'GA','Hawaii':'HI','Idaho':'ID','Illinois':'IL','Indiana':'IN','Iowa':'IA','Kansas':'KS','Kentucky':'KY','Louisiana':'LA','Maine':'ME','Maryland':'MD','Massachusetts':'MA','Michigan':'MI','Minnesota':'MN','Mississippi':'MS','Missouri':'MO','Montana':'MT','Nebraska':'NE','Nevada':'NV','New Hampshire':'NH','New Jersey':'NJ','New Mexico':'NM','New York':'NY','North Carolina':'NC','North Dakota':'ND','Ohio':'OH','Oklahoma':'OK','Oregon':'OR','Pennsylvania':'PA','Rhode Island':'RI','South Carolina':'SC','South Dakota':'SD','Tennessee':'TN','Texas':'TX','Utah':'UT','Vermont':'VT','Virginia':'VA','Washington':'WA','West Virginia':'WV','Wisconsin':'WI','Wyoming':'WY','District of Columbia':'DC'})[p.state]||p.state||'';
-        const zip=p.postcode||'';
-        const full=[street,city,[state,zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-        const disp=full.replace(/&/g,'&amp;').replace(/</g,'&lt;');
-        const s=full.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-        return '<div onmousedown="event.preventDefault()" onclick="_agPick(\''+s+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;font-size:14px">'+disp+'</div>';
-      }).join('');
-      box.style.display=box.innerHTML?'block':'none';
-    }catch(e){const box=document.getElementById('_ag-sugg');if(box)box.style.display='none';}
-  },220);
-}
-function _agPick(addr){
-  const inp=document.getElementById('_addr-gate-inp');if(inp)inp.value=addr;
-  const box=document.getElementById('_ag-sugg');if(box)box.style.display='none';
 }
 function _checkMultiPropertyThenOpen(c){
   // If client already has any in-progress bid (Pending+draft), offer to resume it
@@ -190,12 +161,13 @@ function _askNewPropertyAddress(c){
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">New property address</div>'+
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">Enter the address for this job</div>'+
-    '<input id="_new-prop-addr" type="text" placeholder="123 Main St, City, ST" autocomplete="street-address" '+
-      'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);margin-bottom:14px">'+
+    '<div style="position:relative;margin-bottom:14px"><input id="_new-prop-addr" type="text" placeholder="123 Main St, City, ST" autocomplete="off" '+
+      'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
     '<button id="_new-prop-ok" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Open estimate</button>'+
     '<button onclick="document.getElementById(\'_new-prop-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   const inp=document.getElementById('_new-prop-addr');
+  if(inp&&typeof _addrAutoFull==='function')_addrAutoFull(inp,null);
   if(inp)setTimeout(()=>inp.focus(),80);
   const go=()=>{
     const addr=(inp?inp.value.trim():'')||c.addr||'';
@@ -628,7 +600,7 @@ function onClientSearch(inp){
     const tk=todayKey();
     const ql=q.toLowerCase();
     const matched=clients.filter(c=>
-      c.name.toLowerCase().includes(ql)||
+      (c.name||'').toLowerCase().includes(ql)||
       (c.addr||'').toLowerCase().includes(ql)||
       (c.phone||'').replace(/\D/g,'').includes(q.replace(/\D/g,''))||
       (c.source||'').toLowerCase().includes(ql)
@@ -851,7 +823,7 @@ function checkClientDupe(val){
   const name=val.trim().toLowerCase().replace(/\s+/g,' ');
   const match=clients.find(c=>{
     if(editClientId&&c.id===editClientId)return false;
-    return c.name.toLowerCase().replace(/\s+/g,' ')===name;
+    return (c.name||'').toLowerCase().replace(/\s+/g,' ')===name;
   });
   if(match){warn.style.display='';warn.textContent='⚠ '+match.name+' is already in your records — is this a different client?';}
   else{warn.style.display='none';}
@@ -960,7 +932,7 @@ function saveClient(){
     const nameLow=name.toLowerCase().replace(/\s+/g,' ');
     const realPhone=ph.length===10&&!/^(\d)\1+$/.test(ph);
     // Name match = hard block (almost certainly a re-entry of the same person)
-    const nameDupe=clients.find(x=>x.id!==editClientId&&x.name.toLowerCase().replace(/\s+/g,' ')===nameLow);
+    const nameDupe=clients.find(x=>x.id!==editClientId&&(x.name||'').toLowerCase().replace(/\s+/g,' ')===nameLow);
     if(nameDupe){_submitting=false;showFErr('cf-name','err-cf-name',nameDupe.name+' is already in your list. Is this a different person with the same name?');return;}
     // Phone match = soft warning — two people can share a number (family), allow override
     const phoneDupe=realPhone?clients.find(x=>x.id!==editClientId&&(x.phone||'').replace(/\D/g,'')===ph):null;
@@ -1164,7 +1136,7 @@ function _showImportPreview(parsed){
   const existingNames=new Set(clients.map(c=>(c.name||'').toLowerCase().trim()));
   const toImport=parsed.filter(c=>{
     const ph=c.phone.replace(/\D/g,'');
-    return ph.length>=7&&!existingPhones.has(ph)&&!existingNames.has(c.name.toLowerCase().trim());
+    return ph.length>=7&&!existingPhones.has(ph)&&!existingNames.has((c.name||'').toLowerCase().trim());
   });
   const skipped=parsed.length-toImport.length;
   _importContacts=toImport;
@@ -1530,7 +1502,7 @@ function toggleTlGroup(id){
 function renderCDExpenses(){
   const el=document.getElementById('cdt-expenses-list');if(!el)return;
   const cexp=getClientExpenses(currentClientId);
-  const total=cexp.reduce((s,e)=>s+e.amount,0);
+  const total=cexp.reduce((s,e)=>s+(e.amount||0),0);
   if(!cexp.length){
     el.innerHTML='<div class="empty">No expenses logged for this client yet.<br><br>Tap + Log expense to add one.</div>';
     return;
@@ -1666,7 +1638,7 @@ function renderCDBids(){
       if(!b.completion_date){const linkedJob=jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id);const jid=linkedJob?.id;if(jid)actBtns.push('<button class="btn btn-sm" onclick="markJobDone('+jid+')" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid)">✓ Close job</button>');}
       if(balance>0.01)actBtns.push('<button class="btn btn-sm btn-g" onclick="openPayPanel('+b.id+')">+ Log payment</button>');
       if(balance>0.01&&_stripeConnectStatus?.charges_enabled)actBtns.push('<button class="btn btn-sm" onclick="sendPaymentLink('+b.id+')" style="background:#635BFF;color:#fff;border-color:#635BFF;font-size:11px">💳 Send pay link</button>');
-      if(balance>0.01&&b.completion_date){const _c=getClientById(b.client_id);if(_c&&_c.phone){const _msg=encodeURIComponent('Hi '+_c.name.split(' ')[0]+', this is '+(S.bname||'your contractor')+'. Just a friendly reminder that a balance of '+fmt(balance)+' is outstanding for your job at '+(b.addr||_c.addr||'your property')+'. Please let us know when you can take care of this. Thank you!');actBtns.push('<a href="sms:'+_c.phone.replace(/\D/g,'')+'&body='+_msg+'" onclick="autoLogContact('+b.client_id+',\'payment_request\')" class="btn btn-sm" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid);text-decoration:none">📲 Request pay</a>');}}
+      if(balance>0.01&&b.completion_date){const _c=getClientById(b.client_id);if(_c&&_c.phone){const _msg=encodeURIComponent('Hi '+(_c.name||'').split(' ')[0]+', this is '+(S.bname||'your contractor')+'. Just a friendly reminder that a balance of '+fmt(balance)+' is outstanding for your job at '+(b.addr||_c.addr||'your property')+'. Please let us know when you can take care of this. Thank you!');actBtns.push('<a href="sms:'+_c.phone.replace(/\D/g,'')+'&body='+_msg+'" onclick="autoLogContact('+b.client_id+',\'payment_request\')" class="btn btn-sm" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid);text-decoration:none">📲 Request pay</a>');}}
       if(getBidPaid(b.id)>(b.amount||0)+0.01)actBtns.push('<button class="btn btn-sm" onclick="openPayPanel('+b.id+')" style="background:#FFF0F0;color:#A32D2D;border-color:#A32D2D">↩ Issue refund</button>');
       actBtns.push('<button class="btn btn-sm" onclick="toggleBidSummary('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128196; View bid</button>');
       actBtns.push('<button class="btn btn-sm" onclick="printInvoice('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128438; Print invoice</button>');
@@ -2139,14 +2111,14 @@ function renderCDAddresses(){
     :(c.street&&c.city?`<button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_lookupPropertyData(${c.id},{street:'${escHtml(c.street||'')}',city:'${escHtml(c.city||'')}',state:'${escHtml(c.state||'')}',zip:'${escHtml(c.zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:11px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;margin-left:6px">🏠 Look up</button>`:'');
   const chevron=hasProp?`<span style="font-size:9px;color:var(--text3);display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s;margin-right:2px">▶</span>`:'';
   const propPanel=hasProp&&isOpen?`<div style="padding:10px 0 4px;border-top:1px solid var(--border);margin-top:8px">
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:8px${c.exteriorMaterial||c.roofType||c.garage||c.isRental||c.lastSaleDate||c.lastSalePrice||c.assessorUrl?';margin-bottom:8px':''}">
-      ${c.yearBuilt?`<div><div style="font-size:15px;font-weight:800">${c.yearBuilt}</div><div style="font-size:10px;color:var(--text3)">📅 Year built</div></div>`:''}
-      ${c.sqft?`<div><div style="font-size:15px;font-weight:800">${Number(c.sqft).toLocaleString()}</div><div style="font-size:10px;color:var(--text3)">📐 Sq ft</div></div>`:''}
-      ${c.estimatedValue?`<div><div style="font-size:15px;font-weight:800">${fmt(c.estimatedValue)}</div><div style="font-size:10px;color:var(--text3)">💰 Est. value</div></div>`:''}
-      ${c.stories?`<div><div style="font-size:15px;font-weight:800">${c.stories}</div><div style="font-size:10px;color:var(--text3)">🏢 Stories</div></div>`:''}
-      ${c.bedrooms?`<div><div style="font-size:15px;font-weight:800">${c.bedrooms}</div><div style="font-size:10px;color:var(--text3)">🛏 Beds</div></div>`:''}
-      ${c.bathrooms?`<div><div style="font-size:15px;font-weight:800">${c.bathrooms}</div><div style="font-size:10px;color:var(--text3)">🛁 Baths</div></div>`:''}
-      ${c.lotSize?`<div><div style="font-size:15px;font-weight:800">${escHtml(String(c.lotSize))}</div><div style="font-size:10px;color:var(--text3)">🌳 Lot</div></div>`:''}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px${c.exteriorMaterial||c.roofType||c.garage||c.isRental||c.lastSaleDate||c.lastSalePrice||c.assessorUrl?';margin-bottom:8px':''}">
+      ${c.yearBuilt?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.yearBuilt}</div><div style="font-size:10px;color:var(--text3)">📅 Year built</div></div>`:''}
+      ${c.sqft?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Number(c.sqft).toLocaleString()}</div><div style="font-size:10px;color:var(--text3)">📐 Sq ft</div></div>`:''}
+      ${c.estimatedValue?`<div style="min-width:0"><div style="font-size:14px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fmt(c.estimatedValue)}</div><div style="font-size:10px;color:var(--text3)">💰 Est. value</div></div>`:''}
+      ${c.stories?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.stories}</div><div style="font-size:10px;color:var(--text3)">🏢 Stories</div></div>`:''}
+      ${c.bedrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.bedrooms}</div><div style="font-size:10px;color:var(--text3)">🛏 Beds</div></div>`:''}
+      ${c.bathrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.bathrooms}</div><div style="font-size:10px;color:var(--text3)">🛁 Baths</div></div>`:''}
+      ${c.lotSize?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(String(c.lotSize))}</div><div style="font-size:10px;color:var(--text3)">🌳 Lot</div></div>`:''}
     </div>
     ${c.exteriorMaterial||c.roofType||c.garage||c.isRental?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:${c.lastSaleDate||c.lastSalePrice||c.assessorUrl?'8px':'0'}">
       ${c.exteriorMaterial?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🏠 ${escHtml(String(c.exteriorMaterial))}</span>`:''}
@@ -2186,13 +2158,15 @@ function openAddAddressModal(){
   overlay.innerHTML='<div class="zmodal" style="max-width:360px"><div class="zmodal-title">Add property address</div>'+
     '<div class="f" style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;display:block;margin-bottom:4px">Label (e.g. Vacation home, Rental)</label>'+
     '<input id="_aa-label" placeholder="Vacation home" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit"></div>'+
-    '<div class="f" style="margin-bottom:14px"><label style="font-size:11px;font-weight:700;display:block;margin-bottom:4px">Address <span style="color:#A32D2D">*</span></label>'+
-    '<input id="_aa-addr" placeholder="5678 Oak Ave, Wichita KS 67206" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit"></div>'+
+    '<div class="f" style="margin-bottom:14px;position:relative"><label style="font-size:11px;font-weight:700;display:block;margin-bottom:4px">Address <span style="color:#A32D2D">*</span></label>'+
+    '<input id="_aa-addr" placeholder="5678 Oak Ave, Wichita KS 67206" autocomplete="off" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit"></div>'+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="saveAddClientAddress()" class="btn btn-g" style="flex:1">Add</button>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Cancel</button>'+
     '</div></div>';
   document.body.appendChild(overlay);
+  const _aaInp=document.getElementById('_aa-addr');
+  if(_aaInp&&typeof _addrAutoFull==='function')_addrAutoFull(_aaInp,null);
   setTimeout(()=>{const el=document.getElementById('_aa-label');if(el)el.focus();},80);
 }
 function saveAddClientAddress(){

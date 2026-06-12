@@ -246,7 +246,7 @@ function confirmStartDrive(){
   window._wakeLockRequest&&window._wakeLockRequest();
   if(c&&c.phone){
     const phone=c.phone.replace(/\D/g,'');
-    const msg='Hi '+c.name.split(' ')[0]+', this is '+(S.bname||'TradeDesk')+' — I\'m on my way! I\'ll be there shortly.';
+    const msg='Hi '+(c.name||'').split(' ')[0]+', this is '+(S.bname||'TradeDesk')+' — I\'m on my way! I\'ll be there shortly.';
     const smsLink='sms:'+phone+'&body='+encodeURIComponent(msg);
     window.location.href=smsLink;
   }
@@ -377,7 +377,10 @@ let _tripGpsCoords=null; // cached GPS fix for search bias
 let _fromBiasCache={val:null,coords:null}; // MapKit-geocoded From coords for To-field bias
 
 // ── Shared geocoding — Photon (primary) + Census (fallback) ─────────────────
-const _MAPKIT_TOKEN='eyJhbGciOiJFUzI1NiIsImtpZCI6IjU1TjkyUTVQWkQiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzc4MDc2NTgxLCJleHAiOjE4NDExNDg1ODF9.PgQ2btzlf0EH-QJg_fX8dcsw2eR1yyx-o0K7Kckvn3D_bzdEI2hUMuz3iH2c9t2DtUY2fTtP08r7aEQCsYvQ3w';
+// MapKit tokens are domain-locked with no expiry (see CLAUDE.md §10.1)
+const _MAPKIT_TOKEN=location.hostname.includes('pages.dev')
+  ?'eyJraWQiOiI3S0E5WDhVUjZMIiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzgxMzAxNTIyLCJvcmlnaW4iOiIqLnRyYWRlZGVzay1jeXAucGFnZXMuZGV2Iiwic2NvcGUiOiJtYXBraXRfanMifQ.ehafZ1SO_50PLbz_-5iwhPJXKZpPXSJrNAALFhHmetxrVKOpCYzBHR9viL6Nl8Kor0yCIFJcvKiGrtrlNSgN7Q' // *.tradedesk-cyp.pages.dev — no expiry
+  :'eyJraWQiOiJXQzYzOFM2M0c0IiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzgxMzAxNDcwLCJvcmlnaW4iOiJ0cmFkZWRlc2twcm8uYXBwIiwic2NvcGUiOiJtYXBraXRfanMifQ.0hmtYgvSGLHMZcnHnEGMsaJDg6tXEtzfp3aS-tLdGbTjocZDQLP6VlrPl9l29tV-T5SgNXQycqUJO_T1b_rFWQ'; // tradedeskpro.app — no expiry
 let _mapkitReady=false;
 function _initMapKit(){
   if(typeof mapkit==='undefined')return;
@@ -555,6 +558,55 @@ function _addrSugSelect(suggId,streetId,cityId,stateId,zipId,street,city,state,z
   document.getElementById(streetId)?.dispatchEvent(new Event('input',{bubbles:true}));
   // For existing clients, fire lookup immediately on address selection
   if(editClientId&&street&&city)_lookupPropertyData(editClientId,{street,city,state,zip});
+}
+// ── _addrAutoFull — shared single-field address autocomplete ─────────────────
+// inputEl  : the <input> element to attach autocomplete to
+// onSelect : function(fullAddr, street, city, state, zip) called on pick
+// Creates a suggestion <div> immediately after the input (parent must be
+// position:relative), debounces at 280ms, uses _geocodeAddress().
+let _addrAutoFullTimers=new WeakMap(),_addrAutoFullGen=new WeakMap();
+function _addrAutoFull(inputEl,onSelect){
+  if(!inputEl||inputEl._addrAutoFullBound)return;
+  inputEl._addrAutoFullBound=true;
+  let box=document.createElement('div');
+  box.style.cssText='display:none;position:absolute;left:0;right:0;top:100%;background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r);box-shadow:0 6px 20px rgba(0,0,0,.15);z-index:9999;max-height:240px;overflow-y:auto';
+  const parent=inputEl.parentElement;
+  if(parent&&getComputedStyle(parent).position==='static')parent.style.position='relative';
+  inputEl.insertAdjacentElement('afterend',box);
+  function hide(){box.style.display='none';}
+  inputEl.addEventListener('input',function(){
+    const val=this.value;
+    clearTimeout(_addrAutoFullTimers.get(inputEl));
+    if(!val||val.length<3){hide();return;}
+    const t=setTimeout(async()=>{
+      const gen=(_addrAutoFullGen.get(inputEl)||0)+1;
+      _addrAutoFullGen.set(inputEl,gen);
+      try{
+        const results=await _geocodeAddress(val,4);
+        if(_addrAutoFullGen.get(inputEl)!==gen)return;
+        if(!results.length){hide();return;}
+        box.innerHTML=results.map(res=>{
+          const full=[res.street,res.city,[res.state,res.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+          return '<div data-full="'+escHtml(full)+'" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
+            '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(res.line1)+'</div>'+
+            '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(res.line2)+'</div>'+
+            '</div>';
+        }).join('');
+        Array.from(box.children).forEach((el,i)=>{
+          const res=results[i];
+          const full=[res.street,res.city,[res.state,res.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+          el.addEventListener('mousedown',e=>e.preventDefault());
+          el.addEventListener('click',()=>{
+            inputEl.value=full;hide();
+            if(typeof onSelect==='function')onSelect(full,res.street,res.city,res.state,res.zip);
+          });
+        });
+        box.style.display='block';
+      }catch(e){hide();}
+    },280);
+    _addrAutoFullTimers.set(inputEl,t);
+  });
+  inputEl.addEventListener('blur',function(){setTimeout(hide,150);});
 }
 function _getRecentFromAddresses(limit=8){
   const seen=new Map();

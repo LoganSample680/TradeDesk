@@ -109,8 +109,7 @@ function _pwaHandleShortcut(){
       setTimeout(()=>typeof newEstimate==='function'&&newEstimate(),200);
     }
     else if(sc==='expense'){
-      goPg('pg-finance');
-      setTimeout(()=>typeof openExpenseFlow==='function'&&openExpenseFlow(),200);
+      if(typeof openExpenseFlow==='function')openExpenseFlow();
     }
     else if(sc==='clockin'){
       goPg('pg-jobs');
@@ -146,25 +145,22 @@ async function _pwaHandleSharedPhoto(){
     const file=formData.get('photo');
     await cache.delete(keys[0]);
     if(!file||!(file instanceof File))return;
-    goPg('pg-finance');
+    openExpenseFlow();
     setTimeout(()=>{
-      openExpenseFlow();
-      setTimeout(()=>{
-        // Pre-fill the photo in the expense modal
-        const blob=new Blob([file],{type:file.type||'image/jpeg'});
-        _showReceiptScanner(blob,async b=>{
-          let b64;
-          try{b64=await compressAndEncodeImage(b,900,0.75);}
-          catch(_ce){showToast('Could not read that image','⚠️');return;}
-          _expState.imageData={b64,type:'image/jpeg'};_expState.hasReceipt=true;
-          const preview=document.getElementById('exp-preview-img');
-          if(preview){
-            preview.style.display='block';
-            preview.innerHTML='<img src="data:image/jpeg;base64,'+b64+'" style="max-height:80px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green-mid);margin-top:4px;font-weight:700">📎 Photo attached</div>';
-          }
-        });
-      },300);
-    },400);
+      // Pre-fill the photo in the expense modal
+      const blob=new Blob([file],{type:file.type||'image/jpeg'});
+      _showReceiptScanner(blob,async b=>{
+        let b64;
+        try{b64=await compressAndEncodeImage(b,900,0.75);}
+        catch(_ce){showToast('Could not read that image','⚠️');return;}
+        _expState.imageData={b64,type:'image/jpeg'};_expState.hasReceipt=true;
+        const preview=document.getElementById('exp-preview-img');
+        if(preview){
+          preview.style.display='block';
+          preview.innerHTML='<img src="data:image/jpeg;base64,'+b64+'" style="max-height:80px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green-mid);margin-top:4px;font-weight:700">📎 Photo attached</div>';
+        }
+      });
+    },300);
   }catch(e){}
 }
 

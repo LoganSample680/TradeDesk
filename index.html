@@ -1397,7 +1397,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="fg fg2">
         <div class="f"><label>Client name <span style="color:var(--c-red)">*</span></label><input id="e-cname" placeholder="John &amp; Sarah Smith" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
         <div class="f"><label>Phone <span style="color:var(--c-red)">*</span></label><input id="e-cphone" type="tel" maxlength="12" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="fmtPhone(this);markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
-        <div class="f" style="grid-column:1/-1"><label>Property address <span style="color:var(--c-red)">*</span></label><input id="e-caddr" placeholder="1234 Maple St, Wichita KS 67201" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft();_paintOnAddrInput();_lookupProperty(this.value,'ecaddr')" onblur="typeof checkAddrServiceState==='function'&&checkAddrServiceState(this.value)"></div>
+        <div class="f" style="grid-column:1/-1;position:relative"><label>Property address <span style="color:var(--c-red)">*</span></label><input id="e-caddr" placeholder="1234 Maple St, Wichita KS 67201" autocomplete="off" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft();_paintOnAddrInput();_lookupProperty(this.value,'ecaddr')" onblur="typeof checkAddrServiceState==='function'&&checkAddrServiceState(this.value)"></div>
         <div id="prop-card-ecaddr" style="display:none;margin-top:8px;padding:10px 12px;background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r);font-size:12px;grid-column:1/-1"></div>
         <div style="grid-column:1/-1"><button type="button" class="btn btn-sm" style="width:100%;background:var(--bg2);border-color:var(--border2);color:var(--text2);font-size:12px" onclick="openLogTripModal({purpose:'Estimate',toAddress:document.getElementById('e-caddr').value,clientName:document.getElementById('e-cname').value})">🚗 Log drive to this estimate</button></div>
         <div class="f"><label>Property type</label><select id="e-cprop" onchange="_onEstPropTypeChange(this)"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>
@@ -2078,7 +2078,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <span style="display:inline-flex;align-items:center;gap:6px;background:#f0fdf4;color:#166534;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px">✏️ Build Your Own Proposal</span>
       </div>
       <div class="f" style="margin-bottom:8px"><label>Client name</label><input type="text" id="gei-client" placeholder="Client name"></div>
-      <div class="f" style="margin-bottom:8px"><label>Job address</label><input type="text" id="gei-addr" placeholder="123 Main St, Wichita KS 67201" oninput="_geiOnAddrInput();_lookupProperty(this.value,'geiaddr')"></div>
+      <div class="f" style="margin-bottom:8px;position:relative"><label>Job address</label><input type="text" id="gei-addr" placeholder="123 Main St, Wichita KS 67201" autocomplete="off" oninput="_geiOnAddrInput();_lookupProperty(this.value,'geiaddr')"></div>
       <div id="prop-card-geiaddr" style="display:none;margin-top:6px;padding:10px 12px;background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r);font-size:12px"></div>
       <div class="f" style="margin-bottom:8px"><label>Name your proposal</label><input type="text" id="gei-desc" placeholder="e.g. Water heater replacement"></div>
       <div class="f" style="margin-bottom:8px"><label>Date</label><input type="date" id="gei-date"></div>
@@ -2300,7 +2300,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 
     <div class="fg fg2">
       <div class="f"><label>Name</label><input id="s-name" placeholder="Smith residence"></div>
-      <div class="f"><label>Address</label><input id="s-addr"></div>
+      <div class="f" style="position:relative"><label>Address</label><input id="s-addr" autocomplete="off"></div>
       <div class="f" id="s-value-row" style="display:none"><label>Job value ($)</label><input id="s-value" type="number" placeholder="0"></div>
       <div class="f"><label>Time <span style="font-size:10px;color:var(--text3)">(estimate visits)</span></label>
         <input id="s-time" type="time" value="09:00" onchange="validateEstimateTime()">
@@ -2550,6 +2550,10 @@ body.dark .cal-cell.other{background:var(--cream)}
         <label>Last year's total tax bill ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">From your prior year return — unlocks safe harbor</span></label>
         <input type="number" id="tx-prior-yr" value="0" oninput="calcTax()" placeholder="0 — enter from last year's return">
       </div>
+      <div class="f">
+        <label>Last year's AGI ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">Used for 110% safe harbor threshold — leave 0 if unknown</span></label>
+        <input type="number" id="tx-prior-yr-agi" value="0" oninput="calcTax()" placeholder="0 — from last year's return line 11">
+      </div>
     </div>
   </div>
 
@@ -2781,7 +2785,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="set-form-row">
           <div><div class="set-form-lbl">Address</div><div class="set-form-hint">Required for invoicing.</div></div>
           <div class="set-form-ctrl">
-            <input id="set-baddr" placeholder="1242 N Saint Francis">
+            <div style="position:relative"><input id="set-baddr" placeholder="1242 N Saint Francis" autocomplete="off" style="width:100%;box-sizing:border-box"></div>
             <div style="display:grid;grid-template-columns:1fr 60px 80px;gap:6px">
               <input id="set-bcity" placeholder="Wichita">
               <input id="set-bstate-display" placeholder="KS" maxlength="2" style="text-transform:uppercase">
@@ -3322,9 +3326,9 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="tbar-sub">New prospects waiting for an estimate. Cold leads turn warm again fast — chase the ones with a name beside them.</div>
     </div>
     <div class="tbar-r">
-      <button class="btn btn-sm" onclick="goPg('pg-intake')">📋 Intake form</button>
+      <button class="btn btn-sm" onclick="openIntakeFormModal()">📋 Intake form</button>
       <button class="btn btn-sm" onclick="openImportContacts()">Import</button>
-      <button class="btn btn-p btn-sm" onclick="openNewClient()">+ New lead</button>
+      <button class="btn btn-p btn-sm" onclick="goPg('pg-clients');setTimeout(()=>openNewClient(),100)">+ New lead</button>
     </div>
   </div>
   <div class="fbar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:12px">
@@ -4007,5 +4011,46 @@ if(supaEnabled()){
   </div>
 </div>
 
+<script>
+// ── Wire up _addrAutoFull on static address fields ────────────────────────────
+// _addrAutoFull(inputEl, onSelect) creates its own suggestion box dynamically.
+// tryWire() is called on load and re-called whenever a page that contains one
+// of these fields becomes active, so the input elements are guaranteed to exist.
+(function(){
+  function tryWire(){
+    if(typeof _addrAutoFull!=='function')return;
+    // 1. e-caddr — Paint estimate property address
+    const ecaddr=document.getElementById('e-caddr');
+    if(ecaddr&&!ecaddr._addrAutoFullBound)
+      _addrAutoFull(ecaddr,function(full,street,city,state,zip){
+        if(typeof _paintOnAddrInput==='function')_paintOnAddrInput();
+        if(typeof _lookupProperty==='function')_lookupProperty(full,'ecaddr');
+      });
+    // 2. gei-addr — Generic estimate job address
+    const geiaddr=document.getElementById('gei-addr');
+    if(geiaddr&&!geiaddr._addrAutoFullBound)
+      _addrAutoFull(geiaddr,function(full,street,city,state,zip){
+        if(typeof _geiOnAddrInput==='function')_geiOnAddrInput();
+        if(typeof _lookupProperty==='function')_lookupProperty(full,'geiaddr');
+      });
+    // 3. s-addr — Schedule page job address (no extra callbacks needed)
+    const saddr=document.getElementById('s-addr');
+    if(saddr&&!saddr._addrAutoFullBound)_addrAutoFull(saddr,null);
+    // 4. set-baddr — Settings business address (split: street/city/state/zip)
+    const setbaddr=document.getElementById('set-baddr');
+    if(setbaddr&&!setbaddr._addrAutoFullBound)
+      _addrAutoFull(setbaddr,function(full,street,city,state,zip){
+        setbaddr.value=street||full;
+        const cityEl=document.getElementById('set-bcity');if(cityEl)cityEl.value=city||'';
+        const zipEl=document.getElementById('set-bzip');if(zipEl)zipEl.value=zip||'';
+        const stateEl=document.getElementById('set-bstate-display');if(stateEl)stateEl.value=state||'';
+        // No auto-save — settings commit via the explicit Save button like every other field
+      });
+  }
+  // All four inputs are static HTML — one wire-up after scripts load is enough
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',tryWire,{once:true});
+  else tryWire();
+})();
+</script>
 </body>
 </html>
