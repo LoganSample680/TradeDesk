@@ -3863,7 +3863,18 @@ if(supaEnabled()){
   })();
   // Supabase script is async — may not be ready when inline JS finishes
   if(window.supabase){supaInit();}
-  else{document.getElementById('supabase-sdk').addEventListener('load',supaInit);}
+  else{
+    const _sdk=document.getElementById('supabase-sdk');
+    _sdk.addEventListener('load',supaInit);
+    // SDK failed to load (offline boot, CDN unreachable) — don't strand the user
+    // on the boot overlay forever; render local data like the offline-mode path.
+    const _sdkFallback=()=>{if(typeof _removeBootOverlay==='function')_removeBootOverlay();renderDash();buildScopeGrid();};
+    _sdk.addEventListener('error',_sdkFallback);
+    // The async script may have ALREADY errored before this listener attached —
+    // watchdog: if the SDK still isn't present after 6s and nothing signed in,
+    // fall back to local data instead of an infinite boot overlay.
+    setTimeout(()=>{if(!window.supabase&&typeof _supaUser!=='undefined'&&!_supaUser)_sdkFallback();},6000);
+  }
   // Cmd+K / Ctrl+K global search
   document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();openSearch();}});
 } else {

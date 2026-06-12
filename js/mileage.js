@@ -138,7 +138,7 @@ function setTripPurpose(purpose, btn){
         jobPicker.innerHTML='<label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:6px">Which job? <span style="font-weight:400;opacity:.7">(optional)</span></label>'+
           '<select id="cd-supply-job-sel" style="width:100%;font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)" onchange="gps.supplyJobId=this.value">'+
           '<option value="">— Select job —</option>'+
-          activeJobs.map(b=>{const c=getClientById(b.client_id);return'<option value="'+b.id+'">'+(c?c.name:'Client')+' — '+fmt(b.amount)+'</option>';}).join('')+
+          activeJobs.map(b=>{const c=getClientById(b.client_id);return'<option value="'+b.id+'">'+escHtml(c?c.name:'Client')+' — '+fmt(b.amount)+'</option>';}).join('')+
           '</select>';
       } else {
         jobPicker.style.display='none';
@@ -177,7 +177,7 @@ function renderDriveVehicleChips(){
       vehs.map(v=>{
         const label=getVehicleLabel(v);
         const full=getVehicleFullLabel(v);
-        return '<option value="'+v.name+'"'+(gps.vehicle===v.name?' selected':'')+'>'+full+'</option>';
+        return '<option value="'+escHtml(v.name||'')+'"'+(gps.vehicle===v.name?' selected':'')+'>'+escHtml(full||'')+'</option>';
       }).join('');
     // Auto-select if only one vehicle
     if(vehs.length===1&&!gps.vehicle){
@@ -780,9 +780,9 @@ function openLogTripModal(opts){
   const vehs=getVehicles();
   const selVeh=opts.vehicle||(vehs.length===1?vehs[0].name:'');
   const vehOpts=vehs.length
-    ?vehs.map(v=>'<option value="'+v.name+'"'+(selVeh===v.name?' selected':'')+'>'+getVehicleFullLabel(v)+'</option>').join('')
+    ?vehs.map(v=>'<option value="'+escHtml(v.name||'')+'"'+(selVeh===v.name?' selected':'')+'>'+escHtml(getVehicleFullLabel(v)||'')+'</option>').join('')
     :'<option value="">— Add vehicle in Settings —</option>';
-  const clientOpts='<option value="">— None —</option>'+clients.map(c=>'<option value="'+c.id+'">'+c.name+'</option>').join('');
+  const clientOpts='<option value="">— None —</option>'+clients.map(c=>'<option value="'+c.id+'">'+escHtml(c.name||'')+'</option>').join('');
   const prefill=opts.purpose||'';
   const purposeOpts='<option value="" disabled'+(prefill?'':' selected')+'>— Select type —</option>'+
     MILE_PURPOSES.map(p=>'<option value="'+p+'"'+(p===prefill?' selected':'')+'>'+p+'</option>').join('');
@@ -825,14 +825,14 @@ function openLogTripModal(opts){
     '<input type="hidden" id="lm-to-name" value="">'+
     '<div class="f" style="margin-bottom:12px"><label>Starting from</label>'+
       '<div style="display:flex;gap:8px">'+
-        '<input id="lm-from" placeholder="Your address or last job" style="flex:1" value="'+(opts.fromAddress||'')+'" onfocus="_showRecentFromAddresses()" oninput="tripPlaceSearch(\'lm-from\',\'lm-from-sugg\',this.value)" autocomplete="off">'+
+        '<input id="lm-from" placeholder="Your address or last job" style="flex:1" value="'+escHtml(opts.fromAddress||'')+'" onfocus="_showRecentFromAddresses()" oninput="tripPlaceSearch(\'lm-from\',\'lm-from-sugg\',this.value)" autocomplete="off">'+
         '<button type="button" onclick="grabMyLocation(true)" class="btn btn-sm" id="lm-gps-btn" style="white-space:nowrap;flex-shrink:0;min-height:44px">📍 GPS</button>'+
       '</div>'+
       '<div id="lm-from-sugg" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);margin-top:2px;overflow:hidden;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>'+
       '<div id="lm-from-chip" style="display:none;margin-top:5px;font-size:11px;color:var(--green-mid);background:var(--green-lt);border:1px solid var(--green-mid);border-radius:20px;padding:3px 10px;align-items:center;gap:4px"><span>📍</span><span id="lm-from-chip-txt"></span><span style="color:var(--green-mid);font-weight:700">✓</span></div>'+
       '</div>'+
     '<div class="f" style="margin-bottom:4px"><label>Driving to — client name or address</label>'+
-      '<input id="lm-to" placeholder="Type client name or any address" value="'+(opts.toAddress||'')+'" onfocus="_showRecentDestinations()" oninput="_tripDestSearch(this.value)" autocomplete="off">'+
+      '<input id="lm-to" placeholder="Type client name or any address" value="'+escHtml(opts.toAddress||'')+'" onfocus="_showRecentDestinations()" oninput="_tripDestSearch(this.value)" autocomplete="off">'+
       '<div id="lm-to-sugg" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);margin-top:2px;overflow:hidden;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>'+
       '<div id="lm-to-chip" style="display:none;margin-top:5px;font-size:11px;color:var(--green-mid);background:var(--green-lt);border:1px solid var(--green-mid);border-radius:20px;padding:3px 10px;align-items:center;gap:4px"><span>📍</span><span id="lm-to-chip-txt"></span><span style="color:var(--green-mid);font-weight:700">✓</span></div>'+
       '</div>'+
@@ -854,7 +854,7 @@ function openLogTripModal(opts){
         '</div>'+
       '</div>':'')+
     '<div class="f" style="margin-bottom:14px"><label>Notes <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>'+
-      '<input id="lm-notes" placeholder="e.g. Supply stop at Sherwin-Williams" value="'+(opts.notes||'')+'"></div>'+
+      '<input id="lm-notes" placeholder="e.g. Supply stop at Sherwin-Williams" value="'+escHtml(opts.notes||'')+'"></div>'+
     (opts.editId?'<button onclick="zConfirm(\'Delete this trip?\',function(){delMileage('+opts.editId+');closeTopModal();},{yes:\'Delete\',danger:true})" class="btn" style="width:100%;margin-bottom:8px;color:#dc2626;border-color:#fca5a5;background:#fff5f5;font-weight:700">🗑 Delete trip</button>':'')+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Cancel</button>'+

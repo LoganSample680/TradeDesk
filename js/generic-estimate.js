@@ -68,7 +68,7 @@ function renderHittersList(){
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'+
         '<div style="flex:1;min-width:0">'+
           '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap">'+
-            '<div style="font-size:14px;font-weight:700">'+c.name+'</div>'+
+            '<div style="font-size:14px;font-weight:700">'+escHtml(c.name)+'</div>'+
             '<span style="font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px;background:'+tierColor+'22;color:'+tierColor+'">'+tier+'-tier</span>'+
             (isRealtor?'<span style="font-size:10px;font-weight:700;color:var(--amber)">🏡 Realtor</span>':'')+ 
             (isPM?'<span style="font-size:10px;font-weight:700;color:var(--blue)">🏢 PM</span>':'')+
@@ -86,7 +86,7 @@ function renderHittersList(){
       '</div>'+
       (hasEmail?
         '<div style="margin-top:8px;display:flex;gap:6px">'+
-          '<a href="mailto:'+c.email+'" onclick="event.stopPropagation()" class="btn btn-sm" style="font-size:11px;text-decoration:none">📧 Email</a>'+
+          '<a href="mailto:'+escHtml(c.email)+'" onclick="event.stopPropagation()" class="btn btn-sm" style="font-size:11px;text-decoration:none">📧 Email</a>'+
           (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'" onclick="event.stopPropagation()" class="btn btn-sm" style="font-size:11px;text-decoration:none">💬 Text</a>':'')+ 
         '</div>':
         (c.phone?
@@ -547,8 +547,8 @@ function _byoRenderSections(){
     return '<div class="card card-pad-0" style="margin-bottom:12px">'+
       '<div class="card-hd"><div class="card-hd-title">'+escHtml(sec)+'</div>'+
       '<div style="display:flex;gap:6px">'+
-        (isCustom?'<button class="btn btn-sm" onclick="_byoDeleteSection(\''+escHtml(sec)+'\')" style="color:#A32D2D;border-color:#A32D2D" title="Remove section">✕</button>':'')+
-        '<button class="btn btn-sm" onclick="_byoAddItem(\''+escHtml(sec)+'\')">+ Add item</button>'+
+        (isCustom?'<button class="btn btn-sm" data-sec="'+escHtml(sec)+'" onclick="_byoDeleteSection(this.dataset.sec)" style="color:#A32D2D;border-color:#A32D2D" title="Remove section">✕</button>':'')+
+        '<button class="btn btn-sm" data-sec="'+escHtml(sec)+'" onclick="_byoAddItem(this.dataset.sec)">+ Add item</button>'+
       '</div></div>'+
       '<div>'+rowHtml+'</div>'+
     '</div>';
@@ -635,7 +635,7 @@ function _byoAddItem(sec){
     '<div style="font-size:11px;color:var(--text-3);margin-bottom:14px">Tab or Enter from Notes to save &amp; add another</div>'+
     '<div style="display:flex;gap:10px">'+
       '<button onclick="document.getElementById(\'_byo-add-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
-      '<button onclick="_byaConfirm(\''+escHtml(sec)+'\')" class="btn btn-p" style="flex:2">Add item</button>'+
+      '<button data-sec="'+escHtml(sec)+'" onclick="_byaConfirm(this.dataset.sec)" class="btn btn-p" style="flex:2">Add item</button>'+
     '</div></div>';
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -2493,7 +2493,7 @@ function _geiSignInPerson(){
       '</div>'+
       '<div style="padding:14px 18px 28px">'+
         '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-bottom:16px">'+
-          '<div style="font-size:13px;font-weight:700;margin-bottom:8px">'+cname+'</div>'+
+          '<div style="font-size:13px;font-weight:700;margin-bottom:8px">'+escHtml(cname)+'</div>'+
           '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">Contract total</span><strong style="color:var(--blue)">'+fmt(total)+'</strong></div>'+
           (depAmt>0
             ?'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">'+depLabel+'</span><strong style="color:var(--green)">'+fmt(depAmt)+'</strong></div>'+
@@ -2602,7 +2602,7 @@ async function _geiConfirmInPerson(){
         '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#15803d;margin-bottom:10px">Confirmation</div>'+
         '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #dcfce7"><span style="color:#374151">Contract total</span><strong style="color:#15803d">'+fmt(total)+'</strong></div>'+
         (depAmt>0?'<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #dcfce7"><span style="color:#374151">Deposit due</span><strong>'+fmt(depAmt)+'</strong></div>':'')+
-        '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #dcfce7"><span style="color:#374151">Signed by</span><strong>'+pname+'</strong></div>'+
+        '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #dcfce7"><span style="color:#374151">Signed by</span><strong>'+escHtml(pname)+'</strong></div>'+
         '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0"><span style="color:#374151">Date &amp; time</span><span>'+dtFmt+'</span></div>'+
       '</div>'+
       '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null;goPg(\'pg-dash\');setTimeout(showScheduleAlerts,400)" style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit">🏠 Back to home</button>'+

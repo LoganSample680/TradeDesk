@@ -164,10 +164,10 @@ async function sendPaymentLink(bidId){
       const box=document.createElement('div');box.className='zmodal';
       box.innerHTML=
         '<div style="font-size:17px;font-weight:800;margin-bottom:4px">💳 Payment link ready</div>'+
-        '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+c.name+' · '+fmt(balance)+' due</div>'+
+        '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+escHtml(c.name||'')+' · '+fmt(balance)+' due</div>'+
         '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:12px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+url+'</div>'+
         '<button onclick="navigator.clipboard.writeText(\''+url+'\').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">📋 Copy link</button>'+
-        (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+c.name.split(' ')[0]+', here\\\'s your payment link for '+fmt(balance)+' owed to '+(S.bname||'us')+': '+url+' — Thank you!\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">📱 Open in Messages</button>':'')+
+        (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+escHtml(c.name.split(' ')[0])+', here\\\'s your payment link for '+fmt(balance)+' owed to '+(S.bname||'us')+': '+url+' — Thank you!\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">📱 Open in Messages</button>':'')+
         '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
       ov.appendChild(box);document.body.appendChild(ov);
       ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -192,10 +192,17 @@ async function loadAccountData(){
       _config=cfg;
       const{data:vehs}=await _supa.from('vehicles').select('*').eq('account_id',u.account_id);
       _vehicles=vehs||[];
-      if(_account?.business_name)S.bname=_account.business_name;
-      if(_account?.phone)S.bphone=_account.phone;
-      if(_account?.license_info)S.blic=_account.license_info;
-      if(_account?.state)S.state=_account.state;
+      // Seed from accounts only when S is empty — S (zj_data.settings + localStorage)
+      // is the source of truth once the user has saved Settings. Overwriting here
+      // reverted every Settings save back to the onboarding values on reload.
+      const _seeded=[];
+      if(_account?.business_name&&!S.bname){S.bname=_account.business_name;_seeded.push('bname');}
+      if(_account?.phone&&!S.bphone){S.bphone=_account.phone;_seeded.push('bphone');}
+      if(_account?.license_info&&!S.blic){S.blic=_account.license_info;_seeded.push('blic');}
+      if(_account?.state&&!S.state){S.state=_account.state;_seeded.push('state');}
+      try{console.log('%c[td-settings] BOOT 2/4 — accounts table row','color:#2D5DA8;font-weight:bold',
+        {business_name:_account?.business_name,phone:_account?.phone,state:_account?.state,
+         seededIntoS:_seeded.length?_seeded:'(nothing — S already has values, accounts row IGNORED)'});}catch(_e){}
       _activeTrade=_config?.business_type||'painting';
       _renderNavTradeSwitcher();
       applyPermissions();
@@ -241,7 +248,7 @@ async function loadAccountData(){
         _user=_ac.user||{id:_supaUser.id,email:_supaUser.email,name:getOwnerName()||'',role:'owner',account_id:null};
         if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;}
         _activeTrade=_ac.activeTrade||'painting';
-        if(_ac.account){_account=_ac.account;if(_account.business_name)S.bname=_account.business_name;if(_account.phone)S.bphone=_account.phone;}
+        if(_ac.account){_account=_ac.account;if(_account.business_name&&!S.bname)S.bname=_account.business_name;if(_account.phone&&!S.bphone)S.bphone=_account.phone;}
         if(_ac.config)_config=_ac.config;
         _renderNavTradeSwitcher();applyPermissions();
         return true;
@@ -351,7 +358,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = location.origin + '/api';
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.11.26.24';
+const APP_VERSION='06.12.26.35';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -557,6 +564,11 @@ async function supaInit(){
     _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{
       auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storage:window.localStorage}
     });
+    // Realtime connects straight to Supabase — WebSocket proxying through
+    // Cloudflare Pages is unreliable, and a dead socket silently kills
+    // cross-device live sync. REST keeps using the /api proxy for DNS
+    // resilience; if the direct socket fails, the 30s zj_data poll covers it.
+    try{_supa.realtime.endPoint='wss://mwtsmctajhrrybblgorf.supabase.co/realtime/v1/websocket';}catch(_e){}
     const{data:{session}}=await _supa.auth.getSession();
     if(session){
       _supaUser=session.user;
@@ -588,7 +600,7 @@ async function supaInit(){
           if(_cd.contracts?.length)contracts=_cd.contracts;
           if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
-          if(_cd.settings){_mergeIncomingSettings(_cd.settings);applySettings();loadSettingsForm();}
+          if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (no-session boot)');applySettings();_refillSettingsFormUnlessEditing();}
           _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
           _loadedFromCacheOnly=true;
           _mergeOnSignIn=true;
@@ -618,6 +630,9 @@ async function supaInit(){
           _supaCloudLoaded=false;_mergeOnSignIn=false;_realtimeSubscribed=false;_loadInProgress=false;
           clearTimeout(_syncTimer);_syncTimer=null;
           _devSupportMode=false;_devSupportName='';_devSavedState=null;
+          // Previous user's settings timestamp must never beat this user's cloud copy
+          S.settingsTs=0;
+          if(typeof _setLog==='function')_setLog('ACCOUNT SWITCH — different user signed in, settingsTs zeroed so their cloud copy wins');
         }
         _supaUser=session.user;
         _saveSessionBackup(session);
@@ -685,7 +700,12 @@ async function supaInit(){
           clearTimeout(_syncTimer);_syncTimer=null; // prevent a live timer from flushing emptied arrays
           _supaCloudLoaded=false;_realtimeSubscribed=false;_loadInProgress=false;clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
-          S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],weatherLat:null,weatherLon:null,locationDenied:false};
+          // settingsTs:0 — zp3_S is shared across accounts on this device. Without
+          // zeroing the timestamp, these blanked settings beat the next account's
+          // cloud copy in _mergeIncomingSettings and then get pushed up, wiping
+          // their saved business info.
+          S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],weatherLat:null,weatherLon:null,locationDenied:false,settingsTs:0};
+          if(typeof _setLog==='function')_setLog('SIGN-OUT — business fields blanked, settingsTs zeroed');
           saveAll();
           _deliberateSignOut=false;
           supaSetStatus('local');
@@ -724,7 +744,7 @@ async function supaInit(){
         if(_cd.contracts?.length)contracts=_cd.contracts;
         if(_cd.photos?.length)photos=_cd.photos;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
-        if(_cd.settings){_mergeIncomingSettings(_cd.settings);applySettings();loadSettingsForm();}
+        if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (offline boot, session present)');applySettings();_refillSettingsFormUnlessEditing();}
         _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
         _supaCloudLoaded=true;
         _loadedFromCacheOnly=true;
@@ -770,7 +790,13 @@ function registerDevice(updateLocation){
   const idx=S.devices.findIndex(d=>d.id===id);
   if(idx>-1){S.devices[idx].lastSeen=now;S.devices[idx].label=label;}
   else S.devices.push({id,label,lastSeen:now,addedAt:now});
-  saveSettings();
+  // saveAll, NOT saveSettings — this runs at every boot, before the settings
+  // form is ever filled. saveSettings() here harvested the EMPTY form and wiped
+  // every saved setting on each app open (then pushed the wiped copy to cloud
+  // with a fresh settingsTs, beating the user's real saves on every device).
+  // No settingsTs bump either: at boot the local copy may be stale — claiming
+  // "newest" here would make stale data beat the cloud copy in the merge.
+  saveAll();
   // Capture GPS if explicitly requested or first time registering
   if(updateLocation||idx===-1){
     geoIfGranted(pos=>{
@@ -779,7 +805,7 @@ function registerDevice(updateLocation){
         S.devices[devIdx].lat=pos.coords.latitude;
         S.devices[devIdx].lon=pos.coords.longitude;
         S.devices[devIdx].locAt=now;
-        saveSettings();
+        saveAll(); // direct S mutation — never harvest the form outside the Settings UI
         const tpl=document.getElementById('team-page-devices');
         const tsl=document.getElementById('device-list');
         if(tpl||tsl)renderTeam();
@@ -800,14 +826,14 @@ function renderTeam(){
       return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px">'+
           '<div style="display:flex;align-items:center;gap:8px">'+
-            '<div style="width:34px;height:34px;border-radius:50%;background:'+rc+';display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;flex-shrink:0">'+e.name.charAt(0).toUpperCase()+'</div>'+
-            '<div><div style="font-size:13px;font-weight:700">'+e.name+'</div>'+
+            '<div style="width:34px;height:34px;border-radius:50%;background:'+rc+';display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;flex-shrink:0">'+escHtml(e.name.charAt(0).toUpperCase())+'</div>'+
+            '<div><div style="font-size:13px;font-weight:700">'+escHtml(e.name||'')+'</div>'+
             '<span style="font-size:10px;font-weight:700;background:'+rb+';color:'+rc+';padding:1px 7px;border-radius:8px;text-transform:capitalize">'+e.role+'</span></div>'+
           '</div>'+
           (e.role!=='owner'?'<button onclick="openEditEmployeeModal('+i+')" style="font-size:11px;padding:4px 10px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">Edit</button>':'')+
         '</div>'+
-        (e.phone?'<div style="font-size:11px;color:var(--text3);margin-top:4px">📞 '+e.phone+'</div>':'')+
-        (e.email?'<div style="font-size:11px;color:var(--text3);margin-top:3px">📧 '+e.email+' <span style="font-size:9px;font-weight:700;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:6px">Invite sent</span></div>':'')+
+        (e.phone?'<div style="font-size:11px;color:var(--text3);margin-top:4px">📞 '+escHtml(e.phone)+'</div>':'')+
+        (e.email?'<div style="font-size:11px;color:var(--text3);margin-top:3px">📧 '+escHtml(e.email)+' <span style="font-size:9px;font-weight:700;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:6px">Invite sent</span></div>':'')+
         '<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.5">'+perms+'</div>'+
       '</div>';
     }).join('');
@@ -876,18 +902,18 @@ function _timeAgo(iso){
 }
 function removeDevice(id){
   S.devices=(S.devices||[]).filter(d=>d.id!==id);
-  saveSettings();renderTeam();
+  _settingsChanged();renderTeam();
 }
 function _employeeModalHTML(emp,idx){
   const isNew=idx==null;
   const e=emp||{name:'',role:'painter',phone:'',email:'',permissions:{canEstimate:true,canSchedule:true,canSeeFinancials:false,canEditClients:true,canManageTeam:false}};
-  return '<div style="font-size:17px;font-weight:800;margin-bottom:14px">'+(isNew?'Add team member':'Edit '+e.name)+'</div>'+
+  return '<div style="font-size:17px;font-weight:800;margin-bottom:14px">'+(isNew?'Add team member':'Edit '+escHtml(e.name||''))+'</div>'+
     '<div class="fg fg2" style="margin-bottom:12px">'+
-      '<div class="f"><label>Full name</label><input id="emp-name" value="'+(e.name||'')+'" placeholder="John Smith" style="font-size:15px;padding:10px"></div>'+
-      '<div class="f"><label>Phone</label><input id="emp-phone" type="tel" value="'+(e.phone||'')+'" placeholder="XXX-XXX-XXXX" maxlength="12" oninput="fmtPhone(this)" style="font-size:15px;padding:10px"></div>'+
+      '<div class="f"><label>Full name</label><input id="emp-name" value="'+escHtml(e.name||'')+'" placeholder="John Smith" style="font-size:15px;padding:10px"></div>'+
+      '<div class="f"><label>Phone</label><input id="emp-phone" type="tel" value="'+escHtml(e.phone||'')+'" placeholder="XXX-XXX-XXXX" maxlength="12" oninput="fmtPhone(this)" style="font-size:15px;padding:10px"></div>'+
     '</div>'+
     '<div class="f" style="margin-bottom:12px"><label>Email (for app access)</label>'+
-      '<input id="emp-email" type="email" value="'+(e.email||'')+'" placeholder="employee@email.com" style="font-size:14px;padding:10px">'+
+      '<input id="emp-email" type="email" value="'+escHtml(e.email||'')+'" placeholder="employee@email.com" style="font-size:14px;padding:10px">'+
       '<div style="font-size:10px;color:var(--text3);margin-top:4px">Enter their email then tap "Send Invite" — they\'ll get a sign-in link and see your jobs, clients, and estimates.</div>'+
     '</div>'+
     '<div class="f" style="margin-bottom:12px"><label>Role</label>'+
@@ -945,7 +971,7 @@ async function _saveEmployee(idx){
   const emp={id:_empId,name,email,role:_empRole,phone:_empPhone,permissions:perms};
   if(!S.employees)S.employees=[];
   if(!isNew)S.employees[idx]=emp;else S.employees.push(emp);
-  saveSettings();document.getElementById('emp-modal-overlay')?.remove();renderTeam();
+  _settingsChanged();document.getElementById('emp-modal-overlay')?.remove();renderTeam();
   // Sync to Supabase team_members and send invite if email provided
   if(email&&_supa&&_supaUser){
     const tmRow={contractor_user_id:_supaUser.id,email,name,role:emp.role,active:false,invited_at:new Date().toISOString()};
@@ -962,7 +988,7 @@ async function _saveEmployee(idx){
 function removeEmployee(idx){
   if(!S.employees)return;
   S.employees.splice(idx,1);
-  saveSettings();document.getElementById('emp-modal-overlay')?.remove();renderTeam();
+  _settingsChanged();document.getElementById('emp-modal-overlay')?.remove();renderTeam();
 }
 
 // ── Subcontractor management ─────────────────────────────────────────────────
@@ -1014,13 +1040,13 @@ function _saveSub(idx){
   const sub={id:_subId,name,trade:_subTrade,phone:_subPhone,email:_subEmail,rate:_subRate};
   if(!S.subcontractors)S.subcontractors=[];
   if(idx==null)S.subcontractors.push(sub);else S.subcontractors[idx]=sub;
-  saveSettings();document.getElementById('_sub-modal-ov')?.remove();renderTeam();
+  _settingsChanged();document.getElementById('_sub-modal-ov')?.remove();renderTeam();
   showToast(idx==null?'Subcontractor added':'Saved','✓');
 }
 function _removeSub(idx){
   if(!S.subcontractors)return;
   S.subcontractors.splice(idx,1);
-  saveSettings();document.getElementById('_sub-modal-ov')?.remove();renderTeam();
+  _settingsChanged();document.getElementById('_sub-modal-ov')?.remove();renderTeam();
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -1181,7 +1207,7 @@ function _enterOfflineMode(){
       if(_cd.contracts?.length)contracts=_cd.contracts;
       if(_cd.photos?.length)photos=_cd.photos;
       if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
-      if(_cd.settings){_mergeIncomingSettings(_cd.settings);applySettings();loadSettingsForm();}
+      if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cache restore)');applySettings();_refillSettingsFormUnlessEditing();}
     }catch(_ce){}
   }
   _mergeOfflinePendingToMemory(); // show any records created since the last cloud sync
@@ -1307,16 +1333,24 @@ async function _deleteReceiptFromStorage(receiptKey){
 // user hit Save then refreshed before the cloud flush finished (settings are
 // written LAST in supaSaveToCloud, after all table upserts). Local wins and we
 // flag a pending sync so the newer local settings get pushed up.
-function _mergeIncomingSettings(ss){
+function _mergeIncomingSettings(ss,src){
   if(!ss)return false;
+  if(typeof _setLog==='function')_setLog('MERGE — incoming copy from '+(src||'unknown source'),ss);
   if((S.settingsTs||0)>(ss.settingsTs||0)){
+    if(typeof _setLog==='function')_setLog('MERGE RESULT — LOCAL KEPT (local ts '+(S.settingsTs||0)+' > incoming ts '+(ss.settingsTs||0)+') — pushing local up');
     try{localStorage.setItem('zp3_pending_sync','1');}catch(_e){}
     if(typeof supaSaveDebounced==='function')supaSaveDebounced();
     return false;
   }
+  const _localTsBefore=S.settingsTs||0;
   const _localVehs=S.vehicles,_localVehsTs=S.vehiclesTs||0;
   S={...S,...ss};
   if(_localVehsTs>(ss.vehiclesTs||0)){S.vehicles=_localVehs;S.vehiclesTs=_localVehsTs;}
+  // Persist the winning copy immediately — without this, a force-close right after
+  // the merge boots from a stale zp3_S (cleared values resurrect as their old rate
+  // until the next cloud merge; permanently if that boot happens offline).
+  try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(_e){}
+  if(typeof _setLog==='function')_setLog('MERGE RESULT — INCOMING WON (incoming ts '+(ss.settingsTs||0)+' >= local ts '+_localTsBefore+') — S is now');
   return true;
 }
 function supaSaveDebounced(){
@@ -1558,6 +1592,26 @@ async function supaSaveToCloud(){
   try{
     const ts=new Date().toISOString();
 
+    // Settings FIRST — the table loop below takes seconds on mobile (a round-trip
+    // per table) and a force-quit mid-save used to lose every settings change.
+    // Settings are tiny; landing them immediately makes Save force-quit-proof.
+    if(!_isEmployee){
+      const{stateRates:_sr0,locationDenied:_ld0,locationGranted:_lg0,...sForCloudFirst}=S;
+      const{data:_zjRow,error:_se0}=await _supa.from('zj_data').upsert(
+        {user_id:uid,settings:JSON.stringify(sForCloudFirst),checks_state:JSON.stringify(checksState),updated_at:ts},
+        {onConflict:'user_id'}
+      ).select('updated_at').single();
+      if(_se0){
+        if(typeof _setLog==='function')_setLog('CLOUD PUSH FAILED — zj_data upsert error: '+(_se0.message||_se0.code||_se0));
+        throw _se0; // treat settings write failure as a real error so catch sets zp3_pending_sync
+      }
+      // Store exactly what Postgres returned so the change poll's string comparison works.
+      // JS Date.toISOString() uses 'Z' suffix; Postgres returns '+00:00' — a mismatch would
+      // make the saving device always detect its own writes as "remote" and re-pull needlessly.
+      window._lastZjUpdatedAt=_zjRow?.updated_at||ts;
+      if(typeof _setLog==='function')_setLog('CLOUD PUSH OK — settings written to zj_data (Supabase)');
+    }
+
     // Batch upsert helper: upserts all live records, soft-deletes any that vanished
     const _upsertTable=async(tbl,arr,txFn)=>{
       const rows=(txFn?txFn(arr):arr);
@@ -1597,24 +1651,14 @@ async function supaSaveToCloud(){
       await _upsertTable(t,arr,tx);
     }
 
-    // Settings + checksState stay in zj_data (single-writer object, no concurrent conflict)
-    if(!_isEmployee){
-      const{stateRates:_sr,locationDenied:_ld,locationGranted:_lg,...sForCloud}=S;
-      const{error:_se}=await _supa.from('zj_data').upsert(
-        {user_id:uid,settings:JSON.stringify(sForCloud),checks_state:JSON.stringify(checksState),updated_at:ts},
-        {onConflict:'user_id'}
-      );
-      if(_se)console.warn('[td settings]',_se);
-    }
-
     _logSave('ok',{id:_attemptId,mileage:_mileCount});
     localStorage.removeItem('zp3_pending_sync');
     localStorage.removeItem('zp3_offline_pending');
     _writeLocalCache();
     _hideOfflineBanner();
     supaSetStatus('synced');
-    // Signal other open devices to reload
-    if(_syncBroadcastChannel){try{_syncBroadcastChannel.send({type:'broadcast',event:'data_saved',payload:{deviceId:_deviceId}});}catch(_e){}}
+    // Signal other open devices to reload (send() is async — catch the rejection so it never bubbles)
+    if(_syncBroadcastChannel){try{const _bc=_syncBroadcastChannel.send({type:'broadcast',event:'data_saved',payload:{deviceId:_deviceId}});if(_bc&&typeof _bc.catch==='function')_bc.catch(()=>{});}catch(_e){}}
   }catch(e){
     _logSave('throw',{id:_attemptId,name:e?.name,code:e?.code,msg:e?.message||String(e)});
     console.warn('Cloud save failed:',e);
@@ -1875,7 +1919,7 @@ function showScheduleSuggestion(clientId,bidId,clientNameFallback){
   const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='sched-suggest-overlay';
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
-    '<div style="font-size:18px;font-weight:800;margin-bottom:2px">Schedule '+cname+'</div>'+
+    '<div style="font-size:18px;font-weight:800;margin-bottom:2px">Schedule '+escHtml(cname||'')+'</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">'+(bid?fmt(bid.amount)+' · '+days+' day'+(days!==1?'s':''):'')+' painting job</div>'+
     '<div style="background:var(--blue-lt);border:1.5px solid var(--blue);border-radius:var(--r);padding:14px;margin-bottom:14px;text-align:center">'+
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--blue);margin-bottom:4px">Next available</div>'+
@@ -1884,8 +1928,8 @@ function showScheduleSuggestion(clientId,bidId,clientNameFallback){
     '</div>'+
     '<div style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:14px">Confirm with client, then tap "Lock it in"</div>'+
     '<div style="display:grid;gap:8px;margin-bottom:8px">'+
-      (phone?'<a href="'+smsHref+'" style="display:block;padding:13px;border-radius:var(--r);border:none;background:#27AE60;color:#fff;font-size:15px;font-weight:700;text-align:center;text-decoration:none">📱 Text '+firstName+' to confirm</a>':'')+
-      (callHref?'<a href="'+callHref+'" style="display:block;padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;text-align:center;text-decoration:none">📞 Call '+firstName+'</a>':'')+
+      (phone?'<a href="'+smsHref+'" style="display:block;padding:13px;border-radius:var(--r);border:none;background:#27AE60;color:#fff;font-size:15px;font-weight:700;text-align:center;text-decoration:none">📱 Text '+escHtml(firstName||'')+' to confirm</a>':'')+
+      (callHref?'<a href="'+callHref+'" style="display:block;padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;text-align:center;text-decoration:none">📞 Call '+escHtml(firstName||'')+'</a>':'')+
     '</div>'+
     '<button id="sched-lock-btn" onclick="quickScheduleJob('+bidId+',\''+startKey+'\','+clientId+')" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">✓ Lock it in — '+startLabel+'</button>'+
     '<button onclick="document.getElementById(\'sched-suggest-overlay\').remove();'+(bidId?'schedFromBid('+bidId+')':'goPg(\'pg-schedule\')')+'" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-bottom:6px">Pick a different date</button>'+
@@ -1974,6 +2018,7 @@ async function supaLoadFromCloud({silent=false}={}){
   if(!_supa||!_supaUser)return;
   if(_loadInProgress)return;
   _loadInProgress=true;
+  window._lastCloudLoadAt=Date.now();
   if(silent){
     // Server state wins — cancel any pending debounce without flushing it.
     // Flushing stale local data before loading would re-insert records deleted on another device.
@@ -1990,7 +2035,7 @@ async function supaLoadFromCloud({silent=false}={}){
       Promise.all(_TD_TABLES.map(({t})=>
         _supa.from(t).select('id,data').eq('user_id',uid).is('deleted_at',null)
       )),
-      _supa.from('zj_data').select('settings,checks_state,receipt_images').eq('user_id',uid).maybeSingle()
+      _supa.from('zj_data').select('settings,checks_state,receipt_images,updated_at').eq('user_id',uid).maybeSingle()
     ]);
 
     for(let i=0;i<_TD_TABLES.length;i++){if(tableResults[i].error)throw tableResults[i].error;}
@@ -2009,10 +2054,11 @@ async function supaLoadFromCloud({silent=false}={}){
     expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
 
     const sd=settingsResult.data;
+    if(sd?.updated_at)window._lastZjUpdatedAt=sd.updated_at;
     if(sd){
       if(sd.checks_state){const cc=(()=>{try{return JSON.parse(sd.checks_state);}catch{return null;}})();if(cc&&Object.keys(cc).length)checksState=cc;}
       if(sd.settings){const ss=(()=>{try{return JSON.parse(sd.settings);}catch{return null;}})();
-        if(ss){_mergeIncomingSettings(ss);
+        if(ss){_mergeIncomingSettings(ss,'cloud zj_data (Supabase)'+(silent?' — BACKGROUND refresh (realtime/broadcast/PTR)':' — BOOT 3/4'));
           if(S.fedMFS===14600)S.fedMFS=15000;if(S.fedSingle===14600)S.fedSingle=15000;
           if(S.fedMFJ===29200)S.fedMFJ=30000;if(S.fedHOH===21900)S.fedHOH=22500;
           if(S.b10===11600)S.b10=11925;if(S.b12===47150)S.b12=48475;
@@ -2020,7 +2066,7 @@ async function supaLoadFromCloud({silent=false}={}){
           if(S.b32===243725)S.b32=250525;if(S.b35===609350)S.b35=626350;
           const _IRS_RATE_2026=0.725,_IRS_YEAR=2026;
           if(new Date().getFullYear()>=_IRS_YEAR&&S.irsRate<_IRS_RATE_2026){S.irsRate=_IRS_RATE_2026;S.irsRateYear=_IRS_YEAR;}
-          applySettings();loadSettingsForm();
+          applySettings();_refillSettingsFormUnlessEditing();
           if(!_isEmployee&&ss.ownerName&&_supaUser?.id){localStorage.setItem('zp3_uname_'+_supaUser.id,ss.ownerName);if(_user)_user.name=ss.ownerName;}
           if(_isEmployee&&_employeeRecord?.name&&_user){_user.name=_employeeRecord.name;}
         }
@@ -2029,6 +2075,15 @@ async function supaLoadFromCloud({silent=false}={}){
 
     _supaCloudLoaded=true;_loadedFromCacheOnly=false;_mergeOnSignIn=false;
     supaSetStatus('synced');
+
+    // If _mergeIncomingSettings detected local is newer than cloud it scheduled a
+    // debounced save (2 s). Flush it immediately now that _supaCloudLoaded=true so
+    // a force-quit right after boot can't outrun the timer and lose settings.
+    if(localStorage.getItem('zp3_pending_sync')==='1'){
+      if(typeof _setLog==='function')_setLog('BOOT 4/4 — local was newer than cloud, flushing local up to Supabase NOW');
+      clearTimeout(_syncTimer);_syncTimer=null;
+      setTimeout(()=>supaSaveToCloud(),50);
+    }
 
     if(!silent){
       setTimeout(()=>{if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});},500);
@@ -2076,6 +2131,22 @@ async function supaLoadFromCloud({silent=false}={}){
       },4000);
       setTimeout(()=>_checkOdometerPrompt(),3500);
       setInterval(()=>{checkNewSignatures();_fetchProposalViews();},30000);
+      // Cross-device change poll: zj_data.updated_at bumps on every cloud save
+      // from any device (settings are written first on each save). One tiny row
+      // read per 30s guarantees other devices' changes land even when the
+      // realtime socket is down. Skipped within 8s of a local save (echo).
+      setInterval(async()=>{
+        if(!_supaUser||_loadInProgress||document.visibilityState==='hidden')return;
+        if(Date.now()-_lastLocalSaveAt<8000)return;
+        try{
+          const _puid=_devSupportMode?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id):(_isEmployee?_contractorUserId:_supaUser.id);
+          const{data:_zr}=await _supa.from('zj_data').select('updated_at').eq('user_id',_puid).maybeSingle();
+          if(_zr?.updated_at&&window._lastZjUpdatedAt&&_zr.updated_at!==window._lastZjUpdatedAt){
+            if(typeof _setLog==='function')_setLog('REMOTE CHANGE detected (zj_data.updated_at moved) — pulling latest from cloud');
+            supaLoadFromCloud({silent:true});
+          }
+        }catch(_e){}
+      },1000);
       try{
         _supa.channel('sig-feed-'+_supaUser.id)
           .on('postgres_changes',{event:'*',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{checkNewSignatures();})
@@ -2085,7 +2156,13 @@ async function supaLoadFromCloud({silent=false}={}){
       setInterval(()=>_loadPendingInbound(),30000);
       setTimeout(()=>_fetchStripeConnectStatus(),3000);
       setTimeout(()=>_loadPendingInbound(),2000);
-      document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){checkNewSignatures();_fetchProposalViews();if(_supaUser)_loadPendingInbound();checkNearbyJob();}});
+      document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){
+        checkNewSignatures();_fetchProposalViews();if(_supaUser)_loadPendingInbound();checkNearbyJob();
+        // Cross-device freshness without relying on the realtime socket: when the
+        // app returns to the foreground, pull the latest cloud state (settings
+        // included) if the last load is more than 60s old.
+        if(_supaUser&&!_loadInProgress&&Date.now()-(window._lastCloudLoadAt||0)>60000)supaLoadFromCloud({silent:true});
+      }});
       // Cross-tab signal: sign.html writes zp3_sig_notify after a successful cash/check save.
       // This fires immediately in the contractor's open TradeDesk tab — no polling delay.
       window.addEventListener('storage',e=>{if(e.key==='zp3_sig_notify'&&e.newValue)checkNewSignatures();});
@@ -2127,7 +2204,7 @@ async function supaLoadFromCloud({silent=false}={}){
         if(_cd.licenses?.length)licenses=_cd.licenses;if(_cd.events?.length)events=_cd.events;
         if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.photos?.length)photos=_cd.photos;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
-        if(_cd.settings){_mergeIncomingSettings(_cd.settings);applySettings();loadSettingsForm();}
+        if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cloud load FAILED — fallback)');applySettings();_refillSettingsFormUnlessEditing();}
         _loadedFromCacheOnly=true;_supaCloudLoaded=true;
         try{
           const _op=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');
@@ -2159,6 +2236,12 @@ function _initRealtimeSubscriptions(uid){
         _applyRealtimeRecord(t,payload);
       });
     }
+    // zj_data is not in _TD_TABLES (single-row settings, not a record table) but we
+    // want instant cross-device settings sync when any device saves. postgres_changes
+    // fires on all other subscribed clients the moment the row is written.
+    ch.on('postgres_changes',{event:'UPDATE',schema:'public',table:'zj_data',filter:'user_id=eq.'+uid},()=>{
+      if(!_loadInProgress&&Date.now()-_lastLocalSaveAt>5000)supaLoadFromCloud({silent:true});
+    });
     ch.subscribe();
   }catch(e){console.warn('[realtime] td-sync subscribe failed:',e);}
   try{

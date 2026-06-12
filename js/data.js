@@ -166,8 +166,44 @@ function _buildStateBrackets(data,status){
   return[[Math.round(top*mult),low],[Infinity,high]];
 }
 
+// Settings audit trail — every read/write/merge of settings logs its source and
+// the key business fields so a refresh shows exactly which store won and why.
+// Filter the console by "[td-settings]" to follow the chain.
+function _setLog(stage,src){
+  try{
+    const s=src||S;
+    console.log('%c[td-settings] '+stage,'color:#2D5DA8;font-weight:bold',{
+      bname:s.bname,baddr:s.baddr,bcity:s.bcity,bzip:s.bzip,bphone:s.bphone,
+      bemail:s.bemail,state:s.state,
+      settingsTs:s.settingsTs||0,
+      tsHuman:s.settingsTs?new Date(s.settingsTs).toLocaleString():'(never saved)'
+    });
+  }catch(_e){}
+}
+// Persist S after a direct in-memory mutation (S.devices, S.timeOff, S.employees…).
+// Bumps settingsTs so the change wins the cloud merge — WITHOUT reading the
+// settings form. saveSettings() harvests the form and must only ever be called
+// from the Settings UI; calling it from anywhere else wipes every saved value
+// with whatever happens to be in the (usually empty) form inputs.
+function _settingsChanged(){S.settingsTs=Date.now();saveAll();}
 function saveAll(){if(_devSupportMode){_flushSaveNow();return;}if(_isEmployee){supaSaveDebounced();return;}try{
-  localStorage.setItem('zp3_S',JSON.stringify(S));
+  // Settings are the most critical local write — if quota is blown, evict the
+  // bulky image caches (rebuilt from cloud on demand) and retry rather than
+  // silently losing every settings change until the next successful cloud save.
+  try{localStorage.setItem('zp3_S',JSON.stringify(S));}
+  catch(_qe){
+    try{
+      localStorage.removeItem('zp3_photos');localStorage.removeItem('zp3_rcpt_imgs');
+      localStorage.setItem('zp3_S',JSON.stringify(S));
+    }catch(_qe2){
+      // Last resort: logoData can be several MB — split it out so the rest of S lands safely
+      try{
+        const{logoData:_ld,..._sNoLogo}=S;
+        if(_ld)try{localStorage.setItem('zp3_logo',_ld);}catch(_e){}
+        localStorage.setItem('zp3_S',JSON.stringify(_sNoLogo));
+      }catch(_qe3){console.warn('zp3_S save failed (quota):',_qe3);}
+    }
+  }
   // These arrays are localStorage-only (not in Supabase schema) — safe to keep local
   localStorage.setItem('zp3_chk',JSON.stringify(checksState));
   localStorage.setItem('zp3_ev',JSON.stringify(events.slice(-600)));
@@ -187,7 +223,15 @@ function loadAll(){
   try{
     const lp=(k,d)=>{const s=localStorage.getItem(k);return s?JSON.parse(s):d;};
     const ss=localStorage.getItem('zp3_S');
-    if(ss){const parsed=JSON.parse(ss);S={...S,...parsed};}
+    if(ss){
+      const parsed=JSON.parse(ss);
+      // If logoData was split out due to quota pressure, merge it back in
+      if(!parsed.logoData){const _ld=localStorage.getItem('zp3_logo');if(_ld)parsed.logoData=_ld;}
+      S={...S,...parsed};
+      _setLog('BOOT 1/4 — loaded zp3_S (this device localStorage)');
+    }else{
+      _setLog('BOOT 1/4 — no zp3_S in localStorage, using defaults');
+    }
     checksState=lp('zp3_chk',{});
     events=lp('zp3_ev',[]);
     photos=lp('zp3_photos',[]);
@@ -262,7 +306,7 @@ async function _lookupProperty(addr,cardId){
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">'+
           '<div><div style="color:var(--text3);font-size:11px">Est. value</div><div style="font-weight:600">'+fmt(d.estValue)+'</div></div>'+
           '<div><div style="color:var(--text3);font-size:11px">Sq ft</div><div style="font-weight:600">'+(d.sqft?Number(d.sqft).toLocaleString()+'  sqft':'—')+'</div></div>'+
-          '<div><div style="color:var(--text3);font-size:11px">Year built</div><div style="font-weight:600">'+(d.yearBuilt||'—')+'</div></div>'+
+          '<div><div style="color:var(--text3);font-size:11px">Year built</div><div style="font-weight:600">'+(Number(d.yearBuilt)||'—')+'</div></div>'+
           '<div><div style="color:var(--text3);font-size:11px">Last sale</div><div style="font-weight:600">'+fmt(d.lastSalePrice)+'</div></div>'+
         '</div>';
     }catch(e){card.style.display='none';}

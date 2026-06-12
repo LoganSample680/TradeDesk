@@ -12,7 +12,7 @@ function openExpenseFlow(){
     '<option value="Other">Other</option>';
   const catOpts=IRS_EXPENSE_CATS.map(c=>'<option value="'+c.id+'">'+c.icon+' '+c.label+'</option>').join('');
   const jobOpts='<option value="">— Not tied to a specific job —</option>'+
-    bids.filter(b=>b.status==='Closed Won').map(b=>'<option value="'+b.id+'">'+(b.client_name||b.name)+(b.addr?' · '+b.addr.split(',')[0]:'')+'</option>').join('');
+    bids.filter(b=>b.status==='Closed Won').map(b=>'<option value="'+b.id+'">'+escHtml(b.client_name||b.name)+(b.addr?' · '+escHtml((b.addr||'').split(',')[0]):'')+'</option>').join('');
   const today=new Date().toISOString().slice(0,10);
   ov.innerHTML=
     '<div style="background:var(--bg);border-radius:20px;width:100%;max-width:600px;max-height:92vh;overflow-y:auto;padding:20px 20px 28px">'+
@@ -122,7 +122,13 @@ function expTriggerScan(){
     if(!token){if(status){status.style.display='block';status.innerHTML='<div class="tip tip-w">Sign in to use receipt scanning. <button class="btn btn-sm btn-p" onclick="supaShowLogin()" style="margin-left:8px">Sign in</button></div>';}return;}
     if(status){status.style.display='block';status.innerHTML='<div class="tip"><strong>📡 Reading receipt...</strong></div>';}
     if(scanArea)scanArea.style.opacity='.5';
-    const b64=await compressAndEncodeImage(blob);
+    let b64;
+    try{b64=await compressAndEncodeImage(blob);}
+    catch(_ce){
+      if(scanArea)scanArea.style.opacity='';
+      if(status){status.innerHTML='<div class="tip tip-w">Could not read that image — try another photo.</div>';}
+      return;
+    }
     const pageObj={b64,key:null};
     _expState.imagePages.push(pageObj);
     _expState.imageData={b64,type:'image/jpeg'};
@@ -150,7 +156,7 @@ function expTriggerScan(){
 function expProcessPhoto(input){expTriggerScan();}
 
 async function compressAndEncodeImage(file,maxPx=1200,qual=0.85){
-  return new Promise(resolve=>{
+  return new Promise((resolve,reject)=>{
     const img=new Image();
     const url=URL.createObjectURL(file);
     img.onload=()=>{
@@ -163,6 +169,9 @@ async function compressAndEncodeImage(file,maxPx=1200,qual=0.85){
       URL.revokeObjectURL(url);
       resolve(canvas.toDataURL('image/jpeg',qual).split(',')[1]);
     };
+    // Decode failure (corrupt photo, unsupported format) — reject instead of
+    // hanging the caller's await forever.
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Image decode failed'));};
     img.src=url;
   });
 }
@@ -865,7 +874,7 @@ function openCompleteJobModal(){
       return '<button onclick="markJobCompleteFromDash('+j.id+',this)" style="width:100%;text-align:left;padding:14px 16px;border:none;border-bottom:1px solid var(--border);background:none;cursor:pointer;font-family:inherit">'+
         '<div style="display:flex;justify-content:space-between;align-items:center">'+
           '<div>'+
-            '<div style="font-size:14px;font-weight:700;color:var(--text)">'+c.name+tag+'</div>'+
+            '<div style="font-size:14px;font-weight:700;color:var(--text)">'+escHtml(c.name)+tag+'</div>'+
             '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+j.start+(j.days>1?' · '+j.days+' days':'')+'</div>'+
           '</div>'+
           '<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:var(--text3);fill:none;stroke-width:2;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>'+
@@ -910,8 +919,8 @@ function showQuickPicker(title,subtitle,suggestions,actionType,allowNew){
         '<button data-idx="'+i+'" data-action="'+actionType+'" onclick="pickQuickClient(this,this.dataset.action)" style="width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:6px;display:flex;align-items:center;gap:10px">'+
           '<span style="font-size:20px">'+s.icon+'</span>'+
           '<div style="flex:1;min-width:0">'+
-            '<div style="font-size:14px;font-weight:700;color:var(--text)">'+s.label+'</div>'+
-            '<div style="font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+s.sub+'</div>'+
+            '<div style="font-size:14px;font-weight:700;color:var(--text)">'+escHtml(s.label||'')+'</div>'+
+            '<div style="font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(s.sub||'')+'</div>'+
           '</div>'+
           '<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:var(--text3);fill:none;stroke-width:2;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>'+
         '</button>'
@@ -973,8 +982,8 @@ function onQPSearch(el){
     '<button data-cid="'+c.id+'" data-qpaction="'+actionType+'" onclick="pickQPClient(parseInt(this.dataset.cid),this.dataset.qpaction)" style="width:100%;text-align:left;padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:6px;display:flex;align-items:center;gap:10px">'+
       '<div style="width:34px;height:34px;border-radius:50%;background:var(--blue-lt);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--blue-dk);flex-shrink:0">'+initials(c.name)+'</div>'+
       '<div style="flex:1;min-width:0">'+
-        '<div style="font-size:13px;font-weight:700;color:var(--text)">'+c.name+'</div>'+
-        '<div style="font-size:11px;color:var(--text3)">'+((c.addr||'').split(',')[0]||'No address')+'</div>'+
+        '<div style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(c.name)+'</div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+escHtml((c.addr||'').split(',')[0]||'No address')+'</div>'+
       '</div>'+
     '</button>'
   ).join('');
@@ -1036,14 +1045,14 @@ function showQuickExpenseModal(clientId,bidId){
       '<button onclick="closeTopModal()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">✕</button>'+
     '</div>'+
     '<div style="background:var(--blue-lt);border-radius:var(--r);padding:8px 12px;margin-bottom:14px;font-size:12px;font-weight:700;color:var(--blue-dk)">'+
-      '📌 '+(c?c.name:'Client')+
+      '📌 '+escHtml(c?c.name:'Client')+
     '</div>'+
     (clientBids.length>1?
       '<div class="f" style="margin-bottom:10px">'+
         '<label style="font-size:11px;font-weight:700;color:var(--text3)">Which job?</label>'+
         '<select id="qe-bid" style="font-size:13px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;color:var(--text)">'+
           clientBids.map(b=>'<option value="'+b.id+'"'+(bid&&b.id===bid.id?' selected':'')+'>'+
-            (b.client_name||c.name)+' — '+fmt(b.amount)+(b.status==='Pending'?' (pending)':'')+
+            escHtml(b.client_name||c.name)+' — '+fmt(b.amount)+(b.status==='Pending'?' (pending)':'')+
           '</option>').join('')+
         '</select>'+
       '</div>':
@@ -1152,22 +1161,22 @@ function renderCalConflicts(){
       for(let k=0;k<(parseInt(a.days)||1);k++)ad.add(addDays(a.start,k));
       for(let k=0;k<(parseInt(b.days)||1);k++)bd.push(addDays(b.start,k));
       const ov=bd.filter(d=>ad.has(d));
-      if(ov.length)conflicts.push('"'+a.name+'" and "'+b.name+'" overlap on '+ov.length+' day'+(ov.length>1?'s':''));
+      if(ov.length)conflicts.push('"'+escHtml(a.name)+'" and "'+escHtml(b.name)+'" overlap on '+ov.length+' day'+(ov.length>1?'s':''));
     }
   }
   const el=document.getElementById('cal-conflicts');
   if(el)el.innerHTML=conflicts.map(c=>'<div class="tip tip-d" style="margin-bottom:6px">Scheduling conflict: '+c+'</div>').join('');
 }
-function renderCalWeek(){const t=new Date(),dow=t.getDay(),DNAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],tk=todayKey();const days=[];for(let i=0;i<7;i++){const d=new Date(t);d.setDate(t.getDate()-dow+i);days.push(d);}document.getElementById('cal-week').innerHTML=days.map((d,i)=>{const key=dateKey(d),dj=getJobsOnDay(key).filter(x=>!x.isBuf),isToday=key===tk;return`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)"><div style="width:30px;text-align:center;flex-shrink:0"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:${isToday?'var(--blue)':'var(--text3)'}">${DNAMES[i]}</div><div style="font-size:13px;font-weight:${isToday?'700':'400'};color:${isToday?'var(--blue)':'var(--text2)'}">${d.getDate()}</div></div><div style="flex:1;min-width:0">${dj.length?dj.map(({job})=>`<div style="font-size:10px;padding:2px 5px;border-radius:3px;background:${job.color};color:#fff;margin-bottom:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${job.name}</div>`).join(''):'<div style="font-size:11px;color:var(--text3)">Open</div>'}</div></div>`;}).join('');}
-function renderCalUpcoming(){const tk=todayKey(),upcoming=[...jobs].filter(j=>addDays(j.start,(parseInt(j.days)||1)-1)>=tk).sort((a,b)=>a.start.localeCompare(b.start)).slice(0,6);document.getElementById('cal-upcoming').innerHTML=!upcoming.length?'<div class="empty">No upcoming jobs.</div>':upcoming.map(j=>{const isA=j.start<=tk;return`<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border)"><div style="width:8px;height:8px;border-radius:2px;background:${j.color};flex-shrink:0;margin-top:3px"></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${j.name}</div><div style="font-size:10px;color:var(--text3)">${parseD(j.start).toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${j.days}d${j.value?' · '+fmt(j.value):''}</div></div><span class="bdg ${isA?'bdg-active':'bdg-upcoming'}">${isA?'Active':'Soon'}</span></div>`;}).join('');}
+function renderCalWeek(){const t=new Date(),dow=t.getDay(),DNAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],tk=todayKey();const days=[];for(let i=0;i<7;i++){const d=new Date(t);d.setDate(t.getDate()-dow+i);days.push(d);}document.getElementById('cal-week').innerHTML=days.map((d,i)=>{const key=dateKey(d),dj=getJobsOnDay(key).filter(x=>!x.isBuf),isToday=key===tk;return`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)"><div style="width:30px;text-align:center;flex-shrink:0"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:${isToday?'var(--blue)':'var(--text3)'}">${DNAMES[i]}</div><div style="font-size:13px;font-weight:${isToday?'700':'400'};color:${isToday?'var(--blue)':'var(--text2)'}">${d.getDate()}</div></div><div style="flex:1;min-width:0">${dj.length?dj.map(({job})=>`<div style="font-size:10px;padding:2px 5px;border-radius:3px;background:${job.color};color:#fff;margin-bottom:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(job.name)}</div>`).join(''):'<div style="font-size:11px;color:var(--text3)">Open</div>'}</div></div>`;}).join('');}
+function renderCalUpcoming(){const tk=todayKey(),upcoming=[...jobs].filter(j=>addDays(j.start,(parseInt(j.days)||1)-1)>=tk).sort((a,b)=>a.start.localeCompare(b.start)).slice(0,6);document.getElementById('cal-upcoming').innerHTML=!upcoming.length?'<div class="empty">No upcoming jobs.</div>':upcoming.map(j=>{const isA=j.start<=tk;return`<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border)"><div style="width:8px;height:8px;border-radius:2px;background:${j.color};flex-shrink:0;margin-top:3px"></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.name)}</div><div style="font-size:10px;color:var(--text3)">${parseD(j.start).toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${j.days}d${j.value?' · '+fmt(j.value):''}</div></div><span class="bdg ${isA?'bdg-active':'bdg-upcoming'}">${isA?'Active':'Soon'}</span></div>`;}).join('');}
 
 function populateSchedSelect(){
   const cSel=document.getElementById('s-client-sel');
-  if(cSel)cSel.innerHTML='<option value="">— Select a client —</option>'+clients.map(c=>'<option value="'+c.id+'">'+c.name+'</option>').join('');
+  if(cSel)cSel.innerHTML='<option value="">— Select a client —</option>'+clients.map(c=>'<option value="'+c.id+'">'+escHtml(c.name)+'</option>').join('');
   const scheduledIds=new Set(jobs.filter(j=>j.bid_id).map(j=>j.bid_id));
   const won=bids.filter(b=>b.status==='Closed Won');
   const bSel=document.getElementById('s-bid-sel');
-  if(bSel)bSel.innerHTML='<option value="">— Select a won bid —</option>'+won.map(b=>'<option value="'+b.id+'"'+(scheduledIds.has(b.id)?' disabled':'')+'>'+(b.client_name||b.name)+' — '+fmt(b.amount)+(scheduledIds.has(b.id)?' (scheduled)':'')+' </option>').join('');
+  if(bSel)bSel.innerHTML='<option value="">— Select a won bid —</option>'+won.map(b=>'<option value="'+b.id+'"'+(scheduledIds.has(b.id)?' disabled':'')+'>'+escHtml(b.client_name||b.name)+' — '+fmt(b.amount)+(scheduledIds.has(b.id)?' (scheduled)':'')+' </option>').join('');
 }
 
 function setSchedType(type,btn){
@@ -1212,7 +1221,7 @@ function pullClient(){
   availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();
   refreshAvail();updateSchedPreview();
 }
-function pullBid(){const id=parseInt(v('s-bid-sel'));if(!id)return;const b=bids.find(x=>x.id===id);if(!b)return;document.getElementById('s-name').value=(b.client_name||b.name)+(b.type?' — '+b.type:'');document.getElementById('s-addr').value=b.addr||'';document.getElementById('s-value').value=b.amount||'';document.getElementById('s-days').value=b.days||2;document.getElementById('s-days-src').textContent='from bid';document.getElementById('s-notes').value=b.notes||'';document.getElementById('sched-tip').innerHTML='<strong>Pulled from bid:</strong> '+b.client_name+' · '+fmt(b.amount)+' · '+(b.days||2)+' days. Pick an available start date.';document.getElementById('sched-tip').className='tip tip-s';const na=getNextAvail();document.getElementById('s-start').value=na.key;availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();refreshAvail();updateSchedPreview();}
+function pullBid(){const id=parseInt(v('s-bid-sel'));if(!id)return;const b=bids.find(x=>x.id===id);if(!b)return;document.getElementById('s-name').value=(b.client_name||b.name)+(b.type?' — '+b.type:'');document.getElementById('s-addr').value=b.addr||'';document.getElementById('s-value').value=b.amount||'';document.getElementById('s-days').value=b.days||2;document.getElementById('s-days-src').textContent='from bid';document.getElementById('s-notes').value=b.notes||'';document.getElementById('sched-tip').innerHTML='<strong>Pulled from bid:</strong> '+escHtml(b.client_name||'')+' · '+fmt(b.amount)+' · '+(b.days||2)+' days. Pick an available start date.';document.getElementById('sched-tip').className='tip tip-s';const na=getNextAvail();document.getElementById('s-start').value=na.key;availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();refreshAvail();updateSchedPreview();}
 function buildColorRow(){document.getElementById('s-color-row').innerHTML=JOB_COLORS.map(c=>`<div style="width:24px;height:24px;border-radius:4px;background:${c};cursor:pointer;border:2px solid ${c===selectedColor?'#000':'transparent'}" onclick="selColor('${c}')"></div>`).join('');}
 function selColor(c){selectedColor=c;buildColorRow();}
 function avPrev(){
@@ -2126,7 +2135,7 @@ function exportTaxPDF(){
   const statusLabel={single:'Single',mfj:'Married Filing Jointly',hoh:'Head of Household'}[status]||status;
   // Build HTML using string concat — no template literals to avoid parser issues
   let h='<!DOCTYPE html><html><head><meta charset="utf-8">';
-  h+='<title>'+biz+' Tax Report '+yr+'</title>';
+  h+='<title>'+escHtml(biz)+' Tax Report '+yr+'</title>';
   h+='<style>';
   h+='*{box-sizing:border-box;margin:0;padding:0}';
   h+='body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;color:#1a1a18;font-size:11px;line-height:1.5}';

@@ -492,7 +492,7 @@ async function autoRefreshTaxBrackets(){
     if(typeof d.ksStdS==='number'&&d.ksStdS>1000&&d.ksStdS<15000)S.ksStdS=d.ksStdS;
     if(typeof d.ksStdM==='number'&&d.ksStdM>1000&&d.ksStdM<20000)S.ksStdM=d.ksStdM;
     S.bracketYear=thisYear;saveAll();
-    loadSettingsForm(); // refresh display spans if Settings is open
+    _refillSettingsFormUnlessEditing(); // refresh display spans — but never clobber in-progress edits
     if(S.state)fetchStateBrackets(S.state);
   }catch(e){}finally{_bracketRefreshInProgress=false;}
 }
@@ -518,7 +518,7 @@ async function fetchStateBrackets(state){
     d.year=thisYear;
     S.stateRates[state]=d;
     applySettings();saveAll();
-    loadSettingsForm();
+    _refillSettingsFormUnlessEditing();
     if(changed)showToast((d.noTax?state+' has no income tax':state+' tax rates updated'),'📊');
   }catch(e){}
 }
@@ -872,7 +872,7 @@ function showJobDebrief(jobId){
     const items=SCOPE_ITEMS.filter(s=>sc[s.id]&&sc[s.id].active);
     if(!items.length)return;
     debriefRows+=`<div style="margin-bottom:12px">
-      <div style="font-size:11px;font-weight:800;color:var(--text3);text-transform:uppercase;margin-bottom:6px">${room}</div>
+      <div style="font-size:11px;font-weight:800;color:var(--text3);text-transform:uppercase;margin-bottom:6px">${escHtml(room)}</div>
       ${items.map(s=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border2)">
         <div style="font-size:13px;flex:1">${s.icon||''} ${s.label}</div>
         <input type="number" min="0" step="0.25" placeholder="hrs" inputmode="decimal"
@@ -1452,7 +1452,7 @@ function showRoomSavedState(roomCount){
         // Show color swatch if color was selected
         const roomColor=(recentSurfs[0]?.room||'').split(' — ')[1]?.replace(/\s*\[.*\]/,'').trim()||'';
         return '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin-bottom:10px">'+
-          '<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">'+recentRoom+'</div>'+
+          '<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">'+escHtml(recentRoom)+'</div>'+
           recentSurfs.map(s=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span style="color:var(--text2)">'+(SURF_LABELS2[s.type]||s.type)+'</span><span style="font-weight:700">'+s.qty.toLocaleString()+(s.type==='trim'||s.type==='ext_trim'?' lf':' sf')+'</span></div>').join('')+
         '</div>';
       })()+
@@ -1588,7 +1588,7 @@ function renderSurfRoomsLogged(){
   el.innerHTML=Object.entries(roomMap).map(([room,lines])=>
     '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--green-lt);border:1px solid var(--green);border-radius:var(--r);padding:8px 12px;margin-bottom:6px">'+
       '<div>'+
-        '<div style="font-size:12px;font-weight:700;color:var(--green-mid)">'+room+'</div>'+
+        '<div style="font-size:12px;font-weight:700;color:var(--green-mid)">'+escHtml(room)+'</div>'+
         '<div style="font-size:11px;color:var(--text3)">'+lines.join(' · ')+'</div>'+
       '</div>'+
       '<div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px">'+
@@ -1710,7 +1710,7 @@ function renderEstSurfs(){
     const hasQty=s.qty>0;
     return '<div class="surf-row" style="'+(hasQty?'border-left:3px solid var(--green)':'border-left:3px solid var(--border2)')+'">'+
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;justify-content:space-between">'+
-        '<input id="room-'+s.id+'" value="'+(s.room||'')+'" placeholder="Room or area name (e.g. Master bedroom)" '+
+        '<input id="room-'+s.id+'" value="'+escHtml(s.room||'')+'" placeholder="Room or area name (e.g. Master bedroom)" '+
           'onchange="updateSurfRoom('+s.id+',this.value)" onblur="updateSurfRoom('+s.id+',this.value)" '+
           'style="font-size:13px;font-weight:600;border:none;background:transparent;padding:0;flex:1;color:var(--text)">'+
         '<button class="btn-del" onclick="removeEstSurf('+s.id+')" style="font-size:12px;padding:2px 6px;flex-shrink:0">&#10005;</button>'+
@@ -1931,7 +1931,7 @@ function restoreEstFullDraft(d){
   // Update client display
   const c=estLinkedClientId?getClientById(estLinkedClientId):null;
   const linked=document.getElementById('e-client-linked');
-  if(linked&&c)linked.innerHTML='<span class="conn-tag">'+c.name+'</span>';
+  if(linked&&c)linked.innerHTML='<span class="conn-tag">'+escHtml(c.name)+'</span>';
   ['e-cname','e-cphone','e-caddr','e-days'].forEach(id=>markFieldFilled(document.getElementById(id)));
   checkStep1Ready();checkStep2Ready();
   return true;
@@ -2090,7 +2090,7 @@ function renderEstRunning(){
       // Surface line: type bold, room + color+finish smaller below
       const hexMatch=l.colorFinish&&_swColors?(_swColors.find(c=>l.colorFinish.includes(c.name))?.hex||''):'';
       const swatchHtml=hexMatch?'<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:'+hexMatch+';border:1px solid rgba(0,0,0,.12);margin-right:3px;vertical-align:middle"></span>':'';
-      html+='<span style="line-height:1.4"><span style="font-weight:700">'+l.surfType+'</span>'+(l.room?'<br><span style="font-size:10px;color:var(--text3)">'+l.room+(l.colorFinish?' · '+swatchHtml+l.colorFinish:'')+'</span>':'')+'</span>'+
+      html+='<span style="line-height:1.4"><span style="font-weight:700">'+l.surfType+'</span>'+(l.room?'<br><span style="font-size:10px;color:var(--text3)">'+escHtml(l.room||'')+(l.colorFinish?' · '+swatchHtml+escHtml(l.colorFinish||''):'')+'</span>':'')+'</span>'+
         '<span style="color:var(--text3);align-self:start;padding-top:1px">'+l.qty.toLocaleString()+' '+l.unit+'</span>'+
         '<span style="font-weight:700;text-align:right;align-self:start;padding-top:1px">'+fmtShort(l.sub)+'</span>';
     } else {
@@ -2162,7 +2162,7 @@ function renderEstReview(){
     const paintLine=paintLines.find(p=>cleanRoomName(p.color)===room||p.color.startsWith(room));
     html+='<div style="border:1px solid var(--border);border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">'+
       // Room header
-      '<div style="font-size:14px;font-weight:800;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">'+room+
+      '<div style="font-size:14px;font-weight:800;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">'+escHtml(room)+
         (data.sqft?'<span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:8px">'+data.sqft.toLocaleString()+' sq ft</span>':'')+
       '</div>'+
       // Per-surface rows with color swatch + finish
@@ -2173,7 +2173,7 @@ function renderEstReview(){
             swatchHtml+
             '<div>'+
               '<span style="font-size:12px;font-weight:700;color:var(--text)">'+s.type+'</span>'+
-              (s.color?'<div style="font-size:11px;color:var(--text3)">'+s.color+(s.finish?' · <span style="color:var(--blue-dk);font-weight:600">'+s.finish+'</span>':'')+'</div>':'<div style="font-size:11px;color:#A32D2D">No color selected</div>')+
+              (s.color?'<div style="font-size:11px;color:var(--text3)">'+escHtml(s.color)+(s.finish?' · <span style="color:var(--blue-dk);font-weight:600">'+escHtml(s.finish)+'</span>':'')+'</div>':'<div style="font-size:11px;color:#A32D2D">No color selected</div>')+
             '</div>'+
           '</div>'+
           '<div style="font-size:11px;font-weight:700;color:var(--text2);flex-shrink:0;margin-left:8px">'+

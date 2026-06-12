@@ -28,8 +28,8 @@ function renderCDOpportunities(){
       return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid var(--border)">'+
         '<div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">'+
           '<div style="font-size:20px;flex-shrink:0">'+m.icon+'</div>'+
-          '<div style="min-width:0"><div style="font-size:13px;font-weight:700">'+o.type+'</div>'+
-          '<div style="font-size:11px;color:var(--text3)">'+m.label+(o.notes?' · '+o.notes.substring(0,40):'')+'</div></div>'+
+          '<div style="min-width:0"><div style="font-size:13px;font-weight:700">'+escHtml(o.type)+'</div>'+
+          '<div style="font-size:11px;color:var(--text3)">'+m.label+(o.notes?' · '+escHtml((o.notes||'').substring(0,40)):'')+'</div></div>'+
         '</div>'+
         '<div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px">'+
           '<button class="btn btn-sm btn-p" onclick="convertOpportunityToEstimate('+o.id+')" style="font-size:11px">→ Estimate</button>'+
@@ -47,7 +47,7 @@ function openAddOpportunity(){
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Add opportunity</div>'+
-    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">Track cross-trade work for '+c.name+'</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">Track cross-trade work for '+escHtml(c.name)+'</div>'+
     '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">Trade</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px" id="opp-trade-grid">'+
     lines.map(id=>{const m=TRADE_META[id]||{icon:'🔧',label:id};const sel=id===_oppSelTrade;return'<button onclick="oppPickTrade(\''+id+'\')" id="opptrade-'+id+'" style="padding:10px 8px;border-radius:var(--r);border:2px solid '+(sel?'var(--blue)':'var(--border2)')+';background:'+(sel?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;text-align:center;font-size:12px;font-weight:'+(sel?700:400)+'"><div style="font-size:18px;margin-bottom:2px">'+m.icon+'</div>'+m.label+'</button>';}).join('')+
@@ -91,8 +91,8 @@ function renderCDEstimatesUpcoming(){
         '<div>'+
           '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#7F77DD;margin-bottom:3px">Estimate scheduled</div>'+
           '<div style="font-size:15px;font-weight:700;color:var(--text)">'+dt+(j.time?' at '+fmtTime(j.time):'')+'</div>'+
-          '<div style="font-size:12px;color:#7F77DD;margin-top:2px">'+j.name.replace(' — estimate','').replace(' - estimate','')+'</div>'+
-          (j.addr?'<div style="font-size:11px;color:var(--text2);margin-top:2px">'+j.addr+'</div>':'')+
+          '<div style="font-size:12px;color:#7F77DD;margin-top:2px">'+escHtml(j.name.replace(' — estimate','').replace(' - estimate',''))+'</div>'+
+          (j.addr?'<div style="font-size:11px;color:var(--text2);margin-top:2px">'+escHtml(j.addr)+'</div>':'')+
         '</div>'+
         '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;margin-left:10px">'+
           '<button class="btn btn-sm" onclick="rescheduleEstimate('+j.id+')" style="font-size:11px">Reschedule</button>'+
@@ -611,7 +611,7 @@ function toggleBidSummary(bidId){
   panel=document.createElement('div');
   panel.id='bid-summary-'+bidId;
   panel.style.cssText='background:var(--bg2);border-radius:var(--r);padding:12px;margin-top:10px;border-top:1px solid var(--border)';
-  const surfRows=surfs.length?surfs.map(s=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+(SURF_LABELS[s.type]||s.type)+' — '+(s.room||'')+'</span><span style="font-weight:600">'+s.qty.toLocaleString()+' '+(s.type==='walls'||s.type==='ceiling'||s.type==='ext_walls'||s.type==='deck'?'sf':'')+'</span></div>').join(''):'<div style="font-size:12px;color:var(--text3)">No surface data saved</div>';
+  const surfRows=surfs.length?surfs.map(s=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+(SURF_LABELS[s.type]||s.type)+' — '+escHtml(s.room||'')+'</span><span style="font-weight:600">'+s.qty.toLocaleString()+' '+(s.type==='walls'||s.type==='ceiling'||s.type==='ext_walls'||s.type==='deck'?'sf':'')+'</span></div>').join(''):'<div style="font-size:12px;color:var(--text3)">No surface data saved</div>';
   panel.innerHTML=
     '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Bid details</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">'+
@@ -682,13 +682,13 @@ function printInvoice(bidId){
 <div class="two-col">
   <div>
     <div class="section-label">Bill to</div>
-    <div class="client-name">${c?c.name:b.client_name||'Client'}</div>
-    <div class="client-detail">${b.addr||c&&c.addr||''}</div>
-    ${c&&c.phone?`<div class="client-detail">${c.phone}</div>`:''}
+    <div class="client-name">${escHtml(c?c.name:b.client_name||'Client')}</div>
+    <div class="client-detail">${escHtml(b.addr||c&&c.addr||'')}</div>
+    ${c&&c.phone?`<div class="client-detail">${escHtml(c.phone)}</div>`:''}
   </div>
   <div>
     <div class="section-label">Job details</div>
-    <div class="client-detail"><strong>Type:</strong> ${b.type||'Painting job'}</div>
+    <div class="client-detail"><strong>Type:</strong> ${escHtml(b.type||'Painting job')}</div>
     <div class="client-detail"><strong>Bid date:</strong> ${b.bid_date||''}</div>
     ${b.completion_date?`<div class="client-detail"><strong>Completed:</strong> ${b.completion_date}</div>`:''}
   </div>
@@ -697,13 +697,13 @@ function printInvoice(bidId){
 <table>
   <thead><tr><th>Description</th><th style="text-align:right">Amount</th></tr></thead>
   <tbody>
-    <tr><td>${b.type||'Professional painting services'}<br><span style="font-size:11px;color:#666">${b.addr||''}</span></td><td class="amt">${fmt(b.amount)}</td></tr>
+    <tr><td>${escHtml(b.type||'Professional painting services')}<br><span style="font-size:11px;color:#666">${escHtml(b.addr||'')}</span></td><td class="amt">${fmt(b.amount)}</td></tr>
   </tbody>
 </table>
 
 <div class="totals">
   <div class="total-row"><span>Subtotal</span><span>${fmt(b.amount)}</span></div>
-  ${bPmts.map(p=>`<div class="total-row" style="color:#3B8C2A"><span>Payment received (${p.date||''}) — ${p.method||''}</span><span>(${fmt(p.amount)})</span></div>`).join('')}
+  ${bPmts.map(p=>`<div class="total-row" style="color:#3B8C2A"><span>Payment received (${escHtml(p.date||'')}) — ${escHtml(p.method||'')}</span><span>(${fmt(p.amount)})</span></div>`).join('')}
   <div class="total-row grand"><span>Balance due</span><span>${fmt(balance)}</span></div>
 </div>
 
@@ -716,7 +716,7 @@ function printInvoice(bidId){
 </div>
 
 <div class="footer">
-  ${bname} · ${bphone} · Thank you for choosing us!<br>
+  ${escHtml(bname)} · ${escHtml(bphone)} · Thank you for choosing us!<br>
   <em style="margin-top:4px;display:block">To print or save as PDF: tap Share → Print in Safari</em>
 </div>
 </body></html>`;
@@ -1185,7 +1185,7 @@ function openEditBid(bidId,startStep){
     const totalMiles=cmiles.reduce((s,m)=>s+(m.miles||0),0);
     if(totalMiles>0){sf('e-travel',(Math.round(totalMiles*10)/10).toString());}
     const linked=document.getElementById('e-client-linked');
-    if(linked)linked.innerHTML='<span class="conn-tag">'+(c?c.name:'linked')+' — editing existing bid</span>';
+    if(linked)linked.innerHTML='<span class="conn-tag">'+escHtml(c?c.name:'linked')+' — editing existing bid</span>';
     scopeActiveMap={};scopeHrsStore={};roomScopeMap={};estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};
   SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
     const _ptogE=document.getElementById('portfolio-toggle');
@@ -1465,8 +1465,8 @@ function renderDashActiveLiens(){
     const expiring=daysLeft<60;
     return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
-        '<div><div style="font-size:13px;font-weight:700">'+l.client_name+'</div>'+
-        '<div style="font-size:11px;color:var(--text3)">'+fmt(l.amount)+' claimed · filed '+l.date+(l.county?' · '+l.county:'')+'</div>'+
+        '<div><div style="font-size:13px;font-weight:700">'+escHtml(l.client_name)+'</div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+fmt(l.amount)+' claimed · filed '+escHtml(l.date||'')+(l.county?' · '+escHtml(l.county):'')+'</div>'+
         (expiring?'<div style="font-size:10px;font-weight:800;color:#A32D2D;margin-top:2px">⚠️ Expires in ~'+daysLeft+' days</div>':'<div style="font-size:11px;color:var(--text3)">~'+daysLeft+' days remaining</div>')+'</div>'+
         (bid?'<button class="btn btn-sm" onclick="openClientDetail('+bid.client_id+')" style="font-size:10px">View</button>':'')+
       '</div></div>';

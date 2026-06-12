@@ -2597,7 +2597,7 @@ test.describe('GEI sign in person — T&M and BYO', () => {
         bidStatus: bid ? bid.status : null,
         bidSigned: bid ? !!bid.signedAt : null,
         ovHasAllSet: ov ? ov.textContent.includes("You're all set!") : null,
-        ovHasBack: ov ? ov.textContent.includes('Back to estimate') : null,
+        ovHasBack: ov ? ov.textContent.includes('Back to home') : null,
       };
     });
     if (result && !result.error) {

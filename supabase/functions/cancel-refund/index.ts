@@ -16,6 +16,17 @@ const CORS = {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
+  // Verify the caller is an authenticated contractor who owns this bid
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS });
+  }
+  const token = authHeader.split(' ')[1];
+  const { data: { user }, error: authErr } = await supabase.auth.getUser(token);
+  if (authErr || !user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS });
+  }
+
   try {
     const { bidId } = await req.json();
     if (!bidId) return new Response(JSON.stringify({ error: 'bidId required' }), { status: 400, headers: CORS });

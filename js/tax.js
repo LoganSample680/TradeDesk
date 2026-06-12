@@ -85,7 +85,8 @@ function onStateChange(state){
     fetchStateBrackets(state);
   }
   applySettings();saveAll();
-  loadSettingsForm();
+  // No loadSettingsForm() here — the sf() calls above already updated the rate
+  // inputs, and a full-form refill erases every other unsaved field the user typed.
   showToast(info.name+' tax rates loaded','🗺️');
 }
 

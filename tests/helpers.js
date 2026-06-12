@@ -92,11 +92,28 @@ async function mockAllExternal(page, opts = {}) {
     // The app handles these gracefully — filter so assertNoErrors stays clean.
     if (msg.includes('geocoding.geo.census.gov')) return;
     if (msg.includes('photon.komoot.io')) return;
+    // The 15s version poll (index.html) has .catch(()=>{}) but WebKit still emits
+    // a pageerror when page.reload() kills the fetch mid-flight ("access control checks").
+    if (msg.includes('version.json')) return;
     if (page._consoleErrors) page._consoleErrors.push('PAGE ERROR: ' + msg);
+  });
+
+  // ── Block service worker registration — SW fetches bypass page.route
+  // entirely (including the SW script request itself), so once a SW installs,
+  // a page.reload() serves the REAL supabase CDN (503 in CI) instead of the
+  // shim and the boot hangs. Init scripts persist across reloads.
+  await page.addInitScript(() => {
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.register = () => Promise.reject(new Error('SW disabled in tests'));
+    }
   });
 
   await page.route('**/*', async (route) => {
     const url = route.request().url();
+
+    if (url.endsWith('/sw.js')) {
+      return route.fulfill({ status: 404, contentType: 'text/plain', body: '' });
+    }
 
     // ── Serve app locally — pass through ────────────────────────────────────
     if (url.startsWith('http://localhost') || url.startsWith('data:')) {
