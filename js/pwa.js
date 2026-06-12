@@ -153,7 +153,9 @@ async function _pwaHandleSharedPhoto(){
         // Pre-fill the photo in the expense modal
         const blob=new Blob([file],{type:file.type||'image/jpeg'});
         _showReceiptScanner(blob,async b=>{
-          const b64=await compressAndEncodeImage(b,900,0.75);
+          let b64;
+          try{b64=await compressAndEncodeImage(b,900,0.75);}
+          catch(_ce){showToast('Could not read that image','⚠️');return;}
           _expState.imageData={b64,type:'image/jpeg'};_expState.hasReceipt=true;
           const preview=document.getElementById('exp-preview-img');
           if(preview){

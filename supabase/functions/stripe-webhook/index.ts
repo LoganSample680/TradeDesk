@@ -36,7 +36,7 @@ async function recordCompletedPayment(session: Stripe.Checkout.Session) {
     contractor_user_id: meta.contractorUserId,
     client_name: meta.clientName,
     client_signed_name: meta.signerName,
-    amount: amountPaid / 0.25,
+    amount: amountPaid,
     deposit: amountPaid,
     payment_method: paymentMethod,
     payment_status: 'paid',
@@ -45,7 +45,7 @@ async function recordCompletedPayment(session: Stripe.Checkout.Session) {
     signed_at: ts,
     notify_email: meta.notifyEmail,
     storage_key: meta.proposalKey,
-  });
+  }, { onConflict: 'bid_id' });
 
   const { data: zjRow } = await supabase
     .from('zj_data')

@@ -252,7 +252,7 @@ function doneForDay(){
     const rows=todayEntries.map(e=>{
       const sc=SCOPE_ITEMS.find(x=>x.id===e.scope_id)||{icon:'⏱',label:e.scope_label||'Other'};
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">'+
-        '<div style="font-size:13px"><span style="margin-right:6px">'+sc.icon+'</span>'+sc.label+'</div>'+
+        '<div style="font-size:13px"><span style="margin-right:6px">'+sc.icon+'</span>'+escHtml(sc.label||'')+'</div>'+
         '<div style="font-size:13px;font-weight:700;color:var(--text2)">'+_fmtMin(e.minutes)+'</div></div>';
     }).join('');
     const ov=document.createElement('div');ov.className='zmodal-overlay';
@@ -769,8 +769,8 @@ function openJobSheet(clientId){
   hdr.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">'+
       '<div style="min-width:0">'+
-        '<div style="font-size:19px;font-weight:800;line-height:1.1">'+c.name+'</div>'+
-        (c.addr?'<div style="font-size:12px;opacity:.8;margin-top:3px">📍 '+c.addr+'</div>':'')+
+        '<div style="font-size:19px;font-weight:800;line-height:1.1">'+escHtml(c.name||'')+'</div>'+
+        (c.addr?'<div style="font-size:12px;opacity:.8;margin-top:3px">📍 '+escHtml(c.addr)+'</div>':'')+
       '</div>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1">✕</button>'+
     '</div>'+
@@ -1057,7 +1057,7 @@ function openJobSheet(clientId){
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">📝 Job notes</div>'+
         '<textarea id="visit-notes-ta" placeholder="Site conditions, instructions for crew, client requests, punch list..." '+
           'style="width:100%;min-height:75px;font-size:13px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:none;box-sizing:border-box;line-height:1.5" '+
-          'onblur="saveVisitNotes('+visitNotesJobId+',this.value)">'+visitNotesVal+'</textarea>'+
+          'onblur="saveVisitNotes('+visitNotesJobId+',this.value)">'+escHtml(visitNotesVal)+'</textarea>'+
         '<div style="font-size:10px;color:var(--text3);margin-top:4px">Auto-saves when you tap out</div>'+
       '</div>';
   }
@@ -1069,7 +1069,7 @@ function openJobSheet(clientId){
       '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">⚡ Actions</div>'+
       '<div style="display:grid;gap:8px">'+
         (jobActions.length?
-          jobActions.map(j=>'<button onclick="this.closest(\'.zmodal-overlay\').remove();markJobDone('+j.id+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green-mid);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">✓ Mark job complete — '+j.name+'</button>').join('')
+          jobActions.map(j=>'<button onclick="this.closest(\'.zmodal-overlay\').remove();markJobDone('+j.id+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green-mid);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">✓ Mark job complete — '+escHtml(j.name||'')+'</button>').join('')
         :'')+
         (bid?'<button onclick="this.closest(\'.zmodal-overlay\').remove();showChangeOrderModal('+bid.id+','+clientId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">📋 Change order — adjust scope or price</button>':'')+
         '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+clientId+')" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text);text-align:left">📋 Full client record & history</button>'+
@@ -1192,7 +1192,7 @@ function openAssignSubModal(jobId,clientId){
   const ov=document.createElement('div');ov.id='_asub-ov';ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
   const subOpts=subs.length
-    ?subs.map((s,i)=>'<option value="'+i+'">'+escHtml(s.name||'Sub')+(s.trade?' ('+s.trade+')':'')+'</option>').join('')
+    ?subs.map((s,i)=>'<option value="'+i+'">'+escHtml(s.name||'Sub')+(s.trade?' ('+escHtml(s.trade)+')':'')+'</option>').join('')
     :'<option value="">— No subs in roster —</option>';
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:14px">Assign Subcontractor</div>'+
@@ -1430,7 +1430,7 @@ function markJobDone(jobId){
   box.className='zmodal';
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Job complete</div>'+
-    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+j.name+'</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(j.name||'')+'</div>'+
     '<div class="f" style="margin-bottom:14px">'+
       '<label style="font-size:11px;font-weight:700;color:var(--text3)">Completion date</label>'+
       '<input type="date" id="job-done-date" value="'+todayKey()+'" style="font-size:15px;padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text)">'+
@@ -1583,7 +1583,7 @@ function showReviewRequestPrompt(clientId){
     '<div style="text-align:center;font-size:22px;margin-bottom:8px">⭐</div>'+
     '<div class="zmodal-title" style="text-align:center">Request a review?</div>'+
     '<div style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.5">Send '+firstName+' a text asking for a Google review while the job is fresh.</div>'+
-    '<textarea id="review-msg-text" style="width:100%;min-height:90px;font-size:12px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:none;box-sizing:border-box">'+msg+'</textarea>'+
+    '<textarea id="review-msg-text" style="width:100%;min-height:90px;font-size:12px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:none;box-sizing:border-box">'+escHtml(msg)+'</textarea>'+
     '<div class="zmodal-btns" style="gap:8px;margin-top:12px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;flex:1">Skip</button>'+
       '<button onclick="_sendReviewRequest(\''+c.phone+'\');this.closest(\'.zmodal-overlay\').remove()" style="padding:11px;border-radius:var(--r);border:none;background:#FFC107;color:#1a1a1a;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;flex:1">⭐ Send text</button>'+

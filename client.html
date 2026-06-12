@@ -548,7 +548,21 @@ setTimeout(()=>{const b=document.getElementById('boot-bar');if(b)b.style.width='
 let _hub=null,_activeView='overview',_isContractorPreview=new URLSearchParams(location.search).get('preview')==='1';
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtDate=s=>{if(!s)return'';try{const d=s.includes('T')?new Date(s):new Date(s+'T12:00:00');if(isNaN(d.getTime()))return'';return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}};
-const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+// Sanitize contractor-authored HTML (proposal documents) before injecting via innerHTML.
+// Strips active content (scripts, embeds, inline event handlers, javascript: hrefs).
+function sanitizeHtml(html){
+  const doc=new DOMParser().parseFromString(html,'text/html');
+  doc.querySelectorAll('script, iframe, object, embed, form, meta, link').forEach(el=>el.remove());
+  doc.querySelectorAll('[onclick],[onload],[onerror],[onmouseover],[onmouseout],[onfocus],[onblur],[onchange],[onsubmit],[onreset],[onkeydown],[onkeyup],[onkeypress]').forEach(el=>{
+    ['onclick','onload','onerror','onmouseover','onmouseout','onfocus','onblur','onchange','onsubmit','onreset','onkeydown','onkeyup','onkeypress'].forEach(attr=>el.removeAttribute(attr));
+  });
+  doc.querySelectorAll('[href]').forEach(el=>{
+    const href=el.getAttribute('href')||'';
+    if(/^javascript:/i.test(href))el.removeAttribute('href');
+  });
+  return doc.body.innerHTML;
+}
 // Alias — app pages define escHtml; code copied from them (signature block, etc.)
 // references it. Without this alias those paths throw ReferenceError at render.
 const escHtml=esc;
@@ -949,7 +963,12 @@ function applyBranding(h){
   const nci=document.getElementById('nav-client-info');
   if(nci)nci.innerHTML='<div class="nav-client-name">'+esc(h.clientName||'')+'</div>'+(h.clientAddr?'<div class="nav-client-addr">'+esc(h.clientAddr)+'</div>':'');
   const nf=document.getElementById('nav-footer');
-  if(nf&&h.bwebsite)nf.innerHTML='<a href="'+esc(h.bwebsite)+'" target="_blank" style="color:inherit;text-decoration:none">'+esc(h.bwebsite.replace(/^https?:\/\//,''))+'</a>';
+  if(nf&&h.bwebsite){
+    const safeUrl=(h.bwebsite||'').trim();
+    const isSafeUrl=/^https?:\/\//i.test(safeUrl);
+    if(isSafeUrl)nf.innerHTML='<a href="'+esc(safeUrl)+'" target="_blank" style="color:inherit;text-decoration:none">'+esc(safeUrl.replace(/^https?:\/\//,''))+'</a>';
+    else nf.textContent=safeUrl;
+  }
   // Account chip: avatar circle + first name + chevron
   const fn=(h.clientName||'').split(' ')[0]||'?';
   const avatar=document.getElementById('acct-avatar');
@@ -1630,7 +1649,7 @@ function _showEpaDoc(bidId){
   const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const ackTs=bid.epaAckAt||bid.signedAt;
   const dt=ackTs?new Date(ackTs).toLocaleString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
-  const sigImg=bid.signatureData?'<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:12px;margin:12px 0;text-align:center"><img src="'+bid.signatureData+'" style="max-width:100%;max-height:110px" alt="Client signature"></div>':'';
+  const sigImg=bid.signatureData?'<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:12px;margin:12px 0;text-align:center"><img src="'+esc(bid.signatureData)+'" style="max-width:100%;max-height:110px" alt="Client signature"></div>':'';
   const ov=document.createElement('div');
   ov.id='epa-doc-ov';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
@@ -1719,7 +1738,7 @@ function _showCODoc(bidId,coNum){
   if(signed){
     h+='<div style="border-top:2px solid #1a1a18;padding-top:14px">';
     h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#666;margin-bottom:8px">Approved &amp; Signed</div>';
-    if(sigImgData)h+='<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:12px;margin:12px 0;text-align:center"><img src="'+sigImgData+'" style="max-width:100%;max-height:110px" alt="Client signature"></div>';
+    if(sigImgData)h+='<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:12px;margin:12px 0;text-align:center"><img src="'+esc(sigImgData||'')+'" style="max-width:100%;max-height:110px" alt="Client signature"></div>';
     h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
     h+='<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:3px">Signed By</div><div style="font-size:13px;font-weight:700;color:#1a1a18">'+esc(co.signerName||'Client')+'</div></div>';
     h+='<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:3px">Date &amp; Time</div><div style="font-size:13px;font-weight:700;color:#1a1a18">'+esc(dt||'—')+'</div></div>';
@@ -1982,7 +2001,11 @@ function renderDocuments(){
   html+='<div class="hub-contractor-grid">';
   html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Business</div><div class="hub-contractor-val">'+esc(h.contractorName||'—')+'</div></div>';
   html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Phone</div><div class="hub-contractor-val">'+(h.contractorPhone?'<a href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" style="color:inherit;text-decoration:none">'+esc(h.contractorPhone)+'</a>':'—')+'</div></div>';
-  if(h.bwebsite)html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Website</div><div class="hub-contractor-val"><a href="'+esc(h.bwebsite)+'" target="_blank" style="color:var(--denim);text-decoration:none">'+esc(h.bwebsite.replace(/^https?:\/\//,''))+'</a></div></div>';
+  if(h.bwebsite){
+    const safeUrl=(h.bwebsite||'').trim();
+    const isSafeUrl=/^https?:\/\//i.test(safeUrl);
+    html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Website</div><div class="hub-contractor-val">'+(isSafeUrl?'<a href="'+esc(safeUrl)+'" target="_blank" style="color:var(--denim);text-decoration:none">'+esc(safeUrl.replace(/^https?:\/\//,''))+'</a>':esc(safeUrl))+'</div></div>';
+  }
   if(h.trade)html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Trade</div><div class="hub-contractor-val" style="text-transform:capitalize">'+esc(h.trade)+'</div></div>';
   html+='</div>';
   html+='</div>';
@@ -2258,7 +2281,7 @@ async function openProposal(bidId){
       const payLabel=(propData.paymentMethod||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
       sigBlock='<div style="margin-top:32px;border-top:2px solid var(--ink,#1a1a18);padding-top:24px">'+
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#666;margin-bottom:16px">Client Signature</div>'+
-        (propData.signatureDataUrl?'<div style="background:#fff;border:1.5px solid #e0e0dc;border-radius:10px;padding:12px;margin-bottom:16px;text-align:center"><img src="'+propData.signatureDataUrl+'" style="max-width:100%;max-height:120px" alt="Client signature"></div>':'')+
+        (propData.signatureDataUrl?'<div style="background:#fff;border:1.5px solid #e0e0dc;border-radius:10px;padding:12px;margin-bottom:16px;text-align:center"><img src="'+esc(propData.signatureDataUrl||'')+'" style="max-width:100%;max-height:120px" alt="Client signature"></div>':'')+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:8px">'+
           '<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:4px">Signed By</div><div style="font-size:14px;font-weight:700;color:#1a1a18">'+escHtml(propData.signerName)+'</div></div>'+
           '<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:4px">Date</div><div style="font-size:14px;font-weight:700;color:#1a1a18">'+escHtml(sigDate)+'</div></div>'+
@@ -2267,7 +2290,7 @@ async function openProposal(bidId){
         '</div>'+
       '</div>';
     }
-    ct.innerHTML=(propData.proposalHtml||'<p style="color:#999;padding:20px">Proposal content not available.</p>')+sigBlock+
+    ct.innerHTML=(propData.proposalHtml?sanitizeHtml(propData.proposalHtml||''):'<p style="color:#999;padding:20px">Proposal content not available.</p>')+sigBlock+
       '<div style="margin-top:40px;padding-top:20px;border-top:1px solid #e0e0dc;display:flex;gap:10px" class="no-print">'+
       '<button onclick="closeProp()" class="btn btn-sec" style="width:auto;padding:12px 24px">← Back to hub</button></div>';
   }catch(e){
@@ -2276,7 +2299,7 @@ async function openProposal(bidId){
     // client should never hit a dead end on a document they already signed.
     if(bid.signedAt){
       const dt=new Date(bid.signedAt).toLocaleString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-      const img=bid.signatureData?'<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:12px;margin:14px 0;text-align:center"><img src="'+bid.signatureData+'" style="max-width:100%;max-height:120px" alt="Client signature"></div>':'';
+      const img=bid.signatureData?'<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:12px;margin:14px 0;text-align:center"><img src="'+esc(bid.signatureData||'')+'" style="max-width:100%;max-height:120px" alt="Client signature"></div>':'';
       ct.innerHTML='<div style="padding:24px 20px">'+
         '<div style="font-size:18px;font-weight:800;margin-bottom:4px">'+esc(bid.type||'Signed Agreement')+'</div>'+
         '<div style="font-size:12px;color:#64748b;margin-bottom:18px">The full document is temporarily unavailable — here is your signature record.</div>'+

@@ -666,14 +666,14 @@ async function init(){
       document.getElementById('done-msg').textContent='This proposal has already been signed. The contractor will be in touch to confirm your start date.';
       document.getElementById('done-rows').innerHTML=
         '<div class="row"><span class="rl">Confirmation</span><span class="rv" style="font-weight:700;color:var(--green)">'+confNum+'</span></div>'+
-        '<div class="row"><span class="rl">Client</span><span class="rv">'+(_prop.clientName||_sigRecord?.client_signed_name||'')+'</span></div>'+
-        (_prop.clientAddr?'<div class="row"><span class="rl">Address</span><span class="rv" style="text-align:right;max-width:220px">'+_prop.clientAddr+'</span></div>'+
+        '<div class="row"><span class="rl">Client</span><span class="rv">'+escHtmlN(_prop.clientName||_sigRecord?.client_signed_name||'')+'</span></div>'+
+        (_prop.clientAddr?'<div class="row"><span class="rl">Address</span><span class="rv" style="text-align:right;max-width:220px">'+escHtmlN(_prop.clientAddr)+'</span></div>'+
           '<div class="row"><span class="rl">Directions</span><span class="rv"><a href="https://maps.google.com/?q='+encodeURIComponent(_prop.clientAddr)+'" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700;text-decoration:none">Open in Maps →</a></span></div>':'')+
         '<div class="row"><span class="rl">Total</span><span class="rv">'+fmt(_prop.amount)+'</span></div>'+
         '<div class="row"><span class="rl">Deposit</span><span class="rv">'+fmt(_prop.deposit)+'</span></div>'+
         (payMethod?'<div class="row"><span class="rl">Payment</span><span class="rv">'+payLabel+'</span></div>':'')+
         '<div class="row"><span class="rl">Signed</span><span class="rv">'+signedDate+'</span></div>'+
-        (_prop.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none">📞 Call '+(_prop.businessName||'us')+'</a></span></div>':'');
+        (_prop.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none">📞 Call '+escHtmlN(_prop.businessName||'us')+'</a></span></div>':'');
       const _stamp=document.getElementById('done-stamp');
       if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">✓ Signed &amp; Approved</div>';_stamp.style.display='block';}
       show('pg-done');return;
@@ -709,7 +709,7 @@ async function init(){
     document.querySelectorAll('.decline-biz-name').forEach(el=>{el.textContent=_biz;});
     // Topbar
     const tbName=document.querySelector('.topbar-name');if(tbName)tbName.textContent=_biz;
-    if(_prop.logoData){const tbLogo=document.querySelector('.topbar-logo');if(tbLogo){tbLogo.innerHTML='<img src="'+_prop.logoData+'" style="height:26px;max-width:80px;object-fit:contain;border-radius:4px">';}}
+    if(_prop.logoData&&/^data:image\//.test(_prop.logoData)){const tbLogo=document.querySelector('.topbar-logo');if(tbLogo){tbLogo.innerHTML='<img src="'+escHtmlN(_prop.logoData)+'" style="height:26px;max-width:80px;object-fit:contain;border-radius:4px">';}}
     // Hero card
     document.getElementById('hero-biz-name').textContent=_biz;
     if(_prop.businessPhone){document.getElementById('hero-biz-phone').textContent=_prop.businessPhone;}
@@ -834,10 +834,10 @@ async function init(){
     // Contractor contact footer
     (function(){
       const _ctct=[];
-      if(_prop.businessPhone)_ctct.push('<a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);text-decoration:none;font-weight:600">'+_prop.businessPhone+'</a>');
-      const _em=_prop.notifyEmail||'';if(_em.includes('@'))_ctct.push('<a href="mailto:'+_em+'" style="color:var(--accent);text-decoration:none;font-weight:600">'+_em+'</a>');
+      if(_prop.businessPhone)_ctct.push('<a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);text-decoration:none;font-weight:600">'+escHtmlN(_prop.businessPhone)+'</a>');
+      const _em=_prop.notifyEmail||'';if(_em.includes('@'))_ctct.push('<a href="mailto:'+escHtmlN(_em)+'" style="color:var(--accent);text-decoration:none;font-weight:600">'+escHtmlN(_em)+'</a>');
       const _ws=(_prop.bwebsite||'').trim();
-      if(_ws){const _wh=/^https?:\/\//.test(_ws)?_ws:'https://'+_ws;_ctct.push('<a href="'+_wh+'" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-weight:600">'+_ws.replace(/^https?:\/\//,'')+'</a>');}
+      if(_ws&&/^https?:\/\//i.test(_ws)){const _wh=_ws;_ctct.push('<a href="'+escHtmlN(_wh)+'" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-weight:600">'+escHtmlN(_ws.replace(/^https?:\/\//,''))+'</a>');}
       if(_ctct.length){const _ftr=document.createElement('div');_ftr.id='prop-contact-footer';_ftr.style.cssText='margin-top:18px;padding-top:14px;border-top:1px solid var(--bdr);font-size:11px;color:var(--text3);text-align:center;line-height:2';_ftr.innerHTML='<div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px">Contact us</div>'+_ctct.join('<span style="margin:0 5px;opacity:.35"> · </span>');document.getElementById('prop-html').appendChild(_ftr);}
     })();
     // Collapsible scope lists — collapse any <ol> with 5+ items, show first 4 + expand button
@@ -1050,8 +1050,8 @@ function _buildColorPickUI(){
   rooms.forEach((data,roomName)=>{
     const safeId=roomName.replace(/[^a-zA-Z0-9]/g,'_');
     html+='<div style="border:1px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:12px">'+
-      '<div style="font-weight:700;font-size:14px;color:var(--ink);margin-bottom:4px">'+roomName+'</div>'+
-      '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">'+data.types.join(' · ')+'</div>'+
+      '<div style="font-weight:700;font-size:14px;color:var(--ink);margin-bottom:4px">'+_escHtml(roomName)+'</div>'+
+      '<div style="font-size:11px;color:var(--text3);margin-bottom:10px">'+_escHtml(data.types.join(' · '))+'</div>'+
       '<div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:end">'+
         '<div><label style="font-size:11px;font-weight:600;color:var(--text2);display:block;margin-bottom:4px">Color name</label>'+
         '<input type="text" id="cp-name-'+safeId+'" placeholder="e.g. Accessible Beige" value="'+_escHtml(data.existing)+'" style="width:100%;padding:9px 10px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;color:var(--ink);background:#fff">'+
@@ -1213,10 +1213,10 @@ async function submitCash(){
       // even when the storage-JSON update was missed at signing time.
       signature_data:_sigData||null,
     };
-    let{error:_upsertErr}=await _supa.from('signed_proposals').upsert({..._core,..._optional});
+    let{error:_upsertErr}=await _supa.from('signed_proposals').upsert({..._core,..._optional},{onConflict:'bid_id'});
     if(_upsertErr&&(_upsertErr.code==='PGRST204'||/column/i.test(_upsertErr.message||''))){
       console.warn('signed_proposals: optional column rejected, retrying core only —',_upsertErr.message);
-      ({error:_upsertErr}=await _supa.from('signed_proposals').upsert(_core));
+      ({error:_upsertErr}=await _supa.from('signed_proposals').upsert(_core,{onConflict:'bid_id'}));
     }
     if(_upsertErr)throw _upsertErr;
     // Signal the contractor's open TradeDesk tab to refresh immediately
@@ -1248,13 +1248,13 @@ function showDone(method){
   const payLabel=isAch?'🏦 Bank transfer':isCashApp?'💚 Cash App Pay':isCheck?'📝 Check':method==='card'?'💳 Card charged':'💵 Cash on arrival';
   document.getElementById('done-rows').innerHTML=
     (_confNum?'<div class="row"><span class="rl">Confirmation</span><span class="rv" style="font-weight:700;color:var(--green)">'+_confNum+'</span></div>':'')+
-    '<div class="row"><span class="rl">Client</span><span class="rv">'+(_prop?.clientName||'')+'</span></div>'+
-    (_prop?.clientAddr?'<div class="row"><span class="rl">Address</span><span class="rv" style="text-align:right;max-width:220px">'+_prop.clientAddr+'</span></div>'+
+    '<div class="row"><span class="rl">Client</span><span class="rv">'+escHtmlN(_prop?.clientName||'')+'</span></div>'+
+    (_prop?.clientAddr?'<div class="row"><span class="rl">Address</span><span class="rv" style="text-align:right;max-width:220px">'+escHtmlN(_prop.clientAddr)+'</span></div>'+
       '<div class="row"><span class="rl">Directions</span><span class="rv"><a href="https://maps.google.com/?q='+encodeURIComponent(_prop.clientAddr)+'" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700;text-decoration:none">Open in Maps →</a></span></div>':'')+
     '<div class="row"><span class="rl">Total</span><span class="rv">'+fmt(_prop?.amount)+'</span></div>'+
     '<div class="row"><span class="rl">Deposit</span><span class="rv">'+fmt(_prop?.deposit)+'</span></div>'+
     '<div class="row"><span class="rl">Payment</span><span class="rv">'+payLabel+'</span></div>'+
-    (_prop?.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none">📞 Call '+(_prop.businessName||'us')+'</a></span></div>':'');
+    (_prop?.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none">📞 Call '+escHtmlN(_prop.businessName||'us')+'</a></span></div>':'');
   const _stamp=document.getElementById('done-stamp');
   if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">✓ Signed &amp; Approved</div>';_stamp.style.display='block';}
   const hubUrl=new URLSearchParams(location.search).get('hub')||'';
@@ -1302,7 +1302,7 @@ async function _confirmDecline(){
       payment_method:'declined',payment_status:'declined',
       signed_at:ts,notify_email:_prop.notifyEmail,storage_key:key,
       portfolio_accepted:false,
-    });
+    },{onConflict:'bid_id'});
   }catch(e){console.error('[decline]',e);}
   const modal=document.getElementById('decline-modal');
   if(modal)modal.style.display='none';

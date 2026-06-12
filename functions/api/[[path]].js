@@ -25,10 +25,12 @@ export async function onRequest({ request }) {
   const fwdHeaders = new Headers(request.headers);
   fwdHeaders.delete('host');
 
-  // WebSocket upgrade — Supabase Realtime
+  // WebSocket upgrade — Supabase Realtime.
+  // Workers can't fetch() a wss:// URL — a WebSocket is opened by fetching the
+  // https URL with the Upgrade header intact. The old wss:// rewrite made every
+  // realtime connection fail, killing cross-device live sync.
   if (request.headers.get('Upgrade') === 'websocket') {
-    const wsTarget = target.replace(/^https/, 'wss');
-    const upstreamRes = await fetch(wsTarget, { headers: fwdHeaders });
+    const upstreamRes = await fetch(target, { headers: fwdHeaders });
     const upstream = upstreamRes.webSocket;
     if (!upstream) {
       return new Response('WebSocket upstream unavailable', { status: 502 });

@@ -32,15 +32,16 @@ function _renderSetIndex() {
     const city = S.bcity || '';
     const state = S.state || '';
     const loc = [city, state].filter(Boolean).join(', ');
-    bizMeta.innerHTML = name ? `<strong>${name}</strong>${loc ? '<br>' + loc : ''}` : '';
+    bizMeta.innerHTML = name ? `<strong>${escHtml(name)}</strong>${loc ? '<br>' + escHtml(loc) : ''}` : '';
   }
   // Branding meta
   const brandMeta = document.getElementById('set-meta-branding');
   if (brandMeta) {
     const color = S.brandColor || '#2D5DA8';
+    const safeColor = /^#[0-9a-fA-F]{3,8}$/.test(color) ? color : 'var(--blue)';
     const colorName = _brandColorName(color);
     const hasLogo = !!S.logoData;
-    brandMeta.innerHTML = `<strong style="color:${color}">●</strong> ${colorName}${hasLogo ? '<br>Logo set' : ''}`;
+    brandMeta.innerHTML = `<strong style="color:${safeColor}">●</strong> ${colorName}${hasLogo ? '<br>Logo set' : ''}`;
   }
   // Rates meta
   const ratesMeta = document.getElementById('set-meta-rates');
@@ -318,7 +319,7 @@ function renderLicensing(){
       if(l.holderName)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:4px">👤 '+escHtml(l.holderName)+'</div>';
       if(l.licenseNumber)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:4px">🔢 '+escHtml(l.licenseNumber)+'</div>';
       if(isEquip){
-        if(l.make||l.model||l.serial)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:4px">'+[l.make,l.model,l.serial?'SN: '+l.serial:''].filter(Boolean).join(' · ')+'</div>';
+        if(l.make||l.model||l.serial)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:4px">'+escHtml([l.make,l.model,l.serial?'SN: '+l.serial:''].filter(Boolean).join(' · '))+'</div>';
         if(lastLog)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:8px">Last entry: '+fmtDateShort(lastLog.date)+' — '+escHtml(lastLog.type)+'</div>';
         html+='<div style="display:flex;gap:8px;margin-top:8px"><button onclick="openHepaLog('+l.id+')" class="btn btn-sm" style="font-size:11px">📋 Log ('+logCount+')</button><button onclick="openEditLicense('+l.id+')" class="btn btn-sm" style="font-size:11px">Edit</button><button onclick="deleteLicense('+l.id+')" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Delete</button></div>';
       } else {
@@ -563,12 +564,12 @@ function addTimeOff(start,end,label){
   if(!S.timeOff)S.timeOff=[];
   S.timeOff.push({start,end,label:label||''});
   S.timeOff.sort((a,b)=>a.start.localeCompare(b.start));
-  saveSettings();refreshAvail();renderCalendar&&renderCalendar();
+  _settingsChanged();refreshAvail();renderCalendar&&renderCalendar();
 }
 function removeTimeOff(idx){
   if(!S.timeOff)return;
   S.timeOff.splice(idx,1);
-  saveSettings();refreshAvail();renderCalendar&&renderCalendar();
+  _settingsChanged();refreshAvail();renderCalendar&&renderCalendar();
 }
 function openTimeOffModal(){
   const existing=document.getElementById('timeoff-modal-overlay');
@@ -583,7 +584,7 @@ function openTimeOffModal(){
       (blocks.length?'<div style="margin-bottom:12px">'+blocks.map((b,i)=>
         '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--amber-lt);border:1px solid #D97706;border-radius:var(--r);padding:8px 10px;margin-bottom:6px">'+
           '<div>'+
-            '<div style="font-size:12px;font-weight:700;color:#92400E">'+(b.label||'Time off')+'</div>'+
+            '<div style="font-size:12px;font-weight:700;color:#92400E">'+escHtml(b.label||'Time off')+'</div>'+
             '<div style="font-size:11px;color:var(--text3)">'+b.start+(b.start!==b.end?' → '+b.end:'')+'</div>'+
           '</div>'+
           '<button onclick="removeTimeOff('+i+');document.getElementById(\'timeoff-modal-overlay\').remove();openTimeOffModal()" style="border:none;background:#A32D2D;color:#fff;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>'+
@@ -661,7 +662,7 @@ function buildScopeDefaultsUI(){
 function saveScopeDefault(id,checked){
   if(!S.defaultScope)S.defaultScope={};
   S.defaultScope[id]=checked;
-  saveSettings();
+  _settingsChanged();
 }
 function applyDefaultScope(){
   const defaults=S.defaultScope||{};
@@ -707,7 +708,29 @@ function applySettings(){
   KS_BRACKETS.qss=KS_BRACKETS.mfj;
   KS_STD={single:_sd.stdS||0,mfj:_sd.stdM||0,mfs:_sd.stdS||0,hoh:_sd.stdS||0,qss:_sd.stdM||0};
 }
+// Background syncs (broadcast from another device, auto rate/bracket refresh)
+// must never rewrite the form while the user is editing it — that silently
+// erases everything typed since the last Save. "Editing" = the user actually
+// typed since the last render/save (_settingsFormDirty, set by the input
+// listener below). A clean Settings page DOES refresh, so changes saved on
+// another device appear live.
+function _refillSettingsFormUnlessEditing(){
+  if(document.getElementById('pg-settings')?.classList.contains('active')&&window._settingsFormDirty){
+    if(typeof _setLog==='function')_setLog('RENDER SKIPPED — user has unsaved Settings edits; refusing to overwrite them');
+    return;
+  }
+  loadSettingsForm();
+}
+// Any keystroke in the Settings page marks the form dirty until the next
+// render (loadSettingsForm) or Save.
+(function(){
+  const _pg=document.getElementById('pg-settings');
+  if(_pg)_pg.addEventListener('input',()=>{window._settingsFormDirty=true;});
+})();
 function loadSettingsForm(){
+  if(typeof _setLog==='function')_setLog('RENDER — loadSettingsForm() filling form fields from S');
+  window._settingsFormFilled=true; // saveSettings() may now safely harvest the form
+  window._settingsFormDirty=false; // fresh render — no in-progress edits
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
   const sd=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val;};
   const fmt$=n=>'$'+(n||0).toLocaleString();
@@ -809,6 +832,14 @@ function _collectSwPriceOverrides(){
   return out;
 }
 function saveSettings(){
+  // Guard: saveSettings harvests EVERY field from the form. If the form was
+  // never filled this session (loadSettingsForm not yet run), harvesting would
+  // rebuild S from empty inputs and wipe every saved value — exactly the bug
+  // where registerDevice() wiped settings on every boot. Persist S as-is instead.
+  if(!window._settingsFormFilled){
+    if(typeof _setLog==='function')_setLog('SAVE BLOCKED — saveSettings() called before the form was filled; persisting S without harvesting');
+    saveAll();return;
+  }
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
   setOwnerName(gs('set-owner-name')||getOwnerName()||'');
   const _smsD=_getSmsDefaults();
@@ -825,15 +856,29 @@ function saveSettings(){
     ccSurchargeEnabled:!!(document.getElementById('set-cc-surcharge-enabled')?document.getElementById('set-cc-surcharge-enabled').checked:false),
     ccSurchargePct:parseFloat((document.getElementById('set-cc-surcharge-pct')?document.getElementById('set-cc-surcharge-pct').value:'3')||'3')||3,
     financeChargePct:parseFloat((document.getElementById('set-finance-charge-pct')?document.getElementById('set-finance-charge-pct').value:'1.5')||'1.5')||1.5,
-    salesTaxRate:gf('set-sales-tax-rate')||S.salesTaxRate||0,
+    salesTaxRate:(()=>{const _sr=v('set-sales-tax-rate').trim();return _sr===''?0:parseFloat(_sr)||0;})(),
     salesTaxRateSource:S.salesTaxRateSource||'',
     swPrices:_collectSwPriceOverrides(),
     // Last explicit settings save — lets cloud/cache loads detect a stale
     // incoming copy and keep local (see _mergeIncomingSettings in cloud.js)
     settingsTs:Date.now()};
+  if(typeof _setLog==='function')_setLog('SAVE — user hit Save, S rebuilt from form + new settingsTs stamped');
+  window._settingsFormDirty=false; // edits are now saved — background refills are safe again
   applySettings();saveAll();
   // Flush settings to Supabase immediately (don't rely on 2s debounce — user may refresh first)
   if(typeof supaSaveToCloud==='function')supaSaveToCloud();
+  // Keep accounts table in sync so loadAccountData() reads the correct values on next page load.
+  // Without this, loadAccountData() overwrites S.bname with the original onboarding value every refresh.
+  if(typeof _supa!=='undefined'&&_supa&&typeof _account!=='undefined'&&_account?.id){
+    const _acctUpdates={};
+    if(S.bname!==_account.business_name)_acctUpdates.business_name=S.bname||'';
+    if(S.bphone!==_account.phone)_acctUpdates.phone=S.bphone||'';
+    if(Object.keys(_acctUpdates).length){
+      _supa.from('accounts').update(_acctUpdates).eq('id',_account.id).then(()=>{
+        if(_account){if('business_name'in _acctUpdates)_account.business_name=S.bname;if('phone'in _acctUpdates)_account.phone=S.bphone;}
+      }).catch(e=>console.warn('Account sync failed:',e));
+    }
+  }
   // Refresh the nav user card so a freshly entered name shows immediately
   // (applyPermissions owns the nav-user-name/avatar/role render).
   if(typeof applyPermissions==='function')applyPermissions();
@@ -1281,7 +1326,7 @@ function obBtn(label,onclick,secondary){
 function obInput(id,label,placeholder,type,value){
   return '<div style="margin-bottom:18px">'+
     '<label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">'+label+'</label>'+
-    '<input type="'+(type||'text')+'" id="'+id+'" placeholder="'+placeholder+'" value="'+(value||'')+'" style="font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;outline:none;transition:border-color .15s;font-family:inherit" onfocus="this.style.borderColor=\'var(--blue)\'" onblur="this.style.borderColor=\'var(--border2)\'">'+
+    '<input type="'+(type||'text')+'" id="'+id+'" placeholder="'+placeholder+'" value="'+escHtml(value||'')+'" style="font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;outline:none;transition:border-color .15s;font-family:inherit" onfocus="this.style.borderColor=\'var(--blue)\'" onblur="this.style.borderColor=\'var(--border2)\'">'+
   '</div>';
 }
 
@@ -1515,7 +1560,7 @@ function obVehRow(v,i){
       '<div style="font-size:13px;font-weight:700">Vehicle '+(i+1)+'</div>'+
       '<button onclick="_ob.vehicles.splice('+i+',1);obStep6(document.getElementById(\'ob-body\'))" style="border:none;background:none;color:#A32D2D;cursor:pointer;font-size:18px;padding:0">×</button>'+
     '</div>'+
-    '<input placeholder="Name (e.g. White F-150)" value="'+(v.name||'')+'" oninput="_ob.vehicles['+i+'].name=this.value" style="width:100%;box-sizing:border-box;margin-bottom:8px;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-family:inherit">'+
+    '<input placeholder="Name (e.g. White F-150)" value="'+escHtml(v.name||'')+'" oninput="_ob.vehicles['+i+'].name=this.value" style="width:100%;box-sizing:border-box;margin-bottom:8px;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-family:inherit">'+
     '<select oninput="_ob.vehicles['+i+'].type=this.value" style="width:100%;box-sizing:border-box;'+(needVin?'margin-bottom:8px;':'')+'padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-family:inherit">'+
       ['Truck','Van','SUV','Car','Trailer'].map(t=>'<option'+(v.type===t?' selected':'')+'>'+t+'</option>').join('')+
     '</select>'+

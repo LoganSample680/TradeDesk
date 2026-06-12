@@ -117,8 +117,8 @@ function _fleetCard(v, idx) {
   return `<div class="card" style="margin-bottom:10px;${status==='down'?'border-left:3px solid var(--red);':''}${status==='sold'?'opacity:.7;':''}" onclick="openFleetVehicleDetail(${idx})">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
       <div style="flex:1;min-width:0">
-        <div style="font-size:16px;font-weight:800;color:var(--text);margin-bottom:1px">${v.nickname||v.name}</div>
-        ${v.nickname?`<div style="font-size:11px;color:var(--text3)">${v.name}</div>`:''}
+        <div style="font-size:16px;font-weight:800;color:var(--text);margin-bottom:1px">${escHtml(v.nickname||v.name||'')}</div>
+        ${v.nickname?`<div style="font-size:11px;color:var(--text3)">${escHtml(v.name||'')}</div>`:''}
         <div style="font-size:11px;color:${statusColor};font-weight:700;margin-top:3px">${statusLabels[status]||statusLabels.active}</div>
       </div>
       <button onclick="event.stopPropagation();openAddVehicleModal(${idx})" class="btn btn-sm" style="font-size:11px;padding:3px 8px;flex-shrink:0">Edit</button>
@@ -141,7 +141,7 @@ function _fleetCard(v, idx) {
     ${downDays>0?`<div style="margin-top:8px;font-size:11px;color:var(--red)">⏱ Down ${downDays} day${downDays===1?'':'s'} this year</div>`:''}
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;gap:8px">
       <button onclick="event.stopPropagation();openFleetVehicleDetail(${idx});setTimeout(()=>setFleetDetailTab('service'),80)" style="background:none;border:none;padding:0;cursor:pointer;text-align:left;font-size:11px;color:var(--blue);font-family:inherit;flex:1;min-width:0">
-        ${lastMaint?`🔧 ${lastMaint.typeLabel||lastMaint.type} <span style="color:var(--text3)">${_fleetFmtDate(lastMaint.date)}</span> <span style="color:var(--text3)">›</span>`:'<span style="color:var(--text3)">No service records</span>'}
+        ${lastMaint?`🔧 ${escHtml(lastMaint.typeLabel||lastMaint.type||'')} <span style="color:var(--text3)">${_fleetFmtDate(lastMaint.date)}</span> <span style="color:var(--text3)">›</span>`:'<span style="color:var(--text3)">No service records</span>'}
       </button>
       <button onclick="event.stopPropagation();openAddMaintenanceModal(${idx})" class="btn btn-sm" style="font-size:11px;padding:3px 10px;flex-shrink:0">+ Log service</button>
     </div>
@@ -266,8 +266,8 @@ function _renderFleetDetailModal() {
   box.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 16px 0">
       <div>
-        <div style="font-size:18px;font-weight:800">${v.nickname||v.name}</div>
-        ${v.nickname?`<div style="font-size:11px;color:var(--text3)">${v.name}</div>`:''}
+        <div style="font-size:18px;font-weight:800">${escHtml(v.nickname||v.name||'')}</div>
+        ${v.nickname?`<div style="font-size:11px;color:var(--text3)">${escHtml(v.name||'')}</div>`:''}
         <div style="font-size:12px;font-weight:700;color:${statusColors[status]};margin-top:2px">${statusLabels[status]}</div>
       </div>
       <button onclick="_closeFleetDetail()" style="font-size:22px;line-height:1;background:none;border:none;color:var(--text3);cursor:pointer;padding:4px">×</button>
@@ -345,9 +345,9 @@ function _fleetDetailOverviewHtml(v, pnl, maint, downDays, allDownDays, yr) {
       ${v.purchasePrice?`<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--text3)">Purchase price</span><span style="font-size:12px;font-weight:700">$${v.purchasePrice.toLocaleString()}</span></div>`:''}
       ${v.purchaseDate?`<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--text3)">Purchase date</span><span style="font-size:12px">${_fleetFmtDate(v.purchaseDate)}</span></div>`:''}
       ${v.purchaseOdo?`<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--text3)">Odometer at purchase</span><span style="font-size:12px">${v.purchaseOdo.toLocaleString()} mi</span></div>`:''}
-      ${v.plate?`<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--text3)">License plate</span><span style="font-size:12px;font-weight:700">${v.plate}</span></div>`:''}
-      ${v.vin?`<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--text3)">VIN</span><span style="font-size:11px;font-family:monospace">${v.vin}</span></div>`:''}
-      ${v.color?`<div style="display:flex;justify-content:space-between"><span style="font-size:12px;color:var(--text3)">Color</span><span style="font-size:12px">${v.color}</span></div>`:''}
+      ${v.plate?`<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--text3)">License plate</span><span style="font-size:12px;font-weight:700">${escHtml(v.plate)}</span></div>`:''}
+      ${v.vin?`<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:12px;color:var(--text3)">VIN</span><span style="font-size:11px;font-family:monospace">${escHtml(v.vin)}</span></div>`:''}
+      ${v.color?`<div style="display:flex;justify-content:space-between"><span style="font-size:12px;color:var(--text3)">Color</span><span style="font-size:12px">${escHtml(v.color)}</span></div>`:''}
     </div>`:''}
 
     ${status==='sold'&&v.saleDate?`
@@ -365,7 +365,7 @@ function _fleetDetailOverviewHtml(v, pnl, maint, downDays, allDownDays, yr) {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--border)">
           <div>
             <div style="font-size:12px;font-weight:600">${_fleetFmtDate(d.start)} – ${d.end?_fleetFmtDate(d.end):'ongoing'}</div>
-            ${d.reason?`<div style="font-size:11px;color:var(--text3)">${d.reason}</div>`:''}
+            ${d.reason?`<div style="font-size:11px;color:var(--text3)">${escHtml(d.reason)}</div>`:''}
           </div>
           <div style="font-size:11px;color:var(--red)">${_fleetDowntimeDays(d)} day${_fleetDowntimeDays(d)===1?'':'s'}</div>
         </div>
@@ -391,10 +391,10 @@ function _fleetDetailServiceHtml(v, maint) {
 
   const _svcParts = m => {
     const parts = [];
-    if(m.oilBrand||m.oilType) parts.push((m.oilBrand?m.oilBrand+' ':'')+m.oilType);
-    if(m.oilFilterPart) parts.push('Filter: '+m.oilFilterPart);
-    if(m.tireBrand) parts.push(m.tireBrand+(m.tireSize?' '+m.tireSize:'')+(m.tireCount?' ×'+m.tireCount:''));
-    if(m.vendor) parts.push(m.vendor);
+    if(m.oilBrand||m.oilType) parts.push((m.oilBrand?escHtml(m.oilBrand)+' ':'')+escHtml(m.oilType||''));
+    if(m.oilFilterPart) parts.push('Filter: '+escHtml(m.oilFilterPart));
+    if(m.tireBrand) parts.push(escHtml(m.tireBrand)+(m.tireSize?' '+escHtml(m.tireSize):'')+(m.tireCount?' ×'+m.tireCount:''));
+    if(m.vendor) parts.push(escHtml(m.vendor));
     return parts.join(' · ');
   };
 
@@ -413,11 +413,11 @@ function _fleetDetailServiceHtml(v, maint) {
         const icon=MAINT_TYPES[m.type]?MAINT_TYPES[m.type].icon:'🔧';
         const dateShort=m.date?new Date(m.date+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';
         const nextInfo=m.nextOilMiles?`<div style="font-size:10px;color:var(--text3);margin-top:1px">Next: ${m.nextOilMiles.toLocaleString()} mi</div>`:'';
-        const notesInfo=m.notes?`<div style="font-size:10px;color:var(--text3);font-style:italic;margin-top:1px">${m.notes}</div>`:'';
+        const notesInfo=m.notes?`<div style="font-size:10px;color:var(--text3);font-style:italic;margin-top:1px">${escHtml(m.notes)}</div>`:'';
         return `<div style="display:grid;grid-template-columns:72px 1fr 64px 44px;gap:0;padding:8px 10px;border-bottom:1px solid var(--border);align-items:start;${i%2===1?'background:var(--bg2)':''}">
           <div style="font-size:12px;font-weight:700;color:var(--text);padding-right:6px">${dateShort}</div>
           <div style="min-width:0">
-            <div style="font-size:12px;font-weight:700">${icon} ${m.typeLabel||m.type}</div>
+            <div style="font-size:12px;font-weight:700">${icon} ${escHtml(m.typeLabel||m.type||'')}</div>
             ${parts?`<div style="font-size:11px;color:var(--text3);margin-top:1px;word-break:break-word">${parts}</div>`:''}
             ${nextInfo}${notesInfo}
             <div style="margin-top:4px;display:flex;gap:10px">
@@ -643,17 +643,17 @@ function openAddVehicleModal(idx) {
     <div style="padding:14px 16px 100px;overflow-y:auto;overflow-x:hidden;max-height:80vh">
       <div class="card" style="margin-bottom:12px">
         <div class="f"><label>Year, make, model <span style="color:var(--red)">*</span></label>
-          <input id="fv-name" placeholder="e.g. 2019 F-150" value="${v.name||''}">
+          <input id="fv-name" placeholder="e.g. 2019 F-150" value="${escHtml(v.name||'')}">
         </div>
         <div class="f"><label>Nickname <span style="font-size:10px;color:var(--text3)">(optional)</span></label>
-          <input id="fv-nick" placeholder="e.g. Work Truck" value="${v.nickname||''}">
+          <input id="fv-nick" placeholder="e.g. Work Truck" value="${escHtml(v.nickname||'')}">
         </div>
         <div class="fg fg2">
-          <div class="f"><label>Color</label><input id="fv-color" placeholder="White" value="${v.color||''}"></div>
-          <div class="f"><label>License plate</label><input id="fv-plate" placeholder="ABC-1234" value="${v.plate||''}"></div>
+          <div class="f"><label>Color</label><input id="fv-color" placeholder="White" value="${escHtml(v.color||'')}"></div>
+          <div class="f"><label>License plate</label><input id="fv-plate" placeholder="ABC-1234" value="${escHtml(v.plate||'')}"></div>
         </div>
         <div class="f"><label>VIN <span style="font-size:10px;color:var(--text3)">(17 chars)</span></label>
-          <input id="fv-vin" placeholder="1FTFW1ET..." maxlength="17" value="${v.vin||''}" style="font-family:monospace;font-size:13px">
+          <input id="fv-vin" placeholder="1FTFW1ET..." maxlength="17" value="${escHtml(v.vin||'')}" style="font-family:monospace;font-size:13px">
         </div>
       </div>
       <div class="card" style="margin-bottom:12px">
@@ -855,7 +855,7 @@ function openFleetSaleModal(idx) {
   ov.innerHTML = `
     <div style="background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;width:100%;max-width:520px;padding:20px 16px 60px">
       <div style="font-size:18px;font-weight:800;margin-bottom:16px">📦 Record vehicle sale</div>
-      <div style="font-size:14px;font-weight:600;color:var(--text3);margin-bottom:14px">${v.nickname||v.name}</div>
+      <div style="font-size:14px;font-weight:600;color:var(--text3);margin-bottom:14px">${escHtml(v.nickname||v.name||'')}</div>
       <div class="fg fg2">
         <div class="f"><label>Sale date</label><input type="date" id="fs-date" value="${todayKey()}"></div>
         <div class="f"><label>Sale price ($)</label><input type="number" id="fs-price" min="0" step="100" placeholder="0"></div>
@@ -945,7 +945,7 @@ function _renderMaintModal(savedType) {
   box.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 14px;border-bottom:1px solid var(--border)">
       <div style="min-width:0;flex:1">
-        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:2px">${v.nickname||v.name}</div>
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:2px">${escHtml(v.nickname||v.name||'')}</div>
         <div style="font-size:18px;font-weight:800;color:var(--text)">${_maintEditId?'Edit service record':'Log service'}</div>
       </div>
       <button class="btn btn-ghost" onclick="_closeMaintModal()" style="flex-shrink:0">Cancel</button>
@@ -958,17 +958,17 @@ function _renderMaintModal(savedType) {
         </div>
         <div class="fg fg2">
           <div class="f"><label>Date</label><input type="text" id="maint-date" inputmode="numeric" placeholder="MM/DD/YYYY" maxlength="10" value="${_ymdToMdY((editRec&&editRec.date)||todayKey())}" oninput="_fmtExpDate(this)"></div>
-          <div class="f"><label>Odometer (mi)</label><input type="number" id="maint-odo" min="0" step="1" placeholder="Optional" value="${(editRec&&editRec.odo)||''}"></div>
+          <div class="f"><label>Odometer (mi)</label><input type="number" id="maint-odo" min="0" step="1" placeholder="Optional" value="${escHtml((editRec&&editRec.odo)||'')}"></div>
         </div>
         <div class="fg fg2">
-          <div class="f"><label>Cost ($)</label><input type="number" id="maint-cost" min="0" step="1" placeholder="0.00" value="${(editRec&&editRec.cost)||''}"></div>
-          <div class="f"><label>Vendor / shop</label><input id="maint-vendor" placeholder="Jiffy Lube, AutoZone..." value="${(editRec&&editRec.vendor)||''}"></div>
+          <div class="f"><label>Cost ($)</label><input type="number" id="maint-cost" min="0" step="1" placeholder="0.00" value="${escHtml((editRec&&editRec.cost)||'')}"></div>
+          <div class="f"><label>Vendor / shop</label><input id="maint-vendor" placeholder="Jiffy Lube, AutoZone..." value="${escHtml((editRec&&editRec.vendor)||'')}"></div>
         </div>
       </div>
       <div id="maint-type-fields" style="margin-bottom:12px"></div>
       <div class="card" style="margin-bottom:16px">
         <div class="f"><label>Notes</label>
-          <textarea id="maint-notes" rows="2" placeholder="Any details..." style="width:100%;padding:8px;font-size:13px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical">${(editRec&&editRec.notes)||''}</textarea>
+          <textarea id="maint-notes" rows="2" placeholder="Any details..." style="width:100%;padding:8px;font-size:13px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical">${escHtml((editRec&&editRec.notes)||'')}</textarea>
         </div>
         ${isActualMethod
           ? `<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;margin-top:8px">

@@ -213,18 +213,10 @@ test.describe('Generic estimate send bar — DOM layout', () => {
 test.describe('Generic estimate send bar — shows after proposal generated', () => {
   let page;
 
-  test.beforeAll(async ({ browser }) => {
-    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
-    page = await ctx.newPage();
-    await mockAllExternal(page);
-    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
-    await waitForAppBoot(page);
-    await goPg(page, 'pg-est-generic');
-  });
-
-  test.afterAll(async () => { await page.context().close(); });
-
-  test('gei-send-bar visible and gei-send-btn hidden after proposal ready', async () => {
+  /** Seed the post-generation state (bar visible, dataset filled). Runs before
+   *  EVERY test — a Playwright retry boots a fresh context where earlier tests
+   *  in the file never executed, so each test must set up its own state. */
+  async function seedGeiSendBar() {
     await page.evaluate(({ url, cemail, cphone, token, bidId, userId }) => {
       const bar = document.getElementById('proposal-link-bar');
       if (bar) {
@@ -248,7 +240,26 @@ test.describe('Generic estimate send bar — shows after proposal generated', ()
       bidId: FAKE_BID_ID_1,
       userId: FAKE_USER_ID,
     });
+  }
 
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.beforeEach(async () => {
+    // Re-assert the page + bar state every test — survives retries and any
+    // navigation the app performed during a previous test in this group.
+    await goPg(page, 'pg-est-generic');
+    await seedGeiSendBar();
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('gei-send-bar visible and gei-send-btn hidden after proposal ready', async () => {
     const geiBar = page.locator('#gei-send-bar');
     await expect(geiBar).toBeVisible();
 

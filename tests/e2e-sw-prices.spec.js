@@ -116,6 +116,13 @@ test.describe('SW paint prices — settings editor', () => {
   });
 
   test('overridden price persists in the input after a full page reload', async () => {
+    // Seed the override here, not just in the previous test — Playwright retries
+    // run in a fresh context where earlier tests in the file never executed.
+    await openRatesPanel(page);
+    await page.locator('#set-swp-pm200').fill('99');
+    await page.evaluate(() => typeof saveSettings === 'function' && saveSettings());
+    await page.waitForTimeout(200);
+
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
     await openRatesPanel(page);
@@ -134,6 +141,14 @@ test.describe('SW paint prices — settings editor', () => {
   });
 
   test('Reset to defaults refills inputs; Save clears the override', async () => {
+    // Retry-safe: ensure the panel is open and the override exists before resetting
+    await openRatesPanel(page);
+    const hasOverride = await page.evaluate(() => !!(S.swPrices && S.swPrices.pm200));
+    if (!hasOverride) {
+      await page.locator('#set-swp-pm200').fill('99');
+      await page.evaluate(() => typeof saveSettings === 'function' && saveSettings());
+      await page.waitForTimeout(200);
+    }
     await page.evaluate(() => typeof _resetSwPriceInputs === 'function' && _resetSwPriceInputs());
     const refilled = await page.evaluate(() => document.getElementById('set-swp-pm200')?.value);
     expect(refilled, 'reset refills the hardcoded default').toBe('32');

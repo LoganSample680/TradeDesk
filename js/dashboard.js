@@ -303,13 +303,13 @@ function renderDashToday(){
       '<div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">'+
         '<div style="width:10px;height:10px;border-radius:2px;background:'+(j.color||'var(--blue)')+';flex-shrink:0"></div>'+
         '<div style="min-width:0">'+
-          '<div style="font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+j.name+'</div>'+
+          '<div style="font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(j.name||'')+'</div>'+
           '<div style="font-size:11px;color:var(--text3)">'+
             (isEst?
               (j.time?'@ '+fmtTime(j.time)+' · ':'')+
               '<span style="color:#7F77DD;font-weight:600">Estimate visit</span>'
               :
-              (j.addr||c&&c.addr?'<span style="font-weight:600">'+(j.addr||c.addr||'').split(',')[0]+'</span>':'No address')+
+              (j.addr||c&&c.addr?'<span style="font-weight:600">'+escHtml((j.addr||c.addr||'').split(',')[0])+'</span>':'No address')+
               (j.value?' · '+fmt(j.value):'')+
               ' · '+j.days+' day'+(parseInt(j.days)!==1?'s':'')
             )+
@@ -390,7 +390,7 @@ function renderDashCollect(){
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'+
         '<div style="flex:1;min-width:0">'+
           '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:2px">'+
-            '<div style="font-size:13px;font-weight:700">'+f.name+'</div>'+
+            '<div style="font-size:13px;font-weight:700">'+escHtml(f.name||'')+'</div>'+
             (f.veryUrgent?'<span style="font-size:10px;font-weight:800;text-transform:uppercase;color:#fff;background:#A32D2D;padding:2px 5px;border-radius:4px">30+ days</span>':
              f.urgent?'<span style="font-size:10px;font-weight:800;text-transform:uppercase;color:#fff;background:var(--amber);padding:2px 5px;border-radius:4px">Overdue</span>':'')+
           '</div>'+
@@ -1163,7 +1163,7 @@ function showSourceDetail(src){
   el.style.display='block';
   el.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
-      '<div style="font-size:13px;font-weight:700">'+(ICONS[src]||'📋')+' '+src+'</div>'+
+      '<div style="font-size:13px;font-weight:700">'+(ICONS[src]||'📋')+' '+escHtml(src||'')+'</div>'+
       '<button onclick="closeSourceDetail()" style="border:none;background:none;font-size:16px;cursor:pointer;color:var(--text3)">&#10005;</button>'+
     '</div>'+
     '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">'+
@@ -1394,7 +1394,7 @@ function openBidDetail(bidId,view){
   if(b.notes)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Notes</div><div style="font-size:13px;color:var(--text2);line-height:1.6">'+escHtml(b.notes)+'</div></div>';
   if(pays.length){
     bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Payment history</div>'+
-      pays.map(p=>{const ref=p.type==='refund';return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+(ref?'REFUND':(p.method||p.type)+(p.ref?' #'+p.ref:''))+'</span><span style="font-weight:700;color:'+(ref?'#A32D2D':'var(--green-mid)')+'">'+( ref?'↩ -':'+' )+fmt(Math.abs(p.amount))+'</span></div>';}).join('')+
+      pays.map(p=>{const ref=p.type==='refund';return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+(ref?'REFUND':escHtml(p.method||p.type||'')+(p.ref?' #'+escHtml(p.ref):''))+'</span><span style="font-weight:700;color:'+(ref?'#A32D2D':'var(--green-mid)')+'">'+( ref?'↩ -':'+' )+fmt(Math.abs(p.amount))+'</span></div>';}).join('')+
       '<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:800;padding:8px 0 0"><span>Total paid</span><span style="color:var(--green-mid)">'+fmt(paid)+'</span></div>'+
     '</div>';
   }

@@ -87,12 +87,12 @@ function renderGallery(){
   let html='';
   Object.entries(byClient).forEach(([name,ps])=>{
     html+='<div style="margin-bottom:20px">'+
-      '<div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;padding:0 2px">'+name+'</div>'+
+      '<div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;padding:0 2px">'+escHtml(name)+'</div>'+
       '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px">'+
       ps.map(p=>'<div onclick="openPhotoViewer(\''+p.id+'\')" style="position:relative;aspect-ratio:1;border-radius:var(--r);overflow:hidden;cursor:pointer;background:var(--bg2);border:1px solid var(--border)">'+
         '<img src="'+p.url+'" style="width:100%;height:100%;object-fit:cover" loading="lazy" onerror="this.style.display=\'none\'">'+
         '<div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.6));padding:4px 6px">'+
-          '<span style="font-size:9px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:.04em">'+p.type+'</span>'+
+          '<span style="font-size:9px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:.04em">'+escHtml(p.type)+'</span>'+
         '</div>'+
         '<button onclick="event.stopPropagation();deletePhoto(\''+p.id+'\')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);border:none;color:#fff;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center">✕</button>'+
       '</div>').join('')+
@@ -108,9 +108,9 @@ function openPhotoViewer(photoId){
     '<button onclick="this.closest(\'div\').remove()" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;line-height:1">✕</button>'+
     '<img src="'+p.url+'" style="max-width:100%;max-height:80vh;border-radius:var(--r);object-fit:contain">'+
     '<div style="margin-top:12px;text-align:center">'+
-      '<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.06em">'+p.type+'</div>'+
-      (p.caption?'<div style="font-size:13px;color:#fff;margin-top:4px">'+p.caption+'</div>':'')+
-      '<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:4px">'+(p.client_name||'')+(p.job_name?' · '+p.job_name:'')+'</div>'+
+      '<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.06em">'+escHtml(p.type)+'</div>'+
+      (p.caption?'<div style="font-size:13px;color:#fff;margin-top:4px">'+escHtml(p.caption)+'</div>':'')+
+      '<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:4px">'+escHtml(p.client_name||'')+(p.job_name?' · '+escHtml(p.job_name):'')+'</div>'+
     '</div>';
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -131,7 +131,7 @@ function openGalleryUpload(jobId,clientId){
   const ov=document.createElement('div');ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
   const jobOptions=jobs.filter(j=>j.status==='done'||j.status==='active').slice(0,30)
-    .map(j=>'<option value="'+j.id+'"'+(jobId===j.id?' selected':'')+'>'+j.name+' — '+(clients.find(c=>c.id===j.client_id)?.name||'')+'</option>').join('');
+    .map(j=>'<option value="'+j.id+'"'+(jobId===j.id?' selected':'')+'>'+escHtml(j.name)+' — '+escHtml(clients.find(c=>c.id===j.client_id)?.name||'')+'</option>').join('');
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">📷 Add photo</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">Upload a job photo to your gallery</div>'+
@@ -347,7 +347,7 @@ function sendClientHubLink(clientId){
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">📋 Client Hub ready</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+(c.name||'Client')+' · view proposals, pay balance, download invoices</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+escHtml(c.name||'Client')+' · view proposals, pay balance, download invoices</div>'+
     '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:11px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+url+'</div>'+
     '<button onclick="navigator.clipboard.writeText(\''+url+'\').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">📋 Copy link</button>'+
     (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+firstName+', here\\\'s your project hub from '+biz+' — view your proposals, pay your balance, and download invoices anytime: '+url+'\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">📱 Send via Messages</button>':'')+
@@ -1171,9 +1171,9 @@ function buildProposal(){
           return '<div style="display:flex;align-items:flex-start;gap:6px;margin-bottom:3px">'+
             (swatch||'<span style="flex-shrink:0;width:10px"></span>')+
             '<div>'+
-            '<span style="font-size:11px;font-weight:700;color:#2d3748">'+ps.surfLabel+'</span>'+
-            (colorLine?'<span style="font-size:11px;color:#4a5568;font-weight:400"> — '+colorLine+'</span>':'')+
-            (product?'<div style="font-size:10px;color:#94a3b8;line-height:1.2">'+product+'</div>':'')+
+            '<span style="font-size:11px;font-weight:700;color:#2d3748">'+escHtml(ps.surfLabel)+'</span>'+
+            (colorLine?'<span style="font-size:11px;color:#4a5568;font-weight:400"> — '+escHtml(colorLine)+'</span>':'')+
+            (product?'<div style="font-size:10px;color:#94a3b8;line-height:1.2">'+escHtml(product)+'</div>':'')+
             '</div></div>';
         }).join('')+
         '</div>'
@@ -1183,12 +1183,12 @@ function buildProposal(){
       ?'<div style="margin-top:7px">'+
         '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:4px">Scope of Work</div>'+
         '<ol style="margin:0;padding-left:18px;font-size:11px;color:#4a5568;line-height:1.7">'+
-        roomScopeItems.map(sc=>'<li>'+sc.clientDesc+'</li>').join('')+
+        roomScopeItems.map(sc=>'<li>'+escHtml(sc.clientDesc)+'</li>').join('')+
         '</ol></div>'
       :'';
     const _roomCustPaint=roomCosts[room]&&(roomScopeMap[room]?._customerPaint===true);
     const custPaintBadge=_roomCustPaint?'<span style="display:inline-block;font-size:10px;background:#FEF3C7;color:#856404;border:1px solid #D97706;border-radius:4px;padding:1px 6px;margin-left:6px;font-weight:700;vertical-align:middle">Client supplies paint</span>':'';
-    const descContent='<div style="font-size:13px;font-weight:800;color:#1a365d;line-height:1.2;margin-bottom:3px">'+room+custPaintBadge+'</div>'+
+    const descContent='<div style="font-size:13px;font-weight:800;color:#1a365d;line-height:1.2;margin-bottom:3px">'+escHtml(room)+custPaintBadge+'</div>'+
       paintSpecHtml+
       scopeHtml;
     const rowBg=roomIdx%2===0?'#ffffff':'#f8fafc';
@@ -1211,13 +1211,13 @@ function buildProposal(){
   <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0">
     <div style="padding:14px 18px;border-right:1px solid #e2e8f0">
       <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div>
-      <div style="font-size:14px;font-weight:700;color:#1a365d">${cname}</div>
-      ${caddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${caddr}</div>`:''}
-      ${cphone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${cphone}</div>`:''}
+      <div style="font-size:14px;font-weight:700;color:#1a365d">${escHtml(cname)}</div>
+      ${caddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${escHtml(caddr)}</div>`:''}
+      ${cphone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${escHtml(cphone)}</div>`:''}
     </div>
     <div style="padding:14px 18px">
       <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div>
-      <div style="font-size:13px;font-weight:600;color:#1a365d">${cprop||'House'}</div>
+      <div style="font-size:13px;font-weight:600;color:#1a365d">${escHtml(cprop||'House')}</div>
       <div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${estDays} day${estDays!==1?'s':''}</div>
       ${allowWeekend?'<div style="font-size:11px;color:#718096;margin-top:3px">⚬ Weekends available</div>':''}
       <div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${expD}</div>
@@ -1239,7 +1239,7 @@ function buildProposal(){
         </td>
         <td style="padding:11px 18px 11px 4px;text-align:right;font-weight:700;vertical-align:top;white-space:nowrap;color:#2d3748">${fmt(scaledMatLine)}</td>
       </tr>
-      ${adj?`<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 18px;color:#718096;font-style:italic">${adjReason||'Price adjustment'}</td><td style="padding:9px 18px;text-align:right;color:#718096">${adj>0?'+':''}${fmt(adj)}</td></tr>`:''}
+      ${adj?`<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 18px;color:#718096;font-style:italic">${escHtml(adjReason||'Price adjustment')}</td><td style="padding:9px 18px;text-align:right;color:#718096">${adj>0?'+':''}${fmt(adj)}</td></tr>`:''}
     </tbody>
     <tfoot>
       ${_paintWorkScope==='improvement'?`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td style="padding:8px 18px;font-size:12px;color:#64748b">Sales tax — capital improvement (contractor pays, not client)</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$0.00</td></tr>`:''}
@@ -1305,7 +1305,7 @@ function buildProposal(){
   const _sigDepPct=Math.round(_depositPct*100);
   const _sigBal=Math.round((_paintFinalTotal-_depositAmt)*100)/100;
   document.getElementById('est-sig-sum').innerHTML=
-    `<div style="margin-bottom:10px"><div style="font-size:15px;font-weight:700">${cname}</div>${caddr?'<div style="font-size:12px;color:var(--text2);margin-top:2px">'+caddr+'</div>':''}</div>`+
+    `<div style="margin-bottom:10px"><div style="font-size:15px;font-weight:700">${escHtml(cname)}</div>${caddr?'<div style="font-size:12px;color:var(--text2);margin-top:2px">'+escHtml(caddr)+'</div>':''}</div>`+
     `<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px;display:grid;gap:4px">`+
       `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)"><span style="font-size:12px;color:var(--text2)">Contract total</span><strong style="font-size:14px;color:var(--blue)">${fmt(_paintFinalTotal)}</strong></div>`+
       (_depositPct>0
@@ -1418,7 +1418,7 @@ if(!hasSignature()&&typedSig.length<=2){zAlert('Please type your name or draw yo
   const _doneDepPct=(parseFloat(document.getElementById('e-deposit-pct')?.value)||0)/100;
   const _doneDepAmt=Math.round(final*_doneDepPct*100)/100;
   const _doneBal=Math.round((final-_doneDepAmt)*100)/100;
-  document.getElementById('est-done-sum').innerHTML=`<div style="display:grid;gap:6px;font-size:13px"><div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Client</span><strong>${cname}</strong></div><div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Contract total</span><strong style="color:var(--blue)">${fmt(final)}</strong></div>${_doneDepPct>0?'<div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Deposit due ('+Math.round(_doneDepPct*100)+'%)</span><strong style="color:var(--green)">'+fmt(_doneDepAmt)+'</strong></div>':'<div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">No deposit required</span><strong style="color:var(--text3)">—</strong></div>'}<div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Balance on completion</span><strong>${fmt(_doneDepPct>0?_doneBal:final)}</strong></div></div>`;
+  document.getElementById('est-done-sum').innerHTML=`<div style="display:grid;gap:6px;font-size:13px"><div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Client</span><strong>${escHtml(cname)}</strong></div><div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Contract total</span><strong style="color:var(--blue)">${fmt(final)}</strong></div>${_doneDepPct>0?'<div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Deposit due ('+Math.round(_doneDepPct*100)+'%)</span><strong style="color:var(--green)">'+fmt(_doneDepAmt)+'</strong></div>':'<div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">No deposit required</span><strong style="color:var(--text3)">—</strong></div>'}<div style="display:flex;justify-content:space-between"><span style="color:var(--text2)">Balance on completion</span><strong>${fmt(_doneDepPct>0?_doneBal:final)}</strong></div></div>`;
   if(!estLinkedClientId){
     zAlert('No client linked to this estimate. Go back to step 1 and make sure a client is selected.',{title:'Client required'});return;
   }
@@ -1955,8 +1955,8 @@ async function renderCalGrid(){
       '</div>'+
       (wx?'<div style="font-size:9px;color:'+(wx.rain?'#A32D2D':'var(--text3)')+';font-weight:600;margin-bottom:1px;line-height:1">'+wx.hi+'°/'+wx.lo+'°'+(wx.precip>20?' · '+wx.precip+'%':'')+'</div>':'')+
       dj.map(({job,isBuf})=>{
-        if(job.eventType==='task'){const done=job.status==='done';return'<div class="cjob" style="background:'+(done?'#9CA3AF':'#6366F1')+';font-size:9px">'+(done?'✓ ':'☐ ')+job.name+'</div>';}
-        return'<div class="cjob" style="background:'+(isBuf?lighten(job.color):job.color)+';'+(isBuf?'color:'+job.color+';':'')+'">'+(isBuf?'buf':(job.eventType==='estimate'?'📋 ':'')+job.name)+'</div>';
+        if(job.eventType==='task'){const done=job.status==='done';return'<div class="cjob" style="background:'+(done?'#9CA3AF':'#6366F1')+';font-size:9px">'+(done?'✓ ':'☐ ')+escHtml(job.name)+'</div>';}
+        return'<div class="cjob" style="background:'+(isBuf?lighten(job.color):job.color)+';'+(isBuf?'color:'+job.color+';':'')+'">'+(isBuf?'buf':(job.eventType==='estimate'?'📋 ':'')+escHtml(job.name))+'</div>';
       }).join('')+
     '</div>';
   });

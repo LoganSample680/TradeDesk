@@ -92,7 +92,7 @@ function _gateAddressThenEstimate(c){
     const box=document.createElement('div');box.className='zmodal';
     box.innerHTML=
       '<div style="font-size:18px;margin-bottom:6px">📍 Address required</div>'+
-      '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">Add '+c.name+'\'s property address before starting an estimate. You can\'t measure or quote without it.</div>'+
+      '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">Add '+escHtml(c.name)+'\'s property address before starting an estimate. You can\'t measure or quote without it.</div>'+
       '<div style="position:relative;margin-bottom:14px">'+
 '<input id="_addr-gate-inp" type="text" placeholder="123 Main St, City, ST" autocomplete="off" '+
   'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)" '+
@@ -440,7 +440,7 @@ function _doOpenEstimate(c,_overrideAddr,_forceTrade){
       for(let i=0;i<sel.options.length;i++){if(parseInt(sel.options[i].value)===currentClientId){sel.selectedIndex=i;found=true;break;}}
     }
     const linked=document.getElementById('e-client-linked');
-    if(linked)linked.innerHTML='<span class="conn-tag">'+c.name+'</span>';
+    if(linked)linked.innerHTML='<span class="conn-tag">'+escHtml(c.name)+'</span>';
     const adj=document.getElementById('est-adj');if(adj)adj.value=0;
     const adjv=document.getElementById('est-adj-val');if(adjv)adjv.textContent='0%';
     ['adj-type-hidden','adj-reason-hidden','inc-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
@@ -633,7 +633,7 @@ function onClientSearch(inp){
       (c.phone||'').replace(/\D/g,'').includes(q.replace(/\D/g,''))||
       (c.source||'').toLowerCase().includes(ql)
     );
-    if(!matched.length){el.innerHTML='<div class="empty">No clients match "'+q+'".</div>';return;}
+    if(!matched.length){el.innerHTML='<div class="empty">No clients match "'+escHtml(q)+'".</div>';return;}
     el.innerHTML=matched.map(c=>{
       const s=getClientStage(c.id);
       const pendBids=getClientBids(c.id).filter(b=>b.status==='Pending');
@@ -642,7 +642,7 @@ function onClientSearch(inp){
         '<div style="display:flex;align-items:center;gap:10px">'+
           '<div class="cc-avatar" style="width:36px;height:36px;font-size:12px;flex-shrink:0;'+stageAvatar(s.stage)+'">'+initials(c.name)+'</div>'+
           '<div style="flex:1;min-width:0">'+
-            '<div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.name+'</div>'+
+            '<div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(c.name)+'</div>'+
             '<div style="font-size:11px;color:var(--text3)">'+s.label+pendBidSuffix+'</div>'+
           '</div>'+
           '<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:var(--text3);fill:none;stroke-width:2;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>'+
@@ -666,7 +666,7 @@ function setCF(f,btn){
   renderClientList();
 }
 function populateClientSelectors(){
-  const opts='<option value="">— Select client —</option>'+clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  const opts='<option value="">— Select client —</option>'+clients.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
   ['e-client-sel','inc-client-sel','mil-client-sel'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=opts;});
 }
 function getClientStage(cid){
@@ -968,7 +968,7 @@ function saveClient(){
       _submitting=false;
       const errEl=document.getElementById('err-cf-phone');
       if(errEl){
-        errEl.innerHTML='This number is already on file for <strong>'+phoneDupe.name+'</strong>. Same person? If not, <button onclick="_allowPhoneDupe=true;saveClient()" style="background:none;border:none;color:var(--blue);font-weight:700;cursor:pointer;padding:0;font-size:inherit;font-family:inherit">save anyway →</button>';
+        errEl.innerHTML='This number is already on file for <strong>'+escHtml(phoneDupe.name)+'</strong>. Same person? If not, <button onclick="_allowPhoneDupe=true;saveClient()" style="background:none;border:none;color:var(--blue);font-weight:700;cursor:pointer;padding:0;font-size:inherit;font-family:inherit">save anyway →</button>';
         errEl.style.display='block';
       }
       return;
@@ -1353,7 +1353,7 @@ function renderClientDetail(){
       <button onclick="showFileLienDirect(${_lienBid.id})" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:#A32D2D;color:#FFB3B3;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">📋 Prepare Lien Document</button>
     </div>`;
   }
-  const intakeInfoHTML=(c.callTime||c.notes)?`<div style="padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📞 Best time to call:</span> ${c.callTime}</div>`:''}${c.notes?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📋 Intake notes:</span> ${c.notes}</div>`:''}</div>`:'';
+  const intakeInfoHTML=(c.callTime||c.notes)?`<div style="padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📞 Best time to call:</span> ${escHtml(c.callTime)}</div>`:''}${c.notes?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📋 Intake notes:</span> ${escHtml(c.notes)}</div>`:''}</div>`:'';
   const epaHTML=(c.yearBuilt&&c.yearBuilt<1978)?`<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 12px;${balanceHTML||intakeInfoHTML?'margin-top:10px;':''}font-size:12px;font-weight:700;color:#856404">⚠️ Pre-1978 — EPA RRP applies if &gt;6 sq ft interior or &gt;20 sq ft exterior paint disturbed</div>`:'';
   const _metsContent=balanceHTML+lienAlertHTML+intakeInfoHTML+epaHTML;
   const _metsEl=document.getElementById('cd-client-mets');
@@ -1463,15 +1463,15 @@ function renderCDTimeline(){
       const stageInfo=COLL_STAGES[h.stage]||{};
       const stageLabel=stageInfo.label||h.stage;
       const noteText=h.note&&h.note!==stageLabel?h.note:'';
-      events.push({date:dateStr,type:'coll',label:'Collection: '+stageLabel,meta:noteText+(noteText?' · ':'')+fmt(b.amount)+' job',color:'coll'});
+      events.push({date:dateStr,type:'coll',label:'Collection: '+stageLabel,meta:escHtml(noteText)+(noteText?' · ':'')+fmt(b.amount)+' job',color:'coll'});
     });
-    if(b.completion_date)events.push({date:b.completion_date,type:'complete',label:'Job completed — '+fmt(b.amount),meta:b.type||'Painting job',color:'active'});
+    if(b.completion_date)events.push({date:b.completion_date,type:'complete',label:'Job completed — '+fmt(b.amount),meta:escHtml(b.type||'Painting job'),color:'active'});
   });
   const allPays=payments.filter(p=>cbids.some(b=>b.id===p.bid_id));
   allPays.forEach(p=>{
     if(!p.date)return;
     const isRefund=p.type==='refund';
-    events.push({date:p.date,type:'payment',label:(isRefund?'Refund — ':'Payment — ')+fmt(Math.abs(p.amount)),meta:(p.method||'')+(p.ref?' #'+p.ref:''),color:isRefund?'lost':'payment'});
+    events.push({date:p.date,type:'payment',label:(isRefund?'Refund — ':'Payment — ')+fmt(Math.abs(p.amount)),meta:escHtml(p.method||'')+(p.ref?' #'+escHtml(p.ref):''),color:isRefund?'lost':'payment'});
   });
   cjobs.forEach(j=>{
     if(j.eventType==='estimate'){
@@ -1479,15 +1479,15 @@ function renderCDTimeline(){
       events.push({
         date:j.cancelDate||j.start||'',
         type:'estimate',
-        label:isCanceled?'Estimate '+j.cancelReason:'Estimate visit'+(j.time?' @ '+fmtTime(j.time):''),
-        meta:isCanceled?'Canceled '+j.cancelDate:(j.start+(j.addr?' · '+j.addr:'')),
+        label:isCanceled?'Estimate '+escHtml(j.cancelReason):'Estimate visit'+(j.time?' @ '+fmtTime(j.time):''),
+        meta:isCanceled?'Canceled '+j.cancelDate:(j.start+(j.addr?' · '+escHtml(j.addr):'')),
         color:isCanceled?'canceled':'estimate'
       });
     } else {
       events.push({date:j.start||'',type:'job',label:'Job scheduled — '+j.days+' day'+(j.days>1?'s':''),meta:fmt(j.value||0),color:'active'});
     }
   });
-  cmiles.forEach(m=>events.push({date:m.date||'',type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${m.purpose||'Trip'}${m.from?' · from '+m.from:''}`,color:'mile'}));
+  cmiles.forEach(m=>events.push({date:m.date||'',type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${escHtml(m.purpose||'Trip')}${m.from?' · from '+escHtml(m.from):''}`,color:'mile'}));
   events.sort((a,b)=>b.date.localeCompare(a.date));
   const el=document.getElementById('cd-timeline');
   if(!events.length){el.innerHTML='<div class="empty">No activity yet. Add a bid or drive to this client.</div>';return;}
@@ -1548,11 +1548,11 @@ function renderCDExpenses(){
   '</div>';
   Object.entries(byBid).forEach(([key,group])=>{
     html+='<div style="margin-bottom:14px">'+
-      '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:6px">'+group.name+'</div>'+
+      '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:6px">'+escHtml(group.name)+'</div>'+
       group.items.map(e=>
         '<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border)">'+
           '<div style="flex:1;min-width:0">'+
-            '<div style="font-size:13px;font-weight:700">'+e.vendor+'</div>'+
+            '<div style="font-size:13px;font-weight:700">'+escHtml(e.vendor)+'</div>'+
             '<div style="font-size:11px;color:var(--text3)">'+e.cat+' · '+e.date+'</div>'+
           '</div>'+
           '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'+
@@ -1597,7 +1597,7 @@ function renderCDMileage(){
     );
   const el=document.getElementById('cd-mile-list');
   if(!cmiles.length){el.innerHTML='<div class="empty">No trips yet.<br>Tap "Drive to this job" above to start tracking.</div>';return;}
-  el.innerHTML=[...cmiles].sort((a,b)=>b.date.localeCompare(a.date)).map(m=>`<div class="mile-row"><div class="mile-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/></svg></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">${m.from||'Start'} → ${m.to||'Destination'}</div><div style="font-size:11px;color:var(--text3)">${m.date} · <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${(MILE_PURPOSE_COLORS[m.purpose||'Other']||MILE_PURPOSE_COLORS['Other']).dot};margin-right:2px;vertical-align:middle"></span><select onchange="editMilePurpose(${m.id},this.value)" onclick="event.stopPropagation()" style="font-size:11px;border:none;background:transparent;color:${(MILE_PURPOSE_COLORS[m.purpose||'Other']||MILE_PURPOSE_COLORS['Other']).text};font-weight:700;cursor:pointer;font-family:inherit;padding:1px 2px;border-radius:3px">${MILE_PURPOSES.map(p=>`<option value="${p}"${(m.purpose||'Other')===p?' selected':''}>${p}</option>`).join('')}</select>${m.gps?' · <span class="bdg bdg-gps">GPS</span>':''}</div></div><div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:700">${(m.miles||0).toFixed(1)} mi</div><div style="font-size:10px;color:var(--green-mid)">${fmt((m.miles||0)*IRS())}</div></div><button class="btn-del" onclick="delMileage(${m.id})">✕</button></div>`).join('');
+  el.innerHTML=[...cmiles].sort((a,b)=>b.date.localeCompare(a.date)).map(m=>`<div class="mile-row"><div class="mile-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/></svg></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">${escHtml(m.from||'Start')} → ${escHtml(m.to||'Destination')}</div><div style="font-size:11px;color:var(--text3)">${m.date} · <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${(MILE_PURPOSE_COLORS[m.purpose||'Other']||MILE_PURPOSE_COLORS['Other']).dot};margin-right:2px;vertical-align:middle"></span><select onchange="editMilePurpose(${m.id},this.value)" onclick="event.stopPropagation()" style="font-size:11px;border:none;background:transparent;color:${(MILE_PURPOSE_COLORS[m.purpose||'Other']||MILE_PURPOSE_COLORS['Other']).text};font-weight:700;cursor:pointer;font-family:inherit;padding:1px 2px;border-radius:3px">${MILE_PURPOSES.map(p=>`<option value="${p}"${(m.purpose||'Other')===p?' selected':''}>${p}</option>`).join('')}</select>${m.gps?' · <span class="bdg bdg-gps">GPS</span>':''}</div></div><div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:700">${(m.miles||0).toFixed(1)} mi</div><div style="font-size:10px;color:var(--green-mid)">${fmt((m.miles||0)*IRS())}</div></div><button class="btn-del" onclick="delMileage(${m.id})">✕</button></div>`).join('');
 }
 function renderCDBids(){
   const cbids=getClientBids(currentClientId);
@@ -1611,7 +1611,7 @@ function renderCDBids(){
     alertEl.innerHTML=alerts.map(b=>{
       const days=daysSince(b.completion_date);
       const lien=getBidLien(b.id);
-      if(lien&&lien.status==='filed')return '<div class="lien-banner"><div><span style="font-size:11px;font-weight:800">⚠ LIEN FILED</span><br><span style="font-size:12px">'+fmt(getBidBalance(b))+' outstanding · '+lien.county+'</span></div><button class="btn btn-sm" onclick="openLienPanel('+b.id+')" style="background:rgba(255,100,100,.2);border-color:rgba(255,100,100,.4);color:#FFB3B3;font-size:11px">Edit lien</button></div>';
+      if(lien&&lien.status==='filed')return '<div class="lien-banner"><div><span style="font-size:11px;font-weight:800">⚠ LIEN FILED</span><br><span style="font-size:12px">'+fmt(getBidBalance(b))+' outstanding · '+escHtml(lien.county)+'</span></div><button class="btn btn-sm" onclick="openLienPanel('+b.id+')" style="background:rgba(255,100,100,.2);border-color:rgba(255,100,100,.4);color:#FFB3B3;font-size:11px">Edit lien</button></div>';
       if(lien&&lien.status==='intent')return '<div class="overdue-banner"><div><span style="font-size:11px;font-weight:700;color:var(--red)">NOTICE OF INTENT SENT</span><br><span style="font-size:12px">'+fmt(getBidBalance(b))+' owed · '+days+' days since completion</span></div><button class="btn btn-sm btn-r" onclick="openLienPanel('+b.id+')">Update lien</button></div>';
       if(days>=30)return '<div class="overdue-banner"><div><span style="font-size:11px;font-weight:700;color:var(--red)">'+days+' DAYS OVERDUE</span><br><span style="font-size:12px">'+fmt(getBidBalance(b))+' owed since '+b.completion_date+'</span></div><button class="btn btn-sm btn-r" onclick="openLienPanel('+b.id+')">File lien</button></div>';
       if(days>=7)return '<div class="tip tip-w"><strong>Balance '+days+' days past completion</strong> — '+fmt(getBidBalance(b))+' owed. <button class="btn btn-sm" onclick="openPayPanel('+b.id+')" style="margin-left:6px">Log payment</button></div>';
@@ -1642,7 +1642,7 @@ function renderCDBids(){
       if(bpays.length){
         payHTML+='<div style="margin-top:8px;background:var(--bg2);border-radius:var(--r);padding:8px 10px">';
         payHTML+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:5px">Payment history</div>';
-        payHTML+=bpays.map(p=>{const isRef=p.type==='refund';const amtDisp=isRef?'<strong style="color:#A32D2D">↩ -'+fmt(Math.abs(p.amount))+'</strong>':'<strong style="color:var(--green-mid)">+'+fmt(p.amount)+'</strong>';const typeLabel=isRef?'REFUND':(p.method+(p.ref?' #'+p.ref:''));return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+typeLabel+'</span><span>'+amtDisp+' <button class="btn-del" onclick="deletePay('+p.id+')" style="font-size:10px">✕</button></span></div>';}).join('');
+        payHTML+=bpays.map(p=>{const isRef=p.type==='refund';const amtDisp=isRef?'<strong style="color:#A32D2D">↩ -'+fmt(Math.abs(p.amount))+'</strong>':'<strong style="color:var(--green-mid)">+'+fmt(p.amount)+'</strong>';const typeLabel=isRef?'REFUND':(escHtml(p.method)+(p.ref?' #'+escHtml(p.ref):''));return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+typeLabel+'</span><span>'+amtDisp+' <button class="btn-del" onclick="deletePay('+p.id+')" style="font-size:10px">✕</button></span></div>';}).join('');
         payHTML+='</div>';
       }
       if(lien){
@@ -1650,7 +1650,7 @@ function renderCDBids(){
         const lbg=lien.status==='resolved'?'var(--green-lt)':(lien.status==='filed'?'#3D0000':'var(--red-lt)');
         const ltxt=lien.status==='resolved'?'var(--green)':(lien.status==='filed'?'#FFB3B3':'var(--red)');
         payHTML+='<div style="margin-top:8px;background:'+lbg+';border-radius:var(--r);padding:8px 10px;display:flex;justify-content:space-between;align-items:center">';
-        payHTML+='<div><div style="font-size:11px;font-weight:800;color:'+ltxt+'">'+lstatLabel+'</div><div style="font-size:10px;color:'+ltxt+';opacity:.8">'+lien.date+(lien.county?' · '+lien.county:'')+(lien.amount?' · '+fmt(lien.amount):'')+' claimed</div></div>';
+        payHTML+='<div><div style="font-size:11px;font-weight:800;color:'+ltxt+'">'+lstatLabel+'</div><div style="font-size:10px;color:'+ltxt+';opacity:.8">'+lien.date+(lien.county?' · '+escHtml(lien.county):'')+(lien.amount?' · '+fmt(lien.amount):'')+' claimed</div></div>';
         payHTML+='<button class="btn btn-sm" onclick="openLienPanel('+b.id+')" style="font-size:10px">Edit</button></div>';
       }
       payHTML+='</div>';
@@ -1693,7 +1693,7 @@ function renderCDBids(){
     }
     return '<div class="card" style="margin-bottom:8px" id="bid-card-'+b.id+'">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
-        '<div>'+(b.id===latestBidId&&cbids.length>1?'<span style="font-size:10px;font-weight:800;background:var(--blue);color:#fff;padding:1px 6px;border-radius:8px;margin-bottom:4px;display:inline-block">Latest</span><br>':'')+'<div style="font-size:14px;font-weight:700">'+(b.type||'Painting job')+'</div>'+
+        '<div>'+(b.id===latestBidId&&cbids.length>1?'<span style="font-size:10px;font-weight:800;background:var(--blue);color:#fff;padding:1px 6px;border-radius:8px;margin-bottom:4px;display:inline-block">Latest</span><br>':'')+'<div style="font-size:14px;font-weight:700">'+escHtml(b.type||'Painting job')+'</div>'+
           '<div style="font-size:11px;color:var(--text3)">'+
             (b.status==='Pending'&&b.bid_date?
               (()=>{const d=Math.floor((new Date(todayKey())-new Date(b.bid_date+'T12:00:00'))/(86400000));
@@ -1701,7 +1701,7 @@ function renderCDBids(){
             :(b.bid_date||''))+
             ' · '+(b.days||2)+' day'+(b.days!==1?'s':'')+' est.'+
           '</div>'+
-          (b.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+b.notes.substring(0,60)+'</div>':'')+
+          (b.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escHtml(b.notes.substring(0,60))+'</div>':'')+
           (b.status==='Pending'&&b.signingToken&&typeof _proposalViewsByBidClient!=='undefined'?
             (()=>{
               const hubTs=_proposalViewsByBidHubClient&&_proposalViewsByBidHubClient[String(b.id)];
@@ -1930,7 +1930,7 @@ function _cpOpen(bidId,view){
 
   if(pays.length){
     bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Payment history</div>'+
-      pays.map(p=>{const ref=p.type==='refund';return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+(ref?'REFUND':(p.method||p.type)+(p.ref?' #'+p.ref:''))+'</span><span style="font-weight:700;color:'+(ref?'#A32D2D':'var(--green-mid)')+'">'+( ref?'↩ -':'+' )+fmt(Math.abs(p.amount))+'</span></div>';}).join('')+
+      pays.map(p=>{const ref=p.type==='refund';return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+(ref?'REFUND':escHtml(p.method||p.type)+(p.ref?' #'+escHtml(p.ref):''))+'</span><span style="font-weight:700;color:'+(ref?'#A32D2D':'var(--green-mid)')+'">'+( ref?'↩ -':'+' )+fmt(Math.abs(p.amount))+'</span></div>';}).join('')+
       '<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;padding:8px 0 0"><span>Total paid</span><span style="color:var(--green-mid)">'+fmt(paid)+'</span></div>'+
     '</div>';
   }
@@ -2056,8 +2056,8 @@ function renderCDJobs(){
     return '<div class="card" style="margin-bottom:8px;border-left:3px solid '+(j.color||'var(--blue)')+'">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
         '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:14px;font-weight:700">'+j.name+'</div>'+
-          '<div style="font-size:11px;color:var(--text3)">'+parseD(j.start).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+(j.time?' @ '+fmtTime(j.time):'')+' · '+(j.eventType==='estimate'?(j.hours?j.hours+'hr estimate':'Estimate visit'):j.days+' day'+(j.days>1?'s':''))+(j.addr?' · '+j.addr:'')+' </div>'+
+          '<div style="font-size:14px;font-weight:700">'+escHtml(j.name||'')+'</div>'+
+          '<div style="font-size:11px;color:var(--text3)">'+parseD(j.start).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+(j.time?' @ '+fmtTime(j.time):'')+' · '+(j.eventType==='estimate'?(j.hours?j.hours+'hr estimate':'Estimate visit'):j.days+' day'+(j.days>1?'s':''))+(j.addr?' · '+escHtml(j.addr):'')+' </div>'+
           milesHTML+
         '</div>'+
         '<div style="text-align:right;flex-shrink:0">'+

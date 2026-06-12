@@ -29,6 +29,37 @@ Deno.serve(async (req) => {
       embedded,
     } = body;
 
+    // Validate signatureDataUrl to prevent arbitrary blob storage
+    if (signatureDataUrl) {
+      if (signatureDataUrl.length > 2 * 1024 * 1024) {
+        return new Response(JSON.stringify({ error: 'Signature data too large' }), { status: 400, headers: CORS });
+      }
+      if (!signatureDataUrl.startsWith('data:image/')) {
+        return new Response(JSON.stringify({ error: 'Invalid signature format' }), { status: 400, headers: CORS });
+      }
+    }
+
+    // Validate amount against stored proposal to prevent $0.01 payment attacks
+    if (proposalKey && amount) {
+      try {
+        const { data: storedBlob } = await supabase.storage.from('proposals').download(proposalKey);
+        if (storedBlob) {
+          const storedProp = JSON.parse(await storedBlob.text());
+          const storedTotal = Math.round((storedProp.total || storedProp.amount || storedProp.contractTotal || 0) * 100);
+          const storedDeposit = Math.round((storedProp.depositAmount || storedProp.deposit || 0) * 100);
+          const validAmounts = [storedTotal, storedDeposit].filter(v => v > 50);
+          if (validAmounts.length > 0) {
+            const requested = amount + (surchargeAmount || 0);
+            const isValid = validAmounts.some(v => Math.abs(requested - v) <= Math.max(v * 0.015, 100));
+            if (!isValid) {
+              console.warn('Amount mismatch', { requested, validAmounts });
+              return new Response(JSON.stringify({ error: 'Invalid payment amount' }), { status: 400, headers: CORS });
+            }
+          }
+        }
+      } catch (e) { console.warn('Amount validation skipped:', e); }
+    }
+
     // Look up contractor's connected Stripe account (if any)
     let stripeAccountId: string | null = null;
     if (contractorUserId) {
