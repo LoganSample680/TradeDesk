@@ -1527,6 +1527,19 @@ function _onEstPropTypeChange(sel){
 }
 function clearEstimatorForm(){
   _pendingSignToken=null; // never let a stale token carry into the next estimate
+  // Flush roomScopeMap + surfaces to the bid BEFORE clearing editingBidId.
+  // The 1.5s autosave debounce fires after clearEstimatorForm nulls editingBidId
+  // and empties e-cname, so _paintEstAutosave returns early — this is the only
+  // reliable save point when the user navigates away mid-estimate.
+  if(editingBidId&&estSurfaces.length){
+    const _eb=bids.find(x=>x.id===editingBidId);
+    if(_eb){
+      _eb.roomScopeMap=JSON.parse(JSON.stringify(roomScopeMap||{}));
+      _eb.surfaces=[...estSurfaces];
+      _eb.updated=Date.now();
+      saveAll();
+    }
+  }
   // Delete any unfinished Draft bid BEFORE nulling lastCreatedBidId
   // (saveAndExitEstimate already removes b.draft before calling this, so saved bids are safe)
   if(lastCreatedBidId){

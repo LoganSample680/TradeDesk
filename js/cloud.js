@@ -390,7 +390,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = location.origin + '/api';
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.25.26.35';
+const APP_VERSION='06.25.26.39';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -631,8 +631,91 @@ function _removeBootOverlay(){
     },700);
   },320);
 }
+// One-time recovery snapshot — runs the instant the app boots, BEFORE any cloud
+// load can overwrite zp3_cloud_cache. Freezes the device's current local data into
+// an untouchable key so a destructive sign-in merge can never erase it. Recoverable
+// per-bid via recoverBidRooms() / the "Recover rooms" button. Never overwritten once
+// written (the first boot after a data loss is the one that still holds the good copy).
+function _captureRecoverySnapshot(){
+  try{
+    if(localStorage.getItem('zp3_recovery_snapshot'))return; // already frozen — never clobber
+    const snap={
+      ts:Date.now(),
+      cloud_cache:localStorage.getItem('zp3_cloud_cache')||null,
+      est_full_draft:localStorage.getItem('zp3_est_full_draft')||null,
+      surf_draft:localStorage.getItem('zp3_surf_draft')||null,
+      offline_pending:localStorage.getItem('zp3_offline_pending')||null,
+    };
+    // Only persist if there is at least one source with data — avoids freezing an empty snapshot
+    if(snap.cloud_cache||snap.est_full_draft||snap.surf_draft||snap.offline_pending){
+      localStorage.setItem('zp3_recovery_snapshot',JSON.stringify(snap));
+    }
+  }catch(_e){}
+}
+// Count of distinct rooms/surfaces on a bid — used to decide which copy of a bid is
+// "richer" so a merge or recovery never replaces a fuller record with a sparser one.
+function _bidRichness(b){
+  if(!b)return -1;
+  const surf=Array.isArray(b.surfaces)?b.surfaces.length:0;
+  const rooms=(b.roomScopeMap&&typeof b.roomScopeMap==='object')?Object.keys(b.roomScopeMap).length:0;
+  return surf*100+rooms; // surfaces weighted heavier — they are the measurements that get lost
+}
+// Pick the authoritative copy when the same bid id exists in two places: newest
+// `updated` stamp wins; if stamps tie or are missing, the richer copy wins.
+function _pickBid(a,b){
+  if(!a)return b;if(!b)return a;
+  const ua=+a.updated||0, ub=+b.updated||0;
+  if(ua!==ub)return ua>ub?a:b;
+  return _bidRichness(a)>=_bidRichness(b)?a:b;
+}
+// Scan all local recovery sources for a copy of `bidId` richer than the one in memory,
+// and restore its surfaces + roomScopeMap. Returns true if anything was recovered.
+function recoverBidRooms(bidId){
+  const live=bids.find(x=>String(x.id)===String(bidId));
+  if(!live){if(typeof showToast==='function')showToast('Bid not found','⚠️');return false;}
+  const candidates=[];
+  const _pushFromBlob=(raw)=>{
+    if(!raw)return;
+    try{const d=JSON.parse(raw);
+      if(Array.isArray(d.bids)){const m=d.bids.find(x=>String(x.id)===String(bidId));if(m)candidates.push(m);}
+    }catch(_e){}
+  };
+  const _pushFromDraft=(raw)=>{
+    if(!raw)return;
+    try{const d=JSON.parse(raw);
+      // est_full_draft holds the in-progress estimate; only adopt it if it targets this bid
+      if((d.lastBidId&&String(d.lastBidId)===String(bidId))||(d.clientId&&String(d.clientId)===String(live.client_id))){
+        candidates.push({id:bidId,surfaces:d.surfaces||[],roomScopeMap:d.roomScopeMap||{}});
+      }
+    }catch(_e){}
+  };
+  // 1) Frozen recovery snapshot (captured at boot — the safest source)
+  let snap=null;try{snap=JSON.parse(localStorage.getItem('zp3_recovery_snapshot')||'null');}catch(_e){}
+  if(snap){_pushFromBlob(snap.cloud_cache);_pushFromBlob(snap.offline_pending);_pushFromDraft(snap.est_full_draft);}
+  // 2) Live local sources (may already be overwritten, but harmless to check)
+  _pushFromBlob(localStorage.getItem('zp3_cloud_cache'));
+  _pushFromBlob(localStorage.getItem('zp3_offline_pending'));
+  _pushFromDraft(localStorage.getItem('zp3_est_full_draft'));
+  // Choose the richest candidate that beats what's in memory now
+  let best=null;
+  candidates.forEach(c=>{if(_bidRichness(c)>_bidRichness(best))best=c;});
+  if(!best||_bidRichness(best)<=_bidRichness(live)){
+    if(typeof showToast==='function')showToast('No richer copy found to recover','ℹ️');
+    return false;
+  }
+  if(Array.isArray(best.surfaces)&&best.surfaces.length)live.surfaces=JSON.parse(JSON.stringify(best.surfaces));
+  if(best.roomScopeMap&&Object.keys(best.roomScopeMap).length)live.roomScopeMap=JSON.parse(JSON.stringify(best.roomScopeMap));
+  live.updated=Date.now();
+  saveAll();
+  if(typeof renderClientDetail==='function')renderClientDetail();
+  if(typeof showToast==='function')showToast('Recovered '+(Array.isArray(best.surfaces)?best.surfaces.length:0)+' surfaces','✅');
+  return true;
+}
+window.recoverBidRooms=recoverBidRooms;
+
 async function supaInit(){
   if(!supaEnabled())return;
+  _captureRecoverySnapshot(); // FIRST — freeze local data before any cloud load can overwrite it
   try{
     _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{
       auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storage:window.localStorage}
@@ -741,12 +824,28 @@ async function supaInit(){
             await supaLoadFromCloud(); // non-silent: sets up timers, renders, navigates
             // Merge offline additions that aren't already in cloud data
             const _cSet=new Set(clients.map(c=>c.id));
-            const _bSet=new Set(bids.map(b=>b.id));
             const _jSet=new Set(jobs.map(j=>j.id));
             let _merged=false;
             _oClients.filter(c=>!_cSet.has(c.id)).forEach(c=>{clients.push(c);_merged=true;});
-            _oBids.filter(b=>!_bSet.has(b.id)).forEach(b=>{bids.push(b);_merged=true;});
             _oJobs.filter(j=>!_jSet.has(j.id)).forEach(j=>{jobs.push(j);_merged=true;});
+            // BIDS: non-destructive merge. The cloud copy must NEVER blindly replace a
+            // local copy of the same id — a stale cloud draft (e.g. saved before its room
+            // measurements existed) would otherwise erase the complete local record.
+            // For each id, keep whichever copy is newer (updated stamp) or richer (more
+            // surfaces/rooms). This is the fix for the Adam-Ryder room-data loss.
+            const _cloudBidById=new Map(bids.map(b=>[String(b.id),b]));
+            _oBids.forEach(ob=>{
+              const key=String(ob.id);
+              const cb=_cloudBidById.get(key);
+              if(!cb){bids.push(ob);_cloudBidById.set(key,ob);_merged=true;return;}
+              const winner=_pickBid(ob,cb);
+              if(winner!==cb){
+                const idx=bids.findIndex(x=>String(x.id)===key);
+                if(idx>-1)bids[idx]=winner;
+                _cloudBidById.set(key,winner);
+                _merged=true;
+              }
+            });
             if(_merged){await _flushSaveNow();renderDash();}
             goPg('pg-dash'); // ensure we land on home whether cloud load succeeded or fell back to cache
             typeof _drainHubQueue==='function'&&_drainHubQueue();
@@ -2021,6 +2120,8 @@ function _mergeIncomingSettings(ss,src){
   const _localVehs=S.vehicles,_localVehsTs=S.vehiclesTs||0;
   S={...S,...ss};
   if(_localVehsTs>(ss.vehiclesTs||0)){S.vehicles=_localVehs;S.vehiclesTs=_localVehsTs;}
+  // One-time migration: supplies rate default lowered from $0.40 to $0.25/sqft (2026-06)
+  if(S.suppliesRate===0.40){S.suppliesRate=0.25;}
   // Persist the winning copy immediately — without this, a force-close right after
   // the merge boots from a stale zp3_S (cleared values resurrect as their old rate
   // until the next cloud merge; permanently if that boot happens offline).
@@ -2139,12 +2240,19 @@ async function _onReconnect(){
       await supaLoadFromCloud({silent:true}); // restores cloud data + sets _supaCloudLoaded=true
       // Merge: append any offline-created records not present in cloud
       const _cSet=new Set(clients.map(c=>c.id));
-      const _bSet=new Set(bids.map(b=>b.id));
       const _jSet=new Set(jobs.map(j=>j.id));
       let _merged=false;
       _oClients.filter(c=>!_cSet.has(c.id)).forEach(c=>{clients.push(c);_merged=true;});
-      _oBids.filter(b=>!_bSet.has(b.id)).forEach(b=>{bids.push(b);_merged=true;});
       _oJobs.filter(j=>!_jSet.has(j.id)).forEach(j=>{jobs.push(j);_merged=true;});
+      // BIDS: non-destructive — newer/richer copy wins per id (see SIGNED_IN merge).
+      // A silent cloud reload must never drop offline-edited room measurements.
+      const _cloudBidById=new Map(bids.map(b=>[String(b.id),b]));
+      _oBids.forEach(ob=>{
+        const key=String(ob.id);const cb=_cloudBidById.get(key);
+        if(!cb){bids.push(ob);_cloudBidById.set(key,ob);_merged=true;return;}
+        const winner=_pickBid(ob,cb);
+        if(winner!==cb){const idx=bids.findIndex(x=>String(x.id)===key);if(idx>-1)bids[idx]=winner;_cloudBidById.set(key,winner);_merged=true;}
+      });
       if(_merged){await _flushSaveNow();renderDash();}
       localStorage.removeItem('zp3_pending_sync');
       _hideOfflineBanner();

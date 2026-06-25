@@ -5506,6 +5506,116 @@ test.describe('Int/ext estimate — cloud autosave (_paintEstAutosave)', () => {
     expect(result.unchanged).toBe(true);
   });
 
+  test('clearEstimatorForm flushes roomScopeMap to the active bid before clearing state', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof clearEstimatorForm !== 'function') return null;
+      if (typeof bids === 'undefined') return null;
+      const fakeId = 'flush-test-' + Date.now();
+      bids.push({ id: fakeId, status: 'Pending', draft: false, client_name: 'Flush Test', amount: 1000, surfaces: [{id:1,type:'walls',room:'Living Room',sqft:200}] });
+      editingBidId = fakeId;
+      estSurfaces = [{ id: 1, type: 'walls', room: 'Living Room', sqft: 200 }];
+      roomScopeMap = { 'Living Room': { spackle: { active: true, hrs: 2, rate: 30, cost: 60 } } };
+      clearEstimatorForm();
+      const b = bids.find(x => x.id === fakeId);
+      const saved = b ? JSON.parse(JSON.stringify(b.roomScopeMap || {})) : null;
+      bids.splice(bids.findIndex(x => x.id === fakeId), 1);
+      return saved;
+    });
+    if (result === null) return;
+    expect(result['Living Room']).toBeDefined();
+    expect(result['Living Room'].spackle?.active).toBe(true);
+  });
+
+  test('_paintEstAutosaveDebounced saves synchronously (no setTimeout race)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _paintEstAutosaveDebounced !== 'function') return null;
+      if (typeof bids === 'undefined') return null;
+      const fakeId = 'sync-save-' + Date.now();
+      bids.push({ id: fakeId, status: 'Draft', draft: true, client_name: 'Sync Test', amount: 0 });
+      lastCreatedBidId = fakeId;
+      editingBidId = null;
+      estSurfaces = [{ id: 1, type: 'walls', room: 'Den', qty: 100 }];
+      roomScopeMap = { 'Den': { spackle: { active: true } } };
+      const nameEl = document.getElementById('e-cname');
+      if (nameEl) nameEl.value = 'Sync Test';
+      _paintEstAutosaveDebounced();
+      // No await / no timer — the bid must already be updated synchronously
+      const b = bids.find(x => x.id === fakeId);
+      const surfCount = b && Array.isArray(b.surfaces) ? b.surfaces.length : -1;
+      bids.splice(bids.findIndex(x => x.id === fakeId), 1);
+      lastCreatedBidId = null; if (nameEl) nameEl.value = '';
+      return { surfCount };
+    });
+    if (result === null) return;
+    expect(result.surfCount).toBe(1);
+  });
+
+  test('_paintEstAutosave never blanks an existing bid surfaces with empty state', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _paintEstAutosave !== 'function') return null;
+      if (typeof bids === 'undefined') return null;
+      const fakeId = 'guard-' + Date.now();
+      bids.push({ id: fakeId, status: 'Pending', draft: true, client_name: 'Guard Test',
+        surfaces: [{ id: 1, type: 'walls', room: 'Kitchen', qty: 200 }],
+        roomScopeMap: { 'Kitchen': { spackle: { active: true } } } });
+      editingBidId = fakeId; lastCreatedBidId = null;
+      estSurfaces = []; roomScopeMap = {}; // live state is empty (e.g. mid-load)
+      const nameEl = document.getElementById('e-cname');
+      if (nameEl) nameEl.value = 'Guard Test';
+      _paintEstAutosave();
+      const b = bids.find(x => x.id === fakeId);
+      const out = { surf: b.surfaces?.length || 0, rooms: Object.keys(b.roomScopeMap || {}).length };
+      bids.splice(bids.findIndex(x => x.id === fakeId), 1);
+      editingBidId = null; if (nameEl) nameEl.value = '';
+      return out;
+    });
+    if (result === null) return;
+    expect(result.surf).toBe(1);
+    expect(result.rooms).toBe(1);
+  });
+
+  test('recoverBidRooms restores surfaces from the recovery snapshot', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof recoverBidRooms !== 'function') return null;
+      if (typeof bids === 'undefined') return null;
+      const fakeId = 'recover-' + Date.now();
+      // Live bid lost its surfaces; snapshot holds the full copy
+      bids.push({ id: fakeId, status: 'Pending', client_name: 'Recover Test', surfaces: [], roomScopeMap: { 'Living': { spackle: { active: true } } } });
+      const snap = { ts: Date.now(), cloud_cache: JSON.stringify({ bids: [
+        { id: fakeId, surfaces: [{ id: 1, type: 'walls', room: 'Living', qty: 300 }, { id: 2, type: 'ceiling', room: 'Living', qty: 150 }], roomScopeMap: { 'Living': { spackle: { active: true } } } }
+      ] }) };
+      localStorage.setItem('zp3_recovery_snapshot', JSON.stringify(snap));
+      const ok = recoverBidRooms(fakeId);
+      const b = bids.find(x => x.id === fakeId);
+      const out = { ok, surf: b.surfaces?.length || 0 };
+      bids.splice(bids.findIndex(x => x.id === fakeId), 1);
+      localStorage.removeItem('zp3_recovery_snapshot');
+      return out;
+    });
+    if (result === null) return;
+    expect(result.ok).toBe(true);
+    expect(result.surf).toBe(2);
+  });
+
+  test('recoverBidRooms does not downgrade a bid that already has more data', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof recoverBidRooms !== 'function') return null;
+      const fakeId = 'nodown-' + Date.now();
+      bids.push({ id: fakeId, status: 'Pending', client_name: 'NoDown', surfaces: [{ id: 1, type: 'walls', room: 'A', qty: 100 }, { id: 2, type: 'walls', room: 'B', qty: 100 }], roomScopeMap: {} });
+      const snap = { ts: Date.now(), cloud_cache: JSON.stringify({ bids: [{ id: fakeId, surfaces: [{ id: 1, type: 'walls', room: 'A', qty: 100 }], roomScopeMap: {} }] }) };
+      localStorage.setItem('zp3_recovery_snapshot', JSON.stringify(snap));
+      const ok = recoverBidRooms(fakeId);
+      const b = bids.find(x => x.id === fakeId);
+      const out = { ok, surf: b.surfaces.length };
+      bids.splice(bids.findIndex(x => x.id === fakeId), 1);
+      localStorage.removeItem('zp3_recovery_snapshot');
+      return out;
+    });
+    if (result === null) return;
+    expect(result.ok).toBe(false);
+    expect(result.surf).toBe(2); // unchanged — never downgraded
+  });
+
   test('no console errors in paint autosave tests', async () => {
     assertNoErrors(page, 'paint estimate autosave');
   });
