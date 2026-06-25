@@ -2,6 +2,20 @@
 let _swColors=null,_swFinish='',_swCurrentFamily=null;
 let _paintExpectedCost=null;
 
+function _setBvalidDays(days){
+  [7,14,30,60].forEach(d=>{
+    const btn=document.getElementById('bvalid-'+d);
+    if(!btn)return;
+    const on=d===days;
+    btn.style.borderColor=on?'var(--blue)':'';
+    btn.style.background=on?'var(--blue-lt)':'';
+    btn.style.color=on?'var(--blue-dk)':'';
+  });
+  const sel=document.getElementById('e-bvalid');
+  if(sel){const opt=[...sel.options].find(o=>o.text===days+' days');if(opt)sel.value=opt.value;}
+  saveEstFullDraft();
+}
+
 function _swHslFamily(hex){
   if(!hex||hex.length<7)return'gray';
   const r=parseInt(hex.slice(1,3),16)/255,g=parseInt(hex.slice(3,5),16)/255,b=parseInt(hex.slice(5,7),16)/255;
@@ -1845,6 +1859,53 @@ function saveEstFullDraft(){
     };
     localStorage.setItem('zp3_est_full_draft',JSON.stringify(draft));
   }catch(e){}
+  _paintEstAutosaveDebounced();
+}
+let _paintEstAutosaveTimer=null;
+function _paintEstAutosaveDebounced(){
+  clearTimeout(_paintEstAutosaveTimer);
+  _paintEstAutosaveTimer=setTimeout(_paintEstAutosave,1500);
+}
+function _paintEstAutosave(){
+  const cname=(document.getElementById('e-cname')?.value||'').trim();
+  if(!cname)return;
+  const {final}=(typeof calcEst==='function')?calcEst():{final:0};
+  const surfaces=typeof estSurfaces!=='undefined'?[...estSurfaces]:[];
+  const rmMap=(typeof roomScopeMap!=='undefined'&&roomScopeMap)?JSON.parse(JSON.stringify(roomScopeMap)):{};
+  const ss={};if(typeof SCOPE_ITEMS!=='undefined')SCOPE_ITEMS.forEach(s=>{ss[s.id]=!!scopeOn(s.id);});
+  const bidData={
+    client_id:estLinkedClientId||null,
+    client_name:cname,name:cname,
+    phone:document.getElementById('e-cphone')?.value||'',
+    addr:document.getElementById('e-caddr')?.value||'',
+    notes:document.getElementById('e-cnotes')?.value||'',
+    bid_date:todayKey(),
+    amount:final||0,
+    type:(typeof getBidIncomeLabel==='function'?getBidIncomeLabel({surfaces}):null)||'Interior/Exterior Painting',
+    status:'Draft',draft:true,
+    surfaces,roomScopeMap:rmMap,scope:ss,
+    cond:document.getElementById('e-cond')?.value||'',
+    paint:document.getElementById('e-paint')?.value||'',
+  };
+  // Case 1: editing an existing bid — always update it, never mint a new one
+  if(editingBidId){
+    const b=typeof bids!=='undefined'?bids.find(x=>x.id===editingBidId):null;
+    if(b){Object.assign(b,bidData);saveAll();}
+    return;
+  }
+  // Case 2: we already created a draft this session — update it
+  if(lastCreatedBidId){
+    const b=typeof bids!=='undefined'?bids.find(x=>x.id===lastCreatedBidId):null;
+    if(b&&(b.draft||b.status==='Draft')){Object.assign(b,bidData);saveAll();return;}
+  }
+  // Case 3: no active bid — recover an orphan draft before minting a new one
+  if(typeof bids!=='undefined'){
+    const _orphan=bids.find(b=>(b.draft||b.status==='Draft')&&!b.signingToken&&
+      (estLinkedClientId?b.client_id===estLinkedClientId:b.name===cname));
+    if(_orphan){lastCreatedBidId=_orphan.id;Object.assign(_orphan,bidData);saveAll();return;}
+    const draftBid={id:_newBidId(),followup:addDays(todayKey(),3),completion_date:'',collStage:'none',collHistory:[],...bidData};
+    bids.unshift(draftBid);lastCreatedBidId=draftBid.id;saveAll();
+  }
 }
 function loadEstFullDraft(){
   try{const raw=localStorage.getItem('zp3_est_full_draft');if(!raw)return false;
@@ -2255,53 +2316,37 @@ function renderEstReview(){
     '</div>'+
   '</div>';
 
-  // Paint order summary (Zach-only — not on proposal)
-  if(customerPaint){
-    html+='<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:10px 12px;margin-bottom:12px">'+
-      '<div style="font-size:11px;font-weight:700;color:#856404">🏠 Client supplies paint — no paint order needed.</div>'+
-      '<div style="font-size:11px;color:#856404;margin-top:2px">Paint cost excluded from bid. No warranty on finish quality.</div>'+
-    '</div>';
-  } else if(paintLines.length){
-    html+='<div style="background:var(--blue-lt);border-radius:var(--r);padding:12px;margin-bottom:12px">'+
-      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--blue-dk);margin-bottom:8px">🎨 Paint order</div>'+
-      '<div style="display:grid;grid-template-columns:1fr auto auto;gap:3px 10px;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:6px">'+
-        '<span>Product · Color · Finish</span><span style="text-align:right">Sq Ft</span><span style="text-align:right">Cans</span>'+
-      '</div>'+
-      paintLines.map(pl=>{
-        const parts=pl.spec.split(' · ');
-        const prod=parts[0]||'';
-        const colorFinish=parts.slice(1).join(' · ')||pl.spec;
-        const swMatch=pl.spec.match(/SW \d+/i);
-        const swHex=swMatch&&_swColors?(_swColors.find(c=>c.sw.toLowerCase()===swMatch[0].toLowerCase())?.hex||''):'';
-        const dot=swHex?'<span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:'+swHex+';border:1px solid rgba(0,0,0,.1);margin-right:3px;vertical-align:middle"></span>':'';
-        return '<div style="display:grid;grid-template-columns:1fr auto auto;gap:3px 10px;padding:5px 0;border-bottom:1px solid var(--border2);align-items:start">'+
-          '<div><div style="font-size:11px;font-weight:700;color:var(--text)">'+prod+'</div>'+
-          '<div style="font-size:11px;color:var(--text3)">'+dot+colorFinish+'</div></div>'+
-          '<div style="text-align:right;font-size:11px;color:var(--text2)">'+pl.sqFt.toLocaleString()+'</div>'+
-          '<div style="text-align:right;font-size:13px;font-weight:800;color:var(--blue)">'+pl.wholeCans+' gal</div>'+
-        '</div>';
-      }).join('')+
-      '<div style="font-size:10px;color:var(--text3);margin-top:6px">Includes 10% waste · '+coats+' coat'+(coats>1?'s':'')+' · Verify with SW rep for dark colors</div>'+
-    '</div>';
-  }
-
   el.innerHTML=html;
   const fd=document.getElementById('est-final-disp');if(fd)fd.textContent=fmt(final);
-  // Auto-set cost to materials (hidden input keeps _updateMarginGauge working)
+  // Auto-set cost: paint materials + scope add-on costs + RRP surcharge
   const _costEl=document.getElementById('paint-expected-cost');
   if(_costEl){
-    const autoVal=_paintExpectedCost!==null?_paintExpectedCost:matTotal;
+    const autoVal=_paintExpectedCost!==null?_paintExpectedCost:_paintCalcAutoCost(matTotal);
     _costEl.value=Math.round(autoVal||0);
     if(_paintExpectedCost!==null)_costEl.dataset.userSet='true';
   }
   _paintGaugeUpdate();
+}
+function _paintCalcAutoCost(mt){
+  let c=mt||0;
+  if(typeof roomScopeMap!=='undefined'){
+    Object.values(roomScopeMap).forEach(scope=>{
+      if(!scope||typeof scope!=='object')return;
+      Object.entries(scope).forEach(([k,entry])=>{
+        if(k.startsWith('_')||!entry||!entry.active)return;
+        c+=entry.cost||Math.round((entry.hrs||0)*(entry.rate||45)*100)/100;
+      });
+    });
+  }
+  if(_rrpPaintAnswer==='yes')c+=(typeof S!=='undefined'&&S.rrpSurcharge)||150;
+  return c;
 }
 function _paintGaugeUpdate(){
   const {final,matTotal:mt}=calcEst();
   const costEl=document.getElementById('paint-expected-cost');
   if(!costEl)return;
   if(costEl.dataset.userSet)_paintExpectedCost=parseFloat(costEl.value)||null;
-  else costEl.value=Math.round(_paintExpectedCost!==null?_paintExpectedCost:mt||0);
+  else costEl.value=Math.round(_paintExpectedCost!==null?_paintExpectedCost:_paintCalcAutoCost(mt)||0);
   _updateMarginGauge('paint',final);
 }
 function downloadProposalPDF(){
@@ -2310,7 +2355,7 @@ function downloadProposalPDF(){
     zAlert('Generate the proposal first.',{title:'Nothing to print'});return;
   }
   const cname=(document.getElementById('e-cname')?.value||'Estimate').replace(/[^a-z0-9]/gi,'_');
-  const bname=document.getElementById('e-bname')?.value||'No Business Name Entered';
+  const bname=document.getElementById('e-bname')?.value||getBusinessName()||'Contractor';
   const html=`<!DOCTYPE html><html><head>
 <meta charset="utf-8">
 <title>${bname} — Estimate for ${cname.replace(/_/g,' ')}</title>

@@ -1800,7 +1800,7 @@ function goEstStep(n){
       selectPropertyTier(key);
     },80);
   }
-  if(n===1){_paintSyncJobTypeButtons();}
+  if(n===1){_paintSyncJobTypeButtons();setTimeout(checkStep1Ready,100);}
   if(n===4){
     if(!estSurfaces.length){zAlert('Add at least one room and surface before reviewing.',{title:'No surfaces yet'});return;}
     const pVal=document.getElementById('e-paint')?.value;
@@ -1823,7 +1823,9 @@ function goEstStep(n){
       if(document.scrollingElement)document.scrollingElement.scrollTop=0;
     });
   });
-  if(n===3)renderEstRunning();}
+  if(n===3)renderEstRunning();
+  if(n===3||n===4||n===5){if(typeof _paintEstAutosave==='function')_paintEstAutosave();}
+}
 
 function cm(d){calMonth+=d;if(calMonth>11){calMonth=0;calYear++;}if(calMonth<0){calMonth=11;calYear--;}renderCalendar();}
 function renderCalendar(){renderCalMonthLabel();renderCalGrid();renderCalAvail();renderCalConflicts();renderCalWeek();renderCalUpcoming();}

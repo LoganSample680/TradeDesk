@@ -85,8 +85,8 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 @keyframes td-spin{to{transform:rotate(360deg)}}
 @keyframes td-logoin{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}
 @keyframes td-bar{from{width:0}to{width:68%}}
-@keyframes td-pg-enter{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
-@keyframes td-dash-enter{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
+@keyframes td-pg-enter{from{opacity:0;transform:translateY(7px)}to{opacity:1}}
+@keyframes td-dash-enter{from{opacity:0;transform:scale(.97)}to{opacity:1}}
 /* Authentic iOS springboard wiggle: two desynced animations (rotation +
    position) at ~0.25s, asymmetric -1deg→1.5deg, ~1px translate, no scale. */
 @keyframes td-jiggle-a{0%{transform:rotate(-1deg) translate(-.4px,-.4px);animation-timing-function:ease-in}50%{transform:rotate(1.5deg) translate(.4px,.4px);animation-timing-function:ease-out}100%{transform:rotate(-1deg) translate(-.4px,-.4px)}}
@@ -458,14 +458,14 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .tl-meta{font-size:10px;color:var(--text-3);margin-top:2px;font-weight:500}
 
 /* ── Steps rail ── */
-.steps{display:flex;flex-wrap:wrap;background:var(--cream);border-radius:var(--r-lg);padding:8px;margin-bottom:16px;gap:0;box-shadow:inset 0 0 0 1px var(--line)}
-.step{display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;padding:4px 8px;border-radius:var(--r-sm);flex-shrink:0}
-.snum{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);font-size:10px;font-weight:800;background:var(--bg-card);border:1px solid var(--line-2);color:var(--text-3)}
-.slbl{font-size:11px;font-weight:600;color:var(--text-3);letter-spacing:-.1px}
+.steps{display:flex;align-items:flex-start;background:var(--cream);border-radius:var(--r-lg);padding:8px 6px;margin-bottom:16px;box-shadow:inset 0 0 0 1px var(--line)}
+.step{display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;flex:1;padding:4px 2px;border-radius:var(--r-sm);min-width:0}
+.snum{width:22px;height:22px;min-width:22px;min-height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--font-ui);font-size:10px;font-weight:800;background:var(--bg-card);border:1px solid var(--line-2);color:var(--text-3);flex-shrink:0}
+.slbl{font-size:9px;font-weight:600;color:var(--text-3);letter-spacing:-.1px;text-align:center;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .step.active .snum{background:var(--denim);color:#fff;border-color:var(--denim);box-shadow:var(--shadow-btn-p)}
 .step.active .slbl{color:var(--text);font-weight:800}
 .step.done .snum{background:var(--c-green-soft);color:var(--c-green);border-color:var(--c-green-edge)}
-.ssep{width:14px;height:1px;background:var(--line);align-self:center;flex-shrink:0}
+.ssep{width:10px;height:1px;background:var(--line);flex-shrink:0;margin-top:11px}
 .sf-enter{animation:sf-fwd .22s cubic-bezier(0.4,0,0.2,1) both}
 .sf-enter-back{animation:sf-back .22s cubic-bezier(0.4,0,0.2,1) both}
 
@@ -1379,7 +1379,6 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="tbar-title" id="est-tbar-title">Estimate builder</div>
     </div>
     <div class="tbar-r">
-      <button class="btn btn-p btn-sm" onclick="saveEstFullDraft()">Save draft</button>
     </div>
   </div>
   <div class="steps" id="est-steps">
@@ -1410,30 +1409,16 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <div id="paint-jscope-note" style="font-size:11px;color:var(--text3)"></div>
     </div>
-    <div class="card"><div class="card-hd">Your business</div>
-      <div class="fg fg2">
-        <div class="f"><label>Business name</label><input id="e-bname" placeholder="Your business name"></div>
-        <div class="f"><label>Phone</label><input id="e-bphone" type="tel" maxlength="12" oninput="fmtPhone(this)"></div>
-        <div class="f"><label>License / insured</label><input id="e-blic" placeholder="Licensed &amp; insured in KS"></div>
-        <div class="f"><label>How long to decide</label><select id="e-bvalid"><option>7 days</option><option>14 days</option><option selected>30 days</option><option>60 days</option></select></div>
-      </div>
-    </div>
+    <!-- Business fields as hidden inputs — pre-filled from settings by prefillEstimateRates(); proposal reads them with S.* fallbacks -->
+    <input type="hidden" id="e-bname"><input type="hidden" id="e-bphone"><input type="hidden" id="e-blic">
+    <select id="e-bvalid" style="display:none"><option>7 days</option><option>14 days</option><option selected>30 days</option><option>60 days</option></select>
+    <select id="e-cprop" style="display:none"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select>
     <div class="card"><div class="card-hd">Client info <span id="e-client-linked"></span></div>
-      <div id="e-client-display" style="background:var(--blue-lt);border-radius:var(--r);padding:9px 12px;margin-bottom:10px;font-size:12px;font-weight:700;color:var(--blue-dk)">Client: <span id="e-client-linked">—</span></div>
       <div class="fg fg2">
         <div class="f"><label>Client name <span style="color:var(--c-red)">*</span></label><input id="e-cname" placeholder="John &amp; Sarah Smith" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
         <div class="f"><label>Phone <span style="color:var(--c-red)">*</span></label><input id="e-cphone" type="tel" maxlength="12" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="fmtPhone(this);markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
         <div class="f" style="grid-column:1/-1;position:relative"><label>Property address <span style="color:var(--c-red)">*</span></label><input id="e-caddr" placeholder="1234 Maple St, Wichita KS 67201" autocomplete="off" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft();_paintOnAddrInput();_lookupProperty(this.value,'ecaddr')" onblur="typeof checkAddrServiceState==='function'&&checkAddrServiceState(this.value)"></div>
         <div id="prop-card-ecaddr" style="display:none;margin-top:8px;padding:10px 12px;background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r);font-size:12px;grid-column:1/-1"></div>
-        <div style="grid-column:1/-1"><button type="button" class="btn btn-sm" style="width:100%;background:var(--bg2);border-color:var(--border2);color:var(--text2);font-size:12px" onclick="openLogTripModal({purpose:'Estimate',toAddress:document.getElementById('e-caddr').value,clientName:document.getElementById('e-cname').value})">🚗 Log drive to this estimate</button></div>
-        <div class="f"><label>Property type</label><select id="e-cprop" onchange="_onEstPropTypeChange(this)"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>
-        <div id="_est-industrial-banner" style="display:none;grid-column:1/-1;padding:10px 12px;border-radius:var(--r);border:1.5px dashed #ea580c;background:#fff7ed">
-          <div style="display:flex;align-items:center;gap:10px">
-            <span style="font-size:18px;flex-shrink:0">🏗️</span>
-            <div style="flex:1"><div style="font-size:12px;font-weight:700;color:#c2410c">Asphalt plant, tanks, or heavy machinery?</div><div style="font-size:11px;color:#9a3412">Switch to Equipment Coating for auto-calculated crew, schedule &amp; materials</div></div>
-            <button onclick="openIndustrialEquipEstimate(getClientById(currentClientId||estLinkedClientId))" style="padding:7px 12px;border-radius:var(--r);border:none;background:#c2410c;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">Switch →</button>
-          </div>
-        </div>
       </div>
       <div class="f"><label>Walkthrough notes</label><textarea id="e-cnotes" placeholder="What did you see? What does the client want?"></textarea></div>
     </div>
@@ -1453,8 +1438,8 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div id="est-s3" style="display:none">
     <!-- Property tier picker (was step 2, now at top of surfaces step) -->
     <div class="card" style="margin-bottom:10px">
-      <div class="card-hd">Property type</div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:10px">One tap sets pricing tier. Override anytime.</div>
+      <div class="card-hd">Pricing tier</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px">One tap sets your pricing. Override anytime.</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px" id="prop-tier-grid">
         <button type="button" id="ptier-rental" onclick="selectPropertyTier('rental')"
           style="padding:10px 8px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s">
@@ -1752,7 +1737,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
 
     <div id="est-s4" style="display:none">
-    <div class="card"><div class="card-hd" style="display:flex;align-items:center;gap:8px">🎨 <span>Bid breakdown</span></div><div id="est-review"></div></div>
+    <div class="card"><div id="est-review"></div></div>
     <div class="card" id="adj-portfolio-card"><div class="card-hd">Price adjustment</div>
       <input type="checkbox" id="portfolio-toggle" onchange="togglePortfolioShowcase()" style="display:none">
       <div id="portfolio-details" style="display:none;margin-bottom:14px">
@@ -2086,7 +2071,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="summary-divider"></div>
           <!-- Crew labor cost — only rendered when the contractor has employees -->
           <div id="byo-labor-cost-wrap" style="display:none"></div>
-          <input type="number" id="byo-expected-cost" style="display:none" oninput="this.dataset.userSet='true';_byoUpdateRail()">
+          <input type="number" id="byo-expected-cost" style="display:none" oninput="this.dataset.userSet='true';_byoUpdateRail();_byoAutosave()">
           <div id="byo-gauge-hint" style="display:none"></div>
           <div id="byo-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">
             <div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 15%,#F59E0B 30%,#22C55E 38%,#22C55E 78%,#F59E0B 92%,#EF4444 100%);margin:14px 10px 26px">
@@ -2104,7 +2089,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             <span style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600">Deposit %</span>
             <span style="display:flex;align-items:center;gap:4px">
               <input type="number" id="byo-deposit-pct" value="25" min="0" max="100" step="5"
-                oninput="_byoUpdateRail()"
+                oninput="_byoUpdateRail();_byoAutosave()"
                 style="width:68px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:17px;font-weight:700;text-align:center;font-family:inherit;-moz-appearance:textfield">
               <span style="font-size:15px;font-weight:700">%</span>
             </span>
@@ -2261,7 +2246,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div id="tm-nte-wrap" style="margin-left:24px">
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px">
             <span style="font-size:14px;color:var(--text2);font-weight:600">$</span>
-            <input type="number" id="tm-nte-cap" min="0" step="500" oninput="" style="flex:1;padding:8px 10px;border-radius:var(--r);border:1.5px solid var(--blue);font-size:16px;font-weight:700;color:var(--blue);background:var(--blue-lt)">
+            <input type="number" id="tm-nte-cap" min="0" step="500" oninput="_byoAutosave()" style="flex:1;padding:8px 10px;border-radius:var(--r);border:1.5px solid var(--blue);font-size:16px;font-weight:700;color:var(--blue);background:var(--blue-lt)">
           </div>
           <div style="font-size:11px;color:var(--text3)">Client pays actual T&amp;M only, up to this cap</div>
         </div>

@@ -501,6 +501,7 @@ function _tmRecalc(){
   if(idx>=0){if(labor>0)_geiLines[idx]=line;else _geiLines.splice(idx,1);}
   else if(labor>0)_geiLines.unshift(line);
   renderGeiLines();calcGeiTotal();
+  _byoAutosave();
 }
 function _tmCalcDeposit(){
   const {sub}=calcGeiTotal();
@@ -510,21 +511,24 @@ function _tmCalcDeposit(){
   if(el)el.textContent=amt?'$'+amt.toLocaleString('en-US',{maximumFractionDigits:0}):'—';
   // Also update NTE suggestion if not manually set
   _tmCalcNte();
+  _byoAutosave();
 }
 function _tmCalcNte(){
   const on=document.getElementById('tm-nte-on')?.checked;
   const wrap=document.getElementById('tm-nte-wrap');
   if(wrap)wrap.style.display=on?'block':'none';
-  if(!on)return;
+  if(!on){_byoAutosave();return;}
   const cap=document.getElementById('tm-nte-cap');
   if(cap&&(!cap.value||parseFloat(cap.value)===0)){
     const{sub}=calcGeiTotal();
     if(sub>0)cap.value=Math.round(sub*1.15/500)*500; // round to nearest $500
   }
+  _byoAutosave();
 }
 function _tmSetCycle(v){
   _tmBillingCycle=v;
   _tmSyncCycleButtons();
+  _byoAutosave();
 }
 function _tmSyncCycleButtons(){
   ['weekly','biweekly','milestone','completion'].forEach(c=>{
@@ -637,11 +641,13 @@ function _toggleScopeChip(label){
   _updateScopeSheetBtn(label);
   // Scope drives the auto crew-labor estimate — refresh the rail + gauge.
   if(_geiIsFreeForm&&typeof _byoUpdateRail==='function')_byoUpdateRail();
+  _byoAutosave();
 }
 function _toggleScopeNone(){
   _geiScopeNoScope=!_geiScopeNoScope;
   if(_geiScopeNoScope)_geiScopeChips=[];
   ['tm-scope-wrap','byo-scope-wrap'].forEach(id=>_renderScopeChips(id));
+  _byoAutosave();
 }
 function _updateScopeSheetBtn(label){
   const sid='_scb-'+label.replace(/[^a-z0-9]/gi,'_');
@@ -665,9 +671,9 @@ function _renderScopeChips(containerId){
         '<span onclick="_toggleScopeNone()" style="display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:20px;background:var(--blue-lt,#e6f0fb);color:var(--blue);border:1.5px solid var(--blue);font-size:12px;font-weight:700;cursor:pointer">&#8709; None<span style="font-size:11px;font-weight:900;opacity:.6;margin-left:2px">&#xd7;</span></span>'+
       '</div>';
     }else{
-      wrap.innerHTML='<div style="padding:12px 16px;display:flex;align-items:center;gap:8px">'+
-        '<span style="font-size:12px;color:var(--text3);font-style:italic">No scope added — tap + Add scope</span>'+
-        '<span onclick="_toggleScopeNone()" style="display:inline-flex;align-items:center;padding:4px 10px;border-radius:20px;background:var(--bg2);border:1px solid var(--border2);font-size:11px;font-weight:600;cursor:pointer;color:var(--text3)">&#8709; None</span>'+
+      wrap.innerHTML='<div style="padding:10px 16px">'+
+        '<button type="button" onclick="_openScopeSheet(\''+containerId+'\')" style="display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:20px;background:var(--bg2);border:1.5px dashed var(--border2);font-size:13px;font-weight:600;color:var(--text3);cursor:pointer;font-family:inherit">'+
+        '<span style="font-size:16px;line-height:1">+</span> Add scope of work</button>'+
       '</div>';
     }
     return;
@@ -805,7 +811,7 @@ function _byoRenderSections(){
     '<div style="padding:12px 14px">'+
       '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">Custom terms print on the proposal below the standard payment terms.</div>'+
       '<textarea id="byo-custom-terms" rows="5" placeholder="e.g. All paint supplied by client. Contractor not responsible for pre-existing damage to surfaces..." '+
-        'oninput="_byoCustomTerms=this.value" '+
+        'oninput="_byoCustomTerms=this.value;_byoAutosave()" '+
         'style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical;box-sizing:border-box;line-height:1.5">'+escHtml(_byoCustomTerms||'')+'</textarea>'+
     '</div>'+
   '</div>';
@@ -822,6 +828,29 @@ function _byoAutosave(){
   b.byoCustomSections=[..._byoCustomSections];
   b.isFreeForm=true;
   b.estCrew=[..._estCrew];
+  b.scopeChips=[..._geiScopeChips];
+  b.scopeNoScope=_geiScopeNoScope||false;
+  const _termsEl=document.getElementById('byo-custom-terms');
+  if(_termsEl)b.byoCustomTerms=_termsEl.value;
+  const {total,sub}=calcGeiTotal();
+  if(total>0){
+    b.amount=total;
+    if(_geiIsTM){
+      const _tmDep=parseFloat(document.getElementById('tm-dep-pct')?.value)||20;
+      b.deposit=Math.round(sub*_tmDep/100);
+    } else {
+      const _byoDep=parseFloat(document.getElementById('byo-deposit-pct')?.value)||25;
+      b.deposit=Math.round(total*_byoDep/100);
+    }
+  }
+  if(_geiIsTM){
+    b.isTM=true;
+    b.tmCrewCount=_tmCrewCount;
+    b.tmRatePerMan=_tmRatePerMan;
+    b.tmEstHours=_tmEstHours;
+    b.tmBillingCycle=_tmBillingCycle;
+    b.tmMatMarkup=_tmMatMarkup;
+  }
   saveAll();
 }
 function _injectRrpItems(){
@@ -1017,7 +1046,7 @@ function _updateMarginGauge(type,total){
   else if(margin<22){color='#EF4444';msg='Underpriced — consider raising your rate';}
   else if(margin<35){color='#F59E0B';msg='Below target — a bit of room to grow';}
   else if(margin<55){color='#22C55E';msg='Priced right — solid margin for this job';}
-  else if(margin<75){color='#22C55E';msg='Strong margin — well priced for your trade';}
+  else if(margin<75){color='#22C55E';msg='Strong margin — you\'re building real profit here';}
   else{color='#F59E0B';msg='Very high margin — double-check your numbers';}
   const dot=document.getElementById(type+'-gauge-dot');
   const pct=document.getElementById(type+'-gauge-pct');
@@ -1242,7 +1271,7 @@ function _byoConfirmSection(){
   }
   _byoCustomSections.push(name);
   document.getElementById('_byo-sec-modal')?.remove();
-  _byoRenderSections();
+  _byoRenderSections();_byoAutosave();
 }
 function _byoDeleteSection(sec){
   if(_BYO_DEFAULT_SECTIONS.includes(sec))return;
@@ -1397,6 +1426,7 @@ function _tmInputChange(){
   const _tmCostEl=document.getElementById('tm-expected-cost');
   if(_tmCostEl&&labor>0){_tmCostEl.value=labor;}
   _updateMarginGauge('tm',total);
+  _byoAutosave();
 }
 function _tmRenderMatList(){
   const el=document.getElementById('tm-mat-list');if(!el)return;

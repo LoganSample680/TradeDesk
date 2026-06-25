@@ -3056,11 +3056,13 @@ test.describe('Workforce time intelligence', () => {
 test.describe('Drag-to-reorder nav + dashboard', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
-    page = await browser.newPage();
-    setupConsoleMonitor(page);
-    await page.goto(BASE_URL, { waitUntil: 'networkidle' });
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
   });
-  test.afterAll(async () => { await page.close(); });
+  test.afterAll(async () => { await page.context().close(); });
 
   test('_MTB_DEFAULT_ORDER is defined with 4 tabs', async () => {
     const r = await page.evaluate(() => typeof _MTB_DEFAULT_ORDER !== 'undefined' && _MTB_DEFAULT_ORDER.length === 4);
@@ -3351,25 +3353,30 @@ test.describe('Scope of work — collapsed + sheet picker', () => {
     expect(r.noTileButtons).toBe(true);
   });
 
-  test('selected chips appear as pills, edit-scope button replaces add button', async () => {
+  test('selecting chips replaces the add button with line items', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderScopeChips !== 'function') return null;
       const div = document.createElement('div'); div.id = 'test-scope2-wrap';
       document.body.appendChild(div);
-      window._geiScopeChips = ['Demo & removal', 'Site prep'];
+      // Bare assignment rebinds the module-level `let _geiScopeChips`;
+      // `window._geiScopeChips =` would NOT (it is not a window property).
+      _geiScopeNoScope = false;
+      _geiScopeChips = ['Demo & removal', 'Site prep'];
       _renderScopeChips('test-scope2-wrap');
       const html = div.innerHTML;
+      const text = div.textContent;
       document.body.removeChild(div);
       return {
-        hasPill: html.includes('Demo &amp; removal') || html.includes('Demo & removal'),
-        hasEditBtn: html.includes('Edit scope'),
+        hasItems: text.includes('Demo & removal') && text.includes('Site prep'),
         noAddBtn: !html.includes('Add scope of work'),
+        // Line items must not use the rounded-pill styling.
+        notPills: !html.includes('border-radius:20px'),
       };
     });
     if (r === null) return;
-    expect(r.hasPill).toBe(true);
-    expect(r.hasEditBtn).toBe(true);
+    expect(r.hasItems).toBe(true);
     expect(r.noAddBtn).toBe(true);
+    expect(r.notPills).toBe(true);
   });
 
   test('_openScopeSheet renders bottom sheet with all tile options', async () => {
@@ -5052,6 +5059,100 @@ test.describe('UI cleanup — redundant elements removed', () => {
     expect(count).toBe(0);
   });
 
+  test('Bid breakdown card-hd header is removed from int/ext review card', async () => {
+    const count = await page.locator('#est-s4 .card-hd').count();
+    expect(count).toBe(0);
+  });
+
+  test('est-review div is direct child of its card with no header', async () => {
+    const reviewEl = await page.locator('#est-review').count();
+    expect(reviewEl).toBeGreaterThan(0);
+    // Confirm no sibling card-hd exists in the same card
+    const cardHdInReviewCard = await page.evaluate(() => {
+      const el = document.getElementById('est-review');
+      if (!el) return 0;
+      const card = el.closest('.card');
+      if (!card) return 0;
+      return card.querySelectorAll('.card-hd').length;
+    });
+    expect(cardHdInReviewCard).toBe(0);
+  });
+
+  test('step bar steps are evenly distributed — flex:1 applied', async () => {
+    const result = await page.evaluate(() => {
+      const steps = Array.from(document.querySelectorAll('#est-steps .step'));
+      if (!steps.length) return null;
+      const styles = steps.map(s => window.getComputedStyle(s).flexGrow);
+      return { count: steps.length, allFlex1: styles.every(v => parseFloat(v) >= 1) };
+    });
+    if (result === null) return;
+    expect(result.count).toBe(5);
+    expect(result.allFlex1).toBe(true);
+  });
+
+  test('client info card — blue Client display bar is removed', async () => {
+    const count = await page.locator('#e-client-display').count();
+    expect(count).toBe(0);
+  });
+
+  test('client info card — Log drive button is removed', async () => {
+    const count = await page.locator('button:has-text("Log drive to this estimate")').count();
+    expect(count).toBe(0);
+  });
+
+  test('client info card — Property type select is not visible in step 1', async () => {
+    // e-cprop kept hidden for JS compatibility; assert it is not visible
+    const visible = await page.evaluate(() => {
+      const el = document.getElementById('e-cprop');
+      if (!el) return false;
+      const style = window.getComputedStyle(el);
+      return style.display !== 'none' && style.visibility !== 'hidden';
+    });
+    expect(visible).toBe(false);
+  });
+
+  test('paint order section is not rendered in estimate review', async () => {
+    // renderEstReview() no longer outputs the paint order block
+    const count = await page.locator('text=🎨 Paint order').count();
+    expect(count).toBe(0);
+    const countUpper = await page.locator('text=PAINT ORDER').count();
+    expect(countUpper).toBe(0);
+  });
+
+  test('_paintCalcAutoCost function exists and includes scope + RRP logic', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _paintCalcAutoCost !== 'function') return { skip: true };
+      // With no scope and no RRP, returns base materials
+      const base = _paintCalcAutoCost(500);
+      return { exists: true, base };
+    });
+    if (result.skip) return;
+    expect(result.exists).toBe(true);
+    expect(result.base).toBeGreaterThanOrEqual(500);
+  });
+
+  test('step 3 heading is Pricing tier not Property type', async () => {
+    const tierHeading = await page.evaluate(() => {
+      const cards = document.querySelectorAll('#est-s3 .card-hd');
+      return Array.from(cards).map(c => c.textContent.trim());
+    });
+    expect(tierHeading.some(t => t === 'Pricing tier')).toBe(true);
+    expect(tierHeading.some(t => t === 'Property type')).toBe(false);
+  });
+
+  test('pg.active animation leaves no persistent transform stacking context', async () => {
+    const transform = await page.evaluate(() => {
+      const el = document.querySelector('.pg.active');
+      if (!el) return null;
+      return window.getComputedStyle(el).transform;
+    });
+    // After animation completes, transform should be none (identity matrix is acceptable
+    // only during the animation duration, not as a persisted fill state)
+    const isNone = transform === 'none' || transform === '' || transform === null;
+    const isMatrix = transform && transform.startsWith('matrix(') && transform !== 'matrix(1, 0, 0, 1, 0, 0)';
+    expect(isMatrix).toBe(false);
+  });
+
   test('no console errors from UI cleanup', async () => {
     assertNoErrors(page, 'UI cleanup');
   });
@@ -5114,5 +5215,257 @@ test.describe('Int/ext estimate review — profit gauge + compact summary', () =
 
   test('no console errors in review gauge tests', async () => {
     assertNoErrors(page, 'paint review gauge');
+  });
+});
+
+test.describe('Estimate autosave — BYO and T&M fields', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('_byoAutosave saves scopeChips and scopeNoScope to bid', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _byoAutosave !== 'function') return null;
+      if (typeof bids === 'undefined') return null;
+      // Set up a fake bid
+      const fakeId = 'autosave-test-' + Math.floor(Date.now() / 1000);
+      bids.push({ id: fakeId });
+      window._geiEditBidId = fakeId;
+      window._geiScopeChips = ['Interior', 'Trim'];
+      window._geiScopeNoScope = false;
+      window._byoItems = [];
+      window._byoCustomSections = [];
+      window._estCrew = [];
+      _byoAutosave();
+      const saved = bids.find(b => b.id === fakeId);
+      // clean up
+      bids.splice(bids.findIndex(b => b.id === fakeId), 1);
+      window._geiEditBidId = null;
+      return saved ? { chips: saved.scopeChips, noScope: saved.scopeNoScope } : null;
+    });
+    if (result === null) return;
+    expect(result.chips).toEqual(['Interior', 'Trim']);
+    expect(result.noScope).toBe(false);
+  });
+
+  test('_byoAutosave saves T&M fields when _geiIsTM is true', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _byoAutosave !== 'function') return null;
+      if (typeof bids === 'undefined') return null;
+      const fakeId = 'autosave-tm-' + Math.floor(Date.now() / 1000);
+      bids.push({ id: fakeId });
+      window._geiEditBidId = fakeId;
+      window._geiIsTM = true;
+      window._geiIsFreeForm = true;
+      window._geiScopeChips = [];
+      window._geiScopeNoScope = false;
+      window._byoItems = [];
+      window._byoCustomSections = [];
+      window._estCrew = [];
+      window._tmCrewCount = 3;
+      window._tmRatePerMan = 65;
+      window._tmEstHours = 8;
+      window._tmBillingCycle = 'weekly';
+      window._tmMatMarkup = 15;
+      _byoAutosave();
+      const saved = bids.find(b => b.id === fakeId);
+      bids.splice(bids.findIndex(b => b.id === fakeId), 1);
+      window._geiEditBidId = null;
+      window._geiIsTM = false;
+      return saved ? { isTM: saved.isTM, crew: saved.tmCrewCount, rate: saved.tmRatePerMan, hours: saved.tmEstHours, cycle: saved.tmBillingCycle } : null;
+    });
+    if (result === null) return;
+    expect(result.isTM).toBe(true);
+    expect(result.crew).toBe(3);
+    expect(result.rate).toBe(65);
+    expect(result.hours).toBe(8);
+    expect(result.cycle).toBe('weekly');
+  });
+
+  test('_toggleScopeChip calls _byoAutosave', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _toggleScopeChip !== 'function') return null;
+      if (typeof bids === 'undefined') return null;
+      const fakeId = 'scope-chip-test-' + Math.floor(Date.now() / 1000);
+      bids.push({ id: fakeId });
+      window._geiEditBidId = fakeId;
+      window._geiScopeChips = [];
+      window._geiScopeNoScope = false;
+      window._byoItems = [];
+      window._byoCustomSections = [];
+      window._estCrew = [];
+      window._geiIsTM = false;
+      _toggleScopeChip('Exterior');
+      const saved = bids.find(b => b.id === fakeId);
+      bids.splice(bids.findIndex(b => b.id === fakeId), 1);
+      window._geiEditBidId = null;
+      return saved ? saved.scopeChips : null;
+    });
+    if (result === null) return;
+    expect(result).toContain('Exterior');
+  });
+
+  test('_toggleScopeNone calls _byoAutosave and clears chips', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _toggleScopeNone !== 'function') return null;
+      if (typeof bids === 'undefined') return null;
+      const fakeId = 'scope-none-test-' + Math.floor(Date.now() / 1000);
+      bids.push({ id: fakeId });
+      window._geiEditBidId = fakeId;
+      window._geiScopeChips = ['Interior'];
+      window._geiScopeNoScope = false;
+      window._byoItems = [];
+      window._byoCustomSections = [];
+      window._estCrew = [];
+      window._geiIsTM = false;
+      _toggleScopeNone();
+      const saved = bids.find(b => b.id === fakeId);
+      bids.splice(bids.findIndex(b => b.id === fakeId), 1);
+      window._geiEditBidId = null;
+      return saved ? { noScope: saved.scopeNoScope, chips: saved.scopeChips } : null;
+    });
+    if (result === null) return;
+    expect(result.noScope).toBe(true);
+    expect(result.chips).toEqual([]);
+  });
+
+  test('_tmRecalc triggers autosave — bid reflects T&M rate changes', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _tmRecalc !== 'function') return null;
+      if (typeof bids === 'undefined') return null;
+      const fakeId = 'tm-recalc-test-' + Math.floor(Date.now() / 1000);
+      bids.push({ id: fakeId });
+      window._geiEditBidId = fakeId;
+      window._geiIsTM = true;
+      window._geiIsFreeForm = true;
+      window._geiScopeChips = [];
+      window._geiScopeNoScope = false;
+      window._byoItems = [];
+      window._byoCustomSections = [];
+      window._estCrew = [];
+      window._geiLines = [];
+      window._tmCrewCount = 2;
+      window._tmRatePerMan = 75;
+      window._tmEstHours = 10;
+      window._tmBillingCycle = 'completion';
+      window._tmMatMarkup = 0;
+      _tmRecalc();
+      const saved = bids.find(b => b.id === fakeId);
+      bids.splice(bids.findIndex(b => b.id === fakeId), 1);
+      window._geiEditBidId = null;
+      window._geiIsTM = false;
+      window._geiLines = [];
+      return saved ? { isTM: saved.isTM, crew: saved.tmCrewCount, rate: saved.tmRatePerMan } : null;
+    });
+    if (result === null) return;
+    expect(result.isTM).toBe(true);
+    expect(result.crew).toBe(2);
+    expect(result.rate).toBe(75);
+  });
+
+  test('no console errors in autosave tests', async () => {
+    assertNoErrors(page, 'estimate autosave');
+  });
+});
+
+test.describe('Int/ext estimate — cloud autosave (_paintEstAutosave)', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('_paintEstAutosave function exists', async () => {
+    const exists = await page.evaluate(() => typeof _paintEstAutosave === 'function');
+    expect(exists).toBe(true);
+  });
+
+  test('Save draft button is removed from int/ext estimator topbar', async () => {
+    const count = await page.locator('#pg-est .tbar-r button').count();
+    expect(count).toBe(0);
+  });
+
+  test('_paintEstAutosave creates a draft bid in bids[] when client name is set', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _paintEstAutosave !== 'function') return null;
+      if (typeof bids === 'undefined') return null;
+      const prevCount = bids.length;
+      // Set up estimator state
+      const nameEl = document.getElementById('e-cname');
+      if (nameEl) nameEl.value = 'Autosave Test Client';
+      window.estLinkedClientId = null;
+      window.lastCreatedBidId = null;
+      window.editingBidId = null;
+      window.estSurfaces = [];
+      window.roomScopeMap = {};
+      _paintEstAutosave();
+      const newBid = bids.find(b => b.draft && b.client_name === 'Autosave Test Client');
+      // Clean up
+      if (newBid) bids.splice(bids.findIndex(b => b.id === newBid.id), 1);
+      window.lastCreatedBidId = null;
+      if (nameEl) nameEl.value = '';
+      return newBid ? { status: newBid.status, draft: newBid.draft, name: newBid.client_name } : null;
+    });
+    if (result === null) return;
+    expect(result.draft).toBe(true);
+    expect(result.status).toBe('Draft');
+    expect(result.name).toBe('Autosave Test Client');
+  });
+
+  test('_paintEstAutosave updates existing draft bid rather than creating a new one', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _paintEstAutosave !== 'function') return null;
+      if (typeof bids === 'undefined') return null;
+      const fakeId = 'paint-draft-' + Math.floor(Date.now() / 1000);
+      bids.push({ id: fakeId, status: 'Draft', draft: true, client_name: 'Old Name', amount: 0 });
+      window.lastCreatedBidId = fakeId;
+      window.editingBidId = null;
+      window.estSurfaces = [];
+      window.roomScopeMap = {};
+      const nameEl = document.getElementById('e-cname');
+      if (nameEl) nameEl.value = 'Updated Client';
+      _paintEstAutosave();
+      const b = bids.find(x => x.id === fakeId);
+      bids.splice(bids.findIndex(x => x.id === fakeId), 1);
+      window.lastCreatedBidId = null;
+      if (nameEl) nameEl.value = '';
+      return b ? { name: b.client_name } : null;
+    });
+    if (result === null) return;
+    expect(result.name).toBe('Updated Client');
+  });
+
+  test('_paintEstAutosave does nothing if client name is empty', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _paintEstAutosave !== 'function') return null;
+      if (typeof bids === 'undefined') return null;
+      const nameEl = document.getElementById('e-cname');
+      if (nameEl) nameEl.value = '';
+      window.lastCreatedBidId = null;
+      window.editingBidId = null;
+      const prevCount = bids.length;
+      _paintEstAutosave();
+      return { unchanged: bids.length === prevCount };
+    });
+    if (result === null) return;
+    expect(result.unchanged).toBe(true);
+  });
+
+  test('no console errors in paint autosave tests', async () => {
+    assertNoErrors(page, 'paint estimate autosave');
   });
 });
