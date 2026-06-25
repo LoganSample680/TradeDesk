@@ -1941,6 +1941,51 @@ function resumeEstimateDraft(){
     goEstStep(d.step||1);
   },80);
 }
+// Inspect the frozen boot snapshot + live drafts for the richest unsaved estimate.
+// Returns {surf, rooms, cname} of the best recoverable copy, or null. Read-only.
+function _scanRecoverableEstimate(){
+  const sources=[];
+  const _addDraft=(raw)=>{if(!raw)return;try{const d=JSON.parse(raw);if(d&&typeof d==='object'&&!Array.isArray(d))sources.push(d);}catch(_e){}};
+  const _addSurf=(raw)=>{if(!raw)return;try{const d=JSON.parse(raw);if(d&&Array.isArray(d.surfaces))sources.push({surfaces:d.surfaces,_surfOnly:true});}catch(_e){}};
+  let snap=null;try{snap=JSON.parse(localStorage.getItem('zp3_recovery_snapshot')||'null');}catch(_e){}
+  if(snap){_addDraft(snap.est_full_draft);_addSurf(snap.surf_draft);}
+  _addDraft(localStorage.getItem('zp3_est_full_draft'));
+  _addSurf(localStorage.getItem('zp3_surf_draft'));
+  // Base = the full draft with the most surfaces; graft in a richer surf-only list if found.
+  let base=null,maxSurf=-1;
+  sources.forEach(s=>{if(!s._surfOnly){const n=(s.surfaces||[]).length;if(n>maxSurf){maxSurf=n;base=s;}}});
+  let bestSurf=base?(base.surfaces||[]):[];
+  sources.forEach(s=>{if((s.surfaces||[]).length>bestSurf.length)bestSurf=s.surfaces;});
+  if(!base&&bestSurf.length)base={surfaces:bestSurf};
+  if(!base)return null;
+  base={...base,surfaces:bestSurf};
+  const surf=(base.surfaces||[]).length;
+  const rooms=base.roomScopeMap?Object.keys(base.roomScopeMap).length:0;
+  if(!surf&&!rooms)return null;
+  return {draft:base,surf,rooms,cname:base.cname||''};
+}
+// Rebuild the estimator from the best recoverable copy (snapshot preferred). For an
+// estimate that was never saved as a bid — the room measurements live only in the
+// draft storage, which the boot snapshot froze before any overwrite.
+function recoverLostEstimate(){
+  const found=_scanRecoverableEstimate();
+  if(!found){if(typeof zAlert==='function')zAlert("No recoverable estimate found in this device's backup.",{title:'Nothing to recover'});return false;}
+  const base=found.draft;
+  goPg('pg-est');
+  setTimeout(()=>{
+    estLinkedClientId=base.clientId||null;editingBidId=null;
+    if(base.lastBidId)lastCreatedBidId=base.lastBidId;
+    restoreEstFullDraft(base);
+    goEstStep(base.step||3);
+    try{renderEstSurfs();}catch(_e){}
+    try{renderEstRunning();}catch(_e){}
+    if(typeof showToast==='function')showToast('Recovered '+found.surf+' surfaces · '+found.rooms+' rooms','✅');
+  },90);
+  return true;
+}
+window.recoverLostEstimate=recoverLostEstimate;
+window._scanRecoverableEstimate=_scanRecoverableEstimate;
+
 function restoreEstFullDraft(d){
   if(!d)return false;
   estLinkedClientId=d.clientId||null;

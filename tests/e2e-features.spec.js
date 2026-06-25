@@ -5616,6 +5616,26 @@ test.describe('Int/ext estimate — cloud autosave (_paintEstAutosave)', () => {
     expect(result.surf).toBe(2); // unchanged — never downgraded
   });
 
+  test('_scanRecoverableEstimate finds surfaces frozen in the boot snapshot', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _scanRecoverableEstimate !== 'function') return null;
+      const snap = { ts: Date.now(),
+        est_full_draft: JSON.stringify({ cname: 'Adam Ryder', surfaces: [], roomScopeMap: { A:{}, B:{} }, ts: Date.now() }),
+        surf_draft: JSON.stringify({ surfaces: [
+          { id:1, type:'walls', room:'A', qty:200 }, { id:2, type:'ceiling', room:'A', qty:150 }, { id:3, type:'walls', room:'B', qty:180 }
+        ], ts: Date.now() }) };
+      const prev = localStorage.getItem('zp3_recovery_snapshot');
+      localStorage.setItem('zp3_recovery_snapshot', JSON.stringify(snap));
+      const r = _scanRecoverableEstimate();
+      if (prev) localStorage.setItem('zp3_recovery_snapshot', prev); else localStorage.removeItem('zp3_recovery_snapshot');
+      return r ? { surf: r.surf, rooms: r.rooms, cname: r.cname } : null;
+    });
+    if (result === null) return;
+    expect(result.surf).toBe(3);      // grafted from the richer surf_draft
+    expect(result.rooms).toBe(2);     // roomScopeMap from est_full_draft
+    expect(result.cname).toBe('Adam Ryder');
+  });
+
   test('no console errors in paint autosave tests', async () => {
     assertNoErrors(page, 'paint estimate autosave');
   });

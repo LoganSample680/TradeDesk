@@ -1020,6 +1020,27 @@ function renderTodayFeed(){
       '</div>'
     );
   }
+  // RECOVER — backup snapshot holds an unsaved estimate richer than the live draft.
+  // Surfaces in surf_draft / est_full_draft that the live state lost are still frozen
+  // in the boot snapshot. Offer one-tap recovery when the backup beats what's loaded.
+  if(typeof _scanRecoverableEstimate==='function'){
+    const _rec=_scanRecoverableEstimate();
+    const _liveSurf=(draft&&Array.isArray(draft.surfaces))?draft.surfaces.length:0;
+    if(_rec&&_rec.surf>_liveSurf){
+      buildItems.push(
+        '<div class="tf-card" style="border:1px solid #9DBEE5;background:#F0F7FF">'+
+          '<div class="tf-icon">♻️</div>'+
+          '<div class="tf-body">'+
+            '<div class="tf-name">'+escHtml(_rec.cname||'Unsaved estimate')+'</div>'+
+            '<div class="tf-sub" style="color:#1a365d">Backup found — '+_rec.surf+' surfaces · '+_rec.rooms+' rooms</div>'+
+          '</div>'+
+          '<div class="tf-acts">'+
+            '<button onclick="recoverLostEstimate()" class="btn btn-sm btn-p" style="font-size:11px">Recover →</button>'+
+          '</div>'+
+        '</div>'
+      );
+    }
+  }
   bids.filter(b=>!b.signingToken&&(b.draft||b.status==='Pending'||(b.status==='Draft'&&b.geiLines!==undefined))&&b.id!==_activeDraftBidId).forEach(b=>{
     const c=getClientById(b.client_id);
     const displayName=c?.name||b.client_name||b.name||'';
