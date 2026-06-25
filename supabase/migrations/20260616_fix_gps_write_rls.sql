@@ -7,26 +7,44 @@
 -- The corrected WITH CHECK adds an exists() subquery through team_members so
 -- contractor_user_id must be a contractor who has this employee on their team.
 
-drop policy if exists "Employee writes own job time" on job_time_entries;
-create policy "Employee writes own job time" on job_time_entries for insert
-  with check (
-    employee_user_id::text = auth.uid()::text
-    and exists (
-      select 1 from team_members tm
-      where tm.employee_user_id::text = auth.uid()::text
-        and tm.contractor_user_id = job_time_entries.contractor_user_id
-        and tm.active = true
-    )
-  );
+-- job_time_entries and location_pings are created in 20260619_team_comp_geo_tracking.sql
+-- which runs after this file. Guard with DO blocks so this migration is safe when the
+-- tables don't exist yet. 20260625_fix_idempotent_policies.sql re-applies the hardened
+-- policies after all tables exist.
+do $$
+begin
+  if to_regclass('public.job_time_entries') is not null then
+    drop policy if exists "Employee writes own job time" on job_time_entries;
+    execute $p$
+      create policy "Employee writes own job time" on job_time_entries for insert
+        with check (
+          employee_user_id::text = auth.uid()::text
+          and exists (
+            select 1 from team_members tm
+            where tm.employee_user_id::text = auth.uid()::text
+              and tm.contractor_user_id = job_time_entries.contractor_user_id
+              and tm.active = true
+          )
+        )
+    $p$;
+  end if;
+end $$;
 
-drop policy if exists "Employee writes own location" on location_pings;
-create policy "Employee writes own location" on location_pings for insert
-  with check (
-    employee_user_id::text = auth.uid()::text
-    and exists (
-      select 1 from team_members tm
-      where tm.employee_user_id::text = auth.uid()::text
-        and tm.contractor_user_id = location_pings.contractor_user_id
-        and tm.active = true
-    )
-  );
+do $$
+begin
+  if to_regclass('public.location_pings') is not null then
+    drop policy if exists "Employee writes own location" on location_pings;
+    execute $p$
+      create policy "Employee writes own location" on location_pings for insert
+        with check (
+          employee_user_id::text = auth.uid()::text
+          and exists (
+            select 1 from team_members tm
+            where tm.employee_user_id::text = auth.uid()::text
+              and tm.contractor_user_id = location_pings.contractor_user_id
+              and tm.active = true
+          )
+        )
+    $p$;
+  end if;
+end $$;
