@@ -1661,7 +1661,7 @@ function renderCDBids(){
       actBtns.push('<button class="btn btn-sm" onclick="markBidAbandoned('+b.id+')" style="background:#FFF8F0;color:#A32D2D;border-color:#A32D2D">No response</button>');
       actBtns.push('<button class="btn-del" onclick="deleteBid('+b.id+')" style="font-size:11px;padding:5px 8px">Delete</button>');
     }
-    return '<div class="card" style="margin-bottom:8px" id="bid-card-'+b.id+'">'+
+    return '<div class="card" style="margin-bottom:8px" id="bid-card-'+b.id+'" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml((b.type||'Proposal')+(b.amount?' · '+fmt(b.amount):''))+'">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
         '<div>'+(b.id===latestBidId&&cbids.length>1?'<span style="font-size:10px;font-weight:800;background:var(--blue);color:#fff;padding:1px 6px;border-radius:8px;margin-bottom:4px;display:inline-block">Latest</span><br>':'')+'<div style="font-size:14px;font-weight:700">'+escHtml(b.type||'Painting job')+'</div>'+
           '<div style="font-size:11px;color:var(--text3)">'+
@@ -2023,7 +2023,7 @@ function renderCDJobs(){
         clockBtnCD='<button class="btn btn-sm" onclick="openClockInSheet('+j.id+')" style="border-color:var(--border2);color:var(--text2)">▶ '+(logged>0?loggedLabel:'')+'Clock in</button>';
       }
     }
-    return '<div class="card" style="margin-bottom:8px;border-left:3px solid '+(j.color||'var(--blue)')+'">'+
+    return '<div class="card" style="margin-bottom:8px;border-left:3px solid '+(j.color||'var(--blue)')+'" data-lp-id="'+j.id+'" data-lp-type="job" data-lp-label="'+escHtml(j.name||'job')+'">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
         '<div style="flex:1;min-width:0">'+
           '<div style="font-size:14px;font-weight:700">'+escHtml(j.name||'')+'</div>'+

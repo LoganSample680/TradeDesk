@@ -244,7 +244,7 @@ function calcTax(){
       Object.entries(_stateRev).sort((a,b)=>b[1]-a[1]).map(([st,rev])=>{
         const stName=STATE_TAX[st]?.name||st;
         const isHome=st===_homeState;
-        return '<div class="tax-row"><span>'+escHtml(stName)+(isHome?' <span style="font-size:10px;color:var(--text3)">(home)</span>':'')+'</span><span style="font-weight:700">'+fmt(rev)+'</span></div>';
+        return '<div class="tax-row"><span>'+escHtml(stName)+(isHome?' <span style="font-size:10px;color:var(--text3)">(home)</span>':' <span style="font-size:10px;color:var(--text3)">(non-resident)</span>')+'</span><span style="font-weight:700">'+fmt(rev)+'</span></div>';
       }).join('')+
     '</div>';
   }
@@ -265,9 +265,9 @@ function calcTax(){
   let _stateRows='';
   if(_isMultiState&&_nonHomeTaxes.length){
     _stateRows=
-      '<div class="tax-row"><span>'+escHtml(_homeStateName)+' income tax</span><span style="color:#A32D2D">'+fmt(ksTax)+'</span></div>'+
-      _nonHomeTaxes.map(t=>'<div class="tax-row"><span style="padding-left:14px;color:var(--text2)">'+escHtml(t.name)+(t.noTax?'':' (out of state)')+'</span><span style="color:#A32D2D">'+(t.noTax?'No income tax':fmt(t.stTax))+'</span></div>').join('')+
-      '<div style="font-size:10px;color:var(--text3);margin:4px 0 2px;font-style:italic">⚠ Multi-state — review total with your CPA</div>';
+      '<div class="tax-row"><span>'+escHtml(_homeStateName)+' income tax'+(_credit>0?' <span style="font-size:10px;color:var(--text3)">(after credit)</span>':'')+'</span><span style="color:#A32D2D">'+fmt(ksTax)+'</span></div>'+
+      _nonHomeTaxes.map(t=>'<div class="tax-row"><span style="padding-left:14px;color:var(--text2)">'+escHtml(t.name)+(t.noTax?'':' non-resident income tax')+'</span><span style="color:#A32D2D">'+(t.noTax?'No income tax':fmt(t.stTax))+'</span></div>').join('')+
+      '<div style="font-size:10px;color:var(--text3);margin:4px 0 2px;font-style:italic">⚠ Multi-state estimate — review total with your CPA</div>';
   } else {
     _stateRows='<div class="tax-row"><span>'+escHtml(_homeStateName)+' income tax</span><span style="color:#A32D2D">'+fmt(ksTax)+'</span></div>';
   }

@@ -73,7 +73,6 @@ html{font-size:14px;-webkit-text-size-adjust:100%;overscroll-behavior-y:none;tou
 body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--text);min-height:100vh;overflow-x:hidden;overscroll-behavior:none;touch-action:pan-y;-webkit-font-smoothing:antialiased;text-rendering:geometricPrecision;font-feature-settings:"ss01","cv11","tnum"}
 
 /* ── Keyframes ── */
-@keyframes _ptr_rotate{to{transform:rotate(360deg)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.72}}
 @keyframes fadein{from{opacity:0}to{opacity:1}}
 @keyframes sf-fwd{from{opacity:0}to{opacity:1}}
@@ -137,7 +136,7 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 .pg.active{display:block;animation:td-pg-enter .2s cubic-bezier(.22,1,.36,1) both}
 #pg-dash.active{animation:td-dash-enter .5s cubic-bezier(.22,1,.36,1) both}
 #pg-cal.active{animation:td-pg-enter 5s cubic-bezier(.22,1,.36,1) both}
-#pg-est.active{position:fixed;inset:0;z-index:1100;overflow-y:auto;padding:0;background:var(--bg)}
+#pg-est.active{position:fixed;inset:0;z-index:1100;overflow-y:auto;overscroll-behavior:none;padding:0;background:var(--bg)}
 #pg-leads,#pg-jobs,#pg-money{padding-top:8px}
 .drive-active .pg{padding-top:70px}
 .clock-active .pg{padding-top:70px}
@@ -1384,8 +1383,6 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="steps" id="est-steps">
     <div class="step active" id="est-st-1" onclick="goEstStep(1)"><div class="snum">1</div><span class="slbl">Client</span></div>
     <div class="ssep"></div>
-    <!-- Step 2 (Rates) is merged into step 3 (Surfaces) — keep dot hidden but in DOM for goEstStep loop -->
-    <div class="step" id="est-st-2" style="display:none"><div class="snum">2</div><span class="slbl">Rates</span></div>
     <div class="step" id="est-st-3" onclick="goEstStep(3)"><div class="snum">2</div><span class="slbl">Surfaces</span></div>
     <div class="ssep"></div>
     <div class="step" id="est-st-4" onclick="goEstStep(4)"><div class="snum">3</div><span class="slbl">Review</span></div>
@@ -1738,7 +1735,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 
     <div id="est-s4" style="display:none">
     <div class="card"><div id="est-review"></div></div>
-    <div class="card" id="adj-portfolio-card"><div class="card-hd">Price adjustment</div>
+    <div class="card" id="adj-portfolio-card"><div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">Price adjustment</div>
       <input type="checkbox" id="portfolio-toggle" onchange="togglePortfolioShowcase()" style="display:none">
       <div id="portfolio-details" style="display:none;margin-bottom:14px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
@@ -2104,6 +2101,26 @@ body.dark .cal-cell.other{background:var(--cream)}
           </div>
         </div>
       </div>
+    </div>
+    <!-- Mobile sticky bottom bar — shown on narrow viewports via .byo-mob-bar CSS class -->
+    <div class="byo-mob-bar" id="byo-mob-bar" style="position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-top:1px solid var(--line);padding:10px 16px 18px;z-index:200">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <span style="font-size:12px;font-weight:600;color:var(--text3)">Total</span>
+        <span id="byo-mob-total" style="font-size:20px;font-weight:900;font-family:var(--font-display);color:var(--text)">$0</span>
+      </div>
+      <input type="number" id="byom-expected-cost" placeholder="Your cost (optional)" style="display:none;width:100%;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:15px;font-weight:600;font-family:inherit;margin-bottom:6px;box-sizing:border-box" oninput="_byoUpdateRail();_byoAutosave()">
+      <div id="byom-gauge-hint" style="display:none;font-size:11px;color:var(--text3);margin-bottom:4px"></div>
+      <div id="byom-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">
+        <div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 15%,#F59E0B 30%,#22C55E 38%,#22C55E 78%,#F59E0B 92%,#EF4444 100%);margin:6px 0 18px">
+          <div id="byom-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>
+        </div>
+        <div style="text-align:center;padding-bottom:6px">
+          <div id="byom-gauge-pct" style="font-size:26px;font-weight:900;line-height:1.1;color:var(--text);transition:color .4s ease">—</div>
+          <div id="byom-gauge-dollars" style="font-size:14px;font-weight:700;margin:0 0 3px;transition:color .4s ease"></div>
+          <div id="byom-gauge-msg" style="font-size:11px;color:var(--text3);min-height:14px"></div>
+        </div>
+      </div>
+      <button class="btn btn-p btn-full" style="margin-top:4px" onclick="sendGenericProposal()">📨 Send proposal</button>
     </div>
   </div>
 
@@ -3848,124 +3865,6 @@ setTimeout(()=>{
   const _needsGei=_lines.some(t=>t!=='painting'&&t!=='general');
   if(_needsGei&&(!S.myBundles||!S.myBundles.length))showGeiOnboarding();
 },900);
-
-// Pull-to-refresh: pull down from top → re-sync from cloud
-(function(){
-  let _ptrY=0,_ptrActive=false,_ptrBar=null;
-  function _ptrCreate(){
-    if(_ptrBar)return;
-    _ptrBar=document.createElement('div');
-    _ptrBar.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;font-weight:700;padding:0 16px;height:0;overflow:hidden;transition:height .15s ease';
-    _ptrBar.innerHTML='<svg id="_ptr_spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.7)" stroke-width="2.5" style="flex-shrink:0;animation:_ptr_rotate .7s linear infinite;animation-play-state:paused"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg><span id="_ptr_lbl">Pull to refresh</span>';
-    document.body.appendChild(_ptrBar);
-  }
-  document.addEventListener('touchstart',e=>{
-    if(_devSupportMode)return;
-    if(window.scrollY===0&&e.touches.length===1){_ptrY=e.touches[0].clientY;_ptrCreate();}
-  },{passive:true});
-  document.addEventListener('touchmove',e=>{
-    if(!_ptrY)return;
-    const dy=e.touches[0].clientY-_ptrY;
-    if(dy>0&&_ptrBar){
-      const h=Math.min(dy*.4,44);
-      _ptrBar.style.height=h+'px';
-      const willTrigger=dy>80;
-      if(willTrigger!==_ptrActive){
-        _ptrActive=willTrigger;
-        const spin=_ptrBar.querySelector('svg');
-        if(spin)spin.style.animationPlayState=willTrigger?'running':'paused';
-        const lbl=_ptrBar.querySelector('span');
-        if(lbl)lbl.textContent=willTrigger?'↑ Release to refresh':'↓ Pull to refresh';
-      }
-    }
-  },{passive:true});
-  document.addEventListener('touchend',e=>{
-    if(!_ptrY){return;}
-    const dy=(e.changedTouches[0]?.clientY||0)-_ptrY;
-    _ptrY=0;
-    if(_ptrBar){
-      if(dy>80){
-        if(_devSupportMode){_ptrBar.style.height='0';setTimeout(()=>{_ptrBar&&_ptrBar.remove();_ptrBar=null;_ptrActive=false;},250);return;}
-        const lbl=document.getElementById('_ptr_lbl');if(lbl)lbl.textContent='Refreshing…';
-        setTimeout(()=>{
-          _ptrBar&&(_ptrBar.style.height='0');
-          setTimeout(()=>{_ptrBar&&_ptrBar.remove();_ptrBar=null;_ptrActive=false;},250);
-        },600);
-        if(supaEnabled()&&_supa&&_supaUser){
-          const _ptrCurPg=document.querySelector('.pg.active')?.id||'pg-dash';
-          // CRITICAL: PTR is destructive — supaLoadFromCloud() overwrites every
-          // in-memory array with cloud data. To make PTR non-destructive:
-          //  1. Flush + await any pending save first
-          //  2. Snapshot local data BEFORE the load
-          //  3. After load, restore any IDs in the snapshot that are missing
-          //     from cloud (a previous save may have silently failed)
-          //  4. Push the rescued items back to cloud
-          (async()=>{
-            try{
-              if(_syncTimer)await _flushSaveNow();
-              else if(_pendingSavePromise)await _pendingSavePromise;
-            }catch(e){}
-            // Snapshot id→record for arrays the user can't afford to lose
-            const _snap={
-              mileage:new Map(mileage.map(m=>[m.id,m])),
-              expenses:new Map(expenses.map(e=>[e.id,e])),
-              income:new Map(income.map(i=>[i.id,i])),
-            };
-            await supaLoadFromCloud();
-            let _rescued=0;
-            ['mileage','expenses','income'].forEach(arrName=>{
-              const arr=arrName==='mileage'?mileage:(arrName==='expenses'?expenses:income);
-              const cloudIds=new Set(arr.map(x=>x.id));
-              _snap[arrName].forEach((rec,id)=>{
-                if(!cloudIds.has(id)){arr.unshift(rec);_rescued++;}
-              });
-            });
-            // Restore receipt data from snapshot for expenses present in cloud
-            // but missing their photo (Part 2 failed or bucket upload didn't complete).
-            expenses.forEach((e,i)=>{
-              const snapped=_snap.expenses.get(e.id);
-              if(!snapped)return;
-              const hasImg=e.receipt_img||e.receipt_key;
-              const snappedImg=snapped.receipt_img||snapped.receipt_key;
-              if(snappedImg&&!hasImg){
-                expenses[i]={...e,
-                  receipt_img:snapped.receipt_img||e.receipt_img,
-                  receipt_key:snapped.receipt_key||e.receipt_key,
-                  receipt:snapped.receipt||e.receipt};
-                _rescued++;
-              }
-            });
-            if(_rescued>0){
-              // Re-sort expenses by date (load handler does this)
-              expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
-              // Push the rescued records back to cloud immediately
-              _flushSaveNow();
-              renderDash();
-              if(document.getElementById('mil-table'))renderAllMileage();
-              // Diagnose: look at recent save log for why these failed to save
-              const log=(window._saveLog||[]).slice(-15);
-              const lastFail=[...log].reverse().find(e=>['throw','part2-fail','part2-retry-fail','skip'].includes(e.stage));
-              const lastOk=[...log].reverse().find(e=>e.stage==='ok');
-              const diag=lastFail
-                ? lastFail.stage+': '+(lastFail.info?.msg||lastFail.info?.code||lastFail.info||'?')
-                : (lastOk?'last save OK '+lastOk.t.slice(11,19):'no recent save attempts');
-              zAlert(
-                'Recovered '+_rescued+' unsaved record'+(_rescued>1?'s':'')+'.\n\n'+
-                'Most recent save status:\n'+diag+'\n\n'+
-                'Full log: open dev tools and run window._saveLog',
-                {title:'💾 Records rescued'}
-              );
-            }
-            if(_ptrCurPg&&_ptrCurPg!=='pg-dash')goPg(_ptrCurPg);
-          })();
-        }else renderDash();
-      }else{
-        _ptrBar.style.height='0';
-        setTimeout(()=>{_ptrBar&&_ptrBar.remove();_ptrBar=null;_ptrActive=false;},250);
-      }
-    }
-  },{passive:true});
-})();
 
 if(supaEnabled()){
   // Show loading overlay — don't render local data, wait for cloud

@@ -1207,8 +1207,7 @@ function buildProposal(){
       scopeHtml;
     const rowBg=roomIdx%2===0?'#ffffff':'#f8fafc';
     return `<tr style="border-bottom:1px solid #e2e8f0;background:${rowBg}">
-      <td style="padding:11px 18px 11px 14px;line-height:1.5;color:#2d3748;font-size:12px;border-left:3px solid #2a4a7f">${descContent}</td>
-      <td style="padding:11px 18px 11px 4px;text-align:right;font-weight:700;vertical-align:top;color:#1a365d;white-space:nowrap">${fmt(r.total)}</td>
+      <td colspan="2" style="padding:11px 18px 11px 14px;line-height:1.5;color:#2d3748;font-size:12px;border-left:3px solid #2a4a7f">${descContent}</td>
     </tr>`;
   }).join('');
 

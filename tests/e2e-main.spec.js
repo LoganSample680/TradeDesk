@@ -352,15 +352,45 @@ test.describe('TradeDesk main app', () => {
     expect(newErrors, `Navigation errors: ${newErrors.join('; ')}`).toHaveLength(0);
   });
 
-  // ── Phase 10: Pull-to-refresh spinner uses CSS (no setInterval) ──────────
-  test('Phase 10 — PTR spinner uses CSS keyframes (no setInterval leak)', async () => {
-    const result = await page.evaluate(() => {
-      const tmp = document.createElement('div');
-      tmp.innerHTML = '<svg style="animation:_ptr_rotate .7s linear infinite;animation-play-state:paused"></svg>';
-      const svg = tmp.querySelector('svg');
-      return svg?.style?.animation?.includes('_ptr_rotate') || false;
+  // ── Phase 10: Pull-to-refresh fully removed (real-time sync makes it pointless) ──
+  test('Phase 10 — pull-to-refresh is removed: no PTR keyframe, no refresh bar on pull-down', async () => {
+    const r = await page.evaluate(() => {
+      // 1. The _ptr_rotate keyframe must be gone from all stylesheets.
+      let keyframeFound = false;
+      for (const sheet of Array.from(document.styleSheets)) {
+        let rules;
+        try { rules = sheet.cssRules; } catch (e) { continue; }
+        for (const rule of Array.from(rules || [])) {
+          if (rule.type === CSSRule.KEYFRAMES_RULE && rule.name === '_ptr_rotate') keyframeFound = true;
+        }
+      }
+      // 2. Simulating a pull-down at the top must NOT create the refresh bar.
+      const fire = (type, y) => {
+        const t = { clientY: y, identifier: 0 };
+        document.dispatchEvent(new TouchEvent(type, {
+          bubbles: true, cancelable: true,
+          touches: type === 'touchend' ? [] : [t], changedTouches: [t],
+        }));
+      };
+      window.scrollTo(0, 0);
+      try { fire('touchstart', 0); fire('touchmove', 120); fire('touchend', 120); } catch (e) {}
+      const barAfterPull = !!document.getElementById('_ptr_lbl') || !!document.getElementById('_ptr_spin');
+      return { keyframeFound, barAfterPull };
     });
-    expect(result).toBe(true);
+    expect(r.keyframeFound).toBe(false);
+    expect(r.barAfterPull).toBe(false);
+  });
+
+  // pg-est (interior/exterior estimate) must suppress overscroll so scrolling
+  // never triggers native pull-to-refresh / scroll-chaining.
+  test('Phase 10b — #pg-est.active has overscroll-behavior:none', async () => {
+    const ok = await page.evaluate(() => {
+      const css = Array.from(document.styleSheets).flatMap(s => {
+        try { return Array.from(s.cssRules); } catch (e) { return []; }
+      }).map(r => r.cssText).join('\n');
+      return /#pg-est\.active\s*\{[^}]*overscroll-behavior:\s*none/.test(css);
+    });
+    expect(ok).toBe(true);
   });
 
   // ── Phase 11: Books tabs → stat cards ────────────────────────────────────

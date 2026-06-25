@@ -1,6 +1,7 @@
 // ── SW Color Browser ─────────────────────────────────────────
 let _swColors=null,_swFinish='',_swCurrentFamily=null;
 let _paintExpectedCost=null;
+let _estMetsHtml='';
 
 function _setBvalidDays(days){
   [7,14,30,60].forEach(d=>{
@@ -722,14 +723,14 @@ function goSurfStepB(){
     return;
   }
   surfColor='';
+  const _pgEst=document.getElementById('pg-est');if(_pgEst){_pgEst.scrollTop=0;_pgEst.style.overflowY='hidden';}
   if(surfWhatSelected.length===0){
     zAlert('Select at least one surface to paint.',{title:'Nothing selected'});return;
   }
-  surfBQueue=SURF_ORDER.filter(s=>surfWhatSelected.includes(s));
+  surfBQueue=(typeof SURF_ORDER!=='undefined'?SURF_ORDER:['walls','ceiling','trim','doors','windows']).filter(s=>surfWhatSelected.includes(s));
   surfBIdx=0;
   surfBMeasurements={};
   document.getElementById('surf-step-a').style.display='none';
-  const _pgEst=document.getElementById('pg-est');if(_pgEst){_pgEst.scrollTop=0;_pgEst.style.overflowY='hidden';}
   const _stepBEl=document.getElementById('surf-step-b');_stepBEl.style.display='';_stepBEl.scrollTop=0;_sfShow(_stepBEl);
   document.getElementById('surf-b-roomname').textContent=surfRoom;
   // Show scope-first state
@@ -2031,6 +2032,8 @@ function calcEst(){
     const laborQty=(s.type==='walls'||s.type==='ext_walls')?(s.wallSqft||s.qty):s.qty;
     const cost=Math.round(laborQty*rate*100)/100;
     laborTotal+=cost;
+    // Hours: qty × hrs-per-unit × coats — direct production-rate calc, no price math involved
+    totalLaborHours+=laborQty*(t.hpu||0)*coats;
     // Build label: SurfaceType · Room · Color [Finish]
     const _roomBase=cleanRoomName(s.room)||'';
     const _afterDash=(s.room||'').indexOf(' — ')>-1?(s.room||'').split(' — ').slice(1).join(' — '):'';
@@ -2057,7 +2060,7 @@ function calcEst(){
       }
     }
   });
-  totalLaborHours=Math.round(laborTotal/(S.laborRate||45)*10)/10;
+  totalLaborHours=Math.round(totalLaborHours*10)/10;
   // ── Per-product paint quantity calc ─────────────────────────
   // Helper: get coverage rate from product name stored in room string
   const _allSwProds=Object.values(SW_PRODUCTS).flat();
@@ -2110,7 +2113,7 @@ function calcEst(){
     paintLines.push({color:key,spec:od.spec,sqFt:Math.round(od.sqFt),gals,wholeCans,cost,customerPaint:isRoomCustomer,cov:od.cov});
   });
   // Add supplies cost (tape, plastic, drop cloths, primer, ram board) per sq ft
-  const suppliesRate=gR('e-supplies-rate')||S.suppliesRate||0.40;
+  const suppliesRate=gR('e-supplies-rate')||S.suppliesRate||0.25;
   const suppliesCost=Math.round(totalPaintSqFt*suppliesRate*100)/100;
   if(suppliesCost>0)matTotal+=suppliesCost;
   const flatAdd=0;const scopeFlats=[];
@@ -2285,15 +2288,17 @@ function renderEstReview(){
       '<span style="font-size:13px;font-weight:800">Total</span>'+
       '<span style="font-size:20px;font-weight:900;letter-spacing:-.5px">'+fmtShort(_grandTotal)+'</span>'+
     '</div>'+
-    '<button onclick="const d=document.getElementById(\'est-mets-detail\');const open=!d.hidden;d.hidden=open;this.textContent=open?\'▸ Show analysis\':\'▴ Hide analysis\'" style="display:block;width:100%;background:var(--bg2);border:none;border-top:1px solid var(--border);padding:8px;font-size:11px;font-weight:700;color:var(--text2);cursor:pointer;font-family:inherit;text-align:center">▸ Show analysis</button>'+
-    '<div id="est-mets-detail" hidden style="padding:10px 14px;border-top:1px solid var(--border)">'+
+    ((_estMetsHtml=
       '<div class="mets" style="margin-bottom:0">'+
         '<div class="met"><div class="met-l">Labor hours</div><div class="met-v">'+totalLaborHours.toFixed(1)+'h</div></div>'+
         '<div class="met"><div class="met-l">Labor</div><div class="met-v" style="color:var(--blue)">'+fmtShort(laborTotal)+'</div></div>'+
         '<div class="met"><div class="met-l">Materials</div><div class="met-v" style="color:var(--blue)">'+fmtShort(matTotal)+'</div></div>'+
         (_tierPremium>0?'<div class="met"><div class="met-l" style="color:var(--amber)">'+(estPropertyTier?.label||'Tier')+' +'+_tierPct+'%</div><div class="met-v" style="color:var(--amber)">+'+fmtShort(_tierPremium)+'</div></div>':'')+
         (final>0&&totalLaborHours>0?'<div class="met"><div class="met-l">Effective rate</div><div class="met-v" style="color:var(--text2)">'+fmt(final/totalLaborHours)+'/hr</div></div>':'')+
-      '</div>'+
+      '</div>'
+    ),'')+ // side-effect: cache mets HTML for lazy expand, returns ''
+    '<button onclick="const d=document.getElementById(\'est-mets-detail\');if(!d.children.length)d.innerHTML=_estMetsHtml;const open=!d.hidden;d.hidden=open;this.textContent=open?\'▸ Show analysis\':\'▴ Hide analysis\'" style="display:block;width:100%;background:var(--bg2);border:none;border-top:1px solid var(--border);padding:8px;font-size:11px;font-weight:700;color:var(--text2);cursor:pointer;font-family:inherit;text-align:center">▸ Show analysis</button>'+
+    '<div id="est-mets-detail" hidden style="padding:10px 14px;border-top:1px solid var(--border)">'+
     '</div>'+
   '</div>';
   // ── Profit margin gauge ──────────────────────────────────────────────────

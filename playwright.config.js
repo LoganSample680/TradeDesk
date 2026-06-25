@@ -11,12 +11,8 @@ module.exports = defineConfig({
   fullyParallel: false,
   forbidOnly: isCI,
 
-  // retries: 2 in CI means:
-  //   - 3 total attempts per test
-  //   - Passes on retry → marked FLAKY in report (not a hard failure)
-  //   - Fails all 3 → hard FAILED
-  // This surfaces flaky tests without blocking the whole suite.
-  retries: isCI ? 2 : 0,
+  // Zero retries: a single failure means broken code, not a flaky test.
+  retries: 0,
 
   // CI: 4 workers — Playwright tests are I/O-bound (waiting for browser events,
   // not burning CPU), so 4 workers run efficiently on a 2-vCPU GitHub Actions
@@ -39,7 +35,7 @@ module.exports = defineConfig({
   use: {
     baseURL: 'http://localhost:8899',
 
-    // Capture a trace on first retry — opens as a zip in the Playwright
+    // Capture a trace on failure — opens as a zip in the Playwright
     // report and lets you step through every network request, DOM state,
     // and screenshot at the moment of failure.
     trace: 'on-first-retry',
@@ -47,7 +43,7 @@ module.exports = defineConfig({
     // Screenshot on failure for quick visual triage.
     screenshot: 'only-on-failure',
 
-    // Video on first retry — pairs with trace for flaky tests.
+    // No retries means video is never recorded (on-first-retry never fires).
     video: 'on-first-retry',
 
     viewport: { width: 390, height: 844 },
