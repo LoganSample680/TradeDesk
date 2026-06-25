@@ -1401,7 +1401,7 @@ function saveSurfBAndNext(){
 function finishRoom(){
   try{renderEstSurfs();}catch(e){}
   try{renderEstRunning();}catch(e){}
-  saveSurfDraft();renderSurfRoomsLogged();
+  saveSurfDraft();saveEstFullDraft();renderSurfRoomsLogged();
   const btn=document.getElementById('est-s3-next-btn');
   if(btn){btn.disabled=false;btn.style.background='var(--blue)';btn.style.color='#fff';btn.style.borderColor='var(--blue)';btn.style.cursor='pointer';}
   surfWhatSelected=[];surfBQueue=[];surfBIdx=0;surfBMeasurements={};surfColor='';surfRoom='';_swResetColorUI();
@@ -1864,8 +1864,12 @@ function saveEstFullDraft(){
 }
 let _paintEstAutosaveTimer=null;
 function _paintEstAutosaveDebounced(){
+  // SYNCHRONOUS — no setTimeout. A delayed save can lose a race against navigation
+  // (clearEstimatorForm empties e-cname, so the deferred save bails and the rooms are
+  // never written). Saving inline on every mutation guarantees the bid is always
+  // persisted before the user can navigate or the PWA can refresh.
   clearTimeout(_paintEstAutosaveTimer);
-  _paintEstAutosaveTimer=setTimeout(_paintEstAutosave,1500);
+  _paintEstAutosave();
 }
 function _paintEstAutosave(){
   const cname=(document.getElementById('e-cname')?.value||'').trim();
@@ -1887,17 +1891,27 @@ function _paintEstAutosave(){
     surfaces,roomScopeMap:rmMap,scope:ss,
     cond:document.getElementById('e-cond')?.value||'',
     paint:document.getElementById('e-paint')?.value||'',
+    updated:Date.now(),
+  };
+  // Guard: never let an autosave blank out an existing bid's measurements/rooms.
+  // If the live estimator state has no surfaces/rooms but the saved bid does (e.g. an
+  // autosave fires mid-load before surfaces are restored), preserve the saved data.
+  const _applyData=(b)=>{
+    const d={...bidData};
+    if((!d.surfaces||!d.surfaces.length)&&Array.isArray(b.surfaces)&&b.surfaces.length)delete d.surfaces;
+    if((!d.roomScopeMap||!Object.keys(d.roomScopeMap).length)&&b.roomScopeMap&&Object.keys(b.roomScopeMap).length)delete d.roomScopeMap;
+    Object.assign(b,d);
   };
   // Case 1: editing an existing bid — always update it, never mint a new one
   if(editingBidId){
     const b=typeof bids!=='undefined'?bids.find(x=>x.id===editingBidId):null;
-    if(b){Object.assign(b,bidData);saveAll();}
+    if(b){_applyData(b);saveAll();}
     return;
   }
   // Case 2: we already created a draft this session — update it
   if(lastCreatedBidId){
     const b=typeof bids!=='undefined'?bids.find(x=>x.id===lastCreatedBidId):null;
-    if(b&&(b.draft||b.status==='Draft')){Object.assign(b,bidData);saveAll();return;}
+    if(b&&(b.draft||b.status==='Draft')){_applyData(b);saveAll();return;}
   }
   // Case 3: no active bid — recover an orphan draft before minting a new one
   if(typeof bids!=='undefined'){

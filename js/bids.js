@@ -1305,7 +1305,7 @@ function openEditBid(bidId,startStep){
     if(totalMiles>0){sf('e-travel',(Math.round(totalMiles*10)/10).toString());}
     const linked=document.getElementById('e-client-linked');
     if(linked)linked.innerHTML='<span class="conn-tag">'+escHtml(c?c.name:'linked')+' — editing existing bid</span>';
-    scopeActiveMap={};scopeHrsStore={};roomScopeMap={};estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};
+    estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};
   SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
     const _ptogE=document.getElementById('portfolio-toggle');
     if(_ptogE){_ptogE.checked=!!b.isPortfolio;togglePortfolioShowcase();}

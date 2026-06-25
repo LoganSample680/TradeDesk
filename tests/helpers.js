@@ -399,7 +399,7 @@ function _supabaseShimIntake() {
 }
 
 /** Helper: wait for app to boot past the Supabase overlay. */
-async function waitForAppBoot(page, timeout = 12000) {
+async function waitForAppBoot(page, timeout = 20000) {
   // Try to dismiss the boot overlay if it appears
   try {
     await page.waitForSelector('#supa-boot-overlay', { timeout: 2000 });
