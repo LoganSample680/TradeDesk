@@ -51,7 +51,7 @@ function openExpenseFlow(){
         '</div>'+
       '</div>'+
       '<div id="em-meal-section" style="display:none;background:#FFF8F0;border:1.5px solid #F59E0B;border-radius:var(--r);padding:12px;margin-bottom:12px">'+
-        '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">🍽️ Meal — IRS requires business documentation</div>'+
+        '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">🍽️ Meal — Business purpose required</div>'+
         '<div class="f" style="margin-bottom:8px"><label>Business purpose <span style="color:#A32D2D">*</span></label><input id="em-meal-purpose" placeholder="e.g. Client meeting — reviewed Bettis job scope" style="font-size:13px"></div>'+
         '<div class="f"><label>Who attended</label><input id="em-meal-attendees" placeholder="e.g. Zach + client John Smith" style="font-size:13px"></div>'+
       '</div>'+
@@ -2407,6 +2407,10 @@ function renderJobsHistory(){
   const totalPaid=yearBids.reduce((s,b)=>s+getBidPaid(b.id),0);
 
   el.innerHTML=
+    ((typeof _canViewComp==='function'&&_canViewComp())?'<div style="display:flex;gap:8px;margin-bottom:10px">'+
+      '<button onclick="_openJobProfit()" style="flex:1;padding:11px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">💰 Job Profit</button>'+
+      '<button onclick="_openCrewCost()" style="flex:1;padding:11px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">👷 Crew Cost</button>'+
+    '</div>':'')+
     '<div class="mets" style="margin-bottom:10px">'+
       '<div class="met"><div class="met-l">Jobs</div><div class="met-v">'+yearBids.length+'</div></div>'+
       '<div class="met"><div class="met-l">Billed</div><div class="met-v" style="color:var(--blue)">'+fmt(totalRev)+'</div></div>'+
@@ -2419,8 +2423,8 @@ function renderJobsHistory(){
       return '<div onclick="openBidHistoryDetail('+b.id+')" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(b.client_name||b.name||'bid')+'" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
         '<div style="flex:1;min-width:0">'+
           '<div style="font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(b.client_name||b.name||'Unknown')+'</div>'+
-          '<div style="font-size:11px;color:var(--text3)">'+b.bid_date+(b.addr?' · '+b.addr:'')+'</div>'+
-          '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+b.days+' day'+(b.days>1?'s':'')+(b.scope?getTopScope(b.scope):'')+'</div>'+
+          '<div style="font-size:11px;color:var(--text3)">'+fmtDateShort(b.bid_date)+(b.addr?' · '+b.addr:'')+'</div>'+
+          '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+(b.days||1)+' day'+((b.days||1)>1?'s':'')+(b.scope?getTopScope(b.scope):'')+'</div>'+
         '</div>'+
         '<div style="text-align:right;flex-shrink:0">'+
           '<div style="font-size:15px;font-weight:700">'+fmt(b.amount)+'</div>'+
@@ -2431,6 +2435,284 @@ function renderJobsHistory(){
         '<svg viewBox="0 0 24 24" style="width:16px;height:16px;stroke:var(--text3);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>'+
       '</div>';
     }).join('');
+}
+
+// ── Job Profit Report (revenue − materials − labor from tracked time) ─────────
+// Gated by _canViewComp(). Labor is joined via job_time_entries → jobs[].bid_id.
+async function _openJobProfit(){
+  if(typeof _canViewComp==='function'&&!_canViewComp()){zAlert('You need the Pay & profit permission to view this.');return;}
+  document.getElementById('_job-pl-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_job-pl-ov';ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='460px';
+  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">💰 Job Profit</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Revenue minus materials and loaded labor (wage + '+Math.round(((S.laborBurden||1.3)-1)*100)+'% burden) from tracked crew time on site.</div>'+
+    '<div id="_job-pl-body" style="font-size:13px;color:var(--text3);max-height:60vh;overflow-y:auto">Loading…</div>'+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:10px">Close</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  const body=document.getElementById('_job-pl-body');
+  if(!supaEnabled()||!_supaUser){if(body)body.textContent='Sign in to load job profit data.';return;}
+  const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
+  // Pull pay rates (uid → effective hourly) and tracked minutes per job
+  const rateByUid={};
+  let entries=[];
+  try{
+    const{data:tm}=await _supa.from('team_members').select('employee_user_id,pay_type,pay_rate').eq('contractor_user_id',cid);
+    (tm||[]).forEach(r=>{if(r.employee_user_id)rateByUid[r.employee_user_id]=(typeof _empLoadedHourly==='function')?_empLoadedHourly(r):(r.pay_type==='salary'?(r.pay_rate||0)/2080:(r.pay_rate||0))*(S.laborBurden||1.3);});
+    // Owner's own tracked time (bills under cid) — cost it with the owner's pay rate
+    rateByUid[cid]=(typeof _empLoadedHourly==='function')?_empLoadedHourly({pay_type:S.ownerPayType,pay_rate:S.ownerPayRate}):0;
+    const{data:te}=await _supa.from('job_time_entries').select('employee_user_id,job_id,minutes,source').eq('contractor_user_id',cid);
+    entries=te||[];
+  }catch(_e){}
+  // Labor $ by bid id (on-site time only; drive is overhead, not job labor)
+  const laborByBid={};
+  entries.forEach(en=>{
+    if(en.source==='drive')return;
+    const job=jobs.find(j=>String(j.id)===String(en.job_id));
+    const bidId=job?job.bid_id:en.job_id;
+    if(bidId==null)return;
+    const rate=rateByUid[en.employee_user_id]||0;
+    laborByBid[bidId]=(laborByBid[bidId]||0)+((en.minutes||0)/60)*rate;
+  });
+  // On-site minutes per bid (drive excluded from on-site calc)
+  const onSiteMinByBid={};
+  entries.forEach(en=>{
+    if(en.source==='drive')return;
+    const job=jobs.find(j=>String(j.id)===String(en.job_id));
+    const bidId=job?job.bid_id:en.job_id;
+    if(bidId==null)return;
+    onSiteMinByBid[bidId]=(onSiteMinByBid[bidId]||0)+(en.minutes||0);
+  });
+  const wonBids=bids.filter(b=>b.status==='Closed Won');
+  const rows=wonBids.map(b=>{
+    const revenue=b.amount||0;
+    const materials=expenses.filter(e=>String(e.job_id)===String(b.id)).reduce((s,e)=>s+(e.amount||0),0);
+    const labor=laborByBid[b.id]||0;
+    const profit=revenue-materials-labor;
+    // Sum across all job records for this bid (multiple visits / re-schedules)
+    const linkedJobs=jobs.filter(j=>String(j.bid_id)===String(b.id));
+    const plannedHrs=linkedJobs.length?linkedJobs.reduce((s,j)=>s+(parseInt(j.days)||1)*8,0):null;
+    const actualHrs=(onSiteMinByBid[b.id]||0)/60;
+    const underStaffed=plannedHrs!=null&&actualHrs>0&&actualHrs<plannedHrs*0.5;
+    const anyActive=linkedJobs.some(j=>j.status!=='done'&&!j.cancelled);
+    const noTimeYet=plannedHrs!=null&&actualHrs===0&&anyActive;
+    return{b,revenue,materials,labor,profit,hasLabor:labor>0,plannedHrs,actualHrs,underStaffed,noTimeYet};
+  }).sort((a,b)=>b.profit-a.profit);
+  if(!body)return;
+  if(!rows.length){body.innerHTML='<div style="padding:8px 0">No completed (Closed Won) jobs yet.</div>';return;}
+  const totProfit=rows.reduce((s,r)=>s+r.profit,0);
+  const trackedCount=rows.filter(r=>r.hasLabor).length;
+  body.innerHTML=
+    '<div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg2);border-radius:var(--r);margin-bottom:10px">'+
+      '<div><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Total profit</div>'+
+      '<div style="font-size:18px;font-weight:800;color:'+(totProfit>=0?'#0E6B39':'#A32D2D')+'">'+fmt(totProfit)+'</div></div>'+
+      '<div style="text-align:right"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">With tracked labor</div>'+
+      '<div style="font-size:18px;font-weight:800">'+trackedCount+'/'+rows.length+'</div></div>'+
+    '</div>'+
+    (trackedCount===0?'<div style="font-size:11px;color:var(--text3);background:var(--bg2);border:1px dashed var(--border);border-radius:var(--r);padding:8px 10px;margin-bottom:10px;line-height:1.5">No crew time tracked yet — profit below counts materials only. Enable crew tracking and assign jobs on the dispatch board to capture labor automatically.</div>':'')+
+    rows.map(r=>{
+      const c=(r.profit>=0?'#0E6B39':'#A32D2D');
+      const margin=r.revenue>0?Math.round(r.profit/r.revenue*100):0;
+      const timeRow=r.plannedHrs!=null?(
+        r.underStaffed?
+          '<div style="font-size:10px;color:var(--c-amber);margin-top:3px">⚠ Only '+r.actualHrs.toFixed(1)+'h tracked vs '+r.plannedHrs+'h planned — check crew time on this job</div>':
+        r.noTimeYet?
+          '<div style="font-size:10px;color:var(--text3);margin-top:3px">No time logged yet · '+r.plannedHrs+'h planned</div>':
+        (r.hasLabor?'<div style="font-size:10px;color:var(--text3);margin-top:3px">⏱ '+r.actualHrs.toFixed(1)+'h on-site / '+r.plannedHrs+'h planned</div>':'')
+      ):'';
+      return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">'+
+        '<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline">'+
+          '<div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.b.client_name||r.b.name||'Job')+'</div>'+
+          '<div style="font-size:14px;font-weight:800;color:'+c+';flex-shrink:0">'+fmt(r.profit)+'</div>'+
+        '</div>'+
+        '<div style="display:flex;justify-content:space-between;gap:10px;margin-top:3px">'+
+          '<div style="font-size:11px;color:var(--text3)">Rev '+fmt(r.revenue)+' · Mat '+fmt(r.materials)+' · Labor '+(r.hasLabor?fmt(r.labor):'—')+'</div>'+
+          '<div style="font-size:11px;font-weight:700;color:'+c+';flex-shrink:0">'+margin+'%</div>'+
+        '</div>'+
+        timeRow+
+      '</div>';
+    }).join('');
+}
+
+// ── Crew labor cost — per-employee rollup + dashboard tile ────────────────────
+function _ctDateStr(d){
+  try{return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);}
+  catch(_e){return d.toISOString().slice(0,10);}
+}
+// Fetch pay rates (loaded + wage) and tracked time entries since an ISO instant.
+async function _fetchCrewLabor(sinceISO){
+  const out={loaded:{},wage:{},name:{},entries:[],shopEntries:[]};
+  if(!supaEnabled()||!_supaUser)return out;
+  const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
+  try{
+    const{data:tm}=await _supa.from('team_members').select('employee_user_id,name,email,pay_type,pay_rate').eq('contractor_user_id',cid);
+    (tm||[]).forEach(r=>{
+      if(!r.employee_user_id)return;
+      const comp={pay_type:r.pay_type,pay_rate:r.pay_rate};
+      out.loaded[r.employee_user_id]=(typeof _empLoadedHourly==='function')?_empLoadedHourly(comp):0;
+      out.wage[r.employee_user_id]=(typeof _empEffectiveHourly==='function')?_empEffectiveHourly(comp):0;
+      out.name[r.employee_user_id]=r.name||r.email||'Crew';
+    });
+    const _oc={pay_type:S.ownerPayType,pay_rate:S.ownerPayRate};
+    out.loaded[cid]=(typeof _empLoadedHourly==='function')?_empLoadedHourly(_oc):0;
+    out.wage[cid]=(typeof _empEffectiveHourly==='function')?_empEffectiveHourly(_oc):0;
+    out.name[cid]=S.ownerName||(typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)';
+    let q=_supa.from('job_time_entries').select('employee_user_id,job_id,minutes,arrived_at,source').eq('contractor_user_id',cid);
+    if(sinceISO)q=q.gte('arrived_at',sinceISO);
+    const{data:te}=await q;
+    out.entries=te||[];
+    let sq=_supa.from('shop_time_entries').select('employee_user_id,minutes,arrived_at').eq('contractor_user_id',cid);
+    if(sinceISO)sq=sq.gte('arrived_at',sinceISO);
+    const{data:se}=await sq;
+    out.shopEntries=se||[];
+  }catch(_e){}
+  return out;
+}
+// Dashboard "Crew today" tile — links into Books for the full report.
+async function _renderDashCrewToday(){
+  const el=document.getElementById('dash-crew-today');if(!el)return;
+  if(_isEmployee||!(typeof _canViewComp==='function'&&_canViewComp())||!S.teamTracking||!supaEnabled()||!_supaUser){el.style.display='none';return;}
+  const since=new Date(Date.now()-26*3600000).toISOString();
+  const data=await _fetchCrewLabor(since);
+  const today=_ctDateStr(new Date());
+  // Exclude drive entries — dashboard shows on-site productive time, not total clock
+  const todays=data.entries.filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))===today&&en.source!=='drive');
+  if(!todays.length){el.style.display='none';return;}
+  const byUid={};let totMin=0,totCost=0;
+  todays.forEach(en=>{const uid=en.employee_user_id,m=en.minutes||0;byUid[uid]=(byUid[uid]||0)+m;totMin+=m;totCost+=(m/60)*(data.loaded[uid]||0);});
+  const rows=Object.keys(byUid).sort((a,b)=>byUid[b]-byUid[a]).slice(0,4).map(uid=>{
+    const h=byUid[uid]/60, cost=(byUid[uid]/60)*(data.loaded[uid]||0);
+    return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>'+escHtml(data.name[uid]||'Crew')+'</span><span style="color:var(--text2)">'+h.toFixed(1)+'h · '+fmt(cost)+'</span></div>';
+  }).join('');
+  el.style.display='block';
+  el.innerHTML='<div onclick="goToTrackerTab(\'jobs\')" style="cursor:pointer;background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">'+
+      '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">👷 Crew today</div>'+
+      '<div style="font-size:11px;color:var(--blue);font-weight:700">Books ›</div>'+
+    '</div>'+
+    '<div style="display:flex;gap:18px;margin-bottom:8px">'+
+      '<div><div style="font-size:10px;color:var(--text3)">On the clock</div><div style="font-size:18px;font-weight:800">'+(totMin/60).toFixed(1)+'h</div></div>'+
+      '<div><div style="font-size:10px;color:var(--text3)">Loaded labor</div><div style="font-size:18px;font-weight:800;color:var(--c-red)">'+fmt(totCost)+'</div></div>'+
+    '</div>'+rows+'</div>';
+}
+// Per-employee Crew Cost report (Today / This week), with per-job breakdown.
+async function _openCrewCost(){
+  if(typeof _canViewComp==='function'&&!_canViewComp()){zAlert('You need the Pay & profit permission to view this.');return;}
+  document.getElementById('_crew-cost-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_crew-cost-ov';ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='460px';
+  const _ccBtn=id=>'<button id="_cc-'+id+'" onclick="_crewCostRender(\''+id+'\')" style="flex:1;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;min-width:0">';
+  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">👷 Crew Cost</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:10px">What each person cost you — loaded labor (wage + burden) from tracked time on site.</div>'+
+    '<div style="display:flex;gap:6px;margin-bottom:6px">'+
+      _ccBtn('today')+'Today</button>'+
+      _ccBtn('week')+'This week</button>'+
+      _ccBtn('month')+'This month</button>'+
+    '</div>'+
+    '<div style="display:flex;gap:6px;margin-bottom:12px">'+
+      _ccBtn('quarter')+'This quarter</button>'+
+      _ccBtn('ytd')+'Year to date</button>'+
+    '</div>'+
+    '<div id="_crew-cost-body" style="font-size:13px;color:var(--text3);max-height:56vh;overflow-y:auto">Loading…</div>'+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:10px">Close</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  _crewCostRender('week');
+}
+async function _crewCostRender(range){
+  const body=document.getElementById('_crew-cost-body');if(!body)return;
+  ['today','week','month','quarter','ytd'].forEach(r=>{const b=document.getElementById('_cc-'+r);if(b){const on=r===range;b.style.background=on?'var(--blue)':'var(--bg2)';b.style.color=on?'#fff':'var(--text)';b.style.borderColor=on?'var(--blue)':'var(--border2)';}});
+  body.textContent='Loading…';
+  const todayStr=_ctDateStr(new Date());
+  const [yr,mo]=todayStr.split('-').map(Number);
+  let sinceStr,label;
+  if(range==='today'){sinceStr=todayStr;label='today';}
+  else if(range==='week'){sinceStr=_ctDateStr(new Date(Date.now()-6*86400000));label='this week';}
+  else if(range==='month'){sinceStr=yr+'-'+String(mo).padStart(2,'0')+'-01';label='this month';}
+  else if(range==='quarter'){const qm=Math.floor((mo-1)/3)*3+1;sinceStr=yr+'-'+String(qm).padStart(2,'0')+'-01';label='this quarter';}
+  else{sinceStr=yr+'-01-01';label='this year';}
+  // Fetch with 1-day UTC buffer before period start; CT-date comparison is the authoritative filter
+  const sinceISO=new Date(new Date(sinceStr+'T00:00:00Z').getTime()-86400000).toISOString();
+  const data=await _fetchCrewLabor(sinceISO);
+  const ents=data.entries.filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr);
+  const shopEnts=(data.shopEntries||[]).filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr);
+  if(!ents.length&&!shopEnts.length){body.innerHTML='<div style="padding:10px 0">No tracked time '+label+' yet. Crew time appears here once they\'re on site with sharing enabled.</div>';return;}
+  // Business day length for unaccounted estimate
+  const _phm=s=>{const m=/^(\d{1,2}):(\d{2})$/.exec(s||'');return m?(+m[1])*60+(+m[2]):null;};
+  const _bst=_phm(S.trackStart||'07:00'),_ben=_phm(S.trackEnd||'18:00');
+  const bizDayMins=(_bst!=null&&_ben!=null&&_ben>_bst)?(_ben-_bst):660;
+  // Aggregate by employee
+  const byEmp={};
+  const _emp=uid=>{if(!byEmp[uid])byEmp[uid]={min:0,jobSiteMin:0,driveMin:0,shopMin:0,jobs:{},dayMins:{}};return byEmp[uid];};
+  ents.forEach(en=>{
+    const uid=en.employee_user_id;if(!uid)return;
+    const e=_emp(uid);const m=en.minutes||0;e.min+=m;
+    if(en.source==='drive'){e.driveMin+=m;}else{
+      e.jobSiteMin+=m;
+      const job=jobs.find(j=>String(j.id)===String(en.job_id));
+      const bidId=job?job.bid_id:en.job_id;
+      const key=bidId!=null?String(bidId):'unknown';
+      e.jobs[key]=(e.jobs[key]||0)+m;
+    }
+    const day=_ctDateStr(new Date(en.arrived_at));e.dayMins[day]=(e.dayMins[day]||0)+m;
+  });
+  shopEnts.forEach(en=>{
+    const uid=en.employee_user_id;if(!uid)return;
+    const e=_emp(uid);const m=en.minutes||0;e.min+=m;e.shopMin+=m;
+    const day=_ctDateStr(new Date(en.arrived_at));e.dayMins[day]=(e.dayMins[day]||0)+m;
+  });
+  // Revenue attribution + overtime per employee
+  Object.keys(byEmp).forEach(uid=>{
+    const bidsSeen=new Set(Object.keys(byEmp[uid].jobs).filter(k=>k!=='unknown'));
+    byEmp[uid].revenue=[...bidsSeen].reduce((s,bidId)=>{const b=bids.find(x=>String(x.id)===String(bidId));return s+(b?b.amount||0:0);},0);
+    byEmp[uid].otDays=Object.values(byEmp[uid].dayMins).filter(m=>m>480).length;
+  });
+  const _jobName=bidId=>{
+    const b=bids.find(x=>String(x.id)===String(bidId));if(b)return b.client_name||b.name||'Job';
+    const j=jobs.find(x=>String(x.id)===String(bidId));return j?(j.clientName||j.name||'Job'):'Other';
+  };
+  const uids=Object.keys(byEmp).sort((a,b)=>byEmp[b].min-byEmp[a].min);
+  let grand=0;
+  const rowsHtml=uids.map(uid=>{
+    const e=byEmp[uid];
+    const hrs=e.min/60,loaded=hrs*(data.loaded[uid]||0),wage=hrs*(data.wage[uid]||0);
+    grand+=loaded;
+    const jsHrs=e.jobSiteMin/60,drHrs=e.driveMin/60,shHrs=e.shopMin/60;
+    // Use actual days worked (days with any entry), not the full range length —
+    // otherwise absent days inflate "unaccounted" for part-week workers.
+    const workedDays=Math.max(1,Object.keys(e.dayMins).length);
+    const unaccH=Math.max(0,(bizDayMins*workedDays-e.min)/60);
+    const hasBreakdown=e.driveMin>0||e.shopMin>0;
+    const otTag=e.otDays>0?'<span style="color:var(--c-amber);font-weight:700;margin-left:6px">⚠ OT '+e.otDays+'d</span>':'';
+    const rlTag=(e.revenue>0&&loaded>0)?'<span style="color:var(--green);font-weight:700;margin-left:6px">'+fmt(e.revenue)+' rev</span>':'';
+    const jobLines=Object.keys(e.jobs).sort((a,b)=>e.jobs[b]-e.jobs[a]).map(bid=>{
+      const jh=e.jobs[bid]/60;
+      return '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);padding:1px 0 1px 10px"><span>'+escHtml(_jobName(bid))+'</span><span>'+jh.toFixed(1)+'h · '+fmt(jh*(data.loaded[uid]||0))+'</span></div>';
+    }).join('');
+    const breakdownHtml=hasBreakdown?
+      '<div style="display:flex;flex-wrap:wrap;gap:10px;font-size:10px;color:var(--text3);margin:4px 0 6px 0;padding:6px 8px;background:var(--bg2);border-radius:var(--r)">'+
+        '<span>🏗 On-site '+jsHrs.toFixed(1)+'h</span>'+
+        (drHrs>0.1?'<span>🚗 Drive '+drHrs.toFixed(1)+'h</span>':'')+
+        (shHrs>0.1?'<span>🏠 Shop '+shHrs.toFixed(1)+'h</span>':'')+
+        (unaccH>0.5?'<span style="color:var(--text4)">~ '+unaccH.toFixed(1)+'h unaccounted</span>':'')+
+      '</div>':'';
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">'+
+      '<div style="display:flex;justify-content:space-between;align-items:baseline">'+
+        '<div style="font-size:14px;font-weight:700">'+escHtml(data.name[uid]||'Crew')+'</div>'+
+        '<div style="font-size:15px;font-weight:800;color:var(--c-red)">'+fmt(loaded)+'</div>'+
+      '</div>'+
+      '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin:2px 0 2px">'+
+        '<span>'+hrs.toFixed(1)+'h'+otTag+rlTag+'</span>'+
+        '<span>wage '+fmt(wage)+' + burden</span>'+
+      '</div>'+
+      breakdownHtml+jobLines+
+    '</div>';
+  }).join('');
+  body.innerHTML=
+    '<div style="display:flex;justify-content:space-between;padding:10px 12px;background:var(--bg2);border-radius:var(--r);margin-bottom:10px">'+
+      '<div style="font-size:12px;font-weight:700;color:var(--text2)">Total loaded labor</div>'+
+      '<div style="font-size:18px;font-weight:800;color:var(--c-red)">'+fmt(grand)+'</div>'+
+    '</div>'+rowsHtml;
 }
 
 function getTopScope(scope){
@@ -2502,7 +2784,7 @@ function openBidHistoryDetail(bidId){
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--blue-dk);margin-bottom:4px">Completed job</div>'+
       '<div style="font-size:20px;font-weight:800">'+(b.client_name||b.name)+'</div>'+
       (b.addr?'<div style="font-size:12px;color:var(--text2);margin-top:2px">'+b.addr+'</div>':'')+
-      '<div style="font-size:12px;color:var(--text3);margin-top:2px">'+b.bid_date+' · '+b.days+' day'+(b.days>1?'s':'')+'</div>'+
+      '<div style="font-size:12px;color:var(--text3);margin-top:2px">'+fmtDateShort(b.bid_date)+' · '+(b.days||1)+' day'+((b.days||1)>1?'s':'')+'</div>'+
     '</div>'+
 
     (b.proposalHtml?
@@ -2949,7 +3231,7 @@ function renderSummary(){
     '<div class="mets">'+
     '<div class="met"><div class="met-l">Income</div><div class="met-v" style="color:var(--green-mid)">'+fmt(tIn)+'</div></div>'+
     '<div class="met"><div class="met-l">Expenses</div><div class="met-v" style="color:#A32D2D">'+fmt(tEx)+'</div></div>'+
-    '<div class="met"><div class="met-l">Mile deduction</div><div class="met-v">'+fmt(tMi*irsRateYr)+'</div><div class="met-s">'+tMi.toFixed(0)+' mi · $'+irsRateYr.toFixed(3)+'/mi</div></div>'+
+    '<div class="met"><div class="met-l">Mileage</div><div class="met-v">'+fmt(tMi*irsRateYr)+'</div><div class="met-s">'+tMi.toFixed(0)+' mi · $'+irsRateYr.toFixed(3)+'/mi</div></div>'+
     '<div class="met"><div class="met-l">Est. tax</div><div class="met-v" style="color:var(--amber)">'+fmt(tax)+'</div></div>'+
     '<div class="met" style="grid-column:1/-1"><div class="met-l">Net profit</div><div class="met-v" style="color:'+(profit>=0?'var(--green-mid)':'#A32D2D')+'">'+fmt(profit)+'</div><div class="met-s">After tax &amp; deductions</div></div>'+
     '</div>';
@@ -2958,7 +3240,7 @@ function renderSummary(){
   document.getElementById('sum-inc').innerHTML=!tIn?'<div class="empty">No income in '+yr+'.</div>':Object.entries(byType).sort((a,b)=>b[1]-a[1]).map(([k,vl])=>barChart(k,vl,tIn,'#185FA5')).join('');
   document.getElementById('sum-exp').innerHTML=!tEx?'<div class="empty">No expenses in '+yr+'.</div>':Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,vl])=>barChart(k,vl,tEx,'#E24B4A')).join('');
   const byClient={};yMi.forEach(m=>{const k=m.client_name||'Unlinked';byClient[k]=(byClient[k]||0)+(m.miles||0);});
-  document.getElementById('sum-mile').innerHTML=!tMi?'<div class="empty">No mileage in '+yr+'.</div>':Object.entries(byClient).sort((a,b)=>b[1]-a[1]).map(([k,mi])=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span>'+k+'</span><span style="font-weight:700">'+mi.toFixed(1)+' mi · '+fmt(mi*irsRateYr)+'</span></div>').join('');
+  document.getElementById('sum-mile').innerHTML=!tMi?'<div class="empty">No mileage in '+yr+'.</div>':Object.entries(byClient).sort((a,b)=>b[1]-a[1]).map(([k,mi])=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span>'+escHtml(k)+'</span><span style="font-weight:700">'+mi.toFixed(1)+' mi · '+fmt(mi*irsRateYr)+'</span></div>').join('');
 }
 
 // ── Money page ────────────────────────────────────────────────────────────

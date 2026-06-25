@@ -1,6 +1,6 @@
 // ── Submit guard — prevents double-tap on any button ─────────────────────
 let _submitting=false,_allowPhoneDupe=false;
-let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],maintenance=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[],contracts=[];
+let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],maintenance=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[],contracts=[],agreements=[];
 // Expose bids and clients on window so Playwright E2E tests can inject test data
 Object.defineProperty(window,'bids',{get:()=>bids,set:v=>{bids=v;},configurable:true});
 Object.defineProperty(window,'clients',{get:()=>clients,set:v=>{clients=v;},configurable:true});
@@ -77,7 +77,7 @@ let gps={active:false,startCoords:null,endCoords:null,startTime:null,clientId:nu
 let _activeTimer=null; // {jobId,jobName,clientName,startTime,timerInterval}
 
 
-let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.725,irsRateYear:2026,bracketYear:0,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],subcontractors:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{},baddr:'',bcity:'',bzip:'',poweredBy:true,customTerms:'',coTerms:'',serviceStates:[],salesTaxRate:0,salesTaxRateSource:''};
+let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.725,irsRateYear:2026,bracketYear:0,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],subcontractors:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{},baddr:'',bcity:'',bzip:'',poweredBy:true,customTerms:'',coTerms:'',serviceStates:[],salesTaxRate:0,salesTaxRateSource:'',teamTracking:true,trackStart:'07:00',trackEnd:'18:00',geofenceFt:300,officeLat:0,officeLon:0,laborBurden:1.3,ownerPayType:'hourly',ownerPayRate:0};
 
 // ZJ's logo — SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
 // Only shown for ZJ's Painting account — other accounts see plain business name text.
@@ -110,16 +110,17 @@ function isEmployee(){return _isEmployee;}
 function canSeeTaxes(){return isOwner();}
 function isLifetimeAccount(){return !!_account?.is_lifetime;}
 function getBusinessName(){return _account?.business_name||S.bname||'TradeDesk';}
-function getUserName(){return _user?.name||'';}
+function getUserName(){const n=_user?.name||'';return n.includes('@')?'':n;}
 function getOwnerName(){
   // Check localStorage first (device-specific, fast)
   if(_supaUser?.id){
     const stored=localStorage.getItem('zp3_uname_'+_supaUser.id);
-    if(stored)return stored;
+    if(stored&&!stored.includes('@'))return stored;
   }
   // Fall back to S.ownerName (synced from Supabase on other devices)
-  if(S.ownerName)return S.ownerName;
-  return _user?.name||'';
+  if(S.ownerName&&!S.ownerName.includes('@'))return S.ownerName;
+  const n=_user?.name||'';
+  return n.includes('@')?'':n;
 }
 function setOwnerName(name){
   // Silently reject email addresses stored as names (data corruption guard)
@@ -197,6 +198,7 @@ function saveAll(){if(_devSupportMode){_flushSaveNow();return;}if(_isEmployee){s
   localStorage.setItem('zp3_photos',JSON.stringify(photos.slice(-300)));
   localStorage.setItem('zp3_lic',JSON.stringify(licenses));
   localStorage.setItem('zp3_contracts',JSON.stringify(contracts));
+  localStorage.setItem('zp3_agreements',JSON.stringify(agreements));
   localStorage.setItem('zp3_maint',JSON.stringify(maintenance));
   // Offline-pending: write synchronously so a force-quit can never outrun a timer
   if(typeof _mergeOnSignIn!=='undefined'&&_mergeOnSignIn&&!_supaUser){
@@ -224,6 +226,7 @@ function loadAll(){
     photos=lp('zp3_photos',[]);
     licenses=lp('zp3_lic',[]);
     contracts=lp('zp3_contracts',[]);
+    agreements=lp('zp3_agreements',[]);
     maintenance=lp('zp3_maint',[]);
     // Tax bracket migrations
     if(S.fedMFS===14600)S.fedMFS=15000;
@@ -236,6 +239,7 @@ function loadAll(){
     if(S.b24===191950)S.b24=197300;
     if(S.b32===243725)S.b32=250525;
     if(S.b35===609350)S.b35=626350;
+    S.teamTracking=true; // crew tracking is mandatory — no longer user-toggleable
     if(S.irsRate===0.67||S.irsRate===0.670)S.irsRate=0.700;
     if(new Date().getFullYear()>=2026&&S.irsRate<0.725){S.irsRate=0.725;S.irsRateYear=new Date().getFullYear();}
     try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(e){}
@@ -300,3 +304,32 @@ async function _lookupProperty(addr,cardId){
   },1200);
 }
 
+
+// ── Crowdsourced scope-timing benchmarks ──────────────────────────────────────
+// _scopeRates: { 'scope_id:trade': { median_min, p25_min, p75_min, sample_count } }
+// Populated from td_scope_rates table on boot; used by buildScopeGrid for live hints.
+window._scopeRates = {};
+
+function _applyScopeRates(rates) {
+  const map = {};
+  (rates || []).forEach(r => { map[r.scope_id + ':' + r.trade] = r; });
+  window._scopeRates = map;
+}
+
+function _fetchScopeRates() {
+  if (typeof _supa === 'undefined' || !_supa) return;
+  _supa.from('td_scope_rates').select('*').then(({ data }) => {
+    if (data && data.length) _applyScopeRates(data);
+  }).catch(() => {});
+}
+
+// Upload debrief data for one job and trigger re-aggregation.
+// Called by saveDebriefAndComplete after the local save.
+function _submitScopeBenchmarks(rows) {
+  if (!rows.length || typeof _supa === 'undefined' || !_supa || !_user?.id) return;
+  _supa.from('td_scope_benchmarks').insert(rows).then(() => {
+    _supa.functions.invoke('aggregate-scope-benchmarks').then(({ data }) => {
+      if (data?.rates?.length) _applyScopeRates(data.rates);
+    }).catch(() => {});
+  }).catch(() => {});
+}

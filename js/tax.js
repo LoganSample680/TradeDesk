@@ -1,3 +1,4 @@
+let _taxTipIdx=0;
 // ── State tax rates database ──────────────────────────────────────────
 const STATE_TAX={
   AL:{name:'Alabama',      low:2.0, high:5.0,  top:3000,   stdS:3000,  stdM:8500,  noTax:false},
@@ -221,11 +222,10 @@ function calcTax(){
           '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#A32D2D;margin-bottom:4px">Tax reserve needed</div>'+
           '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">'+
             '<div style="font-size:32px;font-weight:800;color:#A32D2D">'+fmt(reserveAmt)+'</div>'+
-            '<div style="font-size:13px;color:#A32D2D;font-weight:700">'+reserveRate+'% of net</div>'+
+            '<div style="font-size:13px;color:#A32D2D;font-weight:700">&nbsp;</div>'+
           '</div>'+
           '<div style="font-size:12px;color:var(--text2);line-height:1.5">'+
-            'Set this aside from every payment. Based on your actual income, expenses, and '+(STATE_TAX[S.state]?.name||S.state||'your state')+' tax rates. '+
-            'Rounds up — better to have extra at filing than scramble for it.'+
+            'Set aside '+fmt(reserveAmt)+' from every payment — you\'ll need it at tax time.'+
           '</div>'+
           (taxPaid>0?
             '<div style="margin-top:8px;font-size:12px;font-weight:700;color:'+(taxPaid>=reserveAmt?'var(--green-mid)':'var(--amber)')+'">'+
@@ -236,39 +236,28 @@ function calcTax(){
     }
   }
 
-  // ── Income by state bar chart (shown when multi-state) ───────────────────
+  // ── Income by state (shown when multi-state) ─────────────────────────
   let _stateBarHtml='';
   if(_isMultiState&&tIn>0){
-    const _maxRev=Math.max(...Object.values(_stateRev));
     _stateBarHtml='<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border)">'+
-      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">Income by State</div>';
-    Object.entries(_stateRev).sort((a,b)=>b[1]-a[1]).forEach(([st,rev])=>{
-      const pct=Math.round(rev/tIn*100);
-      const barW=Math.round(rev/_maxRev*100);
-      const stName=(STATE_TAX[st]?.name||st);
-      const isHome=st===_homeState;
-      _stateBarHtml+='<div style="margin-bottom:10px">'+
-        '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px">'+
-          '<div style="font-size:12px;font-weight:700">'+escHtml(stName)+'<span style="font-size:10px;font-weight:500;color:var(--text3);margin-left:4px">'+(isHome?'(home)':'(non-resident)')+'</span></div>'+
-          '<div style="font-size:12px;font-weight:700">'+fmt(rev)+'&nbsp;<span style="color:var(--text3);font-size:11px">'+pct+'%</span></div>'+
-        '</div>'+
-        '<div style="height:6px;background:var(--bg3,#e8eef7);border-radius:3px;overflow:hidden">'+
-          '<div style="height:100%;width:'+barW+'%;background:'+(isHome?'var(--blue)':'#5B7FA6')+';border-radius:3px;transition:width .3s"></div>'+
-        '</div>'+
-      '</div>';
-    });
-    _stateBarHtml+='</div>';
+      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">Income by State</div>'+
+      Object.entries(_stateRev).sort((a,b)=>b[1]-a[1]).map(([st,rev])=>{
+        const stName=STATE_TAX[st]?.name||st;
+        const isHome=st===_homeState;
+        return '<div class="tax-row"><span>'+escHtml(stName)+(isHome?' <span style="font-size:10px;color:var(--text3)">(home)</span>':'')+'</span><span style="font-weight:700">'+fmt(rev)+'</span></div>';
+      }).join('')+
+    '</div>';
   }
 
   document.getElementById('tx-inputs').innerHTML=
     '<div class="tax-row"><span style="color:var(--text2)">Gross income</span><span style="font-weight:700">'+fmt(tIn)+'</span></div>'+
     '<div class="tax-row"><span style="color:var(--text2)">Business expenses</span><span style="color:#A32D2D">('+fmt(tEx)+')</span></div>'+
-    '<div class="tax-row"><span style="color:var(--text2)">Mileage deduction <span onclick="goPg(\'pg-tracker\');setTimeout(()=>{setTrTab(\'mileage\',document.getElementById(\'tr-t-mileage\'))},150)" style="font-size:10px;color:var(--blue);cursor:pointer;font-weight:700;margin-left:4px">'+tMi.toFixed(1)+' mi →</span></span><span style="color:#A32D2D">('+fmt(mileDed)+')</span></div>'+
+    '<div class="tax-row"><span style="color:var(--text2)">Mileage savings <span onclick="goPg(\'pg-tracker\');setTimeout(()=>{setTrTab(\'mileage\',document.getElementById(\'tr-t-mileage\'))},150)" style="font-size:10px;color:var(--blue);cursor:pointer;font-weight:700;margin-left:4px">'+tMi.toFixed(1)+' mi →</span></span><span style="color:#A32D2D">('+fmt(mileDed)+')</span></div>'+
     '<div class="tax-row" style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px">'+
-      '<span style="font-weight:700">Net SE income</span><span style="font-weight:700">'+fmt(netSelf)+'</span>'+
+      '<span style="font-weight:700">Business income</span><span style="font-weight:700">'+fmt(netSelf)+'</span>'+
     '</div>'+
     (spouseInc?'<div class="tax-row"><span style="color:var(--text2)">Spouse / other income</span><span>'+fmt(spouseInc)+'</span></div>':'')+
-    '<div class="tax-row"><span style="color:var(--text2)">Effective AGI</span><span>'+fmt(agi)+'</span></div>'+
+    '<div class="tax-row"><span style="color:var(--text2)">Taxable income</span><span>'+fmt(agi)+'</span></div>'+
     _stateBarHtml;
 
   // ── State tax rows — single state keeps old display, multi-state shows breakdown
@@ -276,9 +265,9 @@ function calcTax(){
   let _stateRows='';
   if(_isMultiState&&_nonHomeTaxes.length){
     _stateRows=
-      '<div class="tax-row"><span>'+escHtml(_homeStateName)+' income tax'+(_credit>0?' <span style="font-size:10px;color:var(--text3)">(after credit)</span>':'')+'</span><span style="color:#A32D2D">'+fmt(ksTax)+'</span></div>'+
-      _nonHomeTaxes.map(t=>'<div class="tax-row"><span style="padding-left:14px;color:var(--text2)">'+escHtml(t.name)+(t.noTax?'':' non-resident')+'</span><span style="color:#A32D2D">'+(t.noTax?'No income tax':fmt(t.stTax))+'</span></div>').join('')+
-      '<div style="font-size:10px;color:var(--text3);margin:4px 0 2px;font-style:italic">⚠ Multi-state estimate — verify with your CPA. Credit applied for taxes paid to other states.</div>';
+      '<div class="tax-row"><span>'+escHtml(_homeStateName)+' income tax</span><span style="color:#A32D2D">'+fmt(ksTax)+'</span></div>'+
+      _nonHomeTaxes.map(t=>'<div class="tax-row"><span style="padding-left:14px;color:var(--text2)">'+escHtml(t.name)+(t.noTax?'':' (out of state)')+'</span><span style="color:#A32D2D">'+(t.noTax?'No income tax':fmt(t.stTax))+'</span></div>').join('')+
+      '<div style="font-size:10px;color:var(--text3);margin:4px 0 2px;font-style:italic">⚠ Multi-state — review total with your CPA</div>';
   } else {
     _stateRows='<div class="tax-row"><span>'+escHtml(_homeStateName)+' income tax</span><span style="color:#A32D2D">'+fmt(ksTax)+'</span></div>';
   }
@@ -292,7 +281,7 @@ function calcTax(){
     '</div>'+
     (taxPaid?'<div class="tax-row"><span style="color:var(--text2)">Already paid</span><span style="color:var(--green-mid)">('+fmt(taxPaid)+')</span></div>':'')+
     '<div class="tax-row" style="font-weight:700"><span>Still owed</span><span style="color:#A32D2D">'+fmt(stillOwed)+'</span></div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-top:8px">All figures rounded up. SE tax deducted from income before federal/state calculation.</div>';
+    '';
 
   const now=new Date();
   const yr=now.getFullYear();
@@ -304,15 +293,15 @@ function calcTax(){
   ];
   const safeHarborNote=safeHarborQ>0
     ? '<div style="background:#F0FDF4;border:1.5px solid #16A34A;border-radius:var(--r);padding:10px 12px;margin-bottom:12px">'+
-        '<div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:3px">✓ Safe Harbor Shortcut — No Penalty Guaranteed</div>'+
-        '<div style="font-size:11px;color:#166534;line-height:1.5">Pay <strong>'+fmt(safeHarborQ)+'</strong>/quarter ('+fmt(safeHarborTotal)+'/yr total) and the IRS <em>cannot</em> charge you an underpayment penalty — even if you owe more at filing. That\'s '+Math.round(safeHarborRate*100)+'% of last year\'s '+fmt(priorYrTax)+' tax bill.'+(agi>150000?' High-income rate (110%) applies because your income is over $150K.':'')+'</div>'+
+        '<div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:3px">✓ Penalty-free plan</div>'+
+        '<div style="font-size:11px;color:#166534;line-height:1.5">Pay <strong>'+fmt(safeHarborQ)+'</strong> each quarter and you\'re covered — no IRS underpayment penalty.</div>'+
       '</div>'
     : '<div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:8px 10px;margin-bottom:12px;font-size:11px;color:#92400E">'+
-        '💡 Enter your prior year tax above to unlock the Safe Harbor shortcut — the legal way to pay less each quarter and never get penalized.'+
+        '💡 Enter last year\'s total tax above for the simplest quarterly number.'+
       '</div>';
   document.getElementById('tx-quarters').innerHTML=
     safeHarborNote+
-    '<div style="font-size:11px;color:var(--text2);margin-bottom:10px">Based on this year\'s numbers — pay '+fmt(perQ)+' each quarter to cover what you owe now.</div>'+
+    '<div style="font-size:11px;color:var(--text2);margin-bottom:10px">Pay '+fmt(perQ)+' each quarter.</div>'+
     qdates.map(({q,due,date,period})=>{
       const isPast=date<now;
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">'+
@@ -322,7 +311,7 @@ function calcTax(){
         '</div>'+
         '<div style="text-align:right">'+
           '<div style="font-size:15px;font-weight:700;color:'+(isPast?'var(--text3)':'#A32D2D')+'">'+fmt(perQ)+'</div>'+
-          (safeHarborQ>0?'<div style="font-size:10px;color:#166534;font-weight:600">'+fmt(safeHarborQ)+' safe harbor</div>':'')+
+          (safeHarborQ>0?'<div style="font-size:10px;color:#166534;font-weight:600">'+fmt(safeHarborQ)+' penalty-free</div>':'')+
         '</div>'+
       '</div>';
     }).join('');
@@ -337,7 +326,7 @@ function calcTax(){
     const difHTML='<div style="background:'+bg+';border:1.5px solid '+border+';border-radius:var(--r);padding:10px 12px;margin-top:12px">'+
       '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:'+tc+';margin-bottom:3px">Audit Risk Indicator — '+Math.round(difPct*100)+'% expense ratio</div>'+
       '<div style="font-size:11px;color:'+tc+';line-height:1.5">'+
-        (difRisk==='high'?'⚠️ Your deductions are '+Math.round(difPct*100)+'% of gross revenue — above the 63% threshold where the IRS DIF computer flags returns for review. Your deductions may be completely legitimate, but you need airtight receipts for every single one.':
+        (difRisk==='high'?'⚠️ Your expense ratio is on the high end compared to similar contractors. Keep detailed receipts and records.':
          difRisk==='medium'?'⚡ Moderate: '+Math.round(difPct*100)+'% of revenue in deductions. Keep all receipts — you\'re in the range the IRS notices.':
          '✓ Low risk: '+Math.round(difPct*100)+'% expense ratio looks normal for your industry.')+
       '</div></div>';
@@ -354,38 +343,38 @@ function calcTax(){
     const tips=[];
 
     // SEP-IRA — show actual dollar amount based on their income
-    if(sepMax>0)tips.push({icon:'🏦',color:'#0369a1',bg:'#f0f9ff',title:'Retirement Account — You Can Stash '+fmt(sepMax)+' Tax-Free',body:'Based on your net income, you can put up to '+fmt(sepMax)+' into a SEP-IRA this year and deduct every dollar from your taxes. You have until Oct 15 (with extension) to fund it. At your income level that\'s roughly '+fmt(Math.round(sepMax*0.25))+' back in your pocket right now. Open one at Fidelity or Vanguard in 15 minutes — they walk you through it.'});
+    if(sepMax>0)tips.push({icon:'🏦',color:'#0369a1',bg:'#f0f9ff',title:'Retirement Account — Stash '+fmt(sepMax)+' and Reduce Your Tax Bill',body:'You can set aside $'+sepMax.toLocaleString()+' for retirement and reduce your tax bill — ask your CPA about a SEP-IRA. You have until Oct 15 (with extension) to fund it. At your income level that\'s roughly '+fmt(Math.round(sepMax*0.25))+' back in your pocket right now. Open one at Fidelity or Vanguard in 15 minutes — they walk you through it.'});
 
     // Kansas commercial labor tax — critical for KS contractors
-    if(S.state==='KS')tips.push({icon:'🏗️',color:'#92400e',bg:'#fffbeb',title:'Kansas Trap: Labor on Commercial Jobs IS Taxable',body:'In Kansas, if you\'re doing work on an existing commercial building (repainting a restaurant, replumbing an office, rewiring a hotel), you must collect Kansas sales tax on your LABOR — not just materials. Residential and new construction are exempt. Get this wrong and you owe the tax out of your own pocket. A $15,000 commercial paint job at 9% = $1,350 you\'d owe the state. Register at ksrevenue.gov and collect it going forward.'});
+    if(S.state==='KS')tips.push({icon:'🏗️',color:'#92400e',bg:'#fffbeb',title:'Kansas Commercial Jobs: Labor Is Taxable',body:'Kansas commercial jobs: you must collect sales tax on labor, not just materials. Get this wrong and it comes out of your pocket.'});
 
     // Home office commuting unlock
     if(!S.homeOffice)tips.push({icon:'🏠',color:'#0369a1',bg:'#f0f9ff',title:'Home Office = Every Drive to a Job Site Becomes Deductible',body:'Right now, your drive from home to your first job site each day is "commuting" — not deductible. But if you have a room at home used ONLY for business (scheduling, estimates, billing), that changes everything. Your home becomes your business location and every drive to a job site is a deductible business trip. Check the home office box in Settings if this applies to you.'});
     if(S.homeOffice)tips.push({icon:'🏠',color:'#166534',bg:'#f0fdf4',title:'Home Office Active — Your Drives to Job Sites Are Deductible',body:'Because you have a qualifying home office, the IRS treats your home as your business location. Every drive from home to a job site counts as business mileage — not commuting. Make sure every trip is logged in TradeDesk. This is also the biggest thing to document if you\'re ever audited: photograph the dedicated office space and keep records of what business work you do there.'});
 
     // Health insurance line placement
-    tips.push({icon:'💊',color:'#1d4ed8',bg:'#eff6ff',title:'Health Insurance: Schedule 1, NOT Schedule C',body:'Deduct health insurance premiums on Schedule 1 Line 17 — not on Schedule C. On Schedule C they reduce income tax but NOT self-employment tax. On Schedule 1 they reduce both. At $18K/yr in family premiums the wrong line costs ~$2,754 in extra SE tax every year. One of the most common CPA errors for self-employed contractors.'});
+    tips.push({icon:'💊',color:'#1d4ed8',bg:'#eff6ff',title:'Health Insurance Deduction — Location Matters',body:'Health insurance premiums are deductible — put them in the right place or you\'ll pay more in self-employment tax than you need to. Ask your CPA.'});
 
     // NAICS code
-    tips.push({icon:'📋',color:'#374151',bg:'#f9fafb',title:'Use NAICS Code '+naics.code+' on Schedule C',body:'Line B of Schedule C asks for your business code. Use '+naics.code+' ('+naics.label+'). The IRS computer compares your expense ratios against other contractors in your specific trade — use the right code or your numbers look abnormal by comparison, raising your audit score for no reason.'});
+    tips.push({icon:'📋',color:'#374151',bg:'#f9fafb',title:'Your Trade Code: '+naics.code,body:'Your trade code tells the IRS what kind of contractor you are. We set this automatically — it affects how your numbers look compared to similar businesses.'});
 
     // Commingling
-    tips.push({icon:'🏦',color:'#7c3aed',bg:'#f5f3ff',title:'Separate Bank Account — Not Optional if You Want to Survive an Audit',body:'If you mix business and personal money in one account, an auditor adds up EVERY deposit and calls it all income unless you prove otherwise. That insurance check from your car accident? Income. That personal loan from your brother? Income. It\'s the fastest way to turn a simple audit into a nightmare. Open a free business checking account and run all business money through it — nothing else.'});
+    tips.push({icon:'🏦',color:'#7c3aed',bg:'#f5f3ff',title:'Keep Business Money in a Separate Account',body:'Keep business money in a separate account. Mixed personal and business deposits are an audit headache you don\'t want.'});
 
     // De minimis election
-    tips.push({icon:'🧾',color:'#166534',bg:'#f0fdf4',title:'De Minimis Election — Must File Every Year',body:'You can immediately expense any single item under $2,500 (tools, equipment, supplies) instead of depreciating it over 5 years. But the election is NOT automatic — your CPA must attach a statement to your return every single year. One missed year means those tools get depreciated instead of expensed. Remind your CPA every filing season.'});
+    tips.push({icon:'🧾',color:'#166534',bg:'#f0fdf4',title:'Write Off Tools & Equipment This Year',body:'Tools and equipment under $2,500 might be fully deductible this year instead of written off over time — ask your CPA about expensing them upfront.'});
 
     // December constructive receipt
-    if(mo>=10)tips.push({icon:'📅',color:'#92400e',bg:'#fffbeb',title:'December Alert: Money You Can Collect Now Is Taxable Now',body:'Even if a customer\'s check doesn\'t arrive until January, if you could have collected it in December, the IRS says it\'s December income. Do NOT ask clients to hold off on payment to push it into next year — that\'s called constructive receipt and it\'s an audit trigger. If you genuinely haven\'t earned the money yet, that\'s fine. But if the job is done and the invoice is due, that income belongs in this year.'});
+    if(mo>=10)tips.push({icon:'📅',color:'#92400e',bg:'#fffbeb',title:'December: Income Counts When You Earn It',body:'Income counts when you earn it, not always when you collect it. If a check arrives in January for December work, it may still count as last year\'s income.'});
 
     // Depreciation recapture
-    tips.push({icon:'🔄',color:'#92400e',bg:'#fffbeb',title:'Selling Equipment You Wrote Off? Expect a Tax Bill',body:'If you used Section 179 or bonus depreciation to write off a truck or sprayer in full, your tax "book value" is now zero. Sell it for $20,000 and you owe tax on the full $20,000 as ordinary income — even though you "sold it at a loss" compared to what you paid. This is called depreciation recapture (§1245) and it catches contractors completely off guard. Run the numbers with your CPA before selling equipment you fully depreciated.'});
+    tips.push({icon:'🔄',color:'#92400e',bg:'#fffbeb',title:'Selling Old Equipment? You May Owe Tax',body:'Selling equipment you\'ve already written off? You may owe tax on the sale — check with your CPA before you sell.'});
 
     // Minor child FICA
-    tips.push({icon:'👶',color:'#7c3aed',bg:'#f5f3ff',title:'Kids on Payroll — Zero FICA if You\'re a Sole Prop',body:'Sole proprietors who employ their child under 18 pay zero Social Security and Medicare tax on those wages — that\'s 15.3% you\'re not paying. The child pays income tax at their own lower rate. You deduct the wages. They can contribute to a Roth IRA. Real work, reasonable pay, and timesheets required. Don\'t convert to S-corp before you\'ve modeled this — S-corps lose the FICA exemption for minor children.'});
+    tips.push({icon:'👶',color:'#7c3aed',bg:'#f5f3ff',title:'Paying Your Kids Can Lower Your Tax Bill',body:'If your kids help with the business, paying them a fair wage can reduce your tax bill. Ask your CPA — the rules depend on your business structure.'});
 
     // Tool trailer
-    tips.push({icon:'🚛',color:'#0369a1',bg:'#f0f9ff',title:'Tool Trailers Are NOT Subject to Vehicle Depreciation Limits',body:'A lot of CPAs file tool trailers under "vehicles" and apply the luxury auto caps, which limits your first-year deduction to $12,200. Trailers have no motor — they\'re not listed property under §280F. A $15K enclosed tool trailer is fully depreciable under Section 179 in year one. That\'s a $3,750 difference in your pocket.'});
+    tips.push({icon:'🚛',color:'#0369a1',bg:'#f0f9ff',title:'Tool Trailers: Ask About the Write-Off',body:'Tool trailers may depreciate differently than vehicles. If you bought a trailer this year, ask your CPA — it could mean a bigger write-off.'});
 
     // Record retention
     tips.push({icon:'📁',color:'#374151',bg:'#f9fafb',title:'How Long to Keep Records (The 7-Year Rule)',body:'General rule: 7 years for all tax records. But equipment purchase records need to be kept until 7 years AFTER you sell the equipment — so that 2019 truck purchase receipt needs to stay until 2032 if you sell it in 2025. Equipment you still own: keep those records permanently while you own it. IRS has 6 years (not 3) if you underreported income by more than 25%. Photograph everything and store in Google Drive or Dropbox.'});
@@ -393,11 +382,23 @@ function calcTax(){
     // OBBBA 2025 update
     tips.push({icon:'⚡',color:'#0369a1',bg:'#f0f9ff',title:'2025 Law Change: 100% Bonus Depreciation Is Back',body:'The One Big Beautiful Bill Act (signed July 2025) permanently restored 100% bonus depreciation. Any qualifying equipment, tools, vehicles, or machinery placed in service after January 19, 2025 can be fully written off in year one. This was phasing down (60% in 2024, 40% early 2025) — now it\'s back to 100% permanently. Also: 1099-NEC threshold rises to $2,000 starting with the 2026 tax year. For 2025, the $600 threshold still applies.'});
 
-    tipEl.innerHTML='<div class="card"><div style="font-size:14px;font-weight:800;color:var(--text);margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--line)">💡 IRS Tips — Plain English</div>'+
-      tips.map(t=>'<div style="background:'+t.bg+';border:1.5px solid '+t.color+';border-radius:var(--r);padding:10px 12px;margin-bottom:8px">'+
-        '<div style="font-size:12px;font-weight:700;color:'+t.color+';margin-bottom:3px">'+t.icon+' '+t.title+'</div>'+
-        '<div style="font-size:11px;color:var(--text2);line-height:1.6">'+t.body+'</div>'+
-      '</div>').join('')+
+    _taxTipIdx=_taxTipIdx%tips.length;
+    const _t=tips[_taxTipIdx];
+    const _tNext=tips[(_taxTipIdx+1)%tips.length];
+    window._nextTaxTip=()=>{_taxTipIdx=(_taxTipIdx+1)%tips.length;calcTax();};
+    tipEl.innerHTML='<div class="card">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border)">'+
+        '<div style="font-size:14px;font-weight:800">💡 Tax Tips</div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+(_taxTipIdx+1)+' of '+tips.length+'</div>'+
+      '</div>'+
+      '<div style="background:'+_t.bg+';border:1.5px solid '+_t.color+';border-radius:var(--r);padding:10px 12px">'+
+        '<div style="font-size:12px;font-weight:700;color:'+_t.color+';margin-bottom:3px">'+_t.icon+' '+_t.title+'</div>'+
+        '<div style="font-size:11px;color:var(--text2);line-height:1.6">'+_t.body+'</div>'+
+      '</div>'+
+      '<button onclick="_nextTaxTip()" style="width:100%;margin-top:10px;padding:9px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2);text-align:left;display:flex;align-items:center;gap:6px">'+
+        '<span style="color:var(--text3)">Next:</span> '+_tNext.icon+' '+escHtml(_tNext.title)+
+        '<span style="margin-left:auto;color:var(--text3)">›</span>'+
+      '</button>'+
     '</div>';
   }
 }

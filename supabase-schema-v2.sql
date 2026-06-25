@@ -126,6 +126,15 @@ CREATE TABLE IF NOT EXISTS td_contracts (
   PRIMARY KEY (id, user_id)
 );
 
+CREATE TABLE IF NOT EXISTS td_agreements (
+  id          text         NOT NULL,
+  user_id     uuid         NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  data        jsonb        NOT NULL DEFAULT '{}',
+  updated_at  timestamptz  NOT NULL DEFAULT now(),
+  deleted_at  timestamptz  DEFAULT NULL,
+  PRIMARY KEY (id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS td_photos (
   id          text         NOT NULL,
   user_id     uuid         NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -148,6 +157,7 @@ ALTER TABLE td_time_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE td_licenses    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE td_events      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE td_contracts   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE td_agreements  ENABLE ROW LEVEL SECURITY;
 ALTER TABLE td_photos      ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "owner" ON td_clients      FOR ALL USING (auth.uid()=user_id) WITH CHECK (auth.uid()=user_id);
@@ -162,6 +172,7 @@ CREATE POLICY "owner" ON td_time_entries FOR ALL USING (auth.uid()=user_id) WITH
 CREATE POLICY "owner" ON td_licenses     FOR ALL USING (auth.uid()=user_id) WITH CHECK (auth.uid()=user_id);
 CREATE POLICY "owner" ON td_events       FOR ALL USING (auth.uid()=user_id) WITH CHECK (auth.uid()=user_id);
 CREATE POLICY "owner" ON td_contracts    FOR ALL USING (auth.uid()=user_id) WITH CHECK (auth.uid()=user_id);
+CREATE POLICY "owner" ON td_agreements   FOR ALL USING (auth.uid()=user_id) WITH CHECK (auth.uid()=user_id);
 CREATE POLICY "owner" ON td_photos       FOR ALL USING (auth.uid()=user_id) WITH CHECK (auth.uid()=user_id);
 
 -- ── 4. Indexes (user_id is in every query; deleted_at filter common) ─
@@ -177,6 +188,7 @@ CREATE INDEX IF NOT EXISTS idx_td_time_entries_user ON td_time_entries (user_id)
 CREATE INDEX IF NOT EXISTS idx_td_licenses_user     ON td_licenses     (user_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_td_events_user       ON td_events       (user_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_td_contracts_user    ON td_contracts    (user_id) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_td_agreements_user   ON td_agreements   (user_id) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_td_photos_user       ON td_photos       (user_id) WHERE deleted_at IS NULL;
 
 -- ── 5. Enable Realtime (postgres_changes) for all new tables ─
@@ -194,6 +206,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE td_time_entries;
 ALTER PUBLICATION supabase_realtime ADD TABLE td_licenses;
 ALTER PUBLICATION supabase_realtime ADD TABLE td_events;
 ALTER PUBLICATION supabase_realtime ADD TABLE td_contracts;
+ALTER PUBLICATION supabase_realtime ADD TABLE td_agreements;
 ALTER PUBLICATION supabase_realtime ADD TABLE td_photos;
 
 -- ── 6. One-time data migration from zj_data JSON blobs ───────

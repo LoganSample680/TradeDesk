@@ -324,35 +324,25 @@ function renderTodayLegs(){
 
 
 function buildScopeGrid(roomName){
-  const el=document.getElementById('est-scope-grid')||document.getElementById('surf-scope-first-grid');
+  // Only fall back to surf-scope-first-grid when called WITH a roomName — prevents
+  // cloud-sync / navigation calls (no roomName) from clobbering the paint-estimate scope view.
+  const el=document.getElementById('est-scope-grid')||(roomName?document.getElementById('surf-scope-first-grid'):null);
   if(!el)return;
   _currentScopeRoom=roomName||'';
-  // Get room sqft estimate for auto-price preview
-  const roomSqFt=roomName?estSurfaces.filter(s=>cleanRoomName(s.room)===roomName&&
-    (s.type==='walls'||s.type==='ceiling')).reduce((sum,s)=>sum+(s.qty||0),0):0;
   el.innerHTML=SCOPE_ITEMS.map(s=>{
     const isOn=roomName?roomScopeOn(roomName,s.id):!!scopeActiveMap[s.id];
     const roomAttr=roomName?(' data-room="'+encodeURIComponent(roomName)+'"'):'';
     const clickHandler=roomName
       ?'onclick="toggleScopeRoom(\''+s.id+'\',decodeURIComponent(this.dataset.room))"'
       :'onclick="toggleScope(\''+s.id+'\')"';
-    // Auto-price preview
-    const estCost=roomName?(()=>{
-      const roomSqFt=estSurfaces.filter(sf=>cleanRoomName(sf.room)===roomName&&
-        ['walls','ceiling','ext_walls','deck'].includes(sf.type)).reduce((sum,sf)=>sum+(sf.qty||0),0);
-      if(!roomSqFt&&!s.flatRate)return 0;
-      return Math.round(((s.ratePerSqFt||0)*roomSqFt+(s.flatRate||0))*100)/100;
-    })():s.flatRate||0;
-    const priceTag=estCost>0?'<span style="font-size:10px;font-weight:700;color:var(--green-mid);margin-left:auto;white-space:nowrap">+$'+estCost+'</span>':'';
+    const _lr=(window._scopeRates||{})[s.id+':painting']||(window._scopeRates||{})[s.id+':general'];
+    const _hint=_lr&&_lr.sample_count>=5?'~'+_lr.median_min+' min avg · '+_lr.sample_count+' jobs':s.hint;
     return '<div class="stog'+(isOn?' on':'')+'" id="est-st-'+s.id+'" '+clickHandler+roomAttr+' style="align-items:flex-start">'+
       '<input type="checkbox" id="est-sc-'+s.id+'" style="display:none"'+(isOn?' checked':'')+'>'+
       '<div class="sdot" style="margin-top:2px"></div>'+
       '<div style="flex:1;min-width:0">'+
-        '<div style="display:flex;align-items:center;gap:4px">'+
-          '<span class="slabel">'+(s.icon||'')+'  '+s.label+'</span>'+
-          priceTag+
-        '</div>'+
-        '<span style="display:block;font-size:10px;color:var(--text3);font-weight:400;margin-top:1px;line-height:1.4">'+s.hint+'</span>'+
+        '<div style="font-size:13px;font-weight:700">'+(s.icon||'')+' '+s.label+'</div>'+
+        '<span style="display:block;font-size:10px;color:var(--text3);font-weight:400;margin-top:1px;line-height:1.4">'+_hint+'</span>'+
       '</div></div>';
   }).join('');
 }
@@ -406,10 +396,7 @@ function toggleScope(id,force){
   const tog=document.getElementById('est-st-'+id);
   if(cb)cb.checked=nowOn;
   if(tog)tog.classList.toggle('on',nowOn);
-  if(nowOn&&!wasOn&&force===undefined){
-    const sc=SCOPE_ITEMS.find(x=>x.id===id);
-    promptScopeHours(id,sc?sc.label:id);
-  } else if(!nowOn){
+  if(!nowOn){
     delete scopeHrsStore[id];
     const badge=document.getElementById('scope-hrs-badge-'+id);
     if(badge){badge.textContent='';badge.style.display='none';}
@@ -767,20 +754,20 @@ function openJobSheet(clientId){
   const hdr=document.createElement('div');
   hdr.style.cssText='background:linear-gradient(135deg,#1a365d,#2a4a7f);color:#fff;padding:18px 20px 16px;flex-shrink:0';
   hdr.innerHTML=
-    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">'+
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px">'+
       '<div style="min-width:0">'+
-        '<div style="font-size:19px;font-weight:800;line-height:1.1">'+escHtml(c.name||'')+'</div>'+
-        (c.addr?'<div style="font-size:12px;opacity:.8;margin-top:3px">📍 '+escHtml(c.addr)+'</div>':'')+
+        '<div style="font-size:20px;font-weight:800;line-height:1.15">'+escHtml(c.name||'')+'</div>'+
+        (c.addr?'<div style="font-size:12px;opacity:.75;margin-top:4px">📍 '+escHtml(c.addr)+'</div>':'')+
       '</div>'+
-      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1">✕</button>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1">✕</button>'+
     '</div>'+
-    '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px;flex-wrap:wrap;gap:8px">'+
-      '<span style="font-size:11px;font-weight:800;padding:4px 10px;border-radius:20px;background:rgba(255,255,255,.2);color:#fff">'+st.label+'</span>'+
-      '<div style="display:flex;gap:8px">'+
-        (c.phone?'<a href="tel:'+c.phone.replace(/\D/g,'')+'" style="background:rgba(255,255,255,.2);color:#fff;text-decoration:none;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px" onclick="event.stopPropagation()">📞 Call</a>':'')+
-        (c.addr?'<button onclick="openMapsForClient('+clientId+');event.stopPropagation()" style="background:rgba(255,255,255,.2);border:none;color:#fff;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;cursor:pointer;font-family:inherit">🗺️ Drive</button>':'')+
-        (c.phone?'<button onclick="sendOMWText('+clientId+');event.stopPropagation()" style="background:rgba(255,200,0,.3);border:none;color:#fff;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;cursor:pointer;font-family:inherit">🚗 OMW</button>':'')+
-        '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+clientId+')" style="background:rgba(255,255,255,.2);border:none;color:#fff;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px;cursor:pointer;font-family:inherit">Full record →</button>'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'+
+      '<span style="font-size:11px;font-weight:800;padding:4px 10px;border-radius:20px;background:rgba(255,255,255,.18);color:#fff;letter-spacing:.02em">'+st.label+'</span>'+
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
+        (c.phone?'<a href="tel:'+c.phone.replace(/\D/g,'')+'" style="background:rgba(52,211,153,.25);color:#fff;text-decoration:none;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;display:inline-flex;align-items:center;gap:4px" onclick="event.stopPropagation()">📞 Call</a>':'')+
+        (c.addr?'<button onclick="openMapsForClient('+clientId+');event.stopPropagation()" style="background:rgba(96,165,250,.25);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;cursor:pointer;font-family:inherit">🗺️ Drive</button>':'')+
+        (c.phone?'<button onclick="sendOMWText('+clientId+');event.stopPropagation()" style="background:rgba(251,191,36,.3);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;cursor:pointer;font-family:inherit">🚗 OMW</button>':'')+
+        '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+clientId+')" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;cursor:pointer;font-family:inherit">Full record ›</button>'+
       '</div>'+
     '</div>';
   box.appendChild(hdr);
@@ -841,9 +828,10 @@ function openJobSheet(clientId){
             '<div style="font-size:14px;font-weight:700;color:var(--blue-dk)">'+dt+(nextJob.time?' · '+fmtTime(nextJob.time):'')+'</div>'+
             '<div style="font-size:11px;color:var(--blue);margin-top:2px">'+(nextJob.days||1)+' day'+(nextJob.days!==1?'s':'')+' est.</div>'+
           '</div>'+
-          '<div style="display:flex;gap:6px;flex-shrink:0">'+
-            '<button onclick="openPushBackModal('+nextJob.id+','+clientId+',this.closest(\'.zmodal-overlay\'))" style="padding:7px 12px;border-radius:var(--r);border:1px solid var(--amber);background:var(--amber-lt);color:#92400E;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📅 Push back</button>'+
-            '<button onclick="this.closest(\'.zmodal-overlay\').remove();goPg(\'pg-schedule\')" style="padding:7px 12px;border-radius:var(--r);border:1px solid var(--blue);background:#fff;color:var(--blue-dk);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Reschedule</button>'+
+          '<div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">'+
+            '<button onclick="_extendJob('+nextJob.id+',this.closest(\'.zmodal-overlay\'))" style="padding:7px 12px;border-radius:var(--r);border:1px solid var(--green-mid);background:var(--green-lt);color:var(--green-mid);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">+Days</button>'+
+            '<button onclick="openPushBackModal('+nextJob.id+','+clientId+',this.closest(\'.zmodal-overlay\'))" style="padding:7px 12px;border-radius:var(--r);border:1px solid var(--amber);background:var(--amber-lt);color:#92400E;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Push back</button>'+
+            '<button onclick="this.closest(\'.zmodal-overlay\').remove();goPg(\'pg-schedule\')" style="padding:7px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Reschedule</button>'+
           '</div>'+
         '</div>'+
       '</div>';
@@ -1062,6 +1050,32 @@ function openJobSheet(clientId){
       '</div>';
   }
 
+  // ── Crew tasks (contractor assigns, employees check off) ─────
+  let tasksHtml='';
+  if(latestJob&&!_isEmployee){
+    const _jt=latestJob.tasks||[];
+    const _taskRows=_jt.map(t=>{
+      const _di=t.done&&t.doneBy?'<div style="font-size:10px;color:var(--green-mid);margin-top:2px">✓ '+escHtml(t.doneBy)+(t.doneAt?' · '+_fmtTaskTime(t.doneAt):'')+'</div>':'';
+      return '<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">'+
+        '<button onclick="_contractorToggleTask('+latestJob.id+','+t.id+')" style="flex-shrink:0;margin-top:1px;width:20px;height:20px;border-radius:4px;border:2px solid '+(t.done?'var(--green-mid)':'var(--border2)')+';background:'+(t.done?'var(--green-mid)':'transparent')+';cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center">'+(t.done?'<span style="color:#fff;font-size:9px;font-weight:900">✓</span>':'')+
+        '</button>'+
+        '<div style="flex:1"><span style="font-size:13px;color:'+(t.done?'var(--text3)':'var(--text)')+(t.done?';text-decoration:line-through':'')+'">'+ escHtml(t.text)+'</span>'+_di+'</div>'+
+        '<button onclick="_removeJobTask('+latestJob.id+','+t.id+')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:2px 6px;min-height:32px;line-height:1">×</button>'+
+      '</div>';
+    }).join('');
+    tasksHtml=
+      '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">✅ Crew Tasks</div>'+
+        '<div id="_jtasks-list-'+latestJob.id+'">'+(_taskRows||'<div style="font-size:12px;color:var(--text3);padding:4px 0">No tasks — add one below</div>')+'</div>'+
+        '<div style="display:flex;gap:8px;margin-top:10px">'+
+          '<input id="_jtask-input-'+latestJob.id+'" placeholder="e.g. Call ahead 30 min before arrival" '+
+            'style="flex:1;font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit" '+
+            'onkeydown="if(event.key===\'Enter\')_addJobTask('+latestJob.id+')">'+
+          '<button onclick="_addJobTask('+latestJob.id+')" style="padding:8px 14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px;white-space:nowrap">+ Add</button>'+
+        '</div>'+
+      '</div>';
+  }
+
   // ── Job actions ──────────────────────────────────────────────
   const jobActions=getClientJobs(clientId).filter(j=>j.eventType!=='estimate'&&j.status==='active');
   let actionsHtml=
@@ -1106,7 +1120,46 @@ function openJobSheet(clientId){
     '</div>';
   }
 
-  body.innerHTML=payHtml+schedHtml+coHistoryHtml+supplyHtml+scopeHtml+photosHtml+actualCostsHtml+subsHtml+visitNotesHtml+actionsHtml;
+  // ── Assigned employee (dispatch) ─────────────────────────────────────────────
+  let assignedEmpHtml='';
+  const latestAssignedJob=allJobs.filter(j=>j.assignedTo).sort((a,b)=>(b.assignedDate||'').localeCompare(a.assignedDate||''))[0];
+  if(latestAssignedJob&&latestAssignedJob.assignedTo){
+    const assignedEmp=(S.employees||[]).find(e=>String(e.id)===String(latestAssignedJob.assignedTo));
+    if(assignedEmp){
+      assignedEmpHtml='<div style="padding:10px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">'+
+        '<span style="font-size:11px;font-weight:700;color:var(--text3)">ASSIGNED TO</span>'+
+        '<span style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(assignedEmp.name)+'</span>'+
+        (latestAssignedJob.assignedDate?'<span style="font-size:10px;color:var(--text3)">· '+latestAssignedJob.assignedDate+'</span>':'')+
+      '</div>';
+    }
+  }
+  // ── Paint order (painting estimates only) ───────────────────────────────
+  let paintOrderHtml='';
+  const _paintBid=wonBids.find(b=>b.paintLines&&b.paintLines.length);
+  if(_paintBid){
+    const _pl=_paintBid.paintLines;
+    const _coats=_paintBid.coats||2;
+    paintOrderHtml=
+      '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">🎨 Paint order</div>'+
+        '<div style="display:grid;grid-template-columns:1fr auto auto;gap:3px 10px;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:6px">'+
+          '<span>Product · Color · Finish</span><span style="text-align:right">Sq ft</span><span style="text-align:right">Cans</span>'+
+        '</div>'+
+        _pl.map(function(pl){
+          const parts=pl.spec?pl.spec.split(' · '):[];
+          const prod=parts[0]||'';
+          const colorFinish=parts.slice(1).join(' · ')||pl.spec||'';
+          return '<div style="display:grid;grid-template-columns:1fr auto auto;gap:3px 10px;padding:6px 0;border-bottom:1px solid var(--border);align-items:start">'+
+            '<div><div style="font-size:11px;font-weight:700;color:var(--text)">'+escHtml(prod)+'</div>'+
+            '<div style="font-size:11px;color:var(--text3)">'+escHtml(colorFinish)+'</div></div>'+
+            '<div style="text-align:right;font-size:11px;color:var(--text2)">'+(pl.sqFt||0).toLocaleString()+'</div>'+
+            '<div style="text-align:right;font-size:13px;font-weight:800;color:var(--blue)">'+(pl.wholeCans||0)+' gal</div>'+
+          '</div>';
+        }).join('')+
+        '<div style="font-size:10px;color:var(--text3);margin-top:6px">Includes 10% waste · '+_coats+' coat'+(_coats!==1?'s':'')+' · Verify with SW rep for dark colors</div>'+
+      '</div>';
+  }
+  body.innerHTML=payHtml+schedHtml+assignedEmpHtml+coHistoryHtml+supplyHtml+scopeHtml+photosHtml+paintOrderHtml+actualCostsHtml+subsHtml+visitNotesHtml+tasksHtml+actionsHtml;
   box.appendChild(body);
   ov.appendChild(box);
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
@@ -1230,6 +1283,31 @@ function markSubPaid(jobId,subIdx,clientId){
   j.subs[subIdx].paid=true;j.subs[subIdx].paidDate=todayKey();
   saveAll();showToast('Marked paid','✓');
   openJobSheet(clientId);
+}
+
+// ── Extend job duration ────────────────────────────────────────────────────────
+function _extendJob(jobId,parentOverlay){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  const cur=parseInt(j.days)||1;
+  const ov=document.createElement('div');ov.className='zmodal-overlay';
+  const sheet=document.createElement('div');
+  sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px 28px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(12px);transition:opacity .2s cubic-bezier(.22,1,.36,1),transform .2s cubic-bezier(.22,1,.36,1)';
+  sheet.innerHTML=
+    '<div style="font-size:16px;font-weight:800;margin-bottom:4px">Extend job duration</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">Currently '+cur+' day'+(cur!==1?'s':'')+' — how many days to add?</div>'+
+    [1,2,3,5,7,14].map(d=>'<button onclick="_doExtendJob('+jobId+','+d+',this)" style="display:inline-block;padding:10px 18px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin:0 6px 8px 0;min-height:44px">+'+d+'d</button>').join('')+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="display:block;width:100%;margin-top:8px;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Cancel</button>';
+  ov.appendChild(sheet);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
+}
+function _doExtendJob(jobId,addDays,btn){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  j.days=(parseInt(j.days)||1)+addDays;
+  saveAll();
+  if(typeof renderCal==='function')renderCal();
+  btn.closest('.zmodal-overlay').remove();
+  if(typeof showToast==='function')showToast('Job extended by '+addDays+' day'+(addDays!==1?'s':''),'📅');
 }
 
 // ── Push job date back ────────────────────────────────────────────────────────
@@ -1394,6 +1472,56 @@ function saveVisitNotes(jobId,val){
   j.visitNotes=val.trim();
   saveAll();
   showToast('Notes saved','📝');
+}
+
+function _addJobTask(jobId){
+  const input=document.getElementById('_jtask-input-'+jobId);
+  if(!input)return;
+  const text=(input.value||'').trim();
+  if(!text)return;
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  if(!j.tasks)j.tasks=[];
+  j.tasks.push({id:Date.now(),text,done:false});
+  input.value='';
+  saveAll();
+  _renderJobTasks(jobId);
+}
+function _removeJobTask(jobId,taskId){
+  const j=jobs.find(x=>x.id===jobId);if(!j||!j.tasks)return;
+  j.tasks=j.tasks.filter(t=>t.id!==taskId);
+  saveAll();
+  _renderJobTasks(jobId);
+}
+function _renderJobTasks(jobId){
+  const el=document.getElementById('_jtasks-list-'+jobId);if(!el)return;
+  const j=jobs.find(x=>x.id===jobId);
+  const tasks=(j&&j.tasks)||[];
+  if(!tasks.length){el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:4px 0">No tasks — add one below</div>';return;}
+  el.innerHTML=tasks.map(t=>{
+    const doneInfo=t.done&&t.doneBy
+      ?'<div style="font-size:10px;color:var(--green-mid);margin-top:2px">✓ '+escHtml(t.doneBy)+(t.doneAt?' · '+_fmtTaskTime(t.doneAt):'')+'</div>'
+      :'';
+    return '<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">'+
+      '<button onclick="_contractorToggleTask('+jobId+','+t.id+')" style="flex-shrink:0;margin-top:1px;width:20px;height:20px;border-radius:4px;border:2px solid '+(t.done?'var(--green-mid)':'var(--border2)')+';background:'+(t.done?'var(--green-mid)':'transparent')+';cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center">'+(t.done?'<span style="color:#fff;font-size:9px;font-weight:900">✓</span>':'')+
+      '</button>'+
+      '<div style="flex:1">'+
+        '<span style="font-size:13px;color:'+(t.done?'var(--text3)':'var(--text)')+(t.done?';text-decoration:line-through':'')+'">'+ escHtml(t.text)+'</span>'+
+        doneInfo+
+      '</div>'+
+      '<button onclick="_removeJobTask('+jobId+','+t.id+')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:2px 6px;min-height:32px;line-height:1">×</button>'+
+    '</div>';
+  }).join('');
+}
+function _fmtTaskTime(iso){
+  try{const d=new Date(iso);return d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}catch(e){return'';}
+}
+function _contractorToggleTask(jobId,taskId){
+  const j=jobs.find(x=>x.id===jobId);if(!j||!j.tasks)return;
+  const t=j.tasks.find(x=>x.id===taskId);if(!t)return;
+  t.done=!t.done;
+  if(t.done){t.doneBy=(typeof getOwnerName==='function'&&getOwnerName())||S.bname||'Contractor';t.doneAt=new Date().toISOString();}
+  else{delete t.doneBy;delete t.doneAt;}
+  saveAll();_renderJobTasks(jobId);
 }
 
 function deleteJob(jobId){

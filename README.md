@@ -1,10 +1,10 @@
 # TradeDesk — All-in-One Contractor Business Suite
 
-A complete mobile-first business management app for solo and small contractors. Built as a single HTML file — no install, no app store, runs entirely in the browser. Add to iPhone home screen for a native app experience.
+A complete mobile-first business management app for solo and small contractors. Built as a progressive web app — no install, no app store, runs entirely in the browser. Add to iPhone home screen for a native app experience.
 
 ## Live App
 
-**https://logansample680.github.io/TradeDesk/**
+**https://tradedeskpro.app**
 
 Safari → Share → Add to Home Screen
 
@@ -14,7 +14,10 @@ Safari → Share → Add to Home Screen
 
 | File | Description |
 |------|-------------|
-| `index.html` | The full app — every feature in one file |
+| `index.html` | The full app — every page and feature |
+| `intake.html` | Client-facing lead intake form (shareable link) |
+| `sign.html` | Client-facing proposal signing portal |
+| `client.html` | Client portal — view proposals and history |
 | `supabase-setup.sql` | Run once in Supabase SQL Editor to create the database |
 | `supabase-setup/README.md` | Step-by-step Supabase + cloud sync setup |
 | `signing-setup/README.md` | DocuSeal + ntfy remote signing and notifications |
@@ -24,7 +27,7 @@ Safari → Share → Add to Home Screen
 ## Features
 
 ### Estimate Builder — 7 Steps
-- Client info with live duplicate detection
+- Client info with live duplicate detection and MapKit address autocomplete
 - Per-job labor rates set upfront — never hardcoded
 - Scope of work — tap each item, set hours + rate per job
 - Room-by-room surface entry with L×W auto sq ft calculation
@@ -34,18 +37,32 @@ Safari → Share → Add to Home Screen
 - PDF download for remote signing
 - Client e-signature (typed name + draw canvas)
 - UETA-compliant terms and change order language
+- Generic estimate type for any trade or job
 
-### Client Management
+### Client & Lead Management
 - Full client records — name, phone, address, property type, lead source
+- Multiple property addresses per client with labels
+- MapKit-powered address autocomplete on every address entry field
 - Duplicate detection on name and phone
 - Client risk levels: normal / watch / high risk / blacklisted
 - Timeline view — every bid, job, payment, and note in one place
+- Lead intake form (shareable link) — clients fill out their own info
+- Lead status tracking with follow-up scheduling
 - SMS templates for follow-up, reminders, and collections
+- Lead source analytics — close rate and revenue per lead source
 
 ### Job Lifecycle
 - Lead → Estimate → Signed → Scheduled → Active → Complete → Collect
 - Price adjustment on completion (raise or lower with required reason)
 - Calendar with availability and conflict detection
+- Job documents — proposals, change orders, completion sign-off
+
+### Mileage & GPS Tracking
+- Live GPS drive tracking with MapKit maps
+- Auto-calculates miles from start to stop
+- IRS standard mileage rate deduction
+- Trip history with client and job linking
+- Export mileage log as CSV
 
 ### Collections & Lien Workflow
 - 7 / 14 / 21 / 30 day escalation with pre-written SMS at each stage
@@ -62,8 +79,10 @@ Safari → Share → Add to Home Screen
 ### Books & Taxes
 - Income tracking (auto-logged from payments)
 - Expense tracking with IRS Schedule C categories
-- Mileage log with IRS rate deduction
-- Quarterly tax estimates (federal + Kansas)
+- Quarterly tax estimates — federal + state, SE tax with SS wage-base cap
+- SE tax: Social Security (12.4%) capped at annual wage base; Medicare (2.9%) uncapped
+- Safe harbor: 110% of prior-year tax when prior-year AGI > $150K
+- Multi-state income tracking — apportions income by job location, credits for taxes paid to other states
 - Full tax report PDF, expenses CSV, mileage CSV, full data backup
 
 ### Dashboard
@@ -77,10 +96,19 @@ Safari → Share → Add to Home Screen
 - Full-screen infinite canvas, Apple Pencil compatible
 - Auto-saves to the bid record
 
-### Cloud Sync
+### PWA & Device Features
+- Add to home screen — icon, splash screen, standalone mode
+- App badge shows unsigned proposals + overdue follow-ups
+- Wake lock during GPS tracking and estimate entry (screen stays on)
+- Web Share API — native iOS share sheet for links and documents
+- Home screen shortcuts: New Estimate, Log Expense, Clock In
+- Share-target: share a receipt photo from any app directly into expenses
+
+### Cloud Sync & Realtime
 - Sign in / sign up on first launch
-- All data syncs in background after every save
-- Restore everything on any new device
+- All data syncs in real time across every logged-in device
+- Fleet, gallery, licensing, and calendar update live when another device makes a change
+- Connection restore: re-syncs immediately on reconnect, not on the next poll tick
 - Per-user data isolation — each account sees only their own data
 
 ---
@@ -91,7 +119,7 @@ See [`supabase-setup/README.md`](supabase-setup/README.md).
 
 1. Create a free project at [supabase.com](https://supabase.com)
 2. Run `supabase-setup.sql` in SQL Editor
-3. Copy Project URL and anon key into `index.html`
+3. Copy Project URL and anon key into `index.html`, `intake.html`, `sign.html`, and `client.html`
 4. Push — done
 
 ---
@@ -106,9 +134,9 @@ DocuSeal (self-hosted free on Railway) + ntfy push notifications. Zero monthly c
 
 ## Deploying
 
-GitHub Pages is already configured. Every push to `main` goes live automatically.
+Hosted on Cloudflare Pages. Every push to `main` goes live automatically at **https://tradedeskpro.app**.
 
-To self-host (Nginx, Proxmox, etc) — serve `index.html` as a static file. The app calls Supabase directly from the browser, no backend required.
+To self-host — serve the HTML files as static files. The app calls Supabase directly from the browser, no backend required.
 
 ---
 
@@ -116,9 +144,10 @@ To self-host (Nginx, Proxmox, etc) — serve `index.html` as a static file. The 
 
 | Layer | Tech |
 |-------|------|
-| App | Vanilla JS, single HTML file, no dependencies |
-| Hosting | GitHub Pages |
+| App | Vanilla JS, no framework, no build step |
+| Hosting | Cloudflare Pages |
 | Auth + Database | Supabase (Postgres + GoTrue) |
+| Maps + Geocoding | Apple MapKit JS (primary), Photon + Census fallback |
 | Receipt AI | Claude Haiku via Supabase Edge Function |
 | Signing | DocuSeal |
 | Notifications | ntfy.sh |

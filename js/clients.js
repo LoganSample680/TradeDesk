@@ -49,10 +49,11 @@ function _showRrpModal(c,onProceed){
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
     '<div style="font-size:16px;font-weight:800;margin-bottom:4px">⚠️ Pre-1978 Home — Built '+c.yearBuilt+'</div>'+
-    '<div style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.5">Will more than <strong>6 sq ft of interior</strong> or <strong>20 sq ft of exterior</strong> painted surfaces be disturbed?</div>'+
+    '<div style="font-size:13px;color:var(--text2);margin-bottom:8px;line-height:1.5">Will painted surfaces be disturbed during this job?</div>'+
+    '<div style="font-size:11.5px;color:var(--text3);margin-bottom:14px;line-height:1.5">EPA RRP applies when &gt;6 sq ft interior or &gt;20 sq ft exterior painted surface is disturbed.</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">'+
       '<button onclick="_rrpModalNo()" style="padding:13px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);color:var(--text1);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">No</button>'+
-      '<button onclick="_rrpModalYes()" style="padding:13px;border-radius:var(--r);border:2px solid #d97706;background:#fef3c7;color:#92400e;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Yes</button>'+
+      '<button onclick="_rrpModalYes()" style="padding:13px;border-radius:var(--r);border:2px solid #d97706;background:#fef3c7;color:#92400e;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Yes — I\'m certified</button>'+
     '</div>'+
     '<div id="_rrp-cert-msg" style="display:none"></div>';
   ov.appendChild(box);document.body.appendChild(ov);
@@ -74,8 +75,8 @@ function _showRrpModal(c,onProceed){
       '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:12px;margin-bottom:10px">'+
         '<div style="font-size:13px;font-weight:800;color:#a32d2d;margin-bottom:6px">RRP certification required before this estimate can proceed.</div>'+
         '<div style="margin-top:8px">'+
-          '<div style="font-size:12px;font-weight:800;color:#92400e;margin-bottom:6px">EPA RRP Rule — 40 CFR Part 745</div>'+
-          '<div style="font-size:12px;color:var(--text1);margin-bottom:6px;line-height:1.6">Any contractor disturbing painted surfaces in a pre-1978 home must hold an EPA Firm Certification and have a certified Renovator on the job — <strong>before work begins</strong>, not at proposal time.</div>'+
+          '<div style="font-size:12px;font-weight:800;color:#92400e;margin-bottom:6px">EPA RRP certification required</div>'+
+          '<div style="font-size:12px;color:var(--text1);margin-bottom:6px;line-height:1.6">Pre-1978 homes: you need EPA RRP certification before disturbing any painted surfaces. Work without it and you\'re exposed to serious fines.</div>'+
           '<div style="font-size:13px;font-weight:800;color:#a32d2d;margin-bottom:6px">Fines: up to $37,500 per violation, per day.</div>'+
           '<div style="font-size:12px;color:var(--text2);line-height:1.5">Getting certified: one-day course, ~$200–$300, valid 5 years. Search "EPA RRP certification [your state]" to find a local provider.</div>'+
         '</div>'+
@@ -241,14 +242,14 @@ function _showEstimateStylePicker(c,overrideAddr){
   const ov=document.createElement('div');
   ov.id='_style-pick-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:9000;background:var(--bg2);overflow-y:auto;opacity:0;transform:translateY(22px);transition:opacity .38s ease,transform .42s cubic-bezier(.22,.8,.2,1)';
-  const card=(id,tone,icon,eyebrow,title,sub,desc,bullets)=>{
+  const isPainting=trade==='painting'||trade==='general';
+  const card=(id,tone,icon,eyebrow,title,sub,bullets)=>{
     const bul=bullets.map(b=>'<li><span>✓</span>'+b+'</li>').join('');
     return `<button class="chooser-card chooser-${tone}" onclick="_pickEstStyle('${id}')">
       <div class="chooser-card-eyebrow">${eyebrow}</div>
       <div class="chooser-card-icon">${icon}</div>
       <div class="chooser-card-title">${title}</div>
       <div class="chooser-card-sub">${sub}</div>
-      <div class="chooser-card-desc">${desc}</div>
       <ul class="chooser-card-bullets">${bul}</ul>
       <div class="chooser-card-cta">Start →</div>
     </button>`;
@@ -263,19 +264,16 @@ function _showEstimateStylePicker(c,overrideAddr){
         '<button class="btn btn-ghost" onclick="_closeStylePicker()">Cancel</button>'+
       '</div>'+
       '<div class="chooser-grid">'+
-        card('scope','denim','📋','Most popular','Scope &amp; Price','Fixed scope, one final number',
-          scopeDesc,
-          ['Line items private from client','Internal labor + materials math','Single-price proposal','Deposit collected upfront'])+
-        card('tm','amber','⏱️','For variable scope','Time &amp; Materials','Bill the hours, mark up the materials',
-          'Open-ended scope where the client agrees to a rate, not a final price. Best for unknown-scope work.',
+        card('scope','denim',isPainting?'🖌️':'📋','Most popular',
+          isPainting?'Interior / Exterior':'Scope &amp; Price',
+          isPainting?'Surface-by-surface pricing':'Fixed scope, one final number',
+          isPainting
+            ?['Interior, exterior &amp; cabinet','Auto-calculates from room sq ft','Single-price proposal','Deposit collected upfront']
+            :['Line items private from client','Internal labor + materials math','Single-price proposal','Deposit collected upfront'])+
+        card('tm','amber','⏱️','Unknown scope','Time &amp; Materials','Flexible billing when you can\'t lock in a price',
           ['Hourly rate + crew size','Materials at cost + markup','Not-to-exceed cap (optional)','Weekly invoicing'])+
-        card('freeform','green','🧩','Pick and choose','Build Your Own','Modular line items, client picks what they want',
-          'Send a menu of priced services. Client toggles what they want — bigger close rates because they choose their price.',
-          ['Client picks their own services','You set the prices','Deposit collected upfront','Upsell-friendly'])+
-      '</div>'+
-      '<div class="tip" style="margin-top:18px">'+
-        '<span style="font-size:18px">💡</span>'+
-        '<div><b>Tip · </b>'+tipText+'</div>'+
+        card('freeform','green','🧩','A la carte','Build Your Own','List every service with its own price',
+          ['Price each service individually','Mix labor, materials &amp; add-ons','Deposit collected upfront','Easy to upsell extras'])+
       '</div>'+
     '</div>';
   document.body.appendChild(ov);

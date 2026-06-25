@@ -1,64 +1,36 @@
 /**
- * send-proposal-email — sends a branded HTML proposal email via Resend.
+ * send-invite-email — sends a branded HTML employee invite email via Resend.
  *
  * POST body (JSON):
- *   to           string   — client email address
- *   clientName   string   — full client name (used for personalisation)
+ *   to           string   — employee email address
+ *   empName      string   — employee full name
  *   businessName string   — contractor business name
- *   proposalUrl  string   — signing URL (sign.html?t=…)
- *   replyTo      string   — contractor's email (so client can reply directly)
- *   customSubject string? — override default subject line
- *   customBody   string?  — plain-text body override (newlines → HTML paragraphs)
+ *   inviteUrl    string   — ?emp_invite=... link
+ *   replyTo      string?  — contractor's email (so employee can reply directly)
  *
  * Environment secrets (set via `supabase secrets set`):
- *   RESEND_API_KEY — your Resend API key (re_xxxx...)
- *
- * DNS records required on tradedeskpro.app (one-time setup via Resend dashboard):
- *   SPF   — add "include:_spf.resend.com" to your existing TXT record
- *   DKIM  — Resend generates a TXT record; add it to your DNS provider
- *   DMARC — TXT record: "v=DMARC1; p=quarantine; rua=mailto:dmarc@tradedeskpro.app"
- *
- * Why this matters: when email comes from proposals@tradedeskpro.app with proper
- * DKIM/SPF, corporate spam filters see "link domain = sender domain = passes DMARC"
- * and deliver instead of blocking.
+ *   RESEND_API_KEY — shared with send-proposal-email (re_xxxx...)
  */
 
 const RESEND_API_KEY  = Deno.env.get('RESEND_API_KEY');
 const SUPABASE_URL    = Deno.env.get('SUPABASE_URL') || '';
 const SUPABASE_ANON   = Deno.env.get('SUPABASE_ANON_KEY') || '';
-const FROM_ADDRESS    = 'proposals@tradedeskpro.app';
+const FROM_ADDRESS    = 'team@tradedeskpro.app';
 
 function escHtml(s: string): string {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function bodyToHtml(text: string): string {
-  // Convert plain text paragraphs (double newline) and lines (single newline) to HTML
-  return text
-    .split(/\n\n+/)
-    .map(para => '<p>' + para.replace(/\n/g,'<br>').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</p>')
-    .join('');
-}
-
-function htmlTemplate(
-  clientName: string,
-  businessName: string,
-  proposalUrl: string,
-  customBody?: string,
-): string {
-  const firstName = clientName.split(/[\s,&]+/)[0] || clientName;
-  const displayUrl = proposalUrl.replace(/^https?:\/\//, '');
-
-  const bodyHtml = customBody
-    ? bodyToHtml(customBody)
-    : `<p>It was great meeting with you. I've put together your full proposal — everything we went over is laid out in detail and you can sign directly from the page when you're ready to move forward.</p>`;
+function htmlTemplate(empName: string, businessName: string, inviteUrl: string): string {
+  const firstName = empName.split(/[\s,]+/)[0] || empName;
+  const displayUrl = inviteUrl.replace(/^https?:\/\//, '');
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Your Proposal from ${escHtml(businessName)}</title>
+<title>You've been invited to join ${escHtml(businessName)}</title>
 <style>
   body{margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;}
   .wrap{max-width:600px;width:100%;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08);}
@@ -67,7 +39,7 @@ function htmlTemplate(
   .body{padding:36px 32px 28px;}
   h1{margin:0 0 16px;font-size:22px;font-weight:700;color:#111;letter-spacing:-.02em;}
   p{margin:0 0 16px;font-size:15px;line-height:1.6;color:#444;}
-  .cta{display:block;margin:28px auto;background:#0070f3;color:#fff;font-size:17px;font-weight:700;text-align:center;text-decoration:none;padding:16px 36px;border-radius:12px;max-width:280px;letter-spacing:-.01em;}
+  .cta{display:block;margin:28px auto;background:#0070f3;color:#fff;font-size:17px;font-weight:700;text-align:center;text-decoration:none;padding:16px 36px;border-radius:12px;max-width:300px;letter-spacing:-.01em;}
   .divider{border:none;border-top:1px solid #eee;margin:24px 0;}
   .footer{padding:0 32px 28px;font-size:12px;color:#999;line-height:1.5;}
   .plain-link{color:#0070f3;word-break:break-all;font-size:13px;}
@@ -88,25 +60,24 @@ function htmlTemplate(
 </style>
 </head>
 <body>
-<!-- Table wrapper: margin:auto is unreliable in mobile email clients; align="center" on td is the industry-standard fix -->
 <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation" style="background:#f5f5f5">
 <tr><td align="center" valign="top" style="padding:32px 16px">
 <div class="wrap">
   <div class="header">
-    <p class="header-title">📋 ${escHtml(businessName)}</p>
+    <p class="header-title">👷 ${escHtml(businessName)}</p>
   </div>
   <div class="body">
-    <h1>Hey ${escHtml(firstName)} — your proposal is ready!</h1>
-    ${bodyHtml}
-    <a class="cta" href="${escHtml(proposalUrl)}">View &amp; Sign Proposal →</a>
+    <h1>Hey ${escHtml(firstName)} — you've been invited!</h1>
+    <p>${escHtml(businessName)} has added you to their crew on TradeDesk. Tap the button below to set up your account and get started.</p>
+    <a class="cta" href="${escHtml(inviteUrl)}">Accept Invite &amp; Create Account →</a>
     <hr class="divider">
     <p>Looking forward to working with you,<br><strong>${escHtml(businessName)}</strong></p>
   </div>
   <div class="footer">
     <p>If the button above doesn't work, copy and paste this link into your browser:</p>
-    <p><a class="plain-link" href="${escHtml(proposalUrl)}">${escHtml(displayUrl)}</a></p>
+    <p><a class="plain-link" href="${escHtml(inviteUrl)}">${escHtml(displayUrl)}</a></p>
     <hr class="divider">
-    <p>This proposal was sent to you by ${escHtml(businessName)} via TradeDeskPro. If you weren't expecting this, you can safely ignore it.</p>
+    <p>This invite was sent to you by ${escHtml(businessName)} via TradeDeskPro. If you weren't expecting this, you can safely ignore it.</p>
   </div>
 </div>
 </td></tr>
@@ -116,7 +87,6 @@ function htmlTemplate(
 }
 
 Deno.serve(async (req) => {
-  // CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, {
       headers: {
@@ -149,18 +119,15 @@ Deno.serve(async (req) => {
   }
 
   if (!RESEND_API_KEY) {
-    // Resend key not configured — caller falls back to mailto:
     return new Response(JSON.stringify({ error: 'RESEND_API_KEY not configured' }), { status: 503 });
   }
 
   let body: {
     to?: string;
-    clientName?: string;
+    empName?: string;
     businessName?: string;
-    proposalUrl?: string;
+    inviteUrl?: string;
     replyTo?: string;
-    customSubject?: string;
-    customBody?: string;
   };
   try {
     body = await req.json();
@@ -168,26 +135,24 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400 });
   }
 
-  const { to, clientName, businessName, proposalUrl, replyTo, customSubject, customBody } = body;
-  if (!to || !clientName || !businessName || !proposalUrl) {
-    return new Response(JSON.stringify({ error: 'Missing required fields: to, clientName, businessName, proposalUrl' }), { status: 400 });
+  const { to, empName, businessName, inviteUrl, replyTo } = body;
+  if (!to || !empName || !businessName || !inviteUrl) {
+    return new Response(
+      JSON.stringify({ error: 'Missing required fields: to, empName, businessName, inviteUrl' }),
+      { status: 400 }
+    );
   }
 
-  const html = htmlTemplate(clientName, businessName, proposalUrl, customBody);
-  const firstName = clientName.split(/[\s,&]+/)[0] || clientName;
-  const subject = customSubject?.trim()
-    ? customSubject.trim()
-    : `Your ${businessName} Proposal is Ready, ${firstName}!`;
+  const html = htmlTemplate(empName, businessName, inviteUrl);
+  const firstName = empName.split(/[\s,]+/)[0] || empName;
+  const subject = `${firstName}, you've been invited to join ${businessName} on TradeDesk`;
 
   const resendPayload = {
     from: `${businessName} via TradeDeskPro <${FROM_ADDRESS}>`,
     to: [to],
     subject,
     html,
-    // reply_to → client replies land in contractor's inbox, not in Resend
-    // bcc      → contractor gets a copy for their records (Resend doesn't
-    //            store sent mail, so this is the only paper trail they get)
-    ...(replyTo ? { reply_to: replyTo, bcc: [replyTo] } : {}),
+    ...(replyTo ? { reply_to: replyTo } : {}),
   };
 
   let resendRes: Response;

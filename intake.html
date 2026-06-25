@@ -181,10 +181,10 @@ function _intakeAddrSearch(val){
         const state=p.administrativeAreaCode||'';
         const zip=p.postCode||'';
         const line2=[city,state,zip].filter(Boolean).join(', ');
-        const s1=street.replace(/'/g,"\\'");const s2=city.replace(/'/g,"\\'");const s3=state.replace(/'/g,"\\'");const s4=zip.replace(/'/g,"\\'");
-        return '<div onmousedown="event.preventDefault()" onclick="_intakeAddrSelect(\''+s1+'\',\''+s2+'\',\''+s3+'\',\''+s4+'\')" style="padding:11px 14px;border-bottom:1px solid #eee;cursor:pointer;font-family:inherit">'+
-          '<div style="font-size:14px;font-weight:600;color:#1a1a18">'+street.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>'+
-          '<div style="font-size:12px;color:#888;margin-top:1px">'+line2.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>'+
+        const _ahEsc=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;');
+        return '<div onmousedown="event.preventDefault()" onclick="_intakeAddrSelect(&quot;'+_ahEsc(street)+'&quot;,&quot;'+_ahEsc(city)+'&quot;,&quot;'+_ahEsc(state)+'&quot;,&quot;'+_ahEsc(zip)+'&quot;)" style="padding:11px 14px;border-bottom:1px solid #eee;cursor:pointer;font-family:inherit">'+
+          '<div style="font-size:14px;font-weight:600;color:#1a1a18">'+_ahEsc(street)+'</div>'+
+          '<div style="font-size:12px;color:#888;margin-top:1px">'+_ahEsc(line2)+'</div>'+
         '</div>';
       }).join('');
       box.style.display=box.innerHTML?'block':'none';

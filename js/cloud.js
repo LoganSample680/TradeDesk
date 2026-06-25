@@ -1,5 +1,18 @@
 let _stripeConnectStatus=null; // cached: {connected, charges_enabled, details_submitted, stripe_account_id}
 
+// ── Employee invite URL handling ─────────────────────────────────────────────
+(function(){
+  const params=new URLSearchParams(window.location.search);
+  const raw=params.get('emp_invite');
+  if(raw){
+    try{
+      const inv=JSON.parse(atob(raw));
+      if(inv.cid&&inv.eid)localStorage.setItem('_pendingEmpInvite',JSON.stringify(inv));
+    }catch(_e){}
+    history.replaceState(null,'',window.location.pathname);
+  }
+})();
+
 async function _fetchStripeConnectStatus(){
   if(!supaEnabled()||!_supaUser)return null;
   // Serve from localStorage cache (1-hour TTL) so hub sharing is instant after first load
@@ -213,6 +226,7 @@ async function loadAccountData(){
       _isEmployee=true;_contractorUserId=empRow.contractor_user_id;_employeeRecord=empRow;
       _user={id:_supaUser.id,email:_supaUser.email,name:empRow.name,role:empRow.role||'employee',account_id:null};
       applyPermissions();
+      if(typeof _applyEmployeeNavGating==='function')_applyEmployeeNavGating();
       try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'painting',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
       return true;
     }
@@ -224,8 +238,28 @@ async function loadAccountData(){
       _employeeRecord={...inviteRow,employee_user_id:_supaUser.id,active:true};
       _user={id:_supaUser.id,email:_supaUser.email,name:inviteRow.name,role:inviteRow.role||'employee',account_id:null};
       applyPermissions();
+      if(typeof _applyEmployeeNavGating==='function')_applyEmployeeNavGating();
+      localStorage.removeItem('_pendingEmpInvite');
+      showToast('Welcome to the team, '+escHtml(inviteRow.name||'there')+'! 👋','✅');
       try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'painting',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
       return true;
+    }
+    // No team_members row — try _pendingEmpInvite as a fallback (covers cases where
+    // the contractor's invite flow didn't write a team_members row before this fix)
+    const _pi=JSON.parse(localStorage.getItem('_pendingEmpInvite')||'null');
+    if(_pi?.cid){
+      const{error:_piErr}=await _supa.from('team_members').upsert({contractor_user_id:_pi.cid,email:_supaUser.email,employee_user_id:_supaUser.id,active:true,joined_at:new Date().toISOString()},{onConflict:'contractor_user_id,email'});
+      if(!_piErr){
+        _isEmployee=true;_contractorUserId=_pi.cid;
+        _employeeRecord={contractor_user_id:_pi.cid,email:_supaUser.email,employee_user_id:_supaUser.id,active:true};
+        _user={id:_supaUser.id,email:_supaUser.email,name:'',role:'tech',account_id:null};
+        applyPermissions();
+        if(typeof _applyEmployeeNavGating==='function')_applyEmployeeNavGating();
+        localStorage.removeItem('_pendingEmpInvite');
+        showToast('Welcome to the crew! 👋','✅');
+        try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'painting',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
+        return true;
+      }
     }
     // No users row — check for pre-schema user via zj_data
     const{data:zd}=await _supa.from('zj_data').select('user_id').eq('user_id',_supaUser.id).maybeSingle();
@@ -248,6 +282,7 @@ async function loadAccountData(){
         if(_ac.account){_account=_ac.account;if(_account.business_name&&!S.bname)S.bname=_account.business_name;if(_account.phone&&!S.bphone)S.bphone=_account.phone;}
         if(_ac.config)_config=_ac.config;
         _renderNavTradeSwitcher();applyPermissions();
+        if(_isEmployee&&typeof _applyEmployeeNavGating==='function')_applyEmployeeNavGating();
         return true;
       }
     }catch(_ce){}
@@ -279,7 +314,7 @@ async function _devLoadUserAccount(key){
   _devSavedState={
     clients:[...clients],bids:[...bids],jobs:[...jobs],payments:[...payments],liens:[...liens],
     income:[...income],expenses:[...expenses],mileage:[...mileage],timeEntries:[...timeEntries],
-    licenses:[...licenses],events:[...events],contracts:[...contracts],photos:[...photos],
+    licenses:[...licenses],events:[...events],contracts:[...contracts],agreements:[...agreements],photos:[...photos],
     S:JSON.parse(JSON.stringify(S)),
     lastKnownIds:Object.fromEntries(Object.entries(_lastKnownIds).map(([k,v])=>[k,[...v]]))
   };
@@ -303,7 +338,7 @@ async function _devExitSupportMode(){
   clearTimeout(_syncTimer);_syncTimer=null;
   if(_pendingSavePromise){try{await _pendingSavePromise;}catch(e){console.warn('[support exit] pending save failed:',e);}}
   window.removeEventListener('beforeunload',window._devUnloadGuard);
-  ({clients,bids,jobs,payments,liens,income,expenses,mileage,timeEntries,licenses,events,contracts,photos}=_devSavedState);
+  ({clients,bids,jobs,payments,liens,income,expenses,mileage,timeEntries,licenses,events,contracts,agreements,photos}=_devSavedState);
   if(_devSavedState.S){const dS=_devSavedState.S;Object.keys(S).forEach(k=>{if(!(k in dS))delete S[k];});Object.assign(S,dS);}
   if(_devSavedState.lastKnownIds){for(const[k,v]of Object.entries(_devSavedState.lastKnownIds))_lastKnownIds[k]=new Set(v);}
   _devSupportMode=false;_devSupportName='';_devSavedState=null;
@@ -355,7 +390,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = location.origin + '/api';
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.12.26.60';
+const APP_VERSION='06.25.26.3';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -369,7 +404,7 @@ let _lastKnownIds={
   td_clients:new Set(),td_bids:new Set(),td_jobs:new Set(),
   td_income:new Set(),td_expenses:new Set(),td_mileage:new Set(),
   td_payments:new Set(),td_liens:new Set(),td_time_entries:new Set(),
-  td_licenses:new Set(),td_events:new Set(),td_contracts:new Set(),td_photos:new Set()
+  td_licenses:new Set(),td_events:new Set(),td_contracts:new Set(),td_agreements:new Set(),td_photos:new Set()
 };
 
 // Per-record table definitions — one entry per data type.
@@ -389,9 +424,18 @@ const _TD_TABLES=[
   {t:'td_licenses',    get:()=>licenses,    set:v=>{licenses.length=0;v.forEach(r=>licenses.push(r));},   tx:null},
   {t:'td_events',      get:()=>events,      set:v=>{events.length=0;v.forEach(r=>events.push(r));},       tx:arr=>arr.slice(-600)},
   {t:'td_contracts',   get:()=>contracts,   set:v=>{contracts.length=0;v.forEach(r=>contracts.push(r));}, tx:null},
+  {t:'td_agreements',  get:()=>agreements,  set:v=>{agreements.length=0;v.forEach(r=>agreements.push(r));}, tx:null},
   {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
     tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
 ];
+// True when a Supabase error means "this table doesn't exist in the DB yet" — e.g. a
+// new feature table on a deploy that runs ahead of its migration. Both preview and
+// production proxy to the SAME Supabase project, so an unmerged migration means the
+// table is absent for everyone. Such an error must never abort load/save — that would
+// trap every device in an offline loop. Real errors (auth, network) are not matched.
+function _isMissingTableErr(err){
+  return !!err&&(err.code==='42P01'||err.code==='PGRST205'||/does not exist|could not find the table|schema cache/i.test(err.message||''));
+}
 
 // ── Long-press delete (3s hold on any [data-lp-id] element) ────────────────
 let _lpTimer=null,_lpFired=false,_lpStartX=0,_lpStartY=0;
@@ -553,6 +597,14 @@ function _removeBootOverlay(){
     setTimeout(()=>{
       window._pwaHandleShortcut&&window._pwaHandleShortcut();
     },500);
+    // Employee vehicle picker (after boot, if not already selected today)
+    setTimeout(()=>{
+      if(typeof _checkEmployeeVehiclePicker==='function')_checkEmployeeVehiclePicker();
+      // Crew location tracking — inits if the contractor enabled it and the person
+      // (employee or the owner tracking their own time) consents; shown after the
+      // vehicle picker so they don't stack. Business-hours gating is in _geoTrackInit().
+      if(typeof _geoTrackInit==='function')setTimeout(_geoTrackInit,1400);
+    },700);
   },320);
 }
 async function supaInit(){
@@ -578,6 +630,7 @@ async function supaInit(){
         // Signed in but no data at all — go to app, let them use it
         _removeBootOverlay();
         renderDash();buildScopeGrid();
+        if(typeof _fetchScopeRates==='function')_fetchScopeRates();
         supaSetStatus('cloud');
       }
     } else {
@@ -594,7 +647,7 @@ async function supaInit(){
           mileage=_cd.mileage||[];liens=_cd.liens||[];timeEntries=_cd.timeEntries||[];
           if(_cd.licenses?.length)licenses=_cd.licenses;
           if(_cd.events?.length)events=_cd.events;
-          if(_cd.contracts?.length)contracts=_cd.contracts;
+          if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;
           if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
           if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (no-session boot)');applySettings();_refillSettingsFormUnlessEditing();}
@@ -736,7 +789,7 @@ async function supaInit(){
         mileage=_cd.mileage||[];liens=_cd.liens||[];timeEntries=_cd.timeEntries||[];
         if(_cd.licenses?.length)licenses=_cd.licenses;
         if(_cd.events?.length)events=_cd.events;
-        if(_cd.contracts?.length)contracts=_cd.contracts;
+        if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;
         if(_cd.photos?.length)photos=_cd.photos;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (offline boot, session present)');applySettings();_refillSettingsFormUnlessEditing();}
@@ -759,8 +812,8 @@ async function supaInit(){
 // TEAM & FLEET MANAGEMENT
 // ══════════════════════════════════════════════════════════════════
 const PERM_LABELS={canEstimate:'Estimate jobs',canSchedule:'Schedule jobs',canSeeFinancials:'View financials',canEditClients:'Edit clients',canManageTeam:'Manage team'};
-const ROLE_COLORS={owner:'#185FA5',painter:'#3B6D11',estimator:'#8B4513'};
-const ROLE_BG={owner:'#EBF2FB',painter:'#EAF3DE',estimator:'#FFF0E0'};
+const ROLE_COLORS={owner:'#185FA5',painter:'#3B6D11',estimator:'#8B4513',tech:'#2D5DA8',office:'#5B3BA3',manager:'#185FA5'};
+const ROLE_BG={owner:'#EBF2FB',painter:'#EAF3DE',estimator:'#FFF0E0',tech:'#DCE8FA',office:'#EDE8FA',manager:'#EBF2FB'};
 
 function _initDeviceId(){
   let id=localStorage.getItem('zp3_device_id');
@@ -808,22 +861,410 @@ function registerDevice(updateLocation){
     });
   }
 }
+// ── Employee Invite Flow ─────────────────────────────────────────────────────
+const _EMP_ROLE_PRESETS={
+  tech:    {collect:true,expenses:true,mileage:true},
+  office:  {leads:true,clients:true,estimate:true,schedule:true,collect:true},
+  manager: {leads:true,estimate:true,schedule:true,clients:true,collect:true,expenses:true,mileage:true,team:true,payroll:true},
+  owner:   {leads:true,estimate:true,schedule:true,clients:true,collect:true,expenses:true,mileage:true,financials:true,team:true,payroll:true}
+};
+const _EMP_PERM_INFO={
+  leads:'Sees the Leads page and can add follow-up notes, update lead status, and schedule estimates. For office staff making outbound calls.',
+  estimate:'Creates proposals, runs the estimate builder, and sends to clients for signing.',
+  schedule:'Updates job dates on the calendar and changes job status (scheduled → active → complete).',
+  collect:'Records cash or check payments and sends pay links to clients for an outstanding balance.',
+  clients:'Adds new clients and edits contact info, addresses, and notes. Cannot delete clients.',
+  expenses:'Adds expense receipts — for field workers buying materials or supplies on the job.',
+  mileage:'Logs drive trips for IRS deduction tracking and reimbursement.',
+  financials:'Sees the Books page, income/expense totals, P&L, and tax estimates. Off by default for most field workers.',
+  team:'Adds and invites team members and manages company vehicles. Usually managers only.',
+  payroll:'Sees and edits employee pay rates and the crew location map, and views the Job Profit report. Highly sensitive — managers only. Pay rates are never visible to employees without this.'
+};
+const _EMP_PERM_LABELS={
+  leads:'Work leads',estimate:'Estimate jobs',schedule:'Schedule jobs',collect:'Collect payments',
+  clients:'Edit clients',expenses:'Log expenses',mileage:'Log mileage',
+  financials:'View financials',team:'Manage team',payroll:'Pay & profit'
+};
+const _EMP_CLASSIFICATIONS=['','Apprentice','Journeyman','Master','Foreman / Lead','Helper','Subcontractor'];
+function _togglePermInfo(id){const el=document.getElementById(id);if(el)el.style.display=el.style.display==='block'?'none':'block';}
+function _setEmpRolePreset(role){
+  const preset=_EMP_ROLE_PRESETS[role]||{};
+  Object.keys(_EMP_PERM_LABELS).forEach(p=>{
+    const el=document.getElementById('_perm-'+p);
+    if(el)el.checked=!!preset[p];
+  });
+}
+function openInviteEmployeeModal(){
+  document.getElementById('_emp-invite-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_emp-invite-ov';ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  const permRows=Object.keys(_EMP_PERM_LABELS).map(p=>{
+    const label=escHtml(_EMP_PERM_LABELS[p]);
+    const info=escHtml(_EMP_PERM_INFO[p]);
+    return '<div style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">'+
+      '<input type="checkbox" id="_perm-'+p+'" style="width:20px;height:20px;margin-top:1px;flex-shrink:0;accent-color:var(--blue);cursor:pointer">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'+
+          '<label for="_perm-'+p+'" style="font-size:14px;font-weight:600;cursor:pointer">'+label+'</label>'+
+          '<button onclick="_togglePermInfo(\'_pi-'+p+'\')" style="width:18px;height:18px;border-radius:50%;border:1px solid var(--border2);background:var(--bg2);color:var(--text3);font-size:10px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;font-family:inherit;line-height:1">i</button>'+
+        '</div>'+
+        '<div id="_pi-'+p+'" style="display:none;font-size:12px;color:var(--text2);margin-top:4px;line-height:1.5">'+info+'</div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:14px">Add Team Member</div>'+
+    '<div class="fg fg2" style="margin-bottom:10px">'+
+      '<div class="f"><label>Full name <span style="color:var(--c-red)">*</span></label>'+
+        '<input id="_inv-name" placeholder="Blake Sample" style="font-size:14px;padding:10px" autocomplete="off"></div>'+
+      '<div class="f"><label>Phone</label>'+
+        '<input id="_inv-phone" placeholder="785-555-5250" type="tel" style="font-size:14px;padding:10px" autocomplete="off"></div>'+
+    '</div>'+
+    '<div class="f" style="margin-bottom:4px"><label>Email <span style="font-size:10px;font-weight:400;color:var(--text3)">(for app access)</span></label>'+
+      '<input id="_inv-email" placeholder="blake@email.com" type="email" style="font-size:14px;padding:10px" autocomplete="off"></div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.4">Enter their email then tap "Add &amp; Invite" — they\'ll get a sign-in link and see your jobs, clients, and estimates.</div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Access role</label>'+
+      '<select id="_inv-role" onchange="_setEmpRolePreset(this.value)" style="font-size:14px;padding:10px">'+
+        '<option value="tech">Field Tech</option>'+
+        '<option value="office">Office / CSR</option>'+
+        '<option value="manager">Manager</option>'+
+        '<option value="owner">Owner / Admin</option>'+
+      '</select></div>'+
+    '<div class="f" style="margin-bottom:14px"><label>Classification <span style="font-size:10px;font-weight:400;color:var(--text3)">(optional)</span></label>'+
+      '<select id="_inv-class" style="font-size:14px;padding:10px">'+
+        _EMP_CLASSIFICATIONS.map(c=>'<option value="'+escHtml(c)+'">'+escHtml(c||'— None —')+'</option>').join('')+
+      '</select></div>'+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:2px">Permissions</div>'+
+    permRows+
+    '<div style="height:14px"></div>'+
+    '<button onclick="_submitInviteEmployee()" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">Add &amp; Invite</button>'+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;margin-top:8px;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Cancel</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  setTimeout(()=>{document.getElementById('_inv-name')?.focus();_setEmpRolePreset('tech');},80);
+}
+async function _submitInviteEmployee(){
+  const name=(document.getElementById('_inv-name')?.value||'').trim();
+  if(!name){zAlert('Enter a name.');return;}
+  const phone=(document.getElementById('_inv-phone')?.value||'').trim();
+  const email=(document.getElementById('_inv-email')?.value||'').trim();
+  const role=document.getElementById('_inv-role')?.value||'tech';
+  const classification=(document.getElementById('_inv-class')?.value||'').trim();
+  const permissions={};
+  Object.keys(_EMP_PERM_LABELS).forEach(p=>{permissions[p]=!!(document.getElementById('_perm-'+p)?.checked);});
+  const newEmp={id:Date.now(),name,phone,email,role,classification,permissions};
+  if(!S.employees)S.employees=[];
+  S.employees.push(newEmp);
+  _settingsChanged();saveAll();
+  // Build invite link
+  const cid=_contractorUserId||_supaUser?.id||'';
+  const inviteLink=window.location.origin+window.location.pathname+'?emp_invite='+btoa(JSON.stringify({cid,eid:newEmp.id,email:email||'',bname:S.bname||'',ename:name||''}));
+  // Sync to team_members so email-match works when employee signs up
+  if(email&&supaEnabled()&&_supaUser){
+    _supa.from('team_members').upsert({contractor_user_id:cid,email,name,role:newEmp.role,active:false,invited_at:new Date().toISOString()},{onConflict:'contractor_user_id,email'}).then(({error})=>{if(error)console.warn('team_members upsert:',error);});
+  }
+  // Send branded invite email if address provided
+  if(email&&supaEnabled()&&_supaUser){
+    const{data:{session:_invSess}}=await _supa.auth.getSession();
+    const _invToken=_invSess?.access_token;
+    if(_invToken)fetch(SUPA_URL+'/functions/v1/send-invite-email',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+_invToken},
+      body:JSON.stringify({to:email,empName:name,businessName:S.bname||'Your Contractor',inviteUrl:inviteLink,replyTo:_supaUser?.email||''})
+    }).catch(()=>{});
+  }
+  // Show step 2 in same modal
+  const box=document.getElementById('_emp-invite-ov')?.querySelector('.zmodal');
+  if(!box)return;
+  const _emailSentLine=email?'<div style="font-size:13px;color:var(--green-mid);margin-bottom:10px">📧 Invite sent to '+escHtml(email)+'</div>':'';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:6px">Invite Link Ready</div>'+
+    _emailSentLine+
+    '<div style="font-size:13px;color:var(--text2);margin-bottom:14px">Share this link with <strong>'+escHtml(name)+'</strong>:</div>'+
+    '<div id="_inv-link-box" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:10px;font-size:11px;word-break:break-all;color:var(--text2);margin-bottom:12px;line-height:1.5">'+escHtml(inviteLink)+'</div>'+
+    '<button id="_inv-copy-btn" onclick="_copyInviteLink(\''+escHtml(inviteLink)+'\')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px;margin-bottom:8px">Copy Link</button>'+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove();renderTeam()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
+}
+function _copyInviteLink(link){
+  if(navigator.clipboard){navigator.clipboard.writeText(link).then(()=>{
+    const btn=document.getElementById('_inv-copy-btn');
+    if(btn){btn.textContent='✓ Copied!';btn.style.background='var(--green-mid)';setTimeout(()=>{btn.textContent='Copy Link';btn.style.background='var(--blue)';},2000);}
+  });}else{
+    try{const ta=document.createElement('textarea');ta.value=link;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+    const btn=document.getElementById('_inv-copy-btn');if(btn){btn.textContent='✓ Copied!';btn.style.background='var(--green-mid)';setTimeout(()=>{btn.textContent='Copy Link';btn.style.background='var(--blue)';},2000);}}catch(_e){}
+  }
+}
+
+// ── Dispatch Board ───────────────────────────────────────────────────────────
+function renderDispatch(){
+  const el=document.getElementById('pg-dispatch');if(!el)return;
+  const tk=todayKey();
+  const emps=S.employees||[];
+  // Today's active jobs: start<=today AND start+days-1>=today
+  const todayJobs=jobs.filter(j=>{
+    if(j.completion_date||j.cancelled||j.status==='done')return false;
+    const start=j.start||j.date||'';
+    if(!start)return false;
+    const end=addDays(start,(parseInt(j.days)||1)-1);
+    return start<=tk&&end>=tk;
+  });
+  const unassigned=todayJobs.filter(j=>!j.assignedTo);
+  function _jobCard(j,empId){
+    const c=clients.find(x=>x.id===j.client_id)||{name:j.clientName||j.name||'Job'};
+    const addr=escHtml(j.addr||c.addr||'');
+    const note=escHtml(j.notes||j.description||'');
+    const empName=empId?(S.employees||[]).find(e=>e.id==empId)?.name||'':'';
+    const assignBtn=empId
+      ?'<button onclick="_dispatchUnassign('+j.id+')" style="font-size:11px;padding:5px 10px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit;min-height:36px">Unassign</button>'
+      :'<button onclick="_dispatchAssign('+j.id+')" style="font-size:11px;padding:5px 10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;cursor:pointer;font-family:inherit;min-height:36px">Assign →</button>';
+    const orderBtns='<div style="display:flex;gap:4px">'+
+      '<button onclick="_dispatchMoveUp('+j.id+(empId?',\''+empId+'\'':'')+',\''+empId+'\')" style="font-size:13px;width:30px;height:30px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer">↑</button>'+
+      '<button onclick="_dispatchMoveDown('+j.id+(empId?',\''+empId+'\'':'')+',\''+empId+'\')" style="font-size:13px;width:30px;height:30px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer">↓</button>'+
+      '</div>';
+    return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
+      '<div style="font-size:13px;font-weight:700;margin-bottom:3px">'+escHtml(c.name)+'</div>'+
+      (addr?'<div style="font-size:11px;color:var(--text3);margin-bottom:4px">'+addr+'</div>':'')+
+      (note?'<div style="font-size:11px;color:var(--text2);margin-bottom:6px;line-height:1.4">'+note+'</div>':'')+
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px">'+
+        orderBtns+assignBtn+
+      '</div>'+
+    '</div>';
+  }
+  const unassignedHtml=unassigned.length
+    ?unassigned.map(j=>_jobCard(j,null)).join('')
+    :'<div style="font-size:12px;color:var(--text3);padding:8px 0">No unassigned jobs today.</div>';
+  const empCols=emps.map(emp=>{
+    const empJobs=todayJobs.filter(j=>String(j.assignedTo)===String(emp.id)&&j.assignedDate===tk)
+      .sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
+    const rc=ROLE_COLORS[emp.role]||'var(--text2)';
+    const optBtn=empJobs.length>=2
+      ?'<button onclick="_dispatchOptimizeRoute(\''+emp.id+'\')" style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue);cursor:pointer;font-family:inherit">⚡ Optimize route</button>'
+      :'';
+    return '<div style="min-width:200px;flex:1;max-width:320px">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:8px;padding:0 2px">'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:'+rc+'">'+escHtml(emp.name)+'</div>'+optBtn+
+      '</div>'+
+      (empJobs.length?empJobs.map(j=>_jobCard(j,emp.id)).join('')
+        :'<div style="font-size:12px;color:var(--text3);padding:8px;background:var(--bg2);border:1px dashed var(--border);border-radius:var(--r)">No jobs assigned</div>')+
+    '</div>';
+  }).join('');
+  el.innerHTML=
+    '<div class="tbar"><div class="tbar-title">📋 Dispatch Board</div>'+
+      '<div style="display:flex;gap:6px">'+
+        (S.teamTracking?'<button onclick="_renderCrewMap()" style="font-size:12px;padding:6px 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">📍 Crew map</button>':'')+
+        '<button onclick="goPg(\'pg-jobs\')" style="font-size:12px;padding:6px 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">← Jobs</button>'+
+      '</div>'+
+    '</div>'+
+    '<div style="padding:0 12px 12px">'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Unassigned</div>'+
+      '<div id="dispatch-unassigned" style="margin-bottom:20px">'+unassignedHtml+'</div>'+
+      (emps.length
+        ?'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">By Employee</div>'+
+          '<div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:8px">'+empCols+'</div>'
+        :'<div style="font-size:13px;color:var(--text3);padding:12px 0">No employees added yet. Add team members in the Team tab.</div>')+
+    '</div>';
+}
+function _dispatchAssign(jobId){
+  const emps=S.employees||[];
+  if(!emps.length){zAlert('No employees added yet. Add team members in the Team tab first.');return;}
+  const tk=todayKey();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';
+  const sheet=document.createElement('div');
+  sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
+  sheet.innerHTML='<div style="font-size:15px;font-weight:800;margin-bottom:14px">Assign to Employee</div>'+
+    emps.map(e=>'<button onclick="_dispatchDoAssign('+jobId+',\''+e.id+'\');this.closest(\'.zmodal-overlay\').remove()" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;margin-bottom:8px;min-height:44px">'+escHtml(e.name)+' <span style="font-size:11px;font-weight:400;color:var(--text3)">'+escHtml(e.role||'')+'</span></button>').join('')+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:4px">Cancel</button>';
+  ov.appendChild(sheet);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
+}
+function _dispatchDoAssign(jobId,empId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  j.assignedTo=empId;j.assignedDate=todayKey();
+  // Durable record of everyone ever assigned — powers the crew trust ranking on estimates.
+  if(!Array.isArray(j.crewHistory))j.crewHistory=[];
+  if(!j.crewHistory.map(String).includes(String(empId)))j.crewHistory.push(empId);
+  saveAll();renderDispatch();showToast('Job assigned','📋');
+}
+function _dispatchUnassign(jobId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  zConfirm('Unassign this job?',()=>{
+    delete j.assignedTo;delete j.assignedDate;
+    saveAll();renderDispatch();showToast('Job unassigned','↩️');
+  },{title:'Unassign Job',yes:'Unassign',danger:false});
+}
+function _dispatchMoveUp(jobId,empId){
+  const tk=todayKey();
+  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&j.assignedDate===tk).sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
+  const idx=empJobs.findIndex(j=>j.id===jobId);if(idx<=0)return;
+  const temp=empJobs[idx-1].dispatchOrder||0;
+  empJobs[idx-1].dispatchOrder=empJobs[idx].dispatchOrder||0;
+  empJobs[idx].dispatchOrder=temp===empJobs[idx].dispatchOrder?temp-1:temp;
+  empJobs.forEach((j,i)=>{j.dispatchOrder=i;});
+  saveAll();renderDispatch();
+}
+function _dispatchMoveDown(jobId,empId){
+  const tk=todayKey();
+  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&j.assignedDate===tk).sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
+  const idx=empJobs.findIndex(j=>j.id===jobId);if(idx<0||idx>=empJobs.length-1)return;
+  empJobs.forEach((j,i)=>{j.dispatchOrder=i;});
+  const temp=empJobs[idx+1].dispatchOrder;
+  empJobs[idx+1].dispatchOrder=empJobs[idx].dispatchOrder;
+  empJobs[idx].dispatchOrder=temp;
+  saveAll();renderDispatch();
+}
+
+// ── Route optimization (office → ordered job sites, nearest-neighbor) ─────────
+// Office origin = the business address, geocoded once and cached on S.
+async function _geoOfficeCoords(){
+  if(S.officeLat&&S.officeLon)return{lat:S.officeLat,lng:S.officeLon};
+  const addr=[S.baddr,S.bcity,S.state,S.bzip].filter(Boolean).join(', ');
+  if(!addr||typeof _resolveCoords!=='function')return null;
+  try{
+    const r=await _resolveCoords(addr);
+    if(r&&r.lat){S.officeLat=r.lat;S.officeLon=r.lng;saveAll();return{lat:r.lat,lng:r.lng};}
+  }catch(_e){}
+  return null;
+}
+async function _dispatchOptimizeRoute(empId){
+  const tk=todayKey();
+  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&j.assignedDate===tk);
+  if(empJobs.length<2){showToast('Need at least 2 jobs to optimize','📋');return;}
+  showToast('Optimizing route…','⏳');
+  const office=await _geoOfficeCoords();
+  if(!office){zAlert('Add your business address in Settings first — it\'s the starting point for route optimization.');return;}
+  // Geocode each job (reuse the geo-track cache helper if present)
+  const pts=[];
+  for(const j of empJobs){
+    let c=null;
+    if(j.lat&&j.lon)c={lat:j.lat,lng:j.lon};
+    else{
+      const cl=clients.find(x=>x.id===j.client_id);
+      const addr=j.addr||(cl&&cl.addr)||'';
+      if(addr&&typeof _resolveCoords==='function'){try{const r=await _resolveCoords(addr);if(r&&r.lat){c={lat:r.lat,lng:r.lng};j.lat=r.lat;j.lon=r.lng;}}catch(_e){}}
+    }
+    pts.push({job:j,coord:c});
+  }
+  const located=pts.filter(p=>p.coord);
+  if(located.length<2){zAlert('Could not locate enough job addresses to optimize. Check the addresses on these jobs.');return;}
+  // Nearest-neighbor from the office
+  const remaining=located.slice();
+  const ordered=[];
+  let cur=office,totalMi=0;
+  while(remaining.length){
+    let bi=0,bd=Infinity;
+    remaining.forEach((p,i)=>{const d=_haversineMiles(cur,p.coord);if(d<bd){bd=d;bi=i;}});
+    totalMi+=bd;cur=remaining[bi].coord;ordered.push(remaining[bi]);remaining.splice(bi,1);
+  }
+  // Any un-located jobs keep their relative order at the end
+  pts.filter(p=>!p.coord).forEach(p=>ordered.push(p));
+  ordered.forEach((p,i)=>{p.job.dispatchOrder=i;});
+  saveAll();renderDispatch();
+  const miTxt=Math.round(totalMi*10)/10;
+  showToast('Route optimized · ~'+miTxt+' mi from office','🗺');
+}
+
+// ── Crew live map (manager view of last-known location per employee) ──────────
+async function _renderCrewMap(){
+  document.getElementById('_crew-map-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_crew-map-ov';ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">📍 Crew locations</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Last-known position during today\'s business hours.</div>'+
+    '<div id="_crew-map-body" style="font-size:13px;color:var(--text3)">Loading…</div>'+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:10px">Close</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  if(!supaEnabled()||!_supaUser){const b=document.getElementById('_crew-map-body');if(b)b.textContent='Sign in to see crew locations.';return;}
+  const cid=_contractorUserId||_supaUser.id;
+  const since=new Date(Date.now()-12*3600000).toISOString();
+  let rows=[];
+  try{
+    const{data}=await _supa.from('location_pings').select('employee_user_id,lat,lon,ts')
+      .eq('contractor_user_id',cid).gte('ts',since).order('ts',{ascending:false});
+    rows=data||[];
+  }catch(_e){}
+  const latest={};
+  rows.forEach(r=>{if(!latest[r.employee_user_id])latest[r.employee_user_id]=r;});
+  const keys=Object.keys(latest);
+  const b=document.getElementById('_crew-map-body');if(!b)return;
+  if(!keys.length){b.innerHTML='<div style="padding:8px 0">No location pings yet today. Crew appear here once they\'re on the clock with sharing enabled.</div>';return;}
+  b.innerHTML=keys.map(uid=>{
+    const r=latest[uid];
+    const emp=(S.employees||[]).find(e=>String(e.employee_user_id||'')===uid)||{};
+    const nm=escHtml(emp.name||'Crew member');
+    const ago=_timeAgo(r.ts);
+    const mapUrl='https://www.google.com/maps?q='+r.lat+','+r.lon;
+    return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
+      '<div><div style="font-size:13px;font-weight:700">'+nm+'</div><div style="font-size:11px;color:var(--text3)">📍 '+ago+'</div></div>'+
+      '<a href="'+mapUrl+'" target="_blank" style="font-size:11px;font-weight:700;background:var(--blue-lt);color:var(--blue);border:1px solid var(--blue);border-radius:var(--r);padding:6px 10px;text-decoration:none">🗺 Map</a>'+
+    '</div>';
+  }).join('');
+}
+
+// ── Vehicle-start-of-shift picker ────────────────────────────────────────────
+function _checkEmployeeVehiclePicker(){
+  if(!_isEmployee)return;
+  const tk=todayKey();
+  const key='emp_vehicle_'+tk;
+  if(localStorage.getItem(key))return;
+  const vehs=S.vehicles||[];
+  const ov=document.createElement('div');ov.id='_vehicle-picker-ov';ov.className='zmodal-overlay';
+  const sheet=document.createElement('div');
+  sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
+  const vehList=vehs.map(v=>{
+    const label=[v.year,v.make,v.model].filter(Boolean).join(' ')||escHtml(v.name||v.id||'Vehicle');
+    return '<button onclick="_pickVehicle(\''+v.id+'\',\''+escHtml(label)+'\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;margin-bottom:8px;min-height:44px">🚗 '+escHtml(label)+'</button>';
+  }).join('');
+  sheet.innerHTML=
+    '<div style="font-size:15px;font-weight:800;margin-bottom:4px">Which vehicle are you in today?</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Drive time is only logged for company vehicles — personal vehicle trips stay private.</div>'+
+    vehList+
+    '<button onclick="_pickVehicle(\'personal\',\'Personal vehicle\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;margin-bottom:8px;min-height:44px;color:var(--text2)">🚗 My personal vehicle — no mileage logged</button>'+
+    '<button onclick="_pickVehicle(\'none\',\'On foot\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;margin-bottom:8px;min-height:44px;color:var(--text2)">🚶 On foot / no vehicle</button>';
+  ov.appendChild(sheet);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
+}
+function _pickVehicle(vid,label){
+  const tk=todayKey();
+  localStorage.setItem('emp_vehicle_'+tk,vid);
+  document.getElementById('_vehicle-picker-ov')?.remove();
+  const icon=vid==='none'?'🚶':'🚗';
+  showToast(vid==='personal'?'No mileage logged for personal vehicle':'Logged to '+label,icon);
+  const vd=document.getElementById('_emp-vehicle-display');
+  if(vd)vd.textContent=vid==='none'?'':vid==='personal'?'🚗 Personal vehicle':'🚗 Driving: '+label;
+}
+// Returns true when the employee's shift vehicle should have mileage tracked (company vehicle)
+function _isCompanyVehicleToday(){
+  const v=localStorage.getItem('emp_vehicle_'+todayKey());
+  return !!(v&&v!=='none'&&v!=='personal');
+}
+
 function renderTeam(){
   const el=document.getElementById('team-list');
   const el2=document.getElementById('team-page-list');
   if(!el&&!el2)return;
+  // Refresh pay-rate cache from team_members (RLS-gated) then re-render once loaded
+  if(_canViewComp()&&supaEnabled()&&_supaUser&&!_teamCompLoaded){
+    _teamCompLoaded=true;_loadTeamComp().then(()=>renderTeam());
+  }
   const emps=S.employees||[];
   const empHtml=!emps.length
     ?'<div style="font-size:12px;color:var(--text3);padding:6px 0">No team members yet — just you. Add someone when you hire.</div>'
     :emps.map((e,i)=>{
       const rc=ROLE_COLORS[e.role]||'var(--text2)';const rb=ROLE_BG[e.role]||'var(--bg2)';
-      const perms=Object.entries(e.permissions||{}).filter(([,v])=>v).map(([k])=>PERM_LABELS[k]||k).join(', ')||'No permissions';
+      const perms=Object.entries(e.permissions||{}).filter(([,v])=>v).map(([k])=>_EMP_PERM_LABELS[k]||PERM_LABELS[k]||k).join(', ')||'No permissions';
+      const _roleLabel={tech:'Field Tech',office:'Office / CSR',manager:'Manager',owner:'Owner'}[e.role]||e.role;
+      const _classTag=e.classification?'<span style="font-size:10px;font-weight:600;background:var(--bg3,#f1f5f9);color:var(--text2);padding:1px 7px;border-radius:8px;margin-left:4px">'+escHtml(e.classification)+'</span>':'';
+      const _ec=_teamComp[(e.email||'').toLowerCase()];
+      const _payTag=(_canViewComp()&&_ec&&_ec.pay_rate)?'<span style="font-size:10px;font-weight:700;background:#ECFDF5;color:#0E6B39;padding:1px 7px;border-radius:8px;margin-left:4px">'+(_ec.pay_type==='salary'?'$'+Math.round(_ec.pay_rate/1000)+'k/yr':'$'+_ec.pay_rate+'/hr')+'</span>':'';
       return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px">'+
           '<div style="display:flex;align-items:center;gap:8px">'+
             '<div style="width:34px;height:34px;border-radius:50%;background:'+rc+';display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;flex-shrink:0">'+escHtml(e.name.charAt(0).toUpperCase())+'</div>'+
             '<div><div style="font-size:13px;font-weight:700">'+escHtml(e.name||'')+'</div>'+
-            '<span style="font-size:10px;font-weight:700;background:'+rb+';color:'+rc+';padding:1px 7px;border-radius:8px;text-transform:capitalize">'+e.role+'</span></div>'+
+            '<span style="font-size:10px;font-weight:700;background:'+rb+';color:'+rc+';padding:1px 7px;border-radius:8px">'+escHtml(_roleLabel)+'</span>'+_classTag+_payTag+'</div>'+
           '</div>'+
           (e.role!=='owner'?'<button onclick="openEditEmployeeModal('+i+')" style="font-size:11px;padding:4px 10px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">Edit</button>':'')+
         '</div>'+
@@ -844,12 +1285,14 @@ function renderTeam(){
     const hasLoc=d.lat&&d.lon;
     const mapUrl=hasLoc?'https://www.google.com/maps?q='+d.lat+','+d.lon:'';
     const locAgo=hasLoc&&d.locAt?_timeAgo(d.locAt):'';
+    const dname=escHtml(d.name||d.label);
+    const typeTag=d.name?' <span style="font-size:9px;font-weight:600;background:var(--bg3,#f1f5f9);color:var(--text3);padding:1px 6px;border-radius:8px">'+escHtml(d.label)+'</span>':'';
     return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px'+(hasLoc?';cursor:pointer':'')+'" '+(hasLoc?'onclick="window.open(\''+mapUrl+'\',\'_blank\')"':'')+'>'+
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
         '<div style="display:flex;align-items:center;gap:10px">'+
           '<div style="font-size:22px">'+(d.label==='iPad'||d.label==='iPhone'?'📱':'💻')+'</div>'+
           '<div>'+
-            '<div style="font-size:13px;font-weight:700">'+d.label+(isMe?' <span style="font-size:9px;background:var(--blue);color:#fff;padding:1px 6px;border-radius:8px">This device</span>':'')+'</div>'+
+            '<div style="font-size:13px;font-weight:700">'+dname+(isMe?' <span style="font-size:9px;background:var(--blue);color:#fff;padding:1px 6px;border-radius:8px">This device</span>':'')+typeTag+'</div>'+
             '<div style="font-size:10px;color:'+(isActive?'var(--green-mid)':'var(--text3)')+'">'+
               (isActive?'🟢 Active':'⚪ Last seen '+ago)+'</div>'+
             (hasLoc?'<div style="font-size:10px;color:var(--blue);margin-top:1px">📍 Tap to view on map · '+locAgo+'</div>':'')+
@@ -857,6 +1300,7 @@ function renderTeam(){
         '</div>'+
         '<div style="display:flex;gap:6px;align-items:center">'+
           (hasLoc?'<span style="font-size:11px;font-weight:700;background:var(--blue-lt);color:var(--blue);border:1px solid var(--blue);border-radius:var(--r);padding:5px 10px;white-space:nowrap">🗺 Map</span>':'')+
+          '<button onclick="event.stopPropagation();renameDevice(\''+d.id+'\')" style="font-size:10px;color:var(--text2);border:1px solid var(--border2);border-radius:var(--r);padding:5px 8px;background:none;cursor:pointer;font-family:inherit">Rename</button>'+
           (!isMe?'<button onclick="event.stopPropagation();removeDevice(\''+d.id+'\')" style="font-size:10px;color:#A32D2D;border:1px solid #A32D2D;border-radius:var(--r);padding:5px 8px;background:none;cursor:pointer;font-family:inherit">Remove</button>':'')+
         '</div>'+
       '</div>'+
@@ -899,9 +1343,64 @@ function removeDevice(id){
   S.devices=(S.devices||[]).filter(d=>d.id!==id);
   _settingsChanged();renderTeam();
 }
+function renameDevice(id){
+  const dev=(S.devices||[]).find(d=>d.id===id);
+  if(!dev)return;
+  zPrompt('Name this device so you can tell your iPads apart — e.g. "Front Office", "Truck 2 iPad".',name=>{
+    name=(name||'').trim().slice(0,40);
+    const d=(S.devices||[]).find(x=>x.id===id);
+    if(!d)return;
+    if(name)d.name=name;else delete d.name;
+    _settingsChanged();renderTeam();
+  },{title:'Name this device',placeholder:'Front Office iPad',value:dev.name||''});
+}
+// ── Team compensation (pay rates live in team_members with RLS, never in S) ───
+// _teamComp caches pay_type/pay_rate by lowercased email so the (synchronous)
+// employee modal can pre-fill without a per-open round trip. Populated by
+// _loadTeamComp() on team-page render.
+let _teamComp={};
+let _teamCompLoaded=false;
+// Only the account owner or a payroll-permitted manager may see/edit pay.
+function _canViewComp(){
+  if(!_isEmployee)return true;                       // contractor/owner
+  return !!_employeeRecord?.permissions?.payroll;    // manager with payroll perm
+}
+// Effective hourly rate for job costing: salary ÷ 2080 work-hours, else the rate as-is.
+function _empEffectiveHourly(comp){
+  if(!comp||!comp.pay_rate)return 0;
+  return comp.pay_type==='salary'?(comp.pay_rate/2080):comp.pay_rate;
+}
+// Loaded hourly = wage × burden multiplier (payroll taxes, workers' comp, insurance).
+function _empLoadedHourly(comp){
+  return _empEffectiveHourly(comp)*(S.laborBurden||1.3);
+}
+async function _loadTeamComp(){
+  if(!supaEnabled()||!_supaUser||!_canViewComp())return;
+  const cid=_contractorUserId||_supaUser.id;
+  try{
+    const{data,error}=await _supa.from('team_members')
+      .select('email,pay_type,pay_rate').eq('contractor_user_id',cid);
+    if(error||!data)return;
+    const next={};
+    data.forEach(r=>{if(r.email)next[r.email.toLowerCase()]={pay_type:r.pay_type||'hourly',pay_rate:r.pay_rate||0};});
+    _teamComp=next;
+  }catch(_e){}
+}
+function _empPayTypeSync(){
+  const t=document.getElementById('emp-pay-type')?.value;
+  const lbl=document.getElementById('emp-pay-rate-lbl');
+  const inp=document.getElementById('emp-pay-rate');
+  if(lbl)lbl.textContent=t==='salary'?'Annual salary':'Hourly rate';
+  if(inp)inp.placeholder=t==='salary'?'55000':'28';
+}
 function _employeeModalHTML(emp,idx){
   const isNew=idx==null;
-  const e=emp||{name:'',role:'painter',phone:'',email:'',permissions:{canEstimate:true,canSchedule:true,canSeeFinancials:false,canEditClients:true,canManageTeam:false}};
+  const e=emp||{name:'',role:'tech',phone:'',email:'',classification:'',permissions:{}};
+  // Map legacy role values to the new system
+  const _legacyMap={employee:'tech',estimator:'tech',foreman:'manager',painter:'tech'};
+  const _eRole=_legacyMap[e.role]||e.role||'tech';
+  const _eClass=e.classification||'';
+  const _eComp=_teamComp[(e.email||'').toLowerCase()]||{pay_type:'hourly',pay_rate:0};
   return '<div style="font-size:17px;font-weight:800;margin-bottom:14px">'+(isNew?'Add team member':'Edit '+escHtml(e.name||''))+'</div>'+
     '<div class="fg fg2" style="margin-bottom:12px">'+
       '<div class="f"><label>Full name</label><input id="emp-name" value="'+escHtml(e.name||'')+'" placeholder="John Smith" style="font-size:15px;padding:10px"></div>'+
@@ -909,23 +1408,54 @@ function _employeeModalHTML(emp,idx){
     '</div>'+
     '<div class="f" style="margin-bottom:12px"><label>Email (for app access)</label>'+
       '<input id="emp-email" type="email" value="'+escHtml(e.email||'')+'" placeholder="employee@email.com" style="font-size:14px;padding:10px">'+
-      '<div style="font-size:10px;color:var(--text3);margin-top:4px">Enter their email then tap "Send Invite" — they\'ll get a sign-in link and see your jobs, clients, and estimates.</div>'+
+      '<div style="font-size:10px;color:var(--text3);margin-top:4px">They\'ll receive an employment agreement to sign — then get their account setup link.</div>'+
     '</div>'+
-    '<div class="f" style="margin-bottom:12px"><label>Role</label>'+
-      '<select id="emp-role" style="font-size:14px;padding:10px">'+
-        '<option value="employee"'+((!e.role||e.role==='employee')?' selected':'')+'>Field employee</option>'+
-        '<option value="estimator"'+(e.role==='estimator'?' selected':'')+'>Estimator</option>'+
-        '<option value="foreman"'+(e.role==='foreman'?' selected':'')+'>Foreman</option>'+
-        '<option value="painter"'+(e.role==='painter'?' selected':'')+'>Painter</option>'+
-        '<option value="owner"'+(e.role==='owner'?' selected':'')+'>Owner / Co-owner</option>'+
-      '</select>'+
+    '<div class="fg fg2" style="margin-bottom:12px">'+
+      '<div class="f" style="margin:0"><label>Access role</label>'+
+        '<select id="emp-role" onchange="_setEmpRolePreset(this.value)" style="font-size:14px;padding:10px">'+
+          '<option value="tech"'+(_eRole==='tech'?' selected':'')+'>Field Tech</option>'+
+          '<option value="office"'+(_eRole==='office'?' selected':'')+'>Office / CSR</option>'+
+          '<option value="manager"'+(_eRole==='manager'?' selected':'')+'>Manager</option>'+
+          '<option value="owner"'+(_eRole==='owner'?' selected':'')+'>Owner / Admin</option>'+
+        '</select></div>'+
+      '<div class="f" style="margin:0"><label>Classification <span style="font-size:10px;font-weight:400;color:var(--text3)">(optional)</span></label>'+
+        '<select id="emp-classification" style="font-size:14px;padding:10px">'+
+          _EMP_CLASSIFICATIONS.map(c=>'<option value="'+escHtml(c)+'"'+(c===_eClass?' selected':'')+'>'+escHtml(c||'— None —')+'</option>').join('')+
+        '</select></div>'+
     '</div>'+
+    (_canViewComp()?
+      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'+
+        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Pay</div>'+
+        '<button type="button" onclick="var d=document.getElementById(\'_pay-info-tip\');d.style.display=d.style.display===\'none\'?\'block\':\'none\'" style="width:16px;height:16px;border-radius:50%;border:1px solid var(--text3);background:none;color:var(--text3);font-size:10px;font-weight:700;cursor:pointer;padding:0;font-family:inherit;line-height:16px;text-align:center;flex-shrink:0">?</button>'+
+      '</div>'+
+      '<div id="_pay-info-tip" style="display:none;font-size:12px;color:var(--text2);background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin-bottom:10px;line-height:1.55">'+
+        'Pay rates are stored securely and only visible to people with the <strong>Pay &amp; profit</strong> permission. Employees <em>never</em> see this — not in their daily view or anywhere else in the app. It\'s used to calculate loaded labor cost and profit margin on each job in the Job Profit report.'+
+      '</div>'+
+      '<div style="margin-bottom:8px"></div>'+
+      '<div style="display:grid;grid-template-columns:140px 1fr;gap:10px;margin-bottom:14px">'+
+        '<div class="f" style="margin:0"><label>Pay type</label>'+
+          '<select id="emp-pay-type" onchange="_empPayTypeSync()" style="font-size:14px;padding:10px">'+
+            '<option value="hourly"'+(_eComp.pay_type!=='salary'?' selected':'')+'>Hourly</option>'+
+            '<option value="salary"'+(_eComp.pay_type==='salary'?' selected':'')+'>Salary</option>'+
+          '</select></div>'+
+        '<div class="f" style="margin:0"><label id="emp-pay-rate-lbl">'+(_eComp.pay_type==='salary'?'Annual salary':'Hourly rate')+'</label>'+
+          '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px;color:var(--text2);font-weight:600">$</span>'+
+          '<input id="emp-pay-rate" type="number" min="0" step="0.5" value="'+(_eComp.pay_rate||'')+'" placeholder="'+(_eComp.pay_type==='salary'?'55000':'28')+'" style="font-size:14px;padding:10px;flex:1"></div></div>'+
+      '</div>'
+    :'')+
     '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Permissions</div>'+
     '<div style="display:grid;gap:6px;margin-bottom:14px">'+
-      Object.entries(PERM_LABELS).map(([k,lbl])=>{
+      Object.entries(_EMP_PERM_LABELS).map(([k,lbl])=>{
         const checked=e.permissions&&e.permissions[k];
-        return '<label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;padding:8px;background:var(--bg2);border-radius:var(--r)">'+
-          '<input type="checkbox" id="emp-p-'+k+'"'+(checked?' checked':'')+' style="width:16px;height:16px;cursor:pointer">'+lbl+'</label>';
+        const info=_EMP_PERM_INFO[k]||'';
+        return '<div style="background:var(--bg2);border-radius:var(--r)">'+
+          '<label style="display:flex;align-items:center;gap:10px;font-size:13px;cursor:pointer;padding:8px 10px">'+
+            '<input type="checkbox" id="_perm-'+k+'"'+(checked?' checked':'')+' style="width:16px;height:16px;cursor:pointer;flex-shrink:0;accent-color:var(--blue)">'+
+            '<span style="flex:1">'+escHtml(lbl)+'</span>'+
+            (info?'<button type="button" onclick="event.preventDefault();event.stopPropagation();var d=this.parentElement.parentElement.querySelector(\'.perm-info\');d.style.display=d.style.display===\'none\'?\'block\':\'none\'" style="width:18px;height:18px;border-radius:50%;border:1.5px solid var(--text3);background:none;color:var(--text3);font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0;padding:0;font-family:inherit;line-height:18px;text-align:center">?</button>':'')+
+          '</label>'+
+          (info?'<div class="perm-info" style="display:none;font-size:12px;color:var(--text3);padding:0 10px 10px 34px;line-height:1.45">'+escHtml(info)+'</div>':'')+
+        '</div>';
       }).join('')+
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
@@ -955,28 +1485,79 @@ async function _saveEmployee(idx){
   if(!name){zAlert('Enter a name.');return;}
   const email=(document.getElementById('emp-email')?.value?.trim()||'').toLowerCase();
   const perms={};
-  Object.keys(PERM_LABELS).forEach(k=>{perms[k]=!!(document.getElementById('emp-p-'+k)?.checked);});
+  Object.keys(_EMP_PERM_LABELS).forEach(k=>{perms[k]=!!(document.getElementById('_perm-'+k)?.checked);});
   const isNew=idx==null;
   const _empRoleEl=document.getElementById('emp-role');
   const _empPhoneEl=document.getElementById('emp-phone');
+  const _empClassEl=document.getElementById('emp-classification');
   const _empId=isNew?Date.now():(S.employees[idx]?S.employees[idx].id||Date.now():Date.now());
-  const _empRole=_empRoleEl?_empRoleEl.value||'employee':'employee';
+  const _empRole=_empRoleEl?_empRoleEl.value||'tech':'tech';
   const _empPhoneRaw=_empPhoneEl?_empPhoneEl.value||'':'';
   const _empPhone=_empPhoneRaw.trim();
-  const emp={id:_empId,name,email,role:_empRole,phone:_empPhone,permissions:perms};
+  const _empClass=(_empClassEl?_empClassEl.value||'':'').trim();
+  // Pay fields only exist in the DOM when the editor can view comp. Capture them
+  // here (before the modal is removed) so they ride along on the team_members upsert.
+  const _canComp=_canViewComp();
+  const _payType=_canComp?(document.getElementById('emp-pay-type')?.value||'hourly'):null;
+  const _payRate=_canComp?(parseFloat(document.getElementById('emp-pay-rate')?.value)||0):null;
+  const emp={id:_empId,name,email,role:_empRole,classification:_empClass,phone:_empPhone,permissions:perms};
   if(!S.employees)S.employees=[];
   if(!isNew)S.employees[idx]=emp;else S.employees.push(emp);
   _settingsChanged();document.getElementById('emp-modal-overlay')?.remove();renderTeam();
   // Sync to Supabase team_members and send invite if email provided
   if(email&&_supa&&_supaUser){
     const tmRow={contractor_user_id:_supaUser.id,email,name,role:emp.role,active:false,invited_at:new Date().toISOString()};
+    // Pay is written ONLY when the editor can view comp — otherwise the columns are
+    // omitted from the upsert so existing pay_rate is preserved, never clobbered to 0.
+    if(_canComp){tmRow.pay_type=_payType;tmRow.pay_rate=_payRate;_teamComp[email]={pay_type:_payType,pay_rate:_payRate};}
     const{error}=await _supa.from('team_members').upsert(tmRow,{onConflict:'contractor_user_id,email'});
     if(error){console.warn('team_members upsert failed:',error);return;}
-    // Send magic-link invite
+    // Auto-create employment agreement; signing IS the onboarding step
     if(isNew){
-      const{error:invErr}=await _supa.auth.signInWithOtp({email,options:{shouldCreateUser:true,emailRedirectTo:window.location.origin}});
-      if(invErr)showToast('Saved — invite email failed: '+invErr.message,'⚠️');
-      else showToast('Invite sent to '+email,'📧');
+      const cid=_supaUser.id;
+      const inviteUrl=window.location.origin+window.location.pathname+'?emp_invite='+btoa(JSON.stringify({cid,eid:emp.id,email:emp.email||'',bname:S.bname||'',ename:emp.name||''}));
+      const{data:{session:_saveSess}}=await _supa.auth.getSession();
+      const _saveToken=_saveSess?.access_token;
+      // Build the signing link — embed inviteUrl in the contract snapshot so
+      // contract-sign.html shows "Set up your account" after the employee signs.
+      let signUrl=inviteUrl; // fallback: direct link if agreements feature unavailable
+      if(typeof _agEmploymentBody==='function'){
+        try{
+          const agId=Date.now()+1;
+          const agToken=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
+          const agKey='agreements/'+cid+'/'+agId+'_'+agToken+'.json';
+          const agRecord={id:agId,type:'employment',party:emp.name,
+            title:'Employment Agreement — '+emp.name,body:_agEmploymentBody(emp.name),
+            profitPct:null,cadence:'',partyEmployeeId:emp.id,
+            effectiveDate:todayKey(),status:'sent',
+            createdAt:new Date().toISOString(),
+            signingToken:agToken,signingKey:agKey,signedAt:null,signerName:null,sigData:null};
+          if(!agreements)agreements=[];
+          agreements.push(agRecord);
+          const snapshot={id:agId,token:agToken,contractorUserId:cid,
+            type:'employment',party:emp.name,title:agRecord.title,body:agRecord.body,
+            effectiveDate:agRecord.effectiveDate,
+            businessName:getBusinessName()||'',ownerName:getOwnerName()||'',
+            notifyEmail:_supaUser.email||'',
+            status:'sent',signedAt:null,signerName:null,sigData:null,
+            createdAt:agRecord.createdAt,inviteUrl};
+          await _supa.storage.from('proposals').upload(agKey,JSON.stringify(snapshot),{contentType:'application/json',upsert:true,cacheControl:'0'});
+          saveAll();
+          const _base=_clientBaseUrl?_clientBaseUrl():(window.location.origin+window.location.pathname.split('index.html')[0]);
+          signUrl=_base+'contract-sign.html?t='+agToken+'&u='+cid+'&a='+agId;
+        }catch(_agErr){console.warn('auto-employment-agreement:',_agErr);}
+      }
+      if(_saveToken&&email){
+        try{
+          const _invRes=await fetch(SUPA_URL+'/functions/v1/send-invite-email',{
+            method:'POST',
+            headers:{'Content-Type':'application/json','Authorization':'Bearer '+_saveToken},
+            body:JSON.stringify({to:email,empName:emp.name,businessName:S.bname||'Your Contractor',inviteUrl:signUrl,replyTo:_supaUser.email||''})
+          });
+          if(_invRes.ok)showToast('Agreement sent to '+email,'📝');
+          else showToast('Saved — email failed','⚠️');
+        }catch(_e){showToast('Saved — email failed','⚠️');}
+      }
     }
   }
 }
@@ -1201,7 +1782,7 @@ function _enterOfflineMode(){
       mileage=_cd.mileage||[];liens=_cd.liens||[];timeEntries=_cd.timeEntries||[];
       if(_cd.licenses?.length)licenses=_cd.licenses;
       if(_cd.events?.length)events=_cd.events;
-      if(_cd.contracts?.length)contracts=_cd.contracts;
+      if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;
       if(_cd.photos?.length)photos=_cd.photos;
       if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
       if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cache restore)');applySettings();_refillSettingsFormUnlessEditing();}
@@ -1227,23 +1808,54 @@ function supaShowLogin(opts={}){
     if(localStorage.getItem('zp3_cloud_cache'))return;
   }
   if(document.getElementById('supa-login-overlay'))return;
+  const _pendingInvite=JSON.parse(localStorage.getItem('_pendingEmpInvite')||'null');
+  const _inviteBanner=_pendingInvite
+    ?'<div style="background:#EFF6FF;border:1.5px solid #3B82F6;border-radius:var(--r);padding:12px 14px;margin-bottom:20px">'+
+      '<div style="font-size:13px;font-weight:700;color:#1D4ED8;margin-bottom:2px">You\'ve been invited to join a crew on TradeDesk</div>'+
+      '<div style="font-size:12px;color:#1e40af;line-height:1.5">Create a free account or sign in below to accept the invite and see your assigned jobs.</div>'+
+      '</div>'
+    :'';
   const overlay=document.createElement('div');
   overlay.id='supa-login-overlay';
   overlay.style.cssText='position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px';
-  overlay.innerHTML=
-    '<div style="max-width:360px;width:100%">'+
-    '<div style="font-size:24px;font-weight:800;margin-bottom:4px">TradeDesk</div>'+
-    '<div style="font-size:13px;color:var(--text3);margin-bottom:28px">Sign in to sync your data across devices</div>'+
-    '<div class="f" style="margin-bottom:12px"><label>Email</label>'+
-    '<input type="email" id="supa-email" placeholder="your@email.com" style="font-size:16px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"></div>'+
-    '<div class="f" style="margin-bottom:20px"><label>Password</label>'+
-    '<input type="password" id="supa-pass" placeholder="Password" style="font-size:16px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"></div>'+
-    '<button onclick="supaSignIn()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Sign in</button>'+
-    '<div style="text-align:right;margin-bottom:10px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:13px;cursor:pointer;font-family:inherit;padding:0;text-decoration:underline">Forgot password?</button></div>'+
-    '<button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:16px">Create account</button>'+
-    '<button onclick="_enterOfflineMode()" style="width:100%;padding:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Use offline (data stays on this device only)</button>'+
-    '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:10px;text-align:center;min-height:16px"></div>'+
-    '</div>';
+  const _inputStyle='font-size:16px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box';
+  overlay.innerHTML= _pendingInvite
+    ? (function(){
+        const _piBname=escHtml(_pendingInvite.bname||'Your contractor');
+        const _piEname=(_pendingInvite.ename||'').split(/[\s,]+/)[0];
+        const _piEmail=_pendingInvite.email||'';
+        const _roStyle=_inputStyle+';background:var(--bg3);color:var(--text3);cursor:default';
+        return '<div style="max-width:360px;width:100%">'+
+          '<div style="text-align:center;margin-bottom:24px">'+
+            '<div style="font-size:36px;margin-bottom:10px">👷</div>'+
+            '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:6px">'+(_piEname?'Hey '+escHtml(_piEname)+', you\'re invited!':'You\'ve been invited!')+'</div>'+
+            '<div style="font-size:13px;color:var(--text3);line-height:1.5"><strong style="color:var(--text2)">'+_piBname+'</strong> has added you to their crew on TradeDesk. Set up your account to see your assigned jobs.</div>'+
+          '</div>'+
+          '<div class="f" style="margin-bottom:10px"><label>Email</label>'+
+            (_piEmail
+              ?'<input type="email" id="supa-email" value="'+escHtml(_piEmail)+'" readonly style="'+_roStyle+'">'
+              :'<input type="email" id="supa-email" placeholder="The email your invite was sent to" style="'+_inputStyle+'">'
+            )+'</div>'+
+          '<div class="f" style="margin-bottom:20px"><label>Create a password</label>'+
+            '<input type="password" id="supa-pass" placeholder="Min 6 characters" autocomplete="new-password" style="'+_inputStyle+'"></div>'+
+          '<button onclick="_supaEmpSignUp()" style="width:100%;padding:15px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Join the crew →</button>'+
+          '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:12px;text-align:center;min-height:16px"></div>'+
+          '</div>';
+      })()
+    : // ── Normal login ──────────────────────────────────────────────────────
+      '<div style="max-width:360px;width:100%">'+
+      '<div style="font-size:24px;font-weight:800;margin-bottom:4px">TradeDesk</div>'+
+      '<div style="font-size:13px;color:var(--text3);margin-bottom:28px">Sign in to sync your data across devices</div>'+
+      '<div class="f" style="margin-bottom:12px"><label>Email</label>'+
+        '<input type="email" id="supa-email" placeholder="your@email.com" style="'+_inputStyle+'"></div>'+
+      '<div class="f" style="margin-bottom:20px"><label>Password</label>'+
+        '<input type="password" id="supa-pass" placeholder="Password" style="'+_inputStyle+'"></div>'+
+      '<button onclick="supaSignIn()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Sign in</button>'+
+      '<div style="text-align:right;margin-bottom:10px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:13px;cursor:pointer;font-family:inherit;padding:0;text-decoration:underline">Forgot password?</button></div>'+
+      '<button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:16px">Create account</button>'+
+      '<button onclick="_enterOfflineMode()" style="width:100%;padding:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Use offline (data stays on this device only)</button>'+
+      '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:10px;text-align:center;min-height:16px"></div>'+
+      '</div>';
   document.body.appendChild(overlay);
   setTimeout(()=>document.getElementById('supa-email')?.focus(),100);
 }
@@ -1273,6 +1885,27 @@ async function supaForgotPassword(){
   const{error}=await _supa.auth.resetPasswordForEmail(email,{redirectTo:window.location.href});
   if(error){if(err){err.style.color='#A32D2D';err.textContent=error.message;}}
   else{if(err){err.style.color='#1a7340';err.textContent='Reset link sent — check your email.';}}
+}
+async function _supaEmpSignUp(){
+  const email=document.getElementById('supa-email')?.value?.trim();
+  const pass=document.getElementById('supa-pass')?.value;
+  const err=document.getElementById('supa-login-err');
+  if(!email||!email.includes('@')){if(err){err.style.color='#A32D2D';err.textContent='Enter the email address your invite was sent to.';}return;}
+  if(!pass||pass.length<6){if(err){err.style.color='#A32D2D';err.textContent='Password must be at least 6 characters.';}return;}
+  if(err){err.style.color='var(--text3)';err.textContent='Creating your account...';}
+  const{error}=await _supa.auth.signUp({email,password:pass});
+  if(error){
+    if(error.message?.toLowerCase().includes('already registered')){
+      if(err){err.style.color='var(--text3)';err.textContent='Account exists — signing you in...';}
+      const{error:siErr}=await _supa.auth.signInWithPassword({email,password:pass});
+      if(siErr&&err){err.style.color='#A32D2D';err.textContent=siErr.message;}
+    } else {
+      if(err){err.style.color='#A32D2D';err.textContent=error.message;}
+    }
+    return;
+  }
+  if(err){err.style.color='var(--text3)';err.textContent='Account created — signing you in...';}
+  await _supa.auth.signInWithPassword({email,password:pass});
 }
 let _deliberateSignOut=false;
 function _saveSessionBackup(session){
@@ -1347,6 +1980,42 @@ function _mergeIncomingSettings(ss,src){
   try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(_e){}
   return true;
 }
+// ── Per-individual-user UI layout (dashboard widget order + nav tab order) ──
+// Stored in the user_prefs table keyed by auth.uid() — NOT in zj_data/S, which
+// employees share with their contractor. This keeps each person's layout
+// isolated (iOS-home-screen model: layout follows the identity, never bleeds).
+function _userLayoutCacheKey(){return _supaUser?('td_layout_'+_supaUser.id):null;}
+function _cacheUserLayoutLocal(){
+  const k=_userLayoutCacheKey();if(!k)return;
+  try{localStorage.setItem(k,JSON.stringify({d:S.dashWidgetOrder||null,n:S.navTabOrder||null,k:S.dashKpiOrder||null}));}catch(_e){}
+}
+async function _loadUserPrefs(){
+  // Restore from per-uid local cache first so a force-quit before the cloud
+  // round-trip still shows the right user's layout instantly on next boot.
+  const k=_userLayoutCacheKey();
+  if(k){try{const c=JSON.parse(localStorage.getItem(k)||'null');if(c){if(Array.isArray(c.d))S.dashWidgetOrder=c.d;if(Array.isArray(c.n))S.navTabOrder=c.n;if(Array.isArray(c.k))S.dashKpiOrder=c.k;}}catch(_e){}}
+  if(!_supa||!_supaUser)return;
+  try{
+    const{data}=await _supa.from('user_prefs').select('dash_widget_order,nav_tab_order,kpi_order').eq('user_id',_supaUser.id).maybeSingle();
+    if(data){
+      if(Array.isArray(data.dash_widget_order))S.dashWidgetOrder=data.dash_widget_order;
+      if(Array.isArray(data.nav_tab_order))S.navTabOrder=data.nav_tab_order;
+      if(Array.isArray(data.kpi_order))S.dashKpiOrder=data.kpi_order;
+      _cacheUserLayoutLocal();
+    }
+  }catch(_e){}
+}
+function _saveUserPrefs(){
+  // Local cache is synchronous so a force-quit right after a reorder never loses it.
+  _cacheUserLayoutLocal();
+  if(!_supa||!_supaUser)return;
+  try{
+    _supa.from('user_prefs').upsert(
+      {user_id:_supaUser.id,dash_widget_order:S.dashWidgetOrder||null,nav_tab_order:S.navTabOrder||null,kpi_order:S.dashKpiOrder||null,updated_at:new Date().toISOString()},
+      {onConflict:'user_id'}
+    ).then(()=>{},()=>{});
+  }catch(_e){}
+}
 function supaSaveDebounced(){
   if(!supaEnabled())return;
   if(!_supaUser&&!_mergeOnSignIn)return;
@@ -1357,7 +2026,7 @@ function supaSaveDebounced(){
   // localStorage write completes atomically and survives any force-quit.
   // Cleared by supaSaveToCloud() on a successful push. Drain deduplicates on reload.
   if(_supaCloudLoaded||_mergeOnSignIn){
-    try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
+    try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
   }
   _syncTimer=setTimeout(()=>{_syncTimer=null;supaSaveToCloud();},2000);
   if(_supaUser)supaSetStatus('syncing');
@@ -1376,10 +2045,14 @@ function _flushSaveNow(){
 // ── Offline / reconnect watcher ────────────────────────────────────────────
 function _showOfflineBanner(syncing){
   const b=document.getElementById('offline-banner');if(!b)return;
-  if(syncing){b.textContent='Syncing...';b.style.cssText+='background:#2563eb;color:#fff;display:block';}
-  else{b.textContent='Offline — changes saved locally';b.style.cssText+='background:#D97706;color:#1a1a1a;display:block';}
+  if(syncing){b.textContent='Syncing...';b.style.background='#2563eb';b.style.color='#fff';}
+  else{b.textContent='Offline — changes saved locally';b.style.background='#D97706';b.style.color='#1a1a1a';}
+  b.style.opacity='1';b.style.transform='translateY(0)';b.style.pointerEvents='auto';
 }
-function _hideOfflineBanner(){const b=document.getElementById('offline-banner');if(b)b.style.display='none';}
+function _hideOfflineBanner(){
+  const b=document.getElementById('offline-banner');if(!b)return;
+  b.style.opacity='0';b.style.transform='translateY(-100%)';b.style.pointerEvents='none';
+}
 async function _onReconnect(){
   if(!_supa||!_supaUser)return;
   const hasPending=localStorage.getItem('zp3_pending_sync')==='1';
@@ -1499,7 +2172,7 @@ function _startOfflineWatcher(){
     if(document.visibilityState==='hidden'){
       const _hasUnsaved=_syncTimer||_mergeOnSignIn||localStorage.getItem('zp3_pending_sync')==='1';
       if(_hasUnsaved){
-        try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
+        try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
       }
     }
     if(document.visibilityState==='visible'&&_isOfflineState())_probeAndSync();
@@ -1524,7 +2197,7 @@ function _writeLocalCache(){
   try{
     const _snap={clients,bids,jobs,payments,income,
       expenses:expenses.map(({receipt_img,...r})=>r),
-      mileage,liens,timeEntries,licenses,events,contracts,photos,checksState,
+      mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,checksState,
       settings:S,cached_at:new Date().toISOString()};
     localStorage.setItem('zp3_cloud_cache',JSON.stringify(_snap));
   }catch(_e){}
@@ -1533,7 +2206,7 @@ function _writeLocalCache(){
 async function supaSaveToCloud(){
   if(!_supa||!_supaUser){
     if(_mergeOnSignIn){
-      try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
+      try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
     }
     _logSave('skip','no _supa or _supaUser');return;
   }
@@ -1558,7 +2231,7 @@ async function supaSaveToCloud(){
   _logSave('start',{id:_attemptId,mileage:_mileCount,page:document.querySelector('.pg.active')?.id});
 
   // Force-quit safety net — written before any async work
-  try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
+  try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
   _writeLocalCache();
 
   // Lazy-migrate up to 3 inline receipt_img → Supabase Storage
@@ -1638,7 +2311,14 @@ async function supaSaveToCloud(){
 
     for(const {t,get,tx} of _TD_TABLES){
       const arr=get();
-      await _upsertTable(t,arr,tx);
+      try{
+        await _upsertTable(t,arr,tx);
+      }catch(_te){
+        // Unprovisioned table (migration not yet applied) — skip it, keep syncing the
+        // rest. Without this, one missing table flips the whole app to offline/error.
+        if(_isMissingTableErr(_te)){console.warn('[cloud] skipping save to unprovisioned table',t);continue;}
+        throw _te;
+      }
     }
 
     _logSave('ok',{id:_attemptId,mileage:_mileCount});
@@ -1653,7 +2333,7 @@ async function supaSaveToCloud(){
     _logSave('throw',{id:_attemptId,name:e?.name,code:e?.code,msg:e?.message||String(e)});
     console.warn('Cloud save failed:',e);
     localStorage.setItem('zp3_pending_sync','1');
-    try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
+    try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
     _showOfflineBanner();
     supaSetStatus('error');
   }
@@ -2028,10 +2708,17 @@ async function supaLoadFromCloud({silent=false}={}){
       _supa.from('zj_data').select('settings,checks_state,receipt_images,updated_at').eq('user_id',uid).maybeSingle()
     ]);
 
-    for(let i=0;i<_TD_TABLES.length;i++){if(tableResults[i].error)throw tableResults[i].error;}
+    // A table whose migration hasn't reached the live DB yet must NOT abort the entire
+    // sync — that would take down ALL cloud loading and trap the app in an offline loop.
+    // Skip only "table does not exist" errors; real failures (auth, network) still throw.
+    for(let i=0;i<_TD_TABLES.length;i++){
+      const err=tableResults[i].error;
+      if(err&&!_isMissingTableErr(err))throw err;
+    }
 
     for(let i=0;i<_TD_TABLES.length;i++){
       const{t,set}=_TD_TABLES[i];
+      if(tableResults[i].error){console.warn('[cloud] skipping unprovisioned table',t);continue;} // missing table — leave in-memory data untouched
       const rows=(tableResults[i].data||[]).map(r=>r.data);
       set(rows);
       _lastKnownIds[t]=new Set((tableResults[i].data||[]).map(r=>String(r.id)));
@@ -2063,6 +2750,15 @@ async function supaLoadFromCloud({silent=false}={}){
       }
     }
 
+    // Override the shared-blob layout with THIS individual's saved layout.
+    // For an employee the settings above came from the contractor's zj_data;
+    // this restores the employee's own dashboard/nav order keyed by auth.uid().
+    await _loadUserPrefs();
+    // Re-apply the tab order now that S holds this user's value (boot ran the
+    // initial apply before the cloud round-trip). Dashboard order re-applies
+    // itself inside renderDash() below.
+    if(typeof _applyTabOrder==='function'&&typeof _getTabOrder==='function')_applyTabOrder(_getTabOrder());
+
     _supaCloudLoaded=true;_loadedFromCacheOnly=false;_mergeOnSignIn=false;
     supaSetStatus('synced');
 
@@ -2093,6 +2789,7 @@ async function supaLoadFromCloud({silent=false}={}){
     if(typeof _startPropQueue==='function')setTimeout(_startPropQueue,5000);
     if(typeof renderIncome==='function')renderIncome();
     if(typeof renderExpenses==='function')renderExpenses();
+    if(typeof _fetchScopeRates==='function')_fetchScopeRates();
     if(typeof renderAllMileage==='function')renderAllMileage();
     if(typeof renderFleet==='function')renderFleet();
     if(typeof renderGallery==='function')renderGallery();
@@ -2196,7 +2893,7 @@ async function supaLoadFromCloud({silent=false}={}){
         payments=_cd.payments||[];income=_cd.income||[];expenses=_cd.expenses||[];
         mileage=_cd.mileage||[];liens=_cd.liens||[];timeEntries=_cd.timeEntries||[];
         if(_cd.licenses?.length)licenses=_cd.licenses;if(_cd.events?.length)events=_cd.events;
-        if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.photos?.length)photos=_cd.photos;
+        if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;if(_cd.photos?.length)photos=_cd.photos;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cloud load FAILED — fallback)');applySettings();_refillSettingsFormUnlessEditing();}
         _loadedFromCacheOnly=true;_supaCloudLoaded=true;

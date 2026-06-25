@@ -246,6 +246,9 @@ test.describe('Sales Tax Engine', () => {
   test('T&M estimate shows job type picker on step 1, not TM page', async () => {
     await page.evaluate(() => {
       _geiIsTM = false; _geiIsFreeForm = false;
+      // Isolation: remove any draft for this client so the estimate opens fresh on step 1
+      // (a leftover draft makes openGenericEstimate resume at step 2 by design).
+      if (typeof bids !== 'undefined') bids = bids.filter(b => b.client_id !== 'test-c');
       openTMEstimate({ id: 'test-c', name: 'Test', addr: '123 Main St, KS' });
     });
     await page.waitForTimeout(150);
@@ -259,6 +262,9 @@ test.describe('Sales Tax Engine', () => {
   test('BYO estimate shows job type picker on step 1, not BYO page', async () => {
     await page.evaluate(() => {
       _geiIsTM = false; _geiIsFreeForm = false;
+      // Isolation: remove any draft for this client so the estimate opens fresh on step 1
+      // (a leftover draft makes openGenericEstimate resume at step 2 by design).
+      if (typeof bids !== 'undefined') bids = bids.filter(b => b.client_id !== 'test-c');
       openFreeFormEstimate({ id: 'test-c', name: 'Test', addr: '123 Main St, KS' });
     });
     await page.waitForTimeout(150);

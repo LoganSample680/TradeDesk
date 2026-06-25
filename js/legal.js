@@ -128,12 +128,17 @@ const STATE_LIEN={
 };
 
 // Returns the lien notice sentence for a given state abbreviation.
-function _lienNotice(state){
+// `party` is the business name shown in the notice; falls back to the generic
+// "the contractor" when no business name is available.
+function _lienNotice(state,party){
   const st=state||'KS';
   const lien=STATE_LIEN[st];
   const stateName=STATE_NAMES[st]||(typeof STATE_TAX!=='undefined'&&STATE_TAX[st]?STATE_TAX[st].name:st);
   const statute=lien?lien.statute:'applicable mechanic\'s lien statutes';
-  return 'Under '+stateName+' law ('+statute+'), contractor has the right to file a mechanic\'s lien against this property for any amounts unpaid under this agreement. Client is hereby notified of this right.';
+  // No party → keep the exact original wording ("contractor", no article) so the
+  // full-sentence lien upgrade in sign.html still matches text baked into old proposals.
+  const who=(party&&String(party).trim())?String(party).trim():'contractor';
+  return 'Under '+stateName+' law ('+statute+'), '+who+' has the right to file a mechanic\'s lien against this property for any amounts unpaid under this agreement. Client is hereby notified of this right.';
 }
 
 // Returns the cancellation citation string. State law is the authority; federal is the floor.

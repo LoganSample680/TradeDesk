@@ -764,7 +764,7 @@ async function init(){
     // Pre-sprint T&M and Scope proposals used a generic placeholder rather than a state-aware sentence.
     // Old template literals stored the HTML entity &#39; for apostrophe, so check both forms.
     if(_propSt&&typeof _lienNotice==='function'){
-      const _newLienSentence=_lienNotice(_propSt);
+      const _newLienSentence=_lienNotice(_propSt,escHtmlN(_prop.businessName||''));
       const _genericForms=['Contractor reserves the right to file a mechanic&#39;s lien for any unpaid amounts under this agreement.','Contractor reserves the right to file a mechanic\'s lien for any unpaid amounts under this agreement.'];
       _genericForms.forEach(f=>{if(_proposalHtml.includes(f))_proposalHtml=_proposalHtml.split(f).join(_newLienSentence);});
     }
@@ -932,8 +932,8 @@ async function init(){
       const _ls=_lienRule?_lienRule.statute:(_prop.lienStatute||'applicable mechanic\'s lien statutes');
       const _bizName=_prop.businessName||'Your Contractor';
       const _bizPhone=_prop.businessPhone||'';
-      if(_uetaBody)_uetaBody.textContent='By checking this box, I confirm I have read the Notice of Cancellation below, accept the total price, scope of work, and all terms above. This constitutes a binding electronic signature under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.). A deposit is due before work begins and before a start date is scheduled; remaining balance is due on completion. Contractor retains lien rights under '+_ls.replace(/\.+$/,'')+'.';
-      if(_prop.epaRequired&&_uetaBody)_uetaBody.textContent='By checking this box, I confirm I have read this proposal (Document 1 of 2) and the EPA Pre-Renovation Disclosure (Document 2 of 2), accept the total price, scope of work, and all terms. This electronic signature applies to both documents under applicable state and federal law (15 U.S.C. §7001 et seq.). A deposit is due before work begins; remaining balance is due on completion. Contractor retains lien rights under '+_ls.replace(/\.+$/,'')+'.';
+      if(_uetaBody)_uetaBody.textContent='By checking this box, I confirm I have read the Notice of Cancellation below, accept the total price, scope of work, and all terms above. This constitutes a binding electronic signature under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.). A deposit is due before work begins and before a start date is scheduled; remaining balance is due on completion. '+_bizName+' retains lien rights under '+_ls.replace(/\.+$/,'')+'.';
+      if(_prop.epaRequired&&_uetaBody)_uetaBody.textContent='By checking this box, I confirm I have read this proposal (Document 1 of 2) and the EPA Pre-Renovation Disclosure (Document 2 of 2), accept the total price, scope of work, and all terms. This electronic signature applies to both documents under applicable state and federal law (15 U.S.C. §7001 et seq.). A deposit is due before work begins; remaining balance is due on completion. '+_bizName+' retains lien rights under '+_ls.replace(/\.+$/,'')+'.';
       if(_cancelNoticeBody){
         // FTC 16 CFR Part 429: business day = any day except Sunday and federal legal holidays (Saturdays count)
         // Use local calendar dates — avoids UTC offset shifting the date for US timezones
