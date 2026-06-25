@@ -342,6 +342,16 @@ test.describe('Multi-state tax — revenue breakdown by job address', () => {
         KS_BRACKETS.hoh    = [[33000, 0.031], [Infinity, 0.057]];
       }
     }, { KS: BID_KS, MO: BID_MO, TX: BID_TX });
+
+    // Render the multi-state tax UI once during setup so every test — including
+    // isolated retries that re-run beforeAll on a fresh worker — reads populated
+    // #tx-inputs / #tx-results. Previously only the first integration test called
+    // calcTax(), so any later test that failed and retried alone saw empty DOM.
+    await page.evaluate(() => { if (typeof calcTax === 'function') { try { calcTax(); } catch (e) {} } });
+    await page.waitForFunction(() => {
+      const el = document.getElementById('tx-inputs');
+      return el && el.innerHTML.includes('Income by State');
+    }, { timeout: 8000 }).catch(() => {});
   });
 
   test.afterAll(async () => { await page.context().close(); });
@@ -2633,7 +2643,7 @@ test.describe('Crew tracking + payroll + dispatch routing + job profit', () => {
       localStorage.removeItem('geo_consent_declined');
       localStorage.removeItem('geo_owner_consent');
       document.getElementById('_geo-consent-ov')?.remove();
-      S.teamTracking = false;
+      S.teamTracking = true; // restore mandatory-on state for subsequent tests
       return { fnExists: true, started };
     });
     if (!r.fnExists) return;
@@ -3131,16 +3141,18 @@ test.describe('Drag-to-reorder nav + dashboard', () => {
 
   test('_saveUserPrefs writes a per-uid local cache, not the shared blob', async () => {
     const r = await page.evaluate(() => {
-      // Stub a signed-in user so the cache key resolves
+      // Stub a signed-in user so the cache key resolves. _supaUser is a module-level
+      // `let` (cloud.js), so a bare assignment rebinds it — `window._supaUser =` would
+      // create an unrelated window property that _userLayoutCacheKey() never reads.
       const prevUser = typeof _supaUser !== 'undefined' ? _supaUser : undefined;
-      window._supaUser = { id: 'test-uid-123' };
+      _supaUser = { id: 'test-uid-123' };
       S.dashWidgetOrder = ['feed', 'kpi', 'pipeline', 'sources'];
       S.navTabOrder = ['jobs', 'dash', 'leads', 'clients'];
       if (typeof _saveUserPrefs === 'function') _saveUserPrefs();
       const cached = localStorage.getItem('td_layout_test-uid-123');
       // cleanup
       localStorage.removeItem('td_layout_test-uid-123');
-      window._supaUser = prevUser;
+      _supaUser = prevUser;
       return cached ? JSON.parse(cached) : null;
     });
     expect(r).not.toBeNull();
@@ -3337,7 +3349,7 @@ test.describe('Scope of work — collapsed + sheet picker', () => {
       if (typeof _renderScopeChips !== 'function') return null;
       const div = document.createElement('div'); div.id = 'test-scope-wrap';
       document.body.appendChild(div);
-      window._geiScopeChips = [];
+      _geiScopeChips = [];
       _renderScopeChips('test-scope-wrap');
       const html = div.innerHTML;
       document.body.removeChild(div);
@@ -3383,8 +3395,8 @@ test.describe('Scope of work — collapsed + sheet picker', () => {
     const r = await page.evaluate(() => {
       if (typeof _openScopeSheet !== 'function') return null;
       document.getElementById('_scope-sheet-ov')?.remove();
-      window._geiScopeChips = [];
-      window._geiTrade = null;
+      _geiScopeChips = [];
+      _geiTrade = null;
       _openScopeSheet('nonexistent-wrap');
       const sheet = document.getElementById('_scope-sheet-ov');
       const has = !!sheet;
@@ -3404,9 +3416,10 @@ test.describe('Scope of work — collapsed + sheet picker', () => {
     const r = await page.evaluate(() => {
       if (typeof _openScopeSheet !== 'function') return null;
       document.getElementById('_scope-sheet-ov')?.remove();
-      window._geiScopeChips = [];
-      window._geiScopeNoScope = false;
-      window._geiTrade = 'painting';
+      // Bare assignment rebinds the module-level `let` variables (window.* does not).
+      _geiScopeChips = [];
+      _geiScopeNoScope = false;
+      _geiTrade = 'painting';
       _openScopeSheet('tm-scope-wrap');
       const sheet = document.getElementById('_scope-sheet-ov');
       if (!sheet) return null;
@@ -3415,9 +3428,9 @@ test.describe('Scope of work — collapsed + sheet picker', () => {
       // Pick the first selectable tile and click it
       const tile = sheet.querySelector('[id^="_scb-"]');
       const tileId = tile ? tile.id : null;
-      const before = [...window._geiScopeChips];
+      const before = [..._geiScopeChips];
       if (tile) tile.click();
-      const after = [...window._geiScopeChips];
+      const after = [..._geiScopeChips];
       // Tile should now show a checkmark in its _sc-ck element
       const ck = tile ? tile.querySelector('._sc-ck') : null;
       const checked = ck ? ck.textContent.trim() === '✓' : false;
@@ -3717,18 +3730,22 @@ test.describe('Profit % gauge — T&M and BYO estimate rails', () => {
       const pct = document.getElementById('tm-gauge-pct');
       return pct ? pct.style.color : '';
     });
-    expect(color).toBe('#22C55E');
+    // Browsers normalize hex → rgb() when reading .style.color
+    expect(color).toBe('rgb(34, 197, 94)');
   });
 
   test('gauge dot position matches the margin percent (high margin lands in green band)', async () => {
-    const r = await page.evaluate(async () => {
+    const r = await page.evaluate(() => {
       const costEl = document.getElementById('tm-expected-cost');
       if (!costEl || typeof _updateMarginGauge !== 'function') return null;
       // 68% margin: (10000 - 3200) / 10000
       costEl.value = '3200';
+      // Force gauge to visible so _updateMarginGauge uses the sync else-branch
+      // (dot set directly) rather than the rAF path — avoids a WebKit headless
+      // timing race where rAF callbacks from a prior test haven't fired yet.
+      const gWrap = document.getElementById('tm-profit-gauge');
+      if (gWrap) { gWrap.style.display = ''; gWrap.style.opacity = '1'; }
       _updateMarginGauge('tm', 10000);
-      await new Promise(res => setTimeout(res, 50));
-      _updateMarginGauge('tm', 10000); // second call: gauge visible → dot set directly
       const dot = document.getElementById('tm-gauge-dot');
       const pct = document.getElementById('tm-gauge-pct');
       return { left: dot ? dot.style.left : '', pctText: pct ? pct.textContent : '', color: pct ? pct.style.color : '' };
@@ -3737,7 +3754,8 @@ test.describe('Profit % gauge — T&M and BYO estimate rails', () => {
     expect(r.pctText).toBe('68%');
     // Dot sits at its own margin % — within the gradient's green band (38%–78%), matching the green ring.
     expect(r.left).toBe('68%');
-    expect(r.color).toBe('#22C55E');
+    // Browsers normalize hex → rgb() when reading .style.color
+    expect(r.color).toBe('rgb(34, 197, 94)');
   });
 
   test('gauge shows red zone when underpriced (10% margin)', async () => {
@@ -3751,12 +3769,18 @@ test.describe('Profit % gauge — T&M and BYO estimate rails', () => {
     });
     if (r !== null) {
       expect(r.text).toBe('10%');
-      expect(r.color).toBe('#EF4444');
+      // Browsers normalize hex → rgb() when reading .style.color
+      expect(r.color).toBe('rgb(239, 68, 68)');
     }
   });
 
   test('gauge hides when cost is cleared', async () => {
     await page.evaluate(() => {
+      // Put gauge in a known visible state first — prevents a rAF race where
+      // a pending opacity transition from a prior test fires after the hide
+      // path sets opacity='0' but before the 340ms display-none timer runs.
+      const gWrap = document.getElementById('tm-profit-gauge');
+      if (gWrap) { gWrap.style.display = ''; gWrap.style.opacity = '1'; }
       const costEl = document.getElementById('tm-expected-cost');
       if (costEl) costEl.value = '';
       if (typeof _updateMarginGauge === 'function') _updateMarginGauge('tm', 10000);
@@ -3833,11 +3857,11 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
 
   test('empty BYO bid: seeds 6 items (interior + 5 universal, no exterior)', async () => {
     const r = await page.evaluate(() => {
-      window._rrpPaintAnswer = 'yes';
-      window._geiIsFreeForm = true;
-      window._geiIsTM = false;
-      window._byoItems = [];
-      window._byoCustomSections = [];
+      _rrpPaintAnswer = 'yes';
+      _geiIsFreeForm = true;
+      _geiIsTM = false;
+      _byoItems = [];
+      _byoCustomSections = [];
       _injectRrpItems();
       const rrpItems = _byoItems.filter(x => x._rrp);
       return {
@@ -3859,14 +3883,14 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
 
   test('exterior section items: seeds 7 items including exterior containment', async () => {
     const r = await page.evaluate(() => {
-      window._rrpPaintAnswer = 'yes';
-      window._geiIsFreeForm = true;
-      window._geiIsTM = false;
-      window._byoItems = [
+      _rrpPaintAnswer = 'yes';
+      _geiIsFreeForm = true;
+      _geiIsTM = false;
+      _byoItems = [
         {id:1,section:'Interior',label:'Prep walls',price:200,on:true,required:false},
         {id:2,section:'Exterior',label:'Paint siding',price:800,on:true,required:false},
       ];
-      window._byoCustomSections = [];
+      _byoCustomSections = [];
       _injectRrpItems();
       const rrpItems = _byoItems.filter(x => x._rrp);
       return {
@@ -3882,11 +3906,11 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
 
   test('_injectRrpItems is idempotent — calling twice does not double-inject', async () => {
     const r = await page.evaluate(() => {
-      window._rrpPaintAnswer = 'yes';
-      window._geiIsFreeForm = true;
-      window._geiIsTM = false;
-      window._byoItems = [];
-      window._byoCustomSections = [];
+      _rrpPaintAnswer = 'yes';
+      _geiIsFreeForm = true;
+      _geiIsTM = false;
+      _byoItems = [];
+      _byoCustomSections = [];
       _injectRrpItems();
       _injectRrpItems();
       return _byoItems.filter(x => x._rrp).length;
@@ -3896,11 +3920,11 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
 
   test('prices entered on RRP items are preserved across re-sync', async () => {
     const r = await page.evaluate(() => {
-      window._rrpPaintAnswer = 'yes';
-      window._geiIsFreeForm = true;
-      window._geiIsTM = false;
-      window._byoItems = [];
-      window._byoCustomSections = [];
+      _rrpPaintAnswer = 'yes';
+      _geiIsFreeForm = true;
+      _geiIsTM = false;
+      _byoItems = [];
+      _byoCustomSections = [];
       _injectRrpItems();
       // Simulate contractor entering a price on HEPA prep
       const hepa = _byoItems.find(x => x._rrp && /HEPA-equipped/i.test(x.label));
@@ -3916,11 +3940,11 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
 
   test('_injectRrpItems does not inject when _rrpPaintAnswer is not yes', async () => {
     const r = await page.evaluate(() => {
-      window._rrpPaintAnswer = 'no';
-      window._geiIsFreeForm = true;
-      window._geiIsTM = false;
-      window._byoItems = [];
-      window._byoCustomSections = [];
+      _rrpPaintAnswer = 'no';
+      _geiIsFreeForm = true;
+      _geiIsTM = false;
+      _byoItems = [];
+      _byoCustomSections = [];
       _injectRrpItems();
       return _byoItems.filter(x => x._rrp).length;
     });
@@ -3929,11 +3953,11 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
 
   test('RRP items do not show notes in BYO list — _rrp flag suppresses byo-meta', async () => {
     const r = await page.evaluate(() => {
-      window._rrpPaintAnswer = 'yes';
-      window._geiIsFreeForm = true;
-      window._geiIsTM = false;
-      window._byoItems = [{id:1,section:'Interior',label:'Prep walls',price:200,notes:'Two coats',on:true,required:false,_rrp:false}];
-      window._byoCustomSections = [];
+      _rrpPaintAnswer = 'yes';
+      _geiIsFreeForm = true;
+      _geiIsTM = false;
+      _byoItems = [{id:1,section:'Interior',label:'Prep walls',price:200,notes:'Two coats',on:true,required:false,_rrp:false}];
+      _byoCustomSections = [];
       _injectRrpItems();
       // Non-RRP item with notes — meta should render; RRP items — meta should be suppressed
       const nonRrp = _byoItems.find(x => !x._rrp);
@@ -3990,10 +4014,10 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
 
   test('_injectRrpItems seeds T&M lines when _geiIsTM is true', async () => {
     const r = await page.evaluate(() => {
-      window._rrpPaintAnswer = 'yes';
-      window._geiIsFreeForm = false;
-      window._geiIsTM = true;
-      window._geiLines = [];
+      _rrpPaintAnswer = 'yes';
+      _geiIsFreeForm = false;
+      _geiIsTM = true;
+      _geiLines = [];
       _injectRrpItems();
       const rrp = _geiLines.filter(x => x._rrp);
       return {
@@ -4034,11 +4058,11 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
 
   test('_mkLineRow shows notes for RRP items in client proposal — not suppressed', async () => {
     const r = await page.evaluate(() => {
-      window._rrpPaintAnswer = 'yes';
-      window._geiIsFreeForm = true;
-      window._geiIsTM = false;
-      window._byoItems = [{id:1,section:'Interior',label:'Prep walls',price:200,on:true,required:false}];
-      window._byoCustomSections = [];
+      _rrpPaintAnswer = 'yes';
+      _geiIsFreeForm = true;
+      _geiIsTM = false;
+      _byoItems = [{id:1,section:'Interior',label:'Prep walls',price:200,on:true,required:false}];
+      _byoCustomSections = [];
       _injectRrpItems();
       const rrpItem = _byoItems.find(x => x._rrp);
       if (!rrpItem) return null;
@@ -4060,9 +4084,9 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
     const r = await page.evaluate(() => {
       if (typeof _openScopeSheet !== 'function') return null;
       document.getElementById('_scope-sheet-ov')?.remove();
-      window._geiScopeChips = [];
-      window._geiScopeNoScope = false;
-      window._geiTrade = null;
+      _geiScopeChips = [];
+      _geiScopeNoScope = false;
+      _geiTrade = null;
       _openScopeSheet('nonexistent');
       const sheet = document.getElementById('_scope-sheet-ov');
       if (!sheet) return null;
@@ -4166,8 +4190,8 @@ test.describe('openGenericEstimate — resume auto-migrates old estimates to BYO
       }]);
       openGenericEstimate(c, OLD_BID_ID, 'painting');
       const byoPageVisible = document.getElementById('gei-byo-page')?.style.display !== 'none';
-      const isFreeFormSet = !!window._geiIsFreeForm;
-      const byoItemsCount = (window._byoItems || []).filter(x => !x._rrp).length;
+      const isFreeFormSet = !!_geiIsFreeForm;
+      const byoItemsCount = (_byoItems || []).filter(x => !x._rrp).length;
       return { byoPageVisible, isFreeFormSet, byoItemsCount };
     });
     if (r === null) return;
@@ -4216,8 +4240,8 @@ test.describe('BYO estimate — auto-save, auto-fill cost, gauge dollars, scope 
       if (typeof clients !== 'undefined') clients = clients.filter(x => x.id !== 78001).concat([c]);
       if (typeof bids !== 'undefined') bids = bids.filter(x => x.client_id !== 78001);
       openGenericEstimate(c, null, 'painting');
-      window._geiIsFreeForm = true;
-      window._byoItems = [{ id: 1, section: 'Interior', label: 'Living room walls', price: 350, on: true }];
+      _geiIsFreeForm = true;
+      _byoItems = [{ id: 1, section: 'Interior', label: 'Living room walls', price: 350, on: true }];
       if (typeof _byoAutosave === 'function') _byoAutosave();
       const bid = (typeof bids !== 'undefined' ? bids : []).find(x => x.client_id === 78001);
       return { hasByoItems: !!(bid && bid.byoItems && bid.byoItems.length > 0), isFreeForm: bid?.isFreeForm };
@@ -4234,8 +4258,8 @@ test.describe('BYO estimate — auto-save, auto-fill cost, gauge dollars, scope 
       if (typeof clients !== 'undefined') clients = clients.filter(x => x.id !== 78002).concat([c]);
       if (typeof bids !== 'undefined') bids = bids.filter(x => x.client_id !== 78002);
       openGenericEstimate(c, null, 'painting');
-      window._geiIsFreeForm = true;
-      window._byoItems = [
+      _geiIsFreeForm = true;
+      _byoItems = [
         { id: 1, section: 'Interior', label: 'Labor', price: 100, on: true },
         { id: 2, section: 'Materials', label: 'Paint & primer', price: 45, on: true },
       ];
@@ -4258,13 +4282,13 @@ test.describe('BYO estimate — auto-save, auto-fill cost, gauge dollars, scope 
       if (typeof clients !== 'undefined') clients = clients.filter(x => x.id !== 78003).concat([c]);
       if (typeof bids !== 'undefined') bids = bids.filter(x => x.client_id !== 78003);
       // Simulate resume — _rrpPaintAnswer is unset (new session)
-      if (typeof window !== 'undefined') window._rrpPaintAnswer = '';
+      _rrpPaintAnswer = '';
       openGenericEstimate(c, null, 'painting');
-      window._geiIsFreeForm = true;
-      window._byoItems = [{ id: 1, section: 'Interior', label: 'Walls', price: 200, on: true }];
+      _geiIsFreeForm = true;
+      _byoItems = [{ id: 1, section: 'Interior', label: 'Walls', price: 200, on: true }];
       if (typeof _injectRrpItems === 'function') _injectRrpItems();
-      const rrpCount = (window._byoItems || []).filter(x => x._rrp).length;
-      const rrpAnswer = window._rrpPaintAnswer;
+      const rrpCount = (_byoItems || []).filter(x => x._rrp).length;
+      const rrpAnswer = _rrpPaintAnswer;
       return { rrpCount, rrpAnswer };
     });
     if (r === null) return;
@@ -4275,7 +4299,7 @@ test.describe('BYO estimate — auto-save, auto-fill cost, gauge dollars, scope 
   test('gauge shows dollar profit element when cost is entered', async () => {
     const r = await page.evaluate(() => {
       if (typeof _updateMarginGauge !== 'function') return null;
-      window._byoItems = window._byoItems || [];
+      _byoItems = _byoItems || [];
       const costEl = document.getElementById('byo-expected-cost');
       if (costEl) costEl.value = '500';
       _updateMarginGauge('byo', 1000);
@@ -4294,15 +4318,15 @@ test.describe('BYO estimate — auto-save, auto-fill cost, gauge dollars, scope 
       if (typeof clients !== 'undefined') clients = clients.filter(x => x.id !== 78004).concat([c]);
       if (typeof bids !== 'undefined') bids = bids.filter(x => x.client_id !== 78004);
       openGenericEstimate(c, null, 'painting');
-      window._geiIsFreeForm = true;
-      window._byoItems = [
+      _geiIsFreeForm = true;
+      _byoItems = [
         { id: 1, section: 'Interior', label: 'Master bedroom walls', price: 300, on: true },
         { id: 2, section: 'Materials', label: 'Paint & primer', price: 40, on: true },
       ];
-      window._geiScopeChips = [];
-      window._geiScopeNoScope = false;
+      _geiScopeChips = [];
+      _geiScopeNoScope = false;
       // Simulate scope section HTML build (same logic as sendGenericProposal)
-      const byoWorkItems = window._byoItems.filter(it => it.on && !it._rrp);
+      const byoWorkItems = _byoItems.filter(it => it.on && !it._rrp);
       const hasSections = byoWorkItems.length > 0;
       return { hasSections, labels: byoWorkItems.map(x => x.label) };
     });
@@ -4334,8 +4358,8 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       if (typeof clients !== 'undefined') clients = clients.filter(x => x.id !== 79001).concat([c]);
       if (typeof bids !== 'undefined') bids = bids.filter(x => x.client_id !== 79001);
       openGenericEstimate(c, null, 'general');
-      window._geiIsFreeForm = true;
-      window._geiIsTM = false;
+      _geiIsFreeForm = true;
+      _geiIsTM = false;
       // Simulate the terms generation by checking _warrantyClause and _permitClause variables exist
       // and that sendGenericProposal would include them — we test the variables indirectly
       const hasWarrantyVar = typeof window._warrantyClause !== 'undefined' || true; // built inside function
@@ -4349,8 +4373,8 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       if (typeof clients !== 'undefined') clients = clients.filter(x => x.id !== 79001).concat([c]);
       if (typeof bids !== 'undefined') bids = bids.filter(x => x.client_id !== 79001);
       openGenericEstimate(c, null, 'general');
-      window._geiIsFreeForm = true;
-      window._byoItems = [{ id: 1, section: 'Interior', label: 'Drywall repair', price: 200, on: true }];
+      _geiIsFreeForm = true;
+      _byoItems = [{ id: 1, section: 'Interior', label: 'Drywall repair', price: 200, on: true }];
       // Intercept preview overlay to capture HTML
       let captured = '';
       const orig = window._showProposalPreviewOverlay;
@@ -4381,8 +4405,8 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       if (typeof clients !== 'undefined') clients = clients.filter(x => x.id !== 79010).concat([c]);
       if (typeof bids !== 'undefined') bids = bids.filter(x => x.client_id !== 79010);
       openGenericEstimate(c, null, 'general');
-      window._geiIsFreeForm = true;
-      window._byoItems = [{ id: 1, section: 'Interior', label: 'Drywall repair', price: 200, on: true }];
+      _geiIsFreeForm = true;
+      _byoItems = [{ id: 1, section: 'Interior', label: 'Drywall repair', price: 200, on: true }];
       let captured = '';
       const orig = window._showProposalPreviewOverlay;
       window._showProposalPreviewOverlay = (html) => { captured = html; };
@@ -4430,8 +4454,8 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       if (typeof clients !== 'undefined') clients = clients.filter(x => x.id !== 79002).concat([c]);
       if (typeof bids !== 'undefined') bids = bids.filter(x => x.client_id !== 79002);
       openGenericEstimate(c, null, 'painting');
-      window._geiIsFreeForm = true;
-      window._byoItems = [{ id: 1, section: 'Interior', label: 'Walls', price: 300, on: true }];
+      _geiIsFreeForm = true;
+      _byoItems = [{ id: 1, section: 'Interior', label: 'Walls', price: 300, on: true }];
       let captured = '';
       const orig = window._showProposalPreviewOverlay;
       window._showProposalPreviewOverlay = (html) => { captured = html; };
@@ -4454,8 +4478,8 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       if (typeof clients !== 'undefined') clients = clients.filter(x => x.id !== 79003).concat([c]);
       if (typeof bids !== 'undefined') bids = bids.filter(x => x.client_id !== 79003);
       openGenericEstimate(c, null, 'electrical');
-      window._geiIsFreeForm = true;
-      window._byoItems = [{ id: 1, section: 'Interior', label: 'Panel upgrade', price: 1800, on: true }];
+      _geiIsFreeForm = true;
+      _byoItems = [{ id: 1, section: 'Interior', label: 'Panel upgrade', price: 1800, on: true }];
       let captured = '';
       const orig = window._showProposalPreviewOverlay;
       window._showProposalPreviewOverlay = (html) => { captured = html; };
@@ -4542,20 +4566,29 @@ test.describe('Paint estimate scope — scroll fix + unified renderer', () => {
   test('goSurfStepB sets pg-est overflow to hidden and resets scrollTop', async () => {
     const r = await page.evaluate(() => {
       if (typeof goSurfStepB !== 'function') return null;
+      if (typeof onSurfRoomName !== 'function') return null;
       const pgEst = document.getElementById('pg-est');
       if (!pgEst) return null;
       // Simulate a scrolled state before opening the overlay
       pgEst.scrollTop = 300;
-      window.surfRoom = 'Kitchen';
-      window.surfWhatSelected = ['walls'];
-      if (typeof SURF_ORDER !== 'undefined') window.surfBQueue = SURF_ORDER.filter(s => ['walls'].includes(s));
-      else window.surfBQueue = ['walls'];
-      window.surfBIdx = 0;
+      // surfRoom is a top-level `let` (declared in js/jobs.js) living in the shared
+      // global lexical environment, NOT on window — assigning window.surfRoom would
+      // create a separate property the function never reads. Drive it through the
+      // production handler onSurfRoomName(), which mutates the real binding from inside
+      // its own closure. Same reason toggleSurfWhat() is used for surfWhatSelected.
+      let roomInput = document.getElementById('surf-room-name');
+      if (!roomInput) { roomInput = document.createElement('input'); roomInput.id = 'surf-room-name'; document.body.appendChild(roomInput); }
+      roomInput.value = 'Kitchen';
+      onSurfRoomName(roomInput);
+      if (typeof toggleSurfWhat === 'function') toggleSurfWhat('walls');
       try { goSurfStepB(); } catch(e) {}
       const overflowHidden = pgEst.style.overflowY === 'hidden';
       const scrollReset = pgEst.scrollTop === 0;
       document.getElementById('surf-step-b').style.display = 'none';
       pgEst.style.overflowY = '';
+      // Reset the shared binding so later tests start from a clean room state
+      roomInput.value = ''; onSurfRoomName(roomInput);
+      if (typeof toggleSurfWhat === 'function') toggleSurfWhat('walls');
       return { overflowHidden, scrollReset };
     });
     if (r === null) return;
@@ -5141,6 +5174,7 @@ test.describe('UI cleanup — redundant elements removed', () => {
   });
 
   test('pg.active animation leaves no persistent transform stacking context', async () => {
+    await page.waitForTimeout(600); // let #pg-dash.active 500ms animation finish
     const transform = await page.evaluate(() => {
       const el = document.querySelector('.pg.active');
       if (!el) return null;
@@ -5238,17 +5272,17 @@ test.describe('Estimate autosave — BYO and T&M fields', () => {
       // Set up a fake bid
       const fakeId = 'autosave-test-' + Math.floor(Date.now() / 1000);
       bids.push({ id: fakeId });
-      window._geiEditBidId = fakeId;
-      window._geiScopeChips = ['Interior', 'Trim'];
-      window._geiScopeNoScope = false;
-      window._byoItems = [];
-      window._byoCustomSections = [];
-      window._estCrew = [];
+      _geiEditBidId = fakeId;
+      _geiScopeChips = ['Interior', 'Trim'];
+      _geiScopeNoScope = false;
+      _byoItems = [];
+      _byoCustomSections = [];
+      _estCrew = [];
       _byoAutosave();
       const saved = bids.find(b => b.id === fakeId);
       // clean up
       bids.splice(bids.findIndex(b => b.id === fakeId), 1);
-      window._geiEditBidId = null;
+      _geiEditBidId = null;
       return saved ? { chips: saved.scopeChips, noScope: saved.scopeNoScope } : null;
     });
     if (result === null) return;
@@ -5262,24 +5296,24 @@ test.describe('Estimate autosave — BYO and T&M fields', () => {
       if (typeof bids === 'undefined') return null;
       const fakeId = 'autosave-tm-' + Math.floor(Date.now() / 1000);
       bids.push({ id: fakeId });
-      window._geiEditBidId = fakeId;
-      window._geiIsTM = true;
-      window._geiIsFreeForm = true;
-      window._geiScopeChips = [];
-      window._geiScopeNoScope = false;
-      window._byoItems = [];
-      window._byoCustomSections = [];
-      window._estCrew = [];
-      window._tmCrewCount = 3;
-      window._tmRatePerMan = 65;
-      window._tmEstHours = 8;
-      window._tmBillingCycle = 'weekly';
-      window._tmMatMarkup = 15;
+      _geiEditBidId = fakeId;
+      _geiIsTM = true;
+      _geiIsFreeForm = true;
+      _geiScopeChips = [];
+      _geiScopeNoScope = false;
+      _byoItems = [];
+      _byoCustomSections = [];
+      _estCrew = [];
+      _tmCrewCount = 3;
+      _tmRatePerMan = 65;
+      _tmEstHours = 8;
+      _tmBillingCycle = 'weekly';
+      _tmMatMarkup = 15;
       _byoAutosave();
       const saved = bids.find(b => b.id === fakeId);
       bids.splice(bids.findIndex(b => b.id === fakeId), 1);
-      window._geiEditBidId = null;
-      window._geiIsTM = false;
+      _geiEditBidId = null;
+      _geiIsTM = false;
       return saved ? { isTM: saved.isTM, crew: saved.tmCrewCount, rate: saved.tmRatePerMan, hours: saved.tmEstHours, cycle: saved.tmBillingCycle } : null;
     });
     if (result === null) return;
@@ -5296,17 +5330,17 @@ test.describe('Estimate autosave — BYO and T&M fields', () => {
       if (typeof bids === 'undefined') return null;
       const fakeId = 'scope-chip-test-' + Math.floor(Date.now() / 1000);
       bids.push({ id: fakeId });
-      window._geiEditBidId = fakeId;
-      window._geiScopeChips = [];
-      window._geiScopeNoScope = false;
-      window._byoItems = [];
-      window._byoCustomSections = [];
-      window._estCrew = [];
-      window._geiIsTM = false;
+      _geiEditBidId = fakeId;
+      _geiScopeChips = [];
+      _geiScopeNoScope = false;
+      _byoItems = [];
+      _byoCustomSections = [];
+      _estCrew = [];
+      _geiIsTM = false;
       _toggleScopeChip('Exterior');
       const saved = bids.find(b => b.id === fakeId);
       bids.splice(bids.findIndex(b => b.id === fakeId), 1);
-      window._geiEditBidId = null;
+      _geiEditBidId = null;
       return saved ? saved.scopeChips : null;
     });
     if (result === null) return;
@@ -5319,17 +5353,17 @@ test.describe('Estimate autosave — BYO and T&M fields', () => {
       if (typeof bids === 'undefined') return null;
       const fakeId = 'scope-none-test-' + Math.floor(Date.now() / 1000);
       bids.push({ id: fakeId });
-      window._geiEditBidId = fakeId;
-      window._geiScopeChips = ['Interior'];
-      window._geiScopeNoScope = false;
-      window._byoItems = [];
-      window._byoCustomSections = [];
-      window._estCrew = [];
-      window._geiIsTM = false;
+      _geiEditBidId = fakeId;
+      _geiScopeChips = ['Interior'];
+      _geiScopeNoScope = false;
+      _byoItems = [];
+      _byoCustomSections = [];
+      _estCrew = [];
+      _geiIsTM = false;
       _toggleScopeNone();
       const saved = bids.find(b => b.id === fakeId);
       bids.splice(bids.findIndex(b => b.id === fakeId), 1);
-      window._geiEditBidId = null;
+      _geiEditBidId = null;
       return saved ? { noScope: saved.scopeNoScope, chips: saved.scopeChips } : null;
     });
     if (result === null) return;
@@ -5343,26 +5377,33 @@ test.describe('Estimate autosave — BYO and T&M fields', () => {
       if (typeof bids === 'undefined') return null;
       const fakeId = 'tm-recalc-test-' + Math.floor(Date.now() / 1000);
       bids.push({ id: fakeId });
-      window._geiEditBidId = fakeId;
-      window._geiIsTM = true;
-      window._geiIsFreeForm = true;
-      window._geiScopeChips = [];
-      window._geiScopeNoScope = false;
-      window._byoItems = [];
-      window._byoCustomSections = [];
-      window._estCrew = [];
-      window._geiLines = [];
-      window._tmCrewCount = 2;
-      window._tmRatePerMan = 75;
-      window._tmEstHours = 10;
-      window._tmBillingCycle = 'completion';
-      window._tmMatMarkup = 0;
+      _geiEditBidId = fakeId;
+      _geiIsTM = true;
+      _geiIsFreeForm = true;
+      _geiScopeChips = [];
+      _geiScopeNoScope = false;
+      _byoItems = [];
+      _byoCustomSections = [];
+      _estCrew = [];
+      _geiLines = [];
+      _tmCrewCount = 2;
+      _tmRatePerMan = 75;
+      _tmEstHours = 10;
+      _tmBillingCycle = 'completion';
+      _tmMatMarkup = 0;
+      // _tmRecalc() reads crew/rate/hours from DOM — sync DOM first
+      const _crewEl = document.getElementById('tm-crew-display');
+      if (_crewEl) _crewEl.textContent = '2';
+      const _rateEl = document.getElementById('tm-rate');
+      if (_rateEl) _rateEl.value = '75';
+      const _hoursEl = document.getElementById('tm-hours');
+      if (_hoursEl) _hoursEl.value = '10';
       _tmRecalc();
       const saved = bids.find(b => b.id === fakeId);
       bids.splice(bids.findIndex(b => b.id === fakeId), 1);
-      window._geiEditBidId = null;
-      window._geiIsTM = false;
-      window._geiLines = [];
+      _geiEditBidId = null;
+      _geiIsTM = false;
+      _geiLines = [];
       return saved ? { isTM: saved.isTM, crew: saved.tmCrewCount, rate: saved.tmRatePerMan } : null;
     });
     if (result === null) return;
@@ -5407,16 +5448,16 @@ test.describe('Int/ext estimate — cloud autosave (_paintEstAutosave)', () => {
       // Set up estimator state
       const nameEl = document.getElementById('e-cname');
       if (nameEl) nameEl.value = 'Autosave Test Client';
-      window.estLinkedClientId = null;
-      window.lastCreatedBidId = null;
-      window.editingBidId = null;
-      window.estSurfaces = [];
-      window.roomScopeMap = {};
+      estLinkedClientId = null;
+      lastCreatedBidId = null;
+      editingBidId = null;
+      estSurfaces = [];
+      roomScopeMap = {};
       _paintEstAutosave();
       const newBid = bids.find(b => b.draft && b.client_name === 'Autosave Test Client');
       // Clean up
       if (newBid) bids.splice(bids.findIndex(b => b.id === newBid.id), 1);
-      window.lastCreatedBidId = null;
+      lastCreatedBidId = null;
       if (nameEl) nameEl.value = '';
       return newBid ? { status: newBid.status, draft: newBid.draft, name: newBid.client_name } : null;
     });
@@ -5432,16 +5473,16 @@ test.describe('Int/ext estimate — cloud autosave (_paintEstAutosave)', () => {
       if (typeof bids === 'undefined') return null;
       const fakeId = 'paint-draft-' + Math.floor(Date.now() / 1000);
       bids.push({ id: fakeId, status: 'Draft', draft: true, client_name: 'Old Name', amount: 0 });
-      window.lastCreatedBidId = fakeId;
-      window.editingBidId = null;
-      window.estSurfaces = [];
-      window.roomScopeMap = {};
+      lastCreatedBidId = fakeId;
+      editingBidId = null;
+      estSurfaces = [];
+      roomScopeMap = {};
       const nameEl = document.getElementById('e-cname');
       if (nameEl) nameEl.value = 'Updated Client';
       _paintEstAutosave();
       const b = bids.find(x => x.id === fakeId);
       bids.splice(bids.findIndex(x => x.id === fakeId), 1);
-      window.lastCreatedBidId = null;
+      lastCreatedBidId = null;
       if (nameEl) nameEl.value = '';
       return b ? { name: b.client_name } : null;
     });
@@ -5455,8 +5496,8 @@ test.describe('Int/ext estimate — cloud autosave (_paintEstAutosave)', () => {
       if (typeof bids === 'undefined') return null;
       const nameEl = document.getElementById('e-cname');
       if (nameEl) nameEl.value = '';
-      window.lastCreatedBidId = null;
-      window.editingBidId = null;
+      lastCreatedBidId = null;
+      editingBidId = null;
       const prevCount = bids.length;
       _paintEstAutosave();
       return { unchanged: bids.length === prevCount };
@@ -5467,5 +5508,241 @@ test.describe('Int/ext estimate — cloud autosave (_paintEstAutosave)', () => {
 
   test('no console errors in paint autosave tests', async () => {
     assertNoErrors(page, 'paint estimate autosave');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// Long-press delete (3s hold) for proposals & jobs + sign-out save guard
+// Covers the cleanup tools for purging polluted/cross-account data and the
+// hard guarantee that a deliberate sign-out can never persist outgoing records.
+// ──────────────────────────────────────────────────────────────────────────
+test.describe('Long-press delete — proposals & jobs + sign-out save guard', () => {
+  let page;
+  const CID = 939001;          // test client id
+  const BID = 939101;          // test bid id
+  const JOB = 939201;          // test job id
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('long-press delete infrastructure functions exist', async () => {
+    const r = await page.evaluate(() => ({
+      popup: typeof _showLpDeletePopup === 'function',
+      doDelete: typeof _lpDoDelete === 'function',
+    }));
+    expect(r.popup).toBe(true);
+    expect(r.doDelete).toBe(true);
+  });
+
+  test('proposal card carries data-lp attributes (3s-hold target)', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof renderCDBids !== 'function' || typeof clients === 'undefined') return null;
+      window._savedCid = typeof currentClientId !== 'undefined' ? currentClientId : null;
+      clients = clients.filter(c => c.id !== 939001);
+      clients.push({ id: 939001, name: 'Polluted Co', phone: '316-555-0001', addr: '1 Test Rd' });
+      bids = bids.filter(b => b.id !== 939101);
+      bids.push({ id: 939101, client_id: 939001, client_name: 'Polluted Co', type: 'Painting job', amount: 2380, status: 'Pending', bid_date: '2026-06-01' });
+      currentClientId = 939001;
+      renderCDBids();
+      const card = document.getElementById('bid-card-939101');
+      const out = card ? { type: card.dataset.lpType, id: card.dataset.lpId, hasLabel: !!card.dataset.lpLabel } : null;
+      // cleanup deferred to delete tests below
+      return out;
+    });
+    if (r === null) return;
+    expect(r.type).toBe('bid');
+    expect(r.id).toBe('939101');
+    expect(r.hasLabel).toBe(true);
+  });
+
+  test('scheduled job card carries data-lp-type="job"', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof renderCDJobs !== 'function' || typeof jobs === 'undefined') return null;
+      currentClientId = 939001;
+      jobs = jobs.filter(j => j.id !== 939201);
+      jobs.push({ id: 939201, client_id: 939001, name: 'Polluted Job', start: '2026-07-01', days: 2, eventType: 'job' });
+      renderCDJobs();
+      const card = document.querySelector('[data-lp-type="job"][data-lp-id="939201"]');
+      return card ? { type: card.dataset.lpType, id: card.dataset.lpId } : null;
+    });
+    if (r === null) return;
+    expect(r.type).toBe('job');
+    expect(r.id).toBe('939201');
+  });
+
+  test('_lpDoDelete removes a scheduled job (type=job)', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _lpDoDelete !== 'function' || typeof jobs === 'undefined') return null;
+      if (!jobs.some(j => j.id === 939201)) jobs.push({ id: 939201, client_id: 939001, name: 'Polluted Job', start: '2026-07-01', days: 2, eventType: 'job' });
+      try { _lpDoDelete('939201', 'job'); } catch (e) {}
+      return { removed: !jobs.some(j => j.id === 939201) };
+    });
+    if (r === null) return;
+    expect(r.removed).toBe(true);
+  });
+
+  test('_lpDoDelete removes a bid and cascades its payments + liens (type=bid)', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _lpDoDelete !== 'function' || typeof bids === 'undefined') return null;
+      if (!bids.some(b => b.id === 939101)) bids.push({ id: 939101, client_id: 939001, amount: 2380, status: 'Pending' });
+      if (typeof payments !== 'undefined') { payments = payments.filter(p => p.bid_id !== 939101); payments.push({ id: 939301, bid_id: 939101, client_id: 939001, amount: 500, type: 'deposit' }); }
+      if (typeof liens !== 'undefined') { liens = liens.filter(l => l.bid_id !== 939101); liens.push({ id: 939401, bid_id: 939101, client_id: 939001, status: 'intent' }); }
+      try { _lpDoDelete('939101', 'bid'); } catch (e) {}
+      return {
+        bidGone: !bids.some(b => b.id === 939101),
+        payGone: typeof payments === 'undefined' || !payments.some(p => p.bid_id === 939101),
+        lienGone: typeof liens === 'undefined' || !liens.some(l => l.bid_id === 939101),
+      };
+    });
+    if (r === null) return;
+    expect(r.bidGone).toBe(true);
+    expect(r.payGone).toBe(true);
+    expect(r.lienGone).toBe(true);
+  });
+
+  test('deliberate sign-out blocks cloud save — no pending blob written', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof supaSaveToCloud !== 'function') return null;
+      localStorage.removeItem('zp3_offline_pending');
+      // _mergeOnSignIn=true would normally force a pending write when there's no user.
+      // The _deliberateSignOut guard must override that and persist nothing.
+      _deliberateSignOut = true;
+      _mergeOnSignIn = true;
+      try { await supaSaveToCloud(); } catch (e) {}
+      const pendingWritten = !!localStorage.getItem('zp3_offline_pending');
+      // restore global state so later suites are unaffected
+      _deliberateSignOut = false;
+      _mergeOnSignIn = false;
+      // cleanup seeded test records
+      if (typeof clients !== 'undefined') clients = clients.filter(c => c.id !== 939001);
+      if (typeof currentClientId !== 'undefined') currentClientId = window._savedCid || null;
+      return { pendingWritten };
+    });
+    if (r === null) return;
+    expect(r.pendingWritten).toBe(false);
+  });
+
+  test('_offlinePendingBlob stamps the current account as owner', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _offlinePendingBlob !== 'function') return null;
+      const _saved = typeof _supaUser !== 'undefined' ? _supaUser : null;
+      _supaUser = { id: 'owner-xyz' };
+      const blob = JSON.parse(_offlinePendingBlob());
+      _supaUser = _saved;
+      return { owner: blob._owner };
+    });
+    if (r === null) return;
+    expect(r.owner).toBe('owner-xyz');
+  });
+
+  test('_readOwnedOfflinePending discards a blob owned by a different account', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _readOwnedOfflinePending !== 'function') return null;
+      const _saved = typeof _supaUser !== 'undefined' ? _supaUser : null;
+      // Account A left a pending blob; account B is now signed in.
+      localStorage.setItem('zp3_offline_pending', JSON.stringify({ _owner: 'account-A', bids: [{ id: 1 }], ts: 1 }));
+      _supaUser = { id: 'account-B' };
+      const result = _readOwnedOfflinePending();
+      const cleared = !localStorage.getItem('zp3_offline_pending');
+      _supaUser = _saved;
+      return { discarded: result === null, cleared };
+    });
+    if (r === null) return;
+    expect(r.discarded).toBe(true);
+    expect(r.cleared).toBe(true);
+  });
+
+  test('_readOwnedOfflinePending keeps a blob owned by the same account', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _readOwnedOfflinePending !== 'function') return null;
+      const _saved = typeof _supaUser !== 'undefined' ? _supaUser : null;
+      localStorage.setItem('zp3_offline_pending', JSON.stringify({ _owner: 'account-C', bids: [{ id: 7 }], ts: 1 }));
+      _supaUser = { id: 'account-C' };
+      const result = _readOwnedOfflinePending();
+      _supaUser = _saved;
+      localStorage.removeItem('zp3_offline_pending');
+      return { kept: !!result && Array.isArray(result.bids) && result.bids.length === 1 };
+    });
+    if (r === null) return;
+    expect(r.kept).toBe(true);
+  });
+
+  test('no console errors in long-press delete + sign-out guard tests', async () => {
+    assertNoErrors(page, 'long-press delete & sign-out guard');
+  });
+});
+
+// ─── Proposal: no per-room dollar amounts; total/materials/deposit still visible ──
+test.describe('Proposal hides per-room costs — shows total, materials, deposit only', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(2000);
+  });
+  test.afterAll(async () => { await page.close(); });
+
+  test('buildProposal room rows do not contain a per-room dollar amount', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof buildProposal !== 'function' || typeof calcEst !== 'function') return null;
+      if (typeof estSurfaces !== 'undefined') {
+        estSurfaces.length = 0;
+        estSurfaces.push({ id: 1, type: 'walls', qty: 400, wallSqft: 400, room: 'Living Room — Whitetail [Matte]' });
+      }
+      const proposalDiv = document.getElementById('est-proposal');
+      if (!proposalDiv) return null;
+      try { buildProposal(); } catch (e) { return { error: e.message }; }
+      // Use DOM parsing — regex cross-row matching gives false positives
+      const doc = (new DOMParser()).parseFromString(proposalDiv.innerHTML, 'text/html');
+      const roomTds = [...doc.querySelectorAll('td')].filter(td => (td.getAttribute('style')||'').includes('border-left:3px solid #2a4a7f'));
+      // Each room td must be the sole td in its row (colspan=2, no sibling amount cell)
+      const roomRowsHaveAmountCell = roomTds.some(td => {
+        const row = td.closest('tr');
+        return row && row.querySelectorAll('td').length > 1;
+      });
+      const hasColspan2 = roomTds.some(td => td.getAttribute('colspan') === '2');
+      return { roomRowsHaveAmountCell, hasColspan2, roomTdCount: roomTds.length };
+    });
+    if (!result || result.error) return;
+    expect(result.roomRowsHaveAmountCell).toBe(false);
+    expect(result.hasColspan2).toBe(true);
+  });
+
+  test('buildProposal proposal still shows Materials amount', async () => {
+    const result = await page.evaluate(() => {
+      const proposalDiv = document.getElementById('est-proposal');
+      if (!proposalDiv || !proposalDiv.innerHTML) return null;
+      // Materials row is the td with "Paint, Primer & Materials" — it should still have a dollar amount in a sibling td
+      const html = proposalDiv.innerHTML;
+      const hasMatRow = /Paint.*?Primer.*?Materials/.test(html);
+      const matRowHasAmt = /Paint.*?Primer.*?Materials[\s\S]{1,600}\$[\d,]+\.\d{2}/.test(html);
+      return { hasMatRow, matRowHasAmt };
+    });
+    if (!result) return;
+    expect(result.hasMatRow).toBe(true);
+    expect(result.matRowHasAmt).toBe(true);
+  });
+
+  test('buildProposal proposal still shows TOTAL row', async () => {
+    const result = await page.evaluate(() => {
+      const proposalDiv = document.getElementById('est-proposal');
+      if (!proposalDiv || !proposalDiv.innerHTML) return null;
+      const html = proposalDiv.innerHTML;
+      const hasTotalRow = /TOTAL[\s\S]{1,100}\$[\d,]+\.\d{2}/.test(html);
+      return { hasTotalRow };
+    });
+    if (!result) return;
+    expect(result.hasTotalRow).toBe(true);
+  });
+
+  test('no console errors in proposal per-room cost tests', async () => {
+    assertNoErrors(page, 'proposal per-room cost');
   });
 });

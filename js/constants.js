@@ -147,17 +147,17 @@ const TRADE_SCOPE_ITEMS={
   ],
 };
 const SURF_TYPES=[
-  {v:'walls',l:'Walls',unit:'sq ft',rate:1.25,mf:1},
-  {v:'ceiling',l:'Ceiling',unit:'sq ft',rate:1.00,mf:1},
-  {v:'trim',l:'Trim/baseboard',unit:'lin ft',rate:1.50,mf:.4},
-  {v:'doors',l:'Doors',unit:'doors',rate:75,mf:20},
-  {v:'windows',l:'Windows',unit:'windows',rate:40,mf:8},
-  {v:'cabinets',l:'Cabinets',unit:'lin ft',rate:35,mf:4},
-  {v:'ext_walls',l:'Exterior walls',unit:'sq ft',rate:1.35,mf:1},
-  {v:'ext_trim',l:'Exterior trim',unit:'lin ft',rate:1.75,mf:.4},
-  {v:'deck',l:'Deck/fence',unit:'sq ft',rate:1.10,mf:1},
-  {v:'fence',l:'Fence staining',unit:'sq ft',rate:1.25,mf:1},
-  {v:'epoxy',l:'Epoxy/garage floor',unit:'sq ft',rate:1.75,mf:1},
+  {v:'walls',    l:'Walls',            unit:'sq ft',  rate:1.25, mf:1,  hpu:1/150},  // 150 sqft/hr
+  {v:'ceiling',  l:'Ceiling',          unit:'sq ft',  rate:1.00, mf:1,  hpu:1/100},  // 100 sqft/hr
+  {v:'trim',     l:'Trim/baseboard',   unit:'lin ft', rate:1.50, mf:.4, hpu:1/40},   // 40 lf/hr
+  {v:'doors',    l:'Doors',            unit:'doors',  rate:75,   mf:20, hpu:1.25},   // 1.25 hrs/door
+  {v:'windows',  l:'Windows',          unit:'windows',rate:40,   mf:8,  hpu:0.5},    // 0.5 hrs/window
+  {v:'cabinets', l:'Cabinets',         unit:'lin ft', rate:35,   mf:4,  hpu:1.5},    // 1.5 hrs/lf (detail work)
+  {v:'ext_walls',l:'Exterior walls',   unit:'sq ft',  rate:1.35, mf:1,  hpu:1/100},  // 100 sqft/hr
+  {v:'ext_trim', l:'Exterior trim',    unit:'lin ft', rate:1.75, mf:.4, hpu:1/30},   // 30 lf/hr
+  {v:'deck',     l:'Deck/fence',       unit:'sq ft',  rate:1.10, mf:1,  hpu:1/80},   // 80 sqft/hr
+  {v:'fence',    l:'Fence staining',   unit:'sq ft',  rate:1.25, mf:1,  hpu:1/100},  // 100 sqft/hr
+  {v:'epoxy',    l:'Epoxy/garage floor',unit:'sq ft', rate:1.75, mf:1,  hpu:1/60},   // 60 sqft/hr
 ];
 const CHECKS=[
   {cat:'urgent',title:'Notify Montana Dept of Revenue of address change',desc:'File a final MT state tax return for the year you move. Close any MT business accounts.'},

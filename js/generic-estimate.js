@@ -348,7 +348,7 @@ function openGenericEstimate(c,bidId,_tradePick){
       if(b.geiDuration)sf('gei-duration',b.geiDuration);
       if(b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(b.panelSched)_panelSched=JSON.parse(JSON.stringify(b.panelSched));
-      if(b.isTM){
+      if(b.isTM&&!_geiIsFreeForm){
         _geiIsTM=true;
         _tmCrewCount=b.tmCrewCount||1;_tmRatePerMan=b.tmRatePerMan||0;
         _tmEstHours=b.tmEstHours||0;_tmBillingCycle=b.tmBillingCycle||'weekly';
@@ -387,7 +387,7 @@ function openGenericEstimate(c,bidId,_tradePick){
       if(_b.isFreeForm)_geiIsFreeForm=true;
       if(_b.scopeChips)_geiScopeChips=[..._b.scopeChips];
       _geiScopeNoScope=!!(_b.scopeNoScope);
-      if(_b.isTM){_geiIsTM=true;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmMatMarkup=_b.tmMatMarkup||_b.geiTaxPct||20;_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
+      if(_b.isTM&&!_geiIsFreeForm){_geiIsTM=true;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmMatMarkup=_b.tmMatMarkup||_b.geiTaxPct||20;_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
       if(!_b.isTM&&_b.amount>0&&_b.deposit>0){const _storedPct=Math.round((_b.deposit/_b.amount)*100);const _depEl=document.getElementById('byo-deposit-pct');if(_depEl)_depEl.value=_storedPct;}
       // Purge other empty duplicates for this client+trade now that we have the right one
       bids=bids.filter(b=>b.id===_existingGei.id||!(b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&!b.amount&&!(b.geiLines||[]).length&&(b.status==='Draft'||b.status==='Pending')&&(b.trade_type===_geiTrade||!b.trade_type)));
@@ -1031,8 +1031,16 @@ function _updateMarginGauge(type,total){
   const hint=document.getElementById(type+'-gauge-hint');
   const cost=parseFloat(document.getElementById(type+'-expected-cost')?.value)||0;
   if(!cost||cost<=0||!total||total<=0){
+    // Cancel any in-flight show animation so a pending rAF can't flip opacity back
+    // to '1' after we start hiding (was a flaky-test + visual-flicker source).
+    if(gWrap._showRaf){cancelAnimationFrame(gWrap._showRaf);gWrap._showRaf=0;}
     gWrap.style.opacity='0';
-    setTimeout(()=>{if(gWrap.style.opacity==='0')gWrap.style.display='none';},340);
+    // Gate the hide on the REAL condition (cost still cleared) rather than the
+    // race-prone opacity value — deterministic regardless of stray animations.
+    setTimeout(()=>{
+      const _c=parseFloat(document.getElementById(type+'-expected-cost')?.value)||0;
+      if(!_c||_c<=0)gWrap.style.display='none';
+    },340);
     if(hint)hint.style.display='';
     return;
   }
@@ -1055,14 +1063,16 @@ function _updateMarginGauge(type,total){
   if(wasHidden){
     gWrap.style.display='';
     if(dot){dot.style.transition='none';dot.style.left='50%';dot.style.boxShadow='0 0 0 3px rgba(100,100,100,.2),0 2px 6px rgba(0,0,0,.12)';}
-    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    // Track the rAF handle so a subsequent hide can cancel this pending show.
+    gWrap._showRaf=requestAnimationFrame(()=>{gWrap._showRaf=requestAnimationFrame(()=>{
+      gWrap._showRaf=0;
       gWrap.style.opacity='1';
       if(dot){
         dot.style.transition='left .6s cubic-bezier(.22,1,.36,1),box-shadow .4s ease';
         dot.style.left=pos+'%';
         dot.style.boxShadow='0 0 0 3px '+color+',0 2px 8px rgba(0,0,0,.25)';
       }
-    }));
+    });});
   }else{
     if(dot){dot.style.left=pos+'%';dot.style.boxShadow='0 0 0 3px '+color+',0 2px 8px rgba(0,0,0,.25)';}
   }
@@ -2517,7 +2527,9 @@ async function sendGenericProposal(previewOnly){
     :_geiTrade==='landscaping'
       ?`${_party} warrants all plant material and hardscaping workmanship for ${_warrantyPeriod} from substantial completion. Living plant material is subject to proper watering and care by client after installation. Manufacturer warranties on materials pass through to Buyer.`
       :`${_party} warrants all workmanship against defects in labor and installation for ${_warrantyPeriod} from substantial completion. Manufacturer warranties on materials pass through to Buyer.`;
-  const _permitClause=`If permits or inspections are required for this scope of work, ${_party} will obtain them in accordance with applicable local ordinances and codes. Any permit fees not included in this proposal will be billed at cost with prior Buyer approval.`;
+  const _permitClause=_geiTrade==='painting'
+    ?`Painting and surface work does not typically require permits for standard residential repainting. If your municipality requires a permit for your specific project, ${_party} will notify you in advance. Any permit fees will be billed at cost with prior approval.`
+    :`${_party} shall obtain all permits and inspections required for this scope of work in accordance with applicable local ordinances and codes. Any permit fees not included in this proposal will be billed at cost with prior Buyer approval.`;
   const _tmPayTerms=_geiIsTM
     ?`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Contract type:</strong> Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}</div><div>2. <strong>Mobilization deposit:</strong> ${_tmDepPct}% (${depositFmt}) due before work begins and before a start date is scheduled.</div><div>3. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div><div>4. <strong>Billing:</strong> ${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.</div><div>5. <strong>Change Orders:</strong> Any additional scope not described herein requires a written change order approved and signed by the client.</div><div>6. <strong>Limitation of Liability:</strong> ${_party} is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>7. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(_stateKey,_party)}</div><div>8. <strong>Finance Charges:</strong> Unpaid balances remaining 30 days after job completion are subject to a finance charge of ${_fcPct}% per month (${_fcApr}% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.</div><div>9. <strong>Workmanship Warranty:</strong> ${_warrantyClause}</div><div>10. <strong>Permits &amp; Inspections:</strong> ${_permitClause}</div><div>11. <strong>Schedule &amp; Delays:</strong> Completion dates are good-faith estimates and may be extended due to weather, material shortages, inspection delays, subcontractor availability, or other circumstances beyond ${_party}&apos;s reasonable control. ${_party} will provide timely written or verbal notice of any material delay.</div><div>12. <strong>Insurance:</strong> ${_party} maintains general liability insurance and, where required by law, workers&apos; compensation insurance. A certificate of insurance will be provided to Buyer upon written request prior to commencement of work.</div><div>13. <strong>Dispute Resolution:</strong> In the event of a dispute, both parties agree to attempt good-faith negotiation before pursuing arbitration or litigation. The prevailing party in any legal proceeding to enforce this agreement shall be entitled to recover reasonable attorney&apos;s fees and costs, to the extent permitted by law.</div></div>`
     :`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> ${_sendByoDepPctLabel}% due before work begins and before a start date is scheduled. Balance due upon completion.</div><div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div><div>3. <strong>Change Orders:</strong> Any additional work not described herein requires a written change order approved and signed by the client.</div><div>4. <strong>Limitation of Liability:</strong> ${_party} is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>5. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(_stateKey,_party)}</div><div>6. <strong>Finance Charges:</strong> Unpaid balances remaining 30 days after job completion are subject to a finance charge of ${_fcPct}% per month (${_fcApr}% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.</div><div>7. <strong>Workmanship Warranty:</strong> ${_warrantyClause}</div><div>8. <strong>Permits &amp; Inspections:</strong> ${_permitClause}</div><div>9. <strong>Schedule &amp; Delays:</strong> Completion dates are good-faith estimates and may be extended due to weather, material shortages, inspection delays, subcontractor availability, or other circumstances beyond ${_party}&apos;s reasonable control. ${_party} will provide timely written or verbal notice of any material delay.</div><div>10. <strong>Insurance:</strong> ${_party} maintains general liability insurance and, where required by law, workers&apos; compensation insurance. A certificate of insurance will be provided to Buyer upon written request prior to commencement of work.</div><div>11. <strong>Dispute Resolution:</strong> In the event of a dispute, both parties agree to attempt good-faith negotiation before pursuing arbitration or litigation. The prevailing party in any legal proceeding to enforce this agreement shall be entitled to recover reasonable attorney&apos;s fees and costs, to the extent permitted by law.</div></div>`;

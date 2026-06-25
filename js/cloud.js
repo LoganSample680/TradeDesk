@@ -390,7 +390,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = location.origin + '/api';
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.25.26.3';
+const APP_VERSION='06.25.26.25';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -496,7 +496,30 @@ function _lpDoDelete(id,type){
   else if(type==='expense'){if(typeof delExpense==='function')delExpense(nid);}
   else if(type==='mileage'){if(typeof delMileage==='function')delMileage(nid);}
   else if(type==='lead'||type==='client'){_lpDeleteClientById(nid,type);}
-  else if(type==='bid'){const _delBid=bids.find(x=>x.id===nid);const _delClientId=_delBid?_delBid.client_id:null;bids=bids.filter(x=>x.id!==nid);_flushSaveNow&&_flushSaveNow();if(typeof renderJobsHistory==='function')renderJobsHistory();if(typeof renderJobsPage==='function')renderJobsPage();if(typeof renderDash==='function')renderDash();if(_delClientId&&typeof _uploadClientHub==='function')_uploadClientHub(_delClientId).catch(()=>{});}
+  else if(type==='bid'){
+    // Mirror deleteBid()'s cascade so a long-pressed proposal is fully cleaned up:
+    // its payment records and any lien go with it, and every surface re-renders.
+    const _delBid=bids.find(x=>x.id===nid);const _delClientId=_delBid?_delBid.client_id:null;
+    bids=bids.filter(x=>x.id!==nid);
+    if(typeof payments!=='undefined')payments=payments.filter(p=>p.bid_id!==nid);
+    if(typeof liens!=='undefined')liens=liens.filter(l=>l.bid_id!==nid);
+    _flushSaveNow&&_flushSaveNow();
+    if(typeof renderClientDetail==='function')renderClientDetail();
+    if(typeof renderJobsHistory==='function')renderJobsHistory();
+    if(typeof renderJobsPage==='function')renderJobsPage();
+    if(typeof renderCalendar==='function')renderCalendar();
+    if(typeof renderDash==='function')renderDash();
+    if(_delClientId&&typeof _uploadClientHub==='function')_uploadClientHub(_delClientId).catch(()=>{});
+  }
+  else if(type==='job'){
+    // Remove a single scheduled job/calendar event (jobs array record).
+    jobs=jobs.filter(x=>x.id!==nid);
+    _flushSaveNow&&_flushSaveNow();
+    if(typeof renderClientDetail==='function')renderClientDetail();
+    if(typeof renderCalendar==='function')renderCalendar();
+    if(typeof renderJobsPage==='function')renderJobsPage();
+    if(typeof renderDash==='function')renderDash();
+  }
 }
 function _lpDeleteClientById(id,fromType){
   clients=clients.filter(x=>x.id!==id);
@@ -531,6 +554,7 @@ Object.defineProperty(window,'_proposalViewsByBidClientCount',{get:()=>_proposal
 // incomplete in-memory state over real cloud data.
 let _loadedFromCacheOnly=false;
 let _mergeOnSignIn=false; // true when offline data in memory needs merging after SIGNED_IN
+let _loadedDataOwner=null; // user id whose business data is currently in memory (cross-account guard)
 let _cloudTimersStarted=false; // prevent duplicate setInterval/addEventListener on PTR re-load
 let _checkSigsBusy=false;      // prevent concurrent clawback writes
 let _sessionRestoreInProgress=false;
@@ -642,6 +666,7 @@ async function supaInit(){
       if(_cc){
         try{
           const _cd=JSON.parse(_cc);
+          if(_cd._owner)_loadedDataOwner=_cd._owner; // tag whose data is in memory (cross-account guard)
           clients=_cd.clients||[];bids=_cd.bids||[];jobs=_cd.jobs||[];
           payments=_cd.payments||[];income=_cd.income||[];expenses=_cd.expenses||[];
           mileage=_cd.mileage||[];liens=_cd.liens||[];timeEntries=_cd.timeEntries||[];
@@ -675,11 +700,19 @@ async function supaInit(){
         // TOKEN_REFRESHED in Supabase v2 can fire as SIGNED_IN — never reload cloud data
         // on a background token refresh; only load once per page session on explicit sign-in
         if(_supaCloudLoaded && _supaUser && session.user.id===_supaUser.id){return;}
-        if(_supaCloudLoaded && _supaUser && session.user.id!==_supaUser.id){
-          // Different user signed in on same device — full reset before loading their data
+        // Different account than the data currently in memory — full reset before loading.
+        // Compare against _loadedDataOwner (not _supaUser): after an involuntary SIGNED_OUT
+        // (token expiry) _supaUser is null yet the previous account's records are still in
+        // memory, so checking _supaUser alone would miss the swap and bleed data across.
+        const _incomingId=session.user.id;
+        if((_loadedDataOwner&&_incomingId!==_loadedDataOwner)||(_supaCloudLoaded&&_supaUser&&_incomingId!==_supaUser.id)){
           _supaCloudLoaded=false;_mergeOnSignIn=false;_realtimeSubscribed=false;_loadInProgress=false;
           clearTimeout(_syncTimer);_syncTimer=null;
           _devSupportMode=false;_devSupportName='';_devSavedState=null;
+          // Wipe the outgoing account's in-memory records so they can't be merged/pushed up.
+          clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
+          localStorage.removeItem('zp3_offline_pending');
+          _loadedDataOwner=null;
           // Previous user's settings timestamp must never beat this user's cloud copy
           S.settingsTs=0;
         }
@@ -692,10 +725,12 @@ async function supaInit(){
           // Trigger merge path if _mergeOnSignIn is set OR if zp3_offline_pending exists.
           // The flag may be false after a force-quit restart even if there is pending data —
           // checking the key directly means no offline record is ever silently dropped.
-          const _hasPendingData=!!localStorage.getItem('zp3_offline_pending');
+          // _readOwnedOfflinePending() discards (and clears) any blob owned by a different
+          // account, so foreign offline data can never be folded into this account.
+          const _op=_readOwnedOfflinePending();
+          const _hasPendingData=!!_op;
           if(_mergeOnSignIn||_hasPendingData){
             _mergeOnSignIn=false;
-            const _op=(() => {try{return JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');}catch(_e){return null;}})();
             // Deduplicate by ID across in-memory + pending — saveAll() writes all current
             // clients to pending, so without dedup the same record appears in both arrays
             // and gets pushed twice when neither ID is yet in the cloud.
@@ -748,6 +783,14 @@ async function supaInit(){
         if(_deliberateSignOut){
           clearTimeout(_syncTimer);_syncTimer=null; // prevent a live timer from flushing emptied arrays
           _supaCloudLoaded=false;_realtimeSubscribed=false;_loadInProgress=false;clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;
+          // Clear the cross-account merge state. _mergeOnSignIn stays true after any offline
+          // period; zp3_offline_pending holds THIS account's full data blob. If either survives
+          // a deliberate sign-out, the next account to sign in triggers the SIGNED_IN merge path
+          // (line ~696) and this account's records get pushed into theirs. Hard-clear both, plus
+          // the cloud cache, so no data from this account can leak into the next one.
+          _mergeOnSignIn=false;_loadedFromCacheOnly=false;_loadedDataOwner=null;
+          localStorage.removeItem('zp3_offline_pending');
+          localStorage.removeItem('zp3_cloud_cache');
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           // settingsTs:0 — zp3_S is shared across accounts on this device. Without
           // zeroing the timestamp, these blanked settings beat the next account's
@@ -1760,6 +1803,9 @@ function _mergeOfflinePendingToMemory(){
   try{
     const _op=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');
     if(!_op)return;
+    // Remember whose data this is so a later sign-in by a different account triggers
+    // the wipe-before-load guard rather than merging this account's records into theirs.
+    if(_op._owner&&!_loadedDataOwner)_loadedDataOwner=_op._owner;
     for(const{t,get}of _TD_TABLES){
       const key=t.replace(/^td_/,'').replace(/_([a-z])/g,(_m,c)=>c.toUpperCase());
       const pending=_op[key]||[];
@@ -1777,6 +1823,7 @@ function _enterOfflineMode(){
   if(_cc){
     try{
       const _cd=JSON.parse(_cc);
+      if(_cd._owner)_loadedDataOwner=_cd._owner; // tag whose data is in memory (cross-account guard)
       clients=_cd.clients||[];bids=_cd.bids||[];jobs=_cd.jobs||[];
       payments=_cd.payments||[];income=_cd.income||[];expenses=_cd.expenses||[];
       mileage=_cd.mileage||[];liens=_cd.liens||[];timeEntries=_cd.timeEntries||[];
@@ -2016,7 +2063,31 @@ function _saveUserPrefs(){
     ).then(()=>{},()=>{});
   }catch(_e){}
 }
+// Build the offline-pending snapshot, stamped with the owning account's user id.
+// _owner lets the SIGNED_IN merge path refuse to fold one account's offline data
+// into a different account (the cross-account-bleed root cause). _owner is null
+// only for purely-local data entered before any sign-in (safe to adopt on first login).
+function _offlinePendingBlob(){
+  // Owner falls back to _loadedDataOwner so a blob written while offline (no _supaUser)
+  // is still tagged with the account it came from — the next sign-in checks this.
+  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()});
+}
+// Read offline-pending, discarding (and clearing) any blob owned by a different
+// account than the one now signed in. Returns null when nothing usable remains.
+function _readOwnedOfflinePending(){
+  let op;try{op=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');}catch(_e){return null;}
+  if(!op)return null;
+  if(op._owner&&_supaUser&&op._owner!==_supaUser.id){
+    localStorage.removeItem('zp3_offline_pending');
+    return null; // belongs to a previous account — never merge it in
+  }
+  return op;
+}
 function supaSaveDebounced(){
+  // A deliberate sign-out is in progress — never persist or queue the outgoing
+  // account's data. This is the last line of defense against cross-account bleed:
+  // even if a debounced save was scheduled milliseconds before sign-out, it stops here.
+  if(_deliberateSignOut)return;
   if(!supaEnabled())return;
   if(!_supaUser&&!_mergeOnSignIn)return;
   clearTimeout(_syncTimer);
@@ -2026,7 +2097,7 @@ function supaSaveDebounced(){
   // localStorage write completes atomically and survives any force-quit.
   // Cleared by supaSaveToCloud() on a successful push. Drain deduplicates on reload.
   if(_supaCloudLoaded||_mergeOnSignIn){
-    try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
+    try{localStorage.setItem('zp3_offline_pending',_offlinePendingBlob());}catch(_e){}
   }
   _syncTimer=setTimeout(()=>{_syncTimer=null;supaSaveToCloud();},2000);
   if(_supaUser)supaSetStatus('syncing');
@@ -2172,7 +2243,7 @@ function _startOfflineWatcher(){
     if(document.visibilityState==='hidden'){
       const _hasUnsaved=_syncTimer||_mergeOnSignIn||localStorage.getItem('zp3_pending_sync')==='1';
       if(_hasUnsaved){
-        try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
+        try{localStorage.setItem('zp3_offline_pending',_offlinePendingBlob());}catch(_e){}
       }
     }
     if(document.visibilityState==='visible'&&_isOfflineState())_probeAndSync();
@@ -2195,7 +2266,7 @@ function _logSave(stage,info){
 }
 function _writeLocalCache(){
   try{
-    const _snap={clients,bids,jobs,payments,income,
+    const _snap={_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,payments,income,
       expenses:expenses.map(({receipt_img,...r})=>r),
       mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,checksState,
       settings:S,cached_at:new Date().toISOString()};
@@ -2204,9 +2275,10 @@ function _writeLocalCache(){
 }
 
 async function supaSaveToCloud(){
+  if(_deliberateSignOut){_logSave('skip','deliberate sign-out in progress');return;}
   if(!_supa||!_supaUser){
     if(_mergeOnSignIn){
-      try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
+      try{localStorage.setItem('zp3_offline_pending',_offlinePendingBlob());}catch(_e){}
     }
     _logSave('skip','no _supa or _supaUser');return;
   }
@@ -2231,7 +2303,7 @@ async function supaSaveToCloud(){
   _logSave('start',{id:_attemptId,mileage:_mileCount,page:document.querySelector('.pg.active')?.id});
 
   // Force-quit safety net — written before any async work
-  try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
+  try{localStorage.setItem('zp3_offline_pending',_offlinePendingBlob());}catch(_e){}
   _writeLocalCache();
 
   // Lazy-migrate up to 3 inline receipt_img → Supabase Storage
@@ -2333,7 +2405,7 @@ async function supaSaveToCloud(){
     _logSave('throw',{id:_attemptId,name:e?.name,code:e?.code,msg:e?.message||String(e)});
     console.warn('Cloud save failed:',e);
     localStorage.setItem('zp3_pending_sync','1');
-    try{localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()}));}catch(_e){}
+    try{localStorage.setItem('zp3_offline_pending',_offlinePendingBlob());}catch(_e){}
     _showOfflineBanner();
     supaSetStatus('error');
   }
@@ -2760,6 +2832,7 @@ async function supaLoadFromCloud({silent=false}={}){
     if(typeof _applyTabOrder==='function'&&typeof _getTabOrder==='function')_applyTabOrder(_getTabOrder());
 
     _supaCloudLoaded=true;_loadedFromCacheOnly=false;_mergeOnSignIn=false;
+    _loadedDataOwner=(_supaUser&&_supaUser.id)||_loadedDataOwner; // remember whose data is in memory
     supaSetStatus('synced');
 
     // If _mergeIncomingSettings detected local is newer than cloud it scheduled a

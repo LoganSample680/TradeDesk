@@ -155,24 +155,31 @@ test.describe('Drag-to-reorder — dashboard widgets', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
-    // Navigate to dash to trigger renderDash and _initDashDrag
+    // Navigate to dash to trigger renderDash and _initDashDrag. renderDash wires
+    // the widgets via setTimeout(...,0), so wait for them to actually exist rather
+    // than racing a fixed delay (the cause of the intermittent shard failures).
     await page.evaluate(() => window.goPg('pg-dash'));
-    await page.waitForTimeout(400);
+    await page.waitForFunction(
+      () => document.querySelectorAll('#dash-widget-root > .td-dw').length >= 4,
+      { timeout: 8000 }
+    );
   });
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('dash-widget-root exists with 4 .td-dw children', async () => {
+  test('dash-widget-root exists with 6 .td-dw children', async () => {
     const rootExists = await page.locator('#dash-widget-root').count();
     expect(rootExists).toBe(1);
 
     const widgets = await page.evaluate(() =>
       [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.dataset.dw)
     );
-    expect(widgets).toHaveLength(4);
+    expect(widgets).toHaveLength(6);
     expect(widgets).toContain('kpi');
     expect(widgets).toContain('pipeline');
     expect(widgets).toContain('feed');
+    expect(widgets).toContain('quick');
+    expect(widgets).toContain('calendar');
     expect(widgets).toContain('sources');
   });
 
@@ -195,23 +202,23 @@ test.describe('Drag-to-reorder — dashboard widgets', () => {
       S.dashWidgetOrder = saved;
       return result;
     });
-    expect(order).toEqual(['kpi', 'pipeline', 'feed', 'sources']);
+    expect(order).toEqual(['kpi', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
   });
 
   test('_applyDashOrder reorders widgets in DOM', async () => {
-    await page.evaluate(() => _applyDashOrder(['sources', 'feed', 'pipeline', 'kpi']));
+    await page.evaluate(() => _applyDashOrder(['sources', 'calendar', 'quick', 'feed', 'pipeline', 'kpi']));
 
     const order = await page.evaluate(() =>
       [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.dataset.dw)
     );
-    expect(order).toEqual(['sources', 'feed', 'pipeline', 'kpi']);
+    expect(order).toEqual(['sources', 'calendar', 'quick', 'feed', 'pipeline', 'kpi']);
 
     // Restore default
-    await page.evaluate(() => _applyDashOrder(['kpi', 'pipeline', 'feed', 'sources']));
+    await page.evaluate(() => _applyDashOrder(['kpi', 'pipeline', 'feed', 'quick', 'calendar', 'sources']));
     const restored = await page.evaluate(() =>
       [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.dataset.dw)
     );
-    expect(restored).toEqual(['kpi', 'pipeline', 'feed', 'sources']);
+    expect(restored).toEqual(['kpi', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
   });
 
   test('_dashSortActive flag prevents duplicate listener registration', async () => {
@@ -256,15 +263,15 @@ test.describe('Drag-to-reorder — dashboard widgets', () => {
   test('S.dashWidgetOrder is saved after exit', async () => {
     // Manually set and verify the order is persisted
     await page.evaluate(() => {
-      S.dashWidgetOrder = ['sources', 'kpi', 'pipeline', 'feed'];
+      S.dashWidgetOrder = ['sources', 'calendar', 'kpi', 'pipeline', 'feed', 'quick'];
     });
     const saved = await page.evaluate(() => S.dashWidgetOrder);
-    expect(saved).toEqual(['sources', 'kpi', 'pipeline', 'feed']);
+    expect(saved).toEqual(['sources', 'calendar', 'kpi', 'pipeline', 'feed', 'quick']);
 
     // Reset to default
     await page.evaluate(() => {
-      S.dashWidgetOrder = ['kpi', 'pipeline', 'feed', 'sources'];
-      _applyDashOrder(['kpi', 'pipeline', 'feed', 'sources']);
+      S.dashWidgetOrder = ['kpi', 'pipeline', 'feed', 'quick', 'calendar', 'sources'];
+      _applyDashOrder(['kpi', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
     });
   });
 

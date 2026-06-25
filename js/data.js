@@ -77,7 +77,7 @@ let gps={active:false,startCoords:null,endCoords:null,startTime:null,clientId:nu
 let _activeTimer=null; // {jobId,jobName,clientName,startTime,timerInterval}
 
 
-let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.725,irsRateYear:2026,bracketYear:0,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.40,timeOff:[],employees:[],devices:[],subcontractors:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{},baddr:'',bcity:'',bzip:'',poweredBy:true,customTerms:'',coTerms:'',serviceStates:[],salesTaxRate:0,salesTaxRateSource:'',teamTracking:true,trackStart:'07:00',trackEnd:'18:00',geofenceFt:300,officeLat:0,officeLon:0,laborBurden:1.3,ownerPayType:'hourly',ownerPayRate:0};
+let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.725,irsRateYear:2026,bracketYear:0,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.25,timeOff:[],employees:[],devices:[],subcontractors:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{},baddr:'',bcity:'',bzip:'',poweredBy:true,customTerms:'',coTerms:'',serviceStates:[],salesTaxRate:0,salesTaxRateSource:'',teamTracking:true,trackStart:'07:00',trackEnd:'18:00',geofenceFt:300,officeLat:0,officeLon:0,laborBurden:1.3,ownerPayType:'hourly',ownerPayRate:0};
 
 // ZJ's logo — SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
 // Only shown for ZJ's Painting account — other accounts see plain business name text.
@@ -200,9 +200,12 @@ function saveAll(){if(_devSupportMode){_flushSaveNow();return;}if(_isEmployee){s
   localStorage.setItem('zp3_contracts',JSON.stringify(contracts));
   localStorage.setItem('zp3_agreements',JSON.stringify(agreements));
   localStorage.setItem('zp3_maint',JSON.stringify(maintenance));
-  // Offline-pending: write synchronously so a force-quit can never outrun a timer
+  // Offline-pending: write synchronously so a force-quit can never outrun a timer.
+  // Use the shared owner-stamped blob so this account's data can never be merged
+  // into a different account on the next sign-in (cross-account-bleed guard).
   if(typeof _mergeOnSignIn!=='undefined'&&_mergeOnSignIn&&!_supaUser){
-    localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,ts:Date.now()}));
+    if(typeof _offlinePendingBlob==='function')localStorage.setItem('zp3_offline_pending',_offlinePendingBlob());
+    else localStorage.setItem('zp3_offline_pending',JSON.stringify({clients,bids,jobs,ts:Date.now()}));
   }
 }catch(e){}supaSaveDebounced();}
 function loadAll(){

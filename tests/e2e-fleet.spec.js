@@ -994,15 +994,17 @@ test.describe('Vehicle management consolidation — removal regression', () => {
       maintenance = [{ id: 9001, vehicleName: '2022 Silverado', type: 'oil', typeLabel: 'Oil Change', date: '2025-05-01', cost: 75, odo: 42000 }];
       renderFleetVehicles();
     });
-    await page.waitForTimeout(200);
 
     // The last-service row must be a <button> (not a plain <div>)
-    // Fleet cards use class "card"; the service link button contains "Oil Change"
+    // Fleet cards use class "card"; the service link button contains "Oil Change".
+    // Wait for the rendered button explicitly (bounded) instead of a fixed delay —
+    // a slow render previously hung the whole test to its 60s timeout.
     const serviceBtn = page.locator('.card button').filter({ hasText: /Oil Change/ });
-    await expect(serviceBtn).toHaveCount(1);
+    await expect(serviceBtn).toHaveCount(1, { timeout: 8000 });
 
     // Clicking it should open the fleet detail modal at the service tab
-    await serviceBtn.click();
+    // click() auto-scrolls; no need for a separate scrollIntoViewIfNeeded
+    await serviceBtn.click({ timeout: 8000 });
     await page.waitForTimeout(500);
 
     const activeTab = await page.evaluate(() => {
