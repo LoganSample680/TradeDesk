@@ -1,17 +1,7 @@
 let _renderDashRunning=false;
-let _dashFeedFilter='all';
-
-function setDashFeedFilter(f){
-  _dashFeedFilter=f;
-  ['all','money','urgent'].forEach(id=>{
-    const btn=document.getElementById('dff-'+id);
-    if(btn)btn.classList.toggle('on',id===f);
-  });
-  renderTodayFeed();
-}
 
 function _trendHtml(curr,prev,reverseColor){
-  if(!prev||prev===0)return '<div class="met-s">— est.</div>';
+  if(!prev||prev===0)return '';
   const pct=Math.round((curr-prev)/Math.abs(prev)*100);
   if(Math.abs(pct)<1)return '<div class="met-s">— vs LY</div>';
   const isUp=pct>0;
@@ -99,68 +89,97 @@ function renderDash(){
 
   const kpiEl=document.getElementById('dash-kpi');
   if(kpiEl&&_isEmployee){
-    // Employee home: field-focused tiles, no financial data
-    const activeJobs=jobs.filter(j=>!j.completed&&!j.cancelled);
-    const todayJobs=activeJobs.filter(j=>j.date===tk||j.scheduled_date===tk);
-    const myMiles=mileage.filter(m=>m.logged_by_id===_supaUser?.id&&m.date&&m.date.startsWith(yrStr)).reduce((s,m)=>s+(m.miles||0),0);
-    const recentClients=clients.slice(0,3);
+    // Employee home: Today's Jobs (dispatch-assigned) + vehicle line
+    const empId=_employeeRecord?.id;
+    const myDayJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&j.assignedDate===tk)
+      .sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
+    // Vehicle display
+    const vehKey='emp_vehicle_'+tk;
+    const vehId=localStorage.getItem(vehKey);
+    let vehLabel='';
+    if(vehId&&vehId!=='none'){
+      const v=(S.vehicles||[]).find(x=>String(x.id)===String(vehId));
+      if(v)vehLabel=[v.year,v.make,v.model].filter(Boolean).join(' ')||v.name||'Vehicle';
+    }
+    function _empStatusLabel(s){return s==='done'?'Completed ✓':s==='arrived'?'On site':s==='enroute'?'On my way':'Not started';}
+    function _empStatusColor(s){return s==='done'?'var(--c-green)':s==='arrived'?'var(--blue)':s==='enroute'?'var(--amber)':'var(--text3)';}
+    function _empActionBtn(j){
+      const st=(j.empStatus||{})[empId]||null;
+      if(st==='done')return '';
+      const nextState=st===null?'enroute':st==='enroute'?'arrived':'done';
+      const label=st===null?'On My Way':st==='enroute'?'I\'ve Arrived':'Mark Done';
+      return '<button onclick="_empSetStatus('+j.id+',\''+nextState+'\')" style="min-height:44px;padding:8px 14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+label+'</button>';
+    }
+    const jobCards=myDayJobs.map(j=>{
+      const c=clients.find(x=>x.id===j.client_id)||{name:j.clientName||j.name||'Job'};
+      const addr=j.addr||c.addr||'';
+      const mapsUrl=addr?'https://maps.apple.com/?daddr='+encodeURIComponent(addr):'';
+      const st=(j.empStatus||{})[empId]||null;
+      const statusLabel=_empStatusLabel(st);
+      const statusColor=_empStatusColor(st);
+      const _jTasks=(j.tasks||[]);
+      const _taskHtml=_jTasks.length?
+        '<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">'+
+        _jTasks.map(t=>{
+          const _doneInfo=t.done&&t.doneBy?'<div style="font-size:10px;color:var(--green-mid);margin-top:1px">'+escHtml(t.doneBy)+(t.doneAt?' · '+_fmtEmpTaskTime(t.doneAt):'')+'</div>':'';
+          return '<div style="display:flex;align-items:flex-start;gap:8px;padding:3px 0">'+
+          '<button onclick="_empToggleTask('+j.id+','+t.id+')" style="flex-shrink:0;margin-top:1px;width:22px;height:22px;border-radius:50%;border:2px solid '+(t.done?'var(--green-mid)':'var(--border2)')+';background:'+(t.done?'var(--green-mid)':'transparent')+';cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center">'+(t.done?'<span style="color:#fff;font-size:9px;font-weight:900">✓</span>':'')+
+          '</button>'+
+          '<div><span style="font-size:12px;'+(t.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text)')+'">'+escHtml(t.text)+'</span>'+_doneInfo+'</div>'+
+          '</div>';
+        }).join('')+
+        (_jTasks.every(t=>t.done)?'<div style="font-size:11px;color:var(--green-mid);font-weight:700;margin-top:4px">All tasks complete ✓</div>':'')+
+        '</div>':'';
+      return '<div style="padding:12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px">'+
+        '<div style="font-size:14px;font-weight:700;margin-bottom:4px">'+escHtml(c.name)+'</div>'+
+        (addr?'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
+          '<div style="font-size:12px;color:var(--text2);flex:1">'+escHtml(addr)+'</div>'+
+          (mapsUrl?'<a href="'+mapsUrl+'" style="font-size:11px;font-weight:700;color:var(--blue);text-decoration:none;white-space:nowrap;min-height:36px;display:flex;align-items:center;padding:4px 8px;border-radius:var(--r);border:1px solid var(--blue)">🗺 Navigate</a>':'')+
+        '</div>':'')+
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
+          '<span style="font-size:11px;font-weight:700;color:'+statusColor+'">'+statusLabel+'</span>'+
+          _empActionBtn(j)+
+        '</div>'+
+        _taskHtml+
+      '</div>';
+    }).join('');
     kpiEl.innerHTML=
-      '<div class="mets" style="margin-bottom:12px">'+
-        '<div class="met" style="cursor:pointer" onclick="goPg(\'pg-jobs\')">'+
-          '<div class="met-l">Active jobs</div>'+
-          '<div class="met-v">'+activeJobs.length+'</div>'+
-        '</div>'+
-        '<div class="met" style="cursor:pointer" onclick="goPg(\'pg-jobs\')">'+
-          '<div class="met-l">Today</div>'+
-          '<div class="met-v" style="color:var(--blue)">'+todayJobs.length+'</div>'+
-        '</div>'+
-        '<div class="met" style="cursor:pointer" onclick="goPg(\'pg-clients\')">'+
-          '<div class="met-l">Clients</div>'+
-          '<div class="met-v">'+clients.length+'</div>'+
-        '</div>'+
-        '<div class="met">'+
-          '<div class="met-l">My miles '+yr+'</div>'+
-          '<div class="met-v">'+Math.round(myMiles).toLocaleString()+' <span style="font-size:11px;font-weight:400;color:var(--text3)">mi</span></div>'+
-        '</div>'+
-      '</div>'+
-      (todayJobs.length?
-        '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Today\'s jobs</div>'+
-        todayJobs.slice(0,3).map(j=>'<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:6px;cursor:pointer" onclick="goPg(\'pg-jobs\')">'+
-          '<div style="font-size:18px">🔨</div>'+
-          '<div style="min-width:0"><div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(j.clientName||j.title||'Job')+'</div>'+
-          '<div style="font-size:11px;color:var(--text3)">'+escHtml(j.address||j.type||'')+'</div></div>'+
-        '</div>').join(''):'');
+      '<div id="emp-today-jobs" style="margin-bottom:16px">'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Today\'s Jobs</div>'+
+        (vehLabel?'<div id="_emp-vehicle-display" style="font-size:12px;color:var(--text2);margin-bottom:10px">🚗 Driving: '+escHtml(vehLabel)+'</div>':'<div id="_emp-vehicle-display" style="font-size:12px;color:var(--text2);margin-bottom:10px"></div>')+
+        (myDayJobs.length?jobCards:'<div style="font-size:13px;color:var(--text3);padding:12px 0;line-height:1.5">No jobs assigned for today. Check back after your contractor updates the schedule.</div>')+
+      '</div>';
   } else if(kpiEl){
     const pBids=bids.filter(b=>b.status==='Pending');
     const prevTax=showTrends?estimateTax(Math.max(0,prevInc-prevExp-Math.round(prevMi*IRS()))):0;
     const prevProfit=showTrends?Math.round(prevInc-prevExp-prevTax):0;
     kpiEl.innerHTML='<div class="mets" id="dash-mets-inner">'+
-      '<div class="met" style="cursor:pointer" onclick="goToTrackerTab(\'income\')">'+
+      '<div class="met" data-kpi="revenue" style="cursor:pointer" onclick="goToTrackerTab(\'income\')">'+
         '<div class="met-l">Revenue</div>'+
         '<div class="met-v" style="color:var(--c-green)">'+fmtShort(tInc)+'</div>'+
         (showTrends?_trendHtml(tInc,prevInc,false):'')+
       '</div>'+
-      '<div class="met" style="cursor:pointer" onclick="goToTrackerTab(\'expenses\')">'+
+      '<div class="met" data-kpi="expenses" style="cursor:pointer" onclick="goToTrackerTab(\'expenses\')">'+
         '<div class="met-l">Expenses</div>'+
         '<div class="met-v" style="color:var(--c-red)">'+fmtShort(tExp)+'</div>'+
         (showTrends?_trendHtml(tExp,prevExp,true):'')+
       '</div>'+
-      '<div class="met" style="cursor:pointer" onclick="goToTrackerTab(\'mileage\')">'+
+      '<div class="met" data-kpi="mileage" style="cursor:pointer" onclick="goToTrackerTab(\'mileage\')">'+
         '<div class="met-l">Mileage</div>'+
         '<div class="met-v">'+Math.round(tMi).toLocaleString()+'<span class="unit"> mi</span></div>'+
         (showTrends?_trendHtml(tMi,prevMi,false):'')+
       '</div>'+
-      '<div class="met" style="cursor:pointer" data-pg="pg-taxes" onclick="goPg(this.dataset.pg)">'+
-        '<div class="met-l">Taxes (est)</div>'+
+      '<div class="met" data-kpi="taxes" style="cursor:pointer" data-pg="pg-taxes" onclick="goPg(this.dataset.pg)">'+
+        '<div class="met-l">Taxes</div>'+
         '<div class="met-v" style="color:var(--c-red)">'+fmtShort(ytdTaxEst)+'</div>'+
-        (showTrends&&prevTax?_trendHtml(ytdTaxEst,prevTax,true):'<div class="met-s">— est.</div>')+
+        (showTrends&&prevTax?_trendHtml(ytdTaxEst,prevTax,true):'')+
       '</div>'+
-      '<div class="met" style="cursor:pointer" data-chart="profit" onclick="showKpiChart(this.dataset.chart)">'+
+      '<div class="met" data-kpi="profit" style="cursor:pointer" data-chart="profit" onclick="showKpiChart(this.dataset.chart)">'+
         '<div class="met-l">Profit</div>'+
         '<div class="met-v" style="color:'+(ytdTrueProfit<0?'var(--c-red)':'var(--c-green)')+'">'+fmtShort(ytdTrueProfit)+'</div>'+
         (showTrends?_trendHtml(ytdTrueProfit,prevProfit,false):'')+
       '</div>'+
-      '<div class="met">'+
+      '<div class="met" data-kpi="avgjob">'+
         '<div class="met-l">Avg job</div>'+
         '<div class="met-v">'+(avgJobVal!==null?fmtShort(avgJobVal):'—')+'</div>'+
       '</div>'+
@@ -182,11 +201,15 @@ function renderDash(){
     if(_lossYears>=3){
       _hobbyEl.style.display='block';
       _hobbyEl.innerHTML='<div style="background:#FFF8E7;border:1.5px solid #D4A017;border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">'+
-        '<div style="font-size:12px;font-weight:700;color:#78350F;margin-bottom:3px">⚠️ Hobby Loss Risk — '+_lossYears+' of last 5 years show net losses</div>'+
-        '<div style="font-size:12px;color:var(--text2);line-height:1.5">IRS may reclassify your business as a hobby, limiting deductions to hobby income only. Talk to your CPA about documenting profit motive.</div>'+
+        '<div style="font-size:12px;font-weight:700;color:#78350F;margin-bottom:3px">⚠️ '+_lossYears+' of last 5 years show net losses</div>'+
+        '<div style="font-size:12px;color:var(--text2);line-height:1.5">You\'ve had losses several years in a row. The IRS may start asking questions — talk to your CPA about showing you run this as a real business.</div>'+
       '</div>';
     }else{_hobbyEl.style.display='none';}
   }
+  // Crew labor tile (contractor + payroll viewer + tracking on) — async, links to Books
+  if(typeof _renderDashCrewToday==='function')_renderDashCrewToday();
+  // Employee: show a location-permission fix-it banner only if perms are off
+  if(typeof _geoPermissionBanner==='function')_geoPermissionBanner();
 
   const closeTip=document.getElementById('dash-close-tip');
   if(_isEmployee){if(closeTip)closeTip.style.display='none';}
@@ -258,7 +281,60 @@ function renderDash(){
   window._pwaUpdateBadge&&window._pwaUpdateBadge();
   renderContractsDash&&renderContractsDash();
 
+  setTimeout(()=>{_applyDashOrder(_getDashWidgetOrder());if(typeof _initDashDrag==='function')_initDashDrag();_applyKpiOrder();if(typeof _initKpiDrag==='function')_initKpiDrag();},0);
   }finally{_renderDashRunning=false;}
+}
+
+// ── Employee status updates from daily view ───────────────────────────────────
+function _empSetStatus(jobId,newState){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  const empId=_employeeRecord?.id;if(!empId)return;
+  if(newState==='done'){
+    // Show note bottom sheet before marking done
+    const ov=document.createElement('div');ov.className='zmodal-overlay';
+    const sheet=document.createElement('div');
+    sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
+    sheet.innerHTML=
+      '<div style="font-size:15px;font-weight:800;margin-bottom:10px">Mark Job Done</div>'+
+      '<div class="f" style="margin-bottom:14px"><label>Optional note</label>'+
+        '<textarea id="_emp-done-note" rows="3" placeholder="Any notes about the job..." style="font-size:14px;padding:10px;resize:vertical;min-height:80px"></textarea></div>'+
+      '<button onclick="_empConfirmDone('+jobId+')" style="width:100%;min-height:44px;padding:12px;border-radius:var(--r);border:none;background:var(--c-green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Done</button>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Cancel</button>';
+    ov.appendChild(sheet);document.body.appendChild(ov);
+    ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+    requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
+    return;
+  }
+  if(!j.empStatus)j.empStatus={};
+  j.empStatus[empId]=newState;
+  saveAll();
+  const label=newState==='enroute'?'On your way!':'Arrived — get to work!';
+  showToast(label,newState==='enroute'?'🚗':'📍');
+  renderDash();
+}
+function _empConfirmDone(jobId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  const empId=_employeeRecord?.id;if(!empId)return;
+  const note=(document.getElementById('_emp-done-note')?.value||'').trim();
+  if(!j.empStatus)j.empStatus={};
+  j.empStatus[empId]='done';
+  if(note){if(!j.empNotes)j.empNotes={};j.empNotes[empId]=note;}
+  document.querySelector('.zmodal-overlay')?.remove();
+  saveAll();showToast('Job marked complete','✅');renderDash();
+}
+
+function _fmtEmpTaskTime(iso){
+  try{const d=new Date(iso);return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}catch(e){return'';}
+}
+function _empToggleTask(jobId,taskId){
+  const j=jobs.find(x=>x.id===jobId);if(!j||!j.tasks)return;
+  const t=j.tasks.find(x=>x.id===taskId);if(!t)return;
+  t.done=!t.done;
+  if(t.done){
+    t.doneBy=_employeeRecord?.name||'Employee';
+    t.doneAt=new Date().toISOString();
+  }else{delete t.doneBy;delete t.doneAt;}
+  saveAll();renderDash();
 }
 
 function renderDashToday(){
@@ -295,39 +371,115 @@ function renderDashToday(){
     return;
   }
 
+  const _crewEmps=S.employees||[];
   el.innerHTML=todayJobs.map(j=>{
     const c=getClientById(j.client_id);
     const isEst=j.eventType==='estimate';
     const isActive=j.start<=tk&&addDays(j.start,(parseInt(j.days)||1)-1)>=tk;
-    return '<div onclick="'+(j.client_id?'openClientDetail('+j.client_id+')':'void(0)')+'" style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--border);cursor:'+(j.client_id?'pointer':'default')+'">'+
-      '<div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">'+
-        '<div style="width:10px;height:10px;border-radius:2px;background:'+(j.color||'var(--blue)')+';flex-shrink:0"></div>'+
-        '<div style="min-width:0">'+
-          '<div style="font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(j.name||'')+'</div>'+
-          '<div style="font-size:11px;color:var(--text3)">'+
-            (isEst?
-              (j.time?'@ '+fmtTime(j.time)+' · ':'')+
-              '<span style="color:#7F77DD;font-weight:600">Estimate visit</span>'
-              :
-              (j.addr||c&&c.addr?'<span style="font-weight:600">'+escHtml((j.addr||c.addr||'').split(',')[0])+'</span>':'No address')+
-              (j.value?' · '+fmt(j.value):'')+
-              ' · '+j.days+' day'+(parseInt(j.days)!==1?'s':'')
-            )+
+    // Quick crew assignment row (owner only, non-estimate jobs)
+    const _crewRow=(!_isEmployee&&!isEst)?(()=>{
+      if(_crewEmps.length>0){
+        const _aId=j.assignedTo&&j.assignedDate===tk?j.assignedTo:null;
+        const _aEmp=_aId?_crewEmps.find(e=>String(e.id)===String(_aId)):null;
+        return '<div onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:8px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)">'+
+          (_aEmp?'<span style="font-size:11px;font-weight:700;color:var(--blue);background:var(--blue-lt,#e6f0fb);padding:3px 9px;border-radius:20px">👤 '+escHtml(_aEmp.name)+'</span>':
+                 '<span style="font-size:11px;color:var(--text3)">No crew assigned</span>')+
+          '<button onclick="_openCrewAssignSheet('+j.id+')" style="margin-left:auto;padding:4px 12px;border-radius:20px;border:1px solid var(--border2);background:transparent;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--blue)">+ Assign</button>'+
+        '</div>';
+      }
+      const _days=parseInt(j.days)||1;
+      return '<div onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:8px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)">'+
+        '<span style="font-size:11px;font-weight:700;color:var(--blue);background:var(--blue-lt,#e6f0fb);padding:3px 9px;border-radius:20px">👤 You</span>'+
+        '<span style="font-size:11px;color:var(--text3);margin-left:2px">'+_days+' day'+(_days!==1?'s':'')+' on schedule</span>'+
+      '</div>';
+    })():'';
+    return '<div style="padding:11px 0;border-bottom:1px solid var(--border)">'+
+      '<div onclick="'+(j.client_id?'openClientDetail('+j.client_id+')':'void(0)')+'" style="display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:'+(j.client_id?'pointer':'default')+'">'+
+        '<div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">'+
+          '<div style="width:10px;height:10px;border-radius:2px;background:'+(j.color||'var(--blue)')+';flex-shrink:0"></div>'+
+          '<div style="min-width:0">'+
+            '<div style="font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(j.name||'')+'</div>'+
+            '<div style="font-size:11px;color:var(--text3)">'+
+              (isEst?
+                (j.time?'@ '+fmtTime(j.time)+' · ':'')+
+                '<span style="color:#7F77DD;font-weight:600">Estimate visit</span>'
+                :
+                (j.addr||c&&c.addr?'<span style="font-weight:600">'+escHtml((j.addr||c.addr||'').split(',')[0])+'</span>':'No address')+
+                (j.value?' · '+fmt(j.value):'')+
+                ' · '+j.days+' day'+(parseInt(j.days)!==1?'s':'')
+              )+
+            '</div>'+
           '</div>'+
         '</div>'+
+        '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'+
+          (j.client_id&&isEst?
+            '<div onclick="event.stopPropagation();sendReminderSMS('+j.client_id+')" style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:7px 9px;cursor:pointer" title="Send reminder">💬</div>'
+          :'')+
+          '<span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;background:'+(isEst?'rgba(127,119,221,.15)':'rgba(24,95,165,.12)')+';color:'+(isEst?'#7F77DD':'var(--blue)')+'">'+
+            (isEst?'Estimate':'Active')+
+          '</span>'+
+        '</div>'+
       '</div>'+
-      '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'+
-        (j.client_id&&isEst?
-          '<div onclick="event.stopPropagation();sendReminderSMS('+j.client_id+')" style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:7px 9px;cursor:pointer" title="Send reminder">💬</div>'
-        :'')+
-        '<span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;background:'+(isEst?'rgba(127,119,221,.15)':'rgba(24,95,165,.12)')+';color:'+(isEst?'#7F77DD':'var(--blue)')+'">'+
-          (isEst?'Estimate':'Active')+
-        '</span>'+
-      '</div>'+
+      _crewRow+
     '</div>';
   }).join('');
 }
 
+
+function _openCrewAssignSheet(jobId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  const tk=todayKey();
+  const emps=(S.employees||[]).filter(e=>e.name);
+  if(!emps.length){showToast('Add team members first','👤');return;}
+  document.getElementById('_crew-assign-ov')?.remove();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_crew-assign-ov';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const sheet=document.createElement('div');
+  sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px 40px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
+  const c=getClientById(j.client_id);
+  const curEmpId=j.assignedTo&&j.assignedDate===tk?j.assignedTo:null;
+  const roleLabels={tech:'Field Tech',office:'Office',manager:'Manager',owner:'Owner'};
+  sheet.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
+    '<div style="font-size:15px;font-weight:800">Assign crew</div>'+
+    '<button onclick="document.getElementById(\'_crew-assign-ov\').remove()" style="padding:6px 16px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Done</button>'+
+    '</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+escHtml(j.name||c?.name||'Job')+'</div>'+
+    '<div style="display:flex;flex-direction:column;gap:8px">'+
+    emps.map(e=>{
+      const isAsgn=String(e.id)===String(curEmpId);
+      return '<button onclick="_assignCrewToJob('+jobId+','+e.id+')" style="display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:var(--r);border:1.5px solid '+(isAsgn?'var(--blue)':'var(--border)')+';background:'+(isAsgn?'var(--blue-lt,#e6f0fb)':'var(--bg2)')+';cursor:pointer;font-family:inherit;text-align:left;width:100%">'+
+        '<div style="width:38px;height:38px;border-radius:50%;background:'+(isAsgn?'var(--blue)':'var(--bg)')+';border:1.5px solid '+(isAsgn?'var(--blue)':'var(--border2)')+';display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:'+(isAsgn?'#fff':'var(--text)')+';flex-shrink:0">'+escHtml((e.name||'?').substring(0,2).toUpperCase())+'</div>'+
+        '<div style="flex:1;min-width:0;text-align:left"><div style="font-size:14px;font-weight:700;color:'+(isAsgn?'var(--blue)':'var(--text)')+'">'+escHtml(e.name)+'</div>'+
+        (e.role?'<div style="font-size:11px;color:var(--text3)">'+escHtml(roleLabels[e.role]||e.role)+'</div>':'')+
+        '</div>'+
+        (isAsgn?'<span style="font-size:18px;color:var(--blue)">✓</span>':'')+
+      '</button>';
+    }).join('')+
+    (curEmpId?'<button onclick="_assignCrewToJob('+jobId+',null)" style="margin-top:2px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;width:100%">Remove assignment</button>':'')+
+    '</div>';
+  ov.appendChild(sheet);document.body.appendChild(ov);
+  requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
+}
+
+function _assignCrewToJob(jobId,empId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  const tk=todayKey();
+  if(empId!=null){
+    j.assignedTo=empId;j.assignedDate=tk;
+    // Durable record of everyone ever assigned — powers the crew trust ranking on estimates.
+    if(!Array.isArray(j.crewHistory))j.crewHistory=[];
+    if(!j.crewHistory.map(String).includes(String(empId)))j.crewHistory.push(empId);
+    const emp=(S.employees||[]).find(e=>String(e.id)===String(empId));
+    showToast(escHtml(emp?.name||'Crew member')+' assigned today','👤');
+  }else{
+    j.assignedTo=null;j.assignedDate=null;
+    showToast('Assignment removed','');
+  }
+  saveAll();
+  document.getElementById('_crew-assign-ov')?.remove();
+  renderDashToday();
+}
 
 // ── Collection escalation & risk system ─────────────────────────────────
 
@@ -911,11 +1063,7 @@ function renderTodayFeed(){
     );
   }
 
-  // Filter visibility per tab
-  const showFinalPay=_dashFeedFilter!=='urgent';
-  const showDepSched=_dashFeedFilter!=='urgent';
-  const showPending=_dashFeedFilter!=='money';
-  const showBuild=_dashFeedFilter==='all';
+  const showFinalPay=true,showDepSched=true,showPending=true,showBuild=true;
 
   // Section builder — defaultOpen=true makes the section expand on first render
   const _sec=(id,icon,label,color,items,show,defaultOpen=false)=>{
@@ -937,7 +1085,7 @@ function renderTodayFeed(){
   const _feedSub=document.getElementById('dash-feed-sub');
 
   if(!totalShown){
-    const msg=_dashFeedFilter==='all'?'You\'re caught up — nothing to chase right now.':_dashFeedFilter==='money'?'No deposits or scheduling needed.':'No follow-ups needed right now.';
+    const msg='You\'re caught up — nothing to chase right now.';
     el.innerHTML='<div style="padding:14px;font-size:13px;color:var(--text3)">'+msg+'</div>';
     if(_feedSub)_feedSub.textContent='all caught up';
     return;
@@ -1441,6 +1589,24 @@ function openBidDetail(bidId,view){
       }).join('')+
     '</div>';
   }
+  // Close-out controls — only for sent estimates that never closed.
+  const _isLost=b.status==='Closed Lost'||b.status==='Abandoned';
+  const _isWon=b.status==='Closed Won';
+  if(_isLost){
+    const _lostDate=b.lostAt?new Date(b.lostAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'';
+    bidHTML+='<div class="card" style="margin-bottom:12px;border:1px solid #F0C9C9;background:#FEF2F2">'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#A32D2D;margin-bottom:6px">Closed — lost</div>'+
+      '<div style="font-size:13px;color:var(--text2);line-height:1.6">'+escHtml(b.lostReason||'Marked lost')+(_lostDate?' · '+_lostDate:'')+'</div>'+
+      (b.lostNote?'<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-top:4px;font-style:italic">“'+escHtml(b.lostNote)+'”</div>':'')+
+      '<button onclick="reopenEstimate('+bidId+')" class="btn btn-sm" style="margin-top:10px;font-size:12px;font-weight:700">↩ Reopen estimate</button>'+
+    '</div>';
+  }else if(b.signingToken&&!_isWon&&!b.clientCancelled){
+    bidHTML+='<div class="card" style="margin-bottom:12px">'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Didn’t close?</div>'+
+      '<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:10px">If this estimate won’t move forward, close it out so it stops sitting in “Awaiting signature.”</div>'+
+      '<button onclick="openCloseOutEstimate('+bidId+')" class="btn btn-sm" style="font-size:12px;font-weight:700;color:#A32D2D;border-color:#E5B5B5;background:#FEF2F2">Close out — mark as lost</button>'+
+    '</div>';
+  }
   bidHTML+='<div style="height:24px"></div>';
   document.getElementById('bdd-bid-pane').innerHTML=bidHTML||'<div style="padding:20px;text-align:center;color:var(--text3)">No details stored.</div>';
 
@@ -1636,15 +1802,19 @@ function renderProposalsPage(){
     const c=getClientById(b.client_id)||{name:b.client_name||b.name||'Unknown'};
     const proj=b.addr||b.type||'—';
     const _depPaid=getBidPaid(b.id);const deposit=b.status==='Closed Won'&&(b.deposit||0)>0.01&&_depPaid>=(b.deposit-0.01)?'<div style="font-size:10px;color:var(--green);font-weight:700;margin-top:2px">Deposit '+fmt(b.deposit)+' received</div>':'';
+    const _lostLine=(b.status==='Closed Lost'&&b.lostReason)?'<div style="font-size:10px;color:#A32D2D;font-weight:600;margin-top:2px">'+escHtml(b.lostReason)+'</div>':'';
     const amt=b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'—');
     const revFn=(b.status==='Closed Won'||b.clientCancelled)?'openBidDetail('+b.id+',\'bid\')':(b.geiLines!==undefined?'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')':'openEditBid('+b.id+')');
+    // Sent estimate that hasn't closed → offer a one-tap close-out.
+    const _canCloseOut=b.signingToken&&b.status!=='Closed Won'&&b.status!=='Closed Lost'&&b.status!=='Abandoned'&&!b.clientCancelled;
+    const _coBtn=_canCloseOut?'<button class="btn btn-sm" onclick="event.stopPropagation();openCloseOutEstimate('+b.id+')" style="font-size:11px;font-weight:700;color:#A32D2D;border-color:#E5B5B5;background:#FEF2F2;margin-right:6px">Close out</button>':'';
     return '<tr style="cursor:pointer" onclick="'+revFn+'">'+
       '<td><div style="font-weight:800">'+escHtml(c.name)+'</div>'+
-      '<div style="font-size:10px;color:var(--text3);font-weight:500;margin-top:2px">'+typeChip(b)+escHtml((proj+'').split(',')[0])+'</div>'+deposit+'</td>'+
+      '<div style="font-size:10px;color:var(--text3);font-weight:500;margin-top:2px">'+typeChip(b)+escHtml((proj+'').split(',')[0])+'</div>'+deposit+_lostLine+'</td>'+
       '<td>'+statusChip(b)+'</td>'+
       '<td class="muted">'+escHtml(b.bid_date||'')+'</td>'+
       '<td class="num">'+amt+'</td>'+
-      '<td style="text-align:right"><button class="btn btn-sm btn-p" onclick="event.stopPropagation();'+revFn+'">Open →</button></td>'+
+      '<td style="text-align:right;white-space:nowrap">'+_coBtn+'<button class="btn btn-sm btn-p" onclick="event.stopPropagation();'+revFn+'">Open →</button></td>'+
       '</tr>';
   }).join('');
   list.innerHTML='<div class="card card-pad-0" style="overflow:hidden">'+
@@ -1710,6 +1880,317 @@ function renderEstimatesPage(){
       '</tr>';
   }).join('');
   wrap.innerHTML='<table class="tbl"><thead><tr><th>Client &amp; project</th><th>Type</th><th>Status</th><th>Date</th><th class="num">Amount</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>';
+}
+
+// ── Dashboard widget drag-to-reorder ──────────────────────────────────────
+const _DASH_DEFAULT_ORDER = ['kpi','pipeline','feed','quick','calendar','sources'];
+
+function _getDashWidgetOrder() {
+  const saved = S.dashWidgetOrder;
+  if (Array.isArray(saved) && saved.length >= 3) return saved;
+  return _DASH_DEFAULT_ORDER.slice();
+}
+
+function _applyDashOrder(order) {
+  const root = document.getElementById('dash-widget-root');
+  if (!root) return;
+  order.forEach(id => {
+    const el = root.querySelector(`.td-dw[data-dw="${id}"]`);
+    if (el) root.appendChild(el);
+  });
+  // Append any widgets not present in a saved order (e.g. new widgets added in
+  // an app update) in their default position so they never get orphaned.
+  _DASH_DEFAULT_ORDER.forEach(id => {
+    if (order.includes(id)) return;
+    const el = root.querySelector(`.td-dw[data-dw="${id}"]`);
+    if (el) root.appendChild(el);
+  });
+}
+
+let _dashSortActive = false;
+
+function _initDashDrag() {
+  const root = document.getElementById('dash-widget-root');
+  if (!root || _dashSortActive) return;
+
+  // Apply saved order
+  _applyDashOrder(_getDashWidgetOrder());
+
+  let editMode = false, lpTimer = null;
+  let dragEl = null, ghost = null, placeholder = null, doneBtn = null;
+  let offX = 0, offY = 0;
+
+  function getWidgets() {
+    return [...root.querySelectorAll(':scope>.td-dw')];
+  }
+
+  // While editing, swallow any click inside the dashboard so widgets can't be
+  // opened/navigated — only the Done button (outside root) stays live.
+  function _swallowClick(e) { if (editMode) { e.preventDefault(); e.stopPropagation(); } }
+
+  function enter() {
+    if (editMode) return;
+    editMode = true;
+    navigator.vibrate?.(45);
+    root.classList.add('td-drag-active');
+    root.addEventListener('click', _swallowClick, true);
+    doneBtn = document.createElement('button');
+    doneBtn.className = 'td-sort-done-btn';
+    doneBtn.textContent = 'Done';
+    doneBtn.addEventListener('click', exit);
+    document.body.appendChild(doneBtn);
+  }
+
+  function exit() {
+    editMode = false;
+    root.classList.remove('td-drag-active');
+    root.removeEventListener('click', _swallowClick, true);
+    document.body.classList.remove('td-pressing');
+    doneBtn?.remove(); doneBtn = null;
+    ghost?.remove(); ghost = null;
+    placeholder?.remove(); placeholder = null;
+    if (dragEl) { dragEl.style.cssText = ''; dragEl = null; }
+    // Save new order to the per-individual-user prefs store (keyed by auth.uid),
+    // NOT the shared business settings blob — so each person's layout is isolated.
+    const newOrder = getWidgets().map(el => el.dataset.dw);
+    S.dashWidgetOrder = newOrder;
+    if (typeof _saveUserPrefs === 'function') _saveUserPrefs();
+    showToast('Dashboard layout saved', '✓');
+  }
+
+  // Long press on the dashboard page (not on buttons)
+  let _pressX = 0, _pressY = 0;
+  root.addEventListener('pointerdown', e => {
+    // Don't trigger on interactive elements
+    if (e.target.closest('button,a,input,select,textarea,[onclick]')) return;
+    const widget = e.target.closest('.td-dw');
+    if (!widget) return;
+    if (editMode) { document.body.classList.add('td-pressing'); startDrag(e, widget); return; }
+    _pressX = e.clientX; _pressY = e.clientY;
+    document.body.classList.add('td-pressing'); // kill iOS text-selection during the hold
+    lpTimer = setTimeout(enter, 450);
+  }, { passive: true });
+
+  function clearLp() {
+    clearTimeout(lpTimer); lpTimer = null;
+    if (!editMode) document.body.classList.remove('td-pressing');
+  }
+  // Only cancel the long-press if the finger travels past a tolerance — small jitter is fine
+  root.addEventListener('pointermove', e => {
+    if (lpTimer == null) return;
+    if (Math.hypot(e.clientX - _pressX, e.clientY - _pressY) > 12) clearLp();
+  }, { passive: true });
+  root.addEventListener('pointerup', clearLp, { passive: true });
+  root.addEventListener('pointercancel', clearLp, { passive: true });
+
+  function startDrag(e, el) {
+    dragEl = el;
+    const rect = el.getBoundingClientRect();
+    offX = e.clientX - rect.left;
+    offY = e.clientY - rect.top;
+
+    ghost = el.cloneNode(true);
+    ghost.removeAttribute('id');
+    ghost.className = 'td-dw td-drag-ghost';
+    ghost.style.cssText = `width:${rect.width}px;left:${rect.left}px;top:${rect.top}px;background:var(--bg-card)`;
+    document.body.appendChild(ghost);
+
+    placeholder = document.createElement('div');
+    placeholder.className = 'td-drag-placeholder';
+    placeholder.style.height = rect.height + 'px';
+    el.replaceWith(placeholder);
+    el.style.display = 'none';
+
+    document.addEventListener('pointermove', onMove, { passive: false });
+    document.addEventListener('pointerup', onDrop, { once: true });
+    document.addEventListener('pointercancel', onDrop, { once: true });
+  }
+
+  function onMove(e) {
+    if (!ghost || !dragEl) return;
+    e.preventDefault();
+    ghost.style.left = (e.clientX - offX) + 'px';
+    ghost.style.top = (e.clientY - offY) + 'px';
+    // Find insertion point (vertical axis)
+    const widgets = getWidgets();
+    let before = null;
+    for (const w of widgets) {
+      if (w === dragEl) continue;
+      const r = w.getBoundingClientRect();
+      if (e.clientY < r.top + r.height / 2) { before = w; break; }
+    }
+    if (before) root.insertBefore(placeholder, before);
+    else root.appendChild(placeholder);
+  }
+
+  function onDrop() {
+    document.removeEventListener('pointermove', onMove);
+    document.body.classList.remove('td-pressing');
+    if (!dragEl || !placeholder) return;
+    dragEl.style.display = '';
+    placeholder.replaceWith(dragEl);
+    ghost?.remove(); ghost = null;
+    placeholder = null; dragEl = null;
+  }
+
+  _dashSortActive = true;
+}
+
+// ── Dashboard KPI tile drag-to-reorder (grid-aware) ───────────────────────
+const _DASH_KPI_DEFAULT = ['revenue','expenses','mileage','taxes','profit','avgjob'];
+
+function _getKpiOrder() {
+  const saved = S.dashKpiOrder;
+  if (Array.isArray(saved) && saved.length && saved.every(id => _DASH_KPI_DEFAULT.includes(id))) return saved;
+  return _DASH_KPI_DEFAULT.slice();
+}
+
+function _applyKpiOrder() {
+  const cont = document.getElementById('dash-mets-inner');
+  if (!cont) return;
+  const order = _getKpiOrder();
+  order.forEach(id => {
+    const el = cont.querySelector(`.met[data-kpi="${id}"]`);
+    if (el) cont.appendChild(el);
+  });
+  // Append any tile not in the saved order (e.g. a new tile in a future update)
+  // in its default position so it never gets orphaned.
+  _DASH_KPI_DEFAULT.forEach(id => {
+    if (order.includes(id)) return;
+    const el = cont.querySelector(`.met[data-kpi="${id}"]`);
+    if (el) cont.appendChild(el);
+  });
+}
+
+let _kpiSortActive = false;
+
+function _initKpiDrag() {
+  const cont = document.getElementById('dash-mets-inner');
+  if (!cont) return; // employee daily view has no KPI grid — no-op
+  // The grid is rebuilt every renderDash(), so the element identity changes.
+  // Bind to whichever container is live now, flagged on the element itself so
+  // the same node is never double-bound.
+  if (cont._kpiDragBound) return;
+  cont._kpiDragBound = true;
+
+  let editMode = false, lpTimer = null;
+  let dragEl = null, ghost = null, placeholder = null, doneBtn = null;
+  let offX = 0, offY = 0;
+
+  function getTiles() {
+    return [...cont.querySelectorAll(':scope>.met[data-kpi]')];
+  }
+
+  function _swallowClick(e) { if (editMode) { e.preventDefault(); e.stopPropagation(); } }
+
+  function enter() {
+    if (editMode) return;
+    editMode = true;
+    navigator.vibrate?.(45);
+    cont.classList.add('td-drag-active');
+    cont.addEventListener('click', _swallowClick, true);
+    doneBtn = document.createElement('button');
+    doneBtn.className = 'td-sort-done-btn';
+    doneBtn.textContent = 'Done';
+    doneBtn.addEventListener('click', exit);
+    document.body.appendChild(doneBtn);
+  }
+
+  function exit() {
+    editMode = false;
+    cont.classList.remove('td-drag-active');
+    cont.removeEventListener('click', _swallowClick, true);
+    document.body.classList.remove('td-pressing');
+    doneBtn?.remove(); doneBtn = null;
+    ghost?.remove(); ghost = null;
+    placeholder?.remove(); placeholder = null;
+    if (dragEl) { dragEl.style.cssText = ''; dragEl = null; }
+    const newOrder = getTiles().map(el => el.dataset.kpi);
+    S.dashKpiOrder = newOrder;
+    if (typeof _saveUserPrefs === 'function') _saveUserPrefs();
+    showToast('Layout saved', '✓');
+  }
+
+  let _pressX = 0, _pressY = 0;
+  cont.addEventListener('pointerdown', e => {
+    const tile = e.target.closest('.met[data-kpi]');
+    if (!tile) return;
+    if (editMode) { document.body.classList.add('td-pressing'); startDrag(e, tile); return; }
+    _pressX = e.clientX; _pressY = e.clientY;
+    document.body.classList.add('td-pressing');
+    lpTimer = setTimeout(enter, 450);
+  }, { passive: true });
+
+  function clearLp() {
+    clearTimeout(lpTimer); lpTimer = null;
+    if (!editMode) document.body.classList.remove('td-pressing');
+  }
+  cont.addEventListener('pointermove', e => {
+    if (lpTimer == null) return;
+    if (Math.hypot(e.clientX - _pressX, e.clientY - _pressY) > 12) clearLp();
+  }, { passive: true });
+  cont.addEventListener('pointerup', clearLp, { passive: true });
+  cont.addEventListener('pointercancel', clearLp, { passive: true });
+
+  function startDrag(e, el) {
+    dragEl = el;
+    const rect = el.getBoundingClientRect();
+    offX = e.clientX - rect.left;
+    offY = e.clientY - rect.top;
+
+    ghost = el.cloneNode(true);
+    ghost.removeAttribute('id');
+    ghost.className = 'met td-drag-ghost';
+    ghost.style.cssText = `width:${rect.width}px;height:${rect.height}px;left:${rect.left}px;top:${rect.top}px;background:var(--bg-card)`;
+    document.body.appendChild(ghost);
+
+    placeholder = document.createElement('div');
+    placeholder.className = 'td-drag-placeholder';
+    placeholder.style.width = rect.width + 'px';
+    placeholder.style.height = rect.height + 'px';
+    el.replaceWith(placeholder);
+    el.style.display = 'none';
+
+    document.addEventListener('pointermove', onMove, { passive: false });
+    document.addEventListener('pointerup', onDrop, { once: true });
+    document.addEventListener('pointercancel', onDrop, { once: true });
+  }
+
+  function onMove(e) {
+    if (!ghost || !dragEl) return;
+    e.preventDefault();
+    ghost.style.left = (e.clientX - offX) + 'px';
+    ghost.style.top = (e.clientY - offY) + 'px';
+    // Grid-aware insertion: find the tile whose center is nearest the pointer,
+    // then insert before or after it based on which side the pointer is on.
+    const px = e.clientX, py = e.clientY;
+    let nearest = null, nearDist = Infinity, nearRect = null;
+    for (const t of getTiles()) {
+      if (t === dragEl) continue;
+      const r = t.getBoundingClientRect();
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const d = Math.hypot(cx - px, cy - py);
+      if (d < nearDist) { nearDist = d; nearest = t; nearRect = r; }
+    }
+    if (!nearest) { cont.appendChild(placeholder); return; }
+    const cx = nearRect.left + nearRect.width / 2, cy = nearRect.top + nearRect.height / 2;
+    // Decide side using the dominant axis relative to the nearest tile's center.
+    const after = Math.abs(px - cx) > Math.abs(py - cy) ? px > cx : py > cy;
+    if (after) nearest.after(placeholder);
+    else nearest.before(placeholder);
+  }
+
+  function onDrop() {
+    document.removeEventListener('pointermove', onMove);
+    document.body.classList.remove('td-pressing');
+    if (!dragEl || !placeholder) return;
+    dragEl.style.display = '';
+    placeholder.replaceWith(dragEl);
+    ghost?.remove(); ghost = null;
+    placeholder = null; dragEl = null;
+  }
+
+  _kpiSortActive = true;
 }
 
 // ── Jobs page ─────────────────────────────────────────────────────────────

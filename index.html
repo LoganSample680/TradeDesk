@@ -26,13 +26,13 @@ input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
 :root{
   /* v1 names — kept for backward compat with JS */
   --blue:#2D5DA8;--blue-dk:#1B3F7A;--blue-lt:#DCE8FA;
-  --green:#117841;--green-lt:#D4ECDC;--green-mid:#0F6334;
-  --amber:#9F5B00;--amber-lt:#FBE2BB;
+  --green:#0E6B39;--green-lt:#D4ECDC;--green-mid:#0F6334;
+  --amber:#8A4E00;--amber-lt:#FBE2BB;
   --red:#B22A20;--red-lt:#FAD6CF;
   --gray:#544D44;--gray-lt:#EEE7D8;
   --bg:#FFFFFF;--bg2:#F4F5F7;--bg3:#ECEEF2;
-  --text:#161A1F;--text2:#4B5563;--text3:#8A92A0;
-  --text-2:#4B5563;--text-3:#8A92A0;
+  --text:#161A1F;--text2:#4B5563;--text3:#636C7B;
+  --text-2:#4B5563;--text-3:#636C7B;
   --border:#E2E5EB;--border2:#CFD4DC;
   --r:8px;--rl:12px;
   /* v2 names — used by new component classes */
@@ -79,6 +79,7 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 @keyframes sf-fwd{from{opacity:0}to{opacity:1}}
 @keyframes sf-back{from{opacity:0}to{opacity:1}}
 @keyframes slideup{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes td-modal-enter{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
 @keyframes slideDown{from{transform:translateY(-100%)}to{transform:translateY(0)}}
 @keyframes toast-in{from{opacity:0;transform:scale(.9) translateY(8px)}to{opacity:1;transform:scale(1) translateY(0)}}
 @keyframes td-spin{to{transform:rotate(360deg)}}
@@ -86,6 +87,23 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 @keyframes td-bar{from{width:0}to{width:68%}}
 @keyframes td-pg-enter{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
 @keyframes td-dash-enter{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
+/* Authentic iOS springboard wiggle: two desynced animations (rotation +
+   position) at ~0.25s, asymmetric -1deg→1.5deg, ~1px translate, no scale. */
+@keyframes td-jiggle-a{0%{transform:rotate(-1deg) translate(-.4px,-.4px);animation-timing-function:ease-in}50%{transform:rotate(1.5deg) translate(.4px,.4px);animation-timing-function:ease-out}100%{transform:rotate(-1deg) translate(-.4px,-.4px)}}
+@keyframes td-jiggle-b{0%{transform:rotate(1deg) translate(.4px,-.4px);animation-timing-function:ease-in}50%{transform:rotate(-1.5deg) translate(-.4px,.4px);animation-timing-function:ease-out}100%{transform:rotate(1deg) translate(.4px,-.4px)}}
+.td-drag-active .td-dw{animation:td-jiggle-a .25s linear infinite;transform-origin:50% 50%;cursor:grab;position:relative;touch-action:none;will-change:transform;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.td-drag-active .td-dw:nth-child(even){animation-name:td-jiggle-b;animation-duration:.27s}
+.td-drag-active .td-dw:nth-child(3n){animation-duration:.23s}
+.td-drag-active .met{animation:td-jiggle-a .25s linear infinite;transform-origin:50% 50%;cursor:grab;touch-action:none;will-change:transform;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.td-drag-active .met:nth-child(even){animation-name:td-jiggle-b;animation-duration:.27s}
+.td-drag-active .met:nth-child(3n){animation-duration:.23s}
+.td-drag-active.mtb-inner .mtb:not(#mtb-more){animation:td-jiggle-a .25s linear infinite;transform-origin:50% 50%;cursor:grab;touch-action:none;position:relative;will-change:transform;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.td-drag-active.mtb-inner .mtb:nth-child(even):not(#mtb-more){animation-name:td-jiggle-b;animation-duration:.27s}
+/* Suppress text selection / iOS magnifier while pressing or dragging a sortable */
+body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-select:none!important;-webkit-touch-callout:none!important}
+.td-drag-ghost{position:fixed;pointer-events:none;z-index:99999;opacity:.96;transform:scale(1.04) rotate(1deg);box-shadow:0 18px 40px rgba(0,0,0,.28);border-radius:var(--r-lg);transition:none;will-change:left,top}
+.td-drag-placeholder{border:2px dashed var(--blue);border-radius:var(--r-lg);background:var(--blue-lt);opacity:.5;flex-shrink:0}
+.td-sort-done-btn{position:fixed;bottom:100px;left:50%;transform:translateX(-50%);z-index:99998;background:var(--ink);color:var(--text-cream);border:none;border-radius:20px;padding:12px 32px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,.35);animation:fadein .18s ease;-webkit-tap-highlight-color:transparent;white-space:nowrap}
 
 /* ── Sidebar ── */
 #nav{position:fixed;top:0;left:0;bottom:0;width:var(--nav-w);background:var(--ink);color:var(--text-cream);display:flex;flex-direction:column;border-right:1px solid var(--ink-line);z-index:1000;overflow-y:auto;overflow-x:hidden;scrollbar-width:none;-ms-overflow-style:none}
@@ -113,7 +131,7 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 
 /* ── App layout ── */
 #app{padding-left:var(--nav-w);min-height:100vh}
-#supa-status{left:var(--nav-w);transition:opacity 0.8s ease;opacity:0}
+#supa-status{left:var(--nav-w);transition:opacity .25s cubic-bezier(.22,1,.36,1);opacity:0}
 .drive-banner{left:var(--nav-w)}
 .pg{display:none;padding:24px 28px 32px;max-width:1320px}
 .pg.active{display:block;animation:td-pg-enter .2s cubic-bezier(.22,1,.36,1) both}
@@ -138,6 +156,7 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 #mtb-more-popup{display:none;position:fixed;inset:0;z-index:1999}
 #mtb-more-menu{position:absolute;bottom:calc(58px + env(safe-area-inset-bottom,0px));right:6px;background:var(--ink);border-radius:14px;overflow:hidden;box-shadow:0 -4px 32px rgba(0,0,0,.5);min-width:192px;animation:fadeup .15s ease}
 @keyframes fadeup{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+@keyframes gauge-fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 .mmi{display:flex;align-items:center;gap:14px;padding:13px 18px;color:var(--text-cream-2);font-size:13px;font-weight:600;cursor:pointer;border:none;background:none;width:100%;font-family:inherit;-webkit-tap-highlight-color:transparent;text-align:left;transition:background .1s;border-bottom:1px solid rgba(255,255,255,.07)}
 .mmi:last-child{border-bottom:none}
 .mmi:active{background:var(--ink-line)}
@@ -228,6 +247,7 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 .f label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3)}
 input,select,textarea{font-family:var(--font-ui);font-size:14px;padding:10px 12px;border:1.5px solid var(--line-2);border-radius:var(--r);background:var(--bg-card);color:var(--text);width:100%;-webkit-appearance:none;transition:border-color .15s,box-shadow .15s;touch-action:manipulation}
 input:focus,select:focus,textarea:focus{outline:none;border-color:var(--denim);box-shadow:0 0 0 3px rgba(45,93,168,.16)}
+button:focus-visible,a:focus-visible,[role="button"]:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:4px;}
 input[readonly],input:disabled{background:var(--cream);color:var(--text-3)}
 /* ── Settings two-column form layout ── */
 .set-form-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;margin-bottom:14px}
@@ -236,7 +256,7 @@ input[readonly],input:disabled{background:var(--cream);color:var(--text-3)}
 .set-form-row:last-child{border-bottom:0}
 .set-form-lbl{font-size:13px;font-weight:700;color:var(--text);padding-right:12px;padding-top:2px}
 .set-form-hint{font-size:11px;color:var(--blue);margin-top:3px;line-height:1.4;padding-right:12px}
-.set-form-ctrl input,.set-form-ctrl select,.set-form-ctrl textarea{margin-bottom:6px}
+.set-form-ctrl input,.set-form-ctrl select,.set-form-ctrl textarea{margin-bottom:6px;width:100%;box-sizing:border-box;min-width:0}
 .set-form-ctrl input:last-child,.set-form-ctrl select:last-child,.set-form-ctrl textarea:last-child{margin-bottom:0}
 @media(max-width:480px){.set-form-row{grid-template-columns:1fr;padding:10px 14px}.set-form-lbl{padding-right:0}}
 /* ── Brand color swatches ── */
@@ -250,7 +270,7 @@ input[readonly],input:disabled{background:var(--cream);color:var(--text-3)}
 .set-int-badge{display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:10px;margin-left:5px;vertical-align:1px}
 .set-int-badge.ok{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0}
 .set-int-badge.warn{background:#fffbeb;color:#92400e;border:1px solid #fde68a}
-.set-int-badge.off{background:#f1f5f9;color:#64748b;border:1px solid #e2e8f0}
+.set-int-badge.off{background:#f1f5f9;color:#475569;border:1px solid #e2e8f0}
 textarea{resize:none;min-height:52px;line-height:1.5}
 select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239a9890' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
 input[type=range]{-webkit-appearance:none;appearance:none;background:transparent}
@@ -260,7 +280,7 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 
 /* ── Filter bar ── */
 .fbar{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px}
-.fb{padding:7px 12px;border-radius:var(--r-pill);font-family:var(--font-ui);font-size:11px;font-weight:700;border:1px solid var(--line-2);background:var(--bg-card);color:var(--text-2);cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.fb{padding:7px 12px;border-radius:var(--r-pill);font-family:var(--font-ui);font-size:11px;font-weight:700;border:1px solid var(--line-2);background:var(--bg-card);color:var(--text-2);cursor:pointer;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;flex-shrink:0}
 .fb:hover{background:var(--cream)}
 .fb.active{background:var(--ink);color:var(--text-cream);border-color:var(--ink)}
 #cft-new,#cft-estimate,#cft-pending,#cft-follow_up{background:var(--denim-soft);color:var(--denim-deep);border-color:var(--denim-soft)}
@@ -605,7 +625,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 body.dark{
   --ink:#0A0A08;--paper:#14110E;--cream:#1C1814;--bg-card:#221C16;
   --line:#2E2620;--line-2:#3A302A;
-  --text:#F5EFE2;--text-2:#C8BFB0;--text-3:#7E7466;
+  --text:#F5EFE2;--text-2:#C8BFB0;--text-3:#9E9588;
   --text-cream:#F5EFE2;--text-cream-2:rgba(245,239,226,.62);--text-cream-3:rgba(245,239,226,.42);
   --denim-soft:#122035;--c-green-soft:#0F1F14;--c-amber-soft:#211A09;--c-red-soft:#2A100D;--c-gray-soft:#1E1A14;
   --shadow-card:0 0 0 1px var(--line);--shadow-hover:0 3px 12px rgba(0,0,0,.4),0 0 0 1px var(--line);
@@ -616,7 +636,7 @@ body.dark{
   --red:#FF7070;--red-lt:#330000;
   --gray:#AAA8A0;--gray-lt:#1E1E1C;
   --bg:#221C16;--bg2:#14110E;--bg3:#1C1814;
-  --text2:#C8BFB0;--text3:#7E7466;
+  --text2:#C8BFB0;--text3:#9E9588;
   --border:#2E2620;--border2:#3A302A;
 }
 body.dark input,body.dark select,body.dark textarea{background:var(--bg-card);color:var(--text);border-color:var(--line-2)}
@@ -662,7 +682,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 .mobile-topbar-name{font-family:var(--font-display);font-weight:900;font-size:19px;letter-spacing:-.8px;color:var(--text-cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mobile-topbar-pro{font-family:var(--font-ui);font-weight:800;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--denim);background:rgba(45,93,168,.13);border:1px solid rgba(45,93,168,.32);padding:3px 6px 2px;border-radius:4px;line-height:1;flex-shrink:0}
 .mobile-topbar-actions{display:flex;gap:4px;flex-shrink:0}
-.mobile-topbar-btn{width:36px;height:36px;border-radius:8px;border:none;background:rgba(245,239,226,.06);color:var(--text-cream-2);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .12s}
+.mobile-topbar-btn{width:44px;height:44px;border-radius:8px;border:none;background:rgba(245,239,226,.06);color:var(--text-cream-2);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .12s}
 .mobile-topbar-btn:active{background:rgba(245,239,226,.12)}
 .mobile-topbar-btn svg{stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 @media(max-width:767px){
@@ -683,19 +703,20 @@ body.dark .cal-cell.other{background:var(--cream)}
   .tf-card{padding:12px 14px}
   .f label{font-size:11px}
   .mets{grid-template-columns:repeat(2,1fr);gap:8px}
-  .met{padding:12px}
-  .met-v{font-size:18px}
-  .btn{min-height:44px;padding:11px 16px}
-  .btn-sm{padding:8px 12px;font-size:12px;min-height:36px}
-  .btn-xl{min-height:52px;padding:15px 22px}
-  .btn-del{min-height:36px;padding:6px 10px}
-  .fb{padding:8px 14px;font-size:12px;min-height:36px}
+  .met{padding:10px}
+  .met-v{font-size:17px}
+  .btn{height:44px;min-height:44px;padding:0 16px}
+  .btn-sm{height:44px;min-height:44px;padding:0 12px;font-size:12px}
+  .tbar .btn,.tbar .btn-sm{height:32px;min-height:32px;padding:0 10px;font-size:12px}
+  .btn-xl{height:52px;min-height:52px;padding:0 22px}
+  .btn-del{height:44px;min-height:44px;padding:0 10px}
+  .fb{padding:8px 14px;font-size:12px;min-height:44px}
   .split-2-wide,.split-2-eq,.split-3-eq,.split-est{grid-template-columns:1fr}
   .qa-grid{grid-template-columns:repeat(3,1fr)}
   .qa{padding:14px 6px;font-size:10px}
   .qa-emoji{font-size:20px}
-  .kanban{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-bottom:12px;gap:10px}
-  .kcol{flex:0 0 82vw;scroll-snap-align:start}
+  .kanban{display:flex;flex-direction:column;gap:10px}
+  .kcol{width:100%}
   .cal-cell{min-height:64px;padding:4px}
   .tbl th,.tbl td{padding:8px;font-size:11px}
   .zmodal-overlay{padding:10px}
@@ -897,6 +918,8 @@ body.dark .cal-cell.other{background:var(--cream)}
 .byo-price{font-family:var(--font-display);font-size:15px;font-weight:800;color:var(--text);letter-spacing:-.3px;font-variant-numeric:tabular-nums;min-width:64px;text-align:right;flex-shrink:0}
 .byo-edit{background:none;border:0;color:var(--text-3);cursor:pointer;font-size:10px;font-weight:700;font-family:inherit;padding:1px 4px;letter-spacing:.04em;text-transform:uppercase;text-decoration:underline;text-underline-offset:2px}
 .byo-edit:hover{color:var(--text)}
+.byo-mob-bar{display:none}
+@media(max-width:767px){.byo-mob-bar{display:block}}
 
 /* Client hub directory page */
 .hub-dir-row{padding:14px 18px;border-bottom:1px solid var(--line);transition:background .12s;cursor:pointer}
@@ -982,35 +1005,35 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
   </div>
 
-  <div id="dash-kpi"></div>
-  <div id="dash-hobby-warn" style="display:none"></div>
-  <div id="dash-close-tip" style="display:none;margin-bottom:10px"></div>
-  <div id="dash-resume" style="display:none;margin-bottom:10px"></div>
-  <div id="dash-nearby" style="display:none;margin-bottom:10px"></div>
-  <div id="dash-contracts" style="display:none;margin-bottom:10px"></div>
-  <div id="dash-goal" style="margin-bottom:10px"></div>
-  <div id="dash-pipeline"></div>
-
-  <div class="split-2-wide">
-    <!-- Left: Make Money Today feed -->
-    <div class="card card-pad-0" id="dash-money-feed-card">
-      <div class="card-hd">
-        <div>
-          <div class="card-hd-title">Make money today</div>
-          <div class="card-hd-sub" id="dash-feed-sub">sorted by money on the table</div>
-        </div>
-        <div class="seg">
-          <button class="seg-btn on" id="dff-all" onclick="setDashFeedFilter('all')">All</button>
-          <button class="seg-btn" id="dff-money" onclick="setDashFeedFilter('money')">$$$</button>
-          <button class="seg-btn" id="dff-urgent" onclick="setDashFeedFilter('urgent')">⏰</button>
-        </div>
-      </div>
-      <div id="dash-money-feed"></div>
+  <div id="dash-geo-perm" style="display:none"></div>
+  <div id="dash-widget-root">
+    <div class="td-dw" data-dw="kpi">
+      <div id="dash-kpi"></div>
+      <div id="dash-crew-today" style="display:none"></div>
+      <div id="dash-hobby-warn" style="display:none"></div>
     </div>
-
-    <!-- Right: Quick actions + calendar -->
-    <div>
-      <div class="card" id="dash-quick" style="margin-bottom:14px">
+    <div class="td-dw" data-dw="pipeline">
+      <div id="dash-close-tip" style="display:none;margin-bottom:10px"></div>
+      <div id="dash-resume" style="display:none;margin-bottom:10px"></div>
+      <div id="dash-nearby" style="display:none;margin-bottom:10px"></div>
+      <div id="dash-contracts" style="display:none;margin-bottom:10px"></div>
+      <div id="dash-goal" style="margin-bottom:10px"></div>
+      <div id="dash-pipeline"></div>
+    </div>
+    <div class="td-dw" data-dw="feed">
+      <!-- Make Money Today feed -->
+      <div class="card card-pad-0" id="dash-money-feed-card">
+        <div class="card-hd">
+          <div>
+            <div class="card-hd-title">Make money today</div>
+            <div class="card-hd-sub" id="dash-feed-sub">sorted by money on the table</div>
+          </div>
+        </div>
+        <div id="dash-money-feed"></div>
+      </div>
+    </div>
+    <div class="td-dw" data-dw="quick">
+      <div class="card" id="dash-quick">
         <div class="td-micro" style="margin-bottom:10px">Quick actions</div>
         <div class="qa-grid">
           <button class="qa qa-p" onclick="goPg('pg-clients');setTimeout(()=>openNewClient(),100)">
@@ -1033,7 +1056,8 @@ body.dark .cal-cell.other{background:var(--cream)}
           </button>
         </div>
       </div>
-
+    </div>
+    <div class="td-dw" data-dw="calendar">
       <div class="card card-pad-0">
         <div class="card-hd">
           <div class="card-hd-title">Today's calendar</div>
@@ -1042,16 +1066,18 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div style="padding:4px 16px 14px" id="dash-today"></div>
       </div>
     </div>
-  </div>
-
-  <div class="card card-pad-0" style="margin-top:14px">
-    <div class="card-hd">
-      <div>
-        <div class="card-hd-title">Lead sources</div>
-        <div class="card-hd-sub">Year to date · close rate &amp; revenue</div>
+    <div class="td-dw" data-dw="sources">
+      <div class="card card-pad-0" style="margin-top:14px">
+        <div class="card-hd" style="cursor:pointer" onclick="window._leadSrcOpen=!window._leadSrcOpen;this.querySelector('.lead-src-chevron').textContent=window._leadSrcOpen?'▲':'▼';document.getElementById('dash-sources').style.display=window._leadSrcOpen?'block':'none'">
+          <div>
+            <div class="card-hd-title">Lead sources</div>
+            <div class="card-hd-sub">Year to date · close rate &amp; revenue</div>
+          </div>
+          <span class="lead-src-chevron" style="font-size:11px;color:var(--text3)">▼</span>
+        </div>
+        <div id="dash-sources" style="display:none"></div>
       </div>
     </div>
-    <div id="dash-sources"></div>
   </div>
 
   <div id="dash-leads-sub" style="display:none"></div>
@@ -1155,7 +1181,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             <div><label>State</label><input id="cf-state" placeholder="CO" maxlength="2" autocomplete="address-level1" oninput="this.value=this.value.toUpperCase();_updateAddrComputed()"></div>
             <div><label>Zip</label><input id="cf-zip" placeholder="80203" maxlength="10" autocomplete="postal-code" oninput="_updateAddrComputed()"></div>
           </div>
-          <div class="f"><label>Email</label><input type="email" id="cf-email" placeholder="client@email.com"></div>
+          <div class="f"><label>Email</label><input type="email" id="cf-email" placeholder="client@email.com" autocomplete="off"></div>
           <div class="f"><label>Property type</label><select id="cf-ptype"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>
           <div class="f" id="cf-year-built-wrap"><label>Year built <span style="font-weight:400;color:var(--text3);font-size:10px">Pre-1978 = EPA disclosure</span></label>
             <div style="display:flex;gap:8px;align-items:center">
@@ -1349,7 +1375,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="tbar">
     <div class="tbar-l">
       <button class="link-back" onclick="_estCancelToStylePicker()">← Pick a different type</button>
-      <div class="tbar-eyebrow">Paint estimate</div>
+      <div class="tbar-eyebrow">Interior/Exterior estimate</div>
       <div class="tbar-title" id="est-tbar-title">Estimate builder</div>
     </div>
     <div class="tbar-r">
@@ -1389,7 +1415,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="f"><label>Business name</label><input id="e-bname" placeholder="Your business name"></div>
         <div class="f"><label>Phone</label><input id="e-bphone" type="tel" maxlength="12" oninput="fmtPhone(this)"></div>
         <div class="f"><label>License / insured</label><input id="e-blic" placeholder="Licensed &amp; insured in KS"></div>
-        <div class="f"><label>Estimate valid</label><select id="e-bvalid"><option>7 days</option><option>14 days</option><option selected>30 days</option><option>60 days</option></select></div>
+        <div class="f"><label>How long to decide</label><select id="e-bvalid"><option>7 days</option><option>14 days</option><option selected>30 days</option><option>60 days</option></select></div>
       </div>
     </div>
     <div class="card"><div class="card-hd">Client info <span id="e-client-linked"></span></div>
@@ -1561,7 +1587,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
 
       
-      <div id="surf-step-b" style="display:none;position:fixed;inset:0;z-index:1100;background:var(--bg);overflow-y:auto;padding:16px 16px 80px;box-sizing:border-box">
+      <div id="surf-step-b" style="display:none;position:fixed;inset:0;z-index:1100;background:var(--bg);overflow-y:auto;overscroll-behavior:none;padding:16px 16px 80px;box-sizing:border-box">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
           <button onclick="goSurfStepA()" style="border:none;background:none;cursor:pointer;font-size:18px;color:var(--text3);padding:0">&#8592;</button>
           <div>
@@ -1726,7 +1752,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
 
     <div id="est-s4" style="display:none">
-    <div class="card"><div class="card-hd">Bid breakdown</div><div id="est-review"></div></div>
+    <div class="card"><div class="card-hd" style="display:flex;align-items:center;gap:8px">🎨 <span>Bid breakdown</span></div><div id="est-review"></div></div>
     <div class="card" id="adj-portfolio-card"><div class="card-hd">Price adjustment</div>
       <input type="checkbox" id="portfolio-toggle" onchange="togglePortfolioShowcase()" style="display:none">
       <div id="portfolio-details" style="display:none;margin-bottom:14px">
@@ -1880,7 +1906,6 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar">
       <div class="tbar-l">
         <button class="link-back" onclick="_geiBack()">← Job type</button>
-        <button class="link-back" onclick="_geiToStylePicker()" style="margin-left:14px">← Pick a different type</button>
         <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
           <span id="tm-tbar-title">Time &amp; Materials proposal</span>
           <button onclick="_editTMTitle()" id="tm-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">✏️</button>
@@ -1895,6 +1920,14 @@ body.dark .cal-cell.other{background:var(--cream)}
 
     <div class="split-est">
       <div>
+        <!-- Scope of work chips -->
+        <div class="card card-pad-0" style="margin-bottom:12px">
+          <div class="card-hd">
+            <div class="card-hd-title">Scope of work</div>
+            <div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="_openScopeSheet('tm-scope-wrap')">+ Add scope</button></div>
+          </div>
+          <div id="tm-scope-wrap"></div>
+        </div>
         <!-- Rates & crew -->
         <div class="card">
           <div class="td-h3" style="margin-bottom:10px">Rates &amp; crew</div>
@@ -1916,7 +1949,7 @@ body.dark .cal-cell.other{background:var(--cream)}
               <input type="number" id="tm-i-hours" min="0" step="1" placeholder="40" oninput="_tmInputChange()">
             </div>
             <div class="f">
-              <label>Material markup % <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>
+              <label>Materials markup <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>
               <div class="input-suffix"><input type="number" id="tm-i-markup" min="0" max="100" step="5" placeholder="0" oninput="_tmInputChange()"><span>%</span></div>
             </div>
           </div>
@@ -1983,6 +2016,20 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="summary-row"><span>Materials</span><span id="tm-rail-mat">$0</span></div>
           <div class="summary-row" id="tm-rail-nte-row" style="display:none;color:var(--c-amber)"><span>NTE cap</span><span id="tm-rail-nte-amt">$0</span></div>
           <div class="summary-divider"></div>
+          <input type="number" id="tm-expected-cost" style="display:none" oninput="_tmInputChange()">
+          <div id="tm-gauge-hint" style="display:none"></div>
+          <div id="tm-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">
+            <div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 15%,#F59E0B 30%,#22C55E 38%,#22C55E 78%,#F59E0B 92%,#EF4444 100%);margin:14px 10px 26px">
+              <div id="tm-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>
+            </div>
+            <div style="text-align:center;padding-bottom:12px">
+              <div id="tm-gauge-pct" style="font-size:30px;font-weight:900;line-height:1.1;color:var(--text);transition:color .4s ease">—</div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin:2px 0 2px">Profit %</div>
+              <div id="tm-gauge-dollars" style="font-size:15px;font-weight:700;margin:0 0 5px;transition:color .4s ease"></div>
+              <div id="tm-gauge-msg" style="font-size:11.5px;color:var(--text3);min-height:16px"></div>
+            </div>
+          </div>
+          <div class="summary-divider"></div>
           <div class="td-micro" style="margin-bottom:6px">Billing cadence</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <span class="chip chip-int" id="tm-cad-weekly" onclick="_tmCadence('weekly')">Weekly</span>
@@ -1990,8 +2037,11 @@ body.dark .cal-cell.other{background:var(--cream)}
             <span class="chip chip-int" id="tm-cad-completion" onclick="_tmCadence('completion')">On completion</span>
           </div>
           <button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">📨 Send T&amp;M proposal</button>
-          <button class="btn btn-full" style="margin-top:8px" onclick="_tmPreviewClient()">👁 Preview as client</button>
-          <button class="btn btn-full" style="margin-top:8px;background:var(--green);color:#fff;border-color:var(--green)" onclick="_geiSignInPerson()">✍️ Sign in person</button>
+          <button class="btn btn-xl btn-full" style="margin-top:8px;background:var(--green);color:#fff;border-color:var(--green)" onclick="_geiSignInPerson()">✍️ Sign in person</button>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+            <button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_tmPreviewClient()">👁 Preview</button>
+            <button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_openComparisonPicker()">📊 Compare</button>
+          </div>
         </div>
       </div>
     </div>
@@ -2002,7 +2052,6 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar">
       <div class="tbar-l">
         <button class="link-back" onclick="_geiBack()">← Job type</button>
-        <button class="link-back" onclick="_geiToStylePicker()" style="margin-left:14px">← Pick a different type</button>
         <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
           <span id="byo-tbar-title">Build Your Own proposal</span>
           <button onclick="_editByoTitle()" id="byo-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">✏️</button>
@@ -2017,17 +2066,39 @@ body.dark .cal-cell.other{background:var(--cream)}
 
     <div class="split-est">
       <div>
+        <!-- Scope of work chips -->
+        <div class="card card-pad-0" style="margin-bottom:12px">
+          <div class="card-hd">
+            <div class="card-hd-title">Scope of work</div>
+            <div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="_openScopeSheet('byo-scope-wrap')">+ Add scope</button></div>
+          </div>
+          <div id="byo-scope-wrap"></div>
+        </div>
         <div id="byo-sections"></div>
 
       </div>
 
       <div class="summary-rail">
         <div class="summary-card">
-          <div class="td-micro" style="margin-bottom:8px">Client total · live</div>
           <div class="summary-row" style="color:var(--text-3);margin-bottom:2px"><span>Subtotal</span><span id="byo-rail-sub">$0</span></div>
           <div id="byo-rail-tax-row" class="summary-row" style="color:var(--text-3);display:none"><span id="byo-rail-tax-lbl">Sales tax</span><span id="byo-rail-tax-amt">$0.00</span></div>
           <div class="td-display summary-total" id="byo-rail-total">$0</div>
-          <div class="summary-meta" id="byo-rail-meta">0 of 0 items selected</div>
+          <div class="summary-divider"></div>
+          <!-- Crew labor cost — only rendered when the contractor has employees -->
+          <div id="byo-labor-cost-wrap" style="display:none"></div>
+          <input type="number" id="byo-expected-cost" style="display:none" oninput="this.dataset.userSet='true';_byoUpdateRail()">
+          <div id="byo-gauge-hint" style="display:none"></div>
+          <div id="byo-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">
+            <div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 15%,#F59E0B 30%,#22C55E 38%,#22C55E 78%,#F59E0B 92%,#EF4444 100%);margin:14px 10px 26px">
+              <div id="byo-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>
+            </div>
+            <div style="text-align:center;padding-bottom:12px">
+              <div id="byo-gauge-pct" style="font-size:30px;font-weight:900;line-height:1.1;color:var(--text);transition:color .4s ease">—</div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin:2px 0 2px">Profit %</div>
+              <div id="byo-gauge-dollars" style="font-size:15px;font-weight:700;margin:0 0 5px;transition:color .4s ease"></div>
+              <div id="byo-gauge-msg" style="font-size:11.5px;color:var(--text3);min-height:16px"></div>
+            </div>
+          </div>
           <div class="summary-divider"></div>
           <div class="summary-row" style="align-items:center">
             <span style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600">Deposit %</span>
@@ -2040,10 +2111,12 @@ body.dark .cal-cell.other{background:var(--cream)}
           </div>
           <div class="summary-row" style="color:var(--text-3)"><span>Balance later</span><span id="byo-rail-balance">$0</span></div>
           <button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">📨 Send proposal</button>
-          <button class="btn btn-full" style="margin-top:8px;background:var(--green);color:#fff;border-color:var(--green)" onclick="_geiSignInPerson()">✍️ Sign in person</button>
-          <button class="btn btn-full" style="margin-top:8px" onclick="_byoPreviewClient()">👁 Preview as client</button>
-          <button class="btn btn-full" style="margin-top:8px;background:var(--bg2);color:var(--text2)" onclick="_byoDuplicateBid()">📋 Copy as Option B</button>
-          <button class="btn btn-full" style="margin-top:8px;background:var(--bg2);color:var(--text2)" onclick="_openComparisonPicker()">📊 Compare & Send</button>
+          <button class="btn btn-xl btn-full" style="margin-top:8px;background:var(--green);color:#fff;border-color:var(--green)" onclick="_geiSignInPerson()">✍️ Sign in person</button>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px">
+            <button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_byoPreviewClient()">👁 Preview</button>
+            <button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_byoDuplicateBid()">📋 Option B</button>
+            <button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_openComparisonPicker()">📊 Compare</button>
+          </div>
         </div>
       </div>
     </div>
@@ -2230,6 +2303,19 @@ body.dark .cal-cell.other{background:var(--cream)}
         <span style="font-size:15px;font-weight:800">Total</span>
         <span id="gei-total" style="font-size:22px;font-weight:800;color:var(--blue)">$0.00</span>
       </div>
+      <input type="number" id="gei-expected-cost" style="display:none" oninput="calcGeiTotal()">
+      <div id="gei-gauge-hint" style="display:none"></div>
+      <div id="gei-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">
+        <div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B,#EF4444,#F97316,#FCD34D,#22C55E,#FCD34D,#F97316,#EF4444,#991B1B);margin:14px 10px 26px">
+          <div id="gei-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>
+        </div>
+        <div style="text-align:center;padding-bottom:12px">
+          <div id="gei-gauge-pct" style="font-size:30px;font-weight:900;line-height:1.1;color:var(--text);transition:color .4s ease">—</div>
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin:2px 0 2px">Profit %</div>
+          <div id="gei-gauge-dollars" style="font-size:15px;font-weight:700;margin:0 0 5px;transition:color .4s ease"></div>
+          <div id="gei-gauge-msg" style="font-size:11.5px;color:var(--text3);min-height:16px"></div>
+        </div>
+      </div>
     </div>
     <div class="card" style="margin-bottom:12px">
       <div class="f"><label>Notes / scope details</label><textarea id="gei-notes" rows="3" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical" placeholder="Scope, exclusions, warranty, payment terms..."></textarea></div>
@@ -2380,6 +2466,10 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="tbar"><div class="tbar-title">Licensing</div><button class="btn btn-sm btn-p" onclick="openAddLicense()">+ Add</button></div>
   <div style="padding:0 12px 80px" id="lic-page-body"></div>
 </div>
+<div class="pg" id="pg-contracts">
+  <div class="tbar"><div class="tbar-title">Contracts</div><button class="btn btn-sm btn-p" onclick="openNewAgreement()">+ New contract</button></div>
+  <div style="padding:0 12px 80px" id="contracts-page-body"></div>
+</div>
 <div class="pg" id="pg-team">
   <div class="tbar">
     <div class="tbar-title">Fleet &amp; Team</div>
@@ -2388,12 +2478,12 @@ body.dark .cal-cell.other{background:var(--cream)}
       <button id="team-add-btn" class="btn btn-sm btn-p" onclick="openAddEmployeeModal()">+ Add member</button>
     </div>
   </div>
-  <div class="fbar" style="margin-bottom:0">
+  <div class="fbar" style="margin-bottom:16px;padding-left:2px">
     <button type="button" class="fb active" id="ft-t-fleet" onclick="setFleetTab('fleet')">🚗 Fleet</button>
     <button type="button" class="fb" id="ft-t-team" onclick="setFleetTab('team')">👷 Team</button>
   </div>
   <div id="ft-fleet">
-    <div id="fleet-vehicle-list" style="padding-top:8px"></div>
+    <div id="fleet-vehicle-list"></div>
   </div>
   <div id="ft-team" style="display:none">
     <div class="card">
@@ -2416,6 +2506,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
   </div>
 </div>
+<div class="pg" id="pg-dispatch"></div>
 <div class="pg" id="pg-tracker">
   <div class="tbar" style="flex-direction:column;align-items:stretch;gap:8px">
     <div style="display:flex;justify-content:space-between;align-items:flex-start">
@@ -2497,7 +2588,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <option value="qss">Qualifying surviving spouse</option>
       </select>
     </div>
-    <div class="mets" id="sum-mets"></div>
+    <div id="sum-mets"></div>
     <div class="two-col">
       <div class="card"><div class="card-hd">Income by type</div><div id="sum-inc"></div></div>
       <div class="card"><div class="card-hd">Top expenses</div><div id="sum-exp"></div></div>
@@ -2798,7 +2889,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-form-ctrl">
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
               <input id="set-bphone" type="tel" maxlength="12" oninput="fmtPhone(this)" placeholder="(316) 555-0182">
-              <input type="email" id="set-bemail" placeholder="logan@samplepaint.com">
+              <input type="email" id="set-bemail" placeholder="logan@samplepaint.com" autocomplete="off">
             </div>
           </div>
         </div>
@@ -2822,6 +2913,40 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="set-form-row">
           <div><div class="set-form-lbl">Google review link</div><div class="set-form-hint">Sent to clients after job completion.</div></div>
           <div class="set-form-ctrl"><input type="url" id="set-review-url" placeholder="https://g.page/r/…"></div>
+        </div>
+        <div class="set-form-row" style="border-top:2px solid var(--border);padding-top:14px;margin-top:6px">
+          <div><div class="set-form-lbl">Crew location tracking</div><div class="set-form-hint">Auto-logs drive mileage and time-on-site for dispatched crew during business hours only. Always on — a standard part of running your crew on TradeDesk.</div></div>
+          <div class="set-form-ctrl">
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--green-mid);font-weight:700"><span style="font-size:15px">✓</span><span>Active during business hours</span></div>
+          </div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Business hours</div><div class="set-form-hint">Tracking runs only between these times. Nothing is recorded outside the window.</div></div>
+          <div class="set-form-ctrl">
+            <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center">
+              <input type="time" id="set-track-start">
+              <span style="font-size:13px;color:var(--text3)">to</span>
+              <input type="time" id="set-track-end">
+            </div>
+          </div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Labor burden</div><div class="set-form-hint">Your true cost above wages — payroll taxes, workers' comp, insurance. Used for loaded labor cost in Job Profit and Crew Cost. 30% is typical.</div></div>
+          <div class="set-form-ctrl">
+            <div style="display:flex;align-items:center;gap:8px">
+              <input type="number" id="set-labor-burden" step="5" min="0" max="100" placeholder="30" style="flex:1">
+              <span style="font-size:13px;color:var(--text2);font-weight:600">% over wage</span>
+            </div>
+          </div>
+        </div>
+        <div class="set-form-row">
+          <div><div class="set-form-lbl">Your pay (for job costing)</div><div class="set-form-hint">Counts your own time on job sites as a labor cost in Job Profit and Crew Cost. Leave at 0 if you don't want to cost your own hours.</div></div>
+          <div class="set-form-ctrl">
+            <div style="display:grid;grid-template-columns:120px 1fr;gap:8px">
+              <select id="set-owner-pay-type"><option value="hourly">Hourly</option><option value="salary">Salary</option></select>
+              <div style="display:flex;align-items:center;gap:6px"><span style="font-size:13px;color:var(--text2);font-weight:600">$</span><input type="number" id="set-owner-pay-rate" min="0" step="0.5" placeholder="0" style="flex:1"></div>
+            </div>
+          </div>
         </div>
       </div>
       <button class="btn btn-p" onclick="saveSettings()" style="width:100%;margin-top:4px;padding:13px">Save</button>
@@ -2946,6 +3071,26 @@ body.dark .cal-cell.other{background:var(--cream)}
         </details>
         <button class="btn btn-p" id="sw-price-refresh-btn" onclick="swRefreshPrices()" style="font-size:13px">🔄 Refresh SW prices via AI</button>
         <div id="sw-price-refresh-status" style="font-size:12px;color:var(--text3);margin-top:8px;display:none"></div>
+      </div>
+      <!-- Workmanship warranty period -->
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Proposals</div>
+        <div class="set-form-card">
+          <div style="padding:14px 16px">
+            <div class="fg fg2">
+              <div class="f">
+                <label>Workmanship warranty</label>
+                <select id="set-warranty-period" onchange="saveSettings()">
+                  <option value="90 days">90 days</option>
+                  <option value="6 months">6 months</option>
+                  <option value="1 year" selected>1 year</option>
+                  <option value="2 years">2 years</option>
+                </select>
+                <div style="font-size:10px;color:var(--text3);margin-top:3px">Appears on all client proposals under Terms &amp; Conditions.</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
       <!-- Finance charge rate -->
       <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
@@ -3323,15 +3468,14 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar-l">
       <div class="tbar-eyebrow" id="leads-tbar-eyebrow">Leads</div>
       <div class="tbar-title">Leads</div>
-      <div class="tbar-sub">New prospects waiting for an estimate. Cold leads turn warm again fast — chase the ones with a name beside them.</div>
+      <div class="tbar-sub">Track every opportunity from first contact to signed proposal.</div>
     </div>
     <div class="tbar-r">
-      <button class="btn btn-sm" onclick="openIntakeFormModal()">📋 Intake form</button>
       <button class="btn btn-sm" onclick="openImportContacts()">Import</button>
       <button class="btn btn-p btn-sm" onclick="goPg('pg-clients');setTimeout(()=>openNewClient(),100)">+ New lead</button>
     </div>
   </div>
-  <div class="fbar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin-bottom:12px">
+  <div class="fbar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-wrap:nowrap;margin-bottom:12px">
     <button type="button" class="fb active" id="lft-all"        onclick="setLeadFilter('all',this)">All</button>
     <button type="button" class="fb"        id="lft-incomplete" onclick="setLeadFilter('incomplete',this)">Needs setup</button>
     <button type="button" class="fb"        id="lft-new"        onclick="setLeadFilter('new',this)">Ready</button>
@@ -3349,6 +3493,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="tbar-sub" id="jobs-count-sub"></div>
     </div>
     <div class="tbar-r">
+      <button class="btn btn-sm" id="jobs-dispatch-btn" onclick="goPg('pg-dispatch')">📋 Dispatch</button>
       <button class="btn btn-p btn-sm" onclick="goPg('pg-schedule')">+ Schedule</button>
     </div>
   </div>
@@ -3543,6 +3688,11 @@ body.dark .cal-cell.other{background:var(--cream)}
     <span>Licensing</span>
   </button>
 
+  <button class="nb" id="nb-contracts" onclick="goPg('pg-contracts')">
+    <div class="bx"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h4"/></svg></div>
+    <span>Contracts</span>
+  </button>
+
   <div id="nav-trade-switcher" style="display:none;padding:6px 10px 4px;border-top:1px solid var(--nav-border)">
     <div style="font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.25);padding:0 4px 5px">Active trade</div>
     <div id="nav-trade-pills" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 2px 4px"></div>
@@ -3584,24 +3734,26 @@ body.dark .cal-cell.other{background:var(--cream)}
 </div>
 <!-- ── Mobile bottom tab bar ── -->
 <div id="mobile-tabbar">
-  <button class="mtb active" id="mtb-dash" onclick="goPg('pg-dash')">
-    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-    Home
-  </button>
-  <button class="mtb" id="mtb-leads" onclick="goPg('pg-leads')">
-    <span id="mtb-leads-dot" class="mtb-dot" style="display:none"></span>
-    <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-    Leads
-  </button>
-  <button class="mtb" id="mtb-clients" onclick="goPg('pg-clients')">
-    <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
-    Clients
-  </button>
-  <button class="mtb" id="mtb-jobs" onclick="goPg('pg-jobs')">
-    <span id="mtb-jobs-dot" class="mtb-dot" style="display:none"></span>
-    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-    Jobs
-  </button>
+  <div id="mtb-inner" style="display:contents">
+    <button class="mtb active" id="mtb-dash" data-tab="dash" onclick="goPg('pg-dash')">
+      <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Home
+    </button>
+    <button class="mtb" id="mtb-leads" data-tab="leads" onclick="goPg('pg-leads')">
+      <span id="mtb-leads-dot" class="mtb-dot" style="display:none"></span>
+      <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+      Leads
+    </button>
+    <button class="mtb" id="mtb-clients" data-tab="clients" onclick="goPg('pg-clients')">
+      <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+      Clients
+    </button>
+    <button class="mtb" id="mtb-jobs" data-tab="jobs" onclick="goPg('pg-jobs')">
+      <span id="mtb-jobs-dot" class="mtb-dot" style="display:none"></span>
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+      Jobs
+    </button>
+  </div>
   <button class="mtb" id="mtb-more" onclick="openMobileMore()">
     <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="19" cy="12" r="1" fill="currentColor"/></svg>
     More
@@ -3623,7 +3775,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <svg viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Fleet &amp; Team
     </button>
     <button class="mmi" id="mmi-tracker" onclick="mobileNavTo('pg-tracker')">
-      <svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>Books &amp; P&amp;L
+      <svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/></svg>Books
     </button>
     <button class="mmi" id="mmi-taxes" onclick="mobileNavTo('pg-taxes')">
       <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Taxes
@@ -3633,6 +3785,9 @@ body.dark .cal-cell.other{background:var(--cream)}
     </button>
     <button class="mmi" id="mmi-licensing" onclick="mobileNavTo('pg-licensing')">
       <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>Licensing
+    </button>
+    <button class="mmi" id="mmi-contracts" onclick="mobileNavTo('pg-contracts')">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h4"/></svg>Contracts
     </button>
     <button class="mmi" id="mmi-settings" onclick="mobileNavTo('pg-settings')">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Settings
@@ -3650,6 +3805,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 <script src="js/bids.js"></script>
 <script src="js/jobs.js"></script>
 <script src="js/mileage.js"></script>
+<script src="js/geo-track.js"></script>
 <script src="js/paint-estimate.js"></script>
 <script src="js/legal.js"></script>
 <script src="js/proposals.js"></script>
@@ -3658,6 +3814,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 <script src="js/finance.js"></script>
 <script src="js/generic-estimate.js"></script>
 <script src="js/contracts.js"></script>
+<script src="js/agreements.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/fleet.js"></script>
 <script src="js/e2e.js"></script>
@@ -3698,6 +3855,7 @@ if('serviceWorker' in navigator){
 
 
 loadAll();applySettings();registerDevice();applyBrandLogo();
+setTimeout(()=>{if(typeof _initTabBarDrag==='function')_initTabBarDrag();},0);
 setTimeout(showDailyBriefing,1200);
 setTimeout(checkStripeConnectReturn,800);
 setTimeout(()=>{
@@ -3973,7 +4131,7 @@ if(supaEnabled()){
 <script>document.getElementById('app-version').textContent='v'+APP_VERSION;</script>
 
 <!-- ── Offline banner ── -->
-<div id="offline-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:10001;padding:7px 16px;font-size:12px;font-weight:700;text-align:center;letter-spacing:.01em"></div>
+<div id="offline-banner" style="position:fixed;top:0;left:0;right:0;z-index:10001;padding:7px 16px;font-size:12px;font-weight:700;text-align:center;letter-spacing:.01em;opacity:0;transform:translateY(-100%);pointer-events:none;transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)"></div>
 
 <!-- ── Import Contacts Modal ── -->
 <div id="import-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9998;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)closeImportModal()">

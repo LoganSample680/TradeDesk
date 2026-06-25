@@ -487,20 +487,20 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
     <div class="help-title">Help & FAQ</div>
     <div class="help-sec">
       <div class="help-sec-hd">💳 How payments work</div>
-      <div class="help-sec-body">Your contractor sends you a secure payment link. You can pay by card, ACH bank transfer, or Apple Pay. Deposits are due before work begins; the final balance is due on completion. All payments are processed securely — your contractor never sees your card details.</div>
+      <div class="help-sec-body"><span class="hub-cn-name">Your contractor</span> sends you a secure payment link. You can pay by card, ACH bank transfer, or Apple Pay. Deposits are due before work begins; the final balance is due on completion. All payments are processed securely — <span class="hub-cn-name">your contractor</span> never sees your card details.</div>
     </div>
     <div class="help-sec">
       <div class="help-sec-hd">✍️ How signing works</div>
       <div class="help-sec-body">When you receive a proposal, tap <strong>Review &amp; Sign</strong>. You'll see the full scope of work and price. Sign with your finger or mouse and submit. You'll receive a confirmation email with a copy of the signed agreement.</div>
     </div>
     <div class="help-sec">
-      <div class="help-sec-hd">📞 Contacting your contractor</div>
-      <div class="help-sec-body">Use the Call, Text, or Email buttons on the Overview tab to reach your contractor directly. For non-urgent questions, the Messages tab keeps everything in one place so nothing gets lost in your inbox.</div>
+      <div class="help-sec-hd">📞 Contacting <span class="hub-cn-name">your contractor</span></div>
+      <div class="help-sec-body">Use the Call, Text, or Email buttons on the Overview tab to reach <span class="hub-cn-name">your contractor</span> directly. For non-urgent questions, the Messages tab keeps everything in one place so nothing gets lost in your inbox.</div>
     </div>
     <div class="help-sec">
       <div class="help-sec-hd">❓ Common questions</div>
       <div class="help-sec-body">
-        <strong>Can I change the scope after signing?</strong> Yes — your contractor can send a change order for your approval.<br><br>
+        <strong>Can I change the scope after signing?</strong> Yes — <span class="hub-cn-name">your contractor</span> can send a change order for your approval.<br><br>
         <strong>Is this hub link private?</strong> Yes. The link is unique to you and not publicly indexed.<br><br>
         <strong>How do I get a copy of my invoice?</strong> Go to the Payments tab and tap any invoice row to open a printable version.
       </div>
@@ -549,6 +549,11 @@ let _hub=null,_activeView='overview',_isContractorPreview=new URLSearchParams(lo
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtDate=s=>{if(!s)return'';try{const d=s.includes('T')?new Date(s):new Date(s+'T12:00:00');if(isNaN(d.getTime()))return'';return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}};
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+// Business name for client-facing copy. Returns the escaped business name when the hub
+// has loaded one, otherwise the generic fallback ("your contractor" / "Your contractor").
+// _cn = HTML-safe (for innerHTML); _cnText = raw string (for textContent / titles).
+function _cnText(fallback){const n=_hub&&_hub.contractorName?String(_hub.contractorName).trim():'';return n||(fallback||'your contractor');}
+function _cn(fallback){const n=_cnText(fallback);return esc(n);}
 // Sanitize contractor-authored HTML (proposal documents) before injecting via innerHTML.
 // Strips active content (scripts, embeds, inline event handlers, javascript: hrefs).
 function sanitizeHtml(html){
@@ -859,10 +864,10 @@ function _onbAddrSearch(val){
         const city=p.city||p.town||p.village||'';
         const state=_ONB_STATE_ABBR[p.state]||p.state||'';
         const zip=p.postcode||'';
-        const s1=streetLine.replace(/'/g,"\\'");const s2=city.replace(/'/g,"\\'");const s3=state.replace(/'/g,"\\'");const s4=zip.replace(/'/g,"\\'");
-        return '<div onmousedown="event.preventDefault()" onclick="_onbAddrSelect(\''+s1+'\',\''+s2+'\',\''+s3+'\',\''+s4+'\')" style="padding:11px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
-          '<div style="font-size:14px;font-weight:600">'+streetLine.replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>'+
-          '<div style="font-size:12px;color:#888;margin-top:1px">'+[city,state,zip].filter(Boolean).join(' ').replace(/&/g,'&amp;').replace(/</g,'&lt;')+'</div>'+
+        const _ahEsc=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;');
+        return '<div onmousedown="event.preventDefault()" onclick="_onbAddrSelect(&quot;'+_ahEsc(streetLine)+'&quot;,&quot;'+_ahEsc(city)+'&quot;,&quot;'+_ahEsc(state)+'&quot;,&quot;'+_ahEsc(zip)+'&quot;)" style="padding:11px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
+          '<div style="font-size:14px;font-weight:600">'+_ahEsc(streetLine)+'</div>'+
+          '<div style="font-size:12px;color:#888;margin-top:1px">'+_ahEsc([city,state,zip].filter(Boolean).join(' '))+'</div>'+
         '</div>';
       }).join('');
       box.style.display=box.innerHTML?'block':'none';
@@ -957,6 +962,9 @@ function showState(s){
 function applyBranding(h){
   if(h.brandColor)document.documentElement.style.setProperty('--denim',h.brandColor);
   document.title=(h.contractorName||'Project Hub')+' — Your Hub';
+  // Swap generic "your contractor" placeholders in static copy (e.g. Help drawer) for the business name.
+  const _cnName=(h.contractorName||'').trim();
+  if(_cnName)document.querySelectorAll('.hub-cn-name').forEach(el=>{el.textContent=_cnName;});
   const logoEl=document.getElementById('topbar-logo-img'),nameEl=document.getElementById('topbar-name');
   if(h.logoData){logoEl.src=h.logoData;logoEl.style.display='block';nameEl.style.display='none';}
   else{nameEl.textContent=h.contractorName||'Project Hub';logoEl.style.display='none';}
@@ -1235,7 +1243,7 @@ function renderProject(){
   let html='<div class="view-title">Project &amp; Photos</div>';
 
   if(!allJobs.length&&!allPhotos.length){
-    html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">📷</div><div class="hub-empty-title">No photos yet</div><div class="hub-empty-body">Your contractor will upload progress photos here as work begins. Check back soon!</div></div></div>';
+    html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">📷</div><div class="hub-empty-title">No photos yet</div><div class="hub-empty-body">'+_cn('Your contractor')+' will upload progress photos here as work begins. Check back soon!</div></div></div>';
     document.getElementById('view-project').innerHTML=html;return;
   }
 
@@ -1591,7 +1599,7 @@ function _cancelShowStep3(){
   let refundNote='';
   if(refundDue>0.01){
     if(isStripe)refundNote='Your payment of '+fmt(refundDue)+' will be refunded within <strong>5–7 business days</strong> to your original payment method.';
-    else refundNote='Contact your contractor to arrange your refund of '+fmt(refundDue)+'. Cash and check refunds are due within 10 business days.';
+    else refundNote='Contact '+_cn('your contractor')+' to arrange your refund of '+fmt(refundDue)+'. Cash and check refunds are due within 10 business days.';
   }
   let h=_cancelHdr('Notice of Cancellation');
   h+='<div style="text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;margin-bottom:10px">'+cancelStatute+' — Detach &amp; Retain</div>';
@@ -1632,7 +1640,7 @@ function _cancelShowConfirmed(bid){
   let refundNote='';
   if(refundDue>0.01){
     if(isStripe)refundNote='Your payment of '+fmt(refundDue)+' will be refunded within 5–7 business days to your original payment method.';
-    else refundNote='Contact your contractor to arrange your refund of '+fmt(refundDue)+' within 10 business days.';
+    else refundNote='Contact '+_cn('your contractor')+' to arrange your refund of '+fmt(refundDue)+' within 10 business days.';
   }
   let h=_cancelHdr('Notice of Cancellation');
   h+='<div style="text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;margin-bottom:10px">'+cancelStatute+' — Detach &amp; Retain</div>';
@@ -1640,7 +1648,7 @@ function _cancelShowConfirmed(bid){
   h+='<div style="font-size:12px;color:#2d3748;line-height:1.8"><p style="margin:0 0 8px"><strong>Date of Transaction:</strong> '+txDate+'</p><p style="margin:0 0 10px;font-weight:700">YOU MAY CANCEL THIS TRANSACTION, WITHOUT ANY PENALTY OR OBLIGATION, WITHIN '+daysWord+' BUSINESS DAYS FROM THE ABOVE DATE.</p></div>';
   h+='<div style="border-top:1px solid #e2e8f0;padding-top:14px"><div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:12px 14px;font-size:12px;color:#991B1B"><strong>🚫 Cancellation submitted</strong><br>Signed by '+esc(bid.cancelledName||'you')+' · '+dt;
   if(refundNote)h+='<br><span style="color:#92400E">'+refundNote+'</span>';
-  h+='<br>Your contractor has been notified.</div></div>';
+  h+='<br>'+_cn('Your contractor')+' has been notified.</div></div>';
   _cancelSetContent(h);
 }
 // EPA Renovate Right pre-renovation disclosure — rendered as a signed document
@@ -1853,7 +1861,7 @@ async function _submitCOHubSign(bidId,coNum){
     }
   }catch(e){
     console.warn('change order sign:',e);
-    if(errEl)errEl.textContent='Could not submit — '+(e.message||'please try again or contact your contractor.');
+    if(errEl)errEl.textContent='Could not submit — '+(e.message||'please try again or contact '+_cnText('your contractor')+'.');
     if(btn){btn.disabled=false;btn.textContent='✓ Sign Change Order';}
   }
 }
@@ -1884,7 +1892,7 @@ async function _submitCancellation(bidId){
     _showCancelForm(bidId); // reopen in confirmed state
   }catch(e){
     console.error('cancellation:',e);
-    if(errEl)errEl.textContent='Could not submit — '+(e.message||'please try again or contact your contractor directly.');
+    if(errEl)errEl.textContent='Could not submit — '+(e.message||'please try again or contact '+_cnText('your contractor')+' directly.');
     if(btn){btn.disabled=false;btn.textContent='Submit Cancellation Notice';}
   }
 }

@@ -366,7 +366,7 @@ function showSupplyList(bidId){
     '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
       '<div>'+
         '<div style="font-size:18px;font-weight:800;line-height:1.1">📦 Supply List</div>'+
-        '<div style="font-size:12px;opacity:.85;margin-top:3px">'+(c?c.name:'Job')+' · '+(totalSqFt?totalSqFt.toLocaleString()+' sq ft · ':'')+totalRooms+' room'+(totalRooms!==1?'s':'')+' · '+coats+' coat'+(coats!==1?'s':'')+'</div>'+
+        '<div style="font-size:12px;opacity:.85;margin-top:3px">'+escHtml(c?c.name:'Job')+' · '+(totalSqFt?totalSqFt.toLocaleString()+' sq ft · ':'')+totalRooms+' room'+(totalRooms!==1?'s':'')+' · '+coats+' coat'+(coats!==1?'s':'')+'</div>'+
       '</div>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>'+
     '</div>'+
@@ -755,21 +755,23 @@ function openPayPanel(bidId, autoType){
   const deposit25=Math.round(Math.min(total*.25,balance)*100)/100;
   const rawPaid=getBidPaid(bidId);
   const overpaidAmt=Math.round((rawPaid-total)*100)/100;
+  const _payClient=getClientById(bid.client_id);
+  const _hubUrl=_payClient?.clientToken&&_supaUser
+    ?(_clientBaseUrl()+'client.html?t='+_payClient.clientToken+'&u='+_supaUser.id+'&c='+_payClient.id)
+    :null;
 
   document.querySelectorAll('.pay-modal-overlay').forEach(e=>e.remove());
 
   const overlay=document.createElement('div');
   overlay.className='zmodal-overlay pay-modal-overlay';
 
-  const refundBtn='<button type="button" data-ptype="refund" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:12px 14px;border-radius:var(--r);border:2px solid var(--red-lt,#FEE2E2);background:var(--red-lt,#FFF0F0);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
-    '<div><div style="font-size:14px;font-weight:700;color:#A32D2D">↩ Issue refund to client</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Price reduced after payment</div></div>'+
-    '<div style="font-size:14px;font-weight:800;color:#A32D2D">'+(overpaidAmt>0.01?'-'+fmt(overpaidAmt):'')+'</div>'+
+  const refundBtn='<button type="button" data-ptype="refund" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:11px 14px;border-radius:var(--r);border:1.5px solid var(--red-lt,#FEE2E2);background:var(--red-lt,#FFF0F0);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
+    '<div style="font-size:13px;font-weight:700;color:#A32D2D">↩ Issue refund to client</div>'+
+    '<div style="font-size:12px;font-weight:700;color:#A32D2D">'+(overpaidAmt>0.01?'-'+fmt(overpaidAmt):'')+'</div>'+
   '</button>';
-  // Cancellation refund — shown whenever a deposit has been collected
   const cancelRefundBtn=rawPaid>0.01
-    ?'<button type="button" onclick="closePayPanel();showCancellationRefund('+bidId+')" style="text-align:left;padding:12px 14px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
-        '<div><div style="font-size:14px;font-weight:700;color:#A32D2D">✕ Client cancelled</div>'+
-        '<div style="font-size:12px;color:var(--text3);margin-top:2px">Return paint + refund deposit minus materials</div></div>'+
+    ?'<button type="button" onclick="closePayPanel();showCancellationRefund('+bidId+')" style="text-align:left;padding:11px 14px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit">'+
+        '<div style="font-size:13px;font-weight:700;color:#A32D2D">✕ Client cancelled</div>'+
       '</button>'
     :'';
   const overpaidBanner=overpaidAmt>0.01
@@ -778,37 +780,53 @@ function openPayPanel(bidId, autoType){
         '<div style="font-size:11px;color:#856404">Client paid '+fmt(rawPaid)+' but bid is now '+fmt(total)+'. Refund: <strong>'+fmt(overpaidAmt)+'</strong></div></div>'+
       '</div>'
     :'';
-  const showFinalOnly = autoType==='final';
-  const stripeBtn=_stripeConnectStatus?.charges_enabled&&balance>0.50
-    ?'<button type="button" data-ptype="stripe" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:12px 14px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
-        '<div><div style="font-size:14px;font-weight:700;color:#635BFF">&#128179; Send Stripe payment link</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Client pays by card — auto-logs when paid</div></div>'+
-        '<div style="font-size:13px;font-weight:700;color:#635BFF">'+fmt(balance)+'</div>'+
+  const showFinalOnly=autoType==='final';
+  // Compact send-to-client buttons (Stripe + QR side by side)
+  const hasStripe=!!(_stripeConnectStatus?.charges_enabled&&balance>0.50);
+  const hasQr=!!(_hubUrl&&balance>0.50);
+  const stripeCompact=hasStripe
+    ?'<button type="button" data-ptype="stripe" onclick="selectPayType(this,'+bidId+')" style="padding:12px 8px;border-radius:var(--r);border:1.5px solid #635BFF;background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px">'+
+        '<span style="font-size:20px">💳</span>'+
+        '<span style="font-size:12px;font-weight:700;color:#635BFF">Card link</span>'+
+        '<span style="font-size:11px;color:var(--text3)">'+fmt(balance)+'</span>'+
       '</button>'
     :'';
-  const depositBtn=rawPaid<0.01
-    ?'<button type="button" id="mpay-btn-deposit" data-ptype="deposit" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:12px 14px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
-        '<div><div style="font-size:14px;font-weight:700">Deposit — 25%</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Due before work starts</div></div>'+
-        '<div style="font-size:16px;font-weight:800;color:var(--blue)">'+fmt(deposit25)+'</div>'+
+  const qrCompact=hasQr
+    ?'<button type="button" onclick="showPayQr('+bidId+')" style="padding:12px 8px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px">'+
+        '<span style="font-size:20px">📱</span>'+
+        '<span style="font-size:12px;font-weight:700">QR code</span>'+
+        '<span style="font-size:11px;color:var(--text3)">Client scans</span>'+
       '</button>'
     :'';
-  const typeButtons = showFinalOnly
-    ? '<button type="button" id="mpay-btn-final" data-ptype="final" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:14px 16px;border-radius:var(--r);border:2px solid var(--blue);background:var(--blue-lt);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
-        '<div><div style="font-size:15px;font-weight:700;color:var(--blue-dk)">Pay in full</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Final balance due</div></div>'+
-        '<div style="font-size:18px;font-weight:800;color:var(--green-mid)">'+fmt(balance)+'</div>'+
-      '</button>'+
-      '<button type="button" data-ptype="custom" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:12px 14px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
-        '<div><div style="font-size:13px;font-weight:700">Custom amount</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Enter partial payment</div></div>'+
-        '<div style="font-size:12px;color:var(--text3)">manual</div>'+
-      '</button>'+stripeBtn+refundBtn
-    : depositBtn+
-      '<button type="button" data-ptype="final" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:12px 14px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
-        '<div><div style="font-size:14px;font-weight:700">Pay in full</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Full remaining balance</div></div>'+
-        '<div style="font-size:16px;font-weight:800;color:var(--green)">'+fmt(balance)+'</div>'+
-      '</button>'+
-      '<button type="button" data-ptype="custom" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:12px 14px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
-        '<div><div style="font-size:14px;font-weight:700">Custom amount</div><div style="font-size:12px;color:var(--text3);margin-top:2px">Enter exact amount received</div></div>'+
-        '<div style="font-size:13px;color:var(--text3)">manual</div>'+
-      '</button>'+stripeBtn+refundBtn+cancelRefundBtn;
+  const sendClientRow=(hasStripe||hasQr)
+    ?'<div style="display:flex;align-items:center;gap:8px;margin:6px 0 4px">'+
+        '<div style="flex:1;height:1px;background:var(--border2)"></div>'+
+        '<span style="font-size:10px;font-weight:600;color:var(--text3);white-space:nowrap">or send to client</span>'+
+        '<div style="flex:1;height:1px;background:var(--border2)"></div>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:'+(hasStripe&&hasQr?'1fr 1fr':'1fr')+';gap:8px">'+
+        stripeCompact+qrCompact+
+      '</div>'
+    :'';
+  // Secondary: deposit + custom as small 2-col row
+  const depositSecondary=rawPaid<0.01
+    ?'<button type="button" id="mpay-btn-deposit" data-ptype="deposit" onclick="selectPayType(this,'+bidId+')" style="flex:1;padding:10px 12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left">'+
+        '<div style="font-size:12px;font-weight:700">Deposit 25%</div>'+
+        '<div style="font-size:13px;font-weight:800;color:var(--blue);margin-top:2px">'+fmt(deposit25)+'</div>'+
+      '</button>'
+    :'';
+  const customSecondary='<button type="button" data-ptype="custom" onclick="selectPayType(this,'+bidId+')" style="flex:1;padding:10px 12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left">'+
+    '<div style="font-size:12px;font-weight:700">Custom amount</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-top:2px">Enter exact amount</div>'+
+  '</button>';
+  const secondaryRow='<div style="display:flex;gap:8px;margin-top:4px">'+(depositSecondary||'')+customSecondary+'</div>';
+  // Primary collect button — big green, full width
+  const collectBtn='<button type="button" id="mpay-btn-final" data-ptype="final" onclick="selectPayType(this,'+bidId+')" style="width:100%;padding:16px 18px;border-radius:var(--r);border:none;background:var(--green);color:#fff;cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center;box-sizing:border-box">'+
+    '<div style="text-align:left"><div style="font-size:17px;font-weight:800">Collect '+fmt(balance)+'</div>'+
+    '<div style="font-size:12px;opacity:.75;margin-top:2px">Full balance · tap to log payment</div></div>'+
+    '<div style="font-size:24px;font-weight:900;opacity:.85">&#8594;</div>'+
+  '</button>';
+  const typeButtons=collectBtn+sendClientRow+(showFinalOnly?'':secondaryRow);
 
   overlay.innerHTML=
     '<div class="zmodal">'+
@@ -819,33 +837,37 @@ function openPayPanel(bidId, autoType){
       overpaidBanner+
       '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+bid.client_name+' · '+fmt(total)+' total · '+fmt(balance)+' balance</div>'+
       '<input type="hidden" id="mpay-type">'+
-      '<div style="display:grid;gap:8px;margin-bottom:14px" id="mpay-type-btns">'+typeButtons+'</div>'+
-      '<div id="mpay-amount-row" style="display:none" class="f">'+
-        '<label>Amount ($) <span id="mpay-max-hint" style="font-weight:400;color:var(--text3);font-size:11px"></span></label>'+
-        '<input type="number" id="mpay-amount" placeholder="0.00" step="0.01" min="0" inputmode="decimal"'+
-          ' style="font-size:22px;font-weight:800;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit;text-align:center">'+
-      '</div>'+
-      '<div class="f" style="margin-bottom:10px">'+
-        '<label id="mpay-date-label">Date received</label>'+
-        '<input type="date" id="mpay-date" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit">'+
-      '</div>'+
-      '<div id="mpay-method-row" class="f" style="margin-bottom:10px">'+
-        '<label>Payment method</label>'+
-        '<select id="mpay-method" onchange="_mpayMethodChange()" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit">'+
-          '<option value="Check">Check</option>'+
-          '<option value="Cash">Cash</option>'+
-          '<option value="Zelle">Zelle</option>'+
-          '<option value="Venmo">Venmo</option>'+
-          '<option value="Card">Card</option>'+
-          '<option value="Other">Other</option>'+
-        '</select>'+
-      '</div>'+
-      '<div class="f" style="margin-bottom:14px">'+
-        '<label id="mpay-ref-label">Check # <span style="font-weight:400;color:var(--text3)">(optional)</span></label>'+
-        '<input id="mpay-ref" placeholder="Optional" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit">'+
+      '<div style="display:grid;gap:8px;margin-bottom:8px" id="mpay-type-btns">'+typeButtons+'</div>'+
+      '<button type="button" onclick="_mpayToggleAdj()" style="background:none;border:none;cursor:pointer;font-family:inherit;font-size:12px;font-weight:600;color:var(--text3);padding:4px 0;margin-bottom:8px;text-align:left">⋯ Adjustments & refunds</button>'+
+      '<div id="_mpay-adj-btns" style="display:none">'+refundBtn+(rawPaid>0.01?cancelRefundBtn:'')+'</div>'+
+      '<div id="mpay-detail-fields" style="display:none">'+
+        '<div id="mpay-amount-row" style="display:none" class="f">'+
+          '<label>Amount ($) <span id="mpay-max-hint" style="font-weight:400;color:var(--text3);font-size:11px"></span></label>'+
+          '<input type="number" id="mpay-amount" placeholder="0.00" step="0.01" min="0" inputmode="decimal"'+
+            ' style="font-size:22px;font-weight:800;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit;text-align:center">'+
+        '</div>'+
+        '<div class="f" style="margin-bottom:10px">'+
+          '<label id="mpay-date-label">Date received</label>'+
+          '<input type="date" id="mpay-date" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit">'+
+        '</div>'+
+        '<div id="mpay-method-row" class="f" style="margin-bottom:10px">'+
+          '<label>Payment method</label>'+
+          '<select id="mpay-method" onchange="_mpayMethodChange()" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit">'+
+            '<option value="Check">Check</option>'+
+            '<option value="Cash">Cash</option>'+
+            '<option value="Zelle">Zelle</option>'+
+            '<option value="Venmo">Venmo</option>'+
+            '<option value="Card">Card</option>'+
+            '<option value="Other">Other</option>'+
+          '</select>'+
+        '</div>'+
+        '<div class="f" style="margin-bottom:14px">'+
+          '<label id="mpay-ref-label">Check # <span style="font-weight:400;color:var(--text3)">(optional)</span></label>'+
+          '<input id="mpay-ref" placeholder="Optional" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit">'+
+        '</div>'+
       '</div>'+
       '<div id="mpay-err" style="display:none;font-size:12px;color:#A32D2D;background:#FEE8E8;border-radius:var(--r);padding:8px 10px;margin-bottom:8px"></div>'+
-      '<button id="mpay-submit-btn" onclick="logPayment()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Record payment</button>'+
+      '<button id="mpay-submit-btn" onclick="logPayment()" style="display:none;width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Record payment</button>'+
     '</div>';
 
   document.body.appendChild(overlay);
@@ -863,6 +885,38 @@ function autoFillPayAmount(){
   // No-op — amounts are entered manually, not pre-filled
 }
 function closePayPanel(){document.querySelectorAll('.pay-modal-overlay').forEach(e=>e.remove());const cdp=document.getElementById('cd-pay-panel');if(cdp)cdp.style.display='none';activePayBidId=null;}
+function showPayQr(bidId){
+  const bid=bids.find(b=>b.id===bidId);if(!bid)return;
+  const c=getClientById(bid.client_id);
+  if(!c?.clientToken||!_supaUser){showToast('No client hub for this job.','⚠');return;}
+  const hubUrl=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+c.id;
+  const balance=getBidBalance(bid);
+  closePayPanel();
+  document.getElementById('_pay-qr-ov')?.remove();
+  if(!document.getElementById('_qr-anim-style')){
+    const s=document.createElement('style');s.id='_qr-anim-style';
+    s.textContent='@keyframes _qrIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}';
+    document.head.appendChild(s);
+  }
+  const ov=document.createElement('div');ov.id='_pay-qr-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(60px) saturate(1.5);-webkit-backdrop-filter:blur(60px) saturate(1.5);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;animation:_qrIn .22s cubic-bezier(.22,1,.36,1) both';
+  ov.innerHTML=
+    '<div style="font-size:20px;font-weight:800;color:#fff;margin-bottom:6px">Client scans to pay</div>'+
+    '<div style="font-size:13px;color:rgba(255,255,255,.55);margin-bottom:28px">'+(c.name||bid.client_name||'')+(balance>0?' · '+fmt(balance)+' balance':'')+'</div>'+
+    '<div id="_qr-wrap" style="background:rgba(255,255,255,.97);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.8);padding:20px;border-radius:24px;display:flex;align-items:center;justify-content:center;min-width:200px;min-height:200px;box-shadow:0 8px 40px rgba(0,0,0,.35)">'+
+      '<div style="font-size:13px;color:#bbb;padding:16px">Generating…</div>'+
+    '</div>'+
+    '<div style="margin-top:32px;font-size:13px;color:rgba(255,255,255,.35)">Tap anywhere to close</div>';
+  ov.addEventListener('click',()=>ov.remove());
+  document.body.appendChild(ov);
+  const wrap=document.getElementById('_qr-wrap');
+  const qrImg=document.createElement('img');
+  qrImg.style.cssText='width:240px;height:240px;display:block;border-radius:8px';
+  qrImg.alt='QR Code';
+  qrImg.onerror=()=>{wrap.innerHTML='<div style="font-size:10px;word-break:break-all;max-width:200px;text-align:center;padding:8px;color:#555">'+hubUrl+'</div>';};
+  qrImg.onload=()=>{wrap.innerHTML='';wrap.appendChild(qrImg);};
+  qrImg.src='https://api.qrserver.com/v1/create-qr-code/?size=240x240&data='+encodeURIComponent(hubUrl)+'&margin=10';
+}
 function showCancellationRefund(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   const totalPaid=getBidPaid(bidId);
@@ -928,15 +982,70 @@ function _submitCancellationRefund(bidId){
   _refreshClientHub(bid.client_id); // keep client hub balance in sync
   showToast(refund>0?'Refund of '+fmt(refund)+' issued · Job cancelled':'Job cancelled','↩');
 }
+// ── Close out a sent estimate that was never approved ──────────────────────────
+// Marks a sent-but-unsigned proposal as "Closed Lost" with a reason (e.g. the
+// client went with another contractor). Keeps the record + close-rate stats honest
+// instead of leaving dead estimates stuck in "Awaiting signature" forever.
+const LOST_REASONS=['Went with another contractor','Price was too high','Project postponed or cancelled','Couldn’t reach client / no response','Decided not to do the work','Other'];
+function openCloseOutEstimate(bidId){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  const c=getClientById(b.client_id)||{name:b.client_name||b.name||'this client'};
+  document.getElementById('_co-overlay')?.remove();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_co-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.style.cssText='animation:td-modal-enter .22s cubic-bezier(.22,1,.36,1) both';
+  box.innerHTML=
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'+
+      '<div style="font-size:16px;font-weight:800">Close out estimate</div>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">×</button>'+
+    '</div>'+
+    '<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:14px">Mark <strong>'+escHtml(c.name)+'</strong>’s '+fmt(b.amount||0)+' proposal as lost. It moves to the Declined tab and stops counting against your close rate as pending.</div>'+
+    '<label style="display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Why didn’t it close?</label>'+
+    '<select id="_co-reason" style="width:100%;box-sizing:border-box;padding:11px 12px;font-size:14px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;margin-bottom:12px">'+
+      LOST_REASONS.map(r=>'<option value="'+escHtml(r)+'">'+escHtml(r)+'</option>').join('')+
+    '</select>'+
+    '<label style="display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Note (optional)</label>'+
+    '<textarea id="_co-note" rows="2" placeholder="e.g. went with a cheaper bid from a friend" style="width:100%;box-sizing:border-box;padding:10px 12px;font-size:13px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;margin-bottom:16px"></textarea>'+
+    '<div style="display:flex;gap:8px">'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
+      '<button onclick="_submitCloseOutEstimate('+bidId+')" style="flex:2;padding:12px;border-radius:var(--r);border:none;background:#A32D2D;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Mark as lost</button>'+
+    '</div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function _submitCloseOutEstimate(bidId){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  const reason=document.getElementById('_co-reason')?.value||'Other';
+  const note=(document.getElementById('_co-note')?.value||'').trim();
+  b.status='Closed Lost';b.draft=false;
+  b.lostReason=reason;b.lostNote=note;b.lostAt=new Date().toISOString();
+  saveAll();
+  document.getElementById('_co-overlay')?.remove();
+  document.querySelector('[data-bdov]')?.remove();
+  if(typeof renderProposalsPage==='function')renderProposalsPage();
+  if(typeof renderDash==='function')renderDash();
+  showToast('Estimate closed out — marked lost','✓');
+}
+function reopenEstimate(bidId){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  b.status='Pending';
+  delete b.lostReason;delete b.lostNote;delete b.lostAt;
+  saveAll();
+  document.querySelector('[data-bdov]')?.remove();
+  if(typeof renderProposalsPage==='function')renderProposalsPage();
+  if(typeof renderDash==='function')renderDash();
+  showToast('Estimate reopened — back to awaiting signature','↩');
+}
 function selectPayType(btn, bidId){
-  // Deselect all
+  // Deselect all — keep collect button green but dimmed
   const typeContainer=document.getElementById('mpay-type-btns');
-  if(typeContainer)typeContainer.querySelectorAll('button').forEach(b=>{
-    b.style.borderColor='var(--border2)';b.style.background='var(--bg2)';
-    b.style.color='var(--text)';
+  if(typeContainer)typeContainer.querySelectorAll('button[data-ptype]').forEach(b=>{
+    if(b.dataset.ptype==='final'){b.style.background='var(--green)';b.style.border='none';b.style.color='#fff';b.style.opacity='.45';}
+    else{b.style.borderColor='var(--border2)';b.style.background='var(--bg2)';b.style.color='var(--text)';b.style.opacity='';}
   });
-  btn.style.borderColor='var(--blue)';btn.style.background='var(--blue-lt)';
   const ptype=btn.dataset.ptype;
+  if(ptype==='final'){btn.style.opacity='1';}
+  else{btn.style.borderColor='var(--blue)';btn.style.background='var(--blue-lt)';btn.style.color='var(--text)';}
   const bid=bids.find(b=>b.id==bidId);if(!bid)return;
   const balance=getBidBalance(bid);
   const total=bid.amount||0;
@@ -956,7 +1065,6 @@ function selectPayType(btn, bidId){
     if(amtEl){amtEl.readOnly=true;amtEl.style.background='var(--bg2)';amtEl.style.color='var(--text3)';}
     if(submitBtn){submitBtn.textContent='Record payment';submitBtn.style.background='var(--green)';}
     if(dateLabel)dateLabel.textContent='Date received';
-    if(mRow)mRow.style.display='';
   } else if(ptype==='final'){
     if(amtEl)amtEl.value=balance.toFixed(2);
     if(amtRow)amtRow.style.display='block';
@@ -964,13 +1072,10 @@ function selectPayType(btn, bidId){
     if(amtEl){amtEl.readOnly=true;amtEl.style.background='var(--bg2)';amtEl.style.color='var(--text3)';}
     if(submitBtn){submitBtn.textContent='Record payment';submitBtn.style.background='var(--green)';}
     if(dateLabel)dateLabel.textContent='Date received';
-    if(mRow)mRow.style.display='';
   } else if(ptype==='stripe'){
     if(amtRow)amtRow.style.display='none';
     if(hint)hint.textContent='';
-    if(submitBtn){submitBtn.textContent='Send Stripe payment link →';submitBtn.style.background='#635BFF';}
     if(dateLabel)dateLabel.textContent='';
-    const mRow=document.getElementById('mpay-method-row');if(mRow)mRow.style.display='none';
   } else if(ptype==='refund'){
     const rawBidPaid=getBidPaid(bidId);
     const rawBidTotal=(bids.find(b=>b.id==bidId)||{}).amount||0;
@@ -980,7 +1085,6 @@ function selectPayType(btn, bidId){
     if(hint)hint.textContent='refund amount';
     if(submitBtn){submitBtn.textContent='Issue refund';submitBtn.style.background='#A32D2D';}
     if(dateLabel)dateLabel.textContent='Date issued';
-    if(mRow)mRow.style.display='';
     setTimeout(()=>amtEl&&amtEl.focus(),50);
   } else {
     if(amtEl){amtEl.value='';amtEl.readOnly=false;amtEl.style.background='';amtEl.style.color='';}
@@ -988,11 +1092,26 @@ function selectPayType(btn, bidId){
     if(hint)hint.textContent='max: '+fmt(balance);
     if(submitBtn){submitBtn.textContent='Record payment';submitBtn.style.background='var(--green)';}
     if(dateLabel)dateLabel.textContent='Date received';
-    if(mRow)mRow.style.display='';
     setTimeout(()=>amtEl&&amtEl.focus(),50);
+  }
+  // Reveal detail fields and submit button for all types except direct actions
+  const df=document.getElementById('mpay-detail-fields');
+  const sb=document.getElementById('mpay-submit-btn');
+  if(ptype==='stripe'){
+    if(df)df.style.display='none';
+    if(sb){sb.style.display='';sb.textContent='Send Stripe payment link →';sb.style.background='#635BFF';}
+  }else{
+    if(df)df.style.display='';
+    if(sb)sb.style.display='';
   }
 }
 
+function _mpayToggleAdj(){
+  const d=document.getElementById('_mpay-adj-btns');
+  if(!d)return;
+  if(d.style.display==='none'){d.style.display='grid';d.style.gap='8px';d.style.marginBottom='10px';}
+  else d.style.display='none';
+}
 function _mpayMethodChange(){
   const m=document.getElementById('mpay-method')?.value||'';
   const lbl=document.getElementById('mpay-ref-label');
@@ -1213,7 +1332,7 @@ function openEditBid(bidId,startStep){
     renderEstSurfs();
     goEstStep(startStep||3); // step 2 merged into 3
     const tip=document.querySelector('#est-s3 .tip');
-    if(tip)tip.innerHTML='<strong>Editing existing bid</strong> for '+(c?c.name:b.name||'client')+' · previous amount: '+fmt(b.amount)+'. Re-enter surfaces and adjust as needed.';
+    if(tip)tip.innerHTML='<strong>Editing existing bid</strong> for '+escHtml(c?c.name:b.name||'client')+' · previous amount: '+fmt(b.amount)+'. Re-enter surfaces and adjust as needed.';
     if((startStep||2)>=4){renderEstReview();renderEstRunning();}
   },80);
 }

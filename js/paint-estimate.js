@@ -1,5 +1,6 @@
 // ── SW Color Browser ─────────────────────────────────────────
 let _swColors=null,_swFinish='',_swCurrentFamily=null;
+let _paintExpectedCost=null;
 
 function _swHslFamily(hex){
   if(!hex||hex.length<7)return'gray';
@@ -692,18 +693,10 @@ function cleanRoomName(room){
 
 function _sfShow(el,back){if(!el)return;el.classList.remove('sf-enter','sf-enter-back');void el.offsetWidth;el.classList.add(back?'sf-enter-back':'sf-enter');}
 
-function applyStdScopePreset(preset){
-  const INT_IDS=['protect','spackle','tape','caulk','twocoat','cleanup'];
-  const EXT_IDS=['pwash','spackle','tape','caulk','prime','twocoat'];
-  const ids=preset==='exterior'?EXT_IDS:INT_IDS;
-  ids.forEach(id=>{if(!roomScopeOn(surfRoom,id))toggleScopeRoom(id,surfRoom);});
-  // Hide the preset button after use
-  const pb=document.getElementById('_scope-preset-btn');if(pb)pb.style.display='none';
-}
-
 function goSurfStepA(){
   const a=document.getElementById('surf-step-a');
   document.getElementById('surf-step-b').style.display='none';
+  const _pgEst=document.getElementById('pg-est');if(_pgEst)_pgEst.style.overflowY='';
   a.style.display='';
   _sfShow(a,true);
 }
@@ -722,6 +715,7 @@ function goSurfStepB(){
   surfBIdx=0;
   surfBMeasurements={};
   document.getElementById('surf-step-a').style.display='none';
+  const _pgEst=document.getElementById('pg-est');if(_pgEst){_pgEst.scrollTop=0;_pgEst.style.overflowY='hidden';}
   const _stepBEl=document.getElementById('surf-step-b');_stepBEl.style.display='';_stepBEl.scrollTop=0;_sfShow(_stepBEl);
   document.getElementById('surf-b-roomname').textContent=surfRoom;
   // Show scope-first state
@@ -742,31 +736,9 @@ function goSurfStepB(){
   if(_zb){_zb.style.borderColor=_isc?'var(--border2)':'var(--blue)';_zb.style.background=_isc?'var(--bg2)':'var(--blue-lt)';_zb.style.color=_isc?'var(--text)':'var(--blue-dk)';}
   if(_cb){_cb.style.borderColor=_isc?'#A32D2D':'var(--border2)';_cb.style.background=_isc?'#FEE8E8':'var(--bg2)';_cb.style.color=_isc?'#A32D2D':'var(--text)';}
   const _sn=document.getElementById('paint-supply-note');if(_sn)_sn.style.display=_isc?'block':'none';
-  // Render scope grid for this room (no sqft yet, show flat rates only)
-  const sg=document.getElementById('surf-scope-first-grid');
-  if(sg){
-    _currentScopeRoom=surfRoom;
-    // Get sqft for dynamic pricing — recalculates as Zach adds measurements
-    const _roomSqFt=estSurfaces.filter(sf=>cleanRoomName(sf.room)===surfRoom&&
-      ['walls','ceiling','ext_walls','deck'].includes(sf.type)).reduce((sum,sf)=>sum+(sf.qty||0),0);
-    const _isExtPreset=surfJobType==='exterior';
-    const _hasAnyScope=Object.values(roomScopeMap[surfRoom]||{}).some(v=>v&&v.active);
-    const _presetTxt=_isExtPreset
-      ?'⚡ Std exterior prep — power wash · scrape/sand · tape · caulk · prime · 2 coats'
-      :'⚡ Std interior prep — protect · spackle · tape · caulk · 2 coats · cleanup';
-    const _presetBtnHtml=_hasAnyScope?'':'<button id="_scope-preset-btn" type="button" onclick="applyStdScopePreset(\''+(_isExtPreset?'exterior':'interior')+'\')" style="display:block;width:100%;margin-bottom:10px;padding:10px 12px;border-radius:var(--r);border:1.5px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">'+_presetTxt+'</button>';
-    sg.innerHTML=_presetBtnHtml+SCOPE_ITEMS.map(s=>{
-      const isOn=roomScopeOn(surfRoom,s.id);
-      const roomAttr=' data-room="'+encodeURIComponent(surfRoom)+'"';
-      return '<div class="stog'+(isOn?' on':'')+'" id="est-st-'+s.id+'" onclick="toggleScopeRoom(\''+s.id+'\',decodeURIComponent(this.dataset.room))"'+roomAttr+' style="align-items:center">'+
-        '<input type="checkbox" id="est-sc-'+s.id+'" style="display:none"'+(isOn?' checked':'')+'>'+
-        '<div class="sdot"></div>'+
-        '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:13px;font-weight:700">'+(s.icon||'')+' '+s.label+'</div>'+
-          '<div style="font-size:10px;opacity:.65;margin-top:1px;line-height:1.3">'+s.hint+'</div>'+
-        '</div></div>';
-    }).join('');
-  }
+  // Render scope grid — use the single shared renderer so cloud-sync can't clobber it with a different version
+  _currentScopeRoom=surfRoom;
+  if(typeof buildScopeGrid==='function')buildScopeGrid(surfRoom);
 }
 
 function setPaintSupply(who){
@@ -923,6 +895,17 @@ function saveDebriefAndComplete(jobId,btn){
   });
   if(totalActualHrs>0){const j=jobs.find(x=>x.id===jobId);if(j)j.actualHours=Math.round(totalActualHrs*10)/10;}
   saveAll();
+  // Upload actual hours to crowdsourced benchmark pool
+  const _debJob=jobs.find(x=>x.id===jobId);
+  const _debBid=_debJob?.bid_id?bids.find(b=>b.id===_debJob.bid_id):null;
+  const _debTrade=_debBid?.trade_type||'painting';
+  const _benchRows=[];
+  inputs.forEach(inp=>{
+    const scopeId=inp.dataset.scope;
+    const hrs=parseFloat(inp.value)||0;
+    if(hrs>0&&_user?.id)_benchRows.push({user_id:_user.id,scope_id:scopeId,trade:_debTrade,actual_hrs:hrs});
+  });
+  if(typeof _submitScopeBenchmarks==='function')_submitScopeBenchmarks(_benchRows);
   btn.closest('.zmodal-overlay').remove();
   confirmMarkComplete(jobId);
 }
@@ -1419,6 +1402,7 @@ function finishRoom(){
 
 function showRoomSavedState(roomCount){
   document.getElementById('surf-step-b').style.display='none';
+  const _pgEstR=document.getElementById('pg-est');if(_pgEstR)_pgEstR.style.overflowY='';
   // Get the room name just saved from the last surface entry
   const lastSavedRoom=estSurfaces.length>0?cleanRoomName(estSurfaces[estSurfaces.length-1].room):'';
   const surf3=document.getElementById('est-s3');
@@ -1568,6 +1552,8 @@ function editRoom(roomName){
 function cancelEditRoom(){
   if(_editRoomBackup){estSurfaces=[..._editRoomBackup.surfaces];_editRoomBackup=null;}
   document.getElementById('_edit-room-cancel')?.remove();
+  const _pgEstC=document.getElementById('pg-est');if(_pgEstC)_pgEstC.style.overflowY='';
+  document.getElementById('surf-step-b').style.display='none';
   initSurfStep();renderEstSurfs();renderEstRunning();renderSurfRoomsLogged();
 }
 
@@ -2157,40 +2143,44 @@ function renderEstReview(){
   let html='';
 
   // Per-room breakdown
-  html+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Room breakdown</div>';
+  html+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--blue-dk);margin-bottom:10px;display:flex;align-items:center;gap:6px">🏠 Room by room</div>';
   Object.entries(roomData).forEach(([room,data])=>{
-    const paintLine=paintLines.find(p=>cleanRoomName(p.color)===room||p.color.startsWith(room));
-    html+='<div style="border:1px solid var(--border);border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">'+
-      // Room header
-      '<div style="font-size:14px;font-weight:800;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--border)">'+escHtml(room)+
-        (data.sqft?'<span style="font-size:11px;font-weight:400;color:var(--text3);margin-left:8px">'+data.sqft.toLocaleString()+' sq ft</span>':'')+
+    const accentHex=data.surfaces.find(s=>s.hex)?.hex||'';
+    const accentBorder=accentHex?accentHex:'var(--blue)';
+    html+='<div style="border:1px solid var(--border);border-left:4px solid '+accentBorder+';border-radius:var(--rl);overflow:hidden;margin-bottom:10px">'+
+      // Room header row
+      '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg2);border-bottom:1px solid var(--border)">'+
+        '<span style="font-size:14px;font-weight:800;color:var(--text)">'+escHtml(room)+'</span>'+
+        (data.sqft?'<span style="font-size:11px;font-weight:700;color:var(--blue);background:var(--blue-lt);padding:2px 8px;border-radius:20px">'+data.sqft.toLocaleString()+' sq ft</span>':'')+
       '</div>'+
+      '<div style="padding:4px 14px 8px">'+
       // Per-surface rows with color swatch + finish
       data.surfaces.map(s=>{
-        const swatchHtml=s.hex?'<div style="width:18px;height:18px;border-radius:3px;background:'+s.hex+';border:1px solid rgba(0,0,0,.12);flex-shrink:0;margin-right:6px"></div>':'';
-        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)">'+
-          '<div style="display:flex;align-items:center;min-width:0">'+
+        const swatchHtml=s.hex?'<div style="width:16px;height:16px;border-radius:3px;background:'+s.hex+';border:1px solid rgba(0,0,0,.12);flex-shrink:0"></div>':'';
+        return '<div style="display:flex;align-items:center;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border)">'+
+          '<div style="display:flex;align-items:center;gap:8px;min-width:0">'+
             swatchHtml+
             '<div>'+
-              '<span style="font-size:12px;font-weight:700;color:var(--text)">'+s.type+'</span>'+
+              '<span style="font-size:13px;font-weight:700;color:var(--text)">'+s.type+'</span>'+
               (s.color?'<div style="font-size:11px;color:var(--text3)">'+escHtml(s.color)+(s.finish?' · <span style="color:var(--blue-dk);font-weight:600">'+escHtml(s.finish)+'</span>':'')+'</div>':'<div style="font-size:11px;color:#A32D2D">No color selected</div>')+
             '</div>'+
           '</div>'+
-          '<div style="font-size:11px;font-weight:700;color:var(--text2);flex-shrink:0;margin-left:8px">'+
+          '<div style="font-size:12px;font-weight:700;color:var(--text2);flex-shrink:0;margin-left:8px">'+
             (s.unit==='sq ft'?s.qty.toLocaleString()+' sf':s.qty+' '+s.unit)+
           '</div>'+
         '</div>';
       }).join('')+
       // Scope items
       (data.scopeItems.length?
-        '<div style="margin-top:8px;padding-top:6px">'+
+        '<div style="margin-top:8px">'+
         data.scopeItems.map(si=>
-          '<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0;color:var(--text2)">'+
+          '<div style="display:flex;justify-content:space-between;font-size:11px;padding:3px 0;color:var(--text2)">'+
             '<span>'+si.label+' ('+si.hrs+'h @ $'+si.rate+'/hr)</span>'+
             '<span style="font-weight:700;color:var(--blue)">'+fmt(si.cost)+'</span>'+
           '</div>'
         ).join('')+'</div>'
       :'')+
+      '</div>'+
     '</div>';
   });
 
@@ -2198,68 +2188,72 @@ function renderEstReview(){
   html+='<div style="display:flex;justify-content:space-between;font-size:12px;padding:6px 0;border-bottom:2px solid var(--border2);font-weight:700;margin-bottom:12px">'+
     '<span>Total paintable sq ft</span><span style="color:var(--blue)">'+totalSqft.toLocaleString()+' sq ft</span></div>';
 
-  // Metrics summary
+  // ── Compact summary + collapsible analysis ─────────────────────────────
   const _tierMult=(typeof estPropertyTier!=='undefined'&&estPropertyTier.mult)||1.00;
   const _subtotal=Math.round((laborTotal+matTotal)*100)/100;
   const _tierPremium=_tierMult!==1.00?Math.round((final-_subtotal)*100)/100:0;
   const _tierPct=Math.round((_tierMult-1)*100);
-  html+='<div class="mets" style="margin-bottom:12px">'+
-    '<div class="met"><div class="met-l">Labor hours</div><div class="met-v">'+totalLaborHours.toFixed(1)+'h</div></div>'+
-    '<div class="met"><div class="met-l">Labor</div><div class="met-v" style="color:var(--blue)">'+fmtShort(laborTotal)+'</div></div>'+
-    '<div class="met"><div class="met-l">Materials</div><div class="met-v" style="color:var(--blue)">'+fmtShort(matTotal)+'</div></div>'+
-    ((matTotal-suppliesCost)>0?'<div class="met" style="padding-left:12px"><div class="met-l" style="color:var(--text3);font-size:11px">Paint</div><div class="met-v" style="color:var(--text3);font-size:11px">'+fmtShort(matTotal-suppliesCost)+'</div></div>':'')+
-    (suppliesCost>0?'<div class="met" style="padding-left:12px"><div class="met-l" style="color:var(--text3);font-size:11px">Supplies</div><div class="met-v" style="color:var(--text3);font-size:11px">'+fmtShort(suppliesCost)+'</div></div>':'')+
-    (_tierPremium>0?'<div class="met"><div class="met-l" style="color:var(--amber)">'+(estPropertyTier?.label||'Tier')+' +'+_tierPct+'%</div><div class="met-v" style="color:var(--amber)">+'+fmtShort(_tierPremium)+'</div></div>':'')+
-    '<div class="met"><div class="met-l">Total</div><div class="met-v" style="color:var(--green-mid);font-size:18px">'+fmtShort(final)+'</div></div>'+
-  (() => {
-    const _stR=_paintClientTaxRate!==null?(_paintClientTaxRate.rate??0):(parseFloat(S&&S.salesTaxRate)||0);
-    const _st=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('e-caddr')?.value||''):null)||(S&&S.state)||'KS';
-    if((typeof ST_NO_TAX!=='undefined')&&ST_NO_TAX.has&&ST_NO_TAX.has(_st))return '<div class="met"><div class="met-l" style="color:var(--text3)">Sales tax</div><div class="met-v" style="color:var(--text3);font-size:12px">No sales tax state</div></div>';
-    if(_paintWorkScope==='improvement')return '<div class="met"><div class="met-l" style="color:var(--text3)">Sales tax</div><div class="met-v" style="color:var(--text3);font-size:12px">$0 — capital improvement</div></div>';
-    if(!_stR)return '<div class="met" style="cursor:pointer" onclick="openSalesTaxSetup()"><div class="met-l" style="color:var(--amber)">⚠ Sales tax</div><div class="met-v" style="color:var(--blue);font-size:12px;font-weight:700">Set rate →</div></div>';
-    if(typeof calcSalesTax==='function'){
-      const _prop=_paintIsCommercial?'commercial':'residential';
-      const r=calcSalesTax({state:_st,tradeType:'painting',scope:'repair',propertyType:_prop,taxRate:_stR,laborTotal,materialsTotal:matTotal+suppliesCost});
-      if(r.treatment&&!r.treatment.customerTax)return '<div class="met"><div class="met-l" style="color:var(--text3)">Sales tax</div><div class="met-v" style="color:var(--text3);font-size:12px">Exempt in '+_st+'</div></div>';
-      if(r.taxAmount>0)return '<div class="met"><div class="met-l">Sales tax</div><div class="met-v" style="color:var(--blue)">+'+fmtShort(r.taxAmount)+'</div></div>';
-    }
-    return '';
-  })() +
-  '</div>';
-
-  // ── Pricing health indicator ──────────────────────────────
-  if(final>0&&totalLaborHours>0){
-    const effRate=final/totalLaborHours;
-    const matPct=Math.round(matTotal/final*100);
-    const isHealthy=effRate>=55;
-    const isTight=effRate>=40&&effRate<55;
-    const isLow=effRate<40;
-    const color=isLow?'#A32D2D':isTight?'#856404':'var(--green-mid)';
-    const bg=isLow?'#FEF0F0':isTight?'#FFFBF0':'#F0FBF0';
-    const border=isLow?'#E24B4A':isTight?'var(--amber)':'#97C459';
-    const label=isLow?'Underpriced — adjust before sending':isTight?'Tight margin — review before sending':'Priced well';
-    const icon=isLow?'⚠️':isTight?'⚡':'✓';
-    html+='<div style="background:'+bg+';border:1px solid '+border+';border-radius:var(--rl);padding:11px 14px;margin-bottom:12px">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">'+
-        '<div style="font-size:12px;font-weight:800;color:'+color+'">'+icon+' '+label+'</div>'+
-        '<div style="font-size:12px;color:'+color+';font-weight:700">'+fmt(effRate)+'/hr effective</div>'+
-      '</div>'+
-      '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px">'+
-        '<div style="text-align:center;background:rgba(255,255,255,.6);border-radius:var(--r);padding:6px">'+
-          '<div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase">Effective rate</div>'+
-          '<div style="font-size:14px;font-weight:800;color:'+color+'">'+fmt(effRate)+'/hr</div>'+
-        '</div>'+
-        '<div style="text-align:center;background:rgba(255,255,255,.6);border-radius:var(--r);padding:6px">'+
-          '<div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase">Materials</div>'+
-          '<div style="font-size:14px;font-weight:800;color:var(--text)">'+matPct+'% of bid</div>'+
-        '</div>'+
-        '<div style="text-align:center;background:rgba(255,255,255,.6);border-radius:var(--r);padding:6px">'+
-          '<div style="font-size:10px;color:var(--text3);font-weight:700;text-transform:uppercase">After materials</div>'+
-          '<div style="font-size:14px;font-weight:800;color:var(--green-mid)">'+fmt(final-matTotal)+'</div>'+
-        '</div>'+
-      '</div>'+
-    '</div>';
+  // Compute applied tax
+  const _stR2=_paintClientTaxRate!==null?(_paintClientTaxRate.rate??0):(parseFloat(S&&S.salesTaxRate)||0);
+  const _st2=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('e-caddr')?.value||''):null)||(S&&S.state)||'KS';
+  let _appliedTax=0,_taxLabel='Sales tax';
+  const _noTaxSt=(typeof ST_NO_TAX!=='undefined')&&ST_NO_TAX.has&&ST_NO_TAX.has(_st2);
+  if(_stR2>0&&!_noTaxSt&&_paintWorkScope!=='improvement'&&typeof calcSalesTax==='function'){
+    const _cProp=_paintIsCommercial?'commercial':'residential';
+    const _tr=calcSalesTax({state:_st2,tradeType:'painting',scope:'repair',propertyType:_cProp,taxRate:_stR2,laborTotal,materialsTotal:matTotal+suppliesCost});
+    if(_tr.treatment&&_tr.treatment.customerTax&&_tr.taxAmount>0){_appliedTax=_tr.taxAmount;_taxLabel='Sales tax ('+_stR2+'%)';}
   }
+  const _grandTotal=final+_appliedTax;
+  html+='<div style="border:1px solid var(--border);border-radius:var(--rl);overflow:hidden;margin-bottom:12px">'+
+    '<div style="display:flex;justify-content:space-between;padding:9px 14px;border-bottom:1px solid var(--border)">'+
+      '<span style="font-size:12px;color:var(--text2)">Subtotal</span>'+
+      '<span style="font-size:14px;font-weight:700">'+fmtShort(final)+'</span>'+
+    '</div>'+
+    (_appliedTax>0?
+      '<div style="display:flex;justify-content:space-between;padding:9px 14px;border-bottom:1px solid var(--border)">'+
+        '<span style="font-size:12px;color:var(--text2)">'+_taxLabel+'</span>'+
+        '<span style="font-size:12px;font-weight:600;color:var(--blue)">+'+fmtShort(_appliedTax)+'</span>'+
+      '</div>'
+    :(!_stR2&&!_noTaxSt&&_paintWorkScope!=='improvement'?
+      '<div style="display:flex;justify-content:space-between;padding:9px 14px;border-bottom:1px solid var(--border);cursor:pointer" onclick="openSalesTaxSetup()">'+
+        '<span style="font-size:12px;color:var(--amber)">⚠ Sales tax — tap to set</span>'+
+        '<span style="font-size:12px;font-weight:700;color:var(--blue)">Set rate →</span>'+
+      '</div>':'')
+    )+
+    '<div style="display:flex;justify-content:space-between;padding:10px 14px;background:var(--blue);color:#fff">'+
+      '<span style="font-size:13px;font-weight:800">Total</span>'+
+      '<span style="font-size:20px;font-weight:900;letter-spacing:-.5px">'+fmtShort(_grandTotal)+'</span>'+
+    '</div>'+
+    '<button onclick="const d=document.getElementById(\'est-mets-detail\');const open=!d.hidden;d.hidden=open;this.textContent=open?\'▸ Show analysis\':\'▴ Hide analysis\'" style="display:block;width:100%;background:var(--bg2);border:none;border-top:1px solid var(--border);padding:8px;font-size:11px;font-weight:700;color:var(--text2);cursor:pointer;font-family:inherit;text-align:center">▸ Show analysis</button>'+
+    '<div id="est-mets-detail" hidden style="padding:10px 14px;border-top:1px solid var(--border)">'+
+      '<div class="mets" style="margin-bottom:0">'+
+        '<div class="met"><div class="met-l">Labor hours</div><div class="met-v">'+totalLaborHours.toFixed(1)+'h</div></div>'+
+        '<div class="met"><div class="met-l">Labor</div><div class="met-v" style="color:var(--blue)">'+fmtShort(laborTotal)+'</div></div>'+
+        '<div class="met"><div class="met-l">Materials</div><div class="met-v" style="color:var(--blue)">'+fmtShort(matTotal)+'</div></div>'+
+        (_tierPremium>0?'<div class="met"><div class="met-l" style="color:var(--amber)">'+(estPropertyTier?.label||'Tier')+' +'+_tierPct+'%</div><div class="met-v" style="color:var(--amber)">+'+fmtShort(_tierPremium)+'</div></div>':'')+
+        (final>0&&totalLaborHours>0?'<div class="met"><div class="met-l">Effective rate</div><div class="met-v" style="color:var(--text2)">'+fmt(final/totalLaborHours)+'/hr</div></div>':'')+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  // ── Profit margin gauge ──────────────────────────────────────────────────
+  // Save paintLines to bid in memory so job sheet can show them
+  (()=>{const _bidId=typeof lastCreatedBidId!=='undefined'?lastCreatedBidId:(typeof editingBidId!=='undefined'?editingBidId:null);if(_bidId&&typeof bids!=='undefined'){const _b=bids.find(x=>x.id===_bidId);if(_b)_b.paintLines=paintLines.length?paintLines:undefined;}})();
+  html+='<div style="border:1px solid var(--border);border-radius:var(--rl);padding:14px 14px 6px;margin-bottom:12px">'+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--blue-dk);margin-bottom:10px">Profit margin</div>'+
+    '<input type="number" id="paint-expected-cost" style="display:none">'+
+    '<div id="paint-gauge-hint" style="display:none"></div>'+
+    '<div id="paint-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">'+
+      '<div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 15%,#F59E0B 30%,#22C55E 38%,#22C55E 78%,#F59E0B 92%,#EF4444 100%);margin:14px 10px 26px">'+
+        '<div id="paint-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>'+
+      '</div>'+
+      '<div style="text-align:center;padding-bottom:12px">'+
+        '<div id="paint-gauge-pct" style="font-size:30px;font-weight:900;line-height:1.1;color:var(--text);transition:color .4s ease">—</div>'+
+        '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin:2px 0 2px">Profit %</div>'+
+        '<div id="paint-gauge-dollars" style="font-size:15px;font-weight:700;margin:0 0 5px;transition:color .4s ease"></div>'+
+        '<div id="paint-gauge-msg" style="font-size:11.5px;color:var(--text3);min-height:16px"></div>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
 
   // Paint order summary (Zach-only — not on proposal)
   if(customerPaint){
@@ -2292,7 +2286,23 @@ function renderEstReview(){
   }
 
   el.innerHTML=html;
-  const fd=document.getElementById('est-final-disp');if(fd)fd.textContent=fmt(final);// full precision for final bid display
+  const fd=document.getElementById('est-final-disp');if(fd)fd.textContent=fmt(final);
+  // Auto-set cost to materials (hidden input keeps _updateMarginGauge working)
+  const _costEl=document.getElementById('paint-expected-cost');
+  if(_costEl){
+    const autoVal=_paintExpectedCost!==null?_paintExpectedCost:matTotal;
+    _costEl.value=Math.round(autoVal||0);
+    if(_paintExpectedCost!==null)_costEl.dataset.userSet='true';
+  }
+  _paintGaugeUpdate();
+}
+function _paintGaugeUpdate(){
+  const {final,matTotal:mt}=calcEst();
+  const costEl=document.getElementById('paint-expected-cost');
+  if(!costEl)return;
+  if(costEl.dataset.userSet)_paintExpectedCost=parseFloat(costEl.value)||null;
+  else costEl.value=Math.round(_paintExpectedCost!==null?_paintExpectedCost:mt||0);
+  _updateMarginGauge('paint',final);
 }
 function downloadProposalPDF(){
   const proposal=document.getElementById('est-proposal');

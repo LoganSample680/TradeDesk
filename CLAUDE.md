@@ -77,28 +77,31 @@ Always ask first: *"All shards green — OK to merge?"*
 
 ---
 
-### 1.2 Webhook Noise — Silence Non-Failure Events
+### 1.2 Webhook Noise — Complete Silence on Non-Failure Events
 
-**Do not narrate infrastructure events that require no action.**
+**Say nothing in response to any webhook event that requires no action.**
 
-The following webhook events are expected and informational only — acknowledge them
-with silence:
+No acknowledgement, no "no action needed", no "waiting on shards", no
+confirmation that a deploy succeeded. Zero output to the user.
+
+The following events must produce **no response whatsoever**:
 
 - Cloudflare Pages "build in progress" and "deploy successful" notifications
 - Supabase preview ⏸️ (no migrations) and ✅ (all tasks passed)
 - "Waiting on shards" status updates
 - Any CI shard with `status: in_progress`
+- CI shards completing with `conclusion: success`
 
-**Only surface a webhook event if it requires action:**
+**Only produce output for events that require action:**
 
-| Event | Action |
+| Event | Output |
 |-------|--------|
-| Shard `conclusion: failure` | Fetch logs, diagnose, fix, push |
-| Review comment requesting a change | Investigate and respond or fix |
-| CI shard stays `in_progress` beyond 15 minutes | Check for stuck runner |
+| Shard `conclusion: failure` | What failed + what was fixed + pushed |
+| Review comment requesting a change | What changed + pushed |
+| CI shard stuck `in_progress` > 15 min | Flag to user |
 
-Staying silent on passing/in-progress events saves context and keeps the
-conversation focused on real issues.
+When fixing a failure: report only the failing test name, the root cause,
+and what was changed. Nothing else.
 
 ---
 
@@ -412,6 +415,33 @@ Survives conversation compacting so context is not lost between sessions.
 - Feeds sales tax calculation automatically
 - Files: `js/ai-classify.js` (new) + Supabase Edge Function `classify-line-item`
 
+### 9.5 Employee Geo-Tracking & Job Time-on-Site
+
+**Real-time location tracking with consent controls and business-hours gating**
+
+- **Business hours window**: `S.trackingHours = {start:'07:00', end:'18:00'}` per contractor.
+  Device only sends GPS pings when current time is within the window — no background
+  drain or off-hours tracking on personal phones.
+- **Geo-fence auto clock-in/out**: When a GPS ping lands within ~300ft of a job address,
+  log `arrivedAt`. When device moves away, log `departedAt`. Auto-calculates time-on-site
+  per job per employee. Displayed on the job sheet and dispatch board.
+- **Two-layer consent for personal phones**: (1) Contractor grants the employee a
+  "Share location" permission in the Add/Edit member modal. (2) Employee must explicitly
+  tap-accept location sharing in their daily view. Both layers required — no covert tracking.
+  If employee declines, tracking silently disabled for that device.
+- **Manager-only visibility**: Device map and location history only visible when
+  `_employeeRecord?.permissions?.team` is true. Field workers cannot see each other's
+  locations.
+- **Mileage integration**: GPS track auto-generates mileage log entries for the employee's
+  drive legs between job sites — feeds into the existing mileage tracker.
+- **Implementation notes**:
+  - Supabase Realtime channel per contractor_user_id for live ping delivery
+  - Edge Function `track-location` receives pings, validates business hours server-side
+  - `S.geoFenceRadius` (default 300ft) configurable per contractor
+  - Files: `js/geo-track.js` (new), `js/cloud.js` (employee daily view hook),
+    `js/jobs.js` (time-on-site display), Supabase Edge Function `track-location/`
+  - New `location_pings` table: `{id, contractor_user_id, employee_user_id, lat, lon, job_id, arrived_at, departed_at, ts}`
+
 ### 9.4 TradeDesk Comms (SMS Infrastructure)
 
 **Own the messaging layer — no Twilio, no SendBlue subscription**
@@ -423,6 +453,25 @@ Survives conversation compacting so context is not lost between sessions.
 - iMessage delivery: Mac Mini on TradeDesk infra handles Apple protocol (no SendBlue)
 - Files: `js/messaging/engine.js`, `templates.js`, `numbers.js`, `webhooks.js`
   + Supabase Edge Functions: `send-sms/`, `sms-webhook/`
+
+### 9.6 Employee Offer Letters & Employment Agreements (HR doc chain)
+
+**Run hiring paperwork out of TradeDesk — reuses the e-sign portal pattern.**
+- New document type: employee offer letter / employment agreement, generated from
+  data already in `team_members` (name, role, pay_type, pay_rate).
+- Client signing portal pattern (`sign.html`) is directly reusable → new
+  `employ-offer.html` signing page; numbered, dated, e-signed, stored like proposals.
+- Covers: pay & schedule, at-will statement, conditions of employment,
+  confidentiality, and **location-tracking consent** — this is the legal cover for
+  the now-mandatory crew geo-tracking (employee agrees in writing at hire).
+- Ties into the invite flow: send offer → employee signs → `?emp_invite=` activates
+  their account, so signing the agreement IS the onboarding step.
+- **Legal caution:** employment law is state-specific (at-will language, non-compete
+  enforceability, wage-notice requirements e.g. NY/CA). Ship vetted templates with a
+  prominent "not legal advice — have an attorney review" disclaimer, mirroring the
+  tax tool's disclaimer. Do not auto-generate binding terms without it.
+- Files: `js/employ-offer.js` (new) + `employ-offer.html` (new) + `js/cloud.js`
+  (team_members hook) + a `employment_agreements` store.
 
 ---
 

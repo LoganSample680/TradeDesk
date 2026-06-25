@@ -830,7 +830,14 @@ function openLogTripModal(opts){
   opts=opts||{};
   const today=todayKey();
   const vehs=getVehicles();
-  const selVeh=opts.vehicle||(vehs.length===1?vehs[0].name:'');
+  let selVeh=opts.vehicle||(vehs.length===1?vehs[0].name:'');
+  if(!selVeh&&_isEmployee){
+    const _empVehId=localStorage.getItem('emp_vehicle_'+today);
+    if(_empVehId&&_empVehId!=='none'){
+      const _empVeh=vehs.find(v=>String(v.id)===String(_empVehId));
+      if(_empVeh)selVeh=_empVeh.name||'';
+    }
+  }
   const vehOpts=vehs.length
     ?vehs.map(v=>'<option value="'+escHtml(v.name||'')+'"'+(selVeh===v.name?' selected':'')+'>'+escHtml(getVehicleFullLabel(v)||'')+'</option>').join('')
     :'<option value="">— Add vehicle in Settings —</option>';

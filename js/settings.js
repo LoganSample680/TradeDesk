@@ -707,6 +707,8 @@ function applySettings(){
   KS_BRACKETS.hoh=_buildStateBrackets(_sd,'hoh');
   KS_BRACKETS.qss=KS_BRACKETS.mfj;
   KS_STD={single:_sd.stdS||0,mfj:_sd.stdM||0,mfs:_sd.stdS||0,hoh:_sd.stdS||0,qss:_sd.stdM||0};
+  // Sync topbar/nav brand slot whenever settings (incl. bname/logoData) change
+  if(typeof applyBrandLogo==='function')applyBrandLogo();
 }
 // Background syncs (broadcast from another device, auto rate/bracket refresh)
 // must never rewrite the form while the user is editing it — that silently
@@ -757,6 +759,8 @@ function loadSettingsForm(){
   const bstateEl=document.getElementById('set-bstate-display');if(bstateEl)bstateEl.value=S.state||'KS';
   sf('set-sales-tax-rate',S.salesTaxRate||'');
   const powEl=document.getElementById('set-powered-by');if(powEl)powEl.checked=S.poweredBy!==false;
+  sf('set-track-start',S.trackStart||'07:00');sf('set-track-end',S.trackEnd||'18:00');sf('set-labor-burden',Math.round(((S.laborBurden||1.3)-1)*100));
+  const _optEl=document.getElementById('set-owner-pay-type');if(_optEl)_optEl.value=S.ownerPayType||'hourly';sf('set-owner-pay-rate',S.ownerPayRate||'');
   const ctEl=document.getElementById('set-custom-terms');if(ctEl)ctEl.value=S.customTerms||'';
   const coEl=document.getElementById('set-co-terms');if(coEl)coEl.value=S.coTerms||'';
   const _smsDefaults=_getSmsDefaults();
@@ -771,6 +775,7 @@ function loadSettingsForm(){
   const ccEl=document.getElementById('set-cc-surcharge-enabled');if(ccEl){ccEl.checked=!!S.ccSurchargeEnabled;const pctWrap=document.getElementById('set-cc-surcharge-pct-wrap');if(pctWrap)pctWrap.style.display=S.ccSurchargeEnabled?'block':'none';}
   const ccPctEl=document.getElementById('set-cc-surcharge-pct');if(ccPctEl)ccPctEl.value=S.ccSurchargePct||3;
   const fcPctEl=document.getElementById('set-finance-charge-pct');if(fcPctEl)fcPctEl.value=S.financeChargePct!=null?S.financeChargePct:1.5;
+  const wpEl=document.getElementById('set-warranty-period');if(wpEl)wpEl.value=S.warrantyPeriod||'1 year';
   _renderSwPriceRows();
   _renderLogoPreviewBiz();
   _renderSetIndex();
@@ -847,10 +852,17 @@ function saveSettings(){
     txStatus:gs('set-txstatus')||'single',goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:S.bitlyKey||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.40,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||'',
     baddr:gs('set-baddr')||'',bcity:gs('set-bcity')||'',bzip:gs('set-bzip')||'',state:gs('set-bstate-display')||gs('set-state')||S.state||'',
     poweredBy:document.getElementById('set-powered-by')?.checked!==false,
+    teamTracking:true, // crew tracking is always on — a condition of using TradeDesk
+    trackStart:gs('set-track-start')||'07:00',
+    trackEnd:gs('set-track-end')||'18:00',
+    laborBurden:1+((parseFloat(v('set-labor-burden'))||0)/100),
+    ownerPayType:gs('set-owner-pay-type')||'hourly',
+    ownerPayRate:gf('set-owner-pay-rate')||0,
     customTerms:gs('set-custom-terms')||'',coTerms:gs('set-co-terms')||'',
     ccSurchargeEnabled:!!(document.getElementById('set-cc-surcharge-enabled')?document.getElementById('set-cc-surcharge-enabled').checked:false),
     ccSurchargePct:parseFloat((document.getElementById('set-cc-surcharge-pct')?document.getElementById('set-cc-surcharge-pct').value:'3')||'3')||3,
     financeChargePct:parseFloat((document.getElementById('set-finance-charge-pct')?document.getElementById('set-finance-charge-pct').value:'1.5')||'1.5')||1.5,
+    warrantyPeriod:document.getElementById('set-warranty-period')?.value||'1 year',
     salesTaxRate:(()=>{const _sr=v('set-sales-tax-rate').trim();return _sr===''?0:parseFloat(_sr)||0;})(),
     salesTaxRateSource:S.salesTaxRateSource||'',
     swPrices:_collectSwPriceOverrides(),
@@ -1455,6 +1467,10 @@ function obStep4(el){
     obInput('ob-baddr','Business address (optional)','1234 Main St, Wichita KS','text',_ob.address)+
     '<div class="f" style="margin-bottom:14px"><label>State <span style="color:#A32D2D">*</span></label><select id="ob-state" style="font-size:15px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"><option value="">— Select your state —</option><option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS">KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option></select></div>'+
     obInput('ob-blic','License / insurance info (optional)','Licensed & Insured · KS #12345','text',_ob.licenseInfo)+
+    '<div class="f" style="margin-bottom:14px"><label>Workmanship warranty on proposals</label>'+
+    '<select id="ob-warranty" style="font-size:15px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+
+    ['90 days','6 months','1 year','2 years'].map(v=>'<option'+((_ob.warrantyPeriod||'1 year')===v?' selected':'')+'>'+v+'</option>').join('')+
+    '</select><div style="font-size:11px;color:var(--text3);margin-top:4px">Appears in Terms & Conditions on every proposal you send.</div></div>'+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
     obBtn('Continue','obNext4()')+
     obBtn('Back','_ob.step=3;renderObStep()',true);
@@ -1471,6 +1487,7 @@ function obNext4(){
   _ob.state=document.getElementById('ob-state')?.value||'';
   if(!_ob.state){if(err)err.textContent='Please select your state.';return;}
   _ob.licenseInfo=document.getElementById('ob-blic')?.value.trim()||'';
+  _ob.warrantyPeriod=document.getElementById('ob-warranty')?.value||'1 year';
   // Pre-fill sales tax rate from state base — contractor refines later via openSalesTaxSetup
   if(_ob.state&&typeof lookupSalesTaxRate==='function'&&!(parseFloat(S.salesTaxRate)>0)){
     lookupSalesTaxRate('',_ob.state).then(r=>{if(r.rate>0){S.salesTaxRate=r.rate;S.salesTaxRateSource='onboarding';}}).catch(()=>{});
@@ -1693,7 +1710,7 @@ async function obSubmit(){
 
     await _supa.from('zj_data').insert({user_id:uid,account_id:acct.id});
 
-    S.bname=_ob.businessName;S.bphone=_ob.phone;S.blic=_ob.licenseInfo;S.state=_ob.state||'KS';
+    S.bname=_ob.businessName;S.bphone=_ob.phone;S.blic=_ob.licenseInfo;S.state=_ob.state||'KS';S.warrantyPeriod=_ob.warrantyPeriod||'1 year';
     _user={id:uid,email:_ob.email,name:_ob.name,role:_ob.role,account_id:acct.id};setOwnerName(_ob.name);saveAll();
     _vehicles=_ob.vehicles;
 

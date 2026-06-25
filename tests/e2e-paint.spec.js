@@ -1369,51 +1369,14 @@ test.describe('Paint estimate — interior flow, surfaces, scope, job type', () 
     if (result && !result.error) expect(result.stored).toBe(false);
   });
 
-  test('applyStdScopePreset interior — applies standard interior scope items', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof applyStdScopePreset !== 'function') return null;
-      window.surfRoom = 'Master Bedroom';
-      window.roomScopeMap = {};
-      // Stub toggleScopeRoom and roomScopeOn
-      const toggledItems = [];
-      const origToggle = window.toggleScopeRoom;
-      window.toggleScopeRoom = (id) => { toggledItems.push(id); };
-      const origRoomScopeOn = window.roomScopeOn;
-      window.roomScopeOn = () => false; // nothing on yet
-      try { applyStdScopePreset('interior'); } catch(e) {}
-      window.toggleScopeRoom = origToggle;
-      window.roomScopeOn = origRoomScopeOn;
-      return { toggled: toggledItems };
-    });
-    if (result !== null) {
-      // Standard interior: protect, spackle, tape, caulk, twocoat, cleanup
-      expect(result.toggled).toContain('protect');
-      expect(result.toggled).toContain('spackle');
-      expect(result.toggled).toContain('twocoat');
-      expect(result.toggled).toContain('cleanup');
-    }
+  test('applyStdScopePreset removed — std prep preset no longer exists', async () => {
+    const exists = await page.evaluate(() => typeof applyStdScopePreset === 'function');
+    expect(exists).toBe(false);
   });
 
-  test('applyStdScopePreset exterior — applies power wash, prime, two coat', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof applyStdScopePreset !== 'function') return null;
-      window.surfRoom = 'Front Exterior';
-      window.roomScopeMap = {};
-      const toggledItems = [];
-      const origToggle = window.toggleScopeRoom;
-      window.toggleScopeRoom = (id) => { toggledItems.push(id); };
-      const origRoomScopeOn = window.roomScopeOn;
-      window.roomScopeOn = () => false;
-      try { applyStdScopePreset('exterior'); } catch(e) {}
-      window.toggleScopeRoom = origToggle;
-      window.roomScopeOn = origRoomScopeOn;
-      return { toggled: toggledItems };
-    });
-    if (result !== null) {
-      expect(result.toggled).toContain('pwash');
-      expect(result.toggled).toContain('prime');
-      expect(result.toggled).toContain('twocoat');
-    }
+  test('std-prep preset button is not rendered in the scope walkthrough', async () => {
+    const count = await page.locator('#_scope-preset-btn').count();
+    expect(count).toBe(0);
   });
 
   test('cleanRoomName — strips surface-type suffixes', async () => {

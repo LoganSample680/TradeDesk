@@ -549,7 +549,7 @@ function _renderOdometerReport() {
         <button onclick="document.getElementById('odo-report-overlay').remove()" style="font-size:22px;background:none;border:none;color:var(--text3);cursor:pointer;padding:4px">×</button>
       </div>
       <div style="padding:14px 16px 40px;overflow-y:auto;max-height:75vh">
-        <div style="font-size:13px;font-weight:700;color:var(--text3);margin-bottom:12px">${v.nickname||v.name}</div>
+        <div style="font-size:13px;font-weight:700;color:var(--text3);margin-bottom:12px">${escHtml(v.nickname||v.name)}</div>
         <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
           ${[0,1,2,3].map(d=>{const y=curYr-d;return`<button onclick="_odoReportYear=${y};_renderOdometerReport()" style="padding:6px 12px;border-radius:99px;border:1.5px solid ${y===_odoReportYear?'var(--blue)':'var(--border2)'};background:${y===_odoReportYear?'var(--blue-lt)':'var(--bg2)'};color:${y===_odoReportYear?'var(--blue)':'var(--text3)'};font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">${y}</button>`;}).join('')}
         </div>

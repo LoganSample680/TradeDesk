@@ -140,6 +140,101 @@ const TRADE_META={
   general:   {icon:'🔨',label:'General'},
   other:     {icon:'🛠',label:'Other'},
 };
+
+// ── Scope-of-work chips ───────────────────────────────────────────────
+const _GEN_SCOPE=[
+  {label:'Demo & removal',icon:'🔨',clientDesc:'Demo and remove existing materials per agreed scope'},
+  {label:'Site prep',icon:'🧹',clientDesc:'Prepare and protect work area before work begins'},
+  {label:'Haul-off',icon:'🚛',clientDesc:'Remove and dispose of all job debris'},
+  {label:'Punch list',icon:'📋',clientDesc:'Final walkthrough and completion of outstanding items'},
+];
+const TRADE_SCOPE_CHIPS={
+  painting:[
+    {label:'Interior painting',icon:'🏠',clientDesc:'Walls, ceilings, and trim in agreed rooms'},
+    {label:'Exterior painting',icon:'🏡',clientDesc:'All agreed exterior surfaces — siding, trim, and accents'},
+    {label:'Cabinet painting',icon:'🗄️',clientDesc:'Prep, prime, and finish coat on cabinet doors and boxes'},
+    {label:'Deck / fence stain',icon:'🪵',clientDesc:'Clean and apply semi-transparent or solid stain'},
+    {label:'Move furniture',icon:'🪑',clientDesc:'Move and replace furniture as needed for access'},
+    {label:'Protect floors',icon:'🛡️',clientDesc:'Canvas or plastic drop cloths on all work surfaces'},
+    {label:'Tape & masking',icon:'🎭',clientDesc:'Mask trim, glass, hardware, and fixtures'},
+    {label:'Caulking',icon:'💧',clientDesc:'Fill gaps at trim joints and wall/ceiling transitions'},
+    {label:'Sanding',icon:'🪚',clientDesc:'Sand surfaces smooth prior to painting'},
+    {label:'Spackle & patch',icon:'🔧',clientDesc:'Fill holes, cracks, and imperfections'},
+    {label:'Prime coat',icon:'🖌️',clientDesc:'Apply primer to bare surfaces and repairs'},
+    {label:'Ceilings',icon:'⬆️',clientDesc:'Two coats on ceiling surfaces'},
+    {label:'Trim & doors',icon:'🚪',clientDesc:'Semigloss finish on all trim, doors, and casings'},
+    {label:'Popcorn removal',icon:'⚡',clientDesc:'Scrape and smooth textured ceiling surface'},
+    {label:'Wallpaper removal',icon:'📜',clientDesc:'Strip existing wallpaper and prepare wall for paint'},
+    {label:'Pressure washing',icon:'💦',clientDesc:'Pressure wash exterior surfaces prior to painting'},
+    {label:'Scaffolding',icon:'🏗️',clientDesc:'Set up and remove scaffolding for elevated access'},
+  ],
+  plumbing:[
+    {label:'Water heater',icon:'🌊',clientDesc:'Supply and install new water heater unit'},
+    {label:'Fixtures',icon:'🚿',clientDesc:'Remove and install bathroom or kitchen fixtures'},
+    {label:'Rough-in',icon:'🔩',clientDesc:'Run supply and drain lines per plan'},
+    {label:'Supply lines',icon:'💧',clientDesc:'Replace supply lines to fixtures'},
+    {label:'Drain / sewer',icon:'🌀',clientDesc:'Clean, repair, or replace drain and sewer lines'},
+    {label:'Leak repair',icon:'🔧',clientDesc:'Locate and repair active leaks'},
+    {label:'Toilet / bidet',icon:'🪠',clientDesc:'Remove old unit and install new fixture'},
+    {label:'Sump pump',icon:'💦',clientDesc:'Install or replace sump pump'},
+  ],
+  electrical:[
+    {label:'Panel upgrade',icon:'⚡',clientDesc:'Replace existing panel and update electrical service'},
+    {label:'Outlets & switches',icon:'🔌',clientDesc:'Install or replace outlets and switch plates'},
+    {label:'Lighting fixtures',icon:'💡',clientDesc:'Remove and install new lighting fixtures'},
+    {label:'EV charger',icon:'🚗',clientDesc:'Install Level 2 EV charging outlet'},
+    {label:'Ceiling fans',icon:'🌀',clientDesc:'Install ceiling fan with lighting kit'},
+    {label:'Generator hookup',icon:'🔋',clientDesc:'Install transfer switch and connect generator'},
+    {label:'Smoke / CO detectors',icon:'🔔',clientDesc:'Install interconnected smoke and CO detectors'},
+    {label:'Underground conduit',icon:'🕳️',clientDesc:'Trench and run underground conduit'},
+  ],
+  hvac:[
+    {label:'New AC / furnace',icon:'❄️',clientDesc:'Remove existing unit and install new system'},
+    {label:'Ductwork',icon:'🌬️',clientDesc:'Install, repair, or modify duct system'},
+    {label:'Mini-split',icon:'🏠',clientDesc:'Install ductless mini-split indoor and outdoor units'},
+    {label:'Thermostat',icon:'🌡️',clientDesc:'Install programmable or smart thermostat'},
+    {label:'Refrigerant service',icon:'🧊',clientDesc:'Check, recharge, or reclaim refrigerant'},
+    {label:'Tankless water heater',icon:'🔥',clientDesc:'Supply and install tankless unit with updated gas line'},
+    {label:'Maintenance / tune-up',icon:'🔧',clientDesc:'Full system inspection, cleaning, and calibration'},
+  ],
+  roofing:[
+    {label:'Shingle replacement',icon:'🏠',clientDesc:'Remove old roofing and install new shingles'},
+    {label:'Flat / TPO',icon:'🔲',clientDesc:'Install or repair flat roof membrane'},
+    {label:'Gutters',icon:'🌧️',clientDesc:'Install or replace gutters and downspouts'},
+    {label:'Flashing',icon:'⚡',clientDesc:'Replace or seal flashing at penetrations and transitions'},
+    {label:'Skylight',icon:'🌞',clientDesc:'Install or replace skylight with new flashing kit'},
+    {label:'Soffit & fascia',icon:'🏗️',clientDesc:'Replace damaged soffit and fascia boards'},
+    {label:'Chimney / cap',icon:'🧱',clientDesc:'Repair, reline, or cap chimney'},
+  ],
+  landscaping:[
+    {label:'Mow & edge',icon:'🌿',clientDesc:'Mow lawn and edge along all borders'},
+    {label:'Mulch & beds',icon:'🌸',clientDesc:'Install fresh mulch in all planting beds'},
+    {label:'Tree / shrub trim',icon:'✂️',clientDesc:'Shape and trim trees and shrubs'},
+    {label:'Irrigation',icon:'💧',clientDesc:'Install, repair, or adjust irrigation system'},
+    {label:'Sod / seeding',icon:'🌱',clientDesc:'Grade and install new sod or seed lawn'},
+    {label:'Hardscape',icon:'🪨',clientDesc:'Install pavers, stone, or concrete features'},
+    {label:'Leaf / debris cleanup',icon:'🍂',clientDesc:'Blow, rake, and remove leaves and debris'},
+  ],
+  general:[
+    {label:'Framing',icon:'🏗️',clientDesc:'Rough framing per structural plans'},
+    {label:'Drywall',icon:'🧱',clientDesc:'Hang, tape, mud, and finish drywall'},
+    {label:'Windows & doors',icon:'🪟',clientDesc:'Install new windows and/or exterior doors'},
+    {label:'Insulation',icon:'🔥',clientDesc:'Install batt, blown, or foam insulation'},
+    {label:'Trim / finish',icon:'🪵',clientDesc:'Install interior trim, casings, and base'},
+    {label:'Power washing',icon:'🚿',clientDesc:'Pressure wash surfaces prior to work'},
+    {label:'Fencing',icon:'🚧',clientDesc:'Install new fence with posts and hardware'},
+    {label:'Concrete',icon:'⬜',clientDesc:'Form, pour, and finish concrete per plan'},
+  ],
+  other:[
+    {label:'Framing',icon:'🏗️',clientDesc:'Rough framing per structural plans'},
+    {label:'Drywall',icon:'🧱',clientDesc:'Hang, tape, mud, and finish drywall'},
+    {label:'Tile work',icon:'⬜',clientDesc:'Install or replace tile on floors or walls'},
+    {label:'Windows & doors',icon:'🪟',clientDesc:'Install new windows and/or exterior doors'},
+    {label:'Trim / finish',icon:'🪵',clientDesc:'Install interior trim, casings, and base'},
+    {label:'Power washing',icon:'🚿',clientDesc:'Pressure wash surfaces prior to work'},
+    {label:'Fencing',icon:'🚧',clientDesc:'Install new fence with posts and hardware'},
+  ],
+};
 let _activeTrade=null; // set on login from account_config.business_type
 
 function getActiveTrade(){return _activeTrade||_config?.business_type||'painting';}
@@ -175,6 +270,11 @@ function _renderNavTradeSwitcher(){
 
 // ── Generic estimate (non-painting trades) ────────────────────────────
 let _geiClientId=null,_geiEditBidId=null,_geiLines=[],_geiTrade=null,_geiIsCommercial=false,_geiEmergency=false,_geiStep=1,_geiNewWork=false,_geiJobScope='repair';
+let _geiScopeChips=[];
+let _geiScopeNoScope=false;
+// Crew assigned to this bid (employee emails). Each adds their loaded payroll cost as a
+// real expense; more people on the job → bigger cost. Hours come automatically from scope.
+let _estCrew=[];
 let _panelSched=null; // null = not active, obj = panel schedule data
 let _geiIsTM=false,_tmCrewCount=1,_tmRatePerMan=0,_tmEstHours=0,_tmBillingCycle='weekly';
 let _tmMatMarkup=0,_tmCapAction='Stop & get re-approval';
@@ -212,7 +312,7 @@ function openGenericEstimate(c,bidId,_tradePick){
   _geiClientId=c?.id||null;
   _geiEditBidId=bidId||null;
   _geiClientTaxRate=null;
-  _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;_geiJobScope='repair';
+  _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;_geiJobScope='repair';_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];
   // Callers set _geiIsTM / _geiIsFreeForm before calling; reset TM defaults only when entering scope mode
   if(!_geiIsTM){_tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmMatMarkup=0;_tmCapAction='Stop & get re-approval';}
   document.getElementById('gei-cart-bar')?.remove();
@@ -235,6 +335,7 @@ function openGenericEstimate(c,bidId,_tradePick){
   const nwEl=document.getElementById('gei-new-work');
   if(nwEl)nwEl.checked=false;
   document.getElementById('gei-date').value=todayKey();
+  let _resumingExisting=false;
   if(bidId){
     const b=bids.find(x=>x.id===bidId);
     if(b){
@@ -242,6 +343,8 @@ function openGenericEstimate(c,bidId,_tradePick){
       if(b.geiLines&&b.geiLines.length)_geiLines=JSON.parse(JSON.stringify(b.geiLines));
       if(b.geiTaxPct)sf('gei-tax-pct',b.geiTaxPct);
       if(b.jobScope)_geiJobScope=b.jobScope;
+      if(b.scopeChips)_geiScopeChips=[...b.scopeChips];
+      _geiScopeNoScope=!!(b.scopeNoScope);
       if(b.geiDuration)sf('gei-duration',b.geiDuration);
       if(b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(b.panelSched)_panelSched=JSON.parse(JSON.stringify(b.panelSched));
@@ -259,6 +362,7 @@ function openGenericEstimate(c,bidId,_tradePick){
         const _depEl=document.getElementById('byo-deposit-pct');
         if(_depEl)_depEl.value=_storedPct;
       }
+      _resumingExisting=true;
     }
   }
   if(!_geiEditBidId){
@@ -281,10 +385,13 @@ function openGenericEstimate(c,bidId,_tradePick){
       if(_b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(_b.panelSched)_panelSched=JSON.parse(JSON.stringify(_b.panelSched));
       if(_b.isFreeForm)_geiIsFreeForm=true;
+      if(_b.scopeChips)_geiScopeChips=[..._b.scopeChips];
+      _geiScopeNoScope=!!(_b.scopeNoScope);
       if(_b.isTM){_geiIsTM=true;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmMatMarkup=_b.tmMatMarkup||_b.geiTaxPct||20;_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
       if(!_b.isTM&&_b.amount>0&&_b.deposit>0){const _storedPct=Math.round((_b.deposit/_b.amount)*100);const _depEl=document.getElementById('byo-deposit-pct');if(_depEl)_depEl.value=_storedPct;}
       // Purge other empty duplicates for this client+trade now that we have the right one
       bids=bids.filter(b=>b.id===_existingGei.id||!(b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&!b.amount&&!(b.geiLines||[]).length&&(b.status==='Draft'||b.status==='Pending')&&(b.trade_type===_geiTrade||!b.trade_type)));
+      _resumingExisting=true;
       saveAll();
     }
   }
@@ -294,13 +401,25 @@ function openGenericEstimate(c,bidId,_tradePick){
     const draftBid={id:_newBidId(),client_id:_geiClientId,client_name:_draftClientName,bid_date:todayKey(),amount:0,deposit:0,type:_draftTypeLabel+' estimate',notes:'',status:'Draft',draft:true,trade_type:_geiTrade,geiLines:[],geiTaxPct:0};
     bids.unshift(draftBid);_geiEditBidId=draftBid.id;saveAll();
   }
+  // Auto-migrate old step-based estimates to BYO freeform when resumed
+  if(_resumingExisting&&!_geiIsTM&&!_geiIsFreeForm){
+    _geiIsFreeForm=true;
+    if(_geiLines.length){
+      let nid=1;
+      _byoItems=_geiLines.map(l=>({id:nid++,section:l._byoSection||'Other',label:l.desc||'',price:(l.qty||1)*(l.rate||0),on:true,required:false,notes:l.notes||''}));
+      _byoCustomSections=[...(new Set(_byoItems.map(x=>x.section)))].filter(s=>!['Interior','Exterior','Materials'].includes(s));
+      _geiLines=[];
+    }
+    const _migBid=bids.find(x=>x.id===_geiEditBidId);
+    if(_migBid){_migBid.isFreeForm=true;if(_byoItems.length){_migBid.byoItems=JSON.parse(JSON.stringify(_byoItems));_migBid.byoCustomSections=[..._byoCustomSections];}saveAll();}
+  }
   // Restore scope title from saved description when reopening an existing bid
   if(!_geiIsTM&&!_geiIsFreeForm){
     const _descVal=document.getElementById('gei-desc')?.value?.trim();
     if(_descVal){const _tEl=document.getElementById('gei-trade-title');if(_tEl)_tEl.textContent=_descVal;}
   }
   goPg('pg-est-generic');
-  goGeiStep(1);
+  goGeiStep(_resumingExisting?2:1);
 }
 
 function goGeiStep(n){
@@ -447,9 +566,11 @@ function _tmShowPage(){
   const b=bids.find(x=>x.id===_geiEditBidId);
   if(b?.tmNteCap)setV('tm-i-nte',b.tmNteCap);
   if(b?.tmCapAction){setV('tm-i-cap-action',b.tmCapAction);_tmCapAction=b.tmCapAction;}
+  _injectRrpItems();
   _tmRenderMatList();
   _tmInputChange();
   _tmSyncCadence();
+  _renderScopeChips('tm-scope-wrap');
 }
 function _tmHidePage(){
   const p=document.getElementById('gei-tm-page');if(p)p.style.display='none';
@@ -461,6 +582,24 @@ function _tmHidePage(){
 // ── Build Your Own single-page layout ────────────────────────────────────────
 let _byoItems=[],_byoCustomSections=[],_byoCustomTerms='';
 const _BYO_DEFAULT_SECTIONS=['Interior','Exterior','Materials','Add-ons'];
+const _RRP_BYO_SECTION='RRP — Lead-Safe Protocol';
+const _RRP_ITEMS=[
+  {label:'Lead-safe setup & interior containment',hint:'Plastic sheeting 6 ft from work surfaces; sealed ducts, vents, door coverings (EPA §745.85)',price:0,_scope:'interior'},
+  {label:'Exterior containment',hint:'Ground cover 10 ft out from building; vertical barriers within 10 ft of property line (EPA §745.85)',price:0,_scope:'exterior'},
+  {label:'HEPA-equipped prep',hint:'HEPA-shrouded sanding only — no torching, no dry power sanding, no heat guns >1,100°F (EPA §745.85)',price:0},
+  {label:'HEPA vacuum service',hint:'HEPA vacuum cleanup at end of each workday and at completion (EPA §745.85)',price:0},
+  {label:'Lead-safe cleanup',hint:'Wet-wash + HEPA-vac + wet-wash cycle until no dust or debris remains (EPA §745.85)',price:0},
+  {label:'Cleaning verification',hint:'Certified renovator wipe test vs EPA card on all sills, floors, and counters (EPA §745.85(b))',price:0},
+  {label:'Lead waste disposal',hint:'All debris bagged, sealed, and transported per EPA requirements (EPA §745.85)',price:0},
+];
+const _RRP_PROPOSAL_LINES=[
+  'Containment — Plastic on floors, walls, and HVAC vents. 10-ft exterior perimeter outside.',
+  'No high-dust methods — No torching, no power-sanding without HEPA, no heat guns above 1,100°F.',
+  'HEPA everything — HEPA-attached tools and HEPA vacuums on every cleanup pass.',
+  'Daily lockdown — Work area sealed at end of day. Debris bagged and tied off.',
+  'Cleaning verification — Wet-clean, HEPA-vac, wet-clean again, then a wipe-test against EPA’s clearance card.',
+  'Documentation — Signed work plan, Renovate Right pamphlet, and post-job verification record.',
+];
 function _byoShowPage(){
   _tmHidePage(); // must run first — _tmHidePage re-shows gei-old-tbar, then we hide it below
   ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id=>{
@@ -480,12 +619,116 @@ function _byoShowPage(){
   else{_byoItems=[];}
   _byoCustomSections=b?.byoCustomSections?[...b.byoCustomSections]:[];
   _byoCustomTerms=b?.byoCustomTerms||'';
+  _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
+  _injectRrpItems();
   _byoRenderSections();
-  _byoUpdateRail();
+  _byoUpdateRail(); // also renders the auto crew-labor cost line
+  _renderScopeChips('byo-scope-wrap');
 }
 function _byoHidePage(){
   const p=document.getElementById('gei-byo-page');if(p)p.style.display='none';
   ['gei-old-tbar','gei-step-bar'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='';});
+}
+function _toggleScopeChip(label){
+  _geiScopeNoScope=false;
+  const idx=_geiScopeChips.indexOf(label);
+  if(idx>=0)_geiScopeChips.splice(idx,1);else _geiScopeChips.push(label);
+  ['tm-scope-wrap','byo-scope-wrap'].forEach(id=>_renderScopeChips(id));
+  _updateScopeSheetBtn(label);
+  // Scope drives the auto crew-labor estimate — refresh the rail + gauge.
+  if(_geiIsFreeForm&&typeof _byoUpdateRail==='function')_byoUpdateRail();
+}
+function _toggleScopeNone(){
+  _geiScopeNoScope=!_geiScopeNoScope;
+  if(_geiScopeNoScope)_geiScopeChips=[];
+  ['tm-scope-wrap','byo-scope-wrap'].forEach(id=>_renderScopeChips(id));
+}
+function _updateScopeSheetBtn(label){
+  const sid='_scb-'+label.replace(/[^a-z0-9]/gi,'_');
+  const btn=document.getElementById(sid);if(!btn)return;
+  const on=_geiScopeChips.includes(label);
+  btn.style.borderColor=on?'var(--blue)':'var(--border2)';
+  btn.style.background=on?'var(--blue-lt,#e6f0fb)':'var(--bg-card,var(--bg2))';
+  const lbl=btn.querySelector('._sc-lbl');if(lbl)lbl.style.color=on?'var(--blue)':'var(--text)';
+  const ck=btn.querySelector('._sc-ck');
+  if(ck){ck.style.background=on?'var(--blue)':'transparent';ck.style.borderColor=on?'var(--blue)':'var(--border2)';ck.textContent=on?'✓':'';}
+}
+function _renderScopeChips(containerId){
+  const wrap=document.getElementById(containerId);if(!wrap)return;
+  wrap.style.display='block';
+  const trade=_geiTrade||getActiveTrade();
+  const tradeItems=(typeof TRADE_SCOPE_ITEMS!=='undefined'&&TRADE_SCOPE_ITEMS[trade])||TRADE_SCOPE_CHIPS[trade]||[];
+  const allItems=[..._GEN_SCOPE,...tradeItems];
+  if(!_geiScopeChips.length){
+    if(_geiScopeNoScope){
+      wrap.innerHTML='<div style="padding:12px 16px;display:flex;flex-wrap:wrap;gap:6px">'+
+        '<span onclick="_toggleScopeNone()" style="display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:20px;background:var(--blue-lt,#e6f0fb);color:var(--blue);border:1.5px solid var(--blue);font-size:12px;font-weight:700;cursor:pointer">&#8709; None<span style="font-size:11px;font-weight:900;opacity:.6;margin-left:2px">&#xd7;</span></span>'+
+      '</div>';
+    }else{
+      wrap.innerHTML='<div style="padding:12px 16px;display:flex;align-items:center;gap:8px">'+
+        '<span style="font-size:12px;color:var(--text3);font-style:italic">No scope added — tap + Add scope</span>'+
+        '<span onclick="_toggleScopeNone()" style="display:inline-flex;align-items:center;padding:4px 10px;border-radius:20px;background:var(--bg2);border:1px solid var(--border2);font-size:11px;font-weight:600;cursor:pointer;color:var(--text3)">&#8709; None</span>'+
+      '</div>';
+    }
+    return;
+  }
+  // Render selected scope as clean line items (not pills) — one per row with a divider.
+  let html='<div style="padding:4px 0">';
+  _geiScopeChips.forEach((l,i)=>{
+    const c=allItems.find(x=>x.label===l)||{icon:'✓',label:l};
+    const border=i<_geiScopeChips.length-1?'border-bottom:1px solid var(--border)':'';
+    html+='<div style="display:flex;align-items:center;gap:11px;padding:11px 16px;'+border+'">'+
+      '<span style="font-size:17px;line-height:1;flex-shrink:0">'+escHtml(c.icon||'✓')+'</span>'+
+      '<span style="flex:1;min-width:0;font-size:13px;font-weight:700;color:var(--text);line-height:1.35">'+escHtml(c.label)+'</span>'+
+      '<button type="button" onclick="_toggleScopeChip('+escHtml(JSON.stringify(l))+')" aria-label="Remove '+escHtml(c.label)+'" style="flex-shrink:0;border:none;background:none;color:var(--text3);font-size:18px;font-weight:700;cursor:pointer;padding:2px 6px;line-height:1;font-family:inherit">×</button>'+
+    '</div>';
+  });
+  html+='</div>';
+  wrap.innerHTML=html;
+}
+function _openScopeSheet(containerId){
+  document.getElementById('_scope-sheet-ov')?.remove();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_scope-sheet-ov';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const trade=_geiTrade||getActiveTrade();
+  const tradeItems=(typeof TRADE_SCOPE_ITEMS!=='undefined'&&TRADE_SCOPE_ITEMS[trade]);
+  const sheet=document.createElement('div');
+  sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;max-height:80vh;overflow-y:auto;background:var(--bg);border-radius:16px 16px 0 0;padding:16px 16px 40px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
+  let itemsHtml;
+  if(tradeItems&&tradeItems.length){
+    const allItems=[..._GEN_SCOPE,...tradeItems];
+    itemsHtml='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      allItems.map(s=>{
+        const on=_geiScopeChips.includes(s.label);
+        const sid='_scb-'+s.label.replace(/[^a-z0-9]/gi,'_');
+        return '<div id="'+sid+'" onclick="_toggleScopeChip('+escHtml(JSON.stringify(s.label))+')" style="display:flex;align-items:center;gap:10px;padding:12px 13px;border-radius:14px;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue-lt,#e6f0fb)':'var(--bg-card,var(--bg2))')+';cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .14s,border-color .14s;min-height:52px">'+
+          '<span style="font-size:19px;line-height:1;flex-shrink:0">'+(s.icon||'✓')+'</span>'+
+          '<span class="_sc-lbl" style="font-size:13px;font-weight:700;color:'+(on?'var(--blue)':'var(--text)')+';flex:1;line-height:1.25">'+escHtml(s.label)+'</span>'+
+          '<span class="_sc-ck" style="flex-shrink:0;width:20px;height:20px;border-radius:50%;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue)':'transparent')+';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;color:#fff">'+(on?'✓':'')+'</span>'+
+        '</div>';
+      }).join('')+
+    '</div>';
+  }else{
+    const chips=[..._GEN_SCOPE,...(TRADE_SCOPE_CHIPS[trade]||[])];
+    itemsHtml='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">'+
+      chips.map(c=>{
+        const on=_geiScopeChips.includes(c.label);
+        const sid='_scb-'+c.label.replace(/[^a-z0-9]/gi,'_');
+        return '<button type="button" id="'+sid+'" onclick="_toggleScopeChip('+escHtml(JSON.stringify(c.label))+')" style="display:flex;align-items:center;gap:10px;text-align:left;padding:11px 12px;border-radius:14px;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue-lt,#e6f0fb)':'var(--bg-card,var(--bg2))')+';cursor:pointer;font-family:inherit;min-height:52px;-webkit-tap-highlight-color:transparent;transition:background .14s,border-color .14s">'+
+          '<span style="font-size:19px;line-height:1;flex-shrink:0">'+escHtml(c.icon)+'</span>'+
+          '<span class="_sc-lbl" style="font-size:13px;font-weight:600;color:'+(on?'var(--blue)':'var(--text)')+';flex:1;line-height:1.25">'+escHtml(c.label)+'</span>'+
+          '<span class="_sc-ck" style="flex-shrink:0;width:20px;height:20px;border-radius:50%;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue)':'transparent')+';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;color:#fff">'+(on?'✓':'')+'</span>'+
+        '</button>';
+      }).join('')+
+    '</div>';
+  }
+  sheet.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
+    '<div style="font-size:15px;font-weight:800">Scope of work</div>'+
+    '<button onclick="document.getElementById(\'_scope-sheet-ov\').remove()" style="padding:6px 18px;border-radius:20px;border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Done</button>'+
+    '</div>'+itemsHtml;
+  ov.appendChild(sheet);document.body.appendChild(ov);
+  requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
 }
 function _editEstTitle(titleId,btnId){
   const titleEl=document.getElementById(titleId);
@@ -521,6 +764,7 @@ function _editByoTitle(){_editEstTitle('byo-tbar-title','byo-edit-title-btn');}
 function _editTMTitle(){_editEstTitle('tm-tbar-title','tm-edit-title-btn');}
 function _editScopeTitle(){_editEstTitle('gei-trade-title','scope-edit-title-btn');}
 function _byoRenderSections(){
+  _injectRrpItems();
   const wrap=document.getElementById('byo-sections');if(!wrap)return;
   const extraFromItems=_byoItems.map(x=>x.section).filter(s=>!_BYO_DEFAULT_SECTIONS.includes(s));
   const allExtra=[..._byoCustomSections,...extraFromItems.filter(s=>!_byoCustomSections.includes(s))];
@@ -534,7 +778,7 @@ function _byoRenderSections(){
         '<div class="byo-check'+(it.on?' on':'')+'">'+( it.on?'✓':''  )+'</div>'+
         '<div class="byo-body">'+
           '<div class="byo-label">'+escHtml(it.label)+'</div>'+
-          (it.notes?'<div class="byo-meta" style="font-size:11px;color:var(--text-3)">'+escHtml(it.notes)+'</div>':'')+
+          (it.notes&&!it._rrp?'<div class="byo-meta" style="font-size:11px;color:var(--text-3)">'+escHtml(it.notes)+'</div>':'')+
         '</div>'+
         '<div class="byo-price">$'+it.price.toLocaleString()+'</div>'+
         '<div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px">'+
@@ -568,15 +812,245 @@ function _byoRenderSections(){
   wrap.innerHTML=secHtml+addSecBtn+tcCard;
 }
 function _byoToggle(idx){
-  if(_byoItems[idx]&&!_byoItems[idx].required){_byoItems[idx].on=!_byoItems[idx].on;_byoRenderSections();_byoUpdateRail();}
+  if(_byoItems[idx]&&!_byoItems[idx].required){_byoItems[idx].on=!_byoItems[idx].on;_byoRenderSections();_byoUpdateRail();_byoAutosave();}
+}
+function _byoAutosave(){
+  if(!_geiEditBidId)return;
+  const b=bids.find(x=>x.id===_geiEditBidId);
+  if(!b)return;
+  b.byoItems=JSON.parse(JSON.stringify(_byoItems));
+  b.byoCustomSections=[..._byoCustomSections];
+  b.isFreeForm=true;
+  b.estCrew=[..._estCrew];
+  saveAll();
+}
+function _injectRrpItems(){
+  const _rrpC=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
+  const _clientRrp=_rrpC?.rrpDisturb==='yes';
+  if((typeof _rrpPaintAnswer==='undefined'||_rrpPaintAnswer!=='yes')&&!_clientRrp)return;
+  if(_clientRrp&&(typeof _rrpPaintAnswer==='undefined'||_rrpPaintAnswer!=='yes'))_rrpPaintAnswer='yes';
+  if(_geiIsFreeForm){
+    // Determine which scopes have work (ignore existing RRP items)
+    const workItems=_byoItems.filter(x=>!x._rrp);
+    const workSections=workItems.map(x=>(x.section||'').toLowerCase());
+    const hasInterior=workItems.length===0||workSections.some(s=>/(interior|inside|trim|wall|drywall|ceiling)/i.test(s));
+    const hasExterior=workItems.length>0&&workSections.some(s=>/(exterior|outside|siding|fascia|deck|fence|eave)/i.test(s));
+    // Preserve prices the contractor may have already entered
+    const priceMap=Object.fromEntries(_byoItems.filter(x=>x._rrp).map(x=>[x.label,x.price]));
+    // Remove and re-sync so adding an Exterior section auto-adds exterior containment
+    _byoItems=_byoItems.filter(x=>!x._rrp);
+    _byoCustomSections=_byoCustomSections.filter(s=>s!==_RRP_BYO_SECTION);
+    const toInject=_RRP_ITEMS.filter(r=>{
+      if(r._scope==='interior')return hasInterior;
+      if(r._scope==='exterior')return hasExterior;
+      return true;
+    });
+    if(toInject.length>0){
+      _byoCustomSections.push(_RRP_BYO_SECTION);
+      let nid=(workItems.reduce((m,x)=>Math.max(m,x.id||0),0))+1;
+      toInject.forEach(r=>{_byoItems.push({id:nid++,section:_RRP_BYO_SECTION,label:r.label,price:priceMap[r.label]||0,notes:r.hint,on:true,required:false,_rrp:true});});
+    }
+  }
+  if(_geiIsTM&&!_geiLines.some(x=>x._rrp)){
+    _RRP_ITEMS.forEach(r=>{_geiLines.push({desc:r.label,notes:r.hint,qty:1,unit:'lot',rate:0,total:0,_rrp:true});});
+  }
+}
+// True if the contractor has at least one team member on payroll.
+function _hasEmployees(){return !!(typeof S!=='undefined'&&Array.isArray(S.employees)&&S.employees.length);}
+// Median of the contractor's own recorded hours for a scope (from past job debriefs), or null.
+function _scopeHistoryHrs(id){
+  const h=(typeof S!=='undefined'&&S.scopeHistory&&S.scopeHistory[id])||[];
+  const vals=h.map(x=>x&&x.hrs).filter(v=>typeof v==='number'&&v>0).sort((a,b)=>a-b);
+  if(!vals.length)return null;
+  const m=Math.floor(vals.length/2);
+  return vals.length%2?vals[m]:(vals[m-1]+vals[m])/2;
+}
+// Estimated crew hours for this bid — derived automatically from the selected scope:
+// the contractor's own debrief history first, then the crowdsourced benchmark median.
+// Returns 0 when no scope has time data yet (the gauge stays materials-only until it does).
+function _estLaborHours(){
+  const trade=_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'painting');
+  const allItems=[..._GEN_SCOPE,...((typeof TRADE_SCOPE_ITEMS!=='undefined'&&TRADE_SCOPE_ITEMS[trade])||[])];
+  let hrs=0;
+  (_geiScopeChips||[]).forEach(label=>{
+    const item=allItems.find(x=>x.label===label);
+    if(!item||!item.id)return;
+    const own=_scopeHistoryHrs(item.id);
+    if(own!=null){hrs+=own;return;}
+    const rate=(typeof window!=='undefined'&&window._scopeRates)?window._scopeRates[item.id+':'+trade]:null;
+    if(rate&&rate.sample_count>=5&&rate.median_min>0)hrs+=rate.median_min/60;
+  });
+  return Math.round(hrs*10)/10;
+}
+// Trust signal for ranking crew — lifetime jobs worked + total dollar value of those jobs.
+// Uses the durable crewHistory recorded on each job (falls back to current assignment).
+function _employeeTrust(emp){
+  const eid=String(emp&&emp.id);
+  let count=0,dollars=0;
+  (typeof jobs!=='undefined'?jobs:[]).forEach(j=>{
+    const inHist=Array.isArray(j.crewHistory)&&j.crewHistory.map(String).includes(eid);
+    if(!inHist&&String(j.assignedTo)!==eid)return;
+    count++;
+    const bid=(j.bid_id&&typeof bids!=='undefined')?bids.find(b=>b.id===j.bid_id):null;
+    dollars+=((bid&&bid.amount)||j.amount||0);
+  });
+  return {count,dollars};
+}
+// Order employees most-trusted first: by lifetime job count, then lifetime dollars, then name.
+function _crewByTrust(emps){
+  return [...emps].map(e=>({e,t:_employeeTrust(e)}))
+    .sort((a,b)=>(b.t.count-a.t.count)||(b.t.dollars-a.t.dollars)||((a.e.name||'').localeCompare(b.e.name||'')))
+    .map(x=>x.e);
+}
+// Returns the nearest upcoming job already booked for this employee (start >= today,
+// not canceled/completed). Used to show calendar-availability warnings in the crew picker.
+function _empNextJob(emp){
+  if(!emp)return null;
+  const eid=String(emp.id);
+  const tk=typeof todayKey==='function'?todayKey():'';
+  const jobList=typeof jobs!=='undefined'?jobs:[];
+  const upcoming=jobList.filter(j=>{
+    if(!j.start||j.start<tk)return false;
+    if(j.status==='canceled'||j.status==='completed')return false;
+    const inCrew=Array.isArray(j.crewHistory)&&j.crewHistory.map(String).includes(eid);
+    return String(j.assignedTo)===eid||inCrew;
+  }).sort((a,b)=>(a.start||'').localeCompare(b.start||''));
+  return upcoming[0]||null;
+}
+function _shortDate(d){
+  if(!d)return'';
+  try{const dt=new Date(d+'T12:00:00');return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return d;}
+}
+// Loaded hourly rate (wage × payroll burden) for one employee email, from the pay-rate cache.
+function _empLoadedFor(email){
+  const comp=(typeof _teamComp!=='undefined'&&_teamComp)?_teamComp[(email||'').toLowerCase()]:null;
+  return (comp&&typeof _empLoadedHourly==='function')?_empLoadedHourly(comp):0;
+}
+// Crew payroll the owner pays out of this bid = job hours × the loaded rate of EACH assigned
+// crew member (so two people cost ~2× one). Solo operators (no crew assigned) → 0, since their
+// labor is already priced into the line items. Hours come automatically from the scope.
+function _estLaborCost(){
+  if(!_hasEmployees()||!_estCrew.length)return 0;
+  const hrs=_estLaborHours();
+  if(hrs<=0)return 0;
+  const crewRate=_estCrew.reduce((s,email)=>s+_empLoadedFor(email),0);
+  return Math.round(hrs*crewRate);
+}
+// Toggle an employee on/off this job's crew, then refresh the expense + gauge.
+function _toggleCrewMember(email){
+  email=(email||'').toLowerCase();
+  const i=_estCrew.indexOf(email);
+  if(i>=0)_estCrew.splice(i,1);else _estCrew.push(email);
+  const costEl=document.getElementById('byo-expected-cost');
+  if(costEl)delete costEl.dataset.userSet; // crew payroll drives the cost now
+  if(typeof _byoUpdateRail==='function')_byoUpdateRail();
+  if(typeof _byoAutosave==='function')_byoAutosave();
+}
+// Render the crew picker + red payroll-expense figure into {type}-labor-cost-wrap.
+// Hidden entirely when there are no employees (solo operator → cost is materials only).
+function _renderLaborPicker(type){
+  const wrap=document.getElementById(type+'-labor-cost-wrap');
+  if(!wrap)return;
+  if(!_hasEmployees()){wrap.style.display='none';wrap.innerHTML='';return;}
+  // Pull fresh pay rates once if the cache is empty (RLS-gated; owner/payroll-manager only).
+  if(typeof _loadTeamComp==='function'&&typeof _teamCompLoaded!=='undefined'&&!_teamCompLoaded){
+    _teamCompLoaded=true;
+    _loadTeamComp().then(()=>{if(type==='byo'&&typeof _byoUpdateRail==='function')_byoUpdateRail();}).catch(()=>{});
+  }
+  // Most-trusted crew first — ranked by lifetime jobs worked, then dollars handled.
+  const emps=_crewByTrust((S.employees||[]).filter(e=>e&&e.name));
+  const chips=emps.map((e,i)=>{
+    const email=(e.email||'').toLowerCase();
+    const on=_estCrew.indexOf(email)>=0;
+    const first=(e.name||'').split(' ')[0]||e.name;
+    const t=_employeeTrust(e);
+    const star=i===0&&t.count>0?'★ ':''; // top-ranked, proven crew
+    const jobsTag=t.count>0?'<span style="opacity:.6;font-weight:600"> · '+t.count+'</span>':'';
+    const nj=_empNextJob(e);
+    const bookedTag=nj?'<span style="opacity:.75;font-weight:600;color:#B45309"> · '+_shortDate(nj.start)+'</span>':'';
+    const titleTxt=t.count+' jobs · '+fmt(t.dollars)+' lifetime'+(nj?' · Booked '+_shortDate(nj.start):'· Available');
+    const borderColor=on?'#A32D2D':nj?'#D97706':'var(--border2)';
+    const bgColor=on?'#FEF2F2':nj?'#FFFBEB':'var(--bg)';
+    const textColor=on?'#A32D2D':nj?'#92400E':'var(--text2)';
+    return '<span onclick="_toggleCrewMember('+escHtml(JSON.stringify(email))+')" title="'+titleTxt+'" style="display:inline-flex;align-items:center;gap:4px;padding:4px 9px;border-radius:14px;font-size:11px;font-weight:700;cursor:pointer;border:1.5px solid '+borderColor+';background:'+bgColor+';color:'+textColor+'">'+(on?'−':'+')+' '+star+escHtml(first)+jobsTag+bookedTag+'</span>';
+  }).join('');
+  const hrs=_estLaborHours();
+  const cost=_estLaborCost();
+  let body;
+  // Check if any selected crew member has an upcoming booking conflict.
+  const bookedSelected=emps.filter(e=>_estCrew.indexOf((e.email||'').toLowerCase())>=0&&_empNextJob(e));
+  if(!_estCrew.length){
+    body='<span style="color:var(--text3)">Tap a name to add who\'s on this job — their pay + benefits become a job cost.</span>';
+  }else if(cost<=0){
+    body='<span style="color:var(--c-amber)">Set pay rates on the Team page (or build job-time history) to price this crew.</span>';
+  }else{
+    const ppl=_estCrew.length;
+    const conflictNote=bookedSelected.length?'<div style="margin-top:4px;font-size:10px;color:#B45309">⚠ '+bookedSelected.map(e=>(e.name||'').split(' ')[0]+' has a job '+_shortDate(_empNextJob(e).start)).join(' · ')+'</div>':'';
+    body='<span style="color:#A32D2D;font-weight:800;font-size:14px">− '+fmt(cost)+'</span>'+
+      '<span style="color:var(--text3)"> crew payroll · '+ppl+' '+(ppl>1?'people':'person')+' · ~'+hrs+' hrs · incl. benefits</span>'+conflictNote;
+  }
+  wrap.style.display='';
+  wrap.innerHTML=
+    '<div class="td-micro" style="margin-bottom:6px">Crew on this job <span style="font-weight:500;color:var(--text3);text-transform:none;letter-spacing:0">(their pay is your cost)</span></div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px">'+chips+'</div>'+
+    '<div style="font-size:11px;line-height:1.5;min-height:14px">'+body+'</div>'+
+    '<div class="summary-divider"></div>';
+}
+function _updateMarginGauge(type,total){
+  const gWrap=document.getElementById(type+'-profit-gauge');
+  if(!gWrap)return;
+  const hint=document.getElementById(type+'-gauge-hint');
+  const cost=parseFloat(document.getElementById(type+'-expected-cost')?.value)||0;
+  if(!cost||cost<=0||!total||total<=0){
+    gWrap.style.opacity='0';
+    setTimeout(()=>{if(gWrap.style.opacity==='0')gWrap.style.display='none';},340);
+    if(hint)hint.style.display='';
+    return;
+  }
+  if(hint)hint.style.display='none';
+  const margin=Math.round((total-cost)/total*100);
+  // Dot sits at its own margin % along the bar so its position matches the gradient
+  // colour beneath it (red=low margin on the left → green band → amber when very high).
+  const pos=Math.min(Math.max(margin,2),98);
+  let color,msg;
+  if(margin<0){color='#DC2626';msg='Below cost — you’re losing money on this job';}
+  else if(margin<22){color='#EF4444';msg='Underpriced — consider raising your rate';}
+  else if(margin<35){color='#F59E0B';msg='Below target — a bit of room to grow';}
+  else if(margin<55){color='#22C55E';msg='Priced right — solid margin for this job';}
+  else if(margin<75){color='#22C55E';msg='Strong margin — well priced for your trade';}
+  else{color='#F59E0B';msg='Very high margin — double-check your numbers';}
+  const dot=document.getElementById(type+'-gauge-dot');
+  const pct=document.getElementById(type+'-gauge-pct');
+  const msgEl=document.getElementById(type+'-gauge-msg');
+  const wasHidden=gWrap.style.display==='none'||!parseFloat(gWrap.style.opacity||'0');
+  if(wasHidden){
+    gWrap.style.display='';
+    if(dot){dot.style.transition='none';dot.style.left='50%';dot.style.boxShadow='0 0 0 3px rgba(100,100,100,.2),0 2px 6px rgba(0,0,0,.12)';}
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      gWrap.style.opacity='1';
+      if(dot){
+        dot.style.transition='left .6s cubic-bezier(.22,1,.36,1),box-shadow .4s ease';
+        dot.style.left=pos+'%';
+        dot.style.boxShadow='0 0 0 3px '+color+',0 2px 8px rgba(0,0,0,.25)';
+      }
+    }));
+  }else{
+    if(dot){dot.style.left=pos+'%';dot.style.boxShadow='0 0 0 3px '+color+',0 2px 8px rgba(0,0,0,.25)';}
+  }
+  const profit=total-cost;
+  const profitFmt='$'+Math.round(profit).toLocaleString('en-US');
+  const dollarsEl=document.getElementById(type+'-gauge-dollars');
+  if(pct){pct.textContent=margin+'%';pct.style.color=color;}
+  if(dollarsEl){dollarsEl.textContent=profitFmt+' profit';dollarsEl.style.color=color==='#22C55E'?'var(--text3)':color;}
+  if(msgEl){msgEl.textContent=msg;msgEl.style.color=color==='#22C55E'?'var(--text3)':color;}
 }
 function _byoDelItem(idx){
-  if(_byoItems[idx]&&!_byoItems[idx].required){_byoItems.splice(idx,1);_byoRenderSections();_byoUpdateRail();}
+  if(_byoItems[idx]&&!_byoItems[idx].required){_byoItems.splice(idx,1);_byoRenderSections();_byoUpdateRail();_byoAutosave();}
 }
 function _byoUpdateRail(){
   const selected=_byoItems.filter(it=>it.on);
   const sub=selected.reduce((s,it)=>s+it.price,0);
-  _geiLines=selected.map(it=>({desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,notes:it.notes||'',_byoSection:it.section}));
+  _geiLines=selected.map(it=>({desc:it.label,qty:1,unit:'ea',rate:it.price,total:it.price,notes:it.notes||'',_byoSection:it.section,_rrp:it._rrp||false}));
 
   // Sales tax
   let salesTax=0;
@@ -597,7 +1071,7 @@ function _byoUpdateRail(){
     if(taxRow&&taxAmt&&taxLbl){
       if(salesTax>0){
         const isFull=_stResult.treatment?.type==='service'||_stResult.treatment?.laborTaxable;
-        taxLbl.textContent='Sales tax ('+_stRate+'%'+(isFull?'':' on materials')+')';
+        taxLbl.textContent=isFull?'Sales tax ('+_stRate+'%)':'Materials tax ('+_stRate+'%)';
         taxAmt.textContent='$'+salesTax.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
         taxRow.style.display='';
       } else if(_stResult.treatment&&!_stResult.treatment.customerTax){
@@ -619,9 +1093,22 @@ function _byoUpdateRail(){
   const fmt=n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   setT('byo-rail-sub',fmt(sub));
   setT('byo-rail-total',fmt(total));
-  setT('byo-rail-meta',selected.length+' of '+_byoItems.length+' items');
   setT('byo-rail-deposit',fmt(deposit));
   setT('byo-rail-balance',fmt(total-deposit));
+  // Expected cost = Materials line items + (when the contractor has employees) crew labor cost.
+  // Solo operators have no employees, so labor is 0 and cost stays materials-only.
+  const _matTotal=_byoItems.filter(it=>it.on&&!it._rrp&&(it.section||'').toLowerCase()==='materials').reduce((s,it)=>s+it.price,0);
+  const _laborCost=(typeof _estLaborCost==='function')?_estLaborCost():0;
+  const _autoCost=_matTotal+_laborCost;
+  const _railCostEl=document.getElementById('byo-expected-cost');
+  if(_railCostEl&&!_railCostEl.dataset.userSet){
+    if(_autoCost>0){_railCostEl.value=_autoCost;_railCostEl.dataset.autoFilled='true';}
+    else if(_railCostEl.dataset.autoFilled){_railCostEl.value='';delete _railCostEl.dataset.autoFilled;}
+  }
+  if(typeof _renderLaborPicker==='function')_renderLaborPicker('byo');
+  // Margin is calculated on pre-tax revenue (sub): sales tax is pass-through to the
+  // government and not the contractor's earnings, so including it inflates the margin.
+  _updateMarginGauge('byo',sub);
 }
 function _byoAddItem(sec){
   document.getElementById('_byo-add-modal')?.remove();
@@ -675,7 +1162,7 @@ function _byaConfirm(sec){
   const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
   _byoItems.push({id:nextId,section:sec,label,price,notes,on:true});
   document.getElementById('_byo-add-modal')?.remove();
-  _byoRenderSections();_byoUpdateRail();
+  _byoRenderSections();_byoUpdateRail();_byoAutosave();
 }
 function _byaConfirmAndNext(sec){
   // Save current item (if label is filled) then immediately open a fresh modal for same section
@@ -685,7 +1172,7 @@ function _byaConfirmAndNext(sec){
   if(label){
     const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
     _byoItems.push({id:nextId,section:sec,label,price,notes,on:true});
-    _byoRenderSections();_byoUpdateRail();
+    _byoRenderSections();_byoUpdateRail();_byoAutosave();
   }
   // Open next item modal for the same section
   _byoAddItem(sec);
@@ -726,7 +1213,7 @@ function _byaEditConfirm(idx){
   if(!label)return;
   it.label=label;it.price=price;it.notes=notes;
   document.getElementById('_byo-add-modal')?.remove();
-  _byoRenderSections();_byoUpdateRail();
+  _byoRenderSections();_byoUpdateRail();_byoAutosave();
 }
 function _byoAddSection(){
   document.getElementById('_byo-sec-modal')?.remove();
@@ -763,7 +1250,7 @@ function _byoDeleteSection(sec){
   const doDelete=()=>{
     _byoCustomSections=_byoCustomSections.filter(s=>s!==sec);
     _byoItems=_byoItems.filter(x=>x.section!==sec);
-    _byoRenderSections();_byoUpdateRail();
+    _byoRenderSections();_byoUpdateRail();_byoAutosave();
   };
   if(hasItems){zConfirm('Remove the "'+sec+'" section and all its items?',doDelete,{title:'Remove section',yes:'Remove',danger:true});}
   else doDelete();
@@ -906,6 +1393,10 @@ function _tmInputChange(){
   // Keep the legacy line items + totals in sync (used by save/proposal)
   if(typeof renderGeiLines==='function')renderGeiLines();
   if(typeof calcGeiTotal==='function')calcGeiTotal();
+  // Auto-populate hidden cost field from crew labor so gauge shows without user input
+  const _tmCostEl=document.getElementById('tm-expected-cost');
+  if(_tmCostEl&&labor>0){_tmCostEl.value=labor;}
+  _updateMarginGauge('tm',total);
 }
 function _tmRenderMatList(){
   const el=document.getElementById('tm-mat-list');if(!el)return;
@@ -1429,7 +1920,7 @@ function _geiSyncJobTypeButtons(){
   if(_geiJobScope==='improvement'&&typeof getJobTaxTreatment==='function'){
     const st=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
     const t=getJobTaxTreatment(st,_geiTrade||'general','improvement',_geiIsCommercial?'commercial':'residential');
-    noteEl.textContent=t.certificate?'⚠ '+t.certificate.form+' required — client must sign before work begins.':'Capital improvement: no sales tax charged to client.';
+    noteEl.textContent=t.certificate?'⚠ '+t.certificate.form+' required — client must sign before work begins.':'New construction: no tax';
     noteEl.style.color=t.certificate?'var(--amber-dk)':'var(--text3)';
   } else {
     noteEl.textContent='';
@@ -1456,7 +1947,7 @@ function _geiSyncJobScopeButtons(){
   if(noteEl&&_geiJobScope==='improvement'&&typeof getJobTaxTreatment==='function'){
     const stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
     const t=getJobTaxTreatment(stateKey,_geiTrade||'general','improvement',_geiIsCommercial?'commercial':'residential');
-    noteEl.textContent=t.certificate?'⚠ '+t.certificate.form+' required — client must sign before work begins.':'Capital improvement: no sales tax charged to client.';
+    noteEl.textContent=t.certificate?'⚠ '+t.certificate.form+' required — client must sign before work begins.':'New construction: no tax';
     noteEl.style.color=t.certificate?'var(--amber-dk)':'var(--text3)';
   } else if(noteEl){
     noteEl.textContent='';
@@ -1781,7 +2272,7 @@ function _panelPrint(){
   <table><thead><tr>
     <th>#</th><th style="text-align:left">Circuit description</th><th>Amps</th><th>Phase</th><th>Wire gauge</th><th>AFCI</th><th>GFCI</th>
   </tr></thead><tbody>${rows}</tbody></table>
-  <div style="margin-top:16px;font-size:10px;color:#888;border-top:1px solid #ddd;padding-top:8px">Generated by TradeDesk · ${biz} · ${dateStr}</div>
+  <div style="margin-top:16px;font-size:10px;color:#888;border-top:1px solid #ddd;padding-top:8px">Generated by TradeDesk · ${escHtml(biz)} · ${dateStr}</div>
   <button onclick="window.print()" style="margin-top:16px;padding:10px 24px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:700;cursor:pointer">🖨️ Print / Save PDF</button>
   </body></html>`;
   const win=window.open('','_blank');
@@ -1836,8 +2327,8 @@ function calcGeiTotal(){
       stAmt.style.color='var(--text2)';
       const isGR=salesTaxTreatment?.type==='gross_receipts';
       const isFull=salesTaxTreatment?.type==='service'||salesTaxTreatment?.laborTaxable;
-      stLbl.textContent=(isGR?(salesTaxTreatment.label||'Tax'):('Sales tax'))
-        +' ('+_stRate+'%'+(isFull?'':' on materials')+')';
+      stLbl.textContent=(isGR?(salesTaxTreatment.label||'Tax'):(isFull?'Sales tax':'Materials tax'))
+        +' ('+_stRate+'%)';
     } else {
       stRow.style.display='none';
     }
@@ -1858,6 +2349,8 @@ function calcGeiTotal(){
     }
   }
 
+  // Margin on pre-tax revenue: sub + markup but not salesTax (pass-through to government).
+  _updateMarginGauge('gei',sub+markup);
   return{sub,tax:markup+salesTax,markup,salesTax,total};
 }
 
@@ -1897,6 +2390,8 @@ function saveGenericEstimate(draft){
       b.geiTaxPct=taxPct;b.jobScope=_geiJobScope||'repair';b.salesTaxRate=parseFloat(S.salesTaxRate)||0;b.status=draft?'Draft':'Pending';b.draft=!!draft;
       b.geiDuration=v('gei-duration')||'';b.geiNewWork=_geiNewWork||false;
       b.trade_type=trade;b.deposit=_deposit;b.isFreeForm=_geiIsFreeForm||false;
+      b.scopeChips=[..._geiScopeChips];
+      b.scopeNoScope=_geiScopeNoScope||false;
       if(_geiIsFreeForm&&_byoItems.length)b.byoItems=JSON.parse(JSON.stringify(_byoItems));
       if(_geiIsFreeForm){b.byoCustomSections=_byoSecsSave;b.byoCustomTerms=_byoTermsSave;}
       if(_panelSched)b.panelSched=JSON.parse(JSON.stringify(_panelSched));else delete b.panelSched;
@@ -1917,6 +2412,8 @@ function saveGenericEstimate(draft){
       ...(_geiIsFreeForm?{byoCustomSections:_byoSecsSave,byoCustomTerms:_byoTermsSave}:{}),
       geiLines:JSON.parse(JSON.stringify(_geiLines)),geiTaxPct:taxPct,
       geiDuration:v('gei-duration')||'',geiNewWork:_geiNewWork||false,
+      scopeChips:[..._geiScopeChips],
+      scopeNoScope:_geiScopeNoScope||false,
       trade_type:trade,...(_panelSched?{panelSched:JSON.parse(JSON.stringify(_panelSched))}:{}),..._tmFields,
     };
     bids.unshift(newBid);_geiEditBidId=newBid.id;saveAll();
@@ -1930,6 +2427,18 @@ async function sendGenericProposal(previewOnly){
   saveGenericEstimate(true); // draft=true skips navigation — modal shows over estimate page
   _saveToLineHistory();
   if(!previewOnly){
+    // BYO line items already define the scope; chips are optional summary only.
+    // Only block if there are no chips, no line items, and the contractor hasn't explicitly skipped.
+    const _hasLineItems=_geiIsFreeForm?_byoItems.some(it=>it.on):_geiLines.length>0;
+    if(!_geiScopeChips.length&&!_geiScopeNoScope&&!_hasLineItems){zAlert('Add scope items or tap "None" to skip scope on this proposal.',{title:'Scope required'});return;}
+    if(_geiIsTM){
+      if(!_tmRatePerMan||!_tmEstHours){zAlert('Enter your hourly rate and estimated hours in the Time section.',{title:'Time & labor required'});return;}
+      if(!_geiLines.some(l=>!l._tmLabor&&l.desc)){zAlert('Add at least one material or cost item in the Materials section.',{title:'Materials required'});return;}
+    }else if(_geiIsFreeForm){
+      const _byoOn=_byoItems.filter(it=>it.on);
+      if(!_byoOn.some(it=>it.section==='Materials')){zAlert('Add at least one item in the Materials section.',{title:'Materials required'});return;}
+      if(!_byoOn.some(it=>it.section==='Interior'||it.section==='Exterior')){zAlert('Add at least one line item in Interior or Exterior.',{title:'Work items required'});return;}
+    }
     // Build minimal proposal for sign.html
     if(!navigator.onLine){zAlert('You\'re offline — the proposal link can\'t be activated right now.\n\nYour estimate is saved. Once you\'re back online, open this bid and tap Send to send the link to your client.',{title:'No internet connection'});return;}
     if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.');return;}
@@ -1941,12 +2450,17 @@ async function sendGenericProposal(previewOnly){
   const taxPct=parseFloat(v('gei-tax-pct'))||0;
   const bname=escHtml(S.bname||getBusinessName()||'');
   const bphone=escHtml(S.bphone||'');const blic=escHtml(S.blic||'');
+  const _bnameRaw=S.bname||getBusinessName()||'';const _bphoneRaw=S.bphone||'';const _blicRaw=S.blic||'';
   const clientName=escHtml(v('gei-client'));const clientAddr=escHtml(v('gei-addr'));
+  const _clientRec=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
+  const clientPhone=escHtml(_clientRec?.phone||'');
   const jobDesc=escHtml(v('gei-desc'));const duration=escHtml(v('gei-duration'));
   const _tradeM=TRADE_META[trade]||null;
   const tradeName=(_tradeM&&_tradeM.label)||'Service';const tradeIcon=(_tradeM&&_tradeM.icon)||'🔧';
   const estNum=_geiEditBidId?String(_geiEditBidId).slice(-6):'—';
-  const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const _geiNow=new Date();
+  const dateStr=_geiNow.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const _geiExpD=new Date(_geiNow.getTime()+30*86400000).toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'numeric'});
   const totalFmt='$'+total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const _tmDepPct=parseFloat(v('tm-dep-pct'))||20;
   const _byoDepPctEl=document.getElementById('byo-deposit-pct');
@@ -1965,9 +2479,18 @@ async function sendGenericProposal(previewOnly){
     :`<tr style="background:#2a4a7f;color:rgba(255,255,255,.88)"><td colspan="2" style="padding:6px 18px;font-size:11px;font-weight:600">${_sendByoDepPctLabel}% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr>`;
   const _fcPct=(S&&S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5);
   const _fcApr=Math.round(_fcPct*12*10)/10;
+  const _warrantyPeriod=S?.warrantyPeriod||'1 year';
+  // Legal party name for the Terms & Conditions — the business name, or generic "Contractor" when unset.
+  const _party=bname||'Contractor';
+  const _warrantyClause=_geiTrade==='painting'
+    ?`${_party} warrants workmanship against peeling, cracking, and finish defects for ${_warrantyPeriod} from substantial completion, provided surfaces were in sound condition and properly disclosed prior to work. Client-supplied paint carries no workmanship warranty on finish quality. Manufacturer warranties on materials pass through to Buyer.`
+    :_geiTrade==='landscaping'
+      ?`${_party} warrants all plant material and hardscaping workmanship for ${_warrantyPeriod} from substantial completion. Living plant material is subject to proper watering and care by client after installation. Manufacturer warranties on materials pass through to Buyer.`
+      :`${_party} warrants all workmanship against defects in labor and installation for ${_warrantyPeriod} from substantial completion. Manufacturer warranties on materials pass through to Buyer.`;
+  const _permitClause=`If permits or inspections are required for this scope of work, ${_party} will obtain them in accordance with applicable local ordinances and codes. Any permit fees not included in this proposal will be billed at cost with prior Buyer approval.`;
   const _tmPayTerms=_geiIsTM
-    ?`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Contract type:</strong> Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}</div><div>2. <strong>Mobilization deposit:</strong> ${_tmDepPct}% (${depositFmt}) due before work begins and before a start date is scheduled.</div><div>3. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div><div>4. <strong>Billing:</strong> ${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.</div><div>5. <strong>Change Orders:</strong> Any additional scope not described herein requires a written change order approved and signed by the client.</div><div>6. <strong>Limitation of Liability:</strong> Contractor is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>7. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(_stateKey)}</div><div>8. <strong>Finance Charges:</strong> Unpaid balances remaining 30 days after job completion are subject to a finance charge of ${_fcPct}% per month (${_fcApr}% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.</div></div>`
-    :`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> ${_sendByoDepPctLabel}% due before work begins and before a start date is scheduled. Balance due upon completion.</div><div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div><div>3. <strong>Change Orders:</strong> Any additional work not described herein requires a written change order approved and signed by the client.</div><div>4. <strong>Limitation of Liability:</strong> ${bname} is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>5. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(_stateKey)}</div><div>6. <strong>Finance Charges:</strong> Unpaid balances remaining 30 days after job completion are subject to a finance charge of ${_fcPct}% per month (${_fcApr}% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.</div></div>`;
+    ?`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Contract type:</strong> Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}</div><div>2. <strong>Mobilization deposit:</strong> ${_tmDepPct}% (${depositFmt}) due before work begins and before a start date is scheduled.</div><div>3. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div><div>4. <strong>Billing:</strong> ${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.</div><div>5. <strong>Change Orders:</strong> Any additional scope not described herein requires a written change order approved and signed by the client.</div><div>6. <strong>Limitation of Liability:</strong> ${_party} is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>7. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(_stateKey,_party)}</div><div>8. <strong>Finance Charges:</strong> Unpaid balances remaining 30 days after job completion are subject to a finance charge of ${_fcPct}% per month (${_fcApr}% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.</div><div>9. <strong>Workmanship Warranty:</strong> ${_warrantyClause}</div><div>10. <strong>Permits &amp; Inspections:</strong> ${_permitClause}</div><div>11. <strong>Schedule &amp; Delays:</strong> Completion dates are good-faith estimates and may be extended due to weather, material shortages, inspection delays, subcontractor availability, or other circumstances beyond ${_party}&apos;s reasonable control. ${_party} will provide timely written or verbal notice of any material delay.</div><div>12. <strong>Insurance:</strong> ${_party} maintains general liability insurance and, where required by law, workers&apos; compensation insurance. A certificate of insurance will be provided to Buyer upon written request prior to commencement of work.</div><div>13. <strong>Dispute Resolution:</strong> In the event of a dispute, both parties agree to attempt good-faith negotiation before pursuing arbitration or litigation. The prevailing party in any legal proceeding to enforce this agreement shall be entitled to recover reasonable attorney&apos;s fees and costs, to the extent permitted by law.</div></div>`
+    :`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> ${_sendByoDepPctLabel}% due before work begins and before a start date is scheduled. Balance due upon completion.</div><div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div><div>3. <strong>Change Orders:</strong> Any additional work not described herein requires a written change order approved and signed by the client.</div><div>4. <strong>Limitation of Liability:</strong> ${_party} is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>5. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(_stateKey,_party)}</div><div>6. <strong>Finance Charges:</strong> Unpaid balances remaining 30 days after job completion are subject to a finance charge of ${_fcPct}% per month (${_fcApr}% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.</div><div>7. <strong>Workmanship Warranty:</strong> ${_warrantyClause}</div><div>8. <strong>Permits &amp; Inspections:</strong> ${_permitClause}</div><div>9. <strong>Schedule &amp; Delays:</strong> Completion dates are good-faith estimates and may be extended due to weather, material shortages, inspection delays, subcontractor availability, or other circumstances beyond ${_party}&apos;s reasonable control. ${_party} will provide timely written or verbal notice of any material delay.</div><div>10. <strong>Insurance:</strong> ${_party} maintains general liability insurance and, where required by law, workers&apos; compensation insurance. A certificate of insurance will be provided to Buyer upon written request prior to commencement of work.</div><div>11. <strong>Dispute Resolution:</strong> In the event of a dispute, both parties agree to attempt good-faith negotiation before pursuing arbitration or litigation. The prevailing party in any legal proceeding to enforce this agreement shall be entitled to recover reasonable attorney&apos;s fees and costs, to the extent permitted by law.</div></div>`;
   const _tmPropMarkupMult=(_geiIsTM&&_tmMatMarkup>0)?(1+_tmMatMarkup/100):1;
   // Safari lazy-parses function bodies on first call — extract ?.?? to plain variables
   const _byoTermsEl2=document.getElementById('byo-custom-terms');
@@ -1975,12 +2498,32 @@ async function sendGenericProposal(previewOnly){
   const _customTermsBlock=_byoTermsText
     ?`<div style="padding:16px 24px;border-top:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Additional Terms</div><div style="font-size:11px;color:#2d3748;line-height:1.8;white-space:pre-wrap">${escHtml(_byoTermsText)}</div></div>`
     :'';
-  const lineRows=_geiLines.filter(l=>l.desc||l.rate).map(l=>{
-    let amt=(l.qty||1)*(l.rate||0);
-    // For T&M, bake markup into material prices — client never sees the markup percentage
-    if(_geiIsTM&&!l._tmLabor)amt=Math.round(amt*_tmPropMarkupMult);
-    return `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 18px;font-size:12px;color:#2d3748"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${l.notes?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:''}</td><td style="padding:9px 6px;text-align:center;font-size:12px;color:#64748b">${l.qty||1}</td><td style="padding:9px 18px 9px 4px;text-align:right;font-size:12px;font-weight:600;color:#1a365d">$${amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`;
-  }).join('');
+  const _mkLineRow=(l,amt,isRrp)=>{
+    const amtStr=isRrp&&amt===0?'<span style="font-size:11px;font-style:italic;color:#92400e">Included</span>':'$'+amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const notesHtml=l.notes?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:'';
+    const amtColor=isRrp&&amt===0?'#92400e':'#1a365d';
+    return `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 18px;font-size:12px;color:#2d3748"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${notesHtml}</td><td style="padding:9px 6px;text-align:center;font-size:12px;color:#64748b">${l.qty||1}</td><td style="padding:9px 18px 9px 4px;text-align:right;font-size:12px;font-weight:600;color:${amtColor}">${amtStr}</td></tr>`;
+  };
+  let lineRows;
+  if(_geiIsFreeForm){
+    const _allPropLines=_geiLines.filter(l=>l.desc||l.rate);
+    const _propSecs=[...(new Set(_allPropLines.map(l=>l._byoSection||'')))].filter(s=>s!==_RRP_BYO_SECTION);
+    if(_allPropLines.some(l=>l._byoSection===_RRP_BYO_SECTION))_propSecs.push(_RRP_BYO_SECTION);
+    lineRows=_propSecs.map(sec=>{
+      const sLines=_allPropLines.filter(l=>(l._byoSection||'')=== sec);
+      if(!sLines.length)return '';
+      const isRrpSec=sec===_RRP_BYO_SECTION;
+      const secHeader=sec?`<tr><td colspan="3" style="padding:5px 18px 4px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:${isRrpSec?'#92400e':'#64748b'};background:${isRrpSec?'#fffbeb':'#f8fafc'};border-bottom:1px solid #e2e8f0">${escHtml(sec)}</td></tr>`:'';
+      return secHeader+sLines.map(l=>_mkLineRow(l,(l.qty||1)*(l.rate||0),l._rrp||isRrpSec)).join('');
+    }).join('');
+  }else{
+    // T&M and other flows: flat list
+    lineRows=_geiLines.filter(l=>l.desc||l.rate).map(l=>{
+      let amt=(l.qty||1)*(l.rate||0);
+      if(_geiIsTM&&!l._tmLabor)amt=Math.round(amt*_tmPropMarkupMult);
+      return _mkLineRow(l,amt,l._rrp||false);
+    }).join('');
+  }
   // Suppress markup/tax row for T&M — markup is already in the line prices
   const taxRow=(!_geiIsTM&&taxPct)?`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td colspan="2" style="padding:8px 18px;font-size:12px;color:#64748b">Tax / markup (${taxPct}%)</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$${(total*(taxPct/(100+taxPct))).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`:'';
   // Sales tax row — shown on proposal when applicable
@@ -1998,11 +2541,12 @@ async function sendGenericProposal(previewOnly){
     const _stRes=calcSalesTax({state:_stStateP,tradeType:_geiTrade||'general',scope:_stScopeP,
       propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRateP,lineItems:_stLiP});
     if(_stRes.treatment.customerTax&&_stRes.taxAmount>0){
+      const _stIsFull=_stRes.treatment.laborTaxable||_stRes.treatment.type==='service';
       const _stLblP=(_stRes.treatment.type==='gross_receipts'?(_stRes.treatment.label||'Tax'):
-        'Sales tax')+' ('+_stRateP+'%'+(_stRes.treatment.laborTaxable||_stRes.treatment.type==='service'?'':' on materials')+')';
+        (_stIsFull?'Sales tax':'Materials tax'))+' ('+_stRateP+'%)';
       _stRowHtml=`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td colspan="2" style="padding:8px 18px;font-size:12px;color:#64748b">${_stLblP}</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$${_stRes.taxAmount.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`;
     } else if(_stScopeP==='improvement'&&!_stRes.treatment.customerTax){
-      _stRowHtml=`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td colspan="2" style="padding:8px 18px;font-size:12px;color:#64748b">Sales tax — capital improvement</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$0.00</td></tr>`;
+      _stRowHtml=`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td colspan="2" style="padding:8px 18px;font-size:12px;color:#64748b">New construction: no tax</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$0.00</td></tr>`;
     }
   }
   const notesHtml=v('gei-notes')?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6"><strong style="color:#1a365d">Notes:</strong> ${escHtml(v('gei-notes'))}</div>`:'';
@@ -2014,18 +2558,37 @@ async function sendGenericProposal(previewOnly){
   }
   const _hdrLabel=_geiIsTM?'⏱️ Time &amp; Materials':tradeIcon+' Service Proposal';
   const _nteRow=(_geiIsTM&&_tmNteCap)?`<tr style="background:#075985;color:rgba(255,255,255,.8)"><td colspan="2" style="padding:5px 18px;font-size:11px">Not-to-exceed cap</td><td style="padding:5px 18px;text-align:right;font-size:11px;font-weight:700">$${_tmNteCap.toLocaleString()}</td></tr>`:'';
-  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#1a365d">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#1a365d">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:5px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid 30 days</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th><th style="padding:8px 6px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:40px">Qty</th><th style="padding:8px 18px 8px 4px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:90px">Amount</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${taxRow}${_stRowHtml}<tr style="background:#1a365d;color:#fff"><td colspan="2" style="padding:12px 18px;font-weight:800;font-size:15px">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:15px">${totalFmt}</td></tr>${_tmDepRow}${_nteRow}</tfoot></table>${notesHtml}${_propPanelHtml}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div>${_tmPayTerms}</div>${_customTermsBlock}</div>`;
+  // Scope section — BYO shows structured section/item list matching paint estimate style; others use chip pills
+  let _scopeSection='';
+  const _byoWorkItems2=_geiIsFreeForm?_byoItems.filter(it=>it.on&&!it._rrp):[];
+  if(_geiIsFreeForm&&_byoWorkItems2.length>0&&!_geiScopeNoScope){
+    const _scopeSecs2=[...(new Set(_byoWorkItems2.map(it=>it.section)))].filter(Boolean);
+    const _secBlocks2=_scopeSecs2.map(sec=>{
+      const its=_byoWorkItems2.filter(it=>it.section===sec);
+      const rows='<ol style="margin:4px 0 0;padding-left:18px">'+its.map(it=>`<li style="font-size:11.5px;color:#4a5568;line-height:1.7">${escHtml(it.label)}${it.notes?`<span style="font-size:10.5px;color:#718096"> — ${escHtml(it.notes)}</span>`:''}</li>`).join('')+'</ol>';
+      return `<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:2px">${escHtml(sec)}</div>${rows}</div>`;
+    }).join('');
+    _scopeSection=`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px">Scope of work</div>${_secBlocks2}</div>`;
+  }else if(_geiScopeChips.length&&!_geiScopeNoScope){
+    const _allChipDefs=[...(TRADE_SCOPE_CHIPS[_geiTrade]||[]),...(TRADE_SCOPE_CHIPS.general||[]),..._GEN_SCOPE];
+    const _listItems=_geiScopeChips.map(l=>{
+      const chip=_allChipDefs.find(c=>c.label===l);
+      const desc=chip&&chip.clientDesc?`<span style="font-size:10.5px;color:#718096"> — ${escHtml(chip.clientDesc)}</span>`:'';
+      return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7">${escHtml(l)}${desc}</li>`;
+    }).join('');
+    _scopeSection=`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px">Scope of work</div><ol style="margin:0;padding-left:18px">${_listItems}</ol></div>`;
+  }
+  const _geiEpaClient=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
+  const _geiYearBuilt=_geiEpaClient?_geiEpaClient.yearBuilt||null:null;
+  const _rrpSection='';
+  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#1a365d">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#1a365d">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_scopeSection}${_rrpSection}<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th><th style="padding:8px 6px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:40px">Qty</th><th style="padding:8px 18px 8px 4px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:90px">Amount</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${taxRow}${_stRowHtml}<tr style="background:#1a365d;color:#fff"><td colspan="2" style="padding:12px 18px;font-weight:800;font-size:15px">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:15px">${totalFmt}</td></tr>${_tmDepRow}${_nteRow}</tfoot></table>${notesHtml}${_propPanelHtml}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div>${_tmPayTerms}</div>${_customTermsBlock}</div>`;
   // Preview-only mode — show proposal in a fullscreen overlay, no upload
   if(previewOnly){_showProposalPreviewOverlay(proposalHtml);return;}
   const bidId=_geiEditBidId;
-  const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
+  const token=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
   const proposalKey=`proposals/${_supaUser.id}/${bidId}_${token}.json`;
   // Extract optional chaining out of object literal — Safari chokes on ?. inside { }
   const _stripeEnabled=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
-  // EPA RRP — pre-1978 home + paint-disturbing answer from the RRP gate (persisted on client)
-  const _geiEpaClient=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
-  const _geiYearBuilt=_geiEpaClient?_geiEpaClient.yearBuilt||null:null;
-  const _geiEpaRequired=!!(_geiYearBuilt&&_geiYearBuilt<1978&&((_geiEpaClient&&_geiEpaClient.rrpDisturb==='yes')||(typeof _rrpPaintAnswer!=='undefined'&&_rrpPaintAnswer==='yes')));
   const proposalData={
     id:bidId,token,clientName:v('gei-client'),businessName:S.bname||getBusinessName(),
     contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
@@ -2375,7 +2938,7 @@ async function _sendIndProposal(){
   const liftWarning=r.liftNeeded?'<div style="padding:10px 18px;background:#fff7ed;border-bottom:1px solid #fed7aa;font-size:11px;color:#c2410c;font-weight:600">⚠️ Man-lift rental likely required (~$350/day) — verify availability before scheduling</div>':'';
   const notesSection=notes?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6"><strong style="color:#7c2d12">Site Notes:</strong> ${escHtml(notes)}</div>`:'';
   const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#7c2d12 0%,#c2410c 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">🏗️ Industrial Coating Estimate</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#7c2d12">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#7c2d12">Industrial Equipment Coating</div><div style="font-size:11px;color:#718096;margin-top:3px">${tier.badge} ${tier.name} Specification</div><div style="font-size:11px;color:#718096;margin-top:2px">Valid 30 days from date above</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Equipment</th><th style="padding:8px 8px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:40px">Qty</th><th style="padding:8px 8px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:72px">~Sq Ft</th><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px">Notes</th></tr></thead><tbody>${equipRows}</tbody></table><div style="padding:14px 18px;border-top:1px solid #e2e8f0;background:#fafafa"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px">Coating Specification</div><div style="font-size:12px;color:#374151;line-height:1.9"><div><strong>Prep method:</strong> ${escHtml(tier.desc)}</div><div><strong>Primer:</strong> ${escHtml(resolvedPrimer)}</div><div><strong>Topcoat:</strong> ${escHtml(resolvedTopcoat)}</div><div><strong>Finish:</strong> ${escHtml(finish)}</div>${colorNotes?`<div><strong>Color notes:</strong> ${escHtml(colorNotes)}</div>`:''}</div></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0"><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Surface Area</div><div style="font-size:16px;font-weight:800;color:#374151">${r.totalSqft.toLocaleString()} sqft</div></div><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Duration</div><div style="font-size:16px;font-weight:800;color:#374151">${r.calDays}–${r.calDays+1} days</div></div><div style="padding:12px 14px"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Crew</div><div style="font-size:16px;font-weight:800;color:#374151">${crewLabel}</div></div></div>${liftWarning}<table style="width:100%;border-collapse:collapse"><tr style="background:#7c2d12;color:#fff"><td style="padding:12px 18px;font-weight:800;font-size:13px">ESTIMATE RANGE</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:14px">${rangeStr}</td></tr><tr style="background:#c2410c;color:rgba(255,255,255,.88)"><td style="padding:7px 18px;font-size:12px;font-weight:800">MIDPOINT BID</td><td style="padding:7px 18px;text-align:right;font-size:13px;font-weight:800">${totalFmt}</td></tr><tr style="background:#9a3412;color:rgba(255,255,255,.85)"><td style="padding:6px 18px;font-size:11px;font-weight:600">25% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr></table>${notesSection}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div><div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> 25% due before work begins.</div><div>2. <strong>Balance:</strong> Remainder due upon completion.</div><div>3. <strong>Warranty:</strong> All workmanship warranted for 1 year.</div></div></div></div>`;
-  const token=Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2);
+  const token=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
   const proposalKey=`proposals/${_supaUser.id}/${_indBidId}_${token}.json`;
   const _indYearBuilt=c?c.yearBuilt||null:null;
   const _indEpaRequired=!!(_indYearBuilt&&_indYearBuilt<1978&&((c&&c.rrpDisturb==='yes')||(typeof _rrpPaintAnswer!=='undefined'&&_rrpPaintAnswer==='yes')));
