@@ -5742,6 +5742,21 @@ test.describe('Proposal hides per-room costs — shows total, materials, deposit
     expect(result.hasTotalRow).toBe(true);
   });
 
+  test('buildProposal does NOT include Home Solicitation Law yellow notice box', async () => {
+    const result = await page.evaluate(() => {
+      const proposalDiv = document.getElementById('est-proposal');
+      if (!proposalDiv || !proposalDiv.innerHTML) return null;
+      const html = proposalDiv.innerHTML;
+      return {
+        hasNotice: /Home Solicitation Law/i.test(html) || /FEF3C7/.test(html),
+        hasBuyerMayCancel: /YOU.*THE BUYER.*MAY CANCEL.*PRIOR TO MIDNIGHT/i.test(html),
+      };
+    });
+    if (!result) return;
+    expect(result.hasNotice).toBe(false);
+    expect(result.hasBuyerMayCancel).toBe(false);
+  });
+
   test('no console errors in proposal per-room cost tests', async () => {
     assertNoErrors(page, 'proposal per-room cost');
   });

@@ -1273,10 +1273,6 @@ function buildProposal(){
     <div style="font-size:12px;color:#166534;line-height:1.7">We are currently selecting a limited number of showcase homes to feature across our Social Media. Your home has been selected. In exchange for permission to photograph your home before and after completion and feature it across our platforms, we are offering ${_portfolioPct}% off this project. No personal information is shared without your explicit permission.</div>
     <div style="margin-top:8px;font-size:11px;color:#16a34a;font-weight:700">Portfolio discount applied: ${_portfolioPct}% · You save ${fmt(Math.round(final*_portfolioPct/(100-_portfolioPct)))}</div>
   </div>`:''}
-  <div style="padding:12px 24px;border-top:3px solid #92400E;background:#FEF3C7">
-    <div style="font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#92400E;margin-bottom:6px">⚠ ${_stName} / Federal Home Solicitation Law — Required Notice</div>
-    <div style="font-size:10.5px;font-weight:800;color:#1a1a1a;line-height:1.65;border:2px solid #92400E;padding:9px 11px;border-radius:3px;background:#fff">YOU, THE BUYER, MAY CANCEL THIS TRANSACTION AT ANY TIME PRIOR TO MIDNIGHT OF THE ${_cancelDays===3?'THIRD':_cancelDays+'TH'} BUSINESS DAY AFTER THE DATE OF THIS TRANSACTION. SEE THE NOTICE OF CANCELLATION FORM AT THE BOTTOM OF THIS DOCUMENT FOR AN EXPLANATION OF THIS RIGHT.</div>
-  </div>
   <div style="padding:18px 24px;border-top:1px solid #e2e8f0;background:#f8fafc">
     <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div>
     <div style="font-size:10.5px;color:#4a5568;line-height:1.85">

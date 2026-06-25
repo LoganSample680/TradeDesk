@@ -1058,12 +1058,6 @@ function renderOverview(){
     html+='<div class="hub-progress-track"><div class="hub-progress-fill" style="width:'+pct+'%"></div></div>';
   }
   html+='</div>';
-  // Mini stats
-  html+='<div class="hub-hero-r">';
-  html+='<div class="hub-mini"><div class="hub-mini-val">'+fmt(totalPaid)+'</div><div class="hub-mini-lbl">Paid</div></div>';
-  html+='<div class="hub-mini"><div class="hub-mini-val">'+(totalBalance>0.01?fmt(totalBalance):'$0')+'</div><div class="hub-mini-lbl">Balance</div></div>';
-  html+='<div class="hub-mini"><div class="hub-mini-val">'+(h.photos?.length||0)+'</div><div class="hub-mini-lbl">Photos</div></div>';
-  html+='</div>';
   html+='</div>';
 
   // PR3: Mobile contact strip

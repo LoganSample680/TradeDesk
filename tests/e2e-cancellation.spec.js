@@ -202,11 +202,11 @@ test.describe('Notice of Cancellation — 3-step friction flow', () => {
     assertNoErrors(page, 'cancelled state renders confirmation');
   });
 
-  test('cancelled bid shows $0 balance and no payment CTA in overview', async ({ page }) => {
+  test('cancelled bid shows cancelled state and no payment CTA in overview', async ({ page }) => {
     await bootHub(page, hubWith({ cancelledAt: new Date().toISOString(), cancelledName: 'Logan Sample' }));
     const overview = await page.textContent('#view-overview');
-    // Balance widget must show $0, not the contract amount
-    expect(overview).toContain('$0');
+    // Cancelled bid must show cancelled state label
+    expect(overview).toContain('Cancelled');
     // No Stripe payment button should appear
     expect(overview).not.toContain('Secured by Stripe');
     assertNoErrors(page, 'cancelled bid clears balance in overview');
@@ -289,5 +289,15 @@ test.describe('Hub snapshot — HTTP cache bypass', () => {
     expect(body).toContain('Logan Sample');
     expect(body).toContain('Interior Painting');
     assertNoErrors(page, 'hub fallback after fetch failure');
+  });
+});
+
+// ── Hub hero — stat tiles removed ────────────────────────────────────────────
+test.describe('Client hub hero — stat tiles removed', () => {
+  test('hub-hero does NOT render Paid / Balance / Photos tiles', async ({ page }) => {
+    await bootHub(page, hubWith());
+    const count = await page.locator('.hub-mini').count();
+    expect(count, 'hub-mini stat tiles must not exist').toBe(0);
+    assertNoErrors(page, 'hub-mini tiles removed');
   });
 });

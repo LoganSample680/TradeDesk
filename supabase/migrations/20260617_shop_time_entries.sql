@@ -24,6 +24,7 @@ create index if not exists shop_time_entries_emp_idx        on shop_time_entries
 
 alter table shop_time_entries enable row level security;
 
+drop policy if exists "Contractor manages shop time" on shop_time_entries;
 create policy "Contractor manages shop time" on shop_time_entries for all
   using  (contractor_user_id::text = auth.uid()::text)
   with check (contractor_user_id::text = auth.uid()::text);
@@ -41,8 +42,20 @@ create policy "Employee writes own shop time" on shop_time_entries for insert
     )
   );
 
+drop policy if exists "Employee reads own shop time" on shop_time_entries;
 create policy "Employee reads own shop time" on shop_time_entries for select
   using (employee_user_id::text = auth.uid()::text);
 
-create policy "Payroll manager reads shop time" on shop_time_entries for select
-  using (has_team_perm(contractor_user_id, 'payroll'));
+-- has_team_perm() is created in 20260619 (runs after this on a fresh --include-all
+-- apply). Skip this policy when the function doesn't exist yet;
+-- 20260625_fix_idempotent_policies.sql re-creates it once has_team_perm() exists.
+do $$
+begin
+  if exists (select 1 from pg_proc where proname = 'has_team_perm') then
+    drop policy if exists "Payroll manager reads shop time" on shop_time_entries;
+    execute $p$
+      create policy "Payroll manager reads shop time" on shop_time_entries for select
+        using (has_team_perm(contractor_user_id, 'payroll'))
+    $p$;
+  end if;
+end $$;
