@@ -1,4 +1,4 @@
-const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmt=n=>'$'+(isNaN(+n)?0:+n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtShort=n=>{const v=Number(n||0);if(Math.abs(v)>=1000000)return'$'+(v/1000000).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'M';if(Math.abs(v)>=1000)return'$'+(v/1000).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'K';return'$'+v.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});};
 function formatPhoneDisplay(val){
   let d=(val||'').replace(/\D/g,'').slice(0,10);
@@ -14,7 +14,7 @@ function fmtPhone(input){
   input.value=d;
 }
 const fmt2=n=>'$'+(Math.ceil((n||0)/5)*5).toLocaleString();
-const fmtD=n=>'$'+parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtD=n=>{const v=parseFloat(n);return'$'+(isNaN(v)?0:v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 const dateKey=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return y+'-'+m+'-'+day;};
 const todayKey=()=>dateKey(new Date());
 const parseD=s=>new Date(s+'T12:00:00');
@@ -43,7 +43,7 @@ function stageAvatar(stage){
   };
   return m[stage]||'background:var(--blue-lt);color:var(--blue-dk)';
 }
-function lighten(hex){try{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},0.15)`;}catch(e){return'#eee';}}
+function lighten(hex){if(!hex||typeof hex!=='string'||!/^#[0-9a-fA-F]{6}/.test(hex))return'#eee';try{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},0.15)`;}catch(e){return'#eee';}}
 function barChart(label,val,total,color){const pct=Math.round(val/total*100);return`<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px"><span>${escHtml(String(label))}</span><span style="font-weight:700">${fmt(val)}</span></div><div class="prog-bar"><div class="prog-fill" style="width:${pct}%;background:${color}"></div></div></div>`;}
 function calcBrackets(inc,brackets){let tax=0,prev=0;for(const[lim,rate]of brackets){if(inc<=prev)break;tax+=Math.max(0,Math.min(inc,lim)-prev)*rate;prev=lim;if(lim===Infinity||inc<=lim)break;}return tax;}
 function fmtDateShort(d){if(!d)return'';try{const dt=new Date(d+'T12:00');return dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return d;}}
@@ -128,8 +128,7 @@ function showToast(msg,icon,duration){
 
 function _fmtExpDate(el){
   let v=el.value.replace(/\D/g,'');
-  if(v.length>2)v=v.slice(0,2)+'/'+v.slice(2);
-  if(v.length>5)v=v.slice(0,5)+'/'+v.slice(5,9);
+  if(v.length>2)v=v.slice(0,2)+'/'+v.slice(2,6);
   el.value=v;
 }
 function _ymdToMdY(s){

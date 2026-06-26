@@ -61,7 +61,7 @@ const ST_TRADE_CATEGORY = {
  * @returns {object} treatment descriptor
  */
 function getJobTaxTreatment(state, tradeType, scope, propertyType) {
-  const st = (state || 'KS').toUpperCase();
+  const st = String(state || 'KS').toUpperCase();
   const stateName = (typeof STATE_NAMES !== 'undefined' && STATE_NAMES[st]) || st;
 
   if (ST_NO_TAX.has(st)) {
@@ -171,7 +171,8 @@ function calcSalesTax({state, tradeType, scope, propertyType, taxRate, lineItems
  * Returns null if none found.
  */
 function _extractZip(addr) {
-  const m = (addr || '').match(/\b(\d{5})(?:-\d{4})?\b/);
+  const str = addr == null ? '' : String(addr);
+  const m = str.match(/\b(\d{5})(?:-\d{4})?\b/);
   return m ? m[1] : null;
 }
 
@@ -184,7 +185,7 @@ function _extractZip(addr) {
  * @returns {Promise<{rate:number, source:string, warning?:string}>}
  */
 async function lookupSalesTaxRate(zip, state) {
-  const st = (state || 'KS').toUpperCase();
+  const st = String(state || 'KS').toUpperCase();
   const stateName = (typeof STATE_NAMES !== 'undefined' && STATE_NAMES[st]) || st;
 
   if (ST_NO_TAX.has(st)) return {rate:0, source:'no_tax'};

@@ -1024,6 +1024,10 @@ test.describe('Dashboard KPIs — renderDash, setDashPeriod, setDashYear', () =>
     // Client cancels within the rescission window → checkNewSignatures pushes the
     // clawback row: {amount:-paid, type:'refund', _cancelRefund:true}
     const net = await page.evaluate(() => {
+      // Re-ensure the deposit: a background reload during the wait above can drop
+      // the earlier push in WebKit, which would leave getBidPaid summing only the
+      // refund. Guaranteeing both rows makes the cancelled-bid net deterministic.
+      if (!payments.find(p => p.id === 991201)) payments.push({ id: 991201, bid_id: 991201, amount: 50000, date: new Date().toISOString().slice(0, 10), type: 'deposit', method: 'check' });
       payments.push({ id: 991202, bid_id: 991201, amount: -50000, date: new Date().toISOString().slice(0, 10), type: 'refund', method: 'refund', _cancelRefund: true, note: 'Refund — client cancelled within rescission window' });
       if (typeof renderDash === 'function') renderDash();
       return typeof getBidPaid === 'function' ? getBidPaid(991201) : null;

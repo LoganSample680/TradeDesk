@@ -102,8 +102,9 @@ async function submitEmailCompose(page, { toEmail } = {}) {
     await page.fill('#_ec-to', toEmail);
   }
 
-  // Click Send
-  await page.click('#_ec-send-btn');
+  // Click Send — force past any stray .zmodal-overlay that intercepts the click in
+  // WebKit (otherwise it retries until the 60s timeout closes the context = flake).
+  await page.click('#_ec-send-btn', { force: true });
   await page.waitForTimeout(800);
 
   return page.evaluate(() => window.__sendEmailCalls || []);
@@ -253,6 +254,9 @@ test.describe('Generic estimate send bar — shows after proposal generated', ()
   test.beforeEach(async () => {
     // Re-assert the page + bar state every test — survives retries and any
     // navigation the app performed during a previous test in this group.
+    // Also clear any modal overlay a prior test left open: in WebKit a stray
+    // .zmodal-overlay intercepts pointer events and blocks the Email click.
+    await page.evaluate(() => document.querySelectorAll('.zmodal-overlay, .zmodal').forEach(el => el.remove()));
     await goPg(page, 'pg-est-generic');
     await seedGeiSendBar();
   });

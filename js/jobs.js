@@ -487,6 +487,7 @@ function setRoomScope(roomName,id,active,hrs,rate){
   roomScopeMap[roomName][id]={active:true,hrs:hrs||0,rate:rate||45,cost};
 }
 let surfJobType='interior', surfColor='', surfRoom='';
+Object.defineProperty(window,'surfRoom',{get:()=>surfRoom,set:v=>{surfRoom=v;},configurable:true});
 let _currentScopeRoom='';  // room name currently shown in scope grid
 
 // ── More menu toggle ──────────────────────────────────────────────────────
@@ -506,6 +507,7 @@ function setJobFilter(f,btn){
 }
 // Compute stage for a single won bid (bid-centric, for Jobs page)
 function getBidStage(b){
+  if(!b)return{stage:'signed',label:'Not started',color:'var(--blue)',priority:3,jobs:[]};
   const tk=todayKey();
   // Find jobs linked directly to this bid; fall back to unlinked client jobs (legacy data)
   let bidJobs=jobs.filter(j=>j.bid_id===b.id&&j.eventType!=='estimate'&&j.status!=='canceled'&&j.status!=='done');

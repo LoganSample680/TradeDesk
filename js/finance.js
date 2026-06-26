@@ -1,5 +1,6 @@
 // ── IRS Schedule C expense categories ────────────────────────────────
 let _expState={imageData:null,imageKey:null,editId:null,imagePages:[]};
+Object.defineProperty(window,'_expState',{get:()=>_expState,set:v=>{_expState=v;},configurable:true});
 
 function openExpenseFlow(){
   if(document.getElementById('expense-modal'))return;
@@ -157,22 +158,23 @@ function expProcessPhoto(input){expTriggerScan();}
 
 async function compressAndEncodeImage(file,maxPx=1200,qual=0.85){
   return new Promise((resolve,reject)=>{
-    const img=new Image();
-    const url=URL.createObjectURL(file);
-    img.onload=()=>{
-      let w=img.width,h=img.height;
-      if(w>maxPx){h=Math.round(h*(maxPx/w));w=maxPx;}
-      if(h>maxPx){w=Math.round(w*(maxPx/h));h=maxPx;}
-      const canvas=document.createElement('canvas');
-      canvas.width=w;canvas.height=h;
-      canvas.getContext('2d').drawImage(img,0,0,w,h);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL('image/jpeg',qual).split(',')[1]);
+    const reader=new FileReader();
+    reader.onerror=()=>reject(new Error('Image read failed'));
+    reader.onload=()=>{
+      const img=new Image();
+      img.onload=()=>{
+        let w=img.width,h=img.height;
+        if(w>maxPx){h=Math.round(h*(maxPx/w));w=maxPx;}
+        if(h>maxPx){w=Math.round(w*(maxPx/h));h=maxPx;}
+        const canvas=document.createElement('canvas');
+        canvas.width=w||1;canvas.height=h||1;
+        canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+        resolve(canvas.toDataURL('image/jpeg',qual).split(',')[1]);
+      };
+      img.onerror=()=>reject(new Error('Image decode failed'));
+      img.src=reader.result;
     };
-    // Decode failure (corrupt photo, unsupported format) — reject instead of
-    // hanging the caller's await forever.
-    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Image decode failed'));};
-    img.src=url;
+    reader.readAsDataURL(file);
   });
 }
 
@@ -180,6 +182,7 @@ async function compressAndEncodeImage(file,maxPx=1200,qual=0.85){
 
 // WebGPU state — allocated once per scanner session, destroyed on close
 const _gpu={dev:null,pipe:null,sampler:null,uniformBuf:null,readBuf:null,tw:0,th:0};
+window._gpu=_gpu;
 
 const _GPU_WGSL=`
 struct Dims { tw: u32, th: u32 }
@@ -456,6 +459,7 @@ async function _openLiveScanner(callback){
 }
 
 function _loadAndBuildScanUI(file,callback){
+  if(!file)return;
   const url=URL.createObjectURL(file);
   const img=new Image();
   img.onload=()=>{URL.revokeObjectURL(url);_buildScanUI(img,file,callback);};
@@ -591,6 +595,7 @@ function _detectDocCorners(data,tw,th,outW,outH){
 
 // keep old name for any callers
 function _scanDetectCorners(ctx,w,h){
+  if(!w||!h)return null;
   const tw=180,th=Math.round(h*180/w);
   const tmp=document.createElement('canvas');tmp.width=tw;tmp.height=th;
   tmp.getContext('2d').drawImage(ctx.canvas,0,0,tw,th);
@@ -603,6 +608,7 @@ function _scanWarp(img,w,h,corners){
   const[tl,tr,br,bl]=corners;
   const outW=Math.round(Math.max(Math.hypot(tr.x-tl.x,tr.y-tl.y),Math.hypot(br.x-bl.x,br.y-bl.y)));
   const outH=Math.round(Math.max(Math.hypot(bl.x-tl.x,bl.y-tl.y),Math.hypot(br.x-tr.x,br.y-tr.y)));
+  if(!outW||!outH){const d=document.createElement('canvas');d.width=Math.max(outW,1);d.height=Math.max(outH,1);return d;}
   const src=document.createElement('canvas');src.width=w;src.height=h;
   src.getContext('2d').drawImage(img,0,0,w,h);
   const sData=src.getContext('2d').getImageData(0,0,w,h).data;
@@ -957,6 +963,7 @@ function showQuickPicker(title,subtitle,suggestions,actionType,allowNew){
 }
 
 function onQPSearch(el){
+  if(!el)return;
   const actionType=el.dataset.qpaction||'';
   const q=(el.value||'').toLowerCase().trim();
   const res=document.getElementById('qp-results');
@@ -990,6 +997,7 @@ function onQPSearch(el){
 }
 
 function pickQuickClient(btn,actionType){
+  if(!btn)return;
   const overlay=btn.closest('.zmodal-overlay');
   const suggestions=JSON.parse(overlay.dataset.suggestions||'[]');
   const idx=parseInt(btn.dataset.idx);

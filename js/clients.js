@@ -24,6 +24,7 @@ function openEstimateForClient(){
 // Trades that categorically never disturb painted surfaces — skip RRP question
 const _RRP_EXEMPT_TRADES=['landscaping'];
 function _rrpGateThenEstimate(c){
+  if(!c)return;
   const _trade=typeof getActiveTrade==='function'?getActiveTrade():'painting';
   if(c.yearBuilt&&c.yearBuilt<1978&&!_RRP_EXEMPT_TRADES.includes(_trade)){
     if((c.addr||'').trim()){
@@ -42,6 +43,7 @@ function _rrpGateThenEstimate(c){
   _gateAddressThenEstimate(c);
 }
 function _showRrpModal(c,onProceed){
+  if(!c)return;
   document.getElementById('_rrp-gate-overlay')?.remove();
   const hasCert=(typeof licenses!=='undefined')&&licenses.some(l=>
     ['epa_firm','epa_renovator'].includes(l.typeId)&&(!l.expiryDate||l.expiryDate>=todayKey()));
@@ -87,6 +89,7 @@ function _showRrpModal(c,onProceed){
   };
 }
 function _gateAddressThenEstimate(c){
+  if(!c)return;
   if(!(c.addr||'').trim()){
     // Lead has no address — must collect before building an estimate
     const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_addr-gate-overlay';
@@ -127,6 +130,7 @@ function _gateAddressThenEstimate(c){
   _checkMultiPropertyThenOpen(c);
 }
 function _checkMultiPropertyThenOpen(c){
+  if(!c)return;
   // If client already has any in-progress bid (Pending+draft), offer to resume it
   const activeBids=bids.filter(b=>b.client_id===c.id&&!b.signingToken&&(
     (b.status==='Pending'&&b.draft===true)||
@@ -180,6 +184,7 @@ function _askNewPropertyAddress(c){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 let _tradePickCb=null;
+Object.defineProperty(window,'_tradePickCb',{get:()=>_tradePickCb,set:v=>{_tradePickCb=v;},configurable:true});
 function _showTradePicker(title,cb){
   _tradePickCb=cb;
   const lines=_getTradeLines();
@@ -212,6 +217,7 @@ function _pickTrade(id){
 
 // ── 3-way estimate style picker ──────────────────────────────────────────────
 let _stylePickState=null;
+Object.defineProperty(window,'_stylePickState',{get:()=>_stylePickState,set:v=>{_stylePickState=v;},configurable:true});
 function _closeStylePicker(){
   const ov=document.getElementById('_style-pick-ov');
   if(ov){ov.style.opacity='0';ov.style.transform='translateY(14px)';setTimeout(()=>ov.remove(),380);}
@@ -439,10 +445,15 @@ function _doOpenEstimate(c,_overrideAddr,_forceTrade){
 }
 
 let dashYear=new Date().getFullYear();
+Object.defineProperty(window,'dashYear',{get:()=>dashYear,set:v=>{dashYear=v;},configurable:true});
 let dashPeriod='year';
+Object.defineProperty(window,'dashPeriod',{get:()=>dashPeriod,set:v=>{dashPeriod=v;},configurable:true});
 
 function _dashInRange(dateStr){
-  if(!dateStr)return false;
+  const ds=String(dateStr==null?'':dateStr);
+  if(!ds)return false;
+  // shadow local to use coerced string
+  dateStr=ds;
   if(dashPeriod==='all')return true;
   if(dashPeriod==='year')return dateStr.startsWith(String(dashYear));
   const cm=new Date().getMonth();
@@ -538,6 +549,7 @@ function renderClientHubPage(){
   el.innerHTML='<div class="card card-pad-0">'+sorted.map(rowHtml).join('')+'</div>';
 }
 function _previewClientHub(url,clientName,clientId){
+  if(!url)return;
   // Log as contractor preview so "You previewed" badge appears on the dashboard.
   // We make the call from here (main app context) where _supaUser and bids[] are live,
   // then open the iframe with &preview=1 so client.html skips its own hub tracking.
@@ -697,6 +709,7 @@ function renderClientList(){
   populateClientSelectors();
   const tk=todayKey();
   const el=document.getElementById('client-list');
+  if(!el)return;
 
   // Clients page only shows contacts who have signed an estimate (or beyond)
   const CLIENT_STAGES=['signed','scheduled','active','balance_due','paid'];
@@ -813,7 +826,7 @@ function togglePipeGroup(key){
   if(grp)grp.style.display=window._pipelineExpand[key]?'block':'none';
   const grpDiv=document.querySelector('[data-pkey="'+key+'"]');
   if(grpDiv){const a=grpDiv.querySelector('span');if(a)a.style.transform=window._pipelineExpand[key]?'rotate(90deg)':'';}
-  arrows.forEach(a=>a.style.transform=window._pipelineExpand[key]?'rotate(90deg)':'');
+  if(typeof arrows!=='undefined'&&arrows&&arrows.forEach)arrows.forEach(a=>a.style.transform=window._pipelineExpand[key]?'rotate(90deg)':'');
 }
 function checkClientDupe(val){
   const warn=document.getElementById('cf-dupe-warn');if(!warn)return;

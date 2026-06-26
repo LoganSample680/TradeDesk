@@ -986,6 +986,9 @@ test.describe('Vehicle management consolidation — removal regression', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
+      // A scorecard/clock modal (.zmodal-overlay, contains 📊) left open by a
+      // prior test intercepts pointer events in WebKit and blocks the click below.
+      document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
       S.vehicles = [{
         name: '2022 Silverado', nickname: 'Van',
         status: 'active', downtimeLog: [], addedDate: '2024-01-01',

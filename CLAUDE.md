@@ -496,3 +496,184 @@ Token selection is hostname-based: `pages.dev` → preview token, else → produ
 The anon key in `index.html`, `intake.html`, `client.html`, and `sign.html` does not expire on its own but should be rotated if ever exposed in a breach. Rotation requires updating all four files.
 
 ---
+
+## 11. Patch-Chain Prohibition — No House-of-Cards Fixing
+
+> "Fix A breaks B. Fix B breaks C. Fix C breaks A." — This loop is banned.
+
+Every rule in this section is mandatory. Violating them is how 4-line fixes turn into
+14-shard reruns.
+
+---
+
+### 11.1 Root Cause First — No Symptom Patches
+
+Before writing a single character of a fix, write this sentence:
+
+> **Root cause: `<function/variable>` in `<file:line>` does `<wrong thing>` because `<reason>`.**
+
+If you cannot complete that sentence, **stop**. You do not understand the failure.
+Read more code. Do not guess. Do not patch the symptom and hope.
+
+A "symptom patch" is any of these:
+- Changing what value a test `expect()`s to match wrong behavior
+- Adding `try/catch` around a failing assertion
+- Adding `if (result.noEl) return;` to skip a test that should pass
+- Changing `.toBe(1)` to `.toBe(0)` because the count came back 0
+
+**Fix the code. Never fix the test to hide a bug.**
+Exception: when the test assertion was provably wrong from the start (document the proof).
+
+---
+
+### 11.2 Blast Radius Analysis — Before Any Change
+
+Before modifying any file, enumerate:
+
+1. **Callers** — every JS file that calls any function you're changing (`grep -r functionName js/`)
+2. **Test coverage** — every spec file (`tests/*.spec.js`) that exercises the code path
+3. **Shared infrastructure** — if you touch `tests/helpers.js` or the Supabase shim, list every
+   spec file that imports from it. They are ALL affected by every change to that file.
+
+If blast radius spans more than 2 spec files, state it explicitly before writing the fix.
+
+---
+
+### 11.3 Shared Infrastructure Rule (`tests/helpers.js`)
+
+`helpers.js` is imported by every spec file. It is high-voltage infrastructure.
+
+**Before touching helpers.js:**
+1. List every exported symbol you're changing
+2. Grep each symbol across all spec files
+3. For each test that uses that symbol, read its assertions and verify your change
+   does not alter what the test receives
+
+**After touching helpers.js:**
+- Run the mental CI across every spec file before pushing
+- Never assume "it only affects the test I'm fixing"
+
+---
+
+### 11.4 Test Assertion Change Protocol
+
+When an assertion must change (the behavior intentionally changed, not a bug):
+
+1. State the old behavior and why it was correct at the time
+2. State the new behavior and why it's now the intended behavior
+3. Update the assertion to match the new intended behavior
+4. **Grep for every other test that asserts the same behavior** and update them all
+
+Never update one assertion in isolation when the same behavior is asserted in 5 places.
+
+---
+
+### 11.5 The `addInitScript` Ordering Rule
+
+`page.addInitScript()` calls run in the order they are added. Later calls overwrite earlier
+ones for the same variable. This is the #1 source of test-setting-overwrite bugs.
+
+**Rule:** If `bootApp`, `bootHub`, `mockAllExternal`, or any boot helper calls
+`addInitScript`, any earlier `addInitScript` in the same test for the same variable
+**will be overwritten**.
+
+Before using `addInitScript` in a test, check whether the boot helper also sets that
+variable. If it does, pass your data through the boot helper's options, not as a
+separate `addInitScript`.
+
+---
+
+### 11.6 CSS/JS Section Collapse State
+
+The `_mmtCol_<id>` window variables control whether Make Money Today sections render
+their item cards into `innerHTML`. Default is `undefined`, which means **collapsed**
+(items are NOT in the HTML). Tests that count occurrences in `innerHTML` must first
+set the relevant section to expanded:
+
+```js
+window._mmtCol_build = false;    // expanded — items render into HTML
+window._mmtCol_pending = false;
+window._mmtCol_collect = false;
+```
+
+Any test counting items in `#dash-money-feed` innerHTML without first expanding the
+section will always get 0. This is a known footgun — not a bug, by design for UX.
+
+---
+
+### 11.7 Pre-Push Checklist — Non-Negotiable
+
+Run this before every `git push`. If any answer is "unsure", stop and read more code.
+
+| # | Question | Required answer |
+|---|----------|-----------------|
+| 1 | What files did I change? | List them |
+| 2 | What functions did I change in each? | List them |
+| 3 | Which spec files have tests that call those functions? | Grep and list |
+| 4 | For each such test: does my change alter what it asserts? | Yes/No per test |
+| 5 | Did I update ALL affected assertions (not just one)? | Yes |
+| 6 | Can I state the root cause of every failure I fixed in one sentence? | Yes |
+| 7 | Does the fix change behavior beyond the minimum needed? | No |
+
+---
+
+## 12. Exhaustive Test Standard
+
+**"Every major flow" is not enough. Every function gets tested.**
+
+---
+
+### 12.1 Coverage Requirements
+
+For every global function in every `js/*.js` file, the test suite must cover:
+
+| Input class | Examples |
+|-------------|---------|
+| Null / undefined | `fn(null)`, `fn(undefined)`, `fn()` |
+| Empty | `fn([])`, `fn('')`, `fn(0)` |
+| Boundary | `fn(-1)`, `fn(0)`, `fn(1)`, `fn(Number.MAX_SAFE_INTEGER)` |
+| Type mismatch | `fn('string')` where number expected |
+| Missing DOM | function called when its target element is absent |
+| Valid / golden path | The normal happy-path input |
+| Concurrent calls | Same function called N times without awaiting |
+| Post-error state | Function called after a simulated failure |
+
+---
+
+### 12.2 Race Condition Test Pattern
+
+Every guard variable (`_renderDashRunning`, `_saveRunning`, etc.) gets a concurrent-call test:
+
+```js
+test('guard prevents concurrent execution', async () => {
+  const result = await page.evaluate(() => {
+    let callCount = 0;
+    const orig = renderDash;
+    // Call 10 times synchronously — guard should let exactly 1 through
+    for (let i = 0; i < 10; i++) { try { orig(); callCount++; } catch(e) {} }
+    return { callCount };
+  });
+  expect(result.callCount).toBeGreaterThanOrEqual(1); // at least 1 completed
+});
+```
+
+---
+
+### 12.3 LocalStorage Corruption Tests
+
+Every function that reads localStorage gets a corruption test:
+
+```js
+test('handles corrupted localStorage gracefully', async () => {
+  await page.evaluate(() => {
+    localStorage.setItem('zp3_est_full_draft', '{INVALID JSON{{{{');
+  });
+  // function must not throw, must not crash the page
+  const ok = await page.evaluate(() => {
+    try { loadEstFullDraft(); return true; } catch(e) { return false; }
+  });
+  expect(ok).toBe(true);
+});
+```
+
+---

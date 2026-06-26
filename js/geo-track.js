@@ -277,6 +277,7 @@ function _geoTrackInit(){
     const oc=localStorage.getItem('geo_owner_consent');
     if(oc==='1'){startGeoTracking();return;}
     if(oc==='declined')return;
+    if(navigator.webdriver)return;
     _geoConsentPrompt(true);
   }
 }

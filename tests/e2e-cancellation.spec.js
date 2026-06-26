@@ -235,11 +235,8 @@ test.describe('Hub snapshot — HTTP cache bypass', () => {
   });
 
   test('opening a proposal fetches the proposal JSON with cache:no-store + cb=', async ({ page }) => {
-    await page.addInitScript(d => { window.__mockProposalData = d; }, {
-      id: FAKE_BID_ID_1, status: 'signed', signerName: 'Logan Sample',
-      signedAt: new Date().toISOString(), amount: 5000,
-      proposalHtml: '<p>Interior painting scope</p>', clientName: 'Logan Sample',
-    });
+    // bootHub → mockAllExternal sets window.__mockProposalData = MOCK_PROPOSAL,
+    // so the rendered proposal content comes from MOCK_PROPOSAL.proposalHtml.
     await bootHub(page, hubWith());
     await page.evaluate(id => openProposal(id), FAKE_BID_ID_1);
     await page.waitForTimeout(500);
@@ -248,7 +245,7 @@ test.describe('Hub snapshot — HTTP cache bypass', () => {
     expect(calls[0].cache).toBe('no-store');
     expect(calls[0].url).toMatch(/[?&]cb=\d+/);
     const propText = await page.textContent('#prop-content');
-    expect(propText).toContain('Interior painting scope');
+    expect(propText).toContain('Painting scope');
     assertNoErrors(page, 'proposal cache-bypass fetch');
   });
 

@@ -1562,7 +1562,7 @@ function clearEstimatorForm(){
   const adjV=document.getElementById('est-adj-val');if(adjV)adjV.textContent='0%';
   const _ptogClear=document.getElementById('portfolio-toggle');
   if(_ptogClear){_ptogClear.checked=false;togglePortfolioShowcase();}
-  const _depPctClear=document.getElementById('e-deposit-pct');if(_depPctClear)_depPctClear.value=25;
+  const _depPctClear=document.getElementById('e-deposit-pct');if(_depPctClear)_depPctClear.value=(typeof S!=='undefined'&&S.depositPct!=null)?S.depositPct:25;
   const _wkndClear=document.getElementById('e-allow-weekend');if(_wkndClear)_wkndClear.checked=false;
   const _pPct=document.getElementById('portfolio-pct');if(_pPct)_pPct.value=15;
   const _plb=document.getElementById('proposal-link-bar');if(_plb){_plb.style.display='none';_plb.dataset.signingUrl='';}
@@ -2405,6 +2405,7 @@ function _reviewCO(bidId,clientId){
 }
 
 function _showCOSignDocument(b,c,coData,clientId){
+  _coSignDrawing=false; // reset stale drag state from any previous invocation
   const {desc,type,amount,delta,originalAmount,newAmount,coNum}=coData;
   const biz=S.bname||'TradeDesk';
   const dateStr=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
@@ -2476,21 +2477,27 @@ function _showCOSignDocument(b,c,coData,clientId){
       '<button id="co-send-hub-btn" onclick="_sendCOToHub('+b.id+','+clientId+')" style="width:100%;margin-top:10px;padding:13px;border-radius:8px;border:1.5px solid #2563eb;background:#EFF6FF;color:#1d4ed8;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">📤 Send to Client Hub — client signs remotely</button>'+
     '</div>';
   ov.appendChild(doc);document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  ov.addEventListener('click',e=>{if(e.target===ov){_coSignDrawing=false;ov.remove();}});
   // Store CO data on the element for retrieval
   ov.dataset.coData=JSON.stringify(coData);
-  // Wire up signature canvas
+  // Wire up signature canvas — AbortController ensures listeners die with the overlay
+  const _coSignAc=new AbortController();
+  const _coSignSig={signal:_coSignAc.signal};
+  ov.addEventListener('remove',()=>{_coSignAc.abort();_coSignDrawing=false;},{once:true});
+  // Abort when overlay is removed from DOM (MutationObserver watches for detach)
+  const _coSignObs=new MutationObserver(()=>{if(!document.contains(ov)){_coSignAc.abort();_coSignDrawing=false;_coSignObs.disconnect();}});
+  _coSignObs.observe(document.body,{childList:true,subtree:true});
   setTimeout(()=>{
     const canvas=document.getElementById('co-sign-canvas');if(!canvas)return;
     _coSignCanvas=canvas;_coSignCtx=canvas.getContext('2d');
     _coSignCtx.strokeStyle='#111';_coSignCtx.lineWidth=2;_coSignCtx.lineCap='round';_coSignCtx.lineJoin='round';
     const getPos=(e)=>{const r=canvas.getBoundingClientRect();const src=e.touches?e.touches[0]:e;return{x:(src.clientX-r.left)*(canvas.width/r.width),y:(src.clientY-r.top)*(canvas.height/r.height)};};
-    canvas.addEventListener('mousedown',e=>{_coSignDrawing=true;const p=getPos(e);_coSignCtx.beginPath();_coSignCtx.moveTo(p.x,p.y);});
-    canvas.addEventListener('mousemove',e=>{if(!_coSignDrawing)return;const p=getPos(e);_coSignCtx.lineTo(p.x,p.y);_coSignCtx.stroke();});
-    canvas.addEventListener('mouseup',()=>_coSignDrawing=false);
-    canvas.addEventListener('touchstart',e=>{e.preventDefault();_coSignDrawing=true;const p=getPos(e);_coSignCtx.beginPath();_coSignCtx.moveTo(p.x,p.y);},{passive:false});
-    canvas.addEventListener('touchmove',e=>{e.preventDefault();if(!_coSignDrawing)return;const p=getPos(e);_coSignCtx.lineTo(p.x,p.y);_coSignCtx.stroke();},{passive:false});
-    canvas.addEventListener('touchend',()=>_coSignDrawing=false);
+    canvas.addEventListener('mousedown',e=>{_coSignDrawing=true;const p=getPos(e);_coSignCtx.beginPath();_coSignCtx.moveTo(p.x,p.y);},_coSignSig);
+    canvas.addEventListener('mousemove',e=>{if(!_coSignDrawing)return;const p=getPos(e);_coSignCtx.lineTo(p.x,p.y);_coSignCtx.stroke();},_coSignSig);
+    canvas.addEventListener('mouseup',()=>_coSignDrawing=false,_coSignSig);
+    canvas.addEventListener('touchstart',e=>{e.preventDefault();_coSignDrawing=true;const p=getPos(e);_coSignCtx.beginPath();_coSignCtx.moveTo(p.x,p.y);},{passive:false,signal:_coSignAc.signal});
+    canvas.addEventListener('touchmove',e=>{e.preventDefault();if(!_coSignDrawing)return;const p=getPos(e);_coSignCtx.lineTo(p.x,p.y);_coSignCtx.stroke();},{passive:false,signal:_coSignAc.signal});
+    canvas.addEventListener('touchend',()=>_coSignDrawing=false,_coSignSig);
   },100);
 }
 

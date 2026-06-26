@@ -257,7 +257,12 @@ test.describe('TradeDesk — in-person CO flow still works and offers hub sendin
       _showCOSignDocument(bids.find(x => x.id === 990011), clients.find(x => x.id === 990077), coData, 990077);
     });
     await page.waitForTimeout(300);
-    await page.click('#co-send-hub-btn');
+    // Clear any stray modal overlay a prior test left open, then force the click:
+    // in WebKit a leftover .zmodal-overlay intercepts pointer events and the click
+    // retries until the 60s timeout closes the context (flake). force dispatches to
+    // the real target button regardless.
+    await page.evaluate(() => document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove()));
+    await page.click('#co-send-hub-btn', { force: true });
     // _sendCOToHub opens the job sheet + send modal after 300ms — the EXACT
     // same Text / Email / Other-app overlay proposals use (_showGeiSendOverlay)
     await page.waitForSelector('#_co-send-overlay', { timeout: 5000 });

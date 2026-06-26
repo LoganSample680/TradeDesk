@@ -1,4 +1,5 @@
 let _stripeConnectStatus=null; // cached: {connected, charges_enabled, details_submitted, stripe_account_id}
+Object.defineProperty(window,'_stripeConnectStatus',{get:()=>_stripeConnectStatus,set:v=>{_stripeConnectStatus=v;},configurable:true});
 
 // ── Employee invite URL handling ─────────────────────────────────────────────
 (function(){
@@ -59,6 +60,7 @@ async function loadStripeConnectStatus(){
 }
 
 function _renderStripeConnectUI(el,data){
+  if(!el)return;
   if(!data||!data.connected){
     el.innerHTML=
       '<div style="font-size:13px;color:var(--text2);margin-bottom:10px;line-height:1.5">Connect your Stripe account so clients can pay you directly via card or bank transfer. Money lands in your Stripe account instantly.</div>'+
@@ -390,13 +392,15 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = location.origin + '/api';
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.25.26.40';
+const APP_VERSION='06.26.26.80';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
-// Expose sync state on window so E2E tests can observe it (let variables are not window properties)
+// Expose sync state and auth objects on window so E2E tests can observe/stub them
 Object.defineProperty(window,'_syncStatus',{get:()=>_syncStatus,configurable:true});
 Object.defineProperty(window,'_supaCloudLoaded',{get:()=>_supaCloudLoaded,configurable:true});
+Object.defineProperty(window,'_supa',{get:()=>_supa,set:v=>{_supa=v;},configurable:true});
+Object.defineProperty(window,'_supaUser',{get:()=>_supaUser,set:v=>{_supaUser=v;},configurable:true});
 
 // Tracks IDs present in each table after the last successful load or save.
 // Used to detect deletions (record in _lastKnownIds but not in current array).
@@ -2648,21 +2652,24 @@ async function _fetchProposalViews(){
       .not('bid_id','is',null)
       .order('opened_at',{ascending:false});
     if(data&&!error){
-      _proposalViewsByBid={};
-      _proposalViewsByBidHubClient={};
-      _proposalViewsByBidClient={};
-      _proposalViewsByBidContractor={};
-      _proposalViewsByBidHubCount={};
-      _proposalViewsByBidClientCount={};
+      // Build into temporaries first, then swap atomically — prevents a renderDash()
+      // mid-flight from seeing an empty dict during the rebuild window (flicker race).
+      const _pvBid={},_pvHub={},_pvClient={},_pvCon={},_pvHubCnt={},_pvCliCnt={};
       data.forEach(v=>{
         if(!v.bid_id)return;
-        if(!_proposalViewsByBid[v.bid_id])_proposalViewsByBid[v.bid_id]=v.opened_at;
-        if(v.hub_opened_at&&!_proposalViewsByBidHubClient[v.bid_id])_proposalViewsByBidHubClient[v.bid_id]=v.hub_opened_at;
-        if(v.client_opened_at&&!_proposalViewsByBidClient[v.bid_id])_proposalViewsByBidClient[v.bid_id]=v.client_opened_at;
-        if(v.contractor_opened_at&&!_proposalViewsByBidContractor[v.bid_id])_proposalViewsByBidContractor[v.bid_id]=v.contractor_opened_at;
-        if(v.hub_view_count)_proposalViewsByBidHubCount[v.bid_id]=(v.hub_view_count||0);
-        if(v.client_view_count)_proposalViewsByBidClientCount[v.bid_id]=(v.client_view_count||0);
+        if(!_pvBid[v.bid_id])_pvBid[v.bid_id]=v.opened_at;
+        if(v.hub_opened_at&&!_pvHub[v.bid_id])_pvHub[v.bid_id]=v.hub_opened_at;
+        if(v.client_opened_at&&!_pvClient[v.bid_id])_pvClient[v.bid_id]=v.client_opened_at;
+        if(v.contractor_opened_at&&!_pvCon[v.bid_id])_pvCon[v.bid_id]=v.contractor_opened_at;
+        if(v.hub_view_count)_pvHubCnt[v.bid_id]=(v.hub_view_count||0);
+        if(v.client_view_count)_pvCliCnt[v.bid_id]=(v.client_view_count||0);
       });
+      _proposalViewsByBid=_pvBid;
+      _proposalViewsByBidHubClient=_pvHub;
+      _proposalViewsByBidClient=_pvClient;
+      _proposalViewsByBidContractor=_pvCon;
+      _proposalViewsByBidHubCount=_pvHubCnt;
+      _proposalViewsByBidClientCount=_pvCliCnt;
       renderDash();
     }
   }catch(e){}

@@ -101,7 +101,7 @@ const _BRAND_SWATCH_NAMES = {
   '#2d5da8':'Denim','#166534':'Forest','#92400e':'Amber','#991b1b':'Crimson','#6d28d9':'Violet','#18181b':'Charcoal'
 };
 function _brandColorName(hex) {
-  return _BRAND_SWATCH_NAMES[(hex||'').toLowerCase()] || 'Custom';
+  return _BRAND_SWATCH_NAMES[String(hex||'').toLowerCase()] || 'Custom';
 }
 function _renderBrandSwatches(selected) {
   const container = document.getElementById('set-brand-swatches');
@@ -168,7 +168,7 @@ function _renderIntegrations() {
 }
 function _openStripeConnect() {
   const el = document.getElementById('stripe-connect-status-ui');
-  if (el) { el.style.display = 'block'; el.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+  if (el) { el.style.display = 'block'; try{el.scrollIntoView({behavior:'smooth',block:'nearest'});}catch(e){} }
   if (typeof _renderStripeConnectUI === 'function') _renderStripeConnectUI();
 }
 
@@ -209,7 +209,7 @@ function _licStatusBadge(lic){
 const _STATE_ABBRS=['AL','AK','AZ','AR','CA','CO','CT','DC','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
 const _STATE_RE=/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/;
 function _stateNameOf(st){return(typeof STATE_TAX!=='undefined'&&STATE_TAX[st])?STATE_TAX[st].name:st;}
-function detectStateFromAddr(addr){if(!addr)return null;const m=addr.toUpperCase().match(_STATE_RE);return m?m[1]:null;}
+function detectStateFromAddr(addr){if(!addr)return null;const m=String(addr).toUpperCase().match(_STATE_RE);return m?m[1]:null;}
 function _initServiceStates(){
   // Auto-populate from existing client + bid addresses on first use
   const found=new Set();
@@ -345,6 +345,7 @@ function setLicFilter(cat){_licFilter=cat;renderLicensing();}
 function _licDateDisp(iso){if(!iso)return'';try{const[y,m,d]=iso.split('-');return m+'/'+d+'/'+y;}catch(e){return iso;}}
 function _licDateParse(s){if(!s||!s.trim())return'';const t=s.trim();if(/^\d{4}-\d{2}-\d{2}$/.test(t))return t;const m1=t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);if(m1)return m1[3]+'-'+m1[1].padStart(2,'0')+'-'+m1[2].padStart(2,'0');const m2=t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);if(m2)return(parseInt(m2[3])>50?'19':'20')+m2[3]+'-'+m2[1].padStart(2,'0')+'-'+m2[2].padStart(2,'0');return'';}
 let _editingLicId=null;
+Object.defineProperty(window,'_editingLicId',{get:()=>_editingLicId,set:v=>{_editingLicId=v;},configurable:true});
 function openAddLicense(prefillTypeId){
   _editingLicId=null;_showLicModal(null);
   if(prefillTypeId){const sel=document.getElementById('_lic-type-sel');if(sel){sel.value=prefillTypeId;_licTypeChanged(sel);}}
@@ -748,7 +749,7 @@ function loadSettingsForm(){
   sf('set-labor-rate',S.laborRate||45);sf('set-owner-name',getOwnerName()||'');sf('set-bname',S.bname);sf('set-state',S.state||'KS');
   _renderLogoPreview();
   if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-subdomain',S.subdomain||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-byears',S.byears||'');sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
-  sf('set-margin',S.margin);sf('set-cov',S.cov);sf('set-mm',S.mm);sf('set-supplies-rate',S.suppliesRate||0.12);sf('set-r-walls',S.rWalls||1.30);sf('set-r-ceil',S.rCeil||1.00);sf('set-r-trim',S.rTrim||4.00);sf('set-r-door',S.rDoor||95);sf('set-r-win',S.rWin||50);sf('set-r-ext',S.rExt||1.10);sf('set-r-deck',S.rDeck||1.00);
+  sf('set-margin',S.margin);sf('set-deposit-pct',S.depositPct!=null?S.depositPct:25);sf('set-cov',S.cov);sf('set-mm',S.mm);sf('set-supplies-rate',S.suppliesRate||0.12);sf('set-r-walls',S.rWalls||1.30);sf('set-r-ceil',S.rCeil||1.00);sf('set-r-trim',S.rTrim||4.00);sf('set-r-door',S.rDoor||95);sf('set-r-win',S.rWin||50);sf('set-r-ext',S.rExt||1.10);sf('set-r-deck',S.rDeck||1.00);
   sf('set-review-url',S.reviewUrl||'');
   const brandColor=S.brandColor||'#2D5DA8';
   sf('set-brandcolor',brandColor);
@@ -849,7 +850,7 @@ function saveSettings(){
     smsReminder:gs('set-sms-reminder')||_smsD.reminder,
     smsSecond:gs('set-sms-second')||_smsD.second,
     smsIntent:gs('set-sms-intent')||_smsD.intent,
-    txStatus:gs('set-txstatus')||'single',goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:S.bitlyKey||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.25,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||'',
+    txStatus:gs('set-txstatus')||'single',goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:S.bitlyKey||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,depositPct:gf('set-deposit-pct')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.25,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||'',
     baddr:gs('set-baddr')||'',bcity:gs('set-bcity')||'',bzip:gs('set-bzip')||'',state:gs('set-bstate-display')||gs('set-state')||S.state||'',
     poweredBy:document.getElementById('set-powered-by')?.checked!==false,
     teamTracking:true, // crew tracking is always on — a condition of using TradeDesk

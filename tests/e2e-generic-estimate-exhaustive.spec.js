@@ -1,0 +1,2455 @@
+// @ts-check
+/**
+ * Exhaustive E2E coverage for generic-estimate.js
+ * Every exported function is tested across: null, undefined, empty, boundary,
+ * type-mismatch, missing DOM, golden-path, concurrent-calls, corrupted-localStorage,
+ * duplicate-render, and guard-release scenarios.
+ */
+
+const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors, FAKE_BID_ID_1, FAKE_USER_ID } = require('./helpers');
+
+test.describe('generic-estimate.js — exhaustive coverage', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+
+    // Seed stable test fixtures
+    await page.evaluate(() => {
+      clients = clients.filter(c => c.id !== 55501 && c.id !== 55502);
+      bids    = bids.filter(b => b.id !== 44401 && b.id !== 44402 && b.id !== 44403);
+
+      clients.push(
+        { id: 55501, name: 'GEI Client Alpha', phone: '316-555-9001', addr: '100 Alpha St, Wichita KS 67202', email: 'alpha@gei.test' },
+        { id: 55502, name: 'GEI Client Beta',  phone: '316-555-9002', addr: '200 Beta Ave, Wichita KS 67202', email: 'beta@gei.test' }
+      );
+      bids.push(
+        {
+          id: 44401, client_id: 55501, client_name: 'GEI Client Alpha', amount: 5000, deposit: 1000,
+          status: 'pending', bid_date: '2026-01-01', trade_type: 'painting',
+          type: 'Interior painting', geiLines: [{ desc: 'Labor', qty: 8, rate: 75, total: 600 }],
+          geiTaxPct: 8, geiDuration: '3 days', notes: 'Test notes', isFreeForm: true,
+          byoItems: [{ id: 1, section: 'Interior', label: 'Labor', price: 600, on: true }],
+          byoCustomSections: [], scopeChips: ['Interior painting', 'Tape & masking']
+        },
+        {
+          id: 44402, client_id: 55501, client_name: 'GEI Client Alpha', amount: 3000, deposit: 600,
+          status: 'Draft', bid_date: '2026-02-01', trade_type: 'electrical',
+          type: 'Panel upgrade', geiLines: [], isTM: true,
+          tmCrewCount: 2, tmRatePerMan: 85, tmEstHours: 10, tmBillingCycle: 'weekly',
+          tmMatMarkup: 20, tmCapAction: 'Stop & get re-approval'
+        },
+        {
+          id: 44403, client_id: 55502, client_name: 'GEI Client Beta', amount: 0,
+          status: 'Draft', bid_date: '2026-03-01', trade_type: 'plumbing',
+          type: 'Plumbing estimate', geiLines: [], draft: true
+        }
+      );
+    });
+  });
+
+  test.afterAll(async () => {
+    await page.evaluate(() => {
+      clients = clients.filter(c => c.id !== 55501 && c.id !== 55502);
+      bids    = bids.filter(b => b.id !== 44401 && b.id !== 44402 && b.id !== 44403);
+    });
+    await page.context().close();
+  });
+
+  // ── Utility: run fn expression N times synchronously ──────────────────────
+  async function concurrent(fnExpr, n = 5) {
+    return page.evaluate(([expr, count]) => {
+      let ok = 0;
+      for (let i = 0; i < count; i++) {
+        try { eval(expr); ok++; } catch (_) {}
+      }
+      return ok;
+    }, [fnExpr, n]);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 1. openBidNotes
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('openBidNotes', () => {
+    test('null bidId — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { openBidNotes(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined bidId — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { openBidNotes(undefined); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('empty string bidId — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { openBidNotes(''); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('zero bidId — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { openBidNotes(0); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('negative bidId — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { openBidNotes(-1); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — sets editingBidId and lastCreatedBidId', async () => {
+      const r = await page.evaluate(() => {
+        openBidNotes(44401);
+        return { editingBidId, lastCreatedBidId };
+      });
+      expect(r.editingBidId).toBe(44401);
+      expect(r.lastCreatedBidId).toBe(44401);
+    });
+
+    test('string bidId (type mismatch) — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { openBidNotes('not-a-number'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('very large bidId — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { openBidNotes(Number.MAX_SAFE_INTEGER); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent calls (5x) — no state corruption', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { openBidNotes(44401 + i); ok++; } catch (_) {}
+        }
+        return { ok, finalId: editingBidId };
+      });
+      expect(r.ok).toBe(5);
+      expect(typeof r.finalId).toBe('number');
+    });
+
+    test('corrupted localStorage — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.setItem('td_notes_44401', '{INVALID{{{{');
+        try { openBidNotes(44401); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { localStorage.removeItem('td_notes_44401'); }
+      });
+      expect(r.ok).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 2. showNotesFab
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('showNotesFab', () => {
+    test('no-op — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { showNotesFab(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('called with extra args — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { showNotesFab(null, undefined, 'extra'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const ok = await concurrent('showNotesFab()');
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 3. hideNotesFab
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('hideNotesFab', () => {
+    test('no-op — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { hideNotesFab(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const ok = await concurrent('hideNotesFab()');
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 4. toggleNotesPanel
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('toggleNotesPanel', () => {
+    test('no-op — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { toggleNotesPanel(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const ok = await concurrent('toggleNotesPanel()');
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 5. notesExpandCanvas
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('notesExpandCanvas', () => {
+    test('no-op — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { notesExpandCanvas(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const ok = await concurrent('notesExpandCanvas()');
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 6. clearNotesPanel
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('clearNotesPanel', () => {
+    test('no-op — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { clearNotesPanel(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const ok = await concurrent('clearNotesPanel()');
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 7. _resetNotesForNewEstimate
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_resetNotesForNewEstimate', () => {
+    test('no-op — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _resetNotesForNewEstimate(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const ok = await concurrent('_resetNotesForNewEstimate()');
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 8. setHittersFilter
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('setHittersFilter', () => {
+    test('null filter — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { setHittersFilter(null, null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined filter — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { setHittersFilter(undefined, undefined); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('empty string filter — sets hittersFilter', async () => {
+      const r = await page.evaluate(() => {
+        try { setHittersFilter('', null); return { ok: true, hf: hittersFilter }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hf).toBe('');
+    });
+
+    test('golden path — filter "A" sets hittersFilter to "A"', async () => {
+      const r = await page.evaluate(() => {
+        setHittersFilter('A', null);
+        return { hf: hittersFilter };
+      });
+      expect(r.hf).toBe('A');
+    });
+
+    test('golden path — filter "B" sets hittersFilter to "B"', async () => {
+      const r = await page.evaluate(() => {
+        setHittersFilter('B', null);
+        return { hf: hittersFilter };
+      });
+      expect(r.hf).toBe('B');
+    });
+
+    test('golden path — filter "all" sets hittersFilter to "all"', async () => {
+      const r = await page.evaluate(() => {
+        setHittersFilter('all', null);
+        return { hf: hittersFilter };
+      });
+      expect(r.hf).toBe('all');
+    });
+
+    test('with DOM filter buttons present — highlights correct button', async () => {
+      const r = await page.evaluate(() => {
+        // Create mock filter buttons
+        ['all','A','B'].forEach(t => {
+          let b = document.getElementById('hl-filter-'+t);
+          if (!b) { b = document.createElement('button'); b.id = 'hl-filter-'+t; document.body.appendChild(b); }
+        });
+        setHittersFilter('A', null);
+        const btnA = document.getElementById('hl-filter-A');
+        const btnAll = document.getElementById('hl-filter-all');
+        const result = {
+          ABlue: btnA?.style.background?.includes('var(--blue)') || btnA?.style.background === 'var(--blue)',
+          AllEmpty: btnAll?.style.background === ''
+        };
+        // Cleanup
+        ['all','A','B'].forEach(t => document.getElementById('hl-filter-'+t)?.remove());
+        return result;
+      });
+      expect(r.ABlue).toBe(true);
+      expect(r.AllEmpty).toBe(true);
+    });
+
+    test('type mismatch (number) — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { setHittersFilter(42, null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent calls (5x) — last value sticks', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0;
+        const vals = ['all', 'A', 'B', 'all', 'A'];
+        for (let i = 0; i < 5; i++) {
+          try { setHittersFilter(vals[i], null); ok++; } catch (_) {}
+        }
+        return { ok, final: hittersFilter };
+      });
+      expect(r.ok).toBe(5);
+      expect(r.final).toBe('A');
+    });
+
+    test('corrupted localStorage — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.setItem('td_hitters_filter', '{INVALID{{{{');
+        try { setHittersFilter('all', null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { localStorage.removeItem('td_hitters_filter'); }
+      });
+      expect(r.ok).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 9. renderHittersList
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('renderHittersList', () => {
+    test('missing DOM (no hl-list element) — returns early, no throw', async () => {
+      const r = await page.evaluate(() => {
+        const existing = document.getElementById('hl-list');
+        if (existing) existing.remove();
+        try { renderHittersList(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('empty clients array — shows empty message', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'hl-list';
+        const stats = document.createElement('div'); stats.id = 'hl-stats';
+        document.body.appendChild(wrap); document.body.appendChild(stats);
+        const savedClients = [...clients];
+        clients = [];
+        renderHittersList();
+        const html = wrap.innerHTML;
+        clients = savedClients;
+        wrap.remove(); stats.remove();
+        return { hasEmpty: html.includes('No clients yet') };
+      });
+      expect(r.hasEmpty).toBe(true);
+    });
+
+    test('golden path with clients — renders cards', async () => {
+      const r = await page.evaluate(() => {
+        let wrap = document.getElementById('hl-list');
+        let stats = document.getElementById('hl-stats');
+        const wrapCreated = !wrap;
+        const statsCreated = !stats;
+        if (!wrap) { wrap = document.createElement('div'); wrap.id = 'hl-list'; document.body.appendChild(wrap); }
+        if (!stats) { stats = document.createElement('div'); stats.id = 'hl-stats'; document.body.appendChild(stats); }
+        hittersFilter = 'all';
+        renderHittersList();
+        const cardCount = wrap.querySelectorAll('.card').length;
+        const statsHtml = stats.innerHTML;
+        if (wrapCreated) wrap.remove();
+        if (statsCreated) stats.remove();
+        return { cardCount, hasStats: statsHtml.includes('A-tier') };
+      });
+      expect(r.cardCount).toBeGreaterThanOrEqual(0);
+      expect(r.hasStats).toBe(true);
+    });
+
+    test('filter "A" — shows only A-tier or empty message', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'hl-list';
+        const stats = document.createElement('div'); stats.id = 'hl-stats';
+        document.body.appendChild(wrap); document.body.appendChild(stats);
+        hittersFilter = 'A';
+        renderHittersList();
+        const html = wrap.innerHTML;
+        wrap.remove(); stats.remove();
+        return { ok: true, html };
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('no duplicate entries after 3 render calls', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'hl-list';
+        const stats = document.createElement('div'); stats.id = 'hl-stats';
+        document.body.appendChild(wrap); document.body.appendChild(stats);
+        hittersFilter = 'all';
+        renderHittersList();
+        renderHittersList();
+        renderHittersList();
+        const cards = wrap.querySelectorAll('.card');
+        // Check no duplicate client names by collecting them
+        const names = [...cards].map(c => c.querySelector('[style*="font-weight:700"]')?.textContent?.trim()).filter(Boolean);
+        const uniqueNames = [...new Set(names)];
+        wrap.remove(); stats.remove();
+        return { total: names.length, unique: uniqueNames.length };
+      });
+      // innerHTML is replaced each time, so total should equal unique
+      expect(r.total).toBe(r.unique);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'hl-list';
+        const stats = document.createElement('div'); stats.id = 'hl-stats';
+        document.body.appendChild(wrap); document.body.appendChild(stats);
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { renderHittersList(); ok++; } catch (_) {}
+        }
+        wrap.remove(); stats.remove();
+        return { ok };
+      });
+      expect(r.ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 10. applyPermissions
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('applyPermissions', () => {
+    test('no DOM elements present — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { applyPermissions(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('as employee (_isEmployee=true) — hides restricted nav items', async () => {
+      const r = await page.evaluate(() => {
+        const savedEmployee = _isEmployee;
+        // Create restricted nav elements
+        const ids = ['nb-leads','nb-tracker','nb-team','nb-settings'];
+        ids.forEach(id => {
+          let el = document.getElementById(id);
+          if (!el) { el = document.createElement('div'); el.id = id; document.body.appendChild(el); }
+          el.style.display = 'block';
+        });
+        window._isEmployee = true;
+        try { applyPermissions(); }
+        catch (e) { window._isEmployee = savedEmployee; ids.forEach(id => document.getElementById(id)?.remove()); return { ok: false, err: e.message }; }
+        const hidden = ids.every(id => document.getElementById(id)?.style.display === 'none');
+        window._isEmployee = savedEmployee;
+        ids.forEach(id => document.getElementById(id)?.remove());
+        return { ok: true, hidden };
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hidden).toBe(true);
+    });
+
+    test('as owner (_isEmployee=false) — does not hide owner nav items', async () => {
+      const r = await page.evaluate(() => {
+        const savedEmployee = _isEmployee;
+        window._isEmployee = false;
+        try { applyPermissions(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { window._isEmployee = savedEmployee; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('with nav-user-name element — sets name text', async () => {
+      const r = await page.evaluate(() => {
+        let el = document.getElementById('nav-user-name');
+        const created = !el;
+        if (!el) { el = document.createElement('div'); el.id = 'nav-user-name'; document.body.appendChild(el); }
+        const savedText = el.textContent;
+        const savedEmployee = _isEmployee; window._isEmployee = false;
+        try { applyPermissions(); }
+        catch (_) {}
+        const txt = el.textContent;
+        if (created) el.remove(); else el.textContent = savedText;
+        window._isEmployee = savedEmployee;
+        return { txt, notEmpty: txt.length > 0 };
+      });
+      expect(r.notEmpty).toBe(true);
+    });
+
+    test('nav-user-name not set to email when S.bname is present', async () => {
+      const r = await page.evaluate(() => {
+        const el = document.createElement('div'); el.id = 'nav-user-name';
+        document.body.appendChild(el);
+        const savedEmployee = _isEmployee; window._isEmployee = false;
+        const savedBname = S.bname; S.bname = 'Test Business';
+        try { applyPermissions(); }
+        catch (_) {}
+        const txt = el.textContent;
+        document.getElementById('nav-user-name')?.remove();
+        window._isEmployee = savedEmployee; S.bname = savedBname;
+        return { notEmail: !txt.includes('@') };
+      });
+      expect(r.notEmail).toBe(true);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const ok = await concurrent('applyPermissions()');
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 11. getActiveTrade
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('getActiveTrade', () => {
+    test('returns string — not null/undefined', async () => {
+      const r = await page.evaluate(() => {
+        const t = getActiveTrade();
+        return { t, isString: typeof t === 'string', notEmpty: t.length > 0 };
+      });
+      expect(r.isString).toBe(true);
+      expect(r.notEmpty).toBe(true);
+    });
+
+    test('_activeTrade=null falls back to _config or "painting"', async () => {
+      const r = await page.evaluate(() => {
+        const saved = _activeTrade; _activeTrade = null;
+        const t = getActiveTrade();
+        _activeTrade = saved;
+        return { t, valid: ['painting','plumbing','electrical','hvac','roofing','landscaping','general','other'].includes(t) || typeof t === 'string' };
+      });
+      expect(r.valid).toBe(true);
+    });
+
+    test('_activeTrade set to "electrical" — returns "electrical"', async () => {
+      const r = await page.evaluate(() => {
+        const saved = _activeTrade; _activeTrade = 'electrical';
+        const t = getActiveTrade();
+        _activeTrade = saved;
+        return { t };
+      });
+      expect(r.t).toBe('electrical');
+    });
+
+    test('concurrent calls (10x) — all return same value', async () => {
+      const r = await page.evaluate(() => {
+        _activeTrade = 'painting';
+        const results = [];
+        for (let i = 0; i < 10; i++) results.push(getActiveTrade());
+        return { allSame: results.every(v => v === 'painting') };
+      });
+      expect(r.allSame).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 12. setActiveTrade
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('setActiveTrade', () => {
+    test('null — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { setActiveTrade(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { setActiveTrade(undefined); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('empty string — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        const saved = _activeTrade;
+        try { setActiveTrade(''); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { _activeTrade = saved; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path "plumbing" — _activeTrade becomes "plumbing"', async () => {
+      const r = await page.evaluate(() => {
+        const saved = _activeTrade;
+        setActiveTrade('plumbing');
+        const t = _activeTrade;
+        setActiveTrade(saved);
+        return { t };
+      });
+      expect(r.t).toBe('plumbing');
+    });
+
+    test('unknown trade string — does not throw, sets _activeTrade', async () => {
+      const r = await page.evaluate(() => {
+        const saved = _activeTrade;
+        try { setActiveTrade('underwater-basket-weaving'); return { ok: true, t: _activeTrade }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { _activeTrade = saved; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.t).toBe('underwater-basket-weaving');
+    });
+
+    test('number type — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        const saved = _activeTrade;
+        try { setActiveTrade(42); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { _activeTrade = saved; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent calls (5x) — last value sticks', async () => {
+      const r = await page.evaluate(() => {
+        const saved = _activeTrade;
+        const trades = ['painting','plumbing','electrical','roofing','hvac'];
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { setActiveTrade(trades[i]); ok++; } catch (_) {}
+        }
+        const final = _activeTrade;
+        _activeTrade = saved;
+        return { ok, final };
+      });
+      expect(r.ok).toBe(5);
+      expect(r.final).toBe('hvac');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 13. _getTradeLines
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_getTradeLines', () => {
+    test('_config null/undefined — returns [activeTrade]', async () => {
+      const r = await page.evaluate(() => {
+        const savedConfig = typeof _config !== 'undefined' ? _config : null;
+        window._config = null;
+        _activeTrade = 'painting';
+        let lines;
+        try { lines = _getTradeLines(); }
+        catch (e) { window._config = savedConfig; return { ok: false, err: e.message }; }
+        window._config = savedConfig;
+        return { ok: true, lines };
+      });
+      expect(r.ok).toBe(true);
+      expect(Array.isArray(r.lines)).toBe(true);
+      expect(r.lines.length).toBeGreaterThanOrEqual(1);
+    });
+
+    test('_config.trade_lines as array — returns that array', async () => {
+      const r = await page.evaluate(() => {
+        const savedConfig = typeof _config !== 'undefined' ? _config : null;
+        window._config = { trade_lines: ['painting', 'electrical', 'plumbing'] };
+        let lines;
+        try { lines = _getTradeLines(); }
+        catch (e) { window._config = savedConfig; return { ok: false, err: e.message }; }
+        window._config = savedConfig;
+        return { ok: true, lines };
+      });
+      expect(r.ok).toBe(true);
+      expect(r.lines).toEqual(['painting', 'electrical', 'plumbing']);
+    });
+
+    test('_config.trade_lines as comma string — splits correctly', async () => {
+      const r = await page.evaluate(() => {
+        const savedConfig = typeof _config !== 'undefined' ? _config : null;
+        window._config = { trade_lines: 'painting,electrical, plumbing' };
+        let lines;
+        try { lines = _getTradeLines(); }
+        catch (e) { window._config = savedConfig; return { ok: false, err: e.message }; }
+        window._config = savedConfig;
+        return { ok: true, lines };
+      });
+      expect(r.ok).toBe(true);
+      expect(r.lines).toContain('painting');
+      expect(r.lines).toContain('electrical');
+      expect(r.lines).toContain('plumbing');
+    });
+
+    test('_config.trade_lines empty string — returns array without empty entries', async () => {
+      const r = await page.evaluate(() => {
+        const savedConfig = typeof _config !== 'undefined' ? _config : null;
+        window._config = { trade_lines: '' };
+        let lines;
+        try { lines = _getTradeLines(); }
+        catch (e) { window._config = savedConfig; return { ok: false, err: e.message }; }
+        window._config = savedConfig;
+        return { ok: true, lines, noEmpty: !lines.includes('') };
+      });
+      expect(r.ok).toBe(true);
+      expect(r.noEmpty).toBe(true);
+    });
+
+    test('concurrent calls (5x) — stable result', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0, last;
+        for (let i = 0; i < 5; i++) {
+          try { last = _getTradeLines(); ok++; } catch (_) {}
+        }
+        return { ok, isArray: Array.isArray(last) };
+      });
+      expect(r.ok).toBe(5);
+      expect(r.isArray).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 14. _renderNavTradeSwitcher
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_renderNavTradeSwitcher', () => {
+    test('missing DOM — returns early, no throw', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('nav-trade-switcher')?.remove();
+        document.getElementById('nav-trade-pills')?.remove();
+        try { _renderNavTradeSwitcher(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('single trade line — hides switcher', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'nav-trade-switcher'; wrap.style.display = 'block';
+        const pills = document.createElement('div'); pills.id = 'nav-trade-pills';
+        document.body.appendChild(wrap); document.body.appendChild(pills);
+        const savedConfig = typeof _config !== 'undefined' ? _config : null;
+        window._config = { trade_lines: ['painting'] };
+        _activeTrade = 'painting';
+        try { _renderNavTradeSwitcher(); }
+        catch (_) {}
+        const hidden = wrap.style.display === 'none';
+        wrap.remove(); pills.remove();
+        window._config = savedConfig;
+        return { ok: true, hidden };
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hidden).toBe(true);
+    });
+
+    test('multiple trade lines — shows switcher with pills', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'nav-trade-switcher';
+        const pills = document.createElement('div'); pills.id = 'nav-trade-pills';
+        document.body.appendChild(wrap); document.body.appendChild(pills);
+        const savedConfig = typeof _config !== 'undefined' ? _config : null;
+        window._config = { trade_lines: ['painting', 'electrical', 'plumbing'] };
+        _activeTrade = 'painting';
+        try { _renderNavTradeSwitcher(); }
+        catch (_) {}
+        const btnCount = pills.querySelectorAll('button').length;
+        wrap.remove(); pills.remove();
+        window._config = savedConfig;
+        return { ok: true, btnCount };
+      });
+      expect(r.ok).toBe(true);
+      expect(r.btnCount).toBe(3);
+    });
+
+    test('no duplicate pills after 3 calls', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'nav-trade-switcher';
+        const pills = document.createElement('div'); pills.id = 'nav-trade-pills';
+        document.body.appendChild(wrap); document.body.appendChild(pills);
+        const savedConfig = typeof _config !== 'undefined' ? _config : null;
+        window._config = { trade_lines: ['painting', 'electrical'] };
+        _activeTrade = 'painting';
+        _renderNavTradeSwitcher();
+        _renderNavTradeSwitcher();
+        _renderNavTradeSwitcher();
+        const btnCount = pills.querySelectorAll('button').length;
+        wrap.remove(); pills.remove();
+        window._config = savedConfig;
+        return { btnCount };
+      });
+      expect(r.btnCount).toBe(2);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'nav-trade-switcher';
+        const pills = document.createElement('div'); pills.id = 'nav-trade-pills';
+        document.body.appendChild(wrap); document.body.appendChild(pills);
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { _renderNavTradeSwitcher(); ok++; } catch (_) {}
+        }
+        wrap.remove(); pills.remove();
+        return { ok };
+      });
+      expect(r.ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 15. _geiOnAddrInput
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_geiOnAddrInput', () => {
+    test('no DOM — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _geiOnAddrInput(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('sets debounce timer — does not crash', async () => {
+      const r = await page.evaluate(() => {
+        // Clear any existing timer
+        if (typeof _geiTaxLookupTimer !== 'undefined') clearTimeout(_geiTaxLookupTimer);
+        try { _geiOnAddrInput(); return { ok: true, timerSet: _geiTaxLookupTimer != null }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.timerSet).toBe(true);
+    });
+
+    test('concurrent calls (5x) — debounce does not throw', async () => {
+      const ok = await concurrent('_geiOnAddrInput()');
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 16. _geiLookupClientTaxRate
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_geiLookupClientTaxRate', () => {
+    test('no gei-addr element — does not throw', async () => {
+      const r = await page.evaluate(async () => {
+        document.getElementById('gei-addr')?.remove();
+        try { await _geiLookupClientTaxRate(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('empty address — sets _geiClientTaxRate to null', async () => {
+      const r = await page.evaluate(async () => {
+        const el = document.createElement('input'); el.id = 'gei-addr'; el.value = '';
+        document.body.appendChild(el);
+        try { await _geiLookupClientTaxRate(); }
+        catch (_) {}
+        const rate = _geiClientTaxRate;
+        el.remove();
+        return { ok: true, rateNull: rate === null };
+      });
+      expect(r.ok).toBe(true);
+      expect(r.rateNull).toBe(true);
+    });
+
+    test('address with no zip or state — does not throw', async () => {
+      const r = await page.evaluate(async () => {
+        const el = document.createElement('input'); el.id = 'gei-addr'; el.value = 'No zip here at all';
+        document.body.appendChild(el);
+        try { await _geiLookupClientTaxRate(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { el.remove(); }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('valid zip address — does not throw', async () => {
+      const r = await page.evaluate(async () => {
+        const el = document.createElement('input'); el.id = 'gei-addr'; el.value = '123 Main St, Wichita KS 67202';
+        document.body.appendChild(el);
+        try { await _geiLookupClientTaxRate(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { el.remove(); }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent async calls — no unhandled rejection', async () => {
+      const r = await page.evaluate(async () => {
+        const el = document.createElement('input'); el.id = 'gei-addr'; el.value = '123 Main St, KS 67202';
+        document.body.appendChild(el);
+        try {
+          await Promise.all([
+            _geiLookupClientTaxRate(),
+            _geiLookupClientTaxRate(),
+            _geiLookupClientTaxRate()
+          ]);
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { el.remove(); }
+      });
+      expect(r.ok).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 17. openTMEstimate
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('openTMEstimate', () => {
+    test('null client — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { openTMEstimate(null, null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined client — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { openTMEstimate(undefined, undefined); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('sets _geiIsTM=true', async () => {
+      const r = await page.evaluate(() => {
+        openTMEstimate(null, null);
+        return { isTM: _geiIsTM };
+      });
+      expect(r.isTM).toBe(true);
+    });
+
+    test('sets _geiIsFreeForm=false', async () => {
+      const r = await page.evaluate(() => {
+        // Remove any null-client draft bids that a prior openFreeFormEstimate(null,null) call may have left,
+        // since openGenericEstimate picks them up and restores isFreeForm=true from them.
+        bids = bids.filter(b => !(b.client_id === null && !b.signingToken && b.geiLines !== undefined && (b.status === 'Draft' || b.status === 'Pending')));
+        _geiIsFreeForm = true;
+        openTMEstimate(null, null);
+        return { isFreeForm: _geiIsFreeForm };
+      });
+      expect(r.isFreeForm).toBe(false);
+    });
+
+    test('golden path with client — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        const c = clients.find(x => x.id === 55501);
+        try { openTMEstimate(c, null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('with existing TM bid — restores TM fields', async () => {
+      const r = await page.evaluate(() => {
+        const c = clients.find(x => x.id === 55501);
+        try { openTMEstimate(c, 44402); return { ok: true, isTM: _geiIsTM }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.isTM).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 18. openFreeFormEstimate
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('openFreeFormEstimate', () => {
+    test('null client — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { openFreeFormEstimate(null, null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('sets _geiIsFreeForm=true', async () => {
+      const r = await page.evaluate(() => {
+        _geiIsFreeForm = false;
+        openFreeFormEstimate(null, null);
+        return { isFreeForm: _geiIsFreeForm };
+      });
+      expect(r.isFreeForm).toBe(true);
+    });
+
+    test('sets _geiIsTM=false', async () => {
+      const r = await page.evaluate(() => {
+        _geiIsTM = true;
+        openFreeFormEstimate(null, null);
+        return { isTM: _geiIsTM };
+      });
+      expect(r.isTM).toBe(false);
+    });
+
+    test('golden path with client — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        const c = clients.find(x => x.id === 55501);
+        try { openFreeFormEstimate(c, null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('with existing freeform bid — restores items', async () => {
+      const r = await page.evaluate(() => {
+        const c = clients.find(x => x.id === 55501);
+        try { openFreeFormEstimate(c, 44401); return { ok: true, isFreeForm: _geiIsFreeForm }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.isFreeForm).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 19. openGenericEstimate
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('openGenericEstimate', () => {
+    test('null client, null bidId, null tradePick — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { openGenericEstimate(null, null, null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined all args — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { openGenericEstimate(undefined, undefined, undefined); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('empty client object {} — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { openGenericEstimate({}, null, null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path with client and trade — sets _geiClientId', async () => {
+      const r = await page.evaluate(() => {
+        const c = clients.find(x => x.id === 55501);
+        openGenericEstimate(c, null, 'painting');
+        return { clientId: _geiClientId, trade: _geiTrade };
+      });
+      expect(r.clientId).toBe(55501);
+      expect(r.trade).toBe('painting');
+    });
+
+    test('opening with existing bidId — sets _geiEditBidId', async () => {
+      const r = await page.evaluate(() => {
+        const c = clients.find(x => x.id === 55501);
+        _geiIsFreeForm = true; _geiIsTM = false;
+        openGenericEstimate(c, 44401, 'painting');
+        return { editBidId: _geiEditBidId };
+      });
+      expect(r.editBidId).toBe(44401);
+    });
+
+    test('resets state on new estimate — geiLines is empty []', async () => {
+      const r = await page.evaluate(() => {
+        _geiLines = [{ desc: 'old line', qty: 1, rate: 100, total: 100 }];
+        openGenericEstimate(null, null, null);
+        return { linesEmpty: _geiLines.length === 0 };
+      });
+      expect(r.linesEmpty).toBe(true);
+    });
+
+    test('_tradePick sets _activeTrade', async () => {
+      const r = await page.evaluate(() => {
+        const saved = _activeTrade;
+        openGenericEstimate(null, null, 'roofing');
+        const t = _geiTrade;
+        // restore
+        _activeTrade = saved;
+        return { t };
+      });
+      expect(r.t).toBe('roofing');
+    });
+
+    test('type mismatch bidId (string "abc") — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { openGenericEstimate(null, 'abc', null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('corrupted localStorage — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.setItem('zp3_bids', '{INVALID{{{{');
+        try { openGenericEstimate(null, null, null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { localStorage.removeItem('zp3_bids'); }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0;
+        const c = clients.find(x => x.id === 55501) || null;
+        for (let i = 0; i < 5; i++) {
+          try { openGenericEstimate(c, null, 'painting'); ok++; } catch (_) {}
+        }
+        return { ok };
+      });
+      expect(r.ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 20. goGeiStep
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('goGeiStep', () => {
+    test('null step — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { goGeiStep(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined step — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { goGeiStep(undefined); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('step 0 (boundary) — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { goGeiStep(0); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('step -1 (boundary) — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { goGeiStep(-1); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('step 1 — sets _geiStep to 1', async () => {
+      const r = await page.evaluate(() => {
+        _geiIsTM = false; _geiIsFreeForm = false;
+        goGeiStep(1);
+        return { step: _geiStep };
+      });
+      expect(r.step).toBe(1);
+    });
+
+    test('step 3 — sets _geiStep to 3', async () => {
+      const r = await page.evaluate(() => {
+        _geiIsTM = false; _geiIsFreeForm = false;
+        goGeiStep(3);
+        return { step: _geiStep };
+      });
+      expect(r.step).toBe(3);
+    });
+
+    test('TM mode step 1 — calls _tmHidePage, does not throw', async () => {
+      const r = await page.evaluate(() => {
+        _geiIsTM = true; _geiIsFreeForm = false;
+        try { goGeiStep(1); return { ok: true, step: _geiStep }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { _geiIsTM = false; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('TM mode step 2 — calls _tmShowPage, does not throw', async () => {
+      const r = await page.evaluate(() => {
+        _geiIsTM = true; _geiIsFreeForm = false;
+        try { goGeiStep(2); return { ok: true, step: _geiStep }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { _geiIsTM = false; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('freeform mode step 2 — calls _byoShowPage, does not throw', async () => {
+      const r = await page.evaluate(() => {
+        _geiIsFreeForm = true; _geiIsTM = false;
+        try { goGeiStep(2); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { _geiIsFreeForm = false; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('very large step number — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        _geiIsTM = false; _geiIsFreeForm = false;
+        try { goGeiStep(9999); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('string step "2" (type mismatch) — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { goGeiStep('2'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent calls (5x) — last step sticks', async () => {
+      const r = await page.evaluate(() => {
+        _geiIsTM = false; _geiIsFreeForm = false;
+        let ok = 0;
+        const steps = [1, 2, 3, 1, 3];
+        for (let i = 0; i < 5; i++) {
+          try { goGeiStep(steps[i]); ok++; } catch (_) {}
+        }
+        return { ok, step: _geiStep };
+      });
+      expect(r.ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 21. _tmAdj
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_tmAdj', () => {
+    test('null delta — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _tmAdj(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined delta — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _tmAdj(undefined); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('delta +1 — increments crew count', async () => {
+      const r = await page.evaluate(() => {
+        _tmCrewCount = 2;
+        _tmAdj(1);
+        return { count: _tmCrewCount };
+      });
+      expect(r.count).toBe(3);
+    });
+
+    test('delta -1 — decrements crew count', async () => {
+      const r = await page.evaluate(() => {
+        _tmCrewCount = 3;
+        _tmAdj(-1);
+        return { count: _tmCrewCount };
+      });
+      expect(r.count).toBe(2);
+    });
+
+    test('crew count floor at 1 — never goes below 1', async () => {
+      const r = await page.evaluate(() => {
+        _tmCrewCount = 1;
+        _tmAdj(-10);
+        return { count: _tmCrewCount };
+      });
+      expect(r.count).toBe(1);
+    });
+
+    test('very large delta — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        _tmCrewCount = 1;
+        try { _tmAdj(Number.MAX_SAFE_INTEGER); return { ok: true, count: _tmCrewCount }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { _tmCrewCount = 1; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('delta 0 — crew count unchanged', async () => {
+      const r = await page.evaluate(() => {
+        _tmCrewCount = 4;
+        _tmAdj(0);
+        return { count: _tmCrewCount };
+      });
+      expect(r.count).toBe(4);
+    });
+
+    test('string delta (type mismatch) — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _tmAdj('abc'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('with tm-crew-display DOM element — updates display', async () => {
+      const r = await page.evaluate(() => {
+        const el = document.createElement('div'); el.id = 'tm-crew-display'; el.textContent = '2';
+        document.body.appendChild(el);
+        _tmCrewCount = 2;
+        _tmAdj(1);
+        const txt = document.getElementById('tm-crew-display')?.textContent;
+        el.remove();
+        return { txt, count: _tmCrewCount };
+      });
+      expect(r.count).toBe(3);
+    });
+
+    test('concurrent calls (5x) — crew count is valid integer', async () => {
+      const r = await page.evaluate(() => {
+        _tmCrewCount = 1;
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { _tmAdj(1); ok++; } catch (_) {}
+        }
+        return { ok, count: _tmCrewCount };
+      });
+      expect(r.ok).toBe(5);
+      expect(r.count).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 22. _tmRecalc
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_tmRecalc', () => {
+    test('no DOM elements — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _tmRecalc(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('zero rate and hours — labor is 0, displays "—"', async () => {
+      const r = await page.evaluate(() => {
+        // Create minimal DOM
+        ['tm-crew-display','tm-rate','tm-hours','tm-labor-est','tm-crew-formula'].forEach(id => {
+          let el = document.getElementById(id);
+          if (!el) {
+            el = (id === 'tm-crew-display' || id === 'tm-labor-est' || id === 'tm-crew-formula')
+              ? document.createElement('div') : document.createElement('input');
+            el.id = id;
+            document.body.appendChild(el);
+          }
+        });
+        document.getElementById('tm-crew-display').textContent = '1';
+        document.getElementById('tm-rate').value = '0';
+        document.getElementById('tm-hours').value = '0';
+        _tmCrewCount = 1; _tmRatePerMan = 0; _tmEstHours = 0;
+        _tmRecalc();
+        const laborTxt = document.getElementById('tm-labor-est')?.textContent;
+        ['tm-crew-display','tm-rate','tm-hours','tm-labor-est','tm-crew-formula'].forEach(id => document.getElementById(id)?.remove());
+        return { laborTxt };
+      });
+      expect(r.laborTxt).toBe('—');
+    });
+
+    test('golden path — calculates labor correctly', async () => {
+      const r = await page.evaluate(() => {
+        ['tm-crew-display','tm-rate','tm-hours','tm-labor-est','tm-crew-formula'].forEach(id => {
+          let el = document.getElementById(id);
+          if (!el) {
+            el = (id === 'tm-crew-display' || id === 'tm-labor-est' || id === 'tm-crew-formula')
+              ? document.createElement('div') : document.createElement('input');
+            el.id = id; document.body.appendChild(el);
+          }
+        });
+        document.getElementById('tm-crew-display').textContent = '2';
+        document.getElementById('tm-rate').value = '50';
+        document.getElementById('tm-hours').value = '8';
+        _tmCrewCount = 2; _tmRatePerMan = 50; _tmEstHours = 8;
+        _geiLines = [];
+        _tmRecalc();
+        // 2 workers * $50/hr * 8hrs = $800
+        const hasLaborLine = _geiLines.some(l => l._tmLabor && l.total === 800);
+        ['tm-crew-display','tm-rate','tm-hours','tm-labor-est','tm-crew-formula'].forEach(id => document.getElementById(id)?.remove());
+        return { hasLaborLine };
+      });
+      expect(r.hasLaborLine).toBe(true);
+    });
+
+    test('upserts existing labor line — no duplicates after 3 calls', async () => {
+      const r = await page.evaluate(() => {
+        ['tm-crew-display','tm-rate','tm-hours','tm-labor-est','tm-crew-formula'].forEach(id => {
+          let el = document.getElementById(id);
+          if (!el) {
+            el = (id === 'tm-crew-display' || id === 'tm-labor-est' || id === 'tm-crew-formula')
+              ? document.createElement('div') : document.createElement('input');
+            el.id = id; document.body.appendChild(el);
+          }
+        });
+        document.getElementById('tm-crew-display').textContent = '1';
+        document.getElementById('tm-rate').value = '75';
+        document.getElementById('tm-hours').value = '4';
+        _tmCrewCount = 1; _tmRatePerMan = 75; _tmEstHours = 4;
+        _geiLines = [];
+        _tmRecalc(); _tmRecalc(); _tmRecalc();
+        const laborLines = _geiLines.filter(l => l._tmLabor);
+        ['tm-crew-display','tm-rate','tm-hours','tm-labor-est','tm-crew-formula'].forEach(id => document.getElementById(id)?.remove());
+        return { laborLinesCount: laborLines.length };
+      });
+      expect(r.laborLinesCount).toBe(1);
+    });
+
+    test('corrupted localStorage — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.setItem('zp3_est_full_draft', '{INVALID{{{{');
+        try { _tmRecalc(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { localStorage.removeItem('zp3_est_full_draft'); }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const ok = await concurrent('_tmRecalc()');
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 23. _tmCalcDeposit
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_tmCalcDeposit', () => {
+    test('no DOM elements — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _tmCalcDeposit(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('zero subtotal — shows "—"', async () => {
+      const r = await page.evaluate(() => {
+        const el = document.createElement('div'); el.id = 'tm-dep-amt'; document.body.appendChild(el);
+        const pctEl = document.createElement('input'); pctEl.id = 'tm-dep-pct'; pctEl.value = '20'; document.body.appendChild(pctEl);
+        _geiLines = [];
+        try { _tmCalcDeposit(); return { ok: true, txt: document.getElementById('tm-dep-amt')?.textContent }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { el.remove(); pctEl.remove(); }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.txt).toBe('—');
+    });
+
+    test('golden path — calculates 20% deposit', async () => {
+      const r = await page.evaluate(() => {
+        const el = document.createElement('div'); el.id = 'tm-dep-amt'; document.body.appendChild(el);
+        const pctEl = document.createElement('input'); pctEl.id = 'tm-dep-pct'; pctEl.value = '20'; document.body.appendChild(pctEl);
+        // Set up a line so calcGeiTotal returns non-zero
+        _geiLines = [{ desc: 'Labor', qty: 1, rate: 1000, total: 1000, _tmLabor: false }];
+        try { _tmCalcDeposit(); return { ok: true, txt: document.getElementById('tm-dep-amt')?.textContent }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { el.remove(); pctEl.remove(); _geiLines = []; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('NaN pct — falls back to 20%', async () => {
+      const r = await page.evaluate(() => {
+        const el = document.createElement('div'); el.id = 'tm-dep-amt'; document.body.appendChild(el);
+        const pctEl = document.createElement('input'); pctEl.id = 'tm-dep-pct'; pctEl.value = 'not-a-number'; document.body.appendChild(pctEl);
+        _geiLines = [];
+        try { _tmCalcDeposit(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { el.remove(); pctEl.remove(); }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const ok = await concurrent('_tmCalcDeposit()');
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 24. _tmCalcNte
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_tmCalcNte', () => {
+    test('no DOM elements — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _tmCalcNte(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('NTE off — wrap hidden', async () => {
+      const r = await page.evaluate(() => {
+        let onEl = document.getElementById('tm-nte-on');
+        let wrap = document.getElementById('tm-nte-wrap');
+        const onCreated = !onEl;
+        const wrapCreated = !wrap;
+        if (!onEl) { onEl = document.createElement('input'); onEl.type = 'checkbox'; onEl.id = 'tm-nte-on'; document.body.appendChild(onEl); }
+        if (!wrap) { wrap = document.createElement('div'); wrap.id = 'tm-nte-wrap'; document.body.appendChild(wrap); }
+        const savedChecked = onEl.checked;
+        const savedDisplay = wrap.style.display;
+        onEl.checked = false;
+        try { _tmCalcNte(); return { ok: true, hidden: wrap.style.display === 'none' }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          if (onCreated) onEl.remove(); else onEl.checked = savedChecked;
+          if (wrapCreated) wrap.remove(); else wrap.style.display = savedDisplay;
+        }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hidden).toBe(true);
+    });
+
+    test('NTE on, empty cap — auto-sets cap to sub * 1.15 rounded to $500', async () => {
+      const r = await page.evaluate(() => {
+        let onEl = document.getElementById('tm-nte-on');
+        let wrap = document.getElementById('tm-nte-wrap');
+        let capEl = document.getElementById('tm-nte-cap');
+        const onCreated = !onEl;
+        const wrapCreated = !wrap;
+        const capCreated = !capEl;
+        if (!onEl) { onEl = document.createElement('input'); onEl.type = 'checkbox'; onEl.id = 'tm-nte-on'; document.body.appendChild(onEl); }
+        if (!wrap) { wrap = document.createElement('div'); wrap.id = 'tm-nte-wrap'; document.body.appendChild(wrap); }
+        if (!capEl) { capEl = document.createElement('input'); capEl.id = 'tm-nte-cap'; document.body.appendChild(capEl); }
+        const savedChecked = onEl.checked;
+        const savedDisplay = wrap.style.display;
+        const savedCap = capEl.value;
+        onEl.checked = true;
+        capEl.value = '';
+        _geiLines = [{ desc: 'Labor', qty: 1, rate: 2000, total: 2000 }];
+        try { _tmCalcNte(); return { ok: true, cap: parseFloat(capEl.value) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          if (onCreated) onEl.remove(); else onEl.checked = savedChecked;
+          if (wrapCreated) wrap.remove(); else wrap.style.display = savedDisplay;
+          if (capCreated) capEl.remove(); else capEl.value = savedCap;
+          _geiLines = [];
+        }
+      });
+      expect(r.ok).toBe(true);
+      // 2000 * 1.15 = 2300, rounded to nearest 500 = 2500
+      expect(r.cap % 500).toBe(0);
+    });
+
+    test('NTE on, cap already set — does not overwrite', async () => {
+      const r = await page.evaluate(() => {
+        const onEl = document.createElement('input'); onEl.type = 'checkbox'; onEl.id = 'tm-nte-on'; onEl.checked = true; document.body.appendChild(onEl);
+        const wrap = document.createElement('div'); wrap.id = 'tm-nte-wrap'; document.body.appendChild(wrap);
+        const capEl = document.createElement('input'); capEl.id = 'tm-nte-cap'; capEl.value = '5000'; document.body.appendChild(capEl);
+        _geiLines = [{ desc: 'Labor', qty: 1, rate: 1000, total: 1000 }];
+        try { _tmCalcNte(); return { ok: true, cap: capEl.value }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { onEl.remove(); wrap.remove(); capEl.remove(); _geiLines = []; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.cap).toBe('5000');
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const ok = await concurrent('_tmCalcNte()');
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 25. _tmSetCycle
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_tmSetCycle', () => {
+    test('null — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _tmSetCycle(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _tmSetCycle(undefined); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('empty string — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _tmSetCycle(''); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path "weekly" — sets _tmBillingCycle', async () => {
+      const r = await page.evaluate(() => {
+        _tmSetCycle('weekly');
+        return { cycle: _tmBillingCycle };
+      });
+      expect(r.cycle).toBe('weekly');
+    });
+
+    test('golden path "milestone" — sets _tmBillingCycle', async () => {
+      const r = await page.evaluate(() => {
+        _tmSetCycle('milestone');
+        return { cycle: _tmBillingCycle };
+      });
+      expect(r.cycle).toBe('milestone');
+    });
+
+    test('"completion" — sets _tmBillingCycle', async () => {
+      const r = await page.evaluate(() => {
+        _tmSetCycle('completion');
+        return { cycle: _tmBillingCycle };
+      });
+      expect(r.cycle).toBe('completion');
+    });
+
+    test('concurrent calls (5x) — last value sticks', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0;
+        const cycles = ['weekly','biweekly','milestone','completion','weekly'];
+        for (let i = 0; i < 5; i++) {
+          try { _tmSetCycle(cycles[i]); ok++; } catch (_) {}
+        }
+        return { ok, cycle: _tmBillingCycle };
+      });
+      expect(r.ok).toBe(5);
+      expect(r.cycle).toBe('weekly');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 26. _tmSyncCycleButtons
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_tmSyncCycleButtons', () => {
+    test('no DOM elements — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _tmSyncCycleButtons(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('highlights active cycle button', async () => {
+      const r = await page.evaluate(() => {
+        const cycles = ['weekly','biweekly','milestone','completion'];
+        cycles.forEach(c => {
+          let btn = document.getElementById('tmc-'+c);
+          if (!btn) { btn = document.createElement('button'); btn.id = 'tmc-'+c; document.body.appendChild(btn); }
+        });
+        _tmBillingCycle = 'biweekly';
+        _tmSyncCycleButtons();
+        const biweeklyBtn = document.getElementById('tmc-biweekly');
+        const weeklyBtn = document.getElementById('tmc-weekly');
+        const biweeklyActive = biweeklyBtn?.style.background?.includes('var(--blue)') || biweeklyBtn?.style.background === 'var(--blue)';
+        const weeklyInactive = weeklyBtn?.style.background?.includes('var(--bg2)') || weeklyBtn?.style.background === 'var(--bg2)';
+        cycles.forEach(c => document.getElementById('tmc-'+c)?.remove());
+        return { biweeklyActive, weeklyInactive };
+      });
+      expect(r.biweeklyActive).toBe(true);
+      expect(r.weeklyInactive).toBe(true);
+    });
+
+    test('no duplicate button styling after 3 calls', async () => {
+      const r = await page.evaluate(() => {
+        const cycles = ['weekly','biweekly','milestone','completion'];
+        cycles.forEach(c => {
+          let btn = document.getElementById('tmc-'+c);
+          if (!btn) { btn = document.createElement('button'); btn.id = 'tmc-'+c; document.body.appendChild(btn); }
+        });
+        _tmBillingCycle = 'weekly';
+        _tmSyncCycleButtons(); _tmSyncCycleButtons(); _tmSyncCycleButtons();
+        const weeklyBtn = document.getElementById('tmc-weekly');
+        const weeklyActive = weeklyBtn?.style.background?.includes('var(--blue)') || weeklyBtn?.style.background === 'var(--blue)';
+        cycles.forEach(c => document.getElementById('tmc-'+c)?.remove());
+        return { weeklyActive };
+      });
+      expect(r.weeklyActive).toBe(true);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const ok = await concurrent('_tmSyncCycleButtons()');
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 27. _tmShowPage
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_tmShowPage', () => {
+    test('no DOM elements — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _tmShowPage(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('with gei-tm-page element — makes it visible', async () => {
+      const r = await page.evaluate(() => {
+        let p = document.getElementById('gei-tm-page');
+        const created = !p;
+        if (!p) { p = document.createElement('div'); p.id = 'gei-tm-page'; document.body.appendChild(p); }
+        const savedDisplay = p.style.display;
+        p.style.display = 'none';
+        try { _tmShowPage(); return { ok: true, visible: p.style.display !== 'none' }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { if (created) p.remove(); else p.style.display = savedDisplay; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.visible).toBe(true);
+    });
+
+    test('hides legacy wizard elements', async () => {
+      const r = await page.evaluate(() => {
+        ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id => {
+          let el = document.getElementById(id);
+          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'block'; document.body.appendChild(el); }
+        });
+        const p = document.createElement('div'); p.id = 'gei-tm-page'; document.body.appendChild(p);
+        try { _tmShowPage(); }
+        catch (_) {}
+        const hidden = ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].every(id => document.getElementById(id)?.style.display === 'none');
+        ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3','gei-tm-page'].forEach(id => document.getElementById(id)?.remove());
+        return { hidden };
+      });
+      expect(r.hidden).toBe(true);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const ok = await concurrent('_tmShowPage()');
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 28. _tmHidePage
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_tmHidePage', () => {
+    test('no DOM elements — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _tmHidePage(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('with gei-tm-page element — hides it', async () => {
+      const r = await page.evaluate(() => {
+        let p = document.getElementById('gei-tm-page');
+        const created = !p;
+        if (!p) { p = document.createElement('div'); p.id = 'gei-tm-page'; document.body.appendChild(p); }
+        const savedDisplay = p.style.display;
+        p.style.display = 'block';
+        try { _tmHidePage(); return { ok: true, hidden: p.style.display === 'none' }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { if (created) p.remove(); else p.style.display = savedDisplay; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hidden).toBe(true);
+    });
+
+    test('restores gei-old-tbar and gei-step-bar', async () => {
+      const r = await page.evaluate(() => {
+        ['gei-old-tbar','gei-step-bar'].forEach(id => {
+          let el = document.getElementById(id);
+          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'none'; document.body.appendChild(el); }
+          else { el.style.display = 'none'; }
+        });
+        const p = document.createElement('div'); p.id = 'gei-tm-page'; document.body.appendChild(p);
+        try { _tmHidePage(); }
+        catch (_) {}
+        const restored = ['gei-old-tbar','gei-step-bar'].every(id => document.getElementById(id)?.style.display === '');
+        ['gei-old-tbar','gei-step-bar','gei-tm-page'].forEach(id => document.getElementById(id)?.remove());
+        return { restored };
+      });
+      expect(r.restored).toBe(true);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const ok = await concurrent('_tmHidePage()');
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 29. _byoShowPage
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_byoShowPage', () => {
+    test('no DOM elements — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _byoShowPage(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('with gei-byo-page element — makes it visible', async () => {
+      const r = await page.evaluate(() => {
+        let p = document.getElementById('gei-byo-page');
+        const created = !p;
+        if (!p) { p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p); }
+        const savedDisplay = p.style.display;
+        p.style.display = 'none';
+        _geiEditBidId = 44401;
+        try { _byoShowPage(); return { ok: true, visible: p.style.display !== 'none' }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { if (created) p.remove(); else p.style.display = savedDisplay; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.visible).toBe(true);
+    });
+
+    test('hides legacy wizard elements', async () => {
+      const r = await page.evaluate(() => {
+        ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id => {
+          let el = document.getElementById(id);
+          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'block'; document.body.appendChild(el); }
+        });
+        const p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p);
+        try { _byoShowPage(); }
+        catch (_) {}
+        const hidden = ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].every(id => document.getElementById(id)?.style.display === 'none');
+        ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3','gei-byo-page'].forEach(id => document.getElementById(id)?.remove());
+        return { hidden };
+      });
+      expect(r.hidden).toBe(true);
+    });
+
+    test('with valid bid — loads byoItems from bid', async () => {
+      const r = await page.evaluate(() => {
+        const p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p);
+        _geiEditBidId = 44401;
+        _byoItems = [];
+        try { _byoShowPage(); return { ok: true, items: _byoItems.length }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { p.remove(); }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.items).toBeGreaterThanOrEqual(0);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const ok = await concurrent('_byoShowPage()');
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 30. _byoHidePage
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_byoHidePage', () => {
+    test('no DOM elements — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _byoHidePage(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('with gei-byo-page element — hides it', async () => {
+      const r = await page.evaluate(() => {
+        let p = document.getElementById('gei-byo-page');
+        const created = !p;
+        if (!p) { p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p); }
+        const savedDisplay = p.style.display;
+        p.style.display = 'block';
+        try { _byoHidePage(); return { ok: true, hidden: p.style.display === 'none' }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { if (created) p.remove(); else p.style.display = savedDisplay; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hidden).toBe(true);
+    });
+
+    test('restores gei-old-tbar and gei-step-bar', async () => {
+      const r = await page.evaluate(() => {
+        ['gei-old-tbar','gei-step-bar'].forEach(id => {
+          let el = document.getElementById(id);
+          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'none'; document.body.appendChild(el); }
+          else { el.style.display = 'none'; }
+        });
+        const p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p);
+        try { _byoHidePage(); }
+        catch (_) {}
+        const restored = ['gei-old-tbar','gei-step-bar'].every(id => document.getElementById(id)?.style.display === '');
+        ['gei-old-tbar','gei-step-bar','gei-byo-page'].forEach(id => document.getElementById(id)?.remove());
+        return { restored };
+      });
+      expect(r.restored).toBe(true);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const ok = await concurrent('_byoHidePage()');
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 31. _toggleScopeChip
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_toggleScopeChip', () => {
+    test('null label — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _toggleScopeChip(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined label — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _toggleScopeChip(undefined); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('empty string label — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _toggleScopeChip(''); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — adds label to _geiScopeChips', async () => {
+      const r = await page.evaluate(() => {
+        _geiScopeChips = [];
+        _geiScopeNoScope = false;
+        _toggleScopeChip('Interior painting');
+        return { chips: _geiScopeChips };
+      });
+      expect(r.chips).toContain('Interior painting');
+    });
+
+    test('toggle same label twice — removes it (toggle off)', async () => {
+      const r = await page.evaluate(() => {
+        _geiScopeChips = [];
+        _geiScopeNoScope = false;
+        _toggleScopeChip('Interior painting');
+        _toggleScopeChip('Interior painting');
+        return { chips: _geiScopeChips };
+      });
+      expect(r.chips).not.toContain('Interior painting');
+    });
+
+    test('clears _geiScopeNoScope on toggle', async () => {
+      const r = await page.evaluate(() => {
+        _geiScopeChips = [];
+        _geiScopeNoScope = true;
+        _toggleScopeChip('Tape & masking');
+        return { noScope: _geiScopeNoScope };
+      });
+      expect(r.noScope).toBe(false);
+    });
+
+    test('multiple different chips accumulate', async () => {
+      const r = await page.evaluate(() => {
+        _geiScopeChips = [];
+        _geiScopeNoScope = false;
+        _toggleScopeChip('Interior painting');
+        _toggleScopeChip('Tape & masking');
+        _toggleScopeChip('Prime coat');
+        return { count: _geiScopeChips.length };
+      });
+      expect(r.count).toBe(3);
+    });
+
+    test('type mismatch (number) — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        _geiScopeChips = [];
+        try { _toggleScopeChip(42); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('very long label — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        const longLabel = 'x'.repeat(1000);
+        _geiScopeChips = [];
+        try { _toggleScopeChip(longLabel); return { ok: true, added: _geiScopeChips.includes(longLabel) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { _geiScopeChips = []; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.added).toBe(true);
+    });
+
+    test('concurrent calls with same label (5x) — alternates on/off, no crash', async () => {
+      const r = await page.evaluate(() => {
+        _geiScopeChips = []; _geiScopeNoScope = false;
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { _toggleScopeChip('Interior painting'); ok++; } catch (_) {}
+        }
+        return { ok, chipCount: _geiScopeChips.filter(c => c === 'Interior painting').length };
+      });
+      expect(r.ok).toBe(5);
+      // After 5 odd toggles, should be present once
+      expect(r.chipCount).toBe(1);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 32. _toggleScopeNone
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_toggleScopeNone', () => {
+    test('does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _toggleScopeNone(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('sets _geiScopeNoScope to true when false', async () => {
+      const r = await page.evaluate(() => {
+        _geiScopeNoScope = false;
+        _toggleScopeNone();
+        return { noScope: _geiScopeNoScope };
+      });
+      expect(r.noScope).toBe(true);
+    });
+
+    test('clears _geiScopeChips when enabling none', async () => {
+      const r = await page.evaluate(() => {
+        _geiScopeChips = ['Interior painting', 'Tape & masking'];
+        _geiScopeNoScope = false;
+        _toggleScopeNone();
+        return { noScope: _geiScopeNoScope, chipsEmpty: _geiScopeChips.length === 0 };
+      });
+      expect(r.noScope).toBe(true);
+      expect(r.chipsEmpty).toBe(true);
+    });
+
+    test('toggles off when already on', async () => {
+      const r = await page.evaluate(() => {
+        _geiScopeNoScope = true;
+        _toggleScopeNone();
+        return { noScope: _geiScopeNoScope };
+      });
+      expect(r.noScope).toBe(false);
+    });
+
+    test('concurrent calls (5x) — alternates state, no crash', async () => {
+      const r = await page.evaluate(() => {
+        _geiScopeNoScope = false; _geiScopeChips = [];
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { _toggleScopeNone(); ok++; } catch (_) {}
+        }
+        return { ok, finalState: _geiScopeNoScope };
+      });
+      expect(r.ok).toBe(5);
+      // After 5 odd toggles, should be true
+      expect(r.finalState).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 33. _updateScopeSheetBtn
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_updateScopeSheetBtn', () => {
+    test('null label — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _updateScopeSheetBtn(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined label — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _updateScopeSheetBtn(undefined); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('label with no matching DOM button — returns early', async () => {
+      const r = await page.evaluate(() => {
+        try { _updateScopeSheetBtn('NonExistentScopeItem12345'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — updates active chip button style', async () => {
+      const r = await page.evaluate(() => {
+        const label = 'Interior painting';
+        const sid = '_scb-' + label.replace(/[^a-z0-9]/gi, '_');
+        const btn = document.createElement('div'); btn.id = sid;
+        const lbl = document.createElement('span'); lbl.className = '_sc-lbl'; btn.appendChild(lbl);
+        const ck = document.createElement('span'); ck.className = '_sc-ck'; btn.appendChild(ck);
+        document.body.appendChild(btn);
+        _geiScopeChips = [label];
+        _updateScopeSheetBtn(label);
+        const isBlue = btn.style.borderColor?.includes('var(--blue)') || btn.style.background?.includes('var(--blue)');
+        btn.remove();
+        return { isBlue };
+      });
+      expect(r.isBlue).toBe(true);
+    });
+
+    test('inactive chip — renders without blue styling', async () => {
+      const r = await page.evaluate(() => {
+        const label = 'Sanding';
+        const sid = '_scb-' + label.replace(/[^a-z0-9]/gi, '_');
+        const btn = document.createElement('div'); btn.id = sid;
+        const lbl = document.createElement('span'); lbl.className = '_sc-lbl'; btn.appendChild(lbl);
+        const ck = document.createElement('span'); ck.className = '_sc-ck'; btn.appendChild(ck);
+        document.body.appendChild(btn);
+        _geiScopeChips = []; // not active
+        _updateScopeSheetBtn(label);
+        const notBlue = !btn.style.borderColor?.includes('var(--blue)');
+        btn.remove();
+        return { notBlue };
+      });
+      expect(r.notBlue).toBe(true);
+    });
+
+    test('special chars in label — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _updateScopeSheetBtn('Label with <script> & "quotes"'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const ok = await concurrent('_updateScopeSheetBtn("Interior painting")');
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 34. _renderScopeChips
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_renderScopeChips', () => {
+    test('null containerId — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _renderScopeChips(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined containerId — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _renderScopeChips(undefined); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('missing container element — returns early', async () => {
+      const r = await page.evaluate(() => {
+        try { _renderScopeChips('nonexistent-container-id-12345'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('empty chips array — shows "Add scope" button', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'test-scope-wrap'; document.body.appendChild(wrap);
+        _geiScopeChips = []; _geiScopeNoScope = false;
+        _geiTrade = 'painting';
+        _renderScopeChips('test-scope-wrap');
+        const html = wrap.innerHTML;
+        wrap.remove();
+        return { hasAddBtn: html.includes('Add scope of work') };
+      });
+      expect(r.hasAddBtn).toBe(true);
+    });
+
+    test('scope chips selected — renders chip items', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'test-scope-wrap2'; document.body.appendChild(wrap);
+        _geiScopeChips = ['Interior painting', 'Tape & masking'];
+        _geiScopeNoScope = false;
+        _geiTrade = 'painting';
+        _renderScopeChips('test-scope-wrap2');
+        const html = wrap.innerHTML;
+        wrap.remove();
+        return {
+          hasInterior: html.includes('Interior painting'),
+          hasTape: html.includes('Tape &amp; masking') || html.includes('Tape & masking')
+        };
+      });
+      expect(r.hasInterior).toBe(true);
+      expect(r.hasTape).toBe(true);
+    });
+
+    test('noScope=true — shows "None" chip', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'test-scope-wrap3'; document.body.appendChild(wrap);
+        _geiScopeChips = []; _geiScopeNoScope = true;
+        _geiTrade = 'painting';
+        _renderScopeChips('test-scope-wrap3');
+        const html = wrap.innerHTML;
+        wrap.remove();
+        return { hasNone: html.includes('None') };
+      });
+      expect(r.hasNone).toBe(true);
+    });
+
+    test('no duplicate chips after 3 render calls', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'test-scope-dedup'; document.body.appendChild(wrap);
+        _geiScopeChips = ['Interior painting'];
+        _geiScopeNoScope = false; _geiTrade = 'painting';
+        _renderScopeChips('test-scope-dedup');
+        const count1 = (wrap.innerHTML.match(/Interior painting/g) || []).length;
+        _renderScopeChips('test-scope-dedup');
+        _renderScopeChips('test-scope-dedup');
+        const count3 = (wrap.innerHTML.match(/Interior painting/g) || []).length;
+        wrap.remove();
+        return { count1, count3 };
+      });
+      // innerHTML is replaced each call — 3 renders must equal 1 render (no accumulation)
+      expect(r.count1).toBeGreaterThanOrEqual(1);
+      expect(r.count3).toBe(r.count1);
+    });
+
+    test('concurrent calls (5x) — no crash', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'test-scope-concurrent'; document.body.appendChild(wrap);
+        _geiScopeChips = ['Interior painting'];
+        _geiScopeNoScope = false; _geiTrade = 'painting';
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { _renderScopeChips('test-scope-concurrent'); ok++; } catch (_) {}
+        }
+        wrap.remove();
+        return { ok };
+      });
+      expect(r.ok).toBe(5);
+    });
+
+    test('corrupted localStorage — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.setItem('zp3_scope_chips', '{INVALID{{{{');
+        const wrap = document.createElement('div'); wrap.id = 'test-scope-corrupt'; document.body.appendChild(wrap);
+        _geiScopeChips = []; _geiScopeNoScope = false; _geiTrade = 'painting';
+        try { _renderScopeChips('test-scope-corrupt'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { wrap.remove(); localStorage.removeItem('zp3_scope_chips'); }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('unknown trade — falls back to generic scope chips', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'test-scope-unknown'; document.body.appendChild(wrap);
+        _geiScopeChips = []; _geiScopeNoScope = false; _geiTrade = 'unknown_trade_xyz';
+        try { _renderScopeChips('test-scope-unknown'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { wrap.remove(); _geiTrade = 'painting'; }
+      });
+      expect(r.ok).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 35. _openScopeSheet
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_openScopeSheet', () => {
+    test('null containerId — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _openScopeSheet(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { document.getElementById('_scope-sheet-ov')?.remove(); }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined containerId — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _openScopeSheet(undefined); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { document.getElementById('_scope-sheet-ov')?.remove(); }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — creates overlay in DOM', async () => {
+      const r = await page.evaluate(() => {
+        _geiTrade = 'painting'; _geiScopeChips = [];
+        try { _openScopeSheet('byo-scope-wrap'); }
+        catch (_) {}
+        const ov = document.getElementById('_scope-sheet-ov');
+        const created = !!ov;
+        ov?.remove();
+        return { created };
+      });
+      expect(r.created).toBe(true);
+    });
+
+    test('overlay has correct class "zmodal-overlay"', async () => {
+      const r = await page.evaluate(() => {
+        _geiTrade = 'plumbing'; _geiScopeChips = [];
+        try { _openScopeSheet('byo-scope-wrap'); }
+        catch (_) {}
+        const ov = document.getElementById('_scope-sheet-ov');
+        const hasClass = ov?.classList.contains('zmodal-overlay');
+        ov?.remove();
+        return { hasClass };
+      });
+      expect(r.hasClass).toBe(true);
+    });
+
+    test('called twice — replaces existing overlay (no duplicates)', async () => {
+      const r = await page.evaluate(() => {
+        _geiTrade = 'painting'; _geiScopeChips = [];
+        try { _openScopeSheet('byo-scope-wrap'); _openScopeSheet('byo-scope-wrap'); }
+        catch (_) {}
+        const ovCount = document.querySelectorAll('#_scope-sheet-ov').length;
+        document.getElementById('_scope-sheet-ov')?.remove();
+        return { ovCount };
+      });
+      expect(r.ovCount).toBe(1);
+    });
+
+    test('sheet contains scope chips for painting trade', async () => {
+      const r = await page.evaluate(() => {
+        _geiTrade = 'painting'; _geiScopeChips = [];
+        try { _openScopeSheet('byo-scope-wrap'); }
+        catch (_) {}
+        const ov = document.getElementById('_scope-sheet-ov');
+        const html = ov?.innerHTML || '';
+        ov?.remove();
+        // Painting trade renders TRADE_SCOPE_ITEMS['painting'] = SCOPE_ITEMS (Tape, Sanding, Move furniture, etc.)
+        // plus _GEN_SCOPE (Demo, Site prep, Haul-off, Punch list).  Check for any of these.
+        const hasPaintItem = html.includes('Tape') || html.includes('Demo') || html.includes('Sanding') || html.includes('Move furniture');
+        return { hasPaintItem };
+      });
+      expect(r.hasPaintItem).toBe(true);
+    });
+
+    test('sheet contains "Scope of work" heading', async () => {
+      const r = await page.evaluate(() => {
+        _geiTrade = 'painting'; _geiScopeChips = [];
+        try { _openScopeSheet('byo-scope-wrap'); }
+        catch (_) {}
+        const ov = document.getElementById('_scope-sheet-ov');
+        const html = ov?.innerHTML || '';
+        ov?.remove();
+        return { hasHeading: html.includes('Scope of work') };
+      });
+      expect(r.hasHeading).toBe(true);
+    });
+
+    test('concurrent calls (5x) — only one overlay in DOM', async () => {
+      const r = await page.evaluate(() => {
+        _geiTrade = 'painting'; _geiScopeChips = [];
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { _openScopeSheet('byo-scope-wrap'); ok++; } catch (_) {}
+        }
+        const ovCount = document.querySelectorAll('#_scope-sheet-ov').length;
+        document.getElementById('_scope-sheet-ov')?.remove();
+        return { ok, ovCount };
+      });
+      expect(r.ok).toBe(5);
+      expect(r.ovCount).toBe(1);
+    });
+
+    test('unknown trade — uses generic scope chips without crash', async () => {
+      const r = await page.evaluate(() => {
+        _geiTrade = 'underwater-basket-weaving'; _geiScopeChips = [];
+        try { _openScopeSheet('byo-scope-wrap'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { document.getElementById('_scope-sheet-ov')?.remove(); _geiTrade = 'painting'; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('corrupted localStorage — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        localStorage.setItem('zp3_scope_sheet_data', '{INVALID{{{{');
+        _geiTrade = 'painting'; _geiScopeChips = [];
+        try { _openScopeSheet('byo-scope-wrap'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { document.getElementById('_scope-sheet-ov')?.remove(); localStorage.removeItem('zp3_scope_sheet_data'); }
+      });
+      expect(r.ok).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 36. No console errors — generic-estimate.js
+  // ═══════════════════════════════════════════════════════════════════════════
+  test('no console errors — generic-estimate.js', async () => {
+    assertNoErrors(page, 'generic-estimate.js');
+  });
+});

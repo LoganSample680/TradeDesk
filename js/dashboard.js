@@ -1,4 +1,5 @@
 let _renderDashRunning=false;
+Object.defineProperty(window,'_renderDashRunning',{get:()=>_renderDashRunning,set:v=>{_renderDashRunning=v;},configurable:true});
 
 function _trendHtml(curr,prev,reverseColor){
   if(!prev||prev===0)return '';
@@ -324,7 +325,8 @@ function _empConfirmDone(jobId){
 }
 
 function _fmtEmpTaskTime(iso){
-  try{const d=new Date(iso);return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}catch(e){return'';}
+  if(!iso)return'';
+  try{const d=new Date(iso);if(isNaN(d.getTime()))return'';return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}catch(e){return'';}
 }
 function _empToggleTask(jobId,taskId){
   const j=jobs.find(x=>x.id===jobId);if(!j||!j.tasks)return;
@@ -495,7 +497,7 @@ function getNextCollAction(stage){
   return map[stage]||map['none'];
 }
 
-function emitEvent(type,clientId,extra){if(!events)events=[];events.push({id:Date.now()+'_'+Math.random().toString(36).slice(2,6),type,ts:new Date().toISOString(),client_id:clientId,...(extra||{})});if(events.length>600)events=events.slice(-600);}
+function emitEvent(type,clientId,extra){const arr=typeof _tdGetEvents==='function'?_tdGetEvents():(window._tdEvArr||(window._tdEvArr=[]));arr.push({id:Date.now()+'_'+Math.random().toString(36).slice(2,6),type,ts:new Date().toISOString(),client_id:clientId,...(extra||{})});if(arr.length>600)arr.splice(0,arr.length-600);}
 function autoLogContact(clientId,note){const c=getClientById(clientId);if(!c)return;c.last_contact_date=todayKey();const pb=bids.find(b=>b.client_id===clientId&&b.status==='Pending');if(pb){pb.last_followup_date=todayKey();if(!pb.followup||pb.followup<=todayKey())pb.followup=addDays(todayKey(),7);}emitEvent(note||'contact',clientId);try{saveAll();}catch(e){}}
 function markFollowupSent(bidId){const b=bids.find(x=>x.id===bidId);if(!b)return;b.last_followup_date=todayKey();b.followupStage=(b.followupStage||1)+1;const nextDays=b.followupStage>=3?14:7;b.followup=addDays(todayKey(),nextDays);b.noResponseCount=(b.noResponseCount||0)+1;saveAll();setTimeout(renderDash,600);}
 function _snoozeFollowup(bidId,days){const b=bids.find(x=>x.id===bidId);if(!b)return;b.followup=addDays(todayKey(),days||2);saveAll();setTimeout(renderDash,300);showToast('Follow-up snoozed '+days+' days','⏰');}
@@ -832,11 +834,13 @@ function renderTodayFeed(){
     const stage=getBidCollStage(b);const next=getNextCollAction(stage);
     const lienStage=stage==='lien_filed';const isFileable=stage==='intent'||stage==='lien_ready';
     let actBtns='';
-    if(c.phone)actBtns+='<a href="tel:'+c.phone.replace(/\D/g,'')+'" onclick="autoLogContact('+c.id+',\'call\')" class="btn btn-sm" style="font-size:11px">Call</a>';
-    if(next.smsKey&&c.phone)actBtns+='<button onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+next.smsKey+'\')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+next.label+'</button>';
-    else if(isFileable)actBtns+='<button onclick="showFileLienDirect('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">⚖️ File Lien</button>';
-    else if(lienStage)actBtns+='<button onclick="printKansasLien('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">⚖️ View lien doc</button>';
-    actBtns+='<button onclick="openPayPanel('+b.id+')" class="btn btn-sm btn-g" style="font-size:11px">Collect →</button>';
+    // Collections actions: one SMS/lien button + Collect, equal width (flex:1) so
+    // they sit side-by-side and fit on mobile. Call removed — texting is the
+    // collections channel and the row only has space for two even buttons.
+    if(next.smsKey&&c.phone)actBtns+='<button onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+next.smsKey+'\')" class="btn btn-sm" style="flex:1;font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+next.label+'</button>';
+    else if(isFileable)actBtns+='<button onclick="showFileLienDirect('+b.id+')" class="btn btn-sm" style="flex:1;font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">⚖️ File Lien</button>';
+    else if(lienStage)actBtns+='<button onclick="printKansasLien('+b.id+')" class="btn btn-sm" style="flex:1;font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">⚖️ View lien doc</button>';
+    actBtns+='<button onclick="openPayPanel('+b.id+')" class="btn btn-sm btn-g" style="flex:1;font-size:11px">Collect →</button>';
     finalPayItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">💰</div>'+
@@ -844,7 +848,7 @@ function renderTodayFeed(){
           '<div class="tf-name">'+escHtml(c.name)+urgTag+countdownTag+'</div>'+
           '<div class="tf-sub" style="color:#A32D2D">'+fmt(bal)+' owed · '+daysAgo+'d since completion</div>'+
         '</div>'+
-        '<div class="tf-acts">'+actBtns+'</div>'+
+        '<div class="tf-acts" style="display:flex;gap:6px">'+actBtns+'</div>'+
       '</div>'
     );
   });
@@ -1002,9 +1006,31 @@ function renderTodayFeed(){
   let draft=loadEstFullDraft();
   if(draft&&draft.cname){
     const alreadyWon=bids.some(b=>b.status==='Closed Won'&&(b.client_name||b.name||'').toLowerCase().trim()===(draft.cname||'').toLowerCase().trim());
-    if(alreadyWon){clearEstFullDraft();draft=null;}
+    const _draftBidId=draft?.lastBidId||null;
+    const alreadySent=_draftBidId&&bids.some(b=>b.id===_draftBidId&&b.signingToken);
+    if(alreadyWon||alreadySent){clearEstFullDraft();draft=null;}
   }
   const _activeDraftBidId=draft?.lastBidId||null;
+  // Track all bid IDs shown — prevents the same bid appearing from both the
+  // localStorage draft (via _activeDraftBidId) and bids[] simultaneously.
+  const _shownBidIds=new Set(_activeDraftBidId?[_activeDraftBidId]:[]);
+  // The lastBidId link is only useful if it still points at a real bid. After a
+  // discard or a cloud merge that re-IDs a copy, lastBidId can go stale — pointing
+  // at an ID no longer in bids[] — which lets the localStorage draft card AND its
+  // bids[] twin both render (the duplicate-card bug). Treat a stale link the same
+  // as a missing one so the name-based recovery below re-links and de-dups it.
+  const _hasValidLink=_activeDraftBidId&&bids.some(b=>String(b.id)===String(_activeDraftBidId));
+  // Recovery for missing or stale lastBidId: if exactly one draft/pending bid
+  // exists for the same client name, it IS the draft bid — exclude it and heal the
+  // localStorage link so future renders use ID-based dedup without this recovery.
+  if(!_hasValidLink&&draft?.cname){
+    const _dc=(draft.cname||'').toLowerCase().trim();
+    const _cands=bids.filter(b=>!b.signingToken&&(b.draft||b.status==='Pending'||(b.status==='Draft'&&b.geiLines!==undefined))&&((b.client_name||b.name||'').toLowerCase().trim()===_dc||(getClientById(b.client_id)?.name||'').toLowerCase().trim()===_dc));
+    if(_cands.length===1){
+      _shownBidIds.add(_cands[0].id);
+      try{const _r=localStorage.getItem('zp3_est_full_draft');if(_r){const _fd=JSON.parse(_r);_fd.lastBidId=_cands[0].id;localStorage.setItem('zp3_est_full_draft',JSON.stringify(_fd));}}catch(e){}
+    }
+  }
   if(draft&&draft.cname){
     buildItems.push(
       '<div class="tf-card">'+
@@ -1041,7 +1067,8 @@ function renderTodayFeed(){
       );
     }
   }
-  bids.filter(b=>!b.signingToken&&(b.draft||b.status==='Pending'||(b.status==='Draft'&&b.geiLines!==undefined))&&b.id!==_activeDraftBidId).forEach(b=>{
+  bids.filter(b=>!b.signingToken&&(b.draft||b.status==='Pending'||(b.status==='Draft'&&b.geiLines!==undefined))&&!_shownBidIds.has(b.id)).forEach(b=>{
+    _shownBidIds.add(b.id); // deduplicate within bids[] itself in case same id appears twice
     const c=getClientById(b.client_id);
     const displayName=c?.name||b.client_name||b.name||'';
     if(!displayName)return;
@@ -1696,6 +1723,7 @@ function _bddView(v){
 }
 
 let _proposalFilter='all';
+Object.defineProperty(window,'_proposalFilter',{get:()=>_proposalFilter,set:v=>{_proposalFilter=v;},configurable:true});
 function setProposalFilter(f,btn){
   _proposalFilter=f;
   document.querySelectorAll('#pg-proposals .fb').forEach(b=>b.classList.remove('active'));
@@ -1819,17 +1847,28 @@ function renderProposalsPage(){
     if(b.geiLines!==undefined)return '<span style="font-size:9px;color:var(--text3);font-weight:700">BYO · </span>';
     return '';
   };
-  const rows=filtered.map(b=>{
+  // Sort all non-signed tabs by bid_date descending (newest first), matching Books ordering
+  const PROP_MO=['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const sortedFiltered=[...filtered].sort((a,b)=>(b.bid_date||b.updated||'').localeCompare(a.bid_date||a.updated||''));
+  let _lastPropMo='';
+  const rows=sortedFiltered.map(b=>{
     const c=getClientById(b.client_id)||{name:b.client_name||b.name||'Unknown'};
     const proj=b.addr||b.type||'—';
     const _depPaid=getBidPaid(b.id);const deposit=b.status==='Closed Won'&&(b.deposit||0)>0.01&&_depPaid>=(b.deposit-0.01)?'<div style="font-size:10px;color:var(--green);font-weight:700;margin-top:2px">Deposit '+fmt(b.deposit)+' received</div>':'';
     const _lostLine=(b.status==='Closed Lost'&&b.lostReason)?'<div style="font-size:10px;color:#A32D2D;font-weight:600;margin-top:2px">'+escHtml(b.lostReason)+'</div>':'';
     const amt=b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'—');
     const revFn=(b.status==='Closed Won'||b.clientCancelled)?'openBidDetail('+b.id+',\'bid\')':(b.geiLines!==undefined?'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')':'openEditBid('+b.id+')');
-    // Sent estimate that hasn't closed → offer a one-tap close-out.
     const _canCloseOut=b.signingToken&&b.status!=='Closed Won'&&b.status!=='Closed Lost'&&b.status!=='Abandoned'&&!b.clientCancelled;
     const _coBtn=_canCloseOut?'<button class="btn btn-sm" onclick="event.stopPropagation();openCloseOutEstimate('+b.id+')" style="font-size:11px;font-weight:700;color:#A32D2D;border-color:#E5B5B5;background:#FEF2F2;margin-right:6px">Close out</button>':'';
-    return '<tr style="cursor:pointer" onclick="'+revFn+'">'+
+    // Month section header — inserted as a spanning row when the month changes
+    const _bmo=b.bid_date?b.bid_date.slice(0,7):'';
+    let _moRow='';
+    if(_bmo&&_bmo!==_lastPropMo){
+      _lastPropMo=_bmo;
+      const _yr=parseInt(_bmo.slice(0,4)),_mi=parseInt(_bmo.slice(5,7))-1;
+      _moRow='<tr><td colspan="5" style="background:var(--bg2);font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);letter-spacing:.08em;padding:7px 10px;border-bottom:1px solid var(--border)">'+(PROP_MO[_mi]||'')+' '+(_yr||'')+'</td></tr>';
+    }
+    return _moRow+'<tr style="cursor:pointer" onclick="'+revFn+'">'+
       '<td><div style="font-weight:800">'+escHtml(c.name)+'</div>'+
       '<div style="font-size:10px;color:var(--text3);font-weight:500;margin-top:2px">'+typeChip(b)+escHtml((proj+'').split(',')[0])+'</div>'+deposit+_lostLine+'</td>'+
       '<td>'+statusChip(b)+'</td>'+

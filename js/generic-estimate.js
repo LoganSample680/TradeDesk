@@ -8,6 +8,7 @@ function clearNotesPanel(){}
 function _resetNotesForNewEstimate(){}
 
 let hittersFilter='all';
+Object.defineProperty(window,'hittersFilter',{get:()=>hittersFilter,set:v=>{hittersFilter=v;},configurable:true});
 function setHittersFilter(f,btn){
   hittersFilter=f;
   ['all','A','B'].forEach(t=>{
@@ -270,15 +271,27 @@ function _renderNavTradeSwitcher(){
 
 // ── Generic estimate (non-painting trades) ────────────────────────────
 let _geiClientId=null,_geiEditBidId=null,_geiLines=[],_geiTrade=null,_geiIsCommercial=false,_geiEmergency=false,_geiStep=1,_geiNewWork=false,_geiJobScope='repair';
+Object.defineProperty(window,'_geiClientId',{get:()=>_geiClientId,set:v=>{_geiClientId=v;},configurable:true});
+Object.defineProperty(window,'_geiEditBidId',{get:()=>_geiEditBidId,set:v=>{_geiEditBidId=v;},configurable:true});
+Object.defineProperty(window,'_geiLines',{get:()=>_geiLines,set:v=>{_geiLines=v;},configurable:true});
+Object.defineProperty(window,'_geiTrade',{get:()=>_geiTrade,set:v=>{_geiTrade=v;},configurable:true});
 let _geiScopeChips=[];
+Object.defineProperty(window,'_geiScopeChips',{get:()=>_geiScopeChips,set:v=>{_geiScopeChips=v;},configurable:true});
 let _geiScopeNoScope=false;
+Object.defineProperty(window,'_geiScopeNoScope',{get:()=>_geiScopeNoScope,set:v=>{_geiScopeNoScope=v;},configurable:true});
 // Crew assigned to this bid (employee emails). Each adds their loaded payroll cost as a
 // real expense; more people on the job → bigger cost. Hours come automatically from scope.
 let _estCrew=[];
 let _panelSched=null; // null = not active, obj = panel schedule data
 let _geiIsTM=false,_tmCrewCount=1,_tmRatePerMan=0,_tmEstHours=0,_tmBillingCycle='weekly';
+Object.defineProperty(window,'_geiIsTM',{get:()=>_geiIsTM,set:v=>{_geiIsTM=v;},configurable:true});
+Object.defineProperty(window,'_tmCrewCount',{get:()=>_tmCrewCount,set:v=>{_tmCrewCount=v;},configurable:true});
+Object.defineProperty(window,'_tmRatePerMan',{get:()=>_tmRatePerMan,set:v=>{_tmRatePerMan=v;},configurable:true});
+Object.defineProperty(window,'_tmEstHours',{get:()=>_tmEstHours,set:v=>{_tmEstHours=v;},configurable:true});
+Object.defineProperty(window,'_tmBillingCycle',{get:()=>_tmBillingCycle,set:v=>{_tmBillingCycle=v;},configurable:true});
 let _tmMatMarkup=0,_tmCapAction='Stop & get re-approval';
 let _geiIsFreeForm=false;
+Object.defineProperty(window,'_geiIsFreeForm',{get:()=>_geiIsFreeForm,set:v=>{_geiIsFreeForm=v;},configurable:true});
 let _geiClientTaxRate=null,_geiTaxLookupTimer=null;
 
 function _geiOnAddrInput(){
@@ -302,6 +315,7 @@ async function _geiLookupClientTaxRate(){
 function openTMEstimate(c,bidId){
   _geiIsTM=true;_geiIsFreeForm=false;
   openGenericEstimate(c,bidId,null);
+  _geiIsFreeForm=false;
 }
 function openFreeFormEstimate(c,bidId){
   _geiIsFreeForm=true;_geiIsTM=false;
@@ -313,8 +327,7 @@ function openGenericEstimate(c,bidId,_tradePick){
   _geiEditBidId=bidId||null;
   _geiClientTaxRate=null;
   _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;_geiJobScope='repair';_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];
-  // Callers set _geiIsTM / _geiIsFreeForm before calling; reset TM defaults only when entering scope mode
-  if(!_geiIsTM){_tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmMatMarkup=0;_tmCapAction='Stop & get re-approval';}
+  _tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmMatMarkup=0;_tmCapAction='Stop & get re-approval';
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
@@ -650,6 +663,7 @@ function _toggleScopeNone(){
   _byoAutosave();
 }
 function _updateScopeSheetBtn(label){
+  if(!label||typeof label!=='string')return;
   const sid='_scb-'+label.replace(/[^a-z0-9]/gi,'_');
   const btn=document.getElementById(sid);if(!btn)return;
   const on=_geiScopeChips.includes(label);

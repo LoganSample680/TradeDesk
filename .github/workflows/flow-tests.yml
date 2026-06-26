@@ -1,0 +1,71 @@
+name: Flow Tests (live Supabase)
+
+# Runs the live-Supabase flow tests on every PR commit and on pushes to main,
+# in real time alongside the offline shards. The specs SKIP cleanly when the
+# E2E_DEV_* secrets are absent, so this job is green (all skipped) until the
+# secrets are added — then it activates and drives the real pipeline live.
+on:
+  pull_request:
+    branches: ['**']
+  push:
+    branches: [main]
+
+concurrency:
+  group: flow-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flow:
+    name: Flow tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      CI: true
+      E2E_DEV_EMAIL: ${{ secrets.E2E_DEV_EMAIL }}
+      E2E_DEV_PASSWORD: ${{ secrets.E2E_DEV_PASSWORD }}
+      E2E_DEV_USER_ID: ${{ secrets.E2E_DEV_USER_ID }}
+      # Secret header value that the Cloudflare WAF rule allowlists past the bot
+      # challenge. Set this secret AND add the matching Cloudflare rule.
+      E2E_BYPASS_SECRET: ${{ secrets.E2E_BYPASS_SECRET }}
+      # Target the pages.dev preview, which sits OUTSIDE the tradedeskpro.app zone
+      # and its Bot Fight Mode (a WAF skip rule can't override Bot Fight Mode).
+      # Same app code + /api proxy. Override per-run via repo secret/var if needed.
+      E2E_BASE_URL: https://claude-review-app-ux-flow-mr.tradedesk-cyp.pages.dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install Playwright 1.56
+        run: npm install --no-save @playwright/test@1.56.0 serve
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-1.56.0
+
+      - name: Install Playwright browsers (Chromium + WebKit)
+        run: npx playwright install --with-deps chromium webkit
+
+      # Non-blocking while the live connection is being wired: the job still runs
+      # and logs the exact sign-in diagnostic, but a failure does not gate the PR.
+      # Remove continue-on-error once the live harness reliably signs in.
+      - name: Run live flow tests
+        continue-on-error: true
+        run: npx playwright test -c playwright.flow.config.js
+
+      - name: Upload flow report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flow-report
+          path: playwright-report/
+          retention-days: 14
