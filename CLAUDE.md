@@ -901,3 +901,26 @@ rebuilds.
 - Rationale: the owner keeps thinking of changes after the fact and wants to batch
   them into one intentional deploy instead of burning a Cloudflare build on every
   push. Respect that — never auto-deploy.
+
+### 15.2 The `/api` Proxy Is Load-Bearing — Never Remove It
+
+`functions/api/[[path]].js` is a Cloudflare Pages Function that reverse-proxies
+`/api/*` → the Supabase project URL. The app sets `SUPA_URL = location.origin +
+'/api'` (cloud.js), so **every** Supabase call — REST, auth, and realtime
+WebSocket — routes through it.
+
+- **Why it exists (real, observed, NOT theoretical):** without it, **AT&T Fiber
+  could not load the app** — that network fails to reach `*.supabase.co` directly.
+  Routing through the app's own Cloudflare domain (which the browser already
+  resolved to load the page) fixes it. Do NOT "optimize" this away by calling
+  Supabase directly — it re-breaks AT&T Fiber (and likely other carriers).
+- **The cost:** every Supabase request is one Cloudflare Workers/Pages Functions
+  invocation. The **free** plan caps at **100,000 requests/day per ACCOUNT** (shared
+  across preview + production). Production burns this on every real user-action;
+  the live flow suite burns it FAST.
+- **Therefore Workers Paid ($5/mo → 10M/day) is a hard infra requirement**, not
+  optional. It is cheaper and safer than removing the proxy.
+- **Do not casually trigger the full live flow suite** — it can exhaust the daily
+  account limit in one run and throttle the proxy for preview AND production until
+  the UTC-midnight reset (or until Workers Paid is enabled). Run live specs in
+  small subsets, and only with the owner's go-ahead.
