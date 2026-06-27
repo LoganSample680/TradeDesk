@@ -2430,7 +2430,21 @@ function saveGenericEstimate(draft){
     tmNteCap:_tmNteFromNew||parseFloat(v('tm-nte-cap'))||0,
   }:{isTM:false};
   const _byoDepPct=_geiIsTM?null:(parseFloat(document.getElementById('byo-deposit-pct')?.value)||25)/100;
-  const _deposit=_geiIsTM?(_tmFields.tmDepositAmt||0):Math.round(total*_byoDepPct*100)/100;
+  let _deposit=_geiIsTM?(_tmFields.tmDepositAmt||0):Math.round(total*_byoDepPct*100)/100;
+  // State max-deposit cap (home-improvement compliance). Parse state from client
+  // address like proposals.js _buildClientHubSnapshot, fall back to S.state then KS.
+  if(typeof _maxDeposit==='function'){
+    const _depAddrM=(v('gei-addr')||'').toUpperCase().match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
+    const _depState=(_depAddrM?_depAddrM[1]:null)||(typeof S!=='undefined'&&S.state)||'KS';
+    const _depMax=_maxDeposit(_depState,total);
+    if(_deposit>_depMax+0.005){
+      _deposit=Math.round(_depMax*100)/100;
+      if(_geiIsTM)_tmFields.tmDepositAmt=_deposit;
+      if(typeof showToast==='function'&&typeof _depositCapNote==='function'){
+        showToast('Deposit capped to $'+_deposit.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+' — '+_depositCapNote(_depState),'⚠️',6000);
+      }
+    }
+  }
   const _typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':(TRADE_META[trade]?.label||'Trade')+' Proposal';
   // Extract BYO field values before object literals — Safari fails to parse ?.?? inside spread conditionals
   const _byoTermsEl=document.getElementById('byo-custom-terms');

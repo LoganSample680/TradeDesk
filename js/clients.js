@@ -9,7 +9,16 @@ function openClientDetail(cid,origin){
   if(bb)bb.textContent=window._clientDetailOrigin==='dash'?'← Home':window._clientDetailOrigin==='leads'?'← Leads':'← All clients';
 }
 
+// True for contractors/owners always, and for employees only when granted the
+// `estimate` team permission. The estimate entry points are greyed for employees
+// without it, and any attempt routes through the request-access popup instead.
+function _canEstimate(){ return !_isEmployee || !!(_employeeRecord&&_employeeRecord.permissions&&_employeeRecord.permissions.estimate); }
+
 function openEstimateForClient(){
+  // Permission gate FIRST — covers both entry points (dashboard quick action and
+  // the client-record buttons both funnel here). A non-estimate employee gets the
+  // request-access popup, never the estimator.
+  if(!_canEstimate()){ _showEstimateRequestModal(); return; }
   const c=getClientById(currentClientId);
   if(!c){showWorkflowGate('Select a client first before starting an estimate.','Choose Client','function(){goPg(\'pg-clients\');}');return;}
   const r=getClientRisk(c.id);
@@ -21,6 +30,40 @@ function openEstimateForClient(){
   }
   _rrpGateThenEstimate(c);
 }
+// Popup shown when a non-estimate employee taps a (greyed) estimate entry point:
+// offer to request access from the owner/manager.
+function _showEstimateRequestModal(){
+  if(typeof zConfirm==='function'){
+    zConfirm("You don't have permission to create estimates yet. Send a request to your manager for access?",
+      ()=>_submitEstimateRequest(),
+      {title:'🔒 Estimate access',yes:'Request access'});
+  }else if(typeof zAlert==='function'){
+    zAlert('You do not have permission to create estimates. Ask your manager for access.',{title:'Permission needed'});
+  }
+}
+
+// Insert a pending permission request the owner sees on their Team page. The
+// unique partial index (one pending per contractor/employee/perm) makes a repeat
+// tap a no-op rather than a duplicate.
+async function _submitEstimateRequest(){
+  if(!_isEmployee||typeof _supa==='undefined'||!_supa||!_supaUser||!_contractorUserId){
+    if(typeof showToast==='function')showToast('Could not send request.','⚠️');return;
+  }
+  try{
+    const row={contractor_user_id:_contractorUserId,employee_user_id:_supaUser.id,
+      employee_email:_supaUser.email||'',employee_name:(_employeeRecord&&_employeeRecord.name)||'',
+      perm:'estimate',status:'pending'};
+    const{error}=await _supa.from('td_permission_requests').insert(row);
+    if(error){
+      if(/duplicate|unique|23505/i.test((error.message||'')+(error.code||''))){
+        if(typeof showToast==='function')showToast('Request already sent — pending approval.','⏳');return;
+      }
+      throw error;
+    }
+    if(typeof showToast==='function')showToast('Access request sent to your manager.','📤');
+  }catch(e){console.warn('estimate request failed:',e);if(typeof showToast==='function')showToast('Could not send request.','⚠️');}
+}
+
 // Trades that categorically never disturb painted surfaces — skip RRP question
 const _RRP_EXEMPT_TRADES=['landscaping'];
 function _rrpGateThenEstimate(c){
@@ -1245,7 +1288,7 @@ function renderClientDetail(){
       (c.email?'<button class="btn" onclick="emailClient()">✉️ Email</button>':'')+
       (!gps.active?'<button class="btn" onclick="startDriveToClient()">🚗 Drive there</button>':'')+
       '<button class="btn" onclick="showHubMenu('+c.id+')">🔗 Client hub</button>'+
-      '<button class="btn btn-p" onclick="openEstimateForClient()">+ New estimate</button>'+
+      '<button class="btn btn-p"'+(_canEstimate()?'':' style="opacity:.55"')+' onclick="openEstimateForClient()">'+(_canEstimate()?'':'🔒 ')+'+ New estimate</button>'+
     '</div>'+
     '';
   // Metric tiles — outside hero in split-3-eq grid
@@ -1361,8 +1404,8 @@ function renderClientDetail(){
             '<span style="font-size:18px">📅</span><span>Schedule estimate</span>'+
             '<span style="font-size:10px;color:var(--text3);font-weight:400">Pick a date &amp; time</span>'+
           '</button>'+
-          '<button onclick="openEstimateForClient()" style="padding:12px;border-radius:var(--rl);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px">'+
-            '<span style="font-size:18px">📋</span><span>Start estimate now</span>'+
+          '<button onclick="openEstimateForClient()" style="padding:12px;border-radius:var(--rl);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px'+(_canEstimate()?'':';opacity:.55')+'">'+
+            '<span style="font-size:18px">'+(_canEstimate()?'📋':'🔒')+'</span><span>Start estimate now</span>'+
             '<span style="font-size:10px;color:var(--blue);font-weight:400">I\'m already here</span>'+
           '</button>'+
         '</div>';

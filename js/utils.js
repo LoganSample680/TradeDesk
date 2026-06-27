@@ -163,4 +163,65 @@ function geoIfGranted(cb, errCb, opts){
   }).catch(()=>{});
 }
 
+// ── Auto-capitalize EVERY free-text field ───────────────────────────────────
+// Title-cases the first letter of every space-separated word so anything typed
+// can never be saved as "master bedroom" or "Master bedroom" — it always
+// normalizes to "Master Bedroom". App-wide by default (every <textarea> and
+// text <input>), so no per-field wiring is needed. The rest of each word is left
+// as typed, so acronyms ("ABC Painting") and camelCase ("McDowell") survive —
+// only the word-initial letter is forced upper.
+function _autoCapWords(s){
+  return String(s==null?'':s).replace(/(^|\s)([\p{L}])/gu, function(_m, sep, ch){ return sep + ch.toUpperCase(); });
+}
+// Skip only the field types/modes where title-casing is WRONG (email, password,
+// phone, number, url, search). Any other field can opt out with
+// autocapitalize="none" (or "off").
+function _autoCapEligible(el){
+  if (!el || !el.matches) return false;
+  if (!el.matches('textarea, input:not([type]), input[type="text"]')) return false;
+  var ac = (el.getAttribute('autocapitalize') || '').toLowerCase();
+  if (ac === 'none' || ac === 'off') return false;
+  var im = (el.getAttribute('inputmode') || '').toLowerCase();
+  if (im === 'email' || im === 'url' || im === 'numeric' || im === 'decimal' || im === 'tel' || im === 'search') return false;
+  return true;
+}
+// TWO mechanisms, both triggered by the SPACEBAR (capitalize each word as you
+// type), and neither mutates a field during a programmatic value-set:
+//   1. MOBILE (primary): set autocapitalize="words" on every eligible field, so
+//      the device keyboard capitalizes each word natively as it's typed — the
+//      "hits on the spacebar" behavior, with zero value rewriting.
+//   2. DESKTOP (fallback): on a real spacebar keydown, title-case the value. A
+//      keydown only fires from genuine typing — Playwright's page.fill() sets the
+//      value WITHOUT a keydown, so the offline suite is never affected.
+function _applyAutoCapAttrs(root){
+  try {
+    (root || document).querySelectorAll('input:not([type]), input[type="text"], textarea').forEach(function(el){
+      if (!el.hasAttribute('autocapitalize') && _autoCapEligible(el)) el.setAttribute('autocapitalize', 'words');
+    });
+  } catch (_e) {}
+}
+if (typeof document !== 'undefined' && document.addEventListener) {
+  // Tag static fields once the DOM is ready, and expose a hook so code that
+  // injects fields later (modals/sheets) can re-tag them.
+  if (document.readyState !== 'loading') _applyAutoCapAttrs(document);
+  else document.addEventListener('DOMContentLoaded', function(){ _applyAutoCapAttrs(document); });
+  window._applyAutoCapAttrs = _applyAutoCapAttrs;
+  // Desktop spacebar fallback — runs on real typing only (not page.fill).
+  document.addEventListener('keydown', function(e){
+    if (e.key !== ' ' && e.key !== 'Spacebar') return;
+    var el = e && e.target;
+    if (!_autoCapEligible(el)) return;
+    // Let the space land first, then normalize the words typed so far.
+    setTimeout(function(){
+      var v = el.value, capped = _autoCapWords(v);
+      if (capped !== v) {
+        var pos = el.selectionStart;
+        el.value = capped;
+        try { el.setSelectionRange(pos, pos); } catch (_e) {}
+        try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (_e) {}
+      }
+    }, 0);
+  }, true);
+}
+
 // ── Supabase cloud sync ───────────────────────────────────────────────

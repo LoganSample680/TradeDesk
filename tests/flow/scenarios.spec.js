@@ -21,18 +21,13 @@ test.describe('bids/payments/liens — full scenario matrix', () => {
   test.beforeEach(async ({ page }) => {
     await signIn(page);
     await page.evaluate((runTag) => {
-      // FULL RESET of scenario data (marker __E2E_SCN__) — removes ALL prior
-      // scenario rows including the other browser's copy from this same run, so
-      // the account ends with exactly ONE clean set (no Chromium+WebKit dupes, no
-      // accumulation across runs). The last browser to run leaves the live set.
+      // Remove ONLY THIS run's prior scenario rows (marker __E2E_SCN__ <runTag>).
+      // Scoped to runTag — NOT a global E2E wipe — so this is safe to run with
+      // parallel workers: a worker only ever clears its own rows, never another
+      // worker's in-flight data. (A broad cross-run sweep is a separate opt-in
+      // cleanup; with fullyParallel it would race and delete live data.)
       if (typeof clients === 'undefined') return;
-      // Remove scenario rows (__E2E_SCN__) AND legacy test rows from earlier runs
-      // (old __E2E__ marker or "E2E"-prefixed names) so accumulated duplicate test
-      // bids — which were inflating the outstanding-balance total — get cleared.
-      const stale = clients.filter(c =>
-        (c.notes || '').includes('__E2E_SCN__') ||
-        (c.notes || '').includes('__E2E__') ||
-        (c.name || '').startsWith('E2E'));
+      const stale = clients.filter(c => (c.notes || '').includes('__E2E_SCN__ ' + runTag));
       const ids = new Set(stale.map(c => c.id));
       if (ids.size) {
         clients = clients.filter(c => !ids.has(c.id));

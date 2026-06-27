@@ -1298,8 +1298,11 @@ function renderLeadSources(){
   const noSrc=clients.filter(c=>!c.source).length;
 
   const tbodyRows=visible.map(([src,d])=>{
-    const decided=d.won+d.lost;
-    const cr=decided>0?Math.round(d.won/decided*100):null;
+    // Close rate is won / TOTAL leads from this source (the count shown in the
+    // adjacent Leads column) — not won / decided. Using won/(won+lost) ignored
+    // still-pending leads and overstated the rate (e.g. 2 won of 4 leads showed
+    // 100% instead of 50%). Guarded permanently by close-rate-detector.spec.js.
+    const cr=d.leads>0?Math.round(d.won/d.leads*100):null;
     const crCls=cr===null?'':cr>=40?' green':cr>=25?'':' red';
     const crStr=cr!==null?cr+'%':'—';
     const cost=mktCosts[src]||0;

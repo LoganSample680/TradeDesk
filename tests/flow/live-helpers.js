@@ -130,13 +130,140 @@ function finding({ role = 'contractor', page = '-', control = '', rule = '', exp
   return s;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// step() — the heart of every flow. One instrumented primitive that fuses three
+// things into a single pass so validation and analytics are the SAME data:
+//   1. ACT     — perform the interaction; `act` returns the # of clicks/keystrokes
+//   2. MEASURE — wall-clock ms + interaction count, pushed to the LEDGER
+//   3. ASSERT  — `rule(page)` returns {ok, got}; on !ok we throw a finding() ticket
+//   (optional ABUSE — adversarial probe of the same step)
+// report() then emits a friction profile AND a click-budget verdict from the
+// ledger. CLAUDE.md §13 makes this the mandatory shape for every flow.
+// ─────────────────────────────────────────────────────────────────────────────
+const _LEDGER = [];
+function resetLedger() { _LEDGER.length = 0; }
+
+async function step(page, opts) {
+  const { label, page: pg = '-', role = 'contractor', act, rule, ruleText = 'post-condition', expected = 'ok', suspect = '', abuse } = opts;
+  const t0 = Date.now();
+  let interactions = 0;
+  const res = act ? await act(page) : 0;
+  interactions = (typeof res === 'number') ? res : 0;
+  const ms = Date.now() - t0;
+  let ok = true, got = '';
+  if (rule) {
+    try { const r = await rule(page); ok = !!(r && r.ok); got = r ? r.got : ''; }
+    catch (e) { ok = false; got = 'threw: ' + e.message; }
+  }
+  _LEDGER.push({ label, pg, role, ms, interactions, ok });
+  if (abuse) { try { await abuse(page); } catch (e) {} }
+  if (rule && !ok) {
+    throw new Error(finding({ role, page: pg, control: label, rule: ruleText, expected, got: String(got), suspect }));
+  }
+  return interactions;
+}
+
+// Emit the friction profile (slowest-first + total clicks/ms) and grade against
+// the committed click budget. Clicks are DETERMINISTIC → hard gate (returns
+// overBudget for the caller to assert on). Time is advisory (logged, not gated).
+function report(tag, baseline) {
+  const totalMs = _LEDGER.reduce((s, r) => s + r.ms, 0);
+  const totalClicks = _LEDGER.reduce((s, r) => s + r.interactions, 0);
+  const rows = _LEDGER.slice().sort((a, b) => b.ms - a.ms);
+  // eslint-disable-next-line no-console
+  console.log(`\n⏱  FLOW LEDGER [${tag}] — total ${totalMs}ms · ${totalClicks} interactions (slowest first):`);
+  // eslint-disable-next-line no-console
+  rows.forEach(r => console.log(`   ${String(r.ms).padStart(6)}ms ${String(r.interactions).padStart(3)}clk  ${r.label}`));
+  const base = baseline && baseline[tag];
+  let overBudget = false;
+  if (base && typeof base.clicks === 'number') {
+    overBudget = totalClicks > base.clicks;
+    // eslint-disable-next-line no-console
+    console.log(`   budget: ${totalClicks}/${base.clicks} clicks ${overBudget ? '✗ OVER (UX regression)' : '✓'}`);
+  } else {
+    // eslint-disable-next-line no-console
+    console.log(`   BASELINE CAPTURE [${tag}]: ${totalClicks} clicks · ${totalMs}ms — add to perf-baseline.json to start gating`);
+  }
+  return { totalMs, totalClicks, overBudget, hasBaseline: !!base };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PHYSICAL interaction helpers (CLAUDE.md §13.6) — drive the app like a real
+// thumb on a real screen, and RETURN the honest interaction cost so act() just
+// sums them. Every helper scrolls the target into view first; if the page
+// actually had to move, that's counted as a real scroll (you can't tap what you
+// can't see). This is what makes the ledger reflect true effort on mobile,
+// tablet, and desktop — the same flow costs MORE scrolls on a small screen.
+//   tap(p, sel)            → 1 tap (+1 if a scroll was needed to reach it)
+//   type(p, sel, text)     → text.length keystrokes (+1 if a scroll was needed)
+//   pick(p, sel, value)    → 1 tap for a <select>/<input type=date> (+scroll)
+//   scrollBy(p, dy)        → 1 deliberate scroll
+// All count REAL events: page.fill is never used, so values are typed key-by-key
+// exactly as a user would (which also exercises the auto-capitalize-on-space).
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Bring `sel` into the viewport; return 1 if the page physically scrolled to do
+// it, else 0. Reads scrollY of the element's nearest scrollable ancestor (the
+// app scrolls .pg containers, not always window).
+async function _reach(page, sel) {
+  const loc = page.locator(sel).first();
+  const before = await loc.evaluate(el => {
+    let n = el.parentElement, sy = window.scrollY || 0;
+    while (n) { if (n.scrollHeight > n.clientHeight + 1) { sy += n.scrollTop; } n = n.parentElement; }
+    return sy;
+  }).catch(() => 0);
+  await loc.scrollIntoViewIfNeeded({ timeout: 8000 }).catch(() => {});
+  const after = await loc.evaluate(el => {
+    let n = el.parentElement, sy = window.scrollY || 0;
+    while (n) { if (n.scrollHeight > n.clientHeight + 1) { sy += n.scrollTop; } n = n.parentElement; }
+    return sy;
+  }).catch(() => 0);
+  return Math.abs(after - before) > 2 ? 1 : 0;
+}
+
+async function tap(page, sel) {
+  const scrolls = await _reach(page, sel);
+  await page.locator(sel).first().click({ timeout: 10000 });
+  return 1 + scrolls;
+}
+
+async function type(page, sel, text) {
+  const scrolls = await _reach(page, sel);
+  const loc = page.locator(sel).first();
+  await loc.click({ timeout: 10000 });
+  await loc.fill('');                                  // clear any prefill
+  await loc.pressSequentially(String(text), { delay: 0 }); // REAL key-by-key typing
+  return String(text).length + scrolls;
+}
+
+// <select> / date pickers / file inputs: one tap to choose a value.
+async function pick(page, sel, value) {
+  const scrolls = await _reach(page, sel);
+  const loc = page.locator(sel).first();
+  try { await loc.selectOption(String(value), { timeout: 4000 }); }
+  catch (e) { await loc.fill(String(value)); }          // date inputs take fill
+  return 1 + scrolls;
+}
+
+async function scrollBy(page, dy) {
+  await page.mouse.wheel(0, dy).catch(() => {});
+  return 1;
+}
+
 module.exports = {
   needsLiveCreds,
   shouldTeardown,
   finding,
+  step,
+  report,
+  resetLedger,
   signIn,
   assertDevAccount,
   teardownAll,
+  tap,
+  type,
+  pick,
+  scrollBy,
   RUN_TAG,
   DEV_USER_ID,
   SEEDED_TABLES,

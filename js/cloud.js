@@ -392,7 +392,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = location.origin + '/api';
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.26.26.80';
+const APP_VERSION='06.27.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -439,6 +439,29 @@ const _TD_TABLES=[
 // trap every device in an offline loop. Real errors (auth, network) are not matched.
 function _isMissingTableErr(err){
   return !!err&&(err.code==='42P01'||err.code==='PGRST205'||/does not exist|could not find the table|schema cache/i.test(err.message||''));
+}
+
+// Tables whose money fields are redacted for the CURRENT employee session, derived
+// from their team permissions (the SAME matrix the server RPC load_account_data
+// enforces). Used in TWO places that MUST agree:
+//   1. The server zeroes these tables' money keys on load.
+//   2. supaSaveToCloud SKIPS writing these tables back — so a redacted (zeroed)
+//      array can NEVER overwrite the contractor's real amounts. This guard is
+//      permission-derived, not RPC-derived, so corruption is impossible even
+//      before the RPC migration reaches production (where load falls back to the
+//      raw, unredacted select). Contractors (not _isEmployee) redact nothing.
+function _employeeRedactedTables(){
+  if(!_isEmployee)return new Set();
+  const p=(_employeeRecord&&_employeeRecord.permissions)||{};
+  const fin=!!p.financials;
+  const red=new Set();
+  if(!(fin||p.estimate))red.add('td_bids');
+  if(!fin)             red.add('td_income');
+  if(!(fin||p.collect))red.add('td_payments');
+  if(!(fin||p.collect))red.add('td_liens');
+  if(!(fin||p.expenses))red.add('td_expenses');
+  if(!(fin||p.mileage))red.add('td_mileage');
+  return red;
 }
 
 // ── Long-press delete (3s hold on any [data-lp-id] element) ────────────────
@@ -1387,10 +1410,82 @@ function _isCompanyVehicleToday(){
   return !!(v&&v!=='none'&&v!=='personal');
 }
 
+// ── Estimate access requests (owner side) ──────────────────────────────────
+// Employees without `estimate` permission tap a greyed entry point → a row lands
+// in td_permission_requests; the owner approves (flips permissions.estimate) or
+// denies, here on the Team page.
+let _pendingPermReqs=[];
+let _permReqsLoaded=false;
+
+async function _loadPendingPermRequests(){
+  if(_isEmployee||typeof _supa==='undefined'||!_supa||!_supaUser)return;
+  try{
+    const{data,error}=await _supa.from('td_permission_requests').select('*')
+      .eq('contractor_user_id',_supaUser.id).eq('status','pending').order('created_at',{ascending:true});
+    if(error){if(_isMissingTableErr(error))return;throw error;}
+    _pendingPermReqs=data||[];
+    if(typeof renderTeam==='function')renderTeam();
+    _refreshPermReqBadge();
+  }catch(e){console.warn('load perm requests:',e);}
+}
+
+function _refreshPermReqBadge(){
+  const n=_pendingPermReqs.length;
+  ['nb-team','mtb-team','mmi-team'].forEach(id=>{
+    const el=document.getElementById(id);if(!el)return;
+    let b=el.querySelector('.perm-req-badge');
+    if(n>0){
+      if(!b){b=document.createElement('span');b.className='perm-req-badge';
+        b.style.cssText='display:inline-block;min-width:16px;height:16px;line-height:16px;text-align:center;background:#A32D2D;color:#fff;font-size:10px;font-weight:800;border-radius:8px;margin-left:4px;padding:0 4px';
+        el.appendChild(b);}
+      b.textContent=String(n);
+    }else if(b){b.remove();}
+  });
+}
+
+async function _approvePermissionRequest(reqId){
+  const req=_pendingPermReqs.find(r=>r.id===reqId);if(!req)return;
+  try{
+    const emp=(S.employees||[]).find(e=>(e.email||'').toLowerCase()===(req.employee_email||'').toLowerCase());
+    if(emp){emp.permissions=emp.permissions||{};emp.permissions.estimate=true;_settingsChanged();}
+    await _supa.from('team_members').update({permissions:emp?emp.permissions:{estimate:true}})
+      .eq('contractor_user_id',_supaUser.id).eq('email',req.employee_email);
+    await _supa.from('td_permission_requests').update({status:'approved',resolved_at:new Date().toISOString(),resolved_by:_supaUser.id}).eq('id',reqId);
+    _pendingPermReqs=_pendingPermReqs.filter(r=>r.id!==reqId);
+    if(typeof showToast==='function')showToast('Estimate access granted to '+(req.employee_name||req.employee_email||'employee'),'✅');
+    if(typeof saveAll==='function')saveAll();
+    renderTeam();_refreshPermReqBadge();
+  }catch(e){console.warn('approve failed:',e);if(typeof showToast==='function')showToast('Could not approve.','⚠️');}
+}
+
+async function _denyPermissionRequest(reqId){
+  const req=_pendingPermReqs.find(r=>r.id===reqId);if(!req)return;
+  try{
+    await _supa.from('td_permission_requests').update({status:'denied',resolved_at:new Date().toISOString(),resolved_by:_supaUser.id}).eq('id',reqId);
+    _pendingPermReqs=_pendingPermReqs.filter(r=>r.id!==reqId);
+    if(typeof showToast==='function')showToast('Request denied.','🚫');
+    renderTeam();_refreshPermReqBadge();
+  }catch(e){console.warn('deny failed:',e);}
+}
+
 function renderTeam(){
   const el=document.getElementById('team-list');
   const el2=document.getElementById('team-page-list');
   if(!el&&!el2)return;
+  // Owner: lazy-load pending estimate-access requests once, then re-render.
+  if(!_isEmployee&&supaEnabled()&&_supaUser&&!_permReqsLoaded){_permReqsLoaded=true;_loadPendingPermRequests();}
+  const _reqHtml=(!_isEmployee&&_pendingPermReqs.length)
+    ?'<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Pending access requests</div>'+
+      _pendingPermReqs.map(r=>
+        '<div style="padding:10px;background:#FFF7ED;border:1px solid #FED7AA;border-radius:var(--r);margin-bottom:8px">'+
+          '<div style="font-size:13px;font-weight:700">'+escHtml(r.employee_name||r.employee_email||'Employee')+'</div>'+
+          '<div style="font-size:11px;color:var(--text3);margin:2px 0 8px">requests <b>Estimate</b> access</div>'+
+          '<div style="display:flex;gap:8px">'+
+            '<button onclick="_approvePermissionRequest(\''+r.id+'\')" style="flex:1;padding:7px;border-radius:var(--r);border:none;background:#0E6B39;color:#fff;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit">Approve</button>'+
+            '<button onclick="_denyPermissionRequest(\''+r.id+'\')" style="flex:1;padding:7px;border-radius:var(--r);border:1px solid var(--border2);background:none;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit">Deny</button>'+
+          '</div>'+
+        '</div>').join('')+'</div>'
+    :'';
   // Refresh pay-rate cache from team_members (RLS-gated) then re-render once loaded
   if(_canViewComp()&&supaEnabled()&&_supaUser&&!_teamCompLoaded){
     _teamCompLoaded=true;_loadTeamComp().then(()=>renderTeam());
@@ -1419,8 +1514,8 @@ function renderTeam(){
         '<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.5">'+perms+'</div>'+
       '</div>';
     }).join('');
-  if(el)el.innerHTML=empHtml;
-  if(el2)el2.innerHTML=empHtml;
+  if(el)el.innerHTML=_reqHtml+empHtml;
+  if(el2)el2.innerHTML=_reqHtml+empHtml;
   // Devices
   const devs=S.devices||[];
   const myId=_initDeviceId();
@@ -1652,7 +1747,12 @@ async function _saveEmployee(idx){
   _settingsChanged();document.getElementById('emp-modal-overlay')?.remove();renderTeam();
   // Sync to Supabase team_members and send invite if email provided
   if(email&&_supa&&_supaUser){
-    const tmRow={contractor_user_id:_supaUser.id,email,name,role:emp.role,active:false,invited_at:new Date().toISOString()};
+    // permissions MUST ride along: has_team_perm() and the load_account_data RPC
+    // read team_members.permissions server-side. Without this the column stays
+    // '{}' forever, so every employee perm reads false — locking employees out of
+    // everything (a collect tech wouldn't even see payment amounts). This is the
+    // authoritative write the owner's permission checkboxes depend on.
+    const tmRow={contractor_user_id:_supaUser.id,email,name,role:emp.role,permissions:emp.permissions||{},active:false,invited_at:new Date().toISOString()};
     // Pay is written ONLY when the editor can view comp — otherwise the columns are
     // omitted from the upsert so existing pay_rate is preserved, never clobbered to 0.
     if(_canComp){tmRow.pay_type=_payType;tmRow.pay_rate=_payRate;_teamComp[email]={pay_type:_payType,pay_rate:_payRate};}
@@ -2493,7 +2593,13 @@ async function supaSaveToCloud(){
       _lastKnownIds[tbl]=currentIds;
     };
 
+    // Never write back a table the server redacted for this employee — its
+    // in-memory money fields are zeroed, and upserting them would overwrite the
+    // contractor's real amounts. Permission-derived so it holds even if the RPC
+    // fell back to a raw load. Contractors skip nothing.
+    const _saveSkip=_employeeRedactedTables();
     for(const {t,get,tx} of _TD_TABLES){
+      if(_saveSkip.has(t)){continue;}
       const arr=get();
       try{
         await _upsertTable(t,arr,tx);
@@ -2888,12 +2994,36 @@ async function supaLoadFromCloud({silent=false}={}){
       ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
       :(_isEmployee?_contractorUserId:_supaUser.id);
 
-    const[tableResults,settingsResult]=await Promise.all([
-      Promise.all(_TD_TABLES.map(({t})=>
-        _supa.from(t).select('id,data').eq('user_id',uid).is('deleted_at',null)
-      )),
-      _supa.from('zj_data').select('settings,checks_state,receipt_images,updated_at').eq('user_id',uid).maybeSingle()
-    ]);
+    // Settings load runs in parallel with the table load below.
+    const _settingsP=_supa.from('zj_data').select('settings,checks_state,receipt_images,updated_at').eq('user_id',uid).maybeSingle();
+
+    // EMPLOYEE sessions load through the SECURITY DEFINER RPC load_account_data,
+    // which redacts money fields the employee's permissions don't grant — so the
+    // contractor's bid amounts / income never reach an employee's browser memory.
+    // Contractors (and dev-support) keep the raw per-table select. If the RPC is
+    // not yet deployed (migration not merged to prod), fall back to the raw load:
+    // visibility is unchanged until the migration lands, but the SAVE guard
+    // (_employeeRedactedTables) still prevents any corruption in the meantime.
+    const _rawLoad=()=>Promise.all(_TD_TABLES.map(({t})=>
+      _supa.from(t).select('id,data').eq('user_id',uid).is('deleted_at',null)
+    ));
+    let tableResults;
+    if(_isEmployee&&!_devSupportMode){
+      const{data:_red,error:_rpcErr}=await _supa.rpc('load_account_data',{target_uid:uid});
+      if(_rpcErr&&(_isMissingTableErr(_rpcErr)||_rpcErr.code==='PGRST202'||/function|does not exist/i.test(_rpcErr.message||''))){
+        console.warn('[cloud] load_account_data RPC unavailable — falling back to raw load (save guard still active)');
+        tableResults=await _rawLoad();
+      }else if(_rpcErr){
+        throw _rpcErr;
+      }else{
+        // Shape the RPC's {td_bids:[{id,data}],…} object into the per-table
+        // {data,error} the loop below expects.
+        tableResults=_TD_TABLES.map(({t})=>({data:(_red&&_red[t])||[],error:null}));
+      }
+    }else{
+      tableResults=await _rawLoad();
+    }
+    const settingsResult=await _settingsP;
 
     // A table whose migration hasn't reached the live DB yet must NOT abort the entire
     // sync — that would take down ALL cloud loading and trap the app in an offline loop.
@@ -3008,6 +3138,7 @@ async function supaLoadFromCloud({silent=false}={}){
       setTimeout(()=>{
         if(_supaUser)clients.filter(c=>c.clientToken).forEach(c=>{_uploadClientHub(c.id).catch(()=>{});});
         autoRefreshRates();autoRefreshTaxBrackets();autoRefreshLienRules();
+        if(typeof autoRefreshDepositCaps==='function')autoRefreshDepositCaps();
       },4000);
       setTimeout(()=>_checkOdometerPrompt(),3500);
       setInterval(()=>{checkNewSignatures();_fetchProposalViews();},30000);

@@ -1005,50 +1005,45 @@ test.describe('Dashboard KPIs — renderDash, setDashPeriod, setDashYear', () =>
   });
 
   test('cancellation refund — negative payment row reduces dashboard revenue', async () => {
-    // Helper: read the Revenue tile value from the owner KPI grid
-    const readRevenue = () => page.evaluate(() => {
-      const mets = [...document.querySelectorAll('#dash-mets-inner .met')];
-      const rev = mets.find(m => (m.querySelector('.met-l')?.textContent || '').trim() === 'Revenue');
-      return rev?.querySelector('.met-v')?.textContent || null;
-    });
-
-    // Baseline: a large payment lands this period and shows up as revenue
-    await page.evaluate(() => {
-      payments.push({ id: 991201, bid_id: 991201, amount: 50000, date: new Date().toISOString().slice(0, 10), type: 'deposit', method: 'check' });
+    // ROOT-CAUSE FIX (was WebKit-flaky): the prior version injected a payment,
+    // `await`ed a 200ms timeout, then read the Revenue tile. During that awaited
+    // gap a background cloud reload could replace the `payments` array, dropping
+    // the injected rows and making the before/after delta non-deterministic.
+    // renderDash() is synchronous (dashboard.js:17), so we do inject → render →
+    // read entirely inside ONE page.evaluate with no awaited boundary — a reload
+    // cannot interleave, so the delta is deterministic on every engine.
+    const r = await page.evaluate(() => {
+      const readRevenue = () => {
+        const mets = [...document.querySelectorAll('#dash-mets-inner .met')];
+        const rev = mets.find(m => (m.querySelector('.met-l')?.textContent || '').trim() === 'Revenue');
+        return rev?.querySelector('.met-v')?.textContent || null;
+      };
+      const today = new Date().toISOString().slice(0, 10);
+      // Baseline: a large deposit lands this period and shows up as revenue.
+      payments.push({ id: 991201, bid_id: 991201, amount: 50000, date: today, type: 'deposit', method: 'check' });
       if (typeof renderDash === 'function') renderDash();
-    });
-    await page.waitForTimeout(200);
-    const before = await readRevenue();
-    expect(before, 'Revenue tile must render in owner mode').toBeTruthy();
-
-    // Client cancels within the rescission window → checkNewSignatures pushes the
-    // clawback row: {amount:-paid, type:'refund', _cancelRefund:true}
-    const net = await page.evaluate(() => {
-      // Re-ensure the deposit: a background reload during the wait above can drop
-      // the earlier push in WebKit, which would leave getBidPaid summing only the
-      // refund. Guaranteeing both rows makes the cancelled-bid net deterministic.
-      if (!payments.find(p => p.id === 991201)) payments.push({ id: 991201, bid_id: 991201, amount: 50000, date: new Date().toISOString().slice(0, 10), type: 'deposit', method: 'check' });
-      payments.push({ id: 991202, bid_id: 991201, amount: -50000, date: new Date().toISOString().slice(0, 10), type: 'refund', method: 'refund', _cancelRefund: true, note: 'Refund — client cancelled within rescission window' });
+      const before = readRevenue();
+      // Client cancels within the rescission window → clawback row
+      // {amount:-paid, type:'refund', _cancelRefund:true}.
+      payments.push({ id: 991202, bid_id: 991201, amount: -50000, date: today, type: 'refund', method: 'refund', _cancelRefund: true, note: 'Refund — client cancelled within rescission window' });
       if (typeof renderDash === 'function') renderDash();
-      return typeof getBidPaid === 'function' ? getBidPaid(991201) : null;
-    });
-    await page.waitForTimeout(200);
-    const after = await readRevenue();
-
-    // Revenue must DROP once the refund row exists — proves the dashboard sum
-    // includes negative amounts instead of silently filtering p.amount>0
-    expect(after, 'refund row must reduce displayed revenue').not.toBe(before);
-    // getBidPaid sums ALL payments including negatives → cancelled bid nets to zero
-    expect(net).toBeCloseTo(0, 2);
-
-    // Clean up injected rows so later assertions see the original state
-    await page.evaluate(() => {
+      const after = readRevenue();
+      const net = typeof getBidPaid === 'function' ? getBidPaid(991201) : null;
+      // Clean up injected rows so later assertions see the original state.
       for (const id of [991201, 991202]) {
         const i = payments.findIndex(p => p.id === id);
         if (i > -1) payments.splice(i, 1);
       }
       if (typeof renderDash === 'function') renderDash();
+      return { before, after, net };
     });
+
+    expect(r.before, 'Revenue tile must render in owner mode').toBeTruthy();
+    // Revenue must DROP once the refund row exists — proves the dashboard sum
+    // includes negative amounts instead of silently filtering p.amount>0.
+    expect(r.after, 'refund row must reduce displayed revenue').not.toBe(r.before);
+    // getBidPaid sums ALL payments including negatives → cancelled bid nets to zero.
+    expect(r.net).toBeCloseTo(0, 2);
   });
 
   test('no console errors during dashboard KPI tests', async () => {

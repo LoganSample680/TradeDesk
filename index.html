@@ -1042,7 +1042,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <button class="qa" onclick="quickAction('drive')">
             <span class="qa-emoji">🚗</span><span>Drive</span>
           </button>
-          <button class="qa" onclick="quickAction('estimate')">
+          <button class="qa" id="qa-estimate-btn" onclick="quickAction('estimate')">
             <span class="qa-emoji">📋</span><span>Estimate</span>
           </button>
           <button class="qa" onclick="quickAction('schedule')">
@@ -1414,9 +1414,9 @@ body.dark .cal-cell.other{background:var(--cream)}
     <select id="e-cprop" style="display:none"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select>
     <div class="card"><div class="card-hd">Client info <span id="e-client-linked"></span></div>
       <div class="fg fg2">
-        <div class="f"><label>Client name <span style="color:var(--c-red)">*</span></label><input id="e-cname" placeholder="John &amp; Sarah Smith" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
+        <div class="f"><label>Client name <span style="color:var(--c-red)">*</span></label><input id="e-cname" autocapitalize="words" placeholder="John &amp; Sarah Smith" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
         <div class="f"><label>Phone <span style="color:var(--c-red)">*</span></label><input id="e-cphone" type="tel" maxlength="12" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="fmtPhone(this);markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
-        <div class="f" style="grid-column:1/-1;position:relative"><label>Property address <span style="color:var(--c-red)">*</span></label><input id="e-caddr" placeholder="1234 Maple St, Wichita KS 67201" autocomplete="off" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft();_paintOnAddrInput();_lookupProperty(this.value,'ecaddr')" onblur="typeof checkAddrServiceState==='function'&&checkAddrServiceState(this.value)"></div>
+        <div class="f" style="grid-column:1/-1;position:relative"><label>Property address <span style="color:var(--c-red)">*</span></label><input id="e-caddr" autocapitalize="words" placeholder="1234 Maple St, Wichita KS 67201" autocomplete="off" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft();_paintOnAddrInput();_lookupProperty(this.value,'ecaddr')" onblur="typeof checkAddrServiceState==='function'&&checkAddrServiceState(this.value)"></div>
         <div id="prop-card-ecaddr" style="display:none;margin-top:8px;padding:10px 12px;background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r);font-size:12px;grid-column:1/-1"></div>
       </div>
       <div class="f"><label>Walkthrough notes</label><textarea id="e-cnotes" placeholder="What did you see? What does the client want?"></textarea></div>
@@ -1515,7 +1515,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 
         <div style="margin-bottom:12px">
           <label id="surf-room-name-label" style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Room name <span style="color:var(--c-red)">*</span></label>
-          <input id="surf-room-name" placeholder="Living room, Master bedroom..."
+          <input id="surf-room-name" autocapitalize="words" placeholder="Living room, Master bedroom..."
             style="font-size:16px;font-weight:700;padding:10px 12px;width:100%;border:1.5px solid var(--border2);background:var(--bg2);border-radius:var(--r);outline:none;box-sizing:border-box;color:var(--text)"
             oninput="onSurfRoomName(this)">
           <input id="surf-room-sqft" type="hidden" value="0">
@@ -2389,7 +2389,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
 
     <div class="fg fg2">
-      <div class="f"><label>Name</label><input id="s-name" placeholder="Smith residence"></div>
+      <div class="f"><label>Name</label><input id="s-name" autocapitalize="words" placeholder="Smith residence"></div>
       <div class="f" style="position:relative"><label>Address</label><input id="s-addr" autocomplete="off"></div>
       <div class="f" id="s-value-row" style="display:none"><label>Job value ($)</label><input id="s-value" type="number" placeholder="0"></div>
       <div class="f"><label>Time <span style="font-size:10px;color:var(--text3)">(estimate visits)</span></label>

@@ -3710,10 +3710,20 @@ test.describe('bids.js — exhaustive coverage', () => {
 
     test('golden path — bid fully paid returns 0', async () => {
       const r = await page.evaluate(() => {
-        const bid = bids.find(b => b.id === 77701);
-        return { bal: getBidBalance(bid) };
+        // Self-contained: seed a throwaway bid + a matching full payment, compute,
+        // then clean up. Previously this read the shared id 77701, whose payment
+        // could be drained by a sibling test (payments is a shared mutable global),
+        // intermittently yielding 3000 instead of 0. Owning the data makes it
+        // deterministic regardless of sibling order.
+        const bid = { id: 777019, client_id: 88801, amount: 3000 };
+        bids.push(bid);
+        payments.push({ id: 7770190, bid_id: 777019, amount: 3000, type: 'final' });
+        const bal = getBidBalance(bid);
+        bids = bids.filter(b => b.id !== 777019);
+        payments = payments.filter(p => p.bid_id !== 777019);
+        return { bal };
       });
-      expect(r.bal).toBe(0); // 3000 paid, 3000 amount
+      expect(r.bal).toBe(0); // 3000 paid, 3000 amount → 0
     });
 
     test('partial payment — returns positive balance', async () => {
@@ -26810,20 +26820,34 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.len).toBe(1);
     });
 
-    test('click outside overlay — removes it', async () => {
-      // Tag THIS picker's overlay so a stray overlay leaked from a prior test
-      // (async setTimeout) can't make '.zmodal-overlay' resolve to 2 (strict-mode
-      // violation) or break the assertion.
-      await page.evaluate(() => {
+    test('click outside overlay — removes it (and click inside does not)', async () => {
+      // Exercises BOTH branches of the production backdrop handler
+      // (finance.js:961 `overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove()})`):
+      //   • a click whose target IS the overlay backdrop → removes it
+      //   • a click whose target is the inner .zmodal box   → must NOT remove it
+      // We dispatch the click on the element directly instead of a coordinate
+      // click. A coordinate `{x:1,y:1}` hit-test was the WebKit/Chromium flake
+      // source: the overlay runs a `fadein .15s` animation and a 100ms
+      // auto-focus that scrolls the search input, so which element sits under a
+      // pixel at click time is non-deterministic. Targeting the element is the
+      // real "user clicks the dimmed backdrop" gesture and is deterministic.
+      const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
-        showQuickPicker('T','S',[],'estimate',false);
+        showQuickPicker('T', 'S', [], 'estimate', false);
         const ov = document.querySelector('.zmodal-overlay');
-        if (ov) ov.setAttribute('data-qp-test','1');
+        if (!ov) return { setup: false };
+        const box = ov.querySelector('.zmodal');
+        // Inside the box: e.target !== overlay → guard must keep it open.
+        if (box) box.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        const survivedInner = !!document.querySelector('.zmodal-overlay');
+        // The backdrop itself: e.target === overlay → guard removes it.
+        ov.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        const goneOuter = !document.querySelector('.zmodal-overlay');
+        return { setup: true, survivedInner, goneOuter };
       });
-      // Click top-left corner of THIS overlay (outside the centered modal box)
-      await page.locator('.zmodal-overlay[data-qp-test="1"]').click({ position: { x: 1, y: 1 }, force: true });
-      const gone = await page.evaluate(() => !document.querySelector('.zmodal-overlay[data-qp-test="1"]'));
-      expect(gone).toBe(true);
+      expect(r.setup).toBe(true);
+      expect(r.survivedInner).toBe(true);
+      expect(r.goneOuter).toBe(true);
     });
   });
 

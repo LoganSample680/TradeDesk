@@ -677,3 +677,163 @@ test('handles corrupted localStorage gracefully', async () => {
 ```
 
 ---
+
+## 13. Flow Test Standard & Performance Ratchet
+
+> This is how we take down ServiceTitan: every click in the live app is measured,
+> validated, and budgeted in one pass. A flow test is not "did it work" — it is
+> "did it work AND how much did it cost the user." Both, every time.
+
+The live flow suite (`tests/flow/*.spec.js`, run via `playwright.flow.config.js`
+against the deployed pages.dev preview) drives the REAL app against REAL Supabase.
+No seeding hollow rows — every assertion comes from clicking the actual UI.
+
+`tests/flow/estimate-build.spec.js` is the **reference implementation**. New flows
+copy its shape.
+
+---
+
+### 13.1 `step()` Is the Heart of Every Flow — Mandatory
+
+Every user-facing action in a flow test goes through `step()` from
+`tests/flow/live-helpers.js`. It fuses validation and analytics into one pass so
+they are the SAME data:
+
+```js
+await step(page, {
+  label: 'client info → step 2',   // what the user is doing
+  page:  'pg-est',                 // where
+  role:  'contractor',             // who (employee flows assert lockout)
+  suspect: 'paint-estimate.js validateAndGoStep2',  // file:fn to blame on failure
+  ruleText: 'entering client info must advance to the surface builder',
+  expected: 'surf-room-name visible',
+  act:  async (p) => { /* perform clicks */ return 4; }, // RETURN interaction count
+  rule: async (p) => ({ ok: <bool>, got: '<observed>' }), // post-condition
+  abuse: async (p) => { /* optional adversarial probe */ },
+});
+```
+
+- `act` performs the interaction and **returns the number of interactions**
+  (clicks + keystrokes + programmatic step calls). This number is the currency of
+  the ratchet — count it honestly.
+- `rule` returns `{ok, got}`. On `!ok`, `step()` throws a one-line `finding()`
+  ticket (`[role][page] control → RULE … expected/got/suspect`) — the exact
+  substrate the agentic self-heal loop (§14) reads to fix the bug.
+- Every step is pushed to the `_LEDGER` with its ms + interaction count.
+
+**No raw `expect()` on a UI post-condition outside a `step()`.** If you are
+asserting that an action produced a result, it is a step. Pre-flight setup
+(`signIn`, `resetLedger`) and the final `report()` gate are the only exceptions.
+
+Call `resetLedger()` in `beforeEach` so each test owns a clean ledger.
+
+---
+
+### 13.2 The Performance Ratchet — Clicks Hard-Gate, Time Advises
+
+Every flow ends with:
+
+```js
+const rep = report(FLOW, BASELINE);            // BASELINE = require('./perf-baseline.json')
+expect(rep.overBudget).toBe(false);            // HARD FAIL on click regression
+```
+
+`report()` prints the friction profile (slowest-first ledger, total ms, total
+clicks) and grades total interactions against `tests/flow/perf-baseline.json`.
+
+| Metric | Role | Why |
+|--------|------|-----|
+| **Interaction count** | **Deterministic HARD GATE** | The same flow always takes the same number of clicks. A PR that increases it is a UX regression and **fails CI today** — not a warning. |
+| Wall-clock ms | Advisory (logged) | Network/CI jitter makes time non-deterministic. Tracked for trend, never gated. |
+
+**The ratchet rule:** every PR must be **as fast or faster** than the last. A
+flow's click count may only ever **ratchet DOWN** (the app gained leverage) or stay
+flat. It may go **up only** when a deliberate new step is added — and then you
+raise the baseline in the **same commit** with a one-line justification in the
+`note`. Silent baseline inflation is a banned patch-chain move (§11).
+
+---
+
+### 13.3 Baselines — `tests/flow/perf-baseline.json`
+
+- A flow **listed** in the baseline is hard-gated on `clicks`.
+- A flow **not listed** is in **capture mode** — `report()` logs
+  `BASELINE CAPTURE [flow]: N clicks` and does not gate. Copy that number into the
+  file to start gating it. Capture first, gate second.
+- Because `act()` returns a deterministic count, you can gate a flow the moment it
+  is written — no live run required to discover the number.
+- Improving the app (fewer clicks to the same outcome) means you **must** lower the
+  baseline in the same PR, or the old budget silently permits the regression to
+  creep back.
+
+---
+
+### 13.4 Scale Benchmarks — Find Where the App Gives No Leverage
+
+Big-input flows exist to expose where the UX makes the user grind:
+20-room full repaint, T&M with no template, BYO/custom line items the estimator
+has no idea how to price. Each is its own baseline key
+(`estimate-build/interior-20room`, `estimate-build/tm`, `estimate-build/byo`). A
+high clicks-per-unit-of-output number is a **UX streamline target**, captured as a
+finding, not a failure. The ledger tells us exactly which step costs the most.
+
+---
+
+### 13.5 New Flow Checklist
+
+1. `resetLedger()` + `signIn(page)` in `beforeEach`.
+2. Every user action wrapped in `step()` with an honest interaction count, a
+   `rule`, and a `suspect` pointing at the code to blame.
+3. End with `report(FLOW, BASELINE)` + `expect(rep.overBudget).toBe(false)`.
+4. New flow → run once in capture mode, paste the click count into
+   `perf-baseline.json` with a `note`, commit both together.
+5. Employee/role flows: assert lockout inside `rule` (financials unreachable).
+6. Never wipe data — teardown is opt-in (`E2E_TEARDOWN=1`), off by default.
+
+---
+
+## 14. Agentic Self-Heal Loop (Slack → Claude → Regression Test → PR)
+
+The endgame: a bug reported by a real user heals itself, forever.
+
+1. **Report** — a user hits a bug; it lands in Slack (`#20`), or CI/console/prod
+   surfaces a `console.error`.
+2. **Ticket** — the failure is already in `finding()` shape
+   (`[role][page] control → RULE … expected/got/suspect`) because every `step()`
+   throws that format. Claude reads the suspect file:line directly.
+3. **Fix** — Claude fixes the **root cause** (§11.1 — never the symptom, never the
+   test) on the feature branch.
+4. **Regression test that runs forever** — the same commit adds a `step()` to the
+   relevant flow asserting the bug can never return. This is non-negotiable: a fix
+   without a permanent guarding step is incomplete.
+5. **Push → CI → human approves merge.** Claude never merges without explicit
+   approval (§1.5). The test now runs on every PR, forever.
+
+The `finding()` → `suspect` → root-cause-fix → permanent-`step()` chain is what
+makes the loop reliable instead of a guess-and-hope patch machine.
+
+### 13.6 Physical Interaction Standard — Real Thumb, Real Scroll, Real Devices
+
+Flow tests drive the app the way a person does: real taps, real key-by-key
+typing, and real scrolling — never `page.evaluate(() => someFn())` to shortcut a
+gesture. The helpers in `live-helpers.js` perform the physical action AND return
+its honest cost so `act()` just sums them:
+
+| Helper | Action | Cost returned |
+|--------|--------|---------------|
+| `tap(p, sel)` | scroll into view, then click | `1` (+1 if a scroll was needed) |
+| `type(p, sel, text)` | scroll in, click, type key-by-key | `text.length` (+1 if scrolled) |
+| `pick(p, sel, val)` | choose a `<select>` / date value | `1` (+scroll) |
+| `scrollBy(p, dy)` | a deliberate scroll | `1` |
+
+**You can't tap what you can't see** — every helper scrolls the target into view
+first, and if the page physically moved, that counts as a real scroll. So the
+SAME flow costs MORE on a phone than a laptop, and that delta is the UX signal.
+
+**Three form factors, always** (`playwright.flow.config.js` projects): `mobile`
+(390×844, webkit), `tablet` (820×1180, touch), `desktop` (1280×800). Every flow
+runs on all three.
+
+**Typing is key-by-key** (`pressSequentially`, never `fill`), so values are
+entered exactly as a user would — which also exercises the auto-capitalize-on-
+space behavior live.

@@ -127,6 +127,185 @@ const STATE_LIEN={
   WY:{statute:'Wyo. Stat. §29-2-101 et seq.'},
 };
 
+// ── Maximum Deposit / Down-Payment Caps (Home Improvement) ────────────────
+// NOT LEGAL ADVICE — verify with a licensed attorney; deposit-cap statutes change.
+// Several states cap the up-front deposit a home-improvement contractor may collect.
+// Each entry: { pct: max % of contract (number) or null, flat: max $ flat cap or null,
+//   rule: 'lesser'|'pct'|'flat'|'none', statute: '<cite>', note: '<plain English>' }.
+// Only well-documented statutory caps are encoded. States with no clear statutory
+// cap are rule:'none' (no cap) rather than a guessed number — do not invent caps.
+const STATE_DEPOSIT_CAP={
+  AL:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  AK:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  AZ:{pct:50,flat:null,rule:'pct',statute:'A.R.S. tit. 32 ch. 10 (ROC)',note:'Initial payment may not exceed 50% of the total contract price.'},
+  AR:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  CA:{pct:10,flat:1000,rule:'lesser',statute:'Cal. Bus. & Prof. Code §7159.5',note:'Down payment may not exceed the lesser of $1,000 or 10% of the contract price.'},
+  CO:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  CT:{pct:20,flat:null,rule:'pct',statute:'Conn. Gen. Stat. §20-429 (HIA)',note:'Down payment may not exceed 20% of the contract price.'},
+  DC:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  DE:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  FL:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  GA:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  HI:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  ID:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  IL:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  IN:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  IA:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  KS:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  KY:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  LA:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  ME:{pct:33.33,flat:null,rule:'pct',statute:'10 M.R.S. §1487',note:'Deposit may not exceed one-third (33.33%); waivable by written agreement.'},
+  MD:{pct:33.33,flat:null,rule:'pct',statute:'Md. Code, Bus. Reg. §8-501',note:'Deposit may not exceed one-third (33.33%) of the contract price.'},
+  MA:{pct:33.33,flat:null,rule:'pct',statute:'Mass. Gen. Laws c.142A §2',note:'Advance deposit may not exceed one-third (33.33%) of the total contract price.'},
+  MI:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  MN:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  MS:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  MO:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  MT:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  NE:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  NV:{pct:10,flat:1000,rule:'lesser',statute:'NRS §624.920',note:'Down payment may not exceed the lesser of $1,000 or 10% of the aggregate contract price.'},
+  NH:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  NJ:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  NM:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  NY:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  NC:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  ND:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  OH:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  OK:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  OR:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  PA:{pct:33.33,flat:null,rule:'pct',statute:'73 P.S. §517.7 (Home Improvement Consumer Protection Act)',note:'Deposit may not exceed one-third (33.33%) of the contract price for home improvement.'},
+  RI:{pct:33.33,flat:null,rule:'pct',statute:'R.I. Gen. Laws §5-65',note:'Deposit may not exceed one-third (33.33%) of the contract price.'},
+  SC:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  SD:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  TN:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  TX:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  UT:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  VT:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  VA:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  WA:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  WV:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  WI:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+  WY:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
+};
+
+// Returns the maximum legal deposit dollar amount for a state + contract amount.
+// 'lesser' → min(flat, pct%·amount); 'pct' → pct%·amount; 'flat' → flat;
+// 'none'/unknown → the full contract amount (no statutory cap).
+function _maxDeposit(state,contractAmount){
+  const amt=Math.max(0,parseFloat(contractAmount)||0);
+  const st=state?String(state).toUpperCase():'';
+  const cap=STATE_DEPOSIT_CAP[st];
+  if(!cap||cap.rule==='none')return amt;
+  const byPct=(cap.pct!=null)?(amt*cap.pct/100):Infinity;
+  const byFlat=(cap.flat!=null)?cap.flat:Infinity;
+  let max;
+  if(cap.rule==='lesser')max=Math.min(byPct,byFlat);
+  else if(cap.rule==='pct')max=byPct;
+  else if(cap.rule==='flat')max=byFlat;
+  else max=amt;
+  if(!isFinite(max))return amt;
+  return Math.min(max,amt);
+}
+
+// ── Live deposit-cap lookup (DB-backed, code-free legal updates) ──────────────
+// Mirrors lookupSalesTaxRate (sales-tax.js): query an anon-readable Supabase
+// table (deposit_caps) so the legal cap can be corrected without a deploy, and
+// fall back to the hardcoded STATE_DEPOSIT_CAP on any miss / error / missing
+// table / no-Supabase. Results are cached per state so each state is queried at
+// most once per session.
+const _DEPOSIT_CAP_CACHE={};
+
+// Returns a cap object in the SAME shape as STATE_DEPOSIT_CAP entries
+// ({rule,pct,flat,statute,note}) for the given state. Live value when available,
+// hardcoded fallback otherwise. Never throws.
+async function lookupDepositCap(state){
+  const st=state?String(state).toUpperCase():'';
+  const fallback=STATE_DEPOSIT_CAP[st]||{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'};
+  if(!st)return fallback;
+  if(_DEPOSIT_CAP_CACHE[st])return _DEPOSIT_CAP_CACHE[st];
+
+  if(typeof _supa!=='undefined'&&_supa&&(typeof supaEnabled!=='function'||supaEnabled())){
+    try{
+      const{data}=await _supa.from('deposit_caps').select('*').eq('state',st).maybeSingle();
+      if(data&&data.rule){
+        const live={
+          rule:data.rule,
+          pct:(data.pct!=null)?parseFloat(data.pct):null,
+          flat:(data.flat!=null)?parseFloat(data.flat):null,
+          statute:data.statute||'',
+          note:data.note||'',
+        };
+        _DEPOSIT_CAP_CACHE[st]=live;
+        return live;
+      }
+    }catch(e){ /* network / missing-table / no-supa — fall through to hardcoded */ }
+  }
+  // Miss/error/no-supa: cache the hardcoded value so we don't re-query each call.
+  _DEPOSIT_CAP_CACHE[st]=fallback;
+  return fallback;
+}
+
+// Async counterpart to _maxDeposit: awaits the live cap then computes the maximum
+// legal deposit the exact same way _maxDeposit does. Use this where an await is
+// clean; otherwise the boot-time refresh keeps the sync _maxDeposit live.
+async function _maxDepositLive(state,contractAmount){
+  const amt=Math.max(0,parseFloat(contractAmount)||0);
+  const cap=await lookupDepositCap(state);
+  if(!cap||cap.rule==='none')return amt;
+  const byPct=(cap.pct!=null)?(amt*cap.pct/100):Infinity;
+  const byFlat=(cap.flat!=null)?cap.flat:Infinity;
+  let max;
+  if(cap.rule==='lesser')max=Math.min(byPct,byFlat);
+  else if(cap.rule==='pct')max=byPct;
+  else if(cap.rule==='flat')max=byFlat;
+  else max=amt;
+  if(!isFinite(max))return amt;
+  return Math.min(max,amt);
+}
+
+// Boot-time refresh: pull the live cap for the contractor's state and patch the
+// in-memory STATE_DEPOSIT_CAP entry so the existing SYNC _maxDeposit (the clamp
+// in saveGenericEstimate) transparently uses the live value — no async needed at
+// the point of use. Mirrors autoRefreshTaxBrackets/autoRefreshLienRules: wired
+// into the boot timer in cloud.js. No-op offline / when nothing changed.
+let _depositCapRefreshInProgress=false;
+async function autoRefreshDepositCaps(){
+  if(typeof _supa==='undefined'||!_supa)return;
+  if(typeof _supaUser==='undefined'||!_supaUser)return;
+  if(_depositCapRefreshInProgress)return;
+  _depositCapRefreshInProgress=true;
+  try{
+    const st=((typeof S!=='undefined'&&S.state)?String(S.state):'KS').toUpperCase();
+    if(!st)return;
+    const live=await lookupDepositCap(st);
+    if(live&&STATE_DEPOSIT_CAP[st]){
+      STATE_DEPOSIT_CAP[st]={
+        pct:live.pct,
+        flat:live.flat,
+        rule:live.rule,
+        statute:live.statute||STATE_DEPOSIT_CAP[st].statute||'',
+        note:live.note||STATE_DEPOSIT_CAP[st].note||'',
+      };
+    }
+  }catch(e){ /* offline / missing table — hardcoded values remain in effect */ }
+  finally{_depositCapRefreshInProgress=false;}
+}
+
+// Returns a short human-readable cap description + statute for display.
+// Unknown / no-cap states return a plain "no statutory cap" string.
+function _depositCapNote(state){
+  const st=state?String(state).toUpperCase():'';
+  const cap=STATE_DEPOSIT_CAP[st];
+  const stateName=STATE_NAMES[st]||st||'this state';
+  if(!cap||cap.rule==='none')return stateName+': no statutory deposit cap.';
+  let limit;
+  if(cap.rule==='lesser')limit='lesser of $'+cap.flat.toLocaleString('en-US')+' or '+cap.pct+'%';
+  else if(cap.rule==='pct')limit=cap.pct+'% of the contract';
+  else if(cap.rule==='flat')limit='$'+cap.flat.toLocaleString('en-US');
+  else limit='the contract amount';
+  return stateName+' caps deposits at '+limit+(cap.statute?' ('+cap.statute+')':'')+'.';
+}
+
 // Returns the lien notice sentence for a given state abbreviation.
 // `party` is the business name shown in the notice; falls back to the generic
 // "the contractor" when no business name is available.
