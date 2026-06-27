@@ -392,7 +392,7 @@ async function _devRestoreSnapshot(key,idx){
 // ── Toast notifications ────────────────────────────────────────────────
 const SUPA_URL = location.origin + '/api';
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.27.26.3';
+const APP_VERSION='06.27.26.27';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -2550,7 +2550,13 @@ async function supaSaveToCloud(){
     // per table) and a force-quit mid-save used to lose every settings change.
     // Settings are tiny; landing them immediately makes Save force-quit-proof.
     if(!_isEmployee){
-      const{stateRates:_sr0,locationDenied:_ld0,locationGranted:_lg0,...sForCloudFirst}=S;
+      // Strip only stateRates (anon-readable reference data, never a user setting).
+      // locationGranted/locationDenied DO persist to the cloud so the location
+      // permission survives a reboot / cloud-authoritative reload — they were
+      // previously stripped here, which is why "location permission doesn't save."
+      // A wrongly-optimistic granted flag self-corrects on the next real GPS call
+      // (getCurrentPosition errors → locationDenied is set), so syncing it is safe.
+      const{stateRates:_sr0,...sForCloudFirst}=S;
       const{data:_zjRow,error:_se0}=await _supa.from('zj_data').upsert(
         {user_id:uid,settings:JSON.stringify(sForCloudFirst),checks_state:JSON.stringify(checksState),updated_at:ts},
         {onConflict:'user_id'}

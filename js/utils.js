@@ -156,8 +156,12 @@ function geoIfGranted(cb, errCb, opts){
   if(!navigator.permissions||!navigator.permissions.query)return;
   navigator.permissions.query({name:'geolocation'}).then(p=>{
     if(p.status==='granted'){
-      S.locationGranted=true;S.locationDenied=false;
-      try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(e){}
+      S.locationGranted=true;S.locationDenied=false;S.settingsTs=Date.now();
+      // saveAll persists to localStorage AND queues the cloud sync; bumping
+      // settingsTs makes this granted flag win the next cloud merge so the
+      // permission survives a reboot.
+      if(typeof saveAll==='function')saveAll();
+      else try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(e){}
       doGet();
     }
   }).catch(()=>{});

@@ -792,6 +792,29 @@ finding, not a failure. The ledger tells us exactly which step costs the most.
 
 ---
 
+### 13.7 Live Tests NEVER Clean Up Their Own Data — Leave It to Poke At
+
+**Mandatory: a live flow test must not delete, soft-delete, or restore the records
+it creates.** No end-of-test `bids = bids.filter(...)` + `supaSaveToCloud()`, no
+`_supa.from('td_*').delete()`, no "restore the original value" block. The seed data
+the test writes — bids, clients, jobs, expenses, vehicles, contracts, settings
+changes, everything — **stays in the dev account on purpose**, so the owner can open
+the app afterward and poke holes in exactly what the tests put in. The owner deletes
+it manually on their own schedule.
+
+- The ONLY data removal allowed is the explicit opt-in `teardownAll()` gated behind
+  `E2E_TEARDOWN=1` (off by default) — never inline per-test cleanup.
+- **Resource** cleanup is still fine and expected: closing extra browser
+  contexts/pages you opened (`ctx.close()`, `page.close()`) frees the runner and is
+  not data — keep it.
+- Use uniquely-tagged ids (`Date.now()*1000 + …`, `process.pid`) so the accumulating
+  seed data never collides across runs/viewports, since it is never cleaned up.
+- Rationale: cleanup hides the very thing the owner wants to inspect, and a failed
+  assertion mid-test can leave half-cleaned state that's more confusing than just
+  leaving it all. Leave everything; the owner curates the account by hand.
+
+---
+
 ## 14. Agentic Self-Heal Loop (Slack → Claude → Regression Test → PR)
 
 The endgame: a bug reported by a real user heals itself, forever.

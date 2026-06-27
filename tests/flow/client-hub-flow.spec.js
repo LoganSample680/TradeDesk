@@ -77,13 +77,8 @@ test.describe('client hub shows a real proposal (UI-driven)', () => {
       rule: async () => ({ ok: hub.render.ok, got: hub.render.got }),
     });
 
-    // ── Clean up the throwaway client + bid (and leave the hub snapshot; it's
-    // harmless and the scenario sweep clears E2E rows). ──
-    await page.evaluate(async ({ clientId, bidId }) => {
-      bids = bids.filter(x => x.id !== bidId);
-      clients = clients.filter(x => x.id !== clientId);
-      if (typeof supaSaveToCloud === 'function') await supaSaveToCloud();
-    }, { clientId, bidId });
+    // NO cleanup — the client, bid + hub snapshot stay in the dev account on purpose
+    // so the owner can inspect what this test created (CLAUDE.md §13.7).
 
     const rep = report(FLOW, BASELINE);
     expect(rep.totalClicks).toBeGreaterThan(0);

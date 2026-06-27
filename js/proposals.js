@@ -1852,7 +1852,7 @@ function requestLocationPermission(onGranted, onDenied){
         S.locationGranted=true;S.locationDenied=false;
         _grabLocCoords(onGranted,onDenied);
       }else if(p.status==='denied'){
-        S.locationDenied=true;saveAll();if(onDenied)onDenied();
+        S.locationDenied=true;S.settingsTs=Date.now();saveAll();if(onDenied)onDenied();
       }else{
         _showLocModal(onGranted,onDenied);
       }
@@ -1865,9 +1865,9 @@ function _grabLocCoords(onGranted,onDenied){
   navigator.geolocation.getCurrentPosition(pos=>{
     S.weatherLat=Math.round(pos.coords.latitude*10000)/10000;
     S.weatherLon=Math.round(pos.coords.longitude*10000)/10000;
-    S.locationDenied=false;S.locationGranted=true;saveAll();
+    S.locationDenied=false;S.locationGranted=true;S.settingsTs=Date.now();saveAll();
     if(onGranted)onGranted();
-  },()=>{S.locationDenied=true;saveAll();if(onDenied)onDenied();},{enableHighAccuracy:false,timeout:10000});
+  },()=>{S.locationDenied=true;S.settingsTs=Date.now();saveAll();if(onDenied)onDenied();},{enableHighAccuracy:false,timeout:10000});
 }
 function _showLocModal(onGranted,onDenied){
   const overlay=document.createElement('div');

@@ -5,7 +5,7 @@
 // against a tagged throwaway bid so no real money record is mutated. Every
 // assertion is a step() so a regression throws a one-line finding().
 const { test, expect } = require('@playwright/test');
-const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
+const { needsLiveCreds, signIn, step, report, resetLedger, cloudRows } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'collect/deposit-refund-lien';
@@ -156,19 +156,17 @@ test.describe('payments, deposit, refund, lien (UI-driven)', () => {
           const l = (typeof getBidLien === 'function') ? getBidLien(bidId) : liens.find(x => x.bid_id === bidId);
           return l ? { status: l.status, amount: l.amount, county: l.county } : null;
         }, { bidId });
-        const ok = !!r && r.status === 'filed' && r.amount === BASE - DEP + REF && /Sedgwick|KS/.test(r.county || '');
-        return { ok, got: r ? JSON.stringify(r) : 'no lien recorded' };
+        const memOk = !!r && r.status === 'filed' && r.amount === BASE - DEP + REF && /Sedgwick|KS/.test(r.county || '');
+        // TRUE end-to-end: the filed lien must also be in the cloud (td_liens).
+        const cloud = await cloudRows(p, 'td_liens');
+        const cl = cloud.find(l => String(l.bid_id) === String(bidId));
+        const cloudOk = !!cl && cl.status === 'filed' && cl.amount === BASE - DEP + REF;
+        return { ok: memOk && cloudOk, got: r ? `mem=${JSON.stringify(r)} cloudLien=${cl ? cl.status + '/' + cl.amount : 'ROW ABSENT'}` : 'no lien recorded' };
       },
     });
 
-    // ── Clean up the throwaway bid/client/payments/liens locally. ──
-    await page.evaluate(async ({ bidId, clientId }) => {
-      bids = bids.filter(x => x.id !== bidId);
-      clients = clients.filter(x => x.id !== clientId);
-      payments = payments.filter(x => x.bid_id !== bidId);
-      liens = liens.filter(x => x.bid_id !== bidId);
-      if (typeof supaSaveToCloud === 'function') await supaSaveToCloud();
-    }, { bidId, clientId });
+    // NO cleanup — the bid, payments, liens + client stay in the dev account on
+    // purpose so the owner can inspect what this test created (CLAUDE.md §13.7).
 
     const rep = report(FLOW, BASELINE);
     expect(rep.totalClicks).toBeGreaterThan(0);

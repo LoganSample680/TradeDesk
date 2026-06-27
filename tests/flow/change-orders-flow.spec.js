@@ -11,7 +11,7 @@
 // document chain is therefore HALF complete: change orders ship, completion
 // invoices do not. This test guards the half that exists.
 const { test, expect } = require('@playwright/test');
-const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
+const { needsLiveCreds, signIn, step, report, resetLedger, cloudRows } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'change-order/add-delta';
@@ -76,19 +76,21 @@ test.describe('change order document chain (UI-driven)', () => {
         }, { bidId });
         return 47; // open(1) + desc"Added master bedroom ceiling — two coats"(40) + setCOType(1) + amount"450"(3) + review(1) + send(1) = 47
       },
-      rule: async () => {
+      rule: async (p) => {
         const c = co.co;
-        const ok = !!c && c.delta === ADD && c.newAmount === BASE + ADD && c.status === 'pending_client' && co.amount === BASE;
-        return { ok, got: c ? `delta=${c.delta} newAmount=${c.newAmount} status=${c.status} bidAmount=${co.amount}` : 'no CO recorded' };
+        const memOk = !!c && c.delta === ADD && c.newAmount === BASE + ADD && c.status === 'pending_client' && co.amount === BASE;
+        // TRUE end-to-end: the change order must have persisted onto the bid in the
+        // cloud (td_bids.data.changeOrders), not just the in-memory bids[] array.
+        const cloud = await cloudRows(p, 'td_bids');
+        const cb = cloud.find(b => String(b.id) === String(bidId));
+        const cc = cb && (cb.changeOrders || [])[0];
+        const cloudOk = !!cc && cc.delta === ADD && cc.newAmount === BASE + ADD;
+        return { ok: memOk && cloudOk, got: c ? `mem(delta=${c.delta} newAmount=${c.newAmount} status=${c.status}) cloudDelta=${cc ? cc.delta : 'CO ABSENT'}` : 'no CO recorded' };
       },
     });
 
-    // ── Clean up the throwaway bid/client locally. ──
-    await page.evaluate(async ({ bidId, clientId }) => {
-      let i = bids.findIndex(x => x.id === bidId); if (i > -1) bids.splice(i, 1);
-      i = clients.findIndex(x => x.id === clientId); if (i > -1) clients.splice(i, 1);
-      if (typeof supaSaveToCloud === 'function') await supaSaveToCloud();
-    }, { bidId, clientId });
+    // NO cleanup — the bid, change order + client stay in the dev account on purpose
+    // so the owner can inspect what this test created (CLAUDE.md §13.7).
 
     const rep = report(FLOW, BASELINE);
     expect(rep.totalClicks).toBeGreaterThan(0);

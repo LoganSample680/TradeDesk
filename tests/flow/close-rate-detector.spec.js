@@ -1,13 +1,11 @@
-// Detector for the Lead-Sources CLOSE% miscalc (planted/known bug).
+// Regression guard for the Lead-Sources CLOSE% calc (a bug that WAS here, now fixed).
 //
-// dashboard.js:1301-1302 computes close% as won/(won+lost) — it EXCLUDES pending
-// leads from the denominator. So a source with 4 leads / 2 won / 0 lost / 2
-// pending renders 100% (2/2) even though only half the leads closed. The table
-// shows LEADS=4, WON=2, CLOSE%=100% side-by-side — internally inconsistent.
-//
-// This asserts the SHOWN close% matches the columns the table itself displays
-// (won/leads). It is EXPECTED TO FAIL until the calc is fixed — that failure IS
-// the proof the suite catches the bug. Runs in the non-blocking flow job.
+// dashboard.js once computed close% as won/(won+lost), excluding pending leads from
+// the denominator — a source with 4 leads / 2 won / 0 lost / 2 pending rendered
+// 100% (2/2) while only half the leads actually closed. The fix made it won/leads
+// (dashboard.js:1301). This asserts the SHOWN close% equals won/leads of the row it
+// sits next to — it now PASSES, and guards the calc from regressing back. Runs in
+// the non-blocking flow job.
 const { test, expect } = require('@playwright/test');
 const { needsLiveCreds, signIn, finding } = require('./live-helpers');
 
@@ -40,11 +38,10 @@ test.describe('dashboard lead-sources — CLOSE% consistency (bug detector)', ()
       const m = txt.match(new RegExp(SRC.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[\\s\\S]{0,60}?(\\d+)%'));
       const shown = m ? parseInt(m[1], 10) : null;
 
-      // cleanup
-      clients = clients.filter(c => c.source !== SRC);
-      bids = bids.filter(b => ![951001, 951002].includes(b.id));
+      // NO cleanup of the seeded rows (CLAUDE.md §13.7) — this test renders in memory
+      // only and never persists to Supabase, and signIn reloads the page before the
+      // next test, so the in-memory seed is harmless. Only reset the expand toggle.
       delete window._leadSrcExpanded;
-      try { renderLeadSources(); } catch (e) {}
 
       return { ok: true, leads: 4, won: 2, shown, expected: Math.round(2 / 4 * 100) };
     });

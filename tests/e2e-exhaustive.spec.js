@@ -1405,6 +1405,10 @@ test.describe('dashboard.js — exhaustive coverage', () => {
 
   test('renderTodayFeed: no duplicate cards after 3 calls', async () => {
     const r = await page.evaluate(() => {
+      // The Collect section now DEFAULTS COLLAPSED (its card bodies aren't in the
+      // HTML until expanded — CLAUDE.md §11.6). Expand it so the completed-bid card
+      // renders and we can count occurrences. (Previously Collect auto-expanded.)
+      window._mmtCol_collect = false;
       const fakeClient = { id: 76001, name: 'Feed No Dupe' };
       const fakeBid = {
         id: 76001, client_id: 76001, status: 'Closed Won',
@@ -1425,6 +1429,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
         if (bi !== -1) bids.splice(bi, 1);
         const ci = clients.findIndex(c => c.id === 76001);
         if (ci !== -1) clients.splice(ci, 1);
+        delete window._mmtCol_collect;
       }
     });
     expect(r.ok).toBe(true);

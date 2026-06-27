@@ -250,7 +250,31 @@ async function scrollBy(page, dy) {
   return 1;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// cloudRows(page, table) — re-query a td_* table from Supabase and return the
+// live (non-deleted) rows as flattened objects ({id, ...data}). This is what makes
+// a flow TRULY end-to-end: after a save, assert the row actually landed in the
+// cloud, not just in the in-memory array. The td_* tables store the record JSON in
+// a `data` column (jsonb or string), so we parse + spread it for easy predicates:
+//   const rows = await cloudRows(page, 'td_jobs');
+//   expect(rows.some(j => j.id === jobId && j.assignedTo === empId)).toBe(true);
+// ─────────────────────────────────────────────────────────────────────────────
+async function cloudRows(page, table) {
+  return await page.evaluate(async ({ table }) => {
+    const uid = (typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id) || null;
+    if (!uid || typeof _supa === 'undefined' || !_supa) return [];
+    const { data, error } = await _supa.from(table).select('id,data').eq('user_id', uid).is('deleted_at', null);
+    if (error) return [];
+    return (data || []).map(r => {
+      let d = r.data;
+      if (typeof d === 'string') { try { d = JSON.parse(d); } catch (e) { d = {}; } }
+      return Object.assign({ id: r.id }, d || {});
+    });
+  }, { table });
+}
+
 module.exports = {
+  cloudRows,
   needsLiveCreds,
   shouldTeardown,
   finding,

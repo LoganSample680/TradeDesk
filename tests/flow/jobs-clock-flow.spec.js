@@ -5,7 +5,7 @@
 // markJobDone/confirmJobDone) against a tagged throwaway bid. Each assertion is a
 // step() so a regression throws a one-line finding().
 const { test, expect } = require('@playwright/test');
-const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
+const { needsLiveCreds, signIn, step, report, resetLedger, cloudRows } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'jobs/schedule-clock-complete';
@@ -133,19 +133,19 @@ test.describe('jobs lifecycle (UI-driven)', () => {
           const b = bids.find(x => x.id === bidId);
           return { jStatus: j ? j.status : null, jComp: j ? j.completion_date : null, bComp: b ? b.completion_date : null };
         }, { jobId, bidId });
-        const ok = r.jStatus === 'done' && !!r.jComp && r.bComp === r.jComp;
-        return { ok, got: JSON.stringify(r) };
+        const memOk = r.jStatus === 'done' && !!r.jComp && r.bComp === r.jComp;
+        // TRUE end-to-end: completion must have persisted to the cloud on BOTH the
+        // job (td_jobs) and the mirrored bid (td_bids), not just in-memory arrays.
+        const [cJobs, cBids] = [await cloudRows(p, 'td_jobs'), await cloudRows(p, 'td_bids')];
+        const cj = cJobs.find(j => String(j.id) === String(jobId));
+        const cb = cBids.find(b => String(b.id) === String(bidId));
+        const cloudOk = !!cj && cj.status === 'done' && !!cj.completion_date && !!cb && cb.completion_date === cj.completion_date;
+        return { ok: memOk && cloudOk, got: `mem=${JSON.stringify(r)} cloudJob=${cj ? cj.status + '/' + cj.completion_date : 'ABSENT'} cloudBidComp=${cb ? cb.completion_date : 'ABSENT'}` };
       },
     });
 
-    // ── Clean up the throwaway records locally. ──
-    await page.evaluate(async ({ bidId, clientId, jobId }) => {
-      bids = bids.filter(x => x.id !== bidId);
-      clients = clients.filter(x => x.id !== clientId);
-      jobs = jobs.filter(x => x.id !== jobId);
-      timeEntries = timeEntries.filter(x => x.job_id !== jobId);
-      if (typeof supaSaveToCloud === 'function') await supaSaveToCloud();
-    }, { bidId, clientId, jobId });
+    // NO cleanup — the bid, job, time entry + client stay in the dev account on
+    // purpose so the owner can inspect what this test created (CLAUDE.md §13.7).
 
     const rep = report(FLOW, BASELINE);
     expect(rep.totalClicks).toBeGreaterThan(0);

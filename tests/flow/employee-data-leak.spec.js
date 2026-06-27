@@ -137,12 +137,8 @@ test.describe('employee lockout — data layer (server-side redaction)', () => {
       },
     });
 
-    // ── Clean up the throwaway bid (contractor) so it doesn't linger. ──
-    await page.evaluate(async ({ bidId }) => {
-      const i = bids.findIndex(x => x.id === bidId);
-      if (i > -1) bids.splice(i, 1);
-      if (typeof supaSaveToCloud === 'function') await supaSaveToCloud();
-    }, { bidId });
+    // NO cleanup — the seeded contractor bid stays in the dev account on purpose so
+    // the owner can inspect what this test created (CLAUDE.md §13.7).
 
     const rep = report(FLOW, BASELINE);
     expect(rep.totalClicks).toBeGreaterThan(0);

@@ -20,26 +20,9 @@ test.describe('bids/payments/liens — full scenario matrix', () => {
 
   test.beforeEach(async ({ page }) => {
     await signIn(page);
-    await page.evaluate((runTag) => {
-      // Remove ONLY THIS run's prior scenario rows (marker __E2E_SCN__ <runTag>).
-      // Scoped to runTag — NOT a global E2E wipe — so this is safe to run with
-      // parallel workers: a worker only ever clears its own rows, never another
-      // worker's in-flight data. (A broad cross-run sweep is a separate opt-in
-      // cleanup; with fullyParallel it would race and delete live data.)
-      if (typeof clients === 'undefined') return;
-      const stale = clients.filter(c => (c.notes || '').includes('__E2E_SCN__ ' + runTag));
-      const ids = new Set(stale.map(c => c.id));
-      if (ids.size) {
-        clients = clients.filter(c => !ids.has(c.id));
-        if (typeof bids !== 'undefined') bids = bids.filter(b => !ids.has(b.client_id));
-        if (typeof jobs !== 'undefined') jobs = jobs.filter(j => !ids.has(j.client_id));
-        if (typeof payments !== 'undefined') payments = payments.filter(p => !ids.has(p.client_id));
-        if (typeof liens !== 'undefined') liens = liens.filter(l => !ids.has(l.client_id));
-        if (typeof mileage !== 'undefined') mileage = mileage.filter(m => !ids.has(m.client_id));
-        if (typeof expenses !== 'undefined') expenses = expenses.filter(e => !ids.has(e.client_id));
-        if (typeof _flushSaveNow === 'function') { try { _flushSaveNow(); } catch (e) {} }
-      }
-    }, RUN_TAG);
+    // NO pre-sweep — prior scenario rows are intentionally LEFT in the dev account
+    // so the owner can poke at everything the tests put in (CLAUDE.md §13.7). Rows
+    // are uniquely tagged per run, so leaving them never collides. Manual delete only.
   });
 
   test('seed and verify every bid / payment / lien state', async ({ page }) => {

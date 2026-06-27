@@ -834,13 +834,14 @@ function renderTodayFeed(){
     const stage=getBidCollStage(b);const next=getNextCollAction(stage);
     const lienStage=stage==='lien_filed';const isFileable=stage==='intent'||stage==='lien_ready';
     let actBtns='';
-    // Collections actions: one SMS/lien button + Collect, equal width (flex:1) so
-    // they sit side-by-side and fit on mobile. Call removed — texting is the
+    // Collections actions: one SMS/lien button + Collect. Equal width is enforced
+    // globally by the .tf-acts>.btn CSS rule (flex:1 1 0), so every button in the
+    // row is the same size regardless of label. Call removed — texting is the
     // collections channel and the row only has space for two even buttons.
-    if(next.smsKey&&c.phone)actBtns+='<button onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+next.smsKey+'\')" class="btn btn-sm" style="flex:1;font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+next.label+'</button>';
-    else if(isFileable)actBtns+='<button onclick="showFileLienDirect('+b.id+')" class="btn btn-sm" style="flex:1;font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">⚖️ File Lien</button>';
-    else if(lienStage)actBtns+='<button onclick="printKansasLien('+b.id+')" class="btn btn-sm" style="flex:1;font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">⚖️ View lien doc</button>';
-    actBtns+='<button onclick="openPayPanel('+b.id+')" class="btn btn-sm btn-g" style="flex:1;font-size:11px">Collect →</button>';
+    if(next.smsKey&&c.phone)actBtns+='<button onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+next.smsKey+'\')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+next.label+'</button>';
+    else if(isFileable)actBtns+='<button onclick="showFileLienDirect('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">⚖️ File Lien</button>';
+    else if(lienStage)actBtns+='<button onclick="printKansasLien('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">⚖️ View lien doc</button>';
+    actBtns+='<button onclick="openPayPanel('+b.id+')" class="btn btn-sm btn-g" style="font-size:11px">Collect →</button>';
     finalPayItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">💰</div>'+
@@ -1113,10 +1114,11 @@ function renderTodayFeed(){
 
   const showFinalPay=true,showDepSched=true,showPending=true,showBuild=true;
 
-  // Section builder — defaultOpen=true makes the section expand on first render
-  const _sec=(id,icon,label,color,items,show,defaultOpen=false)=>{
+  // Section builder — every MMT section defaults CLOSED. _mmtCol_<id> is undefined
+  // until the user taps the header (see _mmtToggle); undefined !== false, so col is
+  // true (collapsed) on first render. No section auto-expands. (CLAUDE.md §11.6)
+  const _sec=(id,icon,label,color,items,show)=>{
     if(!show||!items.length)return '';
-    if(defaultOpen&&window['_mmtCol_'+id]===undefined)window['_mmtCol_'+id]=false;
     const col=window['_mmtCol_'+id]!==false;
     return '<div class="mmt-sec">'+
       '<div class="mmt-sec-hdr" onclick="_mmtToggle(\''+id+'\')">'+
@@ -1152,8 +1154,8 @@ function renderTodayFeed(){
     (alertItems.length?'<div>'+alertItems.join('')+'</div>':'')+
     _sec('build','✏️','Build','var(--text2)',buildItems,showBuild)+
     _sec('pending','📨','Pending','#7c3aed',pendingItems,showPending)+
-    _sec('dep-sched','💳','Deposit & Schedule','var(--blue)',[...depositItems,...scheduleItems],showDepSched,true)+
-    _sec('collect','💰','Collect','#A32D2D',finalPayItems,showFinalPay,true);
+    _sec('dep-sched','💳','Deposit & Schedule','var(--blue)',[...depositItems,...scheduleItems],showDepSched)+
+    _sec('collect','💰','Collect','#A32D2D',finalPayItems,showFinalPay);
 }
 
 function checkGoalPrompt(){
@@ -1185,7 +1187,11 @@ function checkGoalPrompt(){
       const val=parseFloat(document.getElementById('goal-prompt-input').value)||0;
       if(!val)return;
       S.goalMonthly=val;
-      saveAll();
+      // Bump settingsTs so this goal wins the next cloud merge. Without it, a cloud
+      // settings row carrying goalMonthly:0 at an equal/higher settingsTs (e.g. a
+      // prior Settings save with the goal field blank) overwrites the goal back to
+      // 0 on the next boot — the "goal doesn't persist on reboot" bug.
+      if(typeof _settingsChanged==='function')_settingsChanged();else{S.settingsTs=Date.now();saveAll();}
       overlay.remove();
       renderDash();
     };
