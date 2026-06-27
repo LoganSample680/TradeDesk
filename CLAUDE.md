@@ -837,3 +837,26 @@ runs on all three.
 **Typing is key-by-key** (`pressSequentially`, never `fill`), so values are
 entered exactly as a user would — which also exercises the auto-capitalize-on-
 space behavior live.
+
+## 15. CI / Deploy Architecture & Cloudflare Build Cadence
+
+Two independent systems — don't conflate them:
+
+| System | What it does | Triggered by | Cost |
+|--------|--------------|--------------|------|
+| **Cloudflare Pages** | Builds + deploys the static app to `pages.dev` | **Every push** (by default) | Cloudflare Pages **build minutes** |
+| **GitHub Actions — offline shards** | Mocked Playwright (6 shards, WebKit+Chromium) | Every push | GH Actions minutes |
+| **GitHub Actions — Flow Tests** | Live Playwright vs the deployed `pages.dev` preview | On-demand (`run-flow` label / `workflow_dispatch`) + nightly | GH Actions minutes |
+| **Supabase preview** | Applies new migrations to the preview branch | Every push | — |
+
+**The flow tests run on GitHub Actions, NOT Cloudflare.** Cloudflare only ever
+*deploys the app*. So a test-only / migration-only / docs-only push that triggers
+a Cloudflare Pages build is **pure waste** — it rebuilds an app that didn't change.
+
+**Fix — Build watch paths** (Cloudflare dashboard → Pages → Settings → Builds &
+deployments → Build watch paths):
+- **Include:** `index.html`, `client.html`, `sign.html`, `intake.html`, `js/**`, `sw.js`, `manifest*`, CSS
+- **Exclude:** `tests/**`, `supabase/**`, `.github/**`, `*.md`, `playwright*.config.js`
+
+**Per-commit skip:** put `[CF-Pages-Skip]` in the commit message to skip that
+build. Use it for test-only / migration-only / docs-only commits.
