@@ -1,0 +1,77 @@
+name: Flow Tests (self-hosted / local proxy)
+
+# Runs the LIVE flow suite on a SELF-HOSTED runner (Proxmox) against a LOCAL /api
+# server (tests/flow/local-server.js) instead of the Cloudflare Pages preview — so
+# it burns ZERO Cloudflare Worker requests. The local server proxies /api → Supabase
+# (SUPABASE_UPSTREAM), so tests still hit REAL Supabase end-to-end. On-demand only.
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: flow-selfhosted-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flow-local:
+    # Only on manual dispatch, or a PR labeled `run-flow-local` — and NEVER from a
+    # fork (self-hosted runners must never execute untrusted fork code).
+    if: >-
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'pull_request' &&
+       github.event.label.name == 'run-flow-local' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [self-hosted, proxmox]
+    timeout-minutes: 40
+    env:
+      CI: 'true'
+      LOCAL_PORT: '8788'
+      # Tests hit the LOCAL server; it forwards /api to this upstream (cloud Supabase
+      # today; point at the self-hosted Supabase VM later by changing this secret).
+      SUPABASE_UPSTREAM: ${{ secrets.SUPABASE_UPSTREAM || 'https://mwtsmctajhrrybblgorf.supabase.co' }}
+      E2E_BASE_URL: http://localhost:8788
+      E2E_DEV_EMAIL: ${{ secrets.E2E_DEV_EMAIL }}
+      E2E_DEV_PASSWORD: ${{ secrets.E2E_DEV_PASSWORD }}
+      E2E_DEV_USER_ID: ${{ secrets.E2E_DEV_USER_ID }}
+      # Second account — activates the cross-account bleed test (#39).
+      E2E_DEV2_EMAIL: ${{ secrets.E2E_DEV2_EMAIL }}
+      E2E_DEV2_PASSWORD: ${{ secrets.E2E_DEV2_PASSWORD }}
+      E2E_DEV2_USER_ID: ${{ secrets.E2E_DEV2_USER_ID }}
+      # No E2E_BYPASS_SECRET needed — there is no Cloudflare WAF in front of localhost.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install test deps (playwright + local-proxy)
+        run: npm install --no-save @playwright/test@1.56.0 http-proxy
+
+      # Browsers are pre-installed on the runner; this is a fast no-op if cached.
+      - name: Ensure Playwright browsers
+        run: npx playwright install chromium webkit
+
+      - name: Start local /api server
+        run: |
+          PORT="$LOCAL_PORT" SUPABASE_UPSTREAM="$SUPABASE_UPSTREAM" \
+            node tests/flow/local-server.js > /tmp/local-server.log 2>&1 &
+          echo $! > /tmp/local-server.pid
+          for i in $(seq 1 30); do
+            curl -sf "http://localhost:$LOCAL_PORT/" >/dev/null && { echo "local server up"; break; }
+            sleep 1
+          done
+          curl -sf "http://localhost:$LOCAL_PORT/" >/dev/null || { echo "local server failed to start"; cat /tmp/local-server.log; exit 1; }
+
+      - name: Run live flow tests (against localhost → Supabase)
+        run: npx playwright test -c playwright.flow.config.js
+
+      - name: Stop local server
+        if: always()
+        run: kill "$(cat /tmp/local-server.pid)" 2>/dev/null || true
+
+      - name: Upload flow report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flow-report-selfhosted
+          path: playwright-report/
+          retention-days: 14
