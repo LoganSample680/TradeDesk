@@ -860,3 +860,21 @@ deployments → Build watch paths):
 
 **Per-commit skip:** put `[CF-Pages-Skip]` in the commit message to skip that
 build. Use it for test-only / migration-only / docs-only commits.
+
+### 15.1 Deploy Cadence — Default-Skip, Deploy On Request (MANDATORY)
+
+Deployments are deliberate, never reflexive. The owner decides when the app
+rebuilds.
+
+- **Every commit Claude pushes carries `[CF-Pages-Skip]` in the message** so
+  Cloudflare Pages does NOT rebuild the app. Offline shards + Migration lint +
+  Supabase preview still run on each push (they're free / necessary gating).
+- **The app preview rebuilds ONLY when the owner explicitly asks** — "deploy",
+  "ready", "rebuild", "ship it", or equivalent. Then, and only then, push a
+  deliberate build: a commit WITHOUT the skip token (or an empty
+  `git commit --allow-empty -m "Deploy preview"` if the code is already pushed).
+- This holds even for app-code (`js/**`, `*.html`) changes: land them with the
+  skip token, tell the owner "app changed — say the word to deploy," and wait.
+- Rationale: the owner keeps thinking of changes after the fact and wants to batch
+  them into one intentional deploy instead of burning a Cloudflare build on every
+  push. Respect that — never auto-deploy.
