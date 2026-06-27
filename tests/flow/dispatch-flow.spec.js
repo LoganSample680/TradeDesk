@@ -9,7 +9,7 @@
 // needs real location pings within business hours — so this covers the
 // deterministic assignment half, which is where the dispatch data is written.
 const { test, expect } = require('@playwright/test');
-const { needsLiveCreds, signIn, step, report, resetLedger, cloudRows } = require('./live-helpers');
+const { needsLiveCreds, signIn, step, report, resetLedger, cloudRows, seedName, seedAddr } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'dispatch/assign-crew';
@@ -23,7 +23,10 @@ test.describe('dispatch board (UI-driven)', () => {
     const stamp = process.pid;
     const jobId = Date.now() * 1000 + (stamp % 1000);
     const empId = 'e2e-emp-' + stamp;
-    const empName = `E2E Crew ${stamp}`;
+    const empName = seedName();                 // a real crew name, not "E2E Crew"
+    const clientId = jobId + 7;
+    const clientName = seedName();
+    const jobAddr = seedAddr();                 // a real address, not "No address"
     const today = new Date().toISOString().slice(0, 10);
 
     await step(page, {
@@ -32,14 +35,16 @@ test.describe('dispatch board (UI-driven)', () => {
       ruleText: 'tapping a crew member in the Assign sheet must assign the job and record crew history',
       expected: `job.assignedTo=${empId}, crewHistory includes it, assignedDate=today`,
       act: async (p) => {
-        await p.evaluate(({ jobId, empId, empName, today }) => {
-          // Seed a crew member and a scheduled job for today.
+        await p.evaluate(({ jobId, empId, empName, clientId, clientName, jobAddr, today }) => {
+          // Seed a crew member + a realistic scheduled job (real client, real
+          // address, real job title) for today — not "E2E Dispatch Job / No address".
           S.employees = (S.employees || []).filter(e => e.id !== empId);
           S.employees.push({ id: empId, name: empName, role: 'Painter' });
-          jobs.push({ id: jobId, client_id: null, name: 'E2E Dispatch Job', eventType: 'job',
-            status: 'upcoming', start: today, days: 1, _e2e: 'dispatch' });
+          clients.push({ id: clientId, name: clientName, addr: jobAddr, source: 'Referral', _e2e: 'dispatch' });
+          jobs.push({ id: jobId, client_id: clientId, name: 'Interior repaint — ' + clientName, addr: jobAddr,
+            eventType: 'job', status: 'upcoming', start: today, days: 1, _e2e: 'dispatch' });
           _dispatchAssign(jobId);                          // 1 tap — open the Assign sheet
-        }, { jobId, empId, empName, today });
+        }, { jobId, empId, empName, clientId, clientName, jobAddr, today });
         // Tap the crew member's button in the sheet (matches the seeded name).
         await p.waitForSelector('.zmodal-overlay', { timeout: 10000 });
         await p.locator('.zmodal-overlay button', { hasText: empName }).first().click({ timeout: 8000 });

@@ -24,10 +24,12 @@ module.exports = defineConfig({
   retries: 0,
   // Serial: the suite shares one dev account and seeds/cleans real data; parallel
   // workers would race on the same rows.
-  // 4 parallel workers in CI (ubuntu-latest has 4 cores), 2 locally. The shared
-  // login allows many concurrent Supabase sessions; only same-row writes would
-  // race, and tagged-id isolation prevents that.
-  workers: isCI ? 4 : 2,
+  // 2 workers in CI (was 4). The live suite reaches Supabase through the Cloudflare
+  // Pages /api proxy; with 4 workers — several of which open 2–4 EXTRA browser
+  // contexts (the realtime/offline multi-device specs) — that proxy saturated and
+  // timed out signIn/supaSaveToCloud even on a FRESHLY-CLEARED account (it was not
+  // data bloat). 2 keeps the suite parallel without overwhelming the proxy.
+  workers: isCI ? 2 : 1,
   reporter: isCI ? [['github'], ['list']] : [['list']],
   // 90s per WHOLE test: multi-save flows (seed-save + several steps + cleanup-save)
   // need headroom because each supaSaveToCloud writes the full account, which is

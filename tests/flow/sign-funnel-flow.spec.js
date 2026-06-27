@@ -10,7 +10,7 @@
 //   suspect chain: sign.html loadProposal (storage fetch by key) → checkReady
 //   (name + UETA consent unlock the continue button).
 const { test, expect } = require('@playwright/test');
-const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
+const { needsLiveCreds, signIn, step, report, resetLedger, seedProposal } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'sign/signature-step';
@@ -32,26 +32,9 @@ test.describe('client signing funnel (UI-driven)', () => {
       ruleText: 'uploading the proposal snapshot must succeed and return the signing key',
       expected: 'upload ok + token/uid present',
       act: async (p) => {
-        ctx = await p.evaluate(async ({ clientId, bidId }) => {
-          const token = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
-          const uid = (_supaUser && _supaUser.id) || null;
-          const key = `proposals/${uid}/${bidId}_${token}.json`;
-          const proposal = {
-            id: bidId, status: 'pending', businessName: S.bname || 'E2E Painting', businessPhone: S.bphone || '3165550100',
-            clientName: 'E2E Sign Client', clientAddr: '321 Sign St, Wichita, KS 67202',
-            amount: 3200, deposit: 800, estDays: 2, createdAt: new Date().toISOString(),
-            signingToken: token, contractorUserId: uid, clientId,
-            proposalHtml: '<p>Interior repaint — Living Room walls + ceiling.</p>',
-            trade: 'painting', surfaces: [{ type: 'walls', room: 'Living Room' }, { type: 'ceiling', room: 'Living Room' }],
-            stripeConnectEnabled: false, _e2e: 'sign',
-          };
-          // Seed the matching bid so a later signed-status write back has a target.
-          clients.push({ id: clientId, name: 'E2E Sign Client', phone: '3165550701', _e2e: 'sign' });
-          bids.push({ id: bidId, client_id: clientId, client_name: 'E2E Sign Client', amount: 3200, deposit: 800, status: 'Pending', signingToken: token, _e2e: 'sign' });
-          if (typeof supaSaveToCloud === 'function') await supaSaveToCloud();
-          const { error } = await _supa.storage.from('proposals').upload(key, JSON.stringify(proposal), { contentType: 'application/json', upsert: true, cacheControl: '0' });
-          return { token, uid, key, uploadErr: error ? (error.message || String(error)) : null };
-        }, { clientId, bidId });
+        // Seed a REAL typed-up, sent proposal (random client/address, real
+        // proposalHtml document, artifact uploaded) — sign.html opens it for real.
+        ctx = await seedProposal(p, { clientId, bidId, amount: 3200, tag: 'sign' });
         return 1;
       },
       rule: async () => ({ ok: !ctx.uploadErr && !!ctx.token && !!ctx.uid, got: `err=${ctx.uploadErr} token=${!!ctx.token} uid=${!!ctx.uid}` }),

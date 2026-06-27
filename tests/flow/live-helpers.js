@@ -273,8 +273,97 @@ async function cloudRows(page, table) {
   }, { table });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Realistic seed data — so what the tests leave in the account looks like genuine
+// usage the owner can actually inspect, NOT hollow "E2E" junk. Real names, real
+// Wichita-area addresses, real phone numbers.
+// ─────────────────────────────────────────────────────────────────────────────
+const SEED_FIRST = ['Marcus', 'Sofia', 'Derek', 'Hannah', 'Andre', 'Olivia', 'Tyler', 'Grace', 'Nathan', 'Priya', 'Wesley', 'Imani', 'Caleb', 'Renee', 'Victor', 'Maya', 'Logan', 'Bianca'];
+const SEED_LAST = ['Holloway', 'Castillo', 'Brennan', 'Okafor', 'Whitman', 'Delgado', 'Foster', 'Ramsey', 'Vaughn', 'Sandoval', 'Pierce', 'Mbeki', 'Nguyen', 'Abbott', 'Schaefer', 'Ortega'];
+const SEED_STREETS = ['Gage Blvd', 'N Main St', 'Mission Rd', 'Commercial St', 'N Hillside St', 'SW Jackson St', 'E Douglas Ave', 'W Central Ave', 'N Rock Rd', 'S Seneca St', 'Maple Grove Ln', 'Oak Ridge Dr'];
+const SEED_CITIES = [['Wichita', '672'], ['Topeka', '666'], ['Overland Park', '662'], ['Lawrence', '660'], ['Olathe', '660'], ['Derby', '670']];
+// Every seeded lead has a SOURCE — "no source set" should never appear for test data.
+const SEED_SOURCES = ['Referral', 'Google', 'Facebook', 'Nextdoor', 'Yard sign', 'Repeat client', 'Word of mouth', 'Website', 'Home Advisor'];
+function _pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function _randInt(lo, hi) { return lo + Math.floor(Math.random() * (hi - lo + 1)); }
+// Randomized (not structured) realistic values — call with no arg for fully random.
+function seedName() { return _pick(SEED_FIRST) + ' ' + _pick(SEED_LAST); }
+function seedAddr() { const [city, zp] = _pick(SEED_CITIES); return `${_randInt(100, 9999)} ${_pick(SEED_STREETS)}, ${city}, KS ${zp}${_randInt(10, 99)}`; }
+function seedPhone() { return '316' + _randInt(200, 989) + _randInt(1000, 9999); }
+function seedSource() { return _pick(SEED_SOURCES); }
+function seedAmount() { return _randInt(18, 142) * 100 + _randInt(0, 1) * 50; } // $1,800–$14,250, varied
+
+// Build a REAL typed-up proposal document (line items + totals + terms) — the same
+// kind of HTML the estimator's sendProposalLink produces, so the proposal that
+// lands in the client hub / proposal section is legit, not a hollow Pending row.
+function buildProposalHtml({ name, addr, amount, deposit, biz = 'TradeDesk Painting' }) {
+  const labor = Math.round(amount * 0.62), materials = Math.round(amount * 0.23), prep = amount - labor - materials;
+  const f = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `<div style="font-family:Arial,sans-serif;color:#1a365d">
+    <h1 style="margin:0 0 4px">${biz}</h1>
+    <div style="font-size:12px;color:#475569">Proposal for ${name} — ${addr}</div>
+    <table style="width:100%;border-collapse:collapse;margin-top:14px;font-size:13px">
+      <tr style="background:#f1f5f9"><th align="left" style="padding:8px">Scope</th><th align="right" style="padding:8px">Amount</th></tr>
+      <tr><td style="padding:8px;border-top:1px solid #e2e8f0">Surface prep — sand, patch, mask, prime</td><td align="right" style="padding:8px;border-top:1px solid #e2e8f0">${f(prep)}</td></tr>
+      <tr><td style="padding:8px;border-top:1px solid #e2e8f0">Labor — Living Room walls + ceiling, two coats</td><td align="right" style="padding:8px;border-top:1px solid #e2e8f0">${f(labor)}</td></tr>
+      <tr><td style="padding:8px;border-top:1px solid #e2e8f0">Materials — Sherwin-Williams Duration + sundries</td><td align="right" style="padding:8px;border-top:1px solid #e2e8f0">${f(materials)}</td></tr>
+      <tr style="font-weight:800"><td style="padding:8px;border-top:2px solid #1a365d">Total</td><td align="right" style="padding:8px;border-top:2px solid #1a365d">${f(amount)}</td></tr>
+      <tr><td style="padding:8px">Deposit due before work begins (25%)</td><td align="right" style="padding:8px">${f(deposit)}</td></tr>
+    </table>
+    <div style="font-size:11px;color:#475569;margin-top:12px;line-height:1.6">Workmanship warranted 1 year. Balance due on completion. Buyer may cancel within 3 business days for a full deposit refund.</div>
+  </div>`;
+}
+
+// seedProposal(page, opts) — create a realistic client AND a GENUINE typed-up,
+// SENT proposal: real name/address, real proposalHtml, a signing token, the bid
+// row in td_bids, and the proposal artifact uploaded to the proposals bucket (so
+// it opens in the client hub / sign.html exactly like a real one). Returns the
+// token/uid/key/name so the caller can build hub or sign URLs. This is the legit
+// alternative to `bids.push({status:'Pending'})` hollow seeds.
+async function seedProposal(page, { clientId, bidId, amount, tag = 'seed' } = {}) {
+  // Randomized, complete, realistic — varied name/address/source/amount each call.
+  const name = seedName(), addr = seedAddr(), phone = seedPhone(), source = seedSource();
+  const amt = amount || seedAmount();
+  const proposalHtml = buildProposalHtml({ name, addr, amount: amt, deposit: Math.round(amt * 0.25) });
+  return await page.evaluate(async (o) => {
+    const token = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+    const uid = (typeof _supaUser !== 'undefined' && _supaUser) ? _supaUser.id : null;
+    const deposit = Math.round(o.amt * 0.25);
+    const biz = (typeof S !== 'undefined' && S.bname) || 'TradeDesk Painting';
+    const surfaces = [{ type: 'walls', room: 'Living Room', qty: 480 }, { type: 'ceiling', room: 'Living Room', qty: 240 }];
+    clients.push({ id: o.clientId, name: o.name, phone: o.phone, addr: o.addr, source: o.source, _e2e: o.tag });
+    bids.push({
+      id: o.bidId, client_id: o.clientId, client_name: o.name, name: o.name, addr: o.addr,
+      amount: o.amt, deposit, status: 'Pending', type: 'Interior / Exterior Painting',
+      bid_date: new Date().toISOString().slice(0, 10), proposalSentDate: new Date().toISOString().slice(0, 10),
+      signingToken: token, proposalHtml: o.proposalHtml, surfaces, _e2e: o.tag,
+    });
+    if (typeof supaSaveToCloud === 'function') await supaSaveToCloud();
+    const key = `proposals/${uid}/${o.bidId}_${token}.json`;
+    const proposalData = {
+      id: o.bidId, status: 'pending', businessName: biz, businessPhone: (S && S.bphone) || '3165550100',
+      clientName: o.name, clientAddr: o.addr, amount: o.amt, deposit, estDays: 3,
+      createdAt: new Date().toISOString(), signingToken: token, contractorUserId: uid, clientId: o.clientId,
+      proposalHtml: o.proposalHtml, trade: 'painting', surfaces, stripeConnectEnabled: false, _e2e: o.tag,
+    };
+    let uploadErr = null;
+    try {
+      const { error } = await _supa.storage.from('proposals').upload(key, JSON.stringify(proposalData), { contentType: 'application/json', upsert: true, cacheControl: '0' });
+      if (error) uploadErr = error.message || String(error);
+    } catch (e) { uploadErr = e.message; }
+    return { token, uid, key, name: o.name, addr: o.addr, amount: o.amt, uploadErr };
+  }, { clientId, bidId, amt, name, addr, phone, source, tag, proposalHtml });
+}
+
 module.exports = {
   cloudRows,
+  seedProposal,
+  seedName,
+  seedAddr,
+  seedPhone,
+  seedSource,
+  seedAmount,
+  buildProposalHtml,
   needsLiveCreds,
   shouldTeardown,
   finding,

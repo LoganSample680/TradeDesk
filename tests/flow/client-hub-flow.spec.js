@@ -6,7 +6,7 @@
 // hub (anon, no login, same /api proxy) and assert the proposal renders as a
 // .hub-bid-row under "Awaiting your signature" — NOT the "Hub not found" state.
 const { test, expect } = require('@playwright/test');
-const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
+const { needsLiveCreds, signIn, step, report, resetLedger, seedProposal } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'client-hub/proposal-visible';
@@ -31,16 +31,15 @@ test.describe('client hub shows a real proposal (UI-driven)', () => {
       ruleText: 'building the hub must mint a token and upload a snapshot carrying the pending proposal',
       expected: 'hub token minted + upload returns a client.html url',
       act: async (p) => {
-        hub = await p.evaluate(async ({ clientId, bidId, AMOUNT }) => {
-          const token = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
-          clients.push({ id: clientId, name: 'E2E Hub Client', phone: '3165550700', addr: '700 Hub St, Wichita, KS 67202', _e2e: 'hub' });
-          bids.push({ id: bidId, client_id: clientId, client_name: 'E2E Hub Client', amount: AMOUNT, deposit: 1600, status: 'Pending', type: 'Interior / Exterior', bid_date: new Date().toISOString().slice(0, 10), signingToken: token, surfaces: [{ type: 'walls', room: 'Living Room', qty: 480 }], _e2e: 'hub' });
-          if (typeof supaSaveToCloud === 'function') await supaSaveToCloud();
+        // Seed a REAL typed-up, sent proposal (random client/address, real
+        // proposalHtml + uploaded artifact) — not a hollow Pending row.
+        await seedProposal(p, { clientId, bidId, amount: AMOUNT, tag: 'hub' });
+        hub = await p.evaluate(async ({ clientId }) => {
           let url = null;
-          if (typeof _uploadClientHub === 'function') url = await _uploadClientHub(clientId); // real build + upload, awaits when new
+          if (typeof _uploadClientHub === 'function') url = await _uploadClientHub(clientId); // real build + upload
           const c = clients.find(x => x.id === clientId);
           return { url, token: c ? c.clientToken : null, uid: (_supaUser && _supaUser.id) || null };
-        }, { clientId, bidId, AMOUNT });
+        }, { clientId });
         return 1;
       },
       rule: async () => {

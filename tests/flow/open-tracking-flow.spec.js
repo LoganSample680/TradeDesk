@@ -9,7 +9,7 @@
 // Soft-skips (pass with a note) if proposal_views isn't reachable in this env, so
 // the gate never deadlocks on a not-yet-deployed analytics table.
 const { test, expect } = require('@playwright/test');
-const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
+const { needsLiveCreds, signIn, step, report, resetLedger, seedProposal } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'open-tracking/hub-opened';
@@ -33,16 +33,14 @@ test.describe('proposal open-tracking (UI-driven)', () => {
       ruleText: 'building the hub must mint a token + upload a snapshot carrying the pending proposal',
       expected: 'hub token + uid present',
       act: async (p) => {
-        hub = await p.evaluate(async ({ clientId, bidId }) => {
-          const token = Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
-          clients.push({ id: clientId, name: 'E2E Open Client', phone: '3165550703', addr: '703 Open St, Wichita, KS 67202', _e2e: 'open' });
-          bids.push({ id: bidId, client_id: clientId, client_name: 'E2E Open Client', amount: 4800, deposit: 1200, status: 'Pending', type: 'Interior', bid_date: new Date().toISOString().slice(0, 10), signingToken: token, surfaces: [{ type: 'walls', room: 'Living Room' }], _e2e: 'open' });
-          if (typeof supaSaveToCloud === 'function') await supaSaveToCloud();
+        // Real typed-up, sent proposal (random client/address + real proposalHtml).
+        await seedProposal(p, { clientId, bidId, amount: 4800, tag: 'open' });
+        hub = await p.evaluate(async ({ clientId }) => {
           let url = null;
           if (typeof _uploadClientHub === 'function') url = await _uploadClientHub(clientId);
           const c = clients.find(x => x.id === clientId);
           return { url, token: c ? c.clientToken : null, uid: (_supaUser && _supaUser.id) || null };
-        }, { clientId, bidId });
+        }, { clientId });
         return 1;
       },
       rule: async () => ({ ok: !!hub.token && !!hub.uid, got: `token=${!!hub.token} uid=${!!hub.uid}` }),

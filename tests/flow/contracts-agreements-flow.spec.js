@@ -6,7 +6,7 @@
 // one-line finding(). Both stores round-trip through the cloud (td_contracts /
 // td_agreements) so the seed save proves the write path end-to-end.
 const { test, expect } = require('@playwright/test');
-const { needsLiveCreds, signIn, step, report, resetLedger, type, cloudRows } = require('./live-helpers');
+const { needsLiveCreds, signIn, step, report, resetLedger, type, cloudRows, seedName, seedAddr } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'docs/contract-agreement-sign';
@@ -19,8 +19,10 @@ test.describe('contracts & agreements (UI-driven)', () => {
   test('create a maintenance contract, then an agreement, and sign it', async ({ page }) => {
     const stamp = process.pid;
     const clientId = Date.now() * 1000 + (stamp % 1000);
-    const ctTitle = `E2E Annual Touch-up ${stamp}`;
-    const agParty = `E2E Partner ${stamp}`;
+    const clientName = seedName();              // real client, not "E2E Contract Client"
+    const clientAddr = seedAddr();
+    const ctTitle = 'Annual exterior touch-up & caulk';
+    const agParty = seedName();                 // real partner name
 
     // ── Maintenance contract via the real modal ───────────────────────────────
     await step(page, {
@@ -29,10 +31,10 @@ test.describe('contracts & agreements (UI-driven)', () => {
       ruleText: 'saving the contract modal must create an active contract for the client',
       expected: `a contract titled "${ctTitle}", amount 1800, active`,
       act: async (p) => {
-        await p.evaluate(({ clientId }) => {
-          clients.push({ id: clientId, name: 'E2E Contract Client', phone: '3165550222', _e2e: 'docs' });
+        await p.evaluate(({ clientId, clientName, clientAddr }) => {
+          clients.push({ id: clientId, name: clientName, addr: clientAddr, phone: '3165550222', source: 'Repeat client', _e2e: 'docs' });
           openNewContractModal(clientId);
-        }, { clientId });
+        }, { clientId, clientName, clientAddr });
         await p.waitForSelector('#ct-title', { timeout: 10000 });
         const k1 = await type(p, '#ct-title', ctTitle);
         const k2 = await type(p, '#ct-amount', '1800');
