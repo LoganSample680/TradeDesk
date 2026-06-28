@@ -106,15 +106,18 @@ async function lookupProperty(addr) {
   const zAddr = formatAddrForZillow(addr);
   const { status, location } = await getOnce(`https://www.zillow.com/homes/${zAddr}_rb/`);
 
-  if (![301, 302].includes(status) || !location) return null;
+  // status 200 (not a redirect) usually = Zillow served a search page or a bot
+  // block/captcha instead of redirecting to the property; 403 = hard block.
+  if (![301, 302].includes(status) || !location) return { __error: 'no_redirect', status, hasLocation: !!location, zAddr };
   const zpidMatch = location.match(/(\d+)_zpid/);
-  if (!zpidMatch) return null;
+  if (!zpidMatch) return { __error: 'no_zpid', redirectedTo: location };
   const zpid = zpidMatch[1];
 
   // Step 2: Fetch property detail page
   const detailUrl = `https://www.zillow.com/homedetails/${zpid}_zpid/`;
   const { body: html } = await get(detailUrl);
-  if (!html || html.length < 5000) return null;
+  // A short page is almost always a bot block / captcha interstitial, not a real listing.
+  if (!html || html.length < 5000) return { __error: 'thin_html', htmlLen: html ? html.length : 0, hint: 'likely a Zillow block/captcha page', detailUrl };
 
   const yearBuilt = extractNum(html, 'yearBuilt');
   const beds      = extractNum(html, 'bedrooms');
@@ -172,9 +175,10 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ error: 'addr param required' }));
     }
     const data = await lookupProperty(addr);
-    if (!data) {
+    if (!data || data.__error) {
+      // Surface WHY it failed so a missing lookup is diagnosable, not a silent null.
       res.writeHead(404);
-      return res.end(JSON.stringify({ error: 'Property not found' }));
+      return res.end(JSON.stringify({ error: 'Property not found', reason: (data && data.__error) || 'null', detail: data || null, zAddr: formatAddrForZillow(addr) }));
     }
     res.writeHead(200);
     res.end(JSON.stringify(data));
