@@ -30,7 +30,12 @@ module.exports = defineConfig({
   // timed out signIn/supaSaveToCloud even on a FRESHLY-CLEARED account (it was not
   // data bloat). 2 keeps the suite parallel without overwhelming the proxy.
   workers: isCI ? 2 : 1,
-  reporter: isCI ? [['github'], ['list']] : [['list']],
+  // CI emits a JSON report (machine-readable failure dump) + an HTML report dir
+  // (uploaded as an artifact) so a red run is never a black box — the json carries
+  // every test's error text + the finding() ticket, the html is browsable offline.
+  reporter: isCI
+    ? [['github'], ['list'], ['json', { outputFile: 'flow-results.json' }], ['html', { open: 'never' }]]
+    : [['list']],
   // 90s per WHOLE test: multi-save flows (seed-save + several steps + cleanup-save)
   // need headroom because each supaSaveToCloud writes the full account, which is
   // slower as the shared dev account accumulates E2E rows. 45s was too aggressive

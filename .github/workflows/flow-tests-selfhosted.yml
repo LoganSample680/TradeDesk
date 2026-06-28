@@ -61,6 +61,17 @@ jobs:
           done
           curl -sf "http://localhost:$LOCAL_PORT/" >/dev/null || { echo "local server failed to start"; cat /tmp/local-server.log; exit 1; }
 
+      # Prove the proxy actually reaches Supabase BEFORE running 60 tests against it.
+      # If the app or the /api passthrough is broken, fail here with a clear message
+      # instead of 10 confusing "cloud ABSENT" test failures downstream.
+      - name: Probe app + /api → Supabase passthrough
+        run: |
+          APP=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$LOCAL_PORT/")
+          HEALTH=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$LOCAL_PORT/api/auth/v1/health")
+          echo "app=$APP  /api/auth/v1/health=$HEALTH"
+          [ "$APP" = "200" ] || { echo "::error::app did not serve (got $APP)"; cat /tmp/local-server.log; exit 1; }
+          case "$HEALTH" in 200|401) ;; *) echo "::error::/api did not reach Supabase (got $HEALTH)"; cat /tmp/local-server.log; exit 1;; esac
+
       - name: Run live flow tests (against localhost → Supabase)
         run: npx playwright test -c playwright.flow.config.js
 
@@ -68,10 +79,42 @@ jobs:
         if: always()
         run: kill "$(cat /tmp/local-server.pid)" 2>/dev/null || true
 
-      - name: Upload flow report
+      # Self-reporting failure dump — proxy log + every failed test's title and error,
+      # printed INLINE in the job log so a red run is diagnosable without downloading
+      # anything (and readable via the GitHub API / WebFetch).
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          echo "===================== local /api server log ====================="
+          cat /tmp/local-server.log 2>/dev/null || echo "(no server log)"
+          echo "===================== flow failures (parsed) ====================="
+          node -e '
+            try {
+              const r = require("./flow-results.json");
+              const out = [];
+              const walk = (s) => {
+                (s.suites||[]).forEach(walk);
+                (s.specs||[]).forEach(sp => (sp.tests||[]).forEach(t =>
+                  (t.results||[]).forEach(res => {
+                    if (res.status !== "passed" && res.status !== "skipped") {
+                      const err = (res.errors||[]).map(e => (e.message||"").split("\n").slice(0,6).join("\n")).join("\n");
+                      out.push("✗ " + sp.title + "\n" + err + "\n");
+                    }
+                  })));
+              };
+              (r.suites||[]).forEach(walk);
+              console.log(out.length ? out.join("\n") : "(no parsed failures — see list output above)");
+            } catch (e) { console.log("could not parse flow-results.json:", e.message); }
+          '
+
+      - name: Upload flow report + diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: flow-report-selfhosted
-          path: playwright-report/
+          path: |
+            playwright-report/
+            flow-results.json
+            /tmp/local-server.log
           retention-days: 14
+          if-no-files-found: ignore
