@@ -86,20 +86,17 @@ test.describe('cross-account bleed — same-device sign-out → sign-in (bug #39
     }, { bidId, clientId, MARK });
     expect(await page.evaluate(({ bidId }) => bids.some(b => b.id === bidId), { bidId }), "A's bid is in memory before sign-out").toBe(true);
 
-    // ── 2. "Sign out of cloud sync", then the app's REAL account-switch path: it
-    // returns to the login screen (a reload), and the user signs into a different
-    // account. The bleed sources that actually matter — localStorage keys, the
-    // offline-pending blob, the cloud cache, and B's own cloud — ALL survive a reload,
-    // so this still catches a real leak, while avoiding the no-reload re-auth deadlock
-    // (supaSignOut's wipe-drain racing B's SIGNED_IN, which just hangs, never bleeds). ──
+    // ── 2. REAL account switch — NO reload. This is exactly what a user does: tap
+    // "sign out of cloud sync", then sign into a different account on the SAME page
+    // session. supaSignOut() only clears the local session; it does NOT wipe bids[]/
+    // clients[] or reload. So A's data is still in memory when B signs in — the precise
+    // window bug #39 lived in. This tests the APP's real behavior, not a reload-around. ──
     await page.evaluate(async () => { if (typeof supaSignOut === 'function') await supaSignOut(); });
-    await page.waitForTimeout(400);
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#supa-email', { timeout: 30000 });
+    await page.waitForTimeout(600);
 
-    // ── 3. Sign into NEW user B on the reloaded page — "sign into new user". ──
+    // ── 3. Sign into NEW user B on the SAME page, no reload. ──
     const bIn = await _signInDiag(page, B, 'B');
-    expect(bIn.ok, `B sign-in: ${bIn.why}`).toBe(true);
+    expect(bIn.ok, `B sign-in (no-reload account switch): ${bIn.why}`).toBe(true);
     await page.waitForTimeout(1800); // let B's cloud load + any merge settle
 
     // ── 4. SNAPSHOT where A's marker appears — let the test find the source. ──
