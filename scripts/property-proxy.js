@@ -6,14 +6,28 @@
 'use strict';
 const http = require('http');
 const https = require('https');
+const zlib = require('zlib');
 
 const PORT = process.env.PORT || 3001;
 
+// Mimic a CURRENT real Chrome — the old Chrome/124 UA + bare headers fingerprinted as a
+// bot, so Zillow served a challenge/stripped page (data came back null). A modern UA +
+// client-hints (sec-ch-ua) + sec-fetch-* + Accept-Encoding looks like a browser request.
+const _CH_UA = '"Chromium";v="138", "Google Chrome";v="138", "Not/A)Brand";v="24"';
 const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
   'Accept-Language': 'en-US,en;q=0.9',
+  'Accept-Encoding': 'gzip, deflate, br',
   'Referer': 'https://www.zillow.com/',
+  'Upgrade-Insecure-Requests': '1',
+  'sec-ch-ua': _CH_UA,
+  'sec-ch-ua-mobile': '?0',
+  'sec-ch-ua-platform': '"Windows"',
+  'Sec-Fetch-Site': 'same-origin',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-User': '?1',
+  'Sec-Fetch-Dest': 'document',
 };
 
 // Single request — no redirect following
@@ -39,9 +53,17 @@ function get(url, hops = 0) {
           : new URL(res.headers.location, url).toString();
         return resolve(get(next, hops + 1));
       }
+      // Decompress per Content-Encoding (we now send Accept-Encoding, so Zillow may
+      // gzip/br the response — reading it raw would feed garbage to the regex).
+      const enc = (res.headers['content-encoding'] || '').toLowerCase();
+      let stream = res;
+      if (enc === 'gzip') stream = res.pipe(zlib.createGunzip());
+      else if (enc === 'br') stream = res.pipe(zlib.createBrotliDecompress());
+      else if (enc === 'deflate') stream = res.pipe(zlib.createInflate());
       let body = '';
-      res.on('data', c => body += c);
-      res.on('end', () => resolve({ status: res.statusCode, body }));
+      stream.on('data', c => body += c);
+      stream.on('end', () => resolve({ status: res.statusCode, body }));
+      stream.on('error', reject);
     });
     req.on('error', reject);
     req.setTimeout(12000, () => { req.destroy(); reject(new Error('timeout')); });
