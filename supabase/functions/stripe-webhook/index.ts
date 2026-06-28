@@ -1,16 +1,14 @@
 import Stripe from 'npm:stripe@14';
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { getServiceRoleKey, getStripeSecretKey, getStripeWebhookSecret } from '../_shared/keys.ts';
+import { getServiceRoleKey, stripeSecretKey, stripeWebhookSecret } from '../_shared/keys.ts';
 
-const stripe = new Stripe(getStripeSecretKey(), { apiVersion: '2023-10-16' });
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
   getServiceRoleKey()
 );
-const webhookSecret = getStripeWebhookSecret();
 
 // Fetch actual Stripe fee from balance transaction; fall back to estimate by method.
-async function getActualFee(paymentIntentId: string, amountPaid: number, method: string, connectedAccountId?: string): Promise<number> {
+async function getActualFee(stripe: Stripe, paymentIntentId: string, amountPaid: number, method: string, connectedAccountId?: string): Promise<number> {
   try {
     // Direct charge: the PaymentIntent lives on the contractor's connected account, so
     // it must be retrieved WITH that account header or the lookup 404s. event.account
@@ -30,7 +28,7 @@ async function getActualFee(paymentIntentId: string, amountPaid: number, method:
 // belongs to — a refund can never land on the wrong client or the wrong contractor's
 // books. Idempotent by refund id, and it records the EXACT refunded amount (which equals
 // the amount the contractor typed on the collect screen), never the whole charge.
-async function recordRefund(charge: Stripe.Charge, connectedAccountId?: string) {
+async function recordRefund(stripe: Stripe, charge: Stripe.Charge, connectedAccountId?: string) {
   const piRef = String(charge.payment_intent || '');
   if (!piRef) return;
 
@@ -81,14 +79,14 @@ async function recordRefund(charge: Stripe.Charge, connectedAccountId?: string) 
   }
 }
 
-async function recordCompletedPayment(session: Stripe.Checkout.Session, connectedAccountId?: string) {
+async function recordCompletedPayment(stripe: Stripe, session: Stripe.Checkout.Session, connectedAccountId?: string) {
   const meta = session.metadata!;
   const amountPaid = (session.amount_total || 0) / 100;
   const paymentMethod = meta.paymentMethod || session.payment_method_types?.[0] || 'card';
   const piRef = String(session.payment_intent);
   const ts = new Date().toISOString();
 
-  const stripeFee = await getActualFee(piRef, amountPaid, paymentMethod, connectedAccountId);
+  const stripeFee = await getActualFee(stripe, piRef, amountPaid, paymentMethod, connectedAccountId);
 
   await supabase.from('signed_proposals').upsert({
     bid_id: meta.bidId,
@@ -147,19 +145,29 @@ async function recordCompletedPayment(session: Stripe.Checkout.Session, connecte
 Deno.serve(async (req) => {
   const signature = req.headers.get('stripe-signature')!;
   const body = await req.text();
-  let event: Stripe.Event;
 
-  try {
-    event = await stripe.webhooks.constructEventAsync(body, signature, webhookSecret);
-  } catch (err) {
-    return new Response(`Webhook error: ${err.message}`, { status: 400 });
+  // Auto mode for webhooks: Stripe sends no origin, so verify the signature against
+  // whichever secret matches (live first, then test) and let the event's own livemode
+  // flag pick the keys. A throwaway client is fine for verification — constructEventAsync
+  // only HMACs the body+secret, it never calls the API.
+  const verifier = new Stripe(stripeSecretKey('live') || stripeSecretKey('test') || 'sk_placeholder', { apiVersion: '2023-10-16' });
+  let event: Stripe.Event | null = null;
+  for (const m of ['live', 'test'] as const) {
+    const secret = stripeWebhookSecret(m);
+    if (!secret) continue;
+    try { event = await verifier.webhooks.constructEventAsync(body, signature, secret); break; }
+    catch (_e) { /* try the other mode's secret */ }
   }
+  if (!event) return new Response('Webhook signature verification failed', { status: 400 });
+
+  // Pick keys by the event's own mode — live events → live keys, test events → test keys.
+  const stripe = new Stripe(stripeSecretKey(event.livemode ? 'live' : 'test'), { apiVersion: '2023-10-16' });
 
   // ── Instant payments (card, Venmo, Cash App, etc.) ────────────────────────
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
     if (session.payment_status === 'paid') {
-      await recordCompletedPayment(session, event.account || undefined);
+      await recordCompletedPayment(stripe, session, event.account || undefined);
     }
     // payment_status === 'unpaid' means ACH — wait for async_payment_succeeded
   }
@@ -167,7 +175,7 @@ Deno.serve(async (req) => {
   // ── ACH settles days later — record when money actually clears ────────────
   if (event.type === 'checkout.session.async_payment_succeeded') {
     const session = event.data.object as Stripe.Checkout.Session;
-    await recordCompletedPayment(session, event.account || undefined);
+    await recordCompletedPayment(stripe, session, event.account || undefined);
   }
 
   // ── Refund issued (collect-screen overage, client cancel, or contractor's own
@@ -175,7 +183,7 @@ Deno.serve(async (req) => {
   //    Idempotent by refund id, so the same refund is never double-booked regardless
   //    of how many times charge.refunded fires or who triggered it. ─────────────────
   if (event.type === 'charge.refunded') {
-    await recordRefund(event.data.object as Stripe.Charge, event.account || undefined);
+    await recordRefund(stripe, event.data.object as Stripe.Charge, event.account || undefined);
   }
 
   // ── Connect onboarding completed ──────────────────────────────────────────

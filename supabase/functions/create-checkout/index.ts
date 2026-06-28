@@ -1,9 +1,8 @@
 // v207 — redeploy: ship server-side amount validation (was never deployed; deploy workflow had been failing)
 import Stripe from 'npm:stripe@14';
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { getServiceRoleKey, getStripeSecretKey, getStripePublishableKey } from '../_shared/keys.ts';
+import { getServiceRoleKey, resolveStripeMode, stripeSecretKey, stripePublishableKey } from '../_shared/keys.ts';
 
-const stripe = new Stripe(getStripeSecretKey(), { apiVersion: '2023-10-16' });
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
   getServiceRoleKey()
@@ -18,6 +17,9 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   try {
+    // Auto-select live vs test Stripe by the caller's origin (prod domain → live).
+    const mode = resolveStripeMode(req);
+    const stripe = new Stripe(stripeSecretKey(mode), { apiVersion: '2023-10-16' });
     const body = await req.json();
     const {
       amount, currency, paymentMethod, paymentType,
@@ -145,7 +147,7 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({
           clientSecret: pi.client_secret,
-          publishableKey: getStripePublishableKey(),
+          publishableKey: stripePublishableKey(mode),
           // For a direct charge the client MUST init Stripe.js with this connected
           // account (Stripe(pk, { stripeAccount })) or the client_secret won't resolve.
           connectedAccountId: stripeAccountId || null,

@@ -11,9 +11,8 @@
 // cannot produce a valid token.
 import Stripe from 'npm:stripe@14';
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { getServiceRoleKey, getStripeSecretKey } from '../_shared/keys.ts';
+import { getServiceRoleKey, resolveStripeMode, stripeSecretKey } from '../_shared/keys.ts';
 
-const stripe = new Stripe(getStripeSecretKey(), { apiVersion: '2023-10-16' });
 const supabase = createClient(Deno.env.get('SUPABASE_URL')!, getServiceRoleKey());
 
 const CORS = {
@@ -25,6 +24,8 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   try {
+    const mode = resolveStripeMode(req);
+    const stripe = new Stripe(stripeSecretKey(mode), { apiVersion: '2023-10-16' });
     const { bidId, u, c, t, signerName } = await req.json();
     if (!bidId || !u || !c || !t) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400, headers: CORS });

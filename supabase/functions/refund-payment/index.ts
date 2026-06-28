@@ -16,9 +16,8 @@
 // function also stamps stripe_refund_id so the UI reflects it immediately.
 import Stripe from 'npm:stripe@14';
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { getServiceRoleKey, getStripeSecretKey } from '../_shared/keys.ts';
+import { getServiceRoleKey, resolveStripeMode, stripeSecretKey } from '../_shared/keys.ts';
 
-const stripe = new Stripe(getStripeSecretKey(), { apiVersion: '2023-10-16' });
 const supabase = createClient(Deno.env.get('SUPABASE_URL')!, getServiceRoleKey());
 
 const CORS = {
@@ -30,6 +29,8 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   try {
+    const mode = resolveStripeMode(req);
+    const stripe = new Stripe(stripeSecretKey(mode), { apiVersion: '2023-10-16' });
     // Authenticated contractor only — resolve the caller from their JWT.
     const jwt = (req.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
     if (!jwt) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: CORS });
