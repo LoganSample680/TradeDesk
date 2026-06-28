@@ -244,8 +244,11 @@ function renderContractsDash(){
         const cl=getClientById(ct.clientId);
         const daysUntil=Math.ceil((new Date(ct.nextDate+'T12:00')-new Date())/86400000);
         const isOv=ct.nextDate<tk;
+        // Tapping a due item opens the actual maintenance contract (its terms +
+        // log-visit/edit actions) directly, not the client record's contracts tab —
+        // the card is contract-specific, so the click is too.
         return '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(45,93,168,.1);cursor:pointer" '+
-          'onclick="openClientDetail&&openClientDetail('+ct.clientId+');setTimeout(()=>{setCDTab&&setCDTab(\'contracts\',document.getElementById(\'cdt-contracts\'))},300)">'+
+          'onclick="editContractModal&&editContractModal('+ct.id+')">'+
           '<div style="min-width:0;flex:1">'+
             '<div style="font-size:13px;font-weight:700;color:var(--text)">'+(cl?escHtml(cl.name):'Client')+'</div>'+
             '<div style="font-size:11px;color:var(--text3)">'+escHtml(ct.title)+'</div>'+

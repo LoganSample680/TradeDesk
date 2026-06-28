@@ -152,8 +152,20 @@ async function step(page, opts) {
   const ms = Date.now() - t0;
   let ok = true, got = '';
   if (rule) {
-    try { const r = await rule(page); ok = !!(r && r.ok); got = r ? r.got : ''; }
-    catch (e) { ok = false; got = 'threw: ' + e.message; }
+    // Cloud writes flush ASYNCHRONOUSLY (debounced _flushSaveNow / supaSaveToCloud),
+    // so a rule that reads the cloud can run before the write lands — the /api log
+    // confirms the writes return 200, just AFTER the first read fired. Poll the
+    // post-condition for up to ~8s, passing the instant it holds; a rule that never
+    // holds in the window is a real failure. Synchronous rules pass on the first
+    // iteration, so green steps gain no time. `ms` (recorded above) measures the
+    // interaction only, NOT this settle wait, so the perf ledger is unaffected.
+    const _deadline = Date.now() + 8000;
+    for (;;) {
+      try { const r = await rule(page); ok = !!(r && r.ok); got = r ? r.got : ''; }
+      catch (e) { ok = false; got = 'threw: ' + e.message; }
+      if (ok || Date.now() >= _deadline) break;
+      await page.waitForTimeout(400);
+    }
   }
   _LEDGER.push({ label, pg, role, ms, interactions, ok });
   if (abuse) { try { await abuse(page); } catch (e) {} }
