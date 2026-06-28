@@ -1176,6 +1176,41 @@ function _mpayErr(msg){
   const e=document.getElementById('mpay-err');
   if(e){e.textContent=msg;e.style.display='block';}
 }
+// Issue a real Stripe refund for a card-paid bid via the refund-payment edge function:
+// EXACT typed amount, this bid's payment intent (so it can only reach this client), on the
+// contractor's connected account. Books the ledger entry keyed by the Stripe refund id so
+// the collect balance updates immediately; the charge.refunded webhook is an idempotent
+// backstop that dedupes by the SAME ref, so a refund is never double-booked.
+async function _issueCardRefund(bidId,amount,bid){
+  try{
+    const sess=await _supa.auth.getSession();
+    const token=sess&&sess.data&&sess.data.session?sess.data.session.access_token:null;
+    if(!token)throw new Error('Sign in required to refund');
+    const res=await fetch(SUPA_URL+'/functions/v1/refund-payment',{
+      method:'POST',
+      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',apikey:(typeof SUPA_KEY!=='undefined'?SUPA_KEY:'')},
+      body:JSON.stringify({bidId:bidId,amount:amount})
+    });
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok||!d.refund)throw new Error(d.error||'Refund failed');
+    const refAmt=d.refund.amount;
+    if(!payments.some(p=>p.ref===d.refund.id)){
+      payments.push({id:Date.now(),bid_id:bidId,client_id:bid?bid.client_id:null,client_name:bid?bid.client_name:'',date:new Date().toISOString().slice(0,10),type:'refund',amount:-refAmt,method:'Card',ref:d.refund.id});
+      saveAll();
+    }
+    renderCDBids&&renderCDBids();renderDash&&renderDash();renderMoneyPage&&renderMoneyPage();refreshCollectLabel&&refreshCollectLabel();
+    _refundBanner('↩ Refund of '+fmt(refAmt)+' issued to '+(bid&&bid.client_name?bid.client_name:'client')+'’s card');
+  }catch(e){
+    _refundBanner('Refund failed: '+(e&&e.message?e.message:e),true);
+  }
+}
+function _refundBanner(msg,isErr){
+  const banner=document.createElement('div');
+  banner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;animation:slideDown .3s ease';
+  banner.innerHTML='<div style="background:'+(isErr?'#7A1A1A':'#A32D2D')+';color:#fff;padding:14px 16px;text-align:center;font-size:15px;font-weight:700">'+msg+'</div>';
+  document.body.appendChild(banner);
+  setTimeout(()=>banner.remove(),4000);
+}
 function logPayment(){
   if(_submitting)return;
   const errEl=document.getElementById('mpay-err');if(errEl){errEl.style.display='none';}
@@ -1206,6 +1241,20 @@ function logPayment(){
   const bid=bids.find(b=>b.id===activePayBidId);if(!bid)return;
   const pref=v('mpay-ref')||v('pay-ref');
   const pmethod=v('mpay-method')||v('pay-method')||'';
+  // Card refund → issue a REAL Stripe refund of the EXACT typed amount, against THIS
+  // bid's card payment (so it can only go to this bid's client), on the contractor's
+  // connected account. Detected by a prior card payment whose ref is a pi_… intent.
+  // _issueCardRefund books the ledger entry itself; cash/manual refunds fall through to
+  // the local push below.
+  if(isRefund){
+    const _cardPay=payments.find(p=>p.bid_id===activePayBidId&&(p.amount||0)>0&&typeof p.ref==='string'&&p.ref.indexOf('pi_')===0);
+    if(_cardPay){
+      const _rBid=bid,_rBidId=activePayBidId,_rAmt=a;
+      closePayPanel();
+      _issueCardRefund(_rBidId,_rAmt,_rBid);
+      return;
+    }
+  }
   const storedAmount=isRefund?-a:a;
   payments.push({id:Date.now(),bid_id:activePayBidId,client_id:bid.client_id,client_name:bid.client_name,date:pdate,type:type,amount:storedAmount,method:pmethod,ref:pref});
   const _savedBidId=activePayBidId;

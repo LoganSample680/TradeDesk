@@ -25,6 +25,62 @@ async function getActualFee(paymentIntentId: string, amountPaid: number, method:
   return +(amountPaid * 0.029 + 0.30).toFixed(2);
 }
 
+// Book a refund into the contractor's ledger. The charge's payment_intent uniquely
+// identifies ONE signed proposal, so we resolve the exact bid + client + contractor it
+// belongs to — a refund can never land on the wrong client or the wrong contractor's
+// books. Idempotent by refund id, and it records the EXACT refunded amount (which equals
+// the amount the contractor typed on the collect screen), never the whole charge.
+async function recordRefund(charge: Stripe.Charge, connectedAccountId?: string) {
+  const piRef = String(charge.payment_intent || '');
+  if (!piRef) return;
+
+  const { data: sp } = await supabase
+    .from('signed_proposals')
+    .select('bid_id,contractor_user_id,client_name')
+    .eq('stripe_payment_intent', piRef).maybeSingle();
+  if (!sp?.contractor_user_id) return;
+
+  // Refunds on this charge, retrieved on the connected account (direct charges live there).
+  let refunds: Stripe.Refund[] = [];
+  try {
+    const list = await stripe.refunds.list(
+      { charge: String(charge.id), limit: 100 },
+      connectedAccountId ? { stripeAccount: connectedAccountId } : undefined,
+    );
+    refunds = list.data || [];
+  } catch { refunds = (charge.refunds?.data as Stripe.Refund[]) || []; }
+  if (!refunds.length) return;
+
+  const fullyRefunded = (charge.amount_refunded || 0) >= (charge.amount || 0);
+  await supabase.from('signed_proposals')
+    .update({ stripe_refund_id: refunds[0].id, payment_status: fullyRefunded ? 'refunded' : 'partial_refund' })
+    .eq('bid_id', sp.bid_id);
+
+  const { data: zjRow } = await supabase.from('zj_data').select('payments').eq('user_id', sp.contractor_user_id).maybeSingle();
+  if (!zjRow) return;
+  const payments = JSON.parse(zjRow.payments || '[]');
+  let changed = false, i = 0;
+  for (const rf of refunds) {
+    if (payments.some((p: any) => p.ref === rf.id)) continue;     // idempotent — never double-book
+    payments.push({
+      id: Date.now() + (i++),
+      bid_id: sp.bid_id,
+      client_name: sp.client_name,            // the RIGHT client (resolved from the payment intent)
+      date: new Date().toISOString().slice(0, 10),
+      type: 'refund',
+      amount: -(rf.amount / 100),             // negative + EXACT refunded amount
+      method: 'Card',
+      ref: rf.id,
+    });
+    changed = true;
+  }
+  if (changed) {
+    await supabase.from('zj_data')
+      .update({ payments: JSON.stringify(payments), updated_at: new Date().toISOString() })
+      .eq('user_id', sp.contractor_user_id);
+  }
+}
+
 async function recordCompletedPayment(session: Stripe.Checkout.Session, connectedAccountId?: string) {
   const meta = session.metadata!;
   const amountPaid = (session.amount_total || 0) / 100;
@@ -112,6 +168,14 @@ Deno.serve(async (req) => {
   if (event.type === 'checkout.session.async_payment_succeeded') {
     const session = event.data.object as Stripe.Checkout.Session;
     await recordCompletedPayment(session, event.account || undefined);
+  }
+
+  // ── Refund issued (collect-screen overage, client cancel, or contractor's own
+  //    Stripe dashboard) — book it into the contractor's ledger as a negative entry.
+  //    Idempotent by refund id, so the same refund is never double-booked regardless
+  //    of how many times charge.refunded fires or who triggered it. ─────────────────
+  if (event.type === 'charge.refunded') {
+    await recordRefund(event.data.object as Stripe.Charge, event.account || undefined);
   }
 
   // ── Connect onboarding completed ──────────────────────────────────────────
