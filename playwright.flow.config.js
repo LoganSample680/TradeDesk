@@ -38,15 +38,19 @@ module.exports = defineConfig({
   // left inputs "resolved to hidden" past the waits. 3 keeps most of the ~3× speedup
   // with materially less boot contention. (Paired with the local-server pinning proxy
   // mode so no per-boot direct probe.)
-  // SERIAL (1 worker) on the single dev account A. This is the simplest path to a
-  // clean run: the "write returns 200 then the row vanishes" failures come ONLY from
-  // a 2nd session sweeping the account while the 1st is mid-write. One worker = one
-  // session writing at a time = nothing to clobber, so the bulk of specs pass and all
-  // the real seed data accumulates in account A to inspect. Slower, but correct. The
-  // cross-account-bleed spec still signs into B to prove A's data doesn't leak over.
-  // (The only specs that can still fail are ones that internally open MULTIPLE
-  // sessions on one account on purpose — true-concurrency stress tests.)
-  workers: 1,
+  // 2 workers, ONE per real dev account (worker 0 → DEV, worker 1 → DEV2 via
+  // workerAccount()/TEST_PARALLEL_INDEX in live-helpers.js). This is the fast-AND-safe
+  // config now that the two root causes that forced serial are both fixed:
+  //   1. The "write returns 200 then the row vanishes" clobber — a 2nd session sweeping
+  //      the account mid-write — is gone: the concurrency-safe sweep (§9.8, _userDelete /
+  //      _locallyDeletedIds) only soft-deletes ids THIS device explicitly deleted, never
+  //      rows merely absent from a snapshot. So even same-account concurrency is safe.
+  //   2. The async-flush READ-TIMING failures are gone: step()'s post-write poll waits
+  //      for _flushSaveNow to land before the rule reads.
+  // Workers MUST stay ≤ CLOUD_POOL size (2) so the modulo never collides two workers
+  // onto one account — keeping each worker's seed data in its own real account to
+  // inspect. Bump to 3+ only after adding a 3rd dev account. ~2× faster than serial.
+  workers: 2,
   // CI emits a JSON report (machine-readable failure dump) + an HTML report dir
   // (uploaded as an artifact) so a red run is never a black box — the json carries
   // every test's error text + the finding() ticket, the html is browsable offline.
