@@ -258,6 +258,8 @@ function _ensureClientToken(clientId){
   if(!c||c.clientToken)return;
   c.clientToken=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
+// Cheap deterministic hash of the hub JSON — gates redundant re-uploads.
+function _hubHash(s){let h=0;for(let i=0;i<s.length;i++){h=((h<<5)-h+s.charCodeAt(i))|0;}return h;}
 async function _uploadClientHub(clientId){
   if(!supaEnabled()||!_supaUser)return null;
   const c=clients.find(x=>x.id===clientId);if(!c)return null;
@@ -272,10 +274,18 @@ async function _uploadClientHub(clientId){
     const snapshot=_buildClientHubSnapshot(clientId);
     if(!snapshot)return;
     snapshot.token=c.clientToken;
+    const _json=JSON.stringify(snapshot);
+    // Skip the storage write when the hub content is unchanged since the last upload.
+    // Boot used to re-push EVERY tokened client's hub (hundreds of identical /api
+    // writes per load). A content hash gates it: only changed hubs upload — no data
+    // loss, since any real change (incl. the daily finance-charge tick) hashes
+    // differently and uploads.
+    const _hash=_hubHash(_json);
+    if(c.clientHubKey&&c.clientHubHash===_hash)return;
     const key='client-hub/'+_supaUser.id+'/'+clientId+'_'+c.clientToken+'.json';
-    const{error}=await _supa.storage.from('proposals').upload(key,JSON.stringify(snapshot),{contentType:'application/json',upsert:true,cacheControl:'0'});
+    const{error}=await _supa.storage.from('proposals').upload(key,_json,{contentType:'application/json',upsert:true,cacheControl:'0'});
     if(error)throw error;
-    c.clientHubKey=key;
+    c.clientHubKey=key;c.clientHubHash=_hash;
     saveAll();
   };
   const _queueHub=()=>{
