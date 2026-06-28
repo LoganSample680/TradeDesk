@@ -971,15 +971,35 @@ function clearLogoSetting(){
   S.logoData='';saveAll();_renderLogoPreview();_updateBootPreview();
   showToast('Logo removed — proposals will show business name','✓');
 }
+// Crew "today"/contractor labor isn't a local store — it's cloud time-tracking
+// (job_time_entries + shop_time_entries) and raw GPS (location_pings), keyed by
+// contractor_user_id. "Clear all data" hard-deletes those so the Crew Today tile
+// empties too. team_members (the crew roster / invited accounts) is deliberately
+// left intact — that's identity, not tracking, and wiping it would break invites.
+async function _clearCrewTrackingCloud(){
+  if(typeof supaEnabled!=='function'||!supaEnabled()||typeof _supa==='undefined'||!_supa||!_supaUser)return;
+  const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
+  for(const t of ['job_time_entries','shop_time_entries','location_pings']){
+    try{await _supa.from(t).delete().eq('contractor_user_id',cid);}catch(_e){}
+  }
+}
 function clearAllData(){
   zConfirm('This will permanently delete ALL clients, bids, jobs, income, expenses, and mileage. This cannot be undone.',()=>{
-    zConfirm('Last chance — are you absolutely sure you want to delete everything?',()=>{
-      clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];payments=[];liens=[];timeEntries=[];
+    zConfirm('Last chance — are you absolutely sure you want to delete everything?',async()=>{
+      // Every user-data store declared in data.js must be wiped here — leaving any
+      // out (maintenance/events/photos/licenses/contracts/agreements were all
+      // missing) means those records survive a "Clear all data" and resurface.
+      clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];maintenance=[];payments=[];liens=[];timeEntries=[];events=[];photos=[];licenses=[];contracts=[];agreements=[];checksState={};
       S.employees=[];S.vehicles=[];
       estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;
       gps={active:false,startCoords:null,startTime:null,clientId:null,clientName:'',timerInt:null,vehicle:'',purpose:''};
       if(_activeTimer){clearInterval(_activeTimer.timerInterval);_activeTimer=null;hideClockBanner();}
-      hideDriveBanner();clearSurfDraft();saveAll();renderDash();
+      // _flushSaveNow propagates the emptied arrays to the cloud (soft-deletes the
+      // rows) so they don't re-hydrate on the next sync. saveAll alone only writes
+      // localStorage; without the flush the cloud copy comes back on reload.
+      hideDriveBanner();clearSurfDraft();saveAll();_flushSaveNow&&_flushSaveNow();
+      await _clearCrewTrackingCloud();
+      renderDash();
       zAlert('All data cleared. Starting fresh!',{title:'Done'});
       goPg('pg-dash');
     },{title:'Last chance',yes:'Delete everything',danger:true});
