@@ -6028,15 +6028,18 @@ test.describe('Client pipeline — behavioral flow', () => {
     expect(step1Visible).toBe(true);
   });
 
-  test('save estimate as draft and verify bid is created', async () => {
-    const bidsBefore = await page.evaluate(() => bids.length);
-    await page.evaluate(() => {
+  test('save estimate as draft persists the draft to localStorage', async () => {
+    // saveEstFullDraft writes the in-progress estimate to localStorage (zp3_est_full_draft,
+    // paint-estimate.js:1869) — it does NOT add to bids[]. The old assertion checked
+    // bids.length, which (a) saveEstFullDraft never changes and (b) unrelated async could
+    // mutate during the wait — a wrong target that flaked (2→1) under shard reordering.
+    const saved = await page.evaluate(() => {
+      try { localStorage.removeItem('zp3_est_full_draft'); } catch (e) {}
       if (typeof saveEstFullDraft === 'function') saveEstFullDraft();
+      let d = null; try { d = JSON.parse(localStorage.getItem('zp3_est_full_draft') || 'null'); } catch (e) {}
+      return !!(d && typeof d === 'object');
     });
-    await page.waitForTimeout(600);
-    const bidsAfter = await page.evaluate(() => bids.length);
-    // Either new bid was created, or existing bid was updated (count same or greater)
-    expect(bidsAfter).toBeGreaterThanOrEqual(bidsBefore);
+    expect(saved).toBe(true);
   });
 
   test('no console errors during client pipeline flow', async () => {
