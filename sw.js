@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-06.27.26.45';
+const CACHE = 'tradedesk-06.27.26.46';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
 // tries to serve it for a navigation. new Response() always has redirected:false.
