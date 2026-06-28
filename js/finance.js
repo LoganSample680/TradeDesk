@@ -868,6 +868,9 @@ function openCompleteJobModal(){
     return{j,c,priority:isPast?0:isToday?1:2,isPast,isToday};
   }).filter(x=>x.c).sort((a,b)=>a.priority-b.priority||(a.j.start<b.j.start?-1:1));
 
+  // Clear any open overlay first — never stack modals, and keep this deterministic so
+  // a stale overlay left in the DOM can't be what callers/tests read back.
+  document.querySelectorAll('.zmodal-overlay').forEach(el=>el.remove());
   const overlay=document.createElement('div');
   overlay.className='zmodal-overlay';
   overlay.style.cssText='';
