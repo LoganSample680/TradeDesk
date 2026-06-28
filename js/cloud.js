@@ -409,7 +409,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.28.26.29';
+const APP_VERSION='06.28.26.30';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null,_broadcastPending=false;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -3701,11 +3701,15 @@ function showDailyBriefing(){
         const c=getClientById(j.client_id);
         const nm=c?c.name:'Unknown';
         const icon=j.eventType==='estimate'?'📋':'🔨';
+        // A job record can lack eventType (it's implicitly a job); the icon already
+        // defaults to 🔨 in that case, so default the label to 'job' too — calling
+        // .charAt on an undefined eventType throws (cloud.js:3708 console error).
+        const et=j.eventType||'job';
         return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">'+
           '<div style="font-size:16px">'+icon+'</div>'+
           '<div>'+
             '<div style="font-size:13px;font-weight:600">'+escHtml(nm)+'</div>'+
-            '<div style="font-size:11px;color:var(--text3)">'+j.eventType.charAt(0).toUpperCase()+j.eventType.slice(1)+(c&&c.addr?' · '+escHtml(c.addr.split(',')[0]):'')+'</div>'+
+            '<div style="font-size:11px;color:var(--text3)">'+et.charAt(0).toUpperCase()+et.slice(1)+(c&&c.addr?' · '+escHtml(c.addr.split(',')[0]):'')+'</div>'+
           '</div>'+
         '</div>';
       }).join('')+
