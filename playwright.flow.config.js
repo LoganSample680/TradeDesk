@@ -38,19 +38,19 @@ module.exports = defineConfig({
   // left inputs "resolved to hidden" past the waits. 3 keeps most of the ~3× speedup
   // with materially less boot contention. (Paired with the local-server pinning proxy
   // mode so no per-boot direct probe.)
-  // 2 workers, ONE per real dev account (worker 0 → DEV, worker 1 → DEV2 via
-  // workerAccount()/TEST_PARALLEL_INDEX in live-helpers.js). This is the fast-AND-safe
-  // config now that the two root causes that forced serial are both fixed:
-  //   1. The "write returns 200 then the row vanishes" clobber — a 2nd session sweeping
-  //      the account mid-write — is gone: the concurrency-safe sweep (§9.8, _userDelete /
-  //      _locallyDeletedIds) only soft-deletes ids THIS device explicitly deleted, never
-  //      rows merely absent from a snapshot. So even same-account concurrency is safe.
-  //   2. The async-flush READ-TIMING failures are gone: step()'s post-write poll waits
-  //      for _flushSaveNow to land before the rule reads.
-  // Workers MUST stay ≤ CLOUD_POOL size (2) so the modulo never collides two workers
-  // onto one account — keeping each worker's seed data in its own real account to
-  // inspect. Bump to 3+ only after adding a 3rd dev account. ~2× faster than serial.
-  workers: 2,
+  // SERIAL (1 worker). The data-correctness reasons for serial are now FIXED — the
+  // concurrency-safe sweep (§9.8, _userDelete/_locallyDeletedIds) ended the "write
+  // returns 200 then the row vanishes" clobber, and step()'s post-write poll ended the
+  // async-flush read-timing failures. BUT a 2-worker run on the SINGLE self-hosted
+  // runner is RUNNER-CAPACITY bound, not correctness bound: with workers:2 the two
+  // projects (chromium+DEV, webkit+DEV2) of a realtime spec run at once, and two
+  // concurrent 2-device realtime tests on one runner push Supabase Realtime delivery
+  // past the 25s window — realtime-delete-sync flaked exactly there (the row DID arrive,
+  // just after the wait expired). That's contention, not a bug, and bumping the window
+  // to hide it would be masking (§11.1). So: stay at 1 worker until a SECOND runner
+  // exists; then workers:2 (one per real dev account, capped at CLOUD_POOL size) is the
+  // safe ~2× speedup. Per-worker account isolation is already wired in live-helpers.js.
+  workers: 1,
   // CI emits a JSON report (machine-readable failure dump) + an HTML report dir
   // (uploaded as an artifact) so a red run is never a black box — the json carries
   // every test's error text + the finding() ticket, the html is browsable offline.
