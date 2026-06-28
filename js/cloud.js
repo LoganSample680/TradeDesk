@@ -390,26 +390,26 @@ async function _devRestoreSnapshot(key,idx){
   },{title:'Restore backup',yes:'Restore',danger:true});
 }
 // ── Toast notifications ────────────────────────────────────────────────
-// Supabase endpoint. DEFAULT = the same-origin /api Pages-Function proxy, which
-// resolves Supabase server-side (§15.2 — added because AT&T Fiber couldn't reach
-// *.supabase.co directly). Every call through it is one metered Cloudflare request.
-//
-// DIRECT MODE (reversible toggle — proxy is NEVER deleted): talk straight to Supabase
-// and pay ZERO Cloudflare /api cost. The proxy only forwards headers (it doesn't add
-// the apikey), so going direct changes ONLY where requests resolve — the lone risk is
-// a network that can't DNS-resolve *.supabase.co, which is a one-flag revert, not an
-// outage. intake.html already uses this direct URL successfully.
-//   Turn ON : open the app with ?supadirect=1 once (persists), then reload.
-//   Turn OFF: ?supadirect=0 (or clear localStorage 'zp3_supa_direct'), then reload.
+// Supabase endpoint. DEFAULT = DIRECT to Supabase — validated on AT&T Fiber (the exact
+// network §15.2's /api proxy was built for), which now resolves *.supabase.co fine.
+// Direct pays ZERO Cloudflare /api cost. The /api Pages-Function proxy is RETAINED as
+// the safety net, reached two ways:
+//   (a) explicit override: ?supadirect=0 (persists) forces the proxy; ?supadirect=1 forces direct.
+//   (b) AUTO-FALLBACK (supaInit): if direct is unreachable on a network (can't DNS-resolve
+//       / blocked), the boot probe silently switches THIS session to the proxy so the app
+//       still loads. So even an untested carrier self-heals — direct where it works, proxy
+//       where it must, never an outage.
 const _SUPA_DIRECT_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
-(function(){try{const p=new URLSearchParams(location.search);
-  if(p.get('supadirect')==='1')localStorage.setItem('zp3_supa_direct','1');
-  if(p.get('supadirect')==='0')localStorage.removeItem('zp3_supa_direct');
+const _SUPA_PROXY_URL = location.origin + '/api';
+(function(){try{const p=new URLSearchParams(location.search);const v=p.get('supadirect');
+  if(v==='1')localStorage.setItem('zp3_supa_mode','direct');
+  if(v==='0')localStorage.setItem('zp3_supa_mode','proxy');
 }catch(_e){}})();
-const _supaDirect=(()=>{try{return localStorage.getItem('zp3_supa_direct')==='1';}catch(_e){return false;}})();
-const SUPA_URL = _supaDirect ? _SUPA_DIRECT_URL : (location.origin + '/api');
+const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e){return null;}})();
+// `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
+let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.27.26.44';
+const APP_VERSION='06.27.26.45';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -760,14 +760,30 @@ window.recoverBidRooms=recoverBidRooms;
 async function supaInit(){
   if(!supaEnabled())return;
   _captureRecoverySnapshot(); // FIRST — freeze local data before any cloud load can overwrite it
+  // AUTO-FALLBACK: if we're set to talk DIRECT to Supabase, confirm this network can
+  // actually reach it before building the client. A 2.5s health probe — any HTTP
+  // response (even 401) means reachable → stay direct; a DNS/network/timeout error
+  // means this carrier can't resolve *.supabase.co → silently switch to the /api proxy
+  // for this session so the app still loads. The probe runs only in direct mode, so
+  // proxy-forced sessions pay nothing.
+  if(SUPA_URL===_SUPA_DIRECT_URL){
+    let _directOk=false;
+    try{
+      const _c=new AbortController();const _t=setTimeout(()=>_c.abort(),2500);
+      await fetch(_SUPA_DIRECT_URL+'/auth/v1/health',{signal:_c.signal});
+      clearTimeout(_t);_directOk=true;
+    }catch(_e){_directOk=false;}
+    if(!_directOk){SUPA_URL=_SUPA_PROXY_URL;try{localStorage.setItem('zp3_supa_fellback','1');}catch(_e2){}}
+  }
   try{
     _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{
       auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storage:window.localStorage}
     });
     // Realtime connects straight to Supabase — WebSocket proxying through
     // Cloudflare Pages is unreliable, and a dead socket silently kills
-    // cross-device live sync. REST keeps using the /api proxy for DNS
-    // resilience; if the direct socket fails, the 30s zj_data poll covers it.
+    // cross-device live sync. REST now ALSO defaults to direct (see SUPA_URL);
+    // the /api proxy is the auto-fallback when direct can't be reached. If the
+    // direct socket fails, the 30s zj_data poll covers it.
     try{_supa.realtime.endPoint='wss://mwtsmctajhrrybblgorf.supabase.co/realtime/v1/websocket';}catch(_e){}
     const{data:{session}}=await _supa.auth.getSession();
     if(session){
