@@ -112,7 +112,7 @@ async function _geoOnPing(pos){
   const insideId=inside?inside.id:null;
   if(insideId!==_geoCurrentJob){
     const prevJob=_geoCurrentJob;
-    if(prevJob&&_geoArrivedAt)_geoCloseEntry(prevJob); // left previous job
+    if(prevJob&&_geoArrivedAt)await _geoCloseEntry(prevJob); // left previous job
     if(prevJob&&!insideId)_geoDriveStartedAt=new Date().toISOString(); // leaving job → drive
     if(insideId){
       if(_geoDriveStartedAt)_geoDriveEntry(insideId,_geoDriveStartedAt); // log drive leg
@@ -131,7 +131,7 @@ function _geoWritePing(here,acc){
     }).then(()=>{},()=>{});
   }catch(_e){}
 }
-function _geoCloseEntry(jobId){
+async function _geoCloseEntry(jobId){
   const arrived=_geoArrivedAt; _geoArrivedAt=null;
   if(!arrived)return;
   const departed=new Date().toISOString();
@@ -139,10 +139,10 @@ function _geoCloseEntry(jobId){
   if(mins<2)return;            // ignore brief pass-throughs
   if(!_supa||!_supaUser)return;
   try{
-    _supa.from('job_time_entries').insert({
+    await _supa.from('job_time_entries').insert({
       contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
       job_id:String(jobId),arrived_at:arrived,departed_at:departed,minutes:mins,source:'geofence'
-    }).then(()=>{},()=>{});
+    });
   }catch(_e){}
 }
 function _geoCloseShopEntry(arrivedAt){

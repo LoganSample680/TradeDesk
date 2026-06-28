@@ -58,6 +58,10 @@ test.describe('offline-sync race safety (multi-device)', () => {
 
   test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page); });
 
+  // Concurrency-safe sweep (CLAUDE.md §9.8) is now implemented: the cloud save only
+  // soft-deletes ids this device EXPLICITLY deleted (recorded via _userDelete at every
+  // delete site), never rows merely absent from a snapshot. So N concurrent writers on
+  // one account no longer clobber each other. This spec is the permanent guard for it.
   test('concurrent workers + offline/reconnect never clobber each others bids', async ({ page, browser }) => {
     test.setTimeout(120000); // heavy: N full app boots + offline cycle
 

@@ -1531,8 +1531,8 @@ function deleteJob(jobId){
   if(!j)return;
   const label=j.eventType==='estimate'?'estimate visit':'job';
   zConfirm('Remove this '+label+' from the calendar?',()=>{
-    jobs=jobs.filter(x=>x.id!==jobId);
-    saveAll();renderClientDetail();renderCalendar();
+    _userDelete(()=>{jobs=jobs.filter(x=>x.id!==jobId);saveAll();});
+    renderClientDetail();renderCalendar();
   },{title:'Remove '+label,yes:'Remove',danger:true});
 }
 

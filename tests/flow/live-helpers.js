@@ -22,6 +22,69 @@
 const DEV_EMAIL = process.env.E2E_DEV_EMAIL || '';
 const DEV_PASSWORD = process.env.E2E_DEV_PASSWORD || '';
 const DEV_USER_ID = process.env.E2E_DEV_USER_ID || '';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LOCAL-STACK per-worker account isolation (GATED on E2E_LOCAL_STACK==='1').
+//
+// When unset, EVERY function below short-circuits and the cloud path is byte-for-
+// byte unchanged. When set, global-setup.js has provisioned a pool of distinct
+// auth users (one per worker) on the local Supabase stack, written to
+// .local-accounts.json. localAccount() maps this worker's parallelIndex to its
+// own {email,password,uid}, so the 3 workers never share a user_id and can't
+// clobber each other's rows / realtime / soft-delete sweep.
+// ─────────────────────────────────────────────────────────────────────────────
+const fs = require('fs');
+const path = require('path');
+const LOCAL_STACK = process.env.E2E_LOCAL_STACK === '1';
+let _localPool; // lazy-loaded once: array | null (null = unavailable/not-local)
+
+function _loadLocalPool() {
+  if (_localPool !== undefined) return _localPool;
+  _localPool = null;
+  if (!LOCAL_STACK) return _localPool;
+  try {
+    const raw = fs.readFileSync(path.join(__dirname, '.local-accounts.json'), 'utf8');
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr) && arr.length) _localPool = arr;
+  } catch (e) { _localPool = null; }
+  return _localPool;
+}
+
+// This worker's dedicated account in local mode, else null. Maps the Playwright
+// parallel index across the pool so every worker gets a stable distinct account.
+function localAccount() {
+  const pool = _loadLocalPool();
+  if (!pool) return null;
+  const idx = parseInt(process.env.TEST_PARALLEL_INDEX || '0', 10) % pool.length;
+  return pool[idx] || null;
+}
+
+// CLOUD per-worker pool. With a 2nd real dev account configured, each Playwright
+// worker gets its OWN cloud account — so workers don't clobber a shared one (fixes
+// the contention failures) AND the seed data lands in REAL Supabase accounts you can
+// sign into and inspect (the §13.7 "poke at it" workflow). Workers MUST be ≤ pool
+// size (see playwright.flow.config.js) so the modulo never collides two workers onto
+// one account. Falls back to the single shared dev login when no 2nd account exists.
+const CLOUD_POOL = (() => {
+  const p = [];
+  if (DEV_EMAIL && DEV_PASSWORD && DEV_USER_ID) p.push({ email: DEV_EMAIL, password: DEV_PASSWORD, uid: DEV_USER_ID });
+  const e2 = process.env.E2E_DEV2_EMAIL, p2 = process.env.E2E_DEV2_PASSWORD, u2 = process.env.E2E_DEV2_USER_ID;
+  if (e2 && p2 && u2) p.push({ email: e2, password: p2, uid: u2 });
+  return p;
+})();
+
+// This worker's account: local-stack pool wins when active; else the cloud pool
+// (only when a real 2nd account exists); else null = the single-account default
+// (behavior byte-for-byte unchanged).
+function workerAccount() {
+  const local = localAccount();
+  if (local) return local;
+  if (CLOUD_POOL.length > 1) {
+    const idx = parseInt(process.env.TEST_PARALLEL_INDEX || '0', 10) % CLOUD_POOL.length;
+    return CLOUD_POOL[idx];
+  }
+  return null;
+}
 // Whether the Cloudflare-bypass header secret is configured in this CI run.
 // Reported in sign-in failures so we can tell "header not sent" from "Cloudflare
 // rule not matching" without guessing. Length only — never the value.
@@ -36,6 +99,8 @@ const RUN_TAG = `E2E_${process.env.GITHUB_RUN_ID || 'local'}_${process.pid}`;
 // True only when all three secrets are present. Specs gate on this:
 //   test.skip(!needsLiveCreds(), 'live Supabase creds not configured');
 function needsLiveCreds() {
+  // In local-stack mode the per-worker pool stands in for the cloud secrets.
+  if (LOCAL_STACK && localAccount()) return true;
   return !!(DEV_EMAIL && DEV_PASSWORD && DEV_USER_ID);
 }
 
@@ -50,6 +115,11 @@ function shouldTeardown() {
 // Sign in through the real login form, exactly as a user would: fill the email
 // and password fields, click Sign in, and wait for the dashboard to mount.
 async function signIn(page) {
+  // In local-stack mode, sign in as THIS worker's dedicated account (distinct
+  // user_id per worker = isolation). Else use the shared cloud dev login.
+  const _acct = workerAccount();
+  const _email = _acct ? _acct.email : DEV_EMAIL;
+  const _password = _acct ? _acct.password : DEV_PASSWORD;
   await page.goto('/');
   await page.waitForSelector('#supa-email', { timeout: 30000 });
   // Authenticate through the app's own Supabase client and RETURN the exact
@@ -68,11 +138,25 @@ async function signIn(page) {
       const t = await r.text();
       probe = r.status + ' ' + (r.headers.get('content-type') || '') + ' :: ' + t.slice(0, 70).replace(/\s+/g, ' ');
     } catch (e) { probe = 'probe-fail: ' + (e && e.message); }
-    try {
-      const { data, error } = await _supa.auth.signInWithPassword({ email, password });
-      return { ok: !error, why: error ? error.message : null, session: !!(data && data.session), origin, supaUrl, probe };
-    } catch (e) { return { ok: false, why: 'exception: ' + (e && e.message), origin, supaUrl, probe }; }
-  }, { email: DEV_EMAIL, password: DEV_PASSWORD });
+    // 3 workers all sign into the SAME dev account near-simultaneously; GoTrue
+    // rate-limits password grants per-email and surfaces a transient AuthError whose
+    // .message is EMPTY (stringifies to "{}"). That's not a real auth failure — it's
+    // contention. Retry with jittered backoff so the workers de-correlate, instead of
+    // dropping to workers:1 (which blows the runtime budget). A real bad-credential
+    // error (e.g. "Invalid login credientials") has a message and we surface it fast.
+    let lastWhy = null;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const { data, error } = await _supa.auth.signInWithPassword({ email, password });
+        if (!error) return { ok: true, why: null, session: !!(data && data.session), origin, supaUrl, probe, attempt };
+        lastWhy = error.message || `empty-error(status ${error.status || '?'})`;
+        const transient = !error.message || error.status === 429 || error.status === 0 || /network|fetch|timeout|rate/i.test(error.message || '');
+        if (!transient) return { ok: false, why: lastWhy, origin, supaUrl, probe, attempt };
+      } catch (e) { lastWhy = 'exception: ' + (e && e.message); }
+      await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt) + Math.floor(Math.random() * 350)));
+    }
+    return { ok: false, why: lastWhy, origin, supaUrl, probe };
+  }, { email: _email, password: _password });
   if (!res.ok) throw new Error(`Live sign-in failed @ ${res.supaUrl} (origin ${res.origin}) bypassHeader=${BYPASS_STATUS} probe[${res.probe}]: ${res.why}`);
   // Auth succeeded — wait for the app to propagate the session, then cloud load.
   await page.waitForFunction(
@@ -90,8 +174,11 @@ async function signIn(page) {
 async function assertDevAccount(page) {
   const id = await page.evaluate(() => (typeof _supaUser !== 'undefined' && _supaUser ? _supaUser.id : null));
   if (!id) throw new Error('assertDevAccount: no authenticated user');
-  if (id !== DEV_USER_ID) {
-    throw new Error(`assertDevAccount: signed-in user ${id} !== E2E_DEV_USER_ID — refusing to seed/teardown`);
+  // In local-stack mode the trusted id is THIS worker's provisioned uid.
+  const _acct = workerAccount();
+  const expectedId = _acct ? _acct.uid : DEV_USER_ID;
+  if (id !== expectedId) {
+    throw new Error(`assertDevAccount: signed-in user ${id} !== ${_acct ? 'local-worker-uid' : 'E2E_DEV_USER_ID'} — refusing to seed/teardown`);
   }
   return id;
 }
@@ -392,4 +479,5 @@ module.exports = {
   RUN_TAG,
   DEV_USER_ID,
   SEEDED_TABLES,
+  localAccount,
 };

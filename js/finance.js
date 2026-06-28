@@ -3181,7 +3181,7 @@ async function purgeOldReceiptImages(){
     saveAll();renderExpenses();showToast(old.length+' receipt images purged — records kept','🗑️');
   },{title:'Purge old receipt images',yes:'Delete images',danger:true});
 }
-function delExpense(id){expenses=expenses.filter(x=>x.id!==id);_flushSaveNow&&_flushSaveNow();renderExpenses();}
+function delExpense(id){_userDelete(()=>{expenses=expenses.filter(x=>x.id!==id);_flushSaveNow&&_flushSaveNow();});renderExpenses();}
 
 function editExpense(id){
   const exp=expenses.find(e=>e.id===id);if(!exp)return;

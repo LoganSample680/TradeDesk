@@ -37,8 +37,13 @@ test.describe('client hub shows a real proposal (UI-driven)', () => {
         hub = await p.evaluate(async ({ clientId }) => {
           let url = null;
           if (typeof _uploadClientHub === 'function') url = await _uploadClientHub(clientId); // real build + upload
-          const c = clients.find(x => x.id === clientId);
-          return { url, token: c ? c.clientToken : null, uid: (_supaUser && _supaUser.id) || null };
+          // Read the token from the RETURNED URL — the authoritative artifact the hub
+          // snapshot was keyed with and that client.html actually resolves from. Re-reading
+          // clients[].clientToken races a realtime cloud-reload that can swap the array out
+          // from under us between the await and the find (shared-account multi-device sync).
+          const m = (url || '').match(/[?&]t=([^&]+)/);
+          const token = m ? decodeURIComponent(m[1]) : null;
+          return { url, token, uid: (_supaUser && _supaUser.id) || null };
         }, { clientId });
         return 1;
       },

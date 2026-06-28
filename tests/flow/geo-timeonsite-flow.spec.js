@@ -55,9 +55,14 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
     // Helper to install ONE coord-bearing job for today + always-on hours, isolated
     // so _geoMyJobs() returns exactly our job (real jobs lack session coords/are far).
     const setup = async (jobId, hoursOk) => {
-      await page.evaluate(({ jobId, SITE, hoursOk }) => {
+      return await page.evaluate(({ jobId, SITE, hoursOk }) => {
         window.__origJobs = jobs.slice();
-        const today = new Date().toISOString().slice(0, 10);
+        // _geoMyJobs() filters today's jobs against the app's LOCAL date key
+        // (todayKey, built from getFullYear/Month/Date). Seeding with UTC
+        // (toISOString) makes the job land on tomorrow's date when the runner clock is
+        // behind UTC (Central in the evening) → the job is filtered out → no arrival →
+        // no geofence row. Use the same local key the app compares against.
+        const today = (typeof todayKey === 'function') ? todayKey() : new Date().toISOString().slice(0, 10);
         jobs.length = 0;
         jobs.push({ id: jobId, client_id: null, name: 'E2E Geo Site', eventType: 'job', status: 'upcoming', start: today, days: 1, lat: SITE.lat, lon: SITE.lon, _e2e: 'geo' });
         // Reset the geo state machine.
@@ -86,10 +91,20 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
         const ok = await setup(jobOn, true);
         if (!ok) return 0; // hours setup failed (shouldn't with 00:00-23:59)
         await ping(p, SITE.lat, SITE.lon);                       // arrive (inside fence)
+        // DIAGNOSTIC: capture whether arrival actually registered — did _geoMyJobs
+        // return our seeded job, did business-hours pass, did _geoCurrentJob get set?
+        // This tells us if the failure is ARRIVAL (no current job → nothing to close)
+        // vs the INSERT (current job set but no row written).
+        p.__geoDiag = await p.evaluate(() => ({
+          curJob: (typeof _geoCurrentJob !== 'undefined') ? _geoCurrentJob : 'undef',
+          arrived: (typeof _geoArrivedAt !== 'undefined') ? !!_geoArrivedAt : 'undef',
+          myJobIds: (typeof _geoMyJobs === 'function') ? (_geoMyJobs() || []).map(j => j.id) : 'no-fn',
+          hoursNow: (typeof _geoBusinessHoursNow === 'function') ? _geoBusinessHoursNow() : 'no-fn',
+        }));
         // Simulate a 12-minute dwell by back-dating the arrival the handler stored.
         await p.evaluate(() => { _geoArrivedAt = new Date(Date.now() - 12 * 60000).toISOString(); });
         await ping(p, FAR.lat, FAR.lon);                         // depart (outside fence)
-        await p.waitForTimeout(1200);                            // let the insert land
+        await p.waitForTimeout(1500);                            // let the awaited insert land
         await restore();
         return 2; // two pings
       },
@@ -97,7 +112,7 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
         const r = await geoEntries(p, jobOn);
         if (r.absent) return { ok: true, got: 'SKIP — job_time_entries not provisioned in this env (pending geo migration)' };
         const gf = (r.rows || []).find(x => x.source === 'geofence');
-        return { ok: !!gf && gf.minutes >= 2, got: gf ? `minutes=${gf.minutes} source=${gf.source}` : `no geofence row (rows=${JSON.stringify(r.rows)})` };
+        return { ok: !!gf && gf.minutes >= 2, got: gf ? `minutes=${gf.minutes} source=${gf.source}` : `no geofence row — DIAG after arrive: ${JSON.stringify(p.__geoDiag)}` };
       },
     });
 

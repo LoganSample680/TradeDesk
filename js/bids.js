@@ -10,7 +10,7 @@ function convertOpportunityToEstimate(bidId){
   _doOpenEstimate(c,null,opp.trade_type||getActiveTrade());
 }
 function deleteOpportunity(bidId){
-  bids=bids.filter(b=>b.id!==bidId);saveAll();renderCDOpportunities();
+  _userDelete(()=>{bids=bids.filter(b=>b.id!==bidId);saveAll();});renderCDOpportunities();
 }
 function renderCDOpportunities(){
   const el=document.getElementById('cd-opportunities');if(!el)return;
@@ -1288,7 +1288,7 @@ function logPayment(){
     }
   }
 }
-function deletePay(id){zConfirm('Delete this payment record?',()=>{payments=payments.filter(p=>p.id!==id);saveAll();renderCDBids();},{title:'Delete payment',yes:'Delete',danger:true});}
+function deletePay(id){zConfirm('Delete this payment record?',()=>{_userDelete(()=>{payments=payments.filter(p=>p.id!==id);saveAll();});renderCDBids();},{title:'Delete payment',yes:'Delete',danger:true});}
 
 let activeLienBidId=null;
 function openLienPanel(bidId){
@@ -1392,10 +1392,13 @@ function deleteBid(bidId){
   const b=bids.find(x=>x.id===bidId);
   zConfirm('Delete this bid'+(b?' ('+fmt(b.amount)+')':'')+' permanently? Payment records and any lien will also be removed.',()=>{
     const _cid=b?.client_id;
-    bids=bids.filter(x=>x.id!==bidId);
-    payments=payments.filter(p=>p.bid_id!==bidId);
-    liens=liens.filter(l=>l.bid_id!==bidId);
-    clearEstFullDraft();saveAll();renderClientDetail();
+    _userDelete(()=>{
+      bids=bids.filter(x=>x.id!==bidId);
+      payments=payments.filter(p=>p.bid_id!==bidId);
+      liens=liens.filter(l=>l.bid_id!==bidId);
+      clearEstFullDraft();saveAll();
+    });
+    renderClientDetail();
     if(_cid)_uploadClientHub(_cid).catch(e=>console.error('[hub upload]',e));
   },{title:'Delete bid',yes:'Delete permanently',danger:true});
 }
@@ -1404,9 +1407,12 @@ function saveLien(){
   const status=v('lien-status');
   const bidId=activeLienBidId;
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
-  liens=liens.filter(l=>l.bid_id!==activeLienBidId);
-  liens.push({id:Date.now(),bid_id:activeLienBidId,client_id:bid.client_id,client_name:bid.client_name,date:v('lien-date'),status,amount:parseFloat(v('lien-amount'))||0,county:v('lien-county'),notes:v('lien-notes')});
-  saveAll();closeLienPanel();renderCDBids();
+  _userDelete(()=>{
+    liens=liens.filter(l=>l.bid_id!==activeLienBidId);
+    liens.push({id:Date.now(),bid_id:activeLienBidId,client_id:bid.client_id,client_name:bid.client_name,date:v('lien-date'),status,amount:parseFloat(v('lien-amount'))||0,county:v('lien-county'),notes:v('lien-notes')});
+    saveAll();
+  });
+  closeLienPanel();renderCDBids();
   if(bid&&(status==='filed'||status==='attorney')){
     setClientRisk(bid.client_id,'high_risk');
     setBidCollStage(bid,'lien_filed','Lien filed');

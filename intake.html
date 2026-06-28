@@ -209,7 +209,7 @@ async function init(){
     return;
   }
   try{
-    const{data,error}=await _supa.from('accounts').select('id,business_name,phone,logo_data,brand_color').eq('id',ACCOUNT_ID).maybeSingle();
+    const{data,error}=await _supa.from('account_public').select('id,business_name,phone,logo_data,brand_color').eq('id',ACCOUNT_ID).maybeSingle();
     if(error||!data){
       showErr('Contractor not found','This link may be invalid or expired.');
       return;

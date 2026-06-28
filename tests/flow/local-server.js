@@ -20,6 +20,37 @@ const PORT = parseInt(process.env.PORT || '8788', 10);
 const UPSTREAM = (process.env.SUPABASE_UPSTREAM || 'https://mwtsmctajhrrybblgorf.supabase.co').replace(/\/$/, '');
 const ROOT = path.resolve(__dirname, '..', '..'); // repo root (where index.html lives)
 
+// ─────────────────────────────────────────────────────────────────────────────
+// LOCAL-STACK anon-key swap (GATED on E2E_LOCAL_STACK==='1').
+//
+// When the flag is OFF this is dormant — served HTML/JS is byte-for-byte the
+// cloud files. When ON, the app must authenticate against the LOCAL Supabase
+// stack, which uses a DIFFERENT publishable key than the baked cloud one. We
+// rewrite the cloud anon key(s) → the local publishable key on the fly as files
+// are served (the on-disk source is never touched). Two key forms exist:
+//   • js/cloud.js (main app)        : sb_publishable_… (new format)
+//   • client/sign/intake .html      : eyJhbGciOiJ… (legacy anon JWT)
+// Both map to the single local publishable key below.
+// ─────────────────────────────────────────────────────────────────────────────
+const LOCAL_STACK = process.env.E2E_LOCAL_STACK === '1';
+const LOCAL_PUBLISHABLE_KEY = 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH';
+const CLOUD_PUBLISHABLE_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
+const CLOUD_ANON_JWT = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
+
+// Swap every cloud anon-key form → the local publishable key. No-op when the
+// local-stack flag is off, so cloud serving is completely untouched.
+function swapAnonKey(text) {
+  if (!LOCAL_STACK) return text;
+  return text
+    .split(CLOUD_PUBLISHABLE_KEY).join(LOCAL_PUBLISHABLE_KEY)
+    .split(CLOUD_ANON_JWT).join(LOCAL_PUBLISHABLE_KEY)
+    // client/sign/intake.html hardcode the CLOUD Supabase URL (not the /api proxy
+    // like the main app), so in local mode they'd talk to cloud Supabase with the
+    // local key (→ 401) instead of the local stack. Rewrite that quoted literal to
+    // the same-origin /api path so they route through THIS server → local stack.
+    .split("'https://mwtsmctajhrrybblgorf.supabase.co'").join("(location.origin+'/api')");
+}
+
 const proxy = httpProxy.createProxyServer({ target: UPSTREAM, changeOrigin: true, secure: true, ws: true, xfwd: false });
 proxy.on('error', (err, _req, res) => {
   if (res && !res.headersSent && res.writeHead) { res.writeHead(502, { 'content-type': 'text/plain' }); }
@@ -65,8 +96,29 @@ function serveStatic(req, res) {
         if (e2) { res.writeHead(500); return res.end('read error'); }
         const inject = '<script>try{localStorage.setItem("zp3_supa_mode","proxy")}catch(e){}</script>';
         html = /<head[^>]*>/i.test(html) ? html.replace(/<head([^>]*)>/i, '<head$1>' + inject) : inject + html;
+        // The standalone client pages (sign.html / client.html / intake.html) hardcode
+        // the DIRECT https://<ref>.supabase.co URL in their own `const SUPA_URL='...'`
+        // (they don't share cloud.js's bridge logic). On the runner that host is
+        // unreachable, so their proposal/hub/account fetches fail and the page sits on
+        // its error screen (#f-name / #approve-btn never shown). Rewrite that literal to
+        // the same-origin /api bridge this server proxies — exactly what the main app
+        // uses (location.origin+'/api') — so they load live data identically. Only those
+        // pages contain the literal; index.html (cloud.js) is untouched.
+        html = html.replace(/'https:\/\/[a-z0-9-]+\.supabase\.co'/gi, "(location.origin+'/api')");
+        // LOCAL STACK ONLY: point the app's anon key at the local stack's key.
+        html = swapAnonKey(html);
         res.writeHead(200, { 'content-type': ctype, 'cache-control': 'no-store' });
         res.end(html);
+      });
+      return;
+    }
+    // LOCAL STACK ONLY: the main app's anon key lives in js/cloud.js (a .js file),
+    // so rewrite JS text the same way as HTML. Cloud path streams unchanged.
+    if (LOCAL_STACK && ext === '.js') {
+      fs.readFile(filePath, 'utf8', (e3, js) => {
+        if (e3) { res.writeHead(500); return res.end('read error'); }
+        res.writeHead(200, { 'content-type': ctype, 'cache-control': 'no-store' });
+        res.end(swapAnonKey(js));
       });
       return;
     }

@@ -239,8 +239,7 @@ function openAgreementDetail(id){
 
 function deleteAgreement(id){
   zConfirm('Delete this contract permanently?',()=>{
-    agreements=agreements.filter(a=>a.id!==id);
-    saveAll();
+    _userDelete(()=>{agreements=agreements.filter(a=>a.id!==id);saveAll();});
     document.getElementById('_ag-detail-ov')?.remove();
     renderContracts();
     showToast('Contract deleted','🗑');

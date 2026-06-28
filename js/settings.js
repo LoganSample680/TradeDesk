@@ -449,7 +449,7 @@ function saveLicenseModal(){
 }
 
 function deleteLicense(id){
-  zConfirm('Delete this record?',()=>{licenses=licenses.filter(l=>l.id!==id);saveAll();renderLicensing();},{title:'Delete record',yes:'Delete',danger:true});
+  zConfirm('Delete this record?',()=>{_userDelete(()=>{licenses=licenses.filter(l=>l.id!==id);saveAll();});renderLicensing();},{title:'Delete record',yes:'Delete',danger:true});
 }
 
 // ── HEPA Equipment Log ──
@@ -989,15 +989,17 @@ function clearAllData(){
       // Every user-data store declared in data.js must be wiped here — leaving any
       // out (maintenance/events/photos/licenses/contracts/agreements were all
       // missing) means those records survive a "Clear all data" and resurface.
-      clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];maintenance=[];payments=[];liens=[];timeEntries=[];events=[];photos=[];licenses=[];contracts=[];agreements=[];checksState={};
-      S.employees=[];S.vehicles=[];
-      estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;
-      gps={active:false,startCoords:null,startTime:null,clientId:null,clientName:'',timerInt:null,vehicle:'',purpose:''};
-      if(_activeTimer){clearInterval(_activeTimer.timerInterval);_activeTimer=null;hideClockBanner();}
-      // _flushSaveNow propagates the emptied arrays to the cloud (soft-deletes the
-      // rows) so they don't re-hydrate on the next sync. saveAll alone only writes
-      // localStorage; without the flush the cloud copy comes back on reload.
-      hideDriveBanner();clearSurfDraft();saveAll();_flushSaveNow&&_flushSaveNow();
+      _userDelete(()=>{
+        clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];maintenance=[];payments=[];liens=[];timeEntries=[];events=[];photos=[];licenses=[];contracts=[];agreements=[];checksState={};
+        S.employees=[];S.vehicles=[];
+        estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;
+        gps={active:false,startCoords:null,startTime:null,clientId:null,clientName:'',timerInt:null,vehicle:'',purpose:''};
+        if(_activeTimer){clearInterval(_activeTimer.timerInterval);_activeTimer=null;hideClockBanner();}
+        // _flushSaveNow propagates the emptied arrays to the cloud (soft-deletes the
+        // rows) so they don't re-hydrate on the next sync. saveAll alone only writes
+        // localStorage; without the flush the cloud copy comes back on reload.
+        hideDriveBanner();clearSurfDraft();saveAll();_flushSaveNow&&_flushSaveNow();
+      });
       await _clearCrewTrackingCloud();
       renderDash();
       zAlert('All data cleared. Starting fresh!',{title:'Done'});
@@ -1008,16 +1010,18 @@ function clearAllData(){
 
 function clearMileageOnly(){
   zConfirm('Delete all mileage records? This cannot be undone.',()=>{
-    mileage=[];saveAll();_flushSaveNow();renderAllMileage();renderDash();
+    _userDelete(()=>{mileage=[];saveAll();_flushSaveNow();});renderAllMileage();renderDash();
     zAlert('Mileage cleared.',{title:'Done'});
   },{title:'Clear mileage',yes:'Delete mileage',danger:true});
 }
 
 function clearClientsOnly(){
   zConfirm('Delete all clients, bids, jobs, and payments? This cannot be undone.',()=>{
-    clients=[];bids=[];jobs=[];income=[];payments=[];liens=[];
-    estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;
-    saveAll();renderDash();
+    _userDelete(()=>{
+      clients=[];bids=[];jobs=[];income=[];payments=[];liens=[];
+      estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;
+      saveAll();
+    });renderDash();
     zAlert('Clients and all related records cleared.',{title:'Done'});
   },{title:'Clear clients',yes:'Delete clients',danger:true});
 }

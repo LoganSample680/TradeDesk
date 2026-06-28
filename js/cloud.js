@@ -409,9 +409,9 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.28.26.2';
+const APP_VERSION='06.28.26.28';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
-let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
+let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null,_broadcastPending=false;
 const _deviceId=Math.random().toString(36).slice(2,10);
 // Expose sync state and auth objects on window so E2E tests can observe/stub them
 Object.defineProperty(window,'_syncStatus',{get:()=>_syncStatus,configurable:true});
@@ -427,6 +427,47 @@ let _lastKnownIds={
   td_payments:new Set(),td_liens:new Set(),td_time_entries:new Set(),
   td_licenses:new Set(),td_events:new Set(),td_contracts:new Set(),td_agreements:new Set(),td_photos:new Set()
 };
+
+// CONCURRENCY-SAFE SWEEP (CLAUDE.md §9.8). The cloud save soft-deletes rows that
+// "disappeared" from this device's snapshot. Inferring deletes that way clobbers
+// concurrent devices: a peer's brand-new row, not yet merged here, looks "missing"
+// and gets deleted. Instead we soft-delete ONLY ids the user EXPLICITLY deleted on
+// THIS device, recorded here at each delete site via _recordLocalDelete(). A row
+// merely absent (a peer's, not-yet-synced) is never swept. Even bulk wipes
+// (clearAllData / clear*Only) just go through _userDelete, which records every id
+// that vanished — no special flag needed, and it survives the deferred async save.
+let _locallyDeletedIds={
+  td_clients:new Set(),td_bids:new Set(),td_jobs:new Set(),
+  td_income:new Set(),td_expenses:new Set(),td_mileage:new Set(),
+  td_payments:new Set(),td_liens:new Set(),td_time_entries:new Set(),
+  td_licenses:new Set(),td_events:new Set(),td_contracts:new Set(),td_agreements:new Set(),td_photos:new Set()
+};
+// Record an explicit local delete so the next save propagates it (and ONLY it).
+// Call with the synced table name + the id(s) removed from that table's array —
+// INCLUDING cascade removals (deleting a client also removes its bids/jobs/… → record
+// each under its own table). Safe no-op for unknown tables / empty ids.
+function _recordLocalDelete(tbl,...ids){
+  if(!_locallyDeletedIds[tbl])return;
+  ids.forEach(id=>{if(id!==undefined&&id!==null)_locallyDeletedIds[tbl].add(String(id));});
+}
+
+// Wrap a user-initiated delete action: snapshot every synced array's ids, run the
+// delete (its synchronous array mutations + any cascade), then record EVERY id that
+// disappeared as an explicit delete. Because the mutations are synchronous, nothing
+// else can change the arrays between snapshot and diff, so this captures exactly what
+// the user deleted — cascades included — and nothing a concurrent peer touched.
+// Usage: wrap the function body's mutation+save, e.g.
+//   function deleteBid(id){ if(!confirm)return; _userDelete(()=>{ bids=bids.filter(b=>b.id!==id); saveAll(); }); }
+function _userDelete(fn){
+  const before={};
+  for(const t of _TD_TABLES){ try{ before[t.t]=new Set((t.get()||[]).map(r=>String(r.id))); }catch(_e){ before[t.t]=new Set(); } }
+  const ret=fn();
+  for(const t of _TD_TABLES){
+    let now; try{ now=new Set((t.get()||[]).map(r=>String(r.id))); }catch(_e){ continue; }
+    before[t.t].forEach(id=>{ if(!now.has(id)) _recordLocalDelete(t.t,id); });
+  }
+  return ret;
+}
 
 // Per-record table definitions — one entry per data type.
 // arr: getter for the live in-memory array
@@ -535,8 +576,8 @@ function _showLpDeletePopup(row){
 }
 function _lpDoDelete(id,type){
   const nid=parseInt(id,10);
-  if(type==='income'){income=income.filter(x=>x.id!==nid);_flushSaveNow&&_flushSaveNow();if(typeof renderIncome==='function')renderIncome();}
-  else if(type==='payment'){payments=payments.filter(x=>x.id!==nid);_flushSaveNow&&_flushSaveNow();if(typeof renderIncome==='function')renderIncome();}
+  if(type==='income'){_userDelete(()=>{income=income.filter(x=>x.id!==nid);_flushSaveNow&&_flushSaveNow();});if(typeof renderIncome==='function')renderIncome();}
+  else if(type==='payment'){_userDelete(()=>{payments=payments.filter(x=>x.id!==nid);_flushSaveNow&&_flushSaveNow();});if(typeof renderIncome==='function')renderIncome();}
   else if(type==='expense'){if(typeof delExpense==='function')delExpense(nid);}
   else if(type==='mileage'){if(typeof delMileage==='function')delMileage(nid);}
   else if(type==='lead'||type==='client'){_lpDeleteClientById(nid,type);}
@@ -544,10 +585,12 @@ function _lpDoDelete(id,type){
     // Mirror deleteBid()'s cascade so a long-pressed proposal is fully cleaned up:
     // its payment records and any lien go with it, and every surface re-renders.
     const _delBid=bids.find(x=>x.id===nid);const _delClientId=_delBid?_delBid.client_id:null;
-    bids=bids.filter(x=>x.id!==nid);
-    if(typeof payments!=='undefined')payments=payments.filter(p=>p.bid_id!==nid);
-    if(typeof liens!=='undefined')liens=liens.filter(l=>l.bid_id!==nid);
-    _flushSaveNow&&_flushSaveNow();
+    _userDelete(()=>{
+      bids=bids.filter(x=>x.id!==nid);
+      if(typeof payments!=='undefined')payments=payments.filter(p=>p.bid_id!==nid);
+      if(typeof liens!=='undefined')liens=liens.filter(l=>l.bid_id!==nid);
+      _flushSaveNow&&_flushSaveNow();
+    });
     if(typeof renderClientDetail==='function')renderClientDetail();
     if(typeof renderJobsHistory==='function')renderJobsHistory();
     if(typeof renderJobsPage==='function')renderJobsPage();
@@ -557,8 +600,10 @@ function _lpDoDelete(id,type){
   }
   else if(type==='job'){
     // Remove a single scheduled job/calendar event (jobs array record).
-    jobs=jobs.filter(x=>x.id!==nid);
-    _flushSaveNow&&_flushSaveNow();
+    _userDelete(()=>{
+      jobs=jobs.filter(x=>x.id!==nid);
+      _flushSaveNow&&_flushSaveNow();
+    });
     if(typeof renderClientDetail==='function')renderClientDetail();
     if(typeof renderCalendar==='function')renderCalendar();
     if(typeof renderJobsPage==='function')renderJobsPage();
@@ -566,13 +611,15 @@ function _lpDoDelete(id,type){
   }
 }
 function _lpDeleteClientById(id,fromType){
-  clients=clients.filter(x=>x.id!==id);
-  bids=bids.filter(b=>b.client_id!==id);
-  jobs=jobs.filter(j=>j.client_id!==id);
-  mileage=mileage.filter(m=>m.client_id!==id);
-  income=income.filter(i=>i.client_id!==id);
-  expenses=expenses.filter(e=>e.client_id!==id);
-  _flushSaveNow&&_flushSaveNow();
+  _userDelete(()=>{
+    clients=clients.filter(x=>x.id!==id);
+    bids=bids.filter(b=>b.client_id!==id);
+    jobs=jobs.filter(j=>j.client_id!==id);
+    mileage=mileage.filter(m=>m.client_id!==id);
+    income=income.filter(i=>i.client_id!==id);
+    expenses=expenses.filter(e=>e.client_id!==id);
+    _flushSaveNow&&_flushSaveNow();
+  });
   if(fromType==='lead'){if(typeof renderLeadsPage==='function')renderLeadsPage();}
   else{if(typeof renderClientList==='function')renderClientList();}
 }
@@ -2204,6 +2251,16 @@ async function supaSignOut(){
   // scope:'global' (the default) revokes the token on the server, so the backup key
   // can't be used to silently re-auth when the user comes back online.
   if(_supa)await _supa.auth.signOut({scope:'local'});
+  // GoTrue dispatches SIGNED_OUT asynchronously, and its handler is what wipes the
+  // outgoing account's in-memory arrays and sets _supaUser=null. If the user signs
+  // straight into a DIFFERENT account on the same page (no reload), that wipe can
+  // land AFTER the new account's SIGNED_IN already set _supaUser — nulling it back
+  // out and bleeding/blanking state. Drain deterministically: the SIGNED_OUT handler
+  // clears _deliberateSignOut at the end of its wipe, so wait (bounded) for that flag
+  // to drop before returning. Now any subsequent sign-in is a clean SIGNED_IN.
+  const _t0=Date.now();
+  while(_deliberateSignOut&&Date.now()-_t0<3000){await new Promise(r=>setTimeout(r,25));}
+  _deliberateSignOut=false; // safety: never strand the guard if SIGNED_OUT didn't fire
 }
 
 // ── Supabase Storage helpers for receipt photos ───────────────────────
@@ -2620,15 +2677,20 @@ async function supaSaveToCloud(){
           if(error)throw error;
         }
       }
-      // Soft-delete records that were removed locally since last known state (never touch locked)
+      // Soft-delete ONLY ids the user EXPLICITLY deleted on this device (recorded in
+      // _locallyDeletedIds) — or everything vanished, during a deliberate bulk wipe.
+      // A row merely absent from this snapshot (e.g. a peer's row not yet merged here)
+      // is NEVER swept, so concurrent devices can't clobber each other's new rows.
       const prev=_lastKnownIds[tbl]||new Set();
-      const gone=[...prev].filter(id=>!currentIds.has(id)&&!lockedIds.has(id));
+      const deleted=_locallyDeletedIds[tbl]||new Set();
+      const gone=[...prev].filter(id=>!currentIds.has(id)&&!lockedIds.has(id)&&deleted.has(id));
       if(gone.length){
         for(let i=0;i<gone.length;i+=50){
           const{error:_de}=await _supa.from(tbl).update({deleted_at:ts,updated_at:ts}).in('id',gone.slice(i,i+50)).eq('user_id',uid);
           if(_de)throw _de;
         }
       }
+      gone.forEach(id=>deleted.delete(id)); // delete-intent consumed; don't let the set grow
       _lastKnownIds[tbl]=currentIds;
     };
 
@@ -2972,7 +3034,7 @@ function discardInProgressBid(bidId){
   const _cid=_db?.client_id;
   zConfirm('Delete this pending bid? The client\'s signing link will stop working.',()=>{
     const idx=bids.findIndex(b=>b.id===bidId);
-    if(idx>-1){bids.splice(idx,1);clearEstFullDraft();saveAll();renderDash();
+    if(idx>-1){_userDelete(()=>{bids.splice(idx,1);clearEstFullDraft();saveAll();});renderDash();
       if(_cid)_uploadClientHub(_cid).catch(e=>console.error('[hub upload]',e));}
   },{title:'Delete pending bid',yes:'Delete',danger:true});
 }
@@ -3277,6 +3339,14 @@ async function supaLoadFromCloud({silent=false}={}){
     _removeBootOverlay();renderDash();buildScopeGrid();supaSetStatus('error');
   }finally{
     _loadInProgress=false;
+    // A peer broadcast that arrived WHILE this load was in flight was dropped (it
+    // can't reload during a load). Re-run one trailing load now so a rapid burst of
+    // remote edits always converges to the LAST value instead of a stale mid-burst one.
+    if(_broadcastPending){
+      _broadcastPending=false;
+      clearTimeout(_broadcastReloadTimer);
+      _broadcastReloadTimer=setTimeout(()=>{if(!_loadInProgress)supaLoadFromCloud({silent:true});},300);
+    }
   }
 }
 function _initRealtimeSubscriptions(uid){
@@ -3300,7 +3370,10 @@ function _initRealtimeSubscriptions(uid){
     _syncBroadcastChannel
       .on('broadcast',{event:'data_saved'},(msg)=>{
         if(msg?.payload?.deviceId===_deviceId&&Date.now()-_lastLocalSaveAt<5000)return;
-        if(_loadInProgress)return;
+        // Can't reload during an in-flight load — but DON'T just drop it: remember a
+        // peer update arrived so supaLoadFromCloud's finally re-runs one trailing load
+        // (otherwise a rapid burst leaves this device on a stale mid-burst value).
+        if(_loadInProgress){_broadcastPending=true;return;}
         // Small delay: lets postgres_changes per-record patches arrive first (smoother).
         // If realtime already handled everything, the reload is a cheap no-op.
         clearTimeout(_broadcastReloadTimer);
@@ -3401,7 +3474,7 @@ function _onNewInboundLead(row){
   _pendingInbound.unshift(row);
   _updateInboundBadge();
   showToast('New lead from '+(row.source==='qr_form'?'QR form':'intake form')+' — tap to review','🆕');
-  if(_activePg==='pg-leads')renderLeadsPage();
+  if(document.querySelector('.pg.active')?.id==='pg-leads')renderLeadsPage();
 }
 function _updateInboundBadge(){
   const n=_pendingInbound.filter(x=>x.status==='pending').length;
@@ -3448,7 +3521,7 @@ async function _dismissInbound(id){
   _pendingInbound=_pendingInbound.filter(x=>x.id!==id);
   _updateInboundBadge();
   try{await _supa.from('inbound_leads').update({status:'dismissed'}).eq('id',id);}catch(e){}
-  if(_activePg==='pg-leads')renderLeadsPage();
+  if(document.querySelector('.pg.active')?.id==='pg-leads')renderLeadsPage();
 }
 
 function supaSetStatus(s){

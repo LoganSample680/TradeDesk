@@ -45,7 +45,10 @@ test.describe('contracts & agreements (UI-driven)', () => {
       },
       rule: async (p) => {
         const r = await p.evaluate((t) => {
-          const c = (contracts || []).find(x => x.title === t);
+          // Case-insensitive: the app auto-capitalizes #ct-title on space as the
+          // client types (real behavior), so "Annual exterior…" is stored as
+          // "Annual Exterior…". Match on lowercase so the assertion is robust.
+          const c = (contracts || []).find(x => (x.title || '').toLowerCase() === t.toLowerCase());
           return c ? { amount: c.amount, active: c.active } : null;
         }, ctTitle);
         return { ok: !!r && r.amount === 1800 && r.active === true, got: JSON.stringify(r) };

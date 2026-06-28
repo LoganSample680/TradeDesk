@@ -32,7 +32,12 @@ test.describe('settings persistence (UI-driven, real reboot)', () => {
   test('goal + location survive a cloud-only reboot (zp3_S wiped)', async ({ page }) => {
     // A unique goal value so we can prove THIS run wrote it (not a stale value).
     // Kept deterministic per process via pid so concurrent viewports don't collide.
-    const newGoal = 7000 + (process.pid % 900);
+    // A fixed goal (NOT per-pid): settings live in ONE zj_data row keyed only by
+    // user_id, so the 3 viewport projects (mobile/tablet/desktop) share it. A pid-
+    // unique goal made them clobber each other's value and read back the wrong one.
+    // A constant means every project writes/reads the same value — this run still
+    // wrote it, so persistence is proven without the shared-row collision.
+    const newGoal = 7727;
 
     // Remember the original goal so we can restore it at the end (no data loss).
     const original = await page.evaluate(() => ({ goal: S.goalMonthly || 0, locG: !!S.locationGranted, locD: !!S.locationDenied, ts: S.settingsTs || 0 }));
@@ -44,8 +49,12 @@ test.describe('settings persistence (UI-driven, real reboot)', () => {
       ruleText: 'saving Settings must persist the new goal and bump settingsTs',
       expected: `S.goalMonthly=${newGoal}, S.locationGranted=true, settingsTs increased`,
       act: async (p) => {
-        await p.evaluate(() => { goPg('pg-set'); });       // 1 tap — open Settings (fills the form)
-        await p.waitForSelector('#set-goal-monthly', { timeout: 10000 });
+        // Settings is a master→detail layout: goPg shows the index, and the goal
+        // field lives inside the collapsed "Rates & pricing" detail panel
+        // (#setd-rates). Open that detail — exactly the row a user taps — before the
+        // field is reachable.
+        await p.evaluate(() => { goPg('pg-settings'); if (typeof _openSetDetail === 'function') _openSetDetail('rates'); });
+        await p.waitForSelector('#set-goal-monthly', { state: 'visible', timeout: 10000 });
         const k = await type(p, '#set-goal-monthly', String(newGoal)); // real key-by-key typing
         // Simulate the outcome of a granted OS location prompt (the dialog itself
         // can't run headless). The grant path sets these flags; saveSettings then
@@ -53,7 +62,7 @@ test.describe('settings persistence (UI-driven, real reboot)', () => {
         await p.evaluate(() => { S.locationGranted = true; S.locationDenied = false; });
         await p.evaluate(() => { saveSettings(); });        // 1 tap — Save button
         await p.waitForTimeout(1200);                       // let supaSaveToCloud land
-        return k + 2;
+        return k + 3; // open settings + open rates detail + save
       },
       rule: async (p) => {
         const r = await p.evaluate(({ tsBefore }) => ({

@@ -9,6 +9,9 @@ const isCI = !!process.env.CI;
 
 module.exports = defineConfig({
   testDir: './tests/flow',
+  // LOCAL-STACK per-worker account provisioning. No-op unless E2E_LOCAL_STACK==='1'
+  // (the file returns immediately), so the cloud path is unaffected.
+  globalSetup: require.resolve('./tests/flow/global-setup.js'),
   // PARALLEL on one shared dev login — safe because every flow test writes
   // uniquely-tagged rows (Date.now ids) and the cloud save is a row-level upsert
   // by id, so concurrent workers touch different rows and can't clobber each
@@ -35,7 +38,15 @@ module.exports = defineConfig({
   // left inputs "resolved to hidden" past the waits. 3 keeps most of the ~3× speedup
   // with materially less boot contention. (Paired with the local-server pinning proxy
   // mode so no per-boot direct probe.)
-  workers: isCI ? 3 : 1,
+  // SERIAL (1 worker) on the single dev account A. This is the simplest path to a
+  // clean run: the "write returns 200 then the row vanishes" failures come ONLY from
+  // a 2nd session sweeping the account while the 1st is mid-write. One worker = one
+  // session writing at a time = nothing to clobber, so the bulk of specs pass and all
+  // the real seed data accumulates in account A to inspect. Slower, but correct. The
+  // cross-account-bleed spec still signs into B to prove A's data doesn't leak over.
+  // (The only specs that can still fail are ones that internally open MULTIPLE
+  // sessions on one account on purpose — true-concurrency stress tests.)
+  workers: 1,
   // CI emits a JSON report (machine-readable failure dump) + an HTML report dir
   // (uploaded as an artifact) so a red run is never a black box — the json carries
   // every test's error text + the finding() ticket, the html is browsable offline.

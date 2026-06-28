@@ -1482,7 +1482,7 @@ function _togMileTrip(id){
   if(chv)chv.style.transform=open?'rotate(-90deg)':'rotate(0deg)';
 }
 function toggleMileAddr(id){_togMileTrip(id);}// legacy alias
-function delMileage(id){mileage=mileage.filter(x=>x.id!==id);saveAll();_flushSaveNow();if(currentClientId){const el=document.getElementById('cd-mile-list');if(el)renderCDMileage();}renderAllMileage();}
+function delMileage(id){_userDelete(()=>{mileage=mileage.filter(x=>x.id!==id);saveAll();_flushSaveNow();});if(currentClientId){const el=document.getElementById('cd-mile-list');if(el)renderCDMileage();}renderAllMileage();}
 function editMilePurpose(id,val){const m=mileage.find(x=>x.id===id);if(!m)return;m.purpose=val;saveAll();_flushSaveNow();}
 function openMileageEdit(id){
   const r=mileage.find(x=>x.id===id);if(!r)return;

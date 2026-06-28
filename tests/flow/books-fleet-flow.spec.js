@@ -96,9 +96,12 @@ test.describe('books & fleet (UI-driven)', () => {
           const opt = [...sel.options].find(o => o.value);
           if (opt) { sel.value = opt.value; if (typeof _licTypeChanged === 'function') _licTypeChanged(sel); }
         });
-        const numEl = await p.$('#_lic-num');
+        // Only some license types render a number field — equipment/no-number types
+        // hide #_lic-num-wrap. Check real VISIBILITY (the element exists in the DOM
+        // either way), so we type a number only when the chosen type actually shows it.
+        const numVisible = await p.locator('#_lic-num').isVisible().catch(() => false);
         let k = 1; // the type pick
-        if (numEl) k += await type(p, '#_lic-num', `E2E-${stamp}`);
+        if (numVisible) k += await type(p, '#_lic-num', `E2E-${stamp}`);
         await p.evaluate(() => { saveLicenseModal(); });
         await p.waitForTimeout(300);
         p._licBefore = before;

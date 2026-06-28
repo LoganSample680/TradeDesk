@@ -118,8 +118,8 @@ function openPhotoViewer(photoId){
 function deletePhoto(photoId){
   const p=photos.find(x=>x.id===photoId);if(!p)return;
   zConfirm('Delete this photo?',()=>{
-    photos=photos.filter(x=>x.id!==photoId);
-    saveAll();renderGallery();
+    _userDelete(()=>{photos=photos.filter(x=>x.id!==photoId);saveAll();});
+    renderGallery();
     if(p.storagePath&&supaEnabled()&&_supa){
       _supa.storage.from('gallery').remove([p.storagePath]).catch(()=>{});
     }

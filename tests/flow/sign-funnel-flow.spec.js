@@ -52,8 +52,27 @@ test.describe('client signing funnel (UI-driven)', () => {
         let unlocked = false, got = '';
         for (let i = 0; i < 4 && !unlocked; i++) {
           await signPage.goto(url + '&cb=' + Date.now(), { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-          const ready = await signPage.waitForSelector('#sig-name, #sign-err', { timeout: 12000 }).then(() => true).catch(() => false);
-          if (ready && await signPage.locator('#sig-name').count()) {
+          // The proposal must load first (Step 1 "Review" shows #approve-btn). If the
+          // page is stuck on the error screen the proposal didn't load — surface that.
+          const loaded = await signPage.waitForSelector('#approve-btn', { state: 'visible', timeout: 12000 }).then(() => true).catch(() => false);
+          if (!loaded) {
+            const errVisible = await signPage.locator('#pg-err').isVisible().catch(() => false);
+            got = `attempt=${i + 1} proposal did not load (approve-btn never shown, pg-err=${errVisible})`;
+            await signPage.waitForTimeout(2200);
+            continue;
+          }
+          // #sig-name lives in Step 3 (#pg-sign-action), hidden until the client drives
+          // the REAL funnel: Approve & Sign → (painting+surfaces) color-pick →
+          // "Continue to sign →". Click through exactly as a client would.
+          await signPage.locator('#approve-btn').click({ timeout: 8000 }).catch(() => {});
+          // Painting proposal with surfaces routes to the color-pick step; its
+          // "Continue to sign →" button calls _goToSignPad() → reveals #sig-name.
+          const onColorPick = await signPage.waitForSelector('#pg-color-pick', { state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
+          if (onColorPick) {
+            await signPage.locator('#pg-color-pick button.btn').click({ timeout: 8000 }).catch(() => {});
+          }
+          const padReady = await signPage.waitForSelector('#sig-name', { state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
+          if (padReady) {
             // Type the legal name key-by-key, then tick the UETA consent checkbox.
             await signPage.locator('#sig-name').click({ timeout: 8000 }).catch(() => {});
             await signPage.locator('#sig-name').pressSequentially('Jordan E Client', { delay: 0 }).catch(() => {});
@@ -63,13 +82,13 @@ test.describe('client signing funnel (UI-driven)', () => {
             unlocked = await signPage.locator('#sign-btn').isEnabled().catch(() => false);
             got = `attempt=${i + 1} signBtnEnabled=${unlocked}`;
           } else {
-            got = `attempt=${i + 1} sig-name not present`;
+            got = `attempt=${i + 1} reached approve but sign pad (#sig-name) never revealed`;
           }
           if (!unlocked) await signPage.waitForTimeout(2200);
         }
         ctx.render = { unlocked, got };
         await signPage.close().catch(() => {});
-        return 'Jordan E Client'.length + 2; // name typed + name-field tap + consent tick
+        return 'Jordan E Client'.length + 4; // approve + continue-to-sign + name tap + name typed + consent tick
       },
       rule: async () => ({ ok: ctx.render.unlocked, got: ctx.render.got }),
     });

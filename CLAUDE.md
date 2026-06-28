@@ -473,6 +473,50 @@ Survives conversation compacting so context is not lost between sessions.
 - Files: `js/employ-offer.js` (new) + `employ-offer.html` (new) + `js/cloud.js`
   (team_members hook) + a `employment_agreements` store.
 
+### 9.7 Apprentice / Journeyman OJT Hour Logging (geo-fence → master sign-off → state export)
+
+**Turn the geo-fence clock-in into licensable on-the-job training hours.** Most trades
+(electrical, plumbing, HVAC) require documented OJT hours for apprentice→journeyman→master
+licensure exams — often thousands of hours, frequently broken into work-category buckets.
+
+- **Capture**: the existing geo-fence/time-on-site engine (§9.5, `job_time_entries`) already
+  logs verified on-site minutes per employee per job. Tag each entry with a **work
+  classification** (e.g. for electrical: service/conduit/troubleshooting) so hours roll up by
+  the categories a state board wants.
+- **Sign-off chain**: reuse the e-sign portal pattern (`sign.html`) — accumulated hours get
+  sent to the supervising **master/licensed supervisor** to e-sign off on (their license # on
+  record), mirroring the proposal-signing audit trail (`signed_proposals`).
+- **Export**: per-employee, date-ranged **OJT hours report**, exportable for the state
+  apprenticeship board (PDF/CSV). Shows verified hours by category + supervisor attestation.
+- **Open question (research first)**: per-state + per-trade requirements vary widely — total
+  hours, category breakdowns, supervisor ratios, and the board's accepted report format. Build
+  the capture + sign-off generically; the **state data model is the research piece** (start
+  with the 2–3 states the first customers are in, not all 50). Ship with a "verify with your
+  state board" disclaimer like the tax tool.
+- **Files**: `js/ojt-hours.js` (new), `ojt-signoff.html` (new, mirrors sign.html), hooks in
+  `js/geo-track.js` (classification tag) + `js/jobs.js`; new `ojt_hour_logs` +
+  `ojt_signoffs` stores.
+
+### 9.8 Concurrency-Safe Cloud Sweep (sync-engine refactor)
+
+`supaSaveToCloud` does a full-account **soft-delete sweep**: it deletes any row in
+`_lastKnownIds[tbl]` that isn't in THIS device's current in-memory snapshot. That's
+correct for single-device use, but two simultaneous writers on one account delete each
+other's rows, and a row learned via realtime (`_applyRealtimeRecord` adds it to
+`_lastKnownIds`) can be swept on the next save even though a peer just created it
+("realtime resurrection/clobber"). Surfaced by `offline-sync-race-flow.spec.js`
+(`test.fixme`).
+
+- **Fix:** only sweep ids this device **explicitly deleted locally** — track a
+  `_locallyDeletedIds[tbl]` Set populated at every delete site, and change the sweep to
+  `prev ∩ _locallyDeletedIds`, never "known but now absent." Realtime-learned ids are
+  then never sweep-eligible.
+- **Blast radius:** every place an array shrinks (delete a bid/client/job/expense/…) must
+  record the id. Miss one and a real delete won't propagate (row resurrects on other
+  devices) — so this is a careful, fully-tested refactor, not a quick patch (§11).
+- Files: `js/cloud.js` (`supaSaveToCloud` sweep + `_applyRealtimeRecord`) + every delete
+  call site. Re-enable the `offline-sync-race` spec when done.
+
 ---
 
 ## 10. Credentials & Token Renewal Calendar

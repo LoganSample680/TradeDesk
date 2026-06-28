@@ -1055,13 +1055,16 @@ function deleteClient(){
   if(!editClientId)return;
   zConfirm('Permanently delete this client and ALL their bids, jobs, expenses, and mileage?',()=>{
     const id=editClientId;
-    clients=clients.filter(x=>x.id!==id);
-    bids=bids.filter(b=>b.client_id!==id);
-    jobs=jobs.filter(j=>j.client_id!==id);
-    mileage=mileage.filter(m=>m.client_id!==id);
-    income=income.filter(i=>i.client_id!==id);
-    expenses=expenses.filter(e=>e.client_id!==id);
-    _flushSaveNow&&_flushSaveNow();closeClientForm();goPg('pg-clients');
+    _userDelete(()=>{
+      clients=clients.filter(x=>x.id!==id);
+      bids=bids.filter(b=>b.client_id!==id);
+      jobs=jobs.filter(j=>j.client_id!==id);
+      mileage=mileage.filter(m=>m.client_id!==id);
+      income=income.filter(i=>i.client_id!==id);
+      expenses=expenses.filter(e=>e.client_id!==id);
+      _flushSaveNow&&_flushSaveNow();
+    });
+    closeClientForm();goPg('pg-clients');
   },{title:'Delete client',yes:'Delete everything',danger:true});
 }
 function closeClientForm(){
@@ -1594,8 +1597,8 @@ function renderCDExpenses(){
 }
 function delExpenseFromCD(id){
   zConfirm('Delete this expense?',()=>{
-    expenses=expenses.filter(e=>e.id!==id);
-    saveAll();renderCDExpenses();renderDash();
+    _userDelete(()=>{expenses=expenses.filter(e=>e.id!==id);saveAll();});
+    renderCDExpenses();renderDash();
   },{title:'Delete expense',danger:true});
 }
 

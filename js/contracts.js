@@ -142,8 +142,7 @@ function _ctUpdate(ctId){
 function _ctDelete(ctId){
   const ct=contracts.find(x=>x.id===ctId);if(!ct)return;
   zConfirm('Delete this maintenance contract?',()=>{
-    contracts=contracts.filter(x=>x.id!==ctId);
-    saveAll();
+    _userDelete(()=>{contracts=contracts.filter(x=>x.id!==ctId);saveAll();});
     document.getElementById('_ct-modal-ov')?.remove();
     showToast('Contract deleted','🗑️');
     renderClientContracts(ct.clientId);

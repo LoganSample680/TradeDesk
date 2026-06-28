@@ -6,6 +6,17 @@ name: Flow Tests (self-hosted / local proxy)
 # (SUPABASE_UPSTREAM), so tests still hit REAL Supabase end-to-end. On-demand only.
 on:
   workflow_dispatch:
+    inputs:
+      local_stack:
+        description: 'Run against the LOCAL Supabase stack (127.0.0.1:54321) with per-worker account isolation'
+        type: boolean
+        required: false
+        default: false
+      spec:
+        description: 'Playwright filter — run only specs matching this (path substring or grep). Empty = full suite. Use to FAST-LOOP one spec.'
+        type: string
+        required: false
+        default: ''
   pull_request:
     types: [labeled]
 
@@ -27,9 +38,19 @@ jobs:
     env:
       CI: 'true'
       LOCAL_PORT: '8788'
-      # Tests hit the LOCAL server; it forwards /api to this upstream (cloud Supabase
-      # today; point at the self-hosted Supabase VM later by changing this secret).
-      SUPABASE_UPSTREAM: ${{ secrets.SUPABASE_UPSTREAM || 'https://mwtsmctajhrrybblgorf.supabase.co' }}
+      # LOCAL-STACK toggle (workflow_dispatch input). When true: the app authenticates
+      # against the LOCAL Supabase stack with a DISTINCT per-worker account (isolation),
+      # and /api forwards to 127.0.0.1:54321. When false (default / PR-label runs): the
+      # existing cloud behavior is unchanged.
+      E2E_LOCAL_STACK: ${{ (github.event_name == 'workflow_dispatch' && inputs.local_stack) && '1' || '' }}
+      # Tests hit the LOCAL server; it forwards /api to this upstream. In local-stack
+      # mode that's the local Supabase stack; otherwise the cloud project (today's
+      # default; point at the self-hosted Supabase VM later by changing this secret).
+      SUPABASE_UPSTREAM: ${{ (github.event_name == 'workflow_dispatch' && inputs.local_stack) && 'http://127.0.0.1:54321' || (secrets.SUPABASE_UPSTREAM || 'https://mwtsmctajhrrybblgorf.supabase.co') }}
+      # Local stack service_role/secret key (sb_secret_…) for per-worker account
+      # provisioning. Stored as a GitHub Actions secret — never committed (secret
+      # scanning blocks the literal). Only used when local_stack is true.
+      SUPABASE_LOCAL_KEY: ${{ secrets.SUPABASE_LOCAL_KEY }}
       E2E_BASE_URL: http://localhost:8788
       E2E_DEV_EMAIL: ${{ secrets.E2E_DEV_EMAIL }}
       E2E_DEV_PASSWORD: ${{ secrets.E2E_DEV_PASSWORD }}
@@ -73,7 +94,7 @@ jobs:
           case "$HEALTH" in 200|401) ;; *) echo "::error::/api did not reach Supabase (got $HEALTH)"; cat /tmp/local-server.log; exit 1;; esac
 
       - name: Run live flow tests (against localhost → Supabase)
-        run: npx playwright test -c playwright.flow.config.js
+        run: npx playwright test -c playwright.flow.config.js ${{ github.event.inputs.spec }}
 
       - name: Stop local server
         if: always()
