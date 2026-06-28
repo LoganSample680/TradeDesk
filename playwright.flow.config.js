@@ -30,7 +30,12 @@ module.exports = defineConfig({
   // saturating under load) is gone too: direct-Supabase is the default now, so workers
   // hit Supabase directly with no proxy bottleneck. Serial bought only slowness
   // (~30min/190 tests). Parallel + step-poll = fast AND correct.
-  workers: isCI ? 4 : 1,
+  // 3 in CI: 4 workers all booting the app (each a full sign-in + cloud load) against
+  // one local server + one shared dev project created enough contention that slow boots
+  // left inputs "resolved to hidden" past the waits. 3 keeps most of the ~3× speedup
+  // with materially less boot contention. (Paired with the local-server pinning proxy
+  // mode so no per-boot direct probe.)
+  workers: isCI ? 3 : 1,
   // CI emits a JSON report (machine-readable failure dump) + an HTML report dir
   // (uploaded as an artifact) so a red run is never a black box — the json carries
   // every test's error text + the finding() ticket, the html is browsable offline.

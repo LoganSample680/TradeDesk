@@ -53,7 +53,24 @@ function serveStatic(req, res) {
   if (!filePath.startsWith(ROOT)) { res.writeHead(403); return res.end('forbidden'); }
   fs.stat(filePath, (err, st) => {
     if (err || !st.isFile()) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found: ' + urlPath); }
-    res.writeHead(200, { 'content-type': MIME[path.extname(filePath).toLowerCase()] || 'application/octet-stream', 'cache-control': 'no-store' });
+    const ext = path.extname(filePath).toLowerCase();
+    const ctype = MIME[ext] || 'application/octet-stream';
+    // For HTML, inject a tiny script pinning the app to PROXY mode. The local server
+    // IS the /api proxy (it forwards to Supabase), so the app must NOT try direct-to-
+    // supabase.co — on the runner that's unreachable, so its 2.5s boot probe times out
+    // and falls back anyway, adding ~2.5s to EVERY test boot (→ slow boot → inputs
+    // "resolved to hidden" → the timeout failures). Pinning proxy skips the probe.
+    if (ext === '.html') {
+      fs.readFile(filePath, 'utf8', (e2, html) => {
+        if (e2) { res.writeHead(500); return res.end('read error'); }
+        const inject = '<script>try{localStorage.setItem("zp3_supa_mode","proxy")}catch(e){}</script>';
+        html = /<head[^>]*>/i.test(html) ? html.replace(/<head([^>]*)>/i, '<head$1>' + inject) : inject + html;
+        res.writeHead(200, { 'content-type': ctype, 'cache-control': 'no-store' });
+        res.end(html);
+      });
+      return;
+    }
+    res.writeHead(200, { 'content-type': ctype, 'cache-control': 'no-store' });
     fs.createReadStream(filePath).pipe(res);
   });
 }
