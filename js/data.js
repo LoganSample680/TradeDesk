@@ -63,7 +63,7 @@ function _wmoIcon(code,precip){
 async function fetchWeather(){
   const now=Date.now();
   if(_weatherCache&&now-_weatherCacheTime<1800000)return _weatherCache;
-  if(_weatherLoading)return _weatherCache;
+  if(_weatherLoading)return _weatherCache||{};  // cache is null until first fetch resolves — never hand back null (callers do weather[dateKey])
   _weatherLoading=true;
   try{
     if(!S.weatherLat||!S.weatherLon){console.warn('No location set — skipping weather');return{};}

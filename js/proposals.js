@@ -1943,7 +1943,7 @@ async function renderCalGrid(){
   // Validation: drop any cell whose year is outside plausible range
   const validCells=cells.filter(({d})=>d.getFullYear()>=2020&&d.getFullYear()<=2099);
   // Fetch weather (cached — won't block render on repeat calls)
-  const weather=await fetchWeather();
+  const weather=await fetchWeather()||{};
   validCells.forEach(({d,other})=>{
     const key=dateKey(d),isToday=key===tk,dj=getJobsOnDay(key);
     const wx=!other?weather[key]:null;

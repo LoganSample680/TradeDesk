@@ -26,6 +26,14 @@ proxy.on('error', (err, _req, res) => {
   if (res && res.end) res.end('upstream error: ' + err.message);
 });
 
+// Log every non-GET /api round-trip's upstream status (and any GET that errors).
+// A "cloud ABSENT" failure is diagnosable from this: a 2xx on POST/PATCH /rest/v1/*
+// means the write landed (test read too early); a 4xx means auth/RLS rejected it.
+proxy.on('proxyRes', (proxyRes, req) => {
+  const m = req.method, u = (req.url || '').split('?')[0], s = proxyRes.statusCode;
+  if (m !== 'GET' || s >= 400) console.log(`[api] ${m} ${u} -> ${s}`);
+});
+
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',

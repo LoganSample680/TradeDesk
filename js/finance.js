@@ -1284,7 +1284,7 @@ async function refreshAvail(){
   for(let i=0;i<dow;i++){const d=new Date(availYear,availMonth,1-dow+i);cells.push({key:dateKey(d),other:true});}
   for(let i=1;i<=last.getDate();i++)cells.push({key:dateKey(new Date(availYear,availMonth,i)),other:false});
   while(cells.length%7!==0){const l=cells[cells.length-1];cells.push({key:addDays(l.key,1),other:true});}
-  const weather=await fetchWeather();
+  const weather=await fetchWeather()||{};
   document.getElementById('avail-grid').innerHTML=cells.map(({key,other})=>{
     if(other)return'<div class="av-d av-other">'+parseInt(key.split('-')[2])+'</div>';
     const isPast=key<today,isTaken=booked.has(key),isBuf=buf.has(key)&&!selDays.has(key);
