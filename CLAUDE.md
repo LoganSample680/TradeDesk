@@ -924,3 +924,61 @@ WebSocket — routes through it.
   account limit in one run and throttle the proxy for preview AND production until
   the UTC-midnight reset (or until Workers Paid is enabled). Run live specs in
   small subsets, and only with the owner's go-ahead.
+
+### 15.3 Direct-Supabase Default + Auto-Fallback (validated 2026-06-28)
+
+§15.2's "never call Supabase directly — it re-breaks AT&T Fiber" was **empirically
+retired**: direct mode was tested on AT&T Fiber (the exact network the proxy was built
+for) and a full lead→bid→send flow loaded fine and burned ZERO `/api` requests.
+
+- **`SUPA_URL` now DEFAULTS to direct** (`https://<ref>.supabase.co`) in `js/cloud.js`
+  — zero Cloudflare `/api` cost on any network that can resolve Supabase.
+- **The `/api` proxy is RETAINED as a self-healing fallback:**
+  - `supaInit()` probes `/auth/v1/health` (2.5s) before building the client; a DNS/
+    network failure silently switches THAT session to the proxy — never an outage.
+  - Manual override: `?supadirect=0` forces proxy, `?supadirect=1` forces direct
+    (persisted in localStorage `zp3_supa_mode`).
+- **Do NOT delete `functions/api/[[path]].js`** — it is the fallback. Removing it
+  re-introduces the all-or-nothing risk for any carrier that can't resolve Supabase.
+- This makes the 100k/day Pages-Functions limit a non-issue for normal use; Workers
+  Paid is now optional, not required.
+
+---
+
+## 16. Layout & Visual Integrity Standard
+
+The app is judged on how it **looks and holds together**, not just whether it works.
+A render that bleeds off-screen, overlaps, or silently changes between commits is a
+**defect** — the same severity as a broken function.
+
+### 16.1 Hard Layout Rules — Every Screen, Every Device
+
+- **Nothing bleeds off-screen.** No element may overflow the viewport width or cause
+  horizontal scroll on any supported device (mobile 390px, tablet 820px, desktop).
+  Use `box-sizing:border-box`, `min-width:0` on flex/grid children, `max-width:100%`,
+  and wrap/truncate long text — never let content push past the edge.
+- **Things stack and center correctly.** On narrow viewports, action areas, cards, and
+  summary rails stack in a sane order and stay centered/aligned — no floating, no
+  overlap, never two action bars on top of each other.
+- **No duplicate or orphaned controls.** One primary Send action per screen, one total
+  per screen. A control whose value isn't wired (shows `$0`/blank) must not ship.
+- **Fixed/sticky elements never cover content.** A `position:fixed` bar must reserve its
+  space (padding on the scroll container) so it can't overlap the buttons beneath it.
+
+### 16.2 No Drastic Visual Change Without Explicit Approval
+
+A screen's rendering **may not drastically change between commits** unless the owner
+explicitly approved that visual change in writing this session. Refactors, "cleanups,"
+and bug-fixes must preserve the existing look unless changing it **is** the point. If a
+change alters layout, say so and get a yes first.
+
+### 16.3 Layout Is Tested, Not Eyeballed
+
+Every screen with a non-trivial layout gets an E2E layout assertion (run at mobile
+390px + desktop) proving:
+- `documentElement.scrollWidth <= innerWidth + 1` — no horizontal bleed.
+- No two interactive controls overlap (bounding-box intersection check).
+- Exactly one primary action (e.g. one visible "Send proposal") per screen.
+- Key containers stay within the viewport (`getBoundingClientRect().right <= innerWidth`).
+
+A layout regression fails CI like any other bug.

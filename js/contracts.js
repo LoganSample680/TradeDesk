@@ -111,6 +111,9 @@ function editContractModal(ctId){
       '<input type="checkbox" id="ct-active"'+(ct.active?' checked':'')+' style="width:16px;height:16px;cursor:pointer">Active contract</label>'+
     '<div class="f" style="margin-bottom:16px"><label>Notes</label>'+
       '<textarea id="ct-notes" style="font-size:13px;padding:10px;min-height:60px;resize:none;line-height:1.5;width:100%;box-sizing:border-box;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit">'+escHtml(ct.notes||'')+'</textarea></div>'+
+    // Mark this service done → advances nextDate to the next cycle, which drops the
+    // contract off the dashboard "Maintenance Due" card (it filters nextDate<=today+14).
+    '<button onclick="logContractVisit('+ctId+');document.getElementById(\'_ct-modal-ov\').remove();" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;touch-action:manipulation">✓ Log service — advance to next visit</button>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'+
       '<button onclick="_ctDelete('+ctId+')" style="padding:10px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Delete</button>'+
       '<button onclick="document.getElementById(\'_ct-modal-ov\').remove()" style="padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+

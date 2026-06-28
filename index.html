@@ -922,8 +922,11 @@ body.dark .cal-cell.other{background:var(--cream)}
 .byo-price{font-family:var(--font-display);font-size:15px;font-weight:800;color:var(--text);letter-spacing:-.3px;font-variant-numeric:tabular-nums;min-width:64px;text-align:right;flex-shrink:0}
 .byo-edit{background:none;border:0;color:var(--text-3);cursor:pointer;font-size:10px;font-weight:700;font-family:inherit;padding:1px 4px;letter-spacing:.04em;text-transform:uppercase;text-decoration:underline;text-underline-offset:2px}
 .byo-edit:hover{color:var(--text)}
+/* Mobile sticky bar retired: its total (#byo-mob-total) was never wired so it showed a
+   stale $0, and being position:fixed it overlapped the summary-rail's own Send/Sign
+   buttons on phones. The summary-rail stacks below the form on mobile and already
+   provides the totals + all actions, so the bar was a broken duplicate. */
 .byo-mob-bar{display:none}
-@media(max-width:767px){.byo-mob-bar{display:block}}
 
 /* Client hub directory page */
 .hub-dir-row{padding:14px 18px;border-bottom:1px solid var(--line);transition:background .12s;cursor:pointer}
