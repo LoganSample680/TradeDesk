@@ -60,16 +60,31 @@ function extractStr(html, key) {
   return m ? m[1] : null;
 }
 
-// Format address into Zillow URL path: "123 Main St Topeka KS 66604"
-// → "123-Main-St,-Topeka,-KS-66604"
+// US state full-name/abbr → 2-letter code, case-insensitive. So "Kansas", "kansas",
+// "ks" and "KS" all normalize to KS. (A MISSPELLED name like "kanas" still won't
+// match — that's an input typo no parser can resolve.)
+const _STATES = {al:'AL',alabama:'AL',ak:'AK',alaska:'AK',az:'AZ',arizona:'AZ',ar:'AR',arkansas:'AR',ca:'CA',california:'CA',co:'CO',colorado:'CO',ct:'CT',connecticut:'CT',de:'DE',delaware:'DE',fl:'FL',florida:'FL',ga:'GA',georgia:'GA',hi:'HI',hawaii:'HI',id:'ID',idaho:'ID',il:'IL',illinois:'IL',in:'IN',indiana:'IN',ia:'IA',iowa:'IA',ks:'KS',kansas:'KS',ky:'KY',kentucky:'KY',la:'LA',louisiana:'LA',me:'ME',maine:'ME',md:'MD',maryland:'MD',ma:'MA',massachusetts:'MA',mi:'MI',michigan:'MI',mn:'MN',minnesota:'MN',ms:'MS',mississippi:'MS',mo:'MO',missouri:'MO',mt:'MT',montana:'MT',ne:'NE',nebraska:'NE',nv:'NV',nevada:'NV',nh:'NH','new hampshire':'NH',nj:'NJ','new jersey':'NJ',nm:'NM','new mexico':'NM',ny:'NY','new york':'NY',nc:'NC','north carolina':'NC',nd:'ND','north dakota':'ND',oh:'OH',ohio:'OH',ok:'OK',oklahoma:'OK',or:'OR',oregon:'OR',pa:'PA',pennsylvania:'PA',ri:'RI','rhode island':'RI',sc:'SC','south carolina':'SC',sd:'SD','south dakota':'SD',tn:'TN',tennessee:'TN',tx:'TX',texas:'TX',ut:'UT',utah:'UT',vt:'VT',vermont:'VT',va:'VA',virginia:'VA',wa:'WA',washington:'WA',wv:'WV','west virginia':'WV',wi:'WI',wisconsin:'WI',wy:'WY',wyoming:'WY',dc:'DC'};
+
+// Format address into Zillow URL path: "123 Main St Topeka Kansas 66604"
+// → "123-Main-St,-Topeka,-KS-66604". Tolerant of full state names + any case.
 function formatAddrForZillow(addr) {
   const s = addr.trim().replace(/,\s*/g, ' ').replace(/\s+/g, ' ');
 
-  // Extract state and zip from end
-  const m = s.match(/^(.*?)\s+([A-Z]{2})\s+(\d{5})\s*$/);
-  if (!m) return s.replace(/\s+/g, '-');
-
-  const [, streetCity, state, zip] = m;
+  // Pull the 5-digit zip off the end, then resolve the state from the 1–2 words
+  // before it (so "Kansas" or "new york" both work), normalizing to a 2-letter code.
+  const zipM = s.match(/(\d{5})(?:-\d{4})?\s*$/);
+  if (!zipM) return s.replace(/\s+/g, '-');
+  const zip = zipM[1];
+  let streetCity = s.slice(0, zipM.index).trim();
+  let state = null;
+  const w = streetCity.split(' ');
+  for (const n of [2, 1]) {
+    if (w.length > n) {
+      const cand = w.slice(-n).join(' ').toLowerCase();
+      if (_STATES[cand]) { state = _STATES[cand]; streetCity = w.slice(0, w.length - n).join(' ').trim(); break; }
+    }
+  }
+  if (!state) return s.replace(/\s+/g, '-');
 
   // Find last street type to split street from city
   const stPat = /\b(Ave|Avenue|St|Street|Rd|Road|Dr|Drive|Blvd|Ln|Lane|Ct|Court|Pl|Place|Way|Pkwy|Hwy|Loop|Cir|Ter|Terrace|Trl|Trail|Run|Pass|Xing)\b/gi;
