@@ -17,3 +17,8 @@ verify_jwt = false
 # verifies the Stripe signature itself. Must be callable without a JWT or Stripe 401s.
 [functions.stripe-webhook]
 verify_jwt = false
+
+# Client-hub cancellation is an anonymous call authorized by the hub link token (the
+# function verifies it), so it must be callable without a Supabase JWT.
+[functions.cancel-proposal]
+verify_jwt = false
