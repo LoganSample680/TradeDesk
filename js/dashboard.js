@@ -1192,6 +1192,11 @@ function checkGoalPrompt(){
       // prior Settings save with the goal field blank) overwrites the goal back to
       // 0 on the next boot — the "goal doesn't persist on reboot" bug.
       if(typeof _settingsChanged==='function')_settingsChanged();else{S.settingsTs=Date.now();saveAll();}
+      // PUSH to the cloud now (not just saveAll). saveAll is local-only, so a
+      // prompt-set goal that's never synced is lost on a cloud-authoritative reload /
+      // fresh device, and the prompt re-fires forever. The Settings form already does
+      // this (settings.js); the prompt must too.
+      if(typeof supaSaveToCloud==='function')supaSaveToCloud();
       overlay.remove();
       renderDash();
     };
