@@ -31,3 +31,23 @@ export function getServiceRoleKey(): string {
     ''
   );
 }
+
+// ── Stripe key selection by mode ──────────────────────────────────────────────
+// Set STRIPE_MODE=test to use the *_TEST Stripe secrets, so live and test keys can
+// live side-by-side in one project and you flip a single flag to test — your live
+// keys (STRIPE_SECRET_KEY / _PUBLISHABLE_KEY / _WEBHOOK_SECRET) are never overwritten.
+// Any other value (or unset) = live. In test mode we deliberately do NOT fall back to
+// the live keys — a missing *_TEST secret returns '' (fails loudly) rather than
+// silently charging real cards during a test.
+function _stripeTestMode(): boolean {
+  return (Deno.env.get('STRIPE_MODE') ?? '').toLowerCase() === 'test';
+}
+export function getStripeSecretKey(): string {
+  return (_stripeTestMode() ? Deno.env.get('STRIPE_SECRET_KEY_TEST') : Deno.env.get('STRIPE_SECRET_KEY')) ?? '';
+}
+export function getStripePublishableKey(): string {
+  return (_stripeTestMode() ? Deno.env.get('STRIPE_PUBLISHABLE_KEY_TEST') : Deno.env.get('STRIPE_PUBLISHABLE_KEY')) ?? '';
+}
+export function getStripeWebhookSecret(): string {
+  return (_stripeTestMode() ? Deno.env.get('STRIPE_WEBHOOK_SECRET_TEST') : Deno.env.get('STRIPE_WEBHOOK_SECRET')) ?? '';
+}

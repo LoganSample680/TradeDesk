@@ -1,13 +1,13 @@
 import Stripe from 'npm:stripe@14';
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { getServiceRoleKey } from '../_shared/keys.ts';
+import { getServiceRoleKey, getStripeSecretKey, getStripeWebhookSecret } from '../_shared/keys.ts';
 
-const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2023-10-16' });
+const stripe = new Stripe(getStripeSecretKey(), { apiVersion: '2023-10-16' });
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
   getServiceRoleKey()
 );
-const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET')!;
+const webhookSecret = getStripeWebhookSecret();
 
 // Fetch actual Stripe fee from balance transaction; fall back to estimate by method.
 async function getActualFee(paymentIntentId: string, amountPaid: number, method: string, connectedAccountId?: string): Promise<number> {
