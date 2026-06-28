@@ -22,22 +22,15 @@ module.exports = defineConfig({
   // suite's wall-clock. A real transient blip just shows as a single red in a
   // non-gating job; we'd rather have a fast suite than auto-retry hangs.
   retries: 0,
-  // Serial: the suite shares one dev account and seeds/cleans real data; parallel
-  // workers would race on the same rows.
-  // 2 workers in CI (was 4). The live suite reaches Supabase through the Cloudflare
-  // Pages /api proxy; with 4 workers — several of which open 2–4 EXTRA browser
-  // contexts (the realtime/offline multi-device specs) — that proxy saturated and
-  // timed out signIn/supaSaveToCloud even on a FRESHLY-CLEARED account (it was not
-  // data bloat). 2 keeps the suite parallel without overwhelming the proxy.
-  // SERIAL. The instrumented self-hosted run proved cloud writes succeed (2xx) yet
-  // rows vanished from reads: supaSaveToCloud does a full-account soft-delete sweep
-  // (PATCH deleted_at for any row not in THAT worker's snapshot). Two workers sharing
-  // the one dev login clobber each other — worker B's save soft-deletes worker A's
-  // just-written row before A reads it. The earlier "row-level upsert by id is safe"
-  // assumption ignored the sweep. Serial removes the shared-account race; genuine
-  // concurrency is still covered by the dedicated offline-sync/realtime specs (which
-  // simulate multi-device on one account on purpose).
-  workers: 1,
+  // PARALLEL (4 in CI). History: dropped 4→2→1 chasing "cloud ABSENT" failures that I
+  // wrongly blamed on a parallel soft-delete clobber. The evidence disproved it — the
+  // SERIAL run still had the same 33 failures; the real cause was async-flush READ
+  // TIMING (the rule read before _flushSaveNow landed), now fixed by step()'s poll in
+  // live-helpers.js. And the original reason workers were lowered (the /api proxy
+  // saturating under load) is gone too: direct-Supabase is the default now, so workers
+  // hit Supabase directly with no proxy bottleneck. Serial bought only slowness
+  // (~30min/190 tests). Parallel + step-poll = fast AND correct.
+  workers: isCI ? 4 : 1,
   // CI emits a JSON report (machine-readable failure dump) + an HTML report dir
   // (uploaded as an artifact) so a red run is never a black box — the json carries
   // every test's error text + the finding() ticket, the html is browsable offline.
