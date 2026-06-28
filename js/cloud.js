@@ -390,9 +390,26 @@ async function _devRestoreSnapshot(key,idx){
   },{title:'Restore backup',yes:'Restore',danger:true});
 }
 // ── Toast notifications ────────────────────────────────────────────────
-const SUPA_URL = location.origin + '/api';
+// Supabase endpoint. DEFAULT = the same-origin /api Pages-Function proxy, which
+// resolves Supabase server-side (§15.2 — added because AT&T Fiber couldn't reach
+// *.supabase.co directly). Every call through it is one metered Cloudflare request.
+//
+// DIRECT MODE (reversible toggle — proxy is NEVER deleted): talk straight to Supabase
+// and pay ZERO Cloudflare /api cost. The proxy only forwards headers (it doesn't add
+// the apikey), so going direct changes ONLY where requests resolve — the lone risk is
+// a network that can't DNS-resolve *.supabase.co, which is a one-flag revert, not an
+// outage. intake.html already uses this direct URL successfully.
+//   Turn ON : open the app with ?supadirect=1 once (persists), then reload.
+//   Turn OFF: ?supadirect=0 (or clear localStorage 'zp3_supa_direct'), then reload.
+const _SUPA_DIRECT_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
+(function(){try{const p=new URLSearchParams(location.search);
+  if(p.get('supadirect')==='1')localStorage.setItem('zp3_supa_direct','1');
+  if(p.get('supadirect')==='0')localStorage.removeItem('zp3_supa_direct');
+}catch(_e){}})();
+const _supaDirect=(()=>{try{return localStorage.getItem('zp3_supa_direct')==='1';}catch(_e){return false;}})();
+const SUPA_URL = _supaDirect ? _SUPA_DIRECT_URL : (location.origin + '/api');
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.27.26.42';
+const APP_VERSION='06.27.26.43';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
 const _deviceId=Math.random().toString(36).slice(2,10);
