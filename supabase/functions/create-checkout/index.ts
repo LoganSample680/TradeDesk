@@ -132,16 +132,23 @@ Deno.serve(async (req) => {
         description: piDescription,
         ...(clientEmail ? { receipt_email: clientEmail } : {}),
       };
-      if (stripeAccountId) {
-        piParams.application_fee_amount = 0;
-        piParams.transfer_data = { destination: stripeAccountId };
-      }
-      const pi = await stripe.paymentIntents.create(piParams);
+      // DIRECT CHARGE: when the contractor has a connected account, create the
+      // PaymentIntent ON THAT ACCOUNT (Stripe-Account header). The charge lives
+      // entirely on the contractor's account — the money never touches the TradeDesk
+      // platform balance, not even transiently, and the contractor (not TradeDesk)
+      // owns refunds, chargebacks, and the Stripe processing fee. No application fee:
+      // TradeDesk takes $0. (Was a destination charge via transfer_data, which routes
+      // funds THROUGH the platform balance first — exactly what we don't want.)
+      const reqOpts: Stripe.RequestOptions | undefined = stripeAccountId ? { stripeAccount: stripeAccountId } : undefined;
+      const pi = await stripe.paymentIntents.create(piParams, reqOpts);
       await saveSignature();
       return new Response(
         JSON.stringify({
           clientSecret: pi.client_secret,
           publishableKey: Deno.env.get('STRIPE_PUBLISHABLE_KEY')!,
+          // For a direct charge the client MUST init Stripe.js with this connected
+          // account (Stripe(pk, { stripeAccount })) or the client_secret won't resolve.
+          connectedAccountId: stripeAccountId || null,
           connect_enabled: !!stripeAccountId,
         }),
         { headers: { ...CORS, 'Content-Type': 'application/json' } }
@@ -194,25 +201,23 @@ Deno.serve(async (req) => {
         : { automatic_payment_methods: { enabled: true, allow_redirects: 'always' } }),
     };
 
-    if (stripeAccountId) {
-      sessionParams.payment_intent_data = {
-        application_fee_amount: 0,
-        transfer_data: { destination: stripeAccountId },
-        statement_descriptor: statementDescriptor,
-        description: piDescription,
-      };
-    } else {
-      sessionParams.payment_intent_data = {
-        statement_descriptor: statementDescriptor,
-        description: piDescription,
-      };
-    }
+    // DIRECT CHARGE (hosted Checkout): no transfer_data / application_fee — the
+    // session is created ON the contractor's connected account below, so funds settle
+    // straight to them and never pass through the TradeDesk balance.
+    sessionParams.payment_intent_data = {
+      statement_descriptor: statementDescriptor,
+      description: piDescription,
+    };
 
-    const session = await stripe.checkout.sessions.create(sessionParams);
+    // Create the Checkout Session on the contractor's connected account (Stripe-Account
+    // header) for a true direct charge; fall back to the platform only when no connected
+    // account exists (e.g. TradeDesk acting as its own contractor).
+    const sessionReqOpts: Stripe.RequestOptions | undefined = stripeAccountId ? { stripeAccount: stripeAccountId } : undefined;
+    const session = await stripe.checkout.sessions.create(sessionParams, sessionReqOpts);
     await saveSignature();
 
     return new Response(
-      JSON.stringify({ url: session.url, connect_enabled: !!stripeAccountId }),
+      JSON.stringify({ url: session.url, connect_enabled: !!stripeAccountId, connectedAccountId: stripeAccountId || null }),
       { headers: { ...CORS, 'Content-Type': 'application/json' } }
     );
 

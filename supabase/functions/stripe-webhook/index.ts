@@ -10,11 +10,14 @@ const supabase = createClient(
 const webhookSecret = Deno.env.get('STRIPE_WEBHOOK_SECRET')!;
 
 // Fetch actual Stripe fee from balance transaction; fall back to estimate by method.
-async function getActualFee(paymentIntentId: string, amountPaid: number, method: string): Promise<number> {
+async function getActualFee(paymentIntentId: string, amountPaid: number, method: string, connectedAccountId?: string): Promise<number> {
   try {
+    // Direct charge: the PaymentIntent lives on the contractor's connected account, so
+    // it must be retrieved WITH that account header or the lookup 404s. event.account
+    // carries it for Connect events; absent for platform charges (the fallback path).
     const pi = await stripe.paymentIntents.retrieve(paymentIntentId, {
       expand: ['latest_charge.balance_transaction'],
-    });
+    }, connectedAccountId ? { stripeAccount: connectedAccountId } : undefined);
     const bt = (pi.latest_charge as Stripe.Charge)?.balance_transaction as Stripe.BalanceTransaction;
     if (bt?.fee != null) return bt.fee / 100;
   } catch (_) { /* fall through to estimate */ }
@@ -22,14 +25,14 @@ async function getActualFee(paymentIntentId: string, amountPaid: number, method:
   return +(amountPaid * 0.029 + 0.30).toFixed(2);
 }
 
-async function recordCompletedPayment(session: Stripe.Checkout.Session) {
+async function recordCompletedPayment(session: Stripe.Checkout.Session, connectedAccountId?: string) {
   const meta = session.metadata!;
   const amountPaid = (session.amount_total || 0) / 100;
   const paymentMethod = meta.paymentMethod || session.payment_method_types?.[0] || 'card';
   const piRef = String(session.payment_intent);
   const ts = new Date().toISOString();
 
-  const stripeFee = await getActualFee(piRef, amountPaid, paymentMethod);
+  const stripeFee = await getActualFee(piRef, amountPaid, paymentMethod, connectedAccountId);
 
   await supabase.from('signed_proposals').upsert({
     bid_id: meta.bidId,
@@ -100,7 +103,7 @@ Deno.serve(async (req) => {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
     if (session.payment_status === 'paid') {
-      await recordCompletedPayment(session);
+      await recordCompletedPayment(session, event.account || undefined);
     }
     // payment_status === 'unpaid' means ACH — wait for async_payment_succeeded
   }
@@ -108,7 +111,7 @@ Deno.serve(async (req) => {
   // ── ACH settles days later — record when money actually clears ────────────
   if (event.type === 'checkout.session.async_payment_succeeded') {
     const session = event.data.object as Stripe.Checkout.Session;
-    await recordCompletedPayment(session);
+    await recordCompletedPayment(session, event.account || undefined);
   }
 
   // ── Connect onboarding completed ──────────────────────────────────────────

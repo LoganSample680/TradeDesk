@@ -1406,7 +1406,9 @@ async function _launchEmbedded(amount,paymentMethod,surchargeAmount=0){
     });
     const d=await res.json();
     if(!res.ok||!d.clientSecret||!d.publishableKey)throw new Error(d.error||'Could not set up payment');
-    const stripeObj=Stripe(d.publishableKey);
+    // Direct charge: the PaymentIntent lives on the contractor's connected account, so
+    // Stripe.js MUST be initialised with that account or the client_secret won't resolve.
+    const stripeObj=d.connectedAccountId?Stripe(d.publishableKey,{stripeAccount:d.connectedAccountId}):Stripe(d.publishableKey);
     _stripeInst=stripeObj;
     document.getElementById('sign-embed-container').innerHTML='';
     // cs_live_/cs_test_ = Checkout Session → use initEmbeddedCheckout
