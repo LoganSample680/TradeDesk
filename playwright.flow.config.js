@@ -29,7 +29,15 @@ module.exports = defineConfig({
   // contexts (the realtime/offline multi-device specs) — that proxy saturated and
   // timed out signIn/supaSaveToCloud even on a FRESHLY-CLEARED account (it was not
   // data bloat). 2 keeps the suite parallel without overwhelming the proxy.
-  workers: isCI ? 2 : 1,
+  // SERIAL. The instrumented self-hosted run proved cloud writes succeed (2xx) yet
+  // rows vanished from reads: supaSaveToCloud does a full-account soft-delete sweep
+  // (PATCH deleted_at for any row not in THAT worker's snapshot). Two workers sharing
+  // the one dev login clobber each other — worker B's save soft-deletes worker A's
+  // just-written row before A reads it. The earlier "row-level upsert by id is safe"
+  // assumption ignored the sweep. Serial removes the shared-account race; genuine
+  // concurrency is still covered by the dedicated offline-sync/realtime specs (which
+  // simulate multi-device on one account on purpose).
+  workers: 1,
   // CI emits a JSON report (machine-readable failure dump) + an HTML report dir
   // (uploaded as an artifact) so a red run is never a black box — the json carries
   // every test's error text + the finding() ticket, the html is browsable offline.
