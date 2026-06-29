@@ -409,9 +409,9 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.28.26.40';
+const APP_VERSION='06.28.26.41';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
-let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null,_broadcastPending=false,_lastBroadcastAt=0;
+let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null,_broadcastPending=false;
 const _deviceId=Math.random().toString(36).slice(2,10);
 // Expose sync state and auth objects on window so E2E tests can observe/stub them
 Object.defineProperty(window,'_syncStatus',{get:()=>_syncStatus,configurable:true});
@@ -3082,10 +3082,6 @@ async function supaLoadFromCloud({silent=false}={}){
   if(!_supa||!_supaUser)return;
   if(_loadInProgress)return;
   _loadInProgress=true;
-  // Reset here (not when scheduling the trailing reload): any broadcast that arrives
-  // DURING this read re-sets it, so the finally below re-runs and we converge to the
-  // last value instead of clearing the flag before the read even happens.
-  _broadcastPending=false;
   window._lastCloudLoadAt=Date.now();
   if(silent){
     // Server state wins — cancel any pending debounce without flushing it.
@@ -3343,14 +3339,11 @@ async function supaLoadFromCloud({silent=false}={}){
     _removeBootOverlay();renderDash();buildScopeGrid();supaSetStatus('error');
   }finally{
     _loadInProgress=false;
-    // Converge to the LAST value across a rapid burst of remote edits. Re-run a trailing
-    // load if EITHER a peer broadcast arrived while this load was in flight (it couldn't
-    // reload mid-load), OR the burst is still settling. The second clause matters: a
-    // broadcast can arrive slightly BEFORE its write becomes read-visible, so the read we
-    // just finished may have pulled a stale mid-burst value with no newer broadcast left
-    // to re-trigger us — one more read after the write commits fixes that. Bounded by the
-    // 1.5s quiet window, so it stops as soon as the burst ends (no infinite reloading).
-    if(_broadcastPending || (Date.now()-_lastBroadcastAt < 1500)){
+    // A peer broadcast that arrived WHILE this load was in flight was dropped (it
+    // can't reload during a load). Re-run one trailing load now so a rapid burst of
+    // remote edits always converges to the LAST value instead of a stale mid-burst one.
+    if(_broadcastPending){
+      _broadcastPending=false;
       clearTimeout(_broadcastReloadTimer);
       _broadcastReloadTimer=setTimeout(()=>{if(!_loadInProgress)supaLoadFromCloud({silent:true});},300);
     }
@@ -3377,8 +3370,6 @@ function _initRealtimeSubscriptions(uid){
     _syncBroadcastChannel
       .on('broadcast',{event:'data_saved'},(msg)=>{
         if(msg?.payload?.deviceId===_deviceId&&Date.now()-_lastLocalSaveAt<5000)return;
-        _lastBroadcastAt=Date.now();   // track burst activity so the load can keep converging
-
         // Can't reload during an in-flight load — but DON'T just drop it: remember a
         // peer update arrived so supaLoadFromCloud's finally re-runs one trailing load
         // (otherwise a rapid burst leaves this device on a stale mid-burst value).
