@@ -67,22 +67,30 @@ test.describe('contracts & agreements (UI-driven)', () => {
         await p.waitForSelector('#_ag-party', { timeout: 10000 });
         const k1 = await type(p, '#_ag-party', agParty);
         const k2 = await type(p, '#_ag-title', `E2E Profit-Share ${process.pid}`);
-        // profit_share is the default type → template body is pre-filled, so terms
-        // are non-empty without typing a wall of text (a real user accepts the tpl).
+        // profit_share now REQUIRES a percentage (so a signed contract can never show the
+        // {X} placeholder) — enter one; the oninput re-fills the template body live.
+        const k3 = await type(p, '#_ag-pct', '20');
         await p.evaluate(() => { _agSave(); });
         await p.waitForTimeout(400);
         agId = await p.evaluate((party) => {
           const a = (agreements || []).find(x => x.party === party);
           return a ? a.id : null;
         }, agParty);
-        return k1 + k2 + 1;
+        return k1 + k2 + k3 + 1;
       },
       rule: async (p) => {
         const r = await p.evaluate((party) => {
           const a = (agreements || []).find(x => x.party === party);
-          return a ? { status: a.status, hasBody: !!(a.body && a.body.length > 10) } : null;
+          return a ? {
+            status: a.status,
+            hasBody: !!(a.body && a.body.length > 10),
+            // The bug this guards: {Party}/{X} template placeholders leaking into a signed
+            // contract. The saved body must name the real party and contain no placeholder.
+            hasPlaceholder: /\{Party\}|\{X\}/.test(a.body || ''),
+            namesParty: (a.body || '').includes(party),
+          } : null;
         }, agParty);
-        return { ok: !!r && r.status === 'draft' && r.hasBody, got: JSON.stringify(r) };
+        return { ok: !!r && r.status === 'draft' && r.hasBody && !r.hasPlaceholder && r.namesParty, got: JSON.stringify(r) };
       },
     });
 

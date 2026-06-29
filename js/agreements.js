@@ -95,8 +95,18 @@ function _agRenderList(){
 function _agProfitShareBody(party,pct,cadence){
   const owner=getOwnerName()||getBusinessName()||'the Owner';
   const p=party||'{Party}';const x=(pct!=null&&pct!=='')?pct:'{X}';const c=cadence||'monthly';
-  return p+' agrees to run all business operations — including all cash jobs, income, expenses, and mileage — through TradeDesk, logged accurately and in good faith. '+
-    'In exchange, '+owner+' agrees to pay '+p+' '+x+'% of net profit (revenue minus materials, labor, and tracked business expenses), calculated and paid '+c+'.';
+  return 'PROFIT-SHARE AGREEMENT\n\n'+
+    'This Profit-Share Agreement (“Agreement”) is entered into between '+owner+' (“Owner”) and '+p+' (“Partner”), effective on the date signed below.\n\n'+
+    '1. Purpose. The Owner and Partner agree to operate the business in good faith, with the Partner sharing in the net profit of the business on the terms below.\n\n'+
+    '2. Profit Share. The Owner shall pay the Partner '+x+'% of the business’s net profit, calculated and paid '+c+'. “Net profit” means total revenue collected during the period, less materials, labor, and tracked business expenses for that period.\n\n'+
+    '3. Recordkeeping. The Partner agrees to run all business operations — including all cash jobs, income, expenses, and mileage — through TradeDesk, logged accurately and in good faith. Both parties rely on these records to calculate the profit share.\n\n'+
+    '4. Payment. Each profit-share amount is due within ten (10) days after the close of the applicable '+c+' period. Either party may request a written summary of the figures used for any period.\n\n'+
+    '5. Access to Records. Each party may review the business books and TradeDesk records relevant to the profit-share calculation upon reasonable notice.\n\n'+
+    '6. Term & Termination. This Agreement continues until terminated by either party on fourteen (14) days’ written notice. Profit earned through the termination date remains payable.\n\n'+
+    '7. Not a Partnership for Liability. This Agreement creates a profit-sharing arrangement only. It does not create a legal partnership, joint venture, or employment relationship, and neither party is responsible for the debts or obligations of the other except as expressly stated here.\n\n'+
+    '8. Confidentiality. The Partner will keep client lists, pricing, and business records confidential during and after this Agreement.\n\n'+
+    '9. Entire Agreement. This is the entire agreement between the parties on this subject and may be changed only by a writing signed by both parties. It is governed by the laws of the state in which the business operates.\n\n'+
+    'By signing below, both parties acknowledge they have read, understood, and agree to these terms.';
 }
 function _agEmploymentBody(party){
   const owner=getOwnerName()||getBusinessName()||'the Company';
@@ -131,12 +141,12 @@ function _showAgreementModal(a){
   AGREEMENT_TYPES.forEach(tp=>{typeOpts+='<option value="'+tp.id+'"'+(t===tp.id?' selected':'')+'>'+tp.emoji+' '+tp.label+'</option>';});
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:14px">'+(a?'Edit contract':'New contract')+'</div>'+
-    '<div class="f"><label>Party name</label><input id="_ag-party" list="_ag-party-list" value="'+escHtml(a?.party||'')+'" placeholder="Partner or employee name">'+partyDatalist+'</div>'+
+    '<div class="f"><label>Party name</label><input id="_ag-party" list="_ag-party-list" oninput="_agApplyTemplate()" value="'+escHtml(a?.party||'')+'" placeholder="Partner or employee name">'+partyDatalist+'</div>'+
     '<div class="f"><label>Type</label><select id="_ag-type" onchange="_agTypeChanged()">'+typeOpts+'</select></div>'+
     '<div class="f"><label>Title</label><input id="_ag-title" value="'+escHtml(a?.title||'')+'" placeholder="e.g. Profit-Share Partnership"></div>'+
     '<div id="_ag-profit-fields" style="display:'+(t==='profit_share'?'block':'none')+'">'+
-      '<div class="f"><label>Profit %</label><input id="_ag-pct" type="number" inputmode="decimal" value="'+(a?.profitPct!=null?escHtml(String(a.profitPct)):'')+'" placeholder="e.g. 20"></div>'+
-      '<div class="f"><label>Payment cadence</label><input id="_ag-cadence" value="'+escHtml(a?.cadence||'monthly')+'" placeholder="e.g. monthly, quarterly"></div>'+
+      '<div class="f"><label>Profit %</label><input id="_ag-pct" type="number" inputmode="decimal" oninput="_agApplyTemplate()" value="'+(a?.profitPct!=null?escHtml(String(a.profitPct)):'')+'" placeholder="e.g. 20"></div>'+
+      '<div class="f"><label>Payment cadence</label><input id="_ag-cadence" oninput="_agApplyTemplate()" value="'+escHtml(a?.cadence||'monthly')+'" placeholder="e.g. monthly, quarterly"></div>'+
     '</div>'+
     '<div class="f"><label>Terms</label><textarea id="_ag-body" rows="8" style="width:100%;box-sizing:border-box;font-family:inherit;font-size:13px;line-height:1.5;padding:10px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text)">'+escHtml(a?.body||'')+'</textarea></div>'+
     '<div class="f"><label>Effective date</label><input id="_ag-eff" type="date" value="'+escHtml(a?.effectiveDate||todayKey())+'"></div>'+
@@ -177,11 +187,17 @@ function _agSave(){
   const party=v('_ag-party').trim();
   const type=v('_ag-type');
   const title=v('_ag-title').trim();
-  const body=v('_ag-body').trim();
+  let body=v('_ag-body').trim();
   const pctRaw=v('_ag-pct').trim();
   const cadence=v('_ag-cadence').trim();
+  // Safety net: never let an unfilled template placeholder ({Party}/{X}) ship into a
+  // signed contract — substitute from the actual fields at save time, belt-and-suspenders
+  // to the live oninput re-fill above.
+  if(party)body=body.replace(/\{Party\}/g,party);
+  if(pctRaw!=='')body=body.replace(/\{X\}/g,pctRaw);
   const effectiveDate=v('_ag-eff');
   if(!party){zAlert('Enter a party name.');return;}
+  if(type==='profit_share'&&pctRaw===''){zAlert('Enter the profit percentage.');return;}
   if(!body){zAlert('Enter the contract terms.');return;}
   const profitPct=type==='profit_share'&&pctRaw!==''?parseFloat(pctRaw):null;
   if(_editingAgId){
