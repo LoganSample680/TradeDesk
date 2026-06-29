@@ -48,7 +48,10 @@ test.describe('UI toggles — proposal tiles, permissions accordion, kanban coll
       expected: 'perms-acc closed initially, then open after tapping the header',
       act: async (p) => {
         await p.evaluate(() => { openAddEmployeeModal(); });
-        await p.waitForSelector('.perms-acc', { timeout: 12000 });
+        // 'attached', NOT 'visible': .perms-acc is the collapsed accordion (max-height:0),
+        // so it's present but zero-height until opened — waiting for visible would hang.
+        await p.waitForSelector('.perms-acc', { state: 'attached', timeout: 12000 });
+        await p.waitForSelector('.perms-chev', { state: 'visible', timeout: 12000 });
         p.__closed0 = await p.evaluate(() => {
           const a = document.querySelector('.perms-acc');
           return !!a && (a.style.maxHeight === '' || a.style.maxHeight === '0px');
