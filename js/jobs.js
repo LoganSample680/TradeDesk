@@ -628,8 +628,12 @@ function _renderJobsKanban(el,tk,wonBidsList){
     {id:'complete', label:'Complete · paid',            items:wonBidsList.filter(b=>getBidStage(b).stage==='paid').slice(0,8)},
   ];
   el.innerHTML='<div class="kanban">'+cols.map(col=>{
+    const _kcollapsed=!!(window._kcolCollapsed&&window._kcolCollapsed[col.id]);
     return '<div class="kcol" data-status="'+col.id+'">'+
-      '<div class="kcol-hd"><span>'+col.label+'</span><span class="k-count">'+col.items.length+'</span></div>'+
+      '<div class="kcol-hd" onclick="_toggleKcol(\''+col.id+'\')" style="cursor:pointer;user-select:none">'+
+        '<span style="display:flex;align-items:center;min-width:0"><span class="kcol-chev" style="display:inline-block;transition:transform .18s cubic-bezier(.22,1,.36,1);transform:'+(_kcollapsed?'':'rotate(90deg)')+';font-size:9px;color:var(--text3);margin-right:5px">▶</span><span>'+col.label+'</span></span>'+
+        '<span class="k-count">'+col.items.length+'</span></div>'+
+      '<div class="kcol-body"'+(_kcollapsed?' style="display:none"':'')+'>'+
       (col.items.length===0
         ?'<div style="padding:18px 8px;text-align:center;color:var(--text3);font-size:11px;font-weight:500">Nothing here yet</div>'
         :col.items.map(b=>{
@@ -670,8 +674,22 @@ function _renderJobsKanban(el,tk,wonBidsList){
             '</div>'+
           '</div>';
         }).join(''))+
+      '</div>'+
     '</div>';
   }).join('')+'</div>';
+}
+// Collapse/expand a kanban column's bid cards. Cards stay in the DOM (just hidden) so the
+// state survives a re-render and nothing that counts cards breaks; persisted per column id.
+function _toggleKcol(id){
+  window._kcolCollapsed=window._kcolCollapsed||{};
+  window._kcolCollapsed[id]=!window._kcolCollapsed[id];
+  const col=document.querySelector('.kcol[data-status="'+id+'"]');
+  if(!col)return;
+  const body=col.querySelector('.kcol-body');
+  const chev=col.querySelector('.kcol-chev');
+  const collapsed=window._kcolCollapsed[id];
+  if(body)body.style.display=collapsed?'none':'';
+  if(chev)chev.style.transform=collapsed?'':'rotate(90deg)';
 }
 
 function openJobChecklist(bidId){
