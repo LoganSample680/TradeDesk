@@ -442,7 +442,13 @@ Survives conversation compacting so context is not lost between sessions.
     `js/jobs.js` (time-on-site display), Supabase Edge Function `track-location/`
   - New `location_pings` table: `{id, contractor_user_id, employee_user_id, lat, lon, job_id, arrived_at, departed_at, ts}`
 
-### 9.4 TradeDesk Comms (SMS Infrastructure)
+### 9.4 TradeDesk Wire — Comms / SMS Infrastructure
+
+**Product name: "TradeDesk Wire"** — the contractor-facing in-app texting layer
+(the TradeDesk answer to Redtail Speak / a self-built SendBlue). Contractors send
+and receive texts to clients without leaving the app; "Wire" is the brand on the
+button/inbox while Bandwidth + the iMessage bridge are invisible infrastructure
+underneath. Name candidates floated: **Wire** (chosen), Speak, Holler, Threads, Wave.
 
 **Own the messaging layer — no Twilio, no SendBlue subscription**
 - Build on Bandwidth API (Tier 1 carrier, not a reseller — ~$0.003-0.004/msg wholesale)
