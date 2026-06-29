@@ -10,7 +10,7 @@ function convertOpportunityToEstimate(bidId){
   _doOpenEstimate(c,null,opp.trade_type||getActiveTrade());
 }
 function deleteOpportunity(bidId){
-  bids=bids.filter(b=>b.id!==bidId);saveAll();renderCDOpportunities();
+  _userDelete(()=>{bids=bids.filter(b=>b.id!==bidId);saveAll();});renderCDOpportunities();
 }
 function renderCDOpportunities(){
   const el=document.getElementById('cd-opportunities');if(!el)return;
@@ -39,6 +39,7 @@ function renderCDOpportunities(){
     }).join(''):'<div style="font-size:12px;color:var(--text3);padding:6px 0">No opportunities yet — track cross-trade follow-ups here.</div>');
 }
 let _oppSelTrade=null;
+Object.defineProperty(window,'_oppSelTrade',{get:()=>_oppSelTrade,set:v=>{_oppSelTrade=v;},configurable:true});
 function openAddOpportunity(){
   const c=getClientById(currentClientId);if(!c)return;
   const lines=_getTradeLines();
@@ -382,7 +383,7 @@ function showSupplyList(bidId){
   body.dataset.bidId=bidId;
   body.style.cssText='overflow-y:auto;padding:16px;flex:1';
   const _supplyKey='supplyChecked_'+bidId;
-  const _supplyState=JSON.parse(localStorage.getItem(_supplyKey)||'{}');
+  let _supplyState={};try{_supplyState=JSON.parse(localStorage.getItem(_supplyKey)||'{}')||{};}catch(e){_supplyState={};}
 
   sections.forEach(sec=>{
     const secDiv=document.createElement('div');
@@ -612,6 +613,53 @@ function toggleBidSummary(bidId){
   panel.id='bid-summary-'+bidId;
   panel.style.cssText='background:var(--bg2);border-radius:var(--r);padding:12px;margin-top:10px;border-top:1px solid var(--border)';
   const surfRows=surfs.length?surfs.map(s=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+(SURF_LABELS[s.type]||s.type)+' — '+escHtml(s.room||'')+'</span><span style="font-weight:600">'+(s.qty||0).toLocaleString()+' '+(s.type==='walls'||s.type==='ceiling'||s.type==='ext_walls'||s.type==='deck'?'sf':'')+'</span></div>').join(''):'<div style="font-size:12px;color:var(--text3)">No surface data saved</div>';
+  // Per-room cost breakdown — for change order reference (remove a room, know how much to deduct)
+  const roomBreakdown=(()=>{
+    if(!surfs.length||!(b.amount>0))return '';
+    const R={
+      walls:   (typeof S!=='undefined'&&S.rWalls)||1.30,
+      ceiling: (typeof S!=='undefined'&&S.rCeil) ||1.00,
+      trim:    (typeof S!=='undefined'&&S.rTrim) ||3.25,
+      doors:   (typeof S!=='undefined'&&S.rDoor) ||95,
+      windows: (typeof S!=='undefined'&&S.rWin)  ||50,
+      cabinets:38,
+      ext_walls:(typeof S!=='undefined'&&S.rExt) ||1.10,
+      ext_trim: (typeof S!=='undefined'&&S.rTrim)||3.25,
+      deck:    (typeof S!=='undefined'&&S.rDeck) ||1.00,
+      fence:1.25,epoxy:1.75,
+    };
+    const rooms={};
+    surfs.forEach(s=>{
+      if(!s.qty)return;
+      const room=(s.room||'').split(' — ')[0].trim()||'Other';
+      if(!rooms[room])rooms[room]={w:0,labels:[]};
+      const t=(typeof SURF_TYPES!=='undefined')&&SURF_TYPES.find(x=>x.v===s.type);
+      rooms[room].w+=s.qty*(R[s.type]||(t&&t.rate)||0);
+      rooms[room].labels.push(SURF_LABELS[s.type]||s.type);
+    });
+    Object.entries(b.roomScopeMap||{}).forEach(([room,sc])=>{
+      if(!rooms[room])return;
+      Object.entries(sc).forEach(([,entry])=>{
+        if(!entry||!entry.active)return;
+        rooms[room].w+=entry.cost||Math.round((entry.hrs||0)*(entry.rate||45)*100)/100;
+      });
+    });
+    const rNames=Object.keys(rooms);
+    if(rNames.length<2)return '';
+    const totalW=rNames.reduce((s,r)=>s+rooms[r].w,0)||1;
+    const amt=b.amount;
+    let html='<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-top:14px;margin-bottom:6px">Per-room breakdown</div>';
+    rNames.forEach(room=>{
+      const roomAmt=Math.round(rooms[room].w/totalW*amt);
+      const labels=[...new Set(rooms[room].labels)].join(' · ');
+      html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)">'+
+        '<div><div style="font-size:12px;font-weight:600">'+escHtml(room)+'</div>'+
+        '<div style="font-size:10px;color:var(--text3)">'+escHtml(labels)+'</div></div>'+
+        '<div style="font-size:13px;font-weight:700;color:var(--text1)">$'+roomAmt.toLocaleString()+'</div></div>';
+    });
+    html+='<div style="font-size:10px;color:var(--text3);margin-top:5px;text-align:right">For change order reference</div>';
+    return html;
+  })();
   panel.innerHTML=
     '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Bid details</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">'+
@@ -621,7 +669,7 @@ function toggleBidSummary(bidId){
       (scope?'<div style="grid-column:1/-1"><div style="font-size:10px;text-transform:uppercase;color:var(--text3)">Scope</div><div style="font-size:11px;color:var(--text2)">'+scope+'</div></div>':'')+
     '</div>'+
     '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Surfaces ('+surfs.length+')</div>'+
-    surfRows;
+    surfRows+roomBreakdown;
   card.appendChild(panel);
 }
 
@@ -730,9 +778,10 @@ function printInvoice(bidId){
   }
 }
 function getBidLien(bidId){return liens.find(l=>l.bid_id===bidId);}
-function daysSince(dateStr){if(!dateStr)return 0;return Math.floor((Date.now()-new Date(dateStr+'T12:00:00').getTime())/86400000);}
+function daysSince(dateStr){if(!dateStr)return 0;const d=new Date(dateStr+'T00:00:00Z');if(isNaN(d.getTime()))return 0;const now=new Date();const todayUTC=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate());return Math.round((todayUTC-d.getTime())/86400000);}
 function payStatus(bid){
   const paid=getBidPaid(bid.id),total=bid.amount||0,balance=total-paid;
+  if(!total)return{label:'Paid in full',cls:'bdg-paid',color:'var(--green)'};
   if(paid<=0)return{label:'Unpaid',cls:'bdg-pending',color:'var(--amber)'};
   if(balance<=0.01)return{label:'Paid in full',cls:'bdg-paid',color:'var(--green)'};
   const dep=bid.deposit||Math.round(total*0.25*100)/100;
@@ -1024,6 +1073,8 @@ function _submitCloseOutEstimate(bidId){
   document.querySelector('[data-bdov]')?.remove();
   if(typeof renderProposalsPage==='function')renderProposalsPage();
   if(typeof renderDash==='function')renderDash();
+  if(typeof renderCDBids==='function')try{renderCDBids();}catch(e){}
+  if(typeof renderClientDetail==='function')try{renderClientDetail();}catch(e){}
   showToast('Estimate closed out — marked lost','✓');
 }
 function reopenEstimate(bidId){
@@ -1125,6 +1176,41 @@ function _mpayErr(msg){
   const e=document.getElementById('mpay-err');
   if(e){e.textContent=msg;e.style.display='block';}
 }
+// Issue a real Stripe refund for a card-paid bid via the refund-payment edge function:
+// EXACT typed amount, this bid's payment intent (so it can only reach this client), on the
+// contractor's connected account. Books the ledger entry keyed by the Stripe refund id so
+// the collect balance updates immediately; the charge.refunded webhook is an idempotent
+// backstop that dedupes by the SAME ref, so a refund is never double-booked.
+async function _issueCardRefund(bidId,amount,bid){
+  try{
+    const sess=await _supa.auth.getSession();
+    const token=sess&&sess.data&&sess.data.session?sess.data.session.access_token:null;
+    if(!token)throw new Error('Sign in required to refund');
+    const res=await fetch(SUPA_URL+'/functions/v1/refund-payment',{
+      method:'POST',
+      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',apikey:(typeof SUPA_KEY!=='undefined'?SUPA_KEY:'')},
+      body:JSON.stringify({bidId:bidId,amount:amount})
+    });
+    const d=await res.json().catch(()=>({}));
+    if(!res.ok||!d.refund)throw new Error(d.error||'Refund failed');
+    const refAmt=d.refund.amount;
+    if(!payments.some(p=>p.ref===d.refund.id)){
+      payments.push({id:Date.now(),bid_id:bidId,client_id:bid?bid.client_id:null,client_name:bid?bid.client_name:'',date:new Date().toISOString().slice(0,10),type:'refund',amount:-refAmt,method:'Card',ref:d.refund.id});
+      saveAll();
+    }
+    renderCDBids&&renderCDBids();renderDash&&renderDash();renderMoneyPage&&renderMoneyPage();refreshCollectLabel&&refreshCollectLabel();
+    _refundBanner('↩ Refund of '+fmt(refAmt)+' issued to '+(bid&&bid.client_name?bid.client_name:'client')+'’s card');
+  }catch(e){
+    _refundBanner('Refund failed: '+(e&&e.message?e.message:e),true);
+  }
+}
+function _refundBanner(msg,isErr){
+  const banner=document.createElement('div');
+  banner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;animation:slideDown .3s ease';
+  banner.innerHTML='<div style="background:'+(isErr?'#7A1A1A':'#A32D2D')+';color:#fff;padding:14px 16px;text-align:center;font-size:15px;font-weight:700">'+msg+'</div>';
+  document.body.appendChild(banner);
+  setTimeout(()=>banner.remove(),4000);
+}
 function logPayment(){
   if(_submitting)return;
   const errEl=document.getElementById('mpay-err');if(errEl){errEl.style.display='none';}
@@ -1155,6 +1241,20 @@ function logPayment(){
   const bid=bids.find(b=>b.id===activePayBidId);if(!bid)return;
   const pref=v('mpay-ref')||v('pay-ref');
   const pmethod=v('mpay-method')||v('pay-method')||'';
+  // Card refund → issue a REAL Stripe refund of the EXACT typed amount, against THIS
+  // bid's card payment (so it can only go to this bid's client), on the contractor's
+  // connected account. Detected by a prior card payment whose ref is a pi_… intent.
+  // _issueCardRefund books the ledger entry itself; cash/manual refunds fall through to
+  // the local push below.
+  if(isRefund){
+    const _cardPay=payments.find(p=>p.bid_id===activePayBidId&&(p.amount||0)>0&&typeof p.ref==='string'&&p.ref.indexOf('pi_')===0);
+    if(_cardPay){
+      const _rBid=bid,_rBidId=activePayBidId,_rAmt=a;
+      closePayPanel();
+      _issueCardRefund(_rBidId,_rAmt,_rBid);
+      return;
+    }
+  }
   const storedAmount=isRefund?-a:a;
   payments.push({id:Date.now(),bid_id:activePayBidId,client_id:bid.client_id,client_name:bid.client_name,date:pdate,type:type,amount:storedAmount,method:pmethod,ref:pref});
   const _savedBidId=activePayBidId;
@@ -1237,7 +1337,7 @@ function logPayment(){
     }
   }
 }
-function deletePay(id){zConfirm('Delete this payment record?',()=>{payments=payments.filter(p=>p.id!==id);saveAll();renderCDBids();},{title:'Delete payment',yes:'Delete',danger:true});}
+function deletePay(id){zConfirm('Delete this payment record?',()=>{_userDelete(()=>{payments=payments.filter(p=>p.id!==id);saveAll();});renderCDBids();},{title:'Delete payment',yes:'Delete',danger:true});}
 
 let activeLienBidId=null;
 function openLienPanel(bidId){
@@ -1341,10 +1441,13 @@ function deleteBid(bidId){
   const b=bids.find(x=>x.id===bidId);
   zConfirm('Delete this bid'+(b?' ('+fmt(b.amount)+')':'')+' permanently? Payment records and any lien will also be removed.',()=>{
     const _cid=b?.client_id;
-    bids=bids.filter(x=>x.id!==bidId);
-    payments=payments.filter(p=>p.bid_id!==bidId);
-    liens=liens.filter(l=>l.bid_id!==bidId);
-    clearEstFullDraft();saveAll();renderClientDetail();
+    _userDelete(()=>{
+      bids=bids.filter(x=>x.id!==bidId);
+      payments=payments.filter(p=>p.bid_id!==bidId);
+      liens=liens.filter(l=>l.bid_id!==bidId);
+      clearEstFullDraft();saveAll();
+    });
+    renderClientDetail();
     if(_cid)_uploadClientHub(_cid).catch(e=>console.error('[hub upload]',e));
   },{title:'Delete bid',yes:'Delete permanently',danger:true});
 }
@@ -1353,9 +1456,12 @@ function saveLien(){
   const status=v('lien-status');
   const bidId=activeLienBidId;
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
-  liens=liens.filter(l=>l.bid_id!==activeLienBidId);
-  liens.push({id:Date.now(),bid_id:activeLienBidId,client_id:bid.client_id,client_name:bid.client_name,date:v('lien-date'),status,amount:parseFloat(v('lien-amount'))||0,county:v('lien-county'),notes:v('lien-notes')});
-  saveAll();closeLienPanel();renderCDBids();
+  _userDelete(()=>{
+    liens=liens.filter(l=>l.bid_id!==activeLienBidId);
+    liens.push({id:Date.now(),bid_id:activeLienBidId,client_id:bid.client_id,client_name:bid.client_name,date:v('lien-date'),status,amount:parseFloat(v('lien-amount'))||0,county:v('lien-county'),notes:v('lien-notes')});
+    saveAll();
+  });
+  closeLienPanel();renderCDBids();
   if(bid&&(status==='filed'||status==='attorney')){
     setClientRisk(bid.client_id,'high_risk');
     setBidCollStage(bid,'lien_filed','Lien filed');

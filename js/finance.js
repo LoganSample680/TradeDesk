@@ -1,5 +1,6 @@
 // ── IRS Schedule C expense categories ────────────────────────────────
 let _expState={imageData:null,imageKey:null,editId:null,imagePages:[]};
+Object.defineProperty(window,'_expState',{get:()=>_expState,set:v=>{_expState=v;},configurable:true});
 
 function openExpenseFlow(){
   if(document.getElementById('expense-modal'))return;
@@ -157,22 +158,23 @@ function expProcessPhoto(input){expTriggerScan();}
 
 async function compressAndEncodeImage(file,maxPx=1200,qual=0.85){
   return new Promise((resolve,reject)=>{
-    const img=new Image();
-    const url=URL.createObjectURL(file);
-    img.onload=()=>{
-      let w=img.width,h=img.height;
-      if(w>maxPx){h=Math.round(h*(maxPx/w));w=maxPx;}
-      if(h>maxPx){w=Math.round(w*(maxPx/h));h=maxPx;}
-      const canvas=document.createElement('canvas');
-      canvas.width=w;canvas.height=h;
-      canvas.getContext('2d').drawImage(img,0,0,w,h);
-      URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL('image/jpeg',qual).split(',')[1]);
+    const reader=new FileReader();
+    reader.onerror=()=>reject(new Error('Image read failed'));
+    reader.onload=()=>{
+      const img=new Image();
+      img.onload=()=>{
+        let w=img.width,h=img.height;
+        if(w>maxPx){h=Math.round(h*(maxPx/w));w=maxPx;}
+        if(h>maxPx){w=Math.round(w*(maxPx/h));h=maxPx;}
+        const canvas=document.createElement('canvas');
+        canvas.width=w||1;canvas.height=h||1;
+        canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+        resolve(canvas.toDataURL('image/jpeg',qual).split(',')[1]);
+      };
+      img.onerror=()=>reject(new Error('Image decode failed'));
+      img.src=reader.result;
     };
-    // Decode failure (corrupt photo, unsupported format) — reject instead of
-    // hanging the caller's await forever.
-    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Image decode failed'));};
-    img.src=url;
+    reader.readAsDataURL(file);
   });
 }
 
@@ -180,6 +182,7 @@ async function compressAndEncodeImage(file,maxPx=1200,qual=0.85){
 
 // WebGPU state — allocated once per scanner session, destroyed on close
 const _gpu={dev:null,pipe:null,sampler:null,uniformBuf:null,readBuf:null,tw:0,th:0};
+window._gpu=_gpu;
 
 const _GPU_WGSL=`
 struct Dims { tw: u32, th: u32 }
@@ -456,6 +459,7 @@ async function _openLiveScanner(callback){
 }
 
 function _loadAndBuildScanUI(file,callback){
+  if(!file)return;
   const url=URL.createObjectURL(file);
   const img=new Image();
   img.onload=()=>{URL.revokeObjectURL(url);_buildScanUI(img,file,callback);};
@@ -591,6 +595,7 @@ function _detectDocCorners(data,tw,th,outW,outH){
 
 // keep old name for any callers
 function _scanDetectCorners(ctx,w,h){
+  if(!w||!h)return null;
   const tw=180,th=Math.round(h*180/w);
   const tmp=document.createElement('canvas');tmp.width=tw;tmp.height=th;
   tmp.getContext('2d').drawImage(ctx.canvas,0,0,tw,th);
@@ -603,6 +608,7 @@ function _scanWarp(img,w,h,corners){
   const[tl,tr,br,bl]=corners;
   const outW=Math.round(Math.max(Math.hypot(tr.x-tl.x,tr.y-tl.y),Math.hypot(br.x-bl.x,br.y-bl.y)));
   const outH=Math.round(Math.max(Math.hypot(bl.x-tl.x,bl.y-tl.y),Math.hypot(br.x-tr.x,br.y-tr.y)));
+  if(!outW||!outH){const d=document.createElement('canvas');d.width=Math.max(outW,1);d.height=Math.max(outH,1);return d;}
   const src=document.createElement('canvas');src.width=w;src.height=h;
   src.getContext('2d').drawImage(img,0,0,w,h);
   const sData=src.getContext('2d').getImageData(0,0,w,h).data;
@@ -862,6 +868,9 @@ function openCompleteJobModal(){
     return{j,c,priority:isPast?0:isToday?1:2,isPast,isToday};
   }).filter(x=>x.c).sort((a,b)=>a.priority-b.priority||(a.j.start<b.j.start?-1:1));
 
+  // Clear any open overlay first — never stack modals, and keep this deterministic so
+  // a stale overlay left in the DOM can't be what callers/tests read back.
+  document.querySelectorAll('.zmodal-overlay').forEach(el=>el.remove());
   const overlay=document.createElement('div');
   overlay.className='zmodal-overlay';
   overlay.style.cssText='';
@@ -957,6 +966,7 @@ function showQuickPicker(title,subtitle,suggestions,actionType,allowNew){
 }
 
 function onQPSearch(el){
+  if(!el)return;
   const actionType=el.dataset.qpaction||'';
   const q=(el.value||'').toLowerCase().trim();
   const res=document.getElementById('qp-results');
@@ -990,6 +1000,7 @@ function onQPSearch(el){
 }
 
 function pickQuickClient(btn,actionType){
+  if(!btn)return;
   const overlay=btn.closest('.zmodal-overlay');
   const suggestions=JSON.parse(overlay.dataset.suggestions||'[]');
   const idx=parseInt(btn.dataset.idx);
@@ -1276,7 +1287,7 @@ async function refreshAvail(){
   for(let i=0;i<dow;i++){const d=new Date(availYear,availMonth,1-dow+i);cells.push({key:dateKey(d),other:true});}
   for(let i=1;i<=last.getDate();i++)cells.push({key:dateKey(new Date(availYear,availMonth,i)),other:false});
   while(cells.length%7!==0){const l=cells[cells.length-1];cells.push({key:addDays(l.key,1),other:true});}
-  const weather=await fetchWeather();
+  const weather=await fetchWeather()||{};
   document.getElementById('avail-grid').innerHTML=cells.map(({key,other})=>{
     if(other)return'<div class="av-d av-other">'+parseInt(key.split('-')[2])+'</div>';
     const isPast=key<today,isTaken=booked.has(key),isBuf=buf.has(key)&&!selDays.has(key);
@@ -2445,7 +2456,7 @@ async function _openJobProfit(){
   const ov=document.createElement('div');ov.id='_job-pl-ov';ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='460px';
   box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">💰 Job Profit</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Revenue minus materials and loaded labor (wage + '+Math.round(((S.laborBurden||1.3)-1)*100)+'% burden) from tracked crew time on site.</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Revenue minus materials and labor cost (wage + '+Math.round(((S.laborBurden||1.3)-1)*100)+'% overhead) from tracked crew time on site.</div>'+
     '<div id="_job-pl-body" style="font-size:13px;color:var(--text3);max-height:60vh;overflow-y:auto">Loading…</div>'+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:10px">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
@@ -2592,7 +2603,7 @@ async function _renderDashCrewToday(){
     '</div>'+
     '<div style="display:flex;gap:18px;margin-bottom:8px">'+
       '<div><div style="font-size:10px;color:var(--text3)">On the clock</div><div style="font-size:18px;font-weight:800">'+(totMin/60).toFixed(1)+'h</div></div>'+
-      '<div><div style="font-size:10px;color:var(--text3)">Loaded labor</div><div style="font-size:18px;font-weight:800;color:var(--c-red)">'+fmt(totCost)+'</div></div>'+
+      '<div><div style="font-size:10px;color:var(--text3)">Labor cost</div><div style="font-size:18px;font-weight:800;color:var(--c-red)">'+fmt(totCost)+'</div></div>'+
     '</div>'+rows+'</div>';
 }
 // Per-employee Crew Cost report (Today / This week), with per-job breakdown.
@@ -2603,7 +2614,7 @@ async function _openCrewCost(){
   const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='460px';
   const _ccBtn=id=>'<button id="_cc-'+id+'" onclick="_crewCostRender(\''+id+'\')" style="flex:1;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;min-width:0">';
   box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">👷 Crew Cost</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:10px">What each person cost you — loaded labor (wage + burden) from tracked time on site.</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:10px">What each person actually cost you — wage + overhead (payroll taxes, insurance) — from tracked time on site.</div>'+
     '<div style="display:flex;gap:6px;margin-bottom:6px">'+
       _ccBtn('today')+'Today</button>'+
       _ccBtn('week')+'This week</button>'+
@@ -3170,7 +3181,7 @@ async function purgeOldReceiptImages(){
     saveAll();renderExpenses();showToast(old.length+' receipt images purged — records kept','🗑️');
   },{title:'Purge old receipt images',yes:'Delete images',danger:true});
 }
-function delExpense(id){expenses=expenses.filter(x=>x.id!==id);_flushSaveNow&&_flushSaveNow();renderExpenses();}
+function delExpense(id){_userDelete(()=>{expenses=expenses.filter(x=>x.id!==id);_flushSaveNow&&_flushSaveNow();});renderExpenses();}
 
 function editExpense(id){
   const exp=expenses.find(e=>e.id===id);if(!exp)return;

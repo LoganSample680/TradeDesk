@@ -9,7 +9,16 @@ function openClientDetail(cid,origin){
   if(bb)bb.textContent=window._clientDetailOrigin==='dash'?'← Home':window._clientDetailOrigin==='leads'?'← Leads':'← All clients';
 }
 
+// True for contractors/owners always, and for employees only when granted the
+// `estimate` team permission. The estimate entry points are greyed for employees
+// without it, and any attempt routes through the request-access popup instead.
+function _canEstimate(){ return !_isEmployee || !!(_employeeRecord&&_employeeRecord.permissions&&_employeeRecord.permissions.estimate); }
+
 function openEstimateForClient(){
+  // Permission gate FIRST — covers both entry points (dashboard quick action and
+  // the client-record buttons both funnel here). A non-estimate employee gets the
+  // request-access popup, never the estimator.
+  if(!_canEstimate()){ _showEstimateRequestModal(); return; }
   const c=getClientById(currentClientId);
   if(!c){showWorkflowGate('Select a client first before starting an estimate.','Choose Client','function(){goPg(\'pg-clients\');}');return;}
   const r=getClientRisk(c.id);
@@ -21,9 +30,44 @@ function openEstimateForClient(){
   }
   _rrpGateThenEstimate(c);
 }
+// Popup shown when a non-estimate employee taps a (greyed) estimate entry point:
+// offer to request access from the owner/manager.
+function _showEstimateRequestModal(){
+  if(typeof zConfirm==='function'){
+    zConfirm("You don't have permission to create estimates yet. Send a request to your manager for access?",
+      ()=>_submitEstimateRequest(),
+      {title:'🔒 Estimate access',yes:'Request access'});
+  }else if(typeof zAlert==='function'){
+    zAlert('You do not have permission to create estimates. Ask your manager for access.',{title:'Permission needed'});
+  }
+}
+
+// Insert a pending permission request the owner sees on their Team page. The
+// unique partial index (one pending per contractor/employee/perm) makes a repeat
+// tap a no-op rather than a duplicate.
+async function _submitEstimateRequest(){
+  if(!_isEmployee||typeof _supa==='undefined'||!_supa||!_supaUser||!_contractorUserId){
+    if(typeof showToast==='function')showToast('Could not send request.','⚠️');return;
+  }
+  try{
+    const row={contractor_user_id:_contractorUserId,employee_user_id:_supaUser.id,
+      employee_email:_supaUser.email||'',employee_name:(_employeeRecord&&_employeeRecord.name)||'',
+      perm:'estimate',status:'pending'};
+    const{error}=await _supa.from('td_permission_requests').insert(row);
+    if(error){
+      if(/duplicate|unique|23505/i.test((error.message||'')+(error.code||''))){
+        if(typeof showToast==='function')showToast('Request already sent — pending approval.','⏳');return;
+      }
+      throw error;
+    }
+    if(typeof showToast==='function')showToast('Access request sent to your manager.','📤');
+  }catch(e){console.warn('estimate request failed:',e);if(typeof showToast==='function')showToast('Could not send request.','⚠️');}
+}
+
 // Trades that categorically never disturb painted surfaces — skip RRP question
 const _RRP_EXEMPT_TRADES=['landscaping'];
 function _rrpGateThenEstimate(c){
+  if(!c)return;
   const _trade=typeof getActiveTrade==='function'?getActiveTrade():'painting';
   if(c.yearBuilt&&c.yearBuilt<1978&&!_RRP_EXEMPT_TRADES.includes(_trade)){
     if((c.addr||'').trim()){
@@ -42,6 +86,7 @@ function _rrpGateThenEstimate(c){
   _gateAddressThenEstimate(c);
 }
 function _showRrpModal(c,onProceed){
+  if(!c)return;
   document.getElementById('_rrp-gate-overlay')?.remove();
   const hasCert=(typeof licenses!=='undefined')&&licenses.some(l=>
     ['epa_firm','epa_renovator'].includes(l.typeId)&&(!l.expiryDate||l.expiryDate>=todayKey()));
@@ -87,6 +132,7 @@ function _showRrpModal(c,onProceed){
   };
 }
 function _gateAddressThenEstimate(c){
+  if(!c)return;
   if(!(c.addr||'').trim()){
     // Lead has no address — must collect before building an estimate
     const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_addr-gate-overlay';
@@ -127,6 +173,7 @@ function _gateAddressThenEstimate(c){
   _checkMultiPropertyThenOpen(c);
 }
 function _checkMultiPropertyThenOpen(c){
+  if(!c)return;
   // If client already has any in-progress bid (Pending+draft), offer to resume it
   const activeBids=bids.filter(b=>b.client_id===c.id&&!b.signingToken&&(
     (b.status==='Pending'&&b.draft===true)||
@@ -180,6 +227,7 @@ function _askNewPropertyAddress(c){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 let _tradePickCb=null;
+Object.defineProperty(window,'_tradePickCb',{get:()=>_tradePickCb,set:v=>{_tradePickCb=v;},configurable:true});
 function _showTradePicker(title,cb){
   _tradePickCb=cb;
   const lines=_getTradeLines();
@@ -212,6 +260,7 @@ function _pickTrade(id){
 
 // ── 3-way estimate style picker ──────────────────────────────────────────────
 let _stylePickState=null;
+Object.defineProperty(window,'_stylePickState',{get:()=>_stylePickState,set:v=>{_stylePickState=v;},configurable:true});
 function _closeStylePicker(){
   const ov=document.getElementById('_style-pick-ov');
   if(ov){ov.style.opacity='0';ov.style.transform='translateY(14px)';setTimeout(()=>ov.remove(),380);}
@@ -439,10 +488,15 @@ function _doOpenEstimate(c,_overrideAddr,_forceTrade){
 }
 
 let dashYear=new Date().getFullYear();
+Object.defineProperty(window,'dashYear',{get:()=>dashYear,set:v=>{dashYear=v;},configurable:true});
 let dashPeriod='year';
+Object.defineProperty(window,'dashPeriod',{get:()=>dashPeriod,set:v=>{dashPeriod=v;},configurable:true});
 
 function _dashInRange(dateStr){
-  if(!dateStr)return false;
+  const ds=String(dateStr==null?'':dateStr);
+  if(!ds)return false;
+  // shadow local to use coerced string
+  dateStr=ds;
   if(dashPeriod==='all')return true;
   if(dashPeriod==='year')return dateStr.startsWith(String(dashYear));
   const cm=new Date().getMonth();
@@ -538,6 +592,7 @@ function renderClientHubPage(){
   el.innerHTML='<div class="card card-pad-0">'+sorted.map(rowHtml).join('')+'</div>';
 }
 function _previewClientHub(url,clientName,clientId){
+  if(!url)return;
   // Log as contractor preview so "You previewed" badge appears on the dashboard.
   // We make the call from here (main app context) where _supaUser and bids[] are live,
   // then open the iframe with &preview=1 so client.html skips its own hub tracking.
@@ -697,6 +752,7 @@ function renderClientList(){
   populateClientSelectors();
   const tk=todayKey();
   const el=document.getElementById('client-list');
+  if(!el)return;
 
   // Clients page only shows contacts who have signed an estimate (or beyond)
   const CLIENT_STAGES=['signed','scheduled','active','balance_due','paid'];
@@ -813,7 +869,7 @@ function togglePipeGroup(key){
   if(grp)grp.style.display=window._pipelineExpand[key]?'block':'none';
   const grpDiv=document.querySelector('[data-pkey="'+key+'"]');
   if(grpDiv){const a=grpDiv.querySelector('span');if(a)a.style.transform=window._pipelineExpand[key]?'rotate(90deg)':'';}
-  arrows.forEach(a=>a.style.transform=window._pipelineExpand[key]?'rotate(90deg)':'');
+  if(typeof arrows!=='undefined'&&arrows&&arrows.forEach)arrows.forEach(a=>a.style.transform=window._pipelineExpand[key]?'rotate(90deg)':'');
 }
 function checkClientDupe(val){
   const warn=document.getElementById('cf-dupe-warn');if(!warn)return;
@@ -999,13 +1055,16 @@ function deleteClient(){
   if(!editClientId)return;
   zConfirm('Permanently delete this client and ALL their bids, jobs, expenses, and mileage?',()=>{
     const id=editClientId;
-    clients=clients.filter(x=>x.id!==id);
-    bids=bids.filter(b=>b.client_id!==id);
-    jobs=jobs.filter(j=>j.client_id!==id);
-    mileage=mileage.filter(m=>m.client_id!==id);
-    income=income.filter(i=>i.client_id!==id);
-    expenses=expenses.filter(e=>e.client_id!==id);
-    _flushSaveNow&&_flushSaveNow();closeClientForm();goPg('pg-clients');
+    _userDelete(()=>{
+      clients=clients.filter(x=>x.id!==id);
+      bids=bids.filter(b=>b.client_id!==id);
+      jobs=jobs.filter(j=>j.client_id!==id);
+      mileage=mileage.filter(m=>m.client_id!==id);
+      income=income.filter(i=>i.client_id!==id);
+      expenses=expenses.filter(e=>e.client_id!==id);
+      _flushSaveNow&&_flushSaveNow();
+    });
+    closeClientForm();goPg('pg-clients');
   },{title:'Delete client',yes:'Delete everything',danger:true});
 }
 function closeClientForm(){
@@ -1232,7 +1291,7 @@ function renderClientDetail(){
       (c.email?'<button class="btn" onclick="emailClient()">✉️ Email</button>':'')+
       (!gps.active?'<button class="btn" onclick="startDriveToClient()">🚗 Drive there</button>':'')+
       '<button class="btn" onclick="showHubMenu('+c.id+')">🔗 Client hub</button>'+
-      '<button class="btn btn-p" onclick="openEstimateForClient()">+ New estimate</button>'+
+      '<button class="btn btn-p"'+(_canEstimate()?'':' style="opacity:.55"')+' onclick="openEstimateForClient()">'+(_canEstimate()?'':'🔒 ')+'+ New estimate</button>'+
     '</div>'+
     '';
   // Metric tiles — outside hero in split-3-eq grid
@@ -1348,8 +1407,8 @@ function renderClientDetail(){
             '<span style="font-size:18px">📅</span><span>Schedule estimate</span>'+
             '<span style="font-size:10px;color:var(--text3);font-weight:400">Pick a date &amp; time</span>'+
           '</button>'+
-          '<button onclick="openEstimateForClient()" style="padding:12px;border-radius:var(--rl);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px">'+
-            '<span style="font-size:18px">📋</span><span>Start estimate now</span>'+
+          '<button onclick="openEstimateForClient()" style="padding:12px;border-radius:var(--rl);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px'+(_canEstimate()?'':';opacity:.55')+'">'+
+            '<span style="font-size:18px">'+(_canEstimate()?'📋':'🔒')+'</span><span>Start estimate now</span>'+
             '<span style="font-size:10px;color:var(--blue);font-weight:400">I\'m already here</span>'+
           '</button>'+
         '</div>';
@@ -1538,8 +1597,8 @@ function renderCDExpenses(){
 }
 function delExpenseFromCD(id){
   zConfirm('Delete this expense?',()=>{
-    expenses=expenses.filter(e=>e.id!==id);
-    saveAll();renderCDExpenses();renderDash();
+    _userDelete(()=>{expenses=expenses.filter(e=>e.id!==id);saveAll();});
+    renderCDExpenses();renderDash();
   },{title:'Delete expense',danger:true});
 }
 

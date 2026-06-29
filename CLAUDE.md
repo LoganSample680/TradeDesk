@@ -473,6 +473,50 @@ Survives conversation compacting so context is not lost between sessions.
 - Files: `js/employ-offer.js` (new) + `employ-offer.html` (new) + `js/cloud.js`
   (team_members hook) + a `employment_agreements` store.
 
+### 9.7 Apprentice / Journeyman OJT Hour Logging (geo-fence → master sign-off → state export)
+
+**Turn the geo-fence clock-in into licensable on-the-job training hours.** Most trades
+(electrical, plumbing, HVAC) require documented OJT hours for apprentice→journeyman→master
+licensure exams — often thousands of hours, frequently broken into work-category buckets.
+
+- **Capture**: the existing geo-fence/time-on-site engine (§9.5, `job_time_entries`) already
+  logs verified on-site minutes per employee per job. Tag each entry with a **work
+  classification** (e.g. for electrical: service/conduit/troubleshooting) so hours roll up by
+  the categories a state board wants.
+- **Sign-off chain**: reuse the e-sign portal pattern (`sign.html`) — accumulated hours get
+  sent to the supervising **master/licensed supervisor** to e-sign off on (their license # on
+  record), mirroring the proposal-signing audit trail (`signed_proposals`).
+- **Export**: per-employee, date-ranged **OJT hours report**, exportable for the state
+  apprenticeship board (PDF/CSV). Shows verified hours by category + supervisor attestation.
+- **Open question (research first)**: per-state + per-trade requirements vary widely — total
+  hours, category breakdowns, supervisor ratios, and the board's accepted report format. Build
+  the capture + sign-off generically; the **state data model is the research piece** (start
+  with the 2–3 states the first customers are in, not all 50). Ship with a "verify with your
+  state board" disclaimer like the tax tool.
+- **Files**: `js/ojt-hours.js` (new), `ojt-signoff.html` (new, mirrors sign.html), hooks in
+  `js/geo-track.js` (classification tag) + `js/jobs.js`; new `ojt_hour_logs` +
+  `ojt_signoffs` stores.
+
+### 9.8 Concurrency-Safe Cloud Sweep (sync-engine refactor)
+
+`supaSaveToCloud` does a full-account **soft-delete sweep**: it deletes any row in
+`_lastKnownIds[tbl]` that isn't in THIS device's current in-memory snapshot. That's
+correct for single-device use, but two simultaneous writers on one account delete each
+other's rows, and a row learned via realtime (`_applyRealtimeRecord` adds it to
+`_lastKnownIds`) can be swept on the next save even though a peer just created it
+("realtime resurrection/clobber"). Surfaced by `offline-sync-race-flow.spec.js`
+(`test.fixme`).
+
+- **Fix:** only sweep ids this device **explicitly deleted locally** — track a
+  `_locallyDeletedIds[tbl]` Set populated at every delete site, and change the sweep to
+  `prev ∩ _locallyDeletedIds`, never "known but now absent." Realtime-learned ids are
+  then never sweep-eligible.
+- **Blast radius:** every place an array shrinks (delete a bid/client/job/expense/…) must
+  record the id. Miss one and a real delete won't propagate (row resurrects on other
+  devices) — so this is a careful, fully-tested refactor, not a quick patch (§11).
+- Files: `js/cloud.js` (`supaSaveToCloud` sweep + `_applyRealtimeRecord`) + every delete
+  call site. Re-enable the `offline-sync-race` spec when done.
+
 ---
 
 ## 10. Credentials & Token Renewal Calendar
@@ -496,3 +540,489 @@ Token selection is hostname-based: `pages.dev` → preview token, else → produ
 The anon key in `index.html`, `intake.html`, `client.html`, and `sign.html` does not expire on its own but should be rotated if ever exposed in a breach. Rotation requires updating all four files.
 
 ---
+
+## 11. Patch-Chain Prohibition — No House-of-Cards Fixing
+
+> "Fix A breaks B. Fix B breaks C. Fix C breaks A." — This loop is banned.
+
+Every rule in this section is mandatory. Violating them is how 4-line fixes turn into
+14-shard reruns.
+
+---
+
+### 11.1 Root Cause First — No Symptom Patches
+
+Before writing a single character of a fix, write this sentence:
+
+> **Root cause: `<function/variable>` in `<file:line>` does `<wrong thing>` because `<reason>`.**
+
+If you cannot complete that sentence, **stop**. You do not understand the failure.
+Read more code. Do not guess. Do not patch the symptom and hope.
+
+A "symptom patch" is any of these:
+- Changing what value a test `expect()`s to match wrong behavior
+- Adding `try/catch` around a failing assertion
+- Adding `if (result.noEl) return;` to skip a test that should pass
+- Changing `.toBe(1)` to `.toBe(0)` because the count came back 0
+
+**Fix the code. Never fix the test to hide a bug.**
+Exception: when the test assertion was provably wrong from the start (document the proof).
+
+---
+
+### 11.2 Blast Radius Analysis — Before Any Change
+
+Before modifying any file, enumerate:
+
+1. **Callers** — every JS file that calls any function you're changing (`grep -r functionName js/`)
+2. **Test coverage** — every spec file (`tests/*.spec.js`) that exercises the code path
+3. **Shared infrastructure** — if you touch `tests/helpers.js` or the Supabase shim, list every
+   spec file that imports from it. They are ALL affected by every change to that file.
+
+If blast radius spans more than 2 spec files, state it explicitly before writing the fix.
+
+---
+
+### 11.3 Shared Infrastructure Rule (`tests/helpers.js`)
+
+`helpers.js` is imported by every spec file. It is high-voltage infrastructure.
+
+**Before touching helpers.js:**
+1. List every exported symbol you're changing
+2. Grep each symbol across all spec files
+3. For each test that uses that symbol, read its assertions and verify your change
+   does not alter what the test receives
+
+**After touching helpers.js:**
+- Run the mental CI across every spec file before pushing
+- Never assume "it only affects the test I'm fixing"
+
+---
+
+### 11.4 Test Assertion Change Protocol
+
+When an assertion must change (the behavior intentionally changed, not a bug):
+
+1. State the old behavior and why it was correct at the time
+2. State the new behavior and why it's now the intended behavior
+3. Update the assertion to match the new intended behavior
+4. **Grep for every other test that asserts the same behavior** and update them all
+
+Never update one assertion in isolation when the same behavior is asserted in 5 places.
+
+---
+
+### 11.5 The `addInitScript` Ordering Rule
+
+`page.addInitScript()` calls run in the order they are added. Later calls overwrite earlier
+ones for the same variable. This is the #1 source of test-setting-overwrite bugs.
+
+**Rule:** If `bootApp`, `bootHub`, `mockAllExternal`, or any boot helper calls
+`addInitScript`, any earlier `addInitScript` in the same test for the same variable
+**will be overwritten**.
+
+Before using `addInitScript` in a test, check whether the boot helper also sets that
+variable. If it does, pass your data through the boot helper's options, not as a
+separate `addInitScript`.
+
+---
+
+### 11.6 CSS/JS Section Collapse State
+
+The `_mmtCol_<id>` window variables control whether Make Money Today sections render
+their item cards into `innerHTML`. Default is `undefined`, which means **collapsed**
+(items are NOT in the HTML). Tests that count occurrences in `innerHTML` must first
+set the relevant section to expanded:
+
+```js
+window._mmtCol_build = false;    // expanded — items render into HTML
+window._mmtCol_pending = false;
+window._mmtCol_collect = false;
+```
+
+Any test counting items in `#dash-money-feed` innerHTML without first expanding the
+section will always get 0. This is a known footgun — not a bug, by design for UX.
+
+---
+
+### 11.7 Pre-Push Checklist — Non-Negotiable
+
+Run this before every `git push`. If any answer is "unsure", stop and read more code.
+
+| # | Question | Required answer |
+|---|----------|-----------------|
+| 1 | What files did I change? | List them |
+| 2 | What functions did I change in each? | List them |
+| 3 | Which spec files have tests that call those functions? | Grep and list |
+| 4 | For each such test: does my change alter what it asserts? | Yes/No per test |
+| 5 | Did I update ALL affected assertions (not just one)? | Yes |
+| 6 | Can I state the root cause of every failure I fixed in one sentence? | Yes |
+| 7 | Does the fix change behavior beyond the minimum needed? | No |
+
+---
+
+## 12. Exhaustive Test Standard
+
+**"Every major flow" is not enough. Every function gets tested.**
+
+---
+
+### 12.1 Coverage Requirements
+
+For every global function in every `js/*.js` file, the test suite must cover:
+
+| Input class | Examples |
+|-------------|---------|
+| Null / undefined | `fn(null)`, `fn(undefined)`, `fn()` |
+| Empty | `fn([])`, `fn('')`, `fn(0)` |
+| Boundary | `fn(-1)`, `fn(0)`, `fn(1)`, `fn(Number.MAX_SAFE_INTEGER)` |
+| Type mismatch | `fn('string')` where number expected |
+| Missing DOM | function called when its target element is absent |
+| Valid / golden path | The normal happy-path input |
+| Concurrent calls | Same function called N times without awaiting |
+| Post-error state | Function called after a simulated failure |
+
+---
+
+### 12.2 Race Condition Test Pattern
+
+Every guard variable (`_renderDashRunning`, `_saveRunning`, etc.) gets a concurrent-call test:
+
+```js
+test('guard prevents concurrent execution', async () => {
+  const result = await page.evaluate(() => {
+    let callCount = 0;
+    const orig = renderDash;
+    // Call 10 times synchronously — guard should let exactly 1 through
+    for (let i = 0; i < 10; i++) { try { orig(); callCount++; } catch(e) {} }
+    return { callCount };
+  });
+  expect(result.callCount).toBeGreaterThanOrEqual(1); // at least 1 completed
+});
+```
+
+---
+
+### 12.3 LocalStorage Corruption Tests
+
+Every function that reads localStorage gets a corruption test:
+
+```js
+test('handles corrupted localStorage gracefully', async () => {
+  await page.evaluate(() => {
+    localStorage.setItem('zp3_est_full_draft', '{INVALID JSON{{{{');
+  });
+  // function must not throw, must not crash the page
+  const ok = await page.evaluate(() => {
+    try { loadEstFullDraft(); return true; } catch(e) { return false; }
+  });
+  expect(ok).toBe(true);
+});
+```
+
+---
+
+## 13. Flow Test Standard & Performance Ratchet
+
+> This is how we take down ServiceTitan: every click in the live app is measured,
+> validated, and budgeted in one pass. A flow test is not "did it work" — it is
+> "did it work AND how much did it cost the user." Both, every time.
+
+The live flow suite (`tests/flow/*.spec.js`, run via `playwright.flow.config.js`
+against the deployed pages.dev preview) drives the REAL app against REAL Supabase.
+No seeding hollow rows — every assertion comes from clicking the actual UI.
+
+`tests/flow/estimate-build.spec.js` is the **reference implementation**. New flows
+copy its shape.
+
+---
+
+### 13.1 `step()` Is the Heart of Every Flow — Mandatory
+
+Every user-facing action in a flow test goes through `step()` from
+`tests/flow/live-helpers.js`. It fuses validation and analytics into one pass so
+they are the SAME data:
+
+```js
+await step(page, {
+  label: 'client info → step 2',   // what the user is doing
+  page:  'pg-est',                 // where
+  role:  'contractor',             // who (employee flows assert lockout)
+  suspect: 'paint-estimate.js validateAndGoStep2',  // file:fn to blame on failure
+  ruleText: 'entering client info must advance to the surface builder',
+  expected: 'surf-room-name visible',
+  act:  async (p) => { /* perform clicks */ return 4; }, // RETURN interaction count
+  rule: async (p) => ({ ok: <bool>, got: '<observed>' }), // post-condition
+  abuse: async (p) => { /* optional adversarial probe */ },
+});
+```
+
+- `act` performs the interaction and **returns the number of interactions**
+  (clicks + keystrokes + programmatic step calls). This number is the currency of
+  the ratchet — count it honestly.
+- `rule` returns `{ok, got}`. On `!ok`, `step()` throws a one-line `finding()`
+  ticket (`[role][page] control → RULE … expected/got/suspect`) — the exact
+  substrate the agentic self-heal loop (§14) reads to fix the bug.
+- Every step is pushed to the `_LEDGER` with its ms + interaction count.
+
+**No raw `expect()` on a UI post-condition outside a `step()`.** If you are
+asserting that an action produced a result, it is a step. Pre-flight setup
+(`signIn`, `resetLedger`) and the final `report()` gate are the only exceptions.
+
+Call `resetLedger()` in `beforeEach` so each test owns a clean ledger.
+
+---
+
+### 13.2 The Performance Ratchet — Clicks Hard-Gate, Time Advises
+
+Every flow ends with:
+
+```js
+const rep = report(FLOW, BASELINE);            // BASELINE = require('./perf-baseline.json')
+expect(rep.overBudget).toBe(false);            // HARD FAIL on click regression
+```
+
+`report()` prints the friction profile (slowest-first ledger, total ms, total
+clicks) and grades total interactions against `tests/flow/perf-baseline.json`.
+
+| Metric | Role | Why |
+|--------|------|-----|
+| **Interaction count** | **Deterministic HARD GATE** | The same flow always takes the same number of clicks. A PR that increases it is a UX regression and **fails CI today** — not a warning. |
+| Wall-clock ms | Advisory (logged) | Network/CI jitter makes time non-deterministic. Tracked for trend, never gated. |
+
+**The ratchet rule:** every PR must be **as fast or faster** than the last. A
+flow's click count may only ever **ratchet DOWN** (the app gained leverage) or stay
+flat. It may go **up only** when a deliberate new step is added — and then you
+raise the baseline in the **same commit** with a one-line justification in the
+`note`. Silent baseline inflation is a banned patch-chain move (§11).
+
+---
+
+### 13.3 Baselines — `tests/flow/perf-baseline.json`
+
+- A flow **listed** in the baseline is hard-gated on `clicks`.
+- A flow **not listed** is in **capture mode** — `report()` logs
+  `BASELINE CAPTURE [flow]: N clicks` and does not gate. Copy that number into the
+  file to start gating it. Capture first, gate second.
+- Because `act()` returns a deterministic count, you can gate a flow the moment it
+  is written — no live run required to discover the number.
+- Improving the app (fewer clicks to the same outcome) means you **must** lower the
+  baseline in the same PR, or the old budget silently permits the regression to
+  creep back.
+
+---
+
+### 13.4 Scale Benchmarks — Find Where the App Gives No Leverage
+
+Big-input flows exist to expose where the UX makes the user grind:
+20-room full repaint, T&M with no template, BYO/custom line items the estimator
+has no idea how to price. Each is its own baseline key
+(`estimate-build/interior-20room`, `estimate-build/tm`, `estimate-build/byo`). A
+high clicks-per-unit-of-output number is a **UX streamline target**, captured as a
+finding, not a failure. The ledger tells us exactly which step costs the most.
+
+---
+
+### 13.5 New Flow Checklist
+
+1. `resetLedger()` + `signIn(page)` in `beforeEach`.
+2. Every user action wrapped in `step()` with an honest interaction count, a
+   `rule`, and a `suspect` pointing at the code to blame.
+3. End with `report(FLOW, BASELINE)` + `expect(rep.overBudget).toBe(false)`.
+4. New flow → run once in capture mode, paste the click count into
+   `perf-baseline.json` with a `note`, commit both together.
+5. Employee/role flows: assert lockout inside `rule` (financials unreachable).
+6. Never wipe data — teardown is opt-in (`E2E_TEARDOWN=1`), off by default.
+
+---
+
+### 13.7 Live Tests NEVER Clean Up Their Own Data — Leave It to Poke At
+
+**Mandatory: a live flow test must not delete, soft-delete, or restore the records
+it creates.** No end-of-test `bids = bids.filter(...)` + `supaSaveToCloud()`, no
+`_supa.from('td_*').delete()`, no "restore the original value" block. The seed data
+the test writes — bids, clients, jobs, expenses, vehicles, contracts, settings
+changes, everything — **stays in the dev account on purpose**, so the owner can open
+the app afterward and poke holes in exactly what the tests put in. The owner deletes
+it manually on their own schedule.
+
+- The ONLY data removal allowed is the explicit opt-in `teardownAll()` gated behind
+  `E2E_TEARDOWN=1` (off by default) — never inline per-test cleanup.
+- **Resource** cleanup is still fine and expected: closing extra browser
+  contexts/pages you opened (`ctx.close()`, `page.close()`) frees the runner and is
+  not data — keep it.
+- Use uniquely-tagged ids (`Date.now()*1000 + …`, `process.pid`) so the accumulating
+  seed data never collides across runs/viewports, since it is never cleaned up.
+- Rationale: cleanup hides the very thing the owner wants to inspect, and a failed
+  assertion mid-test can leave half-cleaned state that's more confusing than just
+  leaving it all. Leave everything; the owner curates the account by hand.
+
+---
+
+## 14. Agentic Self-Heal Loop (Slack → Claude → Regression Test → PR)
+
+The endgame: a bug reported by a real user heals itself, forever.
+
+1. **Report** — a user hits a bug; it lands in Slack (`#20`), or CI/console/prod
+   surfaces a `console.error`.
+2. **Ticket** — the failure is already in `finding()` shape
+   (`[role][page] control → RULE … expected/got/suspect`) because every `step()`
+   throws that format. Claude reads the suspect file:line directly.
+3. **Fix** — Claude fixes the **root cause** (§11.1 — never the symptom, never the
+   test) on the feature branch.
+4. **Regression test that runs forever** — the same commit adds a `step()` to the
+   relevant flow asserting the bug can never return. This is non-negotiable: a fix
+   without a permanent guarding step is incomplete.
+5. **Push → CI → human approves merge.** Claude never merges without explicit
+   approval (§1.5). The test now runs on every PR, forever.
+
+The `finding()` → `suspect` → root-cause-fix → permanent-`step()` chain is what
+makes the loop reliable instead of a guess-and-hope patch machine.
+
+### 13.6 Physical Interaction Standard — Real Thumb, Real Scroll, Real Devices
+
+Flow tests drive the app the way a person does: real taps, real key-by-key
+typing, and real scrolling — never `page.evaluate(() => someFn())` to shortcut a
+gesture. The helpers in `live-helpers.js` perform the physical action AND return
+its honest cost so `act()` just sums them:
+
+| Helper | Action | Cost returned |
+|--------|--------|---------------|
+| `tap(p, sel)` | scroll into view, then click | `1` (+1 if a scroll was needed) |
+| `type(p, sel, text)` | scroll in, click, type key-by-key | `text.length` (+1 if scrolled) |
+| `pick(p, sel, val)` | choose a `<select>` / date value | `1` (+scroll) |
+| `scrollBy(p, dy)` | a deliberate scroll | `1` |
+
+**You can't tap what you can't see** — every helper scrolls the target into view
+first, and if the page physically moved, that counts as a real scroll. So the
+SAME flow costs MORE on a phone than a laptop, and that delta is the UX signal.
+
+**Three form factors, always** (`playwright.flow.config.js` projects): `mobile`
+(390×844, webkit), `tablet` (820×1180, touch), `desktop` (1280×800). Every flow
+runs on all three.
+
+**Typing is key-by-key** (`pressSequentially`, never `fill`), so values are
+entered exactly as a user would — which also exercises the auto-capitalize-on-
+space behavior live.
+
+## 15. CI / Deploy Architecture & Cloudflare Build Cadence
+
+Two independent systems — don't conflate them:
+
+| System | What it does | Triggered by | Cost |
+|--------|--------------|--------------|------|
+| **Cloudflare Pages** | Builds + deploys the static app to `pages.dev` | **Every push** (by default) | Cloudflare Pages **build minutes** |
+| **GitHub Actions — offline shards** | Mocked Playwright (6 shards, WebKit+Chromium) | Every push | GH Actions minutes |
+| **GitHub Actions — Flow Tests** | Live Playwright vs the deployed `pages.dev` preview | On-demand (`run-flow` label / `workflow_dispatch`) + nightly | GH Actions minutes |
+| **Supabase preview** | Applies new migrations to the preview branch | Every push | — |
+
+**The flow tests run on GitHub Actions, NOT Cloudflare.** Cloudflare only ever
+*deploys the app*. So a test-only / migration-only / docs-only push that triggers
+a Cloudflare Pages build is **pure waste** — it rebuilds an app that didn't change.
+
+**Fix — Build watch paths** (Cloudflare dashboard → Pages → Settings → Builds &
+deployments → Build watch paths):
+- **Include:** `index.html`, `client.html`, `sign.html`, `intake.html`, `js/**`, `sw.js`, `manifest*`, CSS
+- **Exclude:** `tests/**`, `supabase/**`, `.github/**`, `*.md`, `playwright*.config.js`
+
+**Per-commit skip:** put `[CF-Pages-Skip]` in the commit message to skip that
+build. Use it for test-only / migration-only / docs-only commits.
+
+### 15.1 Deploy Cadence — Default-Skip, Deploy On Request (MANDATORY)
+
+Deployments are deliberate, never reflexive. The owner decides when the app
+rebuilds.
+
+- **Every commit Claude pushes carries `[CF-Pages-Skip]` in the message** so
+  Cloudflare Pages does NOT rebuild the app. Offline shards + Migration lint +
+  Supabase preview still run on each push (they're free / necessary gating).
+- **The app preview rebuilds ONLY when the owner explicitly asks** — "deploy",
+  "ready", "rebuild", "ship it", or equivalent. Then, and only then, push a
+  deliberate build: a commit WITHOUT the skip token (or an empty
+  `git commit --allow-empty -m "Deploy preview"` if the code is already pushed).
+- This holds even for app-code (`js/**`, `*.html`) changes: land them with the
+  skip token, tell the owner "app changed — say the word to deploy," and wait.
+- Rationale: the owner keeps thinking of changes after the fact and wants to batch
+  them into one intentional deploy instead of burning a Cloudflare build on every
+  push. Respect that — never auto-deploy.
+
+### 15.2 The `/api` Proxy Is Load-Bearing — Never Remove It
+
+`functions/api/[[path]].js` is a Cloudflare Pages Function that reverse-proxies
+`/api/*` → the Supabase project URL. The app sets `SUPA_URL = location.origin +
+'/api'` (cloud.js), so **every** Supabase call — REST, auth, and realtime
+WebSocket — routes through it.
+
+- **Why it exists (real, observed, NOT theoretical):** without it, **AT&T Fiber
+  could not load the app** — that network fails to reach `*.supabase.co` directly.
+  Routing through the app's own Cloudflare domain (which the browser already
+  resolved to load the page) fixes it. Do NOT "optimize" this away by calling
+  Supabase directly — it re-breaks AT&T Fiber (and likely other carriers).
+- **The cost:** every Supabase request is one Cloudflare Workers/Pages Functions
+  invocation. The **free** plan caps at **100,000 requests/day per ACCOUNT** (shared
+  across preview + production). Production burns this on every real user-action;
+  the live flow suite burns it FAST.
+- **Therefore Workers Paid ($5/mo → 10M/day) is a hard infra requirement**, not
+  optional. It is cheaper and safer than removing the proxy.
+- **Do not casually trigger the full live flow suite** — it can exhaust the daily
+  account limit in one run and throttle the proxy for preview AND production until
+  the UTC-midnight reset (or until Workers Paid is enabled). Run live specs in
+  small subsets, and only with the owner's go-ahead.
+
+### 15.3 Direct-Supabase Default + Auto-Fallback (validated 2026-06-28)
+
+§15.2's "never call Supabase directly — it re-breaks AT&T Fiber" was **empirically
+retired**: direct mode was tested on AT&T Fiber (the exact network the proxy was built
+for) and a full lead→bid→send flow loaded fine and burned ZERO `/api` requests.
+
+- **`SUPA_URL` now DEFAULTS to direct** (`https://<ref>.supabase.co`) in `js/cloud.js`
+  — zero Cloudflare `/api` cost on any network that can resolve Supabase.
+- **The `/api` proxy is RETAINED as a self-healing fallback:**
+  - `supaInit()` probes `/auth/v1/health` (2.5s) before building the client; a DNS/
+    network failure silently switches THAT session to the proxy — never an outage.
+  - Manual override: `?supadirect=0` forces proxy, `?supadirect=1` forces direct
+    (persisted in localStorage `zp3_supa_mode`).
+- **Do NOT delete `functions/api/[[path]].js`** — it is the fallback. Removing it
+  re-introduces the all-or-nothing risk for any carrier that can't resolve Supabase.
+- This makes the 100k/day Pages-Functions limit a non-issue for normal use; Workers
+  Paid is now optional, not required.
+
+---
+
+## 16. Layout & Visual Integrity Standard
+
+The app is judged on how it **looks and holds together**, not just whether it works.
+A render that bleeds off-screen, overlaps, or silently changes between commits is a
+**defect** — the same severity as a broken function.
+
+### 16.1 Hard Layout Rules — Every Screen, Every Device
+
+- **Nothing bleeds off-screen.** No element may overflow the viewport width or cause
+  horizontal scroll on any supported device (mobile 390px, tablet 820px, desktop).
+  Use `box-sizing:border-box`, `min-width:0` on flex/grid children, `max-width:100%`,
+  and wrap/truncate long text — never let content push past the edge.
+- **Things stack and center correctly.** On narrow viewports, action areas, cards, and
+  summary rails stack in a sane order and stay centered/aligned — no floating, no
+  overlap, never two action bars on top of each other.
+- **No duplicate or orphaned controls.** One primary Send action per screen, one total
+  per screen. A control whose value isn't wired (shows `$0`/blank) must not ship.
+- **Fixed/sticky elements never cover content.** A `position:fixed` bar must reserve its
+  space (padding on the scroll container) so it can't overlap the buttons beneath it.
+
+### 16.2 No Drastic Visual Change Without Explicit Approval
+
+A screen's rendering **may not drastically change between commits** unless the owner
+explicitly approved that visual change in writing this session. Refactors, "cleanups,"
+and bug-fixes must preserve the existing look unless changing it **is** the point. If a
+change alters layout, say so and get a yes first.
+
+### 16.3 Layout Is Tested, Not Eyeballed
+
+Every screen with a non-trivial layout gets an E2E layout assertion (run at mobile
+390px + desktop) proving:
+- `documentElement.scrollWidth <= innerWidth + 1` — no horizontal bleed.
+- No two interactive controls overlap (bounding-box intersection check).
+- Exactly one primary action (e.g. one visible "Send proposal") per screen.
+- Key containers stay within the viewport (`getBoundingClientRect().right <= innerWidth`).
+
+A layout regression fails CI like any other bug.

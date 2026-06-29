@@ -8,6 +8,7 @@ function clearNotesPanel(){}
 function _resetNotesForNewEstimate(){}
 
 let hittersFilter='all';
+Object.defineProperty(window,'hittersFilter',{get:()=>hittersFilter,set:v=>{hittersFilter=v;},configurable:true});
 function setHittersFilter(f,btn){
   hittersFilter=f;
   ['all','A','B'].forEach(t=>{
@@ -270,15 +271,27 @@ function _renderNavTradeSwitcher(){
 
 // ── Generic estimate (non-painting trades) ────────────────────────────
 let _geiClientId=null,_geiEditBidId=null,_geiLines=[],_geiTrade=null,_geiIsCommercial=false,_geiEmergency=false,_geiStep=1,_geiNewWork=false,_geiJobScope='repair';
+Object.defineProperty(window,'_geiClientId',{get:()=>_geiClientId,set:v=>{_geiClientId=v;},configurable:true});
+Object.defineProperty(window,'_geiEditBidId',{get:()=>_geiEditBidId,set:v=>{_geiEditBidId=v;},configurable:true});
+Object.defineProperty(window,'_geiLines',{get:()=>_geiLines,set:v=>{_geiLines=v;},configurable:true});
+Object.defineProperty(window,'_geiTrade',{get:()=>_geiTrade,set:v=>{_geiTrade=v;},configurable:true});
 let _geiScopeChips=[];
+Object.defineProperty(window,'_geiScopeChips',{get:()=>_geiScopeChips,set:v=>{_geiScopeChips=v;},configurable:true});
 let _geiScopeNoScope=false;
+Object.defineProperty(window,'_geiScopeNoScope',{get:()=>_geiScopeNoScope,set:v=>{_geiScopeNoScope=v;},configurable:true});
 // Crew assigned to this bid (employee emails). Each adds their loaded payroll cost as a
 // real expense; more people on the job → bigger cost. Hours come automatically from scope.
 let _estCrew=[];
 let _panelSched=null; // null = not active, obj = panel schedule data
 let _geiIsTM=false,_tmCrewCount=1,_tmRatePerMan=0,_tmEstHours=0,_tmBillingCycle='weekly';
+Object.defineProperty(window,'_geiIsTM',{get:()=>_geiIsTM,set:v=>{_geiIsTM=v;},configurable:true});
+Object.defineProperty(window,'_tmCrewCount',{get:()=>_tmCrewCount,set:v=>{_tmCrewCount=v;},configurable:true});
+Object.defineProperty(window,'_tmRatePerMan',{get:()=>_tmRatePerMan,set:v=>{_tmRatePerMan=v;},configurable:true});
+Object.defineProperty(window,'_tmEstHours',{get:()=>_tmEstHours,set:v=>{_tmEstHours=v;},configurable:true});
+Object.defineProperty(window,'_tmBillingCycle',{get:()=>_tmBillingCycle,set:v=>{_tmBillingCycle=v;},configurable:true});
 let _tmMatMarkup=0,_tmCapAction='Stop & get re-approval';
 let _geiIsFreeForm=false;
+Object.defineProperty(window,'_geiIsFreeForm',{get:()=>_geiIsFreeForm,set:v=>{_geiIsFreeForm=v;},configurable:true});
 let _geiClientTaxRate=null,_geiTaxLookupTimer=null;
 
 function _geiOnAddrInput(){
@@ -302,6 +315,7 @@ async function _geiLookupClientTaxRate(){
 function openTMEstimate(c,bidId){
   _geiIsTM=true;_geiIsFreeForm=false;
   openGenericEstimate(c,bidId,null);
+  _geiIsFreeForm=false;
 }
 function openFreeFormEstimate(c,bidId){
   _geiIsFreeForm=true;_geiIsTM=false;
@@ -313,8 +327,7 @@ function openGenericEstimate(c,bidId,_tradePick){
   _geiEditBidId=bidId||null;
   _geiClientTaxRate=null;
   _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;_geiJobScope='repair';_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];
-  // Callers set _geiIsTM / _geiIsFreeForm before calling; reset TM defaults only when entering scope mode
-  if(!_geiIsTM){_tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmMatMarkup=0;_tmCapAction='Stop & get re-approval';}
+  _tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmMatMarkup=0;_tmCapAction='Stop & get re-approval';
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
@@ -650,6 +663,7 @@ function _toggleScopeNone(){
   _byoAutosave();
 }
 function _updateScopeSheetBtn(label){
+  if(!label||typeof label!=='string')return;
   const sid='_scb-'+label.replace(/[^a-z0-9]/gi,'_');
   const btn=document.getElementById(sid);if(!btn)return;
   const on=_geiScopeChips.includes(label);
@@ -2416,7 +2430,21 @@ function saveGenericEstimate(draft){
     tmNteCap:_tmNteFromNew||parseFloat(v('tm-nte-cap'))||0,
   }:{isTM:false};
   const _byoDepPct=_geiIsTM?null:(parseFloat(document.getElementById('byo-deposit-pct')?.value)||25)/100;
-  const _deposit=_geiIsTM?(_tmFields.tmDepositAmt||0):Math.round(total*_byoDepPct*100)/100;
+  let _deposit=_geiIsTM?(_tmFields.tmDepositAmt||0):Math.round(total*_byoDepPct*100)/100;
+  // State max-deposit cap (home-improvement compliance). Parse state from client
+  // address like proposals.js _buildClientHubSnapshot, fall back to S.state then KS.
+  if(typeof _maxDeposit==='function'){
+    const _depAddrM=(v('gei-addr')||'').toUpperCase().match(/\b(AL|AK|AZ|AR|CA|CO|CT|DC|DE|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b/);
+    const _depState=(_depAddrM?_depAddrM[1]:null)||(typeof S!=='undefined'&&S.state)||'KS';
+    const _depMax=_maxDeposit(_depState,total);
+    if(_deposit>_depMax+0.005){
+      _deposit=Math.round(_depMax*100)/100;
+      if(_geiIsTM)_tmFields.tmDepositAmt=_deposit;
+      if(typeof showToast==='function'&&typeof _depositCapNote==='function'){
+        showToast('Deposit capped to $'+_deposit.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+' — '+_depositCapNote(_depState),'⚠️',6000);
+      }
+    }
+  }
   const _typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':(TRADE_META[trade]?.label||'Trade')+' Proposal';
   // Extract BYO field values before object literals — Safari fails to parse ?.?? inside spread conditionals
   const _byoTermsEl=document.getElementById('byo-custom-terms');
@@ -2622,6 +2650,10 @@ async function sendGenericProposal(previewOnly){
   }
   const _geiEpaClient=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
   const _geiYearBuilt=_geiEpaClient?_geiEpaClient.yearBuilt||null:null;
+  // EPA RRP (lead-safe) applies to pre-1978 homes where paint will be disturbed.
+  // Mirrors _indEpaRequired on the industry path; this declaration was dropped in a
+  // refactor while line 2677 still referenced it → ReferenceError aborting every send.
+  const _geiEpaRequired=!!(_geiYearBuilt&&_geiYearBuilt<1978&&((_geiEpaClient&&_geiEpaClient.rrpDisturb==='yes')||(typeof _rrpPaintAnswer!=='undefined'&&_rrpPaintAnswer==='yes')));
   const _rrpSection='';
   const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#1a365d">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#1a365d">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_scopeSection}${_rrpSection}<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th><th style="padding:8px 6px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:40px">Qty</th><th style="padding:8px 18px 8px 4px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:90px">Amount</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${taxRow}${_stRowHtml}<tr style="background:#1a365d;color:#fff"><td colspan="2" style="padding:12px 18px;font-weight:800;font-size:15px">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:15px">${totalFmt}</td></tr>${_tmDepRow}${_nteRow}</tfoot></table>${notesHtml}${_propPanelHtml}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div>${_tmPayTerms}</div>${_customTermsBlock}</div>`;
   // Preview-only mode — show proposal in a fullscreen overlay, no upload

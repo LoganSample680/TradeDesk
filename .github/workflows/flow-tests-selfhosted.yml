@@ -1,0 +1,141 @@
+name: Flow Tests (self-hosted / local proxy)
+
+# Runs the LIVE flow suite on a SELF-HOSTED runner (Proxmox) against a LOCAL /api
+# server (tests/flow/local-server.js) instead of the Cloudflare Pages preview — so
+# it burns ZERO Cloudflare Worker requests. The local server proxies /api → Supabase
+# (SUPABASE_UPSTREAM), so tests still hit REAL Supabase end-to-end. On-demand only.
+on:
+  workflow_dispatch:
+    inputs:
+      local_stack:
+        description: 'Run against the LOCAL Supabase stack (127.0.0.1:54321) with per-worker account isolation'
+        type: boolean
+        required: false
+        default: false
+      spec:
+        description: 'Playwright filter — run only specs matching this (path substring or grep). Empty = full suite. Use to FAST-LOOP one spec.'
+        type: string
+        required: false
+        default: ''
+  pull_request:
+    types: [labeled]
+
+concurrency:
+  group: flow-selfhosted-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flow-local:
+    # Only on manual dispatch, or a PR labeled `run-flow-local` — and NEVER from a
+    # fork (self-hosted runners must never execute untrusted fork code).
+    if: >-
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'pull_request' &&
+       github.event.label.name == 'run-flow-local' &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [self-hosted, tradedesk]
+    timeout-minutes: 40
+    env:
+      CI: 'true'
+      LOCAL_PORT: '8788'
+      # LOCAL-STACK toggle (workflow_dispatch input). When true: the app authenticates
+      # against the LOCAL Supabase stack with a DISTINCT per-worker account (isolation),
+      # and /api forwards to 127.0.0.1:54321. When false (default / PR-label runs): the
+      # existing cloud behavior is unchanged.
+      E2E_LOCAL_STACK: ${{ (github.event_name == 'workflow_dispatch' && inputs.local_stack) && '1' || '' }}
+      # Tests hit the LOCAL server; it forwards /api to this upstream. In local-stack
+      # mode that's the local Supabase stack; otherwise the cloud project (today's
+      # default; point at the self-hosted Supabase VM later by changing this secret).
+      SUPABASE_UPSTREAM: ${{ (github.event_name == 'workflow_dispatch' && inputs.local_stack) && 'http://127.0.0.1:54321' || (secrets.SUPABASE_UPSTREAM || 'https://mwtsmctajhrrybblgorf.supabase.co') }}
+      # Local stack service_role/secret key (sb_secret_…) for per-worker account
+      # provisioning. Stored as a GitHub Actions secret — never committed (secret
+      # scanning blocks the literal). Only used when local_stack is true.
+      SUPABASE_LOCAL_KEY: ${{ secrets.SUPABASE_LOCAL_KEY }}
+      E2E_BASE_URL: http://localhost:8788
+      E2E_DEV_EMAIL: ${{ secrets.E2E_DEV_EMAIL }}
+      E2E_DEV_PASSWORD: ${{ secrets.E2E_DEV_PASSWORD }}
+      E2E_DEV_USER_ID: ${{ secrets.E2E_DEV_USER_ID }}
+      # Second account — activates the cross-account bleed test (#39).
+      E2E_DEV2_EMAIL: ${{ secrets.E2E_DEV2_EMAIL }}
+      E2E_DEV2_PASSWORD: ${{ secrets.E2E_DEV2_PASSWORD }}
+      E2E_DEV2_USER_ID: ${{ secrets.E2E_DEV2_USER_ID }}
+      # No E2E_BYPASS_SECRET needed — there is no Cloudflare WAF in front of localhost.
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install test deps (playwright + local-proxy)
+        run: npm install --no-save @playwright/test@1.56.0 http-proxy
+
+      # Browsers are pre-installed on the runner; this is a fast no-op if cached.
+      - name: Ensure Playwright browsers
+        run: npx playwright install chromium webkit
+
+      - name: Start local /api server
+        run: |
+          PORT="$LOCAL_PORT" SUPABASE_UPSTREAM="$SUPABASE_UPSTREAM" \
+            node tests/flow/local-server.js > /tmp/local-server.log 2>&1 &
+          echo $! > /tmp/local-server.pid
+          for i in $(seq 1 30); do
+            curl -sf "http://localhost:$LOCAL_PORT/" >/dev/null && { echo "local server up"; break; }
+            sleep 1
+          done
+          curl -sf "http://localhost:$LOCAL_PORT/" >/dev/null || { echo "local server failed to start"; cat /tmp/local-server.log; exit 1; }
+
+      # Prove the proxy actually reaches Supabase BEFORE running 60 tests against it.
+      # If the app or the /api passthrough is broken, fail here with a clear message
+      # instead of 10 confusing "cloud ABSENT" test failures downstream.
+      - name: Probe app + /api → Supabase passthrough
+        run: |
+          APP=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$LOCAL_PORT/")
+          HEALTH=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:$LOCAL_PORT/api/auth/v1/health")
+          echo "app=$APP  /api/auth/v1/health=$HEALTH"
+          [ "$APP" = "200" ] || { echo "::error::app did not serve (got $APP)"; cat /tmp/local-server.log; exit 1; }
+          case "$HEALTH" in 200|401) ;; *) echo "::error::/api did not reach Supabase (got $HEALTH)"; cat /tmp/local-server.log; exit 1;; esac
+
+      - name: Run live flow tests (against localhost → Supabase)
+        run: npx playwright test -c playwright.flow.config.js ${{ github.event.inputs.spec }}
+
+      - name: Stop local server
+        if: always()
+        run: kill "$(cat /tmp/local-server.pid)" 2>/dev/null || true
+
+      # Self-reporting failure dump — proxy log + every failed test's title and error,
+      # printed INLINE in the job log so a red run is diagnosable without downloading
+      # anything (and readable via the GitHub API / WebFetch).
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          echo "===================== local /api server log ====================="
+          cat /tmp/local-server.log 2>/dev/null || echo "(no server log)"
+          echo "===================== flow failures (parsed) ====================="
+          node -e '
+            try {
+              const r = require("./flow-results.json");
+              const out = [];
+              const walk = (s) => {
+                (s.suites||[]).forEach(walk);
+                (s.specs||[]).forEach(sp => (sp.tests||[]).forEach(t =>
+                  (t.results||[]).forEach(res => {
+                    if (res.status !== "passed" && res.status !== "skipped") {
+                      const err = (res.errors||[]).map(e => (e.message||"").split("\n").slice(0,6).join("\n")).join("\n");
+                      out.push("✗ " + sp.title + "\n" + err + "\n");
+                    }
+                  })));
+              };
+              (r.suites||[]).forEach(walk);
+              console.log(out.length ? out.join("\n") : "(no parsed failures — see list output above)");
+            } catch (e) { console.log("could not parse flow-results.json:", e.message); }
+          '
+
+      - name: Upload flow report + diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flow-report-selfhosted
+          path: |
+            playwright-report/
+            flow-results.json
+            /tmp/local-server.log
+          retention-days: 14
+          if-no-files-found: ignore

@@ -1,0 +1,83 @@
+name: Flow Tests (live Supabase)
+
+# ON-DEMAND + NIGHTLY (not every push) — the live suite drives the deployed
+# preview's /api Pages Function on every Supabase call, which burns the Cloudflare
+# Workers/Functions daily quota when run per-commit across viewports. So it now
+# runs only: (1) manually (workflow_dispatch), (2) nightly, and (3) when a PR
+# carries the `run-flow` label. The offline shards still hard-gate EVERY push and
+# are free (fully mocked). The specs SKIP cleanly when E2E_DEV_* secrets are absent.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 7 * * *'   # nightly 07:00 UTC
+  pull_request:
+    types: [labeled]      # only fires the job below when the label is `run-flow`
+  push:
+    branches: [main]
+
+concurrency:
+  group: flow-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flow:
+    name: Flow tests
+    # Skip on label events unless the label is exactly `run-flow`.
+    if: github.event_name != 'pull_request' || github.event.label.name == 'run-flow'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Flow specs run with parallel workers (playwright.flow.config.js: workers:4,
+    # fullyParallel). Safe on one shared login because every test writes
+    # uniquely-tagged rows (Date.now ids) upserted by id — concurrent workers
+    # touch different rows and can't clobber. This keeps the growing suite to a
+    # few minutes instead of ~20 serial.
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      CI: true
+      E2E_DEV_EMAIL: ${{ secrets.E2E_DEV_EMAIL }}
+      E2E_DEV_PASSWORD: ${{ secrets.E2E_DEV_PASSWORD }}
+      E2E_DEV_USER_ID: ${{ secrets.E2E_DEV_USER_ID }}
+      # Secret header value that the Cloudflare WAF rule allowlists past the bot
+      # challenge. Set this secret AND add the matching Cloudflare rule.
+      E2E_BYPASS_SECRET: ${{ secrets.E2E_BYPASS_SECRET }}
+      # Target the pages.dev preview, which sits OUTSIDE the tradedeskpro.app zone
+      # and its Bot Fight Mode (a WAF skip rule can't override Bot Fight Mode).
+      # Same app code + /api proxy. Override per-run via repo secret/var if needed.
+      E2E_BASE_URL: https://claude-review-app-ux-flow-mr.tradedesk-cyp.pages.dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install Playwright 1.56
+        run: npm install --no-save @playwright/test@1.56.0 serve
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-1.56.0
+
+      - name: Install Playwright browsers (Chromium + WebKit)
+        run: npx playwright install --with-deps chromium webkit
+
+      # HARD GATE: a flow-test failure fails this job and blocks the PR. Tests that
+      # depend on a not-yet-merged migration soft-skip when their schema is absent
+      # in prod (probe → pass with a 'pending migration merge' note), so the gate
+      # never deadlocks on the very migration the PR is trying to land.
+      - name: Run live flow tests
+        run: npx playwright test -c playwright.flow.config.js
+
+      - name: Upload flow report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flow-report
+          path: playwright-report/
+          retention-days: 14

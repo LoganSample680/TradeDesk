@@ -1,11 +1,29 @@
 // ── Submit guard — prevents double-tap on any button ─────────────────────
 let _submitting=false,_allowPhoneDupe=false;
 let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],maintenance=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[],contracts=[],agreements=[];
-// Expose bids and clients on window so Playwright E2E tests can inject test data
+// Expose all data arrays and employee record on window so Playwright E2E tests can read/write them.
+// All are module-scoped `let` variables (not on window by default in non-module scripts).
 Object.defineProperty(window,'bids',{get:()=>bids,set:v=>{bids=v;},configurable:true});
 Object.defineProperty(window,'clients',{get:()=>clients,set:v=>{clients=v;},configurable:true});
+Object.defineProperty(window,'jobs',{get:()=>jobs,set:v=>{jobs=v;},configurable:true});
+Object.defineProperty(window,'payments',{get:()=>payments,set:v=>{payments=v;},configurable:true});
+Object.defineProperty(window,'income',{get:()=>income,set:v=>{income=v;},configurable:true});
+Object.defineProperty(window,'expenses',{get:()=>expenses,set:v=>{expenses=v;},configurable:true});
+Object.defineProperty(window,'mileage',{get:()=>mileage,set:v=>{mileage=v;},configurable:true});
+Object.defineProperty(window,'maintenance',{get:()=>maintenance,set:v=>{maintenance=v;},configurable:true});
+Object.defineProperty(window,'liens',{get:()=>liens,set:v=>{liens=v;},configurable:true});
+Object.defineProperty(window,'timeEntries',{get:()=>timeEntries,set:v=>{timeEntries=v;},configurable:true});
+Object.defineProperty(window,'photos',{get:()=>photos,set:v=>{photos=v;},configurable:true});
+Object.defineProperty(window,'licenses',{get:()=>licenses,set:v=>{licenses=v;},configurable:true});
+Object.defineProperty(window,'contracts',{get:()=>contracts,set:v=>{contracts=v;},configurable:true});
+Object.defineProperty(window,'agreements',{get:()=>agreements,set:v=>{agreements=v;},configurable:true});
+// `events` is a module-scoped let; expose a getter so emitEvent (dashboard.js) can push to it.
+function _tdGetEvents(){return events;}
+Object.defineProperty(window,'_employeeRecord',{get:()=>_employeeRecord,set:v=>{_employeeRecord=v;},configurable:true});
 function _newBidId(){return Date.now()*1000+Math.floor(Math.random()*999);}
 let currentClientId=null,editClientId=null,clientFilter='all';
+Object.defineProperty(window,'currentClientId',{get:()=>currentClientId,set:v=>{currentClientId=v;},configurable:true});
+Object.defineProperty(window,'editClientId',{get:()=>editClientId,set:v=>{editClientId=v;},configurable:true});
 let estSurfaces=[],estSurfId=0,estStep=1,estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
 let _pendingSignToken=null; // {bidId,token,proposalKey} — committed to bid only when SMS/email is actually sent
 let _estAddrOptions=[];
@@ -45,7 +63,7 @@ function _wmoIcon(code,precip){
 async function fetchWeather(){
   const now=Date.now();
   if(_weatherCache&&now-_weatherCacheTime<1800000)return _weatherCache;
-  if(_weatherLoading)return _weatherCache;
+  if(_weatherLoading)return _weatherCache||{};  // cache is null until first fetch resolves — never hand back null (callers do weather[dateKey])
   _weatherLoading=true;
   try{
     if(!S.weatherLat||!S.weatherLon){console.warn('No location set — skipping weather');return{};}
@@ -102,6 +120,8 @@ let _vehicles=[];    // vehicles rows
 let _isEmployee=false;        // true when logged-in user belongs to another contractor
 let _contractorUserId=null;   // contractor's user_id (set when _isEmployee)
 let _employeeRecord=null;     // team_members row for this employee
+Object.defineProperty(window,'_config',{get:()=>_config,set:v=>{_config=v;},configurable:true});
+Object.defineProperty(window,'_isEmployee',{get:()=>_isEmployee,set:v=>{_isEmployee=v;},configurable:true});
 
 // Default configs by business type
 function getRole(){return _user?.role||'owner';}
@@ -213,16 +233,13 @@ function loadAll(){
   clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];payments=[];liens=[];timeEntries=[];
   // Load settings + localStorage-only arrays
   try{
-    const lp=(k,d)=>{const s=localStorage.getItem(k);return s?JSON.parse(s):d;};
+    const lp=(k,d)=>{const s=localStorage.getItem(k);try{return s?JSON.parse(s):d;}catch(e){return d;}};
     const ss=localStorage.getItem('zp3_S');
     if(ss){
       const parsed=JSON.parse(ss);
       // If logoData was split out due to quota pressure, merge it back in
       if(!parsed.logoData){const _ld=localStorage.getItem('zp3_logo');if(_ld)parsed.logoData=_ld;}
       S={...S,...parsed};
-      _setLog('BOOT 1/4 — loaded zp3_S (this device localStorage)');
-    }else{
-      _setLog('BOOT 1/4 — no zp3_S in localStorage, using defaults');
     }
     checksState=lp('zp3_chk',{});
     events=lp('zp3_ev',[]);

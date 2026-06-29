@@ -380,7 +380,7 @@ input[type=text]:focus{border-color:var(--denim)}
       <div class="sig-pay-opts-label">How much would you like to pay now?</div>
       <div class="sig-pay-opts-row">
         <div id="pay-tile-dep" class="sig-pay-opt sel" onclick="_selectPayTile('dep')">
-          <div class="sig-pay-opt-badge">25% Deposit</div>
+          <div id="pay-tile-dep-badge" class="sig-pay-opt-badge">Deposit</div>
           <div id="pay-tile-dep-amt" class="sig-pay-opt-amt"></div>
           <div id="pay-tile-dep-note" class="sig-pay-opt-sub"></div>
           <div class="sig-pay-opt-sel">✓ Selected</div>
@@ -582,8 +582,9 @@ function portfolioAccept(){
     const fullP=_prop.fullPrice||_prop.amount;
     const discP=_prop.discountedPrice||Math.round(fullP*(1-pct/100)*100)/100;
     const savings=Math.round((fullP-discP)*100)/100;
-    const newDep=Math.round(discP*0.25*100)/100;
-    const newBal=Math.round(discP*0.75*100)/100;
+    const _depFrac=(_prop?.amount>0&&_prop?.deposit>0)?_prop.deposit/_prop.amount:0.25;
+    const newDep=Math.round(discP*_depFrac*100)/100;
+    const newBal=Math.round(discP*(1-_depFrac)*100)/100;
     window._portfolioAccepted=true;
     document.getElementById('po-btns').style.display='none';
     document.getElementById('po-confirmed').style.display='block';
@@ -1139,7 +1140,8 @@ function _selectPayTile(choice){
   _updatePayButtons();
 }
 function _renderPayTiles(){
-  const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice*0.25:_prop?.deposit||0;
+  const _depFrac=(_prop?.amount>0&&_prop?.deposit>0)?_prop.deposit/_prop.amount:0.25;
+  const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?Math.round(_prop.discountedPrice*_depFrac*100)/100:_prop?.deposit||0;
   const fullAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
   const showFull=fullAmt>depAmt+0.01;
   const depSel=!_payFullAmount;
@@ -1147,7 +1149,7 @@ function _renderPayTiles(){
   if(td){
     td.classList.toggle('sel',depSel);
     const badge=td.querySelector('.sig-pay-opt-badge');
-    if(badge)badge.style.color=depSel?'var(--denim)':'var(--text3)';
+    if(badge){badge.style.color=depSel?'var(--denim)':'var(--text3)';badge.textContent=Math.round(_depFrac*100)+'% Deposit';}
     const amtEl=td.querySelector('.sig-pay-opt-amt');
     if(amtEl)amtEl.style.color=depSel?'var(--denim)':'var(--text)';
     const selEl=td.querySelector('.sig-pay-opt-sel');
@@ -1165,7 +1167,8 @@ function _renderPayTiles(){
   if(fullAmtEl)fullAmtEl.textContent=fmt(fullAmt);
 }
 function _updatePayButtons(){
-  const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice*0.25:_prop?.deposit||0;
+  const _depFrac=(_prop?.amount>0&&_prop?.deposit>0)?_prop.deposit/_prop.amount:0.25;
+  const depAmt=window._portfolioAccepted&&_prop?.discountedPrice?Math.round(_prop.discountedPrice*_depFrac*100)/100:_prop?.deposit||0;
   const fullAmt=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice:_prop?.amount||0;
   const pnd=document.getElementById('pay-now-display');
   if(pnd)pnd.textContent=fmt(_payFullAmount?fullAmt:depAmt);
@@ -1184,7 +1187,8 @@ async function submitCash(){
   const params2=new URLSearchParams(location.search);let key=params2.get('key');if(!key){const t=params2.get('t'),u=params2.get('u'),b=params2.get('b');if(t&&u&&b)key=`proposals/${u}/${b}_${t}.json`;}
   const ts=new Date().toISOString();
   const _subAmt=(window._portfolioAccepted&&_prop.discountedPrice)?_prop.discountedPrice:_prop.amount;
-  const _subDep=Math.round(_subAmt*0.25*100)/100;
+  const _subDepFrac=(_prop?.amount>0&&_prop?.deposit>0)?_prop.deposit/_prop.amount:0.25;
+  const _subDep=Math.round(_subAmt*_subDepFrac*100)/100;
   try{
     const updated={..._prop,status:'signed',signedAt:ts,signerName:name,paymentMethod:method,signatureDataUrl:_sigData,portfolioAccepted:window._portfolioAccepted,finalAmount:_subAmt,colorChoices:window._colorChoices||[]};
     // Storage failure must not block the signature (DB row is the source of truth),
@@ -1357,7 +1361,8 @@ async function _paySign(method){
   }
   // 'stripe' — open embedded Stripe checkout; auto-surfaces Apple Pay, Google Pay, card, bank transfer
   if(_isPreview){document.getElementById('pay-err').textContent='Preview mode — card payment is disabled. Your client will see a real checkout here.';return;}
-  const depBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*0.25*100):Math.round((_prop.deposit||0)*100);
+  const _depFrac=(_prop?.amount>0&&_prop?.deposit>0)?_prop.deposit/_prop.amount:0.25;
+  const depBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*_depFrac*100):Math.round((_prop.deposit||0)*100);
   const fullBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*100):Math.round((_prop.amount||0)*100);
   const amt=_payFullAmount?fullBase:depBase;
   const btn=document.getElementById('_pay-now-btn');
@@ -1401,7 +1406,9 @@ async function _launchEmbedded(amount,paymentMethod,surchargeAmount=0){
     });
     const d=await res.json();
     if(!res.ok||!d.clientSecret||!d.publishableKey)throw new Error(d.error||'Could not set up payment');
-    const stripeObj=Stripe(d.publishableKey);
+    // Direct charge: the PaymentIntent lives on the contractor's connected account, so
+    // Stripe.js MUST be initialised with that account or the client_secret won't resolve.
+    const stripeObj=d.connectedAccountId?Stripe(d.publishableKey,{stripeAccount:d.connectedAccountId}):Stripe(d.publishableKey);
     _stripeInst=stripeObj;
     document.getElementById('sign-embed-container').innerHTML='';
     // cs_live_/cs_test_ = Checkout Session → use initEmbeddedCheckout

@@ -2109,7 +2109,9 @@ async function _launchCheckout(bidId,amount,label){
     });
     const d=await res.json();
     if(!res.ok||!d.clientSecret||!d.publishableKey)throw new Error(d.error||'Could not set up payment');
-    const stripeObj=Stripe(d.publishableKey);
+    // Direct charge: PaymentIntent lives on the contractor's connected account, so
+    // Stripe.js must be initialised with that account or the client_secret won't resolve.
+    const stripeObj=d.connectedAccountId?Stripe(d.publishableKey,{stripeAccount:d.connectedAccountId}):Stripe(d.publishableKey);
     _stripeCheckoutInstance=stripeObj;
     document.getElementById('checkout-embed-container').innerHTML='';
     // cs_ = Checkout Session → initEmbeddedCheckout (deployed backend)

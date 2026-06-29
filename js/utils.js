@@ -1,4 +1,4 @@
-const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmt=n=>'$'+(isNaN(+n)?0:+n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtShort=n=>{const v=Number(n||0);if(Math.abs(v)>=1000000)return'$'+(v/1000000).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'M';if(Math.abs(v)>=1000)return'$'+(v/1000).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1})+'K';return'$'+v.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});};
 function formatPhoneDisplay(val){
   let d=(val||'').replace(/\D/g,'').slice(0,10);
@@ -14,7 +14,7 @@ function fmtPhone(input){
   input.value=d;
 }
 const fmt2=n=>'$'+(Math.ceil((n||0)/5)*5).toLocaleString();
-const fmtD=n=>'$'+parseFloat(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtD=n=>{const v=parseFloat(n);return'$'+(isNaN(v)?0:v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});}
 const dateKey=d=>{const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return y+'-'+m+'-'+day;};
 const todayKey=()=>dateKey(new Date());
 const parseD=s=>new Date(s+'T12:00:00');
@@ -43,7 +43,7 @@ function stageAvatar(stage){
   };
   return m[stage]||'background:var(--blue-lt);color:var(--blue-dk)';
 }
-function lighten(hex){try{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},0.15)`;}catch(e){return'#eee';}}
+function lighten(hex){if(!hex||typeof hex!=='string'||!/^#[0-9a-fA-F]{6}/.test(hex))return'#eee';try{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},0.15)`;}catch(e){return'#eee';}}
 function barChart(label,val,total,color){const pct=Math.round(val/total*100);return`<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px"><span>${escHtml(String(label))}</span><span style="font-weight:700">${fmt(val)}</span></div><div class="prog-bar"><div class="prog-fill" style="width:${pct}%;background:${color}"></div></div></div>`;}
 function calcBrackets(inc,brackets){let tax=0,prev=0;for(const[lim,rate]of brackets){if(inc<=prev)break;tax+=Math.max(0,Math.min(inc,lim)-prev)*rate;prev=lim;if(lim===Infinity||inc<=lim)break;}return tax;}
 function fmtDateShort(d){if(!d)return'';try{const dt=new Date(d+'T12:00');return dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return d;}}
@@ -128,8 +128,7 @@ function showToast(msg,icon,duration){
 
 function _fmtExpDate(el){
   let v=el.value.replace(/\D/g,'');
-  if(v.length>2)v=v.slice(0,2)+'/'+v.slice(2);
-  if(v.length>5)v=v.slice(0,5)+'/'+v.slice(5,9);
+  if(v.length>2)v=v.slice(0,2)+'/'+v.slice(2,6);
   el.value=v;
 }
 function _ymdToMdY(s){
@@ -157,11 +156,76 @@ function geoIfGranted(cb, errCb, opts){
   if(!navigator.permissions||!navigator.permissions.query)return;
   navigator.permissions.query({name:'geolocation'}).then(p=>{
     if(p.status==='granted'){
-      S.locationGranted=true;S.locationDenied=false;
-      try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(e){}
+      S.locationGranted=true;S.locationDenied=false;S.settingsTs=Date.now();
+      // saveAll persists to localStorage AND queues the cloud sync; bumping
+      // settingsTs makes this granted flag win the next cloud merge so the
+      // permission survives a reboot.
+      if(typeof saveAll==='function')saveAll();
+      else try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(e){}
       doGet();
     }
   }).catch(()=>{});
+}
+
+// ── Auto-capitalize EVERY free-text field ───────────────────────────────────
+// Title-cases the first letter of every space-separated word so anything typed
+// can never be saved as "master bedroom" or "Master bedroom" — it always
+// normalizes to "Master Bedroom". App-wide by default (every <textarea> and
+// text <input>), so no per-field wiring is needed. The rest of each word is left
+// as typed, so acronyms ("ABC Painting") and camelCase ("McDowell") survive —
+// only the word-initial letter is forced upper.
+function _autoCapWords(s){
+  return String(s==null?'':s).replace(/(^|\s)([\p{L}])/gu, function(_m, sep, ch){ return sep + ch.toUpperCase(); });
+}
+// Skip only the field types/modes where title-casing is WRONG (email, password,
+// phone, number, url, search). Any other field can opt out with
+// autocapitalize="none" (or "off").
+function _autoCapEligible(el){
+  if (!el || !el.matches) return false;
+  if (!el.matches('textarea, input:not([type]), input[type="text"]')) return false;
+  var ac = (el.getAttribute('autocapitalize') || '').toLowerCase();
+  if (ac === 'none' || ac === 'off') return false;
+  var im = (el.getAttribute('inputmode') || '').toLowerCase();
+  if (im === 'email' || im === 'url' || im === 'numeric' || im === 'decimal' || im === 'tel' || im === 'search') return false;
+  return true;
+}
+// TWO mechanisms, both triggered by the SPACEBAR (capitalize each word as you
+// type), and neither mutates a field during a programmatic value-set:
+//   1. MOBILE (primary): set autocapitalize="words" on every eligible field, so
+//      the device keyboard capitalizes each word natively as it's typed — the
+//      "hits on the spacebar" behavior, with zero value rewriting.
+//   2. DESKTOP (fallback): on a real spacebar keydown, title-case the value. A
+//      keydown only fires from genuine typing — Playwright's page.fill() sets the
+//      value WITHOUT a keydown, so the offline suite is never affected.
+function _applyAutoCapAttrs(root){
+  try {
+    (root || document).querySelectorAll('input:not([type]), input[type="text"], textarea').forEach(function(el){
+      if (!el.hasAttribute('autocapitalize') && _autoCapEligible(el)) el.setAttribute('autocapitalize', 'words');
+    });
+  } catch (_e) {}
+}
+if (typeof document !== 'undefined' && document.addEventListener) {
+  // Tag static fields once the DOM is ready, and expose a hook so code that
+  // injects fields later (modals/sheets) can re-tag them.
+  if (document.readyState !== 'loading') _applyAutoCapAttrs(document);
+  else document.addEventListener('DOMContentLoaded', function(){ _applyAutoCapAttrs(document); });
+  window._applyAutoCapAttrs = _applyAutoCapAttrs;
+  // Desktop spacebar fallback — runs on real typing only (not page.fill).
+  document.addEventListener('keydown', function(e){
+    if (e.key !== ' ' && e.key !== 'Spacebar') return;
+    var el = e && e.target;
+    if (!_autoCapEligible(el)) return;
+    // Let the space land first, then normalize the words typed so far.
+    setTimeout(function(){
+      var v = el.value, capped = _autoCapWords(v);
+      if (capped !== v) {
+        var pos = el.selectionStart;
+        el.value = capped;
+        try { el.setSelectionRange(pos, pos); } catch (_e) {}
+        try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (_e) {}
+      }
+    }, 0);
+  }, true);
 }
 
 // ── Supabase cloud sync ───────────────────────────────────────────────

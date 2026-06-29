@@ -111,6 +111,9 @@ function editContractModal(ctId){
       '<input type="checkbox" id="ct-active"'+(ct.active?' checked':'')+' style="width:16px;height:16px;cursor:pointer">Active contract</label>'+
     '<div class="f" style="margin-bottom:16px"><label>Notes</label>'+
       '<textarea id="ct-notes" style="font-size:13px;padding:10px;min-height:60px;resize:none;line-height:1.5;width:100%;box-sizing:border-box;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit">'+escHtml(ct.notes||'')+'</textarea></div>'+
+    // Mark this service done → advances nextDate to the next cycle, which drops the
+    // contract off the dashboard "Maintenance Due" card (it filters nextDate<=today+14).
+    '<button onclick="logContractVisit('+ctId+');document.getElementById(\'_ct-modal-ov\').remove();" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;touch-action:manipulation">✓ Log service — advance to next visit</button>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'+
       '<button onclick="_ctDelete('+ctId+')" style="padding:10px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Delete</button>'+
       '<button onclick="document.getElementById(\'_ct-modal-ov\').remove()" style="padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
@@ -139,8 +142,7 @@ function _ctUpdate(ctId){
 function _ctDelete(ctId){
   const ct=contracts.find(x=>x.id===ctId);if(!ct)return;
   zConfirm('Delete this maintenance contract?',()=>{
-    contracts=contracts.filter(x=>x.id!==ctId);
-    saveAll();
+    _userDelete(()=>{contracts=contracts.filter(x=>x.id!==ctId);saveAll();});
     document.getElementById('_ct-modal-ov')?.remove();
     showToast('Contract deleted','🗑️');
     renderClientContracts(ct.clientId);
@@ -244,8 +246,11 @@ function renderContractsDash(){
         const cl=getClientById(ct.clientId);
         const daysUntil=Math.ceil((new Date(ct.nextDate+'T12:00')-new Date())/86400000);
         const isOv=ct.nextDate<tk;
+        // Tapping a due item opens the actual maintenance contract (its terms +
+        // log-visit/edit actions) directly, not the client record's contracts tab —
+        // the card is contract-specific, so the click is too.
         return '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(45,93,168,.1);cursor:pointer" '+
-          'onclick="openClientDetail&&openClientDetail('+ct.clientId+');setTimeout(()=>{setCDTab&&setCDTab(\'contracts\',document.getElementById(\'cdt-contracts\'))},300)">'+
+          'onclick="editContractModal&&editContractModal('+ct.id+')">'+
           '<div style="min-width:0;flex:1">'+
             '<div style="font-size:13px;font-weight:700;color:var(--text)">'+(cl?escHtml(cl.name):'Client')+'</div>'+
             '<div style="font-size:11px;color:var(--text3)">'+escHtml(ct.title)+'</div>'+

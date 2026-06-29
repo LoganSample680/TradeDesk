@@ -6,3 +6,19 @@ verify_jwt = false
 
 [functions.send-proposal-email]
 verify_jwt = true
+
+# Public signing page (sign.html / client.html) calls this with no Supabase session —
+# it must be callable without a JWT. Amount is validated server-side against the stored
+# proposal, so this is safe to expose.
+[functions.create-checkout]
+verify_jwt = false
+
+# Stripe calls this with only a stripe-signature header (no Supabase JWT); the function
+# verifies the Stripe signature itself. Must be callable without a JWT or Stripe 401s.
+[functions.stripe-webhook]
+verify_jwt = false
+
+# Client-hub cancellation is an anonymous call authorized by the hub link token (the
+# function verifies it), so it must be callable without a Supabase JWT.
+[functions.cancel-proposal]
+verify_jwt = false

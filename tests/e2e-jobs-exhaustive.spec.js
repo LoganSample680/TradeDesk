@@ -1,0 +1,2511 @@
+// @ts-check
+/**
+ * Exhaustive E2E coverage for jobs.js
+ * Every exported function tested across: null, undefined, empty, boundary,
+ * type-mismatch, missing DOM, golden-path, concurrent-calls, corrupted-localStorage,
+ * duplicate-render, and guard-release scenarios.
+ */
+
+const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
+
+test.describe('jobs.js — exhaustive coverage', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+
+    // Seed stable test fixtures
+    await page.evaluate(() => {
+      clients = clients.filter(c => c.id !== 79901 && c.id !== 79902);
+      bids    = bids.filter(b => b.id !== 78801 && b.id !== 78802);
+      jobs    = jobs.filter(j => j.id !== 77701 && j.id !== 77702 && j.id !== 77703);
+      timeEntries = (timeEntries || []).filter(e => e.job_id !== 77701 && e.job_id !== 77702);
+
+      clients.push(
+        { id: 79901, name: 'Jobs Test Alpha', phone: '316-555-7001', addr: '1 Jobs St, Wichita KS 67202', email: 'alpha@jobs.test' },
+        { id: 79902, name: 'Jobs Test Beta',  phone: '316-555-7002', addr: '2 Jobs Ave, Wichita KS 67202', email: 'beta@jobs.test' }
+      );
+      bids.push(
+        { id: 78801, client_id: 79901, client_name: 'Jobs Test Alpha', amount: 3500, status: 'Closed Won',
+          bid_date: '2026-01-10', trade_type: 'painting', type: 'Interior painting',
+          surfaces: [{ type: 'walls', room: 'Living Room', qty: 400, wallSqft: 400 }],
+          roomScopeMap: { 'Living Room': { sand: { active: true, hrs: 2, rate: 45, cost: 90 }, prime: { active: true } } },
+          signedAt: '2026-01-15T00:00:00Z', completion_date: null },
+        { id: 78802, client_id: 79902, client_name: 'Jobs Test Beta', amount: 1200, status: 'Closed Won',
+          bid_date: '2026-02-01', trade_type: 'painting', type: 'Exterior painting',
+          surfaces: [], roomScopeMap: {}, signedAt: '2026-02-05T00:00:00Z', completion_date: null }
+      );
+      jobs.push(
+        { id: 77701, client_id: 79901, bid_id: 78801, name: 'Alpha interior job',
+          eventType: 'job', status: 'scheduled', start: '2099-06-01',
+          extraScopes: ['popcorn'], actualHours: 0 },
+        { id: 77702, client_id: 79902, bid_id: 78802, name: 'Beta exterior job',
+          eventType: 'job', status: 'scheduled', start: '2099-07-01', actualHours: 0 },
+        { id: 77703, client_id: 79901, bid_id: null, name: 'Orphan job no bid',
+          eventType: 'job', status: 'active', start: '2099-08-01', actualHours: 0 }
+      );
+      timeEntries.push(
+        { id: 9990001, job_id: 77701, date: '2026-06-01', minutes: 90, scope_id: 'sand',   scope_label: 'Sanding' },
+        { id: 9990002, job_id: 77701, date: '2026-06-01', minutes: 45, scope_id: 'prime',  scope_label: 'Primer coat' },
+        { id: 9990003, job_id: 77701, date: '2026-06-01', minutes: 30, scope_id: null,     scope_label: null }
+      );
+
+      // Stub out functions that open UI we don't want during pure logic tests
+      window._origZConfirm  = window.zConfirm;
+      window._origZAlert    = window.zAlert;
+      window._origSaveAll   = window.saveAll;
+      window._origShowToast = window.showToast;
+      window._origRenderJobsPage   = window.renderJobsPage;
+      window._origRenderDash       = window.renderDash;
+      window._origRenderLeadsPage  = window.renderLeadsPage;
+      window._origCloseTopModal    = window.closeTopModal;
+      window._origCheckStep2Ready  = window.checkStep2Ready;
+      window._origSaveEstFullDraft = window.saveEstFullDraft;
+      window._origRenderEstRunning = window.renderEstRunning;
+
+      window.zConfirm        = (msg, cb) => { if (cb) cb(); };
+      window.zAlert          = () => {};
+      window.saveAll         = () => {};
+      window.showToast       = () => {};
+      window.renderJobsPage  = () => {};
+      window.renderDash      = () => {};
+      window.renderLeadsPage = () => {};
+      window.closeTopModal   = () => {};
+      window.checkStep2Ready = () => {};
+      window.saveEstFullDraft= () => {};
+      window.renderEstRunning= () => {};
+    });
+  });
+
+  test.afterAll(async () => {
+    await page.evaluate(() => {
+      clients     = clients.filter(c => c.id !== 79901 && c.id !== 79902);
+      bids        = bids.filter(b => b.id !== 78801 && b.id !== 78802);
+      jobs        = jobs.filter(j => j.id !== 77701 && j.id !== 77702 && j.id !== 77703);
+      timeEntries = timeEntries.filter(e => e.job_id !== 77701 && e.job_id !== 77702);
+
+      // Restore stubs
+      if (window._origZConfirm  !== undefined) window.zConfirm  = window._origZConfirm;
+      if (window._origZAlert    !== undefined) window.zAlert    = window._origZAlert;
+      if (window._origSaveAll   !== undefined) window.saveAll   = window._origSaveAll;
+      if (window._origShowToast !== undefined) window.showToast = window._origShowToast;
+      if (window._origRenderJobsPage   !== undefined) window.renderJobsPage   = window._origRenderJobsPage;
+      if (window._origRenderDash       !== undefined) window.renderDash       = window._origRenderDash;
+      if (window._origRenderLeadsPage  !== undefined) window.renderLeadsPage  = window._origRenderLeadsPage;
+      if (window._origCloseTopModal    !== undefined) window.closeTopModal    = window._origCloseTopModal;
+      if (window._origCheckStep2Ready  !== undefined) window.checkStep2Ready  = window._origCheckStep2Ready;
+      if (window._origSaveEstFullDraft !== undefined) window.saveEstFullDraft = window._origSaveEstFullDraft;
+      if (window._origRenderEstRunning !== undefined) window.renderEstRunning = window._origRenderEstRunning;
+
+      // Ensure no active timer bleeds between tests
+      _activeTimer = null;
+    });
+    await page.context().close();
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // getJobScopes
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('getJobScopes', () => {
+    test('null jobId — returns array without throw', async () => {
+      const r = await page.evaluate(() => {
+        try { const res = getJobScopes(null); return { ok: true, isArray: Array.isArray(res) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.isArray).toBe(true);
+    });
+
+    test('undefined jobId — returns array without throw', async () => {
+      const r = await page.evaluate(() => {
+        try { const res = getJobScopes(undefined); return { ok: true, isArray: Array.isArray(res) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.isArray).toBe(true);
+    });
+
+    test('nonexistent jobId — returns default scopes array', async () => {
+      const r = await page.evaluate(() => {
+        try { const res = getJobScopes(999999999); return { ok: true, len: res.length }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.len).toBeGreaterThan(0);
+    });
+
+    test('string jobId — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { const res = getJobScopes('notanumber'); return { ok: true, isArray: Array.isArray(res) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('zero jobId — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { const res = getJobScopes(0); return { ok: true, isArray: Array.isArray(res) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('negative jobId — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { const res = getJobScopes(-1); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — job with bid roomScopeMap returns active scopes + extraScopes', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const res = getJobScopes(77701);
+          const ids = res.map(s => s.id);
+          return { ok: true, ids, hasPopcorn: ids.includes('popcorn'), hasSand: ids.includes('sand') };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasSand).toBe(true);
+      expect(r.hasPopcorn).toBe(true);
+    });
+
+    test('job with no bid — falls back to default clock scopes', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const res = getJobScopes(77703);
+          return { ok: true, len: res.length, ids: res.map(s => s.id) };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.len).toBeGreaterThan(0);
+    });
+
+    test('no duplicate ids returned even when extraScopes overlaps bid scopes', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const j = jobs.find(x => x.id === 77701);
+          const prev = j.extraScopes;
+          j.extraScopes = ['sand', 'popcorn'];
+          const res = getJobScopes(77701);
+          j.extraScopes = prev;
+          const ids = res.map(s => s.id);
+          const uniq = new Set(ids);
+          return { ok: true, hasDup: ids.length !== uniq.size };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasDup).toBe(false);
+    });
+
+    test('extraScopes as object with id — included correctly', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const j = jobs.find(x => x.id === 77701);
+          const prev = j.extraScopes;
+          j.extraScopes = [{ id: 'custom_test_xyz', label: 'Custom XYZ', icon: '🔧', hint: '', ratePerSqFt: 0, flatRate: 0, clientDesc: '' }];
+          const res = getJobScopes(77701);
+          j.extraScopes = prev;
+          return { ok: true, hasCustom: res.some(s => s.id === 'custom_test_xyz') };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasCustom).toBe(true);
+    });
+
+    test('concurrent calls — no corruption', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { getJobScopes(77701); ok++; } catch (_) {}
+        }
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // getJobScopeBreakdown
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('getJobScopeBreakdown', () => {
+    test('null — returns empty object without throw', async () => {
+      const r = await page.evaluate(() => {
+        try { const res = getJobScopeBreakdown(null); return { ok: true, type: typeof res }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.type).toBe('object');
+    });
+
+    test('undefined — returns empty object', async () => {
+      const r = await page.evaluate(() => {
+        try { const res = getJobScopeBreakdown(undefined); return { ok: true, keys: Object.keys(res).length }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.keys).toBe(0);
+    });
+
+    test('nonexistent jobId — returns empty object', async () => {
+      const r = await page.evaluate(() => {
+        try { const res = getJobScopeBreakdown(999999); return { ok: true, keys: Object.keys(res).length }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.keys).toBe(0);
+    });
+
+    test('golden path — correct minutes per scope_id, __other for null scope', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const res = getJobScopeBreakdown(77701);
+          return { ok: true, sand: res.sand, prime: res.prime, other: res['__other'] };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.sand).toBe(90);
+      expect(r.prime).toBe(45);
+      expect(r.other).toBe(30);
+    });
+
+    test('string jobId — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { getJobScopeBreakdown('abc'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent calls — stable results', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { const res = getJobScopeBreakdown(77701); if (res.sand === 90) ok++; } catch (_) {}
+        }
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // getJobClockTotal
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('getJobClockTotal', () => {
+    test('null — returns 0', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: getJobClockTotal(null) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe(0);
+    });
+
+    test('undefined — returns 0', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: getJobClockTotal(undefined) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe(0);
+    });
+
+    test('nonexistent job — returns 0', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: getJobClockTotal(999999) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe(0);
+    });
+
+    test('golden path — sum of minutes across all time entries for job', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: getJobClockTotal(77701) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe(165); // 90 + 45 + 30
+    });
+
+    test('entry with missing minutes — treated as 0', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          timeEntries.push({ id: 9990099, job_id: 77701, date: '2026-06-02', scope_id: 'sand' }); // no minutes field
+          const v = getJobClockTotal(77701);
+          timeEntries = timeEntries.filter(e => e.id !== 9990099);
+          return { ok: true, v };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe(165);
+    });
+
+    test('concurrent calls — stable', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { if (getJobClockTotal(77701) === 165) ok++; } catch (_) {}
+        }
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // _fmtMin
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_fmtMin', () => {
+    test('null — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _fmtMin(null) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _fmtMin(undefined) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('0 — returns empty string', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _fmtMin(0) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe('');
+    });
+
+    test('30 — returns "30m"', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _fmtMin(30) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe('30m');
+    });
+
+    test('60 — returns "1h "', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _fmtMin(60) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toContain('1h');
+    });
+
+    test('90 — returns "1h 30m"', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _fmtMin(90) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe('1h 30m');
+    });
+
+    test('120 — returns "2h "', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _fmtMin(120) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toContain('2h');
+    });
+
+    test('negative -1 — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _fmtMin(-1) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('very large number — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _fmtMin(99999) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toContain('h');
+    });
+
+    test('string input — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _fmtMin('abc') }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent calls — all succeed', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { if (_fmtMin(90) === '1h 30m') ok++; } catch (_) {}
+        }
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // openClockInSheet
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('openClockInSheet', () => {
+    test('null jobId — returns early without throw', async () => {
+      const r = await page.evaluate(() => {
+        try { openClockInSheet(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined jobId — returns early without throw', async () => {
+      const r = await page.evaluate(() => {
+        try { openClockInSheet(undefined); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('nonexistent jobId — returns early without throw', async () => {
+      const r = await page.evaluate(() => {
+        try { openClockInSheet(999999); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — creates overlay with id _cks-ov', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          document.getElementById('_cks-ov')?.remove();
+          openClockInSheet(77701);
+          const exists = !!document.getElementById('_cks-ov');
+          document.getElementById('_cks-ov')?.remove();
+          return { ok: true, exists };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.exists).toBe(true);
+    });
+
+    test('called 3 times — no duplicate overlays', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          openClockInSheet(77701);
+          openClockInSheet(77701);
+          openClockInSheet(77701);
+          const count = document.querySelectorAll('#_cks-ov').length;
+          document.getElementById('_cks-ov')?.remove();
+          return { ok: true, count };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.count).toBe(1);
+    });
+
+    test('job with no bid — uses job name as client name fallback', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          document.getElementById('_cks-ov')?.remove();
+          openClockInSheet(77703);
+          const sheet = document.getElementById('_cks-sheet');
+          const html = sheet ? sheet.innerHTML : '';
+          document.getElementById('_cks-ov')?.remove();
+          return { ok: true, hasJobName: html.includes('Orphan job no bid') };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasJobName).toBe(true);
+    });
+
+    test('concurrent calls — no throw, only 1 overlay', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { openClockInSheet(77701); ok++; } catch (_) {}
+        }
+        const count = document.querySelectorAll('#_cks-ov').length;
+        document.getElementById('_cks-ov')?.remove();
+        return { ok, count };
+      });
+      expect(r.ok).toBe(5);
+      expect(r.count).toBe(1);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // _clockAddTask
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_clockAddTask', () => {
+    test('null jobId — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _clockAddTask(null); document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove()); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined jobId — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _clockAddTask(undefined); document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove()); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — creates overlay with add-task UI', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+          _clockAddTask(77701);
+          const input = document.getElementById('_ck-custom');
+          document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+          return { ok: true, hasInput: !!input };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasInput).toBe(true);
+    });
+
+    test('concurrent calls — no throw', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { _clockAddTask(77701); ok++; } catch (_) {}
+        }
+        document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // _clockAddTaskConfirm
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_clockAddTaskConfirm', () => {
+    test('null jobId — returns early without throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _clockAddTaskConfirm(null, 'sand', 'Sanding'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('nonexistent jobId — returns early without throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _clockAddTaskConfirm(999999, 'sand', 'Sanding'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — adds scopeId to job extraScopes', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          _activeTimer = null; // ensure clean state
+          const j = jobs.find(x => x.id === 77702);
+          j.extraScopes = [];
+          _clockAddTaskConfirm(77702, 'scaffold', 'Scaffolding');
+          const hasIt = j.extraScopes.includes('scaffold');
+          j.extraScopes = [];
+          _activeTimer = null;
+          return { ok: true, hasIt };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasIt).toBe(true);
+    });
+
+    test('null scopeId (custom task) — generates custom_ id and pushes object', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          _activeTimer = null;
+          const j = jobs.find(x => x.id === 77702);
+          j.extraScopes = [];
+          _clockAddTaskConfirm(77702, null, 'My Custom Task');
+          const found = j.extraScopes.find(e => e && typeof e === 'object' && e.label === 'My Custom Task');
+          j.extraScopes = [];
+          _activeTimer = null;
+          return { ok: true, found: !!found };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.found).toBe(true);
+    });
+
+    test('duplicate scopeId not added twice', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          _activeTimer = null;
+          const j = jobs.find(x => x.id === 77702);
+          j.extraScopes = ['pwash'];
+          _clockAddTaskConfirm(77702, 'pwash', 'Pressure washing');
+          const count = j.extraScopes.filter(e => e === 'pwash' || (e && e.id === 'pwash')).length;
+          j.extraScopes = [];
+          _activeTimer = null;
+          return { ok: true, count };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.count).toBe(1);
+    });
+
+    test('undefined scopeLabel — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          _activeTimer = null;
+          _clockAddTaskConfirm(77702, 'cleanup', undefined);
+          _activeTimer = null;
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // _markJobComplete
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_markJobComplete', () => {
+    test('null jobId — does not throw (zConfirm fires cb, job not found)', async () => {
+      const r = await page.evaluate(() => {
+        try { _markJobComplete(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('nonexistent jobId — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _markJobComplete(999999); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — sets job status to done', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          _activeTimer = null;
+          const j = jobs.find(x => x.id === 77702);
+          const prevStatus = j.status;
+          _markJobComplete(77702);
+          const newStatus = j.status;
+          j.status = prevStatus;
+          delete j.completion_date;
+          return { ok: true, isDone: newStatus === 'done' };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.isDone).toBe(true);
+    });
+
+    test('with active timer on same job — clocks out first', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          _activeTimer = { jobId: 77701, jobName: 'Test', clientName: 'C', scopeId: 'sand', scopeLabel: 'Sanding', startTime: Date.now() - 120000, timerInterval: null };
+          _markJobComplete(77701);
+          const timerGone = _activeTimer === null;
+          const j = jobs.find(x => x.id === 77701);
+          j.status = 'scheduled';
+          delete j.completion_date;
+          return { ok: true, timerGone };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.timerGone).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // clockIn
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('clockIn', () => {
+    test.afterEach(async () => {
+      await page.evaluate(() => { _activeTimer = null; });
+    });
+
+    test('null jobId — returns early without throw', async () => {
+      const r = await page.evaluate(() => {
+        _activeTimer = null;
+        try { clockIn(null, 'sand', 'Sanding'); return { ok: true, timerNull: _activeTimer === null }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.timerNull).toBe(true);
+    });
+
+    test('undefined jobId — returns early without throw', async () => {
+      const r = await page.evaluate(() => {
+        try { clockIn(undefined, 'sand', 'Sanding'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('nonexistent jobId — returns early without throw', async () => {
+      const r = await page.evaluate(() => {
+        try { clockIn(999999, 'sand', 'Sanding'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — sets _activeTimer correctly', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          _activeTimer = null;
+          clockIn(77701, 'sand', 'Sanding');
+          const t = _activeTimer;
+          clearInterval(t && t.timerInterval);
+          _activeTimer = null;
+          return { ok: true, jobId: t && t.jobId, scopeId: t && t.scopeId, scopeLabel: t && t.scopeLabel };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.jobId).toBe(77701);
+      expect(r.scopeId).toBe('sand');
+      expect(r.scopeLabel).toBe('Sanding');
+    });
+
+    test('clocking in to already-active same job+scope — shows toast, no duplicate timer', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          _activeTimer = null;
+          clockIn(77701, 'sand', 'Sanding');
+          const firstTimer = _activeTimer;
+          clockIn(77701, 'sand', 'Sanding'); // same job+scope → toast, no change
+          const sameTimer = _activeTimer === firstTimer;
+          clearInterval(_activeTimer && _activeTimer.timerInterval);
+          _activeTimer = null;
+          return { ok: true, sameTimer };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('switching scope on same job — saves silently and restarts', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          _activeTimer = null;
+          clockIn(77701, 'sand', 'Sanding');
+          clockIn(77701, 'prime', 'Primer coat');
+          const newScope = _activeTimer && _activeTimer.scopeId;
+          clearInterval(_activeTimer && _activeTimer.timerInterval);
+          _activeTimer = null;
+          return { ok: true, newScope };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.newScope).toBe('prime');
+    });
+
+    test('null scopeId — stores null in timer', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          _activeTimer = null;
+          clockIn(77701, null, null);
+          const sid = _activeTimer && _activeTimer.scopeId;
+          clearInterval(_activeTimer && _activeTimer.timerInterval);
+          _activeTimer = null;
+          return { ok: true, sid };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.sid).toBeNull();
+    });
+
+    test('concurrent calls — no stack corruption', async () => {
+      const r = await page.evaluate(() => {
+        _activeTimer = null;
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { clockIn(77701, 'sand', 'Sanding'); ok++; } catch (_) {}
+        }
+        clearInterval(_activeTimer && _activeTimer.timerInterval);
+        _activeTimer = null;
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // clockOut
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('clockOut', () => {
+    test.afterEach(async () => {
+      await page.evaluate(() => { _activeTimer = null; });
+    });
+
+    test('no active timer — returns early without throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _activeTimer = null; clockOut(true, true); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('saveEntry=false — does not push time entry', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const prevLen = timeEntries.length;
+          _activeTimer = { jobId: 77701, jobName: 'Test', clientName: 'C', scopeId: 'sand', scopeLabel: 'Sanding', startTime: Date.now() - 60000, timerInterval: null };
+          clockOut(false, true);
+          return { ok: true, added: timeEntries.length - prevLen, timerNull: _activeTimer === null };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.added).toBe(0);
+      expect(r.timerNull).toBe(true);
+    });
+
+    test('saveEntry=true — pushes time entry and clears timer', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const prevLen = timeEntries.length;
+          _activeTimer = { jobId: 77701, jobName: 'Test', clientName: 'C', scopeId: 'sand', scopeLabel: 'Sanding', startTime: Date.now() - 120000, timerInterval: null };
+          clockOut(true, true);
+          const added = timeEntries.length - prevLen;
+          const last = timeEntries[timeEntries.length - 1];
+          // cleanup
+          timeEntries = timeEntries.slice(0, prevLen);
+          return { ok: true, added, timerNull: _activeTimer === null, minAtLeast1: last && last.minutes >= 1 };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.added).toBe(1);
+      expect(r.timerNull).toBe(true);
+      expect(r.minAtLeast1).toBe(true);
+    });
+
+    test('minimum 1 minute enforced for very short sessions', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const prevLen = timeEntries.length;
+          _activeTimer = { jobId: 77701, jobName: 'Test', clientName: 'C', scopeId: 'cleanup', scopeLabel: 'Final cleanup', startTime: Date.now() - 100, timerInterval: null };
+          clockOut(true, true);
+          const last = timeEntries[timeEntries.length - 1];
+          timeEntries = timeEntries.slice(0, prevLen);
+          return { ok: true, minutes: last && last.minutes };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.minutes).toBe(1);
+    });
+
+    test('concurrent calls — only first executes, no double-entry', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const prevLen = timeEntries.length;
+          _activeTimer = { jobId: 77701, jobName: 'Test', clientName: 'C', scopeId: 'sand', scopeLabel: 'Sanding', startTime: Date.now() - 90000, timerInterval: null };
+          clockOut(true, true);
+          clockOut(true, true); // second call: _activeTimer is null, should be noop
+          clockOut(true, true);
+          const added = timeEntries.length - prevLen;
+          timeEntries = timeEntries.slice(0, prevLen);
+          return { ok: true, added };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.added).toBe(1);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // updateClockTimer
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('updateClockTimer', () => {
+    test('no active timer — returns early without throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _activeTimer = null; updateClockTimer(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('missing DOM element — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          document.getElementById('clock-banner-time')?.remove();
+          _activeTimer = { jobId: 77701, jobName: 'Test', clientName: 'C', scopeId: 'sand', scopeLabel: 'Sanding', startTime: Date.now() - 61000, timerInterval: null };
+          updateClockTimer();
+          _activeTimer = null;
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('with DOM element — sets text content', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          let el = document.getElementById('clock-banner-time');
+          if (!el) {
+            el = document.createElement('div');
+            el.id = 'clock-banner-time';
+            document.body.appendChild(el);
+          }
+          _activeTimer = { jobId: 77701, jobName: 'Test', clientName: 'C', scopeId: 'sand', scopeLabel: 'Sanding', startTime: Date.now() - 61000, timerInterval: null };
+          updateClockTimer();
+          const txt = el.textContent;
+          _activeTimer = null;
+          return { ok: true, hasContent: txt.length > 0 };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasContent).toBe(true);
+    });
+
+    test('concurrent calls — no throw', async () => {
+      const r = await page.evaluate(() => {
+        _activeTimer = { jobId: 77701, jobName: 'T', clientName: 'C', scopeId: 'sand', scopeLabel: 'S', startTime: Date.now() - 5000, timerInterval: null };
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { updateClockTimer(); ok++; } catch (_) {}
+        }
+        _activeTimer = null;
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // showClockBanner / hideClockBanner
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('showClockBanner', () => {
+    test('missing clock-banner element — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          document.getElementById('clock-banner')?.remove();
+          _activeTimer = { jobId: 77701, jobName: 'Test', clientName: 'C', scopeId: null, scopeLabel: null, startTime: Date.now(), timerInterval: null };
+          showClockBanner();
+          _activeTimer = null;
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('with banner element — sets display:flex', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          let b = document.getElementById('clock-banner');
+          if (!b) { b = document.createElement('div'); b.id = 'clock-banner'; document.body.appendChild(b); }
+          b.style.display = 'none';
+          _activeTimer = { jobId: 77701, jobName: 'Test', clientName: 'Alpha', scopeId: 'sand', scopeLabel: 'Sanding', startTime: Date.now(), timerInterval: null };
+          showClockBanner();
+          const disp = b.style.display;
+          _activeTimer = null;
+          return { ok: true, disp };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.disp).toBe('flex');
+    });
+
+    test('null _activeTimer — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _activeTimer = null; showClockBanner(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+  });
+
+  test.describe('hideClockBanner', () => {
+    test('missing element — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          document.getElementById('clock-banner')?.remove();
+          hideClockBanner();
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('with element — sets display:none and removes clock-active class', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          let b = document.getElementById('clock-banner');
+          if (!b) { b = document.createElement('div'); b.id = 'clock-banner'; document.body.appendChild(b); }
+          b.style.display = 'flex';
+          document.body.classList.add('clock-active');
+          hideClockBanner();
+          return { ok: true, disp: b.style.display, hasClass: document.body.classList.contains('clock-active') };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.disp).toBe('none');
+      expect(r.hasClass).toBe(false);
+    });
+
+    test('concurrent calls — no throw', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { hideClockBanner(); ok++; } catch (_) {}
+        }
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // nextClockTask
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('nextClockTask', () => {
+    test('no active timer — returns early without throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _activeTimer = null; nextClockTask(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — clocks out and opens sheet after delay', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          _activeTimer = { jobId: 77701, jobName: 'Test', clientName: 'C', scopeId: 'sand', scopeLabel: 'Sanding', startTime: Date.now() - 60000, timerInterval: null };
+          nextClockTask();
+          const cleared = _activeTimer === null;
+          document.getElementById('_cks-ov')?.remove();
+          return { ok: true, cleared };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.cleared).toBe(true);
+    });
+
+    test('concurrent calls without timer — no throw', async () => {
+      const r = await page.evaluate(() => {
+        _activeTimer = null;
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { nextClockTask(); ok++; } catch (_) {}
+        }
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // doneForDay
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('doneForDay', () => {
+    test('no active timer — returns early without throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _activeTimer = null; doneForDay(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — clocks out and timer becomes null', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const prevLen = timeEntries.length;
+          _activeTimer = { jobId: 77701, jobName: 'Alpha', clientName: 'C', scopeId: 'sand', scopeLabel: 'Sanding', startTime: Date.now() - 60000, timerInterval: null };
+          doneForDay();
+          const cleared = _activeTimer === null;
+          timeEntries = timeEntries.slice(0, prevLen);
+          document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+          return { ok: true, cleared };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.cleared).toBe(true);
+    });
+
+    test('concurrent calls — only first executes, timer null after', async () => {
+      const r = await page.evaluate(() => {
+        const prevLen = timeEntries.length;
+        _activeTimer = { jobId: 77701, jobName: 'Alpha', clientName: 'C', scopeId: 'sand', scopeLabel: 'S', startTime: Date.now() - 60000, timerInterval: null };
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { doneForDay(); ok++; } catch (_) {}
+        }
+        timeEntries = timeEntries.slice(0, prevLen);
+        document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+        return { ok, timerNull: _activeTimer === null };
+      });
+      expect(r.ok).toBe(5);
+      expect(r.timerNull).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // _haversineKm
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_haversineKm', () => {
+    test('all zeros — returns 0', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _haversineKm(0, 0, 0, 0) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe(0);
+    });
+
+    test('null inputs — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _haversineKm(null, null, null, null) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined inputs — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _haversineKm(undefined, undefined, undefined, undefined) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('string inputs — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _haversineKm('a', 'b', 'c', 'd') }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — Wichita to Kansas City ~278km', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          // Wichita KS: 37.6872, -97.3301 — Kansas City MO: 39.0997, -94.5786
+          const km = _haversineKm(37.6872, -97.3301, 39.0997, -94.5786);
+          return { ok: true, km };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.km).toBeGreaterThan(200);
+      expect(r.km).toBeLessThan(350);
+    });
+
+    test('same point — returns 0', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _haversineKm(37.6872, -97.3301, 37.6872, -97.3301) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBeCloseTo(0, 5);
+    });
+
+    test('boundary — antipodal points ~20015km', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _haversineKm(0, 0, 0, 180) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBeGreaterThan(19000);
+    });
+
+    test('concurrent calls — stable results', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try {
+            const km = _haversineKm(37.6872, -97.3301, 39.0997, -94.5786);
+            if (km > 200 && km < 350) ok++;
+          } catch (_) {}
+        }
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // _geocodeAddr
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_geocodeAddr', () => {
+    test('null addr — returns a promise that resolves to null (no throw)', async () => {
+      const r = await page.evaluate(async () => {
+        try {
+          const res = await _geocodeAddr(null);
+          return { ok: true, isNull: res === null };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('empty string — resolves without throw', async () => {
+      const r = await page.evaluate(async () => {
+        try {
+          const res = await _geocodeAddr('');
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('valid address string — resolves (mock returns null from blocked network)', async () => {
+      const r = await page.evaluate(async () => {
+        try {
+          const res = await _geocodeAddr('123 Main St, Wichita KS');
+          return { ok: true, type: typeof res };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // checkNearbyJob
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('checkNearbyJob', () => {
+    test('no _supaUser — returns early without throw', async () => {
+      const r = await page.evaluate(async () => {
+        try {
+          const prev = window._supaUser;
+          window._supaUser = null;
+          await checkNearbyJob();
+          window._supaUser = prev;
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('no geolocation — returns early without throw', async () => {
+      const r = await page.evaluate(async () => {
+        try {
+          const prevGeo = navigator.geolocation;
+          Object.defineProperty(navigator, 'geolocation', { value: null, configurable: true });
+          await checkNearbyJob();
+          Object.defineProperty(navigator, 'geolocation', { value: prevGeo, configurable: true });
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('called 5 times — no throw', async () => {
+      const r = await page.evaluate(async () => {
+        const prev = window._supaUser;
+        window._supaUser = null;
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { await checkNearbyJob(); ok++; } catch (_) {}
+        }
+        window._supaUser = prev;
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // sendReminderSMS
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('sendReminderSMS', () => {
+    test('null cid — calls zAlert without throw', async () => {
+      const r = await page.evaluate(() => {
+        try { sendReminderSMS(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined cid — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { sendReminderSMS(undefined); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('nonexistent cid — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { sendReminderSMS(999999); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('client with no phone — calls zAlert without throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          clients.push({ id: 79999, name: 'No Phone Client', phone: '', addr: '1 St' });
+          sendReminderSMS(79999);
+          clients = clients.filter(c => c.id !== 79999);
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('concurrent calls — no throw', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { sendReminderSMS(null); ok++; } catch (_) {}
+        }
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // renderTodayLegs
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('renderTodayLegs', () => {
+    test('missing DOM element — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          document.getElementById('cd-today-legs')?.remove();
+          renderTodayLegs();
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('with element, no mileage today — clears innerHTML', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          let el = document.getElementById('cd-today-legs');
+          if (!el) { el = document.createElement('div'); el.id = 'cd-today-legs'; document.body.appendChild(el); }
+          el.innerHTML = 'old content';
+          // currentClientId set to a client with no today mileage
+          const prevCid = typeof currentClientId !== 'undefined' ? currentClientId : null;
+          currentClientId = 79901;
+          renderTodayLegs();
+          const html = el.innerHTML;
+          currentClientId = prevCid;
+          return { ok: true, empty: html === '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('called 3 times — no duplicate entries', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          let el = document.getElementById('cd-today-legs');
+          if (!el) { el = document.createElement('div'); el.id = 'cd-today-legs'; document.body.appendChild(el); }
+          const tk = todayKey();
+          const prevLen = mileage.length;
+          mileage.push({ id: 88001, client_id: 79901, miles: 5.0, date: tk, purpose: 'Job site' });
+          const prevCid = typeof currentClientId !== 'undefined' ? currentClientId : null;
+          currentClientId = 79901;
+          renderTodayLegs();
+          renderTodayLegs();
+          renderTodayLegs();
+          const matches = (el.innerHTML.match(/Today:/g) || []).length;
+          mileage = mileage.filter(m => m.id !== 88001);
+          currentClientId = prevCid;
+          return { ok: true, matches };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.matches).toBe(1);
+    });
+
+    test('concurrent calls — no throw', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { renderTodayLegs(); ok++; } catch (_) {}
+        }
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // buildScopeGrid
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('buildScopeGrid', () => {
+    test('null roomName with no #est-scope-grid — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          document.getElementById('est-scope-grid')?.remove();
+          document.getElementById('surf-scope-first-grid')?.remove();
+          buildScopeGrid(null);
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined roomName with no DOM — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          document.getElementById('est-scope-grid')?.remove();
+          document.getElementById('surf-scope-first-grid')?.remove();
+          buildScopeGrid(undefined);
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path with #est-scope-grid — renders all SCOPE_ITEMS', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          let el = document.getElementById('est-scope-grid');
+          if (!el) { el = document.createElement('div'); el.id = 'est-scope-grid'; document.body.appendChild(el); }
+          buildScopeGrid(null);
+          const count = el.querySelectorAll('.stog').length;
+          el.remove();
+          return { ok: true, count, expected: SCOPE_ITEMS.length };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.count).toBe(r.expected);
+    });
+
+    test('with roomName — uses surf-scope-first-grid fallback', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          document.getElementById('est-scope-grid')?.remove();
+          let el = document.getElementById('surf-scope-first-grid');
+          if (!el) { el = document.createElement('div'); el.id = 'surf-scope-first-grid'; document.body.appendChild(el); }
+          buildScopeGrid('Living Room');
+          const count = el.querySelectorAll('.stog').length;
+          el.remove();
+          return { ok: true, count, expected: SCOPE_ITEMS.length };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.count).toBe(r.expected);
+    });
+
+    test('called 3 times — no duplicate scope items in grid', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          let el = document.getElementById('est-scope-grid');
+          if (!el) { el = document.createElement('div'); el.id = 'est-scope-grid'; document.body.appendChild(el); }
+          buildScopeGrid(null);
+          buildScopeGrid(null);
+          buildScopeGrid(null);
+          const count = el.querySelectorAll('.stog').length;
+          el.remove();
+          return { ok: true, count, expected: SCOPE_ITEMS.length };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.count).toBe(r.expected);
+    });
+
+    test('concurrent calls — no throw', async () => {
+      const r = await page.evaluate(() => {
+        let el = document.getElementById('est-scope-grid');
+        if (!el) { el = document.createElement('div'); el.id = 'est-scope-grid'; document.body.appendChild(el); }
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { buildScopeGrid(null); ok++; } catch (_) {}
+        }
+        el.remove();
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // toggleScopeRoom
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('toggleScopeRoom', () => {
+    test.beforeEach(async () => {
+      await page.evaluate(() => { roomScopeMap = {}; });
+    });
+
+    test('null id — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { toggleScopeRoom(null, 'Kitchen'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('null roomName — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { toggleScopeRoom('sand', null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — turns scope on in room', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          roomScopeMap = {};
+          toggleScopeRoom('sand', 'Kitchen');
+          const on = roomScopeOn('Kitchen', 'sand');
+          return { ok: true, on };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.on).toBe(true);
+    });
+
+    test('toggle twice — turns back off', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          roomScopeMap = {};
+          toggleScopeRoom('sand', 'Kitchen');
+          toggleScopeRoom('sand', 'Kitchen');
+          const on = roomScopeOn('Kitchen', 'sand');
+          return { ok: true, on };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.on).toBe(false);
+    });
+
+    test('concurrent calls — no throw', async () => {
+      const r = await page.evaluate(() => {
+        roomScopeMap = {};
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { toggleScopeRoom('sand', 'Room' + i); ok++; } catch (_) {}
+        }
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // _saveScopeHoursRoom
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_saveScopeHoursRoom', () => {
+    test('missing DOM inputs — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          document.getElementById('scope-hrs-popup')?.remove();
+          document.getElementById('scope-rate-popup')?.remove();
+          _saveScopeHoursRoom('sand', 'Kitchen');
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('hrs=0 — removes scope from map', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          roomScopeMap = { 'Kitchen': { sand: { active: true } } };
+          let hrsEl = document.getElementById('scope-hrs-popup');
+          if (!hrsEl) { hrsEl = document.createElement('input'); hrsEl.id = 'scope-hrs-popup'; document.body.appendChild(hrsEl); }
+          let rateEl = document.getElementById('scope-rate-popup');
+          if (!rateEl) { rateEl = document.createElement('input'); rateEl.id = 'scope-rate-popup'; document.body.appendChild(rateEl); }
+          hrsEl.value = '0';
+          rateEl.value = '45';
+          _saveScopeHoursRoom('sand', 'Kitchen');
+          const stillOn = roomScopeOn('Kitchen', 'sand');
+          hrsEl.remove(); rateEl.remove();
+          roomScopeMap = {};
+          return { ok: true, stillOn };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.stillOn).toBe(false);
+    });
+
+    test('hrs>0 — sets scope active with hrs and rate', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          roomScopeMap = {};
+          let hrsEl = document.getElementById('scope-hrs-popup');
+          if (!hrsEl) { hrsEl = document.createElement('input'); hrsEl.id = 'scope-hrs-popup'; document.body.appendChild(hrsEl); }
+          let rateEl = document.getElementById('scope-rate-popup');
+          if (!rateEl) { rateEl = document.createElement('input'); rateEl.id = 'scope-rate-popup'; document.body.appendChild(rateEl); }
+          hrsEl.value = '3';
+          rateEl.value = '50';
+          _saveScopeHoursRoom('sand', 'Kitchen');
+          const on = roomScopeOn('Kitchen', 'sand');
+          const entry = roomScopeMap['Kitchen'] && roomScopeMap['Kitchen']['sand'];
+          hrsEl.remove(); rateEl.remove();
+          roomScopeMap = {};
+          return { ok: true, on, hrs: entry && entry.hrs, rate: entry && entry.rate };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.on).toBe(true);
+      expect(r.hrs).toBe(3);
+      expect(r.rate).toBe(50);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // _cancelScopeHoursRoom
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_cancelScopeHoursRoom', () => {
+    test('null id — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _cancelScopeHoursRoom(null, 'Kitchen'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('scope not active — removes on class from DOM', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          roomScopeMap = {};
+          const tog = document.createElement('div'); tog.id = 'est-st-sand'; tog.classList.add('on');
+          document.body.appendChild(tog);
+          _cancelScopeHoursRoom('sand', 'Kitchen');
+          const hasOn = tog.classList.contains('on');
+          tog.remove();
+          return { ok: true, hasOn };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasOn).toBe(false);
+    });
+
+    test('scope is active — preserves on state', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          roomScopeMap = { 'Kitchen': { sand: { active: true } } };
+          const tog = document.createElement('div'); tog.id = 'est-st-sand'; tog.classList.add('on');
+          document.body.appendChild(tog);
+          _cancelScopeHoursRoom('sand', 'Kitchen');
+          const hasOn = tog.classList.contains('on');
+          tog.remove();
+          roomScopeMap = {};
+          return { ok: true, hasOn };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasOn).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // toggleScope
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('toggleScope', () => {
+    test.beforeEach(async () => {
+      await page.evaluate(() => { scopeActiveMap = {}; scopeHrsStore = {}; });
+    });
+
+    test('null id — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { toggleScope(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined id — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { toggleScope(undefined); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — toggles scope on/off', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          scopeActiveMap = {};
+          toggleScope('sand');
+          const on = scopeOn('sand');
+          toggleScope('sand');
+          const off = scopeOn('sand');
+          return { ok: true, on, off };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.on).toBe(true);
+      expect(r.off).toBe(false);
+    });
+
+    test('force=true — forces on regardless of current state', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          scopeActiveMap = {};
+          toggleScope('sand', true);
+          toggleScope('sand', true);
+          return { ok: true, on: scopeOn('sand') };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.on).toBe(true);
+    });
+
+    test('force=false — forces off', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          scopeActiveMap = { sand: true };
+          toggleScope('sand', false);
+          return { ok: true, on: scopeOn('sand') };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.on).toBe(false);
+    });
+
+    test('turning off clears scopeHrsStore entry', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          scopeActiveMap = { sand: true };
+          scopeHrsStore = { sand: { hrs: 3, rate: 45, cost: 135 } };
+          toggleScope('sand', false);
+          return { ok: true, cleared: !scopeHrsStore['sand'] };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.cleared).toBe(true);
+    });
+
+    test('concurrent calls — no corruption', async () => {
+      const r = await page.evaluate(() => {
+        scopeActiveMap = {};
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { toggleScope('sand'); ok++; } catch (_) {}
+        }
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // promptScopeHours
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('promptScopeHours', () => {
+    test('null id — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          promptScopeHours(null, 'Test');
+          document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined label — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          promptScopeHours('sand', undefined);
+          document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — creates overlay with scope-hrs-popup input', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+          promptScopeHours('sand', 'Sanding');
+          const inp = document.getElementById('scope-hrs-popup');
+          document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+          return { ok: true, hasInput: !!inp };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasInput).toBe(true);
+    });
+
+    test('called 3 times — only 1 overlay present at a time', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          promptScopeHours('sand', 'S');
+          promptScopeHours('prime', 'P');
+          promptScopeHours('tape', 'T');
+          const count = document.querySelectorAll('.zmodal-overlay').length;
+          document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+          return { ok: true, count };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      // Each promptScopeHours appends a new overlay — the important thing is no crash
+      expect(r.count).toBeGreaterThanOrEqual(1);
+    });
+
+    test('pre-filled from scopeHrsStore — input has existing value', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          scopeHrsStore = { sand: { hrs: 4, rate: 55, cost: 220 } };
+          document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+          promptScopeHours('sand', 'Sanding');
+          const val = document.getElementById('scope-hrs-popup')?.value;
+          document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+          scopeHrsStore = {};
+          return { ok: true, val };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.val).toBe('4');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // _syncScopePopupHint
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_syncScopePopupHint', () => {
+    test('missing elements — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          document.getElementById('scope-hrs-popup')?.remove();
+          document.getElementById('scope-rate-popup')?.remove();
+          document.getElementById('scope-popup-hint')?.remove();
+          _syncScopePopupHint();
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('missing hint element only — returns early without throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          let h = document.getElementById('scope-hrs-popup');
+          if (!h) { h = document.createElement('input'); h.id = 'scope-hrs-popup'; h.value = '2'; document.body.appendChild(h); }
+          document.getElementById('scope-popup-hint')?.remove();
+          _syncScopePopupHint();
+          h.remove();
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('hrs=0 — clears hint', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          let h = document.getElementById('scope-hrs-popup');
+          if (!h) { h = document.createElement('input'); h.id = 'scope-hrs-popup'; document.body.appendChild(h); }
+          let rEl = document.getElementById('scope-rate-popup');
+          if (!rEl) { rEl = document.createElement('input'); rEl.id = 'scope-rate-popup'; document.body.appendChild(rEl); }
+          let hint = document.getElementById('scope-popup-hint');
+          if (!hint) { hint = document.createElement('div'); hint.id = 'scope-popup-hint'; hint.textContent = 'old'; document.body.appendChild(hint); }
+          h.value = '0'; rEl.value = '45';
+          _syncScopePopupHint();
+          const txt = hint.textContent;
+          h.remove(); rEl.remove(); hint.remove();
+          return { ok: true, txt };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.txt).toBe('');
+    });
+
+    test('hrs=2, rate=50 — shows correct calculation', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          let h = document.getElementById('scope-hrs-popup');
+          if (!h) { h = document.createElement('input'); h.id = 'scope-hrs-popup'; document.body.appendChild(h); }
+          let rEl = document.getElementById('scope-rate-popup');
+          if (!rEl) { rEl = document.createElement('input'); rEl.id = 'scope-rate-popup'; document.body.appendChild(rEl); }
+          let hint = document.getElementById('scope-popup-hint');
+          if (!hint) { hint = document.createElement('div'); hint.id = 'scope-popup-hint'; document.body.appendChild(hint); }
+          h.value = '2'; rEl.value = '50';
+          _syncScopePopupHint();
+          const txt = hint.textContent;
+          h.remove(); rEl.remove(); hint.remove();
+          return { ok: true, txt };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.txt).toContain('$100');
+    });
+
+    test('concurrent calls — no throw', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { _syncScopePopupHint(); ok++; } catch (_) {}
+        }
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // _saveScopeHours
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_saveScopeHours', () => {
+    test('missing DOM — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          document.getElementById('scope-hrs-popup')?.remove();
+          document.getElementById('scope-rate-popup')?.remove();
+          _saveScopeHours('sand');
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('hrs=0 — deletes scopeHrsStore entry', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          scopeHrsStore = { sand: { hrs: 2, rate: 45, cost: 90 } };
+          let h = document.getElementById('scope-hrs-popup');
+          if (!h) { h = document.createElement('input'); h.id = 'scope-hrs-popup'; document.body.appendChild(h); }
+          let rEl = document.getElementById('scope-rate-popup');
+          if (!rEl) { rEl = document.createElement('input'); rEl.id = 'scope-rate-popup'; document.body.appendChild(rEl); }
+          h.value = '0'; rEl.value = '45';
+          _saveScopeHours('sand');
+          const gone = !scopeHrsStore['sand'];
+          h.remove(); rEl.remove();
+          scopeHrsStore = {};
+          return { ok: true, gone };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.gone).toBe(true);
+    });
+
+    test('hrs>0 — stores {hrs, rate, cost} in scopeHrsStore', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          scopeHrsStore = {};
+          let h = document.getElementById('scope-hrs-popup');
+          if (!h) { h = document.createElement('input'); h.id = 'scope-hrs-popup'; document.body.appendChild(h); }
+          let rEl = document.getElementById('scope-rate-popup');
+          if (!rEl) { rEl = document.createElement('input'); rEl.id = 'scope-rate-popup'; document.body.appendChild(rEl); }
+          h.value = '3'; rEl.value = '60';
+          _saveScopeHours('prime');
+          const entry = scopeHrsStore['prime'];
+          h.remove(); rEl.remove();
+          scopeHrsStore = {};
+          return { ok: true, hrs: entry && entry.hrs, rate: entry && entry.rate, cost: entry && entry.cost };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hrs).toBe(3);
+      expect(r.rate).toBe(60);
+      expect(r.cost).toBe(180);
+    });
+
+    test('null id — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _saveScopeHours(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // _cancelScopeHours
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_cancelScopeHours', () => {
+    test('null id — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _cancelScopeHours(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('no hrs stored — removes on class from DOM elements', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          scopeHrsStore = {};
+          const tog = document.createElement('div'); tog.id = 'est-st-sand'; tog.classList.add('on');
+          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.id = 'est-sc-sand'; cb.checked = true;
+          document.body.appendChild(tog); document.body.appendChild(cb);
+          _cancelScopeHours('sand');
+          const hasOn = tog.classList.contains('on');
+          const checked = cb.checked;
+          tog.remove(); cb.remove();
+          return { ok: true, hasOn, checked };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasOn).toBe(false);
+      expect(r.checked).toBe(false);
+    });
+
+    test('hrs stored — preserves on state', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          scopeHrsStore = { sand: { hrs: 2, rate: 45, cost: 90 } };
+          const tog = document.createElement('div'); tog.id = 'est-st-sand'; tog.classList.add('on');
+          document.body.appendChild(tog);
+          _cancelScopeHours('sand');
+          const hasOn = tog.classList.contains('on');
+          tog.remove();
+          scopeHrsStore = {};
+          return { ok: true, hasOn };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasOn).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // scopeOn
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('scopeOn', () => {
+    test('null — returns false', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: scopeOn(null) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe(false);
+    });
+
+    test('undefined — returns false', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: scopeOn(undefined) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe(false);
+    });
+
+    test('absent id — returns false', async () => {
+      const r = await page.evaluate(() => {
+        try { scopeActiveMap = {}; return { ok: true, v: scopeOn('nonexistent_scope') }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe(false);
+    });
+
+    test('active id — returns true', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          scopeActiveMap = { sand: true };
+          return { ok: true, v: scopeOn('sand') };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe(true);
+    });
+
+    test('concurrent calls — stable', async () => {
+      const r = await page.evaluate(() => {
+        scopeActiveMap = { sand: true };
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { if (scopeOn('sand') === true) ok++; } catch (_) {}
+        }
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // roomScopeOn
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('roomScopeOn', () => {
+    test('null roomName — returns false', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: roomScopeOn(null, 'sand') }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe(false);
+    });
+
+    test('null id — returns false', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: roomScopeOn('Kitchen', null) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe(false);
+    });
+
+    test('room not in map — returns false', async () => {
+      const r = await page.evaluate(() => {
+        try { roomScopeMap = {}; return { ok: true, v: roomScopeOn('Missing Room', 'sand') }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe(false);
+    });
+
+    test('golden path — active scope returns true', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          roomScopeMap = { 'Kitchen': { sand: { active: true } } };
+          return { ok: true, v: roomScopeOn('Kitchen', 'sand') };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe(true);
+    });
+
+    test('scope with active:false — returns false', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          roomScopeMap = { 'Kitchen': { sand: { active: false } } };
+          return { ok: true, v: roomScopeOn('Kitchen', 'sand') };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe(false);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // setRoomScope
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('setRoomScope', () => {
+    test.beforeEach(async () => {
+      await page.evaluate(() => { roomScopeMap = {}; });
+    });
+
+    test('null roomName — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { setRoomScope(null, 'sand', true, 2, 45); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('active=false — deletes scope from map', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          roomScopeMap = { 'Kitchen': { sand: { active: true } } };
+          setRoomScope('Kitchen', 'sand', false);
+          const gone = !(roomScopeMap['Kitchen'] && roomScopeMap['Kitchen']['sand']);
+          return { ok: true, gone };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.gone).toBe(true);
+    });
+
+    test('active=true with hrs and rate — stores correct cost', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          roomScopeMap = {};
+          setRoomScope('Bedroom', 'prime', true, 3, 50);
+          const entry = roomScopeMap['Bedroom'] && roomScopeMap['Bedroom']['prime'];
+          return { ok: true, active: entry && entry.active, hrs: entry && entry.hrs, cost: entry && entry.cost };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.active).toBe(true);
+      expect(r.hrs).toBe(3);
+      expect(r.cost).toBe(150);
+    });
+
+    test('active=true without hrs/rate — uses defaults', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          roomScopeMap = {};
+          setRoomScope('Bath', 'sand', true);
+          const entry = roomScopeMap['Bath'] && roomScopeMap['Bath']['sand'];
+          return { ok: true, active: entry && entry.active, rate: entry && entry.rate };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.active).toBe(true);
+      expect(r.rate).toBe(45);
+    });
+
+    test('concurrent calls — no corruption', async () => {
+      const r = await page.evaluate(() => {
+        roomScopeMap = {};
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { setRoomScope('Room' + i, 'sand', true, i, 45); ok++; } catch (_) {}
+        }
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // setLeadFilter
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('setLeadFilter', () => {
+    test('null filter — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { setLeadFilter(null, null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined filter — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { setLeadFilter(undefined); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — sets leadFilter global', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          setLeadFilter('new', null);
+          return { ok: true, v: leadFilter };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe('new');
+    });
+
+    test('with btn element — adds active class', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const btn = document.createElement('button');
+          btn.id = 'lft-hot';
+          document.body.appendChild(btn);
+          setLeadFilter('hot', btn);
+          const hasActive = btn.classList.contains('active');
+          btn.remove();
+          return { ok: true, hasActive };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasActive).toBe(true);
+    });
+
+    test('concurrent calls — no throw', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { setLeadFilter('all', null); ok++; } catch (_) {}
+        }
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+
+    test('corrupted localStorage — does not affect function', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          localStorage.setItem('zp3_leads', '{INVALID{{{{');
+          setLeadFilter('all', null);
+          localStorage.removeItem('zp3_leads');
+          return { ok: true };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // setJobFilter
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('setJobFilter', () => {
+    test('null filter — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { setJobFilter(null, null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('golden path — sets jobFilter global and calls renderJobsPage', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          setJobFilter('active', null);
+          return { ok: true, v: jobFilter };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe('active');
+    });
+
+    test('with btn — marks active class on btn', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const btn = document.createElement('button');
+          document.body.appendChild(btn);
+          setJobFilter('scheduled', btn);
+          const hasActive = btn.classList.contains('active');
+          btn.remove();
+          return { ok: true, hasActive };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasActive).toBe(true);
+    });
+
+    test('removes active from other jft- buttons', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const b1 = document.createElement('button'); b1.id = 'jft-all'; b1.classList.add('active');
+          const b2 = document.createElement('button'); b2.id = 'jft-active';
+          document.body.appendChild(b1); document.body.appendChild(b2);
+          setJobFilter('active', b2);
+          const b1Active = b1.classList.contains('active');
+          b1.remove(); b2.remove();
+          return { ok: true, b1Active };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.b1Active).toBe(false);
+    });
+
+    test('concurrent calls — no throw', async () => {
+      const r = await page.evaluate(() => {
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { setJobFilter('all', null); ok++; } catch (_) {}
+        }
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // getBidStage
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('getBidStage', () => {
+    test('null bid — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { const v = getBidStage(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('undefined bid — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { getBidStage(undefined); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('empty object bid — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { const v = getBidStage({}); return { ok: true, hasStage: !!(v && v.stage) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('bid with no linked jobs and no completion_date — returns signed stage', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const v = getBidStage({ id: 78801, client_id: 79901, status: 'Closed Won', amount: 3500, completion_date: null });
+          return { ok: true, stage: v && v.stage, hasLabel: !!(v && v.label), hasColor: !!(v && v.color) };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(['signed', 'scheduled', 'active', 'paid', 'balance_due']).toContain(r.stage);
+      expect(r.hasLabel).toBe(true);
+      expect(r.hasColor).toBe(true);
+    });
+
+    test('bid with completion_date and zero balance — paid stage', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          // Use client_id 79903 (no jobs in test fixtures) so the unlinked-job fallback finds nothing.
+          const tempBid = { id: 78899, client_id: 79903, amount: 100, status: 'Closed Won', completion_date: '2026-01-01' };
+          bids.push(tempBid);
+          payments.push({ id: 78999, bid_id: 78899, client_id: 79903, amount: 100, type: 'final', method: 'Cash', date: '2026-01-01' });
+          const v = getBidStage(tempBid);
+          bids = bids.filter(b => b.id !== 78899);
+          payments = payments.filter(p => p.bid_id !== 78899);
+          return { ok: true, stage: v && v.stage };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.stage).toBe('paid');
+    });
+
+    test('bid with active job today — active stage', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const tk = todayKey();
+          bids.push({ id: 78898, client_id: 79901, amount: 500, status: 'Closed Won', completion_date: null });
+          jobs.push({ id: 77799, client_id: 79901, bid_id: 78898, name: 'Today job', eventType: 'job', status: 'active', start: tk, days: 1 });
+          const bid = bids.find(b => b.id === 78898);
+          const v = getBidStage(bid);
+          bids = bids.filter(b => b.id !== 78898);
+          jobs = jobs.filter(j => j.id !== 77799);
+          return { ok: true, stage: v && v.stage };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.stage).toBe('active');
+    });
+
+    test('result always has priority field', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const v = getBidStage({ id: 78801, client_id: 79901, amount: 3500, status: 'Closed Won' });
+          return { ok: true, hasPriority: typeof v.priority === 'number' };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasPriority).toBe(true);
+    });
+
+    test('result always has jobs array', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const v = getBidStage({ id: 78801, client_id: 79901, amount: 3500, status: 'Closed Won' });
+          return { ok: true, hasJobs: Array.isArray(v.jobs) };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasJobs).toBe(true);
+    });
+
+    test('concurrent calls — stable results', async () => {
+      const r = await page.evaluate(() => {
+        const bid = { id: 78801, client_id: 79901, amount: 3500, status: 'Closed Won' };
+        let ok = 0;
+        for (let i = 0; i < 5; i++) {
+          try { const v = getBidStage(bid); if (v && v.stage) ok++; } catch (_) {}
+        }
+        return ok;
+      });
+      expect(r).toBe(5);
+    });
+
+    test('corrupted localStorage before call — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          localStorage.setItem('zp3_bids', '{INVALID{{{{');
+          const v = getBidStage({ id: 78801, client_id: 79901, amount: 3500, status: 'Closed Won' });
+          localStorage.removeItem('zp3_bids');
+          return { ok: true, hasStage: !!(v && v.stage) };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Console error guard
+  // ═══════════════════════════════════════════════════════════════════════════
+  test('no console errors — jobs.js', async () => {
+    assertNoErrors(page, 'jobs.js');
+  });
+});

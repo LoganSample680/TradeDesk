@@ -11,9 +11,8 @@
 // cannot produce a valid token.
 import Stripe from 'npm:stripe@14';
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { getServiceRoleKey } from '../_shared/keys.ts';
+import { getServiceRoleKey, resolveStripeMode, stripeSecretKey } from '../_shared/keys.ts';
 
-const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2023-10-16' });
 const supabase = createClient(Deno.env.get('SUPABASE_URL')!, getServiceRoleKey());
 
 const CORS = {
@@ -25,6 +24,8 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   try {
+    const mode = resolveStripeMode(req);
+    const stripe = new Stripe(stripeSecretKey(mode), { apiVersion: '2023-10-16' });
     const { bidId, u, c, t, signerName } = await req.json();
     if (!bidId || !u || !c || !t) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), { status: 400, headers: CORS });
@@ -65,13 +66,28 @@ Deno.serve(async (req) => {
     let refund: { id: string; amount: number } | null = null;
     try {
       const { data: sp } = await supabase
-        .from('signed_proposals').select('stripe_payment_intent,stripe_refund_id')
+        .from('signed_proposals').select('stripe_payment_intent,stripe_refund_id,contractor_user_id')
         .eq('bid_id', String(bidId)).maybeSingle();
       if (sp?.stripe_payment_intent && !sp.stripe_refund_id) {
-        const r = await stripe.refunds.create({
-          payment_intent: sp.stripe_payment_intent,
-          reason: 'requested_by_customer',
-        });
+        // Direct charges live on the contractor's connected account, so the refund must
+        // be issued THERE too — a platform-level refund can't find the payment_intent.
+        // Look up the connected account the same way create-checkout routes the charge;
+        // fall back to a platform refund for legacy destination/platform charges.
+        let connectedAccountId: string | null = null;
+        if (sp.contractor_user_id) {
+          const { data: userRow } = await supabase
+            .from('users').select('account_id').eq('id', sp.contractor_user_id).maybeSingle();
+          if (userRow?.account_id) {
+            const { data: cfg } = await supabase
+              .from('account_config').select('stripe_account_id, stripe_connect_enabled')
+              .eq('account_id', userRow.account_id).maybeSingle();
+            if (cfg?.stripe_account_id && cfg?.stripe_connect_enabled) connectedAccountId = cfg.stripe_account_id;
+          }
+        }
+        const r = await stripe.refunds.create(
+          { payment_intent: sp.stripe_payment_intent, reason: 'requested_by_customer' },
+          connectedAccountId ? { stripeAccount: connectedAccountId } : undefined,
+        );
         await supabase.from('signed_proposals').update({ stripe_refund_id: r.id }).eq('bid_id', String(bidId));
         refund = { id: r.id, amount: r.amount / 100 };
       }

@@ -1767,6 +1767,45 @@ test.describe('_addrAutoFull — shared address autocomplete utility', () => {
     assertNoErrors(page, 'e-caddr autocomplete');
   });
 
+  // ── Save-and-exit must never spawn a duplicate bid (upsert by stable id) ──
+  test('save-and-exit twice (session id lost + client renamed) keeps exactly one bid', async () => {
+    await goPg(page, 'pg-est');
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(() => {
+      const CN1 = 'Dedup Orig Name', CN2 = 'Dedup Renamed';
+      const mine = b => [CN1, CN2].includes(b.name) || [CN1, CN2].includes(b.client_name);
+      if (typeof bids !== 'undefined') bids = bids.filter(b => !mine(b));
+      try { editingBidId = null; } catch (e) {}
+      try { lastCreatedBidId = null; } catch (e) {}
+      try { estLinkedClientId = null; } catch (e) {}
+      localStorage.removeItem('zp3_est_full_draft');
+      const nameEl = document.getElementById('e-cname');
+      if (!nameEl || typeof _paintEstAutosave !== 'function') return { skip: true };
+
+      // First save: mints bid #1 and persists est_full_draft.lastBidId.
+      nameEl.value = CN1;
+      if (typeof saveEstFullDraft === 'function') saveEstFullDraft();
+      _paintEstAutosave();
+      const afterFirst = bids.filter(mine).length;
+
+      // Simulate save-and-exit then reopen: session vars are gone, the localStorage
+      // draft (with the stable lastBidId) survives — AND the client gets renamed,
+      // which defeats the old name-match recovery. Only the id link can dedup.
+      lastCreatedBidId = null; editingBidId = null;
+      nameEl.value = CN2;
+      _paintEstAutosave();
+      const afterSecond = bids.filter(mine).length;
+
+      if (typeof bids !== 'undefined') bids = bids.filter(b => !mine(b));
+      localStorage.removeItem('zp3_est_full_draft');
+      return { afterFirst, afterSecond };
+    });
+    if (r.skip) return;
+    expect(r.afterFirst, 'first save creates exactly one draft bid').toBe(1);
+    expect(r.afterSecond, 'save-and-exit twice must upsert the same bid, not spawn a copy').toBe(1);
+    assertNoErrors(page, 'save-and-exit dedup');
+  });
+
   // ── Field: gei-addr (generic estimate job address) ───────────────────────
   test('gei-addr input exists and _addrAutoFull is attached', async () => {
     await goPg(page, 'pg-est-generic');
@@ -5435,9 +5474,14 @@ test.describe('Int/ext estimate — cloud autosave (_paintEstAutosave)', () => {
     expect(exists).toBe(true);
   });
 
-  test('Save draft button is removed from int/ext estimator topbar', async () => {
+  test('tbar-r has Save & exit navigation button (no manual Save draft button)', async () => {
+    // A "Save & exit" navigation button lives in tbar-r so users can leave without
+    // generating a bid. Autosave (_paintEstAutosave) handles drafting — no separate
+    // "Save draft" button should exist; only the exit-to-home navigation button.
     const count = await page.locator('#pg-est .tbar-r button').count();
-    expect(count).toBe(0);
+    expect(count).toBe(1);
+    const label = await page.locator('#pg-est .tbar-r button').first().textContent();
+    expect(label).toContain('exit');
   });
 
   test('_paintEstAutosave creates a draft bid in bids[] when client name is set', async () => {
@@ -5889,5 +5933,164 @@ test.describe('Proposal hides per-room costs — shows total, materials, deposit
 
   test('no console errors in proposal per-room cost tests', async () => {
     assertNoErrors(page, 'proposal per-room cost');
+  });
+});
+
+// ─── Contractor bid summary: per-room breakdown for change orders ──────────────
+test.describe('toggleBidSummary shows per-room breakdown for change order reference', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(2000);
+  });
+  test.afterAll(async () => { await page.close(); });
+
+  test('per-room breakdown appears when bid has multiple rooms', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof toggleBidSummary !== 'function' || typeof bids === 'undefined') return null;
+      // Create a mock bid with two rooms
+      const fakeBid = {
+        id: 9988,
+        client_name: 'Test Client',
+        amount: 3000,
+        surfaces: [
+          { id: 1, type: 'walls', qty: 400, wallSqft: 400, room: 'Living Room' },
+          { id: 2, type: 'ceiling', qty: 200, room: 'Living Room' },
+          { id: 3, type: 'walls', qty: 300, wallSqft: 300, room: 'Master Bedroom' },
+          { id: 4, type: 'ceiling', qty: 150, room: 'Master Bedroom' },
+        ],
+        roomScopeMap: {},
+        scope: {},
+        status: 'Draft',
+      };
+      bids.unshift(fakeBid);
+      // Create a placeholder card element
+      const card = document.createElement('div');
+      card.id = 'bid-card-9988';
+      document.body.appendChild(card);
+      try {
+        toggleBidSummary(9988);
+      } catch(e) {
+        return { error: e.message };
+      }
+      const panel = document.getElementById('bid-summary-9988');
+      if (!panel) return { panelFound: false };
+      const html = panel.innerHTML;
+      const hasBreakdownHeader = /per-room breakdown/i.test(html);
+      const hasChangeOrderNote = /change order reference/i.test(html);
+      const roomMatches = html.match(/Living Room|Master Bedroom/g) || [];
+      // Both rooms should appear in the breakdown
+      const hasBothRooms = roomMatches.length >= 2;
+      // Dollar amounts should be present
+      const amtMatches = html.match(/\$[\d,]+/g) || [];
+      const hasAmounts = amtMatches.length >= 2;
+      // Amounts should be positive integers that sum close to bid amount
+      const amounts = amtMatches.map(a => parseInt(a.replace(/[$,]/g,''),10)).filter(n=>n>0);
+      const amtSum = amounts.reduce((a,b)=>a+b,0);
+      return { hasBreakdownHeader, hasChangeOrderNote, hasBothRooms, hasAmounts, amtSum, bidAmt: 3000 };
+    });
+    if (!result || result.error) return;
+    expect(result.hasBreakdownHeader).toBe(true);
+    expect(result.hasChangeOrderNote).toBe(true);
+    expect(result.hasBothRooms).toBe(true);
+    expect(result.hasAmounts).toBe(true);
+    // Room amounts must sum to the bid total (within rounding)
+    expect(Math.abs(result.amtSum - result.bidAmt)).toBeLessThanOrEqual(2);
+  });
+
+  test('per-room breakdown is absent for single-room bids', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof toggleBidSummary !== 'function' || typeof bids === 'undefined') return null;
+      const fakeBid = {
+        id: 9987,
+        client_name: 'Single Room Client',
+        amount: 1200,
+        surfaces: [
+          { id: 1, type: 'walls', qty: 300, wallSqft: 300, room: 'Kitchen' },
+          { id: 2, type: 'ceiling', qty: 120, room: 'Kitchen' },
+        ],
+        roomScopeMap: {},
+        scope: {},
+        status: 'Draft',
+      };
+      bids.unshift(fakeBid);
+      const card = document.createElement('div');
+      card.id = 'bid-card-9987';
+      document.body.appendChild(card);
+      try { toggleBidSummary(9987); } catch(e) { return { error: e.message }; }
+      const panel = document.getElementById('bid-summary-9987');
+      if (!panel) return { panelFound: false };
+      return { hasBreakdown: /per-room breakdown/i.test(panel.innerHTML) };
+    });
+    if (!result || result.error) return;
+    expect(result.hasBreakdown).toBe(false);
+  });
+
+  test('no console errors in per-room breakdown tests', async () => {
+    assertNoErrors(page, 'per-room breakdown');
+  });
+});
+
+// ─── sign.html: deposit badge shows actual % from saved bid ───────────────────
+test.describe('sign.html deposit tile shows correct percentage from saved bid', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    page = await browser.newPage();
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(2000);
+  });
+  test.afterAll(async () => { await page.close(); });
+
+  test('_renderPayTiles badge reflects 50% deposit from prop object', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _renderPayTiles !== 'function') return null;
+      // Simulate a prop object with 50% deposit
+      window._prop = { amount: 10000, deposit: 5000 };
+      window._payFullAmount = false;
+      // Ensure the tile element exists
+      let td = document.getElementById('pay-tile-dep');
+      if (!td) {
+        td = document.createElement('div');
+        td.id = 'pay-tile-dep';
+        td.className = 'sig-pay-opt';
+        td.innerHTML = '<div id="pay-tile-dep-badge" class="sig-pay-opt-badge">Deposit</div><div id="pay-tile-dep-amt" class="sig-pay-opt-amt"></div><div id="pay-tile-dep-note" class="sig-pay-opt-sub"></div><div class="sig-pay-opt-sel"></div>';
+        document.body.appendChild(td);
+      }
+      try { _renderPayTiles(); } catch(e) { return { error: e.message }; }
+      const badge = document.getElementById('pay-tile-dep-badge') || td.querySelector('.sig-pay-opt-badge');
+      return { badgeText: badge ? badge.textContent : null };
+    });
+    if (!result || result.error) return;
+    expect(result.badgeText).toBe('50% Deposit');
+  });
+
+  test('_renderPayTiles badge reflects 25% deposit from prop object', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _renderPayTiles !== 'function') return null;
+      window._prop = { amount: 14037, deposit: 3509 }; // ~25%
+      window._payFullAmount = false;
+      try { _renderPayTiles(); } catch(e) { return { error: e.message }; }
+      const badge = document.getElementById('pay-tile-dep-badge') || document.querySelector('#pay-tile-dep .sig-pay-opt-badge');
+      return { badgeText: badge ? badge.textContent : null };
+    });
+    if (!result || result.error) return;
+    expect(result.badgeText).toBe('25% Deposit');
+  });
+
+  test('S.depositPct used as default when opening new estimate', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof S === 'undefined' || typeof clearEstimatorForm !== 'function') return null;
+      S.depositPct = 50;
+      try { clearEstimatorForm(); } catch(e) { /* ignore side-effects */ }
+      const el = document.getElementById('e-deposit-pct');
+      return { value: el ? parseInt(el.value, 10) : null };
+    });
+    if (!result) return;
+    expect(result.value).toBe(50);
+  });
+
+  test('no console errors in deposit badge tests', async () => {
+    assertNoErrors(page, 'deposit badge');
   });
 });

@@ -78,6 +78,11 @@ function _applyEmployeeNavGating(){
   _gatedIds.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
   // Hide the Dispatch button inside the Jobs page header for employees
   const _dispBtn=document.getElementById('jobs-dispatch-btn');if(_dispBtn)_dispBtn.style.display='none';
+  // Grey (don't hide) the dashboard Estimate quick action for employees without
+  // the estimate permission — the click still fires openEstimateForClient, which
+  // shows the request-access popup. Restore full opacity if they have it.
+  const _qaEst=document.getElementById('qa-estimate-btn');
+  if(_qaEst){const _ok=!_employeeRecord?.permissions?.estimate?false:true;_qaEst.style.opacity=_ok?'':'0.55';}
   // nav-user avatar: show employee name/role but don't link to settings
   const nu=document.getElementById('nav-user');
   if(nu){nu.style.cursor='default';nu.onclick=null;}

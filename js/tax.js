@@ -249,7 +249,8 @@ function calcTax(){
     '</div>';
   }
 
-  document.getElementById('tx-inputs').innerHTML=
+  const _txInputsEl=document.getElementById('tx-inputs');
+  if(_txInputsEl)_txInputsEl.innerHTML=
     '<div class="tax-row"><span style="color:var(--text2)">Gross income</span><span style="font-weight:700">'+fmt(tIn)+'</span></div>'+
     '<div class="tax-row"><span style="color:var(--text2)">Business expenses</span><span style="color:#A32D2D">('+fmt(tEx)+')</span></div>'+
     '<div class="tax-row"><span style="color:var(--text2)">Mileage savings <span onclick="goPg(\'pg-tracker\');setTimeout(()=>{setTrTab(\'mileage\',document.getElementById(\'tr-t-mileage\'))},150)" style="font-size:10px;color:var(--blue);cursor:pointer;font-weight:700;margin-left:4px">'+tMi.toFixed(1)+' mi →</span></span><span style="color:#A32D2D">('+fmt(mileDed)+')</span></div>'+
@@ -272,7 +273,8 @@ function calcTax(){
     _stateRows='<div class="tax-row"><span>'+escHtml(_homeStateName)+' income tax</span><span style="color:#A32D2D">'+fmt(ksTax)+'</span></div>';
   }
 
-  document.getElementById('tx-results').innerHTML=
+  const _txResultsEl=document.getElementById('tx-results');
+  if(_txResultsEl)_txResultsEl.innerHTML=
     '<div class="tax-row"><span>Self-employment tax (15.3%)</span><span style="color:#A32D2D">'+fmt(seTax)+'</span></div>'+
     '<div class="tax-row"><span>Federal income tax</span><span style="color:#A32D2D">'+fmt(fedTax)+'</span></div>'+
     _stateRows+
@@ -299,7 +301,8 @@ function calcTax(){
     : '<div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:8px 10px;margin-bottom:12px;font-size:11px;color:#92400E">'+
         '💡 Enter last year\'s total tax above for the simplest quarterly number.'+
       '</div>';
-  document.getElementById('tx-quarters').innerHTML=
+  const _txQuartersEl=document.getElementById('tx-quarters');
+  if(_txQuartersEl)_txQuartersEl.innerHTML=
     safeHarborNote+
     '<div style="font-size:11px;color:var(--text2);margin-bottom:10px">Pay '+fmt(perQ)+' each quarter.</div>'+
     qdates.map(({q,due,date,period})=>{
@@ -403,9 +406,11 @@ function calcTax(){
   }
 }
 
+const _VALID_TAX_STATUSES=new Set(['single','mfj','mfs','hoh','qss']);
 function estimateTax(netSelf,yr){
-  if(netSelf<=0)return 0;
-  const status=S.txStatus||'single';
+  if(!(netSelf>0))return 0;
+  const _rawStatus=S.txStatus||'single';
+  const status=_VALID_TAX_STATUSES.has(_rawStatus)?_rawStatus:'single';
   const seTax=_calcSeTax(netSelf,yr||new Date().getFullYear());
   const seDed=seTax/2;
   const bkts=yr?_getFedBracketsForYear(yr):FED_BRACKETS;

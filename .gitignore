@@ -8,3 +8,4 @@ package-lock.json
 test-results/
 playwright-report/
 settings.local.json
+tests/flow/.local-accounts.json

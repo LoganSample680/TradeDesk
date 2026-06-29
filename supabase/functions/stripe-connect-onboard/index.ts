@@ -1,8 +1,7 @@
 import Stripe from 'npm:stripe@14';
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { getServiceRoleKey } from '../_shared/keys.ts';
+import { getServiceRoleKey, resolveStripeMode, stripeSecretKey } from '../_shared/keys.ts';
 
-const stripe = new Stripe(Deno.env.get('STRIPE_SECRET_KEY')!, { apiVersion: '2023-10-16' });
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, content-type',
@@ -12,6 +11,8 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   try {
+    const mode = resolveStripeMode(req);
+    const stripe = new Stripe(stripeSecretKey(mode), { apiVersion: '2023-10-16' });
     const authHeader = req.headers.get('authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {

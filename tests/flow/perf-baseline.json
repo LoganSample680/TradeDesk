@@ -1,0 +1,3 @@
+{
+  "_comment": "Per-flow click/time baselines for the performance ratchet (CLAUDE.md §13). CAPTURE MODE: all flows are being recounted to reflect REAL user interactions (every field fill/tap/keystroke = 1, not 1 per evaluate-block). Once the honest numbers stabilize in CI, copy each flow's reported click count here to start HARD-GATING it. A flow listed here may not increase its click count vs baseline; improvements ratchet it DOWN. Time is advisory only."
+}

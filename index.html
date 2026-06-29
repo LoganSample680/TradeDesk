@@ -319,6 +319,10 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .tf-arrow{font-size:11px;font-weight:800;color:var(--text-3);flex-shrink:0;align-self:center}
 .tf-card:hover .tf-arrow{color:var(--denim)}
 .tf-acts{display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding-top:6px;width:100%;padding-left:44px}
+/* Every action button in a feed card is the SAME size regardless of label length:
+   equal flex share (flex:1 1 0), centered text, no wrap. "Collect →", "📱 Send",
+   "Snooze 2d", "Won ✓" all render to identical width within their row. */
+.tf-acts>.btn,.tf-acts>.btn-sm,.tf-acts>a{flex:1 1 0;min-width:0;justify-content:center;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* ── Make Money Today sections ── */
 .mmt-sec{border-top:1px solid var(--line)}
@@ -718,6 +722,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   .kcol{width:100%}
   .cal-cell{min-height:64px;padding:4px}
   .tbl th,.tbl td{padding:8px;font-size:11px}
+  #proposals-list .tbl th:nth-child(3),#proposals-list .tbl td:nth-child(3){display:none}
   .zmodal-overlay{padding:10px}
   .tbar-r{width:100%;flex-wrap:wrap}
 }
@@ -917,8 +922,11 @@ body.dark .cal-cell.other{background:var(--cream)}
 .byo-price{font-family:var(--font-display);font-size:15px;font-weight:800;color:var(--text);letter-spacing:-.3px;font-variant-numeric:tabular-nums;min-width:64px;text-align:right;flex-shrink:0}
 .byo-edit{background:none;border:0;color:var(--text-3);cursor:pointer;font-size:10px;font-weight:700;font-family:inherit;padding:1px 4px;letter-spacing:.04em;text-transform:uppercase;text-decoration:underline;text-underline-offset:2px}
 .byo-edit:hover{color:var(--text)}
+/* Mobile sticky bar retired: its total (#byo-mob-total) was never wired so it showed a
+   stale $0, and being position:fixed it overlapped the summary-rail's own Send/Sign
+   buttons on phones. The summary-rail stacks below the form on mobile and already
+   provides the totals + all actions, so the bar was a broken duplicate. */
 .byo-mob-bar{display:none}
-@media(max-width:767px){.byo-mob-bar{display:block}}
 
 /* Client hub directory page */
 .hub-dir-row{padding:14px 18px;border-bottom:1px solid var(--line);transition:background .12s;cursor:pointer}
@@ -1041,7 +1049,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <button class="qa" onclick="quickAction('drive')">
             <span class="qa-emoji">🚗</span><span>Drive</span>
           </button>
-          <button class="qa" onclick="quickAction('estimate')">
+          <button class="qa" id="qa-estimate-btn" onclick="quickAction('estimate')">
             <span class="qa-emoji">📋</span><span>Estimate</span>
           </button>
           <button class="qa" onclick="quickAction('schedule')">
@@ -1378,6 +1386,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="tbar-title" id="est-tbar-title">Estimate builder</div>
     </div>
     <div class="tbar-r">
+      <button class="btn btn-sm" onclick="saveEstFullDraft();goPg('pg-dash')" style="color:var(--text2)">Save &amp; exit</button>
     </div>
   </div>
   <div class="steps" id="est-steps">
@@ -1412,9 +1421,9 @@ body.dark .cal-cell.other{background:var(--cream)}
     <select id="e-cprop" style="display:none"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select>
     <div class="card"><div class="card-hd">Client info <span id="e-client-linked"></span></div>
       <div class="fg fg2">
-        <div class="f"><label>Client name <span style="color:var(--c-red)">*</span></label><input id="e-cname" placeholder="John &amp; Sarah Smith" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
+        <div class="f"><label>Client name <span style="color:var(--c-red)">*</span></label><input id="e-cname" autocapitalize="words" placeholder="John &amp; Sarah Smith" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
         <div class="f"><label>Phone <span style="color:var(--c-red)">*</span></label><input id="e-cphone" type="tel" maxlength="12" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="fmtPhone(this);markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
-        <div class="f" style="grid-column:1/-1;position:relative"><label>Property address <span style="color:var(--c-red)">*</span></label><input id="e-caddr" placeholder="1234 Maple St, Wichita KS 67201" autocomplete="off" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft();_paintOnAddrInput();_lookupProperty(this.value,'ecaddr')" onblur="typeof checkAddrServiceState==='function'&&checkAddrServiceState(this.value)"></div>
+        <div class="f" style="grid-column:1/-1;position:relative"><label>Property address <span style="color:var(--c-red)">*</span></label><input id="e-caddr" autocapitalize="words" placeholder="1234 Maple St, Wichita KS 67201" autocomplete="off" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft();_paintOnAddrInput();_lookupProperty(this.value,'ecaddr')" onblur="typeof checkAddrServiceState==='function'&&checkAddrServiceState(this.value)"></div>
         <div id="prop-card-ecaddr" style="display:none;margin-top:8px;padding:10px 12px;background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r);font-size:12px;grid-column:1/-1"></div>
       </div>
       <div class="f"><label>Walkthrough notes</label><textarea id="e-cnotes" placeholder="What did you see? What does the client want?"></textarea></div>
@@ -1513,7 +1522,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 
         <div style="margin-bottom:12px">
           <label id="surf-room-name-label" style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Room name <span style="color:var(--c-red)">*</span></label>
-          <input id="surf-room-name" placeholder="Living room, Master bedroom..."
+          <input id="surf-room-name" autocapitalize="words" placeholder="Living room, Master bedroom..."
             style="font-size:16px;font-weight:700;padding:10px 12px;width:100%;border:1.5px solid var(--border2);background:var(--bg2);border-radius:var(--r);outline:none;box-sizing:border-box;color:var(--text)"
             oninput="onSurfRoomName(this)">
           <input id="surf-room-sqft" type="hidden" value="0">
@@ -2387,7 +2396,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
 
     <div class="fg fg2">
-      <div class="f"><label>Name</label><input id="s-name" placeholder="Smith residence"></div>
+      <div class="f"><label>Name</label><input id="s-name" autocapitalize="words" placeholder="Smith residence"></div>
       <div class="f" style="position:relative"><label>Address</label><input id="s-addr" autocomplete="off"></div>
       <div class="f" id="s-value-row" style="display:none"><label>Job value ($)</label><input id="s-value" type="number" placeholder="0"></div>
       <div class="f"><label>Time <span style="font-size:10px;color:var(--text3)">(estimate visits)</span></label>
@@ -3035,6 +3044,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="f"><label>Monthly revenue goal ($)</label><input type="number" id="set-goal-monthly" placeholder="e.g. 8000" min="0" step="500"><div style="font-size:10px;color:var(--text3);margin-top:3px">What do you want to bring in each month?</div></div>
         <div class="f"><label>Default labor rate ($/hr)</label><input id="set-labor-rate" type="number" placeholder="45" min="0" step="5"></div>
         <div class="f"><label>Profit margin target (%)</label><input type="number" id="set-margin"></div>
+        <div class="f"><label>Default deposit (%)</label><input type="number" id="set-deposit-pct" min="0" max="100" step="5"><div style="font-size:10px;color:var(--text3);margin-top:3px">Applied to every new estimate (0 = no deposit)</div></div>
         <div class="f"><label>Paint coverage (sq ft/gal)</label><input type="number" id="set-cov"></div>
         <div class="f"><label>Materials markup (%)</label><input type="number" id="set-mm"></div>
         <div class="f"><label>Supplies rate ($/sq ft)</label><input type="number" id="set-supplies-rate" step="0.01" placeholder="0.40"></div>
@@ -3802,6 +3812,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 <script src="js/data.js"></script>
 <script src="js/navigation.js"></script>
 <script src="js/cloud.js"></script>
+<script src="js/observability.js"></script>
 <script src="js/dashboard.js"></script>
 <script src="js/clients.js"></script>
 <script src="js/bids.js"></script>

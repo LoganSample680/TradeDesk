@@ -1,4 +1,5 @@
 let _stripeConnectStatus=null; // cached: {connected, charges_enabled, details_submitted, stripe_account_id}
+Object.defineProperty(window,'_stripeConnectStatus',{get:()=>_stripeConnectStatus,set:v=>{_stripeConnectStatus=v;},configurable:true});
 
 // ── Employee invite URL handling ─────────────────────────────────────────────
 (function(){
@@ -59,6 +60,7 @@ async function loadStripeConnectStatus(){
 }
 
 function _renderStripeConnectUI(el,data){
+  if(!el)return;
   if(!data||!data.connected){
     el.innerHTML=
       '<div style="font-size:13px;color:var(--text2);margin-bottom:10px;line-height:1.5">Connect your Stripe account so clients can pay you directly via card or bank transfer. Money lands in your Stripe account instantly.</div>'+
@@ -316,7 +318,8 @@ async function _devLoadUserAccount(key){
     income:[...income],expenses:[...expenses],mileage:[...mileage],timeEntries:[...timeEntries],
     licenses:[...licenses],events:[...events],contracts:[...contracts],agreements:[...agreements],photos:[...photos],
     S:JSON.parse(JSON.stringify(S)),
-    lastKnownIds:Object.fromEntries(Object.entries(_lastKnownIds).map(([k,v])=>[k,[...v]]))
+    lastKnownIds:Object.fromEntries(Object.entries(_lastKnownIds).map(([k,v])=>[k,[...v]])),
+    syncedHash:Object.fromEntries(Object.entries(_syncedHash).map(([k,v])=>[k,[...v]]))
   };
   // Load target user's records into memory
   for(let i=0;i<_TD_TABLES.length;i++){
@@ -324,6 +327,9 @@ async function _devLoadUserAccount(key){
     const rows=(tableResults[i].data||[]).map(r=>r.data);
     set(rows);
     _lastKnownIds[t]=new Set((tableResults[i].data||[]).map(r=>String(r.id)));
+    // DELTA: rebuild the synced-hash from the TARGET account's rows so the dev's own
+    // row hashes can't linger and suppress a target-account upload (cross-account bleed).
+    _syncedHash[t]=new Map((tableResults[i].data||[]).map(r=>[String(r.id),_hashPayload(r.data)]));
   }
   if(settingsResult.data?.settings){try{const zS=JSON.parse(settingsResult.data.settings);Object.assign(S,zS);}catch(e){}}
   _devSupportMode=true;_devSupportName=u.name;
@@ -341,6 +347,7 @@ async function _devExitSupportMode(){
   ({clients,bids,jobs,payments,liens,income,expenses,mileage,timeEntries,licenses,events,contracts,agreements,photos}=_devSavedState);
   if(_devSavedState.S){const dS=_devSavedState.S;Object.keys(S).forEach(k=>{if(!(k in dS))delete S[k];});Object.assign(S,dS);}
   if(_devSavedState.lastKnownIds){for(const[k,v]of Object.entries(_devSavedState.lastKnownIds))_lastKnownIds[k]=new Set(v);}
+  if(_devSavedState.syncedHash){for(const[k,v]of Object.entries(_devSavedState.syncedHash))_syncedHash[k]=new Map(v);}
   _devSupportMode=false;_devSupportName='';_devSavedState=null;
   saveAll();
   _renderDevTradeCard();renderDash();
@@ -388,15 +395,34 @@ async function _devRestoreSnapshot(key,idx){
   },{title:'Restore backup',yes:'Restore',danger:true});
 }
 // ── Toast notifications ────────────────────────────────────────────────
-const SUPA_URL = location.origin + '/api';
+// Supabase endpoint. DEFAULT = DIRECT to Supabase — validated on AT&T Fiber (the exact
+// network §15.2's /api proxy was built for), which now resolves *.supabase.co fine.
+// Direct pays ZERO Cloudflare /api cost. The /api Pages-Function proxy is RETAINED as
+// the safety net, reached two ways:
+//   (a) explicit override: ?supadirect=0 (persists) forces the proxy; ?supadirect=1 forces direct.
+//   (b) AUTO-FALLBACK (supaInit): if direct is unreachable on a network (can't DNS-resolve
+//       / blocked), the boot probe silently switches THIS session to the proxy so the app
+//       still loads. So even an untested carrier self-heals — direct where it works, proxy
+//       where it must, never an outage.
+const _SUPA_DIRECT_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
+const _SUPA_PROXY_URL = location.origin + '/api';
+(function(){try{const p=new URLSearchParams(location.search);const v=p.get('supadirect');
+  if(v==='1')localStorage.setItem('zp3_supa_mode','direct');
+  if(v==='0')localStorage.setItem('zp3_supa_mode','proxy');
+}catch(_e){}})();
+const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e){return null;}})();
+// `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
+let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.25.26.40';
+const APP_VERSION='06.29.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
-let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null;
+let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null,_broadcastPending=false;
 const _deviceId=Math.random().toString(36).slice(2,10);
-// Expose sync state on window so E2E tests can observe it (let variables are not window properties)
+// Expose sync state and auth objects on window so E2E tests can observe/stub them
 Object.defineProperty(window,'_syncStatus',{get:()=>_syncStatus,configurable:true});
 Object.defineProperty(window,'_supaCloudLoaded',{get:()=>_supaCloudLoaded,configurable:true});
+Object.defineProperty(window,'_supa',{get:()=>_supa,set:v=>{_supa=v;},configurable:true});
+Object.defineProperty(window,'_supaUser',{get:()=>_supaUser,set:v=>{_supaUser=v;},configurable:true});
 
 // Tracks IDs present in each table after the last successful load or save.
 // Used to detect deletions (record in _lastKnownIds but not in current array).
@@ -406,6 +432,74 @@ let _lastKnownIds={
   td_payments:new Set(),td_liens:new Set(),td_time_entries:new Set(),
   td_licenses:new Set(),td_events:new Set(),td_contracts:new Set(),td_agreements:new Set(),td_photos:new Set()
 };
+
+// DELTA SYNC. Per-table Map(id -> content hash of the row payload the SERVER currently
+// holds. On save we upload ONLY rows whose hash changed since the last sync, instead of
+// re-upserting the whole account every time. The hash has no false negatives (any byte
+// change flips it, so a real edit can never be silently skipped); a false positive only
+// causes a harmless re-upload of an identical row; a MISSING entry is treated as changed
+// → uploaded, so any path that doesn't warm the map degrades to today's full-upload.
+//
+// THE ONE DISCIPLINE: the hash input is ALWAYS the object that is/was the DB `data`
+// column — txFn(arr) on save, the loaded `r.data` on load — via _hashPayload(). And
+// _syncedHash[id] is written ONLY AFTER that id's upsert batch resolves with no error,
+// never optimistically. NOT persisted: rebuilt from cloud on every load (the only
+// authoritative source of "what the server has"); an offline/cache boot leaves it empty
+// → safe full upload on reconnect.
+let _syncedHash={};
+// Fast deterministic 32-bit string hash (FNV-1a) over the JSON of a row payload.
+function _hashPayload(obj){
+  let str; try{ str=JSON.stringify(obj); }catch(_e){ return null; }
+  if(str===undefined) return null;
+  let h=0x811c9dc5;
+  for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=(h+((h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24)))>>>0; }
+  return h.toString(36);
+}
+// Test/telemetry hook: counts rows actually uploaded vs skipped on each save pass.
+window._deltaStats={upserts:0,skips:0};
+// Test hook: does the synced-hash map currently hold an entry for this id?
+window.__hashHas=(tbl,id)=>!!(_syncedHash[tbl]&&_syncedHash[tbl].has(String(id)));
+
+// CONCURRENCY-SAFE SWEEP (CLAUDE.md §9.8). The cloud save soft-deletes rows that
+// "disappeared" from this device's snapshot. Inferring deletes that way clobbers
+// concurrent devices: a peer's brand-new row, not yet merged here, looks "missing"
+// and gets deleted. Instead we soft-delete ONLY ids the user EXPLICITLY deleted on
+// THIS device, recorded here at each delete site via _recordLocalDelete(). A row
+// merely absent (a peer's, not-yet-synced) is never swept. Even bulk wipes
+// (clearAllData / clear*Only) just go through _userDelete, which records every id
+// that vanished — no special flag needed, and it survives the deferred async save.
+let _locallyDeletedIds={
+  td_clients:new Set(),td_bids:new Set(),td_jobs:new Set(),
+  td_income:new Set(),td_expenses:new Set(),td_mileage:new Set(),
+  td_payments:new Set(),td_liens:new Set(),td_time_entries:new Set(),
+  td_licenses:new Set(),td_events:new Set(),td_contracts:new Set(),td_agreements:new Set(),td_photos:new Set()
+};
+// Record an explicit local delete so the next save propagates it (and ONLY it).
+// Call with the synced table name + the id(s) removed from that table's array —
+// INCLUDING cascade removals (deleting a client also removes its bids/jobs/… → record
+// each under its own table). Safe no-op for unknown tables / empty ids.
+function _recordLocalDelete(tbl,...ids){
+  if(!_locallyDeletedIds[tbl])return;
+  ids.forEach(id=>{if(id!==undefined&&id!==null)_locallyDeletedIds[tbl].add(String(id));});
+}
+
+// Wrap a user-initiated delete action: snapshot every synced array's ids, run the
+// delete (its synchronous array mutations + any cascade), then record EVERY id that
+// disappeared as an explicit delete. Because the mutations are synchronous, nothing
+// else can change the arrays between snapshot and diff, so this captures exactly what
+// the user deleted — cascades included — and nothing a concurrent peer touched.
+// Usage: wrap the function body's mutation+save, e.g.
+//   function deleteBid(id){ if(!confirm)return; _userDelete(()=>{ bids=bids.filter(b=>b.id!==id); saveAll(); }); }
+function _userDelete(fn){
+  const before={};
+  for(const t of _TD_TABLES){ try{ before[t.t]=new Set((t.get()||[]).map(r=>String(r.id))); }catch(_e){ before[t.t]=new Set(); } }
+  const ret=fn();
+  for(const t of _TD_TABLES){
+    let now; try{ now=new Set((t.get()||[]).map(r=>String(r.id))); }catch(_e){ continue; }
+    before[t.t].forEach(id=>{ if(!now.has(id)) _recordLocalDelete(t.t,id); });
+  }
+  return ret;
+}
 
 // Per-record table definitions — one entry per data type.
 // arr: getter for the live in-memory array
@@ -435,6 +529,29 @@ const _TD_TABLES=[
 // trap every device in an offline loop. Real errors (auth, network) are not matched.
 function _isMissingTableErr(err){
   return !!err&&(err.code==='42P01'||err.code==='PGRST205'||/does not exist|could not find the table|schema cache/i.test(err.message||''));
+}
+
+// Tables whose money fields are redacted for the CURRENT employee session, derived
+// from their team permissions (the SAME matrix the server RPC load_account_data
+// enforces). Used in TWO places that MUST agree:
+//   1. The server zeroes these tables' money keys on load.
+//   2. supaSaveToCloud SKIPS writing these tables back — so a redacted (zeroed)
+//      array can NEVER overwrite the contractor's real amounts. This guard is
+//      permission-derived, not RPC-derived, so corruption is impossible even
+//      before the RPC migration reaches production (where load falls back to the
+//      raw, unredacted select). Contractors (not _isEmployee) redact nothing.
+function _employeeRedactedTables(){
+  if(!_isEmployee)return new Set();
+  const p=(_employeeRecord&&_employeeRecord.permissions)||{};
+  const fin=!!p.financials;
+  const red=new Set();
+  if(!(fin||p.estimate))red.add('td_bids');
+  if(!fin)             red.add('td_income');
+  if(!(fin||p.collect))red.add('td_payments');
+  if(!(fin||p.collect))red.add('td_liens');
+  if(!(fin||p.expenses))red.add('td_expenses');
+  if(!(fin||p.mileage))red.add('td_mileage');
+  return red;
 }
 
 // ── Long-press delete (3s hold on any [data-lp-id] element) ────────────────
@@ -491,8 +608,8 @@ function _showLpDeletePopup(row){
 }
 function _lpDoDelete(id,type){
   const nid=parseInt(id,10);
-  if(type==='income'){income=income.filter(x=>x.id!==nid);_flushSaveNow&&_flushSaveNow();if(typeof renderIncome==='function')renderIncome();}
-  else if(type==='payment'){payments=payments.filter(x=>x.id!==nid);_flushSaveNow&&_flushSaveNow();if(typeof renderIncome==='function')renderIncome();}
+  if(type==='income'){_userDelete(()=>{income=income.filter(x=>x.id!==nid);_flushSaveNow&&_flushSaveNow();});if(typeof renderIncome==='function')renderIncome();}
+  else if(type==='payment'){_userDelete(()=>{payments=payments.filter(x=>x.id!==nid);_flushSaveNow&&_flushSaveNow();});if(typeof renderIncome==='function')renderIncome();}
   else if(type==='expense'){if(typeof delExpense==='function')delExpense(nid);}
   else if(type==='mileage'){if(typeof delMileage==='function')delMileage(nid);}
   else if(type==='lead'||type==='client'){_lpDeleteClientById(nid,type);}
@@ -500,10 +617,12 @@ function _lpDoDelete(id,type){
     // Mirror deleteBid()'s cascade so a long-pressed proposal is fully cleaned up:
     // its payment records and any lien go with it, and every surface re-renders.
     const _delBid=bids.find(x=>x.id===nid);const _delClientId=_delBid?_delBid.client_id:null;
-    bids=bids.filter(x=>x.id!==nid);
-    if(typeof payments!=='undefined')payments=payments.filter(p=>p.bid_id!==nid);
-    if(typeof liens!=='undefined')liens=liens.filter(l=>l.bid_id!==nid);
-    _flushSaveNow&&_flushSaveNow();
+    _userDelete(()=>{
+      bids=bids.filter(x=>x.id!==nid);
+      if(typeof payments!=='undefined')payments=payments.filter(p=>p.bid_id!==nid);
+      if(typeof liens!=='undefined')liens=liens.filter(l=>l.bid_id!==nid);
+      _flushSaveNow&&_flushSaveNow();
+    });
     if(typeof renderClientDetail==='function')renderClientDetail();
     if(typeof renderJobsHistory==='function')renderJobsHistory();
     if(typeof renderJobsPage==='function')renderJobsPage();
@@ -513,8 +632,10 @@ function _lpDoDelete(id,type){
   }
   else if(type==='job'){
     // Remove a single scheduled job/calendar event (jobs array record).
-    jobs=jobs.filter(x=>x.id!==nid);
-    _flushSaveNow&&_flushSaveNow();
+    _userDelete(()=>{
+      jobs=jobs.filter(x=>x.id!==nid);
+      _flushSaveNow&&_flushSaveNow();
+    });
     if(typeof renderClientDetail==='function')renderClientDetail();
     if(typeof renderCalendar==='function')renderCalendar();
     if(typeof renderJobsPage==='function')renderJobsPage();
@@ -522,13 +643,15 @@ function _lpDoDelete(id,type){
   }
 }
 function _lpDeleteClientById(id,fromType){
-  clients=clients.filter(x=>x.id!==id);
-  bids=bids.filter(b=>b.client_id!==id);
-  jobs=jobs.filter(j=>j.client_id!==id);
-  mileage=mileage.filter(m=>m.client_id!==id);
-  income=income.filter(i=>i.client_id!==id);
-  expenses=expenses.filter(e=>e.client_id!==id);
-  _flushSaveNow&&_flushSaveNow();
+  _userDelete(()=>{
+    clients=clients.filter(x=>x.id!==id);
+    bids=bids.filter(b=>b.client_id!==id);
+    jobs=jobs.filter(j=>j.client_id!==id);
+    mileage=mileage.filter(m=>m.client_id!==id);
+    income=income.filter(i=>i.client_id!==id);
+    expenses=expenses.filter(e=>e.client_id!==id);
+    _flushSaveNow&&_flushSaveNow();
+  });
   if(fromType==='lead'){if(typeof renderLeadsPage==='function')renderLeadsPage();}
   else{if(typeof renderClientList==='function')renderClientList();}
 }
@@ -716,14 +839,30 @@ window.recoverBidRooms=recoverBidRooms;
 async function supaInit(){
   if(!supaEnabled())return;
   _captureRecoverySnapshot(); // FIRST — freeze local data before any cloud load can overwrite it
+  // AUTO-FALLBACK: if we're set to talk DIRECT to Supabase, confirm this network can
+  // actually reach it before building the client. A 2.5s health probe — any HTTP
+  // response (even 401) means reachable → stay direct; a DNS/network/timeout error
+  // means this carrier can't resolve *.supabase.co → silently switch to the /api proxy
+  // for this session so the app still loads. The probe runs only in direct mode, so
+  // proxy-forced sessions pay nothing.
+  if(SUPA_URL===_SUPA_DIRECT_URL){
+    let _directOk=false;
+    try{
+      const _c=new AbortController();const _t=setTimeout(()=>_c.abort(),2500);
+      await fetch(_SUPA_DIRECT_URL+'/auth/v1/health',{signal:_c.signal});
+      clearTimeout(_t);_directOk=true;
+    }catch(_e){_directOk=false;}
+    if(!_directOk){SUPA_URL=_SUPA_PROXY_URL;try{localStorage.setItem('zp3_supa_fellback','1');}catch(_e2){}}
+  }
   try{
     _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{
       auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storage:window.localStorage}
     });
     // Realtime connects straight to Supabase — WebSocket proxying through
     // Cloudflare Pages is unreliable, and a dead socket silently kills
-    // cross-device live sync. REST keeps using the /api proxy for DNS
-    // resilience; if the direct socket fails, the 30s zj_data poll covers it.
+    // cross-device live sync. REST now ALSO defaults to direct (see SUPA_URL);
+    // the /api proxy is the auto-fallback when direct can't be reached. If the
+    // direct socket fails, the 30s zj_data poll covers it.
     try{_supa.realtime.endPoint='wss://mwtsmctajhrrybblgorf.supabase.co/realtime/v1/websocket';}catch(_e){}
     const{data:{session}}=await _supa.auth.getSession();
     if(session){
@@ -1029,6 +1168,16 @@ const _EMP_PERM_LABELS={
 };
 const _EMP_CLASSIFICATIONS=['','Apprentice','Journeyman','Master','Foreman / Lead','Helper','Subcontractor'];
 function _togglePermInfo(id){const el=document.getElementById(id);if(el)el.style.display=el.style.display==='block'?'none':'block';}
+// Collapsible Permissions block in the team-member modal (default closed). max-height
+// transition (not display) so it animates per the app's motion standard (§8.4).
+function _togglePermsAccordion(hdr){
+  const acc=hdr.parentElement.querySelector('.perms-acc');
+  const chev=hdr.querySelector('.perms-chev');
+  if(!acc)return;
+  const open=acc.style.maxHeight&&acc.style.maxHeight!=='0px';
+  acc.style.maxHeight=open?'0px':(acc.scrollHeight+24)+'px';
+  if(chev)chev.style.transform=open?'':'rotate(90deg)';
+}
 function _setEmpRolePreset(role){
   const preset=_EMP_ROLE_PRESETS[role]||{};
   Object.keys(_EMP_PERM_LABELS).forEach(p=>{
@@ -1383,10 +1532,82 @@ function _isCompanyVehicleToday(){
   return !!(v&&v!=='none'&&v!=='personal');
 }
 
+// ── Estimate access requests (owner side) ──────────────────────────────────
+// Employees without `estimate` permission tap a greyed entry point → a row lands
+// in td_permission_requests; the owner approves (flips permissions.estimate) or
+// denies, here on the Team page.
+let _pendingPermReqs=[];
+let _permReqsLoaded=false;
+
+async function _loadPendingPermRequests(){
+  if(_isEmployee||typeof _supa==='undefined'||!_supa||!_supaUser)return;
+  try{
+    const{data,error}=await _supa.from('td_permission_requests').select('*')
+      .eq('contractor_user_id',_supaUser.id).eq('status','pending').order('created_at',{ascending:true});
+    if(error){if(_isMissingTableErr(error))return;throw error;}
+    _pendingPermReqs=data||[];
+    if(typeof renderTeam==='function')renderTeam();
+    _refreshPermReqBadge();
+  }catch(e){console.warn('load perm requests:',e);}
+}
+
+function _refreshPermReqBadge(){
+  const n=_pendingPermReqs.length;
+  ['nb-team','mtb-team','mmi-team'].forEach(id=>{
+    const el=document.getElementById(id);if(!el)return;
+    let b=el.querySelector('.perm-req-badge');
+    if(n>0){
+      if(!b){b=document.createElement('span');b.className='perm-req-badge';
+        b.style.cssText='display:inline-block;min-width:16px;height:16px;line-height:16px;text-align:center;background:#A32D2D;color:#fff;font-size:10px;font-weight:800;border-radius:8px;margin-left:4px;padding:0 4px';
+        el.appendChild(b);}
+      b.textContent=String(n);
+    }else if(b){b.remove();}
+  });
+}
+
+async function _approvePermissionRequest(reqId){
+  const req=_pendingPermReqs.find(r=>r.id===reqId);if(!req)return;
+  try{
+    const emp=(S.employees||[]).find(e=>(e.email||'').toLowerCase()===(req.employee_email||'').toLowerCase());
+    if(emp){emp.permissions=emp.permissions||{};emp.permissions.estimate=true;_settingsChanged();}
+    await _supa.from('team_members').update({permissions:emp?emp.permissions:{estimate:true}})
+      .eq('contractor_user_id',_supaUser.id).eq('email',req.employee_email);
+    await _supa.from('td_permission_requests').update({status:'approved',resolved_at:new Date().toISOString(),resolved_by:_supaUser.id}).eq('id',reqId);
+    _pendingPermReqs=_pendingPermReqs.filter(r=>r.id!==reqId);
+    if(typeof showToast==='function')showToast('Estimate access granted to '+(req.employee_name||req.employee_email||'employee'),'✅');
+    if(typeof saveAll==='function')saveAll();
+    renderTeam();_refreshPermReqBadge();
+  }catch(e){console.warn('approve failed:',e);if(typeof showToast==='function')showToast('Could not approve.','⚠️');}
+}
+
+async function _denyPermissionRequest(reqId){
+  const req=_pendingPermReqs.find(r=>r.id===reqId);if(!req)return;
+  try{
+    await _supa.from('td_permission_requests').update({status:'denied',resolved_at:new Date().toISOString(),resolved_by:_supaUser.id}).eq('id',reqId);
+    _pendingPermReqs=_pendingPermReqs.filter(r=>r.id!==reqId);
+    if(typeof showToast==='function')showToast('Request denied.','🚫');
+    renderTeam();_refreshPermReqBadge();
+  }catch(e){console.warn('deny failed:',e);}
+}
+
 function renderTeam(){
   const el=document.getElementById('team-list');
   const el2=document.getElementById('team-page-list');
   if(!el&&!el2)return;
+  // Owner: lazy-load pending estimate-access requests once, then re-render.
+  if(!_isEmployee&&supaEnabled()&&_supaUser&&!_permReqsLoaded){_permReqsLoaded=true;_loadPendingPermRequests();}
+  const _reqHtml=(!_isEmployee&&_pendingPermReqs.length)
+    ?'<div style="margin-bottom:10px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Pending access requests</div>'+
+      _pendingPermReqs.map(r=>
+        '<div style="padding:10px;background:#FFF7ED;border:1px solid #FED7AA;border-radius:var(--r);margin-bottom:8px">'+
+          '<div style="font-size:13px;font-weight:700">'+escHtml(r.employee_name||r.employee_email||'Employee')+'</div>'+
+          '<div style="font-size:11px;color:var(--text3);margin:2px 0 8px">requests <b>Estimate</b> access</div>'+
+          '<div style="display:flex;gap:8px">'+
+            '<button onclick="_approvePermissionRequest(\''+r.id+'\')" style="flex:1;padding:7px;border-radius:var(--r);border:none;background:#0E6B39;color:#fff;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit">Approve</button>'+
+            '<button onclick="_denyPermissionRequest(\''+r.id+'\')" style="flex:1;padding:7px;border-radius:var(--r);border:1px solid var(--border2);background:none;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit">Deny</button>'+
+          '</div>'+
+        '</div>').join('')+'</div>'
+    :'';
   // Refresh pay-rate cache from team_members (RLS-gated) then re-render once loaded
   if(_canViewComp()&&supaEnabled()&&_supaUser&&!_teamCompLoaded){
     _teamCompLoaded=true;_loadTeamComp().then(()=>renderTeam());
@@ -1415,8 +1636,8 @@ function renderTeam(){
         '<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.5">'+perms+'</div>'+
       '</div>';
     }).join('');
-  if(el)el.innerHTML=empHtml;
-  if(el2)el2.innerHTML=empHtml;
+  if(el)el.innerHTML=_reqHtml+empHtml;
+  if(el2)el2.innerHTML=_reqHtml+empHtml;
   // Devices
   const devs=S.devices||[];
   const myId=_initDeviceId();
@@ -1585,7 +1806,12 @@ function _employeeModalHTML(emp,idx){
           '<input id="emp-pay-rate" type="number" min="0" step="0.5" value="'+(_eComp.pay_rate||'')+'" placeholder="'+(_eComp.pay_type==='salary'?'55000':'28')+'" style="font-size:14px;padding:10px;flex:1"></div></div>'+
       '</div>'
     :'')+
-    '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Permissions</div>'+
+    '<div onclick="_togglePermsAccordion(this)" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding:10px 0;margin-bottom:2px">'+
+      '<span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Permissions'+
+        ((e.permissions?Object.values(e.permissions).filter(Boolean).length:0)?' · '+Object.values(e.permissions).filter(Boolean).length+' on':'')+'</span>'+
+      '<span class="perms-chev" style="font-size:11px;color:var(--text3);transition:transform .18s cubic-bezier(.22,1,.36,1)">▶</span>'+
+    '</div>'+
+    '<div class="perms-acc" style="max-height:0;overflow:hidden;transition:max-height .2s cubic-bezier(.22,1,.36,1)">'+
     '<div style="display:grid;gap:6px;margin-bottom:14px">'+
       Object.entries(_EMP_PERM_LABELS).map(([k,lbl])=>{
         const checked=e.permissions&&e.permissions[k];
@@ -1599,6 +1825,7 @@ function _employeeModalHTML(emp,idx){
           (info?'<div class="perm-info" style="display:none;font-size:12px;color:var(--text3);padding:0 10px 10px 34px;line-height:1.45">'+escHtml(info)+'</div>':'')+
         '</div>';
       }).join('')+
+    '</div>'+
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       (!isNew?'<button onclick="removeEmployee('+idx+')" style="padding:10px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>':'<div></div>')+
@@ -1648,7 +1875,12 @@ async function _saveEmployee(idx){
   _settingsChanged();document.getElementById('emp-modal-overlay')?.remove();renderTeam();
   // Sync to Supabase team_members and send invite if email provided
   if(email&&_supa&&_supaUser){
-    const tmRow={contractor_user_id:_supaUser.id,email,name,role:emp.role,active:false,invited_at:new Date().toISOString()};
+    // permissions MUST ride along: has_team_perm() and the load_account_data RPC
+    // read team_members.permissions server-side. Without this the column stays
+    // '{}' forever, so every employee perm reads false — locking employees out of
+    // everything (a collect tech wouldn't even see payment amounts). This is the
+    // authoritative write the owner's permission checkboxes depend on.
+    const tmRow={contractor_user_id:_supaUser.id,email,name,role:emp.role,permissions:emp.permissions||{},active:false,invited_at:new Date().toISOString()};
     // Pay is written ONLY when the editor can view comp — otherwise the columns are
     // omitted from the upsert so existing pay_rate is preserved, never clobbered to 0.
     if(_canComp){tmRow.pay_type=_payType;tmRow.pay_rate=_payRate;_teamComp[email]={pay_type:_payType,pay_rate:_payRate};}
@@ -2067,6 +2299,16 @@ async function supaSignOut(){
   // scope:'global' (the default) revokes the token on the server, so the backup key
   // can't be used to silently re-auth when the user comes back online.
   if(_supa)await _supa.auth.signOut({scope:'local'});
+  // GoTrue dispatches SIGNED_OUT asynchronously, and its handler is what wipes the
+  // outgoing account's in-memory arrays and sets _supaUser=null. If the user signs
+  // straight into a DIFFERENT account on the same page (no reload), that wipe can
+  // land AFTER the new account's SIGNED_IN already set _supaUser — nulling it back
+  // out and bleeding/blanking state. Drain deterministically: the SIGNED_OUT handler
+  // clears _deliberateSignOut at the end of its wipe, so wait (bounded) for that flag
+  // to drop before returning. Now any subsequent sign-in is a clean SIGNED_IN.
+  const _t0=Date.now();
+  while(_deliberateSignOut&&Date.now()-_t0<3000){await new Promise(r=>setTimeout(r,25));}
+  _deliberateSignOut=false; // safety: never strand the guard if SIGNED_OUT didn't fire
 }
 
 // ── Supabase Storage helpers for receipt photos ───────────────────────
@@ -2446,7 +2688,13 @@ async function supaSaveToCloud(){
     // per table) and a force-quit mid-save used to lose every settings change.
     // Settings are tiny; landing them immediately makes Save force-quit-proof.
     if(!_isEmployee){
-      const{stateRates:_sr0,locationDenied:_ld0,locationGranted:_lg0,...sForCloudFirst}=S;
+      // Strip only stateRates (anon-readable reference data, never a user setting).
+      // locationGranted/locationDenied DO persist to the cloud so the location
+      // permission survives a reboot / cloud-authoritative reload — they were
+      // previously stripped here, which is why "location permission doesn't save."
+      // A wrongly-optimistic granted flag self-corrects on the next real GPS call
+      // (getCurrentPosition errors → locationDenied is set), so syncing it is safe.
+      const{stateRates:_sr0,...sForCloudFirst}=S;
       const{data:_zjRow,error:_se0}=await _supa.from('zj_data').upsert(
         {user_id:uid,settings:JSON.stringify(sForCloudFirst),checks_state:JSON.stringify(checksState),updated_at:ts},
         {onConflict:'user_id'}
@@ -2459,6 +2707,8 @@ async function supaSaveToCloud(){
     const _upsertTable=async(tbl,arr,txFn)=>{
       const rows=(txFn?txFn(arr):arr);
       const currentIds=new Set(rows.map(r=>String(r.id)));
+      _syncedHash[tbl]||=new Map();
+      const hashes=_syncedHash[tbl];
       // Fetch server-locked records (updated_at > 1 year from now = admin-deleted, must not overwrite)
       const lockCutoff=new Date(Date.now()+365*24*60*60*1000).toISOString();
       const{data:lockedRows}=await _supa.from(tbl).select('id').eq('user_id',uid).gt('updated_at',lockCutoff);
@@ -2469,27 +2719,53 @@ async function supaSaveToCloud(){
         if(tdef?.set) tdef.set(rows.filter(r=>!lockedIds.has(String(r.id))));
         lockedIds.forEach(id=>currentIds.delete(id));
       }
-      // Upsert live records in batches of 50 (excluding locked)
+      // DELTA: upload ONLY rows whose content hash changed since the last sync (or is
+      // unknown). The hash is computed over `r` here — the exact post-txFn payload that
+      // becomes the DB `data` column — so it round-trips against the load-side rebuild.
       if(rows.length){
-        const dbRows=rows.filter(r=>!lockedIds.has(String(r.id))).map(r=>({id:String(r.id),user_id:uid,data:r,updated_at:ts,deleted_at:null}));
-        for(let i=0;i<dbRows.length;i+=50){
-          const{error}=await _supa.from(tbl).upsert(dbRows.slice(i,i+50),{onConflict:'id,user_id'});
+        const changed=[];
+        for(const r of rows){
+          const id=String(r.id);
+          if(lockedIds.has(id))continue;
+          const h=_hashPayload(r);
+          if(hashes.get(id)===h){ window._deltaStats.skips++; continue; }
+          changed.push({id,h,row:{id,user_id:uid,data:r,updated_at:ts,deleted_at:null}});
+        }
+        // Upsert in batches of 50. Write the synced hash ONLY AFTER each batch resolves
+        // with no error — never optimistically, so a thrown batch (→ pending_sync retry)
+        // never marks un-sent rows as "synced" and silently drops them next save.
+        for(let i=0;i<changed.length;i+=50){
+          const slice=changed.slice(i,i+50);
+          const{error}=await _supa.from(tbl).upsert(slice.map(c=>c.row),{onConflict:'id,user_id'});
           if(error)throw error;
+          slice.forEach(c=>hashes.set(c.id,c.h));
+          window._deltaStats.upserts+=slice.length;
         }
       }
-      // Soft-delete records that were removed locally since last known state (never touch locked)
+      // Soft-delete ONLY ids the user EXPLICITLY deleted on this device (recorded in
+      // _locallyDeletedIds) — or everything vanished, during a deliberate bulk wipe.
+      // A row merely absent from this snapshot (e.g. a peer's row not yet merged here)
+      // is NEVER swept, so concurrent devices can't clobber each other's new rows.
       const prev=_lastKnownIds[tbl]||new Set();
-      const gone=[...prev].filter(id=>!currentIds.has(id)&&!lockedIds.has(id));
+      const deleted=_locallyDeletedIds[tbl]||new Set();
+      const gone=[...prev].filter(id=>!currentIds.has(id)&&!lockedIds.has(id)&&deleted.has(id));
       if(gone.length){
         for(let i=0;i<gone.length;i+=50){
           const{error:_de}=await _supa.from(tbl).update({deleted_at:ts,updated_at:ts}).in('id',gone.slice(i,i+50)).eq('user_id',uid);
           if(_de)throw _de;
         }
       }
+      gone.forEach(id=>{deleted.delete(id);hashes.delete(id);}); // delete-intent consumed; drop the swept row's hash so a re-create re-uploads
       _lastKnownIds[tbl]=currentIds;
     };
 
+    // Never write back a table the server redacted for this employee — its
+    // in-memory money fields are zeroed, and upserting them would overwrite the
+    // contractor's real amounts. Permission-derived so it holds even if the RPC
+    // fell back to a raw load. Contractors skip nothing.
+    const _saveSkip=_employeeRedactedTables();
     for(const {t,get,tx} of _TD_TABLES){
+      if(_saveSkip.has(t)){continue;}
       const arr=get();
       try{
         await _upsertTable(t,arr,tx);
@@ -2648,21 +2924,24 @@ async function _fetchProposalViews(){
       .not('bid_id','is',null)
       .order('opened_at',{ascending:false});
     if(data&&!error){
-      _proposalViewsByBid={};
-      _proposalViewsByBidHubClient={};
-      _proposalViewsByBidClient={};
-      _proposalViewsByBidContractor={};
-      _proposalViewsByBidHubCount={};
-      _proposalViewsByBidClientCount={};
+      // Build into temporaries first, then swap atomically — prevents a renderDash()
+      // mid-flight from seeing an empty dict during the rebuild window (flicker race).
+      const _pvBid={},_pvHub={},_pvClient={},_pvCon={},_pvHubCnt={},_pvCliCnt={};
       data.forEach(v=>{
         if(!v.bid_id)return;
-        if(!_proposalViewsByBid[v.bid_id])_proposalViewsByBid[v.bid_id]=v.opened_at;
-        if(v.hub_opened_at&&!_proposalViewsByBidHubClient[v.bid_id])_proposalViewsByBidHubClient[v.bid_id]=v.hub_opened_at;
-        if(v.client_opened_at&&!_proposalViewsByBidClient[v.bid_id])_proposalViewsByBidClient[v.bid_id]=v.client_opened_at;
-        if(v.contractor_opened_at&&!_proposalViewsByBidContractor[v.bid_id])_proposalViewsByBidContractor[v.bid_id]=v.contractor_opened_at;
-        if(v.hub_view_count)_proposalViewsByBidHubCount[v.bid_id]=(v.hub_view_count||0);
-        if(v.client_view_count)_proposalViewsByBidClientCount[v.bid_id]=(v.client_view_count||0);
+        if(!_pvBid[v.bid_id])_pvBid[v.bid_id]=v.opened_at;
+        if(v.hub_opened_at&&!_pvHub[v.bid_id])_pvHub[v.bid_id]=v.hub_opened_at;
+        if(v.client_opened_at&&!_pvClient[v.bid_id])_pvClient[v.bid_id]=v.client_opened_at;
+        if(v.contractor_opened_at&&!_pvCon[v.bid_id])_pvCon[v.bid_id]=v.contractor_opened_at;
+        if(v.hub_view_count)_pvHubCnt[v.bid_id]=(v.hub_view_count||0);
+        if(v.client_view_count)_pvCliCnt[v.bid_id]=(v.client_view_count||0);
       });
+      _proposalViewsByBid=_pvBid;
+      _proposalViewsByBidHubClient=_pvHub;
+      _proposalViewsByBidClient=_pvClient;
+      _proposalViewsByBidContractor=_pvCon;
+      _proposalViewsByBidHubCount=_pvHubCnt;
+      _proposalViewsByBidClientCount=_pvCliCnt;
       renderDash();
     }
   }catch(e){}
@@ -2820,7 +3099,7 @@ function discardInProgressBid(bidId){
   const _cid=_db?.client_id;
   zConfirm('Delete this pending bid? The client\'s signing link will stop working.',()=>{
     const idx=bids.findIndex(b=>b.id===bidId);
-    if(idx>-1){bids.splice(idx,1);clearEstFullDraft();saveAll();renderDash();
+    if(idx>-1){_userDelete(()=>{bids.splice(idx,1);clearEstFullDraft();saveAll();});renderDash();
       if(_cid)_uploadClientHub(_cid).catch(e=>console.error('[hub upload]',e));}
   },{title:'Delete pending bid',yes:'Delete',danger:true});
 }
@@ -2881,12 +3160,36 @@ async function supaLoadFromCloud({silent=false}={}){
       ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
       :(_isEmployee?_contractorUserId:_supaUser.id);
 
-    const[tableResults,settingsResult]=await Promise.all([
-      Promise.all(_TD_TABLES.map(({t})=>
-        _supa.from(t).select('id,data').eq('user_id',uid).is('deleted_at',null)
-      )),
-      _supa.from('zj_data').select('settings,checks_state,receipt_images,updated_at').eq('user_id',uid).maybeSingle()
-    ]);
+    // Settings load runs in parallel with the table load below.
+    const _settingsP=_supa.from('zj_data').select('settings,checks_state,receipt_images,updated_at').eq('user_id',uid).maybeSingle();
+
+    // EMPLOYEE sessions load through the SECURITY DEFINER RPC load_account_data,
+    // which redacts money fields the employee's permissions don't grant — so the
+    // contractor's bid amounts / income never reach an employee's browser memory.
+    // Contractors (and dev-support) keep the raw per-table select. If the RPC is
+    // not yet deployed (migration not merged to prod), fall back to the raw load:
+    // visibility is unchanged until the migration lands, but the SAVE guard
+    // (_employeeRedactedTables) still prevents any corruption in the meantime.
+    const _rawLoad=()=>Promise.all(_TD_TABLES.map(({t})=>
+      _supa.from(t).select('id,data').eq('user_id',uid).is('deleted_at',null)
+    ));
+    let tableResults;
+    if(_isEmployee&&!_devSupportMode){
+      const{data:_red,error:_rpcErr}=await _supa.rpc('load_account_data',{target_uid:uid});
+      if(_rpcErr&&(_isMissingTableErr(_rpcErr)||_rpcErr.code==='PGRST202'||/function|does not exist/i.test(_rpcErr.message||''))){
+        console.warn('[cloud] load_account_data RPC unavailable — falling back to raw load (save guard still active)');
+        tableResults=await _rawLoad();
+      }else if(_rpcErr){
+        throw _rpcErr;
+      }else{
+        // Shape the RPC's {td_bids:[{id,data}],…} object into the per-table
+        // {data,error} the loop below expects.
+        tableResults=_TD_TABLES.map(({t})=>({data:(_red&&_red[t])||[],error:null}));
+      }
+    }else{
+      tableResults=await _rawLoad();
+    }
+    const settingsResult=await _settingsP;
 
     // A table whose migration hasn't reached the live DB yet must NOT abort the entire
     // sync — that would take down ALL cloud loading and trap the app in an offline loop.
@@ -2902,6 +3205,12 @@ async function supaLoadFromCloud({silent=false}={}){
       const rows=(tableResults[i].data||[]).map(r=>r.data);
       set(rows);
       _lastKnownIds[t]=new Set((tableResults[i].data||[]).map(r=>String(r.id)));
+      // DELTA: rebuild the synced-hash map from the cloud rows AS LOADED — hash each
+      // `r.data` exactly as stored, BEFORE the receipt re-injection / expenses sort below,
+      // so it matches the post-txFn payload the next save will send (the tx strips
+      // receipt_img again). This MUST run before any offline-pending merge later in the
+      // load, so a merged offline row has no hash entry → uploads on the next save.
+      _syncedHash[t]=new Map((tableResults[i].data||[]).map(r=>[String(r.id),_hashPayload(r.data)]));
     }
 
     const _lsRcpt=(()=>{try{return JSON.parse(localStorage.getItem('zp3_rcpt_imgs')||'{}')}catch{return{}}})();
@@ -3001,6 +3310,7 @@ async function supaLoadFromCloud({silent=false}={}){
       setTimeout(()=>{
         if(_supaUser)clients.filter(c=>c.clientToken).forEach(c=>{_uploadClientHub(c.id).catch(()=>{});});
         autoRefreshRates();autoRefreshTaxBrackets();autoRefreshLienRules();
+        if(typeof autoRefreshDepositCaps==='function')autoRefreshDepositCaps();
       },4000);
       setTimeout(()=>_checkOdometerPrompt(),3500);
       setInterval(()=>{checkNewSignatures();_fetchProposalViews();},30000);
@@ -3018,7 +3328,9 @@ async function supaLoadFromCloud({silent=false}={}){
             supaLoadFromCloud({silent:true});
           }
         }catch(_e){}
-      },1000);
+      },30000);  // 30s cross-device backstop (realtime socket is the primary, instant path).
+                 // Was 1000ms — a visible tab hit zj_data 60×/min = ~3,600 /api reads/hr for
+                 // no benefit the socket doesn't already cover. 30s matches the design comment.
       try{
         _supa.channel('sig-feed-'+_supaUser.id)
           .on('postgres_changes',{event:'*',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{checkNewSignatures();})
@@ -3098,6 +3410,13 @@ async function supaLoadFromCloud({silent=false}={}){
     _removeBootOverlay();renderDash();buildScopeGrid();supaSetStatus('error');
   }finally{
     _loadInProgress=false;
+    // If a peer broadcast arrived while this load was in flight, run one trailing load
+    // now (it couldn't reload mid-load) so this device doesn't stay on a stale value.
+    if(_broadcastPending){
+      _broadcastPending=false;
+      clearTimeout(_broadcastReloadTimer);
+      _broadcastReloadTimer=setTimeout(()=>{if(!_loadInProgress)supaLoadFromCloud({silent:true});},300);
+    }
   }
 }
 function _initRealtimeSubscriptions(uid){
@@ -3121,7 +3440,10 @@ function _initRealtimeSubscriptions(uid){
     _syncBroadcastChannel
       .on('broadcast',{event:'data_saved'},(msg)=>{
         if(msg?.payload?.deviceId===_deviceId&&Date.now()-_lastLocalSaveAt<5000)return;
-        if(_loadInProgress)return;
+        // Can't reload during an in-flight load — but DON'T just drop it: remember a
+        // peer update arrived so supaLoadFromCloud's finally re-runs one trailing load
+        // (otherwise a rapid burst leaves this device on a stale mid-burst value).
+        if(_loadInProgress){_broadcastPending=true;return;}
         // Small delay: lets postgres_changes per-record patches arrive first (smoother).
         // If realtime already handled everything, the reload is a cheap no-op.
         clearTimeout(_broadcastReloadTimer);
@@ -3136,26 +3458,30 @@ function _applyRealtimeRecord(tbl,payload){
   const arr=desc.get();
   const ev=payload.eventType;
   const rec=payload.new;
+  // DELTA: mirror _lastKnownIds discipline exactly. Wherever we actually patch/push/
+  // splice arr, update _syncedHash the SAME way — so a peer's value isn't echoed back as
+  // a redundant upload, and a deleted row's stale hash can't suppress a future re-create.
+  // In the resurrection-ignore branch we touch neither map (we're keeping it deleted).
   if((ev==='INSERT'||ev==='UPDATE')&&rec){
     if(rec.deleted_at){
       const idx=arr.findIndex(r=>String(r.id)===String(rec.id));
-      if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(rec.id));}
+      if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(rec.id));_syncedHash[tbl]?.delete(String(rec.id));}
     }else{
       const data=rec.data||rec;
       const recId=String(data.id!=null?data.id:rec.id);
       const idx=arr.findIndex(r=>String(r.id)===recId);
       if(idx!==-1){
-        arr[idx]=data;
+        arr[idx]=data;_syncedHash[tbl]?.set(recId,_hashPayload(data));
       }else if(!_lastKnownIds[tbl]?.has(recId)){
         // Only add if this ID was never known to us — if it was known but
         // isn't in arr, we deleted it locally and another device's stale
         // save is trying to resurrect it. Ignore it.
-        arr.push(data);_lastKnownIds[tbl]?.add(recId);
+        arr.push(data);_lastKnownIds[tbl]?.add(recId);_syncedHash[tbl]?.set(recId,_hashPayload(data));
       }
     }
   }else if(ev==='DELETE'&&payload.old){
     const idx=arr.findIndex(r=>String(r.id)===String(payload.old.id));
-    if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(payload.old.id));}
+    if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(payload.old.id));_syncedHash[tbl]?.delete(String(payload.old.id));}
   }
   _writeLocalCache();
   renderDash&&renderDash();buildScopeGrid&&buildScopeGrid();
@@ -3222,7 +3548,7 @@ function _onNewInboundLead(row){
   _pendingInbound.unshift(row);
   _updateInboundBadge();
   showToast('New lead from '+(row.source==='qr_form'?'QR form':'intake form')+' — tap to review','🆕');
-  if(_activePg==='pg-leads')renderLeadsPage();
+  if(document.querySelector('.pg.active')?.id==='pg-leads')renderLeadsPage();
 }
 function _updateInboundBadge(){
   const n=_pendingInbound.filter(x=>x.status==='pending').length;
@@ -3269,7 +3595,7 @@ async function _dismissInbound(id){
   _pendingInbound=_pendingInbound.filter(x=>x.id!==id);
   _updateInboundBadge();
   try{await _supa.from('inbound_leads').update({status:'dismissed'}).eq('id',id);}catch(e){}
-  if(_activePg==='pg-leads')renderLeadsPage();
+  if(document.querySelector('.pg.active')?.id==='pg-leads')renderLeadsPage();
 }
 
 function supaSetStatus(s){
@@ -3449,11 +3775,15 @@ function showDailyBriefing(){
         const c=getClientById(j.client_id);
         const nm=c?c.name:'Unknown';
         const icon=j.eventType==='estimate'?'📋':'🔨';
+        // A job record can lack eventType (it's implicitly a job); the icon already
+        // defaults to 🔨 in that case, so default the label to 'job' too — calling
+        // .charAt on an undefined eventType throws (cloud.js:3708 console error).
+        const et=j.eventType||'job';
         return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">'+
           '<div style="font-size:16px">'+icon+'</div>'+
           '<div>'+
             '<div style="font-size:13px;font-weight:600">'+escHtml(nm)+'</div>'+
-            '<div style="font-size:11px;color:var(--text3)">'+j.eventType.charAt(0).toUpperCase()+j.eventType.slice(1)+(c&&c.addr?' · '+escHtml(c.addr.split(',')[0]):'')+'</div>'+
+            '<div style="font-size:11px;color:var(--text3)">'+et.charAt(0).toUpperCase()+et.slice(1)+(c&&c.addr?' · '+escHtml(c.addr.split(',')[0]):'')+'</div>'+
           '</div>'+
         '</div>';
       }).join('')+

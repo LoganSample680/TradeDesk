@@ -1,5 +1,7 @@
 // ── SW Color Browser ─────────────────────────────────────────
 let _swColors=null,_swFinish='',_swCurrentFamily=null;
+Object.defineProperty(window,'_swColors',{get:()=>_swColors,set:v=>{_swColors=v;},configurable:true});
+Object.defineProperty(window,'_swFinish',{get:()=>_swFinish,set:v=>{_swFinish=v;},configurable:true});
 let _paintExpectedCost=null;
 let _estMetsHtml='';
 
@@ -18,7 +20,7 @@ function _setBvalidDays(days){
 }
 
 function _swHslFamily(hex){
-  if(!hex||hex.length<7)return'gray';
+  if(typeof hex!=='string'||hex.length<7)return'gray';
   const r=parseInt(hex.slice(1,3),16)/255,g=parseInt(hex.slice(3,5),16)/255,b=parseInt(hex.slice(5,7),16)/255;
   const lin=v=>v>0.04045?Math.pow((v+0.055)/1.055,2.4):v/12.92;
   const R=lin(r),G=lin(g),B=lin(b);
@@ -134,10 +136,10 @@ async function swShowFamily(familyId,familyLabel){
   function _lum(hex){const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return(0.299*r+0.587*g+0.114*b)/255;}
   const matches=colors.filter(c=>c.family===familyId).sort((a,b)=>_lum(b.hex)-_lum(a.hex));
   _swCurrentFamily=familyId;
-  document.getElementById('sw-state-family').style.display='none';
-  document.getElementById('sw-state-swatches').style.display='';
-  document.getElementById('sw-family-label').textContent=familyLabel;
-  document.getElementById('sw-family-count').textContent='('+matches.length+' colors)';
+  const _sf=document.getElementById('sw-state-family');if(_sf)_sf.style.display='none';
+  const _ss=document.getElementById('sw-state-swatches');if(_ss)_ss.style.display='';
+  const _sl=document.getElementById('sw-family-label');if(_sl)_sl.textContent=familyLabel;
+  const _sc=document.getElementById('sw-family-count');if(_sc)_sc.textContent='('+matches.length+' colors)';
   const grid=document.getElementById('sw-swatch-grid');if(!grid)return;
   grid.innerHTML='';
   matches.forEach(c=>{
@@ -158,8 +160,8 @@ async function swShowFamily(familyId,familyLabel){
   });
 }
 function swBackToFamilies(){
-  document.getElementById('sw-state-swatches').style.display='none';
-  document.getElementById('sw-state-family').style.display='';
+  const _ss=document.getElementById('sw-state-swatches');if(_ss)_ss.style.display='none';
+  const _sf=document.getElementById('sw-state-family');if(_sf)_sf.style.display='';
 }
 async function swSearch(val,target){
   const dd=document.getElementById('sw-dropdown');if(!dd)return;
@@ -293,6 +295,7 @@ function swOpenFullscreen(){
   swOpenFullscreenColor(hex,name,'');
 }
 function swOpenFullscreenColor(hex,name,sw){
+  if(!hex||!name)return;
   const existing=document.getElementById('sw-fullscreen-ov');if(existing)existing.remove();
   const ov=document.createElement('div');
   ov.id='sw-fullscreen-ov';
@@ -318,6 +321,7 @@ function swOpenFullscreenColor(hex,name,sw){
 }
 // ══ SW Product Lines ══════════════════════════════════════
 let _swProduct=null;
+Object.defineProperty(window,'_swProduct',{get:()=>_swProduct,set:v=>{_swProduct=v;},configurable:true});
 let _swLastProductByCategory={}; // remembers last picked product per category within a room
 
 
@@ -443,6 +447,7 @@ function swSelectProduct(p,btn){
 
 
 let _rateRefreshInProgress=false;
+Object.defineProperty(window,'_rateRefreshInProgress',{get:()=>_rateRefreshInProgress,set:v=>{_rateRefreshInProgress=v;},configurable:true});
 async function autoRefreshRates(){
   if(!_supa||!_supaUser||_rateRefreshInProgress)return;
   const thisYear=new Date().getFullYear();
@@ -470,6 +475,7 @@ async function autoRefreshRates(){
 }
 
 let _bracketRefreshInProgress=false;
+Object.defineProperty(window,'_bracketRefreshInProgress',{get:()=>_bracketRefreshInProgress,set:v=>{_bracketRefreshInProgress=v;},configurable:true});
 async function autoRefreshTaxBrackets(){
   if(!_supa||!_supaUser||_bracketRefreshInProgress)return;
   const thisYear=new Date().getFullYear();
@@ -634,6 +640,7 @@ function swGetProductName(){
 }
 let surfType='walls', surfDoorOpt='trim', surfWinOpt='trim', surfCabOpt='uppers', surfCount=1; // compat
 let surfWhatSelected=[]; // which surface types toggled on for current room
+Object.defineProperty(window,'surfWhatSelected',{get:()=>surfWhatSelected,set:v=>{surfWhatSelected=v;},configurable:true});
 let surfBQueue=[];       // queue of surface types to measure in step B
 let surfBIdx=0;          // current position in queue
 let surfBMeasurements={}; // collected measurements keyed by type
@@ -710,8 +717,9 @@ function _sfShow(el,back){if(!el)return;el.classList.remove('sf-enter','sf-enter
 
 function goSurfStepA(){
   const a=document.getElementById('surf-step-a');
-  document.getElementById('surf-step-b').style.display='none';
+  const _sb=document.getElementById('surf-step-b');if(_sb)_sb.style.display='none';
   const _pgEst=document.getElementById('pg-est');if(_pgEst)_pgEst.style.overflowY='';
+  if(!a)return;
   a.style.display='';
   _sfShow(a,true);
 }
@@ -1913,14 +1921,46 @@ function _paintEstAutosave(){
     const b=typeof bids!=='undefined'?bids.find(x=>x.id===lastCreatedBidId):null;
     if(b&&(b.draft||b.status==='Draft')){_applyData(b);saveAll();return;}
   }
+  // Case 2.5 — UPSERT BY STABLE ID (offline-first dup prevention). The session var
+  // lastCreatedBidId is lost on reload/app-restart, but the bid id was minted
+  // client-side and persisted in the draft (est_full_draft.lastBidId). Recover it
+  // and UPDATE that exact row instead of minting a second copy on save-and-exit.
+  // This is what stops "save & exit" from spawning duplicate bids — no server
+  // round-trip needed, so it holds fully offline.
+  if(typeof bids!=='undefined'){
+    try{
+      const _raw=localStorage.getItem('zp3_est_full_draft');
+      if(_raw){
+        const _d=JSON.parse(_raw);
+        if(_d&&_d.lastBidId){
+          const _b=bids.find(x=>String(x.id)===String(_d.lastBidId));
+          if(_b&&(_b.draft||_b.status==='Draft')&&!_b.signingToken){
+            lastCreatedBidId=_b.id;_applyData(_b);saveAll();return;
+          }
+        }
+      }
+    }catch(e){}
+  }
   // Case 3: no active bid — recover an orphan draft before minting a new one
   if(typeof bids!=='undefined'){
     const _orphan=bids.find(b=>(b.draft||b.status==='Draft')&&!b.signingToken&&
       (estLinkedClientId?b.client_id===estLinkedClientId:b.name===cname));
-    if(_orphan){lastCreatedBidId=_orphan.id;Object.assign(_orphan,bidData);saveAll();return;}
+    if(_orphan){lastCreatedBidId=_orphan.id;Object.assign(_orphan,bidData);saveAll();_patchDraftBidId(lastCreatedBidId);return;}
     const draftBid={id:_newBidId(),followup:addDays(todayKey(),3),completion_date:'',collStage:'none',collHistory:[],...bidData};
-    bids.unshift(draftBid);lastCreatedBidId=draftBid.id;saveAll();
+    bids.unshift(draftBid);lastCreatedBidId=draftBid.id;saveAll();_patchDraftBidId(lastCreatedBidId);
   }
+}
+// Patch the in-flight localStorage draft with the bid ID just minted/adopted so
+// renderTodayFeed sees _activeDraftBidId and suppresses the duplicate bids[] card.
+// Called synchronously after _paintEstAutosave sets lastCreatedBidId.
+function _patchDraftBidId(bidId){
+  try{
+    const raw=localStorage.getItem('zp3_est_full_draft');if(!raw)return;
+    const d=JSON.parse(raw);
+    if(d.lastBidId===bidId)return; // already in sync
+    d.lastBidId=bidId;d.ts=Date.now();
+    localStorage.setItem('zp3_est_full_draft',JSON.stringify(d));
+  }catch(e){}
 }
 function loadEstFullDraft(){
   try{const raw=localStorage.getItem('zp3_est_full_draft');if(!raw)return false;

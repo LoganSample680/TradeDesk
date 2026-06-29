@@ -487,6 +487,7 @@ function setRoomScope(roomName,id,active,hrs,rate){
   roomScopeMap[roomName][id]={active:true,hrs:hrs||0,rate:rate||45,cost};
 }
 let surfJobType='interior', surfColor='', surfRoom='';
+Object.defineProperty(window,'surfRoom',{get:()=>surfRoom,set:v=>{surfRoom=v;},configurable:true});
 let _currentScopeRoom='';  // room name currently shown in scope grid
 
 // ── More menu toggle ──────────────────────────────────────────────────────
@@ -506,6 +507,7 @@ function setJobFilter(f,btn){
 }
 // Compute stage for a single won bid (bid-centric, for Jobs page)
 function getBidStage(b){
+  if(!b)return{stage:'signed',label:'Not started',color:'var(--blue)',priority:3,jobs:[]};
   const tk=todayKey();
   // Find jobs linked directly to this bid; fall back to unlinked client jobs (legacy data)
   let bidJobs=jobs.filter(j=>j.bid_id===b.id&&j.eventType!=='estimate'&&j.status!=='canceled'&&j.status!=='done');
@@ -626,8 +628,12 @@ function _renderJobsKanban(el,tk,wonBidsList){
     {id:'complete', label:'Complete · paid',            items:wonBidsList.filter(b=>getBidStage(b).stage==='paid').slice(0,8)},
   ];
   el.innerHTML='<div class="kanban">'+cols.map(col=>{
+    const _kcollapsed=!!(window._kcolCollapsed&&window._kcolCollapsed[col.id]);
     return '<div class="kcol" data-status="'+col.id+'">'+
-      '<div class="kcol-hd"><span>'+col.label+'</span><span class="k-count">'+col.items.length+'</span></div>'+
+      '<div class="kcol-hd" onclick="_toggleKcol(\''+col.id+'\')" style="cursor:pointer;user-select:none">'+
+        '<span style="display:flex;align-items:center;min-width:0"><span class="kcol-chev" style="display:inline-block;transition:transform .18s cubic-bezier(.22,1,.36,1);transform:'+(_kcollapsed?'':'rotate(90deg)')+';font-size:9px;color:var(--text3);margin-right:5px">▶</span><span>'+col.label+'</span></span>'+
+        '<span class="k-count">'+col.items.length+'</span></div>'+
+      '<div class="kcol-body"'+(_kcollapsed?' style="display:none"':'')+'>'+
       (col.items.length===0
         ?'<div style="padding:18px 8px;text-align:center;color:var(--text3);font-size:11px;font-weight:500">Nothing here yet</div>'
         :col.items.map(b=>{
@@ -668,8 +674,22 @@ function _renderJobsKanban(el,tk,wonBidsList){
             '</div>'+
           '</div>';
         }).join(''))+
+      '</div>'+
     '</div>';
   }).join('')+'</div>';
+}
+// Collapse/expand a kanban column's bid cards. Cards stay in the DOM (just hidden) so the
+// state survives a re-render and nothing that counts cards breaks; persisted per column id.
+function _toggleKcol(id){
+  window._kcolCollapsed=window._kcolCollapsed||{};
+  window._kcolCollapsed[id]=!window._kcolCollapsed[id];
+  const col=document.querySelector('.kcol[data-status="'+id+'"]');
+  if(!col)return;
+  const body=col.querySelector('.kcol-body');
+  const chev=col.querySelector('.kcol-chev');
+  const collapsed=window._kcolCollapsed[id];
+  if(body)body.style.display=collapsed?'none':'';
+  if(chev)chev.style.transform=collapsed?'':'rotate(90deg)';
 }
 
 function openJobChecklist(bidId){
@@ -1529,8 +1549,8 @@ function deleteJob(jobId){
   if(!j)return;
   const label=j.eventType==='estimate'?'estimate visit':'job';
   zConfirm('Remove this '+label+' from the calendar?',()=>{
-    jobs=jobs.filter(x=>x.id!==jobId);
-    saveAll();renderClientDetail();renderCalendar();
+    _userDelete(()=>{jobs=jobs.filter(x=>x.id!==jobId);saveAll();});
+    renderClientDetail();renderCalendar();
   },{title:'Remove '+label,yes:'Remove',danger:true});
 }
 

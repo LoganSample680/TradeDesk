@@ -62,6 +62,12 @@ const MOCK_PROPOSAL = {
 async function mockAllExternal(page, opts = {}) {
   const { alreadySigned = false, proposalData = MOCK_PROPOSAL, bidId = FAKE_BID_ID_1 } = opts;
 
+  // Set __mockProposalData BEFORE any page scripts run so the shim's fetch interceptor
+  // serves the correct custom proposal (not the default stub) for sign.html tests.
+  if (proposalData) {
+    await page.addInitScript((pd) => { window.__mockProposalData = pd; }, proposalData);
+  }
+
   // Track console errors per page — caller reads them via page._consoleErrors
   page._consoleErrors = [];
   page.on('console', msg => {
@@ -253,6 +259,13 @@ function _supabaseShim() {
   // simulate Supabase being unreachable without touching real network.
   function offlineResult(){ return Promise.resolve({data:null,error:{message:'Simulated offline',code:'offline'}}); }
   function maybeOffline(ok){ return global.__offlineMode ? offlineResult() : ok; }
+  // Returns a 401 Unauthorized error — simulates expired/invalid session.
+  function authErrorResult(){ return Promise.resolve({data:null,error:{status:401,message:'Invalid JWT',code:'PGRST401'}}); }
+  // Returns a 500 server error — simulates Supabase REST outage.
+  function serverErrorResult(){ return Promise.resolve({data:null,error:{status:500,message:'Internal server error',code:'PGRST500'}}); }
+  function maybeAuthError(ok){ return global.__authFail401 ? authErrorResult() : ok; }
+  function maybeServerError(ok){ return global.__serverError500 ? serverErrorResult() : ok; }
+  function maybeAnyError(ok){ return maybeAuthError(maybeServerError(maybeOffline(ok))); }
   // ── Public-URL fetch interception ──────────────────────────────────────────
   // client.html / sign.html read mutable storage JSON (hub snapshot, proposal)
   // by fetching the PUBLIC object URL with cache:'no-store' + a cb= cache-buster
@@ -271,7 +284,11 @@ function _supabaseShim() {
       // simulates full Supabase outage (download() fails too → error UI).
       // __storageFetchHang simulates a request that never settles (dead network) —
       // exercises the boot watchdog.
+      // __proposalNotFound404 simulates a 404 — proposal was deleted or never existed.
+      // __storageError401 simulates an access-denied response from storage.
       if(global.__storageFetchHang) return new Promise(function(){});
+      if(global.__storageError401) return Promise.resolve(new Response('Unauthorized', { status: 401 }));
+      if(global.__proposalNotFound404) return Promise.resolve(new Response('Not Found', { status: 404 }));
       if(global.__offlineMode || global.__storageFetchFail) return Promise.resolve(new Response('unavailable', { status: 503 }));
       var mockJson;
       if(u.indexOf('client-hub') > -1 && typeof global.__mockHubData !== 'undefined') mockJson = JSON.stringify(global.__mockHubData);
@@ -288,9 +305,9 @@ function _supabaseShim() {
       in:()=>q, is:()=>q, not:()=>q, or:()=>q, filter:()=>q, match:()=>q,
       ilike:()=>q, like:()=>q, contains:()=>q, containedBy:()=>q,
       order:()=>q, limit:()=>q, range:()=>q,
-      single:()=>maybeOffline(noopResult(null)),
-      maybeSingle:()=>maybeOffline(noopResult(null)),
-      then:(cb)=>maybeOffline(noopResult([])).then(cb),
+      single:()=>maybeAnyError(noopResult(null)),
+      maybeSingle:()=>maybeAnyError(noopResult(null)),
+      then:(cb)=>maybeAnyError(noopResult([])).then(cb),
       catch:(cb)=>Promise.resolve([]),
     };
     return q;
@@ -299,8 +316,8 @@ function _supabaseShim() {
     createClient: function(url, key) {
       return {
         auth: {
-          getUser:    () => { const uid = (typeof window!=='undefined'&&window.__overrideSessionUserId)||'e2e-user'; return noopResult({ user: { id: uid, email: 'test@test.com' } }); },
-          getSession: () => { const uid = (typeof window!=='undefined'&&window.__overrideSessionUserId)||'e2e-user'; return noopResult({ session: { access_token: 'fake-jwt', user: { id: uid, email: 'test@test.com' } } }); },
+          getUser:    () => { if(global.__authFail401) return authErrorResult(); const uid = (typeof window!=='undefined'&&window.__overrideSessionUserId)||'e2e-user'; return noopResult({ user: { id: uid, email: 'test@test.com' } }); },
+          getSession: () => { if(global.__authFail401) return authErrorResult(); const uid = (typeof window!=='undefined'&&window.__overrideSessionUserId)||'e2e-user'; return noopResult({ session: { access_token: 'fake-jwt', user: { id: uid, email: 'test@test.com' } } }); },
           signInWithPassword: () => noopResult({ user: { id: 'e2e-user' }, session: { access_token: 'fake-jwt' } }),
           signOut:    () => noopResult(null),
           onAuthStateChange: (cb) => { return { data: { subscription: { unsubscribe: ()=>{} } } }; },
@@ -315,6 +332,8 @@ function _supabaseShim() {
               // Mirror the in-page fetch interceptor's failure modes so the app's
               // fallback path behaves like production when storage is down/hung.
               if (window.__storageFetchHang) return new Promise(function(){});
+              if (window.__storageError401) return Promise.resolve({ data: null, error: { status: 401, message: 'Unauthorized' } });
+              if (window.__proposalNotFound404) return Promise.resolve({ data: null, error: { status: 404, message: 'Object not found' } });
               if (window.__storageDownloadFail) return Promise.resolve({ data: null, error: new Error('Object not found') });
               // Resolve mock JSON: hub data → proposal override → default stub
               var mockJson;
@@ -427,7 +446,14 @@ async function waitForAppBoot(page, timeout = 20000) {
 
 /** Helper: navigate to a page and wait. */
 async function goPg(page, id) {
-  await page.evaluate(pgId => window.goPg(pgId), id);
+  await page.evaluate(pgId => {
+    // Test-isolation hardening: clear any modal overlay the previous view left
+    // open before navigating. In WebKit a stray .zmodal-overlay (position:fixed;
+    // inset:0) intercepts pointer events on the next page and flakes clicks.
+    // Navigating away always dismisses modals, so this only removes stale state.
+    try { document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove()); } catch (e) {}
+    window.goPg(pgId);
+  }, id);
   await page.waitForTimeout(350);
 }
 
@@ -450,4 +476,22 @@ function assertNoErrors(page, label) {
   expect(errs, `Console errors on ${label}: ${errs.join('; ')}`).toHaveLength(0);
 }
 
-module.exports = { test, expect, mockAllExternal, _supabaseShim, _supabaseShimIntake, waitForAppBoot, goPg, assertNoErrors, FAKE_BID_ID_1, FAKE_BID_ID_2, FAKE_USER_ID, FAKE_TOKEN, FAKE_TOKEN_2, MOCK_PROPOSAL };
+/**
+ * Set error-simulation flags on a page that has already had mockAllExternal() called.
+ * The shim reads these window flags on every call, so they take effect immediately.
+ *
+ * flags:
+ *   __authFail401        → auth.getUser/getSession return 401
+ *   __serverError500     → all queryBuilder .then/.single calls return 500
+ *   __proposalNotFound404 → storage.download + fetch of proposal return 404
+ *   __storageError401    → storage.download + fetch of storage URLs return 401
+ *   __offlineMode        → all Supabase calls return offline error
+ *   __storageFetchHang   → storage fetch never resolves (simulates dead network)
+ */
+async function mockWithErrorFlags(page, flags) {
+  await page.evaluate(f => {
+    Object.keys(f).forEach(k => { window[k] = f[k]; });
+  }, flags);
+}
+
+module.exports = { test, expect, mockAllExternal, mockWithErrorFlags, _supabaseShim, _supabaseShimIntake, waitForAppBoot, goPg, assertNoErrors, FAKE_BID_ID_1, FAKE_BID_ID_2, FAKE_USER_ID, FAKE_TOKEN, FAKE_TOKEN_2, MOCK_PROPOSAL };
