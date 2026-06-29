@@ -112,6 +112,10 @@ test.describe('offline-sync race safety (multi-device)', () => {
           try { localStorage.setItem('zp3_pending_sync', '1'); } catch (e) {}
           if (typeof supaSaveToCloud === 'function') { try { await supaSaveToCloud(); } catch (e) {} }
         }, { offlineBidId, offlineCid, stamp });
+        // DELTA guard (FM-5): zero B's upload counter NOW (offline save failed → added 0),
+        // so the cumulative count over reconnect + flush below reflects exactly what B
+        // pushed. A delta-skip bug would leave B's queued offline bid unsent (count 0).
+        await B.page.evaluate(() => { window._deltaStats = { upserts: 0, skips: 0 }; });
         // Meanwhile A (online) creates a different bid and saves it to the cloud.
         await workerCreatesBid(A.page, onlineBidId, onlineCid, 'E2E Race Aon ' + stamp);
         await page.waitForTimeout(800);
@@ -121,13 +125,19 @@ test.describe('offline-sync race safety (multi-device)', () => {
         await B.page.waitForTimeout(3000);
         await B.page.evaluate(async () => { try { if (typeof supaSaveToCloud === 'function') await supaSaveToCloud(); } catch (e) {} });
         await page.waitForTimeout(1500);
+        // Capture how many rows B actually pushed across the reconnect+flush window.
+        page.__bOfflineDelta = await B.page.evaluate(() => (window._deltaStats ? window._deltaStats.upserts : -1));
         return 3;
       },
       rule: async (p) => {
         const res = await cloudHasBids(p, [offlineBidId, onlineBidId]);
         const off = res.find(r => String(r.id) === String(offlineBidId));
         const on = res.find(r => String(r.id) === String(onlineBidId));
-        return { ok: !!off?.present && !!on?.present, got: `offlineBid=${off?.present} onlineBid=${on?.present}` };
+        // DELTA: B must have pushed at least its own queued offline bid (>=1) — a delta
+        // bug that marked the offline row "already synced" would push 0 and the bid would
+        // be missing above. (>=1, not ==1: B may legitimately re-push its client row too.)
+        const bPushed = p.__bOfflineDelta;
+        return { ok: !!off?.present && !!on?.present && bPushed >= 1, got: `offlineBid=${off?.present} onlineBid=${on?.present} bDeltaUpserts=${bPushed}` };
       },
     });
 

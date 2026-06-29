@@ -117,6 +117,10 @@ test.describe('cross-account bleed — same-device sign-out → sign-in (bug #39
         inUI: (document.body.innerText || '').includes(MARK),
         inOfflineBlob: blobRaw.includes(MARK) || blobRaw.includes(String(bidId)),
         inCloudCache: cacheRaw.includes(MARK) || cacheRaw.includes(String(bidId)),
+        // DELTA bleed surface: the synced-hash map must not carry A's bid/client ids into
+        // B's session — a stale "already synced" hash under B could suppress uploading B's
+        // own same-id row. The load-side rebuild + dev-switch reset must clear them.
+        inSyncedHash: (typeof window.__hashHas === 'function') && (window.__hashHas('td_bids', bidId) || window.__hashHas('td_clients', clientId)),
         localStorageKeysWithA: lsHits,
         signedInAs: (typeof _supaUser !== 'undefined' && _supaUser) ? _supaUser.id : null,
       };
@@ -140,7 +144,7 @@ test.describe('cross-account bleed — same-device sign-out → sign-in (bug #39
     // run points us straight at the source (memory vs a specific localStorage key vs
     // the offline blob vs the cloud cache) instead of us assuming it.
     const where = JSON.stringify({ ...snap, inBCloud });
-    const bled = snap.inBidsMem || snap.inClientsMem || snap.inUI || snap.inOfflineBlob || snap.inCloudCache || inBCloud;
+    const bled = snap.inBidsMem || snap.inClientsMem || snap.inUI || snap.inOfflineBlob || snap.inCloudCache || snap.inSyncedHash || inBCloud;
 
     expect(bled, `account A's record leaked into account B. SOURCE SNAPSHOT → ${where}`).toBe(false);
   });

@@ -318,7 +318,8 @@ async function _devLoadUserAccount(key){
     income:[...income],expenses:[...expenses],mileage:[...mileage],timeEntries:[...timeEntries],
     licenses:[...licenses],events:[...events],contracts:[...contracts],agreements:[...agreements],photos:[...photos],
     S:JSON.parse(JSON.stringify(S)),
-    lastKnownIds:Object.fromEntries(Object.entries(_lastKnownIds).map(([k,v])=>[k,[...v]]))
+    lastKnownIds:Object.fromEntries(Object.entries(_lastKnownIds).map(([k,v])=>[k,[...v]])),
+    syncedHash:Object.fromEntries(Object.entries(_syncedHash).map(([k,v])=>[k,[...v]]))
   };
   // Load target user's records into memory
   for(let i=0;i<_TD_TABLES.length;i++){
@@ -326,6 +327,9 @@ async function _devLoadUserAccount(key){
     const rows=(tableResults[i].data||[]).map(r=>r.data);
     set(rows);
     _lastKnownIds[t]=new Set((tableResults[i].data||[]).map(r=>String(r.id)));
+    // DELTA: rebuild the synced-hash from the TARGET account's rows so the dev's own
+    // row hashes can't linger and suppress a target-account upload (cross-account bleed).
+    _syncedHash[t]=new Map((tableResults[i].data||[]).map(r=>[String(r.id),_hashPayload(r.data)]));
   }
   if(settingsResult.data?.settings){try{const zS=JSON.parse(settingsResult.data.settings);Object.assign(S,zS);}catch(e){}}
   _devSupportMode=true;_devSupportName=u.name;
@@ -343,6 +347,7 @@ async function _devExitSupportMode(){
   ({clients,bids,jobs,payments,liens,income,expenses,mileage,timeEntries,licenses,events,contracts,agreements,photos}=_devSavedState);
   if(_devSavedState.S){const dS=_devSavedState.S;Object.keys(S).forEach(k=>{if(!(k in dS))delete S[k];});Object.assign(S,dS);}
   if(_devSavedState.lastKnownIds){for(const[k,v]of Object.entries(_devSavedState.lastKnownIds))_lastKnownIds[k]=new Set(v);}
+  if(_devSavedState.syncedHash){for(const[k,v]of Object.entries(_devSavedState.syncedHash))_syncedHash[k]=new Map(v);}
   _devSupportMode=false;_devSupportName='';_devSavedState=null;
   saveAll();
   _renderDevTradeCard();renderDash();
@@ -409,7 +414,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.28.26.53';
+const APP_VERSION='06.29.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null,_broadcastPending=false;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -427,6 +432,33 @@ let _lastKnownIds={
   td_payments:new Set(),td_liens:new Set(),td_time_entries:new Set(),
   td_licenses:new Set(),td_events:new Set(),td_contracts:new Set(),td_agreements:new Set(),td_photos:new Set()
 };
+
+// DELTA SYNC. Per-table Map(id -> content hash of the row payload the SERVER currently
+// holds. On save we upload ONLY rows whose hash changed since the last sync, instead of
+// re-upserting the whole account every time. The hash has no false negatives (any byte
+// change flips it, so a real edit can never be silently skipped); a false positive only
+// causes a harmless re-upload of an identical row; a MISSING entry is treated as changed
+// → uploaded, so any path that doesn't warm the map degrades to today's full-upload.
+//
+// THE ONE DISCIPLINE: the hash input is ALWAYS the object that is/was the DB `data`
+// column — txFn(arr) on save, the loaded `r.data` on load — via _hashPayload(). And
+// _syncedHash[id] is written ONLY AFTER that id's upsert batch resolves with no error,
+// never optimistically. NOT persisted: rebuilt from cloud on every load (the only
+// authoritative source of "what the server has"); an offline/cache boot leaves it empty
+// → safe full upload on reconnect.
+let _syncedHash={};
+// Fast deterministic 32-bit string hash (FNV-1a) over the JSON of a row payload.
+function _hashPayload(obj){
+  let str; try{ str=JSON.stringify(obj); }catch(_e){ return null; }
+  if(str===undefined) return null;
+  let h=0x811c9dc5;
+  for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=(h+((h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24)))>>>0; }
+  return h.toString(36);
+}
+// Test/telemetry hook: counts rows actually uploaded vs skipped on each save pass.
+window._deltaStats={upserts:0,skips:0};
+// Test hook: does the synced-hash map currently hold an entry for this id?
+window.__hashHas=(tbl,id)=>!!(_syncedHash[tbl]&&_syncedHash[tbl].has(String(id)));
 
 // CONCURRENCY-SAFE SWEEP (CLAUDE.md §9.8). The cloud save soft-deletes rows that
 // "disappeared" from this device's snapshot. Inferring deletes that way clobbers
@@ -2675,6 +2707,8 @@ async function supaSaveToCloud(){
     const _upsertTable=async(tbl,arr,txFn)=>{
       const rows=(txFn?txFn(arr):arr);
       const currentIds=new Set(rows.map(r=>String(r.id)));
+      _syncedHash[tbl]||=new Map();
+      const hashes=_syncedHash[tbl];
       // Fetch server-locked records (updated_at > 1 year from now = admin-deleted, must not overwrite)
       const lockCutoff=new Date(Date.now()+365*24*60*60*1000).toISOString();
       const{data:lockedRows}=await _supa.from(tbl).select('id').eq('user_id',uid).gt('updated_at',lockCutoff);
@@ -2685,12 +2719,27 @@ async function supaSaveToCloud(){
         if(tdef?.set) tdef.set(rows.filter(r=>!lockedIds.has(String(r.id))));
         lockedIds.forEach(id=>currentIds.delete(id));
       }
-      // Upsert live records in batches of 50 (excluding locked)
+      // DELTA: upload ONLY rows whose content hash changed since the last sync (or is
+      // unknown). The hash is computed over `r` here — the exact post-txFn payload that
+      // becomes the DB `data` column — so it round-trips against the load-side rebuild.
       if(rows.length){
-        const dbRows=rows.filter(r=>!lockedIds.has(String(r.id))).map(r=>({id:String(r.id),user_id:uid,data:r,updated_at:ts,deleted_at:null}));
-        for(let i=0;i<dbRows.length;i+=50){
-          const{error}=await _supa.from(tbl).upsert(dbRows.slice(i,i+50),{onConflict:'id,user_id'});
+        const changed=[];
+        for(const r of rows){
+          const id=String(r.id);
+          if(lockedIds.has(id))continue;
+          const h=_hashPayload(r);
+          if(hashes.get(id)===h){ window._deltaStats.skips++; continue; }
+          changed.push({id,h,row:{id,user_id:uid,data:r,updated_at:ts,deleted_at:null}});
+        }
+        // Upsert in batches of 50. Write the synced hash ONLY AFTER each batch resolves
+        // with no error — never optimistically, so a thrown batch (→ pending_sync retry)
+        // never marks un-sent rows as "synced" and silently drops them next save.
+        for(let i=0;i<changed.length;i+=50){
+          const slice=changed.slice(i,i+50);
+          const{error}=await _supa.from(tbl).upsert(slice.map(c=>c.row),{onConflict:'id,user_id'});
           if(error)throw error;
+          slice.forEach(c=>hashes.set(c.id,c.h));
+          window._deltaStats.upserts+=slice.length;
         }
       }
       // Soft-delete ONLY ids the user EXPLICITLY deleted on this device (recorded in
@@ -2706,7 +2755,7 @@ async function supaSaveToCloud(){
           if(_de)throw _de;
         }
       }
-      gone.forEach(id=>deleted.delete(id)); // delete-intent consumed; don't let the set grow
+      gone.forEach(id=>{deleted.delete(id);hashes.delete(id);}); // delete-intent consumed; drop the swept row's hash so a re-create re-uploads
       _lastKnownIds[tbl]=currentIds;
     };
 
@@ -3156,6 +3205,12 @@ async function supaLoadFromCloud({silent=false}={}){
       const rows=(tableResults[i].data||[]).map(r=>r.data);
       set(rows);
       _lastKnownIds[t]=new Set((tableResults[i].data||[]).map(r=>String(r.id)));
+      // DELTA: rebuild the synced-hash map from the cloud rows AS LOADED — hash each
+      // `r.data` exactly as stored, BEFORE the receipt re-injection / expenses sort below,
+      // so it matches the post-txFn payload the next save will send (the tx strips
+      // receipt_img again). This MUST run before any offline-pending merge later in the
+      // load, so a merged offline row has no hash entry → uploads on the next save.
+      _syncedHash[t]=new Map((tableResults[i].data||[]).map(r=>[String(r.id),_hashPayload(r.data)]));
     }
 
     const _lsRcpt=(()=>{try{return JSON.parse(localStorage.getItem('zp3_rcpt_imgs')||'{}')}catch{return{}}})();
@@ -3403,26 +3458,30 @@ function _applyRealtimeRecord(tbl,payload){
   const arr=desc.get();
   const ev=payload.eventType;
   const rec=payload.new;
+  // DELTA: mirror _lastKnownIds discipline exactly. Wherever we actually patch/push/
+  // splice arr, update _syncedHash the SAME way — so a peer's value isn't echoed back as
+  // a redundant upload, and a deleted row's stale hash can't suppress a future re-create.
+  // In the resurrection-ignore branch we touch neither map (we're keeping it deleted).
   if((ev==='INSERT'||ev==='UPDATE')&&rec){
     if(rec.deleted_at){
       const idx=arr.findIndex(r=>String(r.id)===String(rec.id));
-      if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(rec.id));}
+      if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(rec.id));_syncedHash[tbl]?.delete(String(rec.id));}
     }else{
       const data=rec.data||rec;
       const recId=String(data.id!=null?data.id:rec.id);
       const idx=arr.findIndex(r=>String(r.id)===recId);
       if(idx!==-1){
-        arr[idx]=data;
+        arr[idx]=data;_syncedHash[tbl]?.set(recId,_hashPayload(data));
       }else if(!_lastKnownIds[tbl]?.has(recId)){
         // Only add if this ID was never known to us — if it was known but
         // isn't in arr, we deleted it locally and another device's stale
         // save is trying to resurrect it. Ignore it.
-        arr.push(data);_lastKnownIds[tbl]?.add(recId);
+        arr.push(data);_lastKnownIds[tbl]?.add(recId);_syncedHash[tbl]?.set(recId,_hashPayload(data));
       }
     }
   }else if(ev==='DELETE'&&payload.old){
     const idx=arr.findIndex(r=>String(r.id)===String(payload.old.id));
-    if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(payload.old.id));}
+    if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(payload.old.id));_syncedHash[tbl]?.delete(String(payload.old.id));}
   }
   _writeLocalCache();
   renderDash&&renderDash();buildScopeGrid&&buildScopeGrid();
