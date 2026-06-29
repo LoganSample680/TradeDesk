@@ -120,7 +120,12 @@ async function signIn(page) {
   const _acct = workerAccount();
   const _email = _acct ? _acct.email : DEV_EMAIL;
   const _password = _acct ? _acct.password : DEV_PASSWORD;
-  await page.goto('/');
+  // 'domcontentloaded', NOT the default 'load': the app's login form is interactive at
+  // DOMContentLoaded, but 'load' blocks on every external resource — notably the Apple
+  // MapKit CDN script — so waiting for it makes every test's boot slower and, on a busy
+  // bridge, tips into the 90s goto timeouts we saw. We still wait for #supa-email below,
+  // so the app is provably ready before we touch it.
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#supa-email', { timeout: 30000 });
   // Authenticate through the app's own Supabase client and RETURN the exact
   // result, so a bad credential or unconfirmed email reports as a one-line
