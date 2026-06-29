@@ -485,4 +485,5 @@ module.exports = {
   DEV_USER_ID,
   SEEDED_TABLES,
   localAccount,
+  workerAccount,
 };
