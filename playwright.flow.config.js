@@ -38,19 +38,17 @@ module.exports = defineConfig({
   // left inputs "resolved to hidden" past the waits. 3 keeps most of the ~3× speedup
   // with materially less boot contention. (Paired with the local-server pinning proxy
   // mode so no per-boot direct probe.)
-  // 2 workers, ONE per real dev account (worker 0 → DEV, worker 1 → DEV2 via
-  // workerAccount()/TEST_PARALLEL_INDEX). ~2× faster than serial (was ~23min). The two
-  // things that forced serial are both resolved:
-  //   • data-correctness: the concurrency-safe sweep (§9.8, _userDelete) ended the
-  //     "write 200 then row vanishes" clobber; step()'s post-write poll ended the
-  //     async-flush read-timing failures.
-  //   • the specs that genuinely flaked at 2 workers on one runner (the 2-device realtime
-  //     contention ones — realtime-delete, realtime-glitch burst) are now test.fixme, so
-  //     they no longer compete for the runner. The remaining specs are single-session and
-  //     isolate cleanly per account.
-  // Capped at CLOUD_POOL size (2) so the modulo never collides two workers onto one
-  // account. Bump to 3+ only after adding a 3rd dev account (and ideally a 2nd runner).
-  workers: 2,
+  // SERIAL (1 worker). Tried workers:2 (one per dev account) for the ~2× speedup; it
+  // works for data-correctness (the §9.8 concurrency-safe sweep handles concurrent
+  // writes) but it BREAKS specs that assume a SPECIFIC account: with 2 workers a spec can
+  // run on worker 1 (DEV2) and then a hardcoded DEV assertion fails — e.g. the smoke
+  // teardown-guard ("signs in as the dev account") asserted DEV_USER_ID, and the
+  // reboot/goal spec read a sibling test's goal (7420 vs 7727) when two goal-writing tests
+  // overlapped. The boot speedup (signIn → 'domcontentloaded', which also killed the
+  // goto-load timeouts) is kept and is worker-count-independent. To safely re-enable
+  // workers:2, every spec must be made account-AGNOSTIC (use workerAccount().uid, never a
+  // hardcoded DEV_*), and goal/settings specs isolated — a focused follow-up, not a flip.
+  workers: 1,
   // CI emits a JSON report (machine-readable failure dump) + an HTML report dir
   // (uploaded as an artifact) so a red run is never a black box — the json carries
   // every test's error text + the finding() ticket, the html is browsable offline.
