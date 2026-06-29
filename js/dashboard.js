@@ -1764,9 +1764,9 @@ function renderProposalsPage(){
   const awaitingAmt=awaiting.reduce((s,b)=>s+(b.amount||0),0);
   const mets=document.getElementById('proposals-mets');
   if(mets)mets.innerHTML=
-    '<div class="met"><div class="met-l">Sent</div><div class="met-v">'+fmt(totalSent)+'</div><div class="met-s">'+sentBids.length+' proposals</div></div>'+
-    '<div class="met"><div class="met-l">Signed</div><div class="met-v" style="color:var(--green)">'+fmt(signedAmt)+'</div><div class="met-s up">'+signed.length+' clients</div></div>'+
-    '<div class="met"><div class="met-l">Awaiting sig</div><div class="met-v" style="color:var(--amber)">'+fmt(awaitingAmt)+'</div><div class="met-s">'+awaiting.length+' clients</div></div>'+
+    '<div class="met" onclick="setProposalFilter(\'all\',document.getElementById(\'pft-all\'))" style="cursor:pointer"><div class="met-l">Sent</div><div class="met-v">'+fmt(totalSent)+'</div><div class="met-s">'+sentBids.length+' proposals</div></div>'+
+    '<div class="met" onclick="setProposalFilter(\'signed\',document.getElementById(\'pft-signed\'))" style="cursor:pointer"><div class="met-l">Signed</div><div class="met-v" style="color:var(--green)">'+fmt(signedAmt)+'</div><div class="met-s up">'+signed.length+' clients</div></div>'+
+    '<div class="met" onclick="setProposalFilter(\'awaiting_sig\',document.getElementById(\'pft-awaiting_sig\'))" style="cursor:pointer"><div class="met-l">Awaiting sig</div><div class="met-v" style="color:var(--amber)">'+fmt(awaitingAmt)+'</div><div class="met-s">'+awaiting.length+' clients</div></div>'+
     '<div class="met"><div class="met-l">Close rate</div><div class="met-v">'+closeRate+'<span class="unit">%</span></div><div class="met-s">of sent</div></div>';
   const f=_proposalFilter;
   const filtered=f==='all'?allBids:f==='draft'?draftBids:f==='signed'?signed:f==='awaiting_sig'?awaiting:declined;

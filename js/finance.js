@@ -2456,7 +2456,7 @@ async function _openJobProfit(){
   const ov=document.createElement('div');ov.id='_job-pl-ov';ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='460px';
   box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">💰 Job Profit</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Revenue minus materials and loaded labor (wage + '+Math.round(((S.laborBurden||1.3)-1)*100)+'% burden) from tracked crew time on site.</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Revenue minus materials and labor cost (wage + '+Math.round(((S.laborBurden||1.3)-1)*100)+'% overhead) from tracked crew time on site.</div>'+
     '<div id="_job-pl-body" style="font-size:13px;color:var(--text3);max-height:60vh;overflow-y:auto">Loading…</div>'+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:10px">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
@@ -2603,7 +2603,7 @@ async function _renderDashCrewToday(){
     '</div>'+
     '<div style="display:flex;gap:18px;margin-bottom:8px">'+
       '<div><div style="font-size:10px;color:var(--text3)">On the clock</div><div style="font-size:18px;font-weight:800">'+(totMin/60).toFixed(1)+'h</div></div>'+
-      '<div><div style="font-size:10px;color:var(--text3)">Loaded labor</div><div style="font-size:18px;font-weight:800;color:var(--c-red)">'+fmt(totCost)+'</div></div>'+
+      '<div><div style="font-size:10px;color:var(--text3)">Labor cost</div><div style="font-size:18px;font-weight:800;color:var(--c-red)">'+fmt(totCost)+'</div></div>'+
     '</div>'+rows+'</div>';
 }
 // Per-employee Crew Cost report (Today / This week), with per-job breakdown.
@@ -2614,7 +2614,7 @@ async function _openCrewCost(){
   const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='460px';
   const _ccBtn=id=>'<button id="_cc-'+id+'" onclick="_crewCostRender(\''+id+'\')" style="flex:1;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;min-width:0">';
   box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">👷 Crew Cost</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:10px">What each person cost you — loaded labor (wage + burden) from tracked time on site.</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:10px">What each person actually cost you — wage + overhead (payroll taxes, insurance) — from tracked time on site.</div>'+
     '<div style="display:flex;gap:6px;margin-bottom:6px">'+
       _ccBtn('today')+'Today</button>'+
       _ccBtn('week')+'This week</button>'+
