@@ -382,8 +382,13 @@ const _MAPKIT_TOKEN=location.hostname.includes('pages.dev')
   ?'eyJraWQiOiI3S0E5WDhVUjZMIiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzgxMzAxNTIyLCJvcmlnaW4iOiIqLnRyYWRlZGVzay1jeXAucGFnZXMuZGV2Iiwic2NvcGUiOiJtYXBraXRfanMifQ.ehafZ1SO_50PLbz_-5iwhPJXKZpPXSJrNAALFhHmetxrVKOpCYzBHR9viL6Nl8Kor0yCIFJcvKiGrtrlNSgN7Q' // *.tradedesk-cyp.pages.dev — no expiry
   :'eyJraWQiOiJXQzYzOFM2M0c0IiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzgxMzAxNDcwLCJvcmlnaW4iOiJ0cmFkZWRlc2twcm8uYXBwIiwic2NvcGUiOiJtYXBraXRfanMifQ.0hmtYgvSGLHMZcnHnEGMsaJDg6tXEtzfp3aS-tLdGbTjocZDQLP6VlrPl9l29tV-T5SgNXQycqUJO_T1b_rFWQ'; // tradedeskpro.app — no expiry
 let _mapkitReady=false;
+// MapKit JS tokens are domain-locked (CLAUDE.md §10.1). On any non-authorized origin
+// (localhost, 127.0.0.1, the flow-test bridge) mapkit.init throws an origin-mismatch
+// console.error — which fails assertNoErrors. Only init on tradedeskpro.app / *.pages.dev.
+const _mapkitAuthorizedOrigin=/(?:^|\.)tradedeskpro\.app$/.test(location.hostname)||/\.pages\.dev$/.test(location.hostname);
 function _initMapKit(){
   if(typeof mapkit==='undefined')return;
+  if(!_mapkitAuthorizedOrigin)return; // unauthorized origin — skip init so MapKit never throws
   mapkit.init({authorizationCallback:done=>done(_MAPKIT_TOKEN),language:'en-US'});
   _mapkitReady=true;
   _retryPendingTrips();
