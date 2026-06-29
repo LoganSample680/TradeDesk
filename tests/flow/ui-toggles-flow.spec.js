@@ -75,6 +75,45 @@ test.describe('UI toggles — proposal tiles, permissions accordion, kanban coll
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
+  test('Crew Today card labels the cost "Labor cost" (renamed from "Loaded labor")', async ({ page }) => {
+    await step(page, {
+      label: 'seed a today time entry, render Crew Today', page: 'pg-dash', role: 'contractor',
+      suspect: 'finance.js _renderDashCrewToday → "Labor cost" label',
+      ruleText: 'the Crew Today card must render and label the cost column "Labor cost", never the old "Loaded labor"',
+      expected: '#dash-crew-today visible with "Labor cost" and no "Loaded labor"',
+      act: async (p) => {
+        const r = await p.evaluate(async () => {
+          const uid = _supaUser.id;
+          const cid = (typeof _contractorUserId !== 'undefined' && _contractorUserId) || uid;
+          S.teamTracking = true; // owner-only card is gated on this
+          let insErr = null;
+          try {
+            const { error } = await _supa.from('job_time_entries').insert({
+              contractor_user_id: cid, employee_user_id: uid, job_id: String(Date.now() * 1000),
+              minutes: 120, source: 'geofence', arrived_at: new Date().toISOString(),
+            });
+            insErr = error ? (error.message || 'insert error') : null;
+          } catch (e) { insErr = 'ex: ' + (e && e.message); }
+          if (typeof _renderDashCrewToday === 'function') await _renderDashCrewToday();
+          return { insErr };
+        });
+        p.__ins = r.insErr;
+        await p.waitForTimeout(400);
+        return 1;
+      },
+      rule: async (p) => {
+        const r = await p.evaluate(() => {
+          const el = document.getElementById('dash-crew-today');
+          const html = el ? (el.innerHTML || '') : '';
+          return { rendered: !!el && el.style.display !== 'none', hasNew: html.includes('Labor cost'), hasOld: html.includes('Loaded labor') };
+        });
+        return { ok: r.rendered && r.hasNew && !r.hasOld, got: JSON.stringify({ ...r, ins: p.__ins }) };
+      },
+    });
+    const rep = report(FLOW, BASELINE);
+    expect(rep.totalClicks).toBeGreaterThan(0);
+  });
+
   test('tapping a kanban column header collapses the bid cards inside it', async ({ page }) => {
     await step(page, {
       label: 'open Jobs board, collapse the first column', page: 'pg-jobs', role: 'contractor',
