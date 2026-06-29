@@ -409,7 +409,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.28.26.47';
+const APP_VERSION='06.28.26.48';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_broadcastReloadTimer=null,_broadcastPending=false;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -1136,6 +1136,16 @@ const _EMP_PERM_LABELS={
 };
 const _EMP_CLASSIFICATIONS=['','Apprentice','Journeyman','Master','Foreman / Lead','Helper','Subcontractor'];
 function _togglePermInfo(id){const el=document.getElementById(id);if(el)el.style.display=el.style.display==='block'?'none':'block';}
+// Collapsible Permissions block in the team-member modal (default closed). max-height
+// transition (not display) so it animates per the app's motion standard (§8.4).
+function _togglePermsAccordion(hdr){
+  const acc=hdr.parentElement.querySelector('.perms-acc');
+  const chev=hdr.querySelector('.perms-chev');
+  if(!acc)return;
+  const open=acc.style.maxHeight&&acc.style.maxHeight!=='0px';
+  acc.style.maxHeight=open?'0px':(acc.scrollHeight+24)+'px';
+  if(chev)chev.style.transform=open?'':'rotate(90deg)';
+}
 function _setEmpRolePreset(role){
   const preset=_EMP_ROLE_PRESETS[role]||{};
   Object.keys(_EMP_PERM_LABELS).forEach(p=>{
@@ -1764,7 +1774,12 @@ function _employeeModalHTML(emp,idx){
           '<input id="emp-pay-rate" type="number" min="0" step="0.5" value="'+(_eComp.pay_rate||'')+'" placeholder="'+(_eComp.pay_type==='salary'?'55000':'28')+'" style="font-size:14px;padding:10px;flex:1"></div></div>'+
       '</div>'
     :'')+
-    '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Permissions</div>'+
+    '<div onclick="_togglePermsAccordion(this)" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding:10px 0;margin-bottom:2px">'+
+      '<span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Permissions'+
+        ((e.permissions?Object.values(e.permissions).filter(Boolean).length:0)?' · '+Object.values(e.permissions).filter(Boolean).length+' on':'')+'</span>'+
+      '<span class="perms-chev" style="font-size:11px;color:var(--text3);transition:transform .18s cubic-bezier(.22,1,.36,1)">▶</span>'+
+    '</div>'+
+    '<div class="perms-acc" style="max-height:0;overflow:hidden;transition:max-height .2s cubic-bezier(.22,1,.36,1)">'+
     '<div style="display:grid;gap:6px;margin-bottom:14px">'+
       Object.entries(_EMP_PERM_LABELS).map(([k,lbl])=>{
         const checked=e.permissions&&e.permissions[k];
@@ -1778,6 +1793,7 @@ function _employeeModalHTML(emp,idx){
           (info?'<div class="perm-info" style="display:none;font-size:12px;color:var(--text3);padding:0 10px 10px 34px;line-height:1.45">'+escHtml(info)+'</div>':'')+
         '</div>';
       }).join('')+
+    '</div>'+
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       (!isNew?'<button onclick="removeEmployee('+idx+')" style="padding:10px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>':'<div></div>')+
