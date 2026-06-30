@@ -87,4 +87,73 @@ test.describe('client hub shows a real proposal (UI-driven)', () => {
     const rep = report(FLOW, BASELINE);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
+
+  // A closed-out (declined) proposal must STAY in the hub Documents as a read-only
+  // record carrying its reason — not vanish once it leaves Pending. Guards the new
+  // close-out → hub-refresh path + the renderDocuments declined card.
+  test('a closed-out proposal stays in the hub Documents — read-only, with its reason', async ({ page }) => {
+    const clientId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+    const bidId = clientId + 1;
+    const REASON = 'Went with another contractor';
+
+    let hub = {};
+    await step(page, {
+      label: 'send proposal → close out (declined) → re-upload hub', page: 'cloud', role: 'contractor',
+      suspect: 'bids.js _submitCloseOutEstimate hub refresh + proposals.js _buildClientHubSnapshot (lostReason)',
+      ruleText: 'closing out a proposal must keep it in the hub snapshot carrying status Closed Lost + the reason',
+      expected: 'hub token minted; snapshot rebuilt after close-out',
+      act: async (p) => {
+        await seedProposal(p, { clientId, bidId, amount: 5200, tag: 'hubdecl' });
+        hub = await p.evaluate(async ({ bidId, clientId, reason }) => {
+          // Close out exactly as _submitCloseOutEstimate does (status + reason), then
+          // re-publish the hub via the real production function.
+          const b = bids.find(x => x.id === bidId);
+          if (b) { b.status = 'Closed Lost'; b.draft = false; b.lostReason = reason; b.lostNote = ''; b.lostAt = new Date().toISOString(); }
+          if (typeof saveAll === 'function') saveAll();
+          let url = null;
+          if (typeof _uploadClientHub === 'function') url = await _uploadClientHub(clientId);
+          const m = (url || '').match(/[?&]t=([^&]+)/);
+          return { url, token: m ? decodeURIComponent(m[1]) : null, uid: (_supaUser && _supaUser.id) || null };
+        }, { bidId, clientId, reason: REASON });
+        return 1;
+      },
+      rule: async () => ({ ok: !!hub.token && !!hub.uid, got: `token=${!!hub.token} uid=${!!hub.uid} url=${hub.url}` }),
+    });
+
+    await step(page, {
+      label: 'open hub Documents → declined card present, no Review & Sign', page: 'client.html', role: 'client',
+      suspect: 'client.html renderDocuments — declined card (lostReason; no sign action)',
+      ruleText: 'the declined proposal must render in Documents with its reason and NO Review & Sign action',
+      expected: 'a DECLINED card showing the reason; zero sign buttons in Documents',
+      act: async (p) => {
+        const hubPage = await p.context().newPage();
+        const base = `/client.html?t=${hub.token}&u=${hub.uid}&c=${clientId}`;
+        let ok = false, got = '';
+        for (let i = 0; i < 4 && !ok; i++) {
+          await hubPage.goto(base + '&cb=' + Date.now(), { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+          await hubPage.waitForSelector('.nav-item, #pg-err', { timeout: 12000 }).catch(() => {});
+          await hubPage.evaluate(() => { if (typeof switchView === 'function') switchView('documents'); }).catch(() => {});
+          await hubPage.waitForTimeout(400);
+          // Expand the declined card so its (collapsed) reason body renders into innerText.
+          await hubPage.evaluate((id) => { if (typeof _toggleDoc === 'function') _toggleDoc(id); }, bidId).catch(() => {});
+          await hubPage.waitForTimeout(250);
+          const declinedBadges = await hubPage.getByText('DECLINED', { exact: false }).count().catch(() => 0);
+          const reasonShown = await hubPage.locator('#db-' + bidId).innerText().then(t => t.includes(REASON)).catch(() => false);
+          // A declined record must never offer signing.
+          const signBtns = await hubPage.locator('.hub-btn-sign, a:has-text("Review & Sign"), button:has-text("Review & Sign")').count().catch(() => 0);
+          const errVisible = await hubPage.locator('#pg-err').isVisible().catch(() => false);
+          ok = declinedBadges >= 1 && reasonShown && signBtns === 0 && !errVisible;
+          got = `declinedBadges=${declinedBadges} reasonShown=${reasonShown} signBtns=${signBtns} errVisible=${errVisible} attempt=${i + 1}`;
+          if (!ok) await hubPage.waitForTimeout(2500);
+        }
+        hub.render = { ok, got };
+        await hubPage.close().catch(() => {});
+        return 1;
+      },
+      rule: async () => ({ ok: hub.render.ok, got: hub.render.got }),
+    });
+
+    const rep = report(FLOW, BASELINE);
+    expect(rep.totalClicks).toBeGreaterThan(0);
+  });
 });

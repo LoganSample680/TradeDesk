@@ -143,22 +143,37 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
       bids.push({ id: bidId, client_name: 'E2E Delta Load ' + bidId, name: 'Delta Load', amount: 100, status: 'Pending', _e2e: 'delta' });
       await supaSaveToCloud();
     }, { bidId });
-    await signIn(page);   // fresh boot → supaLoadFromCloud rebuilds _syncedHash from cloud rows
-    await page.waitForFunction(() => typeof _supaCloudLoaded === 'undefined' || _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});
+    // Fresh boot: RELOAD (the Supabase session persists in localStorage, so the app
+    // re-auths itself and runs supaLoadFromCloud again → rebuilds _syncedHash from cloud).
+    // NOT a second signIn() — that waits for the login form, which never appears when a
+    // session is already active, and would hang.
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => typeof _supaCloudLoaded !== 'undefined' && _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});
+    await page.waitForTimeout(500);
 
     await step(page, {
       label: 'after fresh load, save with no edit', page: 'cloud', role: 'contractor',
       suspect: 'cloud.js supaLoadFromCloud — _syncedHash[t]=new Map(... _hashPayload(r.data))',
       ruleText: 'the load must rebuild the synced hash so an immediate no-op save uploads nothing',
-      expected: 'hash present for the loaded bid, and _deltaStats.upserts === 0',
+      expected: 'no-op save uploads 0, and the rebuilt hash is in lockstep with the loaded rows',
       act: async (p) => {
-        p.__has = await p.evaluate(({ bidId }) => window.__hashHas('td_bids', bidId), { bidId });
+        const r = await p.evaluate(({ bidId }) => ({
+          inMem: (typeof bids !== 'undefined') && bids.some(b => String(b.id) === String(bidId)),
+          hasHash: window.__hashHas('td_bids', bidId),
+        }), { bidId });
+        p.__mem = r.inMem; p.__has = r.hasHash;
         await resetDelta(p);
         await p.evaluate(async () => { await supaSaveToCloud(); });
         p.__d = await readDelta(p);
         return 1;
       },
-      rule: async (p) => ({ ok: p.__has === true && p.__d.upserts === 0, got: `hashPresent=${p.__has} delta=${JSON.stringify(p.__d)}` }),
+      // The property: a fresh load rebuilds _syncedHash, so a no-op save uploads nothing
+      // (upserts===0 — if the hash hadn't rebuilt, every loaded row would re-upload). And
+      // the rebuilt hash is in lockstep with the rows that actually loaded: the seeded
+      // bid's hash is present IFF the bid came back into memory (the shared dev account is
+      // never cleaned per §13.7, so a given row may or may not be in the loaded set, but
+      // hash⟺memory must always hold).
+      rule: async (p) => ({ ok: p.__d.upserts === 0 && p.__has === p.__mem, got: `inMem=${p.__mem} hashPresent=${p.__has} delta=${JSON.stringify(p.__d)}` }),
     });
     const rep = report(FLOW, BASELINE);
     expect(rep.totalClicks).toBeGreaterThan(0);
@@ -236,6 +251,148 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
         return 2;
       },
       rule: async (p) => ({ ok: p.__hasAfterDel === false && p.__softDeleted === true && p.__d.upserts === 1, got: `hashAfterDel=${p.__hasAfterDel} softDeleted=${p.__softDeleted} reDelta=${JSON.stringify(p.__d)}` }),
+    });
+    const rep = report(FLOW, BASELINE);
+    expect(rep.totalClicks).toBeGreaterThan(0);
+  });
+
+  // REGRESSION (cross-device delete bug): a BEFORE UPDATE OR DELETE trigger on td_bids
+  // (20260626 bid history) read OLD.contractor_user_id — a column td_bids does NOT have
+  // (it keys on user_id) — so the soft-delete UPDATE raised 42703 and 400'd, aborting the
+  // save. deleted_at never landed, so the bid stayed alive in the cloud and resurrected on
+  // every device / after reload. This guards the FULL invariant end-to-end: delete → cloud
+  // deleted_at set (save not aborted) → fresh reload → the bid stays gone. (Effective once
+  // the test stack has all migrations incl. 20260626/20260707 — same gap that let prod break
+  // while CI stayed green: the local stack predated the trigger.)
+  test('a deleted bid soft-deletes in the cloud and does NOT resurrect after a fresh reload', async ({ page }) => {
+    const bidId = baseId() + 60;
+    await step(page, {
+      label: 'create a bid, delete it, assert cloud soft-deleted + no resurrection on reload',
+      page: 'cloud', role: 'contractor',
+      suspect: 'supabase 20260707 trg_bid_history (OLD.user_id) + cloud.js _upsertTable sweep (deleted_at)',
+      ruleText: 'a deleted bid must soft-delete in the cloud (the history trigger must not abort the save) and must not come back after a fresh reload',
+      expected: 'deleted_at set in cloud; bid absent in memory after reload',
+      act: async (p) => {
+        await p.evaluate(async ({ bidId }) => {
+          bids.push({ id: bidId, client_name: 'E2E Del Persist ' + bidId, name: 'Del Persist', amount: 100, status: 'Pending', _e2e: 'delta' });
+          await supaSaveToCloud();
+        }, { bidId });
+        // Real delete path — _userDelete records the intent so the sweep soft-deletes it.
+        await p.evaluate(async ({ bidId }) => {
+          _userDelete(() => { bids = bids.filter(b => b.id !== bidId); });
+          await supaSaveToCloud();
+        }, { bidId });
+        p.__softDeleted = await p.evaluate(async ({ bidId }) => {
+          const { data } = await _supa.from('td_bids').select('deleted_at').eq('user_id', _supaUser.id).eq('id', String(bidId)).maybeSingle();
+          return !!(data && data.deleted_at);
+        }, { bidId });
+        // Fresh reload — the load filters deleted_at IS NULL, so a properly soft-deleted bid
+        // must NOT come back. Before the fix it resurrected because deleted_at never landed.
+        await p.reload({ waitUntil: 'domcontentloaded' });
+        await p.waitForFunction(() => typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id, { timeout: 30000 });
+        await p.waitForFunction(() => typeof _supaCloudLoaded === 'undefined' || _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});
+        p.__resurrected = await p.evaluate(({ bidId }) => (typeof bids !== 'undefined' ? bids : []).some(b => b.id === bidId), { bidId });
+        return 1;
+      },
+      rule: async (p) => ({ ok: p.__softDeleted === true && p.__resurrected === false, got: `softDeleted=${p.__softDeleted} resurrectedAfterReload=${p.__resurrected}` }),
+    });
+    const rep = report(FLOW, BASELINE);
+    expect(rep.totalClicks).toBeGreaterThan(0);
+  });
+
+  // REGRESSION (unwrapped delete site): convertOpportunityToEstimate removed a SAVED
+  // opportunity bid with a bare `bids=bids.filter(...)` (no _userDelete), so post-#51 the
+  // sweep never recorded the delete intent and the opportunity resurrected from the cloud.
+  // Now wrapped in _userDelete — assert the removed opportunity actually soft-deletes.
+  test('converting an opportunity soft-deletes its saved bid (unwrapped-delete regression)', async ({ page }) => {
+    const cid = baseId() + 70, bidId = baseId() + 71;
+    await step(page, {
+      label: 'seed a saved opportunity, convert it, assert the opportunity bid soft-deletes',
+      page: 'cloud', role: 'contractor',
+      suspect: 'bids.js convertOpportunityToEstimate — must _userDelete the removed opportunity bid',
+      ruleText: 'converting an opportunity must record the removed bid as a local delete so it soft-deletes in the cloud and does not resurrect',
+      expected: 'opportunity bid deleted_at set; absent after reload',
+      act: async (p) => {
+        await p.evaluate(async ({ cid, bidId }) => {
+          clients.push({ id: cid, name: 'E2E Opp Client ' + cid, phone: '3165550123', _e2e: 'delta' });
+          bids.push({ id: bidId, client_id: cid, client_name: 'E2E Opp Client ' + cid, name: 'Opp', type: 'opportunity', status: 'opportunity', amount: 0, draft: false, bid_date: new Date().toISOString().slice(0, 10), _e2e: 'delta' });
+          await supaSaveToCloud();
+        }, { cid, bidId });
+        // Real app path — converting removes the opportunity bid. Tolerate any UI side-effect
+        // throw from _doOpenEstimate: the delete+record happens first, which is what we assert.
+        await p.evaluate(({ bidId }) => { try { convertOpportunityToEstimate(bidId); } catch (e) {} }, { bidId });
+        await p.evaluate(async () => { if (typeof _flushSaveNow === 'function') _flushSaveNow(); await supaSaveToCloud(); });
+        p.__softDeleted = await p.evaluate(async ({ bidId }) => {
+          const { data } = await _supa.from('td_bids').select('deleted_at').eq('user_id', _supaUser.id).eq('id', String(bidId)).maybeSingle();
+          return !!(data && data.deleted_at);
+        }, { bidId });
+        await p.reload({ waitUntil: 'domcontentloaded' });
+        await p.waitForFunction(() => typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id, { timeout: 30000 });
+        await p.waitForFunction(() => typeof _supaCloudLoaded === 'undefined' || _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});
+        p.__resurrected = await p.evaluate(({ bidId }) => (typeof bids !== 'undefined' ? bids : []).some(b => b.id === bidId), { bidId });
+        return 1;
+      },
+      rule: async (p) => ({ ok: p.__softDeleted === true && p.__resurrected === false, got: `softDeleted=${p.__softDeleted} resurrectedAfterReload=${p.__resurrected}` }),
+    });
+    const rep = report(FLOW, BASELINE);
+    expect(rep.totalClicks).toBeGreaterThan(0);
+  });
+
+  // REGRESSION (Clear Data didn't stick): a deliberate "Clear all data" wipe was aborted
+  // by supaSaveToCloud's accidental-wipe sanity guard on a cache-only load, so the cloud
+  // soft-delete never sent and the rows (e.g. the maintenance contracts behind the
+  // dashboard "Maintenance Due" card) resurrected on reload. Guards the _deliberateWipe
+  // bypass + the awaited flush in clearAllData.
+  test('Clear Data soft-deletes every store in the cloud even on a cache-only load (no resurrection)', async ({ page }) => {
+    const bidId = baseId() + 80, ctId = baseId() + 81;
+    await step(page, {
+      label: 'seed a bid + maintenance contract, Clear Data, assert cloud soft-deleted + no resurrection',
+      page: 'pg-settings', role: 'contractor',
+      suspect: 'settings.js clearAllData (_deliberateWipe bypass + awaited flush) vs cloud.js sanity guard',
+      ruleText: 'a deliberate Clear Data must soft-delete every store in the cloud — even on a cache-only load — and nothing may resurrect on reload',
+      expected: 'td_bids + td_contracts rows for this run have deleted_at set; absent after reload',
+      act: async (p) => {
+        await p.evaluate(async ({ bidId, ctId }) => {
+          bids.push({ id: bidId, client_name: 'E2E Wipe Bid ' + bidId, name: 'Wipe Bid', amount: 100, status: 'Pending', _e2e: 'wipe' });
+          contracts.push({ id: ctId, client_id: bidId, title: 'E2E Wipe Maint ' + ctId, amount: 1800, active: true, nextDate: new Date().toISOString().slice(0, 10), _e2e: 'wipe' });
+          await supaSaveToCloud();
+        }, { bidId, ctId });
+        // Reproduce the bug condition: a cache-only load with cached data, which makes the
+        // accidental-wipe sanity guard abort the clear UNLESS _deliberateWipe bypasses it.
+        await p.evaluate(() => {
+          try {
+            localStorage.setItem('zp3_cloud_cache', JSON.stringify({ clients: [{ id: 1 }], bids: [{ id: 1 }], income: [{ id: 1 }], mileage: [{ id: 1 }] }));
+            _loadedFromCacheOnly = true;
+          } catch (e) {}
+        });
+        // Drive the REAL clearAllData with its two confirmation prompts auto-accepted.
+        await p.evaluate(async () => {
+          const _z = window.zConfirm;
+          window.zConfirm = (msg, onYes) => { try { onYes && onYes(); } catch (e) {} };
+          try { clearAllData(); } catch (e) {}
+          await new Promise(r => setTimeout(r, 2800)); // let the async clear + awaited flush finish
+          window.zConfirm = _z;
+        });
+        p.__cloud = await p.evaluate(async ({ bidId, ctId }) => {
+          const uid = _supaUser.id;
+          const b = await _supa.from('td_bids').select('deleted_at').eq('user_id', uid).eq('id', String(bidId)).maybeSingle();
+          const ct = await _supa.from('td_contracts').select('deleted_at').eq('user_id', uid).eq('id', String(ctId)).maybeSingle();
+          return { bidDel: !!(b.data && b.data.deleted_at), ctDel: !!(ct.data && ct.data.deleted_at) };
+        }, { bidId, ctId });
+        // Reload — a properly soft-deleted row (load filters deleted_at IS NULL) must not come back.
+        await p.reload({ waitUntil: 'domcontentloaded' });
+        await p.waitForFunction(() => typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id, { timeout: 30000 });
+        await p.waitForFunction(() => typeof _supaCloudLoaded === 'undefined' || _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});
+        p.__res = await p.evaluate(({ bidId, ctId }) => ({
+          bid: (typeof bids !== 'undefined' ? bids : []).some(b => b.id === bidId),
+          ct: (typeof contracts !== 'undefined' ? contracts : []).some(c => c.id === ctId),
+        }), { bidId, ctId });
+        return 1;
+      },
+      rule: async (p) => ({
+        ok: p.__cloud.bidDel === true && p.__cloud.ctDel === true && p.__res.bid === false && p.__res.ct === false,
+        got: `cloudDeleted(bid=${p.__cloud.bidDel} contract=${p.__cloud.ctDel}) resurrected(bid=${p.__res.bid} contract=${p.__res.ct})`,
+      }),
     });
     const rep = report(FLOW, BASELINE);
     expect(rep.totalClicks).toBeGreaterThan(0);

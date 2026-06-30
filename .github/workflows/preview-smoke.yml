@@ -1,0 +1,83 @@
+name: Preview Smoke (post-deploy)
+
+# Runs a SMALL smoke against the actual Cloudflare Pages deployment once it goes live, to
+# catch DEPLOY/ENVIRONMENT issues the off-Cloudflare flow gate can't see: a stale bundle
+# (version mismatch), the real /api Pages Function, and MapKit (domain-locked token,
+# never inits on localhost). Dozens of requests — NOT the full realtime suite.
+#
+# NOTE: the `deployment_status` trigger only fires for workflows that exist on the
+# repo's DEFAULT branch (a GitHub rule). So the auto-on-deploy path activates once this
+# file is merged to main; until then, run it manually via workflow_dispatch with the
+# preview URL.
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      preview_url:
+        description: 'Deployed URL to smoke (e.g. https://<hash>.tradedesk-cyp.pages.dev)'
+        required: true
+        type: string
+
+concurrency:
+  group: preview-smoke-${{ github.event.deployment_status.environment_url || inputs.preview_url }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    # Only when a deployment actually SUCCEEDED (Cloudflare fires pending/in_progress too),
+    # or on a manual dispatch.
+    if: >-
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CI: 'true'
+      # The URL that just deployed (deployment_status) or was passed in (manual dispatch).
+      PREVIEW_URL: ${{ github.event.deployment_status.environment_url || inputs.preview_url }}
+      E2E_DEV_EMAIL: ${{ secrets.E2E_DEV_EMAIL }}
+      E2E_DEV_PASSWORD: ${{ secrets.E2E_DEV_PASSWORD }}
+      E2E_DEV_USER_ID: ${{ secrets.E2E_DEV_USER_ID }}
+      # CI-only Cloudflare WAF bypass (no-op if unset).
+      E2E_BYPASS_SECRET: ${{ secrets.E2E_BYPASS_SECRET }}
+
+    steps:
+      # Check out the COMMIT that was deployed so version.json == the live bundle's version
+      # (the whole point of the version assertion). Manual runs fall back to the branch ref.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.deployment.sha || github.ref }}
+
+      - name: Install Playwright
+        run: npm install --no-save @playwright/test@1.56.0
+
+      - name: Ensure browsers
+        run: npx playwright install chromium webkit
+
+      - name: Guard — PREVIEW_URL must be set
+        run: |
+          [ -n "$PREVIEW_URL" ] || { echo "::error::PREVIEW_URL is empty — nothing to smoke"; exit 1; }
+          echo "Smoking $PREVIEW_URL"
+
+      - name: Wait for the deployment to be reachable
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "$PREVIEW_URL/" || true)
+            [ "$code" = "200" ] && { echo "deploy reachable (200)"; exit 0; }
+            echo "waiting for deploy to propagate ($code)…"; sleep 4
+          done
+          echo "::warning::deploy did not return 200 within ~2min — running the smoke anyway so the failure is reported"
+
+      - name: Run preview smoke
+        run: npx playwright test -c playwright.preview-smoke.config.js
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-smoke-report
+          path: |
+            preview-smoke-results.json
+            playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore

@@ -2088,7 +2088,10 @@ function clearEstFullDraft(){
   // Remove the draft bid created when estimate opened (if not yet confirmed)
   if(lastCreatedBidId){
     const idx=bids.findIndex(b=>b.id===lastCreatedBidId&&b.draft);
-    if(idx>-1){bids.splice(idx,1);saveAll();}
+    // Wrap so the removed draft bid's id is recorded as a local delete and the sweep
+    // propagates it cross-device (nested _userDelete from a wrapped caller is safe —
+    // it just re-records the same id; harmless no-op if the draft never reached cloud).
+    if(idx>-1){_userDelete(()=>{bids.splice(idx,1);saveAll();});}
     lastCreatedBidId=null;
   }
   editingBidId=null;

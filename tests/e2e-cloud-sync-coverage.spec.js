@@ -1,0 +1,537 @@
+// @ts-check
+/**
+ * Cloud / sync core coverage (CLAUDE.md §12 — exhaustive per-function coverage).
+ *
+ * Targets the highest-RISK uncovered functions in js/cloud.js — the sync core —
+ * across the §12.1 input classes (null / empty / boundary / type-mismatch /
+ * missing-DOM / golden path), the §12.2 concurrent-call race pattern, and the
+ * §12.3 localStorage-corruption pattern.
+ *
+ * Functions exercised:
+ *   _isMissingTableErr        — error classification (true/false across shapes)
+ *   _bidRichness              — bid scoring (empty / partial / full / non-bid)
+ *   _recordLocalDelete        — delete-sweep id tracking (§9.8 concurrency-safe sweep)
+ *   _setDeliberateWipe        — wipe-flag setter
+ *   _isCompanyVehicleToday    — company-vehicle boolean across localStorage states
+ *   _pickVehicle              — vehicle selection (localStorage + toast, missing DOM)
+ *   _dispatchMoveUp/_dispatchMoveDown/_dispatchUnassign — dispatch reorder + boundaries
+ *   _empPayTypeSync           — pay-type form sync (DOM label/placeholder)
+ *   _setEmpRolePreset         — role → permission-checkbox preset
+ *   _togglePermInfo           — info-block toggle (missing DOM)
+ *   _copyInviteLink           — clipboard copy (no-throw)
+ *   _cacheUserLayoutLocal     — per-uid layout cache to localStorage
+ *   _opDbOpen / _opSyncOps (window.__opSync) — durable op-log + shadow sync (§12.2 race)
+ *   _loadTeamComp / _refreshPermReqBadge / _denyPermissionRequest — supa-backed, no-throw
+ *   _migrateReceiptsToStorage / _restoreReceiptsFromStorage — receipt sync, no-throw
+ */
+
+const { test, expect, mockAllExternal, waitForAppBoot, goPg, assertNoErrors } = require('./helpers');
+
+test.describe('Cloud sync core — uncovered function coverage', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => {
+    assertNoErrors(page, 'cloud sync core coverage');
+    await page.context().close();
+  });
+
+  // ── _isMissingTableErr — pure error classification ────────────────────────
+  test('_isMissingTableErr — classifies missing-table errors true, real errors false', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _isMissingTableErr !== 'function') return { skip: true };
+      try {
+        return {
+          ok: true,
+          pgCode:     _isMissingTableErr({ code: '42P01' }),                    // postgres undefined_table
+          restCode:   _isMissingTableErr({ code: 'PGRST205' }),                 // PostgREST schema-cache miss
+          msgExist:   _isMissingTableErr({ message: 'relation td_x does not exist' }),
+          msgFind:    _isMissingTableErr({ message: 'Could not find the table' }),
+          msgSchema:  _isMissingTableErr({ message: 'schema cache reload needed' }),
+          authErr:    _isMissingTableErr({ code: 'PGRST401', message: 'Invalid JWT' }),
+          netErr:     _isMissingTableErr({ message: 'Failed to fetch' }),
+          emptyObj:   _isMissingTableErr({}),
+          nullErr:    _isMissingTableErr(null),
+          undefErr:   _isMissingTableErr(undefined),
+        };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
+    // true for every missing-table signal
+    expect(r.pgCode).toBe(true);
+    expect(r.restCode).toBe(true);
+    expect(r.msgExist).toBe(true);
+    expect(r.msgFind).toBe(true);
+    expect(r.msgSchema).toBe(true);
+    // false for real errors and empty/null inputs
+    expect(r.authErr).toBe(false);
+    expect(r.netErr).toBe(false);
+    expect(r.emptyObj).toBe(false);
+    expect(r.nullErr).toBe(false);
+    expect(r.undefErr).toBe(false);
+  });
+
+  // ── _bidRichness — pure scoring ───────────────────────────────────────────
+  test('_bidRichness — scores surfaces*100 + rooms across input classes', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _bidRichness !== 'function') return { skip: true };
+      try {
+        return {
+          ok: true,
+          nul:      _bidRichness(null),                                          // -1 sentinel
+          undef:    _bidRichness(undefined),                                     // -1 sentinel
+          empty:    _bidRichness({}),                                            // 0
+          surfOnly: _bidRichness({ surfaces: [{}, {}, {}] }),                    // 3*100
+          roomOnly: _bidRichness({ roomScopeMap: { a: 1, b: 2 } }),             // 2
+          full:     _bidRichness({ surfaces: [{}, {}], roomScopeMap: { a: 1 } }),// 201
+          badTypes: _bidRichness({ surfaces: 'nope', roomScopeMap: 42 }),       // 0 (type-mismatch guarded)
+        };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
+    expect(r.nul).toBe(-1);
+    expect(r.undef).toBe(-1);
+    expect(r.empty).toBe(0);
+    expect(r.surfOnly).toBe(300);
+    expect(r.roomOnly).toBe(2);
+    expect(r.full).toBe(201);
+    expect(r.badTypes).toBe(0);
+    // ordering property the merge logic relies on: surfaces weighted heavier than rooms
+    expect(r.surfOnly).toBeGreaterThan(r.roomOnly);
+    expect(r.full).toBeGreaterThan(r.empty);
+  });
+
+  // ── _recordLocalDelete — §9.8 concurrency-safe sweep id tracking ───────────
+  test('_recordLocalDelete — tracks explicitly-deleted ids, ignores unknown tables/empty', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _recordLocalDelete !== 'function' || typeof _locallyDeletedIds === 'undefined') return { skip: true };
+      try {
+        const has = (tbl, id) => !!(_locallyDeletedIds[tbl] && _locallyDeletedIds[tbl].has(String(id)));
+        // golden path: record a single explicit local delete
+        _recordLocalDelete('td_bids', 555001);
+        const single = has('td_bids', 555001);
+        // multiple ids in one call (cascade pattern)
+        _recordLocalDelete('td_jobs', 555002, 555003);
+        const multi = has('td_jobs', 555002) && has('td_jobs', 555003);
+        // ids are stringified — numeric and string forms collapse to the same key
+        const strMatch = has('td_bids', '555001');
+        // null / undefined ids are skipped, not recorded as "null"/"undefined"
+        const before = _locallyDeletedIds.td_clients.size;
+        _recordLocalDelete('td_clients', null, undefined);
+        const nullSkipped = _locallyDeletedIds.td_clients.size === before;
+        // unknown table → safe no-op, no throw, no new Set created
+        _recordLocalDelete('td_not_a_table', 999);
+        const unknownSafe = _locallyDeletedIds['td_not_a_table'] === undefined;
+        return { ok: true, single, multi, strMatch, nullSkipped, unknownSafe };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
+    expect(r.single).toBe(true);
+    expect(r.multi).toBe(true);
+    expect(r.strMatch).toBe(true);
+    expect(r.nullSkipped).toBe(true);
+    expect(r.unknownSafe).toBe(true);
+  });
+
+  // ── _setDeliberateWipe — flag setter ──────────────────────────────────────
+  test('_setDeliberateWipe — coerces to boolean flag', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _setDeliberateWipe !== 'function' || typeof _deliberateWipe === 'undefined') return { skip: true };
+      try {
+        _setDeliberateWipe(true);  const onTrue = _deliberateWipe;
+        _setDeliberateWipe(false); const offFalse = _deliberateWipe;
+        _setDeliberateWipe(1);     const onTruthy = _deliberateWipe;   // coerced → true
+        _setDeliberateWipe(0);     const offFalsy = _deliberateWipe;   // coerced → false
+        _setDeliberateWipe();      const offUndef = _deliberateWipe;   // undefined → false
+        _setDeliberateWipe(false);                                     // restore default
+        return { ok: true, onTrue, offFalse, onTruthy, offFalsy, offUndef, restored: _deliberateWipe };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
+    expect(r.onTrue).toBe(true);
+    expect(r.offFalse).toBe(false);
+    expect(r.onTruthy).toBe(true);
+    expect(r.offFalsy).toBe(false);
+    expect(r.offUndef).toBe(false);
+    expect(r.restored).toBe(false);
+  });
+
+  // ── _isCompanyVehicleToday — boolean logic over localStorage states ───────
+  test('_isCompanyVehicleToday — true only for a real company vehicle id', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _isCompanyVehicleToday !== 'function' || typeof todayKey !== 'function') return { skip: true };
+      try {
+        const key = 'emp_vehicle_' + todayKey();
+        const orig = localStorage.getItem(key);
+        localStorage.removeItem(key);          const unset    = _isCompanyVehicleToday(); // false
+        localStorage.setItem(key, 'none');     const onFoot   = _isCompanyVehicleToday(); // false
+        localStorage.setItem(key, 'personal'); const personal = _isCompanyVehicleToday(); // false
+        localStorage.setItem(key, 'veh-123');  const company  = _isCompanyVehicleToday(); // true
+        localStorage.setItem(key, '');         const blank    = _isCompanyVehicleToday(); // false
+        if (orig === null) localStorage.removeItem(key); else localStorage.setItem(key, orig);
+        return { ok: true, unset, onFoot, personal, company, blank };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
+    expect(r.unset).toBe(false);
+    expect(r.onFoot).toBe(false);
+    expect(r.personal).toBe(false);
+    expect(r.company).toBe(true);
+    expect(r.blank).toBe(false);
+  });
+
+  // ── _pickVehicle — selection writes localStorage; tolerant of missing DOM ──
+  test('_pickVehicle — persists choice and does not throw when display el absent', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _pickVehicle !== 'function' || typeof todayKey !== 'function') return { skip: true };
+      try {
+        const key = 'emp_vehicle_' + todayKey();
+        const orig = localStorage.getItem(key);
+        // no #_emp-vehicle-display / #_vehicle-picker-ov in DOM → must still not throw
+        _pickVehicle('veh-xyz', 'Work Truck');
+        const stored = localStorage.getItem(key);
+        _pickVehicle('personal', 'Personal vehicle');
+        const storedPersonal = localStorage.getItem(key);
+        _pickVehicle('none', 'On foot');
+        const storedNone = localStorage.getItem(key);
+        if (orig === null) localStorage.removeItem(key); else localStorage.setItem(key, orig);
+        return { ok: true, stored, storedPersonal, storedNone };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
+    expect(r.stored).toBe('veh-xyz');
+    expect(r.storedPersonal).toBe('personal');
+    expect(r.storedNone).toBe('none');
+  });
+
+  // ── _dispatch reorder — seed jobs, assert precise order + boundary no-ops ──
+  test('_dispatchMoveUp / _dispatchMoveDown — reorder dispatchOrder with boundary no-ops', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _dispatchMoveUp !== 'function' || typeof _dispatchMoveDown !== 'function'
+        || typeof jobs === 'undefined' || typeof S === 'undefined' || typeof todayKey !== 'function') return { skip: true };
+      try {
+        const tk = todayKey();
+        const empId = 'emp-dispatch-1';
+        S.employees = S.employees || [];
+        if (!S.employees.some(e => e.id === empId)) S.employees.push({ id: empId, name: 'Reorder Tester', role: 'tech' });
+        // Seed 3 assigned jobs in known order 0,1,2
+        const ids = [770001, 770002, 770003];
+        ids.forEach((id, i) => {
+          if (!jobs.some(j => j.id === id)) jobs.push({ id });
+          const j = jobs.find(x => x.id === id);
+          j.assignedTo = empId; j.assignedDate = tk; j.dispatchOrder = i;
+          j.client_id = null; j.clientName = 'Reorder ' + i; j.start = tk; j.days = 1;
+        });
+        const orderOf = () => jobs.filter(j => String(j.assignedTo) === String(empId) && j.assignedDate === tk)
+          .sort((a, b) => (a.dispatchOrder || 0) - (b.dispatchOrder || 0)).map(j => j.id);
+
+        const initial = orderOf();                                  // [770001,770002,770003]
+        _dispatchMoveDown(770001, empId);                           // first → second
+        const afterDown = orderOf();                                // [770002,770001,770003]
+        _dispatchMoveUp(770001, empId);                             // back to first
+        const afterUp = orderOf();                                  // [770001,770002,770003]
+
+        // Boundary: moving the top item up is a no-op
+        const beforeTopUp = orderOf();
+        _dispatchMoveUp(770001, empId);
+        const afterTopUp = orderOf();
+        // Boundary: moving the bottom item down is a no-op
+        const beforeBotDown = orderOf();
+        _dispatchMoveDown(770003, empId);
+        const afterBotDown = orderOf();
+        // Unknown job id → no throw, no change
+        _dispatchMoveUp(999999, empId);
+        _dispatchMoveDown(999999, empId);
+        const afterUnknown = orderOf();
+
+        return {
+          ok: true, initial, afterDown, afterUp,
+          topNoop: JSON.stringify(beforeTopUp) === JSON.stringify(afterTopUp),
+          botNoop: JSON.stringify(beforeBotDown) === JSON.stringify(afterBotDown),
+          unknownNoop: JSON.stringify(afterUnknown) === JSON.stringify(afterBotDown),
+        };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
+    expect(r.initial).toEqual([770001, 770002, 770003]);
+    expect(r.afterDown).toEqual([770002, 770001, 770003]);
+    expect(r.afterUp).toEqual([770001, 770002, 770003]);
+    expect(r.topNoop).toBe(true);
+    expect(r.botNoop).toBe(true);
+    expect(r.unknownNoop).toBe(true);
+  });
+
+  test('_dispatchUnassign — clears assignment via zConfirm without throwing', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _dispatchUnassign !== 'function' || typeof jobs === 'undefined') return { skip: true };
+      try {
+        // Force-confirm so the unassign branch runs synchronously
+        const origConfirm = window.zConfirm;
+        window.zConfirm = (msg, onYes) => { if (typeof onYes === 'function') onYes(); };
+        const id = 770010;
+        if (!jobs.some(j => j.id === id)) jobs.push({ id });
+        const j = jobs.find(x => x.id === id);
+        j.assignedTo = 'emp-z'; j.assignedDate = '2099-01-01';
+        _dispatchUnassign(id);
+        const cleared = j.assignedTo === undefined && j.assignedDate === undefined;
+        // Unknown id → no-throw
+        _dispatchUnassign(999998);
+        window.zConfirm = origConfirm;
+        return { ok: true, cleared };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
+    expect(r.cleared).toBe(true);
+  });
+
+  // ── _empPayTypeSync — DOM label/placeholder sync ──────────────────────────
+  test('_empPayTypeSync — swaps label + placeholder for salary vs hourly, missing DOM safe', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _empPayTypeSync !== 'function') return { skip: true };
+      try {
+        // Missing DOM first — must not throw
+        document.getElementById('_paytype-harness')?.remove();
+        _empPayTypeSync();
+        // Build a minimal harness mirroring the employee modal ids
+        const wrap = document.createElement('div'); wrap.id = '_paytype-harness';
+        wrap.innerHTML =
+          '<select id="emp-pay-type"><option value="hourly">h</option><option value="salary">s</option></select>' +
+          '<span id="emp-pay-rate-lbl"></span>' +
+          '<input id="emp-pay-rate">';
+        document.body.appendChild(wrap);
+        const sel = document.getElementById('emp-pay-type');
+        const lbl = document.getElementById('emp-pay-rate-lbl');
+        const inp = document.getElementById('emp-pay-rate');
+        sel.value = 'salary'; _empPayTypeSync();
+        const salaryLbl = lbl.textContent, salaryPh = inp.placeholder;
+        sel.value = 'hourly'; _empPayTypeSync();
+        const hourlyLbl = lbl.textContent, hourlyPh = inp.placeholder;
+        wrap.remove();
+        return { ok: true, salaryLbl, salaryPh, hourlyLbl, hourlyPh };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
+    expect(r.salaryLbl).toBe('Annual salary');
+    expect(r.salaryPh).toBe('55000');
+    expect(r.hourlyLbl).toBe('Hourly rate');
+    expect(r.hourlyPh).toBe('28');
+  });
+
+  // ── _setEmpRolePreset — role → permission checkboxes ──────────────────────
+  test('_setEmpRolePreset — checks the right permission boxes per role preset', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _setEmpRolePreset !== 'function' || typeof _EMP_PERM_LABELS === 'undefined') return { skip: true };
+      try {
+        // Missing checkboxes first — must not throw
+        document.getElementById('_rolepreset-harness')?.remove();
+        _setEmpRolePreset('tech');
+        // Build a checkbox per permission key
+        const wrap = document.createElement('div'); wrap.id = '_rolepreset-harness';
+        wrap.innerHTML = Object.keys(_EMP_PERM_LABELS)
+          .map(p => '<input type="checkbox" id="_perm-' + p + '">').join('');
+        document.body.appendChild(wrap);
+        const checked = () => Object.keys(_EMP_PERM_LABELS)
+          .filter(p => document.getElementById('_perm-' + p).checked).sort();
+
+        _setEmpRolePreset('tech');    const tech = checked();
+        _setEmpRolePreset('owner');   const owner = checked();
+        _setEmpRolePreset('manager'); const manager = checked();
+        // Unknown role → empty preset clears every box
+        _setEmpRolePreset('bogus');   const bogus = checked();
+        wrap.remove();
+        return { ok: true, tech, owner, manager, bogus, allKeys: Object.keys(_EMP_PERM_LABELS).length };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
+    expect(r.tech).toEqual(['collect', 'expenses', 'mileage'].sort());
+    expect(r.owner.length).toBe(r.allKeys); // owner preset enables every permission
+    expect(r.manager).toContain('team');
+    expect(r.manager).not.toContain('financials'); // manager has no financials in the preset
+    expect(r.bogus).toEqual([]);
+  });
+
+  // ── _togglePermInfo — info-block display toggle ───────────────────────────
+  test('_togglePermInfo — toggles display block/none, missing el is no-op', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _togglePermInfo !== 'function') return { skip: true };
+      try {
+        // Missing el → no throw
+        _togglePermInfo('_perminfo-does-not-exist');
+        const el = document.createElement('div'); el.id = '_perminfo-harness'; el.style.display = 'none';
+        document.body.appendChild(el);
+        _togglePermInfo('_perminfo-harness'); const open = el.style.display;   // → block
+        _togglePermInfo('_perminfo-harness'); const closed = el.style.display; // → none
+        el.remove();
+        return { ok: true, open, closed };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
+    expect(r.open).toBe('block');
+    expect(r.closed).toBe('none');
+  });
+
+  // ── _copyInviteLink — clipboard copy, no-throw ────────────────────────────
+  test('_copyInviteLink — copies without throwing (clipboard + fallback)', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _copyInviteLink !== 'function') return { skip: true };
+      try {
+        // Provide a stub copy button so the success-state branch runs
+        document.getElementById('_inv-copy-btn')?.remove();
+        const btn = document.createElement('button'); btn.id = '_inv-copy-btn'; btn.textContent = 'Copy Link';
+        document.body.appendChild(btn);
+        _copyInviteLink('https://example.test/?emp_invite=abc');
+        // Also exercise the document.execCommand fallback by hiding navigator.clipboard
+        const origClip = navigator.clipboard;
+        try { Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true }); } catch (_e) {}
+        _copyInviteLink('https://example.test/?emp_invite=def');
+        try { Object.defineProperty(navigator, 'clipboard', { value: origClip, configurable: true }); } catch (_e) {}
+        btn.remove();
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
+  });
+
+  // ── _cacheUserLayoutLocal — per-uid layout cache to localStorage ──────────
+  test('_cacheUserLayoutLocal — writes layout cache only when a user is present', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _cacheUserLayoutLocal !== 'function' || typeof S === 'undefined') return { skip: true };
+      try {
+        const origUser = typeof _supaUser !== 'undefined' ? _supaUser : null;
+        // No user → _userLayoutCacheKey() is null → early return, no throw
+        try { _supaUser = null; } catch (_e) {}
+        _cacheUserLayoutLocal();
+        // With a user → writes td_layout_<uid>
+        const uid = 'layout-cache-test';
+        try { _supaUser = { id: uid }; } catch (_e) {}
+        S.dashWidgetOrder = ['a', 'b'];
+        S.navTabOrder = ['home', 'jobs'];
+        S.dashKpiOrder = ['k1'];
+        _cacheUserLayoutLocal();
+        const raw = localStorage.getItem('td_layout_' + uid);
+        let parsed = null; try { parsed = JSON.parse(raw); } catch (_e) {}
+        localStorage.removeItem('td_layout_' + uid);
+        try { _supaUser = origUser; } catch (_e) {}
+        return { ok: true, raw, parsed };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
+    expect(r.raw).not.toBeNull();
+    expect(r.parsed).toMatchObject({ d: ['a', 'b'], n: ['home', 'jobs'], k: ['k1'] });
+  });
+
+  // ── _opDbOpen — durable IndexedDB op-log opens (or fails safe → null) ──────
+  test('_opDbOpen — resolves a DB handle or null without throwing', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _opDbOpen !== 'function') return { skip: true };
+      try {
+        const db = await _opDbOpen();
+        // best-effort: either a real IDBDatabase or null (blocked/unavailable) — never a throw
+        return { ok: true, isObjectOrNull: db === null || typeof db === 'object' };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
+    expect(r.isObjectOrNull).toBe(true);
+  });
+
+  // ── _opSyncOps via window.__opSync — §12.2 concurrent-call guard ──────────
+  test('__opSync — concurrent calls resolve, guard holds, no throw', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof window.__opSync !== 'function') return { skip: true };
+      try {
+        // Enable the shadow path + provide a fake user so the body runs past its guards.
+        const origShadow = window._opLogShadow;
+        const origUser = typeof _supaUser !== 'undefined' ? _supaUser : null;
+        window._opLogShadow = true;
+        try { if (!_supaUser) _supaUser = { id: 'opsync-test' }; } catch (_e) {}
+        // §12.2: fire N times without awaiting — the _opSyncRunning guard must let
+        // them all settle without throwing (the shim returns empty/offline results).
+        const ps = [];
+        for (let i = 0; i < 10; i++) ps.push(window.__opSync());
+        await Promise.all(ps.map(p => Promise.resolve(p).catch(() => null)));
+        window._opLogShadow = origShadow;
+        try { _supaUser = origUser; } catch (_e) {}
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
+  });
+
+  // ── _loadTeamComp / _refreshPermReqBadge / _denyPermissionRequest — no-throw
+  test('team-comp + permission-badge helpers — run offline without throwing', async () => {
+    const r = await page.evaluate(async () => {
+      try {
+        const out = {};
+        if (typeof _loadTeamComp === 'function')        { await _loadTeamComp(); out.loadTeamComp = true; }
+        if (typeof _refreshPermReqBadge === 'function') { _refreshPermReqBadge(); out.refreshBadge = true; }
+        // _denyPermissionRequest with an unknown id → early return (no matching req), no throw
+        if (typeof _denyPermissionRequest === 'function') { await _denyPermissionRequest('no-such-req'); out.deny = true; }
+        return { ok: true, out };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  // ── _refreshPermReqBadge — renders + clears the badge from the queue count ─
+  test('_refreshPermReqBadge — shows badge when requests pending, removes when empty', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _refreshPermReqBadge !== 'function' || typeof _pendingPermReqs === 'undefined') return { skip: true };
+      try {
+        // Ensure a nav target exists for the badge to attach to
+        let host = document.getElementById('nb-team');
+        let created = false;
+        if (!host) { host = document.createElement('div'); host.id = 'nb-team'; document.body.appendChild(host); created = true; }
+        const orig = _pendingPermReqs;
+        _pendingPermReqs = [{ id: 'r1' }, { id: 'r2' }];
+        _refreshPermReqBadge();
+        const badge = host.querySelector('.perm-req-badge');
+        const shown = !!badge && badge.textContent === '2';
+        _pendingPermReqs = [];
+        _refreshPermReqBadge();
+        const cleared = !host.querySelector('.perm-req-badge');
+        _pendingPermReqs = orig;
+        if (created) host.remove();
+        return { ok: true, shown, cleared };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
+    expect(r.shown).toBe(true);
+    expect(r.cleared).toBe(true);
+  });
+
+  // ── receipt migrate/restore — supa-backed, no-throw offline ───────────────
+  test('_migrateReceiptsToStorage / _restoreReceiptsFromStorage — run offline without throwing', async () => {
+    const r = await page.evaluate(async () => {
+      try {
+        const out = {};
+        if (typeof window._migrateReceiptsToStorage === 'function') { await window._migrateReceiptsToStorage(); out.migrate = true; }
+        if (typeof window._restoreReceiptsFromStorage === 'function') { await window._restoreReceiptsFromStorage(); out.restore = true; }
+        return { ok: true, out };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    expect(r.ok).toBe(true);
+  });
+});

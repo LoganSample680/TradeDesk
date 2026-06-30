@@ -1488,6 +1488,36 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.healed).toBe(76055);  // stale link healed to the real bid id
   });
 
+  test('MMT pending follow-up card has a Close out button using the same close-out framework', async () => {
+    const r = await page.evaluate(() => {
+      window._mmtCol_pending = false; // expand the Pending section so its cards render into innerHTML (§11.6)
+      const cid = 778901, bidId = 778902;
+      clients.unshift({ id: cid, name: 'CloseOut MMT Test', phone: '3165559001' });
+      // Pending, no signing token, not draft, one prior no-response → lands in the
+      // "2nd follow-up needed" chase card. Close out is the Lost counterpart to Won.
+      bids.unshift({ id: bidId, client_id: cid, client_name: 'CloseOut MMT Test', name: 'CloseOut MMT Test', amount: 4200, status: 'Pending', draft: false, noResponseCount: 1, bid_date: todayKey(), followup: todayKey() });
+      let err = '';
+      try { renderTodayFeed(); } catch (e) { err = e.message; }
+      const html = (document.getElementById('dash-money-feed') || {}).innerHTML || '';
+      const i = html.indexOf('CloseOut MMT Test');
+      const card = i >= 0 ? html.slice(Math.max(0, i - 200), i + 1400) : '';
+      const res = {
+        err, hasCard: i >= 0,
+        // Same framework as the proposals section — opens the reason-picker modal.
+        hasCloseOut: card.includes('openCloseOutEstimate(' + bidId + ')'),
+        usesFramework: typeof openCloseOutEstimate === 'function',
+      };
+      bids = bids.filter(b => b.id !== bidId);
+      clients = clients.filter(c => c.id !== cid);
+      delete window._mmtCol_pending;
+      return res;
+    });
+    expect(r.err).toBe('');
+    expect(r.hasCard).toBe(true);
+    expect(r.usesFramework).toBe(true);
+    expect(r.hasCloseOut).toBe(true);
+  });
+
   test('collections card: Call button removed; SMS + Collect remain', async () => {
     const r = await page.evaluate(() => {
       window._mmtCol_collect = false; // expand the Collect section so cards render

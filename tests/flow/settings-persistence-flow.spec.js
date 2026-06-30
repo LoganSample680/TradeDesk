@@ -60,15 +60,47 @@ test.describe('settings persistence (UI-driven, real reboot)', () => {
         // can't run headless). The grant path sets these flags; saveSettings then
         // pushes the full S — including the now-unstripped location flags — to cloud.
         await p.evaluate(() => { S.locationGranted = true; S.locationDenied = false; });
-        await p.evaluate(() => { saveSettings(); });        // 1 tap — Save button
-        await p.waitForTimeout(1200);                       // let supaSaveToCloud land
+        // Save, then deterministically confirm the goal LANDS in the cloud zj_data row
+        // before the test reboots. saveSettings() fires supaSaveToCloud() but does NOT
+        // await it, so on the contended local stack the upsert was still in flight when the
+        // reboot wiped zp3_S + reloaded (cancelling it) → cloud kept goal=0. We explicitly
+        // await the cloud push here, then poll the real cloud value (a real awaited loop —
+        // not waitForFunction, whose async predicate returns a truthy Promise immediately).
+        // Captures the save-path guard state so a non-persist fails LOUDLY with the cause.
+        original.saveDiag = await p.evaluate(async ({ want }) => {
+          saveSettings();
+          let saveErr = '';
+          try { if (typeof supaSaveToCloud === 'function') await supaSaveToCloud(); } catch (e) { saveErr = (e && e.message) || String(e); }
+          let cloudGoal = null, cloudErr = '';
+          for (let i = 0; i < 24; i++) {
+            try {
+              const { data, error } = await _supa.from('zj_data').select('settings').eq('user_id', _supaUser.id).maybeSingle();
+              if (error) cloudErr = error.message || error.code || 'err';
+              else cloudGoal = (JSON.parse((data && data.settings) || '{}')).goalMonthly ?? null;
+            } catch (e) { cloudErr = 'ex:' + (e && e.message); }
+            if (cloudGoal === want) break;
+            await new Promise(r => setTimeout(r, 500));
+          }
+          return {
+            cloudGoal, cloudErr, saveErr,
+            cloudLoaded: (typeof _supaCloudLoaded !== 'undefined') ? _supaCloudLoaded : '?',
+            fromCache: (typeof _loadedFromCacheOnly !== 'undefined') ? _loadedFromCacheOnly : '?',
+          };
+        }, { want: newGoal });
         return k + 3; // open settings + open rates detail + save
       },
       rule: async (p) => {
         const r = await p.evaluate(({ tsBefore }) => ({
           goal: S.goalMonthly, locG: !!S.locationGranted, bumped: (S.settingsTs || 0) > tsBefore,
         }), { tsBefore: original.ts });
-        return { ok: r.goal === newGoal && r.locG === true && r.bumped, got: JSON.stringify(r) };
+        const sd = original.saveDiag || {};
+        // HARD-gate on the cloud actually carrying the goal — that's the whole point of the
+        // reboot test. sd surfaces the save-time guard state (cloudLoaded=false ⇒ save no-op'd;
+        // fromCache=true ⇒ sanity-abort; saveErr ⇒ exception) so a non-persist names its cause.
+        return {
+          ok: r.goal === newGoal && r.locG === true && r.bumped && sd.cloudGoal === newGoal,
+          got: JSON.stringify({ ...r, ...sd }),
+        };
       },
     });
 
@@ -79,18 +111,41 @@ test.describe('settings persistence (UI-driven, real reboot)', () => {
       ruleText: 'after a cloud-only reboot the goal AND the location flag must come back',
       expected: `goalMonthly=${newGoal} and locationGranted=true restored from Supabase`,
       act: async (p) => {
+        // Confirm the cloud STILL has the goal right BEFORE the reboot (step 1 left it 7727).
+        const preReboot = await p.evaluate(async () => {
+          try { const { data } = await _supa.from('zj_data').select('settings').eq('user_id', _supaUser.id).maybeSingle(); return (JSON.parse((data && data.settings) || '{}')).goalMonthly ?? null; } catch (e) { return 'err:' + (e && e.message); }
+        });
         // Delete ONLY the settings cache — the auth session token survives, so the
         // reboot re-authenticates and the values can come back from Supabase alone.
         await p.evaluate(() => { try { localStorage.removeItem('zp3_S'); localStorage.removeItem('zp3_logo'); } catch (e) {} });
         await p.reload({ waitUntil: 'domcontentloaded' });  // a real reboot
         await waitReboot(p);
+        // DIAGNOSTIC TIMELINE: poll the cloud right after reboot to catch a 7727→0 clobber
+        // and the boot state that accompanies it (which save path wrote the default back).
+        const tl = await p.evaluate(async () => {
+          const out = [];
+          for (let i = 0; i < 8; i++) {
+            let cg = null;
+            try { const { data } = await _supa.from('zj_data').select('settings').eq('user_id', _supaUser.id).maybeSingle(); cg = (JSON.parse((data && data.settings) || '{}')).goalMonthly ?? null; } catch (e) { cg = 'err'; }
+            out.push({ t: i * 400, cg, sg: S.goalMonthly, cl: typeof _supaCloudLoaded !== 'undefined' ? _supaCloudLoaded : '?', foc: typeof _loadedFromCacheOnly !== 'undefined' ? _loadedFromCacheOnly : '?', ps: localStorage.getItem('zp3_pending_sync') });
+            await new Promise(r => setTimeout(r, 400));
+          }
+          let cacheGoal = null;
+          try { cacheGoal = ((JSON.parse(localStorage.getItem('zp3_cloud_cache') || '{}').settings) || {}).goalMonthly ?? null; } catch (e) {}
+          return { tl: out, cacheGoal, mergeLog: window._mergeLog || [], zjWrites: window._zjWrites || [] };
+        });
+        original.rebootDiag = { preReboot, ...tl };
         return 1;
       },
       rule: async (p) => {
-        const r = await p.evaluate(() => ({ goal: S.goalMonthly, locG: !!S.locationGranted, locD: !!S.locationDenied }));
-        // The goal must survive (BUG1a) and the location-granted flag must survive
-        // the cloud round-trip (BUG1b — it used to be stripped from the payload).
-        return { ok: r.goal === newGoal && r.locG === true, got: JSON.stringify(r) };
+        const r = await p.evaluate(() => ({
+          goal: S.goalMonthly, locG: !!S.locationGranted, locD: !!S.locationDenied,
+          cloudLoaded: (typeof _supaCloudLoaded !== 'undefined') ? _supaCloudLoaded : '?',
+        }));
+        const rd = original.rebootDiag || {};
+        // The goal must survive (BUG1a) and the location-granted flag must survive the cloud
+        // round-trip (BUG1b). rd.preReboot=7727 + rd.tl showing cg going 7727→0 names the clobber.
+        return { ok: r.goal === newGoal && r.locG === true, got: JSON.stringify({ ...r, ...rd }) };
       },
     });
 

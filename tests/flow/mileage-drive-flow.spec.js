@@ -36,6 +36,10 @@ test.describe('mileage drive logger (UI-driven)', () => {
           showEndDrive();                                  // 1 tap — open End-Drive modal
         }, { clientId, cName });
         await p.waitForSelector('#end-miles-modal', { timeout: 10000 });
+        // showEndDrive() runs a 100ms setTimeout that focus()+select()s this input (so the user
+        // can overtype the GPS-estimate prefill). Let that auto-select fire FIRST — if it lands
+        // mid-typing it select-all-replaces the partial value (e.g. "12" → "." → ".4" = 0.4).
+        await p.waitForTimeout(150);
         const k = await type(p, '#end-miles-modal', '12.4'); // real keystrokes
         await p.evaluate(() => { saveEndDriveModal(); });    // 1 tap — Save trip
         await p.waitForTimeout(700);

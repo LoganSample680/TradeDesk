@@ -87,6 +87,12 @@ function _showOdometerModal(tasks,hardBlock){
 
   window._odoSaveStep=_odoSaveStep;
 
+  // Never open over a user-initiated form modal (quick-expense, agreement,
+  // contract, …). Its z-index (99990) floats above the standard modal layer
+  // (.zmodal-overlay @ 9999), so opening on top would cover the form's inputs and
+  // trap the user mid-task. Skip — it re-prompts on the next boot.
+  if(document.querySelector('.zmodal-overlay'))return;
+
   const ov=document.createElement('div');
   ov.id='_odo-modal-ov';
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,'+(hardBlock?'.85':'.6')+');z-index:99990;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
@@ -94,7 +100,16 @@ function _showOdometerModal(tasks,hardBlock){
   document.body.appendChild(ov);
   renderTask();
 
+  // If a user-initiated form modal opens on top of us a beat later (e.g. the user
+  // taps "log expense" right after adding a vehicle), step aside rather than
+  // floating above and covering its inputs. We re-prompt on the next boot.
+  const _odoYieldIv=setInterval(()=>{
+    if(!document.getElementById('_odo-modal-ov')){clearInterval(_odoYieldIv);return;}
+    if(document.querySelector('.zmodal-overlay')){clearInterval(_odoYieldIv);ov.remove();}
+  },150);
+
   function _odoFinish(){
+    clearInterval(_odoYieldIv);
     ov.remove();
     showToast('Odometer records saved — mileage deduction verified ✓','📋');
   }

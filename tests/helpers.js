@@ -112,6 +112,11 @@ async function mockAllExternal(page, opts = {}) {
     if (navigator.serviceWorker) {
       navigator.serviceWorker.register = () => Promise.reject(new Error('SW disabled in tests'));
     }
+    // Oplog ships ON in prod (Phase 3), but the mocked offline shards exercise the
+    // unchanged whole-row sync path — keep the oplog OFF here so these suites stay
+    // byte-for-byte as before. The oplog's own behavior is covered by the live flow
+    // specs (tests/flow/oplog-shadow-flow.spec.js), which opt back IN explicitly.
+    window._opLogShadow = false;
   });
 
   await page.route('**/*', async (route) => {

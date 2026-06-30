@@ -22,11 +22,22 @@
 //   E2E_DEV2_EMAIL, E2E_DEV2_PASSWORD, E2E_DEV2_USER_ID
 // Soft-skips cleanly until they're configured.
 const { test, expect } = require('@playwright/test');
-const { needsLiveCreds } = require('./live-helpers');
+const { needsLiveCreds, localPool } = require('./live-helpers');
 
-const A = { email: process.env.E2E_DEV_EMAIL || '', password: process.env.E2E_DEV_PASSWORD || '', uid: process.env.E2E_DEV_USER_ID || '' };
-const B = { email: process.env.E2E_DEV2_EMAIL || '', password: process.env.E2E_DEV2_PASSWORD || '', uid: process.env.E2E_DEV2_USER_ID || '' };
-const haveTwoAccounts = !!(A.email && A.password && A.uid && B.email && B.password && B.uid);
+// In LOCAL-STACK mode the cloud E2E_DEV2_* account doesn't exist, so source two DISTINCT
+// accounts from the per-worker local pool instead. Offset by worker so parallel workers
+// mostly use different pairs (the sign-in already retries on contention either way).
+const _pool = localPool();
+const _wi = parseInt(process.env.TEST_PARALLEL_INDEX || '0', 10);
+const _useLocal = _pool.length >= 2;
+const A = _useLocal
+  ? _pool[(2 * _wi) % _pool.length]
+  : { email: process.env.E2E_DEV_EMAIL || '', password: process.env.E2E_DEV_PASSWORD || '', uid: process.env.E2E_DEV_USER_ID || '' };
+const B = _useLocal
+  ? _pool[(2 * _wi + 1) % _pool.length]
+  : { email: process.env.E2E_DEV2_EMAIL || '', password: process.env.E2E_DEV2_PASSWORD || '', uid: process.env.E2E_DEV2_USER_ID || '' };
+const haveTwoAccounts = (_useLocal && A && B && A.uid !== B.uid)
+  || !!(A.email && A.password && A.uid && B.email && B.password && B.uid);
 
 // Open the app fresh and sign in as a SPECIFIC account — like launching the app.
 // Diagnostic sign-in: signs in, then polls for _supaUser.id===uid IN-PAGE, and on
@@ -79,6 +90,16 @@ test.describe('cross-account bleed — same-device sign-out → sign-in (bug #39
     // ── 1. Open as account A, write a uniquely-marked bid, save it to A's cloud. ──
     await openAndSignIn(page, A);
     expect(await page.evaluate(() => _supaUser && _supaUser.id), 'signed in as account A').toBe(A.uid);
+    // PRECONDITION: A and B must be INDEPENDENT contractors. The LOCAL-STACK seed
+    // (tests/flow/global-setup.js) links pool accounts as employer→employee
+    // (account[i] employs account[i+1]); A and B are consecutive pool accounts, so B is
+    // seeded as A's ACTIVE employee. Left in place, B's sign-in legitimately LOADS A's
+    // account (the employee-view path, js/cloud.js:226) — which looks like a leak but is
+    // NOT bug #39. A is B's contractor here, so RLS lets A delete the link; removing it
+    // makes B sign in as its OWN independent contractor — the real same-device scenario.
+    await page.evaluate(async ({ Buid }) => {
+      try { await _supa.from('team_members').delete().eq('contractor_user_id', _supaUser.id).eq('employee_user_id', Buid); } catch (e) {}
+    }, { Buid: B.uid });
     await page.evaluate(async ({ bidId, clientId, MARK }) => {
       clients.push({ id: clientId, name: MARK, phone: '3165550000', _e2e: 'bleed' });
       bids.push({ id: bidId, client_id: clientId, client_name: MARK, name: MARK, amount: 9999, status: 'Pending', bid_date: new Date().toISOString().slice(0, 10), _e2e: 'bleed' });

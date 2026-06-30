@@ -6,7 +6,9 @@ function addTradeOpportunity(clientId,trade,title,notes){
 function convertOpportunityToEstimate(bidId){
   const opp=bids.find(b=>b.id===bidId);if(!opp)return;
   const c=getClientById(opp.client_id);if(!c)return;
-  bids=bids.filter(b=>b.id!==bidId);saveAll();
+  // Removing a saved opportunity bid is a real delete — route through _userDelete so the
+  // soft-delete sweep propagates it cross-device (else it resurrects from the cloud).
+  _userDelete(()=>{bids=bids.filter(b=>b.id!==bidId);saveAll();});
   _doOpenEstimate(c,null,opp.trade_type||getActiveTrade());
 }
 function deleteOpportunity(bidId){
@@ -1069,6 +1071,9 @@ function _submitCloseOutEstimate(bidId){
   b.status='Closed Lost';b.draft=false;
   b.lostReason=reason;b.lostNote=note;b.lostAt=new Date().toISOString();
   saveAll();
+  // Re-publish the client hub so the declined proposal stays in the hub Documents
+  // (read-only, with its reason) instead of vanishing once it leaves Pending.
+  if(b.client_id&&typeof _uploadClientHub==='function')_uploadClientHub(b.client_id).catch(()=>{});
   document.getElementById('_co-overlay')?.remove();
   document.querySelector('[data-bdov]')?.remove();
   if(typeof renderProposalsPage==='function')renderProposalsPage();
@@ -1082,6 +1087,8 @@ function reopenEstimate(bidId){
   b.status='Pending';
   delete b.lostReason;delete b.lostNote;delete b.lostAt;
   saveAll();
+  // Re-publish the hub so the declined card clears once the estimate is reopened.
+  if(b.client_id&&typeof _uploadClientHub==='function')_uploadClientHub(b.client_id).catch(()=>{});
   document.querySelector('[data-bdov]')?.remove();
   if(typeof renderProposalsPage==='function')renderProposalsPage();
   if(typeof renderDash==='function')renderDash();

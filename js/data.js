@@ -122,6 +122,14 @@ let _contractorUserId=null;   // contractor's user_id (set when _isEmployee)
 let _employeeRecord=null;     // team_members row for this employee
 Object.defineProperty(window,'_config',{get:()=>_config,set:v=>{_config=v;},configurable:true});
 Object.defineProperty(window,'_isEmployee',{get:()=>_isEmployee,set:v=>{_isEmployee=v;},configurable:true});
+// Bridge the rest of the employee-context trio so window assignment reaches the real
+// module `let`s (not a dead own-property). Without this, `window._contractorUserId=…`
+// silently no-ops and code reading the bare `_contractorUserId` still sees null —
+// e.g. _submitEstimateRequest's `if(!_contractorUserId) return` guard. Prod sets the
+// bare lets directly; only external callers (tests) assign via window, so this is
+// purely additive and matches the _isEmployee bridge above.
+Object.defineProperty(window,'_contractorUserId',{get:()=>_contractorUserId,set:v=>{_contractorUserId=v;},configurable:true});
+Object.defineProperty(window,'_employeeRecord',{get:()=>_employeeRecord,set:v=>{_employeeRecord=v;},configurable:true});
 
 // Default configs by business type
 function getRole(){return _user?.role||'owner';}

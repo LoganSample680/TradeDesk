@@ -558,6 +558,9 @@ function renderDashCollect(){
 
 // ── On-load unpaid work alert ────────────────────────────────────────────────
 function checkUnpaidOnLoad(){
+  // NOTE: intentionally NOT navigator.webdriver-guarded — offline specs call this directly
+  // to assert it shows its modal. Its only BOOT auto-fire is via showDailyBriefing (which IS
+  // webdriver-guarded), so under automation it never auto-pops, but a direct call still works.
   if(window._collOnLoadShown)return;
   window._collOnLoadShown=true;
   const tk=todayKey();
@@ -915,6 +918,7 @@ function renderTodayFeed(){
           (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+smsBody+'" onclick="autoLogContact('+c.id+',\'second_followup\');markFollowupSent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">📱 Send</a>':'')+
           '<button onclick="_snoozeFollowup('+b.id+',2)" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Snooze 2d</button>'+
           '<button onclick="markFUWon('+b.id+','+b.client_id+')" class="btn btn-sm btn-g" style="font-size:11px">Won ✓</button>'+
+          '<button onclick="openCloseOutEstimate('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:#A32D2D;color:#A32D2D">Close out</button>'+
         '</div>'+
       '</div>'
     );
@@ -940,6 +944,7 @@ function renderTodayFeed(){
           (c.phone?'<a href="tel:'+c.phone.replace(/\D/g,'')+'" onclick="autoLogContact('+c.id+',\'call\')" class="btn btn-sm" style="font-size:11px">Call</a>':'')+
           '<button onclick="_snoozeFollowup('+b.id+',2)" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Snooze 2d</button>'+
           '<button onclick="markFUWon('+b.id+','+b.client_id+')" class="btn btn-sm btn-g" style="font-size:11px">Won ✓</button>'+
+          '<button onclick="openCloseOutEstimate('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:#A32D2D;color:#A32D2D">Close out</button>'+
         '</div>'+
       '</div>'
     );
@@ -997,6 +1002,7 @@ function renderTodayFeed(){
         '<div class="tf-acts">'+
           (b.proposalHtml?'<button onclick="viewSavedProposal('+b.id+')" class="btn btn-sm" style="font-size:11px">View</button>':'')+
           '<button onclick="resendProposalLink('+b.id+')" class="btn btn-sm" style="font-size:11px">Resend</button>'+
+          '<button onclick="openCloseOutEstimate('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:#A32D2D;color:#A32D2D">Close out</button>'+
           '<button onclick="discardInProgressBid('+b.id+')" class="btn btn-sm" style="font-size:11px;color:#A32D2D">Delete</button>'+
         '</div>'+
       '</div>'

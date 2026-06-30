@@ -212,6 +212,7 @@ function _buildClientHubSnapshot(clientId){
     const financeCharge=balance>0.01&&_fcDaysOverdue>0?Math.round(balance*_fcRate*_fcDaysOverdue*100)/100:0;
     const daysOverdue=balance>0.01?_fcDaysOverdue:0;
     return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',
+      lostReason:b.lostReason||'',lostNote:b.lostNote||'',lostAt:b.lostAt||'',
       proposalKey:propKey,signingToken:signToken||null,changeOrders:_hubCOs,
       signHubUrl:signBase?(signBase+(hubUrl?'&hub='+encodeURIComponent(hubUrl):'')):null};
   });
@@ -1554,7 +1555,9 @@ function clearEstimatorForm(){
   // (saveAndExitEstimate already removes b.draft before calling this, so saved bids are safe)
   if(lastCreatedBidId){
     const orphanIdx=bids.findIndex(b=>b.id===lastCreatedBidId&&b.draft===true&&b.status!=='Pending');
-    if(orphanIdx>-1){bids.splice(orphanIdx,1);saveAll();}
+    // Wrap so the removed draft bid's id is recorded as a local delete and the sweep
+    // propagates it (harmless no-op if the draft never reached the cloud).
+    if(orphanIdx>-1){_userDelete(()=>{bids.splice(orphanIdx,1);saveAll();});}
   }
   _paintIsCommercial=false;_paintWorkScope='repair';_paintClientTaxRate=null;
   _rrpPaintAnswer='';
@@ -1850,6 +1853,12 @@ function renderCalendar(){renderCalMonthLabel();renderCalGrid();renderCalAvail()
 function renderCalMonthLabel(){const M=['January','February','March','April','May','June','July','August','September','October','November','December'];document.getElementById('cal-month-lbl').textContent=M[calMonth]+' '+calYear;}
 function getJobsOnDay(key){const res=[];jobs.forEach(job=>{if(job.status==='canceled')return;const workDays=getJobWorkDays(job);if(workDays.includes(key)){res.push({job,isBuf:false});return;}const lastDay=workDays.length?workDays[workDays.length-1]:job.start;const b=parseInt(job.buffer)||0;for(let i=1;i<=b;i++){if(addDays(lastDay,i)===key){res.push({job,isBuf:true});return;}}});return res;}
 function requestLocationPermission(onGranted, onDenied){
+  // Never auto-prompt for location under automation (Playwright/headless webdriver):
+  // there is no real user to grant it, and the full-screen "Allow location access?"
+  // modal would sit over the page intercepting every subsequent click. Mirrors the
+  // geo-consent prompt's existing navigator.webdriver guard (geo-track.js). Real users
+  // are never navigator.webdriver, so production behavior is unchanged.
+  if(navigator.webdriver){if(onDenied)onDenied();return;}
   if(S.weatherLat&&S.weatherLon){if(onGranted)onGranted();return;}
   // Previously granted on this device — skip modal entirely
   if(S.locationGranted){_grabLocCoords(onGranted,onDenied);return;}
@@ -1900,6 +1909,12 @@ function _showLocModal(onGranted,onDenied){
   document.body.appendChild(overlay);
   box.querySelector('#loc-allow-btn').onclick=()=>{
     overlay.remove();
+    // Remember the explicit "Allow" IMMEDIATELY so the prompt is sticky — one tap, saved
+    // forever. Previously locationGranted was only written inside _grabLocCoords' success
+    // callback, so if the first OS coordinate fix was slow, timed out, errored, or the app
+    // closed before it resolved, nothing persisted and the modal returned on the next launch.
+    // (Denial already persisted immediately via the deny handler; this fixes the asymmetry.)
+    S.locationGranted=true;S.locationDenied=false;S.settingsTs=Date.now();saveAll();
     _grabLocCoords(onGranted,()=>{
       // OS denied after user tapped allow — show gentle follow-up
       if(onDenied)onDenied();
@@ -2284,6 +2299,8 @@ function markFUAbandoned(bidId,cid){
     zConfirm('Still no response. Move to cold leads?',()=>{
       b.status='Abandoned';b.abandonDate=todayKey();b.noResponseCount=0;
       saveAll();renderDash();
+      // Keep the abandoned proposal in the client hub Documents (read-only, declined).
+      if(b.client_id&&typeof _uploadClientHub==='function')_uploadClientHub(b.client_id).catch(()=>{});
     },{title:'Move to cold leads',yes:'Move to cold leads',danger:true});
   } else {
     const newFollowup=addDays(todayKey(),7);
