@@ -449,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.6';
+const APP_VERSION='07.01.26.7';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3910,7 +3910,13 @@ function _initRealtimeSubscriptions(uid){
     // want instant cross-device settings sync when any device saves. postgres_changes
     // fires on all other subscribed clients the moment the row is written.
     ch.on('postgres_changes',{event:'UPDATE',schema:'public',table:'zj_data',filter:'user_id=eq.'+uid},()=>{
-      if(!_loadInProgress&&Date.now()-_lastLocalSaveAt>5000)supaLoadFromCloud({silent:true});
+      if(Date.now()-_lastLocalSaveAt<=5000)return;         // ignore this device's own save echo
+      // A peer save arrived. If a load is already in flight, DON'T drop it — flag a
+      // trailing reload so supaLoadFromCloud's finally re-reads the now-committed state.
+      // Dropping it here was the "last update lost" race: on a slow reload the final
+      // burst save landed mid-load and vanished, leaving the peer on a stale value.
+      if(_loadInProgress){_broadcastPending=true;return;}
+      supaLoadFromCloud({silent:true});
     });
     // Track REAL readiness: the channel only delivers peer changes once it reports
     // SUBSCRIBED. Consumers (and cross-device tests) gate on _tdRealtimeReady so they
