@@ -449,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.5';
+const APP_VERSION='07.01.26.6';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3966,6 +3966,13 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
     // corrupts the delta/lastKnownIds state so the soft-delete sweep loses its queued bid.
     if(_curOwner&&_recOwner&&_recOwner!==_curOwner)return;
   }
+  // CONVERGENCE: if a peer change lands WHILE a (silent) load is in flight, that
+  // load's set(rows) can overwrite the patch we're about to apply with the pre-change
+  // snapshot it already read — the "last update lost" / fresh-create-dropped race that
+  // left B on 5004 instead of 5005 and dropped a peer's new bid. Flag a trailing reload
+  // (same machinery as the broadcast path); supaLoadFromCloud's finally re-reads the
+  // now-committed state so this device converges to the newest value instead of a stale one.
+  if(_loadInProgress)_broadcastPending=true;
   const arr=desc.get();
   const ev=payload.eventType;
   const rec=payload.new;
