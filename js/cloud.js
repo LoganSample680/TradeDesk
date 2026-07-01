@@ -449,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.10';
+const APP_VERSION='07.01.26.11';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3134,6 +3134,10 @@ async function supaSaveToCloud(){
       try{localStorage.setItem('zp3_pending_sync','1');}catch(_e){}
     }
 
+    // Count of rows this save actually wrote (upserts + soft-deletes) across ALL tables.
+    // Drives the LAST-WRITTEN sync marker below: the cross-device cursor (zj_data.updated_at)
+    // may only advance once every td_* row is committed — see the marker note after the loop.
+    let _tableWrites=0;
     // Batch upsert helper: upserts all live records, soft-deletes any that vanished
     const _upsertTable=async(tbl,arr,txFn)=>{
       const rows=(txFn?txFn(arr):arr);
@@ -3170,7 +3174,7 @@ async function supaSaveToCloud(){
           const{error}=await _supa.from(tbl).upsert(slice.map(c=>c.row),{onConflict:'id,user_id'});
           if(error)throw error;
           slice.forEach(c=>hashes.set(c.id,c.h));
-          window._deltaStats.upserts+=slice.length;
+          window._deltaStats.upserts+=slice.length;_tableWrites+=slice.length;
         }
       }
       // Soft-delete ONLY ids the user EXPLICITLY deleted on this device (recorded in
@@ -3185,6 +3189,7 @@ async function supaSaveToCloud(){
           const{error:_de}=await _supa.from(tbl).update({deleted_at:ts,updated_at:ts}).in('id',gone.slice(i,i+50)).eq('user_id',uid);
           if(_de)throw _de;
         }
+        _tableWrites+=gone.length;
       }
       gone.forEach(id=>{deleted.delete(id);hashes.delete(id);}); // delete-intent consumed; drop the swept row's hash so a re-create re-uploads
       _lastKnownIds[tbl]=currentIds;
@@ -3206,6 +3211,27 @@ async function supaSaveToCloud(){
         if(_isMissingTableErr(_te)){console.warn('[cloud] skipping save to unprovisioned table',t);continue;}
         throw _te;
       }
+    }
+
+    // ── SYNC MARKER — written LAST, the fix for the cross-device read-skew ──
+    // Every cross-device freshness check (the 30s poll at :3800, _kickFastReconcile,
+    // and the visibilitychange pull) treats a CHANGE in zj_data.updated_at as "a peer
+    // saved — reload." But settings are written FIRST on each save (:3122), so that
+    // cursor used to advance BEFORE the td_* rows committed. A peer could then read the
+    // fresh cursor, reload, read the tables BEFORE this device's row upserts landed, and
+    // mark itself caught up on STALE data — and never reload again, because the cursor
+    // never moved a second time. (That is why the burst test's device B stuck one edit
+    // behind, every run.) Bumping zj_data.updated_at HERE, after the whole table loop has
+    // awaited (⇒ committed) every upsert/soft-delete, guarantees the invariant the peers
+    // rely on: "cursor moved ⇒ ALL data is already committed." Only when this save actually
+    // wrote table rows (settings-only saves already moved the cursor as their last act),
+    // and never for employees (they don't own the contractor's zj_data settings row).
+    if(_tableWrites>0 && !_isEmployee){
+      try{
+        const _mkTs=new Date().toISOString();
+        const{data:_mk}=await _supa.from('zj_data').update({updated_at:_mkTs}).eq('user_id',uid).select('updated_at').single();
+        if(_mk?.updated_at)window._lastZjUpdatedAt=_mk.updated_at;
+      }catch(_e){/* marker is a best-effort backstop; realtime + delta cursor still converge */}
     }
 
     _logSave('ok',{id:_attemptId,mileage:_mileCount});

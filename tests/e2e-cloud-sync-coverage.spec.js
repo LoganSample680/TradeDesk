@@ -596,4 +596,72 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.hasHub).toBe(true);            // the modal offers the embedded hub link
     expect(r.hasHostedCheckout).toBe(false); // and NOT a Stripe hosted-checkout redirect
   });
+
+  // ── supaSaveToCloud writes the zj_data cross-device cursor LAST (read-skew fix) ──
+  // The permanent, FREE guard for the burst / delete-sync race fixes. The cross-device
+  // freshness cursor is zj_data.updated_at; every peer treats a change in it as "reload."
+  // If it advances BEFORE the td_* rows commit, a peer reads a fresh cursor + stale data
+  // and wrongly marks itself caught up (read-skew). This drives supaSaveToCloud against an
+  // order-recording Supabase stub and proves the marker (zj_data update) is the LAST write —
+  // after the td_* upsert — so "cursor moved ⇒ all data committed" holds. If a future edit
+  // moves the cursor back ahead of the table writes, this fails on the offline shard, before
+  // it ever reaches the cloud gate.
+  test('supaSaveToCloud bumps the zj_data cursor LAST — after the td_* upserts (no read-skew)', async () => {
+    const r = await page.evaluate(async () => {
+      // Save everything we clobber so the shared page survives for later tests.
+      const saved = {
+        supa: _supa, user: window._supaUser, loaded: _supaCloudLoaded,
+        cacheOnly: _loadedFromCacheOnly, emp: _isEmployee, authS: _authSettingsLoaded,
+        hash: _syncedHash, known: _lastKnownIds,
+      };
+      // Snapshot + empty every sync table so residual data from earlier tests can't add
+      // stray upserts — then seed EXACTLY one dirty bid. Restored at the end.
+      const _tblSnap = _TD_TABLES.map(({ t, get, set }) => ({ t, set, rows: (get() || []).slice() }));
+      _tblSnap.forEach(({ set }) => set([]));
+      const writes = [];
+      const makeChain = (table) => {
+        const chain = {
+          _mk: null,
+          select() { return chain; }, eq() { return chain; }, gt() { return chain; },
+          lt() { return chain; }, in() { return chain; }, is() { return chain; },
+          order() { return chain; }, limit() { return chain; },
+          maybeSingle() { return Promise.resolve({ data: null, error: null }); },
+          single() { return Promise.resolve({ data: chain._mk || { updated_at: new Date().toISOString() }, error: null }); },
+          upsert() { writes.push({ table, op: 'upsert' }); chain._mk = { updated_at: new Date().toISOString() }; return chain; },
+          update(vals) { writes.push({ table, op: 'update' }); chain._mk = { updated_at: (vals && vals.updated_at) || new Date().toISOString() }; return chain; },
+          then(res, rej) { return Promise.resolve({ data: [], error: null }).then(res, rej); },
+        };
+        return chain;
+      };
+      // Contractor session, cloud loaded, settings hydrated, ONE dirty bid to upload.
+      _supa = { from: (t) => makeChain(t) };
+      window._supaUser = { id: 'marker-uid' };
+      _supaCloudLoaded = true; _loadedFromCacheOnly = false; _isEmployee = false;
+      _authSettingsLoaded = true; _syncedHash = {}; _lastKnownIds = {};
+      const _bidsDef = _TD_TABLES.find(x => x.t === 'td_bids');
+      _bidsDef.set([{ id: 'marker-bid-1', client_id: 1, amount: 123, status: 'Pending', bid_date: '2026-07-01' }]);
+
+      let threw = null;
+      try { await supaSaveToCloud(); } catch (e) { threw = e && e.message || String(e); }
+
+      // restore every table array + the globals we touched
+      _tblSnap.forEach(({ set, rows }) => set(rows));
+      _supa = saved.supa; window._supaUser = saved.user; _supaCloudLoaded = saved.loaded;
+      _loadedFromCacheOnly = saved.cacheOnly; _isEmployee = saved.emp; _authSettingsLoaded = saved.authS;
+      _syncedHash = saved.hash; _lastKnownIds = saved.known;
+
+      const last = writes[writes.length - 1] || null;
+      const tdUpsertIdx = writes.findIndex(w => /^td_/.test(w.table) && w.op === 'upsert');
+      const markerIdx = writes.length - 1;
+      return { threw, writes, last, tdUpsertIdx, markerIdx };
+    });
+    expect(r.threw).toBe(null);
+    // A td_* row was actually uploaded (precondition — otherwise the marker rightly won't fire).
+    expect(r.tdUpsertIdx).toBeGreaterThanOrEqual(0);
+    // The final write is the zj_data cursor bump (the marker)…
+    expect(r.last && r.last.table).toBe('zj_data');
+    expect(r.last && r.last.op).toBe('update');
+    // …and it lands AFTER the td_* upsert, never before it.
+    expect(r.markerIdx).toBeGreaterThan(r.tdUpsertIdx);
+  });
 });

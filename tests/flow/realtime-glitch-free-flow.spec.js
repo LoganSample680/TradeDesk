@@ -109,15 +109,15 @@ test.describe('realtime sync is glitch-free (multi-device)', () => {
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
-  // RE-QUARANTINED (test.fixme) — see the detailed root-cause note in
-  // realtime-delete-sync-flow.spec.js. B lands on 5004 (one behind) every run because
-  // convergence keys off zj_data.updated_at, but that cursor and the td_bids data are read
-  // non-atomically and the cursor is written FIRST — so B can capture a fresh cursor with a
-  // stale amount and think it is current (read-skew). The convergence hardening added while
-  // chasing this (trailing-reload retry, adaptive fast-reconcile, mid-load peer-save flag)
-  // is shipped and correct, but the real fix is the cursor-ordering / snapshot-RPC /
-  // per-row-updated_at-merge work described there. Do NOT widen waits (§11.1).
-  test.fixme('A fires a rapid burst of edits → B converges to the LAST value (no lost update)', async ({ page }) => {
+  // RE-ENABLED after the read-skew root cause was fixed (cloud.js supaSaveToCloud "sync
+  // marker written LAST"). B used to land on 5004 (one behind) every run because convergence
+  // keys off zj_data.updated_at, but that cursor was bumped by the settings-FIRST write —
+  // BEFORE the td_bids rows committed. B could capture the fresh cursor, reload, read the
+  // tables before A's row upserts landed, and mark itself caught up on a stale amount (the
+  // cursor never moved a second time, so B never reloaded again). The fix bumps
+  // zj_data.updated_at only AFTER every td_* upsert has committed, so "cursor moved ⇒ all
+  // data committed" — B's next reconcile reload now always reads the final value.
+  test('A fires a rapid burst of edits → B converges to the LAST value (no lost update)', async ({ page }) => {
     test.setTimeout(120000);
     const bidId = Date.now() * 1000 + (process.pid % 1000);
     const clientId = bidId + 1;
