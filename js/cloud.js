@@ -449,9 +449,9 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.20';
+const APP_VERSION='07.01.26.21';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
-let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null;
+let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
 // flips true only when the td-sync channel confirms SUBSCRIBED (delivery is live).
 // Anything that depends on actually RECEIVING peer changes should gate on this, not
@@ -2669,6 +2669,7 @@ function _teardownRealtimeChannels(){
   _tdRealtimeReady=false;    // channels are gone — delivery is no longer live
   clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;_broadcastPending=false;
   clearTimeout(_reconcileTimer);_reconcileTimer=null;
+  clearTimeout(_writeCacheTimer);_writeCacheTimer=null; // a pending debounced cache write would snapshot the OUTGOING account after the wipe
 }
 // Hard-wipe THIS account's entire local footprint so nothing can bleed into the next
 // account signed in on the same device (bug #39). Idempotent — safe to call from both
@@ -2676,7 +2677,7 @@ function _teardownRealtimeChannels(){
 function _wipeLocalAccountData(){
   clearTimeout(_syncTimer);_syncTimer=null; // prevent a live timer from flushing emptied arrays
   _teardownRealtimeChannels(); // CRITICAL: close A's live channels so they can't re-deliver A's rows into B
-  _supaCloudLoaded=false;_realtimeSubscribed=false;_loadInProgress=false;clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;clearTimeout(_reconcileTimer);_reconcileTimer=null;
+  _supaCloudLoaded=false;_realtimeSubscribed=false;_loadInProgress=false;clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;clearTimeout(_reconcileTimer);_reconcileTimer=null;clearTimeout(_writeCacheTimer);_writeCacheTimer=null;
   // Cross-account merge state: _mergeOnSignIn + the offline blob hold THIS account's data;
   // if either survives, the next account's SIGNED_IN merge pushes this account's records
   // into theirs. Hard-clear them plus the cloud cache so nothing leaks forward.
@@ -3164,6 +3165,25 @@ async function supaSaveToCloud(){
       const currentIds=new Set(rows.map(r=>String(r.id)));
       _syncedHash[tbl]||=new Map();
       const hashes=_syncedHash[tbl];
+      // DELTA: upload ONLY rows whose content hash changed since the last sync (or is
+      // unknown). The hash is computed over `r` here — the exact post-txFn payload that
+      // becomes the DB `data` column — so it round-trips against the load-side rebuild.
+      // Computed BEFORE any network so an unchanged table can short-circuit entirely.
+      let changed=[];
+      for(const r of rows){
+        const id=String(r.id);
+        const h=_hashPayload(r);
+        if(hashes.get(id)===h){ window._deltaStats.skips++; continue; }
+        changed.push({id,h,row:{id,user_id:uid,data:r,updated_at:ts,deleted_at:null}});
+      }
+      const _pendingDeletes=(_locallyDeletedIds[tbl]&&[..._locallyDeletedIds[tbl]].some(id=>(_lastKnownIds[tbl]||new Set()).has(id)&&!currentIds.has(id)))||false;
+      // NO-OP FAST PATH — nothing changed and nothing pending deletion: ZERO round-trips.
+      // Before this, a completely idle save still paid one lockedRows SELECT per table
+      // (14 sequential reads) every ~2s during editing — the per-save cost that made the
+      // bloated-account saves crawl and (at scale) would do the same to any heavy customer.
+      // The lockedRows read only matters when we're about to WRITE this table, so it moves
+      // below the short-circuit. _lastKnownIds still refreshes so the sweep stays correct.
+      if(!changed.length&&!_pendingDeletes){_lastKnownIds[tbl]=currentIds;return;}
       // Fetch server-locked records (updated_at > 1 year from now = admin-deleted, must not overwrite)
       const lockCutoff=new Date(Date.now()+365*24*60*60*1000).toISOString();
       const{data:lockedRows}=await _supa.from(tbl).select('id').eq('user_id',uid).gt('updated_at',lockCutoff);
@@ -3173,19 +3193,9 @@ async function supaSaveToCloud(){
         const tdef=_TD_TABLES.find(x=>x.t===tbl);
         if(tdef?.set) tdef.set(rows.filter(r=>!lockedIds.has(String(r.id))));
         lockedIds.forEach(id=>currentIds.delete(id));
+        changed=changed.filter(c=>!lockedIds.has(c.id));
       }
-      // DELTA: upload ONLY rows whose content hash changed since the last sync (or is
-      // unknown). The hash is computed over `r` here — the exact post-txFn payload that
-      // becomes the DB `data` column — so it round-trips against the load-side rebuild.
-      if(rows.length){
-        const changed=[];
-        for(const r of rows){
-          const id=String(r.id);
-          if(lockedIds.has(id))continue;
-          const h=_hashPayload(r);
-          if(hashes.get(id)===h){ window._deltaStats.skips++; continue; }
-          changed.push({id,h,row:{id,user_id:uid,data:r,updated_at:ts,deleted_at:null}});
-        }
+      if(changed.length){
         // Upsert in batches of 50. Write the synced hash ONLY AFTER each batch resolves
         // with no error — never optimistically, so a thrown batch (→ pending_sync retry)
         // never marks un-sent rows as "synced" and silently drops them next save.
@@ -3221,18 +3231,22 @@ async function supaSaveToCloud(){
     // contractor's real amounts. Permission-derived so it holds even if the RPC
     // fell back to a raw load. Contractors skip nothing.
     const _saveSkip=_employeeRedactedTables();
-    for(const {t,get,tx} of _TD_TABLES){
-      if(_saveSkip.has(t)){continue;}
+    // PARALLEL: the 14 tables are disjoint, so their upserts/sweeps run concurrently —
+    // wall time collapses from 14 sequential round-trips to ~1 (the slowest table). The
+    // read-skew invariant is untouched: the SETTINGS + SYNC CURSOR block below runs only
+    // after this Promise.all resolves, i.e. after EVERY table's writes have committed.
+    await Promise.all(_TD_TABLES.map(async({t,get,tx})=>{
+      if(_saveSkip.has(t))return;
       const arr=get();
       try{
         await _upsertTable(t,arr,tx);
       }catch(_te){
         // Unprovisioned table (migration not yet applied) — skip it, keep syncing the
         // rest. Without this, one missing table flips the whole app to offline/error.
-        if(_isMissingTableErr(_te)){console.warn('[cloud] skipping save to unprovisioned table',t);continue;}
+        if(_isMissingTableErr(_te)){console.warn('[cloud] skipping save to unprovisioned table',t);return;}
         throw _te;
       }
-    }
+    }));
 
     // ── SETTINGS + SYNC CURSOR — written LAST (fixes the cross-device read-skew) ──
     // zj_data.updated_at is the cursor every peer polls ("changed → reload"). Writing it AFTER
@@ -3710,25 +3724,44 @@ async function supaLoadFromCloud({silent=false}={}){
     const _rawLoad=()=>Promise.all(_TD_TABLES.map(({t})=>
       _supa.from(t).select('id,data,updated_at').eq('user_id',uid).is('deleted_at',null)
     ));
-    let tableResults, _isDelta=false, _deltaMeta=null;
+    let tableResults, _isDelta=false, _deltaMeta=null, _deltaBase=null;
+    // 2s OVERLAP MARGIN on every delta query: a save's per-table writes commit over a short
+    // window, so a reader can observe a later-timestamped row while an earlier one from the
+    // same save isn't visible yet — advancing the cursor past a row it never loaded. Querying
+    // from cursor-2s re-reads that sliver; the id-keyed merge below is idempotent, so the
+    // overlap costs a few duplicate rows and can never lose one.
+    const _deltaSince=(cur)=>{try{return new Date(new Date(cur).getTime()-2000).toISOString();}catch(_e){return cur;}};
+    const _deltaQuery=(since)=>Promise.all(_TD_TABLES.map(({t})=>
+      _supa.from(t).select('id,data,updated_at,deleted_at').eq('user_id',uid).gt('updated_at',_deltaSince(since))
+    )).catch(()=>null);
     // DELTA FIRST — a normal contractor cold load pulls only rows changed since this
     // device's last visit (updated_at > cursor; soft-deletes ride via deleted_at),
-    // merged onto the cache-painted snapshot. Skips silent refreshes, employees, and
-    // dev-support (redaction/impersonation), and falls back to the full load on any
-    // error — so it can only ever make sign-in faster, never change what data lands.
+    // merged onto the cache-painted snapshot. Skips employees and dev-support
+    // (redaction/impersonation), and falls back to the full load on any error — so it
+    // can only ever make loads faster, never change what data lands.
     if(!silent&&!_isEmployee&&!_devSupportMode){
       _deltaMeta=_readDeltaMeta(uid);
       if(_deltaMeta&&_paintCacheForDelta(uid)){
-        const _dres=await Promise.all(_TD_TABLES.map(({t})=>
-          _supa.from(t).select('id,data,updated_at,deleted_at').eq('user_id',uid).gt('updated_at',_deltaMeta.cursor)
-        )).catch(()=>null);
+        const _dres=await _deltaQuery(_deltaMeta.cursor);
         if(_dres&&!_dres.some(r=>r&&r.error&&!_isMissingTableErr(r.error))){
-          tableResults=_dres;_isDelta=true;
+          tableResults=_dres;_isDelta=true;_deltaBase=_deltaMeta.cursor;
           // Restore known-cloud hashes so an unsaved local edit still re-uploads, and
           // seed _lastKnownIds from the painted cache so the delete-sweep stays correct.
           _syncedHash={};for(const[k,v]of Object.entries(_deltaMeta.syncedHash||{}))_syncedHash[k]=new Map(v);
           for(const{t,get}of _TD_TABLES)_lastKnownIds[t]=new Set((get()||[]).map(r=>String(r.id)));
         }
+      }
+    }else if(silent&&!_isEmployee&&!_devSupportMode&&_supaCloudLoaded&&_deltaCursor&&_loadedDataOwner===uid){
+      // SILENT DELTA — the scale fix for reconciles. Every heartbeat / realtime catch-up /
+      // trailing reload used to re-read the ENTIRE account (14 full-table selects); on a
+      // heavy account that made the very mechanism that keeps devices converged the most
+      // expensive thing the app does. The in-memory arrays are already authoritative
+      // (_supaCloudLoaded, same owner), so pull only rows changed since the in-memory
+      // cursor and merge by id — soft-deletes ride along via deleted_at. Any error falls
+      // back to the full read below, so correctness never depends on the delta.
+      const _dres=await _deltaQuery(_deltaCursor);
+      if(_dres&&!_dres.some(r=>r&&r.error&&!_isMissingTableErr(r.error))){
+        tableResults=_dres;_isDelta=true;_deltaBase=_deltaCursor;
       }
     }
     if(!_isDelta){
@@ -3761,7 +3794,7 @@ async function supaLoadFromCloud({silent=false}={}){
     // Advance the delta cursor to the newest server updated_at we observed — the next
     // cold load only pulls rows newer than this. Tracked for BOTH paths so the first
     // full load establishes the cursor that subsequent delta loads read from.
-    let _newCursor=_isDelta?_deltaMeta.cursor:null;
+    let _newCursor=_isDelta?_deltaBase:null;
     for(let i=0;i<_TD_TABLES.length;i++){
       const{t,set,get}=_TD_TABLES[i];
       if(tableResults[i].error){console.warn('[cloud] skipping unprovisioned table',t);continue;} // missing table — leave in-memory data untouched
@@ -3791,6 +3824,7 @@ async function supaLoadFromCloud({silent=false}={}){
       }
     }
     if(_newCursor)_deltaCursor=_newCursor;
+    _loadedDataOwner=uid; // memory now authoritatively holds THIS account's data (gates the silent delta + cross-account guard)
 
     const _lsRcpt=(()=>{try{return JSON.parse(localStorage.getItem('zp3_rcpt_imgs')||'{}')}catch{return{}}})();
     const _dbRcpt=(()=>{try{const v=settingsResult.data?.receipt_images;return v?JSON.parse(v):{}}catch{return{}}})();
@@ -4149,7 +4183,12 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
     const idx=arr.findIndex(r=>String(r.id)===String(payload.old.id));
     if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(payload.old.id));_syncedHash[tbl]?.delete(String(payload.old.id));_rowSyncedAt[tbl]?.delete(String(payload.old.id));}
   }
-  _writeLocalCache();
+  // DEBOUNCED cache write: _writeLocalCache serializes the ENTIRE account (+ the delta
+  // sidecar) to localStorage on the main thread — a 20-row realtime burst used to do that
+  // 20 times back-to-back, janking whatever the user was touching. One trailing write
+  // 250ms after the last patch captures the same end state (crash-safety is unaffected:
+  // the authoritative copy is the cloud, and saves/loads still write synchronously).
+  clearTimeout(_writeCacheTimer);_writeCacheTimer=setTimeout(()=>{_writeCacheTimer=null;try{_writeLocalCache();}catch(_e){}},250);
   // Skip the heavy ~15-container re-render ONLY for this device's OWN write-echoes
   // arriving via realtime: it already rendered them locally at edit time, and rebuilding
   // every container on each echoed row left the page churning under any open modal/sheet

@@ -892,4 +892,98 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     });
     expect(r.reconcileQueued).toBe(true); // the masked peer change gets a catch-up reload
   });
+
+  // ── Scale guard: a NO-OP save touches ZERO td_* tables ─────────────────────────
+  // Before the fast path, an idle save still paid one lockedRows SELECT per table —
+  // 14 round-trips every ~2s during editing, the per-save cost that crawled on the
+  // bloated dev account and would do the same to any heavy customer at scale.
+  test('no-op supaSaveToCloud makes zero td_* requests (fast path) — only the zj_data settings write', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = {
+        supa: _supa, user: window._supaUser, loaded: _supaCloudLoaded,
+        cacheOnly: _loadedFromCacheOnly, emp: _isEmployee, authS: _authSettingsLoaded,
+        hash: _syncedHash, known: _lastKnownIds,
+      };
+      const _tblSnap = _TD_TABLES.map(({ t, get, set }) => ({ t, set, rows: (get() || []).slice() }));
+      _tblSnap.forEach(({ set }) => set([])); // nothing to upload, nothing to delete
+      const touched = [];
+      const makeChain = (table) => {
+        const chain = {
+          select() { return chain; }, eq() { return chain; }, gt() { return chain; },
+          in() { return chain; }, is() { return chain; }, order() { return chain; }, limit() { return chain; },
+          maybeSingle() { return Promise.resolve({ data: null, error: null }); },
+          single() { return Promise.resolve({ data: { updated_at: new Date().toISOString() }, error: null }); },
+          upsert() { return chain; }, update() { return chain; },
+          then(res, rej) { return Promise.resolve({ data: [], error: null }).then(res, rej); },
+        };
+        return chain;
+      };
+      try {
+        _supa = { from: (t) => { touched.push(t); return makeChain(t); } };
+        window._supaUser = { id: 'noop-u' };
+        _supaCloudLoaded = true; _loadedFromCacheOnly = false; _isEmployee = false;
+        _authSettingsLoaded = true; _syncedHash = {}; _lastKnownIds = {};
+        await supaSaveToCloud();
+        return {
+          tdTouched: touched.filter(t => /^td_/.test(t)),
+          zjTouched: touched.includes('zj_data'),
+        };
+      } finally {
+        _tblSnap.forEach(({ set, rows }) => set(rows));
+        _supa = saved.supa; window._supaUser = saved.user; _supaCloudLoaded = saved.loaded;
+        _loadedFromCacheOnly = saved.cacheOnly; _isEmployee = saved.emp; _authSettingsLoaded = saved.authS;
+        _syncedHash = saved.hash; _lastKnownIds = saved.known;
+      }
+    });
+    expect(r.tdTouched).toEqual([]); // zero table round-trips when nothing changed
+    expect(r.zjTouched).toBe(true);  // settings/cursor still ride the save
+  });
+
+  // ── Scale guard: SILENT reloads take the DELTA path (not a full-account re-read) ──
+  // Every heartbeat/realtime catch-up used to re-read the entire account. Proof the
+  // delta path is taken: a pre-existing in-memory row NOT present in the (empty) delta
+  // result SURVIVES the silent load — the full path's set(rows) would have wiped it.
+  test('silent supaLoadFromCloud uses the delta path — untouched rows survive an empty delta', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = {
+        supa: _supa, user: window._supaUser, loaded: _supaCloudLoaded, owner: _loadedDataOwner,
+        cursor: _deltaCursor, emp: _isEmployee, hash: _syncedHash, known: _lastKnownIds,
+      };
+      const bidId = 'delta-survivor-1';
+      const gtCalls = [];
+      const makeChain = (table) => {
+        const chain = {
+          select() { return chain; }, eq() { return chain; },
+          gt(col, val) { if (/^td_/.test(table)) gtCalls.push(table); return chain; },
+          in() { return chain; }, is() { return chain; }, order() { return chain; }, limit() { return chain; },
+          maybeSingle() { return Promise.resolve({ data: { settings: null, checks_state: null, receipt_images: null, updated_at: 'CUR' }, error: null }); },
+          single() { return Promise.resolve({ data: null, error: null }); },
+          upsert() { return chain; }, update() { return chain; },
+          then(res, rej) { return Promise.resolve({ data: [], error: null }).then(res, rej); }, // empty delta
+        };
+        return chain;
+      };
+      try {
+        _supa = { from: (t) => makeChain(t) };
+        window._supaUser = { id: 'delta-u' };
+        _supaCloudLoaded = true; _isEmployee = false;
+        _loadedDataOwner = 'delta-u';               // owner matches → silent delta eligible
+        _deltaCursor = new Date().toISOString();    // cursor established
+        bids.push({ id: bidId, client_id: 1, client_name: 'Delta S', amount: 3, status: 'Pending', bid_date: '2026-07-01' });
+        await supaLoadFromCloud({ silent: true });
+        return {
+          survived: bids.some(b => b.id === bidId), // delta merge left it alone; full load would wipe it
+          deltaQueried: gtCalls.length >= 10,       // every td_* table queried with .gt(cursor)
+        };
+      } finally {
+        const i = bids.findIndex(b => b.id === bidId); if (i > -1) bids.splice(i, 1);
+        _supa = saved.supa; window._supaUser = saved.user; _supaCloudLoaded = saved.loaded;
+        _loadedDataOwner = saved.owner; _deltaCursor = saved.cursor; _isEmployee = saved.emp;
+        _syncedHash = saved.hash; _lastKnownIds = saved.known;
+        _loadInProgress = false; _activeLoadPromise = null;
+      }
+    });
+    expect(r.deltaQueried).toBe(true); // the silent load asked "what changed since the cursor"
+    expect(r.survived).toBe(true);     // and merged instead of replacing the whole account
+  });
 });
