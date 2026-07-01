@@ -449,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.19';
+const APP_VERSION='07.01.26.20';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1198,7 +1198,19 @@ async function supaInit(){
   }
   try{
     _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{
-      auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storage:window.localStorage}
+      auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storage:window.localStorage},
+      // HARD FETCH TIMEOUT (30s): supabase-js has none, so a single stalled request left a
+      // save pending FOREVER — _pendingSavePromise never settled, every reconcile reload
+      // deferred behind it, and the device stopped converging until a page reload (observed
+      // live: the wedged A→B delete + the sibling sign-in hang). An aborted request rejects
+      // → the save's finally clears the pending promise → the retry path takes over.
+      // Callers that pass their own AbortSignal keep it (realtime uses WebSocket, unaffected).
+      global:{fetch:(url,opts={})=>{
+        if(opts.signal)return fetch(url,opts);
+        const _ac=new AbortController();
+        const _tt=setTimeout(()=>{try{_ac.abort();}catch(_e){}},30000);
+        return fetch(url,{...opts,signal:_ac.signal}).finally(()=>clearTimeout(_tt));
+      }}
     });
     // Realtime connects straight to Supabase — WebSocket proxying through
     // Cloudflare Pages is unreliable, and a dead socket silently kills
@@ -3238,13 +3250,20 @@ async function supaSaveToCloud(){
       // LAST-WRITER-WINS by settingsTs: never overwrite a NEWER cloud settings blob with our
       // (possibly stale) copy — but if that happens we STILL bump the cursor when our table rows
       // changed, else the peer that owns the newer settings would never learn of our records.
-      let _skipSettings=false;
+      let _skipSettings=false,_peerMovedCursor=false;
       try{
-        const{data:_curS}=await _supa.from('zj_data').select('settings').eq('user_id',uid).maybeSingle();
+        const{data:_curS}=await _supa.from('zj_data').select('settings,updated_at').eq('user_id',uid).maybeSingle();
         if(_curS&&_curS.settings){
           const _curTs=(()=>{try{return (JSON.parse(_curS.settings).settingsTs)||0;}catch(_e){return 0;}})();
           if(_curTs>(S.settingsTs||0))_skipSettings=true;
         }
+        // ANTI-BLINDING: our write below overwrites the cursor — and with it, the heartbeat's
+        // memory of any PEER save we haven't loaded yet. If the server cursor already moved
+        // past what this device last saw, a peer changed something between our last load and
+        // this save; queue a reconcile NOW (it runs after this save completes) or the change
+        // would become invisible to the heartbeat forever (observed live: B's background save
+        // masked A's delete and B kept the deleted bid indefinitely).
+        if(_curS&&_curS.updated_at&&window._lastZjUpdatedAt&&_curS.updated_at!==window._lastZjUpdatedAt)_peerMovedCursor=true;
       }catch(_e){}
       if(navigator.webdriver){try{(window._zjWrites=window._zjWrites||[]).push({g:sForCloud.goalMonthly,ts:sForCloud.settingsTs,skip:_skipSettings,cl:_supaCloudLoaded,foc:_loadedFromCacheOnly,page:document.querySelector('.pg.active')?.id||null});}catch(_e){}}
       if(_skipSettings){
@@ -3262,6 +3281,8 @@ async function supaSaveToCloud(){
         if(_se0){throw _se0;}
         window._lastZjUpdatedAt=_zjRow?.updated_at||_wTs;
       }
+      // Catch up on the peer change our cursor overwrite just masked (see the pre-read note).
+      if(_peerMovedCursor)_scheduleReconcile(800);
     } else if(!_isEmployee && !_authSettingsLoaded){
       // Cloud settings haven't hydrated yet (fresh/cache-wiped boot). Do NOT push the default
       // blob over the cloud (the boot clobber) — defer to the post-load flush.
@@ -3648,7 +3669,26 @@ async function supaLoadFromCloud({silent=false}={}){
     // But DO wait for an already in-flight save (e.g. an offline worker's reconnect flush) to
     // commit first — else this load reads a cloud snapshot taken BEFORE that save landed and
     // set(rows) drops the just-saved row out of memory (the offline/reconnect race).
-    if(_pendingSavePromise){try{await _pendingSavePromise;}catch(e){}}
+    // BOUNDED: wait at most 4s. An unbounded await here WEDGED the whole reconcile backstop —
+    // this load holds _loadInProgress while waiting, every heartbeat tick skips on it, and a
+    // slow/hung background save (bloated account, stalled fetch) starved convergence past the
+    // test window (the live A→B delete failure). If the save is still in flight after 4s we
+    // DEFER — never load concurrently with a save (that reopens the lost-edit race); release
+    // _loadInProgress and retry shortly. Each retry re-waits, so convergence resumes the
+    // moment the save resolves (and the fetch timeout guarantees it eventually does).
+    if(_pendingSavePromise){
+      const _saveDone=await Promise.race([
+        _pendingSavePromise.then(()=>true,()=>true),
+        new Promise(r=>setTimeout(()=>r(false),4000)),
+      ]);
+      if(!_saveDone){
+        _loadInProgress=false;
+        if(_resolveActiveLoad)_resolveActiveLoad();
+        _activeLoadPromise=null;
+        _scheduleReconcile(1500);
+        return;
+      }
+    }
   }else{
     if(_syncTimer){try{await _flushSaveNow();}catch(e){}}
     else if(_pendingSavePromise){try{await _pendingSavePromise;}catch(e){}}
@@ -3839,7 +3879,14 @@ async function supaLoadFromCloud({silent=false}={}){
       for(let i=payments.length-1;i>=0;i--){
         const p=payments[i];
         if(!p||!p._cancelRefund)continue;
-        if(seen.has(p.bid_id)){payments.splice(i,1);dirty=true;}
+        if(seen.has(p.bid_id)){
+          // Record the delete intent so the next save's sweep soft-deletes the dupe on the
+          // SERVER too. Splicing alone removed it only from memory — every load re-downloaded
+          // the dupes and re-ran saveAll(), turning this cleanup into a permanent ambient-save
+          // generator on any device (the background saves that starved the reconcile backstop).
+          if(typeof _recordLocalDelete==='function')_recordLocalDelete('td_payments',p.id);
+          payments.splice(i,1);dirty=true;
+        }
         else seen.add(p.bid_id);
       }
       if(dirty){saveAll();if(typeof renderDash==='function')renderDash();}

@@ -813,4 +813,83 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.trackedWhileInFlight).toBe(true); // the silent-load guard can now await it
     expect(r.clearedAfter).toBe(true);
   });
+
+  // ── Wedge guard: a slow/hung save must NOT starve the reconcile backstop ──────
+  // Live failure (A→B delete): B's silent reload awaited B's own in-flight save
+  // UNBOUNDED while holding _loadInProgress, so every heartbeat tick skipped and B
+  // never converged. The reload must give up after ~4s, release _loadInProgress,
+  // and queue a retry — never load concurrently (lost-edit race) and never wedge.
+  test('silent supaLoadFromCloud DEFERS (not wedges) behind a hung save — releases the lock and queues a retry', async () => {
+    test.setTimeout(20000);
+    const r = await page.evaluate(async () => {
+      const saved = { supa: _supa, user: window._supaUser, pend: _pendingSavePromise };
+      try {
+        _supa = _supa || { from: () => ({}) };
+        window._supaUser = window._supaUser || { id: 'wedge-u' };
+        _pendingSavePromise = new Promise(() => {}); // a save that never settles (stalled fetch)
+        const t0 = Date.now();
+        await supaLoadFromCloud({ silent: true });
+        return {
+          tookMs: Date.now() - t0,
+          lockReleased: _loadInProgress === false,
+          retryQueued: _reconcileTimer !== null,
+        };
+      } finally {
+        _pendingSavePromise = saved.pend;
+        if (_reconcileTimer) { clearTimeout(_reconcileTimer); _reconcileTimer = null; }
+        _loadInProgress = false; _activeLoadPromise = null;
+        _supa = saved.supa; window._supaUser = saved.user;
+      }
+    });
+    expect(r.tookMs).toBeGreaterThanOrEqual(3900); // waited the bounded window…
+    expect(r.tookMs).toBeLessThan(8000);           // …but did NOT hang
+    expect(r.lockReleased).toBe(true);             // heartbeat is free to tick again
+    expect(r.retryQueued).toBe(true);              // convergence retries on its own
+  });
+
+  // ── Anti-blinding guard: a save that overwrites a PEER-moved cursor queues a reconcile ──
+  // Live failure (mechanism #2): B's background save overwrote zj_data.updated_at with its
+  // own write AFTER A's delete moved it — the heartbeat then compared equal forever and B
+  // kept the deleted bid. The save's pre-read must detect the peer's move and queue a
+  // catch-up reload for right after the save.
+  test('supaSaveToCloud queues a reconcile when the cloud cursor moved since our last load', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = {
+        supa: _supa, user: window._supaUser, loaded: _supaCloudLoaded,
+        cacheOnly: _loadedFromCacheOnly, emp: _isEmployee, authS: _authSettingsLoaded,
+        hash: _syncedHash, known: _lastKnownIds, lastZj: window._lastZjUpdatedAt,
+      };
+      const _tblSnap = _TD_TABLES.map(({ t, get, set }) => ({ t, set, rows: (get() || []).slice() }));
+      _tblSnap.forEach(({ set }) => set([]));
+      const makeChain = (table) => {
+        const chain = {
+          select() { return chain; }, eq() { return chain; }, gt() { return chain; },
+          in() { return chain; }, is() { return chain; }, order() { return chain; }, limit() { return chain; },
+          // The settings pre-read: the PEER moved the cursor since our last load.
+          maybeSingle() { return Promise.resolve({ data: table === 'zj_data' ? { settings: JSON.stringify({ settingsTs: 1 }), updated_at: 'PEER-MOVED-CURSOR' } : null, error: null }); },
+          single() { return Promise.resolve({ data: { updated_at: 'MY-WRITE' }, error: null }); },
+          upsert() { return chain; }, update() { return chain; },
+          then(res, rej) { return Promise.resolve({ data: [], error: null }).then(res, rej); },
+        };
+        return chain;
+      };
+      try {
+        _supa = { from: (t) => makeChain(t) };
+        window._supaUser = { id: 'blind-u' };
+        _supaCloudLoaded = true; _loadedFromCacheOnly = false; _isEmployee = false;
+        _authSettingsLoaded = true; _syncedHash = {}; _lastKnownIds = {};
+        window._lastZjUpdatedAt = 'WHAT-I-LAST-LOADED'; // ≠ PEER-MOVED-CURSOR
+        if (_reconcileTimer) { clearTimeout(_reconcileTimer); _reconcileTimer = null; }
+        await supaSaveToCloud();
+        return { reconcileQueued: _reconcileTimer !== null };
+      } finally {
+        _tblSnap.forEach(({ set, rows }) => set(rows));
+        if (_reconcileTimer) { clearTimeout(_reconcileTimer); _reconcileTimer = null; }
+        _supa = saved.supa; window._supaUser = saved.user; _supaCloudLoaded = saved.loaded;
+        _loadedFromCacheOnly = saved.cacheOnly; _isEmployee = saved.emp; _authSettingsLoaded = saved.authS;
+        _syncedHash = saved.hash; _lastKnownIds = saved.known; window._lastZjUpdatedAt = saved.lastZj;
+      }
+    });
+    expect(r.reconcileQueued).toBe(true); // the masked peer change gets a catch-up reload
+  });
 });
