@@ -449,9 +449,15 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.3';
+const APP_VERSION='07.01.26.5';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false;
+// _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
+// flips true only when the td-sync channel confirms SUBSCRIBED (delivery is live).
+// Anything that depends on actually RECEIVING peer changes should gate on this, not
+// on the initiation flag — waiting on the initiation flag races ahead of delivery.
+let _tdRealtimeReady=false;
+try{Object.defineProperty(window,'_tdRealtimeReady',{get:()=>_tdRealtimeReady,set:v=>{_tdRealtimeReady=v;},configurable:true});}catch(_e){}
 const _deviceId=Math.random().toString(36).slice(2,10);
 // Expose sync state and auth objects on window so E2E tests can observe/stub them
 Object.defineProperty(window,'_syncStatus',{get:()=>_syncStatus,configurable:true});
@@ -1233,7 +1239,7 @@ async function supaInit(){
         // memory, so checking _supaUser alone would miss the swap and bleed data across.
         const _incomingId=session.user.id;
         if((_loadedDataOwner&&_incomingId!==_loadedDataOwner)||(_supaCloudLoaded&&_supaUser&&_incomingId!==_supaUser.id)){
-          _supaCloudLoaded=false;_mergeOnSignIn=false;_realtimeSubscribed=false;_loadInProgress=false;
+          _supaCloudLoaded=false;_mergeOnSignIn=false;_realtimeSubscribed=false;_tdRealtimeReady=false;_loadInProgress=false;
           clearTimeout(_syncTimer);_syncTimer=null;
           // Close the OUTGOING account's still-live realtime channels (bug #39): an involuntary
           // SIGNED_OUT (token expiry) never ran _wipeLocalAccountData, so the prior account's
@@ -2613,6 +2619,7 @@ function _teardownRealtimeChannels(){
   try{if(_supa&&typeof _supa.removeAllChannels==='function')_supa.removeAllChannels();}catch(_e){}
   _syncBroadcastChannel=null;
   _realtimeSubscribed=false; // force the next account's load to re-subscribe under ITS uid
+  _tdRealtimeReady=false;    // channels are gone — delivery is no longer live
   clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;_broadcastPending=false;
 }
 // Hard-wipe THIS account's entire local footprint so nothing can bleed into the next
@@ -3905,7 +3912,13 @@ function _initRealtimeSubscriptions(uid){
     ch.on('postgres_changes',{event:'UPDATE',schema:'public',table:'zj_data',filter:'user_id=eq.'+uid},()=>{
       if(!_loadInProgress&&Date.now()-_lastLocalSaveAt>5000)supaLoadFromCloud({silent:true});
     });
-    ch.subscribe();
+    // Track REAL readiness: the channel only delivers peer changes once it reports
+    // SUBSCRIBED. Consumers (and cross-device tests) gate on _tdRealtimeReady so they
+    // never act in the window between "subscribe called" and "channel actually live".
+    ch.subscribe((status)=>{
+      if(status==='SUBSCRIBED')_tdRealtimeReady=true;
+      else if(status==='CLOSED'||status==='CHANNEL_ERROR'||status==='TIMED_OUT')_tdRealtimeReady=false;
+    });
   }catch(e){console.warn('[realtime] td-sync subscribe failed:',e);}
   try{
     // sig-feed: signature + proposal-view notifications for the signed-in contractor.

@@ -109,20 +109,25 @@ test.describe('realtime sync is glitch-free (multi-device)', () => {
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
-  // QUARANTINED — true-concurrency burst convergence (last rapid save not converged); same class as offline-sync-race / realtime-delete. Needs the §9.8 save-side trailing-flush + merge-by-updated_at sync work. Do NOT mask by widening waits.
-  test.fixme('A fires a rapid burst of edits → B converges to the LAST value (no lost update)', async ({ page }) => {
+  // Burst convergence: A fires 5 rapid same-bid edits; B must land on the LAST value.
+  // The trailing-load (_broadcastPending re-runs one load in supaLoadFromCloud's
+  // finally) + the per-field merge cover convergence; the old flake was really the
+  // readiness race (acting before delivery was live). Both devices now gate on the
+  // confirmed _tdRealtimeReady before the burst, so a missed final value is a real
+  // convergence bug, not a warm-up miss.
+  test('A fires a rapid burst of edits → B converges to the LAST value (no lost update)', async ({ page }) => {
     test.setTimeout(120000);
     const bidId = Date.now() * 1000 + (process.pid % 1000);
     const clientId = bidId + 1;
     const tag = `E2E Glitch Burst ${process.pid}`;
 
     // Bring up device B alongside the already-signed-in device A.
-    await page.waitForFunction(() => typeof _realtimeSubscribed !== 'undefined' && _realtimeSubscribed === true, { timeout: 20000 }).catch(() => {});
+    await page.waitForFunction(() => typeof _tdRealtimeReady !== 'undefined' && _tdRealtimeReady === true, { timeout: 30000 });
     const pageB = await page.context().newPage();
     await pageB.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await pageB.waitForFunction(() => typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id, { timeout: 30000 });
     await pageB.waitForFunction(() => typeof _supaCloudLoaded === 'undefined' || _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});
-    await pageB.waitForFunction(() => typeof _realtimeSubscribed !== 'undefined' && _realtimeSubscribed === true, { timeout: 20000 }).catch(() => {});
+    await pageB.waitForFunction(() => typeof _tdRealtimeReady !== 'undefined' && _tdRealtimeReady === true, { timeout: 30000 });
 
     // Seed the bid on A and wait for B to receive it before the burst.
     await page.evaluate(async ({ bidId, clientId, tag }) => {
