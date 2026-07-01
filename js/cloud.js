@@ -465,7 +465,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.1';
+const APP_VERSION='07.01.26.2';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -1261,6 +1261,10 @@ async function supaInit(){
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           localStorage.removeItem('zp3_offline_pending');
           _loadedDataOwner=null;
+          // Account switch: drop the outgoing account's delta cursor so it can't be
+          // written into the incoming account's delta_meta (owner guards the read, but
+          // the in-memory cursor is global). Next load rebuilds it for this account.
+          _deltaCursor=null;
           // Previous user's settings timestamp must never beat this user's cloud copy
           S.settingsTs=0;
         }
@@ -2640,6 +2644,9 @@ function _wipeLocalAccountData(){
   _mergeOnSignIn=false;_loadedFromCacheOnly=false;_loadedDataOwner=null;
   localStorage.removeItem('zp3_offline_pending');
   localStorage.removeItem('zp3_cloud_cache');
+  // Delta cursor + its sidecar are per-account too — drop both so the next account
+  // rebuilds from a full load rather than delta-ing against this account's cursor.
+  _deltaCursor=null;localStorage.removeItem('zp3_delta_meta');
   clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
   // Delta-sync baselines are per-account: a stale _syncedHash entry under the next account
   // would suppress re-upload of its own same-id row, and a stale _lastKnownIds set would
@@ -2983,6 +2990,31 @@ function _logSave(stage,info){
   window._saveLog.push({t:new Date().toISOString(),stage,info});
   if(window._saveLog.length>40)window._saveLog.shift();
 }
+// ── DELTA LOAD (incremental cold sign-in) ────────────────────────────────────
+// The full-account read on every sign-in is O(all data) and times out on big
+// accounts. Delta load pulls ONLY rows changed since this device's last visit
+// (server updated_at > cursor), merged onto the cached snapshot. Safe by design:
+// ANY doubt (no cache, account mismatch, missing cursor, query error) falls back
+// to the full load; and _syncedHash reflects cloud (written only after a save
+// confirms), so a locally-edited-unsaved row keeps its OLD hash and still
+// re-uploads on the next save — the delta merge never marks local edits synced.
+let _deltaCursor=null;
+function _readDeltaMeta(uid){
+  try{const m=JSON.parse(localStorage.getItem('zp3_delta_meta')||'null');return(m&&m._owner===uid&&m.cursor)?m:null;}catch(_e){return null;}
+}
+// Paint the cached full snapshot into the live arrays (in place, via each table's
+// set) so the delta merge has a complete base. Returns false when there is no
+// cache for THIS account → caller full-loads.
+function _paintCacheForDelta(uid){
+  try{
+    const cc=JSON.parse(localStorage.getItem('zp3_cloud_cache')||'null');
+    if(!cc||cc._owner!==uid)return false;
+    const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos};
+    for(const{t,set}of _TD_TABLES)set(Array.isArray(byKey[t])?byKey[t]:[]);
+    if(cc.checksState&&Object.keys(cc.checksState).length)checksState=cc.checksState;
+    return true;
+  }catch(_e){return false;}
+}
 function _writeLocalCache(){
   try{
     const _snap={_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,payments,income,
@@ -2990,6 +3022,12 @@ function _writeLocalCache(){
       mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,checksState,
       settings:S,cached_at:new Date().toISOString()};
     localStorage.setItem('zp3_cloud_cache',JSON.stringify(_snap));
+    // Delta sidecar: the server-updated_at cursor + known-cloud hashes, owner-scoped.
+    // Only written once a load has established a cursor for this account.
+    if(_snap._owner&&_deltaCursor){
+      const _h={};for(const k of Object.keys(_syncedHash))_h[k]=[..._syncedHash[k]];
+      localStorage.setItem('zp3_delta_meta',JSON.stringify({_owner:_snap._owner,cursor:_deltaCursor,syncedHash:_h}));
+    }
   }catch(_e){}
 }
 
@@ -3572,23 +3610,45 @@ async function supaLoadFromCloud({silent=false}={}){
     // visibility is unchanged until the migration lands, but the SAVE guard
     // (_employeeRedactedTables) still prevents any corruption in the meantime.
     const _rawLoad=()=>Promise.all(_TD_TABLES.map(({t})=>
-      _supa.from(t).select('id,data').eq('user_id',uid).is('deleted_at',null)
+      _supa.from(t).select('id,data,updated_at').eq('user_id',uid).is('deleted_at',null)
     ));
-    let tableResults;
-    if(_isEmployee&&!_devSupportMode){
-      const{data:_red,error:_rpcErr}=await _supa.rpc('load_account_data',{target_uid:uid});
-      if(_rpcErr&&(_isMissingTableErr(_rpcErr)||_rpcErr.code==='PGRST202'||/function|does not exist/i.test(_rpcErr.message||''))){
-        console.warn('[cloud] load_account_data RPC unavailable — falling back to raw load (save guard still active)');
-        tableResults=await _rawLoad();
-      }else if(_rpcErr){
-        throw _rpcErr;
-      }else{
-        // Shape the RPC's {td_bids:[{id,data}],…} object into the per-table
-        // {data,error} the loop below expects.
-        tableResults=_TD_TABLES.map(({t})=>({data:(_red&&_red[t])||[],error:null}));
+    let tableResults, _isDelta=false, _deltaMeta=null;
+    // DELTA FIRST — a normal contractor cold load pulls only rows changed since this
+    // device's last visit (updated_at > cursor; soft-deletes ride via deleted_at),
+    // merged onto the cache-painted snapshot. Skips silent refreshes, employees, and
+    // dev-support (redaction/impersonation), and falls back to the full load on any
+    // error — so it can only ever make sign-in faster, never change what data lands.
+    if(!silent&&!_isEmployee&&!_devSupportMode){
+      _deltaMeta=_readDeltaMeta(uid);
+      if(_deltaMeta&&_paintCacheForDelta(uid)){
+        const _dres=await Promise.all(_TD_TABLES.map(({t})=>
+          _supa.from(t).select('id,data,updated_at,deleted_at').eq('user_id',uid).gt('updated_at',_deltaMeta.cursor)
+        )).catch(()=>null);
+        if(_dres&&!_dres.some(r=>r&&r.error&&!_isMissingTableErr(r.error))){
+          tableResults=_dres;_isDelta=true;
+          // Restore known-cloud hashes so an unsaved local edit still re-uploads, and
+          // seed _lastKnownIds from the painted cache so the delete-sweep stays correct.
+          _syncedHash={};for(const[k,v]of Object.entries(_deltaMeta.syncedHash||{}))_syncedHash[k]=new Map(v);
+          for(const{t,get}of _TD_TABLES)_lastKnownIds[t]=new Set((get()||[]).map(r=>String(r.id)));
+        }
       }
-    }else{
-      tableResults=await _rawLoad();
+    }
+    if(!_isDelta){
+      if(_isEmployee&&!_devSupportMode){
+        const{data:_red,error:_rpcErr}=await _supa.rpc('load_account_data',{target_uid:uid});
+        if(_rpcErr&&(_isMissingTableErr(_rpcErr)||_rpcErr.code==='PGRST202'||/function|does not exist/i.test(_rpcErr.message||''))){
+          console.warn('[cloud] load_account_data RPC unavailable — falling back to raw load (save guard still active)');
+          tableResults=await _rawLoad();
+        }else if(_rpcErr){
+          throw _rpcErr;
+        }else{
+          // Shape the RPC's {td_bids:[{id,data}],…} object into the per-table
+          // {data,error} the loop below expects.
+          tableResults=_TD_TABLES.map(({t})=>({data:(_red&&_red[t])||[],error:null}));
+        }
+      }else{
+        tableResults=await _rawLoad();
+      }
     }
     const settingsResult=await _settingsP;
 
@@ -3600,19 +3660,36 @@ async function supaLoadFromCloud({silent=false}={}){
       if(err&&!_isMissingTableErr(err))throw err;
     }
 
+    // Advance the delta cursor to the newest server updated_at we observed — the next
+    // cold load only pulls rows newer than this. Tracked for BOTH paths so the first
+    // full load establishes the cursor that subsequent delta loads read from.
+    let _newCursor=_isDelta?_deltaMeta.cursor:null;
     for(let i=0;i<_TD_TABLES.length;i++){
-      const{t,set}=_TD_TABLES[i];
+      const{t,set,get}=_TD_TABLES[i];
       if(tableResults[i].error){console.warn('[cloud] skipping unprovisioned table',t);continue;} // missing table — leave in-memory data untouched
-      const rows=(tableResults[i].data||[]).map(r=>r.data);
-      set(rows);
-      _lastKnownIds[t]=new Set((tableResults[i].data||[]).map(r=>String(r.id)));
-      // DELTA: rebuild the synced-hash map from the cloud rows AS LOADED — hash each
-      // `r.data` exactly as stored, BEFORE the receipt re-injection / expenses sort below,
-      // so it matches the post-txFn payload the next save will send (the tx strips
-      // receipt_img again). This MUST run before any offline-pending merge later in the
-      // load, so a merged offline row has no hash entry → uploads on the next save.
-      _syncedHash[t]=new Map((tableResults[i].data||[]).map(r=>[String(r.id),_hashPayload(r.data)]));
+      const data=tableResults[i].data||[];
+      for(const r of data){if(r.updated_at&&(!_newCursor||r.updated_at>_newCursor))_newCursor=r.updated_at;}
+      if(_isDelta){
+        // Merge the changed rows onto the cache-painted array by id: a soft-deleted
+        // row (deleted_at set) is removed; any other changed row replaces/adds. A row
+        // NOT in this delta is untouched (it hasn't changed since the cursor).
+        const byId=new Map((get()||[]).map(r=>[String(r.id),r]));
+        for(const r of data){
+          const id=String(r.id);
+          if(r.deleted_at){byId.delete(id);_syncedHash[t]&&_syncedHash[t].delete(id);_lastKnownIds[t]&&_lastKnownIds[t].delete(id);}
+          else{byId.set(id,r.data);(_syncedHash[t]||(_syncedHash[t]=new Map())).set(id,_hashPayload(r.data));(_lastKnownIds[t]||(_lastKnownIds[t]=new Set())).add(id);}
+        }
+        set([...byId.values()]);
+      }else{
+        // Full load — replace the array, and rebuild the synced-hash map from the cloud
+        // rows AS LOADED (hash each `r.data` exactly as stored, BEFORE the receipt
+        // re-injection / expenses sort below, so it matches the next save's txFn payload).
+        set(data.map(r=>r.data));
+        _lastKnownIds[t]=new Set(data.map(r=>String(r.id)));
+        _syncedHash[t]=new Map(data.map(r=>[String(r.id),_hashPayload(r.data)]));
+      }
     }
+    if(_newCursor)_deltaCursor=_newCursor;
 
     const _lsRcpt=(()=>{try{return JSON.parse(localStorage.getItem('zp3_rcpt_imgs')||'{}')}catch{return{}}})();
     const _dbRcpt=(()=>{try{const v=settingsResult.data?.receipt_images;return v?JSON.parse(v):{}}catch{return{}}})();
