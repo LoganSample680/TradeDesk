@@ -666,4 +666,134 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     const firstZjIdx = r.writes.findIndex(w => w.table === 'zj_data');
     expect(firstZjIdx).toBe(r.markerIdx);
   });
+
+  // ── Phase-3 per-field merge — the two review-confirmed defects, fixed ─────────
+  // (1) A protected pending edit must RE-UPLOAD: the hash stamped on merge must be the
+  //     INCOMING cloud row's hash, never the merged row's — else the next save hash-skips
+  //     the row and the protected edit never reaches the cloud (permanent divergence).
+  // (2) The pending gate (_rowSyncedAt): a field whose edit already reached the cloud is
+  //     NOT protected, even when a skewed-fast clock makes its field-clock ms exceed the
+  //     incoming row's server-stamped updated_at.
+  test.describe('_opApplyIncoming via _applyRealtimeRecord — pending-edit merge', () => {
+    test('protected PENDING edit survives the merge AND is queued for re-upload (hash = incoming, not merged)', async () => {
+      const r = await page.evaluate(() => {
+        const id = 'm3-pending-1';
+        const savedFlag = window._opLogShadow; window._opLogShadow = true;
+        // Local row with a pending amount edit (field clock stamped NOW, row last synced 60s ago).
+        bids.push({ id, amount: 7, note: 'local' });
+        _opStampFields('td_bids', id, { amount: 1 }, _hlcNow());
+        (_rowSyncedAt['td_bids'] || (_rowSyncedAt['td_bids'] = new Map())).set(id, Date.now() - 60000);
+        (_lastKnownIds['td_bids'] || (_lastKnownIds['td_bids'] = new Set())).add(id);
+        // Peer's row arrives: they changed `note`, carry the OLD amount, stamped 30s ago.
+        const incoming = { id, amount: 5, note: 'peer' };
+        _applyRealtimeRecord('td_bids', {
+          eventType: 'UPDATE',
+          new: { id, data: incoming, updated_at: new Date(Date.now() - 30000).toISOString() },
+        }, false);
+        const row = bids.find(b => b.id === id);
+        const stampedHash = _syncedHash['td_bids'] && _syncedHash['td_bids'].get(id);
+        const res = {
+          amount: row && row.amount,           // pending edit protected
+          note: row && row.note,               // peer's field taken
+          hashIsIncoming: stampedHash === _hashPayload(incoming),
+          hashIsMerged: stampedHash === _hashPayload(row),
+        };
+        // cleanup
+        const i = bids.findIndex(b => b.id === id); if (i > -1) bids.splice(i, 1);
+        _syncedHash['td_bids'] && _syncedHash['td_bids'].delete(id);
+        _rowSyncedAt['td_bids'] && _rowSyncedAt['td_bids'].delete(id);
+        _lastKnownIds['td_bids'] && _lastKnownIds['td_bids'].delete(id);
+        delete (_fieldClocks['td_bids'] || {})[id];
+        window._opLogShadow = savedFlag;
+        return res;
+      });
+      expect(r.amount).toBe(7);            // the pending local edit survived
+      expect(r.note).toBe('peer');         // the peer's concurrent field landed
+      expect(r.hashIsIncoming).toBe(true); // hash = cloud state → next save re-uploads the merged row
+      expect(r.hashIsMerged).toBe(false);  // NEVER the merged hash (that was the divergence bug)
+    });
+
+    test('already-UPLOADED edit is NOT protected — a fast clock cannot reject peer updates (pending gate)', async () => {
+      const r = await page.evaluate(() => {
+        const id = 'm3-gate-1';
+        const savedFlag = window._opLogShadow; window._opLogShadow = true;
+        bids.push({ id, amount: 7, note: 'local' });
+        // Field clock stamped (simulating a fast wall clock beating the server timestamp)…
+        _opStampFields('td_bids', id, { amount: 1 }, _hlcNow());
+        // …but the row was uploaded AFTER that edit → the edit is NOT pending anymore.
+        (_rowSyncedAt['td_bids'] || (_rowSyncedAt['td_bids'] = new Map())).set(id, Date.now() + 1);
+        (_lastKnownIds['td_bids'] || (_lastKnownIds['td_bids'] = new Set())).add(id);
+        const incoming = { id, amount: 5, note: 'peer' };
+        _applyRealtimeRecord('td_bids', {
+          eventType: 'UPDATE',
+          new: { id, data: incoming, updated_at: new Date(Date.now() - 30000).toISOString() },
+        }, false);
+        const row = bids.find(b => b.id === id);
+        const res = { amount: row && row.amount, note: row && row.note };
+        const i = bids.findIndex(b => b.id === id); if (i > -1) bids.splice(i, 1);
+        _syncedHash['td_bids'] && _syncedHash['td_bids'].delete(id);
+        _rowSyncedAt['td_bids'] && _rowSyncedAt['td_bids'].delete(id);
+        _lastKnownIds['td_bids'] && _lastKnownIds['td_bids'].delete(id);
+        delete (_fieldClocks['td_bids'] || {})[id];
+        window._opLogShadow = savedFlag;
+        return res;
+      });
+      // Incoming wins whole-row: nothing was pending, so nothing is protected.
+      expect(r.amount).toBe(5);
+      expect(r.note).toBe('peer');
+    });
+
+    test('upload stamps _rowSyncedAt (the pending window closes when the save lands)', async () => {
+      const r = await page.evaluate(() => {
+        // _paintCacheForDelta owner-scoped stamp is covered in e2e-delta-load; here prove
+        // the upload path: _upsertTable's success handler must bump _rowSyncedAt.
+        // Cheapest deterministic probe: full-load loop stamps rows as synced.
+        const saved = bids.slice();
+        localStorage.setItem('zp3_cloud_cache', JSON.stringify({ _owner: 'gate-u1', bids: [{ id: 'gate-b1', amount: 1 }], clients: [], jobs: [] }));
+        const ok = _paintCacheForDelta('gate-u1');
+        const stamped = !!(_rowSyncedAt['td_bids'] && _rowSyncedAt['td_bids'].get('gate-b1'));
+        bids.length = 0; saved.forEach(b => bids.push(b));
+        _rowSyncedAt['td_bids'] && _rowSyncedAt['td_bids'].delete('gate-b1');
+        localStorage.removeItem('zp3_cloud_cache');
+        return { ok, stamped };
+      });
+      expect(r.ok).toBe(true);
+      expect(r.stamped).toBe(true); // painted-from-cache rows are "in sync now" → old clocks can't protect stale values
+    });
+  });
+
+  // ── Fix #1 guard: the DEBOUNCED save is tracked in _pendingSavePromise ────────
+  // The lost-edit race: a bare supaSaveToCloud() fired by the 2s debounce timer was
+  // invisible to the silent-load guard, so a reconcile reload racing the in-flight save
+  // could rebuild _syncedHash mid-save and permanently drop the edit. Every save now
+  // routes through _flushSaveNow. This drives the real timer and asserts the promise.
+  test('supaSaveDebounced → the fired save is tracked in _pendingSavePromise (lost-edit race guard)', async () => {
+    test.setTimeout(20000);
+    const r = await page.evaluate(async () => {
+      const savedUser = window._supaUser, savedLoaded = _supaCloudLoaded;
+      const origSave = window.supaSaveToCloud;
+      window._supaUser = window._supaUser || { id: 'race-guard-u' };
+      _supaCloudLoaded = true;
+      let resolveSave; let called = 0;
+      window.supaSaveToCloud = () => { called++; return new Promise(res => { resolveSave = res; }); };
+      try {
+        supaSaveDebounced();
+        // Let the real 2s debounce fire.
+        await new Promise(res => setTimeout(res, 2400));
+        const trackedWhileInFlight = _pendingSavePromise !== null && called === 1;
+        resolveSave && resolveSave();
+        await new Promise(res => setTimeout(res, 50));
+        const clearedAfter = _pendingSavePromise === null;
+        return { trackedWhileInFlight, clearedAfter, called };
+      } finally {
+        window.supaSaveToCloud = origSave;
+        window._supaUser = savedUser; _supaCloudLoaded = savedLoaded;
+        if (_syncTimer) { clearTimeout(_syncTimer); _syncTimer = null; }
+        localStorage.removeItem('zp3_offline_pending');
+      }
+    });
+    expect(r.called).toBe(1);
+    expect(r.trackedWhileInFlight).toBe(true); // the silent-load guard can now await it
+    expect(r.clearedAfter).toBe(true);
+  });
 });

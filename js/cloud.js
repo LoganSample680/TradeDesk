@@ -338,7 +338,7 @@ const _DEV_SUPPORT_USERS={
 async function _devLoadUserAccount(key){
   if(!_config?.is_dev)return;
   clearTimeout(_syncTimer);
-  await supaSaveToCloud();
+  await _flushSaveNow();
   const u=_DEV_SUPPORT_USERS[key];
   if(!u){showToast('Unknown support user','⚠️');return;}
   // Load all per-record tables for target user in parallel (requires dev_support RLS policy)
@@ -449,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.16';
+const APP_VERSION='07.01.26.17';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -507,6 +507,15 @@ let _lastKnownIds={
 // authoritative source of "what the server has"); an offline/cache boot leaves it empty
 // → safe full upload on reconnect.
 let _syncedHash={};
+// PENDING-EDIT GATE for the Phase-3 per-field merge: _rowSyncedAt[tbl] = Map(id → client-ms
+// of the last moment this row was KNOWN IN SYNC with the cloud (uploaded by us, loaded from
+// the cloud, or taken whole from a realtime event). _opApplyIncoming only protects a local
+// field whose clock is NEWER than this — i.e. a genuinely PENDING (not-yet-uploaded) edit.
+// Without the gate, a device with a fast wall clock keeps "protecting" fields it already
+// uploaded long ago, silently rejecting every genuine peer update for the skew duration.
+// Client-clock domain on BOTH sides of the gate comparison, so skew cannot break it.
+// NOT persisted — resets like _syncedHash (a fresh boot treats nothing as pending).
+let _rowSyncedAt={};
 // Fast deterministic 32-bit string hash (FNV-1a) over the JSON of a row payload.
 function _hashPayload(obj){
   let str; try{ str=JSON.stringify(obj); }catch(_e){ return null; }
@@ -730,12 +739,19 @@ function _opApplyIncoming(tbl,localRow,incomingRow,incomingUpdatedAt){
     if(!incMs)return incomingRow; // no comparable incoming clock → defer to the cloud (current behavior)
     const id=String(incomingRow.id!=null?incomingRow.id:localRow.id);
     const clocks=_opFieldClocks(tbl,id);
+    // PENDING GATE: only protect fields edited AFTER this row was last known in sync with
+    // the cloud (uploaded/loaded/taken from realtime — see _rowSyncedAt). An edit that
+    // already reached the cloud needs no protection (the incoming row reflects or
+    // deliberately supersedes it), and gating on it kills the clock-skew failure where a
+    // fast local clock rejected genuine peer updates for the whole skew duration. Both
+    // sides of THIS comparison are client-clock ms, so skew cannot affect the gate itself.
+    const syncedAt=(_rowSyncedAt[tbl]&&_rowSyncedAt[tbl].get(id))||0;
     const out={};let keptLocal=false;
     const keys=new Set([...Object.keys(localRow),...Object.keys(incomingRow)]);
     for(const k of keys){
       const fc=clocks[k];
       const fcMs=fc?((_hlcParse(fc)||{}).ms||0):0;
-      if(fcMs>incMs&&(k in localRow)){out[k]=localRow[k];keptLocal=true;} // local edit is newer → keep it
+      if(fcMs>incMs&&fcMs>syncedAt&&(k in localRow)){out[k]=localRow[k];keptLocal=true;} // PENDING local edit is newer → keep it
       else if(k in incomingRow)out[k]=incomingRow[k];                     // take the incoming value
       else out[k]=localRow[k];
     }
@@ -2662,7 +2678,8 @@ function _wipeLocalAccountData(){
   // Delta-sync baselines are per-account: a stale _syncedHash entry under the next account
   // would suppress re-upload of its own same-id row, and a stale _lastKnownIds set would
   // mis-target the soft-delete sweep. Both rebuild from the next account's cloud load.
-  _syncedHash={};
+  // _rowSyncedAt mirrors _syncedHash (per-account merge gate) — same lifecycle.
+  _syncedHash={};_rowSyncedAt={};
   Object.values(_lastKnownIds).forEach(s=>{if(s&&typeof s.clear==='function')s.clear();});
   // settingsTs:0 — zp3_S is shared across accounts on this device. Without zeroing the
   // timestamp these blanked settings beat the next account's cloud copy and overwrite it.
@@ -2829,7 +2846,12 @@ function supaSaveDebounced(){
   if(_supaCloudLoaded||_mergeOnSignIn){
     try{localStorage.setItem('zp3_offline_pending',_offlinePendingBlob());}catch(_e){}
   }
-  _syncTimer=setTimeout(()=>{_syncTimer=null;supaSaveToCloud();},2000);
+  // The fired save MUST be tracked in _pendingSavePromise (via _flushSaveNow) — a bare
+  // supaSaveToCloud() here is invisible to the silent-load guard in supaLoadFromCloud,
+  // so a reconcile-heartbeat reload racing this in-flight save could replace the arrays
+  // + rebuild _syncedHash mid-save and permanently drop the edit being saved (the
+  // review-confirmed lost-edit race). _flushSaveNow is the ONE tracked entry point.
+  _syncTimer=setTimeout(()=>{_syncTimer=null;_flushSaveNow();},2000);
   if(_supaUser)supaSetStatus('syncing');
 }
 // Cancel the 2s debounce and push the full state to Supabase RIGHT NOW.
@@ -3021,7 +3043,17 @@ function _paintCacheForDelta(uid){
     const cc=JSON.parse(localStorage.getItem('zp3_cloud_cache')||'null');
     if(!cc||cc._owner!==uid)return false;
     const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos};
-    for(const{t,set}of _TD_TABLES)set(Array.isArray(byKey[t])?byKey[t]:[]);
+    const _ptTs=Date.now();
+    for(const{t,set}of _TD_TABLES){
+      const rows=Array.isArray(byKey[t])?byKey[t]:[];
+      set(rows);
+      // Painted rows came from the cloud-derived cache → in sync as of NOW for the merge's
+      // pending-gate. Conservative on purpose: field clocks rehydrated from the op log are
+      // all OLDER than this boot, so none can wrongly "protect" a stale value against a
+      // peer's update. Genuinely-unsaved offline edits don't rely on the merge — they ride
+      // the zp3_offline_pending merge + reconnect flush, which re-uploads them wholesale.
+      _rowSyncedAt[t]=new Map(rows.map(r=>[String(r.id),_ptTs]));
+    }
     if(cc.checksState&&Object.keys(cc.checksState).length)checksState=cc.checksState;
     return true;
   }catch(_e){return false;}
@@ -3149,7 +3181,8 @@ async function supaSaveToCloud(){
           const slice=changed.slice(i,i+50);
           const{error}=await _supa.from(tbl).upsert(slice.map(c=>c.row),{onConflict:'id,user_id'});
           if(error)throw error;
-          slice.forEach(c=>hashes.set(c.id,c.h));
+          const _upTs=Date.now();
+          slice.forEach(c=>{hashes.set(c.id,c.h);(_rowSyncedAt[tbl]||(_rowSyncedAt[tbl]=new Map())).set(c.id,_upTs);}); // uploaded → in sync as of now (ends the merge's pending window)
           window._deltaStats.upserts+=slice.length;_tableWrites+=slice.length;
         }
       }
@@ -3617,7 +3650,7 @@ async function supaLoadFromCloud({silent=false}={}){
     // set(rows) drops the just-saved row out of memory (the offline/reconnect race).
     if(_pendingSavePromise){try{await _pendingSavePromise;}catch(e){}}
   }else{
-    if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;try{await supaSaveToCloud();}catch(e){}}
+    if(_syncTimer){try{await _flushSaveNow();}catch(e){}}
     else if(_pendingSavePromise){try{await _pendingSavePromise;}catch(e){}}
   }  try{
     const uid=_devSupportMode
@@ -3699,10 +3732,11 @@ async function supaLoadFromCloud({silent=false}={}){
         // row (deleted_at set) is removed; any other changed row replaces/adds. A row
         // NOT in this delta is untouched (it hasn't changed since the cursor).
         const byId=new Map((get()||[]).map(r=>[String(r.id),r]));
+        const _ldTs=Date.now();
         for(const r of data){
           const id=String(r.id);
-          if(r.deleted_at){byId.delete(id);_syncedHash[t]&&_syncedHash[t].delete(id);_lastKnownIds[t]&&_lastKnownIds[t].delete(id);}
-          else{byId.set(id,r.data);(_syncedHash[t]||(_syncedHash[t]=new Map())).set(id,_hashPayload(r.data));(_lastKnownIds[t]||(_lastKnownIds[t]=new Set())).add(id);}
+          if(r.deleted_at){byId.delete(id);_syncedHash[t]&&_syncedHash[t].delete(id);_lastKnownIds[t]&&_lastKnownIds[t].delete(id);_rowSyncedAt[t]&&_rowSyncedAt[t].delete(id);}
+          else{byId.set(id,r.data);(_syncedHash[t]||(_syncedHash[t]=new Map())).set(id,_hashPayload(r.data));(_lastKnownIds[t]||(_lastKnownIds[t]=new Set())).add(id);(_rowSyncedAt[t]||(_rowSyncedAt[t]=new Map())).set(id,_ldTs);}
         }
         set([...byId.values()]);
       }else{
@@ -3712,6 +3746,8 @@ async function supaLoadFromCloud({silent=false}={}){
         set(data.map(r=>r.data));
         _lastKnownIds[t]=new Set(data.map(r=>String(r.id)));
         _syncedHash[t]=new Map(data.map(r=>[String(r.id),_hashPayload(r.data)]));
+        const _ldTs=Date.now();
+        _rowSyncedAt[t]=new Map(data.map(r=>[String(r.id),_ldTs])); // loaded from cloud → in sync now; edits older than this load are not "pending"
       }
     }
     if(_newCursor)_deltaCursor=_newCursor;
@@ -3761,7 +3797,7 @@ async function supaLoadFromCloud({silent=false}={}){
     // a force-quit right after boot can't outrun the timer and lose settings.
     if(localStorage.getItem('zp3_pending_sync')==='1'){
       clearTimeout(_syncTimer);_syncTimer=null;
-      setTimeout(()=>supaSaveToCloud(),50);
+      setTimeout(()=>_flushSaveNow(),50);
     }
 
     if(!silent){
@@ -4034,7 +4070,7 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   if((ev==='INSERT'||ev==='UPDATE')&&rec){
     if(rec.deleted_at){
       const idx=arr.findIndex(r=>String(r.id)===String(rec.id));
-      if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(rec.id));_syncedHash[tbl]?.delete(String(rec.id));}
+      if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(rec.id));_syncedHash[tbl]?.delete(String(rec.id));_rowSyncedAt[tbl]?.delete(String(rec.id));}
     }else{
       const data=rec.data||rec;
       const recId=String(data.id!=null?data.id:rec.id);
@@ -4042,19 +4078,29 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
       if(idx!==-1){
         // PHASE 3 (authoritative, gated): per-field merge so a peer's save can't clobber a
         // field this device edited more recently. Fail-safe — returns `data` unless gated AND
-        // a provably-newer local field exists, so the default path is byte-for-byte unchanged.
+        // a provably-newer PENDING local field exists (see the _rowSyncedAt gate), so the
+        // default path is byte-for-byte unchanged.
         const merged=_opApplyIncoming(tbl,arr[idx],data,rec.updated_at);
-        arr[idx]=merged;_syncedHash[tbl]?.set(recId,_hashPayload(merged));
+        arr[idx]=merged;
+        // CRITICAL: stamp the hash of the INCOMING CLOUD row — never of `merged`. The hash
+        // map means "what the server has". When the merge protected a pending local field,
+        // merged ≠ data, so hashing `merged` would make the next save see hash-match and
+        // SKIP the row — the protected edit would never upload (permanent divergence, the
+        // exact bug the review confirmed). Hashing `data` guarantees the mismatch → the
+        // merged row re-uploads on the next save and the protected edit reaches every peer.
+        _syncedHash[tbl]?.set(recId,_hashPayload(data));
+        if(merged===data)(_rowSyncedAt[tbl]||(_rowSyncedAt[tbl]=new Map())).set(recId,Date.now()); // took cloud row whole → in sync; a kept-pending field stays pending
       }else if(!_lastKnownIds[tbl]?.has(recId)){
         // Only add if this ID was never known to us — if it was known but
         // isn't in arr, we deleted it locally and another device's stale
         // save is trying to resurrect it. Ignore it.
         arr.push(data);_lastKnownIds[tbl]?.add(recId);_syncedHash[tbl]?.set(recId,_hashPayload(data));
+        (_rowSyncedAt[tbl]||(_rowSyncedAt[tbl]=new Map())).set(recId,Date.now());
       }
     }
   }else if(ev==='DELETE'&&payload.old){
     const idx=arr.findIndex(r=>String(r.id)===String(payload.old.id));
-    if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(payload.old.id));_syncedHash[tbl]?.delete(String(payload.old.id));}
+    if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(payload.old.id));_syncedHash[tbl]?.delete(String(payload.old.id));_rowSyncedAt[tbl]?.delete(String(payload.old.id));}
   }
   _writeLocalCache();
   // Skip the heavy ~15-container re-render ONLY for this device's OWN write-echoes
@@ -4593,7 +4639,7 @@ async function _autoSaveAndReload(){
   // that hasn't completed yet. Awaiting an idempotent full-state push
   // guarantees the latest data is in the cloud before reload.
   if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
-  try{await supaSaveToCloud();}catch(e){}
+  try{await _flushSaveNow();}catch(e){}
   // Clear ALL service-worker caches before reloading. The SW serves JS/CSS
   // subresources cache-first (cached||net), so a plain reload of fresh HTML
   // still pulls js/cloud.js — and therefore APP_VERSION — from the stale cache,
@@ -4648,10 +4694,10 @@ window._restoreReceiptsFromStorage=async function(){
   if(restored>0){_flushSaveNow();console.log('Saved.');}
 };
 window.addEventListener('pagehide',()=>{
-  if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;supaSaveToCloud();}
+  if(_syncTimer)_flushSaveNow(); // tracked — a racing silent load must await it
 });
 document.addEventListener('visibilitychange',()=>{
-  if(document.hidden&&_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;supaSaveToCloud();}
+  if(document.hidden&&_syncTimer)_flushSaveNow(); // tracked — a racing silent load must await it
 });
 
 // ── Persistent version check: fires every time app comes to foreground ────────

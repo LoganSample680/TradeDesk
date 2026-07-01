@@ -112,11 +112,12 @@ async function mockAllExternal(page, opts = {}) {
     if (navigator.serviceWorker) {
       navigator.serviceWorker.register = () => Promise.reject(new Error('SW disabled in tests'));
     }
-    // Oplog ships ON in prod (Phase 3), but the mocked offline shards exercise the
-    // unchanged whole-row sync path — keep the oplog OFF here so these suites stay
-    // byte-for-byte as before. The oplog's own behavior is covered by the live flow
-    // specs (tests/flow/oplog-shadow-flow.spec.js), which opt back IN explicitly.
-    window._opLogShadow = false;
+    // Oplog ships ON in prod (Phase 3) — so the offline shards run it ON too. Tests must
+    // exercise the code path real users run; keeping it off here meant the authoritative
+    // per-field merge was live in production while every mocked suite certified the
+    // whole-row path instead (the review flagged exactly that gap). The mocked Supabase
+    // chain absorbs td_ops traffic as no-ops, and IndexedDB works in the test browsers.
+    window._opLogShadow = true;
   });
 
   await page.route('**/*', async (route) => {
