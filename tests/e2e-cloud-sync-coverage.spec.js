@@ -678,34 +678,42 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     test('protected PENDING edit survives the merge AND is queued for re-upload (hash = incoming, not merged)', async () => {
       const r = await page.evaluate(() => {
         const id = 'm3-pending-1';
-        const savedFlag = window._opLogShadow; window._opLogShadow = true;
-        // Local row with a pending amount edit (field clock stamped NOW, row last synced 60s ago).
-        bids.push({ id, amount: 7, note: 'local' });
-        _opStampFields('td_bids', id, { amount: 1 }, _hlcNow());
-        (_rowSyncedAt['td_bids'] || (_rowSyncedAt['td_bids'] = new Map())).set(id, Date.now() - 60000);
-        (_lastKnownIds['td_bids'] || (_lastKnownIds['td_bids'] = new Set())).add(id);
-        // Peer's row arrives: they changed `note`, carry the OLD amount, stamped 30s ago.
-        const incoming = { id, amount: 5, note: 'peer' };
-        _applyRealtimeRecord('td_bids', {
-          eventType: 'UPDATE',
-          new: { id, data: incoming, updated_at: new Date(Date.now() - 30000).toISOString() },
-        }, false);
-        const row = bids.find(b => b.id === id);
-        const stampedHash = _syncedHash['td_bids'] && _syncedHash['td_bids'].get(id);
-        const res = {
-          amount: row && row.amount,           // pending edit protected
-          note: row && row.note,               // peer's field taken
-          hashIsIncoming: stampedHash === _hashPayload(incoming),
-          hashIsMerged: stampedHash === _hashPayload(row),
-        };
-        // cleanup
-        const i = bids.findIndex(b => b.id === id); if (i > -1) bids.splice(i, 1);
-        _syncedHash['td_bids'] && _syncedHash['td_bids'].delete(id);
-        _rowSyncedAt['td_bids'] && _rowSyncedAt['td_bids'].delete(id);
-        _lastKnownIds['td_bids'] && _lastKnownIds['td_bids'].delete(id);
-        delete (_fieldClocks['td_bids'] || {})[id];
-        window._opLogShadow = savedFlag;
-        return res;
+        const savedFlag = window._opLogShadow, savedSaveAt = _lastLocalSaveAt;
+        try {
+          window._opLogShadow = true;
+          // Skip the ~15-container re-render inside _applyRealtimeRecord (fromRealtime +
+          // recent local save = the echo guard returns AFTER applying data, BEFORE
+          // rendering). This test asserts merge + hash semantics, not the render chain —
+          // and a synchronous render here crashed on the seed row in an unrelated
+          // calendar sort. Data application is unaffected by the guard.
+          _lastLocalSaveAt = Date.now();
+          // Local row with a pending amount edit (field clock stamped NOW, row last synced 60s ago).
+          bids.push({ id, client_id: 1, client_name: 'Merge T', amount: 7, note: 'local', status: 'Pending', bid_date: '2026-07-01' });
+          _opStampFields('td_bids', id, { amount: 1 }, _hlcNow());
+          (_rowSyncedAt['td_bids'] || (_rowSyncedAt['td_bids'] = new Map())).set(id, Date.now() - 60000);
+          (_lastKnownIds['td_bids'] || (_lastKnownIds['td_bids'] = new Set())).add(id);
+          // Peer's row arrives: they changed `note`, carry the OLD amount, stamped 30s ago.
+          const incoming = { id, client_id: 1, client_name: 'Merge T', amount: 5, note: 'peer', status: 'Pending', bid_date: '2026-07-01' };
+          _applyRealtimeRecord('td_bids', {
+            eventType: 'UPDATE',
+            new: { id, data: incoming, updated_at: new Date(Date.now() - 30000).toISOString() },
+          }, true);
+          const row = bids.find(b => b.id === id);
+          const stampedHash = _syncedHash['td_bids'] && _syncedHash['td_bids'].get(id);
+          return {
+            amount: row && row.amount,           // pending edit protected
+            note: row && row.note,               // peer's field taken
+            hashIsIncoming: stampedHash === _hashPayload(incoming),
+            hashIsMerged: stampedHash === _hashPayload(row),
+          };
+        } finally {
+          const i = bids.findIndex(b => b.id === id); if (i > -1) bids.splice(i, 1);
+          _syncedHash['td_bids'] && _syncedHash['td_bids'].delete(id);
+          _rowSyncedAt['td_bids'] && _rowSyncedAt['td_bids'].delete(id);
+          _lastKnownIds['td_bids'] && _lastKnownIds['td_bids'].delete(id);
+          delete (_fieldClocks['td_bids'] || {})[id];
+          window._opLogShadow = savedFlag; _lastLocalSaveAt = savedSaveAt;
+        }
       });
       expect(r.amount).toBe(7);            // the pending local edit survived
       expect(r.note).toBe('peer');         // the peer's concurrent field landed
@@ -716,27 +724,31 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     test('already-UPLOADED edit is NOT protected — a fast clock cannot reject peer updates (pending gate)', async () => {
       const r = await page.evaluate(() => {
         const id = 'm3-gate-1';
-        const savedFlag = window._opLogShadow; window._opLogShadow = true;
-        bids.push({ id, amount: 7, note: 'local' });
-        // Field clock stamped (simulating a fast wall clock beating the server timestamp)…
-        _opStampFields('td_bids', id, { amount: 1 }, _hlcNow());
-        // …but the row was uploaded AFTER that edit → the edit is NOT pending anymore.
-        (_rowSyncedAt['td_bids'] || (_rowSyncedAt['td_bids'] = new Map())).set(id, Date.now() + 1);
-        (_lastKnownIds['td_bids'] || (_lastKnownIds['td_bids'] = new Set())).add(id);
-        const incoming = { id, amount: 5, note: 'peer' };
-        _applyRealtimeRecord('td_bids', {
-          eventType: 'UPDATE',
-          new: { id, data: incoming, updated_at: new Date(Date.now() - 30000).toISOString() },
-        }, false);
-        const row = bids.find(b => b.id === id);
-        const res = { amount: row && row.amount, note: row && row.note };
-        const i = bids.findIndex(b => b.id === id); if (i > -1) bids.splice(i, 1);
-        _syncedHash['td_bids'] && _syncedHash['td_bids'].delete(id);
-        _rowSyncedAt['td_bids'] && _rowSyncedAt['td_bids'].delete(id);
-        _lastKnownIds['td_bids'] && _lastKnownIds['td_bids'].delete(id);
-        delete (_fieldClocks['td_bids'] || {})[id];
-        window._opLogShadow = savedFlag;
-        return res;
+        const savedFlag = window._opLogShadow, savedSaveAt = _lastLocalSaveAt;
+        try {
+          window._opLogShadow = true;
+          _lastLocalSaveAt = Date.now(); // echo guard → skip the render chain (see prior test)
+          bids.push({ id, client_id: 1, client_name: 'Merge T', amount: 7, note: 'local', status: 'Pending', bid_date: '2026-07-01' });
+          // Field clock stamped (simulating a fast wall clock beating the server timestamp)…
+          _opStampFields('td_bids', id, { amount: 1 }, _hlcNow());
+          // …but the row was uploaded AFTER that edit → the edit is NOT pending anymore.
+          (_rowSyncedAt['td_bids'] || (_rowSyncedAt['td_bids'] = new Map())).set(id, Date.now() + 1);
+          (_lastKnownIds['td_bids'] || (_lastKnownIds['td_bids'] = new Set())).add(id);
+          const incoming = { id, client_id: 1, client_name: 'Merge T', amount: 5, note: 'peer', status: 'Pending', bid_date: '2026-07-01' };
+          _applyRealtimeRecord('td_bids', {
+            eventType: 'UPDATE',
+            new: { id, data: incoming, updated_at: new Date(Date.now() - 30000).toISOString() },
+          }, true);
+          const row = bids.find(b => b.id === id);
+          return { amount: row && row.amount, note: row && row.note };
+        } finally {
+          const i = bids.findIndex(b => b.id === id); if (i > -1) bids.splice(i, 1);
+          _syncedHash['td_bids'] && _syncedHash['td_bids'].delete(id);
+          _rowSyncedAt['td_bids'] && _rowSyncedAt['td_bids'].delete(id);
+          _lastKnownIds['td_bids'] && _lastKnownIds['td_bids'].delete(id);
+          delete (_fieldClocks['td_bids'] || {})[id];
+          window._opLogShadow = savedFlag; _lastLocalSaveAt = savedSaveAt;
+        }
       });
       // Incoming wins whole-row: nothing was pending, so nothing is protected.
       expect(r.amount).toBe(5);
