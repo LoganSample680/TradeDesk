@@ -986,4 +986,48 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.deltaQueried).toBe(true); // the silent load asked "what changed since the cursor"
     expect(r.survived).toBe(true);     // and merged instead of replacing the whole account
   });
+
+  // ── Read-skew guard, load side: the CURSOR is sampled BEFORE the table snapshot ──
+  // The save writes tables→cursor; the load must read cursor→tables. If the cursor is
+  // sampled after the tables, a load racing a peer's save can store a fresh cursor over
+  // stale data — the heartbeat then compares equal and the device goes permanently blind
+  // (the local-stack B→A delete/create failures). Order is recorded at request-FIRE time
+  // (maybeSingle/then), not builder construction, because supabase-js builders are lazy.
+  test('supaLoadFromCloud samples the zj_data cursor BEFORE any td_* table read', async () => {
+    const r = await page.evaluate(async () => {
+      const saved = {
+        supa: _supa, user: window._supaUser, loaded: _supaCloudLoaded, owner: _loadedDataOwner,
+        cursor: _deltaCursor, emp: _isEmployee, hash: _syncedHash, known: _lastKnownIds,
+      };
+      const fired = [];
+      const makeChain = (table) => {
+        const chain = {
+          select() { return chain; }, eq() { return chain; }, gt() { return chain; },
+          in() { return chain; }, is() { return chain; }, order() { return chain; }, limit() { return chain; },
+          maybeSingle() { fired.push(table); return Promise.resolve({ data: { settings: null, checks_state: null, receipt_images: null, updated_at: 'CUR' }, error: null }); },
+          single() { fired.push(table); return Promise.resolve({ data: null, error: null }); },
+          upsert() { return chain; }, update() { return chain; },
+          then(res, rej) { fired.push(table); return Promise.resolve({ data: [], error: null }).then(res, rej); },
+        };
+        return chain;
+      };
+      try {
+        _supa = { from: (t) => makeChain(t) };
+        window._supaUser = { id: 'order-u' };
+        _supaCloudLoaded = true; _isEmployee = false;
+        _loadedDataOwner = 'order-u'; _deltaCursor = new Date().toISOString();
+        await supaLoadFromCloud({ silent: true });
+        const zjIdx = fired.indexOf('zj_data');
+        const firstTdIdx = fired.findIndex(t => /^td_/.test(t));
+        return { zjIdx, firstTdIdx, fired: fired.slice(0, 4) };
+      } finally {
+        _supa = saved.supa; window._supaUser = saved.user; _supaCloudLoaded = saved.loaded;
+        _loadedDataOwner = saved.owner; _deltaCursor = saved.cursor; _isEmployee = saved.emp;
+        _syncedHash = saved.hash; _lastKnownIds = saved.known;
+        _loadInProgress = false; _activeLoadPromise = null;
+      }
+    });
+    expect(r.zjIdx).toBeGreaterThanOrEqual(0);      // the cursor row was read…
+    expect(r.firstTdIdx).toBeGreaterThan(r.zjIdx);  // …strictly BEFORE any table snapshot
+  });
 });

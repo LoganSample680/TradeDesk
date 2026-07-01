@@ -449,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.21';
+const APP_VERSION='07.01.26.22';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3711,8 +3711,18 @@ async function supaLoadFromCloud({silent=false}={}){
       ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
       :(_isEmployee?_contractorUserId:_supaUser.id);
 
-    // Settings load runs in parallel with the table load below.
-    const _settingsP=_supa.from('zj_data').select('settings,checks_state,receipt_images,updated_at').eq('user_id',uid).maybeSingle();
+    // ── CURSOR READ-FIRST — the other half of the read-skew fix ──
+    // The save writes tables FIRST, cursor LAST ("cursor moved ⇒ all data committed").
+    // The load must therefore sample the cursor BEFORE the table snapshot: a stored
+    // cursor can then never be NEWER than the data it vouches for. The old code read
+    // them the other way around (the "parallel" settings builder is lazy — it actually
+    // fired one round-trip AFTER the tables), so a load racing a peer's save could
+    // store a fresh cursor over stale data — the heartbeat then compared equal and the
+    // device went permanently blind to that peer change (the local-stack B→A failures).
+    // Any peer write landing after this sample leaves the server cursor ahead of
+    // _lastZjUpdatedAt, so the heartbeat MUST fire within one interval. Zero added
+    // latency: the reads were already sequential, just in the wrong order.
+    const settingsResult=await _supa.from('zj_data').select('settings,checks_state,receipt_images,updated_at').eq('user_id',uid).maybeSingle();
 
     // EMPLOYEE sessions load through the SECURITY DEFINER RPC load_account_data,
     // which redacts money fields the employee's permissions don't grant — so the
@@ -3781,7 +3791,6 @@ async function supaLoadFromCloud({silent=false}={}){
         tableResults=await _rawLoad();
       }
     }
-    const settingsResult=await _settingsP;
 
     // A table whose migration hasn't reached the live DB yet must NOT abort the entire
     // sync — that would take down ALL cloud loading and trap the app in an offline loop.
@@ -4078,8 +4087,14 @@ function _initRealtimeSubscriptions(uid){
     // zj_data is not in _TD_TABLES (single-row settings, not a record table) but we
     // want instant cross-device settings sync when any device saves. postgres_changes
     // fires on all other subscribed clients the moment the row is written.
-    ch.on('postgres_changes',{event:'UPDATE',schema:'public',table:'zj_data',filter:'user_id=eq.'+uid},()=>{
-      if(Date.now()-_lastLocalSaveAt<=5000)return;         // ignore this device's own save echo
+    ch.on('postgres_changes',{event:'UPDATE',schema:'public',table:'zj_data',filter:'user_id=eq.'+uid},(payload)=>{
+      // Echo detection by CURSOR VALUE, not by time window. The old guard skipped every
+      // zj event within 5s of a local save — which also ate PEER saves in that window
+      // (a co-factor in the local-stack B→A blindness). Our own save's echo carries the
+      // exact updated_at we just stored in _lastZjUpdatedAt — skip that one; anything
+      // else is a cursor state this device hasn't loaded → reconcile (cheap delta now).
+      const _evTs=payload?.new?.updated_at;
+      if(_evTs&&window._lastZjUpdatedAt&&_evTs===window._lastZjUpdatedAt)return; // own echo / already applied
       // A peer save arrived → coalesced reconcile (handles the in-flight-load case via the
       // scheduler's _broadcastPending trailing reload, so a mid-load peer save is never dropped).
       _scheduleReconcile(300);
