@@ -449,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.13';
+const APP_VERSION='07.01.26.14';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -459,6 +459,12 @@ let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_
 let _tdRealtimeReady=false;
 try{Object.defineProperty(window,'_tdRealtimeReady',{get:()=>_tdRealtimeReady,set:v=>{_tdRealtimeReady=v;},configurable:true});}catch(_e){}
 const _deviceId=Math.random().toString(36).slice(2,10);
+// When a PEER change last arrived over the realtime socket. The reconcile heartbeat
+// uses this to stay a pure BACKSTOP: while the socket is actively delivering peer
+// changes it skips its poll (the realtime path already reloads), so it adds ZERO
+// redundant rebuilds. It only takes over when the socket has gone quiet — i.e. an
+// event was dropped or the socket is down — which is exactly when a poll is needed.
+let _lastRealtimeActivityAt=0;
 // Expose sync state and auth objects on window so E2E tests can observe/stub them
 Object.defineProperty(window,'_syncStatus',{get:()=>_syncStatus,configurable:true});
 Object.defineProperty(window,'_supaCloudLoaded',{get:()=>_supaCloudLoaded,configurable:true});
@@ -3831,6 +3837,12 @@ async function supaLoadFromCloud({silent=false}={}){
       setInterval(async()=>{
         if(!_supaUser||_loadInProgress||document.visibilityState==='hidden')return;
         if(Date.now()-_lastLocalSaveAt<3000)return;
+        // Pure BACKSTOP: if the socket delivered a PEER change within the last interval it is
+        // clearly alive and already driving reloads — skip, so the heartbeat never piles a
+        // redundant reload/rebuild on top of realtime (the "render storm" the ratchet caught).
+        // Only when the socket has gone quiet (a dropped event, or it's down) does this poll
+        // take over — which is exactly when it's needed.
+        if(Date.now()-_lastRealtimeActivityAt<_RECONCILE_HEARTBEAT_MS)return;
         try{
           const _puid=_devSupportMode?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id):(_isEmployee?_contractorUserId:_supaUser.id);
           const{data:_zr}=await _supa.from('zj_data').select('updated_at').eq('user_id',_puid).maybeSingle();
@@ -3955,6 +3967,7 @@ function _initRealtimeSubscriptions(uid){
     // fires on all other subscribed clients the moment the row is written.
     ch.on('postgres_changes',{event:'UPDATE',schema:'public',table:'zj_data',filter:'user_id=eq.'+uid},()=>{
       if(Date.now()-_lastLocalSaveAt<=5000)return;         // ignore this device's own save echo
+      _lastRealtimeActivityAt=Date.now();                  // peer change delivered → socket alive (backstop stands down)
       // A peer save arrived. If a load is already in flight, DON'T drop it — flag a
       // trailing reload so supaLoadFromCloud's finally re-reads the now-committed state.
       // Dropping it here was the "last update lost" race: on a slow reload the final
@@ -3984,6 +3997,7 @@ function _initRealtimeSubscriptions(uid){
     _syncBroadcastChannel
       .on('broadcast',{event:'data_saved'},(msg)=>{
         if(msg?.payload?.deviceId===_deviceId&&Date.now()-_lastLocalSaveAt<5000)return;
+        _lastRealtimeActivityAt=Date.now();                  // peer broadcast delivered → socket alive (backstop stands down)
         // Can't reload during an in-flight load — but DON'T just drop it: remember a
         // peer update arrived so supaLoadFromCloud's finally re-runs one trailing load
         // (otherwise a rapid burst leaves this device on a stale mid-burst value).
@@ -4064,6 +4078,7 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   // render-parity tests) pass no fromRealtime flag, so they still dispatch synchronously;
   // a genuine peer change (no recent local save) also renders. Data is always applied above.
   if(fromRealtime&&Date.now()-_lastLocalSaveAt<5000)return;
+  if(fromRealtime)_lastRealtimeActivityAt=Date.now();  // genuine peer record delivered → socket alive (heartbeat stands down)
   renderDash&&renderDash();buildScopeGrid&&buildScopeGrid();
   renderClientList&&renderClientList();renderLeadsPage&&renderLeadsPage();
   renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
