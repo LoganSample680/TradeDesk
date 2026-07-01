@@ -935,6 +935,19 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(html).toContain('Connect Stripe Account');
       expect(html).not.toContain('Reset connection');
     });
+
+    // The connected state must expose an in-app unlink (the whole point of the
+    // feature) alongside Manage — so Stripe can be disconnected without SQL.
+    test('connected state renders a Disconnect (unlink) control', async () => {
+      const html = await page.evaluate(() => {
+        const el = document.createElement('div');
+        _renderStripeConnectUI(el, { connected: true, charges_enabled: true, stripe_account_id: 'acct_live', payouts_enabled: true });
+        return el.innerHTML;
+      });
+      expect(html).toContain('Manage in Stripe');
+      expect(html).toContain('Disconnect');
+      expect(html).toContain('disconnectStripeConnect');
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
