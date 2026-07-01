@@ -169,7 +169,11 @@ function _renderIntegrations() {
 function _openStripeConnect() {
   const el = document.getElementById('stripe-connect-status-ui');
   if (el) { el.style.display = 'block'; try{el.scrollIntoView({behavior:'smooth',block:'nearest'});}catch(e){} }
-  if (typeof _renderStripeConnectUI === 'function') _renderStripeConnectUI();
+  // loadStripeConnectStatus() owns the full render path: it looks up the
+  // container, fetches the (cached) Connect status, and calls
+  // _renderStripeConnectUI(el, data) with BOTH args. Calling the renderer
+  // directly with no args passed el=undefined → el.innerHTML threw.
+  if (typeof loadStripeConnectStatus === 'function') loadStripeConnectStatus();
 }
 
 function _filterSetRows(q) {

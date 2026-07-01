@@ -534,4 +534,37 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     });
     expect(r.ok).toBe(true);
   });
+
+  // ── version/SW-update reload must NOT fire mid cold-load ───────────────────
+  // Regression for "loading then crashed": a SW_UPDATED / version-poll reload
+  // firing during the initial supaLoadFromCloud on a heavy account hid the body
+  // and reloaded mid-load, stranding the app on a blank page. _autoSaveAndReload
+  // must DEFER while _loadInProgress and never blank the page.
+  test('_autoSaveAndReload defers (never blanks the page) while a cold load is in progress', async () => {
+    const r = await page.evaluate(async () => {
+      // These are `let` globals in cloud.js — reference by bare name, not window.*
+      const saved = { load: _loadInProgress, pending: _reloadPending, deferred: _deferredReload, vis: document.body.style.visibility };
+      try {
+        _reloadPending = false;
+        _deferredReload = false;
+        _loadInProgress = true;              // simulate an in-flight cold load
+        document.body.style.visibility = '';
+        _autoSaveAndReload();                // version/SW reload fires mid-load
+        await new Promise(res => setTimeout(res, 30));
+        return {
+          deferred: _deferredReload === true,
+          reloadPending: _reloadPending === true,
+          bodyHidden: document.body.style.visibility === 'hidden',
+        };
+      } finally {
+        _loadInProgress = saved.load;
+        _reloadPending = saved.pending;
+        _deferredReload = saved.deferred;    // clear so no real load fires the reload later
+        document.body.style.visibility = saved.vis;
+      }
+    });
+    expect(r.deferred).toBe(true);        // it registered a deferred reload
+    expect(r.reloadPending).toBe(false);  // it did NOT proceed into the reload
+    expect(r.bodyHidden).toBe(false);     // and critically did NOT blank the page
+  });
 });

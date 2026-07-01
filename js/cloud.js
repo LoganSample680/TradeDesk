@@ -62,6 +62,22 @@ async function loadStripeConnectStatus(){
 function _renderStripeConnectUI(el,data){
   if(!el)return;
   if(!data||!data.connected){
+    // A stored account the backend couldn't verify in THIS environment (e.g. a
+    // live account viewed from a test-mode preview, or a deleted account). Offer
+    // an explicit reset so a fresh account can be connected — the dead-Connect trap.
+    if(data&&data.has_stored_account){
+      el.innerHTML=
+        '<div style="display:flex;align-items:flex-start;gap:8px;background:#FFF8F0;border:1px solid var(--amber);border-radius:var(--r);padding:10px 12px;margin-bottom:10px">'+
+          '<span style="font-size:16px">⚠️</span>'+
+          '<div>'+
+            '<div style="font-size:13px;font-weight:700;color:#856404">Existing Stripe connection can’t be verified here</div>'+
+            '<div style="font-size:11px;color:var(--text3);line-height:1.5">A Stripe account is linked but isn’t reachable in this environment (test vs live mode). Reset the connection to link a fresh account.</div>'+
+          '</div>'+
+        '</div>'+
+        '<button class="btn btn-p btn-sm" onclick="startStripeConnect()">⚡ Connect a new account</button>'+
+        '<button class="btn btn-sm" onclick="disconnectStripeConnect()" style="margin-left:8px;font-size:12px;color:var(--red)">Reset connection</button>';
+      return;
+    }
     el.innerHTML=
       '<div style="font-size:13px;color:var(--text2);margin-bottom:10px;line-height:1.5">Connect your Stripe account so clients can pay you directly via card or bank transfer. Money lands in your Stripe account instantly.</div>'+
       '<button class="btn btn-p" onclick="startStripeConnect()" style="font-size:13px;padding:10px 18px">⚡ Connect Stripe Account</button>';
@@ -76,7 +92,8 @@ function _renderStripeConnectUI(el,data){
           '<div style="font-size:11px;color:var(--text3)">Account created but onboarding not finished.</div>'+
         '</div>'+
       '</div>'+
-      '<button class="btn btn-p btn-sm" onclick="startStripeConnect()">Resume setup →</button>';
+      '<button class="btn btn-p btn-sm" onclick="startStripeConnect()">Resume setup →</button>'+
+      '<button class="btn btn-sm" onclick="disconnectStripeConnect()" style="margin-left:8px;font-size:12px;color:var(--red)">Disconnect</button>';
     return;
   }
   // Fully connected
@@ -88,7 +105,8 @@ function _renderStripeConnectUI(el,data){
         '<div style="font-size:11px;color:var(--text3)">Account: '+escHtml(data.stripe_account_id)+(data.payouts_enabled?' · Payouts on':' · Payouts pending')+'</div>'+
       '</div>'+
     '</div>'+
-    '<button class="btn btn-sm" onclick="openStripeConnect()" style="font-size:11px;color:var(--text3)">Manage in Stripe →</button>';
+    '<button class="btn btn-sm" onclick="openStripeConnect()" style="font-size:11px;color:var(--text3)">Manage in Stripe →</button>'+
+    '<button class="btn btn-sm" onclick="disconnectStripeConnect()" style="margin-left:8px;font-size:11px;color:var(--red)">Disconnect</button>';
 }
 
 async function startStripeConnect(){
@@ -114,6 +132,39 @@ async function startStripeConnect(){
 function openStripeConnect(){
   // Express connected accounts are managed at express.stripe.com, not dashboard.stripe.com
   window.open('https://express.stripe.com/','_blank');
+}
+
+// Unlink Stripe from this account — clears the stored pointer so the next
+// "Connect" starts fresh onboarding. Does NOT touch the Stripe account itself
+// (it may be the owner's real account). Replaces the manual Supabase clear we
+// used to run before reconnecting a test account.
+async function disconnectStripeConnect(){
+  if(!supaEnabled()||!_supaUser){zAlert('Sign in first.');return;}
+  zConfirm(
+    'This unlinks Stripe from your TradeDesk account. Your Stripe account itself is not deleted — you can reconnect anytime. Clients won’t be able to pay online until you reconnect.',
+    async ()=>{
+      try{
+        const session=await _supa.auth.getSession();
+        const token=session?.data?.session?.access_token;
+        const res=await fetch(SUPA_URL+'/functions/v1/stripe-connect-disconnect',{
+          method:'POST',
+          headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+          body:'{}'
+        });
+        const data=await res.json();
+        if(!res.ok||data.error){zAlert('Could not disconnect: '+(data.error||('HTTP '+res.status)));return;}
+        // Drop the cached status so the UI immediately reflects the unlink, then re-render.
+        try{localStorage.removeItem('td_stripe_status_'+(_supaUser?.id||''));}catch(e){}
+        _stripeConnectStatus={connected:false};
+        if(typeof _renderIntegrations==='function')_renderIntegrations();
+        loadStripeConnectStatus();
+        if(typeof showToast==='function')showToast('Stripe disconnected','✅',4000);
+      }catch(e){
+        zAlert('Could not disconnect Stripe: '+e.message);
+      }
+    },
+    {title:'Disconnect Stripe?',yes:'Disconnect',no:'Keep connected'}
+  );
 }
 
 async function checkStripeConnectReturn(){
@@ -414,7 +465,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='06.30.26.30';
+const APP_VERSION='06.30.26.44';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false;
 const _deviceId=Math.random().toString(36).slice(2,10);
@@ -3764,6 +3815,11 @@ async function supaLoadFromCloud({silent=false}={}){
     _removeBootOverlay();renderDash();buildScopeGrid();supaSetStatus('error');
   }finally{
     _loadInProgress=false;
+    // A version/SW-update reload arrived mid-load and was deferred (see
+    // _autoSaveAndReload). The load has now settled, so it's safe to reload into
+    // the new code without stranding the app. setTimeout lets this finally unwind
+    // first; _loadInProgress is false now, so the guard there won't re-defer.
+    if(_deferredReload){_deferredReload=false;setTimeout(()=>_autoSaveAndReload(),0);}
     if(_resolveActiveLoad)_resolveActiveLoad();_activeLoadPromise=null; // release any caller awaiting this in-flight load
     // If a peer broadcast arrived while this load was in flight, run one trailing load
     // now (it couldn't reload mid-load) so this device doesn't stay on a stale value.
@@ -4346,6 +4402,7 @@ function _showUpdateOverlay(){
   document.body.appendChild(ov);
 }
 let _reloadPending=false;
+let _deferredReload=false; // a version/SW reload asked to fire mid cold-load — held until the load settles
 function _snapshotForms(){
   // Capture all visible form inputs so unsaved data (client form, expense
   // modal, log-trip modal, etc.) survives the auto-update reload.
@@ -4373,6 +4430,13 @@ function _snapshotForms(){
 }
 async function _autoSaveAndReload(){
   if(_reloadPending)return; // SW_UPDATED + version.json poll can both fire — only the first wins
+  // NEVER reload DURING an in-flight cold load. On a heavy account the initial
+  // supaLoadFromCloud can take several seconds; a mid-load reload (below: hide
+  // body → wipe SW caches → location.replace) collides with it and strands the
+  // app on a hidden/blank page — the "loading then crashed" report. Defer here
+  // and let supaLoadFromCloud's finally re-fire once the load settles. Must
+  // return BEFORE hiding the body, or the page stays invisible.
+  if(_loadInProgress){_deferredReload=true;return;}
   _reloadPending=true;
   if(_devSupportMode){location.reload();return;} // dev's own data already saved on support entry — never push support user data to cloud
   document.body.style.visibility='hidden'; // hide current page during save — boot overlay handles the visual after reload

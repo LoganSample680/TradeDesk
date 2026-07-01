@@ -798,6 +798,143 @@ test.describe('settings.js — exhaustive coverage', () => {
       const ok = await concurrent('_openStripeConnect()', 5);
       expect(ok).toBe(5);
     });
+
+    // Regression — the Manage/Connect tap-target used to call
+    // _renderStripeConnectUI() with NO arguments (el=undefined), throwing
+    // "Cannot set properties of undefined (setting 'innerHTML')" (cloud.js:63),
+    // and even once guarded it revealed an EMPTY box. _openStripeConnect must
+    // route through loadStripeConnectStatus(), which looks up the container and
+    // renders status (sign-in prompt / not-connected / connected / error) into
+    // it — every branch fills the box, none leaves it blank.
+    test('Manage tap-target renders status into the box, never an empty panel', async () => {
+      const r = await page.evaluate(async () => {
+        let el = document.getElementById('stripe-connect-status-ui');
+        let created = false;
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'stripe-connect-status-ui';
+          document.body.appendChild(el);
+          created = true;
+        }
+        el.innerHTML = '';
+        el.style.display = 'none';
+        let threw = null;
+        try { _openStripeConnect(); } catch (e) { threw = e.message; }
+        // loadStripeConnectStatus renders synchronously in the no-cloud branch and
+        // async after a fetch otherwise — poll briefly to cover both.
+        const start = Date.now();
+        while (el.innerHTML.trim() === '' && Date.now() - start < 3000) {
+          await new Promise(res => setTimeout(res, 50));
+        }
+        const out = { threw, display: el.style.display, filled: el.innerHTML.trim().length > 0 };
+        if (created) el.remove();
+        return out;
+      });
+      expect(r.threw).toBe(null);
+      expect(r.display).toBe('block');
+      expect(r.filled).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // disconnectStripeConnect — in-app unlink (replaces the manual Supabase clear)
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('disconnectStripeConnect', () => {
+    test('signed-out — alerts, opens no confirm, does not throw', async () => {
+      const r = await page.evaluate(async () => {
+        const savedUser = window._supaUser;
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        window._supaUser = null;
+        let threw = null;
+        try { disconnectStripeConnect(); } catch (e) { threw = e.message; }
+        await new Promise(res => setTimeout(res, 30));
+        // The guard shows a zAlert ('Sign in first') — itself a .zmodal-overlay.
+        // What must NOT appear is the Disconnect CONFIRM dialog ('Disconnect Stripe?').
+        const confirmShown = [...document.querySelectorAll('.zmodal-overlay')]
+          .some(o => (o.querySelector('.zmodal-title')?.textContent || '').includes('Disconnect Stripe'));
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        window._supaUser = savedUser;
+        return { threw, confirmShown };
+      });
+      expect(r.threw).toBe(null);
+      expect(r.confirmShown).toBe(false); // guarded before ever reaching the confirm
+    });
+
+    test('signed-in — opens a Disconnect confirm dialog', async () => {
+      const r = await page.evaluate(async () => {
+        const savedUser = window._supaUser;
+        const savedEnabled = window.supaEnabled;
+        window._supaUser = { id: 'e2e-user' };
+        window.supaEnabled = () => true;
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        disconnectStripeConnect();
+        await new Promise(res => setTimeout(res, 30));
+        const overlay = document.querySelector('.zmodal-overlay');
+        const title = overlay ? (overlay.querySelector('.zmodal-title')?.textContent || '') : '';
+        const yesLabel = overlay ? (overlay.querySelector('#zmodal-yes')?.textContent || '') : '';
+        overlay && overlay.remove();
+        window._supaUser = savedUser;
+        window.supaEnabled = savedEnabled;
+        return { hasOverlay: !!overlay, title, yesLabel };
+      });
+      expect(r.hasOverlay).toBe(true);
+      expect(r.title).toContain('Disconnect');
+      expect(r.yesLabel).toContain('Disconnect');
+    });
+
+    test('confirmed — clears status + cached state, re-renders, no throw', async () => {
+      const r = await page.evaluate(async () => {
+        const savedUser = window._supaUser;
+        const savedEnabled = window.supaEnabled;
+        const savedSupa = window._supa;
+        window._supaUser = { id: 'e2e-user' };
+        window.supaEnabled = () => true;
+        window._supa = { auth: { getSession: async () => ({ data: { session: { access_token: 't' } } }) } };
+        window._stripeConnectStatus = { connected: true, charges_enabled: true, stripe_account_id: 'acct_x' };
+        try { localStorage.setItem('td_stripe_status_e2e-user', JSON.stringify({ ts: Date.now(), data: { connected: true } })); } catch (e) {}
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        let threw = null;
+        try {
+          disconnectStripeConnect();
+          await new Promise(res => setTimeout(res, 30));
+          document.querySelector('#zmodal-yes')?.click(); // confirm → runs the unlink
+          await new Promise(res => setTimeout(res, 250)); // let the mocked fetch + re-render settle
+        } catch (e) { threw = e.message; }
+        const status = window._stripeConnectStatus;
+        window._supaUser = savedUser;
+        window.supaEnabled = savedEnabled;
+        window._supa = savedSupa;
+        return { threw, connected: !!(status && status.connected) };
+      });
+      expect(r.threw).toBe(null);
+      // Seeded connected:true; a successful unlink flips it away from connected
+      // (the re-render may repaint it, but never back to connected).
+      expect(r.connected).toBe(false);
+    });
+
+    // Regression — an existing account the backend can't verify in THIS
+    // environment (live account on a test-mode preview, or a deleted account)
+    // must NOT render a dead Connect button. It offers an explicit Reset.
+    test('unverifiable stored account → offers Reset connection (not a dead Connect)', async () => {
+      const html = await page.evaluate(() => {
+        const el = document.createElement('div');
+        _renderStripeConnectUI(el, { connected: false, has_stored_account: true, stored_account_id: 'acct_dead' });
+        return el.innerHTML;
+      });
+      expect(html).toContain('Reset connection');
+      expect(html).toContain('disconnectStripeConnect');
+      expect(html).toContain('can’t be verified');
+    });
+
+    test('plain not-connected (no stored account) → normal Connect, no Reset', async () => {
+      const html = await page.evaluate(() => {
+        const el = document.createElement('div');
+        _renderStripeConnectUI(el, { connected: false });
+        return el.innerHTML;
+      });
+      expect(html).toContain('Connect Stripe Account');
+      expect(html).not.toContain('Reset connection');
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
