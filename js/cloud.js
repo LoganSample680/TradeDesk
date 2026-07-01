@@ -449,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.8';
+const APP_VERSION='07.01.26.9';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -458,6 +458,12 @@ let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_
 // on the initiation flag — waiting on the initiation flag races ahead of delivery.
 let _tdRealtimeReady=false;
 try{Object.defineProperty(window,'_tdRealtimeReady',{get:()=>_tdRealtimeReady,set:v=>{_tdRealtimeReady=v;},configurable:true});}catch(_e){}
+// Adaptive reconcile: realtime can DROP an event (notably the LAST of a rapid same-row
+// burst), and the 30s backstop is far too slow to catch it. On any realtime activity we
+// briefly poll zj_data.updated_at (a tiny REST read that lands even when the socket
+// dropped the event), reload on a change, then relax — so a device always converges to
+// the newest value within seconds, not 30s. Only active for a short window per burst.
+let _fastReconcileTimer=null,_fastReconcileUntil=0;
 const _deviceId=Math.random().toString(36).slice(2,10);
 // Expose sync state and auth objects on window so E2E tests can observe/stub them
 Object.defineProperty(window,'_syncStatus',{get:()=>_syncStatus,configurable:true});
@@ -3907,6 +3913,22 @@ async function supaLoadFromCloud({silent=false}={}){
     }
   }
 }
+function _kickFastReconcile(){
+  _fastReconcileUntil=Date.now()+16000; // fast-check for 16s after the latest realtime activity
+  if(_fastReconcileTimer)return;         // already ticking — just extended the window
+  const _tick=async()=>{
+    if(Date.now()>_fastReconcileUntil){_fastReconcileTimer=null;return;}
+    _fastReconcileTimer=setTimeout(_tick,2500);
+    if(!_supaUser||_loadInProgress||document.visibilityState==='hidden')return;
+    if(Date.now()-_lastLocalSaveAt<2000)return; // our own just-written echo
+    try{
+      const _puid=_devSupportMode?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id):(_isEmployee?_contractorUserId:_supaUser.id);
+      const{data:_zr}=await _supa.from('zj_data').select('updated_at').eq('user_id',_puid).maybeSingle();
+      if(_zr?.updated_at&&window._lastZjUpdatedAt&&_zr.updated_at!==window._lastZjUpdatedAt)supaLoadFromCloud({silent:true});
+    }catch(_e){}
+  };
+  _fastReconcileTimer=setTimeout(_tick,2500);
+}
 function _initRealtimeSubscriptions(uid){
   try{
     const ch=_supa.channel('td-sync-'+uid);
@@ -3920,6 +3942,7 @@ function _initRealtimeSubscriptions(uid){
     // fires on all other subscribed clients the moment the row is written.
     ch.on('postgres_changes',{event:'UPDATE',schema:'public',table:'zj_data',filter:'user_id=eq.'+uid},()=>{
       if(Date.now()-_lastLocalSaveAt<=5000)return;         // ignore this device's own save echo
+      _kickFastReconcile();                                 // catch a dropped follow-up event fast
       // A peer save arrived. If a load is already in flight, DON'T drop it — flag a
       // trailing reload so supaLoadFromCloud's finally re-reads the now-committed state.
       // Dropping it here was the "last update lost" race: on a slow reload the final
@@ -3981,6 +4004,9 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
     // corrupts the delta/lastKnownIds state so the soft-delete sweep loses its queued bid.
     if(_curOwner&&_recOwner&&_recOwner!==_curOwner)return;
   }
+  // Any peer event → briefly fast-poll so a DROPPED sibling event (e.g. the last of a
+  // rapid burst) is still caught within seconds via the reliable REST read.
+  _kickFastReconcile();
   // CONVERGENCE: if a peer change lands WHILE a (silent) load is in flight, that
   // load's set(rows) can overwrite the patch we're about to apply with the pre-change
   // snapshot it already read — the "last update lost" / fresh-create-dropped race that
