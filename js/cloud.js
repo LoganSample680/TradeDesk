@@ -449,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.7';
+const APP_VERSION='07.01.26.8';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3889,12 +3889,21 @@ async function supaLoadFromCloud({silent=false}={}){
     // first; _loadInProgress is false now, so the guard there won't re-defer.
     if(_deferredReload){_deferredReload=false;setTimeout(()=>_autoSaveAndReload(),0);}
     if(_resolveActiveLoad)_resolveActiveLoad();_activeLoadPromise=null; // release any caller awaiting this in-flight load
-    // If a peer broadcast arrived while this load was in flight, run one trailing load
-    // now (it couldn't reload mid-load) so this device doesn't stay on a stale value.
+    // A peer change arrived while this load was in flight — run ONE trailing load so
+    // this device doesn't stay on a stale value. CRITICAL: if another load is still
+    // running when the timer fires, RETRY (don't drop it). The old code dropped the
+    // trailing load whenever _loadInProgress was true at the 300ms mark; under a burst
+    // on a slow (bloated) account reloads are back-to-back, so the final catch-up read
+    // evaporated and the device stayed one update behind (B stuck on 5004; a peer's new
+    // bid never pulled). Retrying until the load clears guarantees eventual convergence.
     if(_broadcastPending){
       _broadcastPending=false;
       clearTimeout(_broadcastReloadTimer);
-      _broadcastReloadTimer=setTimeout(()=>{if(!_loadInProgress)supaLoadFromCloud({silent:true});},300);
+      const _trailing=()=>{
+        if(_loadInProgress){_broadcastReloadTimer=setTimeout(_trailing,200);return;}
+        supaLoadFromCloud({silent:true});
+      };
+      _broadcastReloadTimer=setTimeout(_trailing,300);
     }
   }
 }
