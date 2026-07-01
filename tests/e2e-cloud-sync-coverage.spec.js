@@ -689,6 +689,10 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
           _lastLocalSaveAt = Date.now();
           // Local row with a pending amount edit (field clock stamped NOW, row last synced 60s ago).
           bids.push({ id, client_id: 1, client_name: 'Merge T', amount: 7, note: 'local', status: 'Pending', bid_date: '2026-07-01' });
+          // A device that holds this row has a synced-hash entry from its load — seed it like
+          // production. (The apply stamps via _syncedHash[tbl]?.set — no map, no stamp, and the
+          // mocked boot never cloud-loads, which is what tripped this assertion on CI.)
+          (_syncedHash['td_bids'] || (_syncedHash['td_bids'] = new Map())).set(id, 'stale-prev-hash');
           _opStampFields('td_bids', id, { amount: 1 }, _hlcNow());
           (_rowSyncedAt['td_bids'] || (_rowSyncedAt['td_bids'] = new Map())).set(id, Date.now() - 60000);
           (_lastKnownIds['td_bids'] || (_lastKnownIds['td_bids'] = new Set())).add(id);
@@ -729,6 +733,7 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
           window._opLogShadow = true;
           _lastLocalSaveAt = Date.now(); // echo guard → skip the render chain (see prior test)
           bids.push({ id, client_id: 1, client_name: 'Merge T', amount: 7, note: 'local', status: 'Pending', bid_date: '2026-07-01' });
+          (_syncedHash['td_bids'] || (_syncedHash['td_bids'] = new Map())).set(id, 'stale-prev-hash'); // seeded like production (see prior test)
           // Field clock stamped (simulating a fast wall clock beating the server timestamp)…
           _opStampFields('td_bids', id, { amount: 1 }, _hlcNow());
           // …but the row was uploaded AFTER that edit → the edit is NOT pending anymore.
