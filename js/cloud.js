@@ -449,9 +449,9 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.14';
+const APP_VERSION='07.01.26.15';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
-let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false;
+let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
 // flips true only when the td-sync channel confirms SUBSCRIBED (delivery is live).
 // Anything that depends on actually RECEIVING peer changes should gate on this, not
@@ -459,12 +459,25 @@ let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_
 let _tdRealtimeReady=false;
 try{Object.defineProperty(window,'_tdRealtimeReady',{get:()=>_tdRealtimeReady,set:v=>{_tdRealtimeReady=v;},configurable:true});}catch(_e){}
 const _deviceId=Math.random().toString(36).slice(2,10);
-// When a PEER change last arrived over the realtime socket. The reconcile heartbeat
-// uses this to stay a pure BACKSTOP: while the socket is actively delivering peer
-// changes it skips its poll (the realtime path already reloads), so it adds ZERO
-// redundant rebuilds. It only takes over when the socket has gone quiet — i.e. an
-// event was dropped or the socket is down — which is exactly when a poll is needed.
-let _lastRealtimeActivityAt=0;
+// COALESCED RECONCILE — every cross-device "something changed, re-read the cloud" trigger
+// (the zj_data postgres_changes handler, the data_saved broadcast, and the reconcile
+// heartbeat) funnels through here instead of each calling supaLoadFromCloud itself. A single
+// debounced timer means a peer's ONE save — which fans out into a per-record patch, a settings
+// write, a marker write, and a broadcast — collapses to ONE trailing reload, not four (the
+// "render storm" the ratchet caught). The per-record patch path is untouched: it still applies
+// + renders the row immediately; this only coalesces the heavier full-reload backstops. Because
+// EVERY trigger (heartbeat included) schedules the same reconcile, a dropped realtime event is
+// still caught — the backstop is preserved, unlike a "suppress while the socket was recently
+// active" gate, which wrongly swallowed a dropped event that followed a delivered one.
+function _scheduleReconcile(delay){
+  if(_loadInProgress){_broadcastPending=true;return;} // a load is running — its finally re-fires
+  if(_reconcileTimer)return;                          // one already queued — coalesce into it
+  _reconcileTimer=setTimeout(()=>{
+    _reconcileTimer=null;
+    if(_loadInProgress){_broadcastPending=true;return;}
+    supaLoadFromCloud({silent:true});
+  },delay==null?300:delay);
+}
 // Expose sync state and auth objects on window so E2E tests can observe/stub them
 Object.defineProperty(window,'_syncStatus',{get:()=>_syncStatus,configurable:true});
 Object.defineProperty(window,'_supaCloudLoaded',{get:()=>_supaCloudLoaded,configurable:true});
@@ -2627,6 +2640,7 @@ function _teardownRealtimeChannels(){
   _realtimeSubscribed=false; // force the next account's load to re-subscribe under ITS uid
   _tdRealtimeReady=false;    // channels are gone — delivery is no longer live
   clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;_broadcastPending=false;
+  clearTimeout(_reconcileTimer);_reconcileTimer=null;
 }
 // Hard-wipe THIS account's entire local footprint so nothing can bleed into the next
 // account signed in on the same device (bug #39). Idempotent — safe to call from both
@@ -2634,7 +2648,7 @@ function _teardownRealtimeChannels(){
 function _wipeLocalAccountData(){
   clearTimeout(_syncTimer);_syncTimer=null; // prevent a live timer from flushing emptied arrays
   _teardownRealtimeChannels(); // CRITICAL: close A's live channels so they can't re-deliver A's rows into B
-  _supaCloudLoaded=false;_realtimeSubscribed=false;_loadInProgress=false;clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;
+  _supaCloudLoaded=false;_realtimeSubscribed=false;_loadInProgress=false;clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;clearTimeout(_reconcileTimer);_reconcileTimer=null;
   // Cross-account merge state: _mergeOnSignIn + the offline blob hold THIS account's data;
   // if either survives, the next account's SIGNED_IN merge pushes this account's records
   // into theirs. Hard-clear them plus the cloud cache so nothing leaks forward.
@@ -3835,20 +3849,15 @@ async function supaLoadFromCloud({silent=false}={}){
       // local save (our own echo) and while the tab is hidden or a load is already running.
       const _RECONCILE_HEARTBEAT_MS=5000;
       setInterval(async()=>{
-        if(!_supaUser||_loadInProgress||document.visibilityState==='hidden')return;
+        if(!_supaUser||_loadInProgress||_reconcileTimer||document.visibilityState==='hidden')return;
         if(Date.now()-_lastLocalSaveAt<3000)return;
-        // Pure BACKSTOP: if the socket delivered a PEER change within the last interval it is
-        // clearly alive and already driving reloads — skip, so the heartbeat never piles a
-        // redundant reload/rebuild on top of realtime (the "render storm" the ratchet caught).
-        // Only when the socket has gone quiet (a dropped event, or it's down) does this poll
-        // take over — which is exactly when it's needed.
-        if(Date.now()-_lastRealtimeActivityAt<_RECONCILE_HEARTBEAT_MS)return;
         try{
           const _puid=_devSupportMode?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id):(_isEmployee?_contractorUserId:_supaUser.id);
           const{data:_zr}=await _supa.from('zj_data').select('updated_at').eq('user_id',_puid).maybeSingle();
-          if(_zr?.updated_at&&window._lastZjUpdatedAt&&_zr.updated_at!==window._lastZjUpdatedAt){
-            supaLoadFromCloud({silent:true});
-          }
+          // Only reconcile when the cursor is actually AHEAD of what we've applied — so on the
+          // normal path (realtime already caught us up, cursor matches) the heartbeat is a free
+          // no-op and adds no rebuild; it only fires a reload when an event was genuinely missed.
+          if(_zr?.updated_at&&window._lastZjUpdatedAt&&_zr.updated_at!==window._lastZjUpdatedAt) _scheduleReconcile(0);
         }catch(_e){}
       },_RECONCILE_HEARTBEAT_MS);
       // NOTE: the sig-feed-<uid> realtime channel is subscribed in _initRealtimeSubscriptions
@@ -3967,13 +3976,9 @@ function _initRealtimeSubscriptions(uid){
     // fires on all other subscribed clients the moment the row is written.
     ch.on('postgres_changes',{event:'UPDATE',schema:'public',table:'zj_data',filter:'user_id=eq.'+uid},()=>{
       if(Date.now()-_lastLocalSaveAt<=5000)return;         // ignore this device's own save echo
-      _lastRealtimeActivityAt=Date.now();                  // peer change delivered → socket alive (backstop stands down)
-      // A peer save arrived. If a load is already in flight, DON'T drop it — flag a
-      // trailing reload so supaLoadFromCloud's finally re-reads the now-committed state.
-      // Dropping it here was the "last update lost" race: on a slow reload the final
-      // burst save landed mid-load and vanished, leaving the peer on a stale value.
-      if(_loadInProgress){_broadcastPending=true;return;}
-      supaLoadFromCloud({silent:true});
+      // A peer save arrived → coalesced reconcile (handles the in-flight-load case via the
+      // scheduler's _broadcastPending trailing reload, so a mid-load peer save is never dropped).
+      _scheduleReconcile(300);
     });
     // Track REAL readiness: the channel only delivers peer changes once it reports
     // SUBSCRIBED. Consumers (and cross-device tests) gate on _tdRealtimeReady so they
@@ -3997,15 +4002,10 @@ function _initRealtimeSubscriptions(uid){
     _syncBroadcastChannel
       .on('broadcast',{event:'data_saved'},(msg)=>{
         if(msg?.payload?.deviceId===_deviceId&&Date.now()-_lastLocalSaveAt<5000)return;
-        _lastRealtimeActivityAt=Date.now();                  // peer broadcast delivered → socket alive (backstop stands down)
-        // Can't reload during an in-flight load — but DON'T just drop it: remember a
-        // peer update arrived so supaLoadFromCloud's finally re-runs one trailing load
-        // (otherwise a rapid burst leaves this device on a stale mid-burst value).
-        if(_loadInProgress){_broadcastPending=true;return;}
-        // Small delay: lets postgres_changes per-record patches arrive first (smoother).
-        // If realtime already handled everything, the reload is a cheap no-op.
-        clearTimeout(_broadcastReloadTimer);
-        _broadcastReloadTimer=setTimeout(()=>{if(!_loadInProgress)supaLoadFromCloud({silent:true});},300);
+        // Peer save signalled → coalesced reconcile. The 300ms debounce lets the per-record
+        // postgres_changes patches land first (smoother), and coalescing means this broadcast,
+        // the zj_data event, and the marker event for the SAME save collapse to one reload.
+        _scheduleReconcile(300);
       })
       .subscribe();
   }catch(_e){}
@@ -4078,7 +4078,6 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   // render-parity tests) pass no fromRealtime flag, so they still dispatch synchronously;
   // a genuine peer change (no recent local save) also renders. Data is always applied above.
   if(fromRealtime&&Date.now()-_lastLocalSaveAt<5000)return;
-  if(fromRealtime)_lastRealtimeActivityAt=Date.now();  // genuine peer record delivered → socket alive (heartbeat stands down)
   renderDash&&renderDash();buildScopeGrid&&buildScopeGrid();
   renderClientList&&renderClientList();renderLeadsPage&&renderLeadsPage();
   renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
