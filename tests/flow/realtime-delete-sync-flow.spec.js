@@ -63,21 +63,17 @@ test.describe('realtime cross-device create + delete, both directions (UI-driven
 
   test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page); });
 
-  // PARTIALLY GREEN, re-quarantined for the REVERSE direction only. Live run (commit
-  // 6d17692, real Supabase) result: steps 1 & 2 (A→B create + delete) PASS, and the sibling
-  // read-skew burst test (realtime-glitch-free) PASSES — the "write the zj_data cursor LAST"
-  // fix is confirmed. What still fails is steps 3 & 4 (B→A, the reverse direction): a create/
-  // delete on device B does not reach device A within the 25s window (got "A has bid = false").
-  //
-  // Root cause is SEPARATE from the read-skew: Supabase Realtime is best-effort (at-most-once)
-  // — B's single postgres_changes event to A can simply be dropped — and A's only fast catch-up,
-  // _kickFastReconcile, is itself KICKED BY a realtime event, so a fully-dropped event leaves
-  // nothing fast running; the 30s zj_data poll is the sole backstop and is slower than the
-  // test's wait. The correct fix is a realtime-independent reconcile HEARTBEAT (poll the cursor
-  // on a short timer regardless of whether an event arrived), which changes core sync cadence
-  // and has an /api-cost tradeoff (§15.2) — its own scoped change, not a widen-the-wait patch
-  // (§11.1). Tracked as the B→A convergence follow-up.
-  test.fixme('a change on device A flows to B and deletes propagate live — and vice versa', async ({ page }) => {
+  // RE-ENABLED after BOTH root causes were fixed. (1) Read-skew: the sync marker is written
+  // LAST on every save, so zj_data.updated_at advances only once all td_* rows commit — proven
+  // by the sibling burst test passing live on commit 6d17692. (2) B→A reverse-direction drop:
+  // a live run showed steps 1&2 (A→B) green but 3&4 (B→A) failing because Supabase Realtime is
+  // best-effort — B's single postgres_changes event to A was dropped, and the old fast catch-up
+  // was itself KICKED BY a realtime event, so a fully-dropped event fell through to a slow 30s
+  // poll (>25s test window). Fix (cloud.js): the reconcile is now an always-on ~5s HEARTBEAT
+  // that polls the cursor regardless of whether an event arrived, so a dropped event self-heals
+  // within one interval and the socket is a mere accelerator. Not a widened wait (§11.1) — the
+  // convergence path itself is what changed.
+  test('a change on device A flows to B and deletes propagate live — and vice versa', async ({ page }) => {
     test.setTimeout(150000);
     const base = Date.now() * 1000 + (process.pid % 1000);
     const aBid = base, aCid = base + 1;          // created+deleted on A
