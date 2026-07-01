@@ -567,4 +567,33 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.reloadPending).toBe(false);  // it did NOT proceed into the reload
     expect(r.bodyHidden).toBe(false);     // and critically did NOT blank the page
   });
+
+  // ── sendPaymentLink → embedded HUB link, not a hosted-checkout redirect ─────
+  test('sendPaymentLink hands over the embedded client-hub link (never checkout.stripe.com)', async () => {
+    const r = await page.evaluate(async () => {
+      const savedUser = window._supaUser, savedStatus = window._stripeConnectStatus;
+      window._supaUser = window._supaUser || { id: 'e2e-user', email: 'e@x.com' };
+      window._stripeConnectStatus = { connected: true, charges_enabled: true };
+      const cid = 990011, bidId = 990012;
+      clients.push({ id: cid, name: 'Pay Client', clientToken: 'tok_hub_abc' });
+      bids.push({ id: bidId, client_id: cid, amount: 500, status: 'Closed Won' });
+      document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+      let threw = null;
+      try { await sendPaymentLink(bidId); } catch (e) { threw = e.message; }
+      await new Promise(res => setTimeout(res, 250));
+      const text = [...document.querySelectorAll('.zmodal-overlay')].map(o => o.innerHTML).join(' ');
+      document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+      const bi = bids.findIndex(b => b.id === bidId); if (bi > -1) bids.splice(bi, 1);
+      const ci = clients.findIndex(c => c.id === cid); if (ci > -1) clients.splice(ci, 1);
+      window._supaUser = savedUser; window._stripeConnectStatus = savedStatus;
+      return {
+        threw,
+        hasHub: /client\.html\?t=/.test(text),
+        hasHostedCheckout: /checkout\.stripe\.com/.test(text),
+      };
+    });
+    expect(r.threw).toBe(null);
+    expect(r.hasHub).toBe(true);            // the modal offers the embedded hub link
+    expect(r.hasHostedCheckout).toBe(false); // and NOT a Stripe hosted-checkout redirect
+  });
 });

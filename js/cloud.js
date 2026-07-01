@@ -200,30 +200,14 @@ async function sendPaymentLink(bidId){
   }
   try{
     showToast('Creating payment link…','⏳');
-    const session=await _supa.auth.getSession();
-    const token=session?.data?.session?.access_token;
-    const baseUrl=window.location.href.split('#')[0];
-    const _depPaid=getBidPaid(bid.id)>0;
-    const res=await fetch(SUPA_URL+'/functions/v1/create-checkout',{
-      method:'POST',
-      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
-      body:JSON.stringify({
-        amount:Math.round(balance*100),
-        currency:'usd',
-        paymentMethod:'card',
-        paymentType:_depPaid?'full':'deposit',
-        proposalKey:null,
-        clientName:c.name,
-        businessName:S.bname||'Your Contractor',
-        bidId:String(bid.id),
-        contractorUserId:_supaUser.id,
-        notifyEmail:_supaUser.email,
-        successUrl:baseUrl+'#paid-'+bid.id,
-        cancelUrl:baseUrl+'#cancel-'+bid.id,
-      })
-    });
-    const data=await res.json();
-    if(data.error){zAlert('Error: '+data.error);return;}
+    // Send the client's HUB link, not a Stripe hosted-checkout redirect. The hub
+    // homepage shows the balance and pays inline via the embedded Payment Element
+    // (client.html), so the customer never leaves for checkout.stripe.com — one
+    // consistent, higher-converting embedded flow. _uploadClientHub mints the token
+    // (if absent) and publishes the current snapshot so the link resolves.
+    await _uploadClientHub(c.id);
+    if(!c.clientToken)throw new Error('Could not create the client hub link.');
+    const url=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+c.id;
     // Show link modal (copy fallback) then attempt SMS
     const _showPayLinkModal=(url)=>{
       const ov=document.createElement('div');ov.className='zmodal-overlay';
@@ -239,7 +223,7 @@ async function sendPaymentLink(bidId){
       ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
       navigator.clipboard.writeText(url).catch(()=>{});
     };
-    _showPayLinkModal(data.url);
+    _showPayLinkModal(url);
     autoLogContact(bid.client_id,'payment_link_sent');
   }catch(e){
     zAlert('Could not create payment link: '+e.message);
@@ -465,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.2';
+const APP_VERSION='07.01.26.3';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false;
 const _deviceId=Math.random().toString(36).slice(2,10);
