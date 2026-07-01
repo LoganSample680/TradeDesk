@@ -112,13 +112,19 @@ test.describe('realtime cross-device create + delete, both directions (UI-driven
     });
 
     // ── 3. CREATE on B → A sees it (B→A — vice versa). ──
+    // A has been a BACKGROUND tab since B opened (modern headless mirrors real tab
+    // visibility). The product bar for a backgrounded device is the slow backstop; the
+    // bar for a device the user LOOKS AT is "current now". bringToFront models the
+    // worker pulling the phone out — foregrounding fires the instant cursor check.
+    // Not a widened wait (§11.1): the assertion window is unchanged, the test just
+    // observes a FOREGROUND device like a real user would.
     await step(page, {
       label: 'device B creates a bid → device A receives it live (reverse direction)', page: 'cloud', role: 'contractor',
       suspect: 'cloud.js supaSaveToCloud (device B) → postgres_changes INSERT → _applyRealtimeRecord on A',
       ruleText: 'a bid created on device B must appear on device A via Realtime (sync flows both ways)',
       expected: `device A has bid ${bBid}`,
-      act: async (p) => { await createBid(B, bBid, bCid, TAG + ' B'); p.__r = await waitForBid(p, bBid, true); return 1; },
-      rule: async (p) => ({ ok: p.__r && (await sees(p, bBid)), got: `A has bid = ${await sees(p, bBid)}` }),
+      act: async (p) => { await createBid(B, bBid, bCid, TAG + ' B'); await p.bringToFront(); p.__r = await waitForBid(p, bBid, true); return 1; },
+      rule: async (p) => ({ ok: p.__r && (await sees(p, bBid)), got: `A has bid = ${await sees(p, bBid)} (A visibility=${await p.evaluate(() => document.visibilityState)}, rt=${await p.evaluate(() => typeof _tdRealtimeReady !== 'undefined' && _tdRealtimeReady)})` }),
     });
 
     // ── 4. DELETE on B → A removes it live (B→A — vice versa). ──
@@ -127,8 +133,8 @@ test.describe('realtime cross-device create + delete, both directions (UI-driven
       suspect: 'cloud.js _userDelete + sweep on device B → postgres_changes UPDATE → _applyRealtimeRecord on A (splice)',
       ruleText: 'deleting a bid on device B must remove it from device A via Realtime (deletes flow both ways)',
       expected: `device A no longer has bid ${bBid}`,
-      act: async (p) => { await deleteBidLive(B, bBid); p.__r = await waitForBid(p, bBid, false); return 1; },
-      rule: async (p) => ({ ok: p.__r && !(await sees(p, bBid)), got: `A still has bid = ${await sees(p, bBid)}` }),
+      act: async (p) => { await deleteBidLive(B, bBid); await p.bringToFront(); p.__r = await waitForBid(p, bBid, false); return 1; },
+      rule: async (p) => ({ ok: p.__r && !(await sees(p, bBid)), got: `A still has bid = ${await sees(p, bBid)} (A visibility=${await p.evaluate(() => document.visibilityState)}, rt=${await p.evaluate(() => typeof _tdRealtimeReady !== 'undefined' && _tdRealtimeReady)})` }),
     });
 
     await B.close().catch(() => {});

@@ -449,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.23';
+const APP_VERSION='07.01.26.24';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3973,24 +3973,28 @@ async function supaLoadFromCloud({silent=false}={}){
       // so the interval is tuned for convergence latency, not cost. Skipped within 3s of a
       // local save (our own echo) and while the tab is hidden or a load is already running.
       const _RECONCILE_HEARTBEAT_MS=5000;
-      setInterval(async()=>{
+      // One tiny cursor read; reload ONLY when it's ahead of what we've applied — the
+      // free no-op on the caught-up path. Shared by the heartbeat tick and the
+      // return-to-foreground pull so both converge by the same rule.
+      window._cursorCheckReconcile=async()=>{
         if(!_supaUser||_loadInProgress||_reconcileTimer)return;
+        if(Date.now()-_lastLocalSaveAt<3000)return;
+        try{
+          const _puid=_devSupportMode?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id):(_isEmployee?_contractorUserId:_supaUser.id);
+          const{data:_zr}=await _supa.from('zj_data').select('updated_at').eq('user_id',_puid).maybeSingle();
+          if(_zr?.updated_at&&window._lastZjUpdatedAt&&_zr.updated_at!==window._lastZjUpdatedAt) _scheduleReconcile(0);
+        }catch(_e){}
+      };
+      setInterval(()=>{
         // HIDDEN ≠ DEAD: a backgrounded tab used to skip every tick, which left it with
         // ZERO convergence channels whenever realtime was also down/dropping — modern
         // headless (and real phones switching apps) mark background tabs hidden, and a
         // device that can't converge while hidden resurfaces stale. Throttle instead:
         // hidden tabs check at most once per 60s (browsers clamp background timers
-        // anyway), visible tabs keep the full cadence.
+        // anyway), visible tabs keep the full cadence. Foregrounding converges
+        // immediately via the visibilitychange cursor check below.
         if(document.visibilityState==='hidden'&&Date.now()-(window._lastCloudLoadAt||0)<60000)return;
-        if(Date.now()-_lastLocalSaveAt<3000)return;
-        try{
-          const _puid=_devSupportMode?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id):(_isEmployee?_contractorUserId:_supaUser.id);
-          const{data:_zr}=await _supa.from('zj_data').select('updated_at').eq('user_id',_puid).maybeSingle();
-          // Only reconcile when the cursor is actually AHEAD of what we've applied — so on the
-          // normal path (realtime already caught us up, cursor matches) the heartbeat is a free
-          // no-op and adds no rebuild; it only fires a reload when an event was genuinely missed.
-          if(_zr?.updated_at&&window._lastZjUpdatedAt&&_zr.updated_at!==window._lastZjUpdatedAt) _scheduleReconcile(0);
-        }catch(_e){}
+        window._cursorCheckReconcile();
       },_RECONCILE_HEARTBEAT_MS);
       // NOTE: the sig-feed-<uid> realtime channel is subscribed in _initRealtimeSubscriptions
       // (gated on _realtimeSubscribed, which resets on account switch) — NOT here. _cloudTimersStarted
@@ -4003,10 +4007,12 @@ async function supaLoadFromCloud({silent=false}={}){
       setTimeout(()=>_loadPendingInbound(),2000);
       document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){
         checkNewSignatures();_fetchProposalViews();if(_supaUser)_loadPendingInbound();checkNearbyJob();
-        // Cross-device freshness without relying on the realtime socket: when the
-        // app returns to the foreground, pull the latest cloud state (settings
-        // included) if the last load is more than 60s old.
-        if(_supaUser&&!_loadInProgress&&Date.now()-(window._lastCloudLoadAt||0)>60000)supaLoadFromCloud({silent:true});
+        // FOREGROUND = the moment the user looks. The worker pulls the phone out of a
+        // pocket — the app must be current NOW, not "within 60s". One tiny cursor read;
+        // a reload only happens when a peer actually changed something we haven't seen
+        // (the old 60s-gated full reload missed anything a teammate did in the last
+        // minute — exactly the crew scenario). Delta-sized when it does fire.
+        window._cursorCheckReconcile&&window._cursorCheckReconcile();
       }});
       // Cross-tab signal: sign.html writes zp3_sig_notify after a successful cash/check save.
       // This fires immediately in the contractor's open TradeDesk tab — no polling delay.
