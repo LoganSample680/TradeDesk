@@ -449,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.22';
+const APP_VERSION='07.01.26.23';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1216,8 +1216,20 @@ async function supaInit(){
     // Cloudflare Pages is unreliable, and a dead socket silently kills
     // cross-device live sync. REST now ALSO defaults to direct (see SUPA_URL);
     // the /api proxy is the auto-fallback when direct can't be reached. If the
-    // direct socket fails, the 30s zj_data poll covers it.
-    try{_supa.realtime.endPoint='wss://mwtsmctajhrrybblgorf.supabase.co/realtime/v1/websocket';}catch(_e){}
+    // direct socket fails, the reconcile heartbeat covers it.
+    // GATED on non-localhost: forcing the HOSTED socket unconditionally created a
+    // ZOMBIE subscription on any non-hosted backend — the socket connects to the
+    // cloud project (valid key), reports SUBSCRIBED, and never delivers an event,
+    // because the data lives elsewhere (the local test stack today; the self-hosted
+    // Proxmox Supabase after the migration — this line would have silently killed
+    // realtime for the entire production app there). On localhost the endpoint
+    // derives from SUPA_URL, and the local /api proxy carries the WS upgrade.
+    // Derived from _SUPA_DIRECT_URL (one source of truth for the migration).
+    try{
+      if(!/^(localhost|127\.0\.0\.1)$/.test(location.hostname)){
+        _supa.realtime.endPoint=_SUPA_DIRECT_URL.replace(/^https/,'wss')+'/realtime/v1/websocket';
+      }
+    }catch(_e){}
     const{data:{session}}=await _supa.auth.getSession();
     if(session){
       _supaUser=session.user;
@@ -3962,7 +3974,14 @@ async function supaLoadFromCloud({silent=false}={}){
       // local save (our own echo) and while the tab is hidden or a load is already running.
       const _RECONCILE_HEARTBEAT_MS=5000;
       setInterval(async()=>{
-        if(!_supaUser||_loadInProgress||_reconcileTimer||document.visibilityState==='hidden')return;
+        if(!_supaUser||_loadInProgress||_reconcileTimer)return;
+        // HIDDEN ≠ DEAD: a backgrounded tab used to skip every tick, which left it with
+        // ZERO convergence channels whenever realtime was also down/dropping — modern
+        // headless (and real phones switching apps) mark background tabs hidden, and a
+        // device that can't converge while hidden resurfaces stale. Throttle instead:
+        // hidden tabs check at most once per 60s (browsers clamp background timers
+        // anyway), visible tabs keep the full cadence.
+        if(document.visibilityState==='hidden'&&Date.now()-(window._lastCloudLoadAt||0)<60000)return;
         if(Date.now()-_lastLocalSaveAt<3000)return;
         try{
           const _puid=_devSupportMode?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id):(_isEmployee?_contractorUserId:_supaUser.id);
