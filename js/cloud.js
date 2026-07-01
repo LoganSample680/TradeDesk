@@ -449,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.15';
+const APP_VERSION='07.01.26.16';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3104,49 +3104,11 @@ async function supaSaveToCloud(){
   try{
     const ts=new Date().toISOString();
 
-    // Settings FIRST — the table loop below takes seconds on mobile (a round-trip
-    // per table) and a force-quit mid-save used to lose every settings change.
-    // Settings are tiny; landing them immediately makes Save force-quit-proof.
-    if(!_isEmployee && _authSettingsLoaded){
-      // Strip only stateRates (anon-readable reference data, never a user setting).
-      // locationGranted/locationDenied DO persist to the cloud so the location
-      // permission survives a reboot / cloud-authoritative reload — they were
-      // previously stripped here, which is why "location permission doesn't save."
-      // A wrongly-optimistic granted flag self-corrects on the next real GPS call
-      // (getCurrentPosition errors → locationDenied is set), so syncing it is safe.
-      const{stateRates:_sr0,...sForCloudFirst}=S;
-      // LAST-WRITER-WINS BY settingsTs (symmetric with _mergeIncomingSettings on the load side):
-      // never overwrite a NEWER cloud settings version with our (possibly stale) copy. Without
-      // this the upsert clobbers unconditionally, so a device/boot holding an OLD settings blob
-      // stomps a fresh save from another device back to the old value (the reboot clobber). Read
-      // the cloud's current settingsTs; if it's newer than ours, skip the settings write.
-      let _skipSettings=false;
-      try{
-        const{data:_curS}=await _supa.from('zj_data').select('settings').eq('user_id',uid).maybeSingle();
-        if(_curS&&_curS.settings){
-          const _curTs=(()=>{try{return (JSON.parse(_curS.settings).settingsTs)||0;}catch(_e){return 0;}})();
-          if(_curTs>(S.settingsTs||0))_skipSettings=true;
-        }
-      }catch(_e){}
-      // TEMP DIAGNOSTIC (automation only): trace every cloud settings write to find the reboot clobber.
-      if(navigator.webdriver){try{(window._zjWrites=window._zjWrites||[]).push({g:sForCloudFirst.goalMonthly,ts:sForCloudFirst.settingsTs,skip:_skipSettings,cl:_supaCloudLoaded,foc:_loadedFromCacheOnly,page:document.querySelector('.pg.active')?.id||null});}catch(_e){}}
-      if(_skipSettings){
-        _logSave('skip-settings','cloud settingsTs is newer — not clobbering with a stale local copy');
-      }else{
-        const{data:_zjRow,error:_se0}=await _supa.from('zj_data').upsert(
-          {user_id:uid,settings:JSON.stringify(sForCloudFirst),checks_state:JSON.stringify(checksState),updated_at:ts},
-          {onConflict:'user_id'}
-        ).select('updated_at').single();
-        if(_se0){throw _se0;}
-        window._lastZjUpdatedAt=_zjRow?.updated_at||ts;
-      }
-    } else if(!_isEmployee && !_authSettingsLoaded){
-      // Cloud settings haven't hydrated yet (fresh/cache-wiped boot, load not done). Do NOT
-      // push the default/un-loaded settings blob over the cloud — that's the boot clobber.
-      // Mark pending so the post-load flush re-saves the real settings once hydration lands.
-      _logSave('skip-settings','settings not hydrated — deferring to post-load flush');
-      try{localStorage.setItem('zp3_pending_sync','1');}catch(_e){}
-    }
+    // NOTE: settings + the zj_data sync cursor are written LAST, AFTER the table loop below
+    // (see the "SETTINGS + SYNC CURSOR" block). Writing zj_data.updated_at after every td_* row
+    // has committed is what fixes the cross-device read-skew — a peer can never read a fresh
+    // cursor over stale table data. It also means ONE zj_data write per save (not a settings-first
+    // write + a separate marker), so a peer's reload path has a single event to coalesce.
 
     // Count of rows this save actually wrote (upserts + soft-deletes) across ALL tables.
     // Drives the LAST-WRITTEN sync marker below: the cross-device cursor (zj_data.updated_at)
@@ -3227,26 +3189,51 @@ async function supaSaveToCloud(){
       }
     }
 
-    // ── SYNC MARKER — written LAST, the fix for the cross-device read-skew ──
-    // Every cross-device freshness check (the reconcile heartbeat and the visibilitychange
-    // pull) treats a CHANGE in zj_data.updated_at as "a peer saved — reload." The heartbeat
-    // depends on this cursor being trustworthy. But settings are written FIRST on each save
-    // (:3122), so that
-    // cursor used to advance BEFORE the td_* rows committed. A peer could then read the
-    // fresh cursor, reload, read the tables BEFORE this device's row upserts landed, and
-    // mark itself caught up on STALE data — and never reload again, because the cursor
-    // never moved a second time. (That is why the burst test's device B stuck one edit
-    // behind, every run.) Bumping zj_data.updated_at HERE, after the whole table loop has
-    // awaited (⇒ committed) every upsert/soft-delete, guarantees the invariant the peers
-    // rely on: "cursor moved ⇒ ALL data is already committed." Only when this save actually
-    // wrote table rows (settings-only saves already moved the cursor as their last act),
-    // and never for employees (they don't own the contractor's zj_data settings row).
-    if(_tableWrites>0 && !_isEmployee){
+    // ── SETTINGS + SYNC CURSOR — written LAST (fixes the cross-device read-skew) ──
+    // zj_data.updated_at is the cursor every peer polls ("changed → reload"). Writing it AFTER
+    // the whole table loop has awaited (⇒ committed) every upsert/soft-delete guarantees the
+    // invariant peers rely on: "cursor moved ⇒ ALL table data is already committed", so a peer
+    // can never read a fresh cursor over stale data (the read-skew that stuck B one edit behind).
+    // Settings ride the SAME write — ONE zj_data event per save, not a settings-first write plus
+    // a separate marker, so a peer's reload path has a single event to coalesce (no render storm).
+    // Trade-off vs the old settings-first: a force-quit AFTER the tables but BEFORE this write
+    // loses only the (tiny) settings delta; the bigger table data has already committed.
+    if(!_isEmployee && _authSettingsLoaded){
+      // Strip only stateRates (anon-readable reference data, never a user setting).
+      // locationGranted/locationDenied DO persist so the location permission survives a reload.
+      const{stateRates:_sr0,...sForCloud}=S;
+      // LAST-WRITER-WINS by settingsTs: never overwrite a NEWER cloud settings blob with our
+      // (possibly stale) copy — but if that happens we STILL bump the cursor when our table rows
+      // changed, else the peer that owns the newer settings would never learn of our records.
+      let _skipSettings=false;
       try{
-        const _mkTs=new Date().toISOString();
-        const{data:_mk}=await _supa.from('zj_data').update({updated_at:_mkTs}).eq('user_id',uid).select('updated_at').single();
-        if(_mk?.updated_at)window._lastZjUpdatedAt=_mk.updated_at;
-      }catch(_e){/* marker is a best-effort backstop; realtime + delta cursor still converge */}
+        const{data:_curS}=await _supa.from('zj_data').select('settings').eq('user_id',uid).maybeSingle();
+        if(_curS&&_curS.settings){
+          const _curTs=(()=>{try{return (JSON.parse(_curS.settings).settingsTs)||0;}catch(_e){return 0;}})();
+          if(_curTs>(S.settingsTs||0))_skipSettings=true;
+        }
+      }catch(_e){}
+      if(navigator.webdriver){try{(window._zjWrites=window._zjWrites||[]).push({g:sForCloud.goalMonthly,ts:sForCloud.settingsTs,skip:_skipSettings,cl:_supaCloudLoaded,foc:_loadedFromCacheOnly,page:document.querySelector('.pg.active')?.id||null});}catch(_e){}}
+      if(_skipSettings){
+        _logSave('skip-settings','cloud settingsTs is newer — not clobbering with a stale local copy');
+        // Cursor-only bump so our table changes still propagate to the peer with newer settings.
+        if(_tableWrites>0){
+          try{const _cTs=new Date().toISOString();const{data:_ck}=await _supa.from('zj_data').update({updated_at:_cTs}).eq('user_id',uid).select('updated_at').single();if(_ck?.updated_at)window._lastZjUpdatedAt=_ck.updated_at;}catch(_e){}
+        }
+      }else{
+        const _wTs=new Date().toISOString();
+        const{data:_zjRow,error:_se0}=await _supa.from('zj_data').upsert(
+          {user_id:uid,settings:JSON.stringify(sForCloud),checks_state:JSON.stringify(checksState),updated_at:_wTs},
+          {onConflict:'user_id'}
+        ).select('updated_at').single();
+        if(_se0){throw _se0;}
+        window._lastZjUpdatedAt=_zjRow?.updated_at||_wTs;
+      }
+    } else if(!_isEmployee && !_authSettingsLoaded){
+      // Cloud settings haven't hydrated yet (fresh/cache-wiped boot). Do NOT push the default
+      // blob over the cloud (the boot clobber) — defer to the post-load flush.
+      _logSave('skip-settings','settings not hydrated — deferring to post-load flush');
+      try{localStorage.setItem('zp3_pending_sync','1');}catch(_e){}
     }
 
     _logSave('ok',{id:_attemptId,mileage:_mileCount});

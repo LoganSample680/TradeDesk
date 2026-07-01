@@ -602,11 +602,11 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
   // freshness cursor is zj_data.updated_at; every peer treats a change in it as "reload."
   // If it advances BEFORE the td_* rows commit, a peer reads a fresh cursor + stale data
   // and wrongly marks itself caught up (read-skew). This drives supaSaveToCloud against an
-  // order-recording Supabase stub and proves the marker (zj_data update) is the LAST write —
-  // after the td_* upsert — so "cursor moved ⇒ all data committed" holds. If a future edit
-  // moves the cursor back ahead of the table writes, this fails on the offline shard, before
-  // it ever reaches the cloud gate.
-  test('supaSaveToCloud bumps the zj_data cursor LAST — after the td_* upserts (no read-skew)', async () => {
+  // order-recording Supabase stub and proves the zj_data write (settings + cursor, a single
+  // write per save) is the LAST write — after the td_* upsert — so "cursor moved ⇒ all data
+  // committed" holds. If a future edit moves the zj_data write back ahead of the table writes,
+  // this fails on the offline shard, before it ever reaches the cloud gate.
+  test('supaSaveToCloud writes the zj_data cursor LAST — after the td_* upserts (no read-skew)', async () => {
     const r = await page.evaluate(async () => {
       // Save everything we clobber so the shared page survives for later tests.
       const saved = {
@@ -656,12 +656,14 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
       return { threw, writes, last, tdUpsertIdx, markerIdx };
     });
     expect(r.threw).toBe(null);
-    // A td_* row was actually uploaded (precondition — otherwise the marker rightly won't fire).
+    // A td_* row was actually uploaded (precondition — otherwise the zj_data write won't fire).
     expect(r.tdUpsertIdx).toBeGreaterThanOrEqual(0);
-    // The final write is the zj_data cursor bump (the marker)…
+    // The final write carries the zj_data cursor (settings + updated_at, one write per save)…
     expect(r.last && r.last.table).toBe('zj_data');
-    expect(r.last && r.last.op).toBe('update');
-    // …and it lands AFTER the td_* upsert, never before it.
+    // …it lands AFTER the td_* upsert, never before it (the read-skew invariant)…
     expect(r.markerIdx).toBeGreaterThan(r.tdUpsertIdx);
+    // …and NO zj_data write precedes the td_* upsert (no settings-first cursor bump anymore).
+    const firstZjIdx = r.writes.findIndex(w => w.table === 'zj_data');
+    expect(firstZjIdx).toBe(r.markerIdx);
   });
 });
