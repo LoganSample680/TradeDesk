@@ -5,6 +5,25 @@
 
 ---
 
+## Communication — plain English, always
+
+Talk to the owner like a person, not a compiler. Every reply:
+
+- **Plain English.** No jargon dumps. If a term is unavoidable, say it in one plain
+  sentence too. Assume the owner is smart but not reading the code.
+- **Lead with the answer.** First line = what happened / what to do. Details after,
+  only if they help.
+- **Short.** Cut everything that isn't load-bearing. Long walls of text lose the owner.
+- **"What you need to do" is explicit.** If the owner has an action, put it in a short
+  numbered list with the exact taps/values. If there's nothing for them to do, say so.
+- **Name the thing that broke and the fix in one line each** — not a five-paragraph tour.
+- **No status noise.** Don't narrate every CI poll or push. Report when something needs
+  the owner or when a real result lands.
+
+This rule is mandatory and applies to every response, not just summaries.
+
+---
+
 ## 0. The Loop (plain English — read this first)
 
 How a change ships. Repeat until review is clean:
