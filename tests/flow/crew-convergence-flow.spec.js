@@ -70,7 +70,11 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
     const CREW = crewPool();
     test.skip(CREW.length < 3, `crew pool too small (${CREW.length}) — global-setup provisions it on the local stack`);
     const M = Math.min(CREW.length, 6);
-    test.setTimeout(240000 + M * 20000);
+    // 7 REAL boots (boss + M crew) against an account that GROWS every run by design
+    // (§13.7 — live tests never clean up their seed data). Boot cost scales with the
+    // accumulated rows/hub refreshes, so the budget tracks it: the old 240k+M*20k
+    // (=360s at M=6) was hit exactly once the account got heavy enough.
+    test.setTimeout(360000 + M * 30000);
 
     const bossUid = (workerAccount() || {}).uid;
     const base = Date.now() * 1000 + (process.pid % 1000);
@@ -346,7 +350,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
     test.skip(browserName !== 'chromium', 'runs once — chromium project only');
     const CREW = crewPool();
     test.skip(CREW.length < 2, `crew pool too small (${CREW.length})`);
-    test.setTimeout(300000);
+    test.setTimeout(420000); // 3 real boots on the ever-growing cert account (see test 1)
 
     const FLOW2 = 'crew/estimate-rollup';
     const bossUid = (workerAccount() || {}).uid;
