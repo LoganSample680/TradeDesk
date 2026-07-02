@@ -1031,3 +1031,298 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.firstTdIdx).toBeGreaterThan(r.zjIdx);  // …strictly BEFORE any table snapshot
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 100-WRITER PACKAGE — the load-bearing op channel + reconnect rebase.
+// These guard the machinery that lets N devices write ONE account concurrently:
+//   _opApplyPeerOps  — per-field HLC apply (newer wins, older rejected, stale-vs-row
+//                      guard, create materialization, resurrection guard, echo-free)
+//   _opDbPruneAcked  — the op log is pruned on ack and stays O(pending)
+//   full-load rebase — a pending local edit survives the array replace; an
+//                      offline-created row (pending CREATE op) is re-appended
+//   reconnect order  — pull (reads) strictly BEFORE push (writes) on offline return
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('100-writer op channel + rebase', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => {
+    assertNoErrors(page, '100-writer op channel');
+    await page.context().close();
+  });
+
+  test('_opApplyPeerOps — newer op sets the field, older op is rejected, no derive echo', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof window.__opApplyPeerOps !== 'function' || typeof window.__hlcNow !== 'function') return { skip: true };
+      const id = 771001;
+      const savedFlag = window._opLogShadow, savedSaveAt = _lastLocalSaveAt;
+      try {
+        window._opLogShadow = true;
+        _lastLocalSaveAt = Date.now(); // suppress the render side-effect path
+        bids.push({ id, client_name: 'OpApply', name: 'OpApply', amount: 100, status: 'Pending' });
+        _opShadowDerive(); // settle the baseline so the bid itself isn't a pending diff
+        const h1 = window.__hlcNow();
+        const h2 = window.__hlcNow(); // strictly > h1
+        // Apply the NEWER op first…
+        window.__opApplyPeerOps([{ hlc: h2, op_table: 'td_bids', row_id: String(id), fields: { amount: 555 }, device_id: 'peer-1' }]);
+        const afterNew = bids.find(b => b.id === id).amount;
+        // …then the OLDER op for the same field must be rejected (LWW by field clock).
+        window.__opApplyPeerOps([{ hlc: h1, op_table: 'td_bids', row_id: String(id), fields: { amount: 111 }, device_id: 'peer-2' }]);
+        const afterOld = bids.find(b => b.id === id).amount;
+        // ECHO-FREE: the applied peer field must NOT be re-emitted as an op from this
+        // device on the next derive (the baseline was updated on apply).
+        window._opStats = { emitted: 0, creates: 0, updates: 0, phantomDeleteCandidates: 0 };
+        _opShadowDerive();
+        return { afterNew, afterOld, echoed: window._opStats.emitted };
+      } finally {
+        window._opLogShadow = savedFlag; _lastLocalSaveAt = savedSaveAt;
+        const i = bids.findIndex(b => b.id === 771001); if (i > -1) bids.splice(i, 1);
+        try { _opRebaseline(); } catch (e) {}
+      }
+    });
+    if (r.skip) return;
+    expect(r.afterNew).toBe(555);
+    expect(r.afterOld).toBe(555); // older op rejected
+    expect(r.echoed).toBe(0);     // peer's field not re-emitted as our op
+  });
+
+  test('_opApplyPeerOps — create op materializes an unknown row; deleted ids never resurrect; partial ops for unknown rows are skipped', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof window.__opApplyPeerOps !== 'function') return { skip: true };
+      const idNew = 771010, idDel = 771011, idPartial = 771012;
+      const savedFlag = window._opLogShadow, savedSaveAt = _lastLocalSaveAt;
+      try {
+        window._opLogShadow = true;
+        _lastLocalSaveAt = Date.now();
+        // (a) CREATE op (fields carry id) for a row this device never saw → materializes.
+        window.__opApplyPeerOps([{ hlc: window.__hlcNow(), op_table: 'td_bids', row_id: String(idNew), fields: { id: idNew, name: 'FromOp', amount: 42, status: 'Pending' }, device_id: 'peer-1' }]);
+        const created = bids.find(b => String(b.id) === String(idNew));
+        // (b) This device DELETED idDel (still in _lastKnownIds, absent from the array) —
+        // a peer's op must not resurrect it.
+        (_lastKnownIds['td_bids'] || (_lastKnownIds['td_bids'] = new Set())).add(String(idDel));
+        window.__opApplyPeerOps([{ hlc: window.__hlcNow(), op_table: 'td_bids', row_id: String(idDel), fields: { id: idDel, amount: 9 }, device_id: 'peer-1' }]);
+        const resurrected = bids.some(b => String(b.id) === String(idDel));
+        // (c) PARTIAL op (no fields.id) for an unknown row → skipped, no half-row shell.
+        window.__opApplyPeerOps([{ hlc: window.__hlcNow(), op_table: 'td_bids', row_id: String(idPartial), fields: { amount: 7 }, device_id: 'peer-1' }]);
+        const shell = bids.some(b => String(b.id) === String(idPartial) || (b && b.amount === 7 && b.id === undefined));
+        return { created: !!created, createdAmount: created && created.amount, resurrected, shell };
+      } finally {
+        window._opLogShadow = savedFlag; _lastLocalSaveAt = savedSaveAt;
+        for (const id of [771010, 771011, 771012]) { const i = bids.findIndex(b => String(b.id) === String(id)); if (i > -1) bids.splice(i, 1); }
+        _lastKnownIds['td_bids'] && _lastKnownIds['td_bids'].delete('771011');
+        try { _opRebaseline(); } catch (e) {}
+      }
+    });
+    if (r.skip) return;
+    expect(r.created).toBe(true);
+    expect(r.createdAmount).toBe(42);
+    expect(r.resurrected).toBe(false);
+    expect(r.shell).toBe(false);
+  });
+
+  test('_opApplyPeerOps — an op STALER than the row snapshot we hold is skipped (_rowServerTs guard)', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof window.__opApplyPeerOps !== 'function') return { skip: true };
+      const id = 771020;
+      const savedFlag = window._opLogShadow, savedSaveAt = _lastLocalSaveAt;
+      try {
+        window._opLogShadow = true;
+        _lastLocalSaveAt = Date.now();
+        bids.push({ id, client_name: 'Stale', name: 'Stale', amount: 100, status: 'Pending' });
+        _opShadowDerive();
+        // Pretend the cloud row we hold was committed far in the future relative to the
+        // op below (an old op replayed after the row already embodies it).
+        (_rowServerTs['td_bids'] || (_rowServerTs['td_bids'] = new Map())).set(String(id), Date.now() + 120000);
+        window.__opApplyPeerOps([{ hlc: window.__hlcNow(), op_table: 'td_bids', row_id: String(id), fields: { amount: 1 }, device_id: 'peer-1' }]);
+        return { amount: bids.find(b => b.id === id).amount };
+      } finally {
+        window._opLogShadow = savedFlag; _lastLocalSaveAt = savedSaveAt;
+        const i = bids.findIndex(b => b.id === 771020); if (i > -1) bids.splice(i, 1);
+        _rowServerTs['td_bids'] && _rowServerTs['td_bids'].delete('771020');
+        try { _opRebaseline(); } catch (e) {}
+      }
+    });
+    if (r.skip) return;
+    expect(r.amount).toBe(100); // stale op did not regress the row
+  });
+
+  test('_opDbPruneAcked — ops at-or-below the ack ceiling are DELETED, newer ops survive', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof window.__opPruneAcked !== 'function' || typeof window.__opDbUnsynced !== 'function') return { skip: true };
+      const idA = 771030, idB = 771031;
+      const savedFlag = window._opLogShadow, savedSaveAt = _lastLocalSaveAt;
+      try {
+        window._opLogShadow = true;
+        _lastLocalSaveAt = Date.now();
+        // Op A (pre-ceiling): a create derived + persisted now.
+        bids.push({ id: idA, client_name: 'PruneA', name: 'PruneA', amount: 10, status: 'Pending' });
+        _opShadowDerive();
+        const ceiling = window.__hlcNow(); // everything so far is ≤ ceiling
+        // Op B (post-ceiling): derived after the ceiling was sampled.
+        bids.push({ id: idB, client_name: 'PruneB', name: 'PruneB', amount: 20, status: 'Pending' });
+        _opShadowDerive();
+        // IndexedDB adds are fire-and-forget — wait until both ops are visible.
+        for (let i = 0; i < 40; i++) {
+          const ops = await window.__opDbUnsynced();
+          if (ops.some(o => o.rowId === String(idA)) && ops.some(o => o.rowId === String(idB))) break;
+          await new Promise(res => setTimeout(res, 100));
+        }
+        await window.__opPruneAcked(ceiling);
+        const after = await window.__opDbUnsynced();
+        return {
+          aGone: !after.some(o => o.rowId === String(idA)),
+          bKept: after.some(o => o.rowId === String(idB)),
+        };
+      } finally {
+        window._opLogShadow = savedFlag; _lastLocalSaveAt = savedSaveAt;
+        for (const id of [771030, 771031]) { const i = bids.findIndex(b => b.id === id); if (i > -1) bids.splice(i, 1); }
+        try { _opRebaseline(); } catch (e) {}
+      }
+    });
+    if (r.skip) return;
+    expect(r.aGone).toBe(true);
+    expect(r.bKept).toBe(true);
+  });
+
+  test('full-load REBASE — a pending local edit survives the array replace; an offline-created row (pending CREATE op) is re-appended', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof supaLoadFromCloud !== 'function' || typeof window.__opDbUnsynced !== 'function') return { skip: true };
+      const idCloud = 771040, idLocal = 771041;
+      const UID = 'rebase-u';
+      const saved = {
+        supa: _supa, user: window._supaUser, loaded: _supaCloudLoaded, owner: _loadedDataOwner,
+        cursor: _deltaCursor, emp: _isEmployee, hash: _syncedHash, known: _lastKnownIds,
+        syncedAt: _rowSyncedAt, flag: window._opLogShadow, saveAt: _lastLocalSaveAt,
+        auth: _authSettingsLoaded,
+      };
+      // The FULL load path replaces every table array — snapshot ALL of them for restore.
+      const _tblSnap = _TD_TABLES.map(({ t, get, set }) => ({ t, set, rows: (get() || []).slice() }));
+      const past = new Date(Date.now() - 60000).toISOString();
+      const makeChain = (table) => {
+        const rows = table === 'td_bids'
+          ? [{ id: String(idCloud), data: { id: idCloud, name: 'CloudRow', amount: 5, status: 'X' }, updated_at: past }]
+          : [];
+        const chain = {
+          select() { return chain; }, eq() { return chain; }, gt() { return chain; }, lt() { return chain; },
+          in() { return chain; }, is() { return chain; }, order() { return chain; }, limit() { return chain; },
+          insert() { return chain; }, upsert() { return chain; }, update() { return chain; }, delete() { return chain; },
+          maybeSingle() { return Promise.resolve({ data: { settings: null, checks_state: null, receipt_images: null, updated_at: 'CUR-rebase' }, error: null }); },
+          single() { return Promise.resolve({ data: null, error: null }); },
+          then(res, rej) { return Promise.resolve({ data: rows, error: null }).then(res, rej); },
+        };
+        return chain;
+      };
+      try {
+        window._opLogShadow = true;
+        _lastLocalSaveAt = Date.now();
+        window._supaUser = { id: UID };
+        // Local state: our copy of the cloud row with a PENDING edit (amount 999, field
+        // clock stamped now — newer than the incoming row's updated_at), plus a row the
+        // cloud has never seen whose CREATE op is pending in the durable log.
+        bids.length = 0;
+        bids.push({ id: idCloud, name: 'CloudRow', amount: 100, status: 'X' });
+        _opRebaseline(); // settle baseline, then make the pending edits AFTER it
+        bids.find(b => b.id === idCloud).amount = 999;        // pending EDIT
+        bids.push({ id: idLocal, name: 'OfflineCreated', amount: 77, status: 'Pending' }); // pending CREATE
+        _opShadowDerive(); // stamps field clocks + persists both ops (owner = UID)
+        // Wait for the CREATE op to be durably visible (the re-append reads the log).
+        for (let i = 0; i < 40; i++) {
+          const ops = await window.__opDbUnsynced();
+          if (ops.some(o => o.rowId === String(idLocal) && o.fields && o.fields.id !== undefined && o.owner === UID)) break;
+          await new Promise(res => setTimeout(res, 100));
+        }
+        _rowSyncedAt['td_bids'] = new Map(); // nothing "already uploaded" — the edit is genuinely pending
+        _supa = { from: (t) => makeChain(t), rpc: () => Promise.resolve({ data: null, error: { code: 'PGRST202', message: 'missing' } }) };
+        _supaCloudLoaded = true; _isEmployee = false;
+        _loadedDataOwner = UID;
+        _deltaCursor = null; // force the FULL (array-replace) branch — the one that used to clobber
+        await supaLoadFromCloud({ silent: true });
+        const cloudRow = bids.find(b => String(b.id) === String(idCloud));
+        const localRow = bids.find(b => String(b.id) === String(idLocal));
+        return {
+          protectedAmount: cloudRow && cloudRow.amount,   // 999 = pending edit survived
+          tookPeerField: cloudRow && cloudRow.status,     // 'X' from the cloud row
+          reappended: !!localRow,                         // offline-created row survived the replace
+          reappendedAmount: localRow && localRow.amount,
+          hashIsIncoming: window.__hashHas('td_bids', idCloud), // hash stamped → re-upload guarantee arms
+        };
+      } finally {
+        _supa = saved.supa; window._supaUser = saved.user; _supaCloudLoaded = saved.loaded;
+        _loadedDataOwner = saved.owner; _deltaCursor = saved.cursor; _isEmployee = saved.emp;
+        _syncedHash = saved.hash; _lastKnownIds = saved.known; _rowSyncedAt = saved.syncedAt;
+        window._opLogShadow = saved.flag; _lastLocalSaveAt = saved.saveAt;
+        _authSettingsLoaded = saved.auth;
+        _tblSnap.forEach(({ set, rows }) => set(rows));
+        _loadInProgress = false; _activeLoadPromise = null;
+        try { _opRebaseline(); } catch (e) {}
+      }
+    });
+    if (r.skip) return;
+    expect(r.protectedAmount).toBe(999); // the offline edit was NOT clobbered by the replace
+    expect(r.tookPeerField).toBe('X');
+    expect(r.reappended).toBe(true);     // the offline-created row was NOT dropped
+    expect(r.reappendedAmount).toBe(77);
+    expect(r.hashIsIncoming).toBe(true);
+  });
+
+  test('reconnect with pending offline writes — PULL (reads) strictly before PUSH (writes)', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _onReconnect !== 'function') return { skip: true };
+      const fired = [];
+      const saved = {
+        supa: _supa, user: window._supaUser, loaded: _supaCloudLoaded, owner: _loadedDataOwner,
+        cursor: _deltaCursor, emp: _isEmployee, hash: _syncedHash, known: _lastKnownIds,
+        auth: _authSettingsLoaded, foc: _loadedFromCacheOnly, flag: window._opLogShadow,
+      };
+      // The reconnect's FULL pull replaces every table array — snapshot ALL for restore.
+      const _tblSnap = _TD_TABLES.map(({ t, get, set }) => ({ t, set, rows: (get() || []).slice() }));
+      const makeChain = (table) => {
+        const chain = {
+          select() { return chain; }, eq() { return chain; }, gt() { return chain; }, lt() { return chain; },
+          in() { return chain; }, is() { return chain; }, order() { return chain; }, limit() { return chain; },
+          insert() { fired.push('write:' + table); return chain; },
+          upsert() { fired.push('write:' + table); return chain; },
+          update() { fired.push('write:' + table); return chain; },
+          delete() { return chain; },
+          maybeSingle() { fired.push('read:' + table); return Promise.resolve({ data: { settings: null, checks_state: null, receipt_images: null, updated_at: 'CUR-recon' }, error: null }); },
+          single() { return Promise.resolve({ data: { updated_at: 'CUR-recon2' }, error: null }); },
+          then(res, rej) { fired.push((chain._wrote ? 'flush:' : 'read:') + table); return Promise.resolve({ data: [], error: null }).then(res, rej); },
+        };
+        return chain;
+      };
+      try {
+        window._opLogShadow = false; // isolate the ORDER property from op traffic noise
+        _supa = { from: (t) => makeChain(t), rpc: () => Promise.resolve({ data: null, error: { code: 'PGRST202', message: 'missing' } }) };
+        window._supaUser = { id: 'recon-u' };
+        _supaCloudLoaded = true; _loadedFromCacheOnly = false; _isEmployee = false;
+        _loadedDataOwner = 'recon-u'; _deltaCursor = null; _authSettingsLoaded = true;
+        localStorage.setItem('zp3_pending_sync', '1'); // "offline writes pending"
+        await _onReconnect();
+        const firstWrite = fired.findIndex(f => f.startsWith('write:'));
+        const firstRead = fired.findIndex(f => f.startsWith('read:'));
+        return { firstRead, firstWrite, sample: fired.slice(0, 6), pendingCleared: localStorage.getItem('zp3_pending_sync') !== '1' };
+      } finally {
+        _supa = saved.supa; window._supaUser = saved.user; _supaCloudLoaded = saved.loaded;
+        _loadedDataOwner = saved.owner; _deltaCursor = saved.cursor; _isEmployee = saved.emp;
+        _syncedHash = saved.hash; _lastKnownIds = saved.known; _authSettingsLoaded = saved.auth;
+        _loadedFromCacheOnly = saved.foc; window._opLogShadow = saved.flag;
+        _tblSnap.forEach(({ set, rows }) => set(rows));
+        localStorage.removeItem('zp3_pending_sync');
+        _loadInProgress = false; _activeLoadPromise = null;
+      }
+    });
+    if (r.skip) return;
+    expect(r.firstRead).toBeGreaterThanOrEqual(0);       // the pull happened…
+    if (r.firstWrite !== -1) {
+      expect(r.firstWrite).toBeGreaterThan(r.firstRead); // …and every write came after it
+    }
+    expect(r.pendingCleared).toBe(true);
+  });
+});
