@@ -161,6 +161,11 @@ test.describe('Realtime sync — render coverage', () => {
       if (origLoad) window.supaLoadFromCloud = origLoad;
       return loadFromCloudCalled;
     });
+    // The reconnect fired a REAL (mocked) silent load fire-and-forget. Let it fully
+    // settle before the next test — an in-flight load replacing the arrays mid-test
+    // is cross-test contamination whose timing varies by browser (webkit flaked here).
+    await page.waitForFunction(() => typeof _loadInProgress === 'undefined' || _loadInProgress === false, null, { timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(600); // trailing-reload settle (300ms timer + retry margin)
     // This test is informational — the function may not be accessible depending on scoping
     if (loadCalled !== null) {
       expect(loadCalled, '_onReconnect must trigger supaLoadFromCloud even with no pending saves').toBe(true);
@@ -177,22 +182,31 @@ test.describe('Realtime sync — render coverage', () => {
   // timing exposed. Now: fire the event, wait out the debounce, and assert the cache
   // actually CONTAINS the applied record (strictly stronger than the old check).
   test('_applyRealtimeRecord writes the applied record to the local cache (debounced)', async () => {
-    const cacheUpdated = await page.evaluate(async () => {
+    const r = await page.evaluate(async () => {
       if (typeof _applyRealtimeRecord !== 'function') return null;
       _applyRealtimeRecord('td_clients', {
         eventType: 'INSERT',
         new: { id: 'rt-test-client-1', user_id: 'u', data: { id: 'rt-test-client-1', name: 'Realtime Test Client' }, deleted_at: null },
         old: null,
       });
-      await new Promise(r => setTimeout(r, 800)); // > the 250ms trailing debounce
+      const appliedToArray = (typeof clients !== 'undefined' ? clients : []).some(x => String(x.id) === 'rt-test-client-1');
+      await new Promise(res => setTimeout(res, 800)); // > the 250ms trailing debounce
       const after = localStorage.getItem('zp3_cloud_cache');
+      const stillInArray = (typeof clients !== 'undefined' ? clients : []).some(x => String(x.id) === 'rt-test-client-1');
       // Clean up
       const c = clients; const idx = c.findIndex(x => String(x.id) === 'rt-test-client-1');
       if (idx !== -1) c.splice(idx, 1);
-      return !!(after && after.includes('rt-test-client-1'));
+      return {
+        ok: !!(after && after.includes('rt-test-client-1')),
+        cacheExists: after !== null,
+        appliedToArray,
+        stillInArray,
+        loadInProgress: typeof _loadInProgress !== 'undefined' ? _loadInProgress : 'n/a',
+        timerPending: typeof _writeCacheTimer !== 'undefined' ? !!_writeCacheTimer : 'n/a',
+      };
     });
-    if (cacheUpdated !== null) {
-      expect(cacheUpdated, 'the debounced cache write must land and contain the applied record').toBe(true);
+    if (r !== null) {
+      expect(r.ok, `debounced cache write must land with the applied record — ${JSON.stringify(r)}`).toBe(true);
     }
     assertNoErrors(page, '_writeLocalCache on realtime');
   });

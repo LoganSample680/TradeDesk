@@ -449,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.32';
+const APP_VERSION='07.01.26.33';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3703,13 +3703,21 @@ async function _fetchProposalViews(){
         if(v.hub_view_count)_pvHubCnt[v.bid_id]=(v.hub_view_count||0);
         if(v.client_view_count)_pvCliCnt[v.bid_id]=(v.client_view_count||0);
       });
+      // Render ONLY when the view data actually changed. This fetch runs after every
+      // load (setTimeout 1500) and on a 30s interval — an unconditional renderDash()
+      // here rebuilt the whole dashboard for byte-identical data on every tick, and
+      // stacked 2-3 redundant render passes into every reconcile window (named live
+      // by the glitch-free budget's caller trace). The maps still swap every time.
+      const _pvSig=JSON.stringify([_pvBid,_pvHub,_pvClient,_pvCon,_pvHubCnt,_pvCliCnt]);
+      const _pvChanged=_pvSig!==window._pvLastSig;
+      window._pvLastSig=_pvSig;
       _proposalViewsByBid=_pvBid;
       _proposalViewsByBidHubClient=_pvHub;
       _proposalViewsByBidClient=_pvClient;
       _proposalViewsByBidContractor=_pvCon;
       _proposalViewsByBidHubCount=_pvHubCnt;
       _proposalViewsByBidClientCount=_pvCliCnt;
-      renderDash();
+      if(_pvChanged)renderDash();
     }
   }catch(e){}
 }
