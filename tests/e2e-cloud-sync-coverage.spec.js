@@ -1306,6 +1306,129 @@ test.describe('100-writer op channel + rebase', () => {
     expect(r.hashIsIncoming).toBe(true);
   });
 
+  test('crew op-sync — ops carry the CONTRACTOR uid and redacted-table ops never push', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof window.__opSync !== 'function' || typeof window.__opDbUnsynced !== 'function') return { skip: true };
+      const idC = 771050, idB = 771051;
+      const saved = {
+        supa: _supa, user: window._supaUser, flag: window._opLogShadow, saveAt: _lastLocalSaveAt,
+        emp: _isEmployee, cid: _contractorUserId, rec: _employeeRecord, cursor: _deltaCursor,
+      };
+      const pushed = []; const pulls = [];
+      const makeChain = (table) => {
+        const chain = {
+          insert(rows) { if (table === 'td_ops') pushed.push(...rows); return chain; },
+          select() { return chain; }, eq(col, val) { if (table === 'td_ops') pulls.push(val); return chain; },
+          gt() { return chain; }, order() { return chain; }, limit() { return chain; },
+          upsert() { return chain; }, update() { return chain; }, delete() { return chain; },
+          maybeSingle() { return Promise.resolve({ data: null, error: null }); },
+          single() { return Promise.resolve({ data: null, error: null }); },
+          then(res, rej) { return Promise.resolve({ data: [], error: null }).then(res, rej); },
+        };
+        return chain;
+      };
+      try {
+        window._opLogShadow = true; _lastLocalSaveAt = Date.now();
+        window._supaUser = { id: 'emp-1' };
+        _isEmployee = true; _contractorUserId = 'boss-1';
+        _employeeRecord = { permissions: {} }; // no money permissions → bids/income/etc redacted
+        _deltaCursor = null;
+        // Derive one PERMITTED op (td_clients) and one REDACTED op (td_bids) as this login.
+        clients.push({ id: idC, name: 'Crew Op C', phone: '3165550001' });
+        bids.push({ id: idB, client_name: 'Crew Op B', name: 'Crew Op B', amount: 5, status: 'Pending' });
+        _opShadowDerive();
+        for (let i = 0; i < 40; i++) {
+          const ops = await window.__opDbUnsynced();
+          if (ops.some(o => o.rowId === String(idC)) && ops.some(o => o.rowId === String(idB))) break;
+          await new Promise(res => setTimeout(res, 100));
+        }
+        _supa = { from: (t) => makeChain(t), rpc: () => Promise.resolve({ data: null, error: null }) };
+        await window.__opSync();
+        const after = await window.__opDbUnsynced();
+        return {
+          pushedUids: [...new Set(pushed.map(p => p.user_id))],
+          pushedTables: [...new Set(pushed.map(p => p.op_table))],
+          pushedOurClientOp: pushed.some(p => p.row_id === String(idC)),
+          pushedOurBidOp: pushed.some(p => p.row_id === String(idB)),
+          pullUid: pulls[0],
+          bidOpStillPending: after.some(o => o.rowId === String(idB)), // filtered, not lost
+        };
+      } finally {
+        _supa = saved.supa; window._supaUser = saved.user; window._opLogShadow = saved.flag;
+        _lastLocalSaveAt = saved.saveAt; _isEmployee = saved.emp; _contractorUserId = saved.cid;
+        _employeeRecord = saved.rec; _deltaCursor = saved.cursor;
+        let i = clients.findIndex(c => c.id === 771050); if (i > -1) clients.splice(i, 1);
+        i = bids.findIndex(b => b.id === 771051); if (i > -1) bids.splice(i, 1);
+        try { _opRebaseline(); } catch (e) {}
+      }
+    });
+    if (r.skip) return;
+    expect(r.pushedOurClientOp).toBe(true);          // permitted table publishes…
+    expect(r.pushedUids).toEqual(['boss-1']);        // …under the CONTRACTOR's account
+    expect(r.pushedOurBidOp).toBe(false);            // redacted-table op never leaves the device
+    expect(r.pushedTables).not.toContain('td_bids');
+    expect(r.pullUid).toBe('boss-1');                // the pull reads the contractor's stream
+    expect(r.bidOpStillPending).toBe(true);          // filtered ≠ deleted (ack-prune owns cleanup)
+  });
+
+  test('crew save — bumps the account cursor via RPC after table writes (never zj_data directly)', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof supaSaveToCloud !== 'function') return { skip: true };
+      const saved = {
+        supa: _supa, user: window._supaUser, loaded: _supaCloudLoaded, emp: _isEmployee,
+        cid: _contractorUserId, rec: _employeeRecord, hash: _syncedHash, known: _lastKnownIds,
+        foc: _loadedFromCacheOnly, flag: window._opLogShadow, zj: window._lastZjUpdatedAt,
+        auth: _authSettingsLoaded,
+      };
+      const _tblSnap = _TD_TABLES.map(({ t, get, set }) => ({ t, set, rows: (get() || []).slice() }));
+      const rpcCalls = []; const zjWrites = [];
+      const makeChain = (table) => {
+        const chain = {
+          select() { return chain; }, eq() { return chain; }, gt() { return chain; }, lt() { return chain; },
+          in() { return chain; }, is() { return chain; }, order() { return chain; }, limit() { return chain; },
+          insert() { return chain; },
+          upsert() { if (table === 'zj_data') zjWrites.push('upsert'); return chain; },
+          update() { if (table === 'zj_data') zjWrites.push('update'); return chain; },
+          delete() { return chain; },
+          maybeSingle() { return Promise.resolve({ data: null, error: null }); },
+          single() { return Promise.resolve({ data: null, error: null }); },
+          then(res, rej) { return Promise.resolve({ data: [], error: null }).then(res, rej); },
+        };
+        return chain;
+      };
+      try {
+        window._opLogShadow = false; // isolate the cursor-bump property from op traffic
+        window._supaUser = { id: 'emp-2' };
+        _isEmployee = true; _contractorUserId = 'boss-2';
+        _employeeRecord = { permissions: { estimate: true } }; // td_bids writable
+        _supaCloudLoaded = true; _loadedFromCacheOnly = false; _authSettingsLoaded = false;
+        _syncedHash = {}; _lastKnownIds = {};
+        bids.push({ id: 771060, client_name: 'Crew Save', name: 'Crew Save', amount: 12, status: 'Pending' }); // unknown hash → a real table write
+        _supa = {
+          from: (t) => makeChain(t),
+          rpc: (name, args) => { rpcCalls.push({ name, args }); return Promise.resolve({ data: '2026-07-02T00:00:00.000+00:00', error: null }); },
+        };
+        await supaSaveToCloud();
+        return {
+          bump: rpcCalls.find(c => c.name === 'bump_account_cursor'),
+          zjWrites: zjWrites.length,
+          cursorApplied: window._lastZjUpdatedAt === '2026-07-02T00:00:00.000+00:00',
+        };
+      } finally {
+        _supa = saved.supa; window._supaUser = saved.user; _supaCloudLoaded = saved.loaded;
+        _isEmployee = saved.emp; _contractorUserId = saved.cid; _employeeRecord = saved.rec;
+        _syncedHash = saved.hash; _lastKnownIds = saved.known; _loadedFromCacheOnly = saved.foc;
+        window._opLogShadow = saved.flag; window._lastZjUpdatedAt = saved.zj; _authSettingsLoaded = saved.auth;
+        _tblSnap.forEach(({ set, rows }) => set(rows));
+        localStorage.removeItem('zp3_pending_sync');
+      }
+    });
+    if (r.skip) return;
+    expect(r.bump && r.bump.args && r.bump.args.target).toBe('boss-2'); // cursor bumped for the BOSS's account
+    expect(r.zjWrites).toBe(0);                                          // crew never writes zj_data directly
+    expect(r.cursorApplied).toBe(true);                                  // returned cursor becomes our applied cursor
+  });
+
   test('reconnect with pending offline writes — PULL (reads) strictly before PUSH (writes)', async () => {
     const r = await page.evaluate(async () => {
       if (typeof _onReconnect !== 'function') return { skip: true };

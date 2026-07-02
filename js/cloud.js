@@ -257,33 +257,57 @@ async function loadAccountData(){
       try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,account:_account,config:_config,activeTrade:_activeTrade,isEmployee:false}));}catch(_e){}
       return true;
     }
-    // Check if this user is a linked employee
-    const{data:empRow}=await _supa.from('team_members').select('*').eq('employee_user_id',_supaUser.id).eq('active',true).maybeSingle();
-    if(empRow){
-      _isEmployee=true;_contractorUserId=empRow.contractor_user_id;_employeeRecord=empRow;
-      _user={id:_supaUser.id,email:_supaUser.email,name:empRow.name,role:empRow.role||'employee',account_id:null};
+    // ── CREW LINKING ─────────────────────────────────────────────────────────
+    // Shared helper: finalize this session as a linked crew member.
+    const _linkAsCrew=(row,welcome)=>{
+      _isEmployee=true;_contractorUserId=row.contractor_user_id;_employeeRecord=row;
+      _user={id:_supaUser.id,email:_supaUser.email,name:row.name||'',role:row.role||'employee',account_id:null};
       applyPermissions();
       if(typeof _applyEmployeeNavGating==='function')_applyEmployeeNavGating();
+      if(welcome)showToast('Welcome to the team, '+escHtml(row.name||'there')+'! 👋','✅');
       try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'painting',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
       return true;
+    };
+    const _pend=(()=>{try{return JSON.parse(localStorage.getItem('_pendingEmpInvite')||'null');}catch(_e){return null;}})();
+    // (0) SERVER-VERIFIED TOKEN — the forge-proof path. Links regardless of which
+    // email the crew member signed up with (the old flows silently dead-ended on a
+    // mismatch); single-use and expiring, validated entirely server-side.
+    if(_pend?.tok){
+      try{
+        const{data:_cl,error:_clErr}=await _supa.rpc('claim_crew_invite',{tok:_pend.tok});
+        if(!_clErr&&_cl?.ok){
+          localStorage.removeItem('_pendingEmpInvite');
+          return _linkAsCrew({id:_cl.team_member_id,contractor_user_id:_cl.contractor_user_id,employee_user_id:_supaUser.id,name:_cl.name||_pend.ename||'',role:_cl.role||'tech',permissions:_cl.permissions||{},active:true},true);
+        }
+        // invalid / used / expired → fall through; the mismatch alert below explains.
+      }catch(_e){} // RPC not deployed yet → legacy paths below, unchanged
     }
-    // Check for pending invite (email match, not yet linked)
-    const{data:inviteRow}=await _supa.from('team_members').select('*').eq('email',_supaUser.email).is('employee_user_id',null).maybeSingle();
+    // (1) Already-linked crew member. LIST, not maybeSingle — an employee active on
+    // two crews (subs work for multiple GCs) used to ERROR the lookup and fall
+    // through to "not nested". Deterministic pick: remembered choice, else the most
+    // recently joined; window.switchCrew(cid) re-targets and reloads.
+    const{data:empRows}=await _supa.from('team_members').select('*').eq('employee_user_id',_supaUser.id).eq('active',true).order('joined_at',{ascending:false});
+    if(empRows&&empRows.length){
+      let empRow=empRows[0];
+      if(empRows.length>1){
+        window._crewChoices=empRows.map(r=>({contractor_user_id:r.contractor_user_id,name:r.name,role:r.role}));
+        const _pick=(()=>{try{return localStorage.getItem('zp3_crew_choice_'+_supaUser.id);}catch(_e){return null;}})();
+        const _hit=_pick&&empRows.find(r=>String(r.contractor_user_id)===String(_pick));
+        if(_hit)empRow=_hit;
+      }
+      return _linkAsCrew(empRow,false);
+    }
+    // (2) Pending invite by EMAIL MATCH (contractor pre-created the roster row).
+    // LIST + most-recent — two bosses inviting the same email used to error out.
+    const{data:inviteRows}=await _supa.from('team_members').select('*').eq('email',_supaUser.email).is('employee_user_id',null).order('invited_at',{ascending:false});
+    const inviteRow=inviteRows&&inviteRows[0];
     if(inviteRow){
       await _supa.from('team_members').update({employee_user_id:_supaUser.id,active:true,joined_at:new Date().toISOString()}).eq('id',inviteRow.id);
-      _isEmployee=true;_contractorUserId=inviteRow.contractor_user_id;
-      _employeeRecord={...inviteRow,employee_user_id:_supaUser.id,active:true};
-      _user={id:_supaUser.id,email:_supaUser.email,name:inviteRow.name,role:inviteRow.role||'employee',account_id:null};
-      applyPermissions();
-      if(typeof _applyEmployeeNavGating==='function')_applyEmployeeNavGating();
       localStorage.removeItem('_pendingEmpInvite');
-      showToast('Welcome to the team, '+escHtml(inviteRow.name||'there')+'! 👋','✅');
-      try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'painting',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
-      return true;
+      return _linkAsCrew({...inviteRow,employee_user_id:_supaUser.id,active:true},true);
     }
-    // No team_members row — try _pendingEmpInvite as a fallback (covers cases where
-    // the contractor's invite flow didn't write a team_members row before this fix)
-    const _pi=JSON.parse(localStorage.getItem('_pendingEmpInvite')||'null');
+    // (3) Legacy fallback: unsigned _pendingEmpInvite payload (pre-token links).
+    const _pi=_pend;
     if(_pi?.cid){
       const{error:_piErr}=await _supa.from('team_members').upsert({contractor_user_id:_pi.cid,email:_supaUser.email,employee_user_id:_supaUser.id,active:true,joined_at:new Date().toISOString()},{onConflict:'contractor_user_id,email'});
       if(!_piErr){
@@ -297,6 +321,15 @@ async function loadAccountData(){
         try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'painting',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
         return true;
       }
+    }
+    // (4) A crew invite is pending but NOTHING linked: the crew member almost
+    // certainly signed up with a different email than the boss put on the roster.
+    // This used to dead-end SILENTLY into a brand-new empty owner account — the
+    // worst possible first impression. Say it out loud, then continue (they may
+    // legitimately also be an owner).
+    if(_pend&&(_pend.cid||_pend.tok)){
+      localStorage.removeItem('_pendingEmpInvite');
+      try{zAlert('Your crew invite from '+escHtml(_pend.bname||'your contractor')+' couldn’t be linked to this login ('+escHtml(_supaUser.email||'')+').\n\nIf you signed up with a different email than the invite was sent to, ask '+escHtml(_pend.bname||'them')+' to re-send the invite to this address. Continuing as a new business account for now.',{title:'Invite not linked'});}catch(_e){}
     }
     // No users row — check for pre-schema user via zj_data
     const{data:zd}=await _supa.from('zj_data').select('user_id').eq('user_id',_supaUser.id).maybeSingle();
@@ -449,7 +482,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.34';
+const APP_VERSION='07.02.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -930,26 +963,34 @@ function _opIngestPulled(ops){
 }
 // Ops sync: PUSH this device's un-acked ops to td_ops (chunked), prune them on success,
 // then PULL peers' ops since our cursor and apply them. Best-effort: a missing td_ops
-// table or any error is swallowed — rows remain the correctness backstop. Employee and
-// dev-support sessions are excluded (their auth.uid() ≠ the account owner td_ops is
-// scoped to; they keep row-level sync — extending the RLS to linked crew is backlogged).
+// table or any error is swallowed — rows remain the correctness backstop. CREW logins
+// participate fully: their ops carry the CONTRACTOR's user_id (the td_ops_crew RLS
+// policy authorizes exactly that for actively-linked members, permission-filtered per
+// op_table), so the per-field concurrency protection covers crew writers too. Only
+// dev-support impersonation stays off the channel (read-only posture).
 let _opSyncRunning=false;
 async function _opSyncOps(){
   if(!window._opLogShadow||!_supa||!_supaUser||_opSyncRunning)return;
-  if(_isEmployee||_devSupportMode)return;
+  if(_devSupportMode)return;
+  const _opUid=_isEmployee?_contractorUserId:_supaUser.id;
+  if(!_opUid)return;
   _opSyncRunning=true;
   try{
-    const unsynced=(await _opDbUnsynced()).filter(op=>op.owner===_supaUser.id); // never push another account's ops
+    // Never push another login's ops, and never push ops for tables this crew
+    // member's permissions redact — the server would reject the whole batch (the
+    // td_ops_crew policy is the enforced twin of this filter).
+    const _redact=_employeeRedactedTables();
+    const unsynced=(await _opDbUnsynced()).filter(op=>op.owner===_supaUser.id&&!_redact.has(op.table));
     if(unsynced.length){
       for(let i=0;i<unsynced.length;i+=200){
         const slice=unsynced.slice(i,i+200);
-        const{error}=await _supa.from('td_ops').insert(slice.map(op=>({hlc:op.hlc,user_id:_supaUser.id,op_table:op.table,row_id:String(op.rowId),fields:op.fields||{},device_id:_deviceId})));
+        const{error}=await _supa.from('td_ops').insert(slice.map(op=>({hlc:op.hlc,user_id:_opUid,op_table:op.table,row_id:String(op.rowId),fields:op.fields||{},device_id:_deviceId})));
         if(error)break;              // keep them pending; retry next sync
         await _opDbPrune(slice.map(o=>o.seq));
       }
     }
     const since=_opsPullSince(_deltaCursor);
-    let q=_supa.from('td_ops').select('hlc,op_table,row_id,fields,device_id').eq('user_id',_supaUser.id).order('hlc',{ascending:true}).limit(500);
+    let q=_supa.from('td_ops').select('hlc,op_table,row_id,fields,device_id').eq('user_id',_opUid).order('hlc',{ascending:true}).limit(500);
     if(since)q=q.gt('hlc',since);
     const{data,error}=await q;
     if(!error)_opIngestPulled(data||[]);
@@ -1038,6 +1079,16 @@ function _isMissingTableErr(err){
 //      permission-derived, not RPC-derived, so corruption is impossible even
 //      before the RPC migration reaches production (where load falls back to the
 //      raw, unredacted select). Contractors (not _isEmployee) redact nothing.
+// Multi-crew: remember which boss this login works under next boot, then reload into
+// it. window._crewChoices (set at link time when >1 active crew) lists the options.
+window.switchCrew=function(cid){
+  try{if(_supaUser&&cid)localStorage.setItem('zp3_crew_choice_'+_supaUser.id,String(cid));}catch(_e){}
+  location.reload();
+};
+
+// KEEP IN LOCKSTEP with crew_perm() in supabase/migrations/20260715_crew_rls_and_invites.sql
+// — that policy function is the SERVER-enforced twin of this map (crew writes/reads/ops
+// are permission-gated per table by the database, not just by this client-side skip).
 function _employeeRedactedTables(){
   if(!_isEmployee)return new Set();
   const p=(_employeeRecord&&_employeeRecord.permissions)||{};
@@ -1770,6 +1821,22 @@ function openInviteEmployeeModal(){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   setTimeout(()=>{document.getElementById('_inv-name')?.focus();_setEmpRolePreset('tech');},80);
 }
+// Mint a SERVER-VERIFIED single-use invite token (crew_invites row) for a roster
+// entry. The legacy ?emp_invite= payload is forgeable base64 that only ever linked
+// via email-match; the token links regardless of sign-up email and can't be forged
+// (it exists only as a row the contractor created; claim_crew_invite burns it).
+// Returns the token or null (migration not deployed / offline / no roster row) —
+// callers fall back to the legacy email-match-only link, so deploys stay safe.
+async function _mintCrewInviteToken(cid,email){
+  try{
+    if(!_supa||!_supaUser||!email)return null;
+    const{data:tmRow,error:tmErr}=await _supa.from('team_members').select('id').eq('contractor_user_id',cid).eq('email',email).maybeSingle();
+    if(tmErr||!tmRow)return null;
+    const{data:inv,error:invErr}=await _supa.from('crew_invites').insert({contractor_user_id:cid,team_member_id:tmRow.id,email}).select('token').single();
+    if(invErr||!inv)return null;
+    return inv.token;
+  }catch(_e){return null;}
+}
 async function _submitInviteEmployee(){
   const name=(document.getElementById('_inv-name')?.value||'').trim();
   if(!name){zAlert('Enter a name.');return;}
@@ -1783,13 +1850,18 @@ async function _submitInviteEmployee(){
   if(!S.employees)S.employees=[];
   S.employees.push(newEmp);
   _settingsChanged();saveAll();
-  // Build invite link
+  // Build invite link. Sync team_members FIRST (awaited) so the server-minted token
+  // can reference the roster row; the link then carries `tok` — the forge-proof,
+  // single-use claim path that links even if the crew member signs up with a
+  // different email. Email-match remains the fallback when minting is unavailable.
   const cid=_contractorUserId||_supaUser?.id||'';
-  const inviteLink=window.location.origin+window.location.pathname+'?emp_invite='+btoa(JSON.stringify({cid,eid:newEmp.id,email:email||'',bname:S.bname||'',ename:name||''}));
-  // Sync to team_members so email-match works when employee signs up
+  let _invTok=null;
   if(email&&supaEnabled()&&_supaUser){
-    _supa.from('team_members').upsert({contractor_user_id:cid,email,name,role:newEmp.role,active:false,invited_at:new Date().toISOString()},{onConflict:'contractor_user_id,email'}).then(({error})=>{if(error)console.warn('team_members upsert:',error);});
+    const{error}=await _supa.from('team_members').upsert({contractor_user_id:cid,email,name,role:newEmp.role,permissions:permissions||{},active:false,invited_at:new Date().toISOString()},{onConflict:'contractor_user_id,email'});
+    if(error)console.warn('team_members upsert:',error);
+    else _invTok=await _mintCrewInviteToken(cid,email);
   }
+  const inviteLink=window.location.origin+window.location.pathname+'?emp_invite='+btoa(JSON.stringify({cid,eid:newEmp.id,email:email||'',bname:S.bname||'',ename:name||'',tok:_invTok||undefined}));
   // Send branded invite email if address provided
   if(email&&supaEnabled()&&_supaUser){
     const{data:{session:_invSess}}=await _supa.auth.getSession();
@@ -2428,7 +2500,8 @@ async function _saveEmployee(idx){
     // Auto-create employment agreement; signing IS the onboarding step
     if(isNew){
       const cid=_supaUser.id;
-      const inviteUrl=window.location.origin+window.location.pathname+'?emp_invite='+btoa(JSON.stringify({cid,eid:emp.id,email:emp.email||'',bname:S.bname||'',ename:emp.name||''}));
+      const _tok2=await _mintCrewInviteToken(cid,emp.email); // server-verified claim token (null → legacy email-match link)
+      const inviteUrl=window.location.origin+window.location.pathname+'?emp_invite='+btoa(JSON.stringify({cid,eid:emp.id,email:emp.email||'',bname:S.bname||'',ename:emp.name||'',tok:_tok2||undefined}));
       const{data:{session:_saveSess}}=await _supa.auth.getSession();
       const _saveToken=_saveSess?.access_token;
       // Build the signing link — embed inviteUrl in the contract snapshot so
@@ -3541,6 +3614,17 @@ async function supaSaveToCloud(){
       // blob over the cloud (the boot clobber) — defer to the post-load flush.
       _logSave('skip-settings','settings not hydrated — deferring to post-load flush');
       try{localStorage.setItem('zp3_pending_sync','1');}catch(_e){}
+    } else if(_isEmployee && !_devSupportMode && _tableWrites>0){
+      // CREW SAVE CURSOR BUMP: crew can't write zj_data (settings stay owner-private),
+      // but "cursor moved ⇒ all data committed" must hold for crew writes too — else
+      // every peer's heartbeat/delta goes blind to crew edits and only best-effort
+      // realtime carries them. The SECURITY DEFINER RPC bumps ONLY updated_at, and
+      // runs AFTER the table loop above committed, preserving the read-skew invariant.
+      // Missing RPC (old server) → realtime row events still carry the edits.
+      try{
+        const{data:_bc}=await _supa.rpc('bump_account_cursor',{target:uid});
+        if(_bc)window._lastZjUpdatedAt=_bc;
+      }catch(_e){}
     }
 
     _logSave('ok',{id:_attemptId,mileage:_mileCount});
@@ -3981,6 +4065,15 @@ async function supaLoadFromCloud({silent=false}={}){
     // latency: the reads were already sequential, just in the wrong order.
     _lastLoadDeletes={}; // fresh record of what THIS load explicitly deletes (reconnect merge-back reads it)
     const settingsResult=await _supa.from('zj_data').select('settings,checks_state,receipt_images,updated_at').eq('user_id',uid).maybeSingle();
+    // CREW CURSOR READ-FIRST: crew logins can't read zj_data (settings stay owner-
+    // private), so the read above returns null for them. Sample the account cursor
+    // via the SECURITY DEFINER RPC — BEFORE the table snapshot, same read-skew
+    // discipline as the owner path ("stored cursor never newer than data"). Missing
+    // RPC (old server) → null → crew keeps today's full-RPC-reload behavior.
+    let _crewCursor=null;
+    if(_isEmployee&&!_devSupportMode){
+      try{const{data:_cc}=await _supa.rpc('get_account_cursor',{target:uid});if(_cc)_crewCursor=_cc;}catch(_e){}
+    }
 
     // EMPLOYEE sessions load through the SECURITY DEFINER RPC load_account_data,
     // which redacts money fields the employee's permissions don't grant — so the
@@ -4024,7 +4117,13 @@ async function supaLoadFromCloud({silent=false}={}){
         return _TD_TABLES.map(({t})=>({data:Array.isArray(data.tables[t])?data.tables[t]:[],error:null}));
       }catch(_e){return null;}
     };
-    const _deltaFetch=async(since)=>(await _rpcDelta(since))||_deltaQuery(since);
+    const _deltaFetch=async(since)=>{
+      // get_account_delta is auth.uid()-scoped — a crew login calling it would read
+      // its OWN (empty) account. Crew deltas ride the per-table reads, which the
+      // crew RLS policies scope to the boss's rows with per-table permissions.
+      if(_isEmployee)return _deltaQuery(since);
+      return (await _rpcDelta(since))||_deltaQuery(since);
+    };
     // DELTA FIRST — a normal contractor cold load pulls only rows changed since this
     // device's last visit (updated_at > cursor; soft-deletes ride via deleted_at),
     // merged onto the cache-painted snapshot. Skips employees and dev-support
@@ -4042,7 +4141,10 @@ async function supaLoadFromCloud({silent=false}={}){
           for(const{t,get}of _TD_TABLES)_lastKnownIds[t]=new Set((get()||[]).map(r=>String(r.id)));
         }
       }
-    }else if(silent&&!_isEmployee&&!_devSupportMode&&_supaCloudLoaded&&_deltaCursor&&_deltaCursor<new Date(Date.now()+60000).toISOString()&&_loadedDataOwner===uid){
+    }else if(silent&&!_devSupportMode&&_supaCloudLoaded&&_deltaCursor&&_deltaCursor<new Date(Date.now()+60000).toISOString()&&_loadedDataOwner===uid){
+      // (Crew included: their delta rides the per-table reads under the crew RLS —
+      // permitted tables return changed rows, redacted tables return EMPTY, and the
+      // id-keyed merge leaves untouched tables exactly as the redacting RPC left them.)
       // SILENT DELTA — the scale fix for reconciles. Every heartbeat / realtime catch-up /
       // trailing reload used to re-read the ENTIRE account (14 full-table selects); on a
       // heavy account that made the very mechanism that keeps devices converged the most
@@ -4173,6 +4275,12 @@ async function supaLoadFromCloud({silent=false}={}){
       }
     }
     if(_newCursor)_deltaCursor=_newCursor;
+    // CREW: the redacted RPC's rows carry no updated_at, so a crew FULL load never
+    // establishes a delta cursor from rows. Seed it from the pre-table cursor sample —
+    // the cursor is bumped LAST on every save, so "rows newer than it" is the exact
+    // delta contract owner devices use. This is what graduates crew from full-RPC
+    // reloads to cheap silent deltas.
+    if(_isEmployee&&!_deltaCursor&&_crewCursor)_deltaCursor=_crewCursor;
     _loadedDataOwner=uid; // memory now authoritatively holds THIS account's data (gates the silent delta + cross-account guard)
 
     const _lsRcpt=(()=>{try{return JSON.parse(localStorage.getItem('zp3_rcpt_imgs')||'{}')}catch{return{}}})();
@@ -4183,6 +4291,10 @@ async function supaLoadFromCloud({silent=false}={}){
 
     const sd=settingsResult.data;
     if(sd?.updated_at)window._lastZjUpdatedAt=sd.updated_at;
+    // Crew can't read zj_data — their "last applied cursor" is the RPC sample taken
+    // BEFORE the table reads (never newer than the data it vouches for; a save that
+    // landed mid-load leaves the server cursor ahead → the heartbeat fires next tick).
+    else if(_isEmployee&&_crewCursor)window._lastZjUpdatedAt=_crewCursor;
     if(sd){
       if(sd.checks_state){const cc=(()=>{try{return JSON.parse(sd.checks_state);}catch{return null;}})();if(cc&&Object.keys(cc).length)checksState=cc;}
       if(sd.settings){const ss=(()=>{try{return JSON.parse(sd.settings);}catch{return null;}})();
@@ -4331,6 +4443,12 @@ async function supaLoadFromCloud({silent=false}={}){
         if(Date.now()-_lastLocalSaveAt<3000)return;
         try{
           const _puid=_devSupportMode?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id):(_isEmployee?_contractorUserId:_supaUser.id);
+          if(_isEmployee&&!_devSupportMode){
+            // Crew can't SELECT zj_data — the cursor RPC is their heartbeat probe.
+            const{data:_ec}=await _supa.rpc('get_account_cursor',{target:_puid});
+            if(_ec&&window._lastZjUpdatedAt&&_ec!==window._lastZjUpdatedAt)_scheduleReconcile(0);
+            return;
+          }
           const{data:_zr}=await _supa.from('zj_data').select('updated_at').eq('user_id',_puid).maybeSingle();
           if(_zr?.updated_at&&window._lastZjUpdatedAt&&_zr.updated_at!==window._lastZjUpdatedAt) _scheduleReconcile(0);
         }catch(_e){}

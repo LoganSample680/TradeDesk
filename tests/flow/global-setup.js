@@ -24,6 +24,10 @@ const path = require('path');
 const LOCAL_API = process.env.SUPABASE_UPSTREAM || 'http://127.0.0.1:54321';
 const LOCAL_SECRET = process.env.SUPABASE_LOCAL_KEY || '';
 const ACCOUNTS_FILE = path.join(__dirname, '.local-accounts.json');
+// Bare CREW auth users (no contractor graph) — the crew-convergence spec links them
+// to a worker contractor at runtime, exercising the real invite/claim paths.
+const CREW_FILE = path.join(__dirname, '.local-crew.json');
+const CREW_N = Math.max(2, parseInt(process.env.E2E_CREW_N || '6', 10));
 
 // Best-effort read of the configured worker count from the flow config, so the
 // pool always covers every parallelIndex. Falls back to 3 on any parse trouble.
@@ -182,4 +186,32 @@ module.exports = async () => {
 
   fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
   console.log(`[global-setup] LOCAL STACK: provisioned ${accounts.length}/${count} per-worker accounts → ${path.basename(ACCOUNTS_FILE)}`);
+
+  // ── CREW POOL — bare auth users (deliberately NO contractor graph: no users/
+  // accounts/zj_data rows), so signing one in exercises the REAL crew-linking paths
+  // (token claim / email match) instead of the owner branch. The crew-convergence
+  // spec links them to a worker contractor at runtime. Failures are non-fatal: the
+  // spec soft-skips when the crew pool is short.
+  const crew = [];
+  for (let i = 0; i < CREW_N; i++) {
+    const email = `e2e+crew${i}@tradedesk.local`;
+    const password = `Crew-Passw0rd-${i}!`;
+    let uid = null;
+    try {
+      const r = await fetch(`${LOCAL_API}/auth/v1/admin/users`, {
+        method: 'POST',
+        headers: { apikey: LOCAL_SECRET, Authorization: 'Bearer ' + LOCAL_SECRET, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, email_confirm: true }),
+      });
+      if (r.status === 200 || r.status === 201) {
+        const data = await r.json();
+        uid = data && (data.id || (data.user && data.user.id)) || null;
+      } else {
+        uid = await findExistingUid(email);
+      }
+    } catch (e) { /* soft */ }
+    if (uid) crew.push({ email, password, uid });
+  }
+  fs.writeFileSync(CREW_FILE, JSON.stringify(crew, null, 2));
+  console.log(`[global-setup] LOCAL STACK: provisioned ${crew.length}/${CREW_N} crew accounts → ${path.basename(CREW_FILE)}`);
 };

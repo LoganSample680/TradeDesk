@@ -84,6 +84,16 @@ function localAccount() {
 // from here instead of the cloud E2E_DEV2_* creds, which don't exist on the local stack.
 function localPool() { return _loadLocalPool() || []; }
 
+// CREW pool — bare auth users provisioned by global-setup (no contractor graph), for
+// specs that exercise the crew invite/link/nest paths. [] when unavailable.
+function crewPool() {
+  if (!LOCAL_STACK) return [];
+  try {
+    const arr = JSON.parse(fs.readFileSync(path.join(__dirname, '.local-crew.json'), 'utf8'));
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
 // CLOUD per-worker pool. With a 2nd real dev account configured, each Playwright
 // worker gets its OWN cloud account — so workers don't clobber a shared one (fixes
 // the contention failures) AND the seed data lands in REAL Supabase accounts you can
@@ -573,6 +583,7 @@ module.exports = {
   SEEDED_TABLES,
   localAccount,
   localPool,
+  crewPool,
   workerAccount,
   accountPair,
 };
