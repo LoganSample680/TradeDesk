@@ -202,6 +202,9 @@ test.describe('employee lockout — data layer (server-side redaction)', () => {
           const { error } = await _supa.from('team_members').insert({
             contractor_user_id: _supaUser.id, employee_user_id: Buid, name: 'E2E Tech B', role: 'tech', permissions: perms, active: true,
           });
+          // Surface the REAL failure reason in the finding (a bare linked=false told us
+          // nothing on the cloud gate — capture code+message for the rule's got).
+          window.__linkErr = error ? ((error.code || '?') + ': ' + (error.message || String(error))) : null;
           return error ? 0 : 3;
         }, { bidId, incId, REAL, Buid: B.uid, perms: TECH_PERMS });
       },
@@ -212,7 +215,8 @@ test.describe('employee lockout — data layer (server-side redaction)', () => {
           return { bidLanded: !!(b && b.length), linked: !!(tm && tm.length) };
         }, { bidId, Buid: B.uid });
         if (!r.bidLanded) return { ok: true, got: 'SKIP — td_bids unavailable on this stack (bid not persistable); redaction not exercisable' };
-        return { ok: r.linked, got: `bidLanded=${r.bidLanded} linked=${r.linked}` };
+        const linkErr = await p.evaluate(() => window.__linkErr || null);
+        return { ok: r.linked, got: `bidLanded=${r.bidLanded} linked=${r.linked}${linkErr ? ' insertErr=' + linkErr : ''}` };
       },
     });
 

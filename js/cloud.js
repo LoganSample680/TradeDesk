@@ -449,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.24';
+const APP_VERSION='07.01.26.25';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3058,7 +3058,16 @@ function _logSave(stage,info){
 // re-uploads on the next save — the delta merge never marks local edits synced.
 let _deltaCursor=null;
 function _readDeltaMeta(uid){
-  try{const m=JSON.parse(localStorage.getItem('zp3_delta_meta')||'null');return(m&&m._owner===uid&&m.cursor)?m:null;}catch(_e){return null;}
+  try{
+    const m=JSON.parse(localStorage.getItem('zp3_delta_meta')||'null');
+    if(!(m&&m._owner===uid&&m.cursor))return null;
+    // SELF-HEAL a poisoned sidecar: a cursor in the future (written before the cursor
+    // clamp existed, off a far-future legacy locked row) would make every delta return
+    // 0 rows forever. Reject it → this load falls back to FULL and re-establishes a
+    // sane cursor. 60s slack matches the write-side clamp.
+    if(m.cursor>new Date(Date.now()+60000).toISOString())return null;
+    return m;
+  }catch(_e){return null;}
 }
 // Paint the cached full snapshot into the live arrays (in place, via each table's
 // set) so the delta merge has a complete base. Returns false when there is no
@@ -3773,7 +3782,7 @@ async function supaLoadFromCloud({silent=false}={}){
           for(const{t,get}of _TD_TABLES)_lastKnownIds[t]=new Set((get()||[]).map(r=>String(r.id)));
         }
       }
-    }else if(silent&&!_isEmployee&&!_devSupportMode&&_supaCloudLoaded&&_deltaCursor&&_loadedDataOwner===uid){
+    }else if(silent&&!_isEmployee&&!_devSupportMode&&_supaCloudLoaded&&_deltaCursor&&_deltaCursor<new Date(Date.now()+60000).toISOString()&&_loadedDataOwner===uid){
       // SILENT DELTA — the scale fix for reconciles. Every heartbeat / realtime catch-up /
       // trailing reload used to re-read the ENTIRE account (14 full-table selects); on a
       // heavy account that made the very mechanism that keeps devices converged the most
@@ -3816,11 +3825,19 @@ async function supaLoadFromCloud({silent=false}={}){
     // cold load only pulls rows newer than this. Tracked for BOTH paths so the first
     // full load establishes the cursor that subsequent delta loads read from.
     let _newCursor=_isDelta?_deltaBase:null;
+    // CURSOR CLAMP — never advance the delta cursor past sane wall time. Legacy
+    // admin-locked rows are stamped updated_at ≈ now()+1 YEAR (the lock convention),
+    // and any such row poisons the cursor: every later delta asks "changed since
+    // next year?" → 0 rows forever, and the device silently stops converging while
+    // believing it's current (the cloud full-suite B→A + redundant-upload failures
+    // on the legacy dev account). Far-future rows still MERGE normally below — they
+    // just can't drag the cursor with them. 60s of slack absorbs proxy clock jitter.
+    const _cursorCeiling=new Date(Date.now()+60000).toISOString();
     for(let i=0;i<_TD_TABLES.length;i++){
       const{t,set,get}=_TD_TABLES[i];
       if(tableResults[i].error){console.warn('[cloud] skipping unprovisioned table',t);continue;} // missing table — leave in-memory data untouched
       const data=tableResults[i].data||[];
-      for(const r of data){if(r.updated_at&&(!_newCursor||r.updated_at>_newCursor))_newCursor=r.updated_at;}
+      for(const r of data){if(r.updated_at&&r.updated_at<_cursorCeiling&&(!_newCursor||r.updated_at>_newCursor))_newCursor=r.updated_at;}
       if(_isDelta){
         // Merge the changed rows onto the cache-painted array by id: a soft-deleted
         // row (deleted_at set) is removed; any other changed row replaces/adds. A row
