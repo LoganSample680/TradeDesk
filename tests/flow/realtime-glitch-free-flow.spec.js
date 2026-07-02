@@ -178,7 +178,31 @@ test.describe('realtime sync is glitch-free (multi-device)', () => {
       },
       rule: async () => {
         const amt = await pageB.evaluate((id) => { const b = (bids || []).find(x => x.id === id); return b ? b.amount : null; }, bidId);
-        return { ok: amt === 5005, got: `B final amount=${amt} (want 5005)` };
+        if (amt === 5005) return { ok: true, got: `B final amount=${amt}` };
+        // MISS — dump B's sync state, then the decisive probe: does ONE forced silent
+        // reconcile heal it? healed ⇒ the notification/scheduler chain failed to fire
+        // (zj event lost + heartbeat quiet); not healed ⇒ the merge itself rejects the
+        // newer row (clock/gate bug). Still a failure either way — B must converge on
+        // its own — but the next occurrence names its half of the machine.
+        const diag = await pageB.evaluate(async (id) => {
+          const before = {
+            loadInProgress: typeof _loadInProgress !== 'undefined' && _loadInProgress,
+            rtReady: typeof _tdRealtimeReady !== 'undefined' && _tdRealtimeReady,
+            lastZj: window._lastZjUpdatedAt || null,
+            deltaCursor: (typeof _deltaCursor !== 'undefined' && _deltaCursor) || null,
+            clock: (typeof window.__fieldClock === 'function' && window.__fieldClock('td_bids', String(id), 'amount')) || null,
+          };
+          let after = null;
+          try {
+            await supaLoadFromCloud({ silent: true });
+            const b = (bids || []).find(x => x.id === id); after = b && b.amount;
+          } catch (e) { after = 'loadErr:' + (e && e.message); }
+          return { ...before, after };
+        }, bidId);
+        return {
+          ok: false,
+          got: `B final amount=${amt} (want 5005) — loadInProgress=${diag.loadInProgress} rtReady=${diag.rtReady} lastZj=${diag.lastZj} deltaCursor=${diag.deltaCursor} clock=${diag.clock ? 'SET' : 'ABSENT'} afterForcedReconcile=${diag.after}`,
+        };
       },
     });
 

@@ -525,8 +525,14 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
           let hubKey = null, hubUrl = null, upErr = null;
           try {
             hubUrl = await _uploadClientHub(estClientId); // returns the client-facing link
-            const c = clients.find(x => String(x.id) === String(estClientId));
-            hubKey = c && c.clientHubKey;
+            // An already-tokened client refreshes its snapshot in the BACKGROUND (the
+            // share sheet never blocks on the upload) — poll for the recorded key
+            // instead of reading it synchronously.
+            for (let t = 0; t < 40 && !hubKey; t++) {
+              const c = clients.find(x => String(x.id) === String(estClientId));
+              hubKey = (c && c.clientHubKey) || null;
+              if (!hubKey) await new Promise(r => setTimeout(r, 250));
+            }
           } catch (e) { upErr = e && e.message; }
           return {
             effIsBoss: String(eff) === String(boss),

@@ -3598,6 +3598,58 @@ test.describe('Auto employment agreement on new employee invite', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+//  CLIENT HUB UPLOAD — live-object stamping under mid-upload merges
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('_uploadClientHub — stamps the LIVE client object', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('hub key/token survive a merge that replaces the client object mid-upload', async () => {
+    // A delta/realtime merge replaces row OBJECTS in `clients` by id. If that happens
+    // while the storage upload is in flight, stamping the pre-await reference writes to
+    // a dead object — token and clientHubKey vanish and the uploaded hub is orphaned
+    // (the crew money-routing cert failure). The fix re-finds the live object.
+    const r = await page.evaluate(async () => {
+      const cid = 881001;
+      clients = clients.filter(c => c.id !== cid);
+      clients.push({ id: cid, name: 'Swap TestClient', phone: '316-555-8802', email: '', addr: '2 Test St', clientToken: '', clientHubKey: '' });
+      window._supaUser = window._supaUser || { id: 'swap-test-user', email: 't@t.com' };
+      // Controllable storage: hold the upload open until the swap has happened.
+      const origFrom = _supa.storage.from.bind(_supa.storage);
+      let releaseUpload; const gate = new Promise(res => { releaseUpload = res; });
+      _supa.storage.from = () => ({ upload: async () => { await gate; return { data: { path: 'x' }, error: null }; } });
+      try {
+        const p = _uploadClientHub(cid);            // runs up to the held upload await
+        await new Promise(r2 => setTimeout(r2, 50));
+        // Simulate the merge: same id, fresh object, WITHOUT the just-minted token
+        // (a peer's copy predates it) — exactly what a delta row replace produces.
+        const idx = clients.findIndex(c => c.id === cid);
+        const stale = JSON.parse(JSON.stringify(clients[idx]));
+        stale.clientToken = ''; stale.clientHubKey = '';
+        clients[idx] = stale;
+        releaseUpload();
+        await p;
+        const live = clients.find(c => c.id === cid);
+        return { key: live.clientHubKey || '', token: live.clientToken || '' };
+      } finally { _supa.storage.from = origFrom; }
+    });
+    expect(r.key).toContain('client-hub/');     // stamped on the LIVE object
+    expect(r.token.length).toBeGreaterThan(0);  // token restored onto the live object too
+    assertNoErrors(page, 'hub live-object stamp');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 //  QR PAY NOW — showPayQr / openPayPanel QR button
 // ════════════════════════════════════════════════════════════════════════════
 

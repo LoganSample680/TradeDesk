@@ -286,7 +286,13 @@ async function _uploadClientHub(clientId){
     const key='client-hub/'+_effectiveUid()+'/'+clientId+'_'+c.clientToken+'.json';
     const{error}=await _supa.storage.from('proposals').upload(key,_json,{contentType:'application/json',upsert:true,cacheControl:'0'});
     if(error)throw error;
-    c.clientHubKey=key;c.clientHubHash=_hash;
+    // Stamp the LIVE array object, not the reference captured before the await: a
+    // delta/realtime merge during the upload replaces row objects in `clients`, so
+    // writing to `c` can land on a dead object — the token/key silently vanish and
+    // the uploaded hub becomes unreachable (seen live in the crew money-routing cert).
+    const live=clients.find(x=>x.id===clientId)||c;
+    live.clientToken=c.clientToken;
+    live.clientHubKey=key;live.clientHubHash=_hash;
     saveAll();
   };
   const _queueHub=()=>{
@@ -378,7 +384,9 @@ async function _refreshClientHub(clientId){
   try{
     const{error}=await _supa.storage.from('proposals').upload(key,JSON.stringify(snapshot),{contentType:'application/json',upsert:true,cacheControl:'0'});
     if(error)throw error;
-    c.clientHubKey=key;saveAll();
+    // Same live-object rule as _uploadClientHub — never stamp a pre-await reference.
+    const live=clients.find(x=>x.id===clientId)||c;
+    live.clientHubKey=key;saveAll();
   }catch(e){console.warn('hub refresh:',e);}
 }
 function copyHubLink(url){navigator.clipboard.writeText(url).then(()=>showToast('Hub link copied','📋')).catch(()=>showToast('Could not copy — tap the URL above','⚠️'));}
