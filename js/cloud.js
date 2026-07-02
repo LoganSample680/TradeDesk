@@ -297,8 +297,20 @@ async function loadAccountData(){
       }
       return _linkAsCrew(empRow,false);
     }
-    // (2) Pending invite by EMAIL MATCH (contractor pre-created the roster row).
-    // LIST + most-recent — two bosses inviting the same email used to error out.
+    // (2) Pending invite by EMAIL MATCH — server-side (SECURITY DEFINER). Under strict
+    // RLS the employee can't even SEE their unlinked roster row (employee_user_id null
+    // → no policy grants it), so the legacy client-side select+update silently linked
+    // NOTHING on a from-migrations stack — hosted only worked via dashboard-era
+    // permissive policies (same drift family as the missing columns, caught live by
+    // the crew certification). The RPC links the most recent unlinked row for this
+    // login's email atomically; the email comes from auth.users, never the client.
+    try{
+      const{data:_em,error:_emErr}=await _supa.rpc('claim_crew_by_email');
+      if(!_emErr&&_em?.ok){
+        localStorage.removeItem('_pendingEmpInvite');
+        return _linkAsCrew({id:_em.team_member_id,contractor_user_id:_em.contractor_user_id,employee_user_id:_supaUser.id,name:_em.name||'',role:_em.role||'tech',permissions:_em.permissions||{},active:true},true);
+      }
+    }catch(_e){} // RPC not deployed → legacy path below (hosted-compat)
     const{data:inviteRows}=await _supa.from('team_members').select('*').eq('email',_supaUser.email).is('employee_user_id',null).order('invited_at',{ascending:false});
     const inviteRow=inviteRows&&inviteRows[0];
     if(inviteRow){
@@ -482,7 +494,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.02.26.5';
+const APP_VERSION='07.02.26.6';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
