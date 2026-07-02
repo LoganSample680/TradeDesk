@@ -308,6 +308,9 @@ function _empSetStatus(jobId,newState){
   }
   if(!j.empStatus)j.empStatus={};
   j.empStatus[empId]=newState;
+  // "I've Arrived" doubles as the manual clock-in bookend — a tap works offline
+  // and backgrounded, everywhere GPS can't. The geofence entries corroborate it.
+  if(newState==='arrived'&&typeof _geoManualArrive==='function')_geoManualArrive(j.id);
   saveAll();
   const label=newState==='enroute'?'On your way!':'Arrived — get to work!';
   showToast(label,newState==='enroute'?'🚗':'📍');
@@ -320,6 +323,8 @@ function _empConfirmDone(jobId){
   if(!j.empStatus)j.empStatus={};
   j.empStatus[empId]='done';
   if(note){if(!j.empNotes)j.empNotes={};j.empNotes[empId]=note;}
+  // "Mark Done" is the manual clock-out bookend (see _empSetStatus 'arrived').
+  if(typeof _geoManualDone==='function')_geoManualDone(j.id);
   document.querySelector('.zmodal-overlay')?.remove();
   saveAll();showToast('Job marked complete','✅');renderDash();
 }

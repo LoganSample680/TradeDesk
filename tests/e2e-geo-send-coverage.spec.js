@@ -956,3 +956,260 @@ test.describe('Generic-estimate sync/scope — _gei* / _stsuLookup / _scopeHisto
     assertNoErrors(page, 'generic-estimate sync/scope');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  GEO HARDENING — durable queue, hidden-gap survival, manual bookends, wake lock,
+//  ping re-entrancy, breadcrumb retention (geo-track.js hardening package)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test.describe('Geo hardening — offline queue + gap survival + bookends', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // Fresh geo state + a scriptable _supa recorder for every test.
+  const geoReset = () => page.evaluate(() => {
+    localStorage.removeItem('zp3_geo_queue'); localStorage.removeItem('zp3_geo_open');
+    localStorage.removeItem('zp3_geo_manual'); localStorage.removeItem('zp3_geo_prune_day');
+    _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
+    _geoDriveStartedAt = null; _geoGapHiddenAt = null; _geoLastPingTs = 0; _geoPingBusy = false;
+    window._isEmployee = false;
+    window._supaUser = { id: 'geo-hard-user-1', email: 'g@t.com' };
+    window.__rec = { upserts: [], inserts: [], deletes: [] };
+    window.__supaMode = 'ok'; // 'ok' | 'fail' | 'no-conflict' | 'no-column'
+    window.__origSupa = window.__origSupa || window._supa;
+    window._supa = {
+      from: (tbl) => ({
+        upsert: (row, opts) => {
+          if (window.__supaMode === 'fail') return Promise.resolve({ error: { message: 'network down' } });
+          if (window.__supaMode === 'no-conflict') return Promise.resolve({ error: { message: 'there is no unique or exclusion constraint matching the ON CONFLICT specification' } });
+          if (window.__supaMode === 'no-column') return Promise.resolve({ error: { message: "Could not find the 'client_key' column of 'job_time_entries' in the schema cache" } });
+          window.__rec.upserts.push({ tbl, row, opts }); return Promise.resolve({ error: null });
+        },
+        insert: (row) => {
+          if (window.__supaMode === 'fail') return Promise.resolve({ error: { message: 'network down' } });
+          if (window.__supaMode === 'no-column' && row.client_key !== undefined) return Promise.resolve({ error: { message: "Could not find the 'client_key' column" } });
+          window.__rec.inserts.push({ tbl, row }); return Promise.resolve({ error: null });
+        },
+        delete: () => ({ eq: () => ({ lt: (col, val) => ({ then: (res) => { window.__rec.deletes.push({ tbl, col, val }); res && res({}); return { catch: () => {} }; } }) }) }),
+      }),
+    };
+  });
+  const geoRestore = () => page.evaluate(() => { if (window.__origSupa) window._supa = window.__origSupa; });
+
+  test('queue — a failed write STAYS queued; the next drain lands it with a client_key (idempotent upsert)', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      window.__supaMode = 'fail';
+      _geoEnqueue('job_time_entries', { contractor_user_id: 'geo-hard-user-1', employee_user_id: 'geo-hard-user-1', job_id: '1', arrived_at: new Date(Date.now() - 600000).toISOString(), departed_at: new Date().toISOString(), minutes: 10, source: 'geofence' });
+      await new Promise(res => setTimeout(res, 50));
+      const queuedAfterFail = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]').length;
+      window.__supaMode = 'ok';
+      await _geoDrainQueue();
+      const queuedAfterDrain = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]').length;
+      const up = window.__rec.upserts[0];
+      return { queuedAfterFail, queuedAfterDrain, upserts: window.__rec.upserts.length, key: up && up.row.client_key, onConflict: up && up.opts && up.opts.onConflict };
+    });
+    expect(r.queuedAfterFail).toBe(1);   // offline write survived on the device
+    expect(r.queuedAfterDrain).toBe(0);  // drained exactly once when the network returned
+    expect(r.upserts).toBe(1);
+    expect(String(r.key || '')).toContain('geo-hard'); // client-minted idempotency key present
+    expect(r.onConflict).toBe('contractor_user_id,client_key');
+    await geoRestore();
+  });
+
+  test('queue — schema-lag fallbacks: no unique index → plain insert; no client_key column → insert without it', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      window.__supaMode = 'no-conflict';
+      _geoEnqueue('job_time_entries', { contractor_user_id: 'geo-hard-user-1', job_id: '2', arrived_at: new Date(Date.now() - 300000).toISOString(), departed_at: new Date().toISOString(), minutes: 5, source: 'geofence' });
+      await new Promise(res => setTimeout(res, 50));
+      const afterNoConflict = { inserts: window.__rec.inserts.length, hadKey: !!(window.__rec.inserts[0] && window.__rec.inserts[0].row.client_key) };
+      window.__rec.inserts = [];
+      window.__supaMode = 'no-column';
+      _geoEnqueue('job_time_entries', { contractor_user_id: 'geo-hard-user-1', job_id: '3', arrived_at: new Date(Date.now() - 300000).toISOString(), departed_at: new Date().toISOString(), minutes: 5, source: 'geofence' });
+      await new Promise(res => setTimeout(res, 50));
+      const afterNoColumn = { inserts: window.__rec.inserts.length, hasKey: window.__rec.inserts[0] ? window.__rec.inserts[0].row.client_key !== undefined : null };
+      const queueLeft = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]').length;
+      return { afterNoConflict, afterNoColumn, queueLeft };
+    });
+    expect(r.afterNoConflict.inserts).toBe(1);
+    expect(r.afterNoConflict.hadKey).toBe(true);   // column exists, index missing → keep the key
+    expect(r.afterNoColumn.inserts).toBe(1);
+    expect(r.afterNoColumn.hasKey).toBe(false);    // column missing → stripped, entry still lands
+    expect(r.queueLeft).toBe(0);
+    await geoRestore();
+  });
+
+  test('hidden gap — backgrounding persists the open entry; restore + outside ping closes AT the hidden moment as geofence-gap', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      const jobId = 883001;
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      jobs.push({ id: jobId, lat: 37.6872, lon: -97.3301, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      S.trackStart = '00:00'; S.trackEnd = '23:59'; S.officeLat = null; S.officeLon = null;
+      const arrived = new Date(Date.now() - 30 * 60000).toISOString();
+      const hidden = new Date(Date.now() - 10 * 60000).toISOString();
+      _geoCurrentJob = jobId; _geoArrivedAt = arrived;
+      _geoPersistOpen(hidden); // what the visibilitychange→hidden handler does
+      const persisted = JSON.parse(localStorage.getItem('zp3_geo_open') || 'null');
+      // Simulate an app kill: state wiped, then restored on next boot.
+      _geoCurrentJob = null; _geoArrivedAt = null; _geoGapHiddenAt = null;
+      _geoRestoreOpen();
+      const restored = { job: _geoCurrentJob, arrivedAt: _geoArrivedAt, gap: _geoGapHiddenAt };
+      // First post-gap ping lands far OUTSIDE the fence → gap-close.
+      await _geoOnPing({ coords: { latitude: 38.2, longitude: -98.0, accuracy: 8 } });
+      await new Promise(res => setTimeout(res, 50));
+      const row = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries') || {}).row || null;
+      jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
+      return { persisted: !!persisted, hiddenAt: persisted && persisted.hiddenAt, restored, row, cur: _geoCurrentJob };
+    });
+    expect(r.persisted).toBe(true);
+    expect(String(r.restored.job)).toBe('883001');      // arrival survived the kill
+    expect(r.restored.gap).toBe(r.hiddenAt);            // gap marker restored
+    expect(r.row).not.toBeNull();
+    expect(r.row.source).toBe('geofence-gap');          // unverified time never claimed…
+    expect(r.row.departed_at).toBe(r.hiddenAt);         // …closed at the last VERIFIED moment
+    expect(r.row.minutes).toBe(20);                     // 30min open − 10min unverified gap
+    expect(r.cur).toBeNull();
+    await geoRestore();
+  });
+
+  test('hidden gap — still INSIDE the fence after the gap → continuous visit, no entry written, gap cleared', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      const jobId = 883002;
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      jobs.push({ id: jobId, lat: 37.6872, lon: -97.3301, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      S.trackStart = '00:00'; S.trackEnd = '23:59'; S.officeLat = null; S.officeLon = null;
+      const arrived = new Date(Date.now() - 30 * 60000).toISOString();
+      _geoCurrentJob = jobId; _geoArrivedAt = arrived; _geoGapHiddenAt = new Date(Date.now() - 10 * 60000).toISOString();
+      await _geoOnPing({ coords: { latitude: 37.6872, longitude: -97.3301, accuracy: 8 } });
+      const out = { rows: window.__rec.upserts.length, cur: _geoCurrentJob, arrivedKept: _geoArrivedAt === arrived, gap: _geoGapHiddenAt };
+      jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
+      return out;
+    });
+    expect(r.rows).toBe(0);              // no close — the visit continues
+    expect(String(r.cur)).toBe('883002');
+    expect(r.arrivedKept).toBe(true);    // hidden time COUNTS (same arrival stands)
+    expect(r.gap).toBeNull();            // gap resolved
+    await geoRestore();
+  });
+
+  test('re-entrancy — a ping arriving while the previous one awaits a geocode is dropped whole', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      const jobId = 883003;
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      // No lat/lon on the job → _geoJobLatLng hits the (patched, hanging) geocoder.
+      jobs.push({ id: jobId, addr: '123 Slow Geocode St', start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      S.trackStart = '00:00'; S.trackEnd = '23:59'; S.officeLat = null; S.officeLon = null;
+      const origResolve = window._resolveCoords;
+      let release; const hang = new Promise(res => { release = res; });
+      window._resolveCoords = () => hang.then(() => ({ lat: 37.6872, lng: -97.3301 }));
+      const p1 = _geoOnPing({ coords: { latitude: 37.6872, longitude: -97.3301, accuracy: 8 } }); // hangs at the geocode
+      await new Promise(res => setTimeout(res, 30));
+      _geoLastPingTs = 0; // arm the breadcrumb — a second ping WOULD write one if not guarded
+      await _geoOnPing({ coords: { latitude: 37.7, longitude: -97.34, accuracy: 8 } });           // must drop at the guard
+      const breadcrumbAfterSecond = _geoLastPingTs;
+      release({}); await p1;
+      window._resolveCoords = origResolve;
+      const out = { breadcrumbAfterSecond, busyAfter: _geoPingBusy };
+      jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
+      return out;
+    });
+    expect(r.breadcrumbAfterSecond).toBe(0); // second ping returned at the guard — touched nothing
+    expect(r.busyAfter).toBe(false);         // guard released after the first ping finished
+    await geoRestore();
+  });
+
+  test('manual bookends — Arrived opens, Done writes a source:manual entry through the queue; job-switch closes the previous', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      S.teamTracking = true;
+      _geoManualArrive(884001);
+      const open1 = JSON.parse(localStorage.getItem('zp3_geo_manual') || 'null');
+      if (open1) { open1.arrivedAt = new Date(Date.now() - 45 * 60000).toISOString(); localStorage.setItem('zp3_geo_manual', JSON.stringify(open1)); }
+      _geoManualArrive(884001); // double-tap same job → still ONE open record, arrival unchanged
+      const open1b = JSON.parse(localStorage.getItem('zp3_geo_manual') || 'null');
+      _geoManualArrive(884002); // switching jobs closes the previous one first
+      await new Promise(res => setTimeout(res, 50));
+      const closedFirst = (window.__rec.upserts.find(u => String(u.row.job_id) === '884001') || {}).row || null;
+      const open2 = JSON.parse(localStorage.getItem('zp3_geo_manual') || 'null');
+      if (open2) { open2.arrivedAt = new Date(Date.now() - 30 * 60000).toISOString(); localStorage.setItem('zp3_geo_manual', JSON.stringify(open2)); }
+      _geoManualDone(884002);
+      await new Promise(res => setTimeout(res, 50));
+      const closedSecond = (window.__rec.upserts.find(u => String(u.row.job_id) === '884002') || {}).row || null;
+      const openAfter = localStorage.getItem('zp3_geo_manual');
+      return { open1: open1 && String(open1.job), sameArrival: !!(open1b && open1 && open1b.arrivedAt === open1.arrivedAt), closedFirst, closedSecond, openAfter };
+    });
+    expect(r.open1).toBe('884001');
+    expect(r.sameArrival).toBe(true);
+    expect(r.closedFirst).not.toBeNull();
+    expect(r.closedFirst.source).toBe('manual');
+    expect(r.closedFirst.minutes).toBeGreaterThanOrEqual(44);
+    expect(r.closedSecond).not.toBeNull();
+    expect(r.closedSecond.source).toBe('manual');
+    expect(r.openAfter).toBeNull();
+    await geoRestore();
+  });
+
+  test('wake lock — acquired via navigator.wakeLock, released on _geoWakeRelease (stubbed)', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      let acquired = 0, released = 0;
+      let stubbed = false;
+      try {
+        Object.defineProperty(navigator, 'wakeLock', {
+          configurable: true,
+          value: { request: async () => { acquired++; return { release: () => { released++; }, addEventListener: () => {} }; } },
+        });
+        stubbed = true;
+      } catch (e) {}
+      if (!stubbed) return { skip: true };
+      _geoWakeLockObj = null;
+      await _geoWakeAcquire();
+      const afterAcquire = acquired;
+      await _geoWakeAcquire(); // idempotent — no double-request while held
+      _geoWakeRelease();
+      return { afterAcquire, acquiredTotal: acquired, released, objAfter: _geoWakeLockObj === null };
+    });
+    if (!r.skip) {
+      expect(r.afterAcquire).toBe(1);
+      expect(r.acquiredTotal).toBe(1);
+      expect(r.released).toBe(1);
+      expect(r.objAfter).toBe(true);
+    }
+    await geoRestore();
+  });
+
+  test('breadcrumb retention — owner prunes pings older than 90 days, at most once per day', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      _geoPrunePings();
+      await new Promise(res => setTimeout(res, 30));
+      const first = window.__rec.deletes.length;
+      _geoPrunePings(); // same day → no second delete
+      await new Promise(res => setTimeout(res, 30));
+      const second = window.__rec.deletes.length;
+      const cutoff = window.__rec.deletes[0] ? window.__rec.deletes[0].val : null;
+      const about90d = cutoff ? Math.abs((Date.now() - new Date(cutoff).getTime()) / 86400000 - 90) < 1 : false;
+      return { first, second, about90d, tbl: window.__rec.deletes[0] && window.__rec.deletes[0].tbl };
+    });
+    expect(r.first).toBe(1);
+    expect(r.second).toBe(1);
+    expect(r.tbl).toBe('location_pings');
+    expect(r.about90d).toBe(true);
+    await geoRestore();
+  });
+
+  test('no console errors during geo hardening tests', async () => {
+    assertNoErrors(page, 'geo hardening');
+  });
+});

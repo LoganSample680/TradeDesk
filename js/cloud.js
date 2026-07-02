@@ -499,7 +499,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.02.26.10';
+const APP_VERSION='07.02.26.11';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -2019,6 +2019,19 @@ function _dispatchDoAssign(jobId,empId){
   // Durable record of everyone ever assigned — powers the crew trust ranking on estimates.
   if(!Array.isArray(j.crewHistory))j.crewHistory=[];
   if(!j.crewHistory.map(String).includes(String(empId)))j.crewHistory.push(empId);
+  // Geocode the job address NOW, on the owner's device, and stamp lat/lon on the
+  // row — the employee's GPS ping handler then fences against stored coordinates
+  // instead of doing network geocodes mid-ping (the interleaving that scrambled
+  // arrive/depart transitions on slow connections).
+  if(!(j.lat&&j.lon)){
+    const _jc=clients.find(x=>x.id===j.client_id);
+    const _jaddr=j.addr||(_jc&&_jc.addr)||'';
+    if(_jaddr&&typeof _resolveCoords==='function'){
+      _resolveCoords(_jaddr).then(r=>{
+        if(r&&r.lat){const _lj=jobs.find(x=>String(x.id)===String(jobId));if(_lj){_lj.lat=r.lat;_lj.lon=r.lng;saveAll();}}
+      }).catch(()=>{});
+    }
+  }
   saveAll();renderDispatch();showToast('Job assigned','📋');
 }
 function _dispatchUnassign(jobId){
