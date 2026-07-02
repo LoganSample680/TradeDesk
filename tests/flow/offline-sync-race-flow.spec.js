@@ -133,11 +133,30 @@ test.describe('offline-sync race safety (multi-device)', () => {
         const res = await cloudHasBids(p, [offlineBidId, onlineBidId]);
         const off = res.find(r => String(r.id) === String(offlineBidId));
         const on = res.find(r => String(r.id) === String(onlineBidId));
-        // DELTA: B must have pushed at least its own queued offline bid (>=1) — a delta
-        // bug that marked the offline row "already synced" would push 0 and the bid would
-        // be missing above. (>=1, not ==1: B may legitimately re-push its client row too.)
         const bPushed = p.__bOfflineDelta;
-        return { ok: !!off?.present && !!on?.present && bPushed >= 1, got: `offlineBid=${off?.present} onlineBid=${on?.present} bDeltaUpserts=${bPushed}` };
+        const ok = !!off?.present && !!on?.present && bPushed >= 1;
+        if (ok) return { ok, got: `offlineBid=${off.present} onlineBid=${on.present} bDeltaUpserts=${bPushed}` };
+        // DIAGNOSE the miss: is the bid in B's memory? what does its RAW cloud row show
+        // (absent vs deleted_at vs archived_at)? is its id caught in a removal set?
+        const B = workers[1];
+        const diag = await B.page.evaluate(async ({ id }) => {
+          let raw = null;
+          try {
+            const { data } = await _supa.from('td_bids').select('id,deleted_at,archived_at').eq('user_id', _supaUser.id).eq('id', String(id)).maybeSingle();
+            raw = data ? { exists: true, del: !!data.deleted_at, arch: !!data.archived_at } : { exists: false };
+          } catch (e) { raw = { err: e.message }; }
+          const pend = [];
+          try { for (const o of (await (window._opDbUnsynced ? _opDbUnsynced() : [])) || []) if (o && o.fields && o.fields.id !== undefined && String(o.rowId) === String(id)) pend.push(o.owner); } catch (e) {}
+          return {
+            inMemory: (typeof bids !== 'undefined' ? bids : []).some(b => String(b.id) === String(id)),
+            raw,
+            locallyDeleted: !!(typeof _locallyDeletedIds !== 'undefined' && _locallyDeletedIds.td_bids && _locallyDeletedIds.td_bids.has(String(id))),
+            lastLoadDeleted: !!(typeof _lastLoadDeletes !== 'undefined' && _lastLoadDeletes.td_bids && _lastLoadDeletes.td_bids.has(String(id))),
+            pendingCreateOwners: pend,
+            oplogOn: !!window._opLogShadow,
+          };
+        }, { id: offlineBidId });
+        return { ok, got: `offlineBid=${off?.present} onlineBid=${on?.present} bDeltaUpserts=${bPushed} — Bmem=${diag.inMemory} cloudRaw=${JSON.stringify(diag.raw)} locDel=${diag.locallyDeleted} lastLoadDel=${diag.lastLoadDeleted} pendCreate=${JSON.stringify(diag.pendingCreateOwners)} oplog=${diag.oplogOn}` };
       },
     });
 
