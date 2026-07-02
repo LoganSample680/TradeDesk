@@ -848,6 +848,70 @@ test.describe('Vehicle management consolidation — removal regression', () => {
     assertNoErrors(page, 'Settings has no old vehicle inputs');
   });
 
+  // ── Regression: a deleted vehicle must STAY deleted ───────────────────────
+  // Bug ("Zach Ford always comes back"): getVehicles() re-seeded a vehicle from
+  // the legacy single-vehicle string field S.veh whenever S.vehicles was empty —
+  // so deleting the last vehicle resurrected it on the very next render. The seed
+  // now fires only when the fleet was NEVER managed (no S.vehiclesTs stamp); any
+  // add/edit/delete stamps it and permanently disables the seed.
+  test('Deleting the last vehicle stays deleted — no resurrection from legacy S.veh', async () => {
+    const r = await page.evaluate(() => {
+      // Legacy account shape: old string field set, fleet never managed.
+      delete S.vehicles;
+      delete S.vehiclesTs;
+      S.veh = 'Zach Ford';
+      const legacySeed = getVehicles().map(v => v.name); // migration still shows it
+
+      // Delete it the way the fleet remove path does: array shrinks + stamp.
+      const vehs = getVehicles();
+      vehs.splice(0, 1);
+      S.vehicles = vehs;
+      S.vehiclesTs = Date.now();
+      const afterDelete = getVehicles().map(v => v.name);
+
+      // S.veh is still a live settings field — re-reading must NOT bring it back.
+      const afterReRead = getVehicles().map(v => v.name);
+      return { legacySeed, afterDelete, afterReRead, vehStillSet: S.veh };
+    });
+    expect(r.legacySeed).toContain('Zach Ford'); // legacy one-time migration still works
+    expect(r.afterDelete).toEqual([]);           // deletion sticks
+    expect(r.afterReRead).toEqual([]);           // no resurrection on the next render
+    expect(r.vehStillSet).toBe('Zach Ford');     // the settings field itself is untouched
+
+    // Leave a clean fleet for the tests that follow.
+    await page.evaluate(() => { S.vehicles = []; delete S.veh; });
+    assertNoErrors(page, 'vehicle delete does not resurrect from legacy S.veh');
+  });
+
+  // ── Regression: fleet writes must win the settings sync ───────────────────
+  // Bug ("Zach's Ford deletes itself"): every fleet write stamped only its
+  // private vehiclesTs, never the blob-level settingsTs. The cloud save gate
+  // (skip-settings when cloud settingsTs is newer) therefore treated a fresh
+  // vehicle add as STALE and silently never uploaded it — the vehicle lived
+  // only in that device's cache and vanished on the next sign-out/fresh boot.
+  // _setVehicles is the single write path and must stamp BOTH timestamps.
+  test('_setVehicles stamps settingsTs AND vehiclesTs — a fleet edit can never look stale to the save gate', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _setVehicles !== 'function') return null;
+      const staleTs = 1000; // ancient settingsTs, like a user who never opens Settings
+      S.settingsTs = staleTs;
+      S.vehiclesTs = 0;
+      const before = Date.now();
+      _setVehicles([{ name: 'Zach Ford', nickname: '' }]);
+      return {
+        vehicles: (S.vehicles || []).map(v => v.name),
+        settingsBumped: (S.settingsTs || 0) >= before, // beats any older cloud blob
+        vehiclesBumped: (S.vehiclesTs || 0) >= before, // wins the per-field tiebreaker
+      };
+    });
+    expect(r).not.toBeNull();
+    expect(r.vehicles).toEqual(['Zach Ford']);
+    expect(r.settingsBumped).toBe(true);
+    expect(r.vehiclesBumped).toBe(true);
+    await page.evaluate(() => { S.vehicles = []; });
+    assertNoErrors(page, '_setVehicles stamps both sync timestamps');
+  });
+
   // ── Settings: page loads without errors after renderVehicleSettings removed
   test('Settings page loads without console errors (no renderVehicleSettings call)', async () => {
     await goPg(page, 'pg-settings');

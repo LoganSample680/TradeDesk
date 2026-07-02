@@ -499,7 +499,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.02.26.26';
+const APP_VERSION='07.02.26.28';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3019,7 +3019,9 @@ function _wipeLocalAccountData(){
   Object.values(_lastKnownIds).forEach(s=>{if(s&&typeof s.clear==='function')s.clear();});
   // settingsTs:0 — zp3_S is shared across accounts on this device. Without zeroing the
   // timestamp these blanked settings beat the next account's cloud copy and overwrite it.
-  S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],weatherLat:null,weatherLon:null,locationDenied:false,settingsTs:0};
+  // vehiclesTs:0 for the same reason: the blanked vehicles:[] must never win the
+  // per-field keep-local rule over the next login's real cloud fleet.
+  S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],vehiclesTs:0,weatherLat:null,weatherLon:null,locationDenied:false,settingsTs:0};
   saveAll();
 }
 async function supaSignOut(){
