@@ -499,7 +499,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.02.26.22';
+const APP_VERSION='07.02.26.23';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1076,6 +1076,26 @@ function _userDelete(fn){
   return ret;
 }
 
+// DEV-ONLY DELETE GATE (owner directive): nobody deletes in normal use — they edit,
+// and old records auto-archive (kept forever). The ONE exception is the dev/owner
+// purging a rare duplicate via the hidden 3s long-press (below). is_dev comes from
+// the account config; dev-support mode counts too (only is_dev accounts can enter it).
+function _canDelete(){try{if(window._e2eAllowDelete)return true;return !!((typeof _config!=='undefined'&&_config&&_config.is_dev)||(typeof _devSupportMode!=='undefined'&&_devSupportMode));}catch(_e){return false;}}
+window._canDelete=_canDelete;
+
+// A dev deletion HARD-removes the actual DB row (for dupe cleanup — "delete the
+// actual row too"), not a soft-delete: Supabase realtime emits a DELETE event so
+// online peers drop it live via _applyRealtimeRecord. Removes from memory + records
+// the intent so nothing local resurrects it. Best-effort, fire-and-forget.
+function _devHardPurge(tbl,id){
+  try{
+    const def=_TD_TABLES.find(d=>d.t===tbl);
+    if(def){const arr=def.get()||[];const idx=arr.findIndex(r=>String(r.id)===String(id));if(idx!==-1){arr.splice(idx,1);def.set&&def.set(arr.slice());}}
+  }catch(_e){}
+  if(typeof _recordLocalDelete==='function')_recordLocalDelete(tbl,id);
+  try{const uid=(typeof _effectiveUid==='function'&&_effectiveUid())||(_supaUser&&_supaUser.id);if(_supa&&uid)_supa.from(tbl).delete().eq('id',String(id)).eq('user_id',uid).then(()=>{},()=>{});}catch(_e){}
+}
+
 // Per-record table definitions — one entry per data type.
 // arr: getter for the live in-memory array
 // set: setter (replaces array contents in-place; keeps same reference for other code)
@@ -1146,6 +1166,7 @@ let _lpTimer=null,_lpFired=false,_lpStartX=0,_lpStartY=0;
   s.textContent='[data-lp-id]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;}';
   (document.head||document.documentElement).appendChild(s);
   function _lpStart(e){
+    if(typeof _canDelete==='function'&&!_canDelete())return; // DEV-ONLY: gesture is inert for everyone else
     const row=e.target.closest('[data-lp-id]');
     if(!row)return;
     if(e.target.closest('button,select,input,a,label'))return;
@@ -1192,22 +1213,22 @@ function _showLpDeletePopup(row){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 function _lpDoDelete(id,type){
+  if(typeof _canDelete==='function'&&!_canDelete())return; // DEV-ONLY (defense in depth)
   const nid=parseInt(id,10);
-  if(type==='income'){_userDelete(()=>{income=income.filter(x=>x.id!==nid);_flushSaveNow&&_flushSaveNow();});if(typeof renderIncome==='function')renderIncome();}
-  else if(type==='payment'){_userDelete(()=>{payments=payments.filter(x=>x.id!==nid);_flushSaveNow&&_flushSaveNow();});if(typeof renderIncome==='function')renderIncome();}
-  else if(type==='expense'){if(typeof delExpense==='function')delExpense(nid);}
-  else if(type==='mileage'){if(typeof delMileage==='function')delMileage(nid);}
+  // DEV HARD DELETE (owner directive): the long-press purges the ACTUAL row(s) via
+  // _devHardPurge, not a soft-delete — for rare dupe cleanup. Realtime DELETE events
+  // propagate to online peers. Cascades mirror the old soft-delete cascade shapes.
+  if(type==='income'){_devHardPurge('td_income',nid);if(typeof renderIncome==='function')renderIncome();}
+  else if(type==='payment'){_devHardPurge('td_payments',nid);if(typeof renderIncome==='function')renderIncome();if(typeof renderClientDetail==='function')renderClientDetail();}
+  else if(type==='expense'){_devHardPurge('td_expenses',nid);if(typeof renderExpenses==='function')renderExpenses();}
+  else if(type==='mileage'){_devHardPurge('td_mileage',nid);if(typeof renderAllMileage==='function')renderAllMileage();}
   else if(type==='lead'||type==='client'){_lpDeleteClientById(nid,type);}
   else if(type==='bid'){
-    // Mirror deleteBid()'s cascade so a long-pressed proposal is fully cleaned up:
-    // its payment records and any lien go with it, and every surface re-renders.
     const _delBid=bids.find(x=>x.id===nid);const _delClientId=_delBid?_delBid.client_id:null;
-    _userDelete(()=>{
-      bids=bids.filter(x=>x.id!==nid);
-      if(typeof payments!=='undefined')payments=payments.filter(p=>p.bid_id!==nid);
-      if(typeof liens!=='undefined')liens=liens.filter(l=>l.bid_id!==nid);
-      _flushSaveNow&&_flushSaveNow();
-    });
+    // Cascade: the bid + its payments + any lien.
+    if(typeof payments!=='undefined')payments.filter(p=>p.bid_id===nid).map(p=>p.id).forEach(pid=>_devHardPurge('td_payments',pid));
+    if(typeof liens!=='undefined')liens.filter(l=>l.bid_id===nid).map(l=>l.id).forEach(lid=>_devHardPurge('td_liens',lid));
+    _devHardPurge('td_bids',nid);
     if(typeof renderClientDetail==='function')renderClientDetail();
     if(typeof renderJobsHistory==='function')renderJobsHistory();
     if(typeof renderJobsPage==='function')renderJobsPage();
@@ -1216,11 +1237,7 @@ function _lpDoDelete(id,type){
     if(_delClientId&&typeof _uploadClientHub==='function')_uploadClientHub(_delClientId).catch(()=>{});
   }
   else if(type==='job'){
-    // Remove a single scheduled job/calendar event (jobs array record).
-    _userDelete(()=>{
-      jobs=jobs.filter(x=>x.id!==nid);
-      _flushSaveNow&&_flushSaveNow();
-    });
+    _devHardPurge('td_jobs',nid);
     if(typeof renderClientDetail==='function')renderClientDetail();
     if(typeof renderCalendar==='function')renderCalendar();
     if(typeof renderJobsPage==='function')renderJobsPage();
@@ -1228,17 +1245,16 @@ function _lpDoDelete(id,type){
   }
 }
 function _lpDeleteClientById(id,fromType){
-  _userDelete(()=>{
-    clients=clients.filter(x=>x.id!==id);
-    bids=bids.filter(b=>b.client_id!==id);
-    jobs=jobs.filter(j=>j.client_id!==id);
-    mileage=mileage.filter(m=>m.client_id!==id);
-    income=income.filter(i=>i.client_id!==id);
-    expenses=expenses.filter(e=>e.client_id!==id);
-    _flushSaveNow&&_flushSaveNow();
-  });
+  // Cascade hard-purge: the client + everything referencing it.
+  try{if(typeof bids!=='undefined')bids.filter(b=>b.client_id===id).map(b=>b.id).forEach(bid=>{if(typeof payments!=='undefined')payments.filter(p=>p.bid_id===bid).map(p=>p.id).forEach(pid=>_devHardPurge('td_payments',pid));if(typeof liens!=='undefined')liens.filter(l=>l.bid_id===bid).map(l=>l.id).forEach(lid=>_devHardPurge('td_liens',lid));_devHardPurge('td_bids',bid);});}catch(_e){}
+  try{if(typeof jobs!=='undefined')jobs.filter(j=>j.client_id===id).map(j=>j.id).forEach(jid=>_devHardPurge('td_jobs',jid));}catch(_e){}
+  try{if(typeof mileage!=='undefined')mileage.filter(m=>m.client_id===id).map(m=>m.id).forEach(mid=>_devHardPurge('td_mileage',mid));}catch(_e){}
+  try{if(typeof income!=='undefined')income.filter(i=>i.client_id===id).map(i=>i.id).forEach(iid=>_devHardPurge('td_income',iid));}catch(_e){}
+  try{if(typeof expenses!=='undefined')expenses.filter(e=>e.client_id===id).map(e=>e.id).forEach(eid=>_devHardPurge('td_expenses',eid));}catch(_e){}
+  _devHardPurge('td_clients',id);
   if(fromType==='lead'){if(typeof renderLeadsPage==='function')renderLeadsPage();}
   else{if(typeof renderClientList==='function')renderClientList();}
+  if(typeof renderDash==='function')renderDash();
 }
 
 let _proposalViews={};
@@ -3075,6 +3091,22 @@ function _mergeIncomingSettings(ss,src){
   if(!ss)return false;
   // TEMP DIAGNOSTIC (automation only): trace every settings merge to find the reboot clobber.
   if(navigator.webdriver){try{(window._mergeLog=window._mergeLog||[]).push({src:String(src).slice(0,40),ig:ss&&ss.goalMonthly,it:ss&&ss.settingsTs,lt:S.settingsTs,localNewer:(S.settingsTs||0)>(ss.settingsTs||0)});}catch(_e){}}
+  // CROSS-ACCOUNT GUARD (production bug: an E2E/dev vehicle bled into another account on
+  // a REAL password login). zp3_S — the settings cache S is painted from on boot — is
+  // shared across accounts on one device, so S may still hold the PREVIOUS account's
+  // settings. If the settings now arriving belong to a DIFFERENT account, nothing of the
+  // old one may survive: take the incoming account's settings wholesale and BYPASS both
+  // same-account guards below — the newer-settingsTs bail (which would keep the old
+  // account's whole S) and the newer-vehiclesTs keep-local rule (which actively carried
+  // the old account's vehicles across). S._sOwner stamps which account S belongs to.
+  const _incomingOwner=((typeof _isEmployee!=='undefined'&&_isEmployee)?_contractorUserId:(_supaUser&&_supaUser.id))||null;
+  if(S._sOwner&&_incomingOwner&&String(S._sOwner)!==String(_incomingOwner)){
+    S={...ss,_sOwner:_incomingOwner};
+    if(!Array.isArray(S.vehicles))S.vehicles=[]; // never inherit the old account's vehicles
+    if(S.suppliesRate===0.40)S.suppliesRate=0.25;
+    try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(_e){}
+    return true;
+  }
   if((S.settingsTs||0)>(ss.settingsTs||0)){
     try{localStorage.setItem('zp3_pending_sync','1');}catch(_e){}
     if(typeof supaSaveDebounced==='function')supaSaveDebounced();
@@ -3083,6 +3115,7 @@ function _mergeIncomingSettings(ss,src){
   const _localTsBefore=S.settingsTs||0;
   const _localVehs=S.vehicles,_localVehsTs=S.vehiclesTs||0;
   S={...S,...ss};
+  S._sOwner=_incomingOwner; // stamp owner so the NEXT login can detect an account switch
   if(_localVehsTs>(ss.vehiclesTs||0)){S.vehicles=_localVehs;S.vehiclesTs=_localVehsTs;}
   // One-time migration: supplies rate default lowered from $0.40 to $0.25/sqft (2026-06)
   if(S.suppliesRate===0.40){S.suppliesRate=0.25;}
@@ -3583,19 +3616,20 @@ async function supaSaveToCloud(){
       // A row merely absent from this snapshot (e.g. a peer's row not yet merged here)
       // is NEVER swept, so concurrent devices can't clobber each other's new rows.
       //
-      // NEVER-DELETE POLICY (owner directive): a user "delete" ARCHIVES the row —
-      // archived_at, not deleted_at — so nothing a contractor removes is ever gone:
-      // it leaves every device's hot set through the ordinary delta/realtime paths
-      // but stays in the table, restorable from the Archive view. True hard-delete
-      // exists only behind the Archive view's hold-to-delete. Falls back to the old
-      // soft-delete on a DB that predates the archival migration (unknown column).
+      // DELETE vs ARCHIVE are SEPARATE (owner directive):
+      //   • ARCHIVE = automatic, time-based (7-year rule, archive_old_records) — keeps
+      //     everything, just moves old rows out of the hot set.
+      //   • DELETE = a rare, DELIBERATE removal via the hidden press-and-hold-the-record
+      //     gesture (no delete buttons anywhere). It soft-deletes (deleted_at) — the row
+      //     leaves every device's view but STAYS in the table forever ("keep everything
+      //     in"), never a hard delete. Still swept ONLY for ids the user explicitly
+      //     removed on THIS device (_locallyDeletedIds), never a merely-absent peer row.
       const prev=_lastKnownIds[tbl]||new Set();
       const deleted=_locallyDeletedIds[tbl]||new Set();
       const gone=[...prev].filter(id=>!currentIds.has(id)&&!lockedIds.has(id)&&deleted.has(id));
       if(gone.length){
         for(let i=0;i<gone.length;i+=50){
-          let{error:_de}=await _supa.from(tbl).update({archived_at:ts,updated_at:ts}).in('id',gone.slice(i,i+50)).eq('user_id',uid);
-          if(_de&&/archived_at/i.test(_de.message||'')){({error:_de}=await _supa.from(tbl).update({deleted_at:ts,updated_at:ts}).in('id',gone.slice(i,i+50)).eq('user_id',uid));}
+          const{error:_de}=await _supa.from(tbl).update({deleted_at:ts,updated_at:ts}).in('id',gone.slice(i,i+50)).eq('user_id',uid);
           if(_de)throw _de;
         }
         _tableWrites+=gone.length;

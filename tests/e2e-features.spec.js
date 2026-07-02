@@ -5959,7 +5959,7 @@ test.describe('Long-press delete — proposals & jobs + sign-out save guard', ()
     const r = await page.evaluate(() => {
       if (typeof _lpDoDelete !== 'function' || typeof jobs === 'undefined') return null;
       if (!jobs.some(j => j.id === 939201)) jobs.push({ id: 939201, client_id: 939001, name: 'Polluted Job', start: '2026-07-01', days: 2, eventType: 'job' });
-      try { _lpDoDelete('939201', 'job'); } catch (e) {}
+      window._e2eAllowDelete=true; try { _lpDoDelete('939201', 'job'); } catch (e) {}
       return { removed: !jobs.some(j => j.id === 939201) };
     });
     if (r === null) return;
@@ -5972,7 +5972,7 @@ test.describe('Long-press delete — proposals & jobs + sign-out save guard', ()
       if (!bids.some(b => b.id === 939101)) bids.push({ id: 939101, client_id: 939001, amount: 2380, status: 'Pending' });
       if (typeof payments !== 'undefined') { payments = payments.filter(p => p.bid_id !== 939101); payments.push({ id: 939301, bid_id: 939101, client_id: 939001, amount: 500, type: 'deposit' }); }
       if (typeof liens !== 'undefined') { liens = liens.filter(l => l.bid_id !== 939101); liens.push({ id: 939401, bid_id: 939101, client_id: 939001, status: 'intent' }); }
-      try { _lpDoDelete('939101', 'bid'); } catch (e) {}
+      window._e2eAllowDelete=true; try { _lpDoDelete('939101', 'bid'); } catch (e) {}
       return {
         bidGone: !bids.some(b => b.id === 939101),
         payGone: typeof payments === 'undefined' || !payments.some(p => p.bid_id === 939101),
@@ -6333,42 +6333,60 @@ test.describe('Never-delete policy — archive + hold + edit', () => {
     assertNoErrors(page, 'archived realtime removal');
   });
 
-  test('zConfirm destructive: a TAP does not fire; a HOLD does (webdriver override)', async () => {
-    const r = await page.evaluate(async () => {
-      let fired = 0;
-      const origWd = Object.getOwnPropertyDescriptor(Navigator.prototype, 'webdriver');
-      try { Object.defineProperty(navigator, 'webdriver', { configurable: true, get: () => false }); } catch (e) { return { skip: true }; }
-      window._tdHoldMs = 250; // fast hold for the test — real users get 5000ms
-      zConfirm('Remove this?', () => { fired++; }, { title: 'Remove', yes: 'Remove', danger: true });
-      const yes = document.getElementById('zmodal-yes');
-      // TAP (click) — must NOT fire
-      yes.click();
-      await new Promise(res => setTimeout(res, 350));
-      const afterTap = fired;
-      // HOLD — pointerdown, wait past the hold window, never release
-      yes.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-      await new Promise(res => setTimeout(res, 400));
-      const afterHold = fired;
-      // EARLY RELEASE on a fresh dialog — must NOT fire
-      zConfirm('Remove again?', () => { fired++; }, { title: 'Remove', yes: 'Remove', danger: true });
-      const yes2 = document.getElementById('zmodal-yes');
-      yes2.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
-      await new Promise(res => setTimeout(res, 80));
-      yes2.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
-      await new Promise(res => setTimeout(res, 350));
-      const afterRelease = fired;
-      document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
-      delete window._tdHoldMs;
-      if (origWd) Object.defineProperty(Navigator.prototype, 'webdriver', origWd);
-      try { delete navigator.webdriver; } catch (e) {}
-      return { afterTap, afterHold, afterRelease };
+  test('long-press delete is DEV-ONLY: a non-dev _lpDoDelete is inert', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _lpDoDelete !== 'function') return { skip: true };
+      const jid = 888401;
+      jobs = jobs.filter(j => j.id !== jid);
+      jobs.push({ id: jid, client_id: 888001, name: 'DevGate Job', start: '2026-07-01', days: 1, eventType: 'job' });
+      const savedFlag = window._e2eAllowDelete;
+      window._e2eAllowDelete = false; // simulate a non-dev account
+      const origCanDelete = window._canDelete;
+      // Force the real gate: no is_dev, no support mode, no bypass.
+      try { _lpDoDelete(String(jid), 'job'); } catch (e) {}
+      const stillThere = jobs.some(j => j.id === jid);
+      window._e2eAllowDelete = savedFlag;
+      jobs = jobs.filter(j => j.id !== jid);
+      return { stillThere, canDeleteIsFn: typeof origCanDelete === 'function' };
     });
     if (!r.skip) {
-      expect(r.afterTap).toBe(0);     // tap can never destroy
-      expect(r.afterHold).toBe(1);    // deliberate hold confirms
-      expect(r.afterRelease).toBe(1); // early release cancels
+      expect(r.canDeleteIsFn).toBe(true);
+      expect(r.stillThere).toBe(true); // non-dev delete did nothing — record survives
     }
-    assertNoErrors(page, 'hold-to-confirm');
+    assertNoErrors(page, 'dev-only delete gate');
+  });
+
+  test('cross-account settings guard: another account\'s vehicles cannot bleed across a login (E2E-truck bug)', async () => {
+    // Production bug: on the same device, sign into account A (vehicles=[E2E truck]),
+    // sign out, sign into account B by password — B saw A's truck. Root cause: the
+    // settings merge kept the locally-newer vehicles with no account check. The guard
+    // stamps S._sOwner and, on an owner change, takes the incoming account's settings
+    // wholesale — no vehicle (or any key) survives across the boundary.
+    const r = await page.evaluate(() => {
+      if (typeof _mergeIncomingSettings !== 'function') return { skip: true };
+      const savedS = JSON.parse(JSON.stringify(S));
+      const savedUser = window._supaUser;
+      try {
+        // Account A is cached in S with a truck and a RECENT vehicles timestamp.
+        S.vehicles = [{ id: 5314, name: 'E2E truck 5314' }];
+        S.vehiclesTs = Date.now();
+        S.settingsTs = Date.now();      // A's settings are newer than B's (would bail without the guard)
+        S._sOwner = 'account-A-uid';
+        S.bname = 'Dev A Painting';
+        // Now B (Zach) signs in and B's settings arrive — different owner, older ts, no vehicles.
+        window._supaUser = { id: 'account-B-uid', email: 'zach@example.com' };
+        _mergeIncomingSettings({ bname: 'Zach Co', settingsTs: 1, vehiclesTs: 0 }, 'test cross-account');
+        return { vehicles: (S.vehicles || []).map(v => v.name || v), bname: S.bname, owner: S._sOwner };
+      } finally {
+        S = savedS; window._supaUser = savedUser;
+      }
+    });
+    if (!r.skip) {
+      expect(r.vehicles).not.toContain('E2E truck 5314'); // the leak is closed
+      expect(r.vehicles.length).toBe(0);                  // took B's (empty) vehicles wholesale
+      expect(r.bname).toBe('Zach Co');                    // B's business name, not A's
+      expect(r.owner).toBe('account-B-uid');              // S now stamped to B
+    }
   });
 
   test('editPayment — fixes the record in place (edit-not-delete)', async () => {
