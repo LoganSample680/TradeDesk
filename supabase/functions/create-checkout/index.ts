@@ -58,6 +58,12 @@ Deno.serve(async (req) => {
               return new Response(JSON.stringify({ error: 'Invalid payment amount' }), { status: 400, headers: CORS });
             }
           }
+          // Server-side mirror of the cash-only UI: a proposal SENT without Stripe
+          // Connect never shows a card button, but a direct API call could still
+          // reach here — refuse it, don't let it fall to the platform account.
+          if (storedProp.stripeConnectEnabled === false) {
+            return new Response(JSON.stringify({ error: 'This proposal is cash/check only.', code: 'cash_only_proposal' }), { status: 409, headers: { ...CORS, 'Content-Type': 'application/json' } });
+          }
         }
       } catch (e) { console.warn('Amount validation skipped:', e); }
     }
@@ -81,6 +87,25 @@ Deno.serve(async (req) => {
         if (cfg?.stripe_account_id && cfg?.stripe_connect_enabled) {
           stripeAccountId = cfg.stripe_account_id;
         }
+      }
+    }
+
+    // HARD WALL — client money must NEVER settle on the TradeDesk platform account
+    // for someone else's work. If a contractor id was given but no ENABLED connected
+    // account resolves (disconnected after sending the link, onboarding incomplete,
+    // account revoked), REFUSE the payment instead of silently absorbing it into the
+    // platform balance. The ONLY exception: uids explicitly listed in the
+    // PLATFORM_DIRECT_USER_IDS env var (comma-separated) — TradeDesk acting as its
+    // own contractor, where the platform's dollars are the contractor's dollars.
+    if (contractorUserId && !stripeAccountId) {
+      const allowDirect = (Deno.env.get('PLATFORM_DIRECT_USER_IDS') || '')
+        .split(',').map((s) => s.trim()).filter(Boolean);
+      if (!allowDirect.includes(String(contractorUserId))) {
+        console.warn('Refused platform-fallback charge', { contractorUserId });
+        return new Response(
+          JSON.stringify({ error: 'Card payments are unavailable for this contractor right now — please pay by cash or check, or contact your contractor.', code: 'no_connected_account' }),
+          { status: 409, headers: { ...CORS, 'Content-Type': 'application/json' } }
+        );
       }
     }
 
