@@ -283,4 +283,37 @@ test.describe('oplog phase 1+2+3 — durable op log + per-field merge + authorit
     const rep = report(FLOW, BASELINE);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
+
+  test('an amount-less in-progress draft SURVIVES a full reload (never load-filtered)', async ({ page }) => {
+    // Owner-reported 53-vs-43: a post-load filter stripped shell drafts from memory, so
+    // "things to build" vanished on refresh while un-reloaded devices still showed them.
+    // A draft with no amount/lines is USER INTENT (the build feed renders it with
+    // "finish & send" + Discard) — a reload must never hide or drop it.
+    const bidId = baseId() + 60, clientId = baseId() + 61;
+    await step(page, {
+      label: 'create a shell draft, flush, hard-reload — draft still present', page: 'cloud', role: 'contractor',
+      suspect: 'cloud.js supaLoadFromCloud post-load bid filters (must not exist)',
+      ruleText: 'an in-progress draft must survive a reload byte-for-byte visible',
+      expected: 'draft present in bids[] with draft/Draft status after reload',
+      act: async (p) => {
+        await p.evaluate(async ({ bidId, clientId }) => {
+          clients.push({ id: clientId, name: 'E2E Shell ' + bidId, phone: '3165550779', _e2e: 'oplog' });
+          bids.push({ id: bidId, client_id: clientId, client_name: 'E2E Shell ' + bidId, bid_date: new Date().toISOString().slice(0, 10), status: 'Draft', draft: true, _e2e: 'oplog' });
+          saveAll(); await _flushSaveNow();
+        }, { bidId, clientId });
+        await p.reload({ waitUntil: 'domcontentloaded' });
+        await p.waitForFunction(() => typeof _supaCloudLoaded !== 'undefined' && _supaCloudLoaded === true, { timeout: 45000 });
+        return 3;
+      },
+      rule: async (p) => {
+        const r = await p.evaluate((id) => {
+          const b = (typeof bids !== 'undefined' ? bids : []).find(x => String(x.id) === String(id));
+          return { present: !!b, draft: !!(b && (b.draft || b.status === 'Draft')) };
+        }, bidId);
+        return { ok: r.present && r.draft, got: `present=${r.present} draft=${r.draft}` };
+      },
+    });
+    const rep = report(FLOW, BASELINE);
+    expect(rep.totalClicks).toBeGreaterThan(0);
+  });
 });

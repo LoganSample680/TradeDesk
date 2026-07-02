@@ -402,8 +402,14 @@ function openGenericEstimate(c,bidId,_tradePick){
       _geiScopeNoScope=!!(_b.scopeNoScope);
       if(_b.isTM&&!_geiIsFreeForm){_geiIsTM=true;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmMatMarkup=_b.tmMatMarkup||_b.geiTaxPct||20;_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
       if(!_b.isTM&&_b.amount>0&&_b.deposit>0){const _storedPct=Math.round((_b.deposit/_b.amount)*100);const _depEl=document.getElementById('byo-deposit-pct');if(_depEl)_depEl.value=_storedPct;}
-      // Purge other empty duplicates for this client+trade now that we have the right one
-      bids=bids.filter(b=>b.id===_existingGei.id||!(b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&!b.amount&&!(b.geiLines||[]).length&&(b.status==='Draft'||b.status==='Pending')&&(b.trade_type===_geiTrade||!b.trade_type)));
+      // Purge other empty duplicates for this client+trade now that we have the right
+      // one — through _userDelete so the delete-intent is RECORDED and the next save's
+      // sweep soft-deletes them server-side too. A bare array filter only hid them in
+      // memory: every reload re-downloaded the zombies, which the old load-side GEI
+      // filter then re-hid — the silent-hide loop behind the owner's 53-vs-43 report.
+      _userDelete(()=>{
+        bids=bids.filter(b=>b.id===_existingGei.id||!(b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&!b.amount&&!(b.geiLines||[]).length&&(b.status==='Draft'||b.status==='Pending')&&(b.trade_type===_geiTrade||!b.trade_type)));
+      });
       _resumingExisting=true;
       saveAll();
     }

@@ -499,7 +499,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.02.26.9';
+const APP_VERSION='07.02.26.10';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -4385,14 +4385,19 @@ async function supaLoadFromCloud({silent=false}={}){
       _removeBootOverlay();goPg('pg-dash');
     }
 
-    // De-duplicate and filter BEFORE rendering — prevents flash of duplicate bids on PTR
+    // De-duplicate BEFORE rendering — prevents flash of duplicate bids on PTR
     const _dedupById=(arr)=>{const seen=new Set();return arr.filter(x=>{if(seen.has(x.id))return false;seen.add(x.id);return true;});};
     const _preLen=clients.length+bids.length+jobs.length;
     clients=_dedupById(clients);bids=_dedupById(bids);jobs=_dedupById(jobs);
     if(clients.length+bids.length+jobs.length<_preLen)setTimeout(()=>_flushSaveNow(),1200);
-    bids=bids.filter(b=>!(b.draft===true&&b.status==='Draft'&&b.geiLines===undefined&&(!b.surfaces||!b.surfaces.length)&&!b.signingToken&&!b.amount));
-    const _geiSeen=new Set();
-    bids=bids.filter(b=>{if(b.geiLines===undefined||b.signingToken||b.amount||(b.geiLines||[]).length)return true;if(b.status!=='Draft'&&b.status!=='Pending')return true;const key=b.client_id+'|'+(b.trade_type||'general');if(_geiSeen.has(key))return false;_geiSeen.add(key);return true;});
+    // NOTE: empty-shell draft bids are DELIBERATELY NOT filtered here. The Make Money
+    // Today build feed renders them ("In progress — finish & send") with an explicit
+    // Discard control — hiding them on load made in-progress estimates vanish on every
+    // reload while un-reloaded devices still showed them (owner-reported 53-vs-43
+    // device disagreement). Junk drafts are removed by the USER via discardInProgressBid,
+    // and duplicate empty GEI drafts by openGenericEstimate's purge — both record real
+    // delete intent so the sweep removes them server-side. Never a silent load-side
+    // filter (§7): a row either exists everywhere or is deleted everywhere.
     // PHASE 0 oplog: baseline the shadow diff AFTER the dedupe + draft-bid filters above,
     // so filtered rows aren't seen as deletes on the next save (no-op unless _opLogShadow).
     _opRebaseline();

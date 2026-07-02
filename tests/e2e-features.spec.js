@@ -3650,6 +3650,45 @@ test.describe('_uploadClientHub — stamps the LIVE client object', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+//  BUILD FEED — in-progress drafts are user intent and always render
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('Build feed — amount-less drafts always visible', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('a shell draft (no amount, no lines, no surfaces) renders in the build feed', async () => {
+    // Owner-reported 53-vs-43: a load-side filter silently hid these exact drafts, so
+    // in-progress estimates vanished on reload. The feed is their ONLY surface — it must
+    // show them ("finish & send" + Discard); hiding is banned (§7), deletion is the
+    // user's Discard button.
+    const r = await page.evaluate(() => {
+      const cid = 991101, bidId = 991102;
+      clients = clients.filter(c => c.id !== cid);
+      bids = bids.filter(b => b.id !== bidId);
+      clients.push({ id: cid, name: 'Shell Draft Client', phone: '3165550778' });
+      bids.push({ id: bidId, client_id: cid, client_name: 'Shell Draft Client', bid_date: todayKey(), status: 'Draft', draft: true });
+      window._mmtCol_build = false; // §11.6 — expand the section so items render into innerHTML
+      renderDash();
+      const feed = document.getElementById('dash-money-feed');
+      return { html: feed ? feed.innerHTML : '' };
+    });
+    expect(r.html).toContain('Shell Draft Client');
+    expect(r.html).toContain('finish');
+    assertNoErrors(page, 'build feed shell draft');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 //  QR PAY NOW — showPayQr / openPayPanel QR button
 // ════════════════════════════════════════════════════════════════════════════
 

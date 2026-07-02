@@ -431,6 +431,46 @@ test.describe('Bid payment recording', () => {
     if (result !== null) expect(result.after).toBe(result.before);
   });
 
+  // ── Schedule-prompt gating (owner-reported: logging a collection payment offered
+  //    to schedule a job that was already scheduled AND complete) ────────────────
+  const _promptProbe = ([bidSeed, payAmt, seedJob]) => {
+    if (typeof logPayment !== 'function') return null;
+    const cid = bidSeed + 1, bidId = bidSeed;
+    clients.push({ id: cid, name: 'Gate C' + bidSeed, phone: '3165550777' });
+    bids.push({ id: bidId, client_id: cid, client_name: 'Gate C' + bidSeed, amount: 1000, deposit: 0, status: 'Closed Won', bid_date: '2026-06-01' });
+    if (seedJob) jobs.push(Object.assign({ id: bidSeed + 2, start: '2026-06-10', days: 2, name: 'Gate J' + bidSeed }, seedJob, { client_id: cid }));
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+    const typeEl = document.getElementById('mpay-type'); if (typeEl) typeEl.value = 'partial';
+    set('mpay-amount', String(payAmt)); set('mpay-date', '2026-06-20'); set('mpay-method', 'Cash');
+    window.activePayBidId = bidId;
+    const prompts = [];
+    const _confirm = window.zConfirm;
+    window.zConfirm = (msg) => { prompts.push(String(msg)); };
+    window.closePayPanel = () => {}; window.renderCDBids = () => {}; window.renderCDTimeline = () => {};
+    window.renderMoneyPage = () => {}; window.renderDash = () => {}; window.refreshCollectLabel = () => {};
+    window.renderClientDetail = () => {}; window.emitEvent = () => {};
+    try { logPayment(); } catch (e) { window.zConfirm = _confirm; return { error: e.message }; }
+    // The schedule prompt fires on a 300ms timeout — wait past it before restoring.
+    return new Promise(res => setTimeout(() => { window.zConfirm = _confirm; res({ prompts }); }, 700));
+  };
+
+  test('logPayment — an unlinked COMPLETED job suppresses the schedule prompt', async () => {
+    // The schedule form doesn't require linking the bid, so the job carries bid_id:null —
+    // it must still count as "already scheduled" (same client fallback the bid panel uses).
+    const r = await page.evaluate(_promptProbe, [990310, 200, { bid_id: null, eventType: 'job', status: 'done' }]);
+    if (r && !r.error) expect(r.prompts.filter(m => m.includes('Schedule this job')).length).toBe(0);
+  });
+
+  test('logPayment — a paid-in-full payment never offers to schedule (collection is the END of the chain)', async () => {
+    const r = await page.evaluate(_promptProbe, [990320, 1000, null]);
+    if (r && !r.error) expect(r.prompts.filter(m => m.includes('Schedule this job')).length).toBe(0);
+  });
+
+  test('logPayment — the prompt STILL fires for a partial payment with genuinely no job (positive control)', async () => {
+    const r = await page.evaluate(_promptProbe, [990330, 200, null]);
+    if (r && !r.error) expect(r.prompts.filter(m => m.includes('Schedule this job')).length).toBe(1);
+  });
+
   test('no console errors during payment recording', async () => {
     assertNoErrors(page, 'bid payment recording');
   });

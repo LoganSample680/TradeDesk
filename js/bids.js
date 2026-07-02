@@ -1331,10 +1331,19 @@ function logPayment(){
   }
   renderCDBids();renderDash();renderMoneyPage();refreshCollectLabel();
   _refreshClientHub(bid.client_id);
-  // After payment — if no job scheduled yet, offer to schedule
-  if(_savedBidId){
+  // After payment — if no job scheduled yet, offer to schedule.
+  // A job counts whether it's linked by bid_id OR is an unlinked job for the same
+  // client (the schedule form doesn't require picking the bid — same fallback the
+  // bid detail panel uses), in ANY state including done: a completed job means
+  // "already scheduled", never re-prompt. And a paid-in-full payment is the END of
+  // the money chain (collection) — the work plainly already happened, so never
+  // offer to schedule off the final payment either.
+  if(_savedBidId&&newBalance>0.01){
     const _pb=bids.find(b=>b.id===_savedBidId);
-    const _hasJob=_pb&&jobs.some(j=>j.bid_id===_pb.id&&j.eventType==='job');
+    const _hasJob=_pb&&jobs.some(j=>
+      j.eventType!=='estimate'&&j.eventType!=='task'&&j.status!=='canceled'&&
+      (String(j.bid_id)===String(_pb.id)||(!j.bid_id&&String(j.client_id)===String(_pb.client_id)))
+    );
     if(_pb&&!_hasJob){
       setTimeout(()=>{
         zConfirm('Payment logged! Schedule this job on the calendar?',
