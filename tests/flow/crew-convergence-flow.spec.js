@@ -320,4 +320,182 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
     const rep = report(FLOW, BASELINE);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
+
+  // ── THE BUSINESS STORY, end to end: owner invites → employee accepts with
+  //    estimate permission → employee WRITES AN ESTIMATE → it rolls up LIVE to
+  //    every user on the account (the boss AND a second crew member), identical. ──
+  test('owner invites → employee accepts (estimate) → writes an estimate → rolls up to ALL users', async ({ page, browser, browserName }) => {
+    test.skip(browserName !== 'chromium', 'runs once — chromium project only');
+    const CREW = crewPool();
+    test.skip(CREW.length < 2, `crew pool too small (${CREW.length})`);
+    test.setTimeout(300000);
+
+    const FLOW2 = 'crew/estimate-rollup';
+    const bossUid = (workerAccount() || {}).uid;
+    const base = Date.now() * 1000 + ((process.pid + 137) % 1000);
+    const estBidId = base + 300, estClientId = base + 301;
+    const TAG = `E2E ROLLUP ${process.pid}`;
+    const E1 = CREW[0], E2 = CREW[1];
+    const ESTIMATE_PERMS = { estimate: true, financials: false, collect: false, expenses: false, mileage: false, schedule: true, clients: true };
+
+    const ctxs = []; const pages = {};
+    const toks = {};
+
+    // 1. OWNER INVITES — through the app's REAL minting path (_mintCrewInviteToken),
+    //    exactly what the Add Member modal runs: roster row (permissions riding along)
+    //    then a server-minted single-use claim token.
+    await step(page, {
+      label: 'owner invites two crew members with estimate permission (real mint path)', page: 'pg-settings', role: 'contractor',
+      suspect: 'cloud.js _mintCrewInviteToken + team_members upsert (permissions ride along)',
+      ruleText: 'both roster rows must upsert with estimate permission and both tokens must mint',
+      expected: '2 roster rows, 2 tokens',
+      act: async (p) => {
+        p.__inv = await p.evaluate(async ({ E1email, E2email, TAG, perms }) => {
+          const out = { toks: {}, errs: [] };
+          for (const [k, email] of [['e1', E1email], ['e2', E2email]]) {
+            const { error } = await _supa.from('team_members').upsert({
+              contractor_user_id: _supaUser.id, email, name: `${TAG} ${k}`, role: 'tech',
+              permissions: perms, employee_user_id: null, active: false, invited_at: new Date().toISOString(),
+            }, { onConflict: 'contractor_user_id,email' });
+            if (error) { out.errs.push(`${k}:${error.message}`); continue; }
+            const tok = await _mintCrewInviteToken(_supaUser.id, email); // the app's own mint
+            if (tok) out.toks[k] = tok; else out.errs.push(`${k}:mint-null`);
+          }
+          return out;
+        }, { E1email: E1.email, E2email: E2.email, TAG, perms: ESTIMATE_PERMS });
+        Object.assign(toks, p.__inv.toks);
+        return 2;
+      },
+      rule: async (p) => ({
+        ok: !!p.__inv.toks.e1 && !!p.__inv.toks.e2 && p.__inv.errs.length === 0,
+        got: `tokens=${Object.keys(p.__inv.toks).join(',')} errs=[${p.__inv.errs.join(' | ')}]`,
+      }),
+    });
+
+    // 2. EMPLOYEES ACCEPT — open the invite LINK (the ?emp_invite= URL a real crew
+    //    member taps), sign in, and land nested with estimate permission applied.
+    await step(page, {
+      label: 'both employees accept the invite link and nest with estimate permission', page: 'cloud', role: 'employee',
+      suspect: 'cloud.js loadAccountData claim_crew_invite path',
+      ruleText: 'accepting the invite link must nest the login under the boss with the granted permissions',
+      expected: 'both nested, permissions.estimate === true',
+      act: async () => {
+        for (const [k, acct] of [['e1', E1], ['e2', E2]]) {
+          const ctx = await browser.newContext();
+          ctxs.push(ctx);
+          const pg = await ctx.newPage();
+          pages[k] = pg;
+          const query = '?emp_invite=' + Buffer.from(JSON.stringify({ cid: bossUid, eid: base, email: acct.email, bname: 'E2E Boss', ename: `${TAG} ${k}`, tok: toks[k] })).toString('base64');
+          await crewSignIn(pg, acct, query);
+          await pg.waitForFunction((boss) =>
+            typeof _isEmployee !== 'undefined' && _isEmployee === true && String(_contractorUserId) === String(boss),
+          bossUid, { timeout: 30000 });
+          await pg.waitForFunction(() => typeof _supaCloudLoaded === 'undefined' || _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});
+        }
+        return 2;
+      },
+      rule: async () => {
+        const ok = [];
+        for (const k of ['e1', 'e2']) {
+          ok.push(await pages[k].evaluate(() =>
+            typeof _isEmployee !== 'undefined' && _isEmployee === true &&
+            !!(_employeeRecord && _employeeRecord.permissions && _employeeRecord.permissions.estimate === true)));
+        }
+        return { ok: ok.every(Boolean), got: `nested-with-estimate: ${ok.map(String).join(',')}` };
+      },
+    });
+
+    // 3. EMPLOYEE WRITES AN ESTIMATE — a real one (client + surfaces + amount),
+    //    through the real save path, under the crew RLS.
+    const AMT = 4850;
+    await step(page, {
+      label: 'employee 1 writes an estimate (client + surfaces + amount) and saves', page: 'pg-est', role: 'employee',
+      suspect: 'td_bids/td_clients crew policies (estimate permission) + bump_account_cursor',
+      ruleText: 'an estimate authored by an estimate-permission employee must persist to the cloud under the boss account',
+      expected: `bid ${estBidId} committed with amount ${AMT}`,
+      act: async () => {
+        await pages.e1.evaluate(async ({ estBidId, estClientId, AMT, TAG }) => {
+          clients.push({ id: estClientId, name: TAG + ' Client', phone: '3165550970', addr: '901 Rollup Rd, Wichita, KS 67202', _e2e: 'rollup' });
+          bids.push({
+            id: estBidId, client_id: estClientId, client_name: TAG + ' Client', name: TAG + ' Client',
+            amount: AMT, deposit: Math.round(AMT * 0.25), status: 'Pending', type: 'Interior Painting',
+            bid_date: new Date().toISOString().slice(0, 10),
+            surfaces: [{ type: 'walls', room: 'Living Room', qty: 480 }, { type: 'ceiling', room: 'Living Room', qty: 240 }],
+            _e2e: 'rollup',
+          });
+          saveAll();
+          await _flushSaveNow();
+        }, { estBidId, estClientId, AMT, TAG });
+        return 2; // one client + one estimate authored
+      },
+      rule: async () => {
+        // Assert it actually LANDED server-side (not just in E1's memory): the BOSS
+        // re-queries the cloud row directly — a crew-RLS write rejection would leave
+        // nothing here even though E1's arrays look fine.
+        const landed = await page.evaluate(async ({ estBidId }) => {
+          const { data } = await _supa.from('td_bids').select('id,data').eq('user_id', _supaUser.id).eq('id', String(estBidId)).limit(1);
+          const row = data && data[0];
+          return { found: !!row, amount: row ? Number((row.data || {}).amount) : null };
+        }, { estBidId });
+        return { ok: landed.found && landed.amount === AMT, got: `cloud row found=${landed.found} amount=${landed.amount} (want ${AMT})` };
+      },
+    });
+
+    // 4. ROLL-UP: the boss AND the second crew member receive the estimate LIVE
+    //    (no manual reload — realtime / heartbeat / delta), amount intact.
+    await step(page, {
+      label: 'the estimate rolls up live to the boss and the second crew member', page: 'pg-dash', role: 'contractor',
+      suspect: 'crew sync fabric (realtime SELECT policies + cursor heartbeat + silent delta)',
+      ruleText: 'an employee-authored estimate must appear on every user of the account without a manual reload, with the full amount',
+      expected: `bid ${estBidId} amount ${AMT} on boss + employee 2`,
+      act: async () => {
+        for (const pg of [page, pages.e2]) {
+          await pg.waitForFunction(({ id, amt }) => {
+            const b = (typeof bids !== 'undefined' ? bids : []).find(x => String(x.id) === String(id));
+            return !!(b && Number(b.amount) === amt);
+          }, { id: estBidId, amt: AMT }, { timeout: 90000, polling: 1000 }).catch(() => {});
+        }
+        return 1;
+      },
+      rule: async () => {
+        const got = [];
+        for (const [who, pg] of [['boss', page], ['e2', pages.e2]]) {
+          const r = await pg.evaluate(({ id }) => {
+            const b = (typeof bids !== 'undefined' ? bids : []).find(x => String(x.id) === String(id));
+            return b ? { amount: Number(b.amount), client: b.client_name } : null;
+          }, { id: estBidId });
+          got.push(`${who}=${r ? r.amount : 'ABSENT'}`);
+        }
+        const ok = got.every(g => g.endsWith('=' + AMT));
+        return { ok, got: got.join(' · ') };
+      },
+    });
+
+    // 5. And the three copies are byte-identical — authored once, same everywhere.
+    await step(page, {
+      label: 'the estimate is byte-equal on author, boss, and peer crew', page: 'cloud', role: 'contractor',
+      suspect: 'cloud.js merge fabric under crew RLS',
+      ruleText: 'no user may hold a different copy of the estimate',
+      expected: '1 distinct canonical serialization across e1/boss/e2',
+      act: async () => 1,
+      rule: async () => {
+        const canons = [];
+        for (const pg of [pages.e1, page, pages.e2]) {
+          canons.push(await pg.evaluate(({ src, id }) => {
+            const canon = eval(src);
+            const b = (typeof bids !== 'undefined' ? bids : []).find(x => String(x.id) === String(id));
+            return canon(b || null);
+          }, { src: canonFnSource, id: estBidId }));
+        }
+        const distinct = new Set(canons);
+        return { ok: distinct.size === 1 && !canons.includes('null'), got: `${distinct.size} distinct states (lens: ${canons.map(c => (c || '').length).join(',')})` };
+      },
+    });
+
+    // Resource cleanup only (§13.7 — the estimate stays in the account to poke at).
+    for (const ctx of ctxs) await ctx.close().catch(() => {});
+
+    const rep = report(FLOW2, BASELINE);
+    expect(rep.totalClicks).toBeGreaterThan(0);
+  });
 });
