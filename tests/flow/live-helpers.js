@@ -20,6 +20,26 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DEV_EMAIL = process.env.E2E_DEV_EMAIL || '';
+// ── ACCOUNT-PER-BROWSER SPLIT (cloud mode) ──────────────────────────────────
+// The full suite runs chromium + webkit in parallel; with BOTH browsers cold-
+// signing into the same shared Dev A account, they contend for the same rows
+// and the same account-wide save/load serialization — the 20-minute wall time
+// and the sign-in-under-load timeouts. Split the load: webkit keeps Dev A
+// (E2E_DEV_*), chromium uses Dev B (E2E_DEV2_*) when those creds exist.
+// Graceful: without DEV2 creds every browser falls back to Dev A (unchanged).
+// Two-account specs (accountPair) are unaffected — they resolve A+B explicitly.
+// Note: env-dependent specs self-skip where Dev B lacks prerequisites (Stripe
+// connect, intake profile); webkit/Dev A retains that coverage.
+function cloudAccountFor(browserName) {
+  const e2 = process.env.E2E_DEV2_EMAIL, p2 = process.env.E2E_DEV2_PASSWORD, u2 = process.env.E2E_DEV2_USER_ID;
+  if (browserName === 'chromium' && e2 && p2) {
+    return { email: e2, password: p2, uid: u2 || '' };
+  }
+  return { email: DEV_EMAIL, password: process.env.E2E_DEV_PASSWORD || '', uid: process.env.E2E_DEV_USER_ID || '' };
+}
+function pageBrowserName(page) {
+  try { return page.context().browser().browserType().name(); } catch (_e) { return ''; }
+}
 const DEV_PASSWORD = process.env.E2E_DEV_PASSWORD || '';
 const DEV_USER_ID = process.env.E2E_DEV_USER_ID || '';
 
@@ -136,8 +156,9 @@ async function signIn(page) {
   // In local-stack mode, sign in as THIS worker's dedicated account (distinct
   // user_id per worker = isolation). Else use the shared cloud dev login.
   const _acct = workerAccount();
-  const _email = _acct ? _acct.email : DEV_EMAIL;
-  const _password = _acct ? _acct.password : DEV_PASSWORD;
+  const _cloud = _acct ? null : cloudAccountFor(pageBrowserName(page));
+  const _email = _acct ? _acct.email : _cloud.email;
+  const _password = _acct ? _acct.password : _cloud.password;
   // 'domcontentloaded', NOT the default 'load': the app's login form is interactive at
   // DOMContentLoaded, but 'load' blocks on every external resource — notably the Apple
   // MapKit CDN script — so waiting for it makes every test's boot slower and, on a busy
@@ -201,9 +222,11 @@ async function assertDevAccount(page) {
   if (!id) throw new Error('assertDevAccount: no authenticated user');
   // In local-stack mode the trusted id is THIS worker's provisioned uid.
   const _acct = workerAccount();
-  const expectedId = _acct ? _acct.uid : DEV_USER_ID;
+  // Cloud mode: the trusted id is whichever dev account THIS browser is assigned
+  // (webkit=Dev A, chromium=Dev B when configured) — both are strictly test accounts.
+  const expectedId = _acct ? _acct.uid : cloudAccountFor(pageBrowserName(page)).uid;
   if (id !== expectedId) {
-    throw new Error(`assertDevAccount: signed-in user ${id} !== ${_acct ? 'local-worker-uid' : 'E2E_DEV_USER_ID'} — refusing to seed/teardown`);
+    throw new Error(`assertDevAccount: signed-in user ${id} !== ${_acct ? 'local-worker-uid' : 'assigned dev-account uid'} — refusing to seed/teardown`);
   }
   return id;
 }
