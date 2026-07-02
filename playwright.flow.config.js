@@ -38,16 +38,28 @@ module.exports = defineConfig({
   // left inputs "resolved to hidden" past the waits. 3 keeps most of the ~3× speedup
   // with materially less boot contention. (Paired with the local-server pinning proxy
   // mode so no per-boot direct probe.)
-  // SERIAL (1 worker). Tried workers:2 (one per dev account) for the ~2× speedup; it
-  // works for data-correctness (the §9.8 concurrency-safe sweep handles concurrent
-  // writes) but it BREAKS specs that assume a SPECIFIC account: with 2 workers a spec can
-  // run on worker 1 (DEV2) and then a hardcoded DEV assertion fails — e.g. the smoke
-  // teardown-guard ("signs in as the dev account") asserted DEV_USER_ID, and the
-  // reboot/goal spec read a sibling test's goal (7420 vs 7727) when two goal-writing tests
-  // overlapped. The boot speedup (signIn → 'domcontentloaded', which also killed the
-  // goto-load timeouts) is kept and is worker-count-independent. To safely re-enable
-  // workers:2, every spec must be made account-AGNOSTIC (use workerAccount().uid, never a
-  // hardcoded DEV_*), and goal/settings specs isolated — a focused follow-up, not a flip.
+  // PARALLEL, one Playwright worker bound to ONE account (never shared). The binding is
+  // TEST_PARALLEL_INDEX → workerAccount() (live-helpers.js): parallelIndex 0 → account A,
+  // 1 → account B, etc., resolved per mode below. The §9.8 concurrency-safe sweep makes
+  // concurrent writes data-safe; this binding makes them ACCOUNT-safe (no two workers on
+  // one user_id), and every spec is now account-AGNOSTIC (uses workerAccount().uid /
+  // accountPair(), never a hardcoded DEV_*), so the old workers:2 breakers are gone:
+  //   • smoke teardown-guard asserts workerAccount()?.uid (not DEV_USER_ID).
+  //   • the goal/settings reboot spec reads ONLY its own zj_data row (keyed by user_id),
+  //     so the 7420-vs-7727 cross-account read can't happen — each worker owns its account.
+  //   • the two two-account specs (cross-account-bleed, employee redaction) tag their
+  //     writes per-run and tolerate a concurrently-present team link (upsert, not bare
+  //     insert), so chromium+webkit running them at once can't collide.
+  // COUNT: 1 (proven-green). The limit is CONTENTION on the single local Supabase stack +
+  // one local-server — NOT the account pool. Both 6 and 2 went red: under concurrent load
+  // the stack is uniformly slow enough that td_* SAVES don't commit before the rule reads
+  // cloud (systematic "ROW ABSENT" across save-flows), plus realtime lag, render timeouts,
+  // and a leftover-modal collision. Account isolation (one fresh account per worker) is
+  // fine; the bottleneck is per-test BOOT + read-after-write timing. So parallelism here is
+  // a real project — reuse ONE signed-in session via storageState to kill the sign-in
+  // storm, and harden the rule's cloud-read poll — NOT a worker-count flip. Until that's
+  // built, 1 is the ceiling. (readWorkerCount() reads this → provisions max(1,3)+1 = 4
+  // local accounts, harmless.)
   workers: 1,
   // CI emits a JSON report (machine-readable failure dump) + an HTML report dir
   // (uploaded as an artifact) so a red run is never a black box — the json carries

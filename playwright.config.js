@@ -8,7 +8,9 @@ module.exports = defineConfig({
   // Live-Supabase flow tests live under tests/flow and run via their own config
   // (playwright.flow.config.js) + workflow (flow-tests.yml). They authenticate
   // against the real project and must never run inside the fast offline shards.
-  testIgnore: '**/flow/**',
+  // tests/preview-smoke runs ONLY against a live Cloudflare deployment
+  // (playwright.preview-smoke.config.js) — likewise excluded from the offline shards.
+  testIgnore: ['**/flow/**', '**/preview-smoke/**'],
   // fullyParallel: false keeps tests within each describe block sequential
   // (they often share page state). Workers still run DIFFERENT describe blocks
   // in parallel — safe because each worker gets its own browser context.

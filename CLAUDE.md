@@ -5,6 +5,57 @@
 
 ---
 
+## Communication — plain English, always
+
+Talk to the owner like a person, not a compiler. Every reply:
+
+- **Plain English.** No jargon dumps. If a term is unavoidable, say it in one plain
+  sentence too. Assume the owner is smart but not reading the code.
+- **Lead with the answer.** First line = what happened / what to do. Details after,
+  only if they help.
+- **Short.** Cut everything that isn't load-bearing. Long walls of text lose the owner.
+- **"What you need to do" is explicit.** If the owner has an action, put it in a short
+  numbered list with the exact taps/values. If there's nothing for them to do, say so.
+- **Name the thing that broke and the fix in one line each** — not a five-paragraph tour.
+- **No status noise.** Don't narrate every CI poll or push. Report when something needs
+  the owner or when a real result lands.
+
+This rule is mandatory and applies to every response, not just summaries.
+
+---
+
+## 0. The Loop (plain English — read this first)
+
+How a change ships. Repeat until review is clean:
+
+1. **Build it** — write the feature + its tests on the branch.
+2. **Local tests** — flow tests on a local copy + the offline CI shards. Free, no Cloudflare.
+3. **Cloud gate** — the same tests, now against the REAL backend (Dev Supabase + Stripe).
+   The app still runs on localhost, so still no Cloudflare cost. This seeds real data into
+   Dev A/B for you to poke at.
+4. **Build the preview** — ONE deliberate deploy. Cloudflare builds the real app. Comes
+   AFTER the cloud gate (the cloud gate doesn't need it — don't pay for a build you might toss).
+5. **Smoke the preview** — a tiny check that the *deploy itself* is healthy: right version
+   (not a stale cache), `/api` works, maps load. Dozens of requests, not thousands.
+6. **You review the live preview.** Anything off → back to step 1.
+
+**Two different "clouds" — don't mix them up:**
+- *Cloud gate* = real **backend** (Supabase, Stripe). App runs on localhost. Cheap.
+- *Preview* = the real **front-end**, deployed on Cloudflare. The smoke checks this one.
+
+**Plain rules:**
+- Every dev commit carries `[CF-Pages-Skip]` so Cloudflare does NOT rebuild. Only the
+  step-4 "ready" commit deploys.
+- **Production lags on purpose.** It only updates when you say "deploy/promote." A *preview*
+  is your branch's code; *production* is whatever you last shipped — never the same mid-work.
+- **Never merge or deploy without you saying so** — not even when everything is green.
+- **One push, then WAIT** for the tests to report before the next push. Pushing mid-run
+  kills the test that's running.
+
+Everything below is the detailed version of the above.
+
+---
+
 ## 1. Git Workflow — CI-Gated PR Flow
 
 **Never push directly to `main`.** All changes go through a PR so CI must pass
@@ -125,6 +176,38 @@ and what was changed. Nothing else.
 | Hard failures | 0 across all WebKit and Chromium shards |
 | Flaky tests | None — every test must pass on first attempt |
 | Console errors | 0 new `console.error` calls introduced by the change |
+
+---
+
+### 1.6 NEVER Push Over In-Flight Tests — Wait for the Full Result Set
+
+> One push, then **wait for the whole result set** before the next push. No exceptions.
+
+After any push, **do not push, force-push, amend-and-force, or re-trigger anything**
+on the branch until BOTH of these have come back for the **current HEAD**:
+
+1. **All offline shards** (`test (1)`…`test (6)`) — every one `completed / success`.
+   Not 5 of 6. Not "shard 4 passed." **All of them.**
+2. **A real flow run** — EITHER the self-hosted **flow-local** (local-stack) run OR the
+   **Supabase cloud** live flow run — `completed / success`.
+
+Both gates. Offline-green alone is **not** enough to push again. Flow-green alone is
+**not** enough either. Wait for both.
+
+**Why this rule exists (and cost a wasted run):** force-pushing a new commit while a
+prior flow run is still `in_progress` **cancels/orphans that run** (`concurrency:
+cancel-in-progress`) — the result never lands, the self-hosted runner minutes are
+burned, and we learn nothing. Every rapid-fire push throws away the test we were
+waiting on.
+
+**The only thing allowed while a run is in flight is reading status.** Poll
+`get_check_runs`, read logs, investigate, draft the fix locally — but the fix **sits
+uncommitted/unpushed** until the in-flight runs report. If a failure is obvious mid-run,
+still wait for the run to finish before pushing the fix, so its result is recorded.
+
+**Bootstrapping note:** the first push of a change is what starts CI — that's fine.
+This rule bans the *second* push (and every push after) until the *first* one's full
+result set (both gates above) is in.
 
 ---
 

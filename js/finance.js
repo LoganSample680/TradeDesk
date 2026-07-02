@@ -1547,7 +1547,7 @@ async function viewReceipt(expId){
         (srcs.length>1&&_pg>0?'<button onclick="_rcptPg(-1)" style="color:#fff;font-size:13px;font-weight:600;background:rgba(255,255,255,.15);border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-family:inherit">← Prev</button>':'')+
         (srcs.length>1&&_pg<srcs.length-1?'<button onclick="_rcptPg(1)" style="color:#fff;font-size:13px;font-weight:600;background:rgba(255,255,255,.15);border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-family:inherit">Next →</button>':'')+
         '<a href="'+src+'" download="'+fname(src)+'" style="color:#fff;font-size:13px;font-weight:600;text-decoration:none;background:rgba(255,255,255,.15);padding:8px 14px;border-radius:8px">⬇ Save</a>'+
-        '<button onclick="deleteReceiptPhoto('+expId+')" style="color:#fff;font-size:13px;font-weight:600;background:rgba(180,30,30,.7);border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-family:inherit">🗑 Delete</button>'+
+        ''+
         '<button onclick="this.closest(\'.rcpt-ov\').remove()" style="color:#fff;font-size:13px;font-weight:600;background:rgba(255,255,255,.15);border:none;padding:8px 14px;border-radius:8px;cursor:pointer;font-family:inherit">✕ Close</button>'+
       '</div>';
   };

@@ -1164,7 +1164,7 @@ test.describe('Cloud LP and employee/sub functions', () => {
   test('_lpDoDelete — calls without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _lpDoDelete !== 'function') return { skip: true };
-      try { _lpDoDelete('nonexistent-id', 'bid'); return { ok: true }; }
+      window._e2eAllowDelete=true; try { _lpDoDelete('nonexistent-id', 'bid'); return { ok: true }; }
       catch (e) { return { ok: true, note: e.message }; }
     });
     if (!result.skip) expect(result.ok).toBe(true);
@@ -1177,7 +1177,7 @@ test.describe('Cloud LP and employee/sub functions', () => {
         const row = document.createElement('div');
         row.dataset.id = 'bid-001';
         row.dataset.type = 'bid';
-        _showLpDeletePopup(row);
+        window._e2eAllowDelete=true; _showLpDeletePopup(row);
         return { ok: true };
       } catch (e) { return { ok: true, note: e.message }; }
     });

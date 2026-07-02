@@ -115,7 +115,7 @@ function editContractModal(ctId){
     // contract off the dashboard "Maintenance Due" card (it filters nextDate<=today+14).
     '<button onclick="logContractVisit('+ctId+');document.getElementById(\'_ct-modal-ov\').remove();" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;touch-action:manipulation">✓ Log service — advance to next visit</button>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'+
-      '<button onclick="_ctDelete('+ctId+')" style="padding:10px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Delete</button>'+
+      ''+
       '<button onclick="document.getElementById(\'_ct-modal-ov\').remove()" style="padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
       '<button onclick="_ctUpdate('+ctId+')" style="padding:10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
     '</div>';

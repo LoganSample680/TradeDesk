@@ -51,10 +51,16 @@ test.describe('realtime sync is glitch-free (multi-device)', () => {
     // Instrument B: count renderDash calls, and poll (every 40ms) whether the
     // dashboard greeting ever vanished (a blank-flash) or the active page changed.
     await pageB.evaluate(() => {
-      window.__g = { rd: 0, greetMissing: 0, pageChanged: 0 };
+      window.__g = { rd: 0, greetMissing: 0, pageChanged: 0, stacks: [] };
       if (typeof renderDash === 'function') {
         const orig = renderDash;
-        window.renderDash = function () { window.__g.rd++; return orig.apply(this, arguments); };
+        window.renderDash = function () {
+          window.__g.rd++;
+          // Record WHO triggered each render — on a budget breach the failure names the
+          // caller instead of leaving us to guess which sync path added a pass.
+          try { window.__g.stacks.push(String((new Error()).stack || '').split('\n').slice(1, 4).map(s => s.trim()).join(' < ')); } catch (e) {}
+          return orig.apply(this, arguments);
+        };
       }
       window.__gActive = (document.querySelector('.pg.active') || {}).id || null;
       window.__gPoll = setInterval(() => {
@@ -98,7 +104,10 @@ test.describe('realtime sync is glitch-free (multi-device)', () => {
       rule: async (p) => {
         const g = p.__g || {};
         const ok = g.greetMissing === 0 && g.pageChanged === 0 && g.rd <= 8 && bErrors.length === 0;
-        return { ok, got: `greetMissing=${g.greetMissing} pageChanged=${g.pageChanged} renderDash=${g.rd} errors=${bErrors.length}${bErrors.length ? ' :: ' + bErrors.slice(0, 2).join(' | ') : ''}` };
+        const stackNote = (!ok && g.rd > 8 && Array.isArray(g.stacks))
+          ? ' :: render callers: ' + g.stacks.map((s, i) => `[${i + 1}] ${s}`).join(' || ')
+          : '';
+        return { ok, got: `greetMissing=${g.greetMissing} pageChanged=${g.pageChanged} renderDash=${g.rd} errors=${bErrors.length}${bErrors.length ? ' :: ' + bErrors.slice(0, 2).join(' | ') : ''}${stackNote}` };
       },
     });
 
@@ -109,20 +118,27 @@ test.describe('realtime sync is glitch-free (multi-device)', () => {
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
-  // QUARANTINED — true-concurrency burst convergence (last rapid save not converged); same class as offline-sync-race / realtime-delete. Needs the §9.8 save-side trailing-flush + merge-by-updated_at sync work. Do NOT mask by widening waits.
-  test.fixme('A fires a rapid burst of edits → B converges to the LAST value (no lost update)', async ({ page }) => {
+  // RE-ENABLED after the read-skew root cause was fixed (cloud.js supaSaveToCloud "sync
+  // marker written LAST"). B used to land on 5004 (one behind) every run because convergence
+  // keys off zj_data.updated_at, but that cursor was bumped by the settings-FIRST write —
+  // BEFORE the td_bids rows committed. B could capture the fresh cursor, reload, read the
+  // tables before A's row upserts landed, and mark itself caught up on a stale amount (the
+  // cursor never moved a second time, so B never reloaded again). The fix bumps
+  // zj_data.updated_at only AFTER every td_* upsert has committed, so "cursor moved ⇒ all
+  // data committed" — B's next reconcile reload now always reads the final value.
+  test('A fires a rapid burst of edits → B converges to the LAST value (no lost update)', async ({ page }) => {
     test.setTimeout(120000);
     const bidId = Date.now() * 1000 + (process.pid % 1000);
     const clientId = bidId + 1;
     const tag = `E2E Glitch Burst ${process.pid}`;
 
     // Bring up device B alongside the already-signed-in device A.
-    await page.waitForFunction(() => typeof _realtimeSubscribed !== 'undefined' && _realtimeSubscribed === true, { timeout: 20000 }).catch(() => {});
+    await page.waitForFunction(() => typeof _tdRealtimeReady !== 'undefined' && _tdRealtimeReady === true, { timeout: 30000 });
     const pageB = await page.context().newPage();
     await pageB.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await pageB.waitForFunction(() => typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id, { timeout: 30000 });
     await pageB.waitForFunction(() => typeof _supaCloudLoaded === 'undefined' || _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});
-    await pageB.waitForFunction(() => typeof _realtimeSubscribed !== 'undefined' && _realtimeSubscribed === true, { timeout: 20000 }).catch(() => {});
+    await pageB.waitForFunction(() => typeof _tdRealtimeReady !== 'undefined' && _tdRealtimeReady === true, { timeout: 30000 });
 
     // Seed the bid on A and wait for B to receive it before the burst.
     await page.evaluate(async ({ bidId, clientId, tag }) => {
@@ -162,7 +178,31 @@ test.describe('realtime sync is glitch-free (multi-device)', () => {
       },
       rule: async () => {
         const amt = await pageB.evaluate((id) => { const b = (bids || []).find(x => x.id === id); return b ? b.amount : null; }, bidId);
-        return { ok: amt === 5005, got: `B final amount=${amt} (want 5005)` };
+        if (amt === 5005) return { ok: true, got: `B final amount=${amt}` };
+        // MISS — dump B's sync state, then the decisive probe: does ONE forced silent
+        // reconcile heal it? healed ⇒ the notification/scheduler chain failed to fire
+        // (zj event lost + heartbeat quiet); not healed ⇒ the merge itself rejects the
+        // newer row (clock/gate bug). Still a failure either way — B must converge on
+        // its own — but the next occurrence names its half of the machine.
+        const diag = await pageB.evaluate(async (id) => {
+          const before = {
+            loadInProgress: typeof _loadInProgress !== 'undefined' && _loadInProgress,
+            rtReady: typeof _tdRealtimeReady !== 'undefined' && _tdRealtimeReady,
+            lastZj: window._lastZjUpdatedAt || null,
+            deltaCursor: (typeof _deltaCursor !== 'undefined' && _deltaCursor) || null,
+            clock: (typeof window.__fieldClock === 'function' && window.__fieldClock('td_bids', String(id), 'amount')) || null,
+          };
+          let after = null;
+          try {
+            await supaLoadFromCloud({ silent: true });
+            const b = (bids || []).find(x => x.id === id); after = b && b.amount;
+          } catch (e) { after = 'loadErr:' + (e && e.message); }
+          return { ...before, after };
+        }, bidId);
+        return {
+          ok: false,
+          got: `B final amount=${amt} (want 5005) — loadInProgress=${diag.loadInProgress} rtReady=${diag.rtReady} lastZj=${diag.lastZj} deltaCursor=${diag.deltaCursor} clock=${diag.clock ? 'SET' : 'ABSENT'} afterForcedReconcile=${diag.after}`,
+        };
       },
     });
 

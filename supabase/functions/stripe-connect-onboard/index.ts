@@ -57,6 +57,28 @@ Deno.serve(async (req) => {
 
     let stripeAccountId: string = cfg?.stripe_account_id;
 
+    // Self-heal a STALE stored id. If account_config points at an account that
+    // can't be used with the current-mode key — a live account being onboarded
+    // from a test-mode surface (preview/localhost), or a deleted/revoked account
+    // — reusing it fails accountLinks.create with "account not connected to your
+    // platform or does not exist", dead-ending Connect. Verify first; on a
+    // DEFINITIVE not-found, drop it so a fresh account is created below. Only on
+    // resource_missing (never a transient/network error), so a real live
+    // connection onboarding from production (where retrieve succeeds) is untouched.
+    if (stripeAccountId) {
+      try {
+        await stripe.accounts.retrieve(stripeAccountId);
+      } catch (e: any) {
+        const missing = e?.code === 'resource_missing' ||
+          /no such account|not connected to your platform|does not exist/i.test(e?.message || '');
+        if (missing) {
+          stripeAccountId = '';
+        } else {
+          throw e;
+        }
+      }
+    }
+
     if (!stripeAccountId) {
       // Create a new Express connected account
       const acct = await stripe.accounts.create({

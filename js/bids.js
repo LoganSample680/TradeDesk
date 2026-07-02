@@ -6,7 +6,9 @@ function addTradeOpportunity(clientId,trade,title,notes){
 function convertOpportunityToEstimate(bidId){
   const opp=bids.find(b=>b.id===bidId);if(!opp)return;
   const c=getClientById(opp.client_id);if(!c)return;
-  bids=bids.filter(b=>b.id!==bidId);saveAll();
+  // Removing a saved opportunity bid is a real delete — route through _userDelete so the
+  // soft-delete sweep propagates it cross-device (else it resurrects from the cloud).
+  _userDelete(()=>{bids=bids.filter(b=>b.id!==bidId);saveAll();});
   _doOpenEstimate(c,null,opp.trade_type||getActiveTrade());
 }
 function deleteOpportunity(bidId){
@@ -33,7 +35,7 @@ function renderCDOpportunities(){
         '</div>'+
         '<div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px">'+
           '<button class="btn btn-sm btn-p" onclick="convertOpportunityToEstimate('+o.id+')" style="font-size:11px">→ Estimate</button>'+
-          '<button class="btn-del" onclick="deleteOpportunity('+o.id+')" style="font-size:11px;padding:5px 8px">✕</button>'+
+          ''+
         '</div>'+
       '</div>';
     }).join(''):'<div style="font-size:12px;color:var(--text3);padding:6px 0">No opportunities yet — track cross-trade follow-ups here.</div>');
@@ -98,7 +100,7 @@ function renderCDEstimatesUpcoming(){
         '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;margin-left:10px">'+
           '<button class="btn btn-sm" onclick="rescheduleEstimate('+j.id+')" style="font-size:11px">Reschedule</button>'+
           '<button class="btn btn-sm" onclick="cancelEstimate('+j.id+')" style="font-size:11px;color:var(--amber)">Cancel</button>'+
-          '<button class="btn btn-sm" onclick="deleteJob('+j.id+')" style="font-size:11px;color:#A32D2D">Delete</button>'+
+          ''+
         '</div>'+
       '</div>'+
 
@@ -806,7 +808,7 @@ function openPayPanel(bidId, autoType){
   const overpaidAmt=Math.round((rawPaid-total)*100)/100;
   const _payClient=getClientById(bid.client_id);
   const _hubUrl=_payClient?.clientToken&&_supaUser
-    ?(_clientBaseUrl()+'client.html?t='+_payClient.clientToken+'&u='+_supaUser.id+'&c='+_payClient.id)
+    ?(_clientBaseUrl()+'client.html?t='+_payClient.clientToken+'&u='+_effectiveUid()+'&c='+_payClient.id)
     :null;
 
   document.querySelectorAll('.pay-modal-overlay').forEach(e=>e.remove());
@@ -938,7 +940,7 @@ function showPayQr(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   const c=getClientById(bid.client_id);
   if(!c?.clientToken||!_supaUser){showToast('No client hub for this job.','⚠');return;}
-  const hubUrl=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+c.id;
+  const hubUrl=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+c.id;
   const balance=getBidBalance(bid);
   closePayPanel();
   document.getElementById('_pay-qr-ov')?.remove();
@@ -1069,6 +1071,9 @@ function _submitCloseOutEstimate(bidId){
   b.status='Closed Lost';b.draft=false;
   b.lostReason=reason;b.lostNote=note;b.lostAt=new Date().toISOString();
   saveAll();
+  // Re-publish the client hub so the declined proposal stays in the hub Documents
+  // (read-only, with its reason) instead of vanishing once it leaves Pending.
+  if(b.client_id&&typeof _uploadClientHub==='function')_uploadClientHub(b.client_id).catch(()=>{});
   document.getElementById('_co-overlay')?.remove();
   document.querySelector('[data-bdov]')?.remove();
   if(typeof renderProposalsPage==='function')renderProposalsPage();
@@ -1082,6 +1087,8 @@ function reopenEstimate(bidId){
   b.status='Pending';
   delete b.lostReason;delete b.lostNote;delete b.lostAt;
   saveAll();
+  // Re-publish the hub so the declined card clears once the estimate is reopened.
+  if(b.client_id&&typeof _uploadClientHub==='function')_uploadClientHub(b.client_id).catch(()=>{});
   document.querySelector('[data-bdov]')?.remove();
   if(typeof renderProposalsPage==='function')renderProposalsPage();
   if(typeof renderDash==='function')renderDash();
@@ -1324,10 +1331,19 @@ function logPayment(){
   }
   renderCDBids();renderDash();renderMoneyPage();refreshCollectLabel();
   _refreshClientHub(bid.client_id);
-  // After payment — if no job scheduled yet, offer to schedule
-  if(_savedBidId){
+  // After payment — if no job scheduled yet, offer to schedule.
+  // A job counts whether it's linked by bid_id OR is an unlinked job for the same
+  // client (the schedule form doesn't require picking the bid — same fallback the
+  // bid detail panel uses), in ANY state including done: a completed job means
+  // "already scheduled", never re-prompt. And a paid-in-full payment is the END of
+  // the money chain (collection) — the work plainly already happened, so never
+  // offer to schedule off the final payment either.
+  if(_savedBidId&&newBalance>0.01){
     const _pb=bids.find(b=>b.id===_savedBidId);
-    const _hasJob=_pb&&jobs.some(j=>j.bid_id===_pb.id&&j.eventType==='job');
+    const _hasJob=_pb&&jobs.some(j=>
+      j.eventType!=='estimate'&&j.eventType!=='task'&&j.status!=='canceled'&&
+      (String(j.bid_id)===String(_pb.id)||(!j.bid_id&&String(j.client_id)===String(_pb.client_id)))
+    );
     if(_pb&&!_hasJob){
       setTimeout(()=>{
         zConfirm('Payment logged! Schedule this job on the calendar?',
@@ -1337,7 +1353,50 @@ function logPayment(){
     }
   }
 }
-function deletePay(id){zConfirm('Delete this payment record?',()=>{_userDelete(()=>{payments=payments.filter(p=>p.id!==id);saveAll();});renderCDBids();},{title:'Delete payment',yes:'Delete',danger:true});}
+// NEVER-DELETE UX: kept for compatibility, but the UI now surfaces editPayment —
+// removal lives inside the edit modal, requires the 5s hold, and only archives.
+function deletePay(id){zConfirm('Remove this payment record? It moves to the Archive under Books — nothing is ever deleted.',()=>{_userDelete(()=>{payments=payments.filter(p=>p.id!==id);saveAll();});renderCDBids();},{title:'Remove payment',yes:'Remove',danger:true});}
+
+// ── Edit payment — fix the record instead of deleting it (owner directive) ────
+function editPayment(id){
+  const p=payments.find(x=>x.id===id);if(!p)return;
+  document.getElementById('_epay-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_epay-ov';ov.className='zmodal-overlay';
+  const sheet=document.createElement('div');
+  sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
+  const isRef=p.type==='refund';
+  sheet.innerHTML=
+    '<div style="font-size:15px;font-weight:800;margin-bottom:12px">✎ Edit '+(isRef?'refund':'payment')+'</div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Amount</label><input id="_epay-amount" type="number" step="0.01" value="'+Math.abs(p.amount||0)+'" style="font-size:15px;padding:11px"></div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Date</label><input id="_epay-date" type="date" value="'+escHtml(p.date||'')+'" style="font-size:15px;padding:11px"></div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Method</label><input id="_epay-method" value="'+escHtml(p.method||'')+'" placeholder="Cash, Check, Card…" style="font-size:15px;padding:11px"></div>'+
+    '<div class="f" style="margin-bottom:14px"><label>Reference #</label><input id="_epay-ref" value="'+escHtml(p.ref||'')+'" placeholder="Optional" style="font-size:15px;padding:11px"></div>'+
+    '<button onclick="_savePaymentEdit('+id+')" style="width:100%;min-height:44px;padding:13px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Save changes</button>'+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-bottom:6px">Cancel</button>'+
+    '<button onclick="_removePayment('+id+')" style="width:100%;padding:8px;border:none;background:none;color:var(--text3);font-size:11px;cursor:pointer;font-family:inherit;opacity:.7">Remove this record…</button>';
+  ov.appendChild(sheet);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
+}
+function _savePaymentEdit(id){
+  const p=payments.find(x=>x.id===id);if(!p)return;
+  const a=parseFloat((document.getElementById('_epay-amount')||{}).value);
+  const d=(document.getElementById('_epay-date')||{}).value;
+  if(!a||a<=0||!d){zAlert('Enter a valid amount and date.');return;}
+  const isRef=p.type==='refund';
+  p.amount=isRef?-Math.abs(a):Math.abs(a);
+  p.date=d;
+  p.method=(document.getElementById('_epay-method')||{}).value||'';
+  p.ref=(document.getElementById('_epay-ref')||{}).value||'';
+  saveAll();
+  document.getElementById('_epay-ov')?.remove();
+  renderCDBids&&renderCDBids();renderCDTimeline&&renderCDTimeline();renderMoneyPage&&renderMoneyPage();renderDash&&renderDash();refreshCollectLabel&&refreshCollectLabel();
+  showToast('Payment updated','✎');
+}
+function _removePayment(id){
+  document.getElementById('_epay-ov')?.remove();
+  deletePay(id); // hold-to-confirm for real users; archives server-side, never deletes
+}
 
 let activeLienBidId=null;
 function openLienPanel(bidId){
@@ -1475,9 +1534,17 @@ function releaseLien(bidId){
   const c=bid?getClientById(bid.client_id):null;
   zConfirm('Mark lien as released? This confirms payment has been received.',()=>{
     const l=liens.find(x=>x.bid_id===bidId);
-    if(l){l.status='resolved';saveAll();}
+    if(l){l.status='resolved';l.releasedDate=todayKey();saveAll();}
     if(bid){setBidCollStage(bid,'resolved','Lien released — payment confirmed');}
     renderMoneyPage();try{renderCDBids();}catch(e){}
+    // LEGAL STEP: marking it resolved in the app does NOT clear the public record —
+    // the contractor must FILE a Release of Lien with the same Register of Deeds
+    // (statutory duty once paid). Offer the recordable document right here.
+    setTimeout(()=>{
+      zConfirm('Open the Release of Lien document to file with the county? (Required to clear the property title.)',
+        ()=>{printKansasLienRelease(bidId);},
+        {title:'File the release',yes:'Open release doc',no:'Later',danger:false});
+    },300);
     // Offer to send release confirmation text to client
     if(c&&c.phone){
       const biz=S.bname||'TradeDesk';

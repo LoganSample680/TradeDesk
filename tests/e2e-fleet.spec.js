@@ -1056,7 +1056,7 @@ test.describe('Vehicle management consolidation — removal regression', () => {
     assertNoErrors(page, 'No inline Delete in service log');
   });
 
-  test('Edit maintenance modal shows Delete button when editing existing record', async () => {
+  test('Edit maintenance modal has NO Delete button — records are edit-only now', async () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
@@ -1071,23 +1071,15 @@ test.describe('Vehicle management consolidation — removal regression', () => {
     });
     await page.waitForTimeout(400);
 
-    // Delete button must exist in the edit modal (ID: fleet-maint-overlay)
+    // The visible delete button was removed everywhere — a maintenance record is
+    // edited to fix, never deleted from the UI (§7 record-delete-button sweep).
     const deleteBtn = page.locator('#fleet-maint-overlay button').filter({ hasText: /Delete this record/i });
-    await expect(deleteBtn).toBeVisible();
-
-    // New record modal must NOT show Delete
-    await page.evaluate(() => { _closeMaintModal(); });
-    await page.waitForTimeout(200);
-    await page.evaluate(() => openAddMaintenanceModal(0));
-    await page.waitForTimeout(400);
-
-    const deleteBtnNew = page.locator('#fleet-maint-overlay button').filter({ hasText: /Delete this record/i });
-    await expect(deleteBtnNew).toHaveCount(0);
+    await expect(deleteBtn).toHaveCount(0);
 
     await page.evaluate(() => _closeMaintModal());
     await page.waitForTimeout(200);
 
-    assertNoErrors(page, 'Delete button in edit modal only');
+    assertNoErrors(page, 'No delete button in maintenance edit modal');
   });
 
   test('Zero console errors across service log UX tests', async () => {

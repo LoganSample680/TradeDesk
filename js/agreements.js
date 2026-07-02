@@ -246,7 +246,7 @@ function openAgreementDetail(id){
     html+='<button onclick="copyAgreementLink('+a.id+')" class="btn btn-p" style="flex:1 1 100%">🔗 Copy sign link</button>';
     if(a.status==='sent')html+='<button onclick="markAgreementSigned('+a.id+')" class="btn" style="flex:1">Mark signed</button>';
   }
-  html+='<button onclick="deleteAgreement('+a.id+')" class="btn" style="flex:1;color:var(--text3)">Delete</button>';
+  html+='';
   html+='<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Close</button>';
   html+='</div>';
   box.innerHTML=html;
@@ -279,10 +279,10 @@ function _agSignUrl(a){
 async function _agUpload(a){
   if(!supaEnabled()||!_supaUser)return{error:new Error('Sign in to send for signature.')};
   if(!a.signingToken)a.signingToken=_agToken();
-  const key='agreements/'+_supaUser.id+'/'+a.id+'_'+a.signingToken+'.json';
+  const key='agreements/'+_effectiveUid()+'/'+a.id+'_'+a.signingToken+'.json';
   a.signingKey=key;
   const snapshot={
-    id:a.id,token:a.signingToken,contractorUserId:_supaUser.id,
+    id:a.id,token:a.signingToken,contractorUserId:_effectiveUid(),
     type:a.type,party:a.party,title:a.title||_agTypeLabel(a.type),
     body:a.body,profitPct:a.profitPct,cadence:a.cadence,
     effectiveDate:a.effectiveDate,

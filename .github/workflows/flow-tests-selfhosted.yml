@@ -71,6 +71,54 @@ jobs:
       - name: Ensure Playwright browsers
         run: npx playwright install chromium webkit
 
+      # Reset the LOCAL Supabase stack to a FRESH DB before the tests, then apply every
+      # migration. A `db reset` (not `migration up`) is deliberate: the local stack's Postgres
+      # PERSISTS across runs, so stale rows accumulate — a settings row stuck at an old value
+      # for days made the app's reboot-load read that stale copy even though writes were correct
+      # (the "settings/location don't stick" reproduction). A fresh DB each run clears that, and
+      # the per-worker accounts + seed data are recreated at test time by globalSetup anyway, so
+      # nothing real is lost. Runs from the checkout so the CLI resolves project 'TradeDesk' from
+      # ./supabase/config.toml, never the stray '/root' project. Non-fatal: if the runner can't
+      # drive the stack, the run continues and the migration-dependent specs report it.
+      - name: Reset + migrate the local Supabase stack (fresh DB each run)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.local_stack }}
+        continue-on-error: true
+        run: |
+          echo "Resetting the local stack to a FRESH DB (clears stale/stuck rows), then applying all migrations…"
+          command -v supabase >/dev/null 2>&1 || { echo "::warning::supabase CLI not on PATH for the runner user — skipping auto-migrate"; exit 0; }
+          supabase start >/dev/null 2>&1 || true   # idempotent: reuse the already-running stack
+          if supabase db reset 2>&1; then
+            echo "✓ db reset — fresh schema applied from migrations"
+          else
+            echo "::warning::db reset failed — falling back to incremental migration up"
+            supabase migration up 2>&1 || echo "::warning::could not migrate the local stack — is it started by a user the runner can reach via docker?"
+          fi
+          supabase migration list 2>&1 | tail -25 || true
+
+      # Serve the edge functions that need NO external secret on the local stack, so specs
+      # that POST to /functions/v1/* (log-proposal-view → open-tracking; the no-payment 400
+      # path of refund-payment) actually EXECUTE instead of soft-skipping "edge fn not
+      # deployed". `functions serve` mounts every function at 127.0.0.1:54321/functions/v1/<name>
+      # — the same Kong port the local /api proxy already forwards to, so local-server.js needs
+      # no change. Stripe/Resend/Anthropic functions are still served but return their existing
+      # 4xx/503 "not configured" responses (the specs' skip-on-(0,404,502,503) leaves those as
+      # the documented cloud-only island). LOCAL-STACK runs only; cloud-mode runs untouched.
+      - name: Serve local edge functions (no-external-secret set)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.local_stack }}
+        continue-on-error: true
+        run: |
+          command -v supabase >/dev/null 2>&1 || { echo "::warning::supabase CLI absent — edge fns not served; dependent specs soft-skip"; exit 0; }
+          nohup supabase functions serve --no-verify-jwt > /tmp/edge-functions.log 2>&1 &
+          echo $! > /tmp/edge-functions.pid
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+              "http://127.0.0.1:54321/functions/v1/log-proposal-view" \
+              -H 'Content-Type: application/json' -d '{}')
+            case "$code" in 400|401|200) echo "edge runtime up (log-proposal-view -> $code)"; break;; esac
+            sleep 1
+          done
+          tail -20 /tmp/edge-functions.log 2>/dev/null || true
+
       - name: Start local /api server
         run: |
           PORT="$LOCAL_PORT" SUPABASE_UPSTREAM="$SUPABASE_UPSTREAM" \
@@ -99,6 +147,10 @@ jobs:
       - name: Stop local server
         if: always()
         run: kill "$(cat /tmp/local-server.pid)" 2>/dev/null || true
+
+      - name: Stop edge functions
+        if: always()
+        run: kill "$(cat /tmp/edge-functions.pid)" 2>/dev/null || true
 
       # Self-reporting failure dump — proxy log + every failed test's title and error,
       # printed INLINE in the job log so a red run is diagnosable without downloading

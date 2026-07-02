@@ -169,7 +169,11 @@ function _renderIntegrations() {
 function _openStripeConnect() {
   const el = document.getElementById('stripe-connect-status-ui');
   if (el) { el.style.display = 'block'; try{el.scrollIntoView({behavior:'smooth',block:'nearest'});}catch(e){} }
-  if (typeof _renderStripeConnectUI === 'function') _renderStripeConnectUI();
+  // loadStripeConnectStatus() owns the full render path: it looks up the
+  // container, fetches the (cached) Connect status, and calls
+  // _renderStripeConnectUI(el, data) with BOTH args. Calling the renderer
+  // directly with no args passed el=undefined → el.innerHTML threw.
+  if (typeof loadStripeConnectStatus === 'function') loadStripeConnectStatus();
 }
 
 function _filterSetRows(q) {
@@ -321,7 +325,7 @@ function renderLicensing(){
       if(isEquip){
         if(l.make||l.model||l.serial)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:4px">'+escHtml([l.make,l.model,l.serial?'SN: '+l.serial:''].filter(Boolean).join(' · '))+'</div>';
         if(lastLog)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:8px">Last entry: '+fmtDateShort(lastLog.date)+' — '+escHtml(lastLog.type)+'</div>';
-        html+='<div style="display:flex;gap:8px;margin-top:8px"><button onclick="openHepaLog('+l.id+')" class="btn btn-sm" style="font-size:11px">📋 Log ('+logCount+')</button><button onclick="openEditLicense('+l.id+')" class="btn btn-sm" style="font-size:11px">Edit</button><button onclick="deleteLicense('+l.id+')" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Delete</button></div>';
+        html+='<div style="display:flex;gap:8px;margin-top:8px"><button onclick="openHepaLog('+l.id+')" class="btn btn-sm" style="font-size:11px">📋 Log ('+logCount+')</button><button onclick="openEditLicense('+l.id+')" class="btn btn-sm" style="font-size:11px">Edit</button></div>';
       } else {
         if(l.issueDate||l.expiryDate){
           html+='<div style="font-size:12px;color:var(--text3);margin-bottom:4px">';
@@ -331,7 +335,7 @@ function renderLicensing(){
           html+='</div>';
         }
         if(l.notes)html+='<div style="font-size:11px;color:var(--text3);margin-top:4px">'+escHtml(l.notes)+'</div>';
-        html+='<div style="display:flex;gap:8px;margin-top:10px"><button onclick="openEditLicense('+l.id+')" class="btn btn-sm" style="font-size:11px">Edit</button><button onclick="deleteLicense('+l.id+')" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Delete</button></div>';
+        html+='<div style="display:flex;gap:8px;margin-top:10px"><button onclick="openEditLicense('+l.id+')" class="btn btn-sm" style="font-size:11px">Edit</button></div>';
       }
       html+='</div>';
     });
@@ -986,6 +990,10 @@ async function _clearCrewTrackingCloud(){
 function clearAllData(){
   zConfirm('This will permanently delete ALL clients, bids, jobs, income, expenses, and mileage. This cannot be undone.',()=>{
     zConfirm('Last chance — are you absolutely sure you want to delete everything?',async()=>{
+      // Deliberate wipe — bypass supaSaveToCloud's accidental-wipe sanity guard so the
+      // soft-delete actually reaches the cloud (otherwise the cleared rows, e.g. the
+      // maintenance contracts behind the dashboard "Maintenance Due" card, resurrect).
+      if(typeof _setDeliberateWipe==='function')_setDeliberateWipe(true);
       // Every user-data store declared in data.js must be wiped here — leaving any
       // out (maintenance/events/photos/licenses/contracts/agreements were all
       // missing) means those records survive a "Clear all data" and resurface.
@@ -995,11 +1003,12 @@ function clearAllData(){
         estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;
         gps={active:false,startCoords:null,startTime:null,clientId:null,clientName:'',timerInt:null,vehicle:'',purpose:''};
         if(_activeTimer){clearInterval(_activeTimer.timerInterval);_activeTimer=null;hideClockBanner();}
-        // _flushSaveNow propagates the emptied arrays to the cloud (soft-deletes the
-        // rows) so they don't re-hydrate on the next sync. saveAll alone only writes
-        // localStorage; without the flush the cloud copy comes back on reload.
-        hideDriveBanner();clearSurfDraft();saveAll();_flushSaveNow&&_flushSaveNow();
+        hideDriveBanner();clearSurfDraft();saveAll();
       });
+      // AWAIT the flush so the soft-delete lands in the cloud BEFORE we re-render or any
+      // realtime reload fires — this is what stops the cleared rows from re-hydrating.
+      try{ if(typeof _flushSaveNow==='function') await _flushSaveNow(); }catch(_e){}
+      if(typeof _setDeliberateWipe==='function')_setDeliberateWipe(false);
       await _clearCrewTrackingCloud();
       renderDash();
       zAlert('All data cleared. Starting fresh!',{title:'Done'});
@@ -1009,26 +1018,40 @@ function clearAllData(){
 }
 
 function clearMileageOnly(){
-  zConfirm('Delete all mileage records? This cannot be undone.',()=>{
-    _userDelete(()=>{mileage=[];saveAll();_flushSaveNow();});renderAllMileage();renderDash();
+  zConfirm('Delete all mileage records? This cannot be undone.',async()=>{
+    if(typeof _setDeliberateWipe==='function')_setDeliberateWipe(true);
+    _userDelete(()=>{mileage=[];saveAll();});
+    try{ if(typeof _flushSaveNow==='function') await _flushSaveNow(); }catch(_e){}
+    if(typeof _setDeliberateWipe==='function')_setDeliberateWipe(false);
+    renderAllMileage();renderDash();
     zAlert('Mileage cleared.',{title:'Done'});
   },{title:'Clear mileage',yes:'Delete mileage',danger:true});
 }
 
 function clearClientsOnly(){
-  zConfirm('Delete all clients, bids, jobs, and payments? This cannot be undone.',()=>{
+  zConfirm('Delete all clients, bids, jobs, and payments? This cannot be undone.',async()=>{
+    if(typeof _setDeliberateWipe==='function')_setDeliberateWipe(true);
     _userDelete(()=>{
       clients=[];bids=[];jobs=[];income=[];payments=[];liens=[];
       estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;
       saveAll();
-    });renderDash();
+    });
+    try{ if(typeof _flushSaveNow==='function') await _flushSaveNow(); }catch(_e){}
+    if(typeof _setDeliberateWipe==='function')_setDeliberateWipe(false);
+    renderDash();
     zAlert('Clients and all related records cleared.',{title:'Done'});
   },{title:'Clear clients',yes:'Delete clients',danger:true});
 }
 
 function clearExpensesOnly(){
-  zConfirm('Delete all expense records? This cannot be undone.',()=>{
-    expenses=[];saveAll();renderDash();
+  zConfirm('Delete all expense records? This cannot be undone.',async()=>{
+    // Wrap in _userDelete so the sweep records the expense ids and soft-deletes them in
+    // the cloud (without this, cleared expenses had no delete-intent and resurrected).
+    if(typeof _setDeliberateWipe==='function')_setDeliberateWipe(true);
+    _userDelete(()=>{expenses=[];saveAll();});
+    try{ if(typeof _flushSaveNow==='function') await _flushSaveNow(); }catch(_e){}
+    if(typeof _setDeliberateWipe==='function')_setDeliberateWipe(false);
+    renderDash();
     zAlert('Expenses cleared.',{title:'Done'});
   },{title:'Clear expenses',yes:'Delete expenses',danger:true});
 }
@@ -1080,6 +1103,12 @@ function getVehicleFullLabel(v){
 function _checkOdometerPrompt(){
   const vehs=getVehicles();
   if(!vehs.length||_isEmployee||_devSupportMode)return;
+  // Never slam this unsolicited compliance modal on top of a modal the user is
+  // already filling out (quick-expense, agreement, contract, etc.) — stacking a
+  // fixed full-viewport overlay over an open form covers its inputs and blocks
+  // the user mid-task. Defer: it re-fires on the next boot via cloud.js once the
+  // open overlay is dismissed.
+  if(document.querySelector('.zmodal-overlay,#_odo-modal-ov'))return;
   const cy=new Date().getFullYear();
   const mo=new Date().getMonth(); // 0=Jan
   const log=S.vehicleOdoLog||{};

@@ -402,8 +402,14 @@ function openGenericEstimate(c,bidId,_tradePick){
       _geiScopeNoScope=!!(_b.scopeNoScope);
       if(_b.isTM&&!_geiIsFreeForm){_geiIsTM=true;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmMatMarkup=_b.tmMatMarkup||_b.geiTaxPct||20;_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
       if(!_b.isTM&&_b.amount>0&&_b.deposit>0){const _storedPct=Math.round((_b.deposit/_b.amount)*100);const _depEl=document.getElementById('byo-deposit-pct');if(_depEl)_depEl.value=_storedPct;}
-      // Purge other empty duplicates for this client+trade now that we have the right one
-      bids=bids.filter(b=>b.id===_existingGei.id||!(b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&!b.amount&&!(b.geiLines||[]).length&&(b.status==='Draft'||b.status==='Pending')&&(b.trade_type===_geiTrade||!b.trade_type)));
+      // Purge other empty duplicates for this client+trade now that we have the right
+      // one — through _userDelete so the delete-intent is RECORDED and the next save's
+      // sweep soft-deletes them server-side too. A bare array filter only hid them in
+      // memory: every reload re-downloaded the zombies, which the old load-side GEI
+      // filter then re-hid — the silent-hide loop behind the owner's 53-vs-43 report.
+      _userDelete(()=>{
+        bids=bids.filter(b=>b.id===_existingGei.id||!(b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&!b.amount&&!(b.geiLines||[]).length&&(b.status==='Draft'||b.status==='Pending')&&(b.trade_type===_geiTrade||!b.trade_type)));
+      });
       _resumingExisting=true;
       saveAll();
     }
@@ -2665,7 +2671,7 @@ async function sendGenericProposal(previewOnly){
   const _stripeEnabled=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
   const proposalData={
     id:bidId,token,clientName:v('gei-client'),businessName:S.bname||getBusinessName(),
-    contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
+    contractorUserId:_effectiveUid(),contractorEmail:_supaUser.email,
     clientId:_geiClientId||null,
     proposalHtml,clientAddr:v('gei-addr'),
     amount:total,deposit:_tmDepAmt,
@@ -2698,7 +2704,7 @@ async function sendGenericProposal(previewOnly){
     saveAll();
   }
   const baseUrl=_clientBaseUrl();
-  const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
+  const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_effectiveUid()+'&b='+bidId;
   const shortUrl=await shortenUrl(signingUrl);
   const signingDirectUrl=shortUrl||signingUrl;
   let shareUrl=signingDirectUrl;
@@ -3018,7 +3024,7 @@ async function _sendIndProposal(){
   const _indEpaRequired=!!(_indYearBuilt&&_indYearBuilt<1978&&((c&&c.rrpDisturb==='yes')||(typeof _rrpPaintAnswer!=='undefined'&&_rrpPaintAnswer==='yes')));
   const proposalData={
     id:_indBidId,token,clientName:c?.name||'',businessName:S.bname||getBusinessName(),
-    contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
+    contractorUserId:_effectiveUid(),contractorEmail:_supaUser.email,
     proposalHtml,clientAddr:c?.addr||'',amount:midPrice,deposit:Math.round(midPrice*0.25),
     createdAt:new Date().toISOString(),status:'pending',notifyEmail:_supaUser.email,
     businessPhone:S.bphone||'',stripeConnectEnabled:_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false,
@@ -3034,7 +3040,7 @@ async function _sendIndProposal(){
   const b=bids.find(x=>x.id===_indBidId);
   if(b){b.signingToken=token;b.proposalKey=proposalKey;b.proposalHtml=proposalHtml;saveAll();}
   const baseUrl=_clientBaseUrl();
-  const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+_indBidId;
+  const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_effectiveUid()+'&b='+_indBidId;
   const shortUrl=await shortenUrl(signingUrl).catch(()=>null);
   const shareUrl=shortUrl||signingUrl;
   try{await navigator.clipboard.writeText(shareUrl);}catch(e){}

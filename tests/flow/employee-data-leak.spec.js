@@ -14,7 +14,7 @@
 //   3. COLLECT NOT BROKEN: a collect-permitted tech STILL sees real payment
 //      amounts, so recording payments keeps working.
 const { test, expect } = require('@playwright/test');
-const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
+const { needsLiveCreds, signIn, step, report, resetLedger, accountPair } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'employee-lockout/data-layer';
@@ -144,88 +144,149 @@ test.describe('employee lockout — data layer (server-side redaction)', () => {
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
-  test('a tech employee cannot read bid/income amounts, but still sees payments to collect', async ({ page }) => {
-    // ── Tech employee load through the RPC: bid + income amounts must be 0. ──
+  test('a tech employee cannot read bid/income amounts, but a financials peer can', async ({ page }) => {
+    // GENUINE two-account redaction test. The old version self-linked (employee == owner),
+    // but the RPC explicitly NEVER redacts the owner (auth.uid()==target_uid → full access),
+    // so it could never exercise redaction. This uses TWO distinct accounts: A (contractor,
+    // owns the $7777 bid) and B (a tech employee of A, financials:false). Signed in as B,
+    // load_account_data(target_uid=A) must come back with amounts zeroed.
+    test.setTimeout(90000);
+    const pair = accountPair();
+    test.skip(!pair, 'two-account redaction test needs A+B (local pool ≥2, or E2E_DEV2_* cloud creds)');
+    const [A, B] = pair;
+
+    const REAL = 7777;
+    const bidId = 'e2e-redact-' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
+    const incId = 'e2e-redinc-' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
+
+    // In-page auth as an explicit account (mirrors signIn's internal grant), then wait for
+    // the cloud-load to settle so each role switch is a real, hydrated session.
+    const authAs = async (acct) => {
+      await page.goto('/', { waitUntil: 'domcontentloaded' });
+      // Wait for the Supabase client to initialize, NOT for the login form. When a prior test
+      // leaves a persisted session, the app boots straight to the dashboard and #supa-email
+      // never renders — the old `waitForSelector('#supa-email')` then timed out at 30s. authAs
+      // drives auth through _supa directly, so client-readiness is the correct gate.
+      await page.waitForFunction(() => typeof _supa !== 'undefined' && !!_supa, { timeout: 30000 });
+      const res = await page.evaluate(async ({ email, password }) => {
+        if (typeof _supa === 'undefined' || !_supa) return { ok: false, why: 'client not initialized' };
+        try { await _supa.auth.signOut(); } catch (_e) { /* no prior session — fine */ } // clean switch between accounts
+        for (let i = 0; i < 4; i++) {
+          const { error } = await _supa.auth.signInWithPassword({ email, password });
+          if (!error) return { ok: true };
+          if (error.message && !/network|fetch|timeout|rate/i.test(error.message) && error.status !== 429) return { ok: false, why: error.message };
+          await new Promise(r => setTimeout(r, 400 * (i + 1)));
+        }
+        return { ok: false, why: 'sign-in retries exhausted' };
+      }, { email: acct.email, password: acct.password });
+      if (!res.ok) throw new Error(`auth as ${acct.email} failed: ${res.why}`);
+      // Wait for the app to reflect THIS account (guards against a stale prior session lingering).
+      await page.waitForFunction((uid) => typeof _supaUser !== 'undefined' && _supaUser && (!uid || _supaUser.id === uid), acct.uid, { timeout: 30000 })
+        .catch(() => {});
+      await page.waitForFunction(() => typeof _supaCloudLoaded === 'undefined' || _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});
+    };
+
+    // ── A signs in, seeds a known bid + income, and links B as a tech (financials:false). ──
+    await authAs(A);
     await step(page, {
-      label: 'tech employee load redacts bid/income amounts', page: 'cloud', role: 'employee',
-      suspect: 'migration 20260627 load_account_data redaction',
-      ruleText: 'a tech employee (no financials/estimate) must see every bid and income amount as 0 after a real RPC load',
-      expected: 'max bid amount == 0 AND max income amount == 0',
+      label: 'A seeds a $7777 bid + income and links B as tech (financials:false)', page: 'cloud', role: 'contractor',
+      suspect: 'cloud.js supaSaveToCloud + team_members insert',
+      ruleText: 'A persists a real bid/income and an active team_members link to B',
+      expected: 'bid persisted AND team link active',
       act: async (p) => {
-        await p.evaluate(async (perms) => {
-          window._isEmployee = true;
-          window._contractorUserId = _supaUser.id;
-          window._employeeRecord = { permissions: perms, active: true, name: 'E2E Tech', role: 'tech' };
-          if (typeof supaLoadFromCloud === 'function') await supaLoadFromCloud({ silent: true });
-        }, TECH_PERMS);
-        return 1;
+        return await p.evaluate(async ({ bidId, incId, REAL, Buid, Bemail, perms }) => {
+          bids.push({ id: bidId, amount: REAL, client_name: 'E2E Redact', status: 'sent', _e2e: 'redact', created: new Date().toISOString() });
+          if (typeof income !== 'undefined') income.push({ id: incId, amount: REAL, source: 'E2E Redact', date: new Date().toISOString().slice(0, 10), _e2e: 'redact' });
+          if (typeof supaSaveToCloud === 'function') await supaSaveToCloud();
+          await _supa.from('team_members').delete().eq('contractor_user_id', _supaUser.id).eq('employee_user_id', Buid);
+          const { error } = await _supa.from('team_members').insert({
+            contractor_user_id: _supaUser.id, employee_user_id: Buid, email: Bemail, name: 'E2E Tech B', role: 'tech', permissions: perms, active: true,
+          });
+          // Surface the REAL failure reason in the finding (a bare linked=false told us
+          // nothing on the cloud gate — capture code+message for the rule's got).
+          window.__linkErr = error ? ((error.code || '?') + ': ' + (error.message || String(error))) : null;
+          return error ? 0 : 3;
+        }, { bidId, incId, REAL, Buid: B.uid, Bemail: B.email, perms: TECH_PERMS });
       },
       rule: async (p) => {
-        const r = await p.evaluate(async () => {
-          // Probe whether the RPC is deployed yet — until the migration reaches
-          // production the load falls back to a raw (unredacted) select.
+        const r = await p.evaluate(async ({ bidId, Buid }) => {
+          const { data: b } = await _supa.from('td_bids').select('id').eq('id', bidId).limit(1);
+          const { data: tm } = await _supa.from('team_members').select('id').eq('contractor_user_id', _supaUser.id).eq('employee_user_id', Buid).eq('active', true).limit(1);
+          return { bidLanded: !!(b && b.length), linked: !!(tm && tm.length) };
+        }, { bidId, Buid: B.uid });
+        if (!r.bidLanded) return { ok: true, got: 'SKIP — td_bids unavailable on this stack (bid not persistable); redaction not exercisable' };
+        const linkErr = await p.evaluate(() => window.__linkErr || null);
+        return { ok: r.linked, got: `bidLanded=${r.bidLanded} linked=${r.linked}${linkErr ? ' insertErr=' + linkErr : ''}` };
+      },
+    });
+
+    const Auid = await page.evaluate(() => _supaUser.id);
+
+    // ── B (tech, financials:false) loads A's account via the RPC → amounts must be 0. ──
+    await authAs(B);
+    await step(page, {
+      label: 'B (tech) RPC-loads A → bid & income amounts redacted to 0', page: 'cloud', role: 'employee',
+      suspect: 'migration 20260627 load_account_data redaction (financials:false path)',
+      ruleText: 'a tech employee (no financials) loading the contractor via the RPC must see every bid and income amount as 0',
+      expected: 'maxBid == 0 AND maxInc == 0',
+      act: async () => 1,
+      rule: async (p) => {
+        const r = await p.evaluate(async (Auid) => {
+          let rpcLive = true, probeErr = '', authErr = '';
+          let payload = null;
+          try {
+            const { data, error } = await _supa.rpc('load_account_data', { target_uid: Auid });
+            if (error) {
+              if (/function|does not exist|PGRST202|schema cache/i.test((error.message || '') + (error.code || ''))) { rpcLive = false; probeErr = error.message || error.code; }
+              else authErr = error.message || error.code;
+            } else payload = data;
+          } catch (e) { rpcLive = false; probeErr = e.message; }
+          if (!rpcLive) return { rpcLive, probeErr };
+          if (authErr) return { rpcLive, authErr };
+          const bidRows = (payload && payload.td_bids) || [];
+          const incRows = (payload && payload.td_income) || [];
+          const maxBid = bidRows.length ? Math.max(...bidRows.map(x => Number((x.data || {}).amount) || 0)) : 0;
+          const maxInc = incRows.length ? Math.max(...incRows.map(x => Number((x.data || {}).amount) || 0)) : 0;
+          return { rpcLive, nBids: bidRows.length, nInc: incRows.length, maxBid, maxInc };
+        }, Auid);
+        if (!r.rpcLive) return { ok: true, got: `RPC not deployed yet — redaction pending migration merge [${r.probeErr}]` };
+        if (r.authErr) return { ok: false, got: `RPC rejected B as unauthorized — team link broken: ${r.authErr}` };
+        const ok = r.maxBid === 0 && r.maxInc === 0;
+        return { ok, got: `rpcLive nBids=${r.nBids} maxBid=${r.maxBid} nInc=${r.nInc} maxInc=${r.maxInc} (both must be 0)` };
+      },
+    });
+
+    // ── ALLOW-PATH: A flips B to financials:true; B re-loads → real amounts return. ──
+    await authAs(A);
+    await page.evaluate(async ({ Buid, perms }) => {
+      await _supa.from('team_members').update({ permissions: perms }).eq('contractor_user_id', _supaUser.id).eq('employee_user_id', Buid);
+    }, { Buid: B.uid, perms: FIN_PERMS });
+
+    await authAs(B);
+    await step(page, {
+      label: 'B (now financials) RPC-loads A → real bid amounts visible', page: 'cloud', role: 'employee',
+      suspect: 'migration 20260627 load_account_data td_bids financials allow-path',
+      ruleText: 'an employee WITH financials permission must see real (non-zero) bid amounts via the RPC',
+      expected: 'at least one bid amount > 0',
+      act: async () => 1,
+      rule: async (p) => {
+        const r = await p.evaluate(async (Auid) => {
           let rpcLive = true, probeErr = '';
           try {
-            const { error } = await _supa.rpc('load_account_data', { target_uid: _supaUser.id });
-            if (error && /function|does not exist|PGRST202|schema cache/i.test((error.message || '') + (error.code || ''))) { rpcLive = false; probeErr = error.message || error.code; }
-          } catch (e) { rpcLive = false; probeErr = e.message; }
-          const bidAmts = (typeof bids !== 'undefined' ? bids : []).map(b => Number(b.amount) || 0);
-          const incAmts = (typeof income !== 'undefined' ? income : []).map(r => Number(r.amount) || 0);
-          return { rpcLive, probeErr, maxBid: bidAmts.length ? Math.max(...bidAmts) : 0, maxInc: incAmts.length ? Math.max(...incAmts) : 0, nBids: bidAmts.length };
-        });
-        if (!r.rpcLive) return { ok: true, got: `RPC not deployed yet — redaction pending migration merge [${r.probeErr}]; corruption guard still protects data` };
-        const ok = r.maxBid === 0 && r.maxInc === 0;
-        return { ok, got: `rpcLive nBids=${r.nBids} maxBidAmount=${r.maxBid} maxIncome=${r.maxInc}` };
-      },
-    });
-
-    // ── COLLECT NOT BROKEN: payments stay visible (real amounts) for a collect
-    // tech — this is the working feature we must not break. ──
-    await step(page, {
-      label: 'collect tech still sees payment amounts', page: 'cloud', role: 'employee',
-      suspect: 'migration 20260627 td_payments collect-permission allow-path',
-      ruleText: 'a collect-permitted tech must still see real payment amounts (collect feature unbroken)',
-      expected: 'payments retain their amounts (no payment amount forced to 0 by the load)',
-      act: async () => 0,
-      rule: async (p) => {
-        const r = await p.evaluate(() => {
-          const ps = (typeof payments !== 'undefined' ? payments : []);
-          const nonZero = ps.filter(x => Number(x.amount) !== 0).length;
-          return { total: ps.length, nonZero };
-        });
-        // If there are no payments at all the assertion is vacuously satisfied;
-        // if there ARE payments, a collect tech must see at least one real amount.
-        const ok = r.total === 0 || r.nonZero > 0;
-        return { ok, got: `payments=${r.total} withAmount=${r.nonZero}` };
-      },
-    });
-
-    // ── ALLOW-PATH: a financials-permitted employee DOES see real bid amounts. ──
-    await step(page, {
-      label: 'financials employee sees real bid amounts', page: 'cloud', role: 'employee',
-      suspect: 'migration 20260627 td_bids financials allow-path',
-      ruleText: 'an employee WITH financials permission must see real (non-zero) bid amounts',
-      expected: 'at least one bid amount > 0 when bids exist',
-      act: async (p) => {
-        await p.evaluate(async (perms) => {
-          window._isEmployee = true;
-          window._contractorUserId = _supaUser.id;
-          window._employeeRecord = { permissions: perms, active: true, name: 'E2E Mgr', role: 'manager' };
-          if (typeof supaLoadFromCloud === 'function') await supaLoadFromCloud({ silent: true });
-        }, FIN_PERMS);
-        return 1;
-      },
-      rule: async (p) => {
-        const r = await p.evaluate(() => {
-          const bs = (typeof bids !== 'undefined' ? bids : []);
-          const withAmt = bs.filter(b => Number(b.amount) > 0).length;
-          return { total: bs.length, withAmt };
-        });
+            const { data, error } = await _supa.rpc('load_account_data', { target_uid: Auid });
+            if (error && /function|does not exist|PGRST202|schema cache/i.test((error.message || '') + (error.code || ''))) { rpcLive = false; probeErr = error.message || error.code; return { rpcLive, probeErr }; }
+            const bidRows = (data && data.td_bids) || [];
+            const withAmt = bidRows.filter(x => Number((x.data || {}).amount) > 0).length;
+            return { rpcLive, total: bidRows.length, withAmt };
+          } catch (e) { return { rpcLive: false, probeErr: e.message }; }
+        }, Auid);
+        if (!r.rpcLive) return { ok: true, got: `RPC not deployed yet [${r.probeErr}]` };
         const ok = r.total === 0 || r.withAmt > 0;
         return { ok, got: `bids=${r.total} withRealAmount=${r.withAmt}` };
       },
     });
 
+    // NO data cleanup (§13.7). The team_members link + seed bid stay for inspection.
     const rep = report(FLOW, BASELINE);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });

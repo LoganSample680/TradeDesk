@@ -20,6 +20,26 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DEV_EMAIL = process.env.E2E_DEV_EMAIL || '';
+// ── ACCOUNT-PER-BROWSER SPLIT (cloud mode) ──────────────────────────────────
+// The full suite runs chromium + webkit in parallel; with BOTH browsers cold-
+// signing into the same shared Dev A account, they contend for the same rows
+// and the same account-wide save/load serialization — the 20-minute wall time
+// and the sign-in-under-load timeouts. Split the load: webkit keeps Dev A
+// (E2E_DEV_*), chromium uses Dev B (E2E_DEV2_*) when those creds exist.
+// Graceful: without DEV2 creds every browser falls back to Dev A (unchanged).
+// Two-account specs (accountPair) are unaffected — they resolve A+B explicitly.
+// Note: env-dependent specs self-skip where Dev B lacks prerequisites (Stripe
+// connect, intake profile); webkit/Dev A retains that coverage.
+function cloudAccountFor(browserName) {
+  const e2 = process.env.E2E_DEV2_EMAIL, p2 = process.env.E2E_DEV2_PASSWORD, u2 = process.env.E2E_DEV2_USER_ID;
+  if (browserName === 'chromium' && e2 && p2) {
+    return { email: e2, password: p2, uid: u2 || '' };
+  }
+  return { email: DEV_EMAIL, password: process.env.E2E_DEV_PASSWORD || '', uid: process.env.E2E_DEV_USER_ID || '' };
+}
+function pageBrowserName(page) {
+  try { return page.context().browser().browserType().name(); } catch (_e) { return ''; }
+}
 const DEV_PASSWORD = process.env.E2E_DEV_PASSWORD || '';
 const DEV_USER_ID = process.env.E2E_DEV_USER_ID || '';
 
@@ -30,8 +50,8 @@ const DEV_USER_ID = process.env.E2E_DEV_USER_ID || '';
 // byte unchanged. When set, global-setup.js has provisioned a pool of distinct
 // auth users (one per worker) on the local Supabase stack, written to
 // .local-accounts.json. localAccount() maps this worker's parallelIndex to its
-// own {email,password,uid}, so the 3 workers never share a user_id and can't
-// clobber each other's rows / realtime / soft-delete sweep.
+// own {email,password,uid}, so the workers (up to 6 in local-stack) never share a
+// user_id and can't clobber each other's rows / realtime / soft-delete sweep.
 // ─────────────────────────────────────────────────────────────────────────────
 const fs = require('fs');
 const path = require('path');
@@ -59,6 +79,21 @@ function localAccount() {
   return pool[idx] || null;
 }
 
+// The full local-stack account pool (or [] when not in local-stack mode). Specs that need
+// MORE than one distinct account (e.g. the cross-account-bleed test's A and B) source them
+// from here instead of the cloud E2E_DEV2_* creds, which don't exist on the local stack.
+function localPool() { return _loadLocalPool() || []; }
+
+// CREW pool — bare auth users provisioned by global-setup (no contractor graph), for
+// specs that exercise the crew invite/link/nest paths. [] when unavailable.
+function crewPool() {
+  if (!LOCAL_STACK) return [];
+  try {
+    const arr = JSON.parse(fs.readFileSync(path.join(__dirname, '.local-crew.json'), 'utf8'));
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) { return []; }
+}
+
 // CLOUD per-worker pool. With a 2nd real dev account configured, each Playwright
 // worker gets its OWN cloud account — so workers don't clobber a shared one (fixes
 // the contention failures) AND the seed data lands in REAL Supabase accounts you can
@@ -84,6 +119,19 @@ function workerAccount() {
     return CLOUD_POOL[idx];
   }
   return null;
+}
+// A pair of DISTINCT accounts [A, B] for two-identity tests (contractor + employee),
+// or null if fewer than two are available. Local stack: first two of the per-worker pool.
+// Cloud: E2E_DEV_* (A) + E2E_DEV2_* (B). Lets a spec soft-skip when only one account
+// exists, instead of falsely self-linking (which the redaction RPC never redacts).
+function accountPair() {
+  const local = localPool();
+  if (local.length >= 2) return [local[0], local[1]];
+  const cloud = [];
+  if (DEV_EMAIL && DEV_PASSWORD && DEV_USER_ID) cloud.push({ email: DEV_EMAIL, password: DEV_PASSWORD, uid: DEV_USER_ID });
+  const e2 = process.env.E2E_DEV2_EMAIL, p2 = process.env.E2E_DEV2_PASSWORD, u2 = process.env.E2E_DEV2_USER_ID;
+  if (e2 && p2 && u2) cloud.push({ email: e2, password: p2, uid: u2 });
+  return cloud.length >= 2 ? [cloud[0], cloud[1]] : null;
 }
 // Whether the Cloudflare-bypass header secret is configured in this CI run.
 // Reported in sign-in failures so we can tell "header not sent" from "Cloudflare
@@ -118,8 +166,9 @@ async function signIn(page) {
   // In local-stack mode, sign in as THIS worker's dedicated account (distinct
   // user_id per worker = isolation). Else use the shared cloud dev login.
   const _acct = workerAccount();
-  const _email = _acct ? _acct.email : DEV_EMAIL;
-  const _password = _acct ? _acct.password : DEV_PASSWORD;
+  const _cloud = _acct ? null : cloudAccountFor(pageBrowserName(page));
+  const _email = _acct ? _acct.email : _cloud.email;
+  const _password = _acct ? _acct.password : _cloud.password;
   // 'domcontentloaded', NOT the default 'load': the app's login form is interactive at
   // DOMContentLoaded, but 'load' blocks on every external resource — notably the Apple
   // MapKit CDN script — so waiting for it makes every test's boot slower and, on a busy
@@ -143,11 +192,13 @@ async function signIn(page) {
       const t = await r.text();
       probe = r.status + ' ' + (r.headers.get('content-type') || '') + ' :: ' + t.slice(0, 70).replace(/\s+/g, ' ');
     } catch (e) { probe = 'probe-fail: ' + (e && e.message); }
-    // 3 workers all sign into the SAME dev account near-simultaneously; GoTrue
-    // rate-limits password grants per-email and surfaces a transient AuthError whose
-    // .message is EMPTY (stringifies to "{}"). That's not a real auth failure — it's
-    // contention. Retry with jittered backoff so the workers de-correlate, instead of
-    // dropping to workers:1 (which blows the runtime budget). A real bad-credential
+    // Even with one account per worker, the SAME account is signed into by both that
+    // worker's primary page AND any second device/page a multi-device spec opens, plus
+    // (in cloud) the two two-account specs that sign into Dev A/B directly — so concurrent
+    // password grants per-email still happen. GoTrue rate-limits those and surfaces a
+    // transient AuthError whose .message is EMPTY (stringifies to "{}"). That's not a real
+    // auth failure — it's contention. Retry with jittered backoff so the grants
+    // de-correlate, instead of dropping to workers:1 (which blows the budget). A real bad-credential
     // error (e.g. "Invalid login credientials") has a message and we surface it fast.
     let lastWhy = null;
     for (let attempt = 0; attempt < 4; attempt++) {
@@ -181,9 +232,11 @@ async function assertDevAccount(page) {
   if (!id) throw new Error('assertDevAccount: no authenticated user');
   // In local-stack mode the trusted id is THIS worker's provisioned uid.
   const _acct = workerAccount();
-  const expectedId = _acct ? _acct.uid : DEV_USER_ID;
+  // Cloud mode: the trusted id is whichever dev account THIS browser is assigned
+  // (webkit=Dev A, chromium=Dev B when configured) — both are strictly test accounts.
+  const expectedId = _acct ? _acct.uid : cloudAccountFor(pageBrowserName(page)).uid;
   if (id !== expectedId) {
-    throw new Error(`assertDevAccount: signed-in user ${id} !== ${_acct ? 'local-worker-uid' : 'E2E_DEV_USER_ID'} — refusing to seed/teardown`);
+    throw new Error(`assertDevAccount: signed-in user ${id} !== ${_acct ? 'local-worker-uid' : 'assigned dev-account uid'} — refusing to seed/teardown`);
   }
   return id;
 }
@@ -325,16 +378,60 @@ async function _reach(page, sel) {
   return Math.abs(after - before) > 2 ? 1 : 0;
 }
 
+// Read-only diagnosis for a click that won't land: distinguishes "not visible" vs
+// "covered by an overlay" vs "perpetually re-rendering / animating (not stable)".
+// Sampled twice ~300ms apart so DRIFT > 0 fingerprints the not-stable case. Purely
+// additive — only ever runs on the failure path, then the original error is re-thrown.
+async function _clickDiag(page, sel) {
+  try {
+    const a = await page.evaluate((s) => {
+      const el = document.querySelector(s); if (!el) return { found: false };
+      const r = el.getBoundingClientRect(); const cs = getComputedStyle(el);
+      const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
+      const top = document.elementFromPoint(cx, cy);
+      const covered = !!top && top !== el && !el.contains(top) && !top.contains(el);
+      let cover = null;
+      if (covered && top) {
+        const tcs = getComputedStyle(top); const tr = top.getBoundingClientRect();
+        cover = {
+          tag: top.tagName, id: top.id || null, cls: String(top.className || '').slice(0, 80) || null,
+          pos: tcs.position, z: tcs.zIndex, pe: tcs.pointerEvents, op: tcs.opacity,
+          rect: { x: Math.round(tr.x), y: Math.round(tr.y), w: Math.round(tr.width), h: Math.round(tr.height) },
+          html: (top.outerHTML || '').slice(0, 140).replace(/\s+/g, ' '),
+        };
+      }
+      return {
+        found: true, rect: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
+        inViewport: r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth,
+        display: cs.display, visibility: cs.visibility, opacity: cs.opacity, zeroSize: r.width < 1 || r.height < 1,
+        coveredBy: covered ? (top.id ? '#' + top.id : (String(top.className || '').trim().split(/\s+/)[0] ? '.' + String(top.className).trim().split(/\s+/)[0] : top.tagName)) : null,
+        cover,
+        activePage: (document.querySelector('.pg.active') || {}).id || null,
+      };
+    }, sel);
+    await page.waitForTimeout(300);
+    const b = await page.evaluate((s) => { const el = document.querySelector(s); if (!el) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y) }; }, sel);
+    const drift = (a && a.rect && b) ? (Math.abs(a.rect.x - b.x) + Math.abs(a.rect.y - b.y)) : -1;
+    return JSON.stringify({ ...a, drift });
+  } catch (e) { return 'diag-failed: ' + (e && e.message); }
+}
+
 async function tap(page, sel) {
   const scrolls = await _reach(page, sel);
-  await page.locator(sel).first().click({ timeout: 10000 });
+  try {
+    await page.locator(sel).first().click({ timeout: 10000 });
+  } catch (e) {
+    const diag = await _clickDiag(page, sel);
+    throw new Error(`tap(${sel}) click failed: ${String(e.message).split('\n')[0]} :: DIAG ${diag}`);
+  }
   return 1 + scrolls;
 }
 
 async function type(page, sel, text) {
   const scrolls = await _reach(page, sel);
   const loc = page.locator(sel).first();
-  await loc.click({ timeout: 10000 });
+  try { await loc.click({ timeout: 10000 }); }
+  catch (e) { const diag = await _clickDiag(page, sel); throw new Error(`type(${sel}) click failed: ${String(e.message).split('\n')[0]} :: DIAG ${diag}`); }
   await loc.fill('');                                  // clear any prefill
   await loc.pressSequentially(String(text), { delay: 0 }); // REAL key-by-key typing
   return String(text).length + scrolls;
@@ -485,5 +582,8 @@ module.exports = {
   DEV_USER_ID,
   SEEDED_TABLES,
   localAccount,
+  localPool,
+  crewPool,
   workerAccount,
+  accountPair,
 };

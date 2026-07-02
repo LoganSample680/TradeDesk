@@ -85,13 +85,25 @@ test.describe('proposal open-tracking (UI-driven)', () => {
             const { error } = await _supa.from('proposal_views').select('bid_id').limit(1);
             if (error && (/does not exist|relation|PGRST/i.test(error.message || '') || error.code === '42P01')) reachable = false;
           } catch (e) { reachable = false; }
-          return { opened, tableErr, reachable };
+          // Probe whether the log-proposal-view EDGE FUNCTION is deployed — the hub open is
+          // logged by it, so on a from-migrations local stack (edge runtime absent) the table
+          // is reachable but the view never lands. A 404/502/503/0 means skip, not fail.
+          let edgeFnUp = true;
+          try {
+            const sess = await _supa.auth.getSession();
+            const tok = (sess && sess.data && sess.data.session && sess.data.session.access_token) || (typeof SUPA_KEY !== 'undefined' ? SUPA_KEY : '');
+            const r = await fetch(SUPA_URL + '/functions/v1/log-proposal-view', { method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json', apikey: (typeof SUPA_KEY !== 'undefined' ? SUPA_KEY : '') }, body: '{}' });
+            if ([0, 404, 502, 503].includes(r.status)) edgeFnUp = false;
+          } catch (e) { edgeFnUp = false; }
+          return { opened, tableErr, reachable, edgeFnUp };
         }, { bidId });
         hub.openProbe = probe;
         return 1;
       },
       rule: async () => {
-        if (!hub.openProbe.reachable) return { ok: true, got: 'SKIP — proposal_views not reachable in this env (pending deploy)' };
+        if (!hub.openProbe.reachable || !hub.openProbe.edgeFnUp) {
+          return { ok: true, got: 'SKIP — proposal_views / log-proposal-view edge fn not available in this env (pending deploy): ' + JSON.stringify(hub.openProbe) };
+        }
         return { ok: hub.openProbe.opened, got: JSON.stringify(hub.openProbe) };
       },
     });

@@ -168,7 +168,7 @@ async function processGalleryUpload(input){
       let url='',storagePath='';
       if(supaEnabled()&&_supaUser){
         const ext=file.name.split('.').pop()||'jpg';
-        const path='gallery/'+_supaUser.id+'/'+Date.now()+'_'+Math.random().toString(36).slice(2)+'.'+ext;
+        const path='gallery/'+_effectiveUid()+'/'+Date.now()+'_'+Math.random().toString(36).slice(2)+'.'+ext;
         const{error}=await _supa.storage.from('gallery').upload(path,file,{contentType:file.type,upsert:false});
         if(!error){
           const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
@@ -212,6 +212,7 @@ function _buildClientHubSnapshot(clientId){
     const financeCharge=balance>0.01&&_fcDaysOverdue>0?Math.round(balance*_fcRate*_fcDaysOverdue*100)/100:0;
     const daysOverdue=balance>0.01?_fcDaysOverdue:0;
     return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',
+      lostReason:b.lostReason||'',lostNote:b.lostNote||'',lostAt:b.lostAt||'',
       proposalKey:propKey,signingToken:signToken||null,changeOrders:_hubCOs,
       signHubUrl:signBase?(signBase+(hubUrl?'&hub='+encodeURIComponent(hubUrl):'')):null};
   });
@@ -223,7 +224,7 @@ function _buildClientHubSnapshot(clientId){
   const snapshotPayments=cpayments.map(p=>({date:p.date||'',type:p.type||'',amount:p.amount||0,bid_id:p.bid_id||null,ref:p.ref||'',method:p.method||''}));
   const jobPhotos=clientPhotos.map(p=>({url:p.url,type:p.type,caption:p.caption||'',job_name:p.job_name||'',job_id:p.job_id||null}));
   // Extract optional chaining BEFORE the return object — Safari crashes on ?. inside { }
-  const _snapUserId=_supaUser?_supaUser.id||'':'';
+  const _snapUserId=_effectiveUid()||'';
   const _snapUserEmail=_supaUser?_supaUser.email||'':'';
   const _snapStripeOn=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
   const _snapSurchargeOn=!!(S.ccSurchargeEnabled&&_snapStripeOn);
@@ -269,7 +270,7 @@ async function _uploadClientHub(clientId){
   }
   if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});
   const baseUrl=_clientBaseUrl();
-  const url=baseUrl+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+  const url=baseUrl+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+clientId;
   const doUpload=async()=>{
     const snapshot=_buildClientHubSnapshot(clientId);
     if(!snapshot)return;
@@ -282,10 +283,16 @@ async function _uploadClientHub(clientId){
     // differently and uploads.
     const _hash=_hubHash(_json);
     if(c.clientHubKey&&c.clientHubHash===_hash)return;
-    const key='client-hub/'+_supaUser.id+'/'+clientId+'_'+c.clientToken+'.json';
+    const key='client-hub/'+_effectiveUid()+'/'+clientId+'_'+c.clientToken+'.json';
     const{error}=await _supa.storage.from('proposals').upload(key,_json,{contentType:'application/json',upsert:true,cacheControl:'0'});
     if(error)throw error;
-    c.clientHubKey=key;c.clientHubHash=_hash;
+    // Stamp the LIVE array object, not the reference captured before the await: a
+    // delta/realtime merge during the upload replaces row objects in `clients`, so
+    // writing to `c` can land on a dead object — the token/key silently vanish and
+    // the uploaded hub becomes unreachable (seen live in the crew money-routing cert).
+    const live=clients.find(x=>x.id===clientId)||c;
+    live.clientToken=c.clientToken;
+    live.clientHubKey=key;live.clientHubHash=_hash;
     saveAll();
   };
   const _queueHub=()=>{
@@ -300,6 +307,31 @@ async function _uploadClientHub(clientId){
     doUpload().catch(e=>{console.warn('hub refresh:',e);_queueHub();}); // file exists — return instantly, refresh in background
   }
   return url;
+}
+// ── Boot hub sweep — drift-repair backstop, PACED ─────────────────────────────
+// Every real change already refreshes its own client's hub at the change site
+// (bids/payments/jobs/logPayment call _uploadClientHub/_refreshClientHub inline).
+// This sweep exists only to repair hubs that drifted while another device was
+// authoritative. It used to fire EVERY tokened client CONCURRENTLY at boot —
+// O(clients) simultaneous snapshot builds + storage writes, and the daily
+// finance-charge tick invalidates every content hash at once, so the first boot
+// of the day uploaded ALL of them in one burst (hundreds seen on the grown cert
+// account; the same would hit any large real account). One client per tick keeps
+// boot flat at ANY account size; the content-hash gate inside _uploadClientHub
+// still makes unchanged hubs a no-op.
+let _hubSweepQueue=[],_hubSweepTimer=null;
+function _startHubSweep(){
+  if(_hubSweepTimer||!_supaUser)return;
+  _hubSweepQueue=clients.filter(c=>c.clientToken).map(c=>c.id);
+  if(_hubSweepQueue.length)_hubSweepTimer=setTimeout(_tickHubSweep,350);
+}
+function _tickHubSweep(){
+  _hubSweepTimer=null;
+  const id=_hubSweepQueue.shift();
+  if(id===undefined)return;
+  // Account switched mid-sweep → stale ids simply miss in clients[] and no-op.
+  try{if(_supaUser&&supaEnabled())_uploadClientHub(id).catch(()=>{});}catch(_e){}
+  if(_hubSweepQueue.length)_hubSweepTimer=setTimeout(_tickHubSweep,350);
 }
 async function _drainHubQueue(){
   try{
@@ -318,7 +350,7 @@ function sendOnboardingLink(clientId){
   const c=getClientById(clientId);if(!c)return;
   if(!_supaUser){zAlert('Sign in to send the onboarding link.');return;}
   const baseUrl=_clientBaseUrl();
-  const url=baseUrl+'client.html?mode=onboard&t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+  const url=baseUrl+'client.html?mode=onboard&t='+c.clientToken+'&u='+_effectiveUid()+'&c='+clientId;
   const firstName=c.name?.split(' ')[0]||'there';
   const rawBiz=getBusinessName();
   const biz=(rawBiz&&!rawBiz.includes('@')&&rawBiz!=='TradeDesk')?rawBiz:(getOwnerName()||'your contractor');
@@ -348,7 +380,7 @@ function sendClientHubLink(clientId){
     saveAll();
   }
   const baseUrl=_clientBaseUrl();
-  const url=baseUrl+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+  const url=baseUrl+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+clientId;
   // Refresh hub content silently in background — never blocks the share sheet
   _uploadClientHub(clientId).catch(()=>{});
   const firstName=c.name?.split(' ')[0]||'there';
@@ -373,11 +405,13 @@ async function _refreshClientHub(clientId){
   const snapshot=_buildClientHubSnapshot(clientId);
   if(!snapshot)return;
   snapshot.token=c.clientToken;
-  const key='client-hub/'+_supaUser.id+'/'+clientId+'_'+c.clientToken+'.json';
+  const key='client-hub/'+_effectiveUid()+'/'+clientId+'_'+c.clientToken+'.json';
   try{
     const{error}=await _supa.storage.from('proposals').upload(key,JSON.stringify(snapshot),{contentType:'application/json',upsert:true,cacheControl:'0'});
     if(error)throw error;
-    c.clientHubKey=key;saveAll();
+    // Same live-object rule as _uploadClientHub — never stamp a pre-await reference.
+    const live=clients.find(x=>x.id===clientId)||c;
+    live.clientHubKey=key;saveAll();
   }catch(e){console.warn('hub refresh:',e);}
 }
 function copyHubLink(url){navigator.clipboard.writeText(url).then(()=>showToast('Hub link copied','📋')).catch(()=>showToast('Could not copy — tap the URL above','⚠️'));}
@@ -385,7 +419,7 @@ function showHubMenu(clientId){
   const c=clients.find(x=>x.id===clientId);
   if(!c?.clientToken||!_supaUser){sendClientHubLink(clientId);return;}
   const baseUrl=_clientBaseUrl();
-  const hubUrl=baseUrl+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+  const hubUrl=baseUrl+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+clientId;
   const existing=document.getElementById('_hub-menu-ov');if(existing)existing.remove();
   const ov=document.createElement('div');
   ov.id='_hub-menu-ov';
@@ -654,7 +688,7 @@ async function sendProposalLink(){
     const _pdEpaRequired=!!(_pdYearBuilt&&_pdYearBuilt<1978&&((_pdYbClient&&_pdYbClient.rrpDisturb==='yes')||_rrpPaintAnswer==='yes'));
     const proposalData={
       id:bidId,token,clientName:cname,businessName:bname,
-      contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
+      contractorUserId:_effectiveUid(),contractorEmail:_supaUser.email,
       clientId:estLinkedClientId||null,
       proposalHtml:proposal.innerHTML,
       clientAddr:_pdCaddr,
@@ -696,7 +730,7 @@ async function sendProposalLink(){
     }
     _pendingSignToken={bidId,token,proposalKey};
     const baseUrl=_clientBaseUrl();
-    const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
+    const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_effectiveUid()+'&b='+bidId;
     const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     const shortUrl=await shortenUrl(signingUrl);
     // Run proposal and hub uploads in parallel, each capped at 6s
@@ -1554,7 +1588,9 @@ function clearEstimatorForm(){
   // (saveAndExitEstimate already removes b.draft before calling this, so saved bids are safe)
   if(lastCreatedBidId){
     const orphanIdx=bids.findIndex(b=>b.id===lastCreatedBidId&&b.draft===true&&b.status!=='Pending');
-    if(orphanIdx>-1){bids.splice(orphanIdx,1);saveAll();}
+    // Wrap so the removed draft bid's id is recorded as a local delete and the sweep
+    // propagates it (harmless no-op if the draft never reached the cloud).
+    if(orphanIdx>-1){_userDelete(()=>{bids.splice(orphanIdx,1);saveAll();});}
   }
   _paintIsCommercial=false;_paintWorkScope='repair';_paintClientTaxRate=null;
   _rrpPaintAnswer='';
@@ -1850,6 +1886,12 @@ function renderCalendar(){renderCalMonthLabel();renderCalGrid();renderCalAvail()
 function renderCalMonthLabel(){const M=['January','February','March','April','May','June','July','August','September','October','November','December'];document.getElementById('cal-month-lbl').textContent=M[calMonth]+' '+calYear;}
 function getJobsOnDay(key){const res=[];jobs.forEach(job=>{if(job.status==='canceled')return;const workDays=getJobWorkDays(job);if(workDays.includes(key)){res.push({job,isBuf:false});return;}const lastDay=workDays.length?workDays[workDays.length-1]:job.start;const b=parseInt(job.buffer)||0;for(let i=1;i<=b;i++){if(addDays(lastDay,i)===key){res.push({job,isBuf:true});return;}}});return res;}
 function requestLocationPermission(onGranted, onDenied){
+  // Never auto-prompt for location under automation (Playwright/headless webdriver):
+  // there is no real user to grant it, and the full-screen "Allow location access?"
+  // modal would sit over the page intercepting every subsequent click. Mirrors the
+  // geo-consent prompt's existing navigator.webdriver guard (geo-track.js). Real users
+  // are never navigator.webdriver, so production behavior is unchanged.
+  if(navigator.webdriver){if(onDenied)onDenied();return;}
   if(S.weatherLat&&S.weatherLon){if(onGranted)onGranted();return;}
   // Previously granted on this device — skip modal entirely
   if(S.locationGranted){_grabLocCoords(onGranted,onDenied);return;}
@@ -1900,6 +1942,12 @@ function _showLocModal(onGranted,onDenied){
   document.body.appendChild(overlay);
   box.querySelector('#loc-allow-btn').onclick=()=>{
     overlay.remove();
+    // Remember the explicit "Allow" IMMEDIATELY so the prompt is sticky — one tap, saved
+    // forever. Previously locationGranted was only written inside _grabLocCoords' success
+    // callback, so if the first OS coordinate fix was slow, timed out, errored, or the app
+    // closed before it resolved, nothing persisted and the modal returned on the next launch.
+    // (Denial already persisted immediately via the deny handler; this fixes the asymmetry.)
+    S.locationGranted=true;S.locationDenied=false;S.settingsTs=Date.now();saveAll();
     _grabLocCoords(onGranted,()=>{
       // OS denied after user tapped allow — show gentle follow-up
       if(onDenied)onDenied();
@@ -2036,7 +2084,7 @@ function expandCalDay(key){
               '</div>'+
               (job.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+job.notes+'</div>':'')+
             '</div>'+
-            '<button onclick="deleteJob('+job.id+');renderCalGrid();expandCalDay(\''+key+'\')" style="border:none;background:none;color:var(--text3);cursor:pointer;font-size:14px;padding:2px 4px;flex-shrink:0;line-height:1">✕</button>'+
+            ''+
           '</div>';
         }).join('')+
       '</div>'
@@ -2058,7 +2106,7 @@ function expandCalDay(key){
               '</div>'+
               '<div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">'+
                 (c?'<button class="btn btn-sm btn-p" onclick="openClientDetail('+c.id+')" style="font-size:11px">Open</button>':'')+
-                '<button class="btn-del" onclick="deleteJob('+job.id+');closeCalDay();renderCalendar();" style="padding:4px 8px;font-size:10px">Delete</button>'+
+                ''+
               '</div>'+
             '</div>'+
           '</div>';
@@ -2089,7 +2137,7 @@ function expandCalDay(key){
                 '<div style="display:flex;gap:6px;margin-top:6px">'+
                   (c?'<button onclick="openClientDetail('+c.id+')" style="border:none;background:rgba(255,255,255,.2);color:#fff;border-radius:4px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Open</button>':'')+
                   (isEst?'<button onclick="rescheduleEstimate('+job.id+')" style="border:none;background:rgba(255,255,255,.2);color:#fff;border-radius:4px;padding:4px 8px;font-size:10px;cursor:pointer;font-family:inherit">Reschedule</button>':'')+
-                  '<button onclick="deleteJob('+job.id+');closeCalDay();renderCalendar();" style="border:none;background:rgba(255,255,255,.15);color:#fff;border-radius:4px;padding:4px 8px;font-size:10px;cursor:pointer;font-family:inherit">Delete</button>'+
+                  ''+
                 '</div>'+
               '</div>';
             }).join(''))+
@@ -2284,6 +2332,8 @@ function markFUAbandoned(bidId,cid){
     zConfirm('Still no response. Move to cold leads?',()=>{
       b.status='Abandoned';b.abandonDate=todayKey();b.noResponseCount=0;
       saveAll();renderDash();
+      // Keep the abandoned proposal in the client hub Documents (read-only, declined).
+      if(b.client_id&&typeof _uploadClientHub==='function')_uploadClientHub(b.client_id).catch(()=>{});
     },{title:'Move to cold leads',yes:'Move to cold leads',danger:true});
   } else {
     const newFollowup=addDays(todayKey(),7);
@@ -2606,7 +2656,7 @@ function _showCONotifyModal(clientId,coNum){
     c.clientToken=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
     saveAll();
   }
-  const url=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+  const url=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+clientId;
   _coShareData={url,cname:c.name||'Client',bname:S.bname||'TradeDesk',cphone:(c.phone||'').replace(/\D/g,''),cemail:c.email||'',coNum,clientId};
   document.getElementById('_co-send-overlay')?.remove();
   const ov=document.createElement('div');

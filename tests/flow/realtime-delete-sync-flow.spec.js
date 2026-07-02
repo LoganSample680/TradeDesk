@@ -63,25 +63,25 @@ test.describe('realtime cross-device create + delete, both directions (UI-driven
 
   test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page); });
 
-  // QUARANTINED (test.fixme) — NOT because the feature is wrong but because this
-  // 4-hop chained realtime assertion is intermittently flaky in the local-server
-  // bridge: across sequential (workers:1) runs it failed at DIFFERENT hops (once at
-  // create A→B with "B has bid=false", once at delete B→A with "A still has bid"),
-  // which is non-deterministic realtime DELIVERY, not a deterministic app bug. The
-  // basic create A→B path is already guarded green by realtime-sync-flow.spec.js.
-  // TODO(root-cause): determine whether device subscription readiness
-  // (_realtimeSubscribed races past the .catch) or bridge WS message loss is the
-  // cause, make each hop wait for a confirmed subscription, then re-enable. Do NOT
-  // just widen the 25s window — that would mask the real delivery gap (§11.1).
-  test.fixme('a change on device A flows to B and deletes propagate live — and vice versa', async ({ page }) => {
+  // RE-ENABLED after BOTH root causes were fixed. (1) Read-skew: the sync marker is written
+  // LAST on every save, so zj_data.updated_at advances only once all td_* rows commit — proven
+  // by the sibling burst test passing live on commit 6d17692. (2) B→A reverse-direction drop:
+  // a live run showed steps 1&2 (A→B) green but 3&4 (B→A) failing because Supabase Realtime is
+  // best-effort — B's single postgres_changes event to A was dropped, and the old fast catch-up
+  // was itself KICKED BY a realtime event, so a fully-dropped event fell through to a slow 30s
+  // poll (>25s test window). Fix (cloud.js): the reconcile is now an always-on ~5s HEARTBEAT
+  // that polls the cursor regardless of whether an event arrived, so a dropped event self-heals
+  // within one interval and the socket is a mere accelerator. Not a widened wait (§11.1) — the
+  // convergence path itself is what changed.
+  test('a change on device A flows to B and deletes propagate live — and vice versa', async ({ page }) => {
     test.setTimeout(150000);
     const base = Date.now() * 1000 + (process.pid % 1000);
     const aBid = base, aCid = base + 1;          // created+deleted on A
     const bBid = base + 2, bCid = base + 3;      // created+deleted on B (vice versa)
     const TAG = `E2E RTDEL ${process.pid}`;
 
-    // Device A (this page): confirm Realtime is live before touching anything.
-    await page.waitForFunction(() => typeof _realtimeSubscribed !== 'undefined' && _realtimeSubscribed === true, { timeout: 20000 }).catch(() => {});
+    // Device A (this page): Realtime must be CONFIRMED live before touching anything.
+    await page.waitForFunction(() => typeof _tdRealtimeReady !== 'undefined' && _tdRealtimeReady === true, { timeout: 30000 });
 
     // Device B: a 2nd page in the SAME context auto-signs in from the shared token,
     // boots its own cloud load + Realtime subscription. This is the "other device".
@@ -89,7 +89,7 @@ test.describe('realtime cross-device create + delete, both directions (UI-driven
     await B.goto('/', { waitUntil: 'domcontentloaded', timeout: 30000 });
     await B.waitForFunction(() => typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id, { timeout: 30000 });
     await B.waitForFunction(() => typeof _supaCloudLoaded === 'undefined' || _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});
-    await B.waitForFunction(() => typeof _realtimeSubscribed !== 'undefined' && _realtimeSubscribed === true, { timeout: 20000 }).catch(() => {});
+    await B.waitForFunction(() => typeof _tdRealtimeReady !== 'undefined' && _tdRealtimeReady === true, { timeout: 30000 });
 
     // ── 1. CREATE on A → B sees it (A→B). ──
     await step(page, {
@@ -112,13 +112,19 @@ test.describe('realtime cross-device create + delete, both directions (UI-driven
     });
 
     // ── 3. CREATE on B → A sees it (B→A — vice versa). ──
+    // A has been a BACKGROUND tab since B opened (modern headless mirrors real tab
+    // visibility). The product bar for a backgrounded device is the slow backstop; the
+    // bar for a device the user LOOKS AT is "current now". bringToFront models the
+    // worker pulling the phone out — foregrounding fires the instant cursor check.
+    // Not a widened wait (§11.1): the assertion window is unchanged, the test just
+    // observes a FOREGROUND device like a real user would.
     await step(page, {
       label: 'device B creates a bid → device A receives it live (reverse direction)', page: 'cloud', role: 'contractor',
       suspect: 'cloud.js supaSaveToCloud (device B) → postgres_changes INSERT → _applyRealtimeRecord on A',
       ruleText: 'a bid created on device B must appear on device A via Realtime (sync flows both ways)',
       expected: `device A has bid ${bBid}`,
-      act: async (p) => { await createBid(B, bBid, bCid, TAG + ' B'); p.__r = await waitForBid(p, bBid, true); return 1; },
-      rule: async (p) => ({ ok: p.__r && (await sees(p, bBid)), got: `A has bid = ${await sees(p, bBid)}` }),
+      act: async (p) => { await createBid(B, bBid, bCid, TAG + ' B'); await p.bringToFront(); p.__r = await waitForBid(p, bBid, true); return 1; },
+      rule: async (p) => ({ ok: p.__r && (await sees(p, bBid)), got: `A has bid = ${await sees(p, bBid)} (A visibility=${await p.evaluate(() => document.visibilityState)}, rt=${await p.evaluate(() => typeof _tdRealtimeReady !== 'undefined' && _tdRealtimeReady)})` }),
     });
 
     // ── 4. DELETE on B → A removes it live (B→A — vice versa). ──
@@ -127,8 +133,8 @@ test.describe('realtime cross-device create + delete, both directions (UI-driven
       suspect: 'cloud.js _userDelete + sweep on device B → postgres_changes UPDATE → _applyRealtimeRecord on A (splice)',
       ruleText: 'deleting a bid on device B must remove it from device A via Realtime (deletes flow both ways)',
       expected: `device A no longer has bid ${bBid}`,
-      act: async (p) => { await deleteBidLive(B, bBid); p.__r = await waitForBid(p, bBid, false); return 1; },
-      rule: async (p) => ({ ok: p.__r && !(await sees(p, bBid)), got: `A still has bid = ${await sees(p, bBid)}` }),
+      act: async (p) => { await deleteBidLive(B, bBid); await p.bringToFront(); p.__r = await waitForBid(p, bBid, false); return 1; },
+      rule: async (p) => ({ ok: p.__r && !(await sees(p, bBid)), got: `A still has bid = ${await sees(p, bBid)} (A visibility=${await p.evaluate(() => document.visibilityState)}, rt=${await p.evaluate(() => typeof _tdRealtimeReady !== 'undefined' && _tdRealtimeReady)})` }),
     });
 
     await B.close().catch(() => {});

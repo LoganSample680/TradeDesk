@@ -122,6 +122,32 @@ let _contractorUserId=null;   // contractor's user_id (set when _isEmployee)
 let _employeeRecord=null;     // team_members row for this employee
 Object.defineProperty(window,'_config',{get:()=>_config,set:v=>{_config=v;},configurable:true});
 Object.defineProperty(window,'_isEmployee',{get:()=>_isEmployee,set:v=>{_isEmployee=v;},configurable:true});
+// Bridge the rest of the employee-context trio so window assignment reaches the real
+// module `let`s (not a dead own-property). Without this, `window._contractorUserId=…`
+// silently no-ops and code reading the bare `_contractorUserId` still sees null —
+// e.g. _submitEstimateRequest's `if(!_contractorUserId) return` guard. Prod sets the
+// bare lets directly; only external callers (tests) assign via window, so this is
+// purely additive and matches the _isEmployee bridge above.
+Object.defineProperty(window,'_contractorUserId',{get:()=>_contractorUserId,set:v=>{_contractorUserId=v;},configurable:true});
+Object.defineProperty(window,'_employeeRecord',{get:()=>_employeeRecord,set:v=>{_employeeRecord=v;},configurable:true});
+
+// EFFECTIVE ACCOUNT UID — whose BUSINESS this session acts for. Every client-facing
+// money/identity artifact (hub + pay + signing links' u= param, proposal snapshot
+// contractorUserId, signature/view-tracking rows, storage paths) must carry THIS uid,
+// never raw _supaUser.id: a crew login stamping its own uid pointed Stripe checkout
+// lookups, signature notifications and hub uploads at an account that doesn't exist
+// (employees have no users/account_config row) — payments from crew-sent links could
+// never reach the owner. Owner → self; crew → the boss; dev-support → the target.
+function _effectiveUid(){
+  try{
+    if(typeof _devSupportMode!=='undefined'&&_devSupportMode&&typeof _DEV_SUPPORT_USERS!=='undefined'){
+      const u=Object.values(_DEV_SUPPORT_USERS).find(x=>x.name===_devSupportName)?.userId;
+      if(u)return u;
+    }
+  }catch(_e){}
+  if(typeof _isEmployee!=='undefined'&&_isEmployee&&_contractorUserId)return _contractorUserId;
+  return (typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
+}
 
 // Default configs by business type
 function getRole(){return _user?.role||'owner';}

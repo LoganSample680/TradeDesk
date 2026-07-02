@@ -33,10 +33,31 @@ Deno.serve(async (req) => {
       });
     }
 
+    // CREW: a linked employee asks for the BOSS's connect status (their own login has
+    // no account/Stripe). `target` is honored ONLY when an ACTIVE team_members link
+    // ties the caller to that contractor — verified server-side, never trusted.
+    const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
+    let accountUserId = user.id;
+    if (body && body.target && body.target !== user.id) {
+      const { data: link } = await supaAdmin
+        .from('team_members')
+        .select('id')
+        .eq('employee_user_id', user.id)
+        .eq('contractor_user_id', body.target)
+        .eq('active', true)
+        .limit(1);
+      if (!link || !link.length) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403, headers: { ...CORS, 'Content-Type': 'application/json' },
+        });
+      }
+      accountUserId = body.target;
+    }
+
     const { data: userRow } = await supaAdmin
       .from('users')
       .select('account_id')
-      .eq('id', user.id)
+      .eq('id', accountUserId)
       .maybeSingle();
 
     if (!userRow?.account_id) {
@@ -59,8 +80,27 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Check live status directly from Stripe
-    const acct = await stripe.accounts.retrieve(cfg.stripe_account_id);
+    // Check live status directly from Stripe. A stored id that can't be retrieved
+    // with the CURRENT-mode key (e.g. a live account viewed from a test-mode
+    // surface like a *.pages.dev preview, or a deleted/revoked account) must NOT
+    // 500 the whole status call — that renders a dead "Connect" button that then
+    // fails onboarding too. Report it as not-connected-but-a-stored-account-exists
+    // so the UI can offer an explicit "Reset connection" (never auto-cleared here,
+    // so a transient error can't nuke a real live connection).
+    let acct;
+    try {
+      acct = await stripe.accounts.retrieve(cfg.stripe_account_id);
+    } catch (_e) {
+      return new Response(
+        JSON.stringify({
+          connected: false,
+          reason: 'unverifiable',
+          has_stored_account: true,
+          stored_account_id: cfg.stripe_account_id,
+        }),
+        { headers: { ...CORS, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Sync status to DB if it changed
     if (acct.charges_enabled && !cfg.stripe_connect_enabled) {

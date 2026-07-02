@@ -112,6 +112,12 @@ async function mockAllExternal(page, opts = {}) {
     if (navigator.serviceWorker) {
       navigator.serviceWorker.register = () => Promise.reject(new Error('SW disabled in tests'));
     }
+    // Oplog ships ON in prod (Phase 3) — so the offline shards run it ON too. Tests must
+    // exercise the code path real users run; keeping it off here meant the authoritative
+    // per-field merge was live in production while every mocked suite certified the
+    // whole-row path instead (the review flagged exactly that gap). The mocked Supabase
+    // chain absorbs td_ops traffic as no-ops, and IndexedDB works in the test browsers.
+    window._opLogShadow = true;
   });
 
   await page.route('**/*', async (route) => {

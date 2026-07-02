@@ -8,8 +8,9 @@
 //      'drive-personal' (time is compensable, mileage stays private).
 //   3. BREADCRUMB THROTTLE — the first ping writes a location_pings breadcrumb;
 //      a second ping within 60s is throttled (no duplicate write).
-//   4. BACKGROUNDING    — visibilitychange→hidden finalizes the open entry and
-//      resets the fence state (so a force-quit mid-shift never loses time).
+//   4. BACKGROUNDING    — visibilitychange→hidden KEEPS the entry open (persisted
+//      to the device); the first post-gap ping resolves it — still inside ⇒ one
+//      continuous visit, outside ⇒ closed at the hidden moment as 'geofence-gap'.
 //
 // Soft-skips if geo tables are absent. Session globals it flips (_isEmployee etc.)
 // are restored; in-memory jobs[] restored, never saved (CLAUDE.md §13.7).
@@ -130,12 +131,17 @@ test.describe('geo employee path + lifecycle (UI-driven)', () => {
       },
     });
 
-    // ── 4. BACKGROUNDING — visibilitychange→hidden finalizes + resets. ──
+    // ── 4. BACKGROUNDING — the open entry SURVIVES a hidden gap; the next ping
+    //       resolves it. (Behavior intentionally changed: the old handler closed on
+    //       hidden, so a phone in a pocket all day logged only screen-on slivers and
+    //       any visit hidden within 2 min of arrival was dropped entirely. Now:
+    //       still-inside ⇒ continuous visit; outside ⇒ close at the last VERIFIED
+    //       on-site moment, tagged 'geofence-gap'.) ──
     await step(page, {
-      label: 'backgrounding the app finalizes the open entry and resets fence state', page: 'geo', role: 'contractor',
-      suspect: 'geo-track.js _geoTrackInit visibilitychange handler',
-      ruleText: 'a visibilitychange→hidden while on-site must close the entry (write time) and null _geoCurrentJob',
-      expected: '_geoCurrentJob reset to null after backgrounding',
+      label: 'backgrounding keeps the entry open; leaving during the gap closes at the hidden moment', page: 'geo', role: 'contractor',
+      suspect: 'geo-track.js visibilitychange persist + _geoOnPing hidden-gap resolution',
+      ruleText: 'hidden must NOT close the entry; a post-gap ping outside the fence must close it as geofence-gap AT the hidden timestamp',
+      expected: 'entry open through hidden; geofence-gap row with departed_at === hiddenAt',
       act: async (p) => {
         await p.evaluate(({ jobBg, A }) => {
           window.__origJobs = window.__origJobs || jobs.slice();
@@ -153,14 +159,31 @@ test.describe('geo employee path + lifecycle (UI-driven)', () => {
           try { Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); } catch (e) {}
           document.dispatchEvent(new Event('visibilitychange'));
         });
-        await p.waitForTimeout(1000);
-        p.__cur = await p.evaluate(() => _geoCurrentJob);
-        await p.evaluate(() => { try { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); } catch (e) {} });
+        await p.waitForTimeout(500);
+        p.__mid = await p.evaluate(() => ({
+          cur: _geoCurrentJob,
+          persisted: !!localStorage.getItem('zp3_geo_open'),
+          hiddenAt: (JSON.parse(localStorage.getItem('zp3_geo_open') || '{}')).hiddenAt || null,
+        }));
+        // Return to the foreground OUTSIDE the fence — the worker left during the gap.
+        await p.evaluate(() => { try { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); } catch (e) {} document.dispatchEvent(new Event('visibilitychange')); });
+        await ping(p, 38.2000, -98.0000);            // far away → gap-close path
+        await p.waitForTimeout(1500);                // let the durable queue drain
+        p.__end = await p.evaluate(() => ({ cur: _geoCurrentJob, queueLeft: (JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]')).length }));
         // Restore in-memory jobs after the whole test.
         await p.evaluate(() => { if (window.__origJobs) { jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null; } });
-        return 1;
+        return 3;
       },
-      rule: async (p) => ({ ok: p.__cur == null, got: `currentJob after backgrounding=${p.__cur} (expected null)` }),
+      rule: async (p) => {
+        const r = await jobRows(p, jobBg);
+        if (r.absent) return { ok: true, got: 'SKIP — job_time_entries not provisioned' };
+        const mid = p.__mid || {}, end = p.__end || {};
+        const gapRow = (r.rows || []).find(x => x.source === 'geofence-gap');
+        const ok = mid.cur != null && mid.persisted === true    // hidden did NOT close/reset
+          && end.cur == null                                     // post-gap outside ping closed it
+          && !!gapRow;                                           // ...as a geofence-gap entry
+        return { ok, got: `midCur=${mid.cur != null} persisted=${mid.persisted} endCur=${end.cur} gapRow=${gapRow ? gapRow.source + '/' + gapRow.minutes + 'min' : 'MISSING'} queueLeft=${end.queueLeft}` };
+      },
     });
 
     const rep = report(FLOW, BASELINE);

@@ -552,7 +552,7 @@ function _clientBaseUrl(){
 // ── Client hub directory (one row per client with hub status + share actions) ──
 function _clientHubUrl(c){
   if(!c?.clientToken||!_supaUser)return null;
-  return _clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+c.id;
+  return _clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+c.id;
 }
 function renderClientHubPage(){
   const el=document.getElementById('client-hub-list');if(!el)return;
@@ -602,7 +602,7 @@ function _previewClientHub(url,clientName,clientId){
       fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
         method:'POST',
         headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-        body:JSON.stringify({contractorUserId:_supaUser.id,bidId:String(b.id),viewerType:'contractor'})
+        body:JSON.stringify({contractorUserId:_effectiveUid(),bidId:String(b.id),viewerType:'contractor'})
       }).catch(()=>{});
     });
   }
@@ -1463,7 +1463,7 @@ function renderClientNotes(){
         '<div style="font-size:13px;color:var(--text);line-height:1.4">'+escHtml(n.text)+'</div>'+
         '<div style="font-size:10px;color:var(--text3);margin-top:2px">'+dt+'</div>'+
       '</div>'+
-      '<button class="btn-del" onclick="deleteClientNote(\''+n.id+'\')" style="flex-shrink:0;font-size:11px;padding:3px 6px">✕</button>'+
+      ''+
     '</div>';
   }).join('');
 }
@@ -1586,7 +1586,7 @@ function renderCDExpenses(){
           '</div>'+
           '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'+
             '<span style="font-size:13px;font-weight:700;color:#A32D2D">'+fmt(e.amount)+'</span>'+
-            '<button class="btn-del" onclick="delExpenseFromCD('+e.id+')">✕</button>'+
+            ''+
           '</div>'+
         '</div>'
       ).join('')+
@@ -1626,7 +1626,7 @@ function renderCDMileage(){
     );
   const el=document.getElementById('cd-mile-list');
   if(!cmiles.length){el.innerHTML='<div class="empty">No trips yet.<br>Tap "Drive to this job" above to start tracking.</div>';return;}
-  el.innerHTML=[...cmiles].sort((a,b)=>b.date.localeCompare(a.date)).map(m=>`<div class="mile-row"><div class="mile-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/></svg></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">${escHtml(m.from||'Start')} → ${escHtml(m.to||'Destination')}</div><div style="font-size:11px;color:var(--text3)">${m.date} · <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${(MILE_PURPOSE_COLORS[m.purpose||'Other']||MILE_PURPOSE_COLORS['Other']).dot};margin-right:2px;vertical-align:middle"></span><select onchange="editMilePurpose(${m.id},this.value)" onclick="event.stopPropagation()" style="font-size:11px;border:none;background:transparent;color:${(MILE_PURPOSE_COLORS[m.purpose||'Other']||MILE_PURPOSE_COLORS['Other']).text};font-weight:700;cursor:pointer;font-family:inherit;padding:1px 2px;border-radius:3px">${MILE_PURPOSES.map(p=>`<option value="${p}"${(m.purpose||'Other')===p?' selected':''}>${p}</option>`).join('')}</select>${m.gps?' · <span class="bdg bdg-gps">GPS</span>':''}</div></div><div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:700">${(m.miles||0).toFixed(1)} mi</div><div style="font-size:10px;color:var(--green-mid)">${fmt((m.miles||0)*IRS())}</div></div><button class="btn-del" onclick="delMileage(${m.id})">✕</button></div>`).join('');
+  el.innerHTML=[...cmiles].sort((a,b)=>b.date.localeCompare(a.date)).map(m=>`<div class="mile-row" data-lp-id="${m.id}" data-lp-type="mileage" data-lp-label="${escHtml((m.from||'Start')+' → '+(m.to||'Destination')+' · '+(m.miles||0).toFixed(1)+' mi')}"><div class="mile-icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="10" r="3"/><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/></svg></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700">${escHtml(m.from||'Start')} → ${escHtml(m.to||'Destination')}</div><div style="font-size:11px;color:var(--text3)">${m.date} · <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${(MILE_PURPOSE_COLORS[m.purpose||'Other']||MILE_PURPOSE_COLORS['Other']).dot};margin-right:2px;vertical-align:middle"></span><select onchange="editMilePurpose(${m.id},this.value)" onclick="event.stopPropagation()" style="font-size:11px;border:none;background:transparent;color:${(MILE_PURPOSE_COLORS[m.purpose||'Other']||MILE_PURPOSE_COLORS['Other']).text};font-weight:700;cursor:pointer;font-family:inherit;padding:1px 2px;border-radius:3px">${MILE_PURPOSES.map(p=>`<option value="${p}"${(m.purpose||'Other')===p?' selected':''}>${p}</option>`).join('')}</select>${m.gps?' · <span class="bdg bdg-gps">GPS</span>':''}</div></div><div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:700">${(m.miles||0).toFixed(1)} mi</div><div style="font-size:10px;color:var(--green-mid)">${fmt((m.miles||0)*IRS())}</div></div></div>`).join('');
 }
 function renderCDBids(){
   const cbids=getClientBids(currentClientId);
@@ -1671,7 +1671,10 @@ function renderCDBids(){
       if(bpays.length){
         payHTML+='<div style="margin-top:8px;background:var(--bg2);border-radius:var(--r);padding:8px 10px">';
         payHTML+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:5px">Payment history</div>';
-        payHTML+=bpays.map(p=>{const isRef=p.type==='refund';const amtDisp=isRef?'<strong style="color:#A32D2D">↩ -'+fmt(Math.abs(p.amount))+'</strong>':'<strong style="color:var(--green-mid)">+'+fmt(p.amount)+'</strong>';const typeLabel=isRef?'REFUND':(escHtml(p.method)+(p.ref?' #'+escHtml(p.ref):''));return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+typeLabel+'</span><span>'+amtDisp+' <button class="btn-del" onclick="deletePay('+p.id+')" style="font-size:10px">✕</button></span></div>';}).join('');
+        // NO DELETE BUTTON (owner directive): the visible control is EDIT — fix the
+        // record in place. Deletion is dev-only via the 3s long-press (data-lp-*,
+        // cloud.js) and inert for everyone else. Nobody deletes payments in normal use.
+        payHTML+=bpays.map(p=>{const isRef=p.type==='refund';const amtDisp=isRef?'<strong style="color:#A32D2D">↩ -'+fmt(Math.abs(p.amount))+'</strong>':'<strong style="color:var(--green-mid)">+'+fmt(p.amount)+'</strong>';const typeLabel=isRef?'REFUND':(escHtml(p.method)+(p.ref?' #'+escHtml(p.ref):''));return '<div data-lp-id="'+p.id+'" data-lp-type="payment" data-lp-label="'+escHtml('Payment '+fmt(Math.abs(p.amount)))+'" style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+typeLabel+'</span><span>'+amtDisp+' <button onclick="editPayment('+p.id+')" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1px solid var(--border2);background:none;color:var(--text2);cursor:pointer;font-family:inherit">✎ Edit</button></span></div>';}).join('');
         payHTML+='</div>';
       }
       if(lien){
@@ -1707,10 +1710,12 @@ function renderCDBids(){
       if(balance>0.01&&days>=14&&days<21)actBtns.push('<button class="btn btn-sm" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'second\')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">💬 2nd notice</button>');
       if(balance>0.01&&days>=21)actBtns.push('<button class="btn btn-sm btn-r" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'intent\')">💬 Intent to lien</button>');
       if(lien&&lien.status!=='resolved'&&getBidBalance(b)<=0.01)actBtns.push('<button class="btn btn-sm" onclick="releaseLien('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">✓ Release lien</button>');
+      // Recordable release doc — reachable any time after release (re-file, lost copy).
+      if(lien&&lien.status==='resolved')actBtns.push('<button class="btn btn-sm" onclick="printKansasLienRelease('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">📄 Release doc</button>');
       actBtns.push('<button class="btn btn-sm" onclick="openEditBid('+b.id+')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">✎ Revise bid</button>');
       actBtns.push('<button class="btn btn-sm" onclick="showSupplyList('+b.id+')" style="background:#FFF0E8;color:#854F0B;border-color:#E89B50">📦 Supply list</button>');
       actBtns.push('<button class="btn btn-sm" onclick="recoverBidRooms('+b.id+')" style="background:#F0F7FF;color:#1a365d;border-color:#9DBEE5">♻️ Recover rooms</button>');
-      actBtns.push('<button class="btn-del" onclick="deleteBid('+b.id+')" style="font-size:11px;padding:5px 8px">Delete</button>');
+      actBtns.push('');
     }
     if(!isWon){
       actBtns.push('<button class="btn btn-sm" onclick="sendBidEmail('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#9993; Send email</button>');
@@ -1720,7 +1725,7 @@ function renderCDBids(){
       actBtns.push('<button class="btn btn-sm" onclick="recoverBidRooms('+b.id+')" style="background:#F0F7FF;color:#1a365d;border-color:#9DBEE5">♻️ Recover rooms</button>');
       actBtns.push('<button class="btn btn-sm" onclick="markBidHandshake('+b.id+')" style="background:#FFF8E8;color:#856404;border-color:var(--amber);font-size:11px">🤝 Handshake</button>');
       actBtns.push('<button class="btn btn-sm" onclick="markBidAbandoned('+b.id+')" style="background:#FFF8F0;color:#A32D2D;border-color:#A32D2D">No response</button>');
-      actBtns.push('<button class="btn-del" onclick="deleteBid('+b.id+')" style="font-size:11px;padding:5px 8px">Delete</button>');
+      actBtns.push('');
     }
     return '<div class="card" style="margin-bottom:8px" id="bid-card-'+b.id+'" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml((b.type||'Proposal')+(b.amount?' · '+fmt(b.amount):''))+'">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
@@ -2097,7 +2102,7 @@ function renderCDJobs(){
         '</div>'+
       '</div>'+
       '<div class="brow" style="margin-top:8px">'+
-        (doneBtn?doneBtn:'')+clockBtnCD+'<button class="btn-del" onclick="deleteJob('+j.id+')" style="font-size:11px;padding:5px 8px;color:#A32D2D">Remove</button>'+
+        (doneBtn?doneBtn:'')+clockBtnCD+''+
       '</div>'+
     '</div>';
   }).join('');

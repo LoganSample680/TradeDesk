@@ -937,8 +937,7 @@ function openJobSheet(clientId){
   if(photoJobId){
     const renderThumb=(p,idx,type)=>'<div style="position:relative;width:80px;height:80px;flex-shrink:0">'+
       '<img src="'+p.data+'" style="width:80px;height:80px;object-fit:cover;border-radius:var(--r);border:2px solid '+(type==='before'?'var(--amber)':'var(--green-mid)')+'">'+
-      '<button onclick="deleteJobPhoto('+photoJobId+','+idx+',\''+type+'\');this.closest(\'.zmodal-overlay\').remove();openJobSheet('+clientId+')" '+
-        'style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);border:none;color:#fff;border-radius:50%;width:18px;height:18px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;line-height:1">✕</button>'+
+      ''+
     '</div>';
     const shareBtn=beforePhotos.length&&afterPhotos.length
       ?'<button onclick="_shareBeforeAfterCard('+clientId+')" style="display:inline-flex;align-items:center;gap:5px;margin-top:10px;padding:8px 14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;width:100%;justify-content:center">📤 Share before/after card</button>'

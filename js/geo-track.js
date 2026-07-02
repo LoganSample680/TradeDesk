@@ -27,6 +27,152 @@ let _geoJobCoords={};      // jobId -> {lat,lng} geocode cache (per session)
 let _geoWasInShop=false;   // currently inside office/shop geofence
 let _geoShopArrivedAt=null;// ISO timestamp of shop arrival
 let _geoDriveStartedAt=null;// ISO timestamp when a drive leg began (leaving any fence)
+let _geoPingBusy=false;    // re-entrancy guard: _geoOnPing awaits geocodes — overlapping
+                           // pings must never interleave the fence state machine
+let _geoGapHiddenAt=null;  // ISO of the last hidden/suspend moment with an entry open —
+                           // the last VERIFIED on-site time if the next ping lands outside
+let _geoWakeLockObj=null;  // screen wake lock held while inside a job fence
+
+// ── Offline-durable time-entry queue ──────────────────────────────────────────
+// Every arrival→departure record is written to the DEVICE first and drained to
+// Supabase with retry — a dead spot at departure time can never lose a time entry
+// (rural job sites are the NORM, and these rows feed payroll/Job Profit, later OJT).
+// Rows carry a client-minted key; the server's unique (contractor_user_id,
+// client_key) index makes retries idempotent — a retry after a lost response can't
+// double-count hours. Breadcrumb pings are deliberately NOT queued (low value,
+// unbounded growth offline); only time entries are durable.
+const _GEO_QUEUE_KEY='zp3_geo_queue';
+let _geoDrainBusy=false;
+function _geoClientKey(){return ((_supaUser&&_supaUser.id)||'anon').slice(0,8)+'-'+Date.now().toString(36)+'-'+Math.floor(Math.random()*1e6).toString(36);}
+function _geoQueueRead(){try{return JSON.parse(localStorage.getItem(_GEO_QUEUE_KEY)||'[]');}catch(_e){return[];}}
+function _geoQueueWrite(q){try{localStorage.setItem(_GEO_QUEUE_KEY,JSON.stringify(q));}catch(_e){}}
+function _geoEnqueue(tbl,row){
+  try{
+    row.client_key=row.client_key||_geoClientKey();
+    const q=_geoQueueRead();q.push({tbl,row});
+    if(q.length>500)q.splice(0,q.length-500); // hard cap — the queue can never grow unbounded
+    _geoQueueWrite(q);
+  }catch(_e){}
+  _geoDrainQueue();
+}
+async function _geoDrainQueue(){
+  if(_geoDrainBusy||!_supa||!_supaUser)return;
+  _geoDrainBusy=true;
+  try{
+    let q=_geoQueueRead();
+    while(q.length){
+      const item=q[0];
+      let error=null;
+      try{
+        ({error}=await _supa.from(item.tbl).upsert(item.row,{onConflict:'contractor_user_id,client_key',ignoreDuplicates:true}));
+        // Hosted DB predating the geo-hardening migration: no unique index → retry as
+        // a plain insert; no client_key column at all → retry without the key. Either
+        // way the entry lands — durability beats idempotency when the schema lags.
+        if(error&&/on conflict|constraint/i.test(String(error.message||''))){({error}=await _supa.from(item.tbl).insert(item.row));}
+        if(error&&/client_key/i.test(String(error.message||''))){const{client_key,...plain}=item.row;({error}=await _supa.from(item.tbl).insert(plain));}
+      }catch(_e){error=_e;}
+      if(error)break; // offline / transient — stop; the next drain retries from the same head
+      q.shift();_geoQueueWrite(q);
+    }
+  }catch(_e){}
+  _geoDrainBusy=false;
+}
+
+// ── Screen wake lock — held ONLY while inside a job fence ─────────────────────
+// Browsers stop delivering GPS to a backgrounded page; keeping the screen awake
+// on-site keeps the fence clock honest for dash-mounted / in-hand phones. Auto-
+// released by the OS on hide; re-acquired on return while still on a job.
+async function _geoWakeAcquire(){
+  try{
+    if(_geoWakeLockObj||!navigator.wakeLock||document.hidden)return;
+    _geoWakeLockObj=await navigator.wakeLock.request('screen');
+    if(_geoWakeLockObj&&_geoWakeLockObj.addEventListener)_geoWakeLockObj.addEventListener('release',()=>{_geoWakeLockObj=null;});
+  }catch(_e){_geoWakeLockObj=null;}
+}
+function _geoWakeRelease(){try{if(_geoWakeLockObj)_geoWakeLockObj.release();}catch(_e){}_geoWakeLockObj=null;}
+
+// ── Open-entry persistence — survive backgrounding AND app kills ──────────────
+// The open entry is snapshotted to the device whenever the app hides (and on every
+// arrival), so pocketing the phone or an app kill mid-shift never discards the
+// morning's arrival. The NEXT ping decides the hidden gap: still inside the same
+// fence → one continuous visit (the hidden time counts, verified by both ends);
+// outside → the entry closes at the last VERIFIED on-site moment (hiddenAt) with
+// source 'geofence-gap', so unverified time is never claimed.
+const _GEO_OPEN_KEY='zp3_geo_open';
+function _geoPersistOpen(hiddenAt){
+  try{
+    if((_geoCurrentJob&&_geoArrivedAt)||(_geoWasInShop&&_geoShopArrivedAt)||_geoDriveStartedAt){
+      localStorage.setItem(_GEO_OPEN_KEY,JSON.stringify({
+        job:_geoCurrentJob,arrivedAt:_geoArrivedAt,wasInShop:_geoWasInShop,
+        shopArrivedAt:_geoShopArrivedAt,driveStartedAt:_geoDriveStartedAt,
+        hiddenAt:hiddenAt||new Date().toISOString(),uid:(_supaUser&&_supaUser.id)||null,day:todayKey()
+      }));
+    }else localStorage.removeItem(_GEO_OPEN_KEY);
+  }catch(_e){}
+}
+function _geoClearOpen(){try{localStorage.removeItem(_GEO_OPEN_KEY);}catch(_e){}}
+function _geoRestoreOpen(){
+  try{
+    const s=JSON.parse(localStorage.getItem(_GEO_OPEN_KEY)||'null');
+    if(!s||s.uid!==((_supaUser&&_supaUser.id)||null))return;
+    if(s.day!==todayKey()){
+      // A previous day's entry never survived to close — close it AT its hiddenAt
+      // (the last verified on-site moment) so the hours aren't silently lost.
+      if(s.job&&s.arrivedAt){_geoCurrentJob=s.job;_geoArrivedAt=s.arrivedAt;_geoCloseEntry(s.job,s.hiddenAt,true);_geoCurrentJob=null;}
+      if(s.wasInShop&&s.shopArrivedAt)_geoCloseShopEntry(s.shopArrivedAt,s.hiddenAt);
+      _geoClearOpen();return;
+    }
+    if(_geoCurrentJob||_geoArrivedAt)return; // live state wins — never clobber a running session
+    _geoCurrentJob=s.job;_geoArrivedAt=s.arrivedAt;
+    _geoWasInShop=!!s.wasInShop;_geoShopArrivedAt=s.shopArrivedAt;
+    _geoDriveStartedAt=s.driveStartedAt;
+    _geoGapHiddenAt=s.hiddenAt; // the next ping resolves the gap (continuous vs gap-close)
+  }catch(_e){}
+}
+
+// ── Manual clock bookends — ride the existing "I've Arrived" / "Mark Done" taps ──
+// A tap works offline, backgrounded, everywhere GPS can't. These write source:'manual'
+// entries through the same durable queue; the geofence entries corroborate them.
+const _GEO_MANUAL_KEY='zp3_geo_manual';
+function _geoManualOpenRec(){try{const o=JSON.parse(localStorage.getItem(_GEO_MANUAL_KEY)||'null');return o&&o.uid===((_supaUser&&_supaUser.id)||null)?o:null;}catch(_e){return null;}}
+function _geoManualArrive(jobId){
+  try{
+    if(!_supaUser||!S.teamTracking)return;
+    const open=_geoManualOpenRec();
+    if(open&&String(open.job)===String(jobId))return;   // already clocked in here
+    if(open)_geoManualDone(open.job);                    // close the previous job first
+    localStorage.setItem(_GEO_MANUAL_KEY,JSON.stringify({job:jobId,arrivedAt:new Date().toISOString(),uid:_supaUser.id}));
+  }catch(_e){}
+}
+function _geoManualDone(jobId){
+  try{
+    if(!_supaUser)return;
+    const open=_geoManualOpenRec();
+    if(!open||(jobId!=null&&String(open.job)!==String(jobId)))return;
+    localStorage.removeItem(_GEO_MANUAL_KEY);
+    const departed=new Date().toISOString();
+    const mins=Math.max(0,Math.round((Date.parse(departed)-Date.parse(open.arrivedAt))/60000));
+    if(mins<1)return;
+    _geoEnqueue('job_time_entries',{
+      contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+      job_id:String(open.job),arrived_at:open.arrivedAt,departed_at:departed,minutes:mins,source:'manual'
+    });
+  }catch(_e){}
+}
+
+// ── Breadcrumb retention — owner's device prunes pings older than 90 days ─────
+// One ping/min per crew member grows unbounded otherwise (cost + privacy posture).
+// Arrival/departure SUMMARIES are kept forever; only the raw breadcrumb trail ages out.
+function _geoPrunePings(){
+  try{
+    if(_isEmployee||!_supa||!_supaUser)return;
+    const k='zp3_geo_prune_day';
+    if(localStorage.getItem(k)===todayKey())return;
+    localStorage.setItem(k,todayKey());
+    const cutoff=new Date(Date.now()-90*86400000).toISOString();
+    _supa.from('location_pings').delete().eq('contractor_user_id',_supaUser.id).lt('ts',cutoff).then(()=>{},()=>{});
+  }catch(_e){}
+}
 
 // ── Business-hours window — device local time ─────────────────────────────────
 // S.trackStart/End are set by the contractor as local times (e.g. "07:00").
@@ -79,6 +225,13 @@ async function _geoJobLatLng(j){
 
 // ── Position handler: breadcrumb + geofence state machine ──────────────────────
 async function _geoOnPing(pos){
+  // RE-ENTRANCY GUARD: this handler awaits network geocodes, and watchPosition can
+  // fire faster than they resolve. Interleaved runs used to apply a STALE position
+  // after a fresher one and flip arrive/depart backwards — overlapping pings are
+  // dropped whole (the next ping, seconds later, carries fresher truth anyway).
+  if(_geoPingBusy)return;
+  _geoPingBusy=true;
+  try{
   if(!_geoBusinessHoursNow()){stopGeoTracking();return;}
   const here={lat:pos.coords.latitude,lng:pos.coords.longitude};
   const acc=pos.coords.accuracy||0;
@@ -93,7 +246,9 @@ async function _geoOnPing(pos){
       _geoShopArrivedAt=new Date().toISOString();
       _geoDriveStartedAt=null; // arriving at shop ends any drive leg
     }else{
-      if(_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt);
+      // A hidden gap since shop arrival: if this first post-gap ping is OUTSIDE,
+      // close at the last verified moment — never claim unverified shop time.
+      if(_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt,_geoGapHiddenAt||undefined);
       _geoShopArrivedAt=null;
       // Only start drive clock if not already inside a job fence — otherwise
       // we'd set a stale driveStartedAt mid-job and log phantom drive minutes.
@@ -112,14 +267,28 @@ async function _geoOnPing(pos){
   const insideId=inside?inside.id:null;
   if(insideId!==_geoCurrentJob){
     const prevJob=_geoCurrentJob;
-    if(prevJob&&_geoArrivedAt)await _geoCloseEntry(prevJob); // left previous job
+    // HIDDEN-GAP RESOLUTION (leave): the app was backgrounded while on-site and this
+    // first ping back lands OUTSIDE the fence — the worker left at some unverified
+    // point during the gap. Close at the last VERIFIED on-site moment (hiddenAt),
+    // tagged 'geofence-gap': conservative, defensible, never claims unseen time.
+    if(prevJob&&_geoArrivedAt)await _geoCloseEntry(prevJob,_geoGapHiddenAt||undefined,!!_geoGapHiddenAt); // left previous job
     if(prevJob&&!insideId)_geoDriveStartedAt=new Date().toISOString(); // leaving job → drive
     if(insideId){
       if(_geoDriveStartedAt)_geoDriveEntry(insideId,_geoDriveStartedAt); // log drive leg
       _geoDriveStartedAt=null;
       _geoCurrentJob=insideId;_geoArrivedAt=new Date().toISOString();
-    }else{_geoCurrentJob=null;_geoArrivedAt=null;}
+      _geoPersistOpen();     // an app kill can no longer lose this arrival
+      _geoWakeAcquire();     // keep the screen (and GPS) alive while on-site
+    }else{_geoCurrentJob=null;_geoArrivedAt=null;_geoClearOpen();_geoWakeRelease();}
+  }else if(insideId){
+    // HIDDEN-GAP RESOLUTION (stay): still inside the same fence after the gap —
+    // one continuous visit, verified at both ends. The hidden time COUNTS.
+    _geoWakeAcquire();
   }
+  // Whatever branch ran, THIS completed ping resolved any hidden gap — a stale
+  // marker must never truncate a later, fully-visible close.
+  _geoGapHiddenAt=null;
+  }finally{_geoPingBusy=false;}
 }
 function _geoWritePing(here,acc){
   if(!_supa||!_supaUser)return;
@@ -131,50 +300,50 @@ function _geoWritePing(here,acc){
     }).then(()=>{},()=>{});
   }catch(_e){}
 }
-async function _geoCloseEntry(jobId){
+// All three writers go through the durable queue (_geoEnqueue): the entry is on
+// the device before any network is attempted, so a dead spot can never lose it.
+// `departedIso` (optional) closes at an earlier VERIFIED moment — the hidden-gap
+// path — and `gap` tags the row 'geofence-gap' so reports can show confidence.
+async function _geoCloseEntry(jobId,departedIso,gap){
   const arrived=_geoArrivedAt; _geoArrivedAt=null;
+  _geoClearOpen();
   if(!arrived)return;
-  const departed=new Date().toISOString();
+  const departed=departedIso||new Date().toISOString();
   const mins=Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrived))/60000));
   if(mins<2)return;            // ignore brief pass-throughs
-  if(!_supa||!_supaUser)return;
-  try{
-    await _supa.from('job_time_entries').insert({
-      contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
-      job_id:String(jobId),arrived_at:arrived,departed_at:departed,minutes:mins,source:'geofence'
-    });
-  }catch(_e){}
+  if(!_supaUser)return;
+  _geoEnqueue('job_time_entries',{
+    contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+    job_id:String(jobId),arrived_at:arrived,departed_at:departed,minutes:mins,
+    source:gap?'geofence-gap':'geofence'
+  });
 }
-function _geoCloseShopEntry(arrivedAt){
+function _geoCloseShopEntry(arrivedAt,departedIso){
   if(!arrivedAt)return;
-  const departed=new Date().toISOString();
+  const departed=departedIso||new Date().toISOString();
   const mins=Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrivedAt))/60000));
   if(mins<2)return;
-  if(!_supa||!_supaUser)return;
-  try{
-    _supa.from('shop_time_entries').insert({
-      contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
-      arrived_at:arrivedAt,departed_at:departed,minutes:mins
-    }).then(()=>{},()=>{});
-  }catch(_e){}
+  if(!_supaUser)return;
+  _geoEnqueue('shop_time_entries',{
+    contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+    arrived_at:arrivedAt,departed_at:departed,minutes:mins
+  });
 }
 function _geoDriveEntry(jobId,driveStartedAt){
   if(!driveStartedAt)return;
   const arrived=new Date().toISOString();
   const mins=Math.max(0,Math.round((Date.parse(arrived)-Date.parse(driveStartedAt))/60000));
   if(mins<2)return;
-  if(!_supa||!_supaUser)return;
+  if(!_supaUser)return;
   // Only flag for mileage when employee is in a company vehicle for this shift.
   // Personal vehicle trips stay private — drive TIME is still logged (it's
   // compensable labor) but the mileage flag is omitted.
   const companyVeh=typeof _isCompanyVehicleToday==='function'&&_isCompanyVehicleToday();
-  try{
-    _supa.from('job_time_entries').insert({
-      contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
-      job_id:String(jobId),arrived_at:driveStartedAt,departed_at:arrived,minutes:mins,
-      source:companyVeh?'drive':'drive-personal'
-    }).then(()=>{},()=>{});
-  }catch(_e){}
+  _geoEnqueue('job_time_entries',{
+    contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+    job_id:String(jobId),arrived_at:driveStartedAt,departed_at:arrived,minutes:mins,
+    source:companyVeh?'drive':'drive-personal'
+  });
 }
 
 // ── Location-permission banner (employee self-service) ──────────────────────
@@ -228,7 +397,8 @@ function stopGeoTracking(){
   if(_geoCurrentJob&&_geoArrivedAt)_geoCloseEntry(_geoCurrentJob);
   if(_geoWasInShop&&_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt);
   _geoCurrentJob=null;_geoArrivedAt=null;
-  _geoWasInShop=false;_geoShopArrivedAt=null;_geoDriveStartedAt=null;
+  _geoWasInShop=false;_geoShopArrivedAt=null;_geoDriveStartedAt=null;_geoGapHiddenAt=null;
+  _geoClearOpen();_geoWakeRelease();
   if(_geoHoursTimer){clearInterval(_geoHoursTimer);_geoHoursTimer=null;}
 }
 
@@ -237,23 +407,33 @@ function _geoTrackInit(){
   if(!S.teamTracking)return;                 // tracking not enabled for the company
   if(!_supaUser)return;
   if(!_geoBusinessHoursNow())return;         // outside hours — nothing to do
-  // Finalize the open entry if the app is backgrounded mid-shift
+  // Backgrounding mid-shift KEEPS the entry open (the old handler closed it — a
+  // phone in a pocket all day logged only screen-on slivers, and any visit hidden
+  // within 2 minutes of arrival was dropped entirely). Instead: snapshot the open
+  // state + the hidden moment; the first ping after return resolves the gap —
+  // still inside the fence ⇒ one continuous visit (hidden time counts, verified at
+  // both ends); outside ⇒ close at the hidden moment as 'geofence-gap' (unverified
+  // time is never claimed). stopGeoTracking / out-of-hours still close for real.
   if(!window._geoVisBound){
     window._geoVisBound=true;
     document.addEventListener('visibilitychange',()=>{
       if(document.hidden){
-        if(_geoCurrentJob&&_geoArrivedAt)_geoCloseEntry(_geoCurrentJob);
-        if(_geoWasInShop&&_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt);
-        // Reset fence state so that on foreground-return the next ping correctly
-        // re-enters the "arriving" path and writes a fresh entry.  Without this,
-        // _geoCurrentJob/wasInShop remain set but _geoArrivedAt/_geoShopArrivedAt
-        // are null → resumed session writes no time at all; and stopGeoTracking
-        // would double-write the shop entry using the original pre-hide timestamp.
-        _geoCurrentJob=null;_geoArrivedAt=null;
-        _geoWasInShop=false;_geoShopArrivedAt=null;_geoDriveStartedAt=null;
+        _geoGapHiddenAt=new Date().toISOString();
+        _geoPersistOpen(_geoGapHiddenAt);
+      }else{
+        _geoDrainQueue();                      // back online-ish — flush queued entries
+        if(_geoCurrentJob)_geoWakeAcquire();   // wake locks auto-release on hide
       }
     });
+    // Queued entries also flush the moment connectivity returns.
+    window.addEventListener('online',()=>{try{_geoDrainQueue();}catch(_e){}});
   }
+  // An app kill / reload mid-shift: restore the persisted open entry so the
+  // morning's arrival survives — the next ping resolves it exactly like a
+  // background gap. A previous DAY's orphan closes at its last verified moment.
+  _geoRestoreOpen();
+  _geoDrainQueue();
+  _geoPrunePings();
   // Ensure the shop/office geofence has coordinates. They are derived from the
   // business Address in Settings (S.baddr/bcity/state/bzip), geocoded once and
   // cached on S.officeLat/officeLon. Previously this only happened when the

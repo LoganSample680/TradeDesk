@@ -1384,6 +1384,78 @@ test.describe('printKansasLien — document structure', () => {
     }
   });
 
+  test('printKansasLien — document is self-contained: native print + Back button, no parent-scope tdPrint', async () => {
+    // The doc opens in a window.open() tab where the app's tdPrint() does NOT exist,
+    // so the Print button MUST call the native window.print() defined inline — the old
+    // onclick="tdPrint()" threw silently in that scope (the "print does nothing" bug).
+    const result = await page.evaluate(([bidId]) => {
+      if (typeof printKansasLien !== 'function') return null;
+      let html = null;
+      const _origOpen = window.open;
+      window.open = function () {
+        const w = { document: { _h: '', write(h) { this._h += h; html = this._h; }, close() {} } };
+        return w;
+      };
+      try { printKansasLien(bidId); } catch (e) { window.open = _origOpen; return { error: e.message }; }
+      window.open = _origOpen;
+      if (!html) return { noHtml: true };
+      return {
+        definesPrint: /function\s+tdDoPrint\s*\(/.test(html),
+        callsNativePrint: /window\.print\(\)/.test(html),
+        printBtnWired: /onclick="tdDoPrint\(\)"/.test(html),
+        backBtnWired: /onclick="tdBack\(\)"/.test(html),
+        definesBack: /function\s+tdBack\s*\(/.test(html),
+        hasBackLabel: html.includes('Back to TradeDesk'),
+        callsWindowClose: /window\.close\(\)/.test(html),
+        // The Print button must NOT depend on the parent-only tdPrint() anymore.
+        noParentTdPrint: !/onclick="tdPrint\(\)"/.test(html),
+        // Touch target: both toolbar buttons carry the >=44px min-height class.
+        touchSized: (html.match(/class="td-bar-btn"/g) || []).length >= 2 && /min-height:46px/.test(html),
+      };
+    }, [LIEN_PRINT_BID]);
+    if (result && !result.error && !result.noHtml) {
+      expect(result.definesPrint).toBe(true);
+      expect(result.callsNativePrint).toBe(true);
+      expect(result.printBtnWired).toBe(true);
+      expect(result.noParentTdPrint).toBe(true);
+      expect(result.backBtnWired).toBe(true);
+      expect(result.definesBack).toBe(true);
+      expect(result.hasBackLabel).toBe(true);
+      expect(result.callsWindowClose).toBe(true);
+      expect(result.touchSized).toBe(true);
+    }
+  });
+
+  test('printKansasLienRelease — generates a recordable release doc (self-contained print/back)', async () => {
+    const result = await page.evaluate(([bidId]) => {
+      if (typeof printKansasLienRelease !== 'function') return { noFn: true };
+      let html = null;
+      const _origOpen = window.open;
+      window.open = function () { return { document: { _h: '', write(h) { this._h += h; html = this._h; }, close() {} } }; };
+      try { printKansasLienRelease(bidId); } catch (e) { window.open = _origOpen; return { error: e.message }; }
+      window.open = _origOpen;
+      if (!html) return { noHtml: true };
+      return {
+        isRelease: /Release of Mechanic's Lien/i.test(html),
+        satisfied: /PAID AND SATISFIED|RELEASE, DISCHARGE/i.test(html),
+        refsOriginalLien: /Date Original Lien Filed|Original Lien Amount/i.test(html),
+        fileWithCounty: html.includes('Sedgwick') && /File this release in the SAME office/i.test(html),
+        selfContainedPrint: /function\s+tdDoPrint\s*\(/.test(html) && /window\.print\(\)/.test(html) && /onclick="tdDoPrint\(\)"/.test(html),
+        backBtn: /onclick="tdBack\(\)"/.test(html) && html.includes('Back to TradeDesk'),
+        notary: html.toLowerCase().includes('notary'),
+      };
+    }, [LIEN_PRINT_BID]);
+    if (result && !result.noFn && !result.error && !result.noHtml) {
+      expect(result.isRelease).toBe(true);
+      expect(result.satisfied).toBe(true);
+      expect(result.refsOriginalLien).toBe(true);
+      expect(result.fileWithCounty).toBe(true);
+      expect(result.selfContainedPrint).toBe(true);
+      expect(result.backBtn).toBe(true);
+      expect(result.notary).toBe(true);
+    }
+  });
+
   test('printKansasLien — shows zAlert if window.open blocked', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof printKansasLien !== 'function') return null;
@@ -3598,6 +3670,138 @@ test.describe('Auto employment agreement on new employee invite', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+//  CLIENT HUB UPLOAD — live-object stamping under mid-upload merges
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('_uploadClientHub — stamps the LIVE client object', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('boot hub sweep is PACED — never fires all clients concurrently', async () => {
+    // The old boot sweep called _uploadClientHub for EVERY tokened client at once;
+    // the daily finance-charge tick invalidates all content hashes together, so the
+    // first boot of the day burst O(clients) snapshot builds + storage writes — the
+    // boot storm that times out cert runs and would hit any large real account.
+    const r = await page.evaluate(async () => {
+      const base = 886100;
+      for (let i = 0; i < 6; i++) {
+        clients = clients.filter(c => c.id !== base + i);
+        clients.push({ id: base + i, name: 'Sweep C' + i, phone: '316555090' + i, clientToken: 'sweeptok' + i, clientHubKey: '' });
+      }
+      window._supaUser = window._supaUser || { id: 'sweep-user-1', email: 's@t.com' };
+      // Keep the queue to exactly our 6 — park any other tokened clients for the test.
+      const parked = [];
+      clients.forEach(c => { if ((c.id < base || c.id >= base + 6) && c.clientToken) { parked.push([c, c.clientToken]); c.clientToken = ''; } });
+      const calls = [];
+      const orig = window._uploadClientHub;
+      window._uploadClientHub = async (cid) => { calls.push({ cid, t: Date.now() }); };
+      try {
+        _hubSweepQueue = []; if (_hubSweepTimer) { clearTimeout(_hubSweepTimer); _hubSweepTimer = null; }
+        const t0 = Date.now();
+        _startHubSweep();
+        const atStart = calls.length;                       // nothing fires synchronously
+        await new Promise(res => setTimeout(res, 800));
+        const early = calls.length;                          // ~2 ticks in — NOT all 6
+        await new Promise(res => setTimeout(res, 2200));
+        return { atStart, early, total: calls.filter(c => c.cid >= base && c.cid < base + 6).length, spreadMs: calls.length > 1 ? calls[calls.length - 1].t - calls[0].t : 0, t0 };
+      } finally {
+        window._uploadClientHub = orig;
+        parked.forEach(([c, tok]) => { c.clientToken = tok; });
+        _hubSweepQueue = []; if (_hubSweepTimer) { clearTimeout(_hubSweepTimer); _hubSweepTimer = null; }
+      }
+    });
+    expect(r.atStart).toBe(0);                 // no synchronous burst
+    expect(r.early).toBeLessThan(6);           // pacing: not all clients in the first ticks
+    expect(r.early).toBeGreaterThanOrEqual(1); // ...but the sweep IS running
+    expect(r.total).toBe(6);                   // every tokened client is eventually swept
+    expect(r.spreadMs).toBeGreaterThan(1000);  // spread over time, never one burst
+    assertNoErrors(page, 'paced hub sweep');
+  });
+
+  test('hub key/token survive a merge that replaces the client object mid-upload', async () => {
+    // A delta/realtime merge replaces row OBJECTS in `clients` by id. If that happens
+    // while the storage upload is in flight, stamping the pre-await reference writes to
+    // a dead object — token and clientHubKey vanish and the uploaded hub is orphaned
+    // (the crew money-routing cert failure). The fix re-finds the live object.
+    const r = await page.evaluate(async () => {
+      const cid = 881001;
+      clients = clients.filter(c => c.id !== cid);
+      clients.push({ id: cid, name: 'Swap TestClient', phone: '316-555-8802', email: '', addr: '2 Test St', clientToken: '', clientHubKey: '' });
+      window._supaUser = window._supaUser || { id: 'swap-test-user', email: 't@t.com' };
+      // Controllable storage: hold the upload open until the swap has happened.
+      const origFrom = _supa.storage.from.bind(_supa.storage);
+      let releaseUpload; const gate = new Promise(res => { releaseUpload = res; });
+      _supa.storage.from = () => ({ upload: async () => { await gate; return { data: { path: 'x' }, error: null }; } });
+      try {
+        const p = _uploadClientHub(cid);            // runs up to the held upload await
+        await new Promise(r2 => setTimeout(r2, 50));
+        // Simulate the merge: same id, fresh object, WITHOUT the just-minted token
+        // (a peer's copy predates it) — exactly what a delta row replace produces.
+        const idx = clients.findIndex(c => c.id === cid);
+        const stale = JSON.parse(JSON.stringify(clients[idx]));
+        stale.clientToken = ''; stale.clientHubKey = '';
+        clients[idx] = stale;
+        releaseUpload();
+        await p;
+        const live = clients.find(c => c.id === cid);
+        return { key: live.clientHubKey || '', token: live.clientToken || '' };
+      } finally { _supa.storage.from = origFrom; }
+    });
+    expect(r.key).toContain('client-hub/');     // stamped on the LIVE object
+    expect(r.token.length).toBeGreaterThan(0);  // token restored onto the live object too
+    assertNoErrors(page, 'hub live-object stamp');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  BUILD FEED — in-progress drafts are user intent and always render
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('Build feed — amount-less drafts always visible', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('a shell draft (no amount, no lines, no surfaces) renders in the build feed', async () => {
+    // Owner-reported 53-vs-43: a load-side filter silently hid these exact drafts, so
+    // in-progress estimates vanished on reload. The feed is their ONLY surface — it must
+    // show them ("finish & send" + Discard); hiding is banned (§7), deletion is the
+    // user's Discard button.
+    const r = await page.evaluate(() => {
+      const cid = 991101, bidId = 991102;
+      clients = clients.filter(c => c.id !== cid);
+      bids = bids.filter(b => b.id !== bidId);
+      clients.push({ id: cid, name: 'Shell Draft Client', phone: '3165550778' });
+      bids.push({ id: bidId, client_id: cid, client_name: 'Shell Draft Client', bid_date: todayKey(), status: 'Draft', draft: true });
+      window._mmtCol_build = false; // §11.6 — expand the section so items render into innerHTML
+      renderDash();
+      const feed = document.getElementById('dash-money-feed');
+      return { html: feed ? feed.innerHTML : '' };
+    });
+    expect(r.html).toContain('Shell Draft Client');
+    expect(r.html).toContain('finish');
+    assertNoErrors(page, 'build feed shell draft');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 //  QR PAY NOW — showPayQr / openPayPanel QR button
 // ════════════════════════════════════════════════════════════════════════════
 
@@ -5755,7 +5959,7 @@ test.describe('Long-press delete — proposals & jobs + sign-out save guard', ()
     const r = await page.evaluate(() => {
       if (typeof _lpDoDelete !== 'function' || typeof jobs === 'undefined') return null;
       if (!jobs.some(j => j.id === 939201)) jobs.push({ id: 939201, client_id: 939001, name: 'Polluted Job', start: '2026-07-01', days: 2, eventType: 'job' });
-      try { _lpDoDelete('939201', 'job'); } catch (e) {}
+      window._e2eAllowDelete=true; try { _lpDoDelete('939201', 'job'); } catch (e) {}
       return { removed: !jobs.some(j => j.id === 939201) };
     });
     if (r === null) return;
@@ -5768,7 +5972,7 @@ test.describe('Long-press delete — proposals & jobs + sign-out save guard', ()
       if (!bids.some(b => b.id === 939101)) bids.push({ id: 939101, client_id: 939001, amount: 2380, status: 'Pending' });
       if (typeof payments !== 'undefined') { payments = payments.filter(p => p.bid_id !== 939101); payments.push({ id: 939301, bid_id: 939101, client_id: 939001, amount: 500, type: 'deposit' }); }
       if (typeof liens !== 'undefined') { liens = liens.filter(l => l.bid_id !== 939101); liens.push({ id: 939401, bid_id: 939101, client_id: 939001, status: 'intent' }); }
-      try { _lpDoDelete('939101', 'bid'); } catch (e) {}
+      window._e2eAllowDelete=true; try { _lpDoDelete('939101', 'bid'); } catch (e) {}
       return {
         bidGone: !bids.some(b => b.id === 939101),
         payGone: typeof payments === 'undefined' || !payments.some(p => p.bid_id === 939101),
@@ -6092,5 +6296,119 @@ test.describe('sign.html deposit tile shows correct percentage from saved bid', 
 
   test('no console errors in deposit badge tests', async () => {
     assertNoErrors(page, 'deposit badge');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  NEVER-DELETE POLICY — archive semantics, hold-to-confirm, edit-not-delete
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('Never-delete policy — archive + hold + edit', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('an ARCHIVED row arriving via realtime leaves memory without recording a local delete', async () => {
+    const r = await page.evaluate(() => {
+      const id = 887001;
+      bids = bids.filter(b => b.id !== id);
+      bids.push({ id, client_name: 'Arch RT', amount: 50, status: 'Pending' });
+      (_lastKnownIds['td_bids'] || (_lastKnownIds['td_bids'] = new Set())).add(String(id));
+      _applyRealtimeRecord('td_bids', { eventType: 'UPDATE', new: { id: String(id), data: { id, client_name: 'Arch RT', amount: 50, status: 'Pending' }, archived_at: new Date().toISOString() } }, true);
+      return {
+        inMemory: bids.some(b => String(b.id) === String(id)),
+        localDelete: !!(_locallyDeletedIds['td_bids'] && _locallyDeletedIds['td_bids'].has(String(id))),
+      };
+    });
+    expect(r.inMemory).toBe(false);   // archived = out of the hot set...
+    expect(r.localDelete).toBe(false); // ...but NEVER treated as a user delete (sweep must not touch it)
+    assertNoErrors(page, 'archived realtime removal');
+  });
+
+  test('long-press delete is DEV-ONLY: a non-dev _lpDoDelete is inert', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _lpDoDelete !== 'function') return { skip: true };
+      const jid = 888401;
+      jobs = jobs.filter(j => j.id !== jid);
+      jobs.push({ id: jid, client_id: 888001, name: 'DevGate Job', start: '2026-07-01', days: 1, eventType: 'job' });
+      const savedFlag = window._e2eAllowDelete;
+      window._e2eAllowDelete = false; // simulate a non-dev account
+      const origCanDelete = window._canDelete;
+      // Force the real gate: no is_dev, no support mode, no bypass.
+      try { _lpDoDelete(String(jid), 'job'); } catch (e) {}
+      const stillThere = jobs.some(j => j.id === jid);
+      window._e2eAllowDelete = savedFlag;
+      jobs = jobs.filter(j => j.id !== jid);
+      return { stillThere, canDeleteIsFn: typeof origCanDelete === 'function' };
+    });
+    if (!r.skip) {
+      expect(r.canDeleteIsFn).toBe(true);
+      expect(r.stillThere).toBe(true); // non-dev delete did nothing — record survives
+    }
+    assertNoErrors(page, 'dev-only delete gate');
+  });
+
+  test('cross-account settings guard: another account\'s vehicles cannot bleed across a login (E2E-truck bug)', async () => {
+    // Production bug: on the same device, sign into account A (vehicles=[E2E truck]),
+    // sign out, sign into account B by password — B saw A's truck. Root cause: the
+    // settings merge kept the locally-newer vehicles with no account check. The guard
+    // stamps S._sOwner and, on an owner change, takes the incoming account's settings
+    // wholesale — no vehicle (or any key) survives across the boundary.
+    const r = await page.evaluate(() => {
+      if (typeof _mergeIncomingSettings !== 'function') return { skip: true };
+      const savedS = JSON.parse(JSON.stringify(S));
+      const savedUser = window._supaUser;
+      try {
+        // Account A is cached in S with a truck and a RECENT vehicles timestamp.
+        S.vehicles = [{ id: 5314, name: 'E2E truck 5314' }];
+        S.vehiclesTs = Date.now();
+        S.settingsTs = Date.now();      // A's settings are newer than B's (would bail without the guard)
+        S._sOwner = 'account-A-uid';
+        S.bname = 'Dev A Painting';
+        // Now B (Zach) signs in and B's settings arrive — different owner, older ts, no vehicles.
+        window._supaUser = { id: 'account-B-uid', email: 'zach@example.com' };
+        _mergeIncomingSettings({ bname: 'Zach Co', settingsTs: 1, vehiclesTs: 0 }, 'test cross-account');
+        return { vehicles: (S.vehicles || []).map(v => v.name || v), bname: S.bname, owner: S._sOwner };
+      } finally {
+        S = savedS; window._supaUser = savedUser;
+      }
+    });
+    if (!r.skip) {
+      expect(r.vehicles).not.toContain('E2E truck 5314'); // the leak is closed
+      expect(r.vehicles.length).toBe(0);                  // took B's (empty) vehicles wholesale
+      expect(r.bname).toBe('Zach Co');                    // B's business name, not A's
+      expect(r.owner).toBe('account-B-uid');              // S now stamped to B
+    }
+  });
+
+  test('editPayment — fixes the record in place (edit-not-delete)', async () => {
+    const r = await page.evaluate(() => {
+      const pid = 887101;
+      payments = payments.filter(p => p.id !== pid);
+      payments.push({ id: pid, bid_id: 887102, client_id: 887103, date: '2026-06-01', type: 'partial', amount: 100, method: 'Cash', ref: '' });
+      window.renderCDBids = window.renderCDBids || (() => {});
+      editPayment(pid);
+      const hasModal = !!document.getElementById('_epay-ov');
+      const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+      set('_epay-amount', '250'); set('_epay-date', '2026-06-15'); set('_epay-method', 'Check'); set('_epay-ref', '1042');
+      _savePaymentEdit(pid);
+      const p = payments.find(x => x.id === pid);
+      return { hasModal, amount: p.amount, date: p.date, method: p.method, ref: p.ref, stillOne: payments.filter(x => x.id === pid).length };
+    });
+    expect(r.hasModal).toBe(true);
+    expect(r.amount).toBe(250);
+    expect(r.date).toBe('2026-06-15');
+    expect(r.method).toBe('Check');
+    expect(r.ref).toBe('1042');
+    expect(r.stillOne).toBe(1); // edited, never removed
+    assertNoErrors(page, 'edit payment');
   });
 });

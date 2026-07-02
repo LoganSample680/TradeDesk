@@ -1895,9 +1895,12 @@ function renderDocuments(){
   if(!_hub)return;
   const h=_hub;
   const wonBids=h.bids.filter(b=>b.status==='Closed Won'||!!b.cancelledAt);
+  // Declined / abandoned proposals stay in Documents as a read-only record (with the
+  // reason), so the client can still see what was proposed after it's closed out.
+  const lostBids=h.bids.filter(b=>(b.status==='Closed Lost'||b.status==='Abandoned')&&!b.cancelledAt);
   let html='<div class="view-title">Documents</div>';
 
-  if(!wonBids.length&&!h.epaRequired&&!(_hub._clientDocs&&_hub._clientDocs.length)){
+  if(!wonBids.length&&!lostBids.length&&!h.epaRequired&&!(_hub._clientDocs&&_hub._clientDocs.length)){
     html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">📁</div><div class="hub-empty-title">No documents yet</div><div class="hub-empty-body">Signed proposals and invoices will appear here once a proposal is signed.</div></div></div>';
   }
 
@@ -1972,6 +1975,36 @@ function renderDocuments(){
         '</div>'+
         '<div style="font-size:18px;color:var(--text3);flex-shrink:0">›</div>'+
       '</div>';
+    }
+    html+='</div>';
+    html+='</div>'; // end body
+    html+='</div>'; // end card
+  });
+
+  // Declined / abandoned proposals — read-only record with the reason. No invoice,
+  // no Review & Sign, no cancellation row; the original proposal artifact (if one was
+  // uploaded) opens read-only via openProposal so the client can still see it.
+  lostBids.forEach((bid)=>{
+    const _reason=esc(bid.lostReason||'Declined');
+    const _note=bid.lostNote?esc(bid.lostNote):'';
+    html+='<div style="border-radius:var(--rl);overflow:hidden;margin-bottom:12px;box-shadow:0 1px 6px rgba(27,22,18,.1),0 0 0 1px rgba(27,22,18,.06);opacity:.94">';
+    html+='<div onclick="_toggleDoc('+bid.id+')" style="background:linear-gradient(135deg,#374151,#4B5563);padding:14px 16px;cursor:pointer">';
+    html+='<div style="display:flex;align-items:center;gap:10px">';
+    html+='<div style="flex:1;min-width:0">';
+    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.4);margin-bottom:3px">'+esc(bid.type||'Estimate')+' · Declined</div>';
+    html+='<div style="font-size:16px;font-weight:800;color:#fff;line-height:1.2">'+esc(bid.type||'Project')+'</div>';
+    html+='<div style="font-size:11px;color:rgba(255,255,255,.45);margin-top:3px">Declined '+fmtDate(bid.lostAt||bid.bid_date)+' · '+fmt(bid.amount||0)+'</div>';
+    html+='</div>';
+    html+='<span style="display:inline-block;font-size:9px;font-weight:800;letter-spacing:.04em;padding:2px 7px;border-radius:4px;background:#FEE2E2;color:#991B1B;flex-shrink:0">DECLINED</span>';
+    html+='<span id="dc-'+bid.id+'" style="font-size:20px;color:rgba(255,255,255,.3);transition:transform .2s;flex-shrink:0">›</span>';
+    html+='</div>';
+    html+='</div>'; // end header
+    html+='<div id="db-'+bid.id+'" style="background:var(--bg-card);display:none">';
+    html+='<div style="padding:12px 16px">';
+    html+='<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:'+(_note?'4px':'10px')+'">Reason: '+_reason+'</div>';
+    if(_note)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.5">'+_note+'</div>';
+    if(bid.proposalKey){
+      html+=_docRow('📋','Proposal','View the proposal that was sent (read-only)','<span class="hub-doc-tag" style="margin-left:6px;background:#E5E7EB;color:#374151">Declined</span>','openProposal('+bid.id+')','');
     }
     html+='</div>';
     html+='</div>'; // end body

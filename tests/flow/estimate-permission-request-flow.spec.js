@@ -143,9 +143,19 @@ test.describe('estimate permission-request (UI-driven, two-sided)', () => {
           if (!req) return { tableLive: true, loaded: 0 };
           await _approvePermissionRequest(req.id);
           await new Promise(r => setTimeout(r, 500));
-          const { data: tm } = await _supa.from('team_members').select('permissions').eq('contractor_user_id', uid).eq('employee_user_id', uid).maybeSingle();
+          const { data: tm } = await _supa.from('team_members').select('permissions,email,employee_user_id').eq('contractor_user_id', uid).eq('employee_user_id', uid).maybeSingle();
           const { data: rq } = await _supa.from('td_permission_requests').select('status').eq('id', req.id).maybeSingle();
-          return { tableLive: true, loaded: 1, est: !!(tm && tm.permissions && tm.permissions.estimate), status: rq ? rq.status : null };
+          // DIAGNOSTIC: why might estimate stay false? _approvePermissionRequest updates
+          // team_members keyed on EMAIL; capture the row(s) + a direct update keyed on
+          // employee_user_id. directUpd=estimate:true ⇒ the email-keyed WHERE missed;
+          // directErr/still-false ⇒ RLS/grant on the update.
+          let diag = {};
+          try {
+            const { data: rows } = await _supa.from('team_members').select('email,employee_user_id,permissions').eq('contractor_user_id', uid);
+            const { data: upd, error: updErr } = await _supa.from('team_members').update({ permissions: { collect: true, estimate: true } }).eq('contractor_user_id', uid).eq('employee_user_id', uid).select('permissions');
+            diag = { rowCount: (rows || []).length, reqEmail: req.employee_email, tmEmail: tm ? tm.email : null, directUpd: upd ? upd.map(r => r.permissions) : null, directErr: updErr ? (updErr.message || updErr.code) : null };
+          } catch (e) { diag = { ex: e.message }; }
+          return { tableLive: true, loaded: 1, est: !!(tm && tm.permissions && tm.permissions.estimate), status: rq ? rq.status : null, diag };
         });
         return 1; // approve tap
       },
