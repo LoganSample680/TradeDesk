@@ -1463,7 +1463,7 @@ function renderClientNotes(){
         '<div style="font-size:13px;color:var(--text);line-height:1.4">'+escHtml(n.text)+'</div>'+
         '<div style="font-size:10px;color:var(--text3);margin-top:2px">'+dt+'</div>'+
       '</div>'+
-      '<button class="btn-del" onclick="deleteClientNote(\''+n.id+'\')" style="flex-shrink:0;font-size:11px;padding:3px 6px">✕</button>'+
+      ''+
     '</div>';
   }).join('');
 }
@@ -1586,7 +1586,7 @@ function renderCDExpenses(){
           '</div>'+
           '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'+
             '<span style="font-size:13px;font-weight:700;color:#A32D2D">'+fmt(e.amount)+'</span>'+
-            '<button class="btn-del" onclick="delExpenseFromCD('+e.id+')">✕</button>'+
+            ''+
           '</div>'+
         '</div>'
       ).join('')+
@@ -1715,7 +1715,7 @@ function renderCDBids(){
       actBtns.push('<button class="btn btn-sm" onclick="openEditBid('+b.id+')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">✎ Revise bid</button>');
       actBtns.push('<button class="btn btn-sm" onclick="showSupplyList('+b.id+')" style="background:#FFF0E8;color:#854F0B;border-color:#E89B50">📦 Supply list</button>');
       actBtns.push('<button class="btn btn-sm" onclick="recoverBidRooms('+b.id+')" style="background:#F0F7FF;color:#1a365d;border-color:#9DBEE5">♻️ Recover rooms</button>');
-      actBtns.push('<button class="btn-del" onclick="deleteBid('+b.id+')" style="font-size:11px;padding:5px 8px">Delete</button>');
+      actBtns.push('');
     }
     if(!isWon){
       actBtns.push('<button class="btn btn-sm" onclick="sendBidEmail('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#9993; Send email</button>');
@@ -1725,7 +1725,7 @@ function renderCDBids(){
       actBtns.push('<button class="btn btn-sm" onclick="recoverBidRooms('+b.id+')" style="background:#F0F7FF;color:#1a365d;border-color:#9DBEE5">♻️ Recover rooms</button>');
       actBtns.push('<button class="btn btn-sm" onclick="markBidHandshake('+b.id+')" style="background:#FFF8E8;color:#856404;border-color:var(--amber);font-size:11px">🤝 Handshake</button>');
       actBtns.push('<button class="btn btn-sm" onclick="markBidAbandoned('+b.id+')" style="background:#FFF8F0;color:#A32D2D;border-color:#A32D2D">No response</button>');
-      actBtns.push('<button class="btn-del" onclick="deleteBid('+b.id+')" style="font-size:11px;padding:5px 8px">Delete</button>');
+      actBtns.push('');
     }
     return '<div class="card" style="margin-bottom:8px" id="bid-card-'+b.id+'" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml((b.type||'Proposal')+(b.amount?' · '+fmt(b.amount):''))+'">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
@@ -2102,7 +2102,7 @@ function renderCDJobs(){
         '</div>'+
       '</div>'+
       '<div class="brow" style="margin-top:8px">'+
-        (doneBtn?doneBtn:'')+clockBtnCD+'<button class="btn-del" onclick="deleteJob('+j.id+')" style="font-size:11px;padding:5px 8px;color:#A32D2D">Remove</button>'+
+        (doneBtn?doneBtn:'')+clockBtnCD+''+
       '</div>'+
     '</div>';
   }).join('');

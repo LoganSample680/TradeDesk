@@ -2084,7 +2084,7 @@ function expandCalDay(key){
               '</div>'+
               (job.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+job.notes+'</div>':'')+
             '</div>'+
-            '<button onclick="deleteJob('+job.id+');renderCalGrid();expandCalDay(\''+key+'\')" style="border:none;background:none;color:var(--text3);cursor:pointer;font-size:14px;padding:2px 4px;flex-shrink:0;line-height:1">✕</button>'+
+            ''+
           '</div>';
         }).join('')+
       '</div>'
@@ -2106,7 +2106,7 @@ function expandCalDay(key){
               '</div>'+
               '<div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">'+
                 (c?'<button class="btn btn-sm btn-p" onclick="openClientDetail('+c.id+')" style="font-size:11px">Open</button>':'')+
-                '<button class="btn-del" onclick="deleteJob('+job.id+');closeCalDay();renderCalendar();" style="padding:4px 8px;font-size:10px">Delete</button>'+
+                ''+
               '</div>'+
             '</div>'+
           '</div>';
@@ -2137,7 +2137,7 @@ function expandCalDay(key){
                 '<div style="display:flex;gap:6px;margin-top:6px">'+
                   (c?'<button onclick="openClientDetail('+c.id+')" style="border:none;background:rgba(255,255,255,.2);color:#fff;border-radius:4px;padding:4px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">Open</button>':'')+
                   (isEst?'<button onclick="rescheduleEstimate('+job.id+')" style="border:none;background:rgba(255,255,255,.2);color:#fff;border-radius:4px;padding:4px 8px;font-size:10px;cursor:pointer;font-family:inherit">Reschedule</button>':'')+
-                  '<button onclick="deleteJob('+job.id+');closeCalDay();renderCalendar();" style="border:none;background:rgba(255,255,255,.15);color:#fff;border-radius:4px;padding:4px 8px;font-size:10px;cursor:pointer;font-family:inherit">Delete</button>'+
+                  ''+
                 '</div>'+
               '</div>';
             }).join(''))+

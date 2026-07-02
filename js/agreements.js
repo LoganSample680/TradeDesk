@@ -246,7 +246,7 @@ function openAgreementDetail(id){
     html+='<button onclick="copyAgreementLink('+a.id+')" class="btn btn-p" style="flex:1 1 100%">🔗 Copy sign link</button>';
     if(a.status==='sent')html+='<button onclick="markAgreementSigned('+a.id+')" class="btn" style="flex:1">Mark signed</button>';
   }
-  html+='<button onclick="deleteAgreement('+a.id+')" class="btn" style="flex:1;color:var(--text3)">Delete</button>';
+  html+='';
   html+='<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Close</button>';
   html+='</div>';
   box.innerHTML=html;

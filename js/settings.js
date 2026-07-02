@@ -325,7 +325,7 @@ function renderLicensing(){
       if(isEquip){
         if(l.make||l.model||l.serial)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:4px">'+escHtml([l.make,l.model,l.serial?'SN: '+l.serial:''].filter(Boolean).join(' · '))+'</div>';
         if(lastLog)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:8px">Last entry: '+fmtDateShort(lastLog.date)+' — '+escHtml(lastLog.type)+'</div>';
-        html+='<div style="display:flex;gap:8px;margin-top:8px"><button onclick="openHepaLog('+l.id+')" class="btn btn-sm" style="font-size:11px">📋 Log ('+logCount+')</button><button onclick="openEditLicense('+l.id+')" class="btn btn-sm" style="font-size:11px">Edit</button><button onclick="deleteLicense('+l.id+')" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Delete</button></div>';
+        html+='<div style="display:flex;gap:8px;margin-top:8px"><button onclick="openHepaLog('+l.id+')" class="btn btn-sm" style="font-size:11px">📋 Log ('+logCount+')</button><button onclick="openEditLicense('+l.id+')" class="btn btn-sm" style="font-size:11px">Edit</button></div>';
       } else {
         if(l.issueDate||l.expiryDate){
           html+='<div style="font-size:12px;color:var(--text3);margin-bottom:4px">';
@@ -335,7 +335,7 @@ function renderLicensing(){
           html+='</div>';
         }
         if(l.notes)html+='<div style="font-size:11px;color:var(--text3);margin-top:4px">'+escHtml(l.notes)+'</div>';
-        html+='<div style="display:flex;gap:8px;margin-top:10px"><button onclick="openEditLicense('+l.id+')" class="btn btn-sm" style="font-size:11px">Edit</button><button onclick="deleteLicense('+l.id+')" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Delete</button></div>';
+        html+='<div style="display:flex;gap:8px;margin-top:10px"><button onclick="openEditLicense('+l.id+')" class="btn btn-sm" style="font-size:11px">Edit</button></div>';
       }
       html+='</div>';
     });

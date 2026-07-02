@@ -35,7 +35,7 @@ function renderCDOpportunities(){
         '</div>'+
         '<div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px">'+
           '<button class="btn btn-sm btn-p" onclick="convertOpportunityToEstimate('+o.id+')" style="font-size:11px">→ Estimate</button>'+
-          '<button class="btn-del" onclick="deleteOpportunity('+o.id+')" style="font-size:11px;padding:5px 8px">✕</button>'+
+          ''+
         '</div>'+
       '</div>';
     }).join(''):'<div style="font-size:12px;color:var(--text3);padding:6px 0">No opportunities yet — track cross-trade follow-ups here.</div>');
@@ -100,7 +100,7 @@ function renderCDEstimatesUpcoming(){
         '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;margin-left:10px">'+
           '<button class="btn btn-sm" onclick="rescheduleEstimate('+j.id+')" style="font-size:11px">Reschedule</button>'+
           '<button class="btn btn-sm" onclick="cancelEstimate('+j.id+')" style="font-size:11px;color:var(--amber)">Cancel</button>'+
-          '<button class="btn btn-sm" onclick="deleteJob('+j.id+')" style="font-size:11px;color:#A32D2D">Delete</button>'+
+          ''+
         '</div>'+
       '</div>'+
 
