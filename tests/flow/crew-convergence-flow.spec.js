@@ -188,6 +188,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
       act: async () => {
         await crewPages[offlineIdx].context().setOffline(true);
         await Promise.all(editorIdx.map((i) => crewPages[i].evaluate(async ({ SHARED, i, own, TAG }) => {
+          window._syncTrace = 1; // arm the merge/load trace BEFORE the write — names any path that later erases the marker
           const b = bids.find(x => String(x.id) === String(SHARED));
           if (b) b['crew_f' + i] = 'cv' + i;
           bids.push({ id: own, client_name: TAG + ' by w' + i, name: TAG + ' by w' + i, amount: 900 + i, status: 'Pending', bid_date: new Date().toISOString().slice(0, 10), _e2e: 'crew' });
@@ -211,10 +212,15 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
               pending: localStorage.getItem('zp3_pending_sync') === '1',
               saveInFlight: typeof _pendingSavePromise !== 'undefined' && !!_pendingSavePromise,
               loadInProgress: typeof _loadInProgress !== 'undefined' && _loadInProgress,
+              trace: (window._syncTraceLog || [])
+                .filter(e => e.src === 'load' || (String(e.id) === String(SHARED) && e.lost && e.lost.length))
+                .slice(-12)
+                .map(e => e.src === 'load' ? `load(${e.delta ? 'delta' : 'FULL'})` : `${e.src}:lost[${(e.lost || []).join(',')}]@inc${e.incMs}`)
+                .join(' '),
             };
           }, { SHARED, i });
           if (d.has) held++;
-          else detail.push(`w${i}:row=${d.rowPresent} clock=${d.clock ? 'SET' : 'ABSENT'} pending=${d.pending} save=${d.saveInFlight} load=${d.loadInProgress}`);
+          else detail.push(`w${i}:row=${d.rowPresent} clock=${d.clock ? 'SET' : 'ABSENT'} pending=${d.pending} save=${d.saveInFlight} load=${d.loadInProgress} trace=[${d.trace}]`);
         }
         // clock=SET + marker gone ⇒ a merge dropped a CAPTURED edit (engine bug);
         // clock=ABSENT ⇒ the edit was never derived (save-path bug on crew logins).

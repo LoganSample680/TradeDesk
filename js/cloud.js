@@ -499,7 +499,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.02.26.7';
+const APP_VERSION='07.02.26.8';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -813,11 +813,19 @@ window.__opMerge=(tbl,lr,lc,ir,ic)=>{try{return _opMergeRows(tbl,lr,lc,ir,ic);}c
 // a peer's save, and a field nobody locally touched still syncs in. STRICTLY SAFER than the
 // old whole-row replace: it only ever protects a provably-newer local field, and falls back
 // to the incoming row whenever there's nothing to protect or anything goes wrong (fail-safe).
-function _opApplyIncoming(tbl,localRow,incomingRow,incomingUpdatedAt){
+function _opApplyIncoming(tbl,localRow,incomingRow,incomingUpdatedAt,_src){
   try{
     if(!window._opLogShadow||!localRow||!incomingRow||typeof incomingRow!=='object')return incomingRow;
-    const incMs=incomingUpdatedAt?new Date(incomingUpdatedAt).getTime():0;
-    if(!incMs)return incomingRow; // no comparable incoming clock → defer to the cloud (current behavior)
+    // Missing incoming clock → incMs=0. This is a REAL path, not an edge case: crew FULL
+    // loads ride the load_account_data RPC whose redacted rows carry NO updated_at. The
+    // old `return incomingRow` bail whole-row-replaced on exactly those loads — erasing a
+    // crew device's own clocked fields (the 5-writer marker loss: the server row is the
+    // concurrent-upsert LWW winner, so taking it whole drops every other writer's field
+    // locally, and the restamped bookkeeping made the loss look "in sync"). With incMs=0
+    // the same merge below runs: pending local fields (clock newer than the row's last
+    // in-sync moment) win, local-only clocked fields survive, everything else takes the
+    // incoming value — identical rules to a timestamped row.
+    const incMs=(incomingUpdatedAt?new Date(incomingUpdatedAt).getTime():0)||0;
     const id=String(incomingRow.id!=null?incomingRow.id:localRow.id);
     const clocks=_opFieldClocks(tbl,id);
     // PENDING GATE: only protect fields edited AFTER this row was last known in sync with
@@ -844,7 +852,18 @@ function _opApplyIncoming(tbl,localRow,incomingRow,incomingUpdatedAt){
       // whole-row-take semantics, so a field a peer deliberately dropped still drops.
       else{out[k]=localRow[k];if(fc)keptLocal=true;}
     }
-    return keptLocal?out:incomingRow; // nothing protected → byte-identical to the old whole-row replace
+    const res=keptLocal?out:incomingRow; // nothing protected → byte-identical to the old whole-row replace
+    // SYNC TRACE (window._syncTrace, default off — certification diagnostics): record any
+    // merge whose OUTPUT lost a field the local row held, tagged with the calling path.
+    // A union merge (keptLocal) copies every local key into `out`, so a non-empty `lost`
+    // means a whole-row take — the exact event the crew marker-loss hunt needs named.
+    try{
+      if(window._syncTrace){
+        const lost=[];for(const k in localRow){if(!(k in res))lost.push(k);}
+        if(lost.length)(window._syncTraceLog||(window._syncTraceLog=[])).push({t:Date.now(),src:_src||'',tbl,id,incMs,lost});
+      }
+    }catch(_e){}
+    return res;
   }catch(_e){return incomingRow;}
 }
 window.__opApplyIncoming=(tbl,lr,ir,ts)=>{try{return _opApplyIncoming(tbl,lr,ir,ts);}catch(_e){return ir;}};
@@ -4223,13 +4242,21 @@ async function supaLoadFromCloud({silent=false}={}){
     // union/orphan then needs a real upload, scheduled once after the whole merge below.
     let _keptLocalInLoad=false;
     let _pendingCreateIds={};
-    if(window._opLogShadow&&!_isEmployee&&!_devSupportMode){
+    // Crew included: a crew device's own pending creates are owned by the EMPLOYEE's uid
+    // (ops stamp _hlcOwner() = _supaUser.id), while `uid` here is the BOSS account being
+    // loaded — matching on `uid` alone silently excluded every crew create, so a full
+    // load racing a crew's first save of its own bid dropped the local copy.
+    if(window._opLogShadow&&!_devSupportMode){
       try{
+        const _opOwn=(_supaUser&&_supaUser.id)||uid;
         for(const _o of (await _opDbUnsynced())||[]){
-          if(_o&&_o.fields&&_o.fields.id!==undefined&&_o.owner===uid)(_pendingCreateIds[_o.table]||(_pendingCreateIds[_o.table]=new Set())).add(String(_o.rowId));
+          if(_o&&_o.fields&&_o.fields.id!==undefined&&_o.owner===_opOwn)(_pendingCreateIds[_o.table]||(_pendingCreateIds[_o.table]=new Set())).add(String(_o.rowId));
         }
       }catch(_e){}
     }
+    // SYNC TRACE (certification diagnostics): name each load's kind — a 'FULL' entry in a
+    // window where only silent deltas should run is the marker-loss smoking gun.
+    try{if(window._syncTrace)(window._syncTraceLog||(window._syncTraceLog=[])).push({t:Date.now(),src:'load',delta:_isDelta,silent:!!silent});}catch(_e){}
     for(let i=0;i<_TD_TABLES.length;i++){
       const{t,set,get}=_TD_TABLES[i];
       if(tableResults[i].error){console.warn('[cloud] skipping unprovisioned table',t);continue;} // missing table — leave in-memory data untouched
@@ -4251,7 +4278,7 @@ async function supaLoadFromCloud({silent=false}={}){
           if(r.deleted_at){byId.delete(id);_syncedHash[t]&&_syncedHash[t].delete(id);_lastKnownIds[t]&&_lastKnownIds[t].delete(id);_rowSyncedAt[t]&&_rowSyncedAt[t].delete(id);_rowServerTs[t]&&_rowServerTs[t].delete(id);(_lastLoadDeletes[t]||(_lastLoadDeletes[t]=new Set())).add(id);}
           else{
             const _lr=byId.get(id);
-            const _mg=_lr?_opApplyIncoming(t,_lr,r.data,r.updated_at):r.data;
+            const _mg=_lr?_opApplyIncoming(t,_lr,r.data,r.updated_at,'delta'):r.data;
             if(_mg!==r.data)_keptLocalInLoad=true; // union kept — schedule the upload after the merge
             byId.set(id,_mg);
             (_syncedHash[t]||(_syncedHash[t]=new Map())).set(id,_hashPayload(r.data));
@@ -4275,7 +4302,7 @@ async function supaLoadFromCloud({silent=false}={}){
         const _cloudIds=new Set(data.map(r=>String(r.id)));
         const _merged=data.map(r=>{
           const _lr=_localById.get(String(r.id));
-          const _mg=_lr?_opApplyIncoming(t,_lr,r.data,r.updated_at):r.data;
+          const _mg=_lr?_opApplyIncoming(t,_lr,r.data,r.updated_at,'full'):r.data;
           if(_mg!==r.data)_keptLocalInLoad=true; // union kept — schedule the upload after the merge
           return _mg;
         });
@@ -4705,7 +4732,7 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
         // field this device edited more recently. Fail-safe — returns `data` unless gated AND
         // a provably-newer PENDING local field exists (see the _rowSyncedAt gate), so the
         // default path is byte-for-byte unchanged.
-        const merged=_opApplyIncoming(tbl,arr[idx],data,rec.updated_at);
+        const merged=_opApplyIncoming(tbl,arr[idx],data,rec.updated_at,'rt');
         arr[idx]=merged;
         if(rec.updated_at){try{(_rowServerTs[tbl]||(_rowServerTs[tbl]=new Map())).set(recId,new Date(rec.updated_at).getTime());}catch(_e){}}
         // Baseline the applied row so the next derive doesn't re-emit the PEER's fields

@@ -760,6 +760,38 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
       expect(r.note).toBe('peer');
     });
 
+    test('clock-less incoming row (crew full-load RPC shape) cannot whole-row-erase a clocked local field', async () => {
+      // The load_account_data RPC's redacted rows carry NO updated_at. The old incMs=0
+      // bail whole-row-replaced on exactly those loads — erasing a crew device's own
+      // clocked field when the server row was a concurrent peer upsert's LWW winner
+      // (the 5-writer marker loss). The merge must run with incMs=0: clocked local-only
+      // fields survive, everything unclocked takes the incoming value.
+      const r = await page.evaluate(() => {
+        const id = 'm3-noclock-1';
+        const savedFlag = window._opLogShadow;
+        try {
+          window._opLogShadow = true;
+          const local = { id, client_name: 'C', amount: 5, crew_f9: 'cv9' };
+          _opStampFields('td_bids', id, { crew_f9: 1 }, _hlcNow());
+          (_rowSyncedAt['td_bids'] || (_rowSyncedAt['td_bids'] = new Map())).set(id, Date.now() - 60000);
+          // Server LWW row arrives via a crew FULL load: no updated_at, no crew_f9.
+          const merged = window.__opApplyIncoming('td_bids', local, { id, client_name: 'C2', amount: 7 }, null);
+          // Passive control: nothing clocked → clock-less incoming still replaces whole-row.
+          const passive = window.__opApplyIncoming('td_bids', { id: id + 'p', a: 1 }, { id: id + 'p', a: 2, b: 3 }, null);
+          return { kept: merged && merged.crew_f9, name: merged && merged.client_name, amount: merged && merged.amount, passiveA: passive && passive.a, passiveB: passive && passive.b };
+        } finally {
+          _rowSyncedAt['td_bids'] && _rowSyncedAt['td_bids'].delete(id);
+          delete (_fieldClocks['td_bids'] || {})[id];
+          window._opLogShadow = savedFlag;
+        }
+      });
+      expect(r.kept).toBe('cv9');  // clocked local-only field survived the clock-less replace
+      expect(r.name).toBe('C2');   // unclocked fields still take the incoming value
+      expect(r.amount).toBe(7);
+      expect(r.passiveA).toBe(2);  // nothing clocked → byte-identical to the old whole-row take
+      expect(r.passiveB).toBe(3);
+    });
+
     test('upload stamps _rowSyncedAt (the pending window closes when the save lands)', async () => {
       const r = await page.evaluate(() => {
         // _paintCacheForDelta owner-scoped stamp is covered in e2e-delta-load; here prove
