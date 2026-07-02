@@ -449,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.30';
+const APP_VERSION='07.01.26.31';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -860,7 +860,19 @@ function _opApplyPeerOps(ops){
       }
       if(applied){
         touched=true;
-        if(createdHere){(_lastKnownIds[tbl]||(_lastKnownIds[tbl]=new Set())).add(id);if(om)(_rowServerTs[tbl]||(_rowServerTs[tbl]=new Map())).set(id,om);}
+        if(createdHere){
+          // INVARIANT: ops are published only AFTER the author's row upserts commit — so a
+          // CREATE op guarantees this exact row content is already IN the cloud. Stamp the
+          // synced hash (op fields ARE the author's canonical payload, same key order) and
+          // the sync bookkeeping so this device treats the row as in-sync and its next save
+          // no-ops. Without this, the receiver re-UPSERTED a row it merely learned about —
+          // racing a concurrent delete and resurrecting it (seen live: B's delete undone
+          // by A's echo of its own pointless upsert).
+          (_lastKnownIds[tbl]||(_lastKnownIds[tbl]=new Set())).add(id);
+          (_syncedHash[tbl]||(_syncedHash[tbl]=new Map())).set(id,_hashPayload(row));
+          (_rowSyncedAt[tbl]||(_rowSyncedAt[tbl]=new Map())).set(id,Date.now());
+          if(om)(_rowServerTs[tbl]||(_rowServerTs[tbl]=new Map())).set(id,om);
+        }
         // Baseline the settled row so the NEXT derive doesn't re-emit the peer's fields
         // as ops from THIS device (op echo loop).
         try{(_opPrevPayload[tbl]||(_opPrevPayload[tbl]=new Map())).set(id,_opClone(row));}catch(_e){}
@@ -869,17 +881,15 @@ function _opApplyPeerOps(ops){
   }catch(_e){}
   if(touched){
     clearTimeout(_writeCacheTimer);_writeCacheTimer=setTimeout(()=>{_writeCacheTimer=null;try{_writeLocalCache();}catch(_e){}},250);
-    // Deliberately NO direct render here: an op INSERT event almost always precedes the
-    // row event for the SAME save (which renders via _applyRealtimeRecord), so rendering
-    // from op-apply doubled the pass and broke the glitch-free render budget (9>8, seen
-    // live). If the row event drops, the reconcile heartbeat's load renders within one
-    // interval — data is applied above either way; the socket is just the accelerator.
-    // Schedule ONE debounced save: the merged row now differs from the server's whole-row
-    // copy (hash mismatch), and this upload is what converges the SERVER row to the union
-    // so late joiners see every field in the row itself, not just in the op stream. The 2s
-    // debounce coalesces an op burst into one save; the baseline update above means this
-    // save derives ZERO new ops for the peer fields (no echo, no storm).
-    try{supaSaveDebounced();}catch(_e){}
+    // Deliberately NO direct render AND NO save here. Render: the op INSERT event almost
+    // always precedes the row event for the SAME save (which renders via
+    // _applyRealtimeRecord); doubling the pass broke the glitch-free render budget (9>8,
+    // live). Save: ops are published only AFTER the author's rows committed, so applied
+    // op values are ALREADY in the cloud — a receiver-side save uploads nothing new, but
+    // its cursor bump caused reconcile churn on every peer and its blind upsert raced
+    // concurrent deletes (both seen live). The one thing that ever needs a receiver-side
+    // upload is a UNION (a kept local field), and the row-merge paths that produce unions
+    // schedule that save themselves.
   }
 }
 window.__opApplyPeerOps=(ops)=>{try{_opApplyPeerOps(ops);return true;}catch(_e){return false;}};
@@ -4072,6 +4082,9 @@ async function supaLoadFromCloud({silent=false}={}){
     // An op is a CREATE iff its fields carry the row's id (derive emits ALL fields on
     // create, only changed fields on update) — so a pending EDIT to a row a peer
     // deleted does NOT resurrect it (delete wins, same rule as the delta branch).
+    // Set when any row merge kept a local field (or re-appended a pending create) — the
+    // union/orphan then needs a real upload, scheduled once after the whole merge below.
+    let _keptLocalInLoad=false;
     let _pendingCreateIds={};
     if(window._opLogShadow&&!_isEmployee&&!_devSupportMode){
       try{
@@ -4101,7 +4114,9 @@ async function supaLoadFromCloud({silent=false}={}){
           if(r.deleted_at){byId.delete(id);_syncedHash[t]&&_syncedHash[t].delete(id);_lastKnownIds[t]&&_lastKnownIds[t].delete(id);_rowSyncedAt[t]&&_rowSyncedAt[t].delete(id);_rowServerTs[t]&&_rowServerTs[t].delete(id);(_lastLoadDeletes[t]||(_lastLoadDeletes[t]=new Set())).add(id);}
           else{
             const _lr=byId.get(id);
-            byId.set(id,_lr?_opApplyIncoming(t,_lr,r.data,r.updated_at):r.data);
+            const _mg=_lr?_opApplyIncoming(t,_lr,r.data,r.updated_at):r.data;
+            if(_mg!==r.data)_keptLocalInLoad=true; // union kept — schedule the upload after the merge
+            byId.set(id,_mg);
             (_syncedHash[t]||(_syncedHash[t]=new Map())).set(id,_hashPayload(r.data));
             (_lastKnownIds[t]||(_lastKnownIds[t]=new Set())).add(id);
             (_rowSyncedAt[t]||(_rowSyncedAt[t]=new Map())).set(id,_ldTs);
@@ -4121,11 +4136,16 @@ async function supaLoadFromCloud({silent=false}={}){
         const _localArr=get()||[];
         const _localById=new Map(_localArr.map(r=>[String(r.id),r]));
         const _cloudIds=new Set(data.map(r=>String(r.id)));
-        const _merged=data.map(r=>{const _lr=_localById.get(String(r.id));return _lr?_opApplyIncoming(t,_lr,r.data,r.updated_at):r.data;});
+        const _merged=data.map(r=>{
+          const _lr=_localById.get(String(r.id));
+          const _mg=_lr?_opApplyIncoming(t,_lr,r.data,r.updated_at):r.data;
+          if(_mg!==r.data)_keptLocalInLoad=true; // union kept — schedule the upload after the merge
+          return _mg;
+        });
         const _pendC=_pendingCreateIds[t];
         if(_pendC)for(const _lr of _localArr){
           const _lid=String(_lr.id);
-          if(!_cloudIds.has(_lid)&&_pendC.has(_lid)&&!(_locallyDeletedIds[t]&&_locallyDeletedIds[t].has(_lid)))_merged.push(_lr);
+          if(!_cloudIds.has(_lid)&&_pendC.has(_lid)&&!(_locallyDeletedIds[t]&&_locallyDeletedIds[t].has(_lid))){_merged.push(_lr);_keptLocalInLoad=true;}
         }
         set(_merged);
         _lastKnownIds[t]=new Set(data.map(r=>String(r.id)));
@@ -4202,6 +4222,12 @@ async function supaLoadFromCloud({silent=false}={}){
     // PHASE 0 oplog: baseline the shadow diff AFTER the dedupe + draft-bid filters above,
     // so filtered rows aren't seen as deletes on the next save (no-op unless _opLogShadow).
     _opRebaseline();
+    // A union was kept (or a pending create re-appended) during the merge — the local
+    // state now holds something the cloud's rows don't. One debounced save uploads it:
+    // kept rows' hashes were stamped from the INCOMING rows (already marked changed) and
+    // re-appended rows have no hash at all. Scheduled AFTER the rebaseline above so the
+    // debounce's synchronous derive sees baseline==arrays and emits zero phantom ops.
+    if(_keptLocalInLoad){try{supaSaveDebounced();}catch(_e){}}
     // Ops catch-up rides every load — the reconcile-side leg of the op channel
     // (realtime is the instant leg, the save epilogue the publish leg). When the RPC
     // carried the ops atomically with the rows, ingest those (zero extra reads) and
@@ -4540,6 +4566,11 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
         // merged row re-uploads on the next save and the protected edit reaches every peer.
         _syncedHash[tbl]?.set(recId,_hashPayload(data));
         if(merged===data)(_rowSyncedAt[tbl]||(_rowSyncedAt[tbl]=new Map())).set(recId,Date.now()); // took cloud row whole → in sync; a kept-pending field stays pending
+        // UNION → upload: the merge kept a local field the incoming row lacks/loses, so the
+        // server's whole-row copy is now missing something only this device holds. The hash
+        // above is the INCOMING row's (mismatch armed) — this debounced save is what makes
+        // the union actually reach the cloud instead of waiting for the user's next edit.
+        else{try{supaSaveDebounced();}catch(_e){}}
       }else if(!_lastKnownIds[tbl]?.has(recId)){
         // Only add if this ID was never known to us — if it was known but
         // isn't in arr, we deleted it locally and another device's stale
