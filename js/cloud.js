@@ -499,7 +499,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.02.26.19';
+const APP_VERSION='07.02.26.20';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3536,7 +3536,11 @@ async function supaSaveToCloud(){
         const id=String(r.id);
         const h=_hashPayload(r);
         if(hashes.get(id)===h){ window._deltaStats.skips++; continue; }
-        changed.push({id,h,row:{id,user_id:uid,data:r,updated_at:ts,deleted_at:null}});
+        // archived_at:null mirrors deleted_at:null — a LIVE row in memory is by
+        // definition not archived, so a re-created/edited id resurfaces on every
+        // device (without this, a swept-then-recreated id stayed archived and
+        // invisible — the offline-reconnect race caught it live).
+        changed.push({id,h,row:{id,user_id:uid,data:r,updated_at:ts,deleted_at:null,archived_at:null}});
       }
       const _pendingDeletes=(_locallyDeletedIds[tbl]&&[..._locallyDeletedIds[tbl]].some(id=>(_lastKnownIds[tbl]||new Set()).has(id)&&!currentIds.has(id)))||false;
       // NO-OP FAST PATH — nothing changed and nothing pending deletion: ZERO round-trips.
@@ -3563,7 +3567,11 @@ async function supaSaveToCloud(){
         // never marks un-sent rows as "synced" and silently drops them next save.
         for(let i=0;i<changed.length;i+=50){
           const slice=changed.slice(i,i+50);
-          const{error}=await _supa.from(tbl).upsert(slice.map(c=>c.row),{onConflict:'id,user_id'});
+          let{error}=await _supa.from(tbl).upsert(slice.map(c=>c.row),{onConflict:'id,user_id'});
+          // DB predating the archival migration: retry the batch without archived_at.
+          if(error&&/archived_at/i.test(error.message||'')){
+            ({error}=await _supa.from(tbl).upsert(slice.map(c=>{const{archived_at:_a,...r}=c.row;return r;}),{onConflict:'id,user_id'}));
+          }
           if(error)throw error;
           const _upTs=Date.now();
           slice.forEach(c=>{hashes.set(c.id,c.h);(_rowSyncedAt[tbl]||(_rowSyncedAt[tbl]=new Map())).set(c.id,_upTs);}); // uploaded → in sync as of now (ends the merge's pending window)
