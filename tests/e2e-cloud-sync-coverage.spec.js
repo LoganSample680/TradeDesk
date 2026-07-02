@@ -1333,7 +1333,13 @@ test.describe('100-writer op channel + rebase', () => {
         _isEmployee = true; _contractorUserId = 'boss-1';
         _employeeRecord = { permissions: {} }; // no money permissions → bids/income/etc redacted
         _deltaCursor = null;
-        // Derive one PERMITTED op (td_clients) and one REDACTED op (td_bids) as this login.
+        // ORDER MATTERS: the owner just switched ('e2e-user' → 'emp-1'), and the FIRST
+        // derive after an owner switch REBASELINES from the current arrays (no ops).
+        // Settle that first, THEN create the rows, THEN derive — the incremental diff
+        // emits the CREATE ops. (This test failed in CI by pushing rows before the
+        // rebaseline, which silently swallowed them.)
+        _opShadowDerive();
+        // One PERMITTED op (td_clients) and one REDACTED op (td_bids) as this login.
         clients.push({ id: idC, name: 'Crew Op C', phone: '3165550001' });
         bids.push({ id: idB, client_name: 'Crew Op B', name: 'Crew Op B', amount: 5, status: 'Pending' });
         _opShadowDerive();
