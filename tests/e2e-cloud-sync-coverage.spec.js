@@ -1127,6 +1127,40 @@ test.describe('100-writer op channel + rebase', () => {
     expect(r.shell).toBe(false);
   });
 
+  test('_opApplyPeerOps — a CREATE op older than the row snapshot is a tombstone echo and must NOT materialize', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof window.__opApplyPeerOps !== 'function') return { skip: true };
+      const idOld = 771025, idNew = 771026;
+      const savedFlag = window._opLogShadow, savedSaveAt = _lastLocalSaveAt, savedCursor = _deltaCursor;
+      try {
+        window._opLogShadow = true;
+        _lastLocalSaveAt = Date.now();
+        // Our row snapshot is CURRENT (cursor = now). Ops publish only after their row
+        // commits, so a create op minted BEFORE this snapshot describes a row the
+        // snapshot accounted for — absent from our arrays means soft-DELETED. It must
+        // not resurrect (the live swarm's 8-vs-4 ghost-bid split).
+        _deltaCursor = new Date().toISOString();
+        const oldHlc = (Date.now() - 60000).toString(36).padStart(9, '0') + '.0000.peerdev';
+        window.__opApplyPeerOps([{ hlc: oldHlc, op_table: 'td_bids', row_id: String(idOld), fields: { id: idOld, name: 'Tombstone Echo', amount: 3 }, device_id: 'peer-1' }]);
+        const resurrected = bids.some(b => String(b.id) === String(idOld));
+        // A create op NEWER than the snapshot is a genuinely new row → materializes.
+        const newHlc = (Date.now() + 60000).toString(36).padStart(9, '0') + '.0000.peerdev';
+        window.__opApplyPeerOps([{ hlc: newHlc, op_table: 'td_bids', row_id: String(idNew), fields: { id: idNew, name: 'Fresh Create', amount: 4 }, device_id: 'peer-1' }]);
+        const created = bids.some(b => String(b.id) === String(idNew));
+        return { resurrected, created };
+      } finally {
+        window._opLogShadow = savedFlag; _lastLocalSaveAt = savedSaveAt; _deltaCursor = savedCursor;
+        for (const id of [771025, 771026]) { const i = bids.findIndex(b => String(b.id) === String(id)); if (i > -1) bids.splice(i, 1); }
+        _lastKnownIds['td_bids'] && _lastKnownIds['td_bids'].delete('771026');
+        _syncedHash['td_bids'] && _syncedHash['td_bids'].delete('771026');
+        try { _opRebaseline(); } catch (e) {}
+      }
+    });
+    if (r.skip) return;
+    expect(r.resurrected).toBe(false); // tombstone echo suppressed
+    expect(r.created).toBe(true);      // genuinely new create still lands
+  });
+
   test('_opApplyPeerOps — an op STALER than the row snapshot we hold is skipped (_rowServerTs guard)', async () => {
     const r = await page.evaluate(() => {
       if (typeof window.__opApplyPeerOps !== 'function') return { skip: true };

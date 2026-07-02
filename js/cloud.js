@@ -449,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.33';
+const APP_VERSION='07.01.26.34';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -845,6 +845,15 @@ function _opApplyPeerOps(ops){
       let createdHere=false;
       if(idx===-1){
         if(op.fields.id===undefined)continue;                                  // partial op, row unknown — row snapshot will bring it
+        // TOMBSTONE-ECHO GUARD: ops publish only AFTER their row commits, so a CREATE op
+        // OLDER than our row snapshot describes a row the snapshot already accounted for —
+        // and since it's not in our arrays, the snapshot saw its soft-DELETE. Materializing
+        // it would resurrect a freshly-deleted row in memory (seen live: swarm devices that
+        // booted inside the ops-pull overlap window held a ghost bid an earlier spec had
+        // just deleted; later-booting devices didn't — 8-vs-4 byte-equal split). A genuinely
+        // NEW row always carries an op newer than any snapshot we hold; if clock skew makes
+        // us skip one, its own row INSERT event / next delta delivers it — rows are the backstop.
+        try{if(om&&_deltaCursor&&om<=new Date(_deltaCursor).getTime())continue;}catch(_e){}
         if(_lastKnownIds[tbl]&&_lastKnownIds[tbl].has(id))continue;            // we deleted it locally — never resurrect
         if(_locallyDeletedIds[tbl]&&_locallyDeletedIds[tbl].has(id))continue;
         arr.push({});idx=arr.length-1;createdHere=true;
