@@ -695,19 +695,21 @@ test.describe('Agreements — modals (_showAgreementModal, openNewAgreement, ope
         const ov = document.getElementById('_ag-detail-ov');
         const opened = !!ov;
         const hasBody = ov ? ov.innerHTML.includes('Body text here') : false;
-        const hasDelete = ov ? ov.innerHTML.includes('deleteAgreement(7001)') : false;
+        // NO-DELETE-BUTTONS policy (owner directive): the detail sheet must NOT carry a
+        // delete button — record deletion moved entirely to the hidden 3s press-and-hold.
+        const hasDeleteBtn = ov ? ov.innerHTML.includes('deleteAgreement(7001)') : false;
         // unknown id → function returns early (a not found), no modal, no throw
         document.getElementById('_ag-detail-ov')?.remove();
         openAgreementDetail(424242);
         const noModalForUnknown = !document.getElementById('_ag-detail-ov');
-        return { ok: true, opened, hasBody, hasDelete, noModalForUnknown };
+        return { ok: true, opened, hasBody, hasDeleteBtn, noModalForUnknown };
       } catch (e) { return { ok: false, error: e.message }; }
     });
     if (result.skip) return;
     expect(result.ok).toBe(true);
     expect(result.opened).toBe(true);
     expect(result.hasBody).toBe(true);
-    expect(result.hasDelete).toBe(true);
+    expect(result.hasDeleteBtn).toBe(false); // deletion is via the hidden hold, no button
     expect(result.noModalForUnknown).toBe(true);
   });
 
