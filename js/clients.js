@@ -1671,7 +1671,10 @@ function renderCDBids(){
       if(bpays.length){
         payHTML+='<div style="margin-top:8px;background:var(--bg2);border-radius:var(--r);padding:8px 10px">';
         payHTML+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:5px">Payment history</div>';
-        payHTML+=bpays.map(p=>{const isRef=p.type==='refund';const amtDisp=isRef?'<strong style="color:#A32D2D">↩ -'+fmt(Math.abs(p.amount))+'</strong>':'<strong style="color:var(--green-mid)">+'+fmt(p.amount)+'</strong>';const typeLabel=isRef?'REFUND':(escHtml(p.method)+(p.ref?' #'+escHtml(p.ref):''));return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+typeLabel+'</span><span>'+amtDisp+' <button class="btn-del" onclick="deletePay('+p.id+')" style="font-size:10px">✕</button></span></div>';}).join('');
+        // NEVER-DELETE UX (owner directive): the visible control is EDIT — fix the
+        // record, don't destroy it. Removal lives inside the edit modal behind a
+        // 5s hold-to-confirm, and even then the sweep only ARCHIVES server-side.
+        payHTML+=bpays.map(p=>{const isRef=p.type==='refund';const amtDisp=isRef?'<strong style="color:#A32D2D">↩ -'+fmt(Math.abs(p.amount))+'</strong>':'<strong style="color:var(--green-mid)">+'+fmt(p.amount)+'</strong>';const typeLabel=isRef?'REFUND':(escHtml(p.method)+(p.ref?' #'+escHtml(p.ref):''));return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+typeLabel+'</span><span>'+amtDisp+' <button onclick="editPayment('+p.id+')" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1px solid var(--border2);background:none;color:var(--text2);cursor:pointer;font-family:inherit">✎ Edit</button></span></div>';}).join('');
         payHTML+='</div>';
       }
       if(lien){

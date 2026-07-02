@@ -238,8 +238,9 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
         }, { bidId });
         p.__hasAfterDel = await p.evaluate(({ bidId }) => window.__hashHas('td_bids', bidId), { bidId });
         p.__softDeleted = await p.evaluate(async ({ bidId }) => {
-          const { data } = await _supa.from('td_bids').select('deleted_at').eq('user_id', _supaUser.id).eq('id', String(bidId)).maybeSingle();
-          return !!(data && data.deleted_at);
+          const { data } = await _supa.from('td_bids').select('deleted_at,archived_at').eq('user_id', _supaUser.id).eq('id', String(bidId)).maybeSingle();
+          // NEVER-DELETE policy: a user delete now lands as archived_at (recoverable); either column proves the removal committed.
+          return !!(data && (data.deleted_at || data.archived_at));
         }, { bidId });
         // Re-create the SAME id and save — must upload because the hash was cleared.
         await resetDelta(p);
@@ -283,8 +284,9 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
           await supaSaveToCloud();
         }, { bidId });
         p.__softDeleted = await p.evaluate(async ({ bidId }) => {
-          const { data } = await _supa.from('td_bids').select('deleted_at').eq('user_id', _supaUser.id).eq('id', String(bidId)).maybeSingle();
-          return !!(data && data.deleted_at);
+          const { data } = await _supa.from('td_bids').select('deleted_at,archived_at').eq('user_id', _supaUser.id).eq('id', String(bidId)).maybeSingle();
+          // NEVER-DELETE policy: a user delete now lands as archived_at (recoverable); either column proves the removal committed.
+          return !!(data && (data.deleted_at || data.archived_at));
         }, { bidId });
         // Fresh reload — the load filters deleted_at IS NULL, so a properly soft-deleted bid
         // must NOT come back. Before the fix it resurrected because deleted_at never landed.
@@ -323,8 +325,9 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
         await p.evaluate(({ bidId }) => { try { convertOpportunityToEstimate(bidId); } catch (e) {} }, { bidId });
         await p.evaluate(async () => { if (typeof _flushSaveNow === 'function') _flushSaveNow(); await supaSaveToCloud(); });
         p.__softDeleted = await p.evaluate(async ({ bidId }) => {
-          const { data } = await _supa.from('td_bids').select('deleted_at').eq('user_id', _supaUser.id).eq('id', String(bidId)).maybeSingle();
-          return !!(data && data.deleted_at);
+          const { data } = await _supa.from('td_bids').select('deleted_at,archived_at').eq('user_id', _supaUser.id).eq('id', String(bidId)).maybeSingle();
+          // NEVER-DELETE policy: a user delete now lands as archived_at (recoverable); either column proves the removal committed.
+          return !!(data && (data.deleted_at || data.archived_at));
         }, { bidId });
         await p.reload({ waitUntil: 'domcontentloaded' });
         await p.waitForFunction(() => typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id, { timeout: 30000 });
@@ -375,9 +378,10 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
         });
         p.__cloud = await p.evaluate(async ({ bidId, ctId }) => {
           const uid = _supaUser.id;
-          const b = await _supa.from('td_bids').select('deleted_at').eq('user_id', uid).eq('id', String(bidId)).maybeSingle();
-          const ct = await _supa.from('td_contracts').select('deleted_at').eq('user_id', uid).eq('id', String(ctId)).maybeSingle();
-          return { bidDel: !!(b.data && b.data.deleted_at), ctDel: !!(ct.data && ct.data.deleted_at) };
+          const b = await _supa.from('td_bids').select('deleted_at,archived_at').eq('user_id', uid).eq('id', String(bidId)).maybeSingle();
+          const ct = await _supa.from('td_contracts').select('deleted_at,archived_at').eq('user_id', uid).eq('id', String(ctId)).maybeSingle();
+          // NEVER-DELETE policy: user removals land as archived_at; either column proves the removal committed.
+          return { bidDel: !!(b.data && (b.data.deleted_at || b.data.archived_at)), ctDel: !!(ct.data && (ct.data.deleted_at || ct.data.archived_at)) };
         }, { bidId, ctId });
         // Reload — a properly soft-deleted row (load filters deleted_at IS NULL) must not come back.
         await p.reload({ waitUntil: 'domcontentloaded' });

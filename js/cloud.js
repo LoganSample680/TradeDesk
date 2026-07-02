@@ -499,7 +499,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.02.26.16';
+const APP_VERSION='07.02.26.18';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3570,16 +3570,24 @@ async function supaSaveToCloud(){
           window._deltaStats.upserts+=slice.length;_tableWrites+=slice.length;
         }
       }
-      // Soft-delete ONLY ids the user EXPLICITLY deleted on this device (recorded in
+      // Remove ONLY ids the user EXPLICITLY removed on this device (recorded in
       // _locallyDeletedIds) — or everything vanished, during a deliberate bulk wipe.
       // A row merely absent from this snapshot (e.g. a peer's row not yet merged here)
       // is NEVER swept, so concurrent devices can't clobber each other's new rows.
+      //
+      // NEVER-DELETE POLICY (owner directive): a user "delete" ARCHIVES the row —
+      // archived_at, not deleted_at — so nothing a contractor removes is ever gone:
+      // it leaves every device's hot set through the ordinary delta/realtime paths
+      // but stays in the table, restorable from the Archive view. True hard-delete
+      // exists only behind the Archive view's hold-to-delete. Falls back to the old
+      // soft-delete on a DB that predates the archival migration (unknown column).
       const prev=_lastKnownIds[tbl]||new Set();
       const deleted=_locallyDeletedIds[tbl]||new Set();
       const gone=[...prev].filter(id=>!currentIds.has(id)&&!lockedIds.has(id)&&deleted.has(id));
       if(gone.length){
         for(let i=0;i<gone.length;i+=50){
-          const{error:_de}=await _supa.from(tbl).update({deleted_at:ts,updated_at:ts}).in('id',gone.slice(i,i+50)).eq('user_id',uid);
+          let{error:_de}=await _supa.from(tbl).update({archived_at:ts,updated_at:ts}).in('id',gone.slice(i,i+50)).eq('user_id',uid);
+          if(_de&&/archived_at/i.test(_de.message||'')){({error:_de}=await _supa.from(tbl).update({deleted_at:ts,updated_at:ts}).in('id',gone.slice(i,i+50)).eq('user_id',uid));}
           if(_de)throw _de;
         }
         _tableWrites+=gone.length;
@@ -4132,9 +4140,19 @@ async function supaLoadFromCloud({silent=false}={}){
     // not yet deployed (migration not merged to prod), fall back to the raw load:
     // visibility is unchanged until the migration lands, but the SAVE guard
     // (_employeeRedactedTables) still prevents any corruption in the meantime.
-    const _rawLoad=()=>Promise.all(_TD_TABLES.map(({t})=>
-      _supa.from(t).select('id,data,updated_at').eq('user_id',uid).is('deleted_at',null)
-    ));
+    // ARCHIVAL: full loads pull the HOT set only (archived_at null) — a decade-old
+    // account boots like a young one. Falls back to the unfiltered read on a DB
+    // that predates the archival migration (unknown column), so deploy order is safe.
+    const _rawLoad=async()=>{
+      const _q=(hot)=>Promise.all(_TD_TABLES.map(({t})=>{
+        let s=_supa.from(t).select('id,data,updated_at').eq('user_id',uid).is('deleted_at',null);
+        if(hot)s=s.is('archived_at',null);
+        return s;
+      }));
+      const res=await _q(true);
+      if(res.some(r=>r&&r.error&&/archived_at/i.test(r.error.message||'')))return _q(false);
+      return res;
+    };
     let tableResults, _isDelta=false, _deltaMeta=null, _deltaBase=null;
     // 2s OVERLAP MARGIN on every delta query: a save's per-table writes commit over a short
     // window, so a reader can observe a later-timestamped row while an earlier one from the
@@ -4142,8 +4160,11 @@ async function supaLoadFromCloud({silent=false}={}){
     // from cursor-2s re-reads that sliver; the id-keyed merge below is idempotent, so the
     // overlap costs a few duplicate rows and can never lose one.
     const _deltaSince=(cur)=>{try{return new Date(new Date(cur).getTime()-2000).toISOString();}catch(_e){return cur;}};
+    // archived_at rides the delta select — archiving bumps updated_at, so the
+    // transition reaches every device as an ordinary changed row. On a DB without
+    // the column the select errors → the caller falls back to the full load.
     const _deltaQuery=(since)=>Promise.all(_TD_TABLES.map(({t})=>
-      _supa.from(t).select('id,data,updated_at,deleted_at').eq('user_id',uid).gt('updated_at',_deltaSince(since))
+      _supa.from(t).select('id,data,updated_at,deleted_at,archived_at').eq('user_id',uid).gt('updated_at',_deltaSince(since))
     )).catch(()=>null);
     // ONE-SHOT ATOMIC DELTA — the get_account_delta RPC returns all 14 tables' changed
     // rows in ONE round-trip from ONE Postgres snapshot (a single SELECT = one MVCC
@@ -4288,7 +4309,12 @@ async function supaLoadFromCloud({silent=false}={}){
         const _ldTs=Date.now();
         for(const r of data){
           const id=String(r.id);
-          if(r.deleted_at){byId.delete(id);_syncedHash[t]&&_syncedHash[t].delete(id);_lastKnownIds[t]&&_lastKnownIds[t].delete(id);_rowSyncedAt[t]&&_rowSyncedAt[t].delete(id);_rowServerTs[t]&&_rowServerTs[t].delete(id);(_lastLoadDeletes[t]||(_lastLoadDeletes[t]=new Set())).add(id);}
+          // deleted OR archived — either way the row leaves the hot set on every
+          // device through this same path. _lastLoadDeletes records both so the
+          // reconnect merge-back never resurrects a row a peer deliberately
+          // removed/archived during our outage (restore rides back as an ordinary
+          // changed row with archived_at null).
+          if(r.deleted_at||r.archived_at){byId.delete(id);_syncedHash[t]&&_syncedHash[t].delete(id);_lastKnownIds[t]&&_lastKnownIds[t].delete(id);_rowSyncedAt[t]&&_rowSyncedAt[t].delete(id);_rowServerTs[t]&&_rowServerTs[t].delete(id);(_lastLoadDeletes[t]||(_lastLoadDeletes[t]=new Set())).add(id);}
           else{
             const _lr=byId.get(id);
             const _mg=_lr?_opApplyIncoming(t,_lr,r.data,r.updated_at,'delta'):r.data;
@@ -4476,6 +4502,27 @@ async function supaLoadFromCloud({silent=false}={}){
       // horizon; the td_* rows are the state of record. Fire-and-forget, owner-scoped.
       if(window._opLogShadow&&!_isEmployee&&!_devSupportMode){
         setTimeout(()=>{try{_supa.from('td_ops').delete().eq('user_id',uid).lt('created_at',new Date(Date.now()-14*24*60*60*1000).toISOString()).then(()=>{});}catch(_e){}},8000);
+      }
+      // SEVEN-YEAR AUTO-ARCHIVE (IRS-aligned, owner directive): once a month the
+      // owner's first boot flags records older than the current year minus 7 full
+      // years — they leave every device's hot set via ordinary deltas but stay in
+      // the DB, restorable from the Archive view. Missing RPC (migration not yet
+      // deployed) = silent no-op. S.autoArchive===false opts out.
+      if(!_isEmployee&&!_devSupportMode&&S.autoArchive!==false){
+        setTimeout(()=>{try{
+          const _amKey='zp3_archive_month',_amCur=new Date().toISOString().slice(0,7);
+          if(localStorage.getItem(_amKey)!==_amCur){
+            localStorage.setItem(_amKey,_amCur);
+            _supa.rpc('archive_old_records').then(({data})=>{
+              if(data&&Object.keys(data).length){
+                // Rows changed server-side: reconcile THIS device now and bump the
+                // account cursor so every peer's heartbeat picks the change up too.
+                try{_supa.rpc('bump_account_cursor',{target:uid}).then(()=>{},()=>{});}catch(_e){}
+                try{_scheduleReconcile(0);}catch(_e){}
+              }
+            },()=>{});
+          }
+        }catch(_e){}},15000);
       }
       setTimeout(()=>{
         // PACED hub sweep — the old forEach fired every tokened client's hub
@@ -4740,7 +4787,7 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   // a redundant upload, and a deleted row's stale hash can't suppress a future re-create.
   // In the resurrection-ignore branch we touch neither map (we're keeping it deleted).
   if((ev==='INSERT'||ev==='UPDATE')&&rec){
-    if(rec.deleted_at){
+    if(rec.deleted_at||rec.archived_at){ // archived = removed from the hot set, same handling as a soft delete
       const idx=arr.findIndex(r=>String(r.id)===String(rec.id));
       if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(rec.id));_syncedHash[tbl]?.delete(String(rec.id));_rowSyncedAt[tbl]?.delete(String(rec.id));_rowServerTs[tbl]?.delete(String(rec.id));try{_opPrevPayload[tbl]&&_opPrevPayload[tbl].delete(String(rec.id));}catch(_e){}}
     }else{

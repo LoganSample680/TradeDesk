@@ -6226,3 +6226,99 @@ test.describe('sign.html deposit tile shows correct percentage from saved bid', 
     assertNoErrors(page, 'deposit badge');
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+//  NEVER-DELETE POLICY — archive semantics, hold-to-confirm, edit-not-delete
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('Never-delete policy — archive + hold + edit', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('an ARCHIVED row arriving via realtime leaves memory without recording a local delete', async () => {
+    const r = await page.evaluate(() => {
+      const id = 887001;
+      bids = bids.filter(b => b.id !== id);
+      bids.push({ id, client_name: 'Arch RT', amount: 50, status: 'Pending' });
+      (_lastKnownIds['td_bids'] || (_lastKnownIds['td_bids'] = new Set())).add(String(id));
+      _applyRealtimeRecord('td_bids', { eventType: 'UPDATE', new: { id: String(id), data: { id, client_name: 'Arch RT', amount: 50, status: 'Pending' }, archived_at: new Date().toISOString() } }, true);
+      return {
+        inMemory: bids.some(b => String(b.id) === String(id)),
+        localDelete: !!(_locallyDeletedIds['td_bids'] && _locallyDeletedIds['td_bids'].has(String(id))),
+      };
+    });
+    expect(r.inMemory).toBe(false);   // archived = out of the hot set...
+    expect(r.localDelete).toBe(false); // ...but NEVER treated as a user delete (sweep must not touch it)
+    assertNoErrors(page, 'archived realtime removal');
+  });
+
+  test('zConfirm destructive: a TAP does not fire; a HOLD does (webdriver override)', async () => {
+    const r = await page.evaluate(async () => {
+      let fired = 0;
+      const origWd = Object.getOwnPropertyDescriptor(Navigator.prototype, 'webdriver');
+      try { Object.defineProperty(navigator, 'webdriver', { configurable: true, get: () => false }); } catch (e) { return { skip: true }; }
+      window._tdHoldMs = 250; // fast hold for the test — real users get 5000ms
+      zConfirm('Remove this?', () => { fired++; }, { title: 'Remove', yes: 'Remove', danger: true });
+      const yes = document.getElementById('zmodal-yes');
+      // TAP (click) — must NOT fire
+      yes.click();
+      await new Promise(res => setTimeout(res, 350));
+      const afterTap = fired;
+      // HOLD — pointerdown, wait past the hold window, never release
+      yes.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      await new Promise(res => setTimeout(res, 400));
+      const afterHold = fired;
+      // EARLY RELEASE on a fresh dialog — must NOT fire
+      zConfirm('Remove again?', () => { fired++; }, { title: 'Remove', yes: 'Remove', danger: true });
+      const yes2 = document.getElementById('zmodal-yes');
+      yes2.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      await new Promise(res => setTimeout(res, 80));
+      yes2.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+      await new Promise(res => setTimeout(res, 350));
+      const afterRelease = fired;
+      document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+      delete window._tdHoldMs;
+      if (origWd) Object.defineProperty(Navigator.prototype, 'webdriver', origWd);
+      try { delete navigator.webdriver; } catch (e) {}
+      return { afterTap, afterHold, afterRelease };
+    });
+    if (!r.skip) {
+      expect(r.afterTap).toBe(0);     // tap can never destroy
+      expect(r.afterHold).toBe(1);    // deliberate hold confirms
+      expect(r.afterRelease).toBe(1); // early release cancels
+    }
+    assertNoErrors(page, 'hold-to-confirm');
+  });
+
+  test('editPayment — fixes the record in place (edit-not-delete)', async () => {
+    const r = await page.evaluate(() => {
+      const pid = 887101;
+      payments = payments.filter(p => p.id !== pid);
+      payments.push({ id: pid, bid_id: 887102, client_id: 887103, date: '2026-06-01', type: 'partial', amount: 100, method: 'Cash', ref: '' });
+      window.renderCDBids = window.renderCDBids || (() => {});
+      editPayment(pid);
+      const hasModal = !!document.getElementById('_epay-ov');
+      const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+      set('_epay-amount', '250'); set('_epay-date', '2026-06-15'); set('_epay-method', 'Check'); set('_epay-ref', '1042');
+      _savePaymentEdit(pid);
+      const p = payments.find(x => x.id === pid);
+      return { hasModal, amount: p.amount, date: p.date, method: p.method, ref: p.ref, stillOne: payments.filter(x => x.id === pid).length };
+    });
+    expect(r.hasModal).toBe(true);
+    expect(r.amount).toBe(250);
+    expect(r.date).toBe('2026-06-15');
+    expect(r.method).toBe('Check');
+    expect(r.ref).toBe('1042');
+    expect(r.stillOne).toBe(1); // edited, never removed
+    assertNoErrors(page, 'edit payment');
+  });
+});

@@ -69,7 +69,38 @@ function zConfirm(msg, onYes, opts={}){
   document.body.appendChild(overlay);
   const cancelBtns=overlay.querySelectorAll('.zmodal-cancel');
   cancelBtns.forEach(b=>b.onclick=()=>{overlay.remove();if(onNo)onNo();});
-  overlay.querySelector('#zmodal-yes').onclick=()=>{overlay.remove();onYes();};
+  const _yes=overlay.querySelector('#zmodal-yes');
+  // NEVER-DELETE UX (owner directive): destructive confirms never fire on a tap —
+  // press and HOLD the button (5s; the fill shows progress; release early cancels).
+  // Server-side a user "delete" only ever ARCHIVES (cloud.js sweep), so this hold is
+  // the second wall, not the only one. Gated on the destructive label so ordinary
+  // danger-styled confirms stay one tap; navigator.webdriver (automation) keeps
+  // instant clicks — same convention as the geo consent prompt — and a dedicated
+  // test overrides the flag to cover the hold path. opts.hold:false opts out (for
+  // flows that already guarded with their own hold).
+  const _destructive=danger&&opts.hold!==false&&/delete|remove|discard|clear|wipe/i.test(yesLabel)&&!navigator.webdriver;
+  if(_destructive){
+    const HOLD=(typeof window._tdHoldMs==='number'?window._tdHoldMs:5000);
+    let _hT=null;
+    _yes.style.position='relative';_yes.style.overflow='hidden';
+    const _fill=document.createElement('div');
+    _fill.style.cssText='position:absolute;top:0;left:0;bottom:0;width:0%;background:rgba(255,255,255,.30);transition:width '+HOLD+'ms linear;pointer-events:none';
+    _yes.appendChild(_fill);
+    const _start=(e)=>{e.preventDefault();_fill.style.width='100%';_hT=setTimeout(()=>{overlay.remove();onYes();},HOLD);};
+    const _cancel=()=>{
+      if(!_hT)return;
+      clearTimeout(_hT);_hT=null;
+      _fill.style.transition='none';_fill.style.width='0%';
+      requestAnimationFrame(()=>{_fill.style.transition='width '+HOLD+'ms linear';});
+      if(typeof showToast==='function')showToast('Press and hold to confirm','✋');
+    };
+    _yes.addEventListener('pointerdown',_start);
+    _yes.addEventListener('pointerup',_cancel);
+    _yes.addEventListener('pointerleave',_cancel);
+    _yes.addEventListener('pointercancel',_cancel);
+  }else{
+    _yes.onclick=()=>{overlay.remove();onYes();};
+  }
   overlay.addEventListener('click',e=>{if(e.target===overlay){overlay.remove();if(onNo)onNo();}});
 }
 

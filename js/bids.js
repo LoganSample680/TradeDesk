@@ -1353,7 +1353,50 @@ function logPayment(){
     }
   }
 }
-function deletePay(id){zConfirm('Delete this payment record?',()=>{_userDelete(()=>{payments=payments.filter(p=>p.id!==id);saveAll();});renderCDBids();},{title:'Delete payment',yes:'Delete',danger:true});}
+// NEVER-DELETE UX: kept for compatibility, but the UI now surfaces editPayment —
+// removal lives inside the edit modal, requires the 5s hold, and only archives.
+function deletePay(id){zConfirm('Remove this payment record? It moves to the Archive under Books — nothing is ever deleted.',()=>{_userDelete(()=>{payments=payments.filter(p=>p.id!==id);saveAll();});renderCDBids();},{title:'Remove payment',yes:'Remove',danger:true});}
+
+// ── Edit payment — fix the record instead of deleting it (owner directive) ────
+function editPayment(id){
+  const p=payments.find(x=>x.id===id);if(!p)return;
+  document.getElementById('_epay-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_epay-ov';ov.className='zmodal-overlay';
+  const sheet=document.createElement('div');
+  sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
+  const isRef=p.type==='refund';
+  sheet.innerHTML=
+    '<div style="font-size:15px;font-weight:800;margin-bottom:12px">✎ Edit '+(isRef?'refund':'payment')+'</div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Amount</label><input id="_epay-amount" type="number" step="0.01" value="'+Math.abs(p.amount||0)+'" style="font-size:15px;padding:11px"></div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Date</label><input id="_epay-date" type="date" value="'+escHtml(p.date||'')+'" style="font-size:15px;padding:11px"></div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Method</label><input id="_epay-method" value="'+escHtml(p.method||'')+'" placeholder="Cash, Check, Card…" style="font-size:15px;padding:11px"></div>'+
+    '<div class="f" style="margin-bottom:14px"><label>Reference #</label><input id="_epay-ref" value="'+escHtml(p.ref||'')+'" placeholder="Optional" style="font-size:15px;padding:11px"></div>'+
+    '<button onclick="_savePaymentEdit('+id+')" style="width:100%;min-height:44px;padding:13px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Save changes</button>'+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-bottom:6px">Cancel</button>'+
+    '<button onclick="_removePayment('+id+')" style="width:100%;padding:8px;border:none;background:none;color:var(--text3);font-size:11px;cursor:pointer;font-family:inherit;opacity:.7">Remove this record…</button>';
+  ov.appendChild(sheet);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
+}
+function _savePaymentEdit(id){
+  const p=payments.find(x=>x.id===id);if(!p)return;
+  const a=parseFloat((document.getElementById('_epay-amount')||{}).value);
+  const d=(document.getElementById('_epay-date')||{}).value;
+  if(!a||a<=0||!d){zAlert('Enter a valid amount and date.');return;}
+  const isRef=p.type==='refund';
+  p.amount=isRef?-Math.abs(a):Math.abs(a);
+  p.date=d;
+  p.method=(document.getElementById('_epay-method')||{}).value||'';
+  p.ref=(document.getElementById('_epay-ref')||{}).value||'';
+  saveAll();
+  document.getElementById('_epay-ov')?.remove();
+  renderCDBids&&renderCDBids();renderCDTimeline&&renderCDTimeline();renderMoneyPage&&renderMoneyPage();renderDash&&renderDash();refreshCollectLabel&&refreshCollectLabel();
+  showToast('Payment updated','✎');
+}
+function _removePayment(id){
+  document.getElementById('_epay-ov')?.remove();
+  deletePay(id); // hold-to-confirm for real users; archives server-side, never deletes
+}
 
 let activeLienBidId=null;
 function openLienPanel(bidId){
