@@ -3614,6 +3614,47 @@ test.describe('_uploadClientHub — stamps the LIVE client object', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
+  test('boot hub sweep is PACED — never fires all clients concurrently', async () => {
+    // The old boot sweep called _uploadClientHub for EVERY tokened client at once;
+    // the daily finance-charge tick invalidates all content hashes together, so the
+    // first boot of the day burst O(clients) snapshot builds + storage writes — the
+    // boot storm that times out cert runs and would hit any large real account.
+    const r = await page.evaluate(async () => {
+      const base = 886100;
+      for (let i = 0; i < 6; i++) {
+        clients = clients.filter(c => c.id !== base + i);
+        clients.push({ id: base + i, name: 'Sweep C' + i, phone: '316555090' + i, clientToken: 'sweeptok' + i, clientHubKey: '' });
+      }
+      window._supaUser = window._supaUser || { id: 'sweep-user-1', email: 's@t.com' };
+      // Keep the queue to exactly our 6 — park any other tokened clients for the test.
+      const parked = [];
+      clients.forEach(c => { if ((c.id < base || c.id >= base + 6) && c.clientToken) { parked.push([c, c.clientToken]); c.clientToken = ''; } });
+      const calls = [];
+      const orig = window._uploadClientHub;
+      window._uploadClientHub = async (cid) => { calls.push({ cid, t: Date.now() }); };
+      try {
+        _hubSweepQueue = []; if (_hubSweepTimer) { clearTimeout(_hubSweepTimer); _hubSweepTimer = null; }
+        const t0 = Date.now();
+        _startHubSweep();
+        const atStart = calls.length;                       // nothing fires synchronously
+        await new Promise(res => setTimeout(res, 800));
+        const early = calls.length;                          // ~2 ticks in — NOT all 6
+        await new Promise(res => setTimeout(res, 2200));
+        return { atStart, early, total: calls.filter(c => c.cid >= base && c.cid < base + 6).length, spreadMs: calls.length > 1 ? calls[calls.length - 1].t - calls[0].t : 0, t0 };
+      } finally {
+        window._uploadClientHub = orig;
+        parked.forEach(([c, tok]) => { c.clientToken = tok; });
+        _hubSweepQueue = []; if (_hubSweepTimer) { clearTimeout(_hubSweepTimer); _hubSweepTimer = null; }
+      }
+    });
+    expect(r.atStart).toBe(0);                 // no synchronous burst
+    expect(r.early).toBeLessThan(6);           // pacing: not all clients in the first ticks
+    expect(r.early).toBeGreaterThanOrEqual(1); // ...but the sweep IS running
+    expect(r.total).toBe(6);                   // every tokened client is eventually swept
+    expect(r.spreadMs).toBeGreaterThan(1000);  // spread over time, never one burst
+    assertNoErrors(page, 'paced hub sweep');
+  });
+
   test('hub key/token survive a merge that replaces the client object mid-upload', async () => {
     // A delta/realtime merge replaces row OBJECTS in `clients` by id. If that happens
     // while the storage upload is in flight, stamping the pre-await reference writes to

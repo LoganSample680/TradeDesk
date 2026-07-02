@@ -308,6 +308,31 @@ async function _uploadClientHub(clientId){
   }
   return url;
 }
+// ── Boot hub sweep — drift-repair backstop, PACED ─────────────────────────────
+// Every real change already refreshes its own client's hub at the change site
+// (bids/payments/jobs/logPayment call _uploadClientHub/_refreshClientHub inline).
+// This sweep exists only to repair hubs that drifted while another device was
+// authoritative. It used to fire EVERY tokened client CONCURRENTLY at boot —
+// O(clients) simultaneous snapshot builds + storage writes, and the daily
+// finance-charge tick invalidates every content hash at once, so the first boot
+// of the day uploaded ALL of them in one burst (hundreds seen on the grown cert
+// account; the same would hit any large real account). One client per tick keeps
+// boot flat at ANY account size; the content-hash gate inside _uploadClientHub
+// still makes unchanged hubs a no-op.
+let _hubSweepQueue=[],_hubSweepTimer=null;
+function _startHubSweep(){
+  if(_hubSweepTimer||!_supaUser)return;
+  _hubSweepQueue=clients.filter(c=>c.clientToken).map(c=>c.id);
+  if(_hubSweepQueue.length)_hubSweepTimer=setTimeout(_tickHubSweep,350);
+}
+function _tickHubSweep(){
+  _hubSweepTimer=null;
+  const id=_hubSweepQueue.shift();
+  if(id===undefined)return;
+  // Account switched mid-sweep → stale ids simply miss in clients[] and no-op.
+  try{if(_supaUser&&supaEnabled())_uploadClientHub(id).catch(()=>{});}catch(_e){}
+  if(_hubSweepQueue.length)_hubSweepTimer=setTimeout(_tickHubSweep,350);
+}
 async function _drainHubQueue(){
   try{
     const q=JSON.parse(localStorage.getItem('zp3_hub_queue')||'[]');
