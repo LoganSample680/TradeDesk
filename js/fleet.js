@@ -993,7 +993,6 @@ function _renderMaintModal(savedType) {
         </div>
       </div>
       <button class="btn btn-p" onclick="saveMaintRecord()" style="width:100%;padding:14px;font-size:16px;font-weight:700">Save service record</button>
-      ${_maintEditId?`<button onclick="deleteMaintenanceRecord(${_maintEditId})" style="width:100%;margin-top:8px;padding:11px;background:none;border:none;color:var(--red);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Delete this record</button>`:''}
     </div>
   `;
 

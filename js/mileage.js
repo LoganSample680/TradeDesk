@@ -934,7 +934,6 @@ function openLogTripModal(opts){
       '</div>':'')+
     '<div class="f" style="margin-bottom:14px"><label>Notes <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>'+
       '<input id="lm-notes" placeholder="e.g. Supply stop at Sherwin-Williams" value="'+escHtml(opts.notes||'')+'"></div>'+
-    (opts.editId?'<button onclick="zConfirm(\'Delete this trip?\',function(){delMileage('+opts.editId+');closeTopModal();},{yes:\'Delete\',danger:true})" class="btn" style="width:100%;margin-bottom:8px;color:#dc2626;border-color:#fca5a5;background:#fff5f5;font-weight:700">🗑 Delete trip</button>':'')+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Cancel</button>'+
       (opts.editId
