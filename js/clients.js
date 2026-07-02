@@ -1710,6 +1710,8 @@ function renderCDBids(){
       if(balance>0.01&&days>=14&&days<21)actBtns.push('<button class="btn btn-sm" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'second\')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">💬 2nd notice</button>');
       if(balance>0.01&&days>=21)actBtns.push('<button class="btn btn-sm btn-r" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'intent\')">💬 Intent to lien</button>');
       if(lien&&lien.status!=='resolved'&&getBidBalance(b)<=0.01)actBtns.push('<button class="btn btn-sm" onclick="releaseLien('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">✓ Release lien</button>');
+      // Recordable release doc — reachable any time after release (re-file, lost copy).
+      if(lien&&lien.status==='resolved')actBtns.push('<button class="btn btn-sm" onclick="printKansasLienRelease('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">📄 Release doc</button>');
       actBtns.push('<button class="btn btn-sm" onclick="openEditBid('+b.id+')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">✎ Revise bid</button>');
       actBtns.push('<button class="btn btn-sm" onclick="showSupplyList('+b.id+')" style="background:#FFF0E8;color:#854F0B;border-color:#E89B50">📦 Supply list</button>');
       actBtns.push('<button class="btn btn-sm" onclick="recoverBidRooms('+b.id+')" style="background:#F0F7FF;color:#1a365d;border-color:#9DBEE5">♻️ Recover rooms</button>');

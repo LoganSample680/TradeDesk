@@ -1384,6 +1384,78 @@ test.describe('printKansasLien — document structure', () => {
     }
   });
 
+  test('printKansasLien — document is self-contained: native print + Back button, no parent-scope tdPrint', async () => {
+    // The doc opens in a window.open() tab where the app's tdPrint() does NOT exist,
+    // so the Print button MUST call the native window.print() defined inline — the old
+    // onclick="tdPrint()" threw silently in that scope (the "print does nothing" bug).
+    const result = await page.evaluate(([bidId]) => {
+      if (typeof printKansasLien !== 'function') return null;
+      let html = null;
+      const _origOpen = window.open;
+      window.open = function () {
+        const w = { document: { _h: '', write(h) { this._h += h; html = this._h; }, close() {} } };
+        return w;
+      };
+      try { printKansasLien(bidId); } catch (e) { window.open = _origOpen; return { error: e.message }; }
+      window.open = _origOpen;
+      if (!html) return { noHtml: true };
+      return {
+        definesPrint: /function\s+tdDoPrint\s*\(/.test(html),
+        callsNativePrint: /window\.print\(\)/.test(html),
+        printBtnWired: /onclick="tdDoPrint\(\)"/.test(html),
+        backBtnWired: /onclick="tdBack\(\)"/.test(html),
+        definesBack: /function\s+tdBack\s*\(/.test(html),
+        hasBackLabel: html.includes('Back to TradeDesk'),
+        callsWindowClose: /window\.close\(\)/.test(html),
+        // The Print button must NOT depend on the parent-only tdPrint() anymore.
+        noParentTdPrint: !/onclick="tdPrint\(\)"/.test(html),
+        // Touch target: both toolbar buttons carry the >=44px min-height class.
+        touchSized: (html.match(/class="td-bar-btn"/g) || []).length >= 2 && /min-height:46px/.test(html),
+      };
+    }, [LIEN_PRINT_BID]);
+    if (result && !result.error && !result.noHtml) {
+      expect(result.definesPrint).toBe(true);
+      expect(result.callsNativePrint).toBe(true);
+      expect(result.printBtnWired).toBe(true);
+      expect(result.noParentTdPrint).toBe(true);
+      expect(result.backBtnWired).toBe(true);
+      expect(result.definesBack).toBe(true);
+      expect(result.hasBackLabel).toBe(true);
+      expect(result.callsWindowClose).toBe(true);
+      expect(result.touchSized).toBe(true);
+    }
+  });
+
+  test('printKansasLienRelease — generates a recordable release doc (self-contained print/back)', async () => {
+    const result = await page.evaluate(([bidId]) => {
+      if (typeof printKansasLienRelease !== 'function') return { noFn: true };
+      let html = null;
+      const _origOpen = window.open;
+      window.open = function () { return { document: { _h: '', write(h) { this._h += h; html = this._h; }, close() {} } }; };
+      try { printKansasLienRelease(bidId); } catch (e) { window.open = _origOpen; return { error: e.message }; }
+      window.open = _origOpen;
+      if (!html) return { noHtml: true };
+      return {
+        isRelease: /Release of Mechanic's Lien/i.test(html),
+        satisfied: /PAID AND SATISFIED|RELEASE, DISCHARGE/i.test(html),
+        refsOriginalLien: /Date Original Lien Filed|Original Lien Amount/i.test(html),
+        fileWithCounty: html.includes('Sedgwick') && /File this release in the SAME office/i.test(html),
+        selfContainedPrint: /function\s+tdDoPrint\s*\(/.test(html) && /window\.print\(\)/.test(html) && /onclick="tdDoPrint\(\)"/.test(html),
+        backBtn: /onclick="tdBack\(\)"/.test(html) && html.includes('Back to TradeDesk'),
+        notary: html.toLowerCase().includes('notary'),
+      };
+    }, [LIEN_PRINT_BID]);
+    if (result && !result.noFn && !result.error && !result.noHtml) {
+      expect(result.isRelease).toBe(true);
+      expect(result.satisfied).toBe(true);
+      expect(result.refsOriginalLien).toBe(true);
+      expect(result.fileWithCounty).toBe(true);
+      expect(result.selfContainedPrint).toBe(true);
+      expect(result.backBtn).toBe(true);
+      expect(result.notary).toBe(true);
+    }
+  });
+
   test('printKansasLien — shows zAlert if window.open blocked', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof printKansasLien !== 'function') return null;

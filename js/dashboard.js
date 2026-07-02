@@ -661,12 +661,28 @@ function printKansasLien(bidId){
   .notary-title{font-size:12pt;font-weight:bold;text-transform:uppercase;margin-bottom:10px;text-align:center}
   .page-break{page-break-after:always;margin-bottom:40px}
   .proposal-section{margin-top:40px}
+  .td-bar-btn{padding:12px 18px;border-radius:8px;font-size:15px;font-weight:800;cursor:pointer;min-height:46px;white-space:nowrap;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-tap-highlight-color:transparent;line-height:1}
   @media print{body{padding:20px}.no-print{display:none}}
 </style></head><body>
-<div class="no-print" style="background:#185FA5;color:#fff;padding:12px 16px;margin:-40px -40px 30px;display:flex;justify-content:space-between;align-items:center">
-  <span style="font-size:15px;font-weight:700">${escHtml(stateName)} Mechanic's Lien — Ready to print</span>
-  <button onclick="tdPrint()" style="padding:8px 20px;border-radius:6px;border:none;background:#fff;color:#185FA5;font-size:13px;font-weight:700;cursor:pointer">🖨️ Print</button>
+<div class="no-print" style="position:sticky;top:0;z-index:10;background:#185FA5;color:#fff;padding:10px 14px;margin:-40px -40px 30px;display:flex;justify-content:space-between;align-items:center;gap:10px;box-shadow:0 2px 10px rgba(0,0,0,.18)">
+  <button onclick="tdBack()" class="td-bar-btn" style="border:1.5px solid rgba(255,255,255,.6);background:transparent;color:#fff">&larr; Back to TradeDesk</button>
+  <button onclick="tdDoPrint()" class="td-bar-btn" style="border:none;background:#fff;color:#185FA5">&#128424;&#65039; Print</button>
 </div>
+<script>
+  // Self-contained: this document lives in a window.open() tab, so it CANNOT reach
+  // the parent app's print helper. Use the native window.print()/window.close() that
+  // exist right here — the old handler referenced a parent-only function undefined in
+  // this scope, so the Print button silently threw and never printed (iOS + desktop).
+  function tdDoPrint(){ try{ window.focus(); }catch(e){} window.print(); }
+  function tdBack(){
+    // Close the tab we were opened into; if the browser refuses (some iOS cases),
+    // fall back to navigating back to the app that opened us.
+    try{ window.close(); }catch(e){}
+    setTimeout(function(){
+      if(!window.closed){ try{ if(document.referrer) location.href=document.referrer; else history.back(); }catch(e){ history.back(); } }
+    }, 250);
+  }
+</script>
 
 <h1>Mechanic's Lien Statement</h1>
 <h2>State of ${escHtml(stateName)}</h2>
@@ -788,6 +804,162 @@ ${bid.proposalHtml?`<div class="page-break"></div><div class="proposal-section">
   const win=window.open('','_blank');
   if(win){win.document.write(html);win.document.close();}
   else{zAlert('Allow pop-ups to open the lien document. In Safari: tap AA in address bar → Allow pop-ups.');}
+}
+
+// ── Release of Mechanic's Lien — the recordable discharge filed once paid ─────
+// Once the debt is satisfied, the contractor has a STATUTORY DUTY to file a lien
+// release with the same Register of Deeds so the property title is cleared;
+// failing to do so exposes them to penalties. Mirrors printKansasLien's shape
+// and the self-contained print/back toolbar.
+function printKansasLienRelease(bidId){
+  const bid=bids.find(b=>b.id===bidId);if(!bid)return;
+  const lien=getBidLien(bidId);if(!lien)return;
+  const c=getClientById(bid.client_id);if(!c)return;
+  const bname=S.bname||'TradeDesk';
+  const bphone=S.bphone||'';
+  const blic=S.blic||'';
+  const owner=getOwnerName()||'';
+  const claimAmt=(lien.amount||0).toFixed(2);
+  const addr=bid.addr||c.addr||'';
+  const {stateCode:detectedState,county:detectedCounty}=getCountyForBid(bid);
+  const stateName=(typeof STATE_TAX!=='undefined'&&STATE_TAX[detectedState]?.name)||detectedState;
+  const statuteRef=(typeof STATE_LIEN!=='undefined'&&STATE_LIEN[detectedState])?STATE_LIEN[detectedState].statute:(detectedState+' mechanic\'s lien statutes');
+  const county=lien.county||(detectedCounty+', '+detectedState);
+  const countyShort=county.replace(/,\s*[A-Z]{2}$/,'');
+  const filingInfo=getCountyFilingInfo(detectedState);
+  const fmtD=d=>{if(!d)return'_______________';const[y,m,dy]=d.split('-');const mn=['January','February','March','April','May','June','July','August','September','October','November','December'];return mn[parseInt(m)-1]+' '+parseInt(dy)+', '+y;};
+  const filedDate=lien.date||'';
+  const releaseDate=lien.releasedDate||todayKey();
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Release of Mechanic's Lien — ${escHtml(c.name)}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Times New Roman',Times,serif;font-size:13pt;color:#000;background:#fff;padding:40px}
+  h1{font-size:18pt;text-align:center;text-transform:uppercase;letter-spacing:2px;margin-bottom:6px}
+  h2{font-size:13pt;text-align:center;margin-bottom:24px;font-weight:normal}
+  .subtitle{text-align:center;font-size:11pt;margin-bottom:30px;font-style:italic}
+  .section{margin-bottom:18px}
+  .label{font-size:10pt;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
+  .value{border-bottom:1px solid #000;min-height:24px;padding:2px 4px;font-size:13pt}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .notice{border:2px solid #000;padding:14px;margin:20px 0;font-size:11pt;line-height:1.6}
+  .oath{margin:24px 0;font-size:11pt;line-height:1.8;text-align:justify}
+  .sig-block{margin-top:36px}
+  .sig-line{border-bottom:1px solid #000;min-height:36px;margin-bottom:4px}
+  .sig-label{font-size:10pt;text-align:center;color:#333}
+  .notary{border:1px solid #000;padding:16px;margin-top:28px;font-size:11pt;line-height:1.8}
+  .notary-title{font-size:12pt;font-weight:bold;text-transform:uppercase;margin-bottom:10px;text-align:center}
+  .td-bar-btn{padding:12px 18px;border-radius:8px;font-size:15px;font-weight:800;cursor:pointer;min-height:46px;white-space:nowrap;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-tap-highlight-color:transparent;line-height:1}
+  @media print{body{padding:20px}.no-print{display:none}}
+</style></head><body>
+<div class="no-print" style="position:sticky;top:0;z-index:10;background:#3B8C2A;color:#fff;padding:10px 14px;margin:-40px -40px 30px;display:flex;justify-content:space-between;align-items:center;gap:10px;box-shadow:0 2px 10px rgba(0,0,0,.18)">
+  <button onclick="tdBack()" class="td-bar-btn" style="border:1.5px solid rgba(255,255,255,.6);background:transparent;color:#fff">&larr; Back to TradeDesk</button>
+  <button onclick="tdDoPrint()" class="td-bar-btn" style="border:none;background:#fff;color:#3B8C2A">&#128424;&#65039; Print</button>
+</div>
+<script>
+  function tdDoPrint(){ try{ window.focus(); }catch(e){} window.print(); }
+  function tdBack(){ try{ window.close(); }catch(e){} setTimeout(function(){ if(!window.closed){ try{ if(document.referrer) location.href=document.referrer; else history.back(); }catch(e){ history.back(); } } }, 250); }
+</script>
+
+<h1>Release of Mechanic's Lien</h1>
+<h2>State of ${escHtml(stateName)}</h2>
+<div class="subtitle">Pursuant to ${escHtml(statuteRef)}</div>
+
+<div class="notice">
+  <strong>RELEASE &amp; SATISFACTION:</strong> The undersigned lien claimant hereby acknowledges that the debt secured by the Mechanic's Lien described below has been FULLY PAID AND SATISFIED, and does hereby RELEASE, DISCHARGE, and forever cancel said lien against the real property described herein. The Register of Deeds of ${escHtml(county)} is authorized to release this lien of record.
+</div>
+
+<div class="section">
+  <div class="label">1. Lien Claimant (Contractor)</div>
+  <div class="value">${escHtml(bname)}</div>
+  ${bphone?'<div class="value" style="margin-top:6px">Phone: '+escHtml(bphone)+(blic?' &nbsp;|&nbsp; License: '+escHtml(blic):'')+'</div>':''}
+  ${owner?'<div class="value" style="margin-top:6px">Contractor/Owner: '+escHtml(owner)+'</div>':''}
+</div>
+
+<div class="section">
+  <div class="label">2. Property Owner (Debtor)</div>
+  <div class="value">${escHtml(c.name)}</div>
+</div>
+
+<div class="section">
+  <div class="label">3. Property Address</div>
+  <div class="value">${escHtml(addr)}</div>
+</div>
+
+<div class="section grid2">
+  <div>
+    <div class="label">4. Original Lien Amount</div>
+    <div class="value">$${escHtml(claimAmt)}</div>
+  </div>
+  <div>
+    <div class="label">5. Date Original Lien Filed</div>
+    <div class="value">${fmtD(filedDate)}</div>
+  </div>
+</div>
+
+<div class="section grid2">
+  <div>
+    <div class="label">6. County of Original Filing</div>
+    <div class="value">${escHtml(county)}</div>
+  </div>
+  <div>
+    <div class="label">7. Date of This Release</div>
+    <div class="value">${fmtD(releaseDate)}</div>
+  </div>
+</div>
+
+<div class="oath">
+  <strong>VERIFICATION:</strong> The undersigned, being duly sworn, states that they are the claimant (or duly authorized agent of the claimant) of the Mechanic's Lien described above; that the indebtedness secured by said lien has been paid in full; and that said lien is hereby released and discharged in its entirety.
+</div>
+
+<div class="sig-block">
+  <div class="grid2">
+    <div>
+      <div class="label" style="margin-bottom:8px">Claimant Signature</div>
+      <div class="sig-line"></div>
+      <div class="sig-label">${escHtml(owner||'Contractor')}</div>
+    </div>
+    <div>
+      <div class="label" style="margin-bottom:8px">Date Signed</div>
+      <div class="sig-line"></div>
+      <div class="sig-label">Date</div>
+    </div>
+  </div>
+  <div style="margin-top:16px">
+    <div class="label" style="margin-bottom:8px">Printed Name &amp; Title</div>
+    <div class="sig-line"></div>
+    <div class="sig-label">${escHtml(owner||'Contractor')}, Owner — ${escHtml(bname)}</div>
+  </div>
+</div>
+
+<div class="notary">
+  <div class="notary-title">Notary Acknowledgment</div>
+  State of ${escHtml(stateName)}<br>
+  County of ____________________________<br><br>
+  Subscribed and sworn to before me this _______ day of __________________, 20___,<br>
+  by ____________________________________________.<br><br>
+  <div style="margin-top:24px;display:flex;gap:40px">
+    <div style="flex:1">
+      <div style="border-bottom:1px solid #000;min-height:36px"></div>
+      <div style="font-size:10pt;text-align:center;margin-top:4px">Notary Public Signature</div>
+    </div>
+    <div style="flex:1">
+      <div style="border-bottom:1px solid #000;min-height:36px"></div>
+      <div style="font-size:10pt;text-align:center;margin-top:4px">My Commission Expires</div>
+    </div>
+  </div>
+  <div style="margin-top:12px;font-size:10pt">
+    <strong>File with:</strong> ${escHtml(filingInfo.office)} — ${escHtml(countyShort)}, ${escHtml(detectedState)}<br>
+    File this release in the SAME office where the original lien was recorded to clear the title.<br>
+    <strong>Statute:</strong> ${escHtml(filingInfo.cite)}
+  </div>
+</div>
+
+</body></html>`;
+
+  const win=window.open('','_blank');
+  if(win){win.document.write(html);win.document.close();}
+  else{zAlert('Allow pop-ups to open the lien release document. In Safari: tap AA in address bar → Allow pop-ups.');}
 }
 
 function _mmtToggle(id){

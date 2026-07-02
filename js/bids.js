@@ -1534,9 +1534,17 @@ function releaseLien(bidId){
   const c=bid?getClientById(bid.client_id):null;
   zConfirm('Mark lien as released? This confirms payment has been received.',()=>{
     const l=liens.find(x=>x.bid_id===bidId);
-    if(l){l.status='resolved';saveAll();}
+    if(l){l.status='resolved';l.releasedDate=todayKey();saveAll();}
     if(bid){setBidCollStage(bid,'resolved','Lien released — payment confirmed');}
     renderMoneyPage();try{renderCDBids();}catch(e){}
+    // LEGAL STEP: marking it resolved in the app does NOT clear the public record —
+    // the contractor must FILE a Release of Lien with the same Register of Deeds
+    // (statutory duty once paid). Offer the recordable document right here.
+    setTimeout(()=>{
+      zConfirm('Open the Release of Lien document to file with the county? (Required to clear the property title.)',
+        ()=>{printKansasLienRelease(bidId);},
+        {title:'File the release',yes:'Open release doc',no:'Later',danger:false});
+    },300);
     // Offer to send release confirmation text to client
     if(c&&c.phone){
       const biz=S.bname||'TradeDesk';

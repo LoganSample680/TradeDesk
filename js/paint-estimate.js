@@ -2476,12 +2476,19 @@ ol{padding-left:18px;line-height:2}
 @media print{@page{margin:0.5in;size:letter}body{padding:0}.no-print{display:none!important}}
 </style>
 </head><body>
-<div class="no-print" style="background:#185FA5;color:#fff;padding:12px 20px;display:flex;justify-content:space-between;align-items:center">
-  <span style="font-weight:700">TradeDesk — Proposal PDF</span>
-  <button onclick="tdPrint()" style="background:#fff;color:#185FA5;border:none;padding:8px 18px;border-radius:6px;font-weight:700;font-size:14px;cursor:pointer">⬇ Save as PDF</button>
+<div class="no-print" style="position:sticky;top:0;z-index:10;background:#185FA5;color:#fff;padding:10px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;box-shadow:0 2px 10px rgba(0,0,0,.18)">
+  <span style="font-weight:700;font-size:14px">TradeDesk — Proposal PDF</span>
+  <button onclick="tdDoPrint()" style="background:#fff;color:#185FA5;border:none;padding:12px 20px;border-radius:8px;font-weight:800;font-size:15px;cursor:pointer;min-height:46px;white-space:nowrap;-webkit-tap-highlight-color:transparent">&#11015; Save as PDF</button>
 </div>
 ${proposal.innerHTML}
-<scr"+"ipt>setTimeout(()=>tdPrint(),600)</scr"+"ipt>
+<scr"+"ipt>
+  // Self-contained: this PDF opens in its own blob tab where the app's print helper
+  // does not exist. Call the native window.print() defined right here — the old
+  // handler referenced a parent-only function undefined in this scope, so the button
+  // AND the auto-print silently threw and never printed.
+  function tdDoPrint(){ try{ window.focus(); }catch(e){} window.print(); }
+  setTimeout(tdDoPrint, 600);
+</scr"+"ipt>
 </body></html>`;
   // Use blob URL — no popup permission needed
   const blob=new Blob([html],{type:'text/html'});
