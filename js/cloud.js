@@ -482,9 +482,9 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.02.26.4';
+const APP_VERSION='07.02.26.5';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
-let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null;
+let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
 // flips true only when the td-sync channel confirms SUBSCRIBED (delivery is live).
 // Anything that depends on actually RECEIVING peer changes should gate on this, not
@@ -2922,6 +2922,7 @@ function _teardownRealtimeChannels(){
   clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;_broadcastPending=false;
   clearTimeout(_reconcileTimer);_reconcileTimer=null;
   clearTimeout(_writeCacheTimer);_writeCacheTimer=null; // a pending debounced cache write would snapshot the OUTGOING account after the wipe
+  clearTimeout(_rtRenderTimer);_rtRenderTimer=null;     // a pending coalesced render would paint the outgoing account's rows
 }
 // Hard-wipe THIS account's entire local footprint so nothing can bleed into the next
 // account signed in on the same device (bug #39). Idempotent — safe to call from both
@@ -4731,10 +4732,25 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   // arriving via realtime: it already rendered them locally at edit time, and rebuilding
   // every container on each echoed row left the page churning under any open modal/sheet
   // so its box never settled (clicks timed out on a slow device, "element not stable").
-  // Mirrors the _lastLocalSaveAt guards at cloud.js:3597/3709/3717. Direct callers (the
-  // render-parity tests) pass no fromRealtime flag, so they still dispatch synchronously;
-  // a genuine peer change (no recent local save) also renders. Data is always applied above.
+  // Mirrors the _lastLocalSaveAt guards at cloud.js:3597/3709/3717. Data is always applied above.
   if(fromRealtime&&Date.now()-_lastLocalSaveAt<5000)return;
+  if(fromRealtime){
+    // BURST-COALESCED render for realtime events: a peer save that touches N rows
+    // arrives as N postgres_changes events, and rebuilding all ~15 containers PER
+    // EVENT is a render storm that scales with the peer's batch size (seen live:
+    // a peer's client-token backfill produced 13 UPDATE events → 14 full rebuilds
+    // on the receiver, breaking the glitch-free budget and janking the device).
+    // One trailing render 180ms after the last event paints the same end state.
+    // Direct callers (the render-parity tests, manual invocations) pass no
+    // fromRealtime flag and still dispatch synchronously below.
+    clearTimeout(_rtRenderTimer);
+    _rtRenderTimer=setTimeout(()=>{_rtRenderTimer=null;try{_renderAllPages();}catch(_e){}},180);
+    return;
+  }
+  _renderAllPages();
+}
+// The full post-change render chain — every container a synced record can appear in.
+function _renderAllPages(){
   renderDash&&renderDash();buildScopeGrid&&buildScopeGrid();
   renderClientList&&renderClientList();renderLeadsPage&&renderLeadsPage();
   renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
