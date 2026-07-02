@@ -194,19 +194,19 @@ test.describe('employee lockout — data layer (server-side redaction)', () => {
       ruleText: 'A persists a real bid/income and an active team_members link to B',
       expected: 'bid persisted AND team link active',
       act: async (p) => {
-        return await p.evaluate(async ({ bidId, incId, REAL, Buid, perms }) => {
+        return await p.evaluate(async ({ bidId, incId, REAL, Buid, Bemail, perms }) => {
           bids.push({ id: bidId, amount: REAL, client_name: 'E2E Redact', status: 'sent', _e2e: 'redact', created: new Date().toISOString() });
           if (typeof income !== 'undefined') income.push({ id: incId, amount: REAL, source: 'E2E Redact', date: new Date().toISOString().slice(0, 10), _e2e: 'redact' });
           if (typeof supaSaveToCloud === 'function') await supaSaveToCloud();
           await _supa.from('team_members').delete().eq('contractor_user_id', _supaUser.id).eq('employee_user_id', Buid);
           const { error } = await _supa.from('team_members').insert({
-            contractor_user_id: _supaUser.id, employee_user_id: Buid, name: 'E2E Tech B', role: 'tech', permissions: perms, active: true,
+            contractor_user_id: _supaUser.id, employee_user_id: Buid, email: Bemail, name: 'E2E Tech B', role: 'tech', permissions: perms, active: true,
           });
           // Surface the REAL failure reason in the finding (a bare linked=false told us
           // nothing on the cloud gate — capture code+message for the rule's got).
           window.__linkErr = error ? ((error.code || '?') + ': ' + (error.message || String(error))) : null;
           return error ? 0 : 3;
-        }, { bidId, incId, REAL, Buid: B.uid, perms: TECH_PERMS });
+        }, { bidId, incId, REAL, Buid: B.uid, Bemail: B.email, perms: TECH_PERMS });
       },
       rule: async (p) => {
         const r = await p.evaluate(async ({ bidId, Buid }) => {
