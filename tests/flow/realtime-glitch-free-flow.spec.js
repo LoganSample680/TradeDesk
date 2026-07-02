@@ -51,10 +51,16 @@ test.describe('realtime sync is glitch-free (multi-device)', () => {
     // Instrument B: count renderDash calls, and poll (every 40ms) whether the
     // dashboard greeting ever vanished (a blank-flash) or the active page changed.
     await pageB.evaluate(() => {
-      window.__g = { rd: 0, greetMissing: 0, pageChanged: 0 };
+      window.__g = { rd: 0, greetMissing: 0, pageChanged: 0, stacks: [] };
       if (typeof renderDash === 'function') {
         const orig = renderDash;
-        window.renderDash = function () { window.__g.rd++; return orig.apply(this, arguments); };
+        window.renderDash = function () {
+          window.__g.rd++;
+          // Record WHO triggered each render — on a budget breach the failure names the
+          // caller instead of leaving us to guess which sync path added a pass.
+          try { window.__g.stacks.push(String((new Error()).stack || '').split('\n').slice(1, 4).map(s => s.trim()).join(' < ')); } catch (e) {}
+          return orig.apply(this, arguments);
+        };
       }
       window.__gActive = (document.querySelector('.pg.active') || {}).id || null;
       window.__gPoll = setInterval(() => {
@@ -98,7 +104,10 @@ test.describe('realtime sync is glitch-free (multi-device)', () => {
       rule: async (p) => {
         const g = p.__g || {};
         const ok = g.greetMissing === 0 && g.pageChanged === 0 && g.rd <= 8 && bErrors.length === 0;
-        return { ok, got: `greetMissing=${g.greetMissing} pageChanged=${g.pageChanged} renderDash=${g.rd} errors=${bErrors.length}${bErrors.length ? ' :: ' + bErrors.slice(0, 2).join(' | ') : ''}` };
+        const stackNote = (!ok && g.rd > 8 && Array.isArray(g.stacks))
+          ? ' :: render callers: ' + g.stacks.map((s, i) => `[${i + 1}] ${s}`).join(' || ')
+          : '';
+        return { ok, got: `greetMissing=${g.greetMissing} pageChanged=${g.pageChanged} renderDash=${g.rd} errors=${bErrors.length}${bErrors.length ? ' :: ' + bErrors.slice(0, 2).join(' | ') : ''}${stackNote}` };
       },
     });
 

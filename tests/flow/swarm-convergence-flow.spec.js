@@ -230,7 +230,28 @@ test.describe('swarm — N writers on one account converge byte-equal', () => {
           }, canonFnSource));
         }
         const distinct = new Set(canons);
-        return { ok: distinct.size === 1, got: `${distinct.size} distinct states across ${N} devices (lens: ${canons.map(c => c.length).join(',')})` };
+        let diffNote = '';
+        if (distinct.size > 1) {
+          // Name the divergence instead of just counting states: diff the first two
+          // distinct serializations row-by-row (canon output is valid JSON).
+          try {
+            const [sa, sb] = [...distinct];
+            const A = new Map(JSON.parse(sa).map(r => [String(r.id), r]));
+            const B = new Map(JSON.parse(sb).map(r => [String(r.id), r]));
+            const onlyA = [...A.keys()].filter(k => !B.has(k)).slice(0, 4);
+            const onlyB = [...B.keys()].filter(k => !A.has(k)).slice(0, 4);
+            const fieldDiffs = [];
+            for (const [k, ra] of A) {
+              const rb = B.get(k); if (!rb) continue;
+              for (const f of new Set([...Object.keys(ra), ...Object.keys(rb)])) {
+                if (JSON.stringify(ra[f]) !== JSON.stringify(rb[f])) { fieldDiffs.push(`${k}.${f}: ${JSON.stringify(ra[f])} vs ${JSON.stringify(rb[f])}`); break; }
+              }
+              if (fieldDiffs.length >= 4) break;
+            }
+            diffNote = ` :: rowsOnlyInState1=[${onlyA}] rowsOnlyInState2=[${onlyB}] fieldDiffs=[${fieldDiffs.join(' | ')}]`;
+          } catch (e) { diffNote = ' :: diff failed: ' + e.message; }
+        }
+        return { ok: distinct.size === 1, got: `${distinct.size} distinct states across ${N} devices (lens: ${canons.map(c => c.length).join(',')})${diffNote}` };
       },
     });
 

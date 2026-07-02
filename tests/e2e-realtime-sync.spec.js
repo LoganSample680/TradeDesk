@@ -169,24 +169,30 @@ test.describe('Realtime sync — render coverage', () => {
   });
 
   // ── 8. _writeLocalCache called by _applyRealtimeRecord ───────────────────
-  test('_applyRealtimeRecord writes to local cache on realtime events', async () => {
-    const cacheUpdated = await page.evaluate(() => {
+  // ASSERTION UPDATED (§11.4): the cache write is a 250ms TRAILING DEBOUNCE by design
+  // (one write per realtime burst instead of one per row — the render-jank scale fix),
+  // so reading localStorage synchronously after the event never observes THIS event's
+  // write. The old assertion (`cache exists at all`) passed only when unrelated earlier
+  // activity happened to have written the cache — a hidden order dependency that webkit
+  // timing exposed. Now: fire the event, wait out the debounce, and assert the cache
+  // actually CONTAINS the applied record (strictly stronger than the old check).
+  test('_applyRealtimeRecord writes the applied record to the local cache (debounced)', async () => {
+    const cacheUpdated = await page.evaluate(async () => {
       if (typeof _applyRealtimeRecord !== 'function') return null;
-      const before = localStorage.getItem('zp3_cloud_cache');
-      // Use td_clients table to add a new record
       _applyRealtimeRecord('td_clients', {
         eventType: 'INSERT',
         new: { id: 'rt-test-client-1', user_id: 'u', data: { id: 'rt-test-client-1', name: 'Realtime Test Client' }, deleted_at: null },
         old: null,
       });
+      await new Promise(r => setTimeout(r, 800)); // > the 250ms trailing debounce
       const after = localStorage.getItem('zp3_cloud_cache');
       // Clean up
       const c = clients; const idx = c.findIndex(x => String(x.id) === 'rt-test-client-1');
       if (idx !== -1) c.splice(idx, 1);
-      return after !== null;
+      return !!(after && after.includes('rt-test-client-1'));
     });
     if (cacheUpdated !== null) {
-      expect(cacheUpdated, 'local cache must be written after realtime event').toBe(true);
+      expect(cacheUpdated, 'the debounced cache write must land and contain the applied record').toBe(true);
     }
     assertNoErrors(page, '_writeLocalCache on realtime');
   });
