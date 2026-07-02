@@ -999,7 +999,7 @@ function clearAllData(){
       // missing) means those records survive a "Clear all data" and resurface.
       _userDelete(()=>{
         clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];maintenance=[];payments=[];liens=[];timeEntries=[];events=[];photos=[];licenses=[];contracts=[];agreements=[];checksState={};
-        S.employees=[];S.vehicles=[];
+        S.employees=[];_setVehicles([]); // stamped wipe — must beat any stale cloud copy in the merge
         estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;
         gps={active:false,startCoords:null,startTime:null,clientId:null,clientName:'',timerInt:null,vehicle:'',purpose:''};
         if(_activeTimer){clearInterval(_activeTimer.timerInterval);_activeTimer=null;hideClockBanner();}
@@ -1077,9 +1077,23 @@ function updateLocationBtn(){
   else{btn.textContent='📍 Location access';btn.style.color='';}
 }
 
+// EVERY vehicle write goes through here. Stamps BOTH timestamps:
+// - vehiclesTs: the per-field tiebreaker _mergeIncomingSettings uses to keep a
+//   newer local fleet over an older incoming one.
+// - settingsTs: the blob-level last-writer-wins stamp. Without it a fleet edit
+//   looked "stale" to the save gate (cloud settingsTs newer → skip-settings) and
+//   NEVER UPLOADED — the added vehicle lived only in this device's cache and
+//   vanished on the next sign-out/fresh boot (the "Zach's Ford deletes itself" bug).
+function _setVehicles(vehs){S.vehicles=vehs;S.vehiclesTs=Date.now();S.settingsTs=Date.now();}
 function getVehicles(){
-  let vehs=S.vehicles||[];
-  if(!vehs.length&&S.veh&&S.veh.trim()){vehs=[S.veh.trim()];}
+  let vehs=Array.isArray(S.vehicles)?S.vehicles:[];
+  // Legacy one-time seed from the old single-vehicle string field `S.veh`.
+  // Fire it ONLY when the fleet has NEVER been managed — i.e. no vehiclesTs
+  // stamp. Every add/edit/delete stamps S.vehiclesTs (a plain settings save
+  // does not), so once the user has touched the fleet — including DELETING
+  // the last vehicle — this seed is permanently off and a removed vehicle can
+  // never resurrect from S.veh (the "Zach Ford keeps coming back" bug).
+  if(!vehs.length&&!S.vehiclesTs&&S.veh&&S.veh.trim()){vehs=[S.veh.trim()];}
   // Migrate legacy string array to object array
   return vehs.map(v=>typeof v==='string'?{name:v,nickname:''}:v);
 }

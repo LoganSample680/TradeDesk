@@ -68,7 +68,7 @@ function _showOdometerModal(tasks,hardBlock){
       if(totalDriven>0){
         const bizPct=Math.min(100,Math.round(logged/totalDriven*100));
         const vehs=getVehicles();const vi=vehs.findIndex(v=>_vehKey(v)===key);
-        if(vi>=0){vehs[vi].bizUse=bizPct;S.vehicles=vehs;}
+        if(vi>=0){vehs[vi].bizUse=bizPct;_setVehicles(vehs);}
         existing.bizUsePct=bizPct;existing.loggedMi=Math.round(logged);existing.totalMi=totalDriven;
         if(logged>totalDriven){existing.mileageFlag=true;}
       }
@@ -132,7 +132,7 @@ function _getVehicleOdoSummary(veh,year){
 
 function updateVehicleBizUse(idx,val){
   const vehs=getVehicles();
-  if(vehs[idx]){vehs[idx].bizUse=Math.max(1,Math.min(100,parseFloat(val)||100));S.vehicles=vehs;saveAll();}
+  if(vehs[idx]){vehs[idx].bizUse=Math.max(1,Math.min(100,parseFloat(val)||100));_setVehicles(vehs);saveAll();}
 }
 function getAvgVehicleBizUse(){
   const vehs=getVehicles();if(!vehs.length)return 1;
