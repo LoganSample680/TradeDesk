@@ -808,7 +808,7 @@ function openPayPanel(bidId, autoType){
   const overpaidAmt=Math.round((rawPaid-total)*100)/100;
   const _payClient=getClientById(bid.client_id);
   const _hubUrl=_payClient?.clientToken&&_supaUser
-    ?(_clientBaseUrl()+'client.html?t='+_payClient.clientToken+'&u='+_supaUser.id+'&c='+_payClient.id)
+    ?(_clientBaseUrl()+'client.html?t='+_payClient.clientToken+'&u='+_effectiveUid()+'&c='+_payClient.id)
     :null;
 
   document.querySelectorAll('.pay-modal-overlay').forEach(e=>e.remove());
@@ -940,7 +940,7 @@ function showPayQr(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   const c=getClientById(bid.client_id);
   if(!c?.clientToken||!_supaUser){showToast('No client hub for this job.','⚠');return;}
-  const hubUrl=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+c.id;
+  const hubUrl=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+c.id;
   const balance=getBidBalance(bid);
   closePayPanel();
   document.getElementById('_pay-qr-ov')?.remove();

@@ -16,8 +16,12 @@ Object.defineProperty(window,'_stripeConnectStatus',{get:()=>_stripeConnectStatu
 
 async function _fetchStripeConnectStatus(){
   if(!supaEnabled()||!_supaUser)return null;
-  // Serve from localStorage cache (1-hour TTL) so hub sharing is instant after first load
-  const _cacheKey='td_stripe_status_'+(_supaUser?.id||'');
+  // CREW: the status that matters is the BOSS's (payments from any link route to the
+  // account in the link's u= param — the effective uid). The Edge Function verifies
+  // the team link server-side before honoring the target. Cache is keyed by the
+  // EFFECTIVE account so an owner-and-crew dual identity never reads a stale mix.
+  const _statusUid=(typeof _effectiveUid==='function'&&_effectiveUid())||_supaUser?.id||'';
+  const _cacheKey='td_stripe_status_'+_statusUid;
   try{
     const _cached=JSON.parse(localStorage.getItem(_cacheKey)||'null');
     if(_cached&&_cached.ts&&(Date.now()-_cached.ts)<3600000){
@@ -29,7 +33,8 @@ async function _fetchStripeConnectStatus(){
     const token=session?.data?.session?.access_token;
     if(!token)return null;
     const res=await fetch(SUPA_URL+'/functions/v1/stripe-connect-status',{
-      method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}'
+      method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify(_isEmployee&&_statusUid!==_supaUser.id?{target:_statusUid}:{})
     });
     const data=await res.json();
     _stripeConnectStatus=data;
@@ -207,7 +212,7 @@ async function sendPaymentLink(bidId){
     // (if absent) and publishes the current snapshot so the link resolves.
     await _uploadClientHub(c.id);
     if(!c.clientToken)throw new Error('Could not create the client hub link.');
-    const url=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+c.id;
+    const url=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+c.id;
     // Show link modal (copy fallback) then attempt SMS
     const _showPayLinkModal=(url)=>{
       const ov=document.createElement('div');ov.className='zmodal-overlay';
@@ -494,7 +499,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.02.26.6';
+const APP_VERSION='07.02.26.7';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady

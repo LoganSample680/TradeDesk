@@ -279,10 +279,10 @@ function _agSignUrl(a){
 async function _agUpload(a){
   if(!supaEnabled()||!_supaUser)return{error:new Error('Sign in to send for signature.')};
   if(!a.signingToken)a.signingToken=_agToken();
-  const key='agreements/'+_supaUser.id+'/'+a.id+'_'+a.signingToken+'.json';
+  const key='agreements/'+_effectiveUid()+'/'+a.id+'_'+a.signingToken+'.json';
   a.signingKey=key;
   const snapshot={
-    id:a.id,token:a.signingToken,contractorUserId:_supaUser.id,
+    id:a.id,token:a.signingToken,contractorUserId:_effectiveUid(),
     type:a.type,party:a.party,title:a.title||_agTypeLabel(a.type),
     body:a.body,profitPct:a.profitPct,cadence:a.cadence,
     effectiveDate:a.effectiveDate,

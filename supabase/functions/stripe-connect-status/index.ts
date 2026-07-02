@@ -33,10 +33,31 @@ Deno.serve(async (req) => {
       });
     }
 
+    // CREW: a linked employee asks for the BOSS's connect status (their own login has
+    // no account/Stripe). `target` is honored ONLY when an ACTIVE team_members link
+    // ties the caller to that contractor — verified server-side, never trusted.
+    const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
+    let accountUserId = user.id;
+    if (body && body.target && body.target !== user.id) {
+      const { data: link } = await supaAdmin
+        .from('team_members')
+        .select('id')
+        .eq('employee_user_id', user.id)
+        .eq('contractor_user_id', body.target)
+        .eq('active', true)
+        .limit(1);
+      if (!link || !link.length) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403, headers: { ...CORS, 'Content-Type': 'application/json' },
+        });
+      }
+      accountUserId = body.target;
+    }
+
     const { data: userRow } = await supaAdmin
       .from('users')
       .select('account_id')
-      .eq('id', user.id)
+      .eq('id', accountUserId)
       .maybeSingle();
 
     if (!userRow?.account_id) {

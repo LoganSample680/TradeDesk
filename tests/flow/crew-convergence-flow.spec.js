@@ -199,14 +199,26 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
         return editorIdx.length * 2;
       },
       rule: async () => {
-        const ok = [];
+        const detail = [];
+        let held = 0;
         for (const i of editorIdx) {
-          ok.push(await crewPages[i].evaluate(({ SHARED, i }) => {
+          const d = await crewPages[i].evaluate(({ SHARED, i }) => {
             const b = (typeof bids !== 'undefined' ? bids : []).find(x => String(x.id) === String(SHARED));
-            return !!(b && b['crew_f' + i] === 'cv' + i);
-          }, { SHARED, i }));
+            return {
+              has: !!(b && b['crew_f' + i] === 'cv' + i),
+              rowPresent: !!b,
+              clock: (typeof window.__fieldClock === 'function' && window.__fieldClock('td_bids', String(SHARED), 'crew_f' + i)) || null,
+              pending: localStorage.getItem('zp3_pending_sync') === '1',
+              saveInFlight: typeof _pendingSavePromise !== 'undefined' && !!_pendingSavePromise,
+              loadInProgress: typeof _loadInProgress !== 'undefined' && _loadInProgress,
+            };
+          }, { SHARED, i });
+          if (d.has) held++;
+          else detail.push(`w${i}:row=${d.rowPresent} clock=${d.clock ? 'SET' : 'ABSENT'} pending=${d.pending} save=${d.saveInFlight} load=${d.loadInProgress}`);
         }
-        return { ok: ok.every(Boolean), got: `${ok.filter(Boolean).length}/${editorIdx.length} editors hold their marker` };
+        // clock=SET + marker gone ⇒ a merge dropped a CAPTURED edit (engine bug);
+        // clock=ABSENT ⇒ the edit was never derived (save-path bug on crew logins).
+        return { ok: held === editorIdx.length, got: `${held}/${editorIdx.length} editors hold their marker${detail.length ? ' — ' + detail.join(' | ') : ''}` };
       },
     });
 
@@ -489,6 +501,42 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
         }
         const distinct = new Set(canons);
         return { ok: distinct.size === 1 && !canons.includes('null'), got: `${distinct.size} distinct states (lens: ${canons.map(c => (c || '').length).join(',')})` };
+      },
+    });
+
+    // 6. MONEY ROUTING: everything a crew member sends must carry the BOSS's account
+    //    uid — hub/pay links (u= drives the Stripe checkout lookup in create-checkout)
+    //    and the hub snapshot's storage path. A crew login stamping its own uid sent
+    //    payments to an account that doesn't exist.
+    await step(page, {
+      label: 'crew-sent links + hub uploads carry the BOSS account (Stripe routing)', page: 'cloud', role: 'employee',
+      suspect: 'data.js _effectiveUid + proposals.js _uploadClientHub / hub link builders',
+      ruleText: 'the effective account uid, the hub link u= param, and the hub storage path must all be the boss for a crew sender',
+      expected: `everything stamped ${String(bossUid).slice(0, 8)}…`,
+      act: async (p) => {
+        p.__route = await pages.e1.evaluate(async ({ estClientId, boss }) => {
+          const eff = typeof _effectiveUid === 'function' ? _effectiveUid() : null;
+          let hubKey = null, hubUrl = null, upErr = null;
+          try {
+            hubUrl = await _uploadClientHub(estClientId); // returns the client-facing link
+            const c = clients.find(x => String(x.id) === String(estClientId));
+            hubKey = c && c.clientHubKey;
+          } catch (e) { upErr = e && e.message; }
+          return {
+            effIsBoss: String(eff) === String(boss),
+            urlHasBoss: !!(hubUrl && hubUrl.includes('u=' + boss)),
+            keyUnderBoss: !!(hubKey && hubKey.indexOf('client-hub/' + boss + '/') === 0),
+            upErr,
+          };
+        }, { estClientId, boss: bossUid });
+        return 1;
+      },
+      rule: async (p) => {
+        const r = p.__route || {};
+        return {
+          ok: r.effIsBoss === true && r.urlHasBoss === true && r.keyUnderBoss === true,
+          got: `effIsBoss=${r.effIsBoss} urlHasBoss=${r.urlHasBoss} keyUnderBoss=${r.keyUnderBoss}${r.upErr ? ' upErr=' + r.upErr : ''}`,
+        };
       },
     });
 

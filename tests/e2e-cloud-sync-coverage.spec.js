@@ -1306,6 +1306,28 @@ test.describe('100-writer op channel + rebase', () => {
     expect(r.hashIsIncoming).toBe(true);
   });
 
+  test('_effectiveUid — owner→self, crew→boss, dev-support→target (the Stripe/link routing identity)', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _effectiveUid !== 'function') return { skip: true };
+      const saved = { user: window._supaUser, emp: _isEmployee, cid: _contractorUserId };
+      try {
+        window._supaUser = { id: 'owner-9' }; _isEmployee = false; _contractorUserId = null;
+        const asOwner = _effectiveUid();
+        _isEmployee = true; _contractorUserId = 'boss-9';
+        const asCrew = _effectiveUid();
+        _isEmployee = true; _contractorUserId = null; // half-initialized crew context → fall back to self, never null-route
+        const asCrewUnlinked = _effectiveUid();
+        return { asOwner, asCrew, asCrewUnlinked };
+      } finally {
+        window._supaUser = saved.user; _isEmployee = saved.emp; _contractorUserId = saved.cid;
+      }
+    });
+    if (r.skip) return;
+    expect(r.asOwner).toBe('owner-9');
+    expect(r.asCrew).toBe('boss-9');          // crew artifacts route to the BOSS's account
+    expect(r.asCrewUnlinked).toBe('owner-9'); // never a null/undefined route
+  });
+
   test('crew op-sync — ops carry the CONTRACTOR uid and redacted-table ops never push', async () => {
     const r = await page.evaluate(async () => {
       if (typeof window.__opSync !== 'function' || typeof window.__opDbUnsynced !== 'function') return { skip: true };

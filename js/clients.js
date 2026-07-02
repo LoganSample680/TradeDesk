@@ -552,7 +552,7 @@ function _clientBaseUrl(){
 // ── Client hub directory (one row per client with hub status + share actions) ──
 function _clientHubUrl(c){
   if(!c?.clientToken||!_supaUser)return null;
-  return _clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+c.id;
+  return _clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+c.id;
 }
 function renderClientHubPage(){
   const el=document.getElementById('client-hub-list');if(!el)return;
@@ -602,7 +602,7 @@ function _previewClientHub(url,clientName,clientId){
       fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
         method:'POST',
         headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-        body:JSON.stringify({contractorUserId:_supaUser.id,bidId:String(b.id),viewerType:'contractor'})
+        body:JSON.stringify({contractorUserId:_effectiveUid(),bidId:String(b.id),viewerType:'contractor'})
       }).catch(()=>{});
     });
   }

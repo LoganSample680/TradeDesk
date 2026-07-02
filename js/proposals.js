@@ -168,7 +168,7 @@ async function processGalleryUpload(input){
       let url='',storagePath='';
       if(supaEnabled()&&_supaUser){
         const ext=file.name.split('.').pop()||'jpg';
-        const path='gallery/'+_supaUser.id+'/'+Date.now()+'_'+Math.random().toString(36).slice(2)+'.'+ext;
+        const path='gallery/'+_effectiveUid()+'/'+Date.now()+'_'+Math.random().toString(36).slice(2)+'.'+ext;
         const{error}=await _supa.storage.from('gallery').upload(path,file,{contentType:file.type,upsert:false});
         if(!error){
           const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
@@ -224,7 +224,7 @@ function _buildClientHubSnapshot(clientId){
   const snapshotPayments=cpayments.map(p=>({date:p.date||'',type:p.type||'',amount:p.amount||0,bid_id:p.bid_id||null,ref:p.ref||'',method:p.method||''}));
   const jobPhotos=clientPhotos.map(p=>({url:p.url,type:p.type,caption:p.caption||'',job_name:p.job_name||'',job_id:p.job_id||null}));
   // Extract optional chaining BEFORE the return object — Safari crashes on ?. inside { }
-  const _snapUserId=_supaUser?_supaUser.id||'':'';
+  const _snapUserId=_effectiveUid()||'';
   const _snapUserEmail=_supaUser?_supaUser.email||'':'';
   const _snapStripeOn=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
   const _snapSurchargeOn=!!(S.ccSurchargeEnabled&&_snapStripeOn);
@@ -270,7 +270,7 @@ async function _uploadClientHub(clientId){
   }
   if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});
   const baseUrl=_clientBaseUrl();
-  const url=baseUrl+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+  const url=baseUrl+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+clientId;
   const doUpload=async()=>{
     const snapshot=_buildClientHubSnapshot(clientId);
     if(!snapshot)return;
@@ -283,7 +283,7 @@ async function _uploadClientHub(clientId){
     // differently and uploads.
     const _hash=_hubHash(_json);
     if(c.clientHubKey&&c.clientHubHash===_hash)return;
-    const key='client-hub/'+_supaUser.id+'/'+clientId+'_'+c.clientToken+'.json';
+    const key='client-hub/'+_effectiveUid()+'/'+clientId+'_'+c.clientToken+'.json';
     const{error}=await _supa.storage.from('proposals').upload(key,_json,{contentType:'application/json',upsert:true,cacheControl:'0'});
     if(error)throw error;
     c.clientHubKey=key;c.clientHubHash=_hash;
@@ -319,7 +319,7 @@ function sendOnboardingLink(clientId){
   const c=getClientById(clientId);if(!c)return;
   if(!_supaUser){zAlert('Sign in to send the onboarding link.');return;}
   const baseUrl=_clientBaseUrl();
-  const url=baseUrl+'client.html?mode=onboard&t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+  const url=baseUrl+'client.html?mode=onboard&t='+c.clientToken+'&u='+_effectiveUid()+'&c='+clientId;
   const firstName=c.name?.split(' ')[0]||'there';
   const rawBiz=getBusinessName();
   const biz=(rawBiz&&!rawBiz.includes('@')&&rawBiz!=='TradeDesk')?rawBiz:(getOwnerName()||'your contractor');
@@ -349,7 +349,7 @@ function sendClientHubLink(clientId){
     saveAll();
   }
   const baseUrl=_clientBaseUrl();
-  const url=baseUrl+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+  const url=baseUrl+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+clientId;
   // Refresh hub content silently in background — never blocks the share sheet
   _uploadClientHub(clientId).catch(()=>{});
   const firstName=c.name?.split(' ')[0]||'there';
@@ -374,7 +374,7 @@ async function _refreshClientHub(clientId){
   const snapshot=_buildClientHubSnapshot(clientId);
   if(!snapshot)return;
   snapshot.token=c.clientToken;
-  const key='client-hub/'+_supaUser.id+'/'+clientId+'_'+c.clientToken+'.json';
+  const key='client-hub/'+_effectiveUid()+'/'+clientId+'_'+c.clientToken+'.json';
   try{
     const{error}=await _supa.storage.from('proposals').upload(key,JSON.stringify(snapshot),{contentType:'application/json',upsert:true,cacheControl:'0'});
     if(error)throw error;
@@ -386,7 +386,7 @@ function showHubMenu(clientId){
   const c=clients.find(x=>x.id===clientId);
   if(!c?.clientToken||!_supaUser){sendClientHubLink(clientId);return;}
   const baseUrl=_clientBaseUrl();
-  const hubUrl=baseUrl+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+  const hubUrl=baseUrl+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+clientId;
   const existing=document.getElementById('_hub-menu-ov');if(existing)existing.remove();
   const ov=document.createElement('div');
   ov.id='_hub-menu-ov';
@@ -655,7 +655,7 @@ async function sendProposalLink(){
     const _pdEpaRequired=!!(_pdYearBuilt&&_pdYearBuilt<1978&&((_pdYbClient&&_pdYbClient.rrpDisturb==='yes')||_rrpPaintAnswer==='yes'));
     const proposalData={
       id:bidId,token,clientName:cname,businessName:bname,
-      contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
+      contractorUserId:_effectiveUid(),contractorEmail:_supaUser.email,
       clientId:estLinkedClientId||null,
       proposalHtml:proposal.innerHTML,
       clientAddr:_pdCaddr,
@@ -697,7 +697,7 @@ async function sendProposalLink(){
     }
     _pendingSignToken={bidId,token,proposalKey};
     const baseUrl=_clientBaseUrl();
-    const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
+    const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_effectiveUid()+'&b='+bidId;
     const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     const shortUrl=await shortenUrl(signingUrl);
     // Run proposal and hub uploads in parallel, each capped at 6s
@@ -2623,7 +2623,7 @@ function _showCONotifyModal(clientId,coNum){
     c.clientToken=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
     saveAll();
   }
-  const url=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_supaUser.id+'&c='+clientId;
+  const url=_clientBaseUrl()+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+clientId;
   _coShareData={url,cname:c.name||'Client',bname:S.bname||'TradeDesk',cphone:(c.phone||'').replace(/\D/g,''),cemail:c.email||'',coNum,clientId};
   document.getElementById('_co-send-overlay')?.remove();
   const ov=document.createElement('div');

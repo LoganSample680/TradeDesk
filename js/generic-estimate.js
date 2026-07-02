@@ -2665,7 +2665,7 @@ async function sendGenericProposal(previewOnly){
   const _stripeEnabled=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
   const proposalData={
     id:bidId,token,clientName:v('gei-client'),businessName:S.bname||getBusinessName(),
-    contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
+    contractorUserId:_effectiveUid(),contractorEmail:_supaUser.email,
     clientId:_geiClientId||null,
     proposalHtml,clientAddr:v('gei-addr'),
     amount:total,deposit:_tmDepAmt,
@@ -2698,7 +2698,7 @@ async function sendGenericProposal(previewOnly){
     saveAll();
   }
   const baseUrl=_clientBaseUrl();
-  const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+bidId;
+  const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_effectiveUid()+'&b='+bidId;
   const shortUrl=await shortenUrl(signingUrl);
   const signingDirectUrl=shortUrl||signingUrl;
   let shareUrl=signingDirectUrl;
@@ -3018,7 +3018,7 @@ async function _sendIndProposal(){
   const _indEpaRequired=!!(_indYearBuilt&&_indYearBuilt<1978&&((c&&c.rrpDisturb==='yes')||(typeof _rrpPaintAnswer!=='undefined'&&_rrpPaintAnswer==='yes')));
   const proposalData={
     id:_indBidId,token,clientName:c?.name||'',businessName:S.bname||getBusinessName(),
-    contractorUserId:_supaUser.id,contractorEmail:_supaUser.email,
+    contractorUserId:_effectiveUid(),contractorEmail:_supaUser.email,
     proposalHtml,clientAddr:c?.addr||'',amount:midPrice,deposit:Math.round(midPrice*0.25),
     createdAt:new Date().toISOString(),status:'pending',notifyEmail:_supaUser.email,
     businessPhone:S.bphone||'',stripeConnectEnabled:_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false,
@@ -3034,7 +3034,7 @@ async function _sendIndProposal(){
   const b=bids.find(x=>x.id===_indBidId);
   if(b){b.signingToken=token;b.proposalKey=proposalKey;b.proposalHtml=proposalHtml;saveAll();}
   const baseUrl=_clientBaseUrl();
-  const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_supaUser.id+'&b='+_indBidId;
+  const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_effectiveUid()+'&b='+_indBidId;
   const shortUrl=await shortenUrl(signingUrl).catch(()=>null);
   const shareUrl=shortUrl||signingUrl;
   try{await navigator.clipboard.writeText(shareUrl);}catch(e){}

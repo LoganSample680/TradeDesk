@@ -131,6 +131,24 @@ Object.defineProperty(window,'_isEmployee',{get:()=>_isEmployee,set:v=>{_isEmplo
 Object.defineProperty(window,'_contractorUserId',{get:()=>_contractorUserId,set:v=>{_contractorUserId=v;},configurable:true});
 Object.defineProperty(window,'_employeeRecord',{get:()=>_employeeRecord,set:v=>{_employeeRecord=v;},configurable:true});
 
+// EFFECTIVE ACCOUNT UID — whose BUSINESS this session acts for. Every client-facing
+// money/identity artifact (hub + pay + signing links' u= param, proposal snapshot
+// contractorUserId, signature/view-tracking rows, storage paths) must carry THIS uid,
+// never raw _supaUser.id: a crew login stamping its own uid pointed Stripe checkout
+// lookups, signature notifications and hub uploads at an account that doesn't exist
+// (employees have no users/account_config row) — payments from crew-sent links could
+// never reach the owner. Owner → self; crew → the boss; dev-support → the target.
+function _effectiveUid(){
+  try{
+    if(typeof _devSupportMode!=='undefined'&&_devSupportMode&&typeof _DEV_SUPPORT_USERS!=='undefined'){
+      const u=Object.values(_DEV_SUPPORT_USERS).find(x=>x.name===_devSupportName)?.userId;
+      if(u)return u;
+    }
+  }catch(_e){}
+  if(typeof _isEmployee!=='undefined'&&_isEmployee&&_contractorUserId)return _contractorUserId;
+  return (typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||null;
+}
+
 // Default configs by business type
 function getRole(){return _user?.role||'owner';}
 function isOwner(){return !_isEmployee&&(getRole()==='owner'||getRole()==='co-owner');}
