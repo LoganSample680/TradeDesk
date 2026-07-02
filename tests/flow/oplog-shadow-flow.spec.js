@@ -146,31 +146,44 @@ test.describe('oplog phase 1+2+3 — durable op log + per-field merge + authorit
     await signIn(page);
   });
 
-  test('Phase 1: a derived op persists to IndexedDB and survives a reload (field clock rehydrates)', async ({ page }) => {
+  // ASSERTION UPDATED with the prune-on-ack redesign (§11.4). OLD behavior: ops
+  // accumulated in IndexedDB forever, so "count > 0 after reload" proved durability.
+  // NEW intended behavior: a successful save PUBLISHES pending ops to td_ops and
+  // prunes them locally (the log holds only un-acked intent, O(pending)). Durability
+  // is therefore: the intent survives a reload as EITHER a still-pending local op OR
+  // a published td_ops row — and the field clock must still rehydrate either way
+  // (from the local log pre-publish, or from the td_ops pull post-publish).
+  test('Phase 1: a derived op is durable across a reload — pending locally or published to td_ops (field clock rehydrates)', async ({ page }) => {
     const bidId = baseId() + 10;
     await step(page, {
-      label: 'create a bid → op persisted to IndexedDB → reload → still durable + clock rehydrated', page: 'cloud', role: 'contractor',
-      suspect: 'cloud.js _opPersist / _opDbLoad — durable op log + field-clock rehydrate',
-      ruleText: 'a derived op must be written to the durable IndexedDB log and survive a reload, and its field clock must rehydrate',
-      expected: 'opDbCount > 0 before AND after reload; field clock for the bid present after reload',
+      label: 'create a bid → op persisted → reload → intent still durable (local or td_ops) + clock rehydrated', page: 'cloud', role: 'contractor',
+      suspect: 'cloud.js _opPersist / _opDbLoad / _opSyncOps — durable op log + publish/prune + field-clock rehydrate',
+      ruleText: 'a derived op must be durably held (local log before publish, td_ops after) and its field clock must rehydrate across a reload',
+      expected: 'opDbCount > 0 before reload; after reload the op is pending locally OR published to td_ops; field clock present',
       act: async (p) => {
         await p.evaluate(({ bidId }) => {
           bids.push({ id: bidId, client_name: 'E2E Oplog Durable ' + bidId, name: 'Durable', amount: 100, status: 'Pending', _e2e: 'oplog' });
           saveAll(); // → supaSaveDebounced → _opShadowDerive → _opPersist (IndexedDB add)
         }, { bidId });
-        await p.waitForTimeout(400); // let the debounced save + async IndexedDB add settle
+        await p.waitForTimeout(400); // let the async IndexedDB add settle (debounced save hasn't fired yet)
         p.__before = await p.evaluate(() => window.__opDbCount());
         await p.reload({ waitUntil: 'domcontentloaded' });
         await p.waitForFunction(() => typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id, { timeout: 30000 });
         await p.waitForFunction(() => typeof _supaCloudLoaded === 'undefined' || _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});
-        await p.waitForTimeout(500); // let _opDbLoad rehydrate the field clocks from IndexedDB
+        await p.waitForTimeout(3000); // boot flush → save → publish+prune can complete; clocks rehydrate either way
         p.__after = await p.evaluate(() => window.__opDbCount());
+        p.__published = await p.evaluate(async ({ bidId }) => {
+          try {
+            const { data } = await _supa.from('td_ops').select('row_id').eq('user_id', _supaUser.id).eq('row_id', String(bidId)).limit(1);
+            return !!(data && data.length);
+          } catch (e) { return false; }
+        }, { bidId });
         p.__clock = await p.evaluate(({ bidId }) => window.__fieldClock('td_bids', bidId, 'amount'), { bidId });
         return 1;
       },
       rule: async (p) => ({
-        ok: p.__before > 0 && p.__after > 0 && p.__after >= p.__before && typeof p.__clock === 'string' && p.__clock.length > 0,
-        got: `dbCount before=${p.__before} after=${p.__after} clockAfterReload=${p.__clock}`,
+        ok: p.__before > 0 && (p.__after > 0 || p.__published) && typeof p.__clock === 'string' && p.__clock.length > 0,
+        got: `dbCount before=${p.__before} after=${p.__after} publishedToTdOps=${p.__published} clockAfterReload=${p.__clock}`,
       }),
     });
     const rep = report(FLOW, BASELINE);

@@ -449,7 +449,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.01.26.28';
+const APP_VERSION='07.01.26.29';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -523,6 +523,10 @@ let _rowSyncedAt={};
 // mint time), so applying it would regress the row. 10s of slack absorbs author-clock
 // skew. NOT persisted — rebuilt by the same paths that rebuild _syncedHash.
 let _rowServerTs={};
+// Ids the MOST RECENT load explicitly soft-deleted (deleted_at rode the delta) —
+// {tbl: Set(id)}, reset at each load's start. The reconnect merge-back consults this
+// so it never resurrects a row a peer deliberately deleted during our outage.
+let _lastLoadDeletes={};
 // Fast deterministic 32-bit string hash (FNV-1a) over the JSON of a row payload.
 function _hashPayload(obj){
   let str; try{ str=JSON.stringify(obj); }catch(_e){ return null; }
@@ -865,8 +869,11 @@ function _opApplyPeerOps(ops){
   }catch(_e){}
   if(touched){
     clearTimeout(_writeCacheTimer);_writeCacheTimer=setTimeout(()=>{_writeCacheTimer=null;try{_writeLocalCache();}catch(_e){}},250);
-    // Same render policy as _applyRealtimeRecord: peer changes render, our own save-window echoes don't.
-    if(Date.now()-_lastLocalSaveAt>=5000){try{renderDash&&renderDash();}catch(_e){}}
+    // Deliberately NO direct render here: an op INSERT event almost always precedes the
+    // row event for the SAME save (which renders via _applyRealtimeRecord), so rendering
+    // from op-apply doubled the pass and broke the glitch-free render budget (9>8, seen
+    // live). If the row event drops, the reconcile heartbeat's load renders within one
+    // interval — data is applied above either way; the socket is just the accelerator.
     // Schedule ONE debounced save: the merged row now differs from the server's whole-row
     // copy (hash mismatch), and this upload is what converges the SERVER row to the union
     // so late joiners see every field in the row itself, not just in the op stream. The 2s
@@ -3125,7 +3132,26 @@ async function _onReconnect(){
     //   3. PUSH the merged result + our ops — peers converge field-by-field.
     if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
     if(_pendingSavePromise){try{await _pendingSavePromise;}catch(_e){}}
+    // Snapshot BEFORE the pull: a reconnect must NEVER lose in-memory work. The delta
+    // path merges (nothing to lose), but the cursorless FULL fallback replaces the
+    // arrays, and the op-log re-append can't rescue rows when IndexedDB is unavailable
+    // (private browsing / blocked storage). Merge back whatever the pull dropped —
+    // except ids this device deliberately deleted — and the push below re-uploads any
+    // row the cloud genuinely lacks (no synced hash → treated as changed).
+    const _preSnap=_TD_TABLES.map(({t,get})=>({t,rows:(get()||[]).slice()}));
     await supaLoadFromCloud({silent:true});
+    try{
+      let _merged=false;
+      for(const{t,rows}of _preSnap){
+        const tdef=_TD_TABLES.find(x=>x.t===t);if(!tdef)continue;
+        const arr=tdef.get()||[];
+        const have=new Set(arr.map(r=>String(r.id)));
+        const del=_locallyDeletedIds[t];
+        const peerDel=_lastLoadDeletes[t];
+        for(const r of rows){const id=String(r.id);if(!have.has(id)&&!(del&&del.has(id))&&!(peerDel&&peerDel.has(id))){arr.push(r);_merged=true;}}
+      }
+      if(_merged&&typeof renderDash==='function')renderDash();
+    }catch(_e){}
     await _flushSaveNow();
     localStorage.removeItem('zp3_pending_sync');
     _hideOfflineBanner();
@@ -3926,6 +3952,7 @@ async function supaLoadFromCloud({silent=false}={}){
     // Any peer write landing after this sample leaves the server cursor ahead of
     // _lastZjUpdatedAt, so the heartbeat MUST fire within one interval. Zero added
     // latency: the reads were already sequential, just in the wrong order.
+    _lastLoadDeletes={}; // fresh record of what THIS load explicitly deletes (reconnect merge-back reads it)
     const settingsResult=await _supa.from('zj_data').select('settings,checks_state,receipt_images,updated_at').eq('user_id',uid).maybeSingle();
 
     // EMPLOYEE sessions load through the SECURITY DEFINER RPC load_account_data,
@@ -4071,7 +4098,7 @@ async function supaLoadFromCloud({silent=false}={}){
         const _ldTs=Date.now();
         for(const r of data){
           const id=String(r.id);
-          if(r.deleted_at){byId.delete(id);_syncedHash[t]&&_syncedHash[t].delete(id);_lastKnownIds[t]&&_lastKnownIds[t].delete(id);_rowSyncedAt[t]&&_rowSyncedAt[t].delete(id);_rowServerTs[t]&&_rowServerTs[t].delete(id);}
+          if(r.deleted_at){byId.delete(id);_syncedHash[t]&&_syncedHash[t].delete(id);_lastKnownIds[t]&&_lastKnownIds[t].delete(id);_rowSyncedAt[t]&&_rowSyncedAt[t].delete(id);_rowServerTs[t]&&_rowServerTs[t].delete(id);(_lastLoadDeletes[t]||(_lastLoadDeletes[t]=new Set())).add(id);}
           else{
             const _lr=byId.get(id);
             byId.set(id,_lr?_opApplyIncoming(t,_lr,r.data,r.updated_at):r.data);
