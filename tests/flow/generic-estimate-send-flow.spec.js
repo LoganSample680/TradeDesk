@@ -96,7 +96,7 @@ test.describe('generic estimator send → artifact (UI-driven)', () => {
       },
     });
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -142,7 +142,7 @@ test.describe('generic estimator send → artifact (UI-driven)', () => {
       },
     });
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

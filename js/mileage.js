@@ -68,7 +68,7 @@ function _showOdometerModal(tasks,hardBlock){
       if(totalDriven>0){
         const bizPct=Math.min(100,Math.round(logged/totalDriven*100));
         const vehs=getVehicles();const vi=vehs.findIndex(v=>_vehKey(v)===key);
-        if(vi>=0){vehs[vi].bizUse=bizPct;S.vehicles=vehs;}
+        if(vi>=0){vehs[vi].bizUse=bizPct;_setVehicles(vehs);}
         existing.bizUsePct=bizPct;existing.loggedMi=Math.round(logged);existing.totalMi=totalDriven;
         if(logged>totalDriven){existing.mileageFlag=true;}
       }
@@ -80,6 +80,7 @@ function _showOdometerModal(tasks,hardBlock){
       S.vehicleOdoLog[ny][key].startDate=todayKey();
     }
     S._odoSnoozeCount=0;
+    S.settingsTs=Date.now(); // odometer log is IRS data — must win the settings sync
     saveAll();_flushSaveNow();
     taskIdx++;
     renderTask();
@@ -112,12 +113,16 @@ function _showOdometerModal(tasks,hardBlock){
     clearInterval(_odoYieldIv);
     ov.remove();
     showToast('Odometer records saved — mileage deduction verified ✓','📋');
+    // Year-end verdict: with the business-use % now final, tell the contractor
+    // which deduction method won for the year they just closed out.
+    try{const _vy=tasks&&tasks[0]&&tasks[0].year;if(typeof _vehWinnerAlert==='function')setTimeout(()=>_vehWinnerAlert(_vy),600);}catch(_e){}
   }
 }
 
 function _odoSnooze(){
   S._odoSnoozedUntil=Date.now()+86400000; // 24 hours
   S._odoSnoozeCount=(S._odoSnoozeCount||0)+1;
+  S.settingsTs=Date.now();
   saveAll();
   document.getElementById('_odo-modal-ov')?.remove();
   showToast('Odometer reminder set for tomorrow','⏰');
@@ -132,7 +137,7 @@ function _getVehicleOdoSummary(veh,year){
 
 function updateVehicleBizUse(idx,val){
   const vehs=getVehicles();
-  if(vehs[idx]){vehs[idx].bizUse=Math.max(1,Math.min(100,parseFloat(val)||100));S.vehicles=vehs;saveAll();}
+  if(vehs[idx]){vehs[idx].bizUse=Math.max(1,Math.min(100,parseFloat(val)||100));_setVehicles(vehs);saveAll();}
 }
 function getAvgVehicleBizUse(){
   const vehs=getVehicles();if(!vehs.length)return 1;
@@ -1243,6 +1248,7 @@ function _milSetOdo(vehKey,field,val){
   if(!S.vehicleOdoLog[yr][vehKey])S.vehicleOdoLog[yr][vehKey]={};
   const n=parseFloat(String(val).replace(/[^0-9.]/g,''))||0;
   S.vehicleOdoLog[yr][vehKey][field]=n;
+  S.settingsTs=Date.now();
   saveAll();_flushSaveNow();
   renderAllMileage();
 }

@@ -245,7 +245,7 @@ function swSelectColor(sw,name,hex){
   if(sw&&hex){
     if(!S.recentSwColors)S.recentSwColors=[];
     S.recentSwColors=[{sw,name:cleanName,hex},...S.recentSwColors.filter(c=>c.sw!==sw)].slice(0,4);
-    saveAll();
+    _settingsChanged();
   }
 }
 function _swResetColorUI(){

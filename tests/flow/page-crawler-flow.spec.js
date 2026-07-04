@@ -71,7 +71,7 @@ test.describe('page crawler — every view renders clean (UI-driven)', () => {
     // Land back on the dashboard so the session is left in a normal state.
     await page.evaluate(() => goPg('pg-dash'));
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(errors, finding({
       page: 'crawler', control: 'console', rule: 'no page may log a console error while rendering live data',
       expected: 'zero console errors across all pages', got: errors.length + ' error(s): ' + errors.slice(0, 5).join(' || '),

@@ -327,6 +327,10 @@ function _startHubSweep(){
 }
 function _tickHubSweep(){
   _hubSweepTimer=null;
+  // Pause hook: precision specs (delta-sync's "exactly 1 row") set
+  // window._hubSweepPause so the sweep's client-row stamps can't land inside
+  // their measurement window. The queue holds and resumes when the flag clears.
+  if(window._hubSweepPause){_hubSweepTimer=setTimeout(_tickHubSweep,1000);return;}
   const id=_hubSweepQueue.shift();
   if(id===undefined)return;
   // Account switched mid-sweep → stale ids simply miss in clients[] and no-op.

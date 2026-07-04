@@ -162,7 +162,7 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
       },
     });
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

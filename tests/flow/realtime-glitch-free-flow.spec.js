@@ -114,7 +114,7 @@ test.describe('realtime sync is glitch-free (multi-device)', () => {
     // Resource cleanup only — the seed bid stays in the account (CLAUDE.md §13.7).
     await pageB.close().catch(() => {});
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 

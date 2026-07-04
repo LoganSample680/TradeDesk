@@ -165,7 +165,7 @@ test.describe('offline-sync race safety (multi-device)', () => {
     // (CLAUDE.md §13.7). Only the worker contexts are closed (resource cleanup).
     await Promise.all(workers.map(w => w.ctx.close().catch(() => {})));
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

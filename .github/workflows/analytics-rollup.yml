@@ -1,0 +1,24 @@
+# Nightly analytics rollup — aggregates raw analytics_events (live-user clicks,
+# page views, flow-test step costs) + the proposal funnel into
+# analytics_metrics_daily via the rollup-analytics edge function. The function
+# holds the service role internally; it is deployed --no-verify-jwt so this
+# needs no secret. Manual runs via workflow_dispatch.
+name: Analytics Rollup
+
+on:
+  schedule:
+    - cron: '0 8 * * *'   # nightly 08:00 UTC (~2-3am Central)
+  workflow_dispatch:
+
+jobs:
+  rollup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Invoke rollup-analytics
+        run: |
+          resp=$(curl -sS -X POST -w '\n%{http_code}' \
+            "https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/rollup-analytics")
+          body=$(echo "$resp" | head -n -1); code=$(echo "$resp" | tail -1)
+          echo "HTTP $code — $body"
+          [ "$code" = "200" ] || { echo "::error::rollup failed"; exit 1; }

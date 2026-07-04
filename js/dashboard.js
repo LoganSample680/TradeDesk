@@ -566,6 +566,11 @@ function checkUnpaidOnLoad(){
   // NOTE: intentionally NOT navigator.webdriver-guarded — offline specs call this directly
   // to assert it shows its modal. Its only BOOT auto-fire is via showDailyBriefing (which IS
   // webdriver-guarded), so under automation it never auto-pops, but a direct call still works.
+  // Hold until boot fully done (overlay gone + waterfall settled) — same gate as
+  // showDailyBriefing, so a direct boot-time call can't pop over the loading screen.
+  if(document.getElementById('supa-boot-overlay')||document.getElementById('_update-ov')||document.getElementById('pg-dash')?.classList.contains('boot-cascade')){
+    setTimeout(checkUnpaidOnLoad,350);return;
+  }
   if(window._collOnLoadShown)return;
   window._collOnLoadShown=true;
   const tk=todayKey();
@@ -1320,6 +1325,7 @@ function renderTodayFeed(){
     const msg='You\'re caught up — nothing to chase right now.';
     el.innerHTML='<div style="padding:14px;font-size:13px;color:var(--text3)">'+msg+'</div>';
     if(_feedSub)_feedSub.textContent='all caught up';
+    _mmtFeedEnter(el);
     return;
   }
 
@@ -1338,6 +1344,21 @@ function renderTodayFeed(){
     _sec('pending','📨','Pending','#7c3aed',pendingItems,showPending)+
     _sec('dep-sched','💳','Deposit & Schedule','var(--blue)',[...depositItems,...scheduleItems],showDepSched)+
     _sec('collect','💰','Collect','#A32D2D',finalPayItems,showFinalPay);
+  _mmtFeedEnter(el);
+}
+
+// Make Money Today — smoother entrance (owner request 2026-07-04): the feed's
+// sections fade+rise in a gentle top→bottom stagger the FIRST time they render
+// this session (window._mmtEntered one-shot), instead of snapping in. Opacity+
+// small translate only — no layout thrash — and it never replays on the frequent
+// data-driven re-renders, so it reads as a polished reveal, not a flicker.
+function _mmtFeedEnter(el){
+  try{
+    if(window._mmtEntered||!el)return;
+    window._mmtEntered=true;
+    el.classList.add('mmt-enter');
+    setTimeout(()=>{try{el.classList.remove('mmt-enter');}catch(_e){}},1100);
+  }catch(_e){}
 }
 
 function checkGoalPrompt(){
@@ -2139,7 +2160,36 @@ function renderEstimatesPage(){
 }
 
 // ── Dashboard widget drag-to-reorder ──────────────────────────────────────
-const _DASH_DEFAULT_ORDER = ['kpi','pipeline','feed','quick','calendar','sources'];
+// Every REAL dashboard card is its own widget (owner directive 2026-07-04:
+// "check all dashboard cards and make sure they can be moved"). crew/alerts/
+// contracts/goal were split out of the old kpi+pipeline mega-widgets.
+const _DASH_DEFAULT_ORDER = ['kpi','crew','alerts','contracts','goal','pipeline','feed','quick','calendar','sources'];
+
+// FLIP slide: run a DOM mutation (placeholder move) and animate every shifted
+// sibling from its old position to its new one, so cards GLIDE aside instead of
+// teleporting. Uses the CSS `translate` property (not `transform`) deliberately:
+// the wiggle animation owns `transform`, and `translate` composes with it, so a
+// card keeps jiggling WHILE it slides — exactly like iOS. Safe on re-entry: a
+// card grabbed mid-slide re-measures from its live rect, standard FLIP.
+function _flipShift(container, mutate) {
+  const kids = [...container.children].filter(el => el.nodeType === 1);
+  const before = new Map(kids.map(el => { const r = el.getBoundingClientRect(); return [el, { x: r.left, y: r.top }]; }));
+  mutate();
+  kids.forEach(el => {
+    const was = before.get(el);
+    const now = el.getBoundingClientRect();
+    const dx = was.x - now.left, dy = was.y - now.top;
+    if (!dx && !dy) return;
+    el.style.transition = 'none';
+    el.style.translate = `${dx}px ${dy}px`;
+    void el.offsetHeight; // commit the inverted position before animating
+    el.style.transition = 'translate .22s cubic-bezier(.22,1,.36,1)';
+    el.style.translate = '0 0';
+    const done = () => { el.style.transition = ''; el.style.translate = ''; el.removeEventListener('transitionend', done); };
+    el.addEventListener('transitionend', done);
+    setTimeout(done, 300); // fallback if transitionend never fires (display:none mid-flight)
+  });
+}
 
 function _getDashWidgetOrder() {
   const saved = S.dashWidgetOrder;
@@ -2147,17 +2197,29 @@ function _getDashWidgetOrder() {
   return _DASH_DEFAULT_ORDER.slice();
 }
 
+// Merge a saved order with widgets it doesn't know about (added in app updates,
+// e.g. the crew/alerts/contracts/goal split): each unknown id is INSERTED right
+// after its nearest default-order predecessor that the user already placed —
+// NOT dumped at the bottom. A user's crew card appears where it naturally
+// belongs (after KPIs) instead of below Lead Sources.
+function _mergeDashOrder(saved) {
+  const merged = saved.slice();
+  _DASH_DEFAULT_ORDER.forEach((id, i) => {
+    if (merged.includes(id)) return;
+    let at = 0;
+    for (let j = i - 1; j >= 0; j--) {
+      const p = merged.indexOf(_DASH_DEFAULT_ORDER[j]);
+      if (p !== -1) { at = p + 1; break; }
+    }
+    merged.splice(at, 0, id);
+  });
+  return merged;
+}
+
 function _applyDashOrder(order) {
   const root = document.getElementById('dash-widget-root');
   if (!root) return;
-  order.forEach(id => {
-    const el = root.querySelector(`.td-dw[data-dw="${id}"]`);
-    if (el) root.appendChild(el);
-  });
-  // Append any widgets not present in a saved order (e.g. new widgets added in
-  // an app update) in their default position so they never get orphaned.
-  _DASH_DEFAULT_ORDER.forEach(id => {
-    if (order.includes(id)) return;
+  _mergeDashOrder(order).forEach(id => {
     const el = root.querySelector(`.td-dw[data-dw="${id}"]`);
     if (el) root.appendChild(el);
   });
@@ -2275,8 +2337,16 @@ function _initDashDrag() {
       const r = w.getBoundingClientRect();
       if (e.clientY < r.top + r.height / 2) { before = w; break; }
     }
-    if (before) root.insertBefore(placeholder, before);
-    else root.appendChild(placeholder);
+    // Only mutate when the target slot actually changed — this also gates the
+    // FLIP slide + haptic tick to real reorders, not every pointermove.
+    const already = before ? (placeholder.parentNode === root && placeholder.nextElementSibling === before)
+                           : root.lastElementChild === placeholder;
+    if (already) return;
+    _flipShift(root, () => {
+      if (before) root.insertBefore(placeholder, before);
+      else root.appendChild(placeholder);
+    });
+    navigator.vibrate?.(8); // tiny tick as cards glide aside, iOS-style
   }
 
   function onDrop() {
@@ -2285,6 +2355,11 @@ function _initDashDrag() {
     if (!dragEl || !placeholder) return;
     dragEl.style.display = '';
     placeholder.replaceWith(dragEl);
+    // Settle: the dropped card springs back into the flow instead of popping in.
+    const settled = dragEl;
+    settled.classList.add('td-drop-settle');
+    setTimeout(() => { try { settled.classList.remove('td-drop-settle'); } catch (_e) {} }, 320);
+    navigator.vibrate?.(12);
     ghost?.remove(); ghost = null;
     placeholder = null; dragEl = null;
   }

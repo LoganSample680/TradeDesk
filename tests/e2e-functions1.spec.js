@@ -1008,6 +1008,32 @@ test.describe('Finance functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // Mobile books = stacked cards, no horizontal scroll (owner request). The row
+  // cells must carry data-label (the CSS card layout reads them) and the money
+  // tables carry the bk-tbl hook the responsive @media rule targets.
+  test('books money rows carry data-label + bk-tbl hook for the mobile card layout', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof renderIncome !== 'function' || typeof income === 'undefined') return { skip: true };
+      income.push({ id: 9992001, client_name: 'Card Layout Co', amount: 1234, type: 'payment', method: 'Card', date: '2026-06-01', _src: 'payment' });
+      try { renderIncome(); } catch (e) { return { skip: false, err: e.message }; }
+      const el = document.getElementById('pg-tracker') || document;
+      const table = el.querySelector('.bk-tbl');
+      const row = el.querySelector('.bk-tbl tbody tr');
+      const labels = row ? [...row.querySelectorAll('td[data-label]')].map(td => td.getAttribute('data-label')) : [];
+      // month AND day accordions (owner: break it down by month and day)
+      const hasMonth = !!el.querySelector('.bk-month');
+      const hasDay = !!el.querySelector('.bk-day .bk-day-hd');
+      income = income.filter(x => x.id !== 9992001);
+      return { skip: false, hasTable: !!table, labels, hasMonth, hasDay };
+    });
+    if (r.skip) return;
+    expect(r.hasTable).toBe(true);                 // the bk-tbl hook the @media rule targets
+    expect(r.labels).toContain('Client');          // headline field labeled…
+    expect(r.labels).toContain('Amount');          // …and the amount, for the card layout
+    expect(r.hasMonth).toBe(true);                 // month accordion
+    expect(r.hasDay).toBe(true);                   // nested day accordion
+  });
+
   test('renderMonthlyPL — renders P&L summary without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderMonthlyPL !== 'function') return { skip: true };

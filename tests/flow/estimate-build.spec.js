@@ -211,7 +211,7 @@ test.describe('estimate build → proposal → real artifact (UI-driven)', () =>
     });
 
     // ── FRICTION PROFILE + CLICK-BUDGET GATE (CLAUDE.md §13) ────────────────
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.overBudget,
       `UX REGRESSION: ${FLOW} used ${rep.totalClicks} interactions vs budget ${BASELINE[FLOW] && BASELINE[FLOW].clicks}. ` +
       `Every PR must be as fast or faster (CLAUDE.md §13). If this is an intentional new step, ratchet the baseline up in the same commit and justify it.`

@@ -96,7 +96,7 @@ test.describe('client signing funnel (UI-driven)', () => {
     // NO cleanup — the client, bid + proposal snapshot stay in the dev account on
     // purpose so the owner can inspect what this test created (CLAUDE.md §13.7).
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

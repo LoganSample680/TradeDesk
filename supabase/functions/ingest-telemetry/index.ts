@@ -10,6 +10,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+// INSTANT hot lane (optional): a fine-grained GitHub PAT (Actions: write) lets
+// this function fire the error-watch workflow the moment an error row lands,
+// instead of waiting for its 15-min cron. Unset → cron remains the only trigger.
+const GH_DISPATCH_TOKEN = Deno.env.get("GH_DISPATCH_TOKEN") || "";
+const GH_DISPATCH_REPO = Deno.env.get("GH_DISPATCH_REPO") || "LoganSample680/TradeDesk";
+let _lastDispatch = 0; // per-instance throttle: error bursts fire ONE dispatch/min
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -55,6 +61,19 @@ serve(async (req) => {
       }));
       const { error } = await svc.from("error_log").insert(rows);
       if (!error) errCount = rows.length;
+      // Instant trigger: wake error-watch NOW (throttled, never blocks the response).
+      if (errCount > 0 && GH_DISPATCH_TOKEN && Date.now() - _lastDispatch > 60_000) {
+        _lastDispatch = Date.now();
+        fetch(`https://api.github.com/repos/${GH_DISPATCH_REPO}/dispatches`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${GH_DISPATCH_TOKEN}`,
+            "Accept": "application/vnd.github+json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ event_type: "live-error" }),
+        }).catch(() => {});
+      }
     }
 
     // ── Telemetry → analytics_events (anonymized, aggregated) ──

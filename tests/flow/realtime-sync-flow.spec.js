@@ -69,7 +69,7 @@ test.describe('realtime cross-device sync (UI-driven)', () => {
     // extra device page is closed (resource cleanup, not data).
     await pageB.close().catch(() => {});
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

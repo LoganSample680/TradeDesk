@@ -1688,7 +1688,13 @@ test.describe('finance.js — exhaustive coverage', () => {
 
     test('active job present — shows job in list', async () => {
       const r = await page.evaluate(() => {
-        // Our fixture job 56601 belongs to Finance Test Alpha
+        // Our fixture job 56601 belongs to Finance Test Alpha. Re-seed it INSIDE
+        // the test tick: a late cloud/cache load can reassign `jobs` after the
+        // beforeEach and drop the fixture, so openCompleteJobModal shows "No active
+        // jobs" — the intermittent WebKit failure (task #22, shared-page state race).
+        if (typeof clients !== 'undefined' && !clients.some(c => c.id === 78801)) clients.push({ id: 78801, name: 'Finance Test Alpha', phone: '316-555-9001', addr: '1 Finance St, Wichita KS 67202', email: 'alpha@fintest.com' });
+        if (typeof bids !== 'undefined' && !bids.some(b => b.id === 67701)) bids.push({ id: 67701, client_id: 78801, client_name: 'Finance Test Alpha', amount: 3500, status: 'Closed Won', draft: false });
+        if (typeof jobs !== 'undefined' && !jobs.some(j => j.id === 56601)) jobs.push({ id: 56601, client_id: 78801, bid_id: 67701, name: 'Finance job A', status: 'scheduled', start: '2025-06-01', days: 2 });
         try {
           openCompleteJobModal();
           const text = document.querySelector('.zmodal-overlay')?.textContent || '';

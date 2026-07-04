@@ -1716,7 +1716,7 @@ function _geiAddWithRate(job,inputEl){
   if(entered!==marketTotal&&entered>0){
     S.myRates=S.myRates||{};
     S.myRates[job.id]={labor:entered,mat:0};
-    saveAll();
+    _settingsChanged();
     showToast('Rate saved for '+job.name,'💾');
   }
   if(job.gasLic)showToast('Gas work — verify you\'re licensed for gas in your state','⚠️');
@@ -1869,7 +1869,7 @@ function _geiRenderTemplates(){
 }
 
 function _geiShowAllServices(){
-  S.myBundles=['__all'];saveAll();_geiRenderTemplates();showToast('Showing all services','✓');
+  S.myBundles=['__all'];_settingsChanged();_geiRenderTemplates();showToast('Showing all services','✓');
 }
 
 function showGeiOnboarding(opts){
@@ -1900,7 +1900,7 @@ function showGeiOnboarding(opts){
       <div style="background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--blue-dk)">
         📍 You're in <strong>${stateStr}</strong> — market rates loaded${multNote}
         <button onclick="document.getElementById('_gei-state-sel')?.classList.toggle('show')" style="margin-left:8px;background:none;border:none;color:var(--blue);font-size:11px;cursor:pointer;text-decoration:underline;font-family:inherit">Change</button>
-        <select id="_gei-state-sel" class="show" onchange="S.state=this.value;saveAll();showGeiOnboarding()" style="display:block;margin-top:8px;padding:6px 8px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;background:var(--bg);color:var(--text);width:100%">
+        <select id="_gei-state-sel" class="show" onchange="S.state=this.value;_settingsChanged();showGeiOnboarding()" style="display:block;margin-top:8px;padding:6px 8px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;background:var(--bg);color:var(--text);width:100%">
           ${['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'].map(st=>`<option value="${st}"${S.state===st?' selected':''}>${st}</option>`).join('')}
         </select>
       </div>
@@ -1929,7 +1929,7 @@ function showGeiOnboarding(opts){
   };
   window._geiOnboardFinish=function(){
     if(!selected.size)return;
-    S.myBundles=[...selected];S.hasOnboarded=true;saveAll();
+    S.myBundles=[...selected];S.hasOnboarded=true;_settingsChanged();
     ov.remove();showToast('Services set up — showing '+S.state+' market rates','✓');
   };
   window._geiOnboardSkip=function(){
@@ -2099,7 +2099,7 @@ function _geiSaveToPriceBook(i){
   if(!S.priceBook[trade])S.priceBook[trade]=[];
   if(S.priceBook[trade].some(x=>x.desc===line.desc&&x.rate===line.rate)){showToast('Already in price book');return;}
   S.priceBook[trade].push({desc:line.desc,unit:line.unit||'ea',rate:line.rate});
-  saveAll();showToast('Saved to price book','🔖');
+  _settingsChanged();showToast('Saved to price book','🔖');
   _geiRenderTemplates();
 }
 
@@ -2170,7 +2170,7 @@ function _saveToLineHistory(){
   });
   S.lineHistory.sort((a,b)=>(b.count||0)-(a.count||0));
   if(S.lineHistory.length>100)S.lineHistory.length=100;
-  saveAll();
+  _settingsChanged();
 }
 
 function _geiRateBlur(i,val){
@@ -2182,7 +2182,7 @@ function _geiRateBlur(i,val){
   const market=p.labor+(p.mat||0);
   const entered=parseInt(val)||0;
   if(entered>0&&entered!==market){
-    S.myRates=S.myRates||{};S.myRates[line.jobId]={labor:entered,mat:0};saveAll();showToast('Rate saved','💾');
+    S.myRates=S.myRates||{};S.myRates[line.jobId]={labor:entered,mat:0};_settingsChanged();showToast('Rate saved','💾');
   }
 }
 
@@ -3101,7 +3101,7 @@ async function _stsuLookup(){
 
 function _stsuSave(){
   const rate=parseFloat(document.getElementById('stsu-rate')?.value)||0;
-  if(S){S.salesTaxRate=rate;S.salesTaxRateSource='manual';}
+  if(S){S.salesTaxRate=rate;S.salesTaxRateSource='manual';S.settingsTs=Date.now();}
   if(typeof saveAll==='function')saveAll();
   document.getElementById('sales-tax-setup-overlay')?.remove();
   if(typeof calcGeiTotal==='function')calcGeiTotal();

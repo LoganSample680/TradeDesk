@@ -97,7 +97,7 @@ test.describe('public intake lead funnel (UI-driven)', () => {
       },
     });
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

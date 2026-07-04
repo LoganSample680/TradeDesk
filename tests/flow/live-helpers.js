@@ -79,6 +79,20 @@ function localAccount() {
   return pool[idx] || null;
 }
 
+// SWARM account — the RESERVED last pool entry. global-setup always provisions
+// max(workers,3)+1 accounts, so the last one is never mapped to a worker
+// (localAccount uses parallelIndex) nor to accountPair (first two). The swarm
+// spec pins all N contexts to it so its 12-writer convergence run starts from a
+// DETERMINISTIC fixture instead of the suite-accumulated worker account —
+// §13.7's no-cleanup made the worker account grow with every spec that ran
+// before it, and 12 concurrent boots over that payload blew the swarm's time
+// budget in full-suite runs while passing solo (observed 2026-07-03).
+function swarmAccount() {
+  const pool = _loadLocalPool();
+  if (!pool || pool.length < 2) return null;
+  return pool[pool.length - 1];
+}
+
 // The full local-stack account pool (or [] when not in local-stack mode). Specs that need
 // MORE than one distinct account (e.g. the cross-account-bleed test's A and B) source them
 // from here instead of the cloud E2E_DEV2_* creds, which don't exist on the local stack.
@@ -162,10 +176,12 @@ function shouldTeardown() {
 
 // Sign in through the real login form, exactly as a user would: fill the email
 // and password fields, click Sign in, and wait for the dashboard to mount.
-async function signIn(page) {
+async function signIn(page, acctOverride) {
   // In local-stack mode, sign in as THIS worker's dedicated account (distinct
   // user_id per worker = isolation). Else use the shared cloud dev login.
-  const _acct = workerAccount();
+  // acctOverride: a spec can pin a SPECIFIC pool account (the swarm uses the
+  // reserved one so its fixture is deterministic — see swarmAccount()).
+  const _acct = acctOverride || workerAccount();
   const _cloud = _acct ? null : cloudAccountFor(pageBrowserName(page));
   const _email = _acct ? _acct.email : _cloud.email;
   const _password = _acct ? _acct.password : _cloud.password;
@@ -323,9 +339,27 @@ async function step(page, opts) {
 // Emit the friction profile (slowest-first + total clicks/ms) and grade against
 // the committed click budget. Clicks are DETERMINISTIC → hard gate (returns
 // overBudget for the caller to assert on). Time is advisory (logged, not gated).
-function report(tag, baseline) {
+function report(tag, baseline, page) {
   const totalMs = _LEDGER.reduce((s, r) => s + r.ms, 0);
   const totalClicks = _LEDGER.reduce((s, r) => s + r.interactions, 0);
+  // Ship the ledger into the SAME analytics pipe live users feed (analytics_events,
+  // via the app's own _obs → ingest-telemetry). Fire-and-forget: pass the page and
+  // each step lands as event 'flow_step' (ctx 'tag|label', value clicks) plus one
+  // 'flow_total'. Runs only against deployed origins (observability is inert on
+  // localhost), never blocks or fails the test.
+  if (page) {
+    try {
+      const shipped = _LEDGER.map(r => ({ label: (tag + '|' + r.label).slice(0, 78), clicks: r.interactions }));
+      page.evaluate(({ rows, tag2, total }) => {
+        try {
+          if (!window._obs) return;
+          rows.forEach(r => window._obs.track('flow_step', r.label, r.clicks));
+          window._obs.track('flow_total', tag2, total);
+          window._obs.flush();
+        } catch (_e) {}
+      }, { rows: shipped, tag2: tag, total: totalClicks }).catch(() => {});
+    } catch (_e) {}
+  }
   const rows = _LEDGER.slice().sort((a, b) => b.ms - a.ms);
   // eslint-disable-next-line no-console
   console.log(`\n⏱  FLOW LEDGER [${tag}] — total ${totalMs}ms · ${totalClicks} interactions (slowest first):`);
@@ -557,6 +591,7 @@ async function seedProposal(page, { clientId, bidId, amount, tag = 'seed' } = {}
 }
 
 module.exports = {
+  swarmAccount,
   cloudRows,
   seedProposal,
   seedName,

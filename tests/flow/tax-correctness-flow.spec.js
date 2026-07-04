@@ -99,7 +99,7 @@ test.describe('sales-tax + income-tax engine correctness', () => {
       },
     });
 
-    const rep = report(FLOW, BASELINE);   // capture mode (pure computation, 0 clicks)
+    const rep = report(FLOW, BASELINE, page);   // capture mode (pure computation, 0 clicks)
     expect(rep.overBudget).toBe(false);
   });
 });

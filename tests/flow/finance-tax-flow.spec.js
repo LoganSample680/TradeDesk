@@ -57,7 +57,7 @@ test.describe('finance + tax correctness (UI-driven)', () => {
         return { ok: !!mem && !!ce, got: `mem=${JSON.stringify(mem)} cloud=${ce ? ce.amount + '/' + ce.date : 'ROW ABSENT'}` };
       },
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -112,7 +112,7 @@ test.describe('finance + tax correctness (UI-driven)', () => {
         return { ok: r.netSelf > 0 && r.hasSe && r.hasFed, got: `netSelf=${r.netSelf} expectSE=${r.expectSe}(${r.hasSe}) expectFed=${r.expectFed}(${r.hasFed})` };
       },
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

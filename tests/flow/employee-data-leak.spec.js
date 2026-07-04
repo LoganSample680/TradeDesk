@@ -140,7 +140,7 @@ test.describe('employee lockout — data layer (server-side redaction)', () => {
     // NO cleanup — the seeded contractor bid stays in the dev account on purpose so
     // the owner can inspect what this test created (CLAUDE.md §13.7).
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -287,7 +287,7 @@ test.describe('employee lockout — data layer (server-side redaction)', () => {
     });
 
     // NO data cleanup (§13.7). The team_members link + seed bid stay for inspection.
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

@@ -1299,8 +1299,25 @@ function _saveSubAssignment(jobId,clientId){
 }
 function markSubPaid(jobId,subIdx,clientId){
   const j=jobs.find(x=>x.id===jobId);if(!j||!j.subs||!j.subs[subIdx])return;
-  j.subs[subIdx].paid=true;j.subs[subIdx].paidDate=todayKey();
-  saveAll();showToast('Marked paid','✓');
+  const sp=j.subs[subIdx];
+  sp.paid=true;sp.paidDate=todayKey();
+  // Paying a sub IS a Schedule C Line 11 (contract labor) expense — write it so the
+  // deduction and the 1099-NEC yearly total both happen automatically. subPayKey
+  // dedupes: marking the same assignment paid twice never double-logs.
+  const _spKey=jobId+':'+subIdx;
+  if(sp.amount>0&&!expenses.some(e=>e.subPayKey===_spKey)){
+    const _spBid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+    expenses.push({
+      id:Date.now(),date:sp.paidDate,cat:'subs',catLabel:'Subcontractors',
+      vendor:sp.subName||'Subcontractor',amount:sp.amount,
+      notes:'Sub pay — '+(sp.desc||j.name||''),
+      subId:sp.subId,subPayKey:_spKey,
+      job_id:j.bid_id||null,job_name:j.name||(_spBid?_spBid.client_name:''),client_id:j.client_id||null,
+      deductible:true,created_at:new Date().toISOString(),
+    });
+    expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
+  }
+  saveAll();showToast('Marked paid — logged as contract-labor expense','✓');
   openJobSheet(clientId);
 }
 

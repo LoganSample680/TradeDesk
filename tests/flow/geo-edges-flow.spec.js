@@ -130,7 +130,7 @@ test.describe('geo-fence edge cases (UI-driven via the real ping handler)', () =
       rule: async (p) => ({ ok: String(p.__cur) === String(jobMB), got: `currentJob=${p.__cur} expected=${jobMB}` }),
     });
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

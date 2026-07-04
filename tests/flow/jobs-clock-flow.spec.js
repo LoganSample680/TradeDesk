@@ -147,7 +147,7 @@ test.describe('jobs lifecycle (UI-driven)', () => {
     // NO cleanup — the bid, job, time entry + client stay in the dev account on
     // purpose so the owner can inspect what this test created (CLAUDE.md §13.7).
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

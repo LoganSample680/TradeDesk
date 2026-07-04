@@ -66,7 +66,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
   test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page); });
 
   test('crew link (token + email), write concurrently, converge byte-equal, and stay walled off', async ({ page, browser, browserName }) => {
-    test.skip(browserName !== 'chromium', 'crew certification runs once — chromium project only');
+    // Runs on BOTH browser projects since the per-browser runner split (own stack per box).
     const CREW = crewPool();
     test.skip(CREW.length < 3, `crew pool too small (${CREW.length}) — global-setup provisions it on the local stack`);
     const M = Math.min(CREW.length, 6);
@@ -339,7 +339,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
     // Resource cleanup only (§13.7 — all seeded data stays for inspection).
     for (const ctx of ctxs) await ctx.close().catch(() => {});
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -347,7 +347,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
   //    estimate permission → employee WRITES AN ESTIMATE → it rolls up LIVE to
   //    every user on the account (the boss AND a second crew member), identical. ──
   test('owner invites → employee accepts (estimate) → writes an estimate → rolls up to ALL users', async ({ page, browser, browserName }) => {
-    test.skip(browserName !== 'chromium', 'runs once — chromium project only');
+    // Runs on BOTH browser projects since the per-browser runner split (own stack per box).
     const CREW = crewPool();
     test.skip(CREW.length < 2, `crew pool too small (${CREW.length})`);
     test.setTimeout(420000); // 3 real boots on the ever-growing cert account (see test 1)

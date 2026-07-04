@@ -139,7 +139,7 @@ test.describe('realtime cross-device create + delete, both directions (UI-driven
 
     await B.close().catch(() => {});
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

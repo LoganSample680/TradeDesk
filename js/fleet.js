@@ -220,12 +220,127 @@ function _fleetPnLCalc(v, maintRecords, trips, year) {
     const costPerMile = totalMiles > 0 ? +(totalDeduction / totalMiles).toFixed(2) : 0;
     return {method:'actual',totalMiles,irsDeduction:0,maintCostYTD,deductibleMaint,annualDeprec,totalDeduction,totalCost:totalDeduction,costPerMile,netPosition:totalDeduction};
   } else {
-    // Standard mileage method: IRS rate × miles × biz% = deduction; maintenance is records-only
-    const irsDeduction = +(totalMiles * (S.irsRate||0.67) * bizPct).toFixed(2);
+    // Standard mileage method: business miles × IRS rate — bizPct is NOT re-applied.
+    // The tracked trips already ARE the business miles (bizUse% is derived FROM them
+    // vs total odometer miles), so multiplying by bizPct again double-penalized the
+    // personal share and understated the deduction vs the Schedule C engine
+    // (_vehSchedC), which has always computed miles × rate. Aligned 2026-07-03 so
+    // every surface shows the same, correct number. Maintenance is records-only here.
+    const irsDeduction = +(totalMiles * (S.irsRate||0.67)).toFixed(2);
     // "Real" cost per mile based on actual maintenance spend (for awareness, not deduction)
     const costPerMile = totalMiles > 0 ? +(maintCostYTD / totalMiles).toFixed(2) : 0;
     return {method:'mileage',totalMiles,irsDeduction,maintCostYTD,deductibleMaint:0,annualDeprec:0,totalDeduction:irsDeduction,totalCost:maintCostYTD,costPerMile,netPosition:irsDeduction};
   }
+}
+
+/* ── Schedule C vehicle deduction engine ─────────────────────────────────────────
+   THE single source of truth for how vehicles hit the tax math. IRS says pick ONE
+   method per vehicle: standard mileage OR actual expenses — never both. Before this
+   engine, calcTax() deducted ALL trips (miles × rate) AND ALL vehicle expenses at
+   the same time, silently stacking both deductions for any 'actual' vehicle.
+
+   Per vehicle:
+   - method 'mileage': trips deduct at the year's IRS rate; that vehicle's expenses
+     (fuel/maintenance/purchase) are EXCLUDED from Schedule C and hidden from the
+     expense table (excludedIds).
+   - method 'actual': expenses deduct at the business-use % (odometer-derived
+     bizUse); that vehicle's trips are EXCLUDED from the mileage deduction. The
+     personal-use slice (1 - bizUse%) of its expenses is excluded too.
+   Both methods are computed for every vehicle so year-end can show WHICH ONE WINS.
+
+   Attribution: trips match by trip.vehicle === v.name (the existing fleet
+   convention); expenses match by e.vehicleName (stamped by the expense modals and
+   fleet auto-writes). Unmatched records: single-vehicle fleet -> that vehicle;
+   multi-vehicle -> trips go to the first mileage-method vehicle (deducted, matching
+   pre-engine behavior), expenses are conservatively EXCLUDED and counted in
+   `untagged` so the UI can nudge the user to tag them (never double-deduct).
+   No vehicles configured -> legacy pass-through (all miles deduct, all expenses
+   count) so non-fleet accounts are untouched. */
+const _VEH_EXP_CATS=['fuel','vehicle','vehicle_purchase'];
+const _VEH_EXP_QUICK_LABELS=['Vehicle (fuel)','Vehicle (maintenance)']; // quick-expense stores display strings as cat
+function _isVehicleExpense(e){
+  return !!e&&(_VEH_EXP_CATS.includes(e.cat)||_VEH_EXP_QUICK_LABELS.includes(e.cat));
+}
+function _vehSchedC(yr){
+  yr=String(yr||new Date().getFullYear());
+  const rate=(typeof _getIrsRateForYear==='function')?_getIrsRateForYear(yr):((S&&S.irsRate)||0.7);
+  const out={yr,hasVehicles:false,perVehicle:[],mileDed:0,deductedMiles:0,excludedMiles:0,
+             vehExpTotal:0,vehExpDed:0,expAdjust:0,excludedIds:[],untagged:0,untaggedTotal:0};
+  const trips=mileage.filter(r=>r.date&&r.date.startsWith(yr));
+  const vehExp=expenses.filter(e=>e.date&&e.date.startsWith(yr)&&_isVehicleExpense(e));
+  const vehs=(typeof getVehicles==='function')?getVehicles():[];
+  if(!vehs.length){
+    out.deductedMiles=trips.reduce((s,t)=>s+(t.miles||0),0);
+    out.mileDed=+(out.deductedMiles*rate).toFixed(2);
+    return out;
+  }
+  out.hasVehicles=true;
+  const buckets=vehs.map(v=>({v,method:(v.deductionMethod||'mileage'),miles:0,exp:[],
+    bizPct:Math.min(100,Math.max(1,v.bizUse||100))/100}));
+  const single=buckets.length===1?buckets[0]:null;
+  const firstMileage=buckets.find(b=>b.method==='mileage')||null;
+  trips.forEach(t=>{
+    const hit=(t.vehicle&&buckets.find(b=>b.v.name===t.vehicle))||single||firstMileage||buckets[0];
+    hit.miles+=(t.miles||0);
+  });
+  vehExp.forEach(e=>{
+    const hit=(e.vehicleName&&buckets.find(b=>b.v.name===e.vehicleName))||single;
+    if(hit)hit.exp.push(e);
+    else{out.untagged++;out.untaggedTotal+=(e.amount||0);out.expAdjust+=(e.amount||0);out.excludedIds.push(e.id);}
+  });
+  buckets.forEach(b=>{
+    const expTotal=b.exp.reduce((s,e)=>s+(e.amount||0),0);
+    const mileDed=+(b.miles*rate).toFixed(2);
+    const actualDed=+(expTotal*b.bizPct).toFixed(2);
+    // COMPARISON side ("which method wins"): full logged cost picture — attributed
+    // expenses PLUS service-log records that never became expenses (mileage-method
+    // maintenance is records-only). Contractors log BOTH all year; the verdict must
+    // see everything. Schedule C (actualDed) stays expenses-only.
+    const unexpMaint=maintenance.filter(m=>m.vehicleName===b.v.name&&(m.date||'').startsWith(yr)&&!m.expenseId).reduce((s,m)=>s+(m.cost||0),0);
+    const costTotal=+(expTotal+unexpMaint).toFixed(2);
+    const actualCmp=+(costTotal*b.bizPct).toFixed(2);
+    out.vehExpTotal+=expTotal;
+    if(b.method==='actual'){
+      out.vehExpDed+=actualDed;
+      out.expAdjust+=+(expTotal-actualDed).toFixed(2); // personal-use slice never deducts
+      out.excludedMiles+=b.miles;
+    }else{
+      out.mileDed+=mileDed;
+      out.deductedMiles+=b.miles;
+      out.expAdjust+=expTotal;                          // mileage method: expenses records-only
+      b.exp.forEach(e=>out.excludedIds.push(e.id));
+    }
+    out.perVehicle.push({name:b.v.name,label:b.v.nickname||b.v.name,method:b.method,
+      miles:+b.miles.toFixed(1),bizUse:Math.round(b.bizPct*100),expTotal:+expTotal.toFixed(2),
+      costTotal,actualCmp,
+      mileDed,actualDed,winner:mileDed>=actualCmp?'mileage':'actual',
+      delta:+Math.abs(mileDed-actualCmp).toFixed(2)});
+  });
+  out.mileDed=+out.mileDed.toFixed(2);
+  out.vehExpDed=+out.vehExpDed.toFixed(2);
+  out.expAdjust=+out.expAdjust.toFixed(2);
+  return out;
+}
+
+// ── Year-end method verdict ──────────────────────────────────────────────────
+// Fired when the year-end odometer report saves — the moment business-use % is
+// final. Tells the contractor, per vehicle, WHICH METHOD WON and whether their
+// configured method matches. Needs both sides logged all year to be honest, so
+// it also calls out missing data instead of declaring a hollow winner.
+function _vehWinnerAlert(yr){
+  try{
+    if(typeof _vehSchedC!=='function'||typeof zAlert!=='function')return;
+    const vd=_vehSchedC(yr);
+    if(!vd.hasVehicles)return;
+    const parts=vd.perVehicle.filter(p=>p.miles>0||p.costTotal>0).map(p=>{
+      if(p.miles>0&&p.costTotal===0)return '🚗 '+escHtml(p.label)+': mileage '+fmt(p.mileDed)+' — but NO vehicle costs logged this year. Log gas, parts, and service too so next year we can prove which method wins.';
+      if(p.costTotal>0&&p.miles===0)return '🚗 '+escHtml(p.label)+': actual costs '+fmt(p.actualCmp)+' — but NO trips logged. Track your drives so the mileage side is real.';
+      const winLbl=p.winner==='mileage'?'Standard mileage':'Actual expenses';
+      return '🚗 '+escHtml(p.label)+' ('+p.bizUse+'% business): mileage '+fmt(p.mileDed)+' vs actual '+fmt(p.actualCmp)+' → <strong>'+winLbl+' wins by '+fmt(p.delta)+'</strong>'+(p.winner===p.method?' — you\'re already on the winning method ✓':' — you\'re set to '+p.method+'; switching could save '+fmt(p.delta)+'/yr (IRS switching rules apply — confirm with your tax pro).');
+    });
+    if(!parts.length)return;
+    zAlert(parts.join('<br><br>')+'<br><br><span style="font-size:10px;color:var(--text3)">Not tax advice — verify with your tax professional.</span>',{title:(vd.yr)+' vehicle deduction — which method won'});
+  }catch(_e){}
 }
 
 /* ── Vehicle detail modal ────────────────────────────────────────────────────── */
@@ -614,11 +729,13 @@ function saveOdometerReport() {
   if(totalDriven>0 && loggedMiles>0) {
     v.bizUse = Math.min(100, Math.round((loggedMiles/totalDriven)*100));
     vehs[_odoReportVehIdx] = v;
-    S.vehicles = vehs; S.vehiclesTs = Date.now();
+    _setVehicles(vehs);
   }
+  S.settingsTs=Date.now(); // odometer log is IRS data — must win the settings sync
   saveAll();
   document.getElementById('odo-report-overlay')?.remove();
   showToast('Mileage report saved'+(totalDriven>0&&loggedMiles>0?' — '+v.bizUse+'% business use':''),'📊');
+  setTimeout(()=>_vehWinnerAlert(yr),600); // year-end verdict: which method won
   if(_fleetDetailIdx>=0) _renderFleetDetailModal();
 }
 
@@ -763,6 +880,7 @@ function saveFleetVehicle() {
       cat: 'vehicle_purchase',
       catLabel: 'Vehicle purchase',
       vendor: name,
+      vehicleName: name,
       amount: newPrice,
       notes: 'Vehicle purchase: '+name,
       deductible: true,
@@ -776,7 +894,7 @@ function saveFleetVehicle() {
 
   if(isEdit) vehs[_fleetEditIdx] = newV;
   else vehs.push(newV);
-  S.vehicles = vehs; S.vehiclesTs = Date.now();
+  _setVehicles(vehs);
   saveAll();
   _closeFleetVehModal();
   renderFleetVehicles();
@@ -802,7 +920,7 @@ function _confirmRemoveVehicle(idx) {
   if(!v) return;
   zConfirm('Remove '+(v.nickname||v.name)+'? This will not delete service records.', () => {
     vehs.splice(idx, 1);
-    S.vehicles = vehs; S.vehiclesTs = Date.now();
+    _setVehicles(vehs);
     saveAll();
     _closeFleetVehModal();
     renderFleetVehicles();
@@ -818,7 +936,7 @@ function openFleetStatusModal(idx, toStatus) {
     v.status = 'active';
     const open = (v.downtimeLog||[]).find(d=>!d.end);
     if(open) open.end = todayKey();
-    S.vehicles = vehs; S.vehiclesTs = Date.now();
+    _setVehicles(vehs);
     saveAll();
     _closeFleetDetail();
     renderFleetVehicles();
@@ -830,7 +948,7 @@ function openFleetStatusModal(idx, toStatus) {
     v.status = 'down';
     v.downtimeLog = v.downtimeLog||[];
     v.downtimeLog.push({start: todayKey(), end: null, reason: reason||''});
-    S.vehicles = vehs; S.vehiclesTs = Date.now();
+    _setVehicles(vehs);
     saveAll();
     _closeFleetDetail();
     renderFleetVehicles();
@@ -903,7 +1021,7 @@ function saveFleetSale(idx) {
     v.saleIncomeId = incId;
   }
 
-  S.vehicles = vehs; S.vehiclesTs = Date.now();
+  _setVehicles(vehs);
   saveAll();
   const saleOv = document.getElementById('fleet-sale-overlay');
   if(saleOv) saleOv.remove();
@@ -1220,6 +1338,7 @@ function saveMaintRecord() {
       cat: 'vehicle',
       catLabel: 'Vehicle — maintenance',
       vendor: vendor||(v.nickname||v.name),
+      vehicleName: v.name,
       amount: cost,
       notes: (MAINT_TYPES[type]?MAINT_TYPES[type].label:type)+(notes?' — '+notes:''),
       deductible: true,
@@ -1249,9 +1368,13 @@ function saveMaintRecord() {
 
 function deleteMaintenanceRecord(id) {
   zConfirm('Delete this service record?', () => {
-    const idx = maintenance.findIndex(m=>m.id===id);
-    if(idx>=0) maintenance.splice(idx,1);
-    saveAll();
+    // _userDelete records the id for the cloud sweep — without it the removed
+    // row survives in td_maintenance and resurrects on the next load.
+    _userDelete(() => {
+      const idx = maintenance.findIndex(m=>m.id===id);
+      if(idx>=0) maintenance.splice(idx,1);
+      saveAll();
+    });
     _closeMaintModal();
     _renderFleetDetailModal();
     renderFleetVehicles();

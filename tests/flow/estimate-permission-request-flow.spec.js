@@ -168,7 +168,7 @@ test.describe('estimate permission-request (UI-driven, two-sided)', () => {
       },
     });
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

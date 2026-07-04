@@ -36,7 +36,7 @@ test.describe('UI toggles — proposal tiles, permissions accordion, kanban coll
         return { ok: r.filter === 'signed' && r.tabActive, got: JSON.stringify(r) };
       },
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -71,7 +71,7 @@ test.describe('UI toggles — proposal tiles, permissions accordion, kanban coll
         got: `closedInitially=${p.__closed0} openAfterTap=${p.__openAfter}`,
       }),
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -110,7 +110,7 @@ test.describe('UI toggles — proposal tiles, permissions accordion, kanban coll
         return { ok: r.rendered && r.hasNew && !r.hasOld, got: JSON.stringify({ ...r, ins: p.__ins }) };
       },
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -142,7 +142,7 @@ test.describe('UI toggles — proposal tiles, permissions accordion, kanban coll
         got: JSON.stringify({ before: p.__before, after: p.__after }),
       }),
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

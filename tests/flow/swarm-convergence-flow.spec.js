@@ -22,11 +22,12 @@
 // same engine (Postgres + realtime + PostgREST) that will run on Proxmox in production.
 // Per §13.7 the swarm's rows are left in the account to inspect.
 const { test, expect } = require('@playwright/test');
-const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
+const { needsLiveCreds, signIn, step, report, resetLedger, swarmAccount } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'swarm/convergence';
-const N = Math.max(3, parseInt(process.env.E2E_SWARM_N || '12', 10));
+const RAW_N = Math.max(3, parseInt(process.env.E2E_SWARM_N || '12', 10));
+let N = RAW_N; // finalized per-browser inside the test (WebKit caps lower — see there)
 const LOCAL_STACK = process.env.E2E_LOCAL_STACK === '1';
 
 // Canonical serialization: recursively key-sorted objects, rows sorted by id — so two
@@ -43,10 +44,21 @@ test.describe('swarm — N writers on one account converge byte-equal', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured');
   test.skip(!LOCAL_STACK, 'swarm runs on the local stack only (it hammers one account with N sessions)');
 
-  test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page); });
+  // All N contexts pin to the RESERVED pool account (never used by other specs),
+  // so the convergence run starts from a deterministic fixture. The worker account
+  // accumulates every prior spec's no-cleanup data (§13.7) — 12 concurrent boots
+  // over that grew past the time budget in full-suite runs while passing solo.
+  const SWARM_ACCT = swarmAccount();
+  test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page, SWARM_ACCT); });
 
-  test(`${N} concurrent writers (live + offline-returning) — everything persists everywhere`, async ({ page, browser, browserName }, testInfo) => {
-    test.skip(browserName !== 'chromium', 'swarm runs once — chromium project only');
+  test(`swarm of concurrent writers (live + offline-returning) — everything persists everywhere`, async ({ page, browser, browserName }, testInfo) => {
+    // Runs on BOTH browser projects since the per-browser runner split — WebKit is
+    // the real iPhone engine and gets its own certification. WebKit browser
+    // contexts are far heavier than Chromium's: 12 of them killed the runner box
+    // outright (2026-07-03 — job died with no logs or artifact, i.e. OOM). WebKit
+    // certifies at 6 writers; Chromium keeps the full 12. Both cover the same
+    // concurrency classes (live editors + offline-returners on one account).
+    N = browserName === 'webkit' ? Math.min(RAW_N, 6) : RAW_N;
     test.setTimeout(240000 + N * 12000);
 
     const base = Date.now() * 1000 + (process.pid % 1000);
@@ -74,7 +86,7 @@ test.describe('swarm — N writers on one account converge byte-equal', () => {
           ctxs.push(ctx);
           const pg = await ctx.newPage();
           pages.push(pg);
-          await signIn(pg);
+          await signIn(pg, SWARM_ACCT);
         }
         for (const pg of pages) {
           await pg.waitForFunction(() => typeof _tdRealtimeReady !== 'undefined' && _tdRealtimeReady === true, { timeout: 30000 });
@@ -258,7 +270,7 @@ test.describe('swarm — N writers on one account converge byte-equal', () => {
     // Resource cleanup only (§13.7 — the swarm's DATA stays for inspection).
     for (const ctx of ctxs) await ctx.close().catch(() => {});
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

@@ -499,7 +499,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.02.26.26';
+const APP_VERSION='07.04.26.16';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -578,15 +578,44 @@ let _rowServerTs={};
 // so it never resurrects a row a peer deliberately deleted during our outage.
 let _lastLoadDeletes={};
 // Fast deterministic 32-bit string hash (FNV-1a) over the JSON of a row payload.
+// CANONICAL serialization for hashing — key-order-independent, matching
+// JSON.stringify's semantics for undefined/function values. THE BUG THIS FIXES
+// (diagnosed 2026-07-03 via _deltaStats.rows + field-diff instrumentation):
+// JSON.stringify is key-order-sensitive, but Postgres jsonb RE-SORTS object
+// keys — so the save-side hash (in-memory insertion order) never matched the
+// load/reconcile-side hash (jsonb order) for any row whose key order differed.
+// Every reconcile rebaselined those rows to the jsonb hash, the next save saw a
+// "change" and re-uploaded them, and reconcile flipped the baseline right back:
+// perpetual phantom re-uploads (42 byte-identical clients per save on the cert
+// account — silent write amplification on ANY real account). Sorting keys makes
+// the fingerprint identical for identical DATA regardless of ordering.
+function _canonicalJson(v){
+  if(v===null)return 'null';
+  const t=typeof v;
+  if(t==='undefined'||t==='function')return undefined;   // caller decides (object: omit; array: null)
+  if(t!=='object')return JSON.stringify(v);
+  // Honor toJSON() like JSON.stringify does — else a Date (or any toJSON object)
+  // would serialize as {} on the save side but as its string form after the jsonb
+  // round-trip → a phantom hash mismatch. No synced field holds a Date today; this
+  // is a guard so a future one can't silently reintroduce the re-upload loop.
+  if(typeof v.toJSON==='function'){try{return _canonicalJson(v.toJSON());}catch(_e){}}
+  if(Array.isArray(v))return '['+v.map(x=>{const s=_canonicalJson(x);return s===undefined?'null':s;}).join(',')+']';
+  const parts=[];
+  for(const k of Object.keys(v).sort()){
+    const s=_canonicalJson(v[k]);
+    if(s!==undefined)parts.push(JSON.stringify(k)+':'+s);
+  }
+  return '{'+parts.join(',')+'}';
+}
 function _hashPayload(obj){
-  let str; try{ str=JSON.stringify(obj); }catch(_e){ return null; }
+  let str; try{ str=_canonicalJson(obj); }catch(_e){ return null; }
   if(str===undefined) return null;
   let h=0x811c9dc5;
   for(let i=0;i<str.length;i++){ h^=str.charCodeAt(i); h=(h+((h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24)))>>>0; }
   return h.toString(36);
 }
 // Test/telemetry hook: counts rows actually uploaded vs skipped on each save pass.
-window._deltaStats={upserts:0,skips:0};
+window._deltaStats={upserts:0,skips:0,rows:[]};
 // Test hook: does the synced-hash map currently hold an entry for this id?
 window.__hashHas=(tbl,id)=>!!(_syncedHash[tbl]&&_syncedHash[tbl].has(String(id)));
 
@@ -1114,6 +1143,7 @@ const _TD_TABLES=[
   {t:'td_events',      get:()=>events,      set:v=>{events.length=0;v.forEach(r=>events.push(r));},       tx:arr=>arr.slice(-600)},
   {t:'td_contracts',   get:()=>contracts,   set:v=>{contracts.length=0;v.forEach(r=>contracts.push(r));}, tx:null},
   {t:'td_agreements',  get:()=>agreements,  set:v=>{agreements.length=0;v.forEach(r=>agreements.push(r));}, tx:null},
+  {t:'td_maintenance', get:()=>maintenance, set:v=>{maintenance.length=0;v.forEach(r=>maintenance.push(r));}, tx:null},
   {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
     tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
 ];
@@ -1294,8 +1324,67 @@ let _cloudTimersStarted=false; // prevent duplicate setInterval/addEventListener
 let _checkSigsBusy=false;      // prevent concurrent clawback writes
 let _sessionRestoreInProgress=false;
 function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
+// Boot waterfall arming, popup-gated. Cards start hidden (boot-hold); ~220ms in
+// we sample for an open popup (boot-time alerts spawn right around overlay
+// removal). None → pour immediately. One up → hold until the LAST popup closes
+// (debounced 220ms so chained popups stay first), then pour. 20s failsafe so a
+// detection miss can never leave the dashboard permanently hidden.
+function _armBootCascade(){
+  const d=document.getElementById('pg-dash');
+  if(!d||!d.classList.contains('active'))return;
+  // Cascade plays RIGHT AWAY as the boot overlay lifts — including BEHIND a boot
+  // popup (owner: blank white behind a popup looks odd; the dashboard should be
+  // filling in under the popup's scrim). Delays are assigned over VISIBLE cards
+  // ONLY, so hidden/empty widgets (crew/alerts/contracts with no data) leave no
+  // gaps — the ripple flows smoothly top→bottom over exactly what's on screen.
+  // Backwards `both` fill keeps each card invisible until its own delay elapses,
+  // so no boot-hold class (and no blank-hold) is needed.
+  let count=0;
+  try{
+    const root=d.querySelector('#dash-widget-root');
+    const tbar=d.querySelector('.tbar');
+    const base=60,step=95;
+    if(tbar)tbar.style.animationDelay='0ms';
+    if(root){
+      let i=0;
+      [...root.children].forEach(el=>{
+        if(el.nodeType!==1||!el.classList.contains('td-dw'))return;
+        const visible=el.offsetHeight>2;          // read BEFORE the class → natural layout height
+        el.style.animationDelay=(base+(visible?i:Math.max(0,i-1))*step)+'ms';
+        if(visible)i++;
+      });
+      count=i;
+    }
+  }catch(_e){}
+  d.classList.add('boot-cascade');
+  const total=60+Math.max(1,count)*95+720+260;    // last card start + travel + slack
+  setTimeout(()=>{try{
+    d.classList.remove('boot-cascade');
+    d.querySelectorAll('.tbar,#dash-widget-root>.td-dw').forEach(el=>{el.style.animationDelay='';});
+  }catch(_e){}},total);
+}
 function _removeBootOverlay(){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
+  // A version/SW update arrived during this boot and a reload is queued (new
+  // preview/production build). Keep the loading screen UP and reload beneath it —
+  // fading out, flashing the dash, then re-showing a second loading screen is the
+  // "boot screen shows twice" bug. One continuous load, slightly longer.
+  if(typeof _deferredReload!=='undefined'&&(_deferredReload||_reloadPending))return;
+  // MIN STAGE TIME (owner: "is our boot screen too short?" — yes, on fast loads
+  // the intro was cut off mid-breath). Hold the overlay until it has been on
+  // screen ≥2s: one halo pulse + a wordmark sheen play before the lift-away.
+  // Slow loads are unaffected — real loading always governs.
+  try{
+    const _t0=window._sboT0||0;
+    if(_t0&&!o._minWaited){
+      const _left=4000-(Date.now()-_t0);   // ≥4s on screen (owner: 2.8s felt too short) — the intro gets room to breathe
+      if(_left>60){o._minWaited=true;setTimeout(_removeBootOverlay,_left);return;}
+    }
+  }catch(_e){}
+  // Boot waterfall — popup-gated (owner rule: "waterfall builds after popups;
+  // no popups → after boot load"). _armBootCascade holds the cards invisible,
+  // waits out any boot popup (collect alert, verdicts), then pours them in.
+  try{_armBootCascade();}catch(_e){}
   o.classList.add('td-fadeout');
   setTimeout(()=>{
     o.remove();
@@ -1536,6 +1625,7 @@ async function supaInit(){
           if(_cd.events?.length)events=_cd.events;
           if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;
           if(_cd.photos?.length)photos=_cd.photos;
+          if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
           if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (no-session boot)');applySettings();_refillSettingsFormUnlessEditing();}
           _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
@@ -1711,6 +1801,7 @@ async function supaInit(){
         if(_cd.events?.length)events=_cd.events;
         if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;
         if(_cd.photos?.length)photos=_cd.photos;
+          if(_cd.maintenance?.length)maintenance=_cd.maintenance;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (offline boot, session present)');applySettings();_refillSettingsFormUnlessEditing();}
         _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
@@ -2353,7 +2444,8 @@ function renderTeam(){
   if(subEl){
     subEl.innerHTML=!subs.length
       ?'<div style="font-size:12px;color:var(--text3);padding:6px 0">No subs yet. Add a subcontractor to assign them to jobs and track what you owe.</div>'
-      :subs.map((s,i)=>
+      :('<button onclick="open1099Report()" style="width:100%;margin-bottom:10px;padding:9px;border-radius:var(--r);border:1.5px solid var(--blue);background:var(--blue-lt,rgba(45,93,168,.06));color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📋 1099 payments report — who you paid, per job</button>')+
+       subs.map((s,i)=>
           '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
             '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
               '<div style="display:flex;align-items:center;gap:8px">'+
@@ -2621,7 +2713,7 @@ function removeEmployee(idx){
 // ── Subcontractor management ─────────────────────────────────────────────────
 function _subModalHTML(sub,idx){
   const isNew=idx==null;
-  const s=sub||{name:'',trade:'',phone:'',email:'',rate:''};
+  const s=sub||{name:'',trade:'',phone:'',email:'',rate:'',ein:'',addr:'',w9:false};
   return '<div style="font-size:17px;font-weight:800;margin-bottom:14px">'+(isNew?'Add subcontractor':'Edit '+escHtml(s.name||'Sub'))+'</div>'+
     '<div class="fg fg2" style="margin-bottom:12px">'+
       '<div class="f"><label>Full name</label><input id="sub-name" value="'+escHtml(s.name||'')+'" placeholder="Mike Garcia" style="font-size:15px;padding:10px"></div>'+
@@ -2631,8 +2723,16 @@ function _subModalHTML(sub,idx){
       '<div class="f"><label>Phone</label><input id="sub-phone" type="tel" value="'+escHtml(s.phone||'')+'" placeholder="XXX-XXX-XXXX" maxlength="12" oninput="fmtPhone(this)" style="font-size:15px;padding:10px"></div>'+
       '<div class="f"><label>Email</label><input id="sub-email" type="email" value="'+escHtml(s.email||'')+'" placeholder="sub@email.com" style="font-size:14px;padding:10px"></div>'+
     '</div>'+
-    '<div class="f" style="margin-bottom:16px"><label>Rate / notes</label>'+
+    '<div class="f" style="margin-bottom:12px"><label>Rate / notes</label>'+
       '<input id="sub-rate" value="'+escHtml(s.rate||'')+'" placeholder="e.g. $45/hr or $800 per room" style="font-size:14px;padding:10px">'+
+    '</div>'+
+    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:10px;margin-bottom:16px">'+
+      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">1099-NEC filing info <span style="font-weight:400;text-transform:none;letter-spacing:0">(needed if you pay them $600+/yr)</span></div>'+
+      '<div class="fg fg2" style="margin-bottom:8px">'+
+        '<div class="f"><label>EIN or SSN</label><input id="sub-ein" value="'+escHtml(s.ein||'')+'" placeholder="XX-XXXXXXX" style="font-size:14px;padding:10px"></div>'+
+        '<div class="f" style="display:flex;align-items:flex-end;padding-bottom:2px"><label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;text-transform:none;letter-spacing:0"><input type="checkbox" id="sub-w9" '+(s.w9?'checked':'')+' style="width:16px;height:16px;accent-color:var(--blue)"> W-9 on file</label></div>'+
+      '</div>'+
+      '<div class="f"><label>Mailing address</label><input id="sub-addr" value="'+escHtml(s.addr||'')+'" placeholder="Street, City, ST ZIP" style="font-size:13px;padding:10px"></div>'+
     '</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       (!isNew?'<button onclick="_removeSub('+idx+')" style="padding:10px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Remove</button>':'<div></div>')+
@@ -2664,7 +2764,10 @@ function _saveSub(idx){
   const _subPhone=(_subPhoneEl?_subPhoneEl.value||'':'').trim();
   const _subEmail=(_subEmailEl?_subEmailEl.value||'':'').trim();
   const _subRate=(_subRateEl?_subRateEl.value||'':'').trim();
-  const sub={id:_subId,name,trade:_subTrade,phone:_subPhone,email:_subEmail,rate:_subRate};
+  const _subEin=(document.getElementById('sub-ein')?.value||'').trim();
+  const _subAddr=(document.getElementById('sub-addr')?.value||'').trim();
+  const _subW9=!!document.getElementById('sub-w9')?.checked;
+  const sub={id:_subId,name,trade:_subTrade,phone:_subPhone,email:_subEmail,rate:_subRate,ein:_subEin,addr:_subAddr,w9:_subW9};
   if(!S.subcontractors)S.subcontractors=[];
   if(idx==null)S.subcontractors.push(sub);else S.subcontractors[idx]=sub;
   _settingsChanged();document.getElementById('_sub-modal-ov')?.remove();renderTeam();
@@ -2674,6 +2777,96 @@ function _removeSub(idx){
   if(!S.subcontractors)return;
   S.subcontractors.splice(idx,1);
   _settingsChanged();document.getElementById('_sub-modal-ov')?.remove();renderTeam();
+}
+
+// ── 1099 contractor payment tracking ─────────────────────────────────────────
+// One yearly ledger per payee across BOTH payment sources:
+//  1. expenses with the contract-labor category ('subs' from the full modal,
+//     'Subcontractors' from the quick modal) — including the rows markSubPaid
+//     now auto-writes.
+//  2. legacy job.subs[] entries marked paid BEFORE auto-expensing existed
+//     (no matching subPayKey expense) — so old data still counts.
+// Every row resolves its job address (bid.addr → client.addr) because the
+// 1099 story is "which job, where, how much."
+function _isSubExpense(e){return !!e&&(e.cat==='subs'||e.cat==='Subcontractors');}
+function _sub1099Report(yr){
+  yr=String(yr||new Date().getFullYear());
+  const roster=S.subcontractors||[];
+  const byPayee={};
+  const _addr=(bidId,clientId)=>{
+    const b=bidId?bids.find(x=>x.id===bidId):null;
+    if(b&&b.addr)return b.addr;
+    const c=getClientById(clientId||(b&&b.client_id));
+    return (c&&c.addr)||'';
+  };
+  const _bucket=(key,label,subId)=>{
+    if(!byPayee[key])byPayee[key]={name:label,subId:subId||null,total:0,rows:[]};
+    return byPayee[key];
+  };
+  expenses.filter(e=>_isSubExpense(e)&&e.date&&e.date.startsWith(yr)).forEach(e=>{
+    const sub=e.subId?roster.find(x=>x.id===e.subId):roster.find(x=>x.name&&e.vendor&&x.name.toLowerCase()===e.vendor.toLowerCase());
+    const key=sub?('id:'+sub.id):('v:'+(e.vendor||'Unknown').toLowerCase());
+    const b=_bucket(key,sub?sub.name:(e.vendor||'Unknown'),sub&&sub.id);
+    b.total+=(e.amount||0);
+    b.rows.push({date:e.date,amount:e.amount||0,job:e.job_name||'',addr:_addr(e.job_id,e.client_id)});
+  });
+  jobs.forEach(j=>{
+    (j.subs||[]).forEach((sp,i)=>{
+      if(!sp.paid||!sp.paidDate||!sp.paidDate.startsWith(yr))return;
+      if(expenses.some(e=>e.subPayKey===j.id+':'+i))return; // already counted via its expense
+      const sub=roster.find(x=>x.id===sp.subId);
+      const key=sub?('id:'+sub.id):('v:'+(sp.subName||'Unknown').toLowerCase());
+      const b=_bucket(key,sub?sub.name:(sp.subName||'Unknown'),sub&&sub.id);
+      b.total+=(sp.amount||0);
+      b.rows.push({date:sp.paidDate,amount:sp.amount||0,job:j.name||sp.desc||'',addr:_addr(j.bid_id,j.client_id)});
+    });
+  });
+  const payees=Object.values(byPayee).map(p=>{
+    const sub=p.subId?roster.find(x=>x.id===p.subId):null;
+    p.total=+p.total.toFixed(2);
+    p.needs1099=p.total>=600;
+    p.ein=(sub&&sub.ein)||'';
+    p.w9=!!(sub&&sub.w9);
+    p.addr=(sub&&sub.addr)||'';
+    p.rows.sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+    return p;
+  }).sort((a,b)=>b.total-a.total);
+  return {yr,payees,total:+payees.reduce((s,p)=>s+p.total,0).toFixed(2),
+          flagged:payees.filter(p=>p.needs1099).length,
+          missingW9:payees.filter(p=>p.needs1099&&!(p.w9&&p.ein)).length};
+}
+function open1099Report(yr){
+  const rep=_sub1099Report(yr||trackerYear||new Date().getFullYear());
+  document.getElementById('_1099-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_1099-ov';ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='560px';
+  box.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'+
+      '<div style="font-size:17px;font-weight:800">1099 contractor payments — '+rep.yr+'</div>'+
+      '<button onclick="document.getElementById(\'_1099-ov\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">×</button>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:12px">'+fmt(rep.total)+' paid to '+rep.payees.length+' contractor'+(rep.payees.length!==1?'s':'')+' · '+rep.flagged+' at the $600 1099-NEC threshold'+(rep.missingW9?' · <span style="color:var(--amber);font-weight:700">'+rep.missingW9+' missing W-9/EIN</span>':'')+'</div>'+
+    (!rep.payees.length?'<div class="empty">No contractor payments in '+rep.yr+'.<br>Assign a sub on a job sheet and mark them paid, or log an expense under Subcontractors.</div>':
+      rep.payees.map(p=>
+        '<div style="background:var(--bg2);border:1px solid '+(p.needs1099?'#D4A017':'var(--border)')+';border-radius:var(--r);padding:10px 12px;margin-bottom:10px">'+
+          '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">'+
+            '<div style="font-size:14px;font-weight:800">'+escHtml(p.name)+'</div>'+
+            '<div style="font-size:15px;font-weight:800">'+fmt(p.total)+'</div>'+
+          '</div>'+
+          '<div style="font-size:10px;margin:3px 0 7px">'+
+            (p.needs1099?'<span style="background:#FFF3CD;border:1px solid #D4A017;color:#6B4C00;font-weight:700;padding:1px 7px;border-radius:8px">1099-NEC required — file by Jan 31</span> ':'')+
+            (p.needs1099?(p.w9&&p.ein?'<span style="color:var(--green-mid);font-weight:700">✓ W-9 + EIN on file</span>':'<span style="color:var(--amber);font-weight:700">⚠️ get W-9'+(p.ein?'':' + EIN')+(p.subId?' — edit the sub in Team':' — add them to your sub roster (Team) so filing info attaches')+'</span>'):'')+
+          '</div>'+
+          p.rows.map(r=>
+            '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:3px 0;border-top:1px solid var(--border)">'+
+              '<span style="color:var(--text3);flex-shrink:0">'+r.date+'</span>'+
+              '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.job||'—')+(r.addr?' · '+escHtml(r.addr):'')+'</span>'+
+              '<span style="font-weight:700;flex-shrink:0">'+fmt(r.amount)+'</span>'+
+            '</div>').join('')+
+        '</div>').join(''))+
+    '<div style="font-size:9px;color:var(--text3);margin-top:4px">Payments from job-sheet sub payouts and Subcontractor expenses. Not tax advice — confirm filing requirements with your tax professional.</div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -2839,6 +3032,7 @@ function _enterOfflineMode(){
       if(_cd.events?.length)events=_cd.events;
       if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;
       if(_cd.photos?.length)photos=_cd.photos;
+          if(_cd.maintenance?.length)maintenance=_cd.maintenance;
       if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
       if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cache restore)');applySettings();_refillSettingsFormUnlessEditing();}
     }catch(_ce){}
@@ -3019,7 +3213,9 @@ function _wipeLocalAccountData(){
   Object.values(_lastKnownIds).forEach(s=>{if(s&&typeof s.clear==='function')s.clear();});
   // settingsTs:0 — zp3_S is shared across accounts on this device. Without zeroing the
   // timestamp these blanked settings beat the next account's cloud copy and overwrite it.
-  S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],weatherLat:null,weatherLon:null,locationDenied:false,settingsTs:0};
+  // vehiclesTs:0 for the same reason: the blanked vehicles:[] must never win the
+  // per-field keep-local rule over the next login's real cloud fleet.
+  S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],vehiclesTs:0,weatherLat:null,weatherLon:null,locationDenied:false,settingsTs:0};
   saveAll();
 }
 async function supaSignOut(){
@@ -3140,6 +3336,10 @@ async function _loadUserPrefs(){
   const k=_userLayoutCacheKey();
   if(k){try{const c=JSON.parse(localStorage.getItem(k)||'null');if(c){if(Array.isArray(c.d))S.dashWidgetOrder=c.d;if(Array.isArray(c.n))S.navTabOrder=c.n;if(Array.isArray(c.k))S.dashKpiOrder=c.k;}}catch(_e){}}
   if(!_supa||!_supaUser)return;
+  // OFFLINE-REORDER FIX: a dirty flag means the LOCAL layout is newer than the
+  // cloud row (the reorder's upsert never landed — offline/failed). Push local
+  // up instead of applying the stale cloud copy over it.
+  if(k&&localStorage.getItem(k+'_dirty')){_saveUserPrefs();return;}
   try{
     const{data}=await _supa.from('user_prefs').select('dash_widget_order,nav_tab_order,kpi_order').eq('user_id',_supaUser.id).maybeSingle();
     if(data){
@@ -3153,14 +3353,21 @@ async function _loadUserPrefs(){
 function _saveUserPrefs(){
   // Local cache is synchronous so a force-quit right after a reorder never loses it.
   _cacheUserLayoutLocal();
+  const k=_userLayoutCacheKey();
+  // Dirty until the cloud upsert CONFIRMS — cleared in the success handler only.
+  // Offline (or a failed write) leaves the flag, and reconnect/next boot re-pushes.
+  if(k){try{localStorage.setItem(k+'_dirty','1');}catch(_e){}}
   if(!_supa||!_supaUser)return;
   try{
     _supa.from('user_prefs').upsert(
       {user_id:_supaUser.id,dash_widget_order:S.dashWidgetOrder||null,nav_tab_order:S.navTabOrder||null,kpi_order:S.dashKpiOrder||null,updated_at:new Date().toISOString()},
       {onConflict:'user_id'}
-    ).then(()=>{},()=>{});
+    ).then(()=>{try{if(k)localStorage.removeItem(k+'_dirty');}catch(_e){}},()=>{});
   }catch(_e){}
 }
+// Reconnect: if a reorder happened offline, its dirty flag is still set — push
+// the local layout the moment the network returns (not just on the next reorder).
+window.addEventListener('online',()=>{try{const k=_userLayoutCacheKey();if(k&&localStorage.getItem(k+'_dirty'))_saveUserPrefs();}catch(_e){}});
 // Build the offline-pending snapshot, stamped with the owning account's user id.
 // _owner lets the SIGNED_IN merge path refuse to fold one account's offline data
 // into a different account (the cross-account-bleed root cause). _owner is null
@@ -3168,7 +3375,7 @@ function _saveUserPrefs(){
 function _offlinePendingBlob(){
   // Owner falls back to _loadedDataOwner so a blob written while offline (no _supaUser)
   // is still tagged with the account it came from — the next sign-in checks this.
-  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),ts:Date.now()});
+  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,ts:Date.now()});
 }
 // Read offline-pending, discarding (and clearing) any blob owned by a different
 // account than the one now signed in. Returns null when nothing usable remains.
@@ -3440,7 +3647,7 @@ function _paintCacheForDelta(uid){
   try{
     const cc=JSON.parse(localStorage.getItem('zp3_cloud_cache')||'null');
     if(!cc||cc._owner!==uid)return false;
-    const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos};
+    const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos,td_maintenance:cc.maintenance};
     const _ptTs=Date.now();
     for(const{t,set}of _TD_TABLES){
       const rows=Array.isArray(byKey[t])?byKey[t]:[];
@@ -3460,7 +3667,7 @@ function _writeLocalCache(){
   try{
     const _snap={_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,payments,income,
       expenses:expenses.map(({receipt_img,...r})=>r),
-      mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,checksState,
+      mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,maintenance,checksState,
       settings:S,cached_at:new Date().toISOString()};
     localStorage.setItem('zp3_cloud_cache',JSON.stringify(_snap));
     // Delta sidecar: the server-updated_at cursor + known-cloud hashes, owner-scoped.
@@ -3609,6 +3816,10 @@ async function supaSaveToCloud(){
           const _upTs=Date.now();
           slice.forEach(c=>{hashes.set(c.id,c.h);(_rowSyncedAt[tbl]||(_rowSyncedAt[tbl]=new Map())).set(c.id,_upTs);}); // uploaded → in sync as of now (ends the merge's pending window)
           window._deltaStats.upserts+=slice.length;_tableWrites+=slice.length;
+          // Diagnostic: NAME each uploaded row (tbl:id) so a delta-count assertion
+          // failure reports WHICH rows uploaded, not just how many (§11.1 —
+          // instrument, don't guess). Capped so a full-account first save can't bloat.
+          try{const _dr=(window._deltaStats.rows||(window._deltaStats.rows=[]));if(_dr.length<200)slice.forEach(c=>_dr.push(tbl+':'+c.id));}catch(_e){}
         }
       }
       // Remove ONLY ids the user EXPLICITLY removed on this device (recorded in
@@ -4683,6 +4894,7 @@ async function supaLoadFromCloud({silent=false}={}){
         mileage=_cd.mileage||[];liens=_cd.liens||[];timeEntries=_cd.timeEntries||[];
         if(_cd.licenses?.length)licenses=_cd.licenses;if(_cd.events?.length)events=_cd.events;
         if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;if(_cd.photos?.length)photos=_cd.photos;
+          if(_cd.maintenance?.length)maintenance=_cd.maintenance;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cloud load FAILED — fallback)');applySettings();_refillSettingsFormUnlessEditing();}
         _loadedFromCacheOnly=true;_supaCloudLoaded=true;
@@ -5139,6 +5351,12 @@ function checkFridaySummary(){
 function showDailyBriefing(){
   if(navigator.webdriver)return; // never auto-pop the boot briefing modal under automation — it covers the page and blocks every click (mirrors requestLocationPermission / geo-consent). Real users unaffected.
   if(!_supaUser)return; // don't show before login
+  // Owner: boot popups were appearing DURING the boot screen. Hold until the boot
+  // overlay has fully lifted AND the card waterfall has settled, so the briefing/
+  // unpaid popup lands OVER the finished dashboard, never over the loading screen.
+  if(document.getElementById('supa-boot-overlay')||document.getElementById('_update-ov')||document.getElementById('pg-dash')?.classList.contains('boot-cascade')){
+    setTimeout(showDailyBriefing,350);return;
+  }
   const briefingKey='zp3_last_briefing_'+(_supaUser?.id||'anon');
   const tk=todayKey();
   const lastBriefing=localStorage.getItem(briefingKey)||'';
@@ -5344,31 +5562,39 @@ function showDailyBriefing(){
 
 // ── Auto-update: SW signals reload; auto-save draft first ────────────────────
 function _showUpdateOverlay(){
-  // Painted SYNCHRONOUSLY before any await/reload so the user never sees the
-  // dashboard flash through during the save+reload window. Same look as the
-  // boot overlay so reload feels seamless.
+  // Reload bridge — painted SYNCHRONOUSLY before the save/reload so a version
+  // update NEVER shows the dashboard flashing between the old and new build. Uses
+  // the SAME markup/classes as the redesigned boot overlay (glow, mark, monogram,
+  // gradient glowing bar) so old-build → reload → new-build reads as ONE
+  // continuous loading screen instead of two separate boots.
   if(document.getElementById('_update-ov'))return;
   const logo=S?.logoData||'';
-  const name=S?.bname||'TradeDesk';
-  const color=S?.brandColor||'#185FA5';
-  const hasBrand=!!S?.brandColor;
-  const bg=hasBrand?color:'#0D1117';
-  const barFg=hasBrand?'rgba(0,0,0,0.35)':color;
-  const barBg=hasBrand?'rgba(0,0,0,0.2)':'rgba(255,255,255,0.08)';
-  const logoBlock=logo
-    ?'<img src="'+logo+'" style="max-height:260px;max-width:86vw;width:auto;object-fit:contain;display:block;animation:td-logoin .35s cubic-bezier(.22,1,.36,1) both">'
-    :'<div style="font-size:44px;font-weight:900;color:#fff;letter-spacing:-2px;animation:td-logoin .3s ease both">TradeDesk</div>';
+  const bname=(S?.bname||'').trim();
+  const brand=S?.brandColor||'';
+  const esc=t=>t.replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+  let r=45,g=93,b=168,lr=115,lg=163,lb=238;
+  if(brand){const h=brand.replace('#','');r=parseInt(h.substr(0,2),16)||0;g=parseInt(h.substr(2,2),16)||0;b=parseInt(h.substr(4,2),16)||0;lr=Math.min(255,r+70);lg=Math.min(255,g+70);lb=Math.min(255,b+70);}
+  const bg='radial-gradient(120% 80% at 0% 100%,rgba('+r+','+g+','+b+',.34) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
+  const barFg='linear-gradient(90deg,rgb('+r+','+g+','+b+'),rgb('+lr+','+lg+','+lb+'))';
+  const barGlow='0 0 12px rgba('+r+','+g+','+b+',.55)';
+  const markTile=brand?'background:linear-gradient(135deg,rgb('+r+','+g+','+b+'),rgb('+lr+','+lg+','+lb+'));box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba('+r+','+g+','+b+',.4)':'';
+  const mark=logo?'':(bname
+    ?'<div class="sbo-mark" style="'+markTile+'"><span class="sbo-monogram">'+esc((bname[0]||'').toUpperCase())+'</span></div>'
+    :'<div class="sbo-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>');
+  const nameBlock=logo
+    ?'<div class="sbo-logo-frame"><img src="'+logo+'"></div>'+(bname?'<div class="sbo-wordmark sbo-bizname" style="font-family:Geist,sans-serif;font-weight:900;color:#fff">'+esc(bname)+'</div>':'')
+    :bname
+      ?'<div class="sbo-wordmark sbo-bizname" style="font-family:Geist,sans-serif;font-weight:900;color:#fff">'+esc(bname)+'</div>'
+      :'<div style="display:flex;align-items:baseline"><span class="sbo-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:44px;color:#fff;letter-spacing:-2px">TradeDesk</span></div>';
   const ov=document.createElement('div');
   ov.id='_update-ov';
-  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:'+bg+';display:flex;flex-direction:column;align-items:center;justify-content:center';
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;overflow:hidden;background:'+bg+';display:flex;flex-direction:column;align-items:center;justify-content:center';
   ov.innerHTML=
-    '<div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;padding:0 24px">'+
-      logoBlock+
-    '</div>'+
-    '<div style="width:100%;padding:0 0 52px">'+
-      '<div style="height:3px;background:'+barBg+';border-radius:99px;margin:0 32px;overflow:hidden">'+
-        '<div style="height:100%;background:'+barFg+';border-radius:99px;animation:td-bar 2.8s cubic-bezier(.4,0,.2,1) forwards"></div>'+
-      '</div>'+
+    '<div class="sbo-glow"'+(brand?' style="background:radial-gradient(closest-side,rgba('+r+','+g+','+b+',.30),transparent 65%)"':'')+'></div>'+
+    '<div class="sbo-center">'+mark+nameBlock+'<div class="sbo-tag">Updating…</div></div>'+
+    '<div class="sbo-foot">'+
+      '<div class="sbo-track"><div class="sbo-bar" style="background:'+barFg+';box-shadow:'+barGlow+';animation-duration:1.6s"></div><div class="sbo-sheen"></div></div>'+
+      '<div class="sbo-hint">Loading the latest version…</div>'+
     '</div>';
   document.body.appendChild(ov);
 }
@@ -5410,7 +5636,7 @@ async function _autoSaveAndReload(){
   if(_loadInProgress){_deferredReload=true;return;}
   _reloadPending=true;
   if(_devSupportMode){location.reload();return;} // dev's own data already saved on support entry — never push support user data to cloud
-  document.body.style.visibility='hidden'; // hide current page during save — boot overlay handles the visual after reload
+  _showUpdateOverlay(); // bridge the reload with a boot-matching loading screen (no dashboard flash, no double-boot look)
   // Snapshot any open forms before saving/reloading
   try{
     const snap=_snapshotForms();

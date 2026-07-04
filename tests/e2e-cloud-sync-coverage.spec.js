@@ -667,6 +667,53 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(firstZjIdx).toBe(r.markerIdx);
   });
 
+  // ── _hashPayload is CANONICAL — key order never changes the fingerprint ──────
+  // Root cause of the phantom re-upload loop (delta-sync flow, 2026-07-03): the save
+  // path hashes rows in in-memory insertion order, but reconcile/load rebaseline from
+  // Postgres jsonb payloads — and Postgres re-sorts jsonb object keys. With a plain
+  // JSON.stringify hash the two orderings fingerprint differently, so every reconcile
+  // marked every row "changed" and every save re-uploaded the whole account, forever.
+  // _canonicalJson sorts keys recursively (arrays keep order — order IS data there),
+  // so the same data always hashes the same regardless of who serialized it.
+  test('_hashPayload — key order never changes the hash; array order + values still do', async () => {
+    const r = await page.evaluate(() => {
+      const a = { name: 'Zach', amount: 5, tags: ['x', 'y'], addr: { city: 'Austin', zip: '78701' } };
+      const b = { addr: { zip: '78701', city: 'Austin' }, tags: ['x', 'y'], amount: 5, name: 'Zach' };
+      const arrSwapped = { ...a, tags: ['y', 'x'] };
+      const valChanged = { ...a, amount: 6 };
+      // undefined/function semantics must match JSON.stringify: dropped from objects,
+      // null in arrays — a jsonb round-trip (which strips them) must not change the hash.
+      const withUndef = { name: 'Zach', amount: 5, tags: ['x', 'y'], addr: { city: 'Austin', zip: '78701' }, ghost: undefined, fn: function () {} };
+      const arrUndef1 = { list: [1, undefined, 3] };
+      const arrUndef2 = { list: [1, null, 3] };
+      // toJSON honored (review hardening): a Date must hash to its ISO string form,
+      // so an in-memory Date and the string it becomes after a jsonb round-trip match.
+      const iso = '2026-01-01T00:00:00.000Z';
+      const withDate = { name: 'Zach', when: new Date(iso) };
+      const withIso = { name: 'Zach', when: iso };
+      return {
+        orderInsensitive: _hashPayload(a) === _hashPayload(b),
+        arrayOrderMatters: _hashPayload(a) !== _hashPayload(arrSwapped),
+        valueMatters: _hashPayload(a) !== _hashPayload(valChanged),
+        undefDropped: _hashPayload(withUndef) === _hashPayload(a),
+        arrUndefIsNull: _hashPayload(arrUndef1) === _hashPayload(arrUndef2),
+        nested: _hashPayload({ o: { b: [{ z: 1, a: 2 }] } }) === _hashPayload({ o: { b: [{ a: 2, z: 1 }] } }),
+        primitives: _hashPayload(5) === _hashPayload(5) && _hashPayload('x') !== _hashPayload('y'),
+        nullSafe: typeof _hashPayload(null) === 'string',
+        dateMatchesIso: _hashPayload(withDate) === _hashPayload(withIso),
+      };
+    });
+    expect(r.orderInsensitive).toBe(true);  // THE fix — jsonb key re-sort must not re-upload
+    expect(r.arrayOrderMatters).toBe(true); // arrays are ordered data — never sort them
+    expect(r.valueMatters).toBe(true);
+    expect(r.dateMatchesIso).toBe(true);    // toJSON honored → no Date/jsonb phantom re-upload
+    expect(r.undefDropped).toBe(true);
+    expect(r.arrUndefIsNull).toBe(true);
+    expect(r.nested).toBe(true);
+    expect(r.primitives).toBe(true);
+    expect(r.nullSafe).toBe(true);
+  });
+
   // ── Phase-3 per-field merge — the two review-confirmed defects, fixed ─────────
   // (1) A protected pending edit must RE-UPLOAD: the hash stamped on merge must be the
   //     INCOMING cloud row's hash, never the merged row's — else the next save hash-skips

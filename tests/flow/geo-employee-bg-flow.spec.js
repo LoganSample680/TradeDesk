@@ -186,7 +186,7 @@ test.describe('geo employee path + lifecycle (UI-driven)', () => {
       },
     });
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

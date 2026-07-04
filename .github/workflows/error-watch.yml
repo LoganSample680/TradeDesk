@@ -1,0 +1,159 @@
+# Error watch — the HOT LANE trigger of the self-heal loop (CLAUDE.md §14.1).
+# Every 15 minutes: read new error_log rows (window errors, unhandled
+# rejections, console.error, and DEAD BUTTONS — controls whose first click has
+# zero effect — from live users, captured by js/observability.js →
+# ingest-telemetry). When new errors exist:
+#
+#   1. OPEN A HOTFIX PR — branch claude/hotfix-err-<id> seeded from main with
+#      an empty commit, PR body = the finding-shaped error report + the hot-lane
+#      instructions. If a hotfix PR is already open, append to it instead.
+#   2. WAKE THE AGENT — comment on the open claude/* feature PR (the active
+#      session watches it) pointing at the hotfix PR. No feature PR open →
+#      file an issue.
+#   3. Mark each error row gh_reported so it never re-posts.
+#
+# The agent then fixes the root cause on the hotfix branch, adds the regression
+# test in the same commit, waits for full green, and MERGES AUTONOMOUSLY —
+# hotfix PRs carry standing merge authorization (CLAUDE.md §14.1). The merge
+# builds production, shipping the fix live. hotfix-resolve.yml then marks the
+# error rows resolved; if the same error ever fires again it opens a NEW round.
+#
+# ZERO setup: uses the SUPABASE_ACCESS_TOKEN + SUPABASE_PROJECT_REF secrets the
+# repo already has (same ones that deploy edge functions) via the Supabase
+# management API's SQL endpoint. Missing secrets → exits quietly.
+#
+# INSTANT MODE (optional, one owner step): create a fine-grained GitHub PAT
+# scoped to ONLY this repo with Contents: Read and write (that is the permission
+# the repository_dispatch call needs — not Actions), then
+#   supabase secrets set GH_DISPATCH_TOKEN=<pat> --project-ref mwtsmctajhrrybblgorf
+# ingest-telemetry then repository_dispatches this workflow the second an error
+# lands — seconds instead of the 15-minute cron.
+name: Error Watch
+
+on:
+  # INSTANT path: ingest-telemetry fires this the moment an error row lands
+  # (needs the GH_DISPATCH_TOKEN function secret — see header). The cron is the
+  # always-on fallback so nothing is ever missed even without the token.
+  repository_dispatch:
+    types: [live-error]
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+# Bursts collapse: one run at a time, a queued run picks up whatever's new.
+concurrency:
+  group: error-watch
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SB_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SB_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Fetch unreported errors, open the hotfix PR, wake the agent
+        run: |
+          set -euo pipefail
+          if [ -z "$SB_TOKEN" ] || [ -z "$SB_REF" ]; then
+            echo "::notice::SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF not set — error watch idle"
+            exit 0
+          fi
+          q() {
+            curl -sS -X POST "https://api.supabase.com/v1/projects/$SB_REF/database/query" \
+              -H "Authorization: Bearer $SB_TOKEN" -H "Content-Type: application/json" \
+              -d "$(jq -n --arg query "$1" '{query: $query}')"
+          }
+          resp=$(q "select id, kind, message, stack, url, app_version, context, created_at
+                    from error_log
+                    where resolved = false and (context->>'gh_reported') is null
+                    order by created_at asc limit 10")
+          allrows=$(echo "$resp" | jq 'if type=="array" then . else (.result // .rows // []) end')
+          allcount=$(echo "$allrows" | jq 'length')
+          echo "unreported errors: $allcount"
+          [ "$allcount" -gt 0 ] || exit 0
+
+          # PRODUCTION ONLY (owner decision 2026-07-03): preview (pages.dev) errors are
+          # logged for reading but never open hotfix PRs — poking at a half-tested
+          # preview must not trigger the auto-merge pipeline. Preview rows are marked
+          # reported below so they don't clog the queue.
+          rows=$(echo "$allrows" | jq '[.[] | select((.url // "") | contains("pages.dev") | not)]')
+          count=$(echo "$rows" | jq 'length')
+          echo "production errors (hotfix-eligible): $count of $allcount"
+          if [ "$count" -eq 0 ]; then
+            ids=$(echo "$allrows" | jq -r 'map(.id|tostring)|join(",")')
+            q "update error_log
+               set context = coalesce(context, '{}'::jsonb) || '{\"gh_reported\": true, \"preview_only\": true}'::jsonb
+               where id in ($ids)" >/dev/null
+            echo "preview-only batch — marked reported, no hotfix PR"
+            exit 0
+          fi
+
+          firstId=$(echo "$rows" | jq -r '.[0].id')
+          ids=$(echo "$rows" | jq -r 'map(.id|tostring)|join(",")')
+          report=$(echo "$rows" | jq -r '
+            ( map(
+              "- **[" + .kind + "]** `" + ((.message // "") | gsub("`";"") | .[0:300]) + "`" +
+              (if .url then "\n  - url: " + (.url | .[0:160]) else "" end) +
+              (if .app_version then " · v" + .app_version else "" end) +
+              (if (.context != null and .context.page != null) then " · page: " + (.context.page|tostring) else "" end) +
+              " · " + .created_at +
+              (if .stack then "\n  ```\n  " + ((.stack // "") | gsub("`";"") | .[0:500]) + "\n  ```" else "" end)
+            ) | join("\n") ) +
+            "\n\nerror_log ids: " + (map(.id|tostring)|join(", "))
+          ')
+
+          # ── 1. Hotfix PR: reuse an open one, else open a fresh branch + PR. ──
+          hotpr=$(gh api "repos/$REPO/pulls?state=open&per_page=30" \
+            --jq '[.[] | select(.head.ref | startswith("claude/hotfix-err-"))][0].number // empty')
+          if [ -n "$hotpr" ]; then
+            gh api "repos/$REPO/issues/$hotpr/comments" -f body="## 🔴 More live errors (same hot lane)
+
+          $report" >/dev/null
+            echo "appended to open hotfix PR #$hotpr"
+          else
+            branch="claude/hotfix-err-$firstId"
+            main_sha=$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha)
+            tree=$(gh api "repos/$REPO/git/commits/$main_sha" --jq .tree.sha)
+            seed=$(gh api "repos/$REPO/git/commits" -f message="Hotfix lane opened for live error(s) $ids [CF-Pages-Skip]" -f tree="$tree" -f "parents[]=$main_sha" --jq .sha)
+            gh api "repos/$REPO/git/refs" -f ref="refs/heads/$branch" -f sha="$seed" >/dev/null
+            body="## 🔴 Live error hotfix — hot lane (CLAUDE.md §14.1)
+
+          $report
+
+          ### Hot-lane protocol (agent)
+          1. Root-cause on THIS branch (§11.1 — never patch the symptom).
+          2. Fix + a regression test in the SAME commit. The test must reproduce the error's conditions and assert zero console errors — red before the fix, green after — so this error can never fire again silently.
+          3. Push once, wait for the FULL result set (§1.6).
+          4. All shards green first-attempt → **merge autonomously** (standing owner authorization for claude/hotfix-err-* PRs only). The merge builds production — the fix goes live.
+          5. hotfix-resolve.yml marks these error_log rows resolved on merge. A re-fire opens a new round automatically — that is the self-check."
+            hotpr=$(gh api "repos/$REPO/pulls" -f title="🔴 Hotfix: live error(s) $ids" -f head="$branch" -f base=main -f body="$body" --jq .number)
+            echo "opened hotfix PR #$hotpr on $branch"
+          fi
+
+          # ── 2. Wake the active agent session (it watches the feature PR). ──
+          featpr=$(gh api "repos/$REPO/pulls?state=open&per_page=30" \
+            --jq '[.[] | select((.head.ref | startswith("claude/")) and (.head.ref | startswith("claude/hotfix-err-") | not))][0].number // empty')
+          wake="🔴 **Hot lane**: live error(s) landed — hotfix PR #$hotpr is open and waiting. Fix root cause + regression test there, go green, merge (standing hotfix authorization), production ships the fix."
+          if [ -n "$featpr" ]; then
+            gh api "repos/$REPO/issues/$featpr/comments" -f body="$wake" >/dev/null
+            echo "woke agent via feature PR #$featpr"
+          else
+            gh api "repos/$REPO/issues" -f title="🔴 Hotfix PR #$hotpr needs an agent" -f body="$wake" >/dev/null
+            echo "no feature PR open — filed an issue"
+          fi
+
+          # ── 3. Mark the WHOLE batch reported (incl. preview rows in a mixed batch). ──
+          allids=$(echo "$allrows" | jq -r 'map(.id|tostring)|join(",")')
+          q "update error_log
+             set context = coalesce(context, '{}'::jsonb) || '{\"gh_reported\": true}'::jsonb
+             where id in ($allids)" >/dev/null
+          echo "marked $allcount reported ($count in the hotfix PR)"

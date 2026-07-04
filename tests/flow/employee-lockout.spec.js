@@ -147,7 +147,7 @@ test.describe('employee lockout — financials unreachable (security)', () => {
       },
     });
 
-    const rep = report(FLOW, BASELINE);   // capture mode
+    const rep = report(FLOW, BASELINE, page);   // capture mode
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });
