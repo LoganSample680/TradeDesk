@@ -593,7 +593,10 @@ function checkUnpaidOnLoad(){
   const urgColor=days>=14?'#A32D2D':'var(--amber)';
   let actionBtn='';
   if(lienFiled){
-    actionBtn='<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+b.client_id+')" style="flex:2;padding:13px;border-radius:var(--r);border:none;background:#3D0000;color:#FFB3B3;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">⚖️ View lien</button>';
+    // "View lien" must show the FILED lien document — not the client record.
+    // printKansasLien() is the same action the filed-lien card button uses
+    // ("View lien doc"), rendering the recorded lien in its own window.
+    actionBtn='<button onclick="this.closest(\'.zmodal-overlay\').remove();printKansasLien('+b.id+')" style="flex:2;padding:13px;border-radius:var(--r);border:none;background:#3D0000;color:#FFB3B3;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">⚖️ View lien</button>';
   } else if(isFileable){
     actionBtn='<button onclick="this.closest(\'.zmodal-overlay\').remove();showFileLienDirect('+b.id+')" style="flex:2;padding:13px;border-radius:var(--r);border:none;background:#3D0000;color:#FFB3B3;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">⚖️ File Lien</button>';
   } else if(next.smsKey&&c.phone){
