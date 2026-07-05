@@ -499,7 +499,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.05.26.15';
+const APP_VERSION='07.05.26.16';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1704,6 +1704,12 @@ async function supaInit(){
           _devSupportMode=false;_devSupportName='';_devSavedState=null;
           // Wipe the outgoing account's in-memory records so they can't be merged/pushed up.
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
+          // Inbound-lead review queue lives OUTSIDE these arrays and was never cleared
+          // here — the incoming account's Leads page kept rendering the outgoing
+          // account's unreviewed QR/intake leads until its own poll happened to
+          // overwrite it (not guaranteed — see _loadPendingInbound's early-returns).
+          _pendingInbound=[];_processedInboundIds.clear();
+          _updateInboundBadge();
           localStorage.removeItem('zp3_offline_pending');
           _loadedDataOwner=null;
           // Account switch: drop the outgoing account's delta cursor so it can't be
@@ -3236,6 +3242,13 @@ function _wipeLocalAccountData(){
   // rebuilds from a full load rather than delta-ing against this account's cursor.
   _deltaCursor=null;localStorage.removeItem('zp3_delta_meta');
   clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
+  // Inbound-lead review queue is account-scoped in-memory state that lived OUTSIDE
+  // the arrays above — the next account's Leads page would keep rendering this
+  // account's unreviewed QR/intake leads (and could even promote one into the
+  // next account's clients) until its own poll happened to overwrite it, which
+  // isn't guaranteed (see _loadPendingInbound's early-returns). Clear both here.
+  _pendingInbound=[];_processedInboundIds.clear();
+  _updateInboundBadge();
   // Delta-sync baselines are per-account: a stale _syncedHash entry under the next account
   // would suppress re-upload of its own same-id row, and a stale _lastKnownIds set would
   // mis-target the soft-delete sweep. Both rebuild from the next account's cloud load.
@@ -5171,9 +5184,14 @@ let _pendingInbound=[];
 const _processedInboundIds=new Set();
 async function _loadPendingInbound(){
   if(!_supa||!_supaUser)return;
+  // Snapshot which account this call belongs to — if a sign-out/sign-in happens
+  // while the request is in flight, _supaUser changes out from under this await,
+  // and the response (or its absence) must never be applied against the wrong account.
+  const _forUser=_supaUser.id;
   try{
     const{data}=await _supa.from('inbound_leads').select('*').eq('account_id',_supaUser.id).eq('status','pending').order('created_at',{ascending:false});
-    if(!data)return;
+    if(_supaUser?.id!==_forUser)return; // account switched mid-request — drop this response entirely
+    if(!data){_pendingInbound=[];_updateInboundBadge();return;}
     // Split: onboard_link rows (have client_id) auto-merge; QR rows go to review queue
     const toMerge=data.filter(r=>!!r.client_id);
     const toReview=data.filter(r=>!r.client_id);

@@ -6396,6 +6396,30 @@ test.describe('Never-delete policy — archive + hold + edit', () => {
     }
   });
 
+  // Regression — a real user-reported bug: leads a contractor created on their own
+  // device kept showing up in a different employee's (Zach's) Leads page after he
+  // signed in on the same shared device. Root cause: the inbound-lead review queue
+  // (_pendingInbound, for QR/intake-form leads awaiting review) is in-memory state
+  // that lives OUTSIDE the clients/bids/jobs/... arrays the account-switch wipe
+  // already clears — it was never included, so it survived a sign-out/sign-in and
+  // kept rendering (and could be promoted into) the next account signed into.
+  test('cross-account lead-bleed guard: _pendingInbound (QR/intake review queue) is cleared on account switch', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _wipeLocalAccountData !== 'function' || typeof _pendingInbound === 'undefined') return { skip: true };
+      _pendingInbound = [{ id: 'lead-a-1', name: 'Account A Lead', source: 'qr_form' }];
+      _processedInboundIds.add('already-processed-by-a');
+      _wipeLocalAccountData();
+      return {
+        pendingCount: (typeof _pendingInbound !== 'undefined' ? _pendingInbound.length : -1),
+        processedHasStale: (typeof _processedInboundIds !== 'undefined' ? _processedInboundIds.has('already-processed-by-a') : true),
+      };
+    });
+    if (!r.skip) {
+      expect(r.pendingCount, 'the outgoing account\'s unreviewed leads must not survive into the next login').toBe(0);
+      expect(r.processedHasStale, 'the outgoing account\'s processed-id memory must not carry over either').toBe(false);
+    }
+  });
+
   test('editPayment — fixes the record in place (edit-not-delete)', async () => {
     const r = await page.evaluate(() => {
       const pid = 887101;
