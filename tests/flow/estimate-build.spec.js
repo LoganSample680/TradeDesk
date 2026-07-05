@@ -7,7 +7,7 @@
 // step() — act() returns its interaction count, rule() asserts the post-condition
 // and on failure throws a one-line finding() ticket. report() then emits the
 // friction profile and gates the click budget against perf-baseline.json.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, RUN_TAG, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

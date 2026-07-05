@@ -15,13 +15,12 @@
 //
 // All seed data is uniquely tagged and LEFT in the dev account (§13.7); only worker
 // browser contexts are closed (resource cleanup).
-const { test, expect } = require('@playwright/test');
-const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
+const { test, expect } = require('./flow-test');
+const { needsLiveCreds, signIn, step, report, resetLedger, scopeBypassHeader } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'delta-sync/selective-upload';
 const BASE = process.env.E2E_BASE_URL || 'https://tradedeskpro.app';
-const BYPASS = process.env.E2E_BYPASS_SECRET ? { 'X-E2E-Bypass': process.env.E2E_BYPASS_SECRET } : {};
 
 // Zero the per-save upload/skip counters in-page so the NEXT save measures only its own work.
 const resetDelta = (page) => page.evaluate(() => { window._deltaStats = { upserts: 0, skips: 0, rows: [] }; });
@@ -252,7 +251,8 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
     test.setTimeout(90000);
     const bidId = baseId() + 30;
     // A = this page; B = a second device on the same account that receives realtime.
-    const ctxB = await browser.newContext({ baseURL: BASE, extraHTTPHeaders: BYPASS, bypassCSP: true });
+    const ctxB = await browser.newContext({ baseURL: BASE, bypassCSP: true });
+    await scopeBypassHeader(ctxB, BASE);
     const pageB = await ctxB.newPage();
     await signIn(pageB);
     await pageB.waitForFunction(() => typeof _supaCloudLoaded === 'undefined' || _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});

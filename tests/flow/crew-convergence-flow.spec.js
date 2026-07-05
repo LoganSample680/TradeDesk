@@ -20,7 +20,7 @@
 //
 // LOCAL-STACK only (needs the provisioned crew pool + hammers one account). Per §13.7
 // all seeded data stays; only the extra contexts are closed.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, workerAccount, localPool, crewPool } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

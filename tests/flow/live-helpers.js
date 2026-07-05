@@ -152,6 +152,30 @@ function accountPair() {
 // rule not matching" without guessing. Length only — never the value.
 const BYPASS_STATUS = process.env.E2E_BYPASS_SECRET ? `set(${process.env.E2E_BYPASS_SECRET.length}ch)` : 'MISSING';
 
+// Attach the CI-only Cloudflare WAF bypass header to a context, scoped to the
+// APP'S OWN origin only. A blanket context.extraHTTPHeaders (the old approach)
+// attaches the header to EVERY request the context makes, including third-party
+// origins (Google Fonts, Cloudflare Insights, Stripe, the Supabase REST/Edge
+// Function host) — none of which allow this custom header in their CORS
+// preflight, so the browser blocks those requests. That silently broke font
+// loading, analytics, Stripe Connect status checks, and Supabase Edge Function
+// calls, surfacing as false "console error" / "failed to fetch" failures having
+// nothing to do with the app itself. Route-intercept and inject the header only
+// when the request's origin matches this context's own app origin instead.
+function scopeBypassHeader(context, baseURL) {
+  if (!process.env.E2E_BYPASS_SECRET || !baseURL) return;
+  const bypassSecret = process.env.E2E_BYPASS_SECRET;
+  const appOrigin = new URL(baseURL).origin;
+  return context.route('**/*', (route) => {
+    const reqUrl = new URL(route.request().url());
+    if (reqUrl.origin === appOrigin) {
+      route.continue({ headers: { ...route.request().headers(), 'x-e2e-bypass': bypassSecret } });
+    } else {
+      route.continue();
+    }
+  });
+}
+
 // Unique per process run. Stamped into every seeded record's name/marker field
 // so teardown can target exactly this run's rows. Uses PID + start time from the
 // env (never Math.random/Date.now in shared code) — good enough to be unique
@@ -591,6 +615,7 @@ async function seedProposal(page, { clientId, bidId, amount, tag = 'seed' } = {}
 }
 
 module.exports = {
+  scopeBypassHeader,
   swarmAccount,
   cloudRows,
   seedProposal,

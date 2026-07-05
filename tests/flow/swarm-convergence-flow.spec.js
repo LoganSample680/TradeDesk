@@ -21,7 +21,7 @@
 // contend with the rest of the suite; the local stack is provisioned for it and is the
 // same engine (Postgres + realtime + PostgREST) that will run on Proxmox in production.
 // Per §13.7 the swarm's rows are left in the account to inspect.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, swarmAccount } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

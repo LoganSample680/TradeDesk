@@ -9,7 +9,7 @@
 //
 //   suspect chain: sign.html loadProposal (storage fetch by key) → checkReady
 //   (name + UETA consent unlock the continue button).
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, seedProposal } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

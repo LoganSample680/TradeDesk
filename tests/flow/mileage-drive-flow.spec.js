@@ -5,7 +5,7 @@
 // start path fires an SMS "on my way" redirect + a GPS capture that can't run
 // headless — the data-writing half is the part under test. mileage.unshift rows
 // round-trip through td_mileage, so the save proves the write path end-to-end.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, type, cloudRows } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

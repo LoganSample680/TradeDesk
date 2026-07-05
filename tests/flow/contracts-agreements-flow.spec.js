@@ -5,7 +5,7 @@
 // markAgreementSigned). Each assertion is a step() so a regression throws a
 // one-line finding(). Both stores round-trip through the cloud (td_contracts /
 // td_agreements) so the seed save proves the write path end-to-end.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, type, cloudRows, seedName, seedAddr } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

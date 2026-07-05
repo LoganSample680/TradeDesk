@@ -11,7 +11,7 @@
 //
 //   suspect chain: sign.html goToPayment → _paySign(cash|check) → submitCash
 //   (signed_proposals upsert).
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, seedProposal } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

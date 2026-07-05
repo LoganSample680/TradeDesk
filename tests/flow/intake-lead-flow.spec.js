@@ -7,13 +7,12 @@
 // reads to show the inbound inbox). End-to-end across the public→contractor seam.
 //
 // Seed lead is left in the account per CLAUDE.md §13.7.
-const { test, expect } = require('@playwright/test');
-const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
+const { test, expect } = require('./flow-test');
+const { needsLiveCreds, signIn, step, report, resetLedger, scopeBypassHeader } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'intake/public-lead';
 const BASE = process.env.E2E_BASE_URL || 'https://tradedeskpro.app';
-const BYPASS = process.env.E2E_BYPASS_SECRET ? { 'X-E2E-Bypass': process.env.E2E_BYPASS_SECRET } : {};
 
 test.describe('public intake lead funnel (UI-driven)', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
@@ -37,7 +36,8 @@ test.describe('public intake lead funnel (UI-driven)', () => {
       ruleText: 'submitting the public intake form must show the confirmation (the insert succeeded)',
       expected: 'confirmation screen shown (#pg-form hidden)',
       act: async () => {
-        const ctx = await browser.newContext({ baseURL: BASE, extraHTTPHeaders: BYPASS, bypassCSP: true });
+        const ctx = await browser.newContext({ baseURL: BASE, bypassCSP: true });
+        await scopeBypassHeader(ctx, BASE);
         const ip = await ctx.newPage();
         let confirmed = false, got = '';
         try {

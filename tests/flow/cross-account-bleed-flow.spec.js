@@ -21,7 +21,7 @@
 // real Supabase auth user (a different contractor login):
 //   E2E_DEV2_EMAIL, E2E_DEV2_PASSWORD, E2E_DEV2_USER_ID
 // Soft-skips cleanly until they're configured.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, localPool } = require('./live-helpers');
 
 // In LOCAL-STACK mode the cloud E2E_DEV2_* account doesn't exist, so source two DISTINCT

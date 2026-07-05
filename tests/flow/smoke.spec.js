@@ -1,7 +1,7 @@
 // Harness smoke test — validates sign-in, the dev-account guard, and teardown
 // against the live Supabase project. Skips cleanly when secrets are absent so
 // this file is safe to run anywhere (it just no-ops without creds).
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, shouldTeardown, signIn, assertDevAccount, teardownAll, DEV_USER_ID, workerAccount } = require('./live-helpers');
 
 test.describe('flow harness — smoke', () => {

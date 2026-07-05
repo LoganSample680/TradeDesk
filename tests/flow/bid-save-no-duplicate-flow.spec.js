@@ -7,7 +7,7 @@
 // in-memory bids[] must agree. If the dedup chain in paint-estimate.js
 // `_paintEstAutosave` (editingBidId → lastCreatedBidId → localStorage lastBidId →
 // orphan-by-client) ever breaks, N saves create N rows and this fails loudly.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

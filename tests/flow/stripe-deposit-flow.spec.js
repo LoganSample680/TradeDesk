@@ -11,7 +11,7 @@
 // soft-skips with a clear note instead of failing — so the gate documents the
 // dependency without going red on a perfectly valid account that hasn't
 // connected Stripe. Wire test-mode Stripe → this immediately starts asserting.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

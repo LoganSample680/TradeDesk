@@ -3,7 +3,7 @@
 // Permissions block is a default-closed accordion that opens on tap, and a kanban column
 // header collapses the bid cards inside it. None need seeded data — they assert the real
 // render + the real click handler's effect on real globals/DOM.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, tap } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

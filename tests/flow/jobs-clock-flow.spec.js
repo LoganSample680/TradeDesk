@@ -4,7 +4,7 @@
 // (bids.js schedFromBid, finance.js scheduleJob, jobs.js clockIn/clockOut/
 // markJobDone/confirmJobDone) against a tagged throwaway bid. Each assertion is a
 // step() so a regression throws a one-line finding().
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, cloudRows } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

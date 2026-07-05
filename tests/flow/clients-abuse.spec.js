@@ -8,7 +8,7 @@
 // Test leads carry a hidden "__E2E__" marker in notes so they're identifiable
 // and cleanable while showing real names. A beforeAll sweep removes prior test
 // leads (old "E2E"-named ones + "__E2E__"-tagged ones) so the account stays tidy.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, RUN_TAG, finding } = require('./live-helpers');
 
 const FIRST = ['James', 'Maria', 'Robert', 'Linda', 'David', 'Patricia', 'Michael', 'Jennifer', 'William', 'Elizabeth', 'Carlos', 'Aisha'];

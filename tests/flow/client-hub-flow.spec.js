@@ -5,7 +5,7 @@
 // _buildClientHubSnapshot + _uploadClientHub) → then open the REAL client.html
 // hub (anon, no login, same /api proxy) and assert the proposal renders as a
 // .hub-bid-row under "Awaiting your signature" — NOT the "Hub not found" state.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, seedProposal } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

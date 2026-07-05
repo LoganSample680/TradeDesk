@@ -8,7 +8,7 @@
 // NOTE: live GPS geo-fencing (arrive/depart time-on-site) can't run headless — it
 // needs real location pings within business hours — so this covers the
 // deterministic assignment half, which is where the dispatch data is written.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, cloudRows, seedName, seedAddr } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

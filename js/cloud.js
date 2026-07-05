@@ -499,7 +499,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.05.26.5';
+const APP_VERSION='07.05.26.6';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -714,6 +714,19 @@ function _opShadowDerive(onlyTbl){
   try{
     const owner=_hlcOwner();
     if(owner!==_opPrevOwner){_opRebaseline();} // account switched → fresh baseline, no bleed
+    // An employee's redacted in-memory view (zeroed amounts etc.) is never real data — it
+    // must never advance a FIELD CLOCK (the local merge-priority signal _opApplyIncoming
+    // uses). supaSaveToCloud's _saveSkip correctly stops the redacted zero from reaching
+    // the SERVER (cloud.js ~3862), but this derive runs BEFORE that skip-set is computed,
+    // so without this guard it stamped a fresh, newer field clock from the zeroed value
+    // anyway. That phantom "locally edited, newer than the server" clock then outranked
+    // the contractor's real server row on the next reload's merge — a redacted employee
+    // save silently zeroed the contractor's real bid amount in MEMORY, even though the
+    // network was never touched. The op itself (ring + durable log) still gets created
+    // as before — the crew op-SYNC channel deliberately keeps redacted ops local and
+    // filters them only at push time (see the "redacted-table ops never push" test) —
+    // only the field-clock stamp is skipped, since that's the piece that poisons merges.
+    const _redact=(typeof _employeeRedactedTables==='function')?_employeeRedactedTables():new Set();
     for(const tdef of _TD_TABLES){
       const tbl=tdef.t;
       if(onlyTbl&&tbl!==onlyTbl)continue; // targeted derive (peer-op apply flushes ONE table's pending intent first)
@@ -722,17 +735,27 @@ function _opShadowDerive(onlyTbl){
       for(const r of _opCanonicalRows(tdef)){
         const id=String(r.id);next.set(id,_opClone(r)); // store an immutable snapshot, not the live ref
         const p=prev.get(id);
-        if(p&&_hashPayload(p)===_hashPayload(r))continue; // unchanged
+        if(p&&_hashPayload(p)===_hashPayload(r))continue; // unchanged (canonical, key-order-safe)
         const fields={};
         if(!p){Object.assign(fields,r);}                  // create — all fields
-        else for(const k in r){if(JSON.stringify(r[k])!==JSON.stringify(p[k]))fields[k]=r[k];}
+        // Per-field diff must use the SAME canonical comparison as the row-level gate above
+        // — raw JSON.stringify is key-order-sensitive, so a field whose nested object merely
+        // round-tripped through Postgres jsonb with its keys re-sorted (no data change) could
+        // mis-flag as "changed" here even though the row-level gate correctly saw no change
+        // overall, stamping a fresh field clock from a phantom edit (feeds the same
+        // hash-baseline-churn bug fixed in _opApplyIncoming above).
+        else for(const k in r){if(_canonicalJson(r[k])!==_canonicalJson(p[k]))fields[k]=r[k];}
         if(!p)window._opStats.creates++;else window._opStats.updates++;
         window._opStats.emitted++;
         const _ohlc=_hlcNow();
         const _op={hlc:_ohlc,owner,table:tbl,rowId:id,fields};
         _opRing.push(_op);
         if(_opRing.length>2000)_opRing.shift();
-        _opStampFields(tbl,id,fields,_ohlc); // PHASE 1: per-field HLC field clocks
+        // Redacted table: keep the op itself (ring + durable log) so the crew push-time
+        // filter still has something to filter — but never let a zeroed/redacted value
+        // stamp a field clock; that's the local merge-priority signal, and a phantom
+        // "newer" clock from a redacted view must never outrank the real server value.
+        if(!_redact.has(tbl))_opStampFields(tbl,id,fields,_ohlc); // PHASE 1: per-field HLC field clocks
         _opPersist(_op);                     // PHASE 1: durable IndexedDB op log
       }
       // Would-be absence-deletes (NOT emitted). Capped tables exempt (eviction≠delete).
@@ -871,15 +894,24 @@ function _opApplyIncoming(tbl,localRow,incomingRow,incomingUpdatedAt,_src){
       const fcMs=fc?((_hlcParse(fc)||{}).ms||0):0;
       if(fcMs>incMs&&fcMs>syncedAt&&(k in localRow)){out[k]=localRow[k];keptLocal=true;} // PENDING local edit is newer → keep it
       else if(k in incomingRow)out[k]=incomingRow[k];                     // take the incoming value
-      // Local-only field. If THIS DEVICE set it (a field clock exists), it must SURVIVE
-      // the merge output even when nothing else is protected: a concurrent peer save
-      // whose base predates our upload arrives as a whole row WITHOUT our field, and
-      // returning `incomingRow` here silently erased an edit that had already reached
-      // the cloud (the N-writer same-row loss). Keeping it (and returning `out`) makes
-      // the merged row hash-differ from the incoming row → the next save re-uploads the
-      // union. A local-only field with NO clock (we never set it) keeps the old
-      // whole-row-take semantics, so a field a peer deliberately dropped still drops.
-      else{out[k]=localRow[k];if(fc)keptLocal=true;}
+      // Local-only field (absent from incoming entirely). If THIS DEVICE set it AND that
+      // clock is still PENDING (newer than the row's last known-synced moment — same gate
+      // as the branch above), it must SURVIVE the merge output even when nothing else is
+      // protected: a concurrent peer save whose base predates our upload arrives as a whole
+      // row WITHOUT our field, and returning `incomingRow` here would silently erase an
+      // edit that had already reached the cloud (the N-writer same-row loss). Keeping it
+      // (and returning `out`) makes the merged row hash-differ from the incoming row → the
+      // next save re-uploads the union.
+      //   Field clocks are DELIBERATELY NEVER PRUNED (~line 805) — without the fcMs>syncedAt
+      // gate here, ANY field this device EVER set, once legitimately cleared/absent from
+      // the cloud, permanently tripped keptLocal on every future load forever (the clock's
+      // age was never checked). That poisoned the row's synced-hash baseline on every
+      // reload — the row could never hash-match its own stored baseline again, so it
+      // re-uploaded on every save despite no real data ever changing (the delta-sync
+      // over-upload / "hash-baseline churn" bug). A field with NO clock, or only a STALE
+      // one (already synced before), now falls through exactly like a peer's deliberate
+      // drop: absent from `out`, matching incoming.
+      else if(fc&&fcMs>syncedAt){out[k]=localRow[k];keptLocal=true;}
     }
     const res=keptLocal?out:incomingRow; // nothing protected → byte-identical to the old whole-row replace
     // SYNC TRACE (window._syncTrace, default off — certification diagnostics): record any

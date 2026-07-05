@@ -4,7 +4,7 @@
 // showCancellationRefund path via the refund pay-type, openLienPanel→saveLien)
 // against a tagged throwaway bid so no real money record is mutated. Every
 // assertion is a step() so a regression throws a one-line finding().
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, cloudRows } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

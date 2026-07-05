@@ -14,7 +14,7 @@
 //
 // Soft-skips if geo tables are absent. Session globals it flips (_isEmployee etc.)
 // are restored; in-memory jobs[] restored, never saved (CLAUDE.md §13.7).
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

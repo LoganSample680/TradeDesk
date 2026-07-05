@@ -10,7 +10,7 @@
 //     estimator has to be told crew/rate/hours by hand).
 //   • estimate-build/byo             — Build-Your-Own custom line items the
 //     estimator has no idea how to price.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, RUN_TAG, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

@@ -13,7 +13,7 @@
 //      won't exist yet), hard-asserts once it's live — then guards it forever.
 //   3. COLLECT NOT BROKEN: a collect-permitted tech STILL sees real payment
 //      amounts, so recording payments keeps working.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, accountPair } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

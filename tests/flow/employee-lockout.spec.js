@@ -12,7 +12,7 @@
 //   • DATA-LAYER LEAK — a SEPARATE test (employee-data-leak.spec.js) proves the
 //     in-memory hole. Kept apart so this suite stays green while the architectural
 //     fix is decided.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

@@ -10,7 +10,7 @@
 // so it is safe to run against the real account every time. A page that throws
 // while rendering real data — the single most common prod regression — fails here
 // with the exact page id, no repro needed.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, finding } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

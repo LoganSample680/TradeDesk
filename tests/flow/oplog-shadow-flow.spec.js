@@ -9,7 +9,7 @@
 //     (phantomDeleteCandidates stays 0) — the §9.8 trap that could delete an account.
 // Plus: the HLC is monotonic across calls. Gated behind window._opLogShadow, enabled
 // here via addInitScript BEFORE sign-in so the load-time baseline is built with it on.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

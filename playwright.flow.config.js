@@ -82,13 +82,13 @@ module.exports = defineConfig({
     // flow tests run against the real deployment where the account exists.
     // Override with E2E_BASE_URL (e.g. the branch-preview URL) when needed.
     baseURL: process.env.E2E_BASE_URL || 'https://tradedeskpro.app',
-    // Sent on every request (navigation + the app's /api XHR/fetch) so a
-    // Cloudflare WAF rule can skip the bot challenge for CI traffic only.
-    // Pair with a Cloudflare custom rule: when http.request.headers["x-e2e-bypass"]
-    // equals this secret -> Skip (Bot Fight Mode + managed challenge).
-    extraHTTPHeaders: process.env.E2E_BYPASS_SECRET
-      ? { 'X-E2E-Bypass': process.env.E2E_BYPASS_SECRET }
-      : {},
+    // NOTE: the WAF-bypass header is NOT set here as a blanket extraHTTPHeaders —
+    // that attaches it to EVERY request the context makes, including third-party
+    // origins (Google Fonts, Cloudflare Insights, Stripe, Supabase), whose CORS
+    // preflight rejects the unrecognized custom header and blocks the request.
+    // It's scoped to same-origin requests only via tests/flow/flow-test.js
+    // (every spec's `require('@playwright/test')` → `require('./flow-test')`),
+    // which wraps the built-in `context` fixture with scopeBypassHeader().
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'on-first-retry',

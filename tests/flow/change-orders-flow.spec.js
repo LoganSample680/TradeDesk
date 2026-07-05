@@ -10,7 +10,7 @@
 // no js/completion-invoice.js, no send/sign, and it is not cloud-synced. The
 // document chain is therefore HALF complete: change orders ship, completion
 // invoices do not. This test guards the half that exists.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, cloudRows } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

@@ -13,7 +13,7 @@
 //      deduction, etc.) — not just the pure math the existing tax spec covers.
 //
 // Seed data is left in the account per CLAUDE.md §13.7.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, cloudRows } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 

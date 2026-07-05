@@ -9,7 +9,7 @@
 //
 //   suspect chain: settings.js saveSettings (settingsTs bump) → cloud.js
 //   supaSaveToCloud (must NOT strip location) → cloud.js _mergeIncomingSettings.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, type, tap } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
