@@ -11,6 +11,35 @@ const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = requir
 test.describe('data.js — exhaustive coverage', () => {
   let page;
 
+  // Idempotent fixture seed — filter-then-push so it's safe to re-run. Called in
+  // beforeAll AND beforeEach: a late-resolving background cloud load reassigns the
+  // in-memory arrays after the initial seed and drops these fixtures, so a test running
+  // after that clobber saw getClientById(55501) return undefined on slower WebKit boots
+  // (task #22 race). Re-seeding before EVERY test guarantees the canonical fixture is
+  // present the moment each test reads it — one file-scoped fix for the whole spec.
+  const seedFixtures = () => page.evaluate(() => {
+    clients = clients.filter(c => c.id !== 55501 && c.id !== 55502 && c.id !== 55503);
+    bids    = bids.filter(b => b.id !== 44401 && b.id !== 44402);
+    jobs    = jobs.filter(j => j.id !== 33301);
+    income  = income.filter(i => i.id !== 22201);
+    expenses = expenses.filter(e => e.id !== 11101);
+    mileage  = mileage.filter(m => m.id !== 99901);
+
+    clients.push(
+      { id: 55501, name: 'Data Test Alpha',  phone: '316-555-8001', addr: '1 Data St', email: 'alpha@datatest.com', tier: 'A' },
+      { id: 55502, name: 'Data Test Beta',   phone: '316-555-8002', addr: '2 Data Ave', email: 'beta@datatest.com', source: 'Referral' },
+      { id: 55503, name: 'Data Test Gamma',  phone: '316-555-8003', addr: '3 Data Blvd', email: 'gamma@datatest.com', occupation: 'Realtor / Real estate agent' }
+    );
+    bids.push(
+      { id: 44401, client_id: 55501, client_name: 'Data Test Alpha', amount: 2000, status: 'Closed Won',  draft: false },
+      { id: 44402, client_id: 55501, client_name: 'Data Test Alpha', amount: 500,  status: 'opportunity', draft: false }
+    );
+    jobs.push({ id: 33301, client_id: 55501, bid_id: 44401, name: 'Data job', status: 'scheduled', start: '2099-11-01' });
+    income.push(  { id: 22201, client_id: 55501, amount: 2000, date: '2026-01-01', method: 'Cash' });
+    expenses.push({ id: 11101, client_id: 55501, amount: 100,  date: '2026-01-02', category: 'Supplies' });
+    mileage.push( { id: 99901, client_id: 55501, miles: 12.5,  date: '2026-01-03', purpose: 'Estimate' });
+  });
+
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
     page = await ctx.newPage();
@@ -18,30 +47,13 @@ test.describe('data.js — exhaustive coverage', () => {
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
 
-    // Seed stable fixtures used throughout the suite
-    await page.evaluate(() => {
-      clients = clients.filter(c => c.id !== 55501 && c.id !== 55502 && c.id !== 55503);
-      bids    = bids.filter(b => b.id !== 44401 && b.id !== 44402);
-      jobs    = jobs.filter(j => j.id !== 33301);
-      income  = income.filter(i => i.id !== 22201);
-      expenses = expenses.filter(e => e.id !== 11101);
-      mileage  = mileage.filter(m => m.id !== 99901);
-
-      clients.push(
-        { id: 55501, name: 'Data Test Alpha',  phone: '316-555-8001', addr: '1 Data St', email: 'alpha@datatest.com', tier: 'A' },
-        { id: 55502, name: 'Data Test Beta',   phone: '316-555-8002', addr: '2 Data Ave', email: 'beta@datatest.com', source: 'Referral' },
-        { id: 55503, name: 'Data Test Gamma',  phone: '316-555-8003', addr: '3 Data Blvd', email: 'gamma@datatest.com', occupation: 'Realtor / Real estate agent' }
-      );
-      bids.push(
-        { id: 44401, client_id: 55501, client_name: 'Data Test Alpha', amount: 2000, status: 'Closed Won',  draft: false },
-        { id: 44402, client_id: 55501, client_name: 'Data Test Alpha', amount: 500,  status: 'opportunity', draft: false }
-      );
-      jobs.push({ id: 33301, client_id: 55501, bid_id: 44401, name: 'Data job', status: 'scheduled', start: '2099-11-01' });
-      income.push(  { id: 22201, client_id: 55501, amount: 2000, date: '2026-01-01', method: 'Cash' });
-      expenses.push({ id: 11101, client_id: 55501, amount: 100,  date: '2026-01-02', category: 'Supplies' });
-      mileage.push( { id: 99901, client_id: 55501, miles: 12.5,  date: '2026-01-03', purpose: 'Estimate' });
-    });
+    await seedFixtures();
   });
+
+  // Re-seed before EVERY test — repairs any fixture a late background cloud load
+  // clobbered after boot (task #22). Idempotent (filter-then-push), so tests that
+  // mutate-and-restore their own fixtures still start from the canonical state.
+  test.beforeEach(async () => { await seedFixtures(); });
 
   test.afterAll(async () => {
     await page.evaluate(() => {
