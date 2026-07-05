@@ -106,5 +106,27 @@ test.describe('layout integrity — mobile', () => {
     expect(r.scrollValue - r.clientValue, 'a long email must not overflow its own box (no clipped text)').toBeLessThanOrEqual(2);
   });
 
+  // Regression: the dashboard "Crew today" tile used background:var(--bg2) — the app's
+  // convention for NESTED/inset surfaces sitting inside a card (buttons, sub-boxes, table
+  // headers) — instead of var(--bg-card), the white top-level tile background every other
+  // dashboard tile uses. In light mode --bg2 (#F4F5F7) reads as grey next to every white
+  // sibling tile. Fixed to var(--bg-card). Checked via source string, not a live render:
+  // _renderDashCrewToday requires team tracking + comp permission + real time-entry rows
+  // that the offline mock's generic query shim can't supply.
+  test('dashboard "Crew today" tile uses the same card background as every other tile', async () => {
+    const r = await page.evaluate(() => {
+      const src = typeof _renderDashCrewToday === 'function' ? _renderDashCrewToday.toString() : null;
+      if (!src) return { missing: true };
+      return {
+        missing: false,
+        usesCardBg: src.includes('background:var(--bg-card)'),
+        usesInsetBg: src.includes('background:var(--bg2)'),
+      };
+    });
+    expect(r.missing, '_renderDashCrewToday must exist').toBe(false);
+    expect(r.usesCardBg, 'the tile wrapper must use var(--bg-card) — the same white background every other dashboard tile uses').toBe(true);
+    expect(r.usesInsetBg, 'the tile must NOT use var(--bg2) — that is the inset/nested-surface color, not a top-level tile background').toBe(false);
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });

@@ -2623,7 +2623,7 @@ async function _renderDashCrewToday(){
     return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>'+escHtml(data.name[uid]||'Crew')+'</span><span style="color:var(--text2)">'+h.toFixed(1)+'h · '+fmt(cost)+'</span></div>';
   }).join('');
   el.style.display='block';
-  el.innerHTML='<div onclick="goToTrackerTab(\'jobs\')" style="cursor:pointer;background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">'+
+  el.innerHTML='<div onclick="goToTrackerTab(\'jobs\')" style="cursor:pointer;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">'+
     '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">'+
       '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">👷 Crew today</div>'+
       '<div style="font-size:11px;color:var(--blue);font-weight:700">Books ›</div>'+
