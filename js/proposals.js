@@ -780,6 +780,7 @@ async function sendProposalLink(){
     if(!_lastCheck)localStorage.setItem('zp3_last_sig_check',new Date(Date.now()-86400000*7).toISOString());
     if(btn){btn.textContent='✓ Link ready';btn.disabled=false;}
     showToast('Link ready — tap SMS or Email to send','🔗');
+    try{await _flushSaveNow();}catch(_e){}
   }catch(e){
     console.error('sendProposalLink failed:',e);
     const msg=e.message||'Unknown error';

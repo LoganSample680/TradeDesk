@@ -4909,6 +4909,57 @@ test.describe('Proposals photo, hub, contract, and form functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // Regression — a sent interior-painting proposal was not reliably reaching the
+  // cloud. Before: sendProposalLink only called the fire-and-forget saveAll() (a
+  // 2s debounce timer) and returned as soon as the UI updated, so a caller that
+  // checked td_bids right after would deterministically see the write before it
+  // had even started (the same pattern already fixed this session in
+  // _sendCOToHub, sendGenericProposal, confirmJobDone, saveLien, and
+  // sendAgreementForSignature). Fixed: sendProposalLink now awaits
+  // _flushSaveNow() before it resolves.
+  test('sendProposalLink awaits the cloud write (_flushSaveNow) before resolving — does not just schedule it', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof sendProposalLink !== 'function') return { skip: true };
+      // index.html already has a real (empty) #est-proposal in the DOM — populate
+      // THAT element rather than appending a duplicate id (getElementById returns
+      // the first match in document order, so a second element is never seen).
+      const proposalEl = document.getElementById('est-proposal');
+      if (!proposalEl) return { skip: true };
+      const origProposalHtml = proposalEl.innerHTML;
+      proposalEl.innerHTML = '<div>Flush regression proposal</div>';
+      const origSupaEnabled = window.supaEnabled, origSupaUser = window._supaUser;
+      window.supaEnabled = () => true;
+      window._supaUser = window._supaUser || { id: 'e2e-flush-user', email: 'flush@e2e.test' };
+      let flushCalled = false, flushAwaitedBeforeResolve = false;
+      const origFlush = window._flushSaveNow;
+      window._flushSaveNow = () => {
+        flushCalled = true;
+        return new Promise(res => setTimeout(() => { flushAwaitedBeforeResolve = true; res(); }, 20));
+      };
+      const bidsBefore = bids.length;
+      let resolvedAfterFlush = false, err = null;
+      try {
+        await sendProposalLink();
+        resolvedAfterFlush = flushAwaitedBeforeResolve;
+      } catch (e) { err = e.message; }
+      finally {
+        window.supaEnabled = origSupaEnabled; window._supaUser = origSupaUser;
+        window._flushSaveNow = origFlush;
+        proposalEl.innerHTML = origProposalHtml;
+        document.getElementById('proposal-link-bar')?.remove();
+        // Clean up whatever bid this created — resource cleanup only, not a
+        // data-loss policy violation (this is a synthetic no-op-DOM run, not a
+        // real seeded flow row a live test leaves for the owner to inspect).
+        if (bids.length > bidsBefore) bids.length = bidsBefore;
+      }
+      return { flushCalled, resolvedAfterFlush, err };
+    });
+    if (result.skip) return;
+    expect(result.err, 'sendProposalLink threw: ' + result.err).toBeNull();
+    expect(result.flushCalled, 'sendProposalLink must call _flushSaveNow, not rely on the bare debounce timer').toBe(true);
+    expect(result.resolvedAfterFlush, 'sendProposalLink must AWAIT the flush — it cannot resolve before the cloud write settles').toBe(true);
+  });
+
   test('copyProposalLink — calls without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof copyProposalLink !== 'function') return { skip: true };
