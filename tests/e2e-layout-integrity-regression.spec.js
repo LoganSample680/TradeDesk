@@ -55,31 +55,46 @@ test.describe('layout integrity — mobile', () => {
   test('settings: zip matches the app-wide city/state/zip proportions, and email never clips on mobile', async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     await goPg(page, 'pg-settings'); // navigates + waits for the .pg.active transition to settle
+    // Settings is index→detail: pg-settings only shows the category LIST. The
+    // actual form fields live in the "Business info" detail sub-view, revealed by
+    // _openSetDetail('biz') (adds .active to #setd-biz, hides #set-index-view).
+    // Without this the fields are real but 0×0 (parent detail panel hidden) — the
+    // root cause of this test's own initial flake.
+    await page.evaluate(() => { _openSetDetail('biz'); });
     const r = await page.evaluate(() => {
       const zip = document.getElementById('set-bzip');
       const state = document.getElementById('set-bstate-display');
       const phone = document.getElementById('set-bphone');
       const email = document.getElementById('set-bemail');
       if (!zip || !state || !phone || !email) return { missing: true };
-      email.value = 'somebodylongname@somereallylongcompany.com';
+      // The actual reported value (owner's real email, 24 chars) — long enough to
+      // clip in the old half-width split, short enough to fit once stacked full-width.
+      // A single-line <input> never wraps, so an arbitrarily long stress string would
+      // clip at ANY width — that's normal input behavior, not a layout bug.
+      email.value = 'logansample97@gmail.com';
       const zr = zip.getBoundingClientRect(), sr = state.getBoundingClientRect();
       const pr = phone.getBoundingClientRect(), er = email.getBoundingClientRect();
       return {
         missing: false,
-        pageActive: document.getElementById('pg-settings')?.classList.contains('active') || false,
+        detailActive: document.getElementById('setd-biz')?.classList.contains('active') || false,
         zipWiderThanState: zr.width > sr.width,       // 90px > 56px — matches app convention
         stacked: Math.abs(pr.top - er.top) > 5,        // email drops to its own row on mobile
-        emailFullWidth: er.width >= pr.width * 1.5,    // gets the whole row, not a clipped half
+        // Once stacked, phone and email each get the FULL row width (equal to each
+        // other) rather than splitting it — email must be within a few px of phone's
+        // width, not still constrained to half the row.
+        emailFullWidth: Math.abs(er.width - pr.width) <= 2,
+        emailMajorityOfViewport: er.width >= window.innerWidth * 0.6,
         emailFitsViewport: er.right <= window.innerWidth + 1,
         scrollValue: email.scrollWidth,
         clientValue: email.clientWidth,
       };
     });
     expect(r.missing, 'zip/state/phone/email inputs must exist on the settings page').toBe(false);
-    expect(r.pageActive, 'pg-settings must actually be the active page before measuring layout').toBe(true);
+    expect(r.detailActive, 'the Business info detail sub-view (#setd-biz) must be open before measuring layout').toBe(true);
     expect(r.zipWiderThanState, 'zip box must use the same 56px/90px proportions as every other city/state/zip control in the app').toBe(true);
     expect(r.stacked, 'phone and email must stack on mobile so email gets full row width').toBe(true);
-    expect(r.emailFullWidth, 'email box must be roughly full-row width on mobile, not half-clipped').toBe(true);
+    expect(r.emailFullWidth, 'email box must match phone box width (both get the full stacked row), not still be half-split').toBe(true);
+    expect(r.emailMajorityOfViewport, 'email box must actually span most of the viewport width once stacked').toBe(true);
     expect(r.emailFitsViewport, 'email box must not bleed past the viewport edge').toBe(true);
     expect(r.scrollValue - r.clientValue, 'a long email must not overflow its own box (no clipped text)').toBeLessThanOrEqual(2);
   });
