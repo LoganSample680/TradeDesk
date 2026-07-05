@@ -57,8 +57,21 @@ test.describe('preview deploy smoke — the BUILT artifact on the real origin', 
   //    the false-pass this whole check exists to prevent.
   test('boots clean and the live version matches the deployed commit', async ({ page }) => {
     const errs = [];
+    // Cloudflare Pages auto-injects its own Web Analytics ("RUM") beacon
+    // (cloudflareinsights.com/cdn-cgi/rum) — not something this codebase adds or
+    // controls. It can fail CORS on a fresh preview subdomain (Cloudflare's own
+    // origin-allowlisting, nothing to do with app health) and, on WebKit specifically,
+    // surfaces as a vague "Origin ... not allowed by Access-Control-Allow-Origin"
+    // console message with NO domain named — so it can't always be string-matched.
+    // Track which THIRD-PARTY requests actually failed and only excuse a generic CORS
+    // message when it correlates with one of those — a genuine same-origin CORS
+    // failure (no noisy third-party request failed) still fails the gate.
+    const NOISY_ORIGINS = /cloudflareinsights\.com|apple-mapkit|js\.stripe\.com|fonts\.(gstatic|googleapis)\.com/i;
+    const noisyFailedUrls = [];
     page.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
     page.on('pageerror', e => errs.push('PAGEERROR: ' + e.message));
+    page.on('requestfailed', req => { if (NOISY_ORIGINS.test(req.url())) noisyFailedUrls.push(req.url()); });
+    page.on('response', res => { if (!res.ok() && NOISY_ORIGINS.test(res.url())) noisyFailedUrls.push(res.url()); });
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     // App shell rendered (the login screen) = the deployed JS actually ran, not a blank
@@ -74,8 +87,14 @@ test.describe('preview deploy smoke — the BUILT artifact on the real origin', 
     expect(liveJson, `live /version.json (${liveJson}) must equal ${EXPECTED_VERSION}`).toBe(EXPECTED_VERSION);
 
     // A healthy deploy must not boot with app-origin console errors. Third-party/cross-
-    // origin noise (MapKit CDN, Stripe, opaque "Script error.", favicon 404) is excluded.
-    const real = errs.filter(e => !/Unhandled Promise Rejection|ResizeObserver|Script error\.?$|apple-mapkit|mapkit|stripe|favicon|status of 4\d\d/i.test(e));
+    // origin noise (MapKit CDN, Stripe, Google Fonts, Cloudflare's own Web Analytics
+    // beacon, opaque "Script error.", favicon 404) is excluded.
+    const genericCorsMsg = /not allowed by Access-Control-Allow-Origin|blocked by CORS policy/i;
+    const real = errs.filter(e => {
+      if (/Unhandled Promise Rejection|ResizeObserver|Script error\.?$|apple-mapkit|mapkit|stripe|favicon|status of 4\d\d|cloudflareinsights/i.test(e)) return false;
+      if (genericCorsMsg.test(e) && noisyFailedUrls.length) return false; // correlated with a known noisy third-party failure
+      return true;
+    });
     expect(real, `console errors on boot: ${real.join(' | ')}`).toHaveLength(0);
   });
 
