@@ -2415,9 +2415,9 @@ function showChangeOrderModal(bidId,clientId){
     // Amount input (hidden until type selected)
     '<div id="co-amount-wrap" style="display:none;margin-bottom:16px">'+
       '<label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:6px">Dollar amount <span style="color:#A32D2D">*</span></label>'+
-      '<input type="number" id="co-amount" min="0" step="25" placeholder="0" inputmode="decimal" '+
+      '<input type="text" id="co-amount" placeholder="0" inputmode="decimal" '+
         'style="font-size:26px;font-weight:800;padding:10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);text-align:center;font-family:inherit" '+
-        'oninput="_previewCO('+bidId+')">'+
+        'oninput="_fmtMoneyInput(this);_previewCO('+bidId+')">'+
       '<div id="co-preview" style="font-size:14px;font-weight:700;text-align:center;min-height:22px;margin-top:10px;padding:10px;background:var(--bg2);border-radius:var(--r)"></div>'+
     '</div>'+
     // Buttons
@@ -2440,7 +2440,7 @@ function setCOType(t,bidId){
 
 function _previewCO(bidId){
   const b=bids.find(x=>x.id===bidId);if(!b||!_coType)return;
-  const amt=parseFloat(document.getElementById('co-amount')?.value)||0;
+  const amt=_moneyVal('co-amount');
   const pr=document.getElementById('co-preview');if(!pr)return;
   if(!amt){pr.innerHTML='<span style="color:var(--text3)">Enter amount above</span>';return;}
   const newTotal=_coType==='add'?b.amount+amt:Math.max(0,b.amount-amt);
@@ -2455,7 +2455,7 @@ function _previewCO(bidId){
 function _reviewCO(bidId,clientId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
   const desc=(document.getElementById('co-desc')?.value||'').trim();
-  const amt=parseFloat(document.getElementById('co-amount')?.value||0)||0;
+  const amt=_moneyVal('co-amount');
   if(!desc||desc.length<5){const el=document.getElementById('co-desc');if(el){el.style.borderColor='#A32D2D';el.focus();}zAlert('Describe the change (at least 5 characters).',{title:'Description required'});return;}
   if(!_coType){zAlert('Select whether this adds to or removes from the contract.',{title:'Select direction'});return;}
   if(amt<=0){const el=document.getElementById('co-amount');if(el){el.style.borderColor='#A32D2D';el.focus();}zAlert('Enter the dollar amount for this change.',{title:'Amount required'});return;}

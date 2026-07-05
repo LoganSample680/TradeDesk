@@ -1557,7 +1557,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             </select>
           </div>
           <div class="f"><label>Date of action</label><input type="date" id="lien-date"></div>
-          <div class="f"><label>Amount claimed ($)</label><input type="number" id="lien-amount" placeholder="0.00"></div>
+          <div class="f"><label>Amount claimed ($)</label><input type="text" inputmode="decimal" id="lien-amount" placeholder="0.00" oninput="_fmtMoneyInput(this)"></div>
           <div class="f"><label>County filed</label><input id="lien-county" placeholder="Sedgwick County"></div>
           <div class="f" style="grid-column:1/-1"><label>Notes / attorney / case #</label><textarea id="lien-notes" placeholder="Case number, attorney name, next steps..."></textarea></div>
         </div>

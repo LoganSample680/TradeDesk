@@ -163,6 +163,8 @@ test.describe('Lien management lifecycle', () => {
       try { openLienPanel(bidId); } catch(e) { return { error: e.message }; }
       return {
         visible:  panelEl.style.display !== 'none',
+        // Comma-formatted now ("5,000.00") — strip commas before parsing, same
+        // as the app's own _moneyVal read helper.
         amount:   (document.getElementById('lien-amount') || {}).value || null,
         status:   (document.getElementById('lien-status') || {}).value || null,
         county:   (document.getElementById('lien-county') || {}).value || null,
@@ -171,7 +173,7 @@ test.describe('Lien management lifecycle', () => {
     }, [LIEN_BID_ID]);
     if (result && !result.error) {
       expect(result.visible).toBe(true);
-      if (result.amount !== null) expect(parseFloat(result.amount)).toBeCloseTo(5000, 0);
+      if (result.amount !== null) expect(parseFloat(result.amount.replace(/,/g, ''))).toBeCloseTo(5000, 0);
       if (result.status !== null) expect(result.status).toBe('intent');
       expect(result.dateSet).toBe(true);
     }
@@ -180,13 +182,21 @@ test.describe('Lien management lifecycle', () => {
   test('saveLien — adds lien record to liens array', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof saveLien !== 'function' || typeof liens === 'undefined') return null;
+      // Route through the real openLienPanel(bidId) to set activeLienBidId —
+      // it's a plain module-scope `let`, not a window property, so
+      // `window.activeLienBidId = bidId` (the old pattern here) never actually
+      // reached it. That made this test silently depend on the PRIOR test
+      // ("openLienPanel — populates fields") having already run successfully
+      // to set the real variable as a side effect — if that test ever failed
+      // for any reason, this one broke too, with a confusing unrelated error.
+      // Self-contained now: sets its own state instead of inheriting it.
+      if (typeof openLienPanel === 'function') openLienPanel(bidId);
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
       set('lien-date',   '2026-05-20');
       set('lien-status', 'intent');
       set('lien-amount', '5000');
       set('lien-county', 'Sedgwick County');
       set('lien-notes',  'E2E test lien');
-      window.activeLienBidId = bidId;
       // Stub side effects
       const _save = window.saveAll; const _close = window.closeLienPanel;
       const _render1 = window.renderCDBids; const _render2 = window.renderDashActiveLiens;
@@ -224,10 +234,11 @@ test.describe('Lien management lifecycle', () => {
   test('saveLien with filed status — triggers high_risk on client', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof saveLien !== 'function') return null;
+      // Real call, not window.activeLienBidId= — see the note in the previous test.
+      if (typeof openLienPanel === 'function') openLienPanel(bidId);
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
       set('lien-date', '2026-05-21'); set('lien-status', 'filed');
       set('lien-amount', '5000');     set('lien-county', 'Sedgwick County');
-      window.activeLienBidId = bidId;
       const _save = window.saveAll; const _close = window.closeLienPanel;
       const _r1 = window.renderCDBids; const _r2 = window.renderDashActiveLiens;
       const _print = window.printKansasLien;
@@ -261,10 +272,11 @@ test.describe('Lien management lifecycle', () => {
   test('saveLien awaits the cloud write (_flushSaveNow) before resolving — does not just schedule it', async () => {
     const result = await page.evaluate(async ([bidId]) => {
       if (typeof saveLien !== 'function') return null;
+      // Real call, not window.activeLienBidId= — see the note two tests up.
+      if (typeof openLienPanel === 'function') openLienPanel(bidId);
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
       set('lien-date', '2026-05-22'); set('lien-status', 'intent');
       set('lien-amount', '2500'); set('lien-county', 'Sedgwick County');
-      window.activeLienBidId = bidId;
       const _save = window.saveAll; const _close = window.closeLienPanel;
       const _r1 = window.renderCDBids; const _r2 = window.renderDashActiveLiens;
       const _flush = window._flushSaveNow;

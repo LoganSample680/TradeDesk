@@ -21,6 +21,26 @@ const parseD=s=>new Date(s+'T12:00:00');
 const addDays=(s,n)=>{const d=parseD(s);d.setDate(d.getDate()+n);return dateKey(d);};
 const v=id=>(document.getElementById(id)||{}).value||'';
 const nv=id=>parseFloat(v(id))||0;
+// Shared dollar-amount input formatter — native <input type="number"> rejects
+// commas outright (worst on iOS Safari, which blocks the keystroke before it's
+// even typed; other browsers fail more quietly by dropping the value on read).
+// These fields are plain text with this oninput handler instead: strips
+// anything but digits and a single decimal point, caps cents to 2 digits, and
+// live-formats the integer part with thousands commas as you type. Reads go
+// through _moneyVal, which strips the commas back out before parseFloat.
+function _fmtMoneyInput(el){
+  let raw=(el.value||'').replace(/[^\d.]/g,'');
+  const dot=raw.indexOf('.');
+  if(dot!==-1)raw=raw.slice(0,dot+1)+raw.slice(dot+1).replace(/\./g,'');
+  let[intPart,decPart]=raw.split('.');
+  if(decPart!==undefined)decPart=decPart.slice(0,2);
+  const grouped=intPart?Number(intPart).toLocaleString('en-US'):'';
+  el.value=decPart!==undefined?grouped+'.'+decPart:grouped;
+}
+const _moneyVal=id=>parseFloat((document.getElementById(id)?.value||'').replace(/,/g,''))||0;
+// Comma+cents string for programmatically pre-filling a money input (no $ sign —
+// the field's own label/prefix already shows that).
+const _moneyStr=n=>(Number(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const IRS=()=>S.irsRate||.725;
 function fmtTime(t){if(!t)return'';const[h,m]=t.split(':').map(Number);const ampm=h>=12?'PM':'AM';const h12=h%12||12;return h12+':'+(m<10?'0':'')+m+' '+ampm;}
 const COVERAGE=()=>S.cov||350;

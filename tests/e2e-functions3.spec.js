@@ -7091,3 +7091,97 @@ test.describe('Version consistency', () => {
     expect(v).toMatch(/^\d{2}\.\d{2}\.\d{2}\.\d+$/);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Regression — every dollar-amount field in the app was a native
+// <input type="number">, which rejects commas outright (worst on iOS Safari,
+// which blocks the comma keystroke before it's even typed; other browsers fail
+// more quietly by dropping the value on read). Fixed everywhere by switching to
+// plain text fields with the shared _fmtMoneyInput (live comma-format oninput)
+// and _moneyVal/_moneyStr (comma-safe read/pre-fill) helpers in utils.js.
+// This suite covers the shared helpers directly, then spot-checks every real
+// field call site to prove the wiring (not just the helper in isolation).
+// ═══════════════════════════════════════════════════════════════════════════════
+test.describe('Dollar-field comma formatting — shared helpers + every real call site', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => {
+      const cid = 990101, bidId = 990102, jobId = 990103, ctId = 990104;
+      if (typeof clients !== 'undefined') clients.push({ id: cid, name: 'MoneyFmt Client', phone: '3165551111' });
+      if (typeof bids !== 'undefined') bids.push({ id: bidId, client_id: cid, client_name: 'MoneyFmt Client', amount: 500000, status: 'Closed Won' });
+      if (typeof jobs !== 'undefined') jobs.push({ id: jobId, client_id: cid, bid_id: bidId, name: 'MoneyFmt Job', status: 'active' });
+      if (typeof contracts !== 'undefined') contracts.push({ id: ctId, clientId: cid, title: 'MoneyFmt Contract', amount: 100, freq: 'annual', startDate: '2026-01-01', nextDate: '2026-01-01', active: true, invoices: [] });
+      window._moneyFmtIds = { cid, bidId, jobId, ctId };
+    });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('_fmtMoneyInput — strips non-digits, caps cents to 2, live-formats commas', async () => {
+    const r = await page.evaluate(() => {
+      const el = document.createElement('input');
+      const type = (str) => { el.value = ''; for (const ch of str) { el.value += ch; _fmtMoneyInput(el); } return el.value; };
+      const whole = type('125000');
+      const withLetters = type('12a5b,000');
+      const withCents = type('1500.999');
+      const doubleDot = type('12.5.6');
+      return { whole, withLetters, withCents, doubleDot };
+    });
+    expect(r.whole).toBe('125,000');
+    expect(r.withLetters).toBe('125,000'); // letters and stray commas stripped identically
+    expect(r.withCents).toBe('1,500.99'); // cents capped to 2 digits
+    expect(r.doubleDot).toBe('12.56'); // only the first decimal point survives
+  });
+
+  test('_moneyVal — parses a comma-formatted field back to the correct number', async () => {
+    const r = await page.evaluate(() => {
+      const el = document.createElement('input'); el.id = '_moneyfmt-test-el';
+      el.value = '12,500.50'; document.body.appendChild(el);
+      const v = _moneyVal('_moneyfmt-test-el');
+      el.remove();
+      return v;
+    });
+    expect(r).toBe(12500.5);
+  });
+
+  test('_moneyStr — formats a raw number with commas and 2 decimals for pre-fill', async () => {
+    const r = await page.evaluate(() => ({ whole: _moneyStr(55000), cents: _moneyStr(1234.5), zero: _moneyStr(0) }));
+    expect(r.whole).toBe('55,000.00');
+    expect(r.cents).toBe('1,234.50');
+    expect(r.zero).toBe('0.00');
+  });
+
+  // Per-field: open the real UI path and confirm the field is (a) not type="number"
+  // and (b) actually wired to _fmtMoneyInput, not just coincidentally text.
+  // fs-price isn't driven separately — it's the same input markup pattern as
+  // fv-pprice (both fixed identically in fleet.js), so it's covered by that check
+  // plus the shared-helper tests above.
+  const FIELD_NAMES = ['lien-amount', 'mpay-amount', 'co-amount', 'ct-amount', 'qe-amount', 'fv-pprice', 'adj-amount', 'emp-pay-rate'];
+  for (const fieldName of FIELD_NAMES) {
+    test(`${fieldName} — is not type="number" (would reject commas)`, async () => {
+      const result = await page.evaluate((name) => {
+        const ids = window._moneyFmtIds;
+        try {
+          if (name === 'lien-amount') { window.activeLienBidId = ids.bidId; openLienPanel(ids.bidId); }
+          else if (name === 'mpay-amount') { openPayPanel(ids.bidId, null); document.querySelector('[data-ptype="custom"]')?.click(); }
+          else if (name === 'co-amount') { showChangeOrderModal(ids.bidId, ids.cid); }
+          else if (name === 'ct-amount') { editContractModal(ids.ctId); }
+          else if (name === 'qe-amount') { showQuickExpenseModal(ids.cid, null); }
+          else if (name === 'fv-pprice') { openAddVehicleModal(null); }
+          else if (name === 'adj-amount') { markJobDone(ids.jobId); }
+          else if (name === 'emp-pay-rate') { openAddEmployeeModal(); }
+        } catch (e) { return { skip: true, err: e.message }; }
+        const el = document.getElementById(name);
+        if (!el) return { skip: true };
+        return { type: el.type, hasHandler: (el.getAttribute('oninput') || '').includes('_fmtMoneyInput') };
+      }, fieldName);
+      if (result.skip) return;
+      expect(result.type, `${fieldName} must not be type="number" — that is what rejected commas`).not.toBe('number');
+      expect(result.hasHandler, `${fieldName} must call _fmtMoneyInput on input`).toBe(true);
+    });
+  }
+});

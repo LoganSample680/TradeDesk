@@ -894,7 +894,7 @@ function openPayPanel(bidId, autoType){
       '<div id="mpay-detail-fields" style="display:none">'+
         '<div id="mpay-amount-row" style="display:none" class="f">'+
           '<label>Amount ($) <span id="mpay-max-hint" style="font-weight:400;color:var(--text3);font-size:11px"></span></label>'+
-          '<input type="number" id="mpay-amount" placeholder="0.00" step="0.01" min="0" inputmode="decimal"'+
+          '<input type="text" id="mpay-amount" placeholder="0.00" inputmode="decimal" oninput="_fmtMoneyInput(this)"'+
             ' style="font-size:22px;font-weight:800;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit;text-align:center">'+
         '</div>'+
         '<div class="f" style="margin-bottom:10px">'+
@@ -1117,14 +1117,14 @@ function selectPayType(btn, bidId){
   const mRow=document.getElementById('mpay-method-row');
   if(ptype==='deposit'){
     const depositAmt=Math.min(deposit25,balance);
-    if(amtEl)amtEl.value=depositAmt.toFixed(2);
+    if(amtEl)amtEl.value=_moneyStr(depositAmt);
     if(amtRow)amtRow.style.display='block';
     if(hint)hint.textContent='25% of '+fmt(total);
     if(amtEl){amtEl.readOnly=true;amtEl.style.background='var(--bg2)';amtEl.style.color='var(--text3)';}
     if(submitBtn){submitBtn.textContent='Record payment';submitBtn.style.background='var(--green)';}
     if(dateLabel)dateLabel.textContent='Date received';
   } else if(ptype==='final'){
-    if(amtEl)amtEl.value=balance.toFixed(2);
+    if(amtEl)amtEl.value=_moneyStr(balance);
     if(amtRow)amtRow.style.display='block';
     if(hint)hint.textContent='remaining balance';
     if(amtEl){amtEl.readOnly=true;amtEl.style.background='var(--bg2)';amtEl.style.color='var(--text3)';}
@@ -1138,7 +1138,7 @@ function selectPayType(btn, bidId){
     const rawBidPaid=getBidPaid(bidId);
     const rawBidTotal=(bids.find(b=>b.id==bidId)||{}).amount||0;
     const refAmt=Math.max(0,Math.round((rawBidPaid-rawBidTotal)*100)/100);
-    if(amtEl){amtEl.value=refAmt>0?refAmt.toFixed(2):'';amtEl.readOnly=false;amtEl.style.background='';amtEl.style.color='';}
+    if(amtEl){amtEl.value=refAmt>0?_moneyStr(refAmt):'';amtEl.readOnly=false;amtEl.style.background='';amtEl.style.color='';}
     if(amtRow)amtRow.style.display='block';
     if(hint)hint.textContent='refund amount';
     if(submitBtn){submitBtn.textContent='Issue refund';submitBtn.style.background='#A32D2D';}
@@ -1224,7 +1224,7 @@ function logPayment(){
   const type=v('mpay-type')||v('pay-type');
   if(!type){_mpayErr('Select a payment type above.');return;}
   if(type==='stripe'){const _bid=activePayBidId;closePayPanel();sendPaymentLink(_bid);return;}
-  const a=parseFloat(v('mpay-amount')||v('pay-amount'));
+  const a=parseFloat((v('mpay-amount')||v('pay-amount')).replace(/,/g,''));
   if(!a||a<=0){
     const amtEl=document.getElementById('mpay-amount');
     if(amtEl){amtEl.style.borderColor='#A32D2D';amtEl.focus();}
@@ -1367,7 +1367,7 @@ function editPayment(id){
   const isRef=p.type==='refund';
   sheet.innerHTML=
     '<div style="font-size:15px;font-weight:800;margin-bottom:12px">✎ Edit '+(isRef?'refund':'payment')+'</div>'+
-    '<div class="f" style="margin-bottom:10px"><label>Amount</label><input id="_epay-amount" type="number" step="0.01" value="'+Math.abs(p.amount||0)+'" style="font-size:15px;padding:11px"></div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Amount</label><input id="_epay-amount" type="text" inputmode="decimal" value="'+_moneyStr(Math.abs(p.amount||0))+'" oninput="_fmtMoneyInput(this)" style="font-size:15px;padding:11px"></div>'+
     '<div class="f" style="margin-bottom:10px"><label>Date</label><input id="_epay-date" type="date" value="'+escHtml(p.date||'')+'" style="font-size:15px;padding:11px"></div>'+
     '<div class="f" style="margin-bottom:10px"><label>Method</label><input id="_epay-method" value="'+escHtml(p.method||'')+'" placeholder="Cash, Check, Card…" style="font-size:15px;padding:11px"></div>'+
     '<div class="f" style="margin-bottom:14px"><label>Reference #</label><input id="_epay-ref" value="'+escHtml(p.ref||'')+'" placeholder="Optional" style="font-size:15px;padding:11px"></div>'+
@@ -1380,7 +1380,7 @@ function editPayment(id){
 }
 function _savePaymentEdit(id){
   const p=payments.find(x=>x.id===id);if(!p)return;
-  const a=parseFloat((document.getElementById('_epay-amount')||{}).value);
+  const a=_moneyVal('_epay-amount');
   const d=(document.getElementById('_epay-date')||{}).value;
   if(!a||a<=0||!d){zAlert('Enter a valid amount and date.');return;}
   const isRef=p.type==='refund';
@@ -1405,7 +1405,7 @@ function openLienPanel(bidId){
   const existing=getBidLien(bidId);
   document.getElementById('lien-date').value=existing?existing.date:todayKey();
   document.getElementById('lien-status').value=existing?existing.status:'intent';
-  document.getElementById('lien-amount').value=existing?existing.amount:getBidBalance(bid).toFixed(2);
+  document.getElementById('lien-amount').value=(existing?existing.amount:getBidBalance(bid)).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   document.getElementById('lien-county').value=existing?existing.county:'Sedgwick County';
   document.getElementById('lien-notes').value=existing?existing.notes:'';
   document.getElementById('cd-lien-panel').style.display='block';
@@ -1517,7 +1517,7 @@ async function saveLien(){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   _userDelete(()=>{
     liens=liens.filter(l=>l.bid_id!==activeLienBidId);
-    liens.push({id:Date.now(),bid_id:activeLienBidId,client_id:bid.client_id,client_name:bid.client_name,date:v('lien-date'),status,amount:parseFloat(v('lien-amount'))||0,county:v('lien-county'),notes:v('lien-notes')});
+    liens.push({id:Date.now(),bid_id:activeLienBidId,client_id:bid.client_id,client_name:bid.client_name,date:v('lien-date'),status,amount:_moneyVal('lien-amount'),county:v('lien-county'),notes:v('lien-notes')});
     saveAll();
   });
   closeLienPanel();renderCDBids();

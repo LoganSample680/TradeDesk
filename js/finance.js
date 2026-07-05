@@ -1087,7 +1087,7 @@ function showQuickExpenseModal(clientId,bidId){
     '</div>'+
     '<div class="f" style="margin-bottom:10px">'+
       '<label style="font-size:11px;font-weight:700;color:var(--text3)">Amount <span style="color:#A32D2D">*</span></label>'+
-      '<input type="number" id="qe-amount" placeholder="0.00" step="0.01" inputmode="decimal" style="font-size:26px;font-weight:800;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit;text-align:center">'+
+      '<input type="text" id="qe-amount" placeholder="0.00" inputmode="decimal" oninput="_fmtMoneyInput(this)" style="font-size:26px;font-weight:800;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit;text-align:center">'+
     '</div>'+
     '<div class="f" style="margin-bottom:14px">'+
       '<label style="font-size:11px;font-weight:700;color:var(--text3)">Category</label>'+
@@ -1121,7 +1121,7 @@ function showQuickExpenseModal(clientId,bidId){
 
 function saveQuickExpense(clientId){
   const vendor=(document.getElementById('qe-vendor').value||'').trim();
-  const amount=parseFloat(document.getElementById('qe-amount').value);
+  const amount=_moneyVal('qe-amount');
   if(!vendor){zAlert('Enter a vendor.',{title:'Required'});document.getElementById('qe-vendor').focus();return;}
   if(!amount){zAlert('Enter an amount.',{title:'Required'});document.getElementById('qe-amount').focus();return;}
   const bidEl=document.getElementById('qe-bid');

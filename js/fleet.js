@@ -777,7 +777,7 @@ function openAddVehicleModal(idx) {
         <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Purchase info</div>
         <div class="fg fg2">
           <div class="f"><label>Purchase date</label><input type="text" id="fv-pdate" inputmode="numeric" placeholder="MM/DD/YYYY" maxlength="10" value="${v.purchaseDate?_ymdToMdY(v.purchaseDate):''}" oninput="_fmtExpDate(this)"></div>
-          <div class="f"><label>Purchase price ($)</label><input type="number" id="fv-pprice" min="0" step="100" placeholder="Optional" value="${v.purchasePrice>0?v.purchasePrice:''}"></div>
+          <div class="f"><label>Purchase price ($)</label><input type="text" inputmode="numeric" id="fv-pprice" placeholder="Optional" oninput="_fmtMoneyInput(this)" value="${v.purchasePrice>0?_moneyStr(v.purchasePrice).replace(/\.00$/,''):''}"></div>
         </div>
         <div class="f"><label>Odometer at purchase (mi)</label>
           <input type="number" id="fv-podo" min="0" step="1" placeholder="Optional" value="${v.purchaseOdo>0?v.purchaseOdo:''}">
@@ -862,7 +862,7 @@ function saveFleetVehicle() {
     gvwr:     document.getElementById('fv-gvwr')?document.getElementById('fv-gvwr').value:'',
     deductionMethod: deductEl ? deductEl.value : (oldV.deductionMethod||'mileage'),
     purchaseDate:  _mdYToYmd(document.getElementById('fv-pdate')?document.getElementById('fv-pdate').value:'')||'',
-    purchasePrice: parseFloat(document.getElementById('fv-pprice')?document.getElementById('fv-pprice').value:0)||0,
+    purchasePrice: _moneyVal('fv-pprice'),
     purchaseOdo:   parseInt(document.getElementById('fv-podo')?document.getElementById('fv-podo').value:0)||0,
     status: oldV.status||'active',
     downtimeLog: oldV.downtimeLog||[],
@@ -976,7 +976,7 @@ function openFleetSaleModal(idx) {
       <div style="font-size:14px;font-weight:600;color:var(--text3);margin-bottom:14px">${escHtml(v.nickname||v.name||'')}</div>
       <div class="fg fg2">
         <div class="f"><label>Sale date</label><input type="date" id="fs-date" value="${todayKey()}"></div>
-        <div class="f"><label>Sale price ($)</label><input type="number" id="fs-price" min="0" step="100" placeholder="0"></div>
+        <div class="f"><label>Sale price ($)</label><input type="text" inputmode="numeric" id="fs-price" placeholder="0" oninput="_fmtMoneyInput(this)"></div>
       </div>
       <div class="f"><label>Odometer at sale (mi)</label><input type="number" id="fs-odo" min="0" step="100" placeholder="0"></div>
       ${v.purchasePrice?`<div style="margin-top:8px;padding:8px 10px;background:var(--bg2);border-radius:var(--r);font-size:12px;color:var(--text3)">Purchase price: $${v.purchasePrice.toLocaleString()} — enter sale price to see gain/loss</div>`:''}
@@ -995,7 +995,7 @@ function saveFleetSale(idx) {
   const v = vehs[idx];
   if(!v) return;
   const saleDate = document.getElementById('fs-date')?document.getElementById('fs-date').value||todayKey():todayKey();
-  const salePrice = parseFloat(document.getElementById('fs-price')?document.getElementById('fs-price').value||0:0)||0;
+  const salePrice = _moneyVal('fs-price');
   const saleOdo = parseInt(document.getElementById('fs-odo')?document.getElementById('fs-odo').value||0:0)||0;
 
   v.status = 'sold';

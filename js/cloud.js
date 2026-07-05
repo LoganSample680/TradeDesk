@@ -499,7 +499,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.05.26.14';
+const APP_VERSION='07.05.26.15';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -2607,7 +2607,7 @@ function _employeeModalHTML(emp,idx){
           '</select></div>'+
         '<div class="f" style="margin:0"><label id="emp-pay-rate-lbl">'+(_eComp.pay_type==='salary'?'Annual salary':'Hourly rate')+'</label>'+
           '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px;color:var(--text2);font-weight:600">$</span>'+
-          '<input id="emp-pay-rate" type="number" min="0" step="0.5" value="'+(_eComp.pay_rate||'')+'" placeholder="'+(_eComp.pay_type==='salary'?'55000':'28')+'" style="font-size:14px;padding:10px;flex:1"></div></div>'+
+          '<input id="emp-pay-rate" type="text" inputmode="decimal" value="'+(_eComp.pay_rate?_moneyStr(_eComp.pay_rate).replace(/\.00$/,''):'')+'" placeholder="'+(_eComp.pay_type==='salary'?'55000':'28')+'" oninput="_fmtMoneyInput(this)" style="font-size:14px;padding:10px;flex:1"></div></div>'+
       '</div>'
     :'')+
     '<div onclick="_togglePermsAccordion(this)" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding:10px 0;margin-bottom:2px">'+
@@ -2672,7 +2672,7 @@ async function _saveEmployee(idx){
   // here (before the modal is removed) so they ride along on the team_members upsert.
   const _canComp=_canViewComp();
   const _payType=_canComp?(document.getElementById('emp-pay-type')?.value||'hourly'):null;
-  const _payRate=_canComp?(parseFloat(document.getElementById('emp-pay-rate')?.value)||0):null;
+  const _payRate=_canComp?_moneyVal('emp-pay-rate'):null;
   const emp={id:_empId,name,email,role:_empRole,classification:_empClass,phone:_empPhone,permissions:perms};
   if(!S.employees)S.employees=[];
   if(!isNew)S.employees[idx]=emp;else S.employees.push(emp);

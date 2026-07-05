@@ -1612,9 +1612,9 @@ function markJobDone(jobId){
         '<div id="adj-fields" style="display:none;margin-top:10px">'+
           '<div class="f" style="margin-bottom:8px">'+
             '<label style="font-size:11px;font-weight:700;color:var(--text3)">Amount ($)</label>'+
-            '<input type="number" id="adj-amount" min="0" step="5" placeholder="0" inputmode="decimal"'+
+            '<input type="text" id="adj-amount" placeholder="0" inputmode="decimal"'+
               ' style="font-size:22px;font-weight:700;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);text-align:center"'+
-              ' oninput="_previewAdjTotal('+jobId+')">'+
+              ' oninput="_fmtMoneyInput(this);_previewAdjTotal('+jobId+')">'+
           '</div>'+
           '<div id="adj-preview" style="font-size:13px;font-weight:700;text-align:center;min-height:20px;margin-bottom:8px"></div>'+
           '<div class="f">'+
@@ -1647,7 +1647,7 @@ function _previewAdjTotal(jobId){
   const j=jobs.find(x=>x.id===jobId);
   const bid=j?.bid_id?bids.find(b=>b.id===j.bid_id):null;
   if(!bid)return;
-  const amt=parseFloat(document.getElementById('adj-amount')?.value)||0;
+  const amt=_moneyVal('adj-amount');
   const preview=document.getElementById('adj-preview');
   if(!preview||!amt)return;
   const newTotal=_adjType==='increase'?bid.amount+amt:Math.max(0,bid.amount-amt);
@@ -1661,7 +1661,7 @@ async function confirmJobDone(jobId){
   if(!dateStr.match(/^\d{4}-\d{2}-\d{2}$/)){zAlert('Enter a valid date.',{title:'Invalid date'});return;}
   const adjFields=document.getElementById('adj-fields');
   const adjOpen=adjFields&&adjFields.style.display!=='none';
-  const adjAmt=parseFloat(document.getElementById('adj-amount')?.value||0)||0;
+  const adjAmt=_moneyVal('adj-amount');
   const adjReason=(document.getElementById('adj-reason')?.value||'').trim();
   if(adjOpen&&_adjType){
     if(adjAmt<=0){

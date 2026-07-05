@@ -45,7 +45,7 @@ function openNewContractModal(clientId){
           CONTRACT_FREQ.map(f=>'<option value="'+f.id+'">'+f.label+'</option>').join('')+
         '</select></div>'+
       '<div class="f"><label>Amount ($)</label>'+
-        '<input id="ct-amount" type="number" min="0" step="0.01" placeholder="0.00" style="font-size:15px;padding:10px;font-weight:700"></div>'+
+        '<input id="ct-amount" type="text" inputmode="decimal" placeholder="0.00" oninput="_fmtMoneyInput(this)" style="font-size:15px;padding:10px;font-weight:700"></div>'+
     '</div>'+
     '<div class="fg fg2" style="margin-bottom:12px">'+
       '<div class="f"><label>Start date</label>'+
@@ -68,7 +68,7 @@ function openNewContractModal(clientId){
 function _ctSaveNew(clientId){
   const title=(document.getElementById('ct-title')?.value||'').trim();
   if(!title)return showToast('Enter a service title','⚠️');
-  const amount=parseFloat(document.getElementById('ct-amount')?.value||0)||0;
+  const amount=_moneyVal('ct-amount');
   const freq=document.getElementById('ct-freq')?.value||'annual';
   const start=document.getElementById('ct-start')?.value||todayKey();
   const next=document.getElementById('ct-next')?.value||todayKey();
@@ -99,7 +99,7 @@ function editContractModal(ctId){
           CONTRACT_FREQ.map(f=>'<option value="'+f.id+'"'+(ct.freq===f.id?' selected':'')+'>'+f.label+'</option>').join('')+
         '</select></div>'+
       '<div class="f"><label>Amount ($)</label>'+
-        '<input id="ct-amount" type="number" min="0" step="0.01" value="'+(ct.amount||'')+'" style="font-size:15px;padding:10px;font-weight:700"></div>'+
+        '<input id="ct-amount" type="text" inputmode="decimal" value="'+(ct.amount?_moneyStr(ct.amount):'')+'" oninput="_fmtMoneyInput(this)" style="font-size:15px;padding:10px;font-weight:700"></div>'+
     '</div>'+
     '<div class="fg fg2" style="margin-bottom:12px">'+
       '<div class="f"><label>Start date</label>'+
@@ -127,7 +127,7 @@ function _ctUpdate(ctId){
   const ct=contracts.find(x=>x.id===ctId);if(!ct)return;
   ct.title=(document.getElementById('ct-title')?.value||'').trim()||ct.title;
   ct.freq=document.getElementById('ct-freq')?.value||ct.freq;
-  ct.amount=parseFloat(document.getElementById('ct-amount')?.value||0)||0;
+  ct.amount=_moneyVal('ct-amount');
   ct.startDate=document.getElementById('ct-start')?.value||ct.startDate;
   ct.nextDate=document.getElementById('ct-next')?.value||ct.nextDate;
   ct.notes=document.getElementById('ct-notes')?.value||'';
