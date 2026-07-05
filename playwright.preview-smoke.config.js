@@ -26,10 +26,11 @@ module.exports = defineConfig({
     // The deployed URL to smoke. The workflow sets PREVIEW_URL to the deployment that
     // just went live; falls back to E2E_BASE_URL, then production.
     baseURL: process.env.PREVIEW_URL || process.env.E2E_BASE_URL || 'https://tradedeskpro.app',
-    // CI-only WAF bypass header (no-op when the secret is unset), same as the flow config.
-    extraHTTPHeaders: process.env.E2E_BYPASS_SECRET
-      ? { 'X-E2E-Bypass': process.env.E2E_BYPASS_SECRET }
-      : {},
+    // NOTE: the WAF-bypass header is NOT set here as a blanket extraHTTPHeaders — that
+    // attaches it to EVERY request the context makes, including third-party origins
+    // (Google Fonts, Cloudflare Insights, the MapKit CDN), whose CORS preflight rejects
+    // the unrecognized custom header and blocks the request. It's scoped to same-origin
+    // requests only via page.route() in the spec's beforeEach instead.
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     bypassCSP: true,

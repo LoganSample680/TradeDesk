@@ -60,7 +60,11 @@ jobs:
         run: npm install --no-save @playwright/test@1.56.0
 
       - name: Ensure browsers
-        run: npx playwright install chromium webkit
+        # --with-deps: this GH-hosted runner is missing WebKit's native shared libraries
+        # (libgtk-4, libgraphene, etc.) — without it, webkit fails to launch entirely
+        # ("Host system is missing dependencies to run browsers"), failing every webkit
+        # smoke test regardless of the app. --with-deps apt-installs them on Ubuntu runners.
+        run: npx playwright install --with-deps chromium webkit
 
       - name: Guard — PREVIEW_URL must be set
         run: |

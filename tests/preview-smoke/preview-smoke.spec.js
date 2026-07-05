@@ -32,6 +32,26 @@ const EXPECTED_VERSION = (() => {
 })();
 
 test.describe('preview deploy smoke — the BUILT artifact on the real origin', () => {
+  // The CI-only Cloudflare WAF bypass header must only reach the app's OWN origin — a
+  // blanket context-wide header (extraHTTPHeaders) also attaches to third-party requests
+  // (Google Fonts, Cloudflare Insights, the MapKit CDN), whose CORS preflight rejects the
+  // unrecognized header and blocks the request, breaking fonts/analytics/MapKit and
+  // surfacing as false "console error" failures. Route-intercept and inject it ONLY for
+  // same-origin requests instead.
+  test.beforeEach(async ({ context, baseURL }) => {
+    if (!process.env.E2E_BYPASS_SECRET || !baseURL) return;
+    const bypassSecret = process.env.E2E_BYPASS_SECRET;
+    const appOrigin = new URL(baseURL).origin;
+    await context.route('**/*', (route) => {
+      const reqUrl = new URL(route.request().url());
+      if (reqUrl.origin === appOrigin) {
+        route.continue({ headers: { ...route.request().headers(), 'x-e2e-bypass': bypassSecret } });
+      } else {
+        route.continue();
+      }
+    });
+  });
+
   // 1. Published + boots + the LIVE version matches the deployed commit. A version
   //    mismatch means a stale cache / unpropagated deploy is serving the OLD bundle —
   //    the false-pass this whole check exists to prevent.
@@ -63,7 +83,11 @@ test.describe('preview deploy smoke — the BUILT artifact on the real origin', 
   //    only exists on the deployed origin (localhost uses local-server.js), so it is
   //    UNTESTED until now. Both 200 and 401 prove the proxy reached Supabase auth.
   test('the /api Pages Function proxies to Supabase', async ({ page }) => {
-    const res = await page.request.get('/api/auth/v1/health', { failOnStatusCode: false });
+    // page.request is a separate APIRequestContext — it does NOT go through the
+    // context.route() interceptor above, so the bypass header (needed for this
+    // same-origin relative path) is passed explicitly here instead.
+    const headers = process.env.E2E_BYPASS_SECRET ? { 'x-e2e-bypass': process.env.E2E_BYPASS_SECRET } : {};
+    const res = await page.request.get('/api/auth/v1/health', { failOnStatusCode: false, headers });
     expect([200, 401], `/api/auth/v1/health returned ${res.status()} — the /api proxy worker is down or not reaching Supabase`).toContain(res.status());
   });
 
