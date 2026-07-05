@@ -1495,8 +1495,8 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="card" id="cd-notes-card">
       <div class="card-hd" style="display:flex;justify-content:space-between;align-items:center">Notes<span style="font-size:10px;color:var(--text3);font-weight:400">Private · not sent to client</span></div>
       <div id="cd-notes-list" style="margin-bottom:10px"></div>
-      <div style="display:flex;gap:8px">
-        <input id="cd-note-input" type="text" placeholder="Add a note about this client…" style="flex:1;font-size:13px;padding:9px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit" onkeydown="if(event.key==='Enter')addClientNote()">
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <textarea id="cd-note-input" rows="2" placeholder="Add a note about this client…" style="flex:1;font-size:13px;padding:9px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical;box-sizing:border-box;line-height:1.4" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();addClientNote();}"></textarea>
         <button class="btn btn-p btn-sm" onclick="addClientNote()">Add</button>
       </div>
     </div>

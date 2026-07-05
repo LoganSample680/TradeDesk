@@ -1886,6 +1886,50 @@ test.describe('Client detail tab and notes functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // Regression — a real user-reported bug: client notes had no way back in once
+  // typed. The entry field was a single-line <input>, so anything past a sentence
+  // scrolled out of view while typing (couldn't proofread/fix a misspelling before
+  // saving), and saved notes rendered as plain read-only text with zero edit path —
+  // the only fix was delete-and-retype the whole thing from memory.
+  test('client notes — entry field is a multi-line textarea, and a saved note can be edited in place', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof editClientNote !== 'function' || typeof currentClientId === 'undefined') return { skip: true };
+      const inputEl = document.getElementById('cd-note-input');
+      if (!inputEl) return { skip: true };
+      const isTextarea = inputEl.tagName === 'TEXTAREA';
+
+      // Seed a client + a note directly, then drive the real edit flow.
+      const cid = 995501;
+      if (typeof clients !== 'undefined') {
+        clients = clients.filter(c => c.id !== cid);
+        clients.push({ id: cid, name: 'Notes Edit Client', notes: [{ id: 'note-995501', text: 'Original misspelled tex', ts: new Date().toISOString() }] });
+      }
+      const savedCurrent = window.currentClientId;
+      window.currentClientId = cid;
+      try {
+        editClientNote('note-995501');
+        const modalPresent = !!document.getElementById('_cnote-edit-ov');
+        const textareaEl = document.getElementById('_cnote-edit-text');
+        const prefilled = textareaEl ? textareaEl.value : null;
+        if (textareaEl) textareaEl.value = 'Original misspelled text — fixed';
+        if (typeof _saveEditedClientNote === 'function') _saveEditedClientNote('note-995501');
+        const savedText = clients.find(c => c.id === cid)?.notes?.find(n => n.id === 'note-995501')?.text;
+        const modalGoneAfterSave = !document.getElementById('_cnote-edit-ov');
+        return { isTextarea, modalPresent, prefilled, savedText, modalGoneAfterSave };
+      } finally {
+        window.currentClientId = savedCurrent;
+        clients = clients.filter(c => c.id !== cid);
+        document.getElementById('_cnote-edit-ov')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.isTextarea, 'the note entry field must be a <textarea>, not a single-line <input>').toBe(true);
+    expect(result.modalPresent, 'editClientNote must open an edit surface').toBe(true);
+    expect(result.prefilled, 'the edit surface must show the full existing note text').toBe('Original misspelled tex');
+    expect(result.savedText, 'saving must persist the corrected text back onto the note').toBe('Original misspelled text — fixed');
+    expect(result.modalGoneAfterSave).toBe(true);
+  });
+
   test('toggleTlGroup — calls without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof toggleTlGroup !== 'function') return { skip: true };

@@ -1460,10 +1460,10 @@ function renderClientNotes(){
     const dt=new Date(n.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     return '<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">'+
       '<div style="flex:1;min-width:0">'+
-        '<div style="font-size:13px;color:var(--text);line-height:1.4">'+escHtml(n.text)+'</div>'+
+        '<div style="font-size:13px;color:var(--text);line-height:1.4;white-space:pre-wrap;word-break:break-word">'+escHtml(n.text)+'</div>'+
         '<div style="font-size:10px;color:var(--text3);margin-top:2px">'+dt+'</div>'+
       '</div>'+
-      ''+
+      '<button onclick="editClientNote(\''+n.id+'\')" title="Edit" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--blue);flex-shrink:0;touch-action:manipulation">Edit</button>'+
     '</div>';
   }).join('');
 }
@@ -1480,6 +1480,34 @@ function deleteClientNote(noteId){
   const c=getClientById(currentClientId);if(!c)return;
   c.notes=(c.notes||[]).filter(n=>n.id!==noteId);
   saveAll();renderClientNotes();
+}
+// Notes previously had no way back in once added — long ones got clipped to
+// whatever fit the one-line display, with no edit path to fix a typo. This opens
+// the full text in a real textarea (scrollable, multi-line) with Save/Delete.
+function editClientNote(noteId){
+  const c=getClientById(currentClientId);if(!c)return;
+  const n=(c.notes||[]).find(x=>x.id===noteId);if(!n)return;
+  document.getElementById('_cnote-edit-ov')?.remove();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_cnote-edit-ov';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:16px;font-weight:800;margin-bottom:12px">Edit note</div>'+
+    '<textarea id="_cnote-edit-text" rows="6" style="width:100%;box-sizing:border-box;padding:10px 12px;font-size:13px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical;line-height:1.4;margin-bottom:14px">'+escHtml(n.text)+'</textarea>'+
+    '<div style="display:flex;gap:8px">'+
+      '<button onclick="deleteClientNote(\''+noteId+'\');this.closest(\'.zmodal-overlay\').remove()" style="padding:11px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Delete</button>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
+      '<button onclick="_saveEditedClientNote(\''+noteId+'\')" style="flex:2;padding:11px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
+    '</div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  setTimeout(()=>document.getElementById('_cnote-edit-text')?.focus(),50);
+}
+function _saveEditedClientNote(noteId){
+  const c=getClientById(currentClientId);if(!c)return;
+  const n=(c.notes||[]).find(x=>x.id===noteId);if(!n)return;
+  const text=(document.getElementById('_cnote-edit-text')?.value||'').trim();
+  if(!text){deleteClientNote(noteId);}else{n.text=text;saveAll();renderClientNotes();}
+  document.getElementById('_cnote-edit-ov')?.remove();
 }
 function renderCDTimeline(){
   const cbids=getClientBids(currentClientId),cjobs=getClientJobs(currentClientId),cmiles=getClientMileage(currentClientId);
