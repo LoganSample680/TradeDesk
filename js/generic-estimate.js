@@ -2702,6 +2702,10 @@ async function sendGenericProposal(previewOnly){
     b.draft=false;
     if(!b.proposalSentDate)b.proposalSentDate=todayKey();
     saveAll();
+    // saveAll() only SCHEDULES a debounced cloud write (2s timer) — force + await it
+    // now so the bid's signingToken/proposalKey/status are confirmed in td_bids
+    // before this function proceeds (same fire-and-forget gap fixed in _sendCOToHub).
+    try{await _flushSaveNow();}catch(_e){}
   }
   const baseUrl=_clientBaseUrl();
   const signingUrl=baseUrl+'sign.html?t='+token+'&u='+_effectiveUid()+'&b='+bidId;

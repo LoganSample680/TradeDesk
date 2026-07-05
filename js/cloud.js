@@ -499,7 +499,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.05.26.10';
+const APP_VERSION='07.05.26.11';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -894,24 +894,28 @@ function _opApplyIncoming(tbl,localRow,incomingRow,incomingUpdatedAt,_src){
       const fcMs=fc?((_hlcParse(fc)||{}).ms||0):0;
       if(fcMs>incMs&&fcMs>syncedAt&&(k in localRow)){out[k]=localRow[k];keptLocal=true;} // PENDING local edit is newer → keep it
       else if(k in incomingRow)out[k]=incomingRow[k];                     // take the incoming value
-      // Local-only field (absent from incoming entirely). If THIS DEVICE set it AND that
-      // clock is still PENDING (newer than the row's last known-synced moment — same gate
-      // as the branch above), it must SURVIVE the merge output even when nothing else is
-      // protected: a concurrent peer save whose base predates our upload arrives as a whole
-      // row WITHOUT our field, and returning `incomingRow` here would silently erase an
-      // edit that had already reached the cloud (the N-writer same-row loss). Keeping it
-      // (and returning `out`) makes the merged row hash-differ from the incoming row → the
-      // next save re-uploads the union.
-      //   Field clocks are DELIBERATELY NEVER PRUNED (~line 805) — without the fcMs>syncedAt
-      // gate here, ANY field this device EVER set, once legitimately cleared/absent from
-      // the cloud, permanently tripped keptLocal on every future load forever (the clock's
-      // age was never checked). That poisoned the row's synced-hash baseline on every
-      // reload — the row could never hash-match its own stored baseline again, so it
-      // re-uploaded on every save despite no real data ever changing (the delta-sync
-      // over-upload / "hash-baseline churn" bug). A field with NO clock, or only a STALE
-      // one (already synced before), now falls through exactly like a peer's deliberate
-      // drop: absent from `out`, matching incoming.
-      else if(fc&&fcMs>syncedAt){out[k]=localRow[k];keptLocal=true;}
+      // Local-only field. If THIS DEVICE set it (a field clock exists), it must SURVIVE
+      // the merge output even when nothing else is protected: a concurrent peer save
+      // whose base predates our upload arrives as a whole row WITHOUT our field, and
+      // returning `incomingRow` here silently erased an edit that had already reached
+      // the cloud (the N-writer same-row loss). Keeping it (and returning `out`) makes
+      // the merged row hash-differ from the incoming row → the next save re-uploads the
+      // union. A local-only field with NO clock (we never set it) keeps the old
+      // whole-row-take semantics, so a field a peer deliberately dropped still drops.
+      //   TRIED gating this on fcMs>syncedAt (only protect if still "pending") to fix a
+      // separate over-upload bug (a field cleared long ago kept permanently poisoning the
+      // hash baseline) — reverted. Local field clocks are a client-side HLC timestamp
+      // stamped the instant an edit happens; incMs/syncedAt are SERVER commit timestamps
+      // that lag behind by real network latency. Under genuine concurrent multi-writer
+      // load a device's own just-landed edit can easily have fcMs <= syncedAt (its own
+      // save's ack arrives, bumping syncedAt, before a racing peer's stale-base push is
+      // even processed) — the gate then dropped that device's OWN field the instant a
+      // concurrent peer's push arrived, confirmed by the swarm-convergence flow test
+      // (12 concurrent writers, only 5/12 kept their own marker). Never losing a real
+      // edit under concurrency is a stronger guarantee than avoiding an occasional
+      // harmless re-upload — the over-upload bug needs a different fix (e.g. pruning
+      // truly stale field clocks after a safe time window), not a recency gate here.
+      else{out[k]=localRow[k];if(fc)keptLocal=true;}
     }
     const res=keptLocal?out:incomingRow; // nothing protected → byte-identical to the old whole-row replace
     // SYNC TRACE (window._syncTrace, default off — certification diagnostics): record any

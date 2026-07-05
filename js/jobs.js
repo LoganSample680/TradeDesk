@@ -1655,7 +1655,7 @@ function _previewAdjTotal(jobId){
   const color=_adjType==='increase'?'var(--blue)':'var(--green-mid)';
   preview.innerHTML='<span style="color:var(--text3)">'+fmt(bid.amount)+'</span> <span style="color:'+color+'">'+arrow+' '+fmt(newTotal)+'</span>';
 }
-function confirmJobDone(jobId){
+async function confirmJobDone(jobId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   const dateStr=document.getElementById('job-done-date')?.value||todayKey();
   if(!dateStr.match(/^\d{4}-\d{2}-\d{2}$/)){zAlert('Enter a valid date.',{title:'Invalid date'});return;}
@@ -1734,6 +1734,13 @@ function confirmJobDone(jobId){
   if(S.reviewUrl){
     setTimeout(()=>showReviewRequestPrompt(j.client_id),800);
   }
+  // saveAll() above only SCHEDULES a debounced cloud write (2s timer) — every UI
+  // reaction (scorecard, expense prompt, review prompt) is scheduled unblocked above,
+  // so this await only delays THIS function's own completion, not any visible UI.
+  // Force + await the write now so the job's completion_date (and its mirror onto
+  // the bid) are confirmed in the cloud, not merely scheduled (same fire-and-forget
+  // gap fixed in _sendCOToHub / sendGenericProposal).
+  try{await _flushSaveNow();}catch(_e){}
 }
 function confirmMarkComplete(jobId){confirmJobDone(jobId);}
 function showReviewRequestPrompt(clientId){

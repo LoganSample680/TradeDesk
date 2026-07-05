@@ -839,36 +839,43 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
       expect(r.passiveB).toBe(3);
     });
 
-    // Regression — delta-sync over-upload / hash-baseline churn. Field clocks are
-    // DELIBERATELY NEVER PRUNED (per-field merge needs them after ack). Before: the
-    // local-only-field branch treated "a clock exists at all" as "must survive forever,"
-    // with no recency check — unlike the pending-edit branch two lines above it, which
-    // correctly requires the clock to be newer than the row's last-synced moment. So a
-    // field this device set at ANY point in the past, once legitimately cleared and
-    // absent from the cloud row, permanently tripped `keptLocal`, which stamps the
-    // synced-hash from the INCOMING row while the in-memory row still differs — the row
-    // could never hash-match its own baseline again, so it re-uploaded on every save
-    // despite no real data ever changing. Fixed: the same fcMs>syncedAt recency gate now
-    // applies to the local-only branch too.
-    test('a STALE field clock (already synced, field later cleared) does not poison the merge', async () => {
+    // Regression — concurrent-writer field survival (data-safety guarantee, NOT an
+    // efficiency optimization). A prior attempt at this session gated the local-only-
+    // field branch on fcMs>syncedAt, reasoning that "already synced = no longer pending
+    // = safe to drop if absent from an incoming row" — intended to fix a separate
+    // over-upload bug (a field cleared long ago permanently poisoning the hash
+    // baseline). That gate was REVERTED: local field clocks are a client-side HLC
+    // timestamp stamped the instant an edit happens, while incMs/syncedAt are SERVER
+    // commit timestamps that lag behind by real network latency. Under genuine
+    // concurrent multi-writer load, a device's own just-landed edit can easily have
+    // fcMs <= syncedAt (its own save's ack bumps syncedAt before a racing peer's
+    // stale-base push is even processed) — the gate then dropped that device's OWN
+    // field the instant a concurrent peer's push arrived. Confirmed by the live
+    // swarm-convergence flow test (12 concurrent writers, only 5/12 kept their own
+    // marker). This test locks in the safe behavior permanently: a local-only field
+    // with ANY clock survives a racing peer's stale-base push, regardless of whether
+    // this device's own save already landed.
+    test('a concurrent writers own field survives a racing peers stale-base push, even after its own save already landed', async () => {
       const r = await page.evaluate(() => {
-        const id = 'm3-stale-1';
+        const id = 'm3-swarm-1';
         const savedFlag = window._opLogShadow;
         try {
           window._opLogShadow = true;
-          const local = { id, client_name: 'C', amount: 5, legacyNote: 'old note' };
-          // This field was set long ago and its edit already reached the cloud — the row
-          // was synced AFTER the clock, so it is NOT a pending edit (same shape as the
-          // "already-UPLOADED edit is NOT protected" test above).
-          _opStampFields('td_bids', id, { legacyNote: 1 }, _hlcNow());
-          (_rowSyncedAt['td_bids'] || (_rowSyncedAt['td_bids'] = new Map())).set(id, Date.now() + 1);
-          // The field was later legitimately cleared (undefined → dropped from jsonb) —
-          // the incoming cloud row genuinely has no legacyNote at all.
-          const incoming = { id, client_name: 'C', amount: 5 };
-          const merged = window.__opApplyIncoming('td_bids', local, incoming, null);
+          const local = { id, client_name: 'Shared', amount: 5000, sw_f_A: 'vA' };
+          // T0: row last known-synced (e.g. the initial seed broadcast every writer received)
+          (_rowSyncedAt['td_bids'] || (_rowSyncedAt['td_bids'] = new Map())).set(id, Date.now() - 5000);
+          // T1: THIS device sets its own field (real edit-time HLC stamp, "now")
+          _opStampFields('td_bids', id, { sw_f_A: 1 }, _hlcNow());
+          // Simulate: this device's OWN save just landed → syncedAt advances PAST the
+          // field's own clock (exactly what a successful _flushSaveNow() does).
+          _rowSyncedAt['td_bids'].set(id, Date.now() + 50);
+          // A concurrent peer's push arrives via realtime — its base snapshot predates
+          // this device's field, so it legitimately lacks sw_f_A (peer never saw it).
+          const incoming = { id, client_name: 'Shared', amount: 5000, sw_f_B: 'vB' };
+          const merged = window.__opApplyIncoming('td_bids', local, incoming, new Date().toISOString());
           return {
-            legacyNoteDropped: merged ? !('legacyNote' in merged) : null,
-            hashMatchesIncoming: _hashPayload(merged) === _hashPayload(incoming),
+            survivedOwnField: merged ? merged.sw_f_A === 'vA' : null,
+            gotPeerField: merged ? merged.sw_f_B === 'vB' : null,
           };
         } finally {
           _rowSyncedAt['td_bids'] && _rowSyncedAt['td_bids'].delete(id);
@@ -876,8 +883,8 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
           window._opLogShadow = savedFlag;
         }
       });
-      expect(r.legacyNoteDropped, 'a stale (already-synced) clock must not resurrect a field the cloud legitimately no longer has').toBe(true);
-      expect(r.hashMatchesIncoming, 'nothing genuinely pending → the merge must be byte-identical to incoming, so the hash baseline stays sane').toBe(true);
+      expect(r.survivedOwnField, 'a concurrent writer must never lose its own just-landed field to a racing peers stale-base push').toBe(true);
+      expect(r.gotPeerField, 'the peers own concurrent field must still land').toBe(true);
     });
 
     test('upload stamps _rowSyncedAt (the pending window closes when the save lands)', async () => {
