@@ -2622,8 +2622,17 @@ async function _sendCOToHub(bidId,clientId){
   }
   // Notify step: the client never sees the pending CO unless they open their
   // hub — prompt the contractor to text them the link (after openJobSheet so
-  // the notify modal stacks on top).
+  // the notify modal stacks on top). Scheduled BEFORE the flush below so the UI
+  // timing is unaffected by how long the cloud write takes.
   setTimeout(()=>{openJobSheet(clientId);_showCONotifyModal(clientId,coNum);},300);
+  // saveAll() above only SCHEDULES a debounced cloud write (2s timer) — it never
+  // confirms the CO actually reached td_bids before this function returns. Worse,
+  // _showCONotifyModal above can call saveAll() a second time (for a client with
+  // no clientToken yet), which restarts that same 2s timer, pushing the real
+  // upload out even further. Force + await the write NOW so a caller that awaits
+  // _sendCOToHub (or simply gives it a moment) can rely on the CO actually being
+  // confirmed in the cloud, not merely scheduled.
+  try{await _flushSaveNow();}catch(_e){}
   try{
     const entry={coNum,desc,type,amount,delta,originalAmount,newAmount,sentAt:co.sentAt,signedAt:null,signerName:null,signatureData:null};
     // One signed_proposals row per bid — append to it, or create it for bids

@@ -289,4 +289,50 @@ test.describe('TradeDesk — in-person CO flow still works and offers hub sendin
     });
     assertNoErrors(page, 'CO send modal after hub send');
   });
+
+  // Regression — change orders were not reliably reaching the cloud. Before:
+  // _sendCOToHub only ever called the fire-and-forget saveAll() (a 2s debounce
+  // timer), then returned immediately — the live flow test's 1500ms wait was
+  // shorter than that timer, so it deterministically checked the cloud before
+  // the write had even started. A second saveAll() from _showCONotifyModal (for
+  // a client with no clientToken yet) could push the real upload out further
+  // still. Fixed: _sendCOToHub now awaits _flushSaveNow() (cancels the debounce,
+  // pushes immediately) before it resolves, so a caller that awaits it — or
+  // simply gives it a moment — can rely on the CO having actually reached the
+  // cloud, not merely been scheduled. This proves the await happens; the live
+  // flow test (change-orders-flow.spec.js) proves the row actually lands.
+  test('_sendCOToHub awaits the cloud write (_flushSaveNow) before resolving — does not just schedule it', async () => {
+    const r = await page.evaluate(async () => {
+      const bidId = 990501, clientId = 990502;
+      const savedFlush = window._flushSaveNow;
+      let flushCalled = false, flushAwaitedBeforeResolve = false;
+      window._flushSaveNow = () => {
+        flushCalled = true;
+        return new Promise(res => setTimeout(() => { flushAwaitedBeforeResolve = true; res(); }, 20));
+      };
+      clients.push({ id: clientId, name: 'CO Flush Client', clientToken: 'tok-flush-e2e' });
+      bids.push({ id: bidId, client_id: clientId, amount: 5000, changeOrders: [], surfaces: [] });
+      const ov = document.createElement('div');
+      ov.style.cssText = 'position:fixed';
+      ov.innerHTML = '<canvas id="co-sign-canvas"></canvas>';
+      ov.dataset.coData = JSON.stringify({ desc: 'Flush guard', type: 'add', amount: 100, delta: 100, originalAmount: 5000, newAmount: 5100, coNum: 1 });
+      document.body.appendChild(ov);
+      const origSupaUser = window._supaUser, origSupaEnabled = window.supaEnabled;
+      window._supaUser = window._supaUser || { id: 'e2e-user' };
+      window.supaEnabled = () => true;
+      try {
+        await _sendCOToHub(bidId, clientId);
+        return { flushCalled, resolvedAfterFlush: flushAwaitedBeforeResolve };
+      } finally {
+        window._flushSaveNow = savedFlush;
+        window._supaUser = origSupaUser; window.supaEnabled = origSupaEnabled;
+        document.getElementById('_co-send-overlay')?.remove();
+        document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+        let i = bids.findIndex(b => b.id === bidId); if (i >= 0) bids.splice(i, 1);
+        i = clients.findIndex(c => c.id === clientId); if (i >= 0) clients.splice(i, 1);
+      }
+    });
+    expect(r.flushCalled, '_sendCOToHub must call _flushSaveNow, not rely on the bare debounce timer').toBe(true);
+    expect(r.resolvedAfterFlush, '_sendCOToHub must AWAIT the flush — it cannot resolve before the cloud write settles').toBe(true);
+  });
 });
