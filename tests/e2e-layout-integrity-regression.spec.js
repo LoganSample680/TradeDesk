@@ -46,5 +46,41 @@ test.describe('layout integrity — mobile', () => {
     expect(overflow, 'no element may cause horizontal scroll / bleed off-screen at 390px').toBeLessThanOrEqual(1);
   });
 
+  // Regression: settings' city/state/zip row used 1fr 60px 80px while the identical
+  // control elsewhere in the app (intake.html, client.html) used 1fr 56px 90px — the
+  // zip box was a visibly different size from every other zip box in the product.
+  // Separately, the phone/email row split 1fr 1fr on mobile, so the (much longer)
+  // email address got clipped mid-string on a 390px phone. Fixed: settings now matches
+  // the app-wide 56px/90px convention, and phone/email stacks on mobile via .set-form-2col.
+  test('settings: zip matches the app-wide city/state/zip proportions, and email never clips on mobile', async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const r = await page.evaluate(() => {
+      goPg && typeof goPg === 'function' && goPg('pg-settings');
+      const zip = document.getElementById('set-bzip');
+      const state = document.getElementById('set-bstate-display');
+      const phone = document.getElementById('set-bphone');
+      const email = document.getElementById('set-bemail');
+      if (!zip || !state || !phone || !email) return { missing: true };
+      email.value = 'somebodylongname@somereallylongcompany.com';
+      const zr = zip.getBoundingClientRect(), sr = state.getBoundingClientRect();
+      const pr = phone.getBoundingClientRect(), er = email.getBoundingClientRect();
+      return {
+        missing: false,
+        zipWiderThanState: zr.width > sr.width,       // 90px > 56px — matches app convention
+        stacked: Math.abs(pr.top - er.top) > 5,        // email drops to its own row on mobile
+        emailFullWidth: er.width >= pr.width * 1.5,    // gets the whole row, not a clipped half
+        emailFitsViewport: er.right <= window.innerWidth + 1,
+        scrollValue: email.scrollWidth,
+        clientValue: email.clientWidth,
+      };
+    });
+    expect(r.missing, 'zip/state/phone/email inputs must exist on the settings page').toBe(false);
+    expect(r.zipWiderThanState, 'zip box must use the same 56px/90px proportions as every other city/state/zip control in the app').toBe(true);
+    expect(r.stacked, 'phone and email must stack on mobile so email gets full row width').toBe(true);
+    expect(r.emailFullWidth, 'email box must be roughly full-row width on mobile, not half-clipped').toBe(true);
+    expect(r.emailFitsViewport, 'email box must not bleed past the viewport edge').toBe(true);
+    expect(r.scrollValue - r.clientValue, 'a long email must not overflow its own box (no clipped text)').toBeLessThanOrEqual(2);
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });

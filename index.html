@@ -288,7 +288,8 @@ input[readonly],input:disabled{background:var(--cream);color:var(--text-3)}
 .set-form-hint{font-size:11px;color:var(--blue);margin-top:3px;line-height:1.4;padding-right:12px}
 .set-form-ctrl input,.set-form-ctrl select,.set-form-ctrl textarea{margin-bottom:6px;width:100%;box-sizing:border-box;min-width:0}
 .set-form-ctrl input:last-child,.set-form-ctrl select:last-child,.set-form-ctrl textarea:last-child{margin-bottom:0}
-@media(max-width:480px){.set-form-row{grid-template-columns:1fr;padding:10px 14px}.set-form-lbl{padding-right:0}}
+.set-form-2col{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+@media(max-width:480px){.set-form-row{grid-template-columns:1fr;padding:10px 14px}.set-form-lbl{padding-right:0}.set-form-2col{grid-template-columns:1fr}}
 /* ── Brand color swatches ── */
 .set-swatch{width:38px;height:38px;border-radius:10px;border:2px solid transparent;cursor:pointer;position:relative;padding:0;flex-shrink:0;transition:transform .12s;display:inline-flex;align-items:center;justify-content:center}
 .set-swatch:active{transform:scale(.9)}
@@ -3092,7 +3093,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div><div class="set-form-lbl">Address</div><div class="set-form-hint">Required for invoicing.</div></div>
           <div class="set-form-ctrl">
             <div style="position:relative"><input id="set-baddr" placeholder="1242 N Saint Francis" autocomplete="off" style="width:100%;box-sizing:border-box"></div>
-            <div style="display:grid;grid-template-columns:1fr 60px 80px;gap:6px">
+            <div style="display:grid;grid-template-columns:1fr 56px 90px;gap:6px">
               <input id="set-bcity" placeholder="Wichita">
               <input id="set-bstate-display" placeholder="KS" maxlength="2" style="text-transform:uppercase">
               <input id="set-bzip" placeholder="67214" inputmode="numeric" maxlength="5">
@@ -3102,7 +3103,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="set-form-row">
           <div><div class="set-form-lbl">Phone &amp; email</div></div>
           <div class="set-form-ctrl">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+            <div class="set-form-2col">
               <input id="set-bphone" type="tel" maxlength="12" oninput="fmtPhone(this)" placeholder="(316) 555-0182">
               <input type="email" id="set-bemail" placeholder="logan@samplepaint.com" autocomplete="off">
             </div>
