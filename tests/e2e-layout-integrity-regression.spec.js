@@ -62,22 +62,28 @@ test.describe('layout integrity — mobile', () => {
     // root cause of this test's own initial flake.
     await page.evaluate(() => { _openSetDetail('biz'); });
     const r = await page.evaluate(() => {
+      const city = document.getElementById('set-bcity');
       const zip = document.getElementById('set-bzip');
       const state = document.getElementById('set-bstate-display');
       const phone = document.getElementById('set-bphone');
       const email = document.getElementById('set-bemail');
-      if (!zip || !state || !phone || !email) return { missing: true };
+      if (!zip || !state || !phone || !email || !city) return { missing: true };
       // The actual reported value (owner's real email, 24 chars) — long enough to
       // clip in the old half-width split, short enough to fit once stacked full-width.
       // A single-line <input> never wraps, so an arbitrarily long stress string would
       // clip at ANY width — that's normal input behavior, not a layout bug.
       email.value = 'logansample97@gmail.com';
+      const cr = city.getBoundingClientRect();
       const zr = zip.getBoundingClientRect(), sr = state.getBoundingClientRect();
       const pr = phone.getBoundingClientRect(), er = email.getBoundingClientRect();
       return {
         missing: false,
         detailActive: document.getElementById('setd-biz')?.classList.contains('active') || false,
         zipWiderThanState: zr.width > sr.width,       // 90px > 56px — matches app convention
+        // iOS Safari renders inputmode="numeric" ~18px taller than sibling inputs sharing
+        // the identical font/padding/border rule (a platform quirk) — pinned to an
+        // explicit height:48px on all three so they render identically everywhere.
+        sameHeight: Math.abs(zr.height - sr.height) <= 1 && Math.abs(zr.height - cr.height) <= 1,
         stacked: Math.abs(pr.top - er.top) > 5,        // email drops to its own row on mobile
         // Once stacked, phone and email each get the FULL row width (equal to each
         // other) rather than splitting it — email must be within a few px of phone's
@@ -92,6 +98,7 @@ test.describe('layout integrity — mobile', () => {
     expect(r.missing, 'zip/state/phone/email inputs must exist on the settings page').toBe(false);
     expect(r.detailActive, 'the Business info detail sub-view (#setd-biz) must be open before measuring layout').toBe(true);
     expect(r.zipWiderThanState, 'zip box must use the same 56px/90px proportions as every other city/state/zip control in the app').toBe(true);
+    expect(r.sameHeight, 'city/state/zip must render at the same height — no per-input inputmode quirk').toBe(true);
     expect(r.stacked, 'phone and email must stack on mobile so email gets full row width').toBe(true);
     expect(r.emailFullWidth, 'email box must match phone box width (both get the full stacked row), not still be half-split').toBe(true);
     expect(r.emailMajorityOfViewport, 'email box must actually span most of the viewport width once stacked').toBe(true);

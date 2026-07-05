@@ -3094,9 +3094,13 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-form-ctrl">
             <div style="position:relative"><input id="set-baddr" placeholder="1242 N Saint Francis" autocomplete="off" style="width:100%;box-sizing:border-box"></div>
             <div style="display:grid;grid-template-columns:1fr 56px 90px;gap:6px">
-              <input id="set-bcity" placeholder="Wichita">
-              <input id="set-bstate-display" placeholder="KS" maxlength="2" style="text-transform:uppercase">
-              <input id="set-bzip" placeholder="67214" inputmode="numeric" maxlength="5">
+              <input id="set-bcity" placeholder="Wichita" style="height:48px">
+              <input id="set-bstate-display" placeholder="KS" maxlength="2" style="text-transform:uppercase;height:48px">
+              <!-- height pinned explicitly: inputmode="numeric" renders this box ~18px taller
+                   than its siblings on iOS Safari despite sharing the same font/padding/border
+                   rule — a platform quirk, not a CSS mismatch. Fixing the height forces parity
+                   across every engine instead of trusting each browser's intrinsic sizing. -->
+              <input id="set-bzip" placeholder="67214" inputmode="numeric" maxlength="5" style="height:48px">
             </div>
           </div>
         </div>
