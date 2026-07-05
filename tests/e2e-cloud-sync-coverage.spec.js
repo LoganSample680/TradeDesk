@@ -839,6 +839,47 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
       expect(r.passiveB).toBe(3);
     });
 
+    // Regression — delta-sync over-upload / hash-baseline churn. Field clocks are
+    // DELIBERATELY NEVER PRUNED (per-field merge needs them after ack). Before: the
+    // local-only-field branch treated "a clock exists at all" as "must survive forever,"
+    // with no recency check — unlike the pending-edit branch two lines above it, which
+    // correctly requires the clock to be newer than the row's last-synced moment. So a
+    // field this device set at ANY point in the past, once legitimately cleared and
+    // absent from the cloud row, permanently tripped `keptLocal`, which stamps the
+    // synced-hash from the INCOMING row while the in-memory row still differs — the row
+    // could never hash-match its own baseline again, so it re-uploaded on every save
+    // despite no real data ever changing. Fixed: the same fcMs>syncedAt recency gate now
+    // applies to the local-only branch too.
+    test('a STALE field clock (already synced, field later cleared) does not poison the merge', async () => {
+      const r = await page.evaluate(() => {
+        const id = 'm3-stale-1';
+        const savedFlag = window._opLogShadow;
+        try {
+          window._opLogShadow = true;
+          const local = { id, client_name: 'C', amount: 5, legacyNote: 'old note' };
+          // This field was set long ago and its edit already reached the cloud — the row
+          // was synced AFTER the clock, so it is NOT a pending edit (same shape as the
+          // "already-UPLOADED edit is NOT protected" test above).
+          _opStampFields('td_bids', id, { legacyNote: 1 }, _hlcNow());
+          (_rowSyncedAt['td_bids'] || (_rowSyncedAt['td_bids'] = new Map())).set(id, Date.now() + 1);
+          // The field was later legitimately cleared (undefined → dropped from jsonb) —
+          // the incoming cloud row genuinely has no legacyNote at all.
+          const incoming = { id, client_name: 'C', amount: 5 };
+          const merged = window.__opApplyIncoming('td_bids', local, incoming, null);
+          return {
+            legacyNoteDropped: merged ? !('legacyNote' in merged) : null,
+            hashMatchesIncoming: _hashPayload(merged) === _hashPayload(incoming),
+          };
+        } finally {
+          _rowSyncedAt['td_bids'] && _rowSyncedAt['td_bids'].delete(id);
+          delete (_fieldClocks['td_bids'] || {})[id];
+          window._opLogShadow = savedFlag;
+        }
+      });
+      expect(r.legacyNoteDropped, 'a stale (already-synced) clock must not resurrect a field the cloud legitimately no longer has').toBe(true);
+      expect(r.hashMatchesIncoming, 'nothing genuinely pending → the merge must be byte-identical to incoming, so the hash baseline stays sane').toBe(true);
+    });
+
     test('upload stamps _rowSyncedAt (the pending window closes when the save lands)', async () => {
       const r = await page.evaluate(() => {
         // _paintCacheForDelta owner-scoped stamp is covered in e2e-delta-load; here prove
@@ -1383,6 +1424,67 @@ test.describe('100-writer op channel + rebase', () => {
     expect(r.reappended).toBe(true);     // the offline-created row was NOT dropped
     expect(r.reappendedAmount).toBe(77);
     expect(r.hashIsIncoming).toBe(true);
+  });
+
+  // Regression — employee redaction must never poison a FIELD CLOCK (data-leak guard).
+  // Before: _opShadowDerive stamped a fresh field clock from an employee's REDACTED
+  // (zeroed) in-memory bid amount before supaSaveToCloud's _saveSkip even excluded
+  // td_bids from the upload. The network was never touched, but that phantom "locally
+  // edited, newer than the server" clock then outranked the contractor's real value on
+  // the next reload's field-clock merge (_opApplyIncoming) — an employee's redacted
+  // view silently zeroed the contractor's real bid amount in MEMORY. Fixed: the field
+  // clock stamp is skipped for redacted tables specifically — the op ITSELF (ring +
+  // durable log) still gets created as before, since the crew op-SYNC channel
+  // deliberately keeps redacted ops local and filters them only at push time (see the
+  // sibling "redacted-table ops never push" test above — this fix must not break that).
+  test('_opShadowDerive skips the field clock (not the op) for a redacted table', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _opShadowDerive !== 'function' || typeof _opFieldClocks !== 'function') return { skip: true };
+      const bidId = 991001;
+      const saved = {
+        emp: _isEmployee, empRec: _employeeRecord, flag: window._opLogShadow,
+        bidsSnap: bids.slice(),
+      };
+      try {
+        window._opLogShadow = true;
+        _isEmployee = false; _employeeRecord = null;
+        bids.length = 0;
+        bids.push({ id: bidId, name: 'RedactGuard', amount: 7777, status: 'sent' });
+        _opRebaseline();
+        _opShadowDerive(); // contractor's real save — establishes the genuine field clock
+        const clockBefore = { ..._opFieldClocks('td_bids', bidId) };
+        const opCountBefore = (typeof window.__opLast === 'function' && window.__opLast('td_bids', bidId)) ? 1 : 0;
+
+        // Become a redacted employee (no financials, no estimate permission → td_bids redacted)
+        // and simulate the RPC's zeroing, exactly like the live flow test does.
+        _isEmployee = true;
+        _employeeRecord = { permissions: { financials: false }, active: true, role: 'tech' };
+        const b = bids.find(x => x.id === bidId);
+        if (b) b.amount = 0;
+        _opShadowDerive(); // the redacted "save" derive — must NOT touch the field clock
+        const clockAfter = { ..._opFieldClocks('td_bids', bidId) };
+        const opAfter = typeof window.__opLast === 'function' ? window.__opLast('td_bids', bidId) : null;
+
+        return {
+          skip: false,
+          redactedTables: [...(typeof _employeeRedactedTables === 'function' ? _employeeRedactedTables() : [])],
+          amountClockUnchanged: clockBefore.amount === clockAfter.amount,
+          // The op itself must STILL be created/persisted (Phase 2's push-time filter
+          // needs something to filter) — only the field clock is guarded.
+          opStillCreated: !!opAfter,
+          opStillReflectsZero: !!(opAfter && opAfter.fields && opAfter.fields.amount === 0),
+        };
+      } finally {
+        _isEmployee = saved.emp; _employeeRecord = saved.empRec; window._opLogShadow = saved.flag;
+        bids.length = 0; saved.bidsSnap.forEach(x => bids.push(x));
+        try { _opRebaseline(); } catch (e) {}
+      }
+    });
+    if (r.skip) return;
+    expect(r.redactedTables, 'a financials:false employee with no estimate permission must have td_bids redacted').toContain('td_bids');
+    expect(r.amountClockUnchanged, 'a redacted derive must NOT advance the amount field clock — that is the signal a later merge trusts over the real server value').toBe(true);
+    expect(r.opStillCreated, 'the op itself must still be created/persisted — the crew push-time filter (sibling test) needs something to filter').toBe(true);
+    expect(r.opStillReflectsZero, 'the created op legitimately reflects the redacted value — filtering happens at push time, not here').toBe(true);
   });
 
   test('_effectiveUid — owner→self, crew→boss, dev-support→target (the Stripe/link routing identity)', async () => {
