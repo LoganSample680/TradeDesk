@@ -147,8 +147,7 @@ test.describe('payments, deposit, refund, lien (UI-driven)', () => {
           set('lien-county', 'Sedgwick County, KS'); // county field — typed = 19 keystrokes
           set('lien-notes', 'E2E lien');             // notes field — typed = 8 keystrokes
         }, { today, bal });
-        await p.evaluate(() => { saveLien(); }, {});                                      // 1 tap (submit)
-        await p.waitForTimeout(400);
+        await p.evaluate(() => saveLien(), {});                                           // 1 tap (submit)
         return 37; // openClient(1) + bidsTab(1) + openLien(1) + status pick(1) + amount"4500"(4) + date pick(1) + county(19) + notes(8) + submit(1) = 37
       },
       rule: async (p) => {

@@ -250,6 +250,49 @@ test.describe('Lien management lifecycle', () => {
     }
   });
 
+  // Regression — filed liens were not reliably reaching the cloud. Before:
+  // saveLien only ever called the fire-and-forget saveAll() (a 2s debounce
+  // timer) and returned synchronously, so a caller (or a live flow test) that
+  // checked td_liens right after saveLien() returned would deterministically
+  // see the write before it had even started. Fixed: saveLien is now async
+  // and awaits _flushSaveNow() (cancels the debounce, pushes immediately)
+  // before it resolves. This proves the await happens; the live flow test
+  // (payments-liens-flow.spec.js) proves the row actually lands in td_liens.
+  test('saveLien awaits the cloud write (_flushSaveNow) before resolving — does not just schedule it', async () => {
+    const result = await page.evaluate(async ([bidId]) => {
+      if (typeof saveLien !== 'function') return null;
+      const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+      set('lien-date', '2026-05-22'); set('lien-status', 'intent');
+      set('lien-amount', '2500'); set('lien-county', 'Sedgwick County');
+      window.activeLienBidId = bidId;
+      const _save = window.saveAll; const _close = window.closeLienPanel;
+      const _r1 = window.renderCDBids; const _r2 = window.renderDashActiveLiens;
+      const _flush = window._flushSaveNow;
+      window.saveAll = () => {}; window.closeLienPanel = () => {};
+      window.renderCDBids = () => {}; window.renderDashActiveLiens = () => {};
+      let flushCalled = false, flushAwaitedBeforeResolve = false;
+      window._flushSaveNow = () => {
+        flushCalled = true;
+        return new Promise(res => setTimeout(() => { flushAwaitedBeforeResolve = true; res(); }, 20));
+      };
+      let resolvedAfterFlush = false;
+      try {
+        await saveLien();
+        resolvedAfterFlush = flushAwaitedBeforeResolve;
+      } catch (e) { return { error: e.message }; }
+      finally {
+        window.saveAll = _save; window.closeLienPanel = _close;
+        window.renderCDBids = _r1; window.renderDashActiveLiens = _r2;
+        window._flushSaveNow = _flush;
+      }
+      return { flushCalled, resolvedAfterFlush };
+    }, [LIEN_BID_ID]);
+    if (result && !result.error) {
+      expect(result.flushCalled, 'saveLien must call _flushSaveNow, not rely on the bare debounce timer').toBe(true);
+      expect(result.resolvedAfterFlush, 'saveLien must AWAIT the flush — it cannot resolve before the cloud write settles').toBe(true);
+    }
+  });
+
   test('releaseLien — triggers zConfirm with release title', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof releaseLien !== 'function') return null;

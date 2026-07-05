@@ -1510,7 +1510,7 @@ function deleteBid(bidId){
     if(_cid)_uploadClientHub(_cid).catch(e=>console.error('[hub upload]',e));
   },{title:'Delete bid',yes:'Delete permanently',danger:true});
 }
-function saveLien(){
+async function saveLien(){
   if(!activeLienBidId)return;
   const status=v('lien-status');
   const bidId=activeLienBidId;
@@ -1528,6 +1528,7 @@ function saveLien(){
   if(bid&&status==='intent'){setBidCollStage(bid,'intent','Intent to lien recorded');}
   renderDashActiveLiens();
   if(status==='filed'||status==='attorney'){setTimeout(()=>printKansasLien(bidId),300);}
+  try{await _flushSaveNow();}catch(_e){}
 }
 function releaseLien(bidId){
   const bid=bids.find(b=>b.id===bidId);
