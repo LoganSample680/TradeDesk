@@ -6,8 +6,8 @@
 //   • cancellation citation             = _cancelCitation(state)      proposals.js:1319
 // Both pull from STATE_LIEN / STATE_CANCEL. Each state is its own test() so the
 // suite shows 50 granular results and a failure names the exact state.
-const { test, expect } = require('@playwright/test');
-const { needsLiveCreds, signIn, finding } = require('./live-helpers');
+const { test, expect } = require('./flow-test');
+const { needsLiveCreds, signIn, finding, scopeBypassHeader } = require('./live-helpers');
 
 const STATES = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'];
 
@@ -21,13 +21,16 @@ test.describe('legal — 50-state lien + cancellation statutes in proposal T&C',
   test.beforeAll(async ({ browser }) => {
     // Sign in ONCE and precompute every state's strings — the per-state tests
     // below are then cheap assertions against this map. Manual context so the
-    // baseURL + Cloudflare-bypass header from the config are applied here too.
+    // baseURL is applied here too; the bypass header is scoped to same-origin
+    // only via scopeBypassHeader (see live-helpers.js for why a blanket header
+    // breaks third-party CORS).
+    const _baseURL = process.env.E2E_BASE_URL || 'https://tradedeskpro.app';
     const ctx = await browser.newContext({
-      baseURL: process.env.E2E_BASE_URL || 'https://tradedeskpro.app',
-      extraHTTPHeaders: process.env.E2E_BYPASS_SECRET ? { 'X-E2E-Bypass': process.env.E2E_BYPASS_SECRET } : {},
+      baseURL: _baseURL,
       bypassCSP: true,
       viewport: { width: 390, height: 844 },
     });
+    await scopeBypassHeader(ctx, _baseURL);
     page = await ctx.newPage();
     await signIn(page);
     results = await page.evaluate((states) => {

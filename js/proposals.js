@@ -327,6 +327,10 @@ function _startHubSweep(){
 }
 function _tickHubSweep(){
   _hubSweepTimer=null;
+  // Pause hook: precision specs (delta-sync's "exactly 1 row") set
+  // window._hubSweepPause so the sweep's client-row stamps can't land inside
+  // their measurement window. The queue holds and resumes when the flag clears.
+  if(window._hubSweepPause){_hubSweepTimer=setTimeout(_tickHubSweep,1000);return;}
   const id=_hubSweepQueue.shift();
   if(id===undefined)return;
   // Account switched mid-sweep → stale ids simply miss in clients[] and no-op.
@@ -776,6 +780,7 @@ async function sendProposalLink(){
     if(!_lastCheck)localStorage.setItem('zp3_last_sig_check',new Date(Date.now()-86400000*7).toISOString());
     if(btn){btn.textContent='✓ Link ready';btn.disabled=false;}
     showToast('Link ready — tap SMS or Email to send','🔗');
+    try{await _flushSaveNow();}catch(_e){}
   }catch(e){
     console.error('sendProposalLink failed:',e);
     const msg=e.message||'Unknown error';
@@ -2618,8 +2623,17 @@ async function _sendCOToHub(bidId,clientId){
   }
   // Notify step: the client never sees the pending CO unless they open their
   // hub — prompt the contractor to text them the link (after openJobSheet so
-  // the notify modal stacks on top).
+  // the notify modal stacks on top). Scheduled BEFORE the flush below so the UI
+  // timing is unaffected by how long the cloud write takes.
   setTimeout(()=>{openJobSheet(clientId);_showCONotifyModal(clientId,coNum);},300);
+  // saveAll() above only SCHEDULES a debounced cloud write (2s timer) — it never
+  // confirms the CO actually reached td_bids before this function returns. Worse,
+  // _showCONotifyModal above can call saveAll() a second time (for a client with
+  // no clientToken yet), which restarts that same 2s timer, pushing the real
+  // upload out even further. Force + await the write NOW so a caller that awaits
+  // _sendCOToHub (or simply gives it a moment) can rely on the CO actually being
+  // confirmed in the cloud, not merely scheduled.
+  try{await _flushSaveNow();}catch(_e){}
   try{
     const entry={coNum,desc,type,amount,delta,originalAmount,newAmount,sentAt:co.sentAt,signedAt:null,signerName:null,signatureData:null};
     // One signed_proposals row per bid — append to it, or create it for bids

@@ -10,7 +10,7 @@
 //     estimator has to be told crew/rate/hours by hand).
 //   • estimate-build/byo             — Build-Your-Own custom line items the
 //     estimator has no idea how to price.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, RUN_TAG, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -124,7 +124,7 @@ test.describe('estimator scale benchmarks (UX streamline targets)', () => {
       },
     });
 
-    const rep = report(FLOW, BASELINE);   // capture mode — logs N clicks, not gated
+    const rep = report(FLOW, BASELINE, page);   // capture mode — logs N clicks, not gated
     // Scale benchmarks never hard-fail on clicks (§13.4); the count is the finding.
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
@@ -180,7 +180,7 @@ test.describe('estimator scale benchmarks (UX streamline targets)', () => {
       },
     });
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -244,7 +244,7 @@ test.describe('estimator scale benchmarks (UX streamline targets)', () => {
       },
     });
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

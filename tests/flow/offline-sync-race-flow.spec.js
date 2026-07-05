@@ -17,18 +17,18 @@
 //
 // All bids are uniquely tagged and LEFT in the dev account for inspection (§13.7);
 // only the worker browser contexts are closed at the end.
-const { test, expect } = require('@playwright/test');
-const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
+const { test, expect } = require('./flow-test');
+const { needsLiveCreds, signIn, step, report, resetLedger, scopeBypassHeader } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'offline-sync/multi-worker-race';
 const BASE = process.env.E2E_BASE_URL || 'https://tradedeskpro.app';
-const BYPASS = process.env.E2E_BYPASS_SECRET ? { 'X-E2E-Bypass': process.env.E2E_BYPASS_SECRET } : {};
 const WORKERS = 4; // representative of "many devices"; the safety mechanism is id-based, so N>2 proves the same invariant
 
 // Spin up one worker = its own browser context (a distinct device) signed in.
 async function spawnWorker(browser, idx) {
-  const ctx = await browser.newContext({ baseURL: BASE, extraHTTPHeaders: BYPASS, bypassCSP: true });
+  const ctx = await browser.newContext({ baseURL: BASE, bypassCSP: true });
+  await scopeBypassHeader(ctx, BASE);
   const page = await ctx.newPage();
   await signIn(page);
   return { ctx, page, idx };
@@ -165,7 +165,7 @@ test.describe('offline-sync race safety (multi-device)', () => {
     // (CLAUDE.md §13.7). Only the worker contexts are closed (resource cleanup).
     await Promise.all(workers.map(w => w.ctx.close().catch(() => {})));
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

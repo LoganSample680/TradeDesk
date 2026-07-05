@@ -9,7 +9,7 @@
 //
 //   suspect chain: settings.js saveSettings (settingsTs bump) → cloud.js
 //   supaSaveToCloud (must NOT strip location) → cloud.js _mergeIncomingSettings.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, type, tap } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -153,7 +153,7 @@ test.describe('settings persistence (UI-driven, real reboot)', () => {
     // the dev account on purpose so the owner can confirm persistence by hand
     // (CLAUDE.md §13.7). The owner resets the goal manually if desired.
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
     expect(rep.overBudget).toBe(false);
   });

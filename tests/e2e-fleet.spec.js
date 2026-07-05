@@ -848,6 +848,264 @@ test.describe('Vehicle management consolidation — removal regression', () => {
     assertNoErrors(page, 'Settings has no old vehicle inputs');
   });
 
+  // ── Regression: a deleted vehicle must STAY deleted ───────────────────────
+  // Bug ("Zach Ford always comes back"): getVehicles() re-seeded a vehicle from
+  // the legacy single-vehicle string field S.veh whenever S.vehicles was empty —
+  // so deleting the last vehicle resurrected it on the very next render. The seed
+  // now fires only when the fleet was NEVER managed (no S.vehiclesTs stamp); any
+  // add/edit/delete stamps it and permanently disables the seed.
+  test('Deleting the last vehicle stays deleted — no resurrection from legacy S.veh', async () => {
+    const r = await page.evaluate(() => {
+      // Legacy account shape: old string field set, fleet never managed.
+      delete S.vehicles;
+      delete S.vehiclesTs;
+      S.veh = 'Zach Ford';
+      const legacySeed = getVehicles().map(v => v.name); // migration still shows it
+
+      // Delete it the way the fleet remove path does: array shrinks + stamp.
+      const vehs = getVehicles();
+      vehs.splice(0, 1);
+      S.vehicles = vehs;
+      S.vehiclesTs = Date.now();
+      const afterDelete = getVehicles().map(v => v.name);
+
+      // S.veh is still a live settings field — re-reading must NOT bring it back.
+      const afterReRead = getVehicles().map(v => v.name);
+      return { legacySeed, afterDelete, afterReRead, vehStillSet: S.veh };
+    });
+    expect(r.legacySeed).toContain('Zach Ford'); // legacy one-time migration still works
+    expect(r.afterDelete).toEqual([]);           // deletion sticks
+    expect(r.afterReRead).toEqual([]);           // no resurrection on the next render
+    expect(r.vehStillSet).toBe('Zach Ford');     // the settings field itself is untouched
+
+    // Leave a clean fleet for the tests that follow.
+    await page.evaluate(() => { S.vehicles = []; delete S.veh; });
+    assertNoErrors(page, 'vehicle delete does not resurrect from legacy S.veh');
+  });
+
+  // ── Regression: fleet writes must win the settings sync ───────────────────
+  // Bug ("Zach's Ford deletes itself"): every fleet write stamped only its
+  // private vehiclesTs, never the blob-level settingsTs. The cloud save gate
+  // (skip-settings when cloud settingsTs is newer) therefore treated a fresh
+  // vehicle add as STALE and silently never uploaded it — the vehicle lived
+  // only in that device's cache and vanished on the next sign-out/fresh boot.
+  // _setVehicles is the single write path and must stamp BOTH timestamps.
+  test('_setVehicles stamps settingsTs AND vehiclesTs — a fleet edit can never look stale to the save gate', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _setVehicles !== 'function') return null;
+      const staleTs = 1000; // ancient settingsTs, like a user who never opens Settings
+      S.settingsTs = staleTs;
+      S.vehiclesTs = 0;
+      const before = Date.now();
+      _setVehicles([{ name: 'Zach Ford', nickname: '' }]);
+      return {
+        vehicles: (S.vehicles || []).map(v => v.name),
+        settingsBumped: (S.settingsTs || 0) >= before, // beats any older cloud blob
+        vehiclesBumped: (S.vehiclesTs || 0) >= before, // wins the per-field tiebreaker
+      };
+    });
+    expect(r).not.toBeNull();
+    expect(r.vehicles).toEqual(['Zach Ford']);
+    expect(r.settingsBumped).toBe(true);
+    expect(r.vehiclesBumped).toBe(true);
+    await page.evaluate(() => { S.vehicles = []; });
+    assertNoErrors(page, '_setVehicles stamps both sync timestamps');
+  });
+
+  // ── Regression: the fleet SERVICE LOG is a synced cloud table ─────────────
+  // maintenance (zp3_maint) was the only data store that never left the device —
+  // a reinstall or second device lost/never saw the service history. It now has
+  // a _TD_TABLES entry (td_maintenance) so every save/load/delta/realtime path
+  // picks it up automatically.
+  test('maintenance is wired into _TD_TABLES (td_maintenance) with a working get/set round-trip', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _TD_TABLES === 'undefined') return null;
+      const def = _TD_TABLES.find(d => d.t === 'td_maintenance');
+      if (!def) return { hasEntry: false };
+      const snap = [...def.get()];
+      def.set([{ id: 991001, vehicleName: 'Sync Test Truck', type: 'oil', date: '2026-07-03', cost: 90 }]);
+      const afterSet = def.get().map(m => m.id);
+      const sameArray = maintenance.length === 1 && maintenance[0].id === 991001; // set() painted the live array
+      def.set(snap);
+      return { hasEntry: true, afterSet, sameArray };
+    });
+    expect(r).not.toBeNull();
+    expect(r.hasEntry).toBe(true);
+    expect(r.afterSet).toEqual([991001]);
+    expect(r.sameArray).toBe(true);
+    assertNoErrors(page, 'td_maintenance sync entry round-trips');
+  });
+
+  test('deleting a service record removes it through the recorded-delete path', async () => {
+    await page.evaluate(() => {
+      maintenance.unshift({ id: 991002, vehicleName: 'Sync Test Truck', type: 'oil', typeLabel: 'Oil Change', date: '2026-07-03', cost: 90 });
+      deleteMaintenanceRecord(991002);
+    });
+    await page.waitForTimeout(300);
+    // Confirm the zConfirm dialog — the delete now runs inside _userDelete so the
+    // cloud sweep records the id (without it the row resurrects from td_maintenance).
+    const yesBtn = page.locator('.zmodal-overlay button', { hasText: 'Delete' }).last();
+    await yesBtn.click();
+    await page.waitForTimeout(300);
+    const gone = await page.evaluate(() => !maintenance.some(m => m.id === 991002));
+    expect(gone).toBe(true);
+    assertNoErrors(page, 'service record delete flows through _userDelete');
+  });
+
+  // ── Vehicle deduction engine (_vehSchedC) — one method per vehicle (IRS) ──
+  // Before the engine, calcTax deducted ALL miles AND ALL vehicle expenses at
+  // once — stacking both deductions for any 'actual' vehicle. These tests pin
+  // the exclusivity rules and the year-end winner math.
+  test('_vehSchedC: mileage-method vehicle — miles deduct, its expenses are excluded', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _vehSchedC !== 'function') return null;
+      const YR = '2031';
+      const rate = _getIrsRateForYear(YR);
+      const mSnap = [...mileage], eSnap = [...expenses];
+      S.vehicles = [{ name: 'Test Truck', deductionMethod: 'mileage', bizUse: 80 }];
+      mileage = [{ id: 1, date: YR + '-03-01', miles: 100, vehicle: 'Test Truck' }];
+      expenses = [
+        { id: 11, date: YR + '-03-02', cat: 'fuel', amount: 200, vehicleName: 'Test Truck' },
+        { id: 12, date: YR + '-03-03', cat: 'vehicle', amount: 300 },           // untagged → single vehicle
+        { id: 13, date: YR + '-03-04', cat: 'materials', amount: 50 },          // NOT a vehicle expense
+      ];
+      const vd = _vehSchedC(YR);
+      mileage = mSnap; expenses = eSnap; S.vehicles = [];
+      return { vd, expected: +(100 * rate).toFixed(2) };
+    });
+    expect(r).not.toBeNull();
+    expect(r.vd.mileDed).toBeCloseTo(r.expected, 2);   // miles deduct at the year rate
+    expect(r.vd.deductedMiles).toBe(100);
+    expect(r.vd.expAdjust).toBe(500);                  // BOTH vehicle expenses excluded (200+300)
+    expect(r.vd.excludedIds.sort()).toEqual([11, 12]); // materials untouched
+    expect(r.vd.perVehicle[0].winner).toBeDefined();
+  });
+
+  test('_vehSchedC: actual-method vehicle — expenses deduct at biz-use %, its miles are excluded', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _vehSchedC !== 'function') return null;
+      const YR = '2032';
+      const mSnap = [...mileage], eSnap = [...expenses];
+      S.vehicles = [{ name: 'Work Van', deductionMethod: 'actual', bizUse: 75 }];
+      mileage = [{ id: 2, date: YR + '-05-01', miles: 400, vehicle: 'Work Van' }];
+      expenses = [{ id: 21, date: YR + '-05-02', cat: 'fuel', amount: 1000, vehicleName: 'Work Van' }];
+      const vd = _vehSchedC(YR);
+      mileage = mSnap; expenses = eSnap; S.vehicles = [];
+      return vd;
+    });
+    expect(r).not.toBeNull();
+    expect(r.mileDed).toBe(0);            // actual method: no mileage deduction
+    expect(r.excludedMiles).toBe(400);
+    expect(r.vehExpDed).toBe(750);        // 1000 × 75% business use
+    expect(r.expAdjust).toBe(250);        // personal-use slice never deducts
+    expect(r.excludedIds).toEqual([]);    // rows still show in the expense table
+    expect(r.perVehicle[0].winner).toBe('actual'); // 750 > 400mi × rate (~290)
+  });
+
+  test('_vehSchedC: no vehicles configured — legacy pass-through (all miles, all expenses)', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _vehSchedC !== 'function') return null;
+      const YR = '2033';
+      const rate = _getIrsRateForYear(YR);
+      const mSnap = [...mileage], eSnap = [...expenses];
+      S.vehicles = [];
+      mileage = [{ id: 3, date: YR + '-06-01', miles: 50 }];
+      expenses = [{ id: 31, date: YR + '-06-02', cat: 'fuel', amount: 80 }];
+      const vd = _vehSchedC(YR);
+      mileage = mSnap; expenses = eSnap;
+      return { vd, expected: +(50 * rate).toFixed(2) };
+    });
+    expect(r).not.toBeNull();
+    expect(r.vd.hasVehicles).toBe(false);
+    expect(r.vd.mileDed).toBeCloseTo(r.expected, 2);
+    expect(r.vd.expAdjust).toBe(0);       // nothing excluded — non-fleet accounts untouched
+    expect(r.vd.excludedIds).toEqual([]);
+  });
+
+  test('_vehSchedC: winner comparison sees ALL logged costs — unexpensed service records count', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _vehSchedC !== 'function') return null;
+      const YR = '2036';
+      const rate = _getIrsRateForYear(YR);
+      const mSnap = [...mileage], eSnap = [...expenses], mtSnap = [...maintenance];
+      S.vehicles = [{ name: 'Log Everything Truck', deductionMethod: 'mileage', bizUse: 100 }];
+      mileage = [{ id: 5, date: YR + '-02-01', miles: 100, vehicle: 'Log Everything Truck' }];
+      // A fuel expense (excluded from Schedule C under mileage method)...
+      expenses = [{ id: 51, date: YR + '-02-02', cat: 'fuel', amount: 400, vehicleName: 'Log Everything Truck' }];
+      // ...AND a service-log record that never became an expense (mileage method
+      // is records-only). The year-end verdict must still count it.
+      maintenance = [{ id: 52, date: YR + '-02-03', vehicleName: 'Log Everything Truck', type: 'trans', cost: 800 }];
+      const vd = _vehSchedC(YR);
+      mileage = mSnap; expenses = eSnap; maintenance = mtSnap; S.vehicles = [];
+      return { p: vd.perVehicle[0], schedCAdjust: vd.expAdjust, mileDedExpected: +(100 * rate).toFixed(2) };
+    });
+    expect(r).not.toBeNull();
+    expect(r.p.costTotal).toBe(1200);              // 400 expense + 800 unexpensed service record
+    expect(r.p.actualCmp).toBe(1200);              // comparison side sees everything
+    expect(r.p.winner).toBe('actual');             // 1200 beats ~$70-75 of mileage — honest verdict
+    expect(r.p.mileDed).toBeCloseTo(r.mileDedExpected, 2);
+    expect(r.schedCAdjust).toBe(400);              // Schedule C math unchanged: only the expense excluded
+  });
+
+  test('_vehWinnerAlert renders the year-end verdict without errors', async () => {
+    const ok = await page.evaluate(() => {
+      if (typeof _vehWinnerAlert !== 'function') return null;
+      const mSnap = [...mileage];
+      S.vehicles = [{ name: 'Verdict Truck', deductionMethod: 'mileage', bizUse: 100 }];
+      mileage = [{ id: 6, date: '2037-01-05', miles: 50, vehicle: 'Verdict Truck' }];
+      _vehWinnerAlert('2037');
+      const ov = [...document.querySelectorAll('.zmodal-overlay')].pop();
+      const has = !!ov && /vehicle deduction/i.test(ov.textContent || '');
+      document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+      mileage = mSnap; S.vehicles = [];
+      return has;
+    });
+    expect(ok).toBe(true);
+    assertNoErrors(page, 'year-end verdict alert');
+  });
+
+  test('_vehSchedC: multi-vehicle untagged expense is conservatively excluded and flagged', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _vehSchedC !== 'function') return null;
+      const YR = '2034';
+      const mSnap = [...mileage], eSnap = [...expenses];
+      S.vehicles = [
+        { name: 'Truck A', deductionMethod: 'mileage', bizUse: 100 },
+        { name: 'Van B', deductionMethod: 'actual', bizUse: 100 },
+      ];
+      mileage = []; // no trips this year
+      expenses = [{ id: 41, date: YR + '-07-01', cat: 'fuel', amount: 120 }]; // no vehicleName, 2 vehicles
+      const vd = _vehSchedC(YR);
+      mileage = mSnap; expenses = eSnap; S.vehicles = [];
+      return vd;
+    });
+    expect(r).not.toBeNull();
+    expect(r.untagged).toBe(1);           // flagged for the UI nudge
+    expect(r.untaggedTotal).toBe(120);
+    expect(r.expAdjust).toBe(120);        // never double-deduct an ambiguous expense
+    expect(r.excludedIds).toEqual([41]);
+  });
+
+  // ── Regression: user-data settings writes stamp settingsTs ────────────────
+  // Same class as the vehicles bug: any S-field write that doesn't bump the
+  // blob-level settingsTs can be silently dropped by the cloud save gate. Two
+  // representatives from the sweep (dark mode toggle, odometer snooze).
+  test('user-data settings writes bump settingsTs so they win the cloud save gate', async () => {
+    const r = await page.evaluate(() => {
+      const out = {};
+      S.settingsTs = 1000;
+      toggleDarkMode(false);
+      out.darkMode = (S.settingsTs || 0) > 1000;
+      S.settingsTs = 1000;
+      _odoSnooze();
+      out.odoSnooze = (S.settingsTs || 0) > 1000;
+      return out;
+    });
+    expect(r.darkMode).toBe(true);
+    expect(r.odoSnooze).toBe(true);
+    assertNoErrors(page, 'settings writes stamp settingsTs');
+  });
+
   // ── Settings: page loads without errors after renderVehicleSettings removed
   test('Settings page loads without console errors (no renderVehicleSettings call)', async () => {
     await goPg(page, 'pg-settings');

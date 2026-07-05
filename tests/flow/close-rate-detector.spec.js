@@ -6,7 +6,7 @@
 // (dashboard.js:1301). This asserts the SHOWN close% equals won/leads of the row it
 // sits next to — it now PASSES, and guards the calc from regressing back. Runs in
 // the non-blocking flow job.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, finding } = require('./live-helpers');
 
 test.describe('dashboard lead-sources — CLOSE% consistency (bug detector)', () => {

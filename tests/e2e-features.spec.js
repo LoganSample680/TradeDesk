@@ -32,6 +32,13 @@ test.describe('Bid sharing — Stripe Connect status', () => {
   test('sendPaymentLink — alerts if Stripe not connected', async () => {
     const result = await page.evaluate(async () => {
       if (typeof sendPaymentLink !== 'function') return null;
+      // Re-seed the fixture INSIDE the test tick. A late-resolving cloud/cache load
+      // can reassign `bids`/`clients` after beforeAll and drop the seed; then
+      // sendPaymentLink's `bids.find` misses and it returns SILENTLY (no alert) —
+      // the intermittent WebKit failure (task #22, shared-page state race). Seeding
+      // here removes the async-overwrite window: the bid is present at call time.
+      if (typeof clients !== 'undefined' && !clients.some(c => c.id === 777010)) clients.push({ id: 777010, name: 'Frank Share', phone: '316-555-1010', addr: '10 Share Ln' });
+      if (typeof bids !== 'undefined' && !bids.some(b => b.id === 800010)) bids.push({ id: 800010, client_id: 777010, client_name: 'Frank Share', amount: 2000, status: 'Closed Won', bid_date: '2026-05-01' });
       window._stripeConnectStatus = { connected: false, charges_enabled: false };
       let alerted = false;
       const _origAlert = window.zAlert;

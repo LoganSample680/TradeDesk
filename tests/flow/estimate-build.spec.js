@@ -7,7 +7,7 @@
 // step() — act() returns its interaction count, rule() asserts the post-condition
 // and on failure throws a one-line finding() ticket. report() then emits the
 // friction profile and gates the click budget against perf-baseline.json.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, RUN_TAG, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -211,7 +211,7 @@ test.describe('estimate build → proposal → real artifact (UI-driven)', () =>
     });
 
     // ── FRICTION PROFILE + CLICK-BUDGET GATE (CLAUDE.md §13) ────────────────
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.overBudget,
       `UX REGRESSION: ${FLOW} used ${rep.totalClicks} interactions vs budget ${BASELINE[FLOW] && BASELINE[FLOW].clicks}. ` +
       `Every PR must be as fast or faster (CLAUDE.md §13). If this is an intentional new step, ratchet the baseline up in the same commit and justify it.`

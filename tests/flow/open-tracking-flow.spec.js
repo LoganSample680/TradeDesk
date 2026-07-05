@@ -8,13 +8,12 @@
 //
 // Soft-skips (pass with a note) if proposal_views isn't reachable in this env, so
 // the gate never deadlocks on a not-yet-deployed analytics table.
-const { test, expect } = require('@playwright/test');
-const { needsLiveCreds, signIn, step, report, resetLedger, seedProposal } = require('./live-helpers');
+const { test, expect } = require('./flow-test');
+const { needsLiveCreds, signIn, step, report, resetLedger, seedProposal, scopeBypassHeader } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'open-tracking/hub-opened';
 const BASE = process.env.E2E_BASE_URL || 'https://tradedeskpro.app';
-const BYPASS = process.env.E2E_BYPASS_SECRET ? { 'X-E2E-Bypass': process.env.E2E_BYPASS_SECRET } : {};
 
 test.describe('proposal open-tracking (UI-driven)', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
@@ -55,7 +54,8 @@ test.describe('proposal open-tracking (UI-driven)', () => {
       act: async (p) => {
         // Fully isolated browser context: no shared auth, so client.html treats the
         // viewer as a real client and fires the view log.
-        const cctx = await p.context().browser().newContext({ baseURL: BASE, extraHTTPHeaders: BYPASS, bypassCSP: true });
+        const cctx = await p.context().browser().newContext({ baseURL: BASE, bypassCSP: true });
+        await scopeBypassHeader(cctx, BASE);
         const cpage = await cctx.newPage();
         const url = `/client.html?t=${hub.token}&u=${hub.uid}&c=${clientId}`;
         for (let i = 0; i < 3; i++) {
@@ -111,7 +111,7 @@ test.describe('proposal open-tracking (UI-driven)', () => {
     // NO cleanup — the client, bid + hub snapshot stay in the dev account on purpose
     // so the owner can inspect what this test created (CLAUDE.md §13.7).
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

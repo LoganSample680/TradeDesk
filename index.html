@@ -85,7 +85,7 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 @keyframes td-logoin{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}
 @keyframes td-bar{from{width:0}to{width:68%}}
 @keyframes td-pg-enter{from{opacity:0;transform:translateY(7px)}to{opacity:1}}
-@keyframes td-dash-enter{from{opacity:0;transform:scale(.97)}to{opacity:1}}
+@keyframes td-dash-enter{from{opacity:0;transform:scale(.988)}to{opacity:1}}
 /* Authentic iOS springboard wiggle: two desynced animations (rotation +
    position) at ~0.25s, asymmetric -1deg→1.5deg, ~1px translate, no scale. */
 @keyframes td-jiggle-a{0%{transform:rotate(-1deg) translate(-.4px,-.4px);animation-timing-function:ease-in}50%{transform:rotate(1.5deg) translate(.4px,.4px);animation-timing-function:ease-out}100%{transform:rotate(-1deg) translate(-.4px,-.4px)}}
@@ -93,6 +93,21 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 .td-drag-active .td-dw{animation:td-jiggle-a .25s linear infinite;transform-origin:50% 50%;cursor:grab;position:relative;touch-action:none;will-change:transform;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .td-drag-active .td-dw:nth-child(even){animation-name:td-jiggle-b;animation-duration:.27s}
 .td-drag-active .td-dw:nth-child(3n){animation-duration:.23s}
+/* Randomized wobble PHASE: negative delays start each card mid-cycle at a
+   different point, so the wiggle reads organic instead of choreographed. */
+.td-drag-active .td-dw:nth-child(2n){animation-delay:-.09s}
+.td-drag-active .td-dw:nth-child(3n){animation-delay:-.17s}
+.td-drag-active .td-dw:nth-child(5n){animation-delay:-.05s}
+.td-drag-active .met:nth-child(2n){animation-delay:-.11s}
+.td-drag-active .met:nth-child(3n){animation-delay:-.06s}
+.td-drag-active.mtb-inner .mtb:nth-child(2n):not(#mtb-more){animation-delay:-.08s}
+/* Drop settle: the released card springs back into the flow (scale + shadow
+   fade) instead of popping in. Class is added by onDrop, self-removed ~320ms. */
+@keyframes td-drop-settle{from{transform:scale(1.035);box-shadow:0 14px 32px rgba(0,0,0,.22)}to{transform:scale(1);box-shadow:0 0 0 rgba(0,0,0,0)}}
+.td-drag-active .td-dw.td-drop-settle{animation:td-drop-settle .28s cubic-bezier(.22,1,.36,1) both}
+/* Lift: the ghost grows into the grab instead of appearing pre-scaled. */
+@keyframes td-lift{from{transform:scale(1) rotate(0deg)}to{transform:scale(1.04) rotate(1deg)}}
+.td-drag-ghost{animation:td-lift .16s cubic-bezier(.22,1,.36,1) both}
 .td-drag-active .met{animation:td-jiggle-a .25s linear infinite;transform-origin:50% 50%;cursor:grab;touch-action:none;will-change:transform;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .td-drag-active .met:nth-child(even){animation-name:td-jiggle-b;animation-duration:.27s}
 .td-drag-active .met:nth-child(3n){animation-duration:.23s}
@@ -134,7 +149,23 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 .drive-banner{left:var(--nav-w)}
 .pg{display:none;padding:24px 28px 32px;max-width:1320px}
 .pg.active{display:block;animation:td-pg-enter .2s cubic-bezier(.22,1,.36,1) both}
-#pg-dash.active{animation:td-dash-enter .5s cubic-bezier(.22,1,.36,1) both}
+#pg-dash.active{animation:td-dash-enter .8s cubic-bezier(.16,1,.3,1) both}
+/* Boot waterfall (owner request): while the boot overlay fades, the home header +
+   widget cards ripple in top-to-bottom — 60ms apart, each sliding up 14px. The
+   .boot-cascade class is added ONLY by _removeBootOverlay (boot reveal), never on
+   normal navigation, and is removed after the ripple settles so renderDash's
+   innerHTML updates can never re-trigger it. */
+/* Gentle fade-up (owner: "smoother, fade in more"): mostly opacity with a small
+   14px rise, NO scale (scaling large cards blurs text mid-flight → the "choppy"
+   look). Ease-out-cubic decelerates softly instead of the abrupt expo snap. */
+@keyframes td-card-cascade{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+/* Cards cascade RIGHT AFTER the boot overlay lifts — and BEHIND any boot popup
+   (owner: a blank white backdrop behind a popup looks odd), so the dashboard
+   fills in under the popup's scrim. Delays are assigned in JS (_armBootCascade)
+   over VISIBLE cards only — inline animation-delay wins, so no fixed nth-child
+   holes. Backwards `both` fill keeps each card invisible until its turn. */
+#pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:td-card-cascade .72s cubic-bezier(.33,1,.68,1) both;will-change:opacity,transform}
+@media (prefers-reduced-motion:reduce){#pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:none}}
 #pg-cal.active{animation:td-pg-enter 5s cubic-bezier(.22,1,.36,1) both}
 #pg-est.active{position:fixed;inset:0;z-index:1100;overflow-y:auto;overscroll-behavior:none;padding:0;background:var(--bg)}
 #pg-leads,#pg-jobs,#pg-money{padding-top:8px}
@@ -257,7 +288,8 @@ input[readonly],input:disabled{background:var(--cream);color:var(--text-3)}
 .set-form-hint{font-size:11px;color:var(--blue);margin-top:3px;line-height:1.4;padding-right:12px}
 .set-form-ctrl input,.set-form-ctrl select,.set-form-ctrl textarea{margin-bottom:6px;width:100%;box-sizing:border-box;min-width:0}
 .set-form-ctrl input:last-child,.set-form-ctrl select:last-child,.set-form-ctrl textarea:last-child{margin-bottom:0}
-@media(max-width:480px){.set-form-row{grid-template-columns:1fr;padding:10px 14px}.set-form-lbl{padding-right:0}}
+.set-form-2col{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+@media(max-width:480px){.set-form-row{grid-template-columns:1fr;padding:10px 14px}.set-form-lbl{padding-right:0}.set-form-2col{grid-template-columns:1fr}}
 /* ── Brand color swatches ── */
 .set-swatch{width:38px;height:38px;border-radius:10px;border:2px solid transparent;cursor:pointer;position:relative;padding:0;flex-shrink:0;transition:transform .12s;display:inline-flex;align-items:center;justify-content:center}
 .set-swatch:active{transform:scale(.9)}
@@ -306,6 +338,16 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 
 /* ── Today Feed ── */
 .tf-card{display:flex;align-items:flex-start;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s;flex-wrap:wrap}
+/* Make Money Today one-shot entrance: sections settle in top→bottom (see
+   _mmtFeedEnter). Gentle fade + 9px rise, ease-out-cubic, ~85ms stagger. */
+@keyframes mmt-in{from{opacity:0;transform:translateY(9px)}to{opacity:1;transform:none}}
+#dash-money-feed.mmt-enter>*{animation:mmt-in .5s cubic-bezier(.33,1,.68,1) both}
+#dash-money-feed.mmt-enter>*:nth-child(1){animation-delay:.04s}
+#dash-money-feed.mmt-enter>*:nth-child(2){animation-delay:.13s}
+#dash-money-feed.mmt-enter>*:nth-child(3){animation-delay:.22s}
+#dash-money-feed.mmt-enter>*:nth-child(4){animation-delay:.31s}
+#dash-money-feed.mmt-enter>*:nth-child(5){animation-delay:.4s}
+@media (prefers-reduced-motion:reduce){#dash-money-feed.mmt-enter>*{animation:none}}
 .tf-card:last-child{border-bottom:none}
 .tf-card:hover{background:var(--cream)}
 .tf-icon{font-size:18px;flex-shrink:0;margin-top:1px;width:32px;height:32px;border-radius:8px;background:var(--cream);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;line-height:1}
@@ -355,6 +397,25 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .tbl td.red{color:var(--c-red);font-weight:700}
 .tbl td.muted,.tbl td.mute{color:var(--text-3);font-size:11px}
 .tbl td.bold{font-weight:700}
+/* Books money tables → stacked cards on mobile (owner: no horizontal scroll on
+   the books). Each row becomes a self-contained card; the field label comes from
+   each cell's data-label. Desktop keeps the real table. Scoped to .bk-tbl so no
+   other table is affected. */
+@media(max-width:767px){
+  .bk-tbl-wrap{overflow-x:visible!important}
+  .bk-tbl{min-width:0!important;display:block}
+  .bk-tbl thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  .bk-tbl tbody{display:block}
+  .bk-tbl tr{display:block;border:1px solid var(--line);border-radius:12px;padding:6px 12px;margin:0 0 8px;background:var(--bg-card);box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .bk-tbl tr:hover td{background:none}
+  .bk-tbl td{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:6px 0;border-bottom:1px solid var(--line);text-align:right;font-size:13px}
+  .bk-tbl td:last-child{border-bottom:none}
+  .bk-tbl td::before{content:attr(data-label);font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3);flex-shrink:0;text-align:left}
+  .bk-tbl td[data-label=""]::before{content:none}
+  /* Vendor/Client + Amount are the headline of each card */
+  .bk-tbl td[data-label="Client"],.bk-tbl td[data-label="Vendor"]{font-size:15px;font-weight:800}
+  .bk-tbl td[data-label="Amount"]{font-size:15px;font-weight:800}
+}
 .row-bb{padding:6px 0;border-bottom:1px solid var(--line);font-size:12px}
 .row-bb:last-child{border:none}
 .row-bw{display:flex;align-items:center;justify-content:space-between;gap:8px}
@@ -607,8 +668,13 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 .search-empty{padding:32px;text-align:center;color:var(--text-3);font-size:14px}
 
 /* ── Modals ── */
-.zmodal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;animation:fadein .15s ease;overflow-y:auto}
-.zmodal{background:var(--bg-card);border-radius:var(--r-xl);padding:24px 22px;width:100%;max-width:360px;box-shadow:var(--shadow-modal)}
+.zmodal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;animation:fadein .18s ease;overflow-y:auto}
+/* §8.4 modal entrance: the card fades + slides up + settles from a slight scale
+   while the dim layer fades — no more hard pop. One rule covers every popup
+   (zAlert/zConfirm/collect/complete-job/…, all ~57 creation sites use .zmodal). */
+@keyframes td-modal-in{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}
+.zmodal{background:var(--bg-card);border-radius:var(--r-xl);padding:24px 22px;width:100%;max-width:360px;box-shadow:var(--shadow-modal);animation:td-modal-in .24s cubic-bezier(.22,1,.36,1) both}
+@media (prefers-reduced-motion:reduce){.zmodal{animation:none}}
 .zmodal-title{font-size:16px;font-weight:800;margin-bottom:8px}
 .zmodal-msg{font-size:14px;color:var(--text-2);line-height:1.5;margin-bottom:18px}
 .zmodal-btns{display:flex;gap:8px;justify-content:flex-end}
@@ -622,7 +688,49 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 .toast{position:fixed;bottom:24px;right:24px;background:var(--ink);color:var(--text-cream);border-radius:12px;padding:14px 18px;font-size:13px;font-weight:600;box-shadow:var(--shadow-modal);z-index:9997;display:flex;align-items:center;gap:10px;max-width:320px;animation:toast-in .25s ease;transform-origin:bottom right}
 .toast-icon{font-size:18px;flex-shrink:0}
 .toast-close{background:none;border:none;color:var(--text-cream-2);cursor:pointer;font-size:16px;margin-left:8px;padding:0;line-height:1}
-#supa-boot-overlay.td-fadeout{opacity:0;transition:opacity .65s cubic-bezier(.4,0,.2,1)}
+/* Boot exit: the overlay LIFTS AWAY — gentle zoom + blur dissolve, not a flat fade.
+   Paired with the card waterfall underneath, the whole reveal reads as one motion. */
+#supa-boot-overlay.td-fadeout{opacity:0;transform:scale(1.05);filter:blur(10px);transition:opacity .75s cubic-bezier(.4,0,.2,1),transform .75s cubic-bezier(.4,0,.2,1),filter .75s cubic-bezier(.4,0,.2,1)}
+/* ── Boot screen (redesigned, owner request 2026-07-04) ──
+   Shared by the static overlay AND the JS rebuilder — one look, two entry points.
+   White-label paths untouched: brand color still overrides the background inline,
+   a custom logo replaces the mark+name block entirely. */
+#supa-boot-overlay{overflow:hidden}
+/* Ambient glow: a huge soft radial light that slowly drifts and swells behind the
+   mark — the "alive" feeling. Brand-tinted inline on white-label boots. */
+.sbo-glow{position:absolute;width:130vmax;height:130vmax;left:50%;top:55%;background:radial-gradient(closest-side,rgba(45,93,168,.30),transparent 65%);animation:sbo-drift 9s ease-in-out infinite alternate;pointer-events:none}
+@keyframes sbo-drift{from{transform:translate(-56%,-52%) scale(1)}to{transform:translate(-44%,-46%) scale(1.14)}}
+.sbo-center{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:0 24px;position:relative}
+.sbo-mark{position:relative;width:64px;height:64px;border-radius:16px;background:var(--grad-mark);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba(45,93,168,.4);animation:td-logoin .5s cubic-bezier(.22,1,.36,1) both,sbo-breathe 2.8s ease-in-out .6s infinite}
+.sbo-mark svg{width:32px;height:32px;stroke:#FFF1E6;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+/* Halo ring: pulses outward from the mark every 2.2s — the heartbeat. */
+.sbo-mark::after{content:'';position:absolute;inset:-7px;border-radius:20px;border:1.5px solid rgba(148,185,235,.55);opacity:0;animation:sbo-halo 2.2s cubic-bezier(.22,1,.36,1) 1.1s infinite}
+@keyframes sbo-halo{0%{opacity:.8;transform:scale(1)}70%{opacity:0;transform:scale(1.6)}100%{opacity:0;transform:scale(1.6)}}
+/* Monogram: white-label boots without a logo get the owner's initial in the tile —
+   their app, their letter, not our wrench. */
+.sbo-monogram{font-family:Geist,sans-serif;font-weight:900;font-size:30px;color:#FFF1E6;letter-spacing:-1px}
+/* Logo frame: uploaded artwork of any shape/background sits in a soft light card
+   with the same premium shadow language — the DESIGN carries logos that would
+   otherwise clash with the dark screen. */
+.sbo-logo-frame{background:rgba(255,255,255,.97);border-radius:22px;padding:16px 24px;max-width:78vw;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 18px 50px rgba(0,0,0,.5);animation:td-logoin .55s cubic-bezier(.22,1,.36,1) both}
+.sbo-logo-frame img{max-height:96px;max-width:100%;object-fit:contain;display:block}
+/* Wordmark sheen: a light sweep across the name every 2.6s. */
+.sbo-wordmark{text-align:center;background:linear-gradient(100deg,#fff 42%,#a9c8f2 50%,#fff 58%);background-size:230% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:sbo-textsheen 2.6s ease-in-out 1s infinite}
+/* Business name: auto-shrinks so long multi-word names stay balanced + centered
+   (the "ZJ's Painting & Special Coatings" left-align/overflow bug). Block so the
+   wrapped lines center as a group; clamp scales 44px→28px by viewport width. */
+.sbo-bizname{display:block;text-align:center;max-width:88vw;line-height:1.05;font-size:clamp(28px,7.4vw,44px)!important;letter-spacing:-1.4px!important}
+@keyframes sbo-textsheen{0%{background-position:125% 0}100%{background-position:-125% 0}}
+@keyframes sbo-breathe{0%,100%{box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba(45,93,168,.35);transform:scale(1)}50%{box-shadow:0 1px 0 rgba(255,255,255,.14) inset,0 16px 48px rgba(92,143,212,.55);transform:scale(1.045)}}
+.sbo-tag{font-size:11px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:rgba(255,255,255,.4);animation:sbo-fadeup .6s .3s cubic-bezier(.22,1,.36,1) both}
+@keyframes sbo-fadeup{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+.sbo-foot{width:100%;padding:0 0 44px;display:flex;flex-direction:column;gap:13px}
+.sbo-track{position:relative;height:4px;background:rgba(255,255,255,.08);border-radius:99px;margin:0 40px;overflow:hidden}
+.sbo-bar{height:100%;background:linear-gradient(90deg,#2D5DA8,#5C8FD4);border-radius:99px;box-shadow:0 0 12px rgba(92,143,212,.55);animation:td-bar 5s cubic-bezier(.4,0,.2,1) forwards}
+.sbo-sheen{position:absolute;inset:0;background:linear-gradient(100deg,transparent 32%,rgba(255,255,255,.32) 50%,transparent 68%);transform:translateX(-100%);animation:sbo-sheen 1.7s ease-in-out .5s infinite}
+@keyframes sbo-sheen{to{transform:translateX(100%)}}
+.sbo-hint{text-align:center;font-size:12px;font-weight:500;color:rgba(255,255,255,.35);letter-spacing:.02em;animation:sbo-fadeup .5s .55s cubic-bezier(.22,1,.36,1) both}
+@media (prefers-reduced-motion:reduce){.sbo-mark,.sbo-mark::after,.sbo-sheen,.sbo-glow,.sbo-wordmark{animation:none}}
 
 /* ── Dark mode ── */
 body.dark{
@@ -682,8 +790,13 @@ body.dark .cal-cell.other{background:var(--cream)}
 #mobile-topbar-brand{display:flex;align-items:center;gap:9px;min-width:0}
 .mobile-topbar-icon{width:34px;height:34px;border-radius:var(--r-mark);background:var(--grad-mark);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 4px 10px rgba(45,93,168,.32)}
 .mobile-topbar-icon svg{width:16px;height:16px;stroke:rgba(245,239,226,.9);fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
-.mobile-topbar-name{font-family:var(--font-display);font-weight:900;font-size:19px;letter-spacing:-.8px;color:var(--text-cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mobile-topbar-pro{font-family:var(--font-ui);font-weight:800;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--denim);background:rgba(45,93,168,.13);border:1px solid rgba(45,93,168,.32);padding:3px 6px 2px;border-radius:4px;line-height:1;flex-shrink:0}
+/* Name wraps to up to TWO lines so long names ("ZJ's Painting & Special Coatings")
+   show in FULL — no mid-word ellipsis. Tight line-height + viewport-scaled font
+   keep two lines inside the top bar. Takes all remaining width. */
+.mobile-topbar-name{flex:1;min-width:0;font-family:var(--font-display);font-weight:900;font-size:clamp(14px,4.3vw,18px);letter-spacing:-.5px;line-height:1.08;color:var(--text-cream);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+/* PRO badge hidden on the owner's phone — redundant branding that stole room
+   from the business name (still shown in the desktop sidebar). */
+.mobile-topbar-pro{display:none}
 .mobile-topbar-actions{display:flex;gap:4px;flex-shrink:0}
 .mobile-topbar-btn{width:44px;height:44px;border-radius:8px;border:none;background:rgba(245,239,226,.06);color:var(--text-cream-2);display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .12s}
 .mobile-topbar-btn:active{background:rgba(245,239,226,.12)}
@@ -822,6 +935,17 @@ body.dark .cal-cell.other{background:var(--cream)}
 .bk-month.open .bk-month-chev{transform:rotate(90deg)}
 .bk-month-body{border-top:1px solid var(--line);overflow:hidden;display:none}
 .bk-month.open .bk-month-body{display:block}
+/* Day-level accordion inside a month (owner: break down by month AND day) */
+.bk-day{border-top:1px solid var(--line)}
+.bk-day:first-child{border-top:none}
+.bk-day-hd{display:flex;align-items:center;gap:10px;width:100%;padding:9px 14px;background:var(--cream);cursor:pointer;text-align:left;border:none;font-family:var(--font-ui)}
+.bk-day-title{flex:1;font-size:12px;font-weight:800;color:var(--text-2);letter-spacing:-.1px}
+.bk-day-meta{font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;flex-shrink:0}
+.bk-day-chev{font-size:11px;color:var(--text-3);width:14px;text-align:center;transition:transform .15s;flex-shrink:0}
+.bk-day:not(.open) .bk-day-chev{transform:rotate(-90deg)}
+.bk-day-body{display:block;padding:2px 8px 8px}
+.bk-day:not(.open) .bk-day-body{display:none}
+@media(max-width:767px){.bk-day-body{padding:2px 6px 6px}}
 /* ── Mileage: trip rows ── */
 .mil-day-trip{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line)}
 .mil-day-trip:last-child{border-bottom:none}
@@ -945,46 +1069,116 @@ body.dark .cal-cell.other{background:var(--cream)}
 <body>
 <!-- Full boot screen — visible before any JS runs. td-logoin/td-bar are defined in <style> above. -->
 <div id="supa-boot-overlay" style="position:fixed;inset:0;z-index:9998;background:radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0">
-  <div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;padding:0 24px">
+  <div class="sbo-glow" id="_sbo_glow"></div>
+  <div class="sbo-center">
+    <div class="sbo-mark" id="_sbo_mark"><svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>
     <div id="_sbo_name" style="animation:td-logoin .4s ease both;display:flex;align-items:baseline">
-      <span style="font-family:Geist,sans-serif;font-weight:900;font-size:44px;color:#fff;letter-spacing:-2px">TradeDesk</span><span id="_sbo_pro" style="font-size:11px;font-weight:800;color:#5C8FD4;background:rgba(45,93,168,.18);border:1px solid rgba(45,93,168,.36);padding:3px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.06em;margin-left:8px;vertical-align:6px">Pro</span>
+      <span class="sbo-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:44px;color:#fff;letter-spacing:-2px">TradeDesk</span><span id="_sbo_pro" style="font-size:11px;font-weight:800;color:#5C8FD4;background:rgba(45,93,168,.18);border:1px solid rgba(45,93,168,.36);padding:3px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.06em;margin-left:8px;vertical-align:6px">Pro</span>
     </div>
+    <div class="sbo-tag" id="_sbo_tag">Built for the trades</div>
   </div>
-  <div style="width:100%;padding:0 0 52px">
-    <div id="_sbo_track" style="height:3px;background:rgba(255,255,255,0.08);border-radius:99px;margin:0 32px;overflow:hidden">
-      <div id="_sbo_bar" style="height:100%;background:#2D5DA8;border-radius:99px;animation:td-bar 5s cubic-bezier(.4,0,.2,1) forwards"></div>
+  <div class="sbo-foot">
+    <div id="_sbo_track" class="sbo-track">
+      <div id="_sbo_bar" class="sbo-bar"></div>
+      <div class="sbo-sheen"></div>
     </div>
+    <div class="sbo-hint" id="_sbo_hint">Creating your dashboard…</div>
   </div>
 </div>
 <script>
 // Runs before any other JS — applies contractor white-label or TradeDesk defaults.
 (function(){
   try{
+    window._sboT0=Date.now(); // min-stage-time clock — _removeBootOverlay holds the intro on fast loads
     var raw=localStorage.getItem('zp3_S');
     var s=raw?JSON.parse(raw):{};
     var ov=document.getElementById('supa-boot-overlay');if(!ov)return;
     // Rewrite theme-color meta to brand color before paint
     if(s.brandColor){var tc=document.querySelector('meta[name="theme-color"]');if(tc)tc.setAttribute('content',s.brandColor);}
-    // Background + progress bar: brand color with luminance-aware overlay, or leave denim gradient
+    // Brand color: TINT the dark boot design, never a flat color wall (owner:
+    // "white label colors are ugly as hell and carrying over"). The charcoal
+    // gradient stays; the brand hue drives the ambient glow, corner wash, bar,
+    // and the monogram tile — so a white-label boot looks DESIGNED for that
+    // business, not recolored.
+    var r=45,g=93,b=168,lr=115,lg=163,lb=238,hasBrand=false;
     if(s.brandColor){
-      ov.style.background=s.brandColor;
+      hasBrand=true;
       var hex=s.brandColor.replace('#','');
-      var r=parseInt(hex.substr(0,2),16)||0,g=parseInt(hex.substr(2,2),16)||0,b=parseInt(hex.substr(4,2),16)||0;
-      var lum=(0.299*r+0.587*g+0.114*b)/255;
-      var barFg=lum>0.5?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.6)';
-      var barBg=lum>0.5?'rgba(0,0,0,0.15)':'rgba(255,255,255,0.15)';
-      var bar=document.getElementById('_sbo_bar'),track=document.getElementById('_sbo_track');
-      if(bar)bar.style.background=barFg;if(track)track.style.background=barBg;
+      r=parseInt(hex.substr(0,2),16)||0;g=parseInt(hex.substr(2,2),16)||0;b=parseInt(hex.substr(4,2),16)||0;
+      lr=Math.min(255,r+70);lg=Math.min(255,g+70);lb=Math.min(255,b+70);
+      ov.style.background='radial-gradient(120% 80% at 0% 100%,rgba('+r+','+g+','+b+',.34) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
+      var glow=document.getElementById('_sbo_glow');
+      if(glow)glow.style.background='radial-gradient(closest-side,rgba('+r+','+g+','+b+',.30),transparent 65%)';
+      var bar=document.getElementById('_sbo_bar');
+      if(bar){bar.style.background='linear-gradient(90deg,rgb('+r+','+g+','+b+'),rgb('+lr+','+lg+','+lb+'))';bar.style.boxShadow='0 0 12px rgba('+r+','+g+','+b+',.55)';}
     }
-    // Logo/name priority: logoData > bname > default (already rendered)
+    // White-label identity: logoData > bname > default TradeDesk.
+    //  • logo → shown solo (their artwork carries the screen), tagline becomes
+    //    the quiet "Powered by TradeDesk".
+    //  • bname → the glowing tile shows THEIR INITIAL (brand-tinted monogram)
+    //    and their name gets the same shimmer as the TradeDesk wordmark — the
+    //    boot looks purpose-built for that business, not white-out branding.
     var nameEl=document.getElementById('_sbo_name');
+    var _mk=document.getElementById('_sbo_mark'),_tg=document.getElementById('_sbo_tag');
+    var esc=function(t){return t.replace(/[<>&"]/g,function(c){return{'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});};
     if(s.logoData&&nameEl){
-      var img=new Image();img.src=s.logoData;
-      img.style.cssText='max-height:260px;max-width:86vw;width:auto;object-fit:contain;display:block;animation:td-logoin .55s cubic-bezier(.22,1,.36,1) both';
-      nameEl.replaceWith(img);
+      // FRAMED logo: any artwork (odd shapes, white backgrounds) sits in the light
+      // card and inherits the premium look, with the business name shimmering
+      // beneath when set. No more raw 260px image floating on a dark screen.
+      var frame=document.createElement('div');frame.className='sbo-logo-frame';
+      var img=new Image();img.src=s.logoData;frame.appendChild(img);
+      if(s.bname){
+        nameEl.innerHTML='<span class="sbo-wordmark sbo-bizname" style="font-family:Geist,sans-serif;font-weight:900;color:#fff">'+esc(s.bname)+'</span>';
+        nameEl.parentNode.insertBefore(frame,nameEl);
+      }else nameEl.replaceWith(frame);
+      if(_mk)_mk.style.display='none';
+      if(_tg)_tg.textContent='Powered by TradeDesk';
+      // AUTO BRAND TINT: no brand color set → sample the logo's dominant color
+      // (skipping near-white/near-black) and tint the glow + bar to match. The
+      // boot then looks art-directed around THEIR logo with zero setup.
+      if(!hasBrand){
+        img.onload=function(){try{
+          var c=document.createElement('canvas');c.width=24;c.height=24;
+          var x=c.getContext('2d');x.drawImage(img,0,0,24,24);
+          var d=x.getImageData(0,0,24,24).data,R=0,G=0,B=0,n=0;
+          for(var p=0;p<d.length;p+=4){
+            if(d[p+3]<80)continue;
+            var rr=d[p],gg=d[p+1],bb=d[p+2];
+            var mx=Math.max(rr,gg,bb),mn=Math.min(rr,gg,bb);
+            if(mx>235&&mn>215)continue;
+            if(mx<28)continue;
+            R+=rr;G+=gg;B+=bb;n++;
+          }
+          if(n>20){
+            R=Math.round(R/n);G=Math.round(G/n);B=Math.round(B/n);
+            var gl=document.getElementById('_sbo_glow');
+            if(gl)gl.style.background='radial-gradient(closest-side,rgba('+R+','+G+','+B+',.30),transparent 65%)';
+            var b2=document.getElementById('_sbo_bar');
+            if(b2){b2.style.background='linear-gradient(90deg,rgb('+R+','+G+','+B+'),rgb('+Math.min(255,R+70)+','+Math.min(255,G+70)+','+Math.min(255,B+70)+'))';b2.style.boxShadow='0 0 12px rgba('+R+','+G+','+B+',.55)';}
+          }
+        }catch(e){}};
+      }
     }else if(s.bname&&nameEl){
-      var esc=function(t){return t.replace(/[<>&"]/g,function(c){return{'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});};
-      nameEl.innerHTML='<span style="font-family:Geist,sans-serif;font-weight:900;font-size:44px;color:#fff;letter-spacing:-2px">'+esc(s.bname)+'</span>';
+      nameEl.innerHTML='<span class="sbo-wordmark sbo-bizname" style="font-family:Geist,sans-serif;font-weight:900;color:#fff">'+esc(s.bname)+'</span>';
+      if(_mk){
+        _mk.innerHTML='<span class="sbo-monogram">'+esc((s.bname.trim()[0]||'').toUpperCase())+'</span>';
+        if(hasBrand){_mk.style.background='linear-gradient(135deg,rgb('+r+','+g+','+b+'),rgb('+lr+','+lg+','+lb+'))';_mk.style.boxShadow='0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba('+r+','+g+','+b+',.4)';}
+      }
+      if(_tg)_tg.textContent='Powered by TradeDesk';
+    }
+    // Staged status line — reads like real load stages (advances, then HOLDS on
+    // "Almost ready…" instead of looping, so it feels intentional, not a fake
+    // spinner caption). Paced to track the progress bar filling.
+    var hint=document.getElementById('_sbo_hint');
+    if(hint){
+      var msgs=['Creating your dashboard…','Syncing your leads…','Loading your team…','Crunching the numbers…','Almost ready…'];
+      var hi=0;hint.style.transition='opacity .3s';
+      var hiv=setInterval(function(){
+        if(!hint.isConnected){clearInterval(hiv);return;}
+        if(hi>=msgs.length-1){clearInterval(hiv);return;} // stop on the last stage
+        hint.style.opacity='0';
+        setTimeout(function(){hi++;hint.textContent=msgs[hi];hint.style.opacity='1';},280);
+      },720);
     }
   }catch(e){}
   window._earlyBootDone=true;
@@ -1014,17 +1208,28 @@ body.dark .cal-cell.other{background:var(--cream)}
 
   <div id="dash-geo-perm" style="display:none"></div>
   <div id="dash-widget-root">
+    <!-- Every REAL card is its own widget (data-dw) so it can be held-and-moved
+         independently and rides the boot waterfall. Empty/hidden widgets collapse
+         to zero height (wrappers are unstyled), so conditional cards leave no gap. -->
     <div class="td-dw" data-dw="kpi">
       <div id="dash-kpi"></div>
-      <div id="dash-crew-today" style="display:none"></div>
       <div id="dash-hobby-warn" style="display:none"></div>
     </div>
-    <div class="td-dw" data-dw="pipeline">
+    <div class="td-dw" data-dw="crew">
+      <div id="dash-crew-today" style="display:none"></div>
+    </div>
+    <div class="td-dw" data-dw="alerts">
       <div id="dash-close-tip" style="display:none;margin-bottom:10px"></div>
       <div id="dash-resume" style="display:none;margin-bottom:10px"></div>
       <div id="dash-nearby" style="display:none;margin-bottom:10px"></div>
+    </div>
+    <div class="td-dw" data-dw="contracts">
       <div id="dash-contracts" style="display:none;margin-bottom:10px"></div>
+    </div>
+    <div class="td-dw" data-dw="goal">
       <div id="dash-goal" style="margin-bottom:10px"></div>
+    </div>
+    <div class="td-dw" data-dw="pipeline">
       <div id="dash-pipeline"></div>
     </div>
     <div class="td-dw" data-dw="feed">
@@ -2888,17 +3093,21 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div><div class="set-form-lbl">Address</div><div class="set-form-hint">Required for invoicing.</div></div>
           <div class="set-form-ctrl">
             <div style="position:relative"><input id="set-baddr" placeholder="1242 N Saint Francis" autocomplete="off" style="width:100%;box-sizing:border-box"></div>
-            <div style="display:grid;grid-template-columns:1fr 60px 80px;gap:6px">
-              <input id="set-bcity" placeholder="Wichita">
-              <input id="set-bstate-display" placeholder="KS" maxlength="2" style="text-transform:uppercase">
-              <input id="set-bzip" placeholder="67214" inputmode="numeric" maxlength="5">
+            <div style="display:grid;grid-template-columns:1fr 56px 90px;gap:6px">
+              <input id="set-bcity" placeholder="Wichita" style="height:48px">
+              <input id="set-bstate-display" placeholder="KS" maxlength="2" style="text-transform:uppercase;height:48px">
+              <!-- height pinned explicitly: inputmode="numeric" renders this box ~18px taller
+                   than its siblings on iOS Safari despite sharing the same font/padding/border
+                   rule — a platform quirk, not a CSS mismatch. Fixing the height forces parity
+                   across every engine instead of trusting each browser's intrinsic sizing. -->
+              <input id="set-bzip" placeholder="67214" inputmode="numeric" maxlength="5" style="height:48px">
             </div>
           </div>
         </div>
         <div class="set-form-row">
           <div><div class="set-form-lbl">Phone &amp; email</div></div>
           <div class="set-form-ctrl">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+            <div class="set-form-2col">
               <input id="set-bphone" type="tel" maxlength="12" oninput="fmtPhone(this)" placeholder="(316) 555-0182">
               <input type="email" id="set-bemail" placeholder="logan@samplepaint.com" autocomplete="off">
             </div>
@@ -3884,39 +4093,69 @@ if(supaEnabled()){
     const logo=S.logoData||'';
     const bname=S.bname||'';
     const brandColor=S.brandColor||'';
-    // Background: brand color solid, or denim wash on charcoal
-    const bg=brandColor
-      ?brandColor
-      :'radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
-    // Progress bar: luminance-aware on brand color, denim on default
-    let barFg,barBg;
+    // Brand color TINTS the dark boot design (never a flat color wall) — same
+    // treatment as the early-boot script: charcoal gradient base, brand hue in
+    // the corner glow + progress bar. Default stays the denim design.
+    let bg,barFg,barGlow;
+    const barBg='rgba(255,255,255,0.08)';
+    let _sboR=45,_sboG=93,_sboB=168,_sboLR=115,_sboLG=163,_sboLB=238;
     if(brandColor){
       const hex=brandColor.replace('#','');
-      const r=parseInt(hex.substr(0,2),16)||0,g=parseInt(hex.substr(2,2),16)||0,b=parseInt(hex.substr(4,2),16)||0;
-      const lum=(0.299*r+0.587*g+0.114*b)/255;
-      barFg=lum>0.5?'rgba(0,0,0,0.35)':'rgba(255,255,255,0.6)';
-      barBg=lum>0.5?'rgba(0,0,0,0.15)':'rgba(255,255,255,0.15)';
-    }else{barFg='#2D5DA8';barBg='rgba(255,255,255,0.08)';}
+      _sboR=parseInt(hex.substr(0,2),16)||0;_sboG=parseInt(hex.substr(2,2),16)||0;_sboB=parseInt(hex.substr(4,2),16)||0;
+      _sboLR=Math.min(255,_sboR+70);_sboLG=Math.min(255,_sboG+70);_sboLB=Math.min(255,_sboB+70);
+      bg='radial-gradient(120% 80% at 0% 100%,rgba('+_sboR+','+_sboG+','+_sboB+',.34) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
+      barFg='linear-gradient(90deg,rgb('+_sboR+','+_sboG+','+_sboB+'),rgb('+_sboLR+','+_sboLG+','+_sboLB+'))';
+      barGlow='0 0 12px rgba('+_sboR+','+_sboG+','+_sboB+',.55)';
+    }else{
+      bg='radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)';
+      barFg='linear-gradient(90deg,#2D5DA8,#5C8FD4)';
+      barGlow='0 0 12px rgba(92,143,212,.55)';
+    }
     const proCapsule='<span style="font-size:11px;font-weight:800;color:#5C8FD4;background:rgba(45,93,168,.18);border:1px solid rgba(45,93,168,.36);padding:3px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.06em;margin-left:8px;vertical-align:6px">Pro</span>';
     const esc=t=>t.replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+    // White-label identity, same rules as the static overlay:
+    //  logo → framed in a light card (any artwork inherits the premium framing),
+    //         business name shimmers beneath it, tag = "Powered by TradeDesk".
+    //  bname → brand-tinted monogram tile + shimmering name + "Powered by TradeDesk".
+    //  default → TradeDesk mark + wordmark + "Built for the trades".
+    const wordmark=t=>'<div style="animation:td-logoin .4s ease both"><span class="sbo-wordmark sbo-bizname" style="font-family:Geist,sans-serif;font-weight:900;color:#fff">'+esc(t)+'</span></div>';
     const logoBlock=logo
-      ?'<img src="'+logo+'" style="max-height:260px;max-width:86vw;width:auto;object-fit:contain;display:block;animation:td-logoin .55s cubic-bezier(.22,1,.36,1) both">'
+      ?'<div class="sbo-logo-frame"><img src="'+logo+'"></div>'+(bname?wordmark(bname):'')
       :bname
-        ?'<div style="font-family:Geist,sans-serif;font-weight:900;font-size:44px;color:#fff;letter-spacing:-2px;animation:td-logoin .4s ease both">'+esc(bname)+'</div>'
-        :'<div style="animation:td-logoin .4s ease both;display:flex;align-items:baseline"><span style="font-family:Geist,sans-serif;font-weight:900;font-size:44px;color:#fff;letter-spacing:-2px">TradeDesk</span>'+proCapsule+'</div>';
+        ?wordmark(bname)
+        :'<div style="animation:td-logoin .4s ease both;display:flex;align-items:baseline"><span class="sbo-wordmark" style="font-family:Geist,sans-serif;font-weight:900;font-size:44px;color:#fff;letter-spacing:-2px">TradeDesk</span>'+proCapsule+'</div>';
     const ov=document.getElementById('supa-boot-overlay')||document.createElement('div');
     ov.id='supa-boot-overlay';
     ov.style.cssText='position:fixed;inset:0;z-index:9998;background:'+bg+';display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0';
+    const glowBlock='<div class="sbo-glow" id="_sbo_glow"'+(brandColor?' style="background:radial-gradient(closest-side,rgba('+_sboR+','+_sboG+','+_sboB+',.30),transparent 65%)"':'')+'></div>';
+    const markBlock=logo?'':(bname
+      ?'<div class="sbo-mark"'+(brandColor?' style="background:linear-gradient(135deg,rgb('+_sboR+','+_sboG+','+_sboB+'),rgb('+_sboLR+','+_sboLG+','+_sboLB+'));box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba('+_sboR+','+_sboG+','+_sboB+',.4)"':'')+'><span class="sbo-monogram">'+esc((bname.trim()[0]||'').toUpperCase())+'</span></div>'
+      :'<div class="sbo-mark"><svg viewBox="0 0 24 24" fill="none"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>');
+    const tagBlock='<div class="sbo-tag">'+((logo||bname)?'Powered by TradeDesk':'Built for the trades')+'</div>';
     ov.innerHTML=
-      '<div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;padding:0 24px">'+
-        logoBlock+
-      '</div>'+
-      '<div style="width:100%;padding:0 0 52px">'+
-        '<div style="height:3px;background:'+barBg+';border-radius:99px;margin:0 32px;overflow:hidden">'+
-          '<div style="height:100%;background:'+barFg+';border-radius:99px;animation:td-bar 2.8s cubic-bezier(.4,0,.2,1) forwards"></div>'+
+      glowBlock+
+      '<div class="sbo-center">'+markBlock+logoBlock+tagBlock+'</div>'+
+      '<div class="sbo-foot">'+
+        '<div class="sbo-track" style="background:'+barBg+'">'+
+          '<div class="sbo-bar" style="background:'+barFg+';box-shadow:'+barGlow+';animation-duration:2.8s"></div>'+
+          '<div class="sbo-sheen"></div>'+
         '</div>'+
+        '<div class="sbo-hint" id="_sbo_hint2">Creating your dashboard…</div>'+
       '</div>';
     if(!ov.parentNode)document.body.appendChild(ov);
+    window._sboT0=Date.now(); // min-stage-time clock (see _removeBootOverlay)
+    // Staged status line (advances then HOLDS on "Almost ready…", not a loop).
+    const _h2=document.getElementById('_sbo_hint2');
+    if(_h2){
+      const _m2=['Creating your dashboard…','Syncing your leads…','Loading your team…','Crunching the numbers…','Almost ready…'];
+      let _i2=0;_h2.style.transition='opacity .3s';
+      const _iv2=setInterval(()=>{
+        if(!_h2.isConnected){clearInterval(_iv2);return;}
+        if(_i2>=_m2.length-1){clearInterval(_iv2);return;}
+        _h2.style.opacity='0';
+        setTimeout(()=>{_i2++;_h2.textContent=_m2[_i2];_h2.style.opacity='1';},280);
+      },720);
+    }
   })();
   // Supabase script is async — may not be ready when inline JS finishes
   if(window.supabase){supaInit();}

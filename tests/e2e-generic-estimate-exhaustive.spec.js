@@ -11,6 +11,45 @@ const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors, FAKE_BID_
 test.describe('generic-estimate.js — exhaustive coverage', () => {
   let page;
 
+  // Idempotent fixture seed — filter-then-push so it's safe to re-run. Called in
+  // beforeAll AND beforeEach: a late-resolving background cloud load reassigns the
+  // in-memory arrays after the initial seed and drops these fixtures, so a test
+  // running after that clobber saw an empty `clients`/`bids` (task #22 race). On a
+  // slower WebKit boot the reload lands after the beforeAll seed, and renderHittersList
+  // then early-returns on an empty clients list (no stats block). Re-seeding before
+  // EVERY test guarantees the canonical fixture is present the moment each test reads it.
+  const seedFixtures = () => page.evaluate(() => {
+    clients = clients.filter(c => c.id !== 55501 && c.id !== 55502);
+    bids    = bids.filter(b => b.id !== 44401 && b.id !== 44402 && b.id !== 44403);
+
+    clients.push(
+      { id: 55501, name: 'GEI Client Alpha', phone: '316-555-9001', addr: '100 Alpha St, Wichita KS 67202', email: 'alpha@gei.test' },
+      { id: 55502, name: 'GEI Client Beta',  phone: '316-555-9002', addr: '200 Beta Ave, Wichita KS 67202', email: 'beta@gei.test' }
+    );
+    bids.push(
+      {
+        id: 44401, client_id: 55501, client_name: 'GEI Client Alpha', amount: 5000, deposit: 1000,
+        status: 'pending', bid_date: '2026-01-01', trade_type: 'painting',
+        type: 'Interior painting', geiLines: [{ desc: 'Labor', qty: 8, rate: 75, total: 600 }],
+        geiTaxPct: 8, geiDuration: '3 days', notes: 'Test notes', isFreeForm: true,
+        byoItems: [{ id: 1, section: 'Interior', label: 'Labor', price: 600, on: true }],
+        byoCustomSections: [], scopeChips: ['Interior painting', 'Tape & masking']
+      },
+      {
+        id: 44402, client_id: 55501, client_name: 'GEI Client Alpha', amount: 3000, deposit: 600,
+        status: 'Draft', bid_date: '2026-02-01', trade_type: 'electrical',
+        type: 'Panel upgrade', geiLines: [], isTM: true,
+        tmCrewCount: 2, tmRatePerMan: 85, tmEstHours: 10, tmBillingCycle: 'weekly',
+        tmMatMarkup: 20, tmCapAction: 'Stop & get re-approval'
+      },
+      {
+        id: 44403, client_id: 55502, client_name: 'GEI Client Beta', amount: 0,
+        status: 'Draft', bid_date: '2026-03-01', trade_type: 'plumbing',
+        type: 'Plumbing estimate', geiLines: [], draft: true
+      }
+    );
+  });
+
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
     page = await ctx.newPage();
@@ -18,39 +57,13 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
 
-    // Seed stable test fixtures
-    await page.evaluate(() => {
-      clients = clients.filter(c => c.id !== 55501 && c.id !== 55502);
-      bids    = bids.filter(b => b.id !== 44401 && b.id !== 44402 && b.id !== 44403);
-
-      clients.push(
-        { id: 55501, name: 'GEI Client Alpha', phone: '316-555-9001', addr: '100 Alpha St, Wichita KS 67202', email: 'alpha@gei.test' },
-        { id: 55502, name: 'GEI Client Beta',  phone: '316-555-9002', addr: '200 Beta Ave, Wichita KS 67202', email: 'beta@gei.test' }
-      );
-      bids.push(
-        {
-          id: 44401, client_id: 55501, client_name: 'GEI Client Alpha', amount: 5000, deposit: 1000,
-          status: 'pending', bid_date: '2026-01-01', trade_type: 'painting',
-          type: 'Interior painting', geiLines: [{ desc: 'Labor', qty: 8, rate: 75, total: 600 }],
-          geiTaxPct: 8, geiDuration: '3 days', notes: 'Test notes', isFreeForm: true,
-          byoItems: [{ id: 1, section: 'Interior', label: 'Labor', price: 600, on: true }],
-          byoCustomSections: [], scopeChips: ['Interior painting', 'Tape & masking']
-        },
-        {
-          id: 44402, client_id: 55501, client_name: 'GEI Client Alpha', amount: 3000, deposit: 600,
-          status: 'Draft', bid_date: '2026-02-01', trade_type: 'electrical',
-          type: 'Panel upgrade', geiLines: [], isTM: true,
-          tmCrewCount: 2, tmRatePerMan: 85, tmEstHours: 10, tmBillingCycle: 'weekly',
-          tmMatMarkup: 20, tmCapAction: 'Stop & get re-approval'
-        },
-        {
-          id: 44403, client_id: 55502, client_name: 'GEI Client Beta', amount: 0,
-          status: 'Draft', bid_date: '2026-03-01', trade_type: 'plumbing',
-          type: 'Plumbing estimate', geiLines: [], draft: true
-        }
-      );
-    });
+    await seedFixtures();
   });
+
+  // Re-seed before EVERY test — repairs any fixture a late background cloud load
+  // clobbered after boot (task #22). Idempotent (filter-then-push), so tests that
+  // mutate-and-restore their own fixtures still start from the canonical state.
+  test.beforeEach(async () => { await seedFixtures(); });
 
   test.afterAll(async () => {
     await page.evaluate(() => {

@@ -41,6 +41,13 @@ function openExpenseFlow(){
         '<div class="f"><label>Date *</label><input id="em-date" type="text" placeholder="MM/DD/YYYY" value="'+today.replace(/(\d{4})-(\d{2})-(\d{2})/,'$2/$3/$1')+'" style="font-size:14px" oninput="_fmtExpDate(this)"></div>'+
         '<div class="f"><label>Category *</label><select id="em-cat" style="font-size:13px" onchange="toggleExpenseSections()">'+catOpts+'</select></div>'+
       '</div>'+
+      '<div id="em-vehicle-section" style="display:none;margin-bottom:12px">'+
+        '<div class="f"><label>Which vehicle? <span style="font-weight:400;font-size:10px;color:var(--text3)">(sets the mileage-vs-actual tax treatment)</span></label>'+
+          '<select id="em-vehicle" style="font-size:13px">'+
+            (typeof getVehicles==='function'?getVehicles():[]).map(v=>'<option value="'+escHtml(v.name)+'">'+escHtml(v.nickname||v.name)+'</option>').join('')+
+          '</select>'+
+        '</div>'+
+      '</div>'+
       '<div id="em-marketing-section" style="display:none;margin-bottom:12px">'+
         '<div style="background:rgba(45,93,168,.07);border:1.5px solid rgba(45,93,168,.22);border-radius:var(--r);padding:12px">'+
           '<div style="font-size:11px;font-weight:800;color:var(--blue);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">📢 Marketing channel</div>'+
@@ -690,6 +697,9 @@ function toggleExpenseSections(){
   if(mealSec){mealSec.style.display=cat==='meals'?'block':'none';if(cat==='meals')document.getElementById('em-meal-purpose')?.focus();}
   const mktSec=document.getElementById('em-marketing-section');
   if(mktSec)mktSec.style.display=cat==='marketing'?'block':'none';
+  const vehSec=document.getElementById('em-vehicle-section');
+  const _isVehCat=['fuel','vehicle','vehicle_purchase'].includes(cat);
+  if(vehSec)vehSec.style.display=(_isVehCat&&(typeof getVehicles==='function'?getVehicles():[]).length)?'block':'none';
 }
 function toggleMealFields(){toggleExpenseSections();}  // backwards compat
 function toggleCashWarning(){
@@ -735,6 +745,7 @@ async function expSave(){
       const upd_receipt_key=existing_keys[0]||expenses[idx].receipt_key||null;
       const upd_receipt_img=existing_keys.length?null:expenses[idx].receipt_img;
       expenses[idx]={...expenses[idx],date,cat,catLabel:catInfo2.label||cat,vendor,amount,notes,
+        vehicleName:(['fuel','vehicle','vehicle_purchase'].includes(cat)?(document.getElementById('em-vehicle')?.value||''):'')||undefined,
         lead_source:leadSource||undefined,meal_purpose:mealPurpose2||undefined,meal_attendees:mealAttendees2||undefined,
         job_id:jobId,job_name:job2?job2.client_name||job2.name:'',
         receipt:upd_receipt_key||upd_receipt_img?'Yes — photo stored':'No receipt photo',
@@ -785,6 +796,7 @@ async function expSave(){
   const receipt_img=_expState.imagePages.length&&!receipt_key?'data:image/jpeg;base64,'+_expState.imagePages[0].b64:null;
   expenses.push({
     id:expId,date,cat,catLabel:catInfo.label||cat,vendor,amount,notes,
+    vehicleName:(['fuel','vehicle','vehicle_purchase'].includes(cat)?(document.getElementById('em-vehicle')?.value||''):'')||undefined,
     lead_source:leadSource||undefined,
     meal_purpose:mealPurpose||undefined,meal_attendees:mealAttendees||undefined,
     created_at:new Date().toISOString(),
@@ -1079,13 +1091,20 @@ function showQuickExpenseModal(clientId,bidId){
     '</div>'+
     '<div class="f" style="margin-bottom:14px">'+
       '<label style="font-size:11px;font-weight:700;color:var(--text3)">Category</label>'+
-      '<select id="qe-cat" style="font-size:13px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;color:var(--text)">'+
+      '<select id="qe-cat" onchange="var w=document.getElementById(\'qe-vehicle-wrap\');if(w)w.style.display=this.value.indexOf(\'Vehicle\')===0?\'block\':\'none\'" style="font-size:13px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;color:var(--text)">'+
         ['Paint & supplies','Tools & equipment','Vehicle (fuel)','Vehicle (maintenance)',
          'Subcontractors','Insurance','Marketing','Phone/internet','Uniforms/PPE',
          'Licensing & permits','Professional services','Meals (business)','Other']
           .map(c=>'<option>'+c+'</option>').join('')+
       '</select>'+
     '</div>'+
+    ((typeof getVehicles==='function'?getVehicles():[]).length?
+    '<div class="f" id="qe-vehicle-wrap" style="margin-bottom:14px;display:none">'+
+      '<label style="font-size:11px;font-weight:700;color:var(--text3)">Which vehicle?</label>'+
+      '<select id="qe-vehicle" style="font-size:13px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;color:var(--text)">'+
+        getVehicles().map(v=>'<option value="'+escHtml(v.name)+'">'+escHtml(v.nickname||v.name)+'</option>').join('')+
+      '</select>'+
+    '</div>':'')+
     '<div style="display:flex;gap:8px;margin-bottom:14px">'+
       '<div style="flex:1">'+
         '<label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Date</label>'+
@@ -1111,10 +1130,12 @@ function saveQuickExpense(clientId){
   const cat=document.getElementById('qe-cat').value||'Paint & supplies';
   const _qeDateEl=document.getElementById('qe-date');
   const _qeDateVal=_qeDateEl?_qeDateEl.value||todayKey():todayKey();
+  const _qeVeh=document.getElementById('qe-vehicle');
   expenses.unshift({
     id:Date.now(),
     date:_qeDateVal,
     cat,
+    vehicleName:(cat.indexOf('Vehicle')===0&&_qeVeh?_qeVeh.value:'')||undefined,
     vendor,
     amount,
     pay:'Business card',
@@ -1485,6 +1506,11 @@ function renderMonthlyPL(){
     '</div>';
   });
 
+  // renderMonthlyPL is an ALL-TIME (multi-year) view — totalMiles sums every year's
+  // trips. Pairing it with the YEAR-scoped _vehSchedC(trackerYear).mileDed mismatched
+  // the figures and showed $0 when trackerYear==='all'. Use the all-time miles × rate
+  // here so the deduction matches the miles shown; the authoritative per-year deduction
+  // (with method exclusivity) lives in calcTax / exportTaxPDF, unaffected by this line.
   const totalMileDed=totalMiles*IRS();
   const grandNet=totalInc-totalExp;
   html+='<div style="display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:4px 10px;padding:8px 0;font-size:13px;font-weight:700;border-top:2px solid var(--border);margin-top:4px">'+
@@ -2096,10 +2122,11 @@ function exportTaxPDF(){
   const yrExp=expenses.filter(r=>r.date&&r.date.startsWith(yr)).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const yrMiles=mileage.filter(r=>r.date&&r.date.startsWith(yr)).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const tInc=yrIncome.reduce((s,r)=>s+r.amount,0);
-  const tExp=yrExp.reduce((s,r)=>s+r.amount,0);
+  const _vdX=(typeof _vehSchedC==='function')?_vehSchedC(yr):null; // one method per vehicle (IRS)
+  const tExp=yrExp.reduce((s,r)=>s+r.amount,0)-(_vdX?_vdX.expAdjust:0);
   const tMiles=yrMiles.reduce((s,r)=>s+(r.miles||0),0);
   const irsRateYr=_getIrsRateForYear(yr);
-  const mileDed=tMiles*irsRateYr;
+  const mileDed=_vdX?_vdX.mileDed:tMiles*irsRateYr;
   const net=Math.max(0,tInc-tExp-mileDed);
   const seBase=net*0.9235;
   const seTax=Math.ceil(seBase*0.153);
@@ -2596,7 +2623,7 @@ async function _renderDashCrewToday(){
     return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>'+escHtml(data.name[uid]||'Crew')+'</span><span style="color:var(--text2)">'+h.toFixed(1)+'h · '+fmt(cost)+'</span></div>';
   }).join('');
   el.style.display='block';
-  el.innerHTML='<div onclick="goToTrackerTab(\'jobs\')" style="cursor:pointer;background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">'+
+  el.innerHTML='<div onclick="goToTrackerTab(\'jobs\')" style="cursor:pointer;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">'+
     '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">'+
       '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">👷 Crew today</div>'+
       '<div style="font-size:11px;color:var(--blue);font-weight:700">Books ›</div>'+
@@ -2976,6 +3003,45 @@ function _bkTogMonth(tab,mo){
   el.classList.toggle('open');
   if(body)body.style.display=opening?'block':'none';
 }
+// Day-level accordion inside a month (owner: "break it down by month AND day").
+function _bkTogDay(tab,mo,day){
+  const el=document.getElementById('bk-'+tab+'-day-'+mo+'-'+day);
+  if(!el)return;
+  const body=el.querySelector('.bk-day-body');
+  const opening=!el.classList.contains('open');
+  el.classList.toggle('open');
+  if(body)body.style.display=opening?'block':'none';
+}
+function _bkDayLabel(d){
+  const p=(d||'').split('-').map(Number);
+  if(p.length<3||!p[0]||!p[1]||!p[2])return d||'—';
+  try{return new Date(p[0],p[1]-1,p[2]).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}catch(_e){return d;}
+}
+// Render a month's rows grouped into per-day accordions (each day its own dropdown,
+// default open). rowFn is the month's local row renderer (_incRow / _expRow).
+function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor){
+  const byDay={};
+  rows.forEach(r=>{const d=(r.date||'').slice(0,10)||'unknown';(byDay[d]||(byDay[d]=[])).push(r);});
+  const days=Object.keys(byDay).sort((a,b)=>b.localeCompare(a));
+  return days.map(day=>{
+    const dr=byDay[day];
+    const dayTotal=dr.reduce((s,r)=>s+(r.amount||0),0);
+    const safe=day.replace(/[^0-9]/g,'')||'x';
+    return '<div class="bk-day open" id="bk-'+tab+'-day-'+mo+'-'+safe+'">'+
+      '<button class="bk-day-hd" onclick="_bkTogDay(\''+tab+'\',\''+mo+'\',\''+safe+'\')">'+
+        '<span class="bk-day-title">'+_bkDayLabel(day)+'</span>'+
+        '<span class="bk-day-meta" style="color:'+(totalColor||'var(--text3)')+'">'+dr.length+' · '+fmt(dayTotal)+'</span>'+
+        '<span class="bk-day-chev">▾</span>'+
+      '</button>'+
+      '<div class="bk-day-body">'+
+        '<div class="bk-tbl-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl bk-tbl" style="min-width:'+minWidth+'px"><thead><tr>'+
+          headers.map(h=>'<th>'+h+'</th>').join('')+(tab==='exp'?'<th></th>':'')+'</tr></thead><tbody>'+
+          dr.map(rowFn).join('')+
+        '</tbody></table></div>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
 function renderIncome(){
   const el=document.getElementById('inc-table');if(!el)return;
   const yr=String(trackerYear||new Date().getFullYear());
@@ -3007,12 +3073,14 @@ function renderIncome(){
   };
   const _incRow=r=>{
     const c=clients.find(x=>x.id===r.client_id);
+    // data-label drives the mobile card layout (CSS turns each row into a stacked
+    // card on ≤767px — no horizontal scroll). Desktop still renders a real table.
     return '<tr data-lp-id="'+r.id+'" data-lp-type="'+r._src+'" data-lp-label="'+escHtml((r.client_name||'record')+' · '+fmt(r.amount||0))+'">'+
-      '<td class="mute">'+(r.date||'')+'</td>'+
-      '<td class="bold">'+(r.client_name||'—')+'</td>'+
-      '<td class="mute">'+r.type+'</td>'+
-      '<td class="'+(r.amount<0?'red':'green')+'">'+(r.amount<0?'('+fmtD(Math.abs(r.amount))+')':fmtD(r.amount))+'</td>'+
-      '<td>'+_methodBadge(r.method)+'</td>'+
+      '<td class="bold" data-label="Client">'+(r.client_name||'—')+'</td>'+
+      '<td class="'+(r.amount<0?'red':'green')+'" data-label="Amount">'+(r.amount<0?'('+fmtD(Math.abs(r.amount))+')':fmtD(r.amount))+'</td>'+
+      '<td class="mute" data-label="Date">'+(r.date||'')+'</td>'+
+      '<td class="mute" data-label="Type">'+r.type+'</td>'+
+      '<td data-label="Method">'+_methodBadge(r.method)+'</td>'+
     '</tr>';
   };
   try{
@@ -3034,10 +3102,7 @@ function renderIncome(){
           '</div>'+
         '</button>'+
         '<div class="bk-month-body"'+(isOpen?'':' style="display:none"')+'>'+
-          '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl" style="min-width:480px"><thead><tr>'+
-            ['Date','Client','Type','Amount','Method'].map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'+
-            rows.map(_incRow).join('')+
-          '</tbody></table></div>'+
+          _bkRenderDays('inc',mo,rows,['Client','Amount','Date','Type','Method'],_incRow,480,'var(--green-mid)')+
         '</div>'+
       '</div>';
     }).join('')+'</div>';
@@ -3068,7 +3133,13 @@ function populateExpJobSel(){
 function renderExpenses(){
   const el=document.getElementById('exp-table');if(!el)return;
   const yr=String(trackerYear||new Date().getFullYear());
-  const filtered=yr==='all'?expenses:expenses.filter(e=>e.date&&e.date.startsWith(yr));
+  let filtered=yr==='all'?expenses:expenses.filter(e=>e.date&&e.date.startsWith(yr));
+  // One method per vehicle (IRS): a mileage-method vehicle's fuel/maintenance/purchase
+  // records are covered by the per-mile rate — they don't deduct and don't show here.
+  const _vdE=(yr!=='all'&&typeof _vehSchedC==='function')?_vehSchedC(yr):null;
+  const _exclSet=new Set(_vdE?_vdE.excludedIds:[]);
+  const _hiddenVeh=_exclSet.size?filtered.filter(e=>_exclSet.has(e.id)):[];
+  if(_hiddenVeh.length)filtered=filtered.filter(e=>!_exclSet.has(e.id));
   const total=filtered.reduce((s,e)=>s+e.amount,0);
   const noReceipt=filtered.filter(e=>!e.receipt||typeof e.receipt==='string'&&e.receipt.includes('No')).filter(e=>e.cat!=='fees'&&!e.autoLogged);
   const today=todayKey();
@@ -3077,13 +3148,21 @@ function renderExpenses(){
   if(purgeable.length){
     html+='<div class="tip tip-w" style="display:flex;justify-content:space-between;align-items:center"><span>'+purgeable.length+' receipt image'+(purgeable.length>1?'s':'')+' past 7 years — images can be deleted, records kept</span><button class="btn btn-sm" onclick="purgeOldReceiptImages()" style="flex-shrink:0;margin-left:8px">Clean up</button></div>';
   }
-  const subsFiltered=filtered.filter(e=>e.cat==='subs');
+  if(_hiddenVeh.length){
+    const _hidTot=_hiddenVeh.reduce((s,e)=>s+(e.amount||0),0);
+    const _untagN=_vdE?_vdE.untagged:0;
+    html+='<div class="tip tip-w">🚗 <strong>'+_hiddenVeh.length+' vehicle expense'+(_hiddenVeh.length>1?'s':'')+' ('+fmt(_hidTot)+') not shown or deducted</strong> — '+
+      (_untagN?_untagN+' need'+(_untagN>1?'':'s')+' a vehicle picked (edit the expense), the rest are covered by the standard-mileage rate.':'covered by the standard-mileage deduction (one method per vehicle, IRS rule). Keep logging them — they still count in the year-end mileage-vs-actual comparison, and switching the vehicle to Actual expenses in Fleet deducts them instead.')+'</div>';
+  }
+  // Both entry paths count: 'subs' (full modal) + 'Subcontractors' (quick modal),
+  // plus job-sheet sub payouts via the full report engine.
+  const subsFiltered=filtered.filter(e=>e.cat==='subs'||e.cat==='Subcontractors');
   if(subsFiltered.length){
     const subsBy={};
     subsFiltered.forEach(e=>{const k=(e.vendor||'Unknown').trim();subsBy[k]=(subsBy[k]||0)+e.amount;});
     const flagged=Object.entries(subsBy).filter(([,amt])=>amt>=600);
     if(flagged.length){
-      html+='<div class="tip tip-a" style="background:#FFF3CD;border:1.5px solid #D4A017;color:#6B4C00"><strong>⚠️ 1099-NEC Required:</strong> '+flagged.length+' subcontractor'+(flagged.length>1?'s':'')+' reached $600+ in '+yr+' — file Form 1099-NEC by Jan 31. '+flagged.map(([v,a])=>v+' ('+fmt(a)+')').join(', ')+'</div>';
+      html+='<div class="tip tip-a" onclick="if(typeof open1099Report===\'function\')open1099Report('+(yr==='all'?'null':yr)+')" style="background:#FFF3CD;border:1.5px solid #D4A017;color:#6B4C00;cursor:pointer"><strong>⚠️ 1099-NEC Required:</strong> '+flagged.length+' subcontractor'+(flagged.length>1?'s':'')+' reached $600+ in '+yr+' — file Form 1099-NEC by Jan 31. '+flagged.map(([v,a])=>v+' ('+fmt(a)+')').join(', ')+' <span style="font-weight:800;text-decoration:underline">Tap for the full per-job report →</span></div>';
     }
   }
   if(noReceipt.length){
@@ -3114,12 +3193,12 @@ function renderExpenses(){
         :'<button onclick="viewReceipt('+r.id+')" style="background:#fff8e1;border:1px solid #f59e0b;color:#b45309;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">💾 View</button>')
       :'<button onclick="addReceiptToExpense('+r.id+')" style="background:rgba(162,45,45,.08);border:1px solid #A32D2D;color:#A32D2D;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">+ Add</button>';
     return '<tr data-lp-id="'+r.id+'" data-lp-type="expense" data-lp-label="'+escHtml((r.vendor||'expense')+' · '+fmt(r.amount||0))+'">'+
-      '<td class="mute">'+(r.date||'')+'</td>'+
-      '<td class="mute" style="font-size:10px">'+(info?info.icon+' '+info.label:r.catLabel||r.cat||'—')+'</td>'+
-      '<td class="bold">'+(r.vendor||'—')+(r.job_name?'<div style="font-size:9px;color:var(--text3)">'+r.job_name+'</div>':'')+'</td>'+
-      '<td class="red">('+fmtD(r.amount||0)+')'+(r.meals_50?'<div style="font-size:9px;color:var(--amber)">50% deduct</div>':'')+'</td>'+
-      '<td>'+recLabel+'</td>'+
-      '<td><button onclick="editExpense('+r.id+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Edit</button></td>'+
+      '<td class="bold" data-label="Vendor">'+(r.vendor||'—')+(r.job_name?'<div style="font-size:9px;color:var(--text3)">'+r.job_name+'</div>':'')+'</td>'+
+      '<td class="red" data-label="Amount">('+fmtD(r.amount||0)+')'+(r.meals_50?'<div style="font-size:9px;color:var(--amber)">50% deduct</div>':'')+'</td>'+
+      '<td class="mute" data-label="Date">'+(r.date||'')+'</td>'+
+      '<td class="mute" style="font-size:10px" data-label="Category">'+(info?info.icon+' '+info.label:r.catLabel||r.cat||'—')+'</td>'+
+      '<td data-label="Receipt">'+recLabel+'</td>'+
+      '<td data-label="">'+'<button onclick="editExpense('+r.id+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Edit</button></td>'+
     '</tr>';
   };
   try{
@@ -3141,10 +3220,7 @@ function renderExpenses(){
           '</div>'+
         '</button>'+
         '<div class="bk-month-body"'+(isOpen?'':' style="display:none"')+'>'+
-          '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl" style="min-width:560px"><thead><tr>'+
-            ['Date','Category','Vendor','Amount','Receipt'].map(h=>'<th>'+h+'</th>').join('')+'<th></th></tr></thead><tbody>'+
-            rows.map(_expRow).join('')+
-          '</tbody></table></div>'+
+          _bkRenderDays('exp',mo,rows,['Vendor','Amount','Date','Category','Receipt'],_expRow,560,'#A32D2D')+
         '</div>'+
       '</div>';
     }).join('')+'</div>';
@@ -3196,6 +3272,7 @@ function editExpense(id){
     sv('em-notes',exp.notes);
     if(exp.job_id)sv('em-job',exp.job_id);
     toggleExpenseSections();
+    if(exp.vehicleName)sv('em-vehicle',exp.vehicleName);
     if(exp.lead_source)sv('em-mkt-source',exp.lead_source);
     if(exp.meal_purpose)sv('em-meal-purpose',exp.meal_purpose);
     if(exp.meal_attendees)sv('em-meal-attendees',exp.meal_attendees);
@@ -3231,18 +3308,20 @@ function renderSummary(){
   const yExp=expenses.filter(e=>e.date&&e.date.startsWith(yr));
   const yMi=mileage.filter(m=>m.date&&m.date.startsWith(yr));
   const tIn=yInc.reduce((s,r)=>s+r.amount,0);
-  const tEx=yExp.reduce((s,r)=>s+r.amount,0);
+  const _vdS=(typeof _vehSchedC==='function')?_vehSchedC(yr):null; // one method per vehicle (IRS)
+  const tEx=yExp.reduce((s,r)=>s+r.amount,0)-(_vdS?_vdS.expAdjust:0);
   const tMi=yMi.reduce((s,r)=>s+(r.miles||0),0);
   const irsRateYr=_getIrsRateForYear(yr);
-  const net=Math.max(0,tIn-tEx-(tMi*irsRateYr));
+  const _mileDedS=_vdS?_vdS.mileDed:tMi*irsRateYr;
+  const net=Math.max(0,tIn-tEx-_mileDedS);
   const tax=estimateTax(net,yr);
-  const profit=tIn-tEx-(tMi*IRS())-tax;
+  const profit=tIn-tEx-_mileDedS-tax;
   document.getElementById('sum-mets').innerHTML=
     '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">'+yr+' summary</div>'+
     '<div class="mets">'+
     '<div class="met"><div class="met-l">Income</div><div class="met-v" style="color:var(--green-mid)">'+fmt(tIn)+'</div></div>'+
     '<div class="met"><div class="met-l">Expenses</div><div class="met-v" style="color:#A32D2D">'+fmt(tEx)+'</div></div>'+
-    '<div class="met"><div class="met-l">Mileage</div><div class="met-v">'+fmt(tMi*irsRateYr)+'</div><div class="met-s">'+tMi.toFixed(0)+' mi · $'+irsRateYr.toFixed(3)+'/mi</div></div>'+
+    '<div class="met"><div class="met-l">Mileage</div><div class="met-v">'+fmt(_mileDedS)+'</div><div class="met-s">'+(_vdS?_vdS.deductedMiles:tMi).toFixed(0)+' mi · $'+irsRateYr.toFixed(3)+'/mi</div></div>'+
     '<div class="met"><div class="met-l">Est. tax</div><div class="met-v" style="color:var(--amber)">'+fmt(tax)+'</div></div>'+
     '<div class="met" style="grid-column:1/-1"><div class="met-l">Net profit</div><div class="met-v" style="color:'+(profit>=0?'var(--green-mid)':'#A32D2D')+'">'+fmt(profit)+'</div><div class="met-s">After tax &amp; deductions</div></div>'+
     '</div>';
@@ -3500,5 +3579,6 @@ function toggleCheck(el,title){checksState[title]=el.checked;saveAll();renderChe
 function toggleDarkMode(on){
   if(document.body&&document.body.classList)document.body.classList.toggle('dark', on);
   S.darkMode = on;
+  S.settingsTs=Date.now();
   saveAll();
 }

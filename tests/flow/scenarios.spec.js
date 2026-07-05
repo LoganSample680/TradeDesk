@@ -5,7 +5,7 @@
 //
 // Seeded rows are tagged "__E2E__<run>" (clients via notes) so a beforeEach sweep
 // clears PRIOR runs while keeping the current run's data for in-app review.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, RUN_TAG, finding } = require('./live-helpers');
 
 const FIRST = ['Marcus', 'Sofia', 'Derek', 'Hannah', 'Andre', 'Olivia', 'Tyler', 'Grace', 'Nathan', 'Priya', 'Wesley', 'Imani'];

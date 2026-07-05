@@ -26,9 +26,17 @@ jobs:
   smoke:
     # Only when a deployment actually SUCCEEDED (Cloudflare fires pending/in_progress too),
     # or on a manual dispatch.
+    # Only Cloudflare deployments (pages.dev / tradedeskpro.app) — the repo ALSO
+    # publishes a legacy GitHub Pages mirror (logansample680.github.io) whose
+    # deployment_status event otherwise triggers this smoke against a static file
+    # dump with no /api, no MapKit auth, no login (all 8 checks failed on the
+    # first main merge, 2026-07-02). Never smoke the mirror.
     if: >-
       (github.event_name == 'workflow_dispatch') ||
-      (github.event_name == 'deployment_status' && github.event.deployment_status.state == 'success')
+      (github.event_name == 'deployment_status' &&
+       github.event.deployment_status.state == 'success' &&
+       (contains(github.event.deployment_status.environment_url, 'pages.dev') ||
+        contains(github.event.deployment_status.environment_url, 'tradedeskpro.app')))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -52,7 +60,11 @@ jobs:
         run: npm install --no-save @playwright/test@1.56.0
 
       - name: Ensure browsers
-        run: npx playwright install chromium webkit
+        # --with-deps: this GH-hosted runner is missing WebKit's native shared libraries
+        # (libgtk-4, libgraphene, etc.) — without it, webkit fails to launch entirely
+        # ("Host system is missing dependencies to run browsers"), failing every webkit
+        # smoke test regardless of the app. --with-deps apt-installs them on Ubuntu runners.
+        run: npx playwright install --with-deps chromium webkit
 
       - name: Guard — PREVIEW_URL must be set
         run: |

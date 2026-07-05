@@ -13,7 +13,7 @@
 // Soft-skips cleanly if the geo tables aren't provisioned in this env. Seed job is
 // left in the account per CLAUDE.md §13.7 (only in-memory jobs[] is restored, never
 // saved, so the shared account is untouched).
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -162,7 +162,7 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
       },
     });
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

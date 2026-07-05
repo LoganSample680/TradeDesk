@@ -11,6 +11,48 @@ const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = requir
 test.describe('jobs.js — exhaustive coverage', () => {
   let page;
 
+  // Idempotent fixture seed — filter-then-push so it's safe to re-run. Called in
+  // beforeAll AND beforeEach: a late-resolving cloud/cache load reassigns the
+  // in-memory arrays after the initial seed and drops these fixtures, so tests
+  // running after that clobber saw undefined scopes/time-entries (task #22 race).
+  // Re-seeding before EVERY test guarantees the canonical fixture is present at
+  // the moment each test reads it — one file-scoped fix for the whole spec.
+  const seedFixtures = () => page.evaluate(() => {
+    clients = clients.filter(c => c.id !== 79901 && c.id !== 79902);
+    bids    = bids.filter(b => b.id !== 78801 && b.id !== 78802);
+    jobs    = jobs.filter(j => j.id !== 77701 && j.id !== 77702 && j.id !== 77703);
+    timeEntries = (timeEntries || []).filter(e => e.job_id !== 77701 && e.job_id !== 77702);
+
+    clients.push(
+      { id: 79901, name: 'Jobs Test Alpha', phone: '316-555-7001', addr: '1 Jobs St, Wichita KS 67202', email: 'alpha@jobs.test' },
+      { id: 79902, name: 'Jobs Test Beta',  phone: '316-555-7002', addr: '2 Jobs Ave, Wichita KS 67202', email: 'beta@jobs.test' }
+    );
+    bids.push(
+      { id: 78801, client_id: 79901, client_name: 'Jobs Test Alpha', amount: 3500, status: 'Closed Won',
+        bid_date: '2026-01-10', trade_type: 'painting', type: 'Interior painting',
+        surfaces: [{ type: 'walls', room: 'Living Room', qty: 400, wallSqft: 400 }],
+        roomScopeMap: { 'Living Room': { sand: { active: true, hrs: 2, rate: 45, cost: 90 }, prime: { active: true } } },
+        signedAt: '2026-01-15T00:00:00Z', completion_date: null },
+      { id: 78802, client_id: 79902, client_name: 'Jobs Test Beta', amount: 1200, status: 'Closed Won',
+        bid_date: '2026-02-01', trade_type: 'painting', type: 'Exterior painting',
+        surfaces: [], roomScopeMap: {}, signedAt: '2026-02-05T00:00:00Z', completion_date: null }
+    );
+    jobs.push(
+      { id: 77701, client_id: 79901, bid_id: 78801, name: 'Alpha interior job',
+        eventType: 'job', status: 'scheduled', start: '2099-06-01',
+        extraScopes: ['popcorn'], actualHours: 0 },
+      { id: 77702, client_id: 79902, bid_id: 78802, name: 'Beta exterior job',
+        eventType: 'job', status: 'scheduled', start: '2099-07-01', actualHours: 0 },
+      { id: 77703, client_id: 79901, bid_id: null, name: 'Orphan job no bid',
+        eventType: 'job', status: 'active', start: '2099-08-01', actualHours: 0 }
+    );
+    timeEntries.push(
+      { id: 9990001, job_id: 77701, date: '2026-06-01', minutes: 90, scope_id: 'sand',   scope_label: 'Sanding' },
+      { id: 9990002, job_id: 77701, date: '2026-06-01', minutes: 45, scope_id: 'prime',  scope_label: 'Primer coat' },
+      { id: 9990003, job_id: 77701, date: '2026-06-01', minutes: 30, scope_id: null,     scope_label: null }
+    );
+  });
+
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
     page = await ctx.newPage();
@@ -18,42 +60,9 @@ test.describe('jobs.js — exhaustive coverage', () => {
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
 
-    // Seed stable test fixtures
+    await seedFixtures();
+
     await page.evaluate(() => {
-      clients = clients.filter(c => c.id !== 79901 && c.id !== 79902);
-      bids    = bids.filter(b => b.id !== 78801 && b.id !== 78802);
-      jobs    = jobs.filter(j => j.id !== 77701 && j.id !== 77702 && j.id !== 77703);
-      timeEntries = (timeEntries || []).filter(e => e.job_id !== 77701 && e.job_id !== 77702);
-
-      clients.push(
-        { id: 79901, name: 'Jobs Test Alpha', phone: '316-555-7001', addr: '1 Jobs St, Wichita KS 67202', email: 'alpha@jobs.test' },
-        { id: 79902, name: 'Jobs Test Beta',  phone: '316-555-7002', addr: '2 Jobs Ave, Wichita KS 67202', email: 'beta@jobs.test' }
-      );
-      bids.push(
-        { id: 78801, client_id: 79901, client_name: 'Jobs Test Alpha', amount: 3500, status: 'Closed Won',
-          bid_date: '2026-01-10', trade_type: 'painting', type: 'Interior painting',
-          surfaces: [{ type: 'walls', room: 'Living Room', qty: 400, wallSqft: 400 }],
-          roomScopeMap: { 'Living Room': { sand: { active: true, hrs: 2, rate: 45, cost: 90 }, prime: { active: true } } },
-          signedAt: '2026-01-15T00:00:00Z', completion_date: null },
-        { id: 78802, client_id: 79902, client_name: 'Jobs Test Beta', amount: 1200, status: 'Closed Won',
-          bid_date: '2026-02-01', trade_type: 'painting', type: 'Exterior painting',
-          surfaces: [], roomScopeMap: {}, signedAt: '2026-02-05T00:00:00Z', completion_date: null }
-      );
-      jobs.push(
-        { id: 77701, client_id: 79901, bid_id: 78801, name: 'Alpha interior job',
-          eventType: 'job', status: 'scheduled', start: '2099-06-01',
-          extraScopes: ['popcorn'], actualHours: 0 },
-        { id: 77702, client_id: 79902, bid_id: 78802, name: 'Beta exterior job',
-          eventType: 'job', status: 'scheduled', start: '2099-07-01', actualHours: 0 },
-        { id: 77703, client_id: 79901, bid_id: null, name: 'Orphan job no bid',
-          eventType: 'job', status: 'active', start: '2099-08-01', actualHours: 0 }
-      );
-      timeEntries.push(
-        { id: 9990001, job_id: 77701, date: '2026-06-01', minutes: 90, scope_id: 'sand',   scope_label: 'Sanding' },
-        { id: 9990002, job_id: 77701, date: '2026-06-01', minutes: 45, scope_id: 'prime',  scope_label: 'Primer coat' },
-        { id: 9990003, job_id: 77701, date: '2026-06-01', minutes: 30, scope_id: null,     scope_label: null }
-      );
-
       // Stub out functions that open UI we don't want during pure logic tests
       window._origZConfirm  = window.zConfirm;
       window._origZAlert    = window.zAlert;
@@ -80,6 +89,11 @@ test.describe('jobs.js — exhaustive coverage', () => {
       window.renderEstRunning= () => {};
     });
   });
+
+  // Re-seed before EVERY test — repairs any fixture a late cloud/cache load
+  // clobbered after boot (task #22). Idempotent, so tests that mutate-and-restore
+  // their own fixtures still start from the canonical state.
+  test.beforeEach(async () => { await seedFixtures(); });
 
   test.afterAll(async () => {
     await page.evaluate(() => {
@@ -165,6 +179,17 @@ test.describe('jobs.js — exhaustive coverage', () => {
     test('golden path — job with bid roomScopeMap returns active scopes + extraScopes', async () => {
       const r = await page.evaluate(() => {
         try {
+          // Re-seed the fixture INSIDE the test tick. A late-resolving cloud/cache
+          // load can reassign `bids`/`jobs` after beforeAll and drop or replace the
+          // fixture — the bid's roomScopeMap (sand) survives but the job's
+          // extraScopes (popcorn) goes missing (task #22 shared-page state race).
+          // Forcing the fixture present here makes the scope merge deterministic.
+          if (typeof bids !== 'undefined' && !bids.some(b => b.id === 78801)) bids.push({ id: 78801, client_id: 79901, client_name: 'Jobs Test Alpha', amount: 3500, status: 'Closed Won', bid_date: '2026-01-10', trade_type: 'painting', type: 'Interior painting', surfaces: [{ type: 'walls', room: 'Living Room', qty: 400, wallSqft: 400 }], roomScopeMap: { 'Living Room': { sand: { active: true, hrs: 2, rate: 45, cost: 90 }, prime: { active: true } } }, signedAt: '2026-01-15T00:00:00Z', completion_date: null });
+          if (typeof jobs !== 'undefined') {
+            let j = jobs.find(x => x.id === 77701);
+            if (!j) { j = { id: 77701, client_id: 79901, bid_id: 78801, name: 'Alpha interior job', eventType: 'job', status: 'scheduled', start: '2099-06-01', actualHours: 0 }; jobs.push(j); }
+            j.extraScopes = ['popcorn'];
+          }
           const res = getJobScopes(77701);
           const ids = res.map(s => s.id);
           return { ok: true, ids, hasPopcorn: ids.includes('popcorn'), hasSand: ids.includes('sand') };

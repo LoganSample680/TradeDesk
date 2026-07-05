@@ -1,0 +1,49 @@
+# Hotfix resolve — closes the hot lane (CLAUDE.md §14.1). When a
+# claude/hotfix-err-* PR MERGES, mark the error_log rows it fixed as resolved.
+# From then on, if the same error ever fires again in production it is a NEW
+# unresolved row → error-watch opens a fresh hotfix round automatically. That
+# re-fire check is the loop's self-test: a fix that didn't hold surfaces
+# itself within 15 minutes of a user hitting it again.
+name: Hotfix Resolve
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'claude/hotfix-err-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      SB_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SB_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      # Ids come from the PR TITLE ("🔴 Hotfix: live error(s) 1,2,3"), NOT the body.
+      # The title is built by error-watch.yml purely from the trusted digit-only id
+      # list — it never contains user-supplied error text. Parsing the body instead
+      # let a signed-in user inject "error_log ids: <other ids>" via an error message
+      # and get arbitrary rows resolved (cross-tenant self-heal suppression). The
+      # title is the only injection-safe source of the ids.
+      PR_TITLE: ${{ github.event.pull_request.title }}
+    steps:
+      - name: Mark the fixed error_log rows resolved
+        run: |
+          set -euo pipefail
+          if [ -z "$SB_TOKEN" ] || [ -z "$SB_REF" ]; then
+            echo "::notice::Supabase secrets not set — skipping resolve"
+            exit 0
+          fi
+          # Every digit in the trusted title is an error_log id (the emoji + fixed
+          # words carry none), so digit extraction is safe from content injection.
+          ids=$(printf '%s' "$PR_TITLE" | grep -oE '[0-9]+' | sort -un | paste -sd, -)
+          if [ -z "$ids" ]; then
+            echo "::warning::no error_log ids found in the PR title — nothing to resolve"
+            exit 0
+          fi
+          curl -sS -X POST "https://api.supabase.com/v1/projects/$SB_REF/database/query" \
+            -H "Authorization: Bearer $SB_TOKEN" -H "Content-Type: application/json" \
+            -d "$(jq -n --arg query "update error_log set resolved = true where id in ($ids)" '{query: $query}')"
+          echo "resolved error_log ids: $ids"

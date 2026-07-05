@@ -8,7 +8,7 @@
 // One-login self-contained: the dev account is made an employee OF ITSELF via a
 // seeded team_members self-link (so the employee-insert RLS — which requires an
 // active team membership — passes), then torn down.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -168,7 +168,7 @@ test.describe('estimate permission-request (UI-driven, two-sided)', () => {
       },
     });
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

@@ -4,7 +4,7 @@
 // showCancellationRefund path via the refund pay-type, openLienPanel→saveLien)
 // against a tagged throwaway bid so no real money record is mutated. Every
 // assertion is a step() so a regression throws a one-line finding().
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, cloudRows } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -147,8 +147,7 @@ test.describe('payments, deposit, refund, lien (UI-driven)', () => {
           set('lien-county', 'Sedgwick County, KS'); // county field — typed = 19 keystrokes
           set('lien-notes', 'E2E lien');             // notes field — typed = 8 keystrokes
         }, { today, bal });
-        await p.evaluate(() => { saveLien(); }, {});                                      // 1 tap (submit)
-        await p.waitForTimeout(400);
+        await p.evaluate(() => saveLien(), {});                                           // 1 tap (submit)
         return 37; // openClient(1) + bidsTab(1) + openLien(1) + status pick(1) + amount"4500"(4) + date pick(1) + county(19) + notes(8) + submit(1) = 37
       },
       rule: async (p) => {
@@ -168,7 +167,7 @@ test.describe('payments, deposit, refund, lien (UI-driven)', () => {
     // NO cleanup — the bid, payments, liens + client stay in the dev account on
     // purpose so the owner can inspect what this test created (CLAUDE.md §13.7).
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

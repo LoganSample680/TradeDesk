@@ -10,7 +10,7 @@
 //   2. EXACT/RIGHT (needs Stripe test mode wired + a real card-paid proposal): refunding
 //      $X returns exactly $X against this bid's intent. Soft-skips until a card payment
 //      can be made in the sandbox (no Stripe keys → no payment intent → cleanly skipped).
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn } = require('./live-helpers');
 
 // Call refund-payment exactly as the collect screen does (contractor JWT).

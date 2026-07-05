@@ -138,15 +138,20 @@ function calcTax(){
   // Gross income = manually-logged income entries + bid payments (both filtered to selected year)
   const tIn=income.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+r.amount,0)
            +payments.filter(p=>p.amount!==0&&p.date&&p.date.startsWith(_taxYr)).reduce((s,p)=>s+p.amount,0);
-  const tEx=expenses.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+r.amount,0);
+  const _tExRaw=expenses.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+r.amount,0);
   const tMi=mileage.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+(r.miles||0),0);
   const _yrIrsRate=_getIrsRateForYear(_taxYr);
-  const mileDed=tMi*_yrIrsRate;
+  // Vehicle deduction engine — enforces the IRS one-method-per-vehicle rule.
+  // Mileage-method vehicles: miles deduct, their vehicle expenses don't (expAdjust).
+  // Actual-method vehicles: expenses deduct at biz-use %, their miles don't.
+  const _vd=(typeof _vehSchedC==='function')?_vehSchedC(_taxYr):null;
+  const tEx=_tExRaw-(_vd?_vd.expAdjust:0);
+  const mileDed=_vd?_vd.mileDed:tMi*_yrIrsRate;
   const netSelf=Math.max(0,tIn-tEx-mileDed);
   const spouseInc=nv('tx-spouse');
   const taxPaid=nv('tx-paid');
   const status=v('tx-status')||S.txStatus||'single';
-  S.txStatus=status;
+  if(S.txStatus!==status){S.txStatus=status;S.settingsTs=Date.now();} // conditional — calc runs on every render
   const sumSel=document.getElementById('sum-tx-status');if(sumSel)sumSel.value=status;
 
   const seTax=_calcSeTax(netSelf,_taxYr);
@@ -249,17 +254,44 @@ function calcTax(){
     '</div>';
   }
 
+  // Per-vehicle "which method wins" comparison — the year-end decision aid. Shows
+  // standard-mileage vs actual side by side per vehicle and flags when the vehicle's
+  // configured method is leaving money on the table.
+  let _vehCmpHtml='';
+  if(_vd&&_vd.hasVehicles&&_vd.perVehicle.some(p=>p.miles>0||p.expTotal>0)){
+    _vehCmpHtml='<div style="margin-top:10px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r)">'+
+      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">🚗 Vehicle deduction — which method wins ('+_vd.yr+')</div>'+
+      _vd.perVehicle.filter(p=>p.miles>0||p.costTotal>0).map(p=>{
+        // Dual-logging nudges: a verdict is only honest when BOTH sides are logged.
+        if(p.miles>0&&p.costTotal===0)return '<div style="font-size:11px;margin-bottom:5px;line-height:1.5"><span style="font-weight:700">'+escHtml(p.label)+'</span>: mileage '+fmt(p.mileDed)+' ('+p.miles.toFixed(0)+' mi) — <span style="color:var(--amber);font-weight:700">no vehicle costs logged. Log gas, parts &amp; service all year so we can prove which method wins.</span></div>';
+        if(p.costTotal>0&&p.miles===0)return '<div style="font-size:11px;margin-bottom:5px;line-height:1.5"><span style="font-weight:700">'+escHtml(p.label)+'</span>: actual costs '+fmt(p.actualCmp)+' — <span style="color:var(--amber);font-weight:700">no trips logged. Track drives all year so the mileage side is real.</span></div>';
+        const winLbl=p.winner==='mileage'?'Standard mileage':'Actual expenses';
+        const usingWinner=p.winner===p.method;
+        return '<div style="font-size:11px;margin-bottom:5px;line-height:1.5">'+
+          '<span style="font-weight:700">'+escHtml(p.label)+'</span> <span style="color:var(--text3)">('+p.bizUse+'% business use)</span><br>'+
+          'Mileage '+fmt(p.mileDed)+' ('+p.miles.toFixed(0)+' mi) vs Actual '+fmt(p.actualCmp)+' (all logged costs) → '+
+          '<span style="font-weight:700;color:'+(usingWinner?'var(--green-mid)':'var(--amber)')+'">'+winLbl+' wins by '+fmt(p.delta)+'</span>'+
+          ' · using '+(p.method==='mileage'?'mileage':'actual')+
+          (usingWinner?' ✓':' — <span style="color:var(--amber);font-weight:700">switching could save '+fmt(p.delta)+'/yr (IRS switching rules apply — confirm with your tax pro)</span>')+
+        '</div>';
+      }).join('')+
+      (_vd.untagged?'<div style="font-size:10px;color:var(--amber);margin-top:4px">⚠️ '+_vd.untagged+' vehicle expense'+(_vd.untagged>1?'s':'')+' ('+fmt(_vd.untaggedTotal)+') not linked to a vehicle — not deducted. Edit each expense and pick its vehicle.</div>':'')+
+      '<div style="font-size:9px;color:var(--text3);margin-top:4px">One method per vehicle (IRS). Not tax advice — verify with your tax professional.</div>'+
+    '</div>';
+  }
   const _txInputsEl=document.getElementById('tx-inputs');
   if(_txInputsEl)_txInputsEl.innerHTML=
     '<div class="tax-row"><span style="color:var(--text2)">Gross income</span><span style="font-weight:700">'+fmt(tIn)+'</span></div>'+
-    '<div class="tax-row"><span style="color:var(--text2)">Business expenses</span><span style="color:#A32D2D">('+fmt(tEx)+')</span></div>'+
-    '<div class="tax-row"><span style="color:var(--text2)">Mileage savings <span onclick="goPg(\'pg-tracker\');setTimeout(()=>{setTrTab(\'mileage\',document.getElementById(\'tr-t-mileage\'))},150)" style="font-size:10px;color:var(--blue);cursor:pointer;font-weight:700;margin-left:4px">'+tMi.toFixed(1)+' mi →</span></span><span style="color:#A32D2D">('+fmt(mileDed)+')</span></div>'+
+    '<div class="tax-row"><span style="color:var(--text2)">Business expenses'+(_vd&&_vd.expAdjust>0?' <span style="font-size:9px;color:var(--text3)">(vehicle costs excluded per method)</span>':'')+'</span><span style="color:#A32D2D">('+fmt(tEx)+')</span></div>'+
+    '<div class="tax-row"><span style="color:var(--text2)">Mileage savings <span onclick="goPg(\'pg-tracker\');setTimeout(()=>{setTrTab(\'mileage\',document.getElementById(\'tr-t-mileage\'))},150)" style="font-size:10px;color:var(--blue);cursor:pointer;font-weight:700;margin-left:4px">'+(_vd?_vd.deductedMiles:tMi).toFixed(1)+' mi →</span></span><span style="color:#A32D2D">('+fmt(mileDed)+')</span></div>'+
+    (_vd&&_vd.vehExpDed>0?'<div class="tax-row"><span style="color:var(--text2)">Vehicle actual expenses <span style="font-size:10px;color:var(--text3)">(at business-use %)</span></span><span style="color:#A32D2D">included above</span></div>':'')+
     '<div class="tax-row" style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px">'+
       '<span style="font-weight:700">Business income</span><span style="font-weight:700">'+fmt(netSelf)+'</span>'+
     '</div>'+
     (spouseInc?'<div class="tax-row"><span style="color:var(--text2)">Spouse / other income</span><span>'+fmt(spouseInc)+'</span></div>':'')+
     '<div class="tax-row"><span style="color:var(--text2)">Taxable income</span><span>'+fmt(agi)+'</span></div>'+
-    _stateBarHtml;
+    _stateBarHtml+
+    _vehCmpHtml;
 
   // ── State tax rows — single state keeps old display, multi-state shows breakdown
   const _homeStateName=STATE_TAX[_homeState]?.name||_homeState||'State';

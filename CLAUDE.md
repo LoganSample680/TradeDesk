@@ -161,7 +161,9 @@ and what was changed. Nothing else.
 - **Every push must have an open PR.** Create one if it does not exist. Always.
 
 - **Never merge to `main` without explicit user permission.** Not even when CI is
-  fully green. This rule has no exceptions.
+  fully green. ONE exception, granted in writing by the owner: live-error hotfix
+  PRs (`claude/hotfix-err-*` branches) merge autonomously when fully green — see
+  §14.1 for the exact rules. Everything else: no exceptions.
 
 - **Verify CI by re-polling** `get_check_runs` and confirming every shard shows
   `status: completed, conclusion: success` before reporting green. Do not rely
@@ -961,6 +963,47 @@ The endgame: a bug reported by a real user heals itself, forever.
 
 The `finding()` → `suspect` → root-cause-fix → permanent-`step()` chain is what
 makes the loop reliable instead of a guess-and-hope patch machine.
+
+### 14.1 Hot Lane — Live-Error Hotfix PRs (standing merge authorization)
+
+> Two PR lanes, by owner decision (2026-07-03): **hotfix PRs run hot end-to-end
+> with no human in the loop; feature PRs still wait for explicit approval.**
+
+**The pipeline (fully automatic):**
+
+1. A live user hits an error (window error, unhandled rejection,
+   `console.error`, or a DEAD BUTTON — a control whose FIRST click produces
+   zero DOM/navigation/network effect — captured by `js/observability.js` →
+   `error_log`).
+2. `error-watch.yml` (INSTANT when the `GH_DISPATCH_TOKEN` function secret is
+   set — ingest-telemetry fires it the moment the row lands; 15-min cron as
+   the always-on fallback) opens a **hotfix PR** on a fresh
+   `claude/hotfix-err-<id>` branch off `main`, body = the finding-shaped error
+   report, and wakes the active agent session via a comment on the open
+   feature PR.
+3. The agent fixes the **root cause on the hotfix branch** (§11.1 — never the
+   symptom) and adds a **regression test in the same commit**. The test must
+   reproduce the error's conditions and assert zero console errors — red
+   before the fix, green after — so the error can never return silently.
+4. One push, full result set (§1.6). All shards green **first-attempt**.
+5. **The agent merges the hotfix PR autonomously.** This is the ONLY exception
+   to §1.4's no-merge rule, granted in writing by the owner and scoped
+   strictly to PRs whose head branch starts with `claude/hotfix-err-`. The
+   merge builds production — the fix ships live immediately (that's the point
+   of the lane). Never use `[CF-Pages-Skip]` on a hotfix merge.
+6. `hotfix-resolve.yml` marks the fixed `error_log` rows resolved on merge.
+   **The self-test:** if the same error ever fires again in production, it
+   lands as a new unresolved row and error-watch opens a fresh hotfix round
+   within 15 minutes — a fix that didn't hold surfaces itself.
+
+**Hard limits of the lane:**
+- Hotfix PRs contain the MINIMAL root-cause fix + its regression test.
+  Nothing else — no refactors, no features, no drive-by cleanups.
+- Feature work, migrations, and anything touching money flows or auth stay in
+  the feature lane with explicit owner approval (§1.4 unchanged there).
+- If the root cause is ambiguous, architecturally significant, or spans more
+  than a small blast radius (§11.2), the agent STOPS and asks the owner
+  instead of merging.
 
 ### 13.6 Physical Interaction Standard — Real Thumb, Real Scroll, Real Devices
 

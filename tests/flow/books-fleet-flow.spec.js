@@ -5,7 +5,7 @@
 // settings.js saveLicenseModal) and each assertion is a step() so a regression
 // throws a one-line finding(). Vehicles + expenses round-trip through the cloud;
 // licenses persist locally (zp3_lic) by design — asserted accordingly.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, type, cloudRows } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -116,7 +116,7 @@ test.describe('books & fleet (UI-driven)', () => {
     // NO cleanup — the vehicle, expense, license + client stay in the dev account on
     // purpose so the owner can inspect what this test created (CLAUDE.md §13.7).
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
     expect(rep.overBudget).toBe(false);
   });

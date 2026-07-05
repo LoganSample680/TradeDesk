@@ -308,6 +308,7 @@ async function sendAgreementForSignature(id){
   document.getElementById('_ag-detail-ov')?.remove();
   renderContracts();
   _agShowLink(a);
+  try{await _flushSaveNow();}catch(_e){}
 }
 
 function copyAgreementLink(id){

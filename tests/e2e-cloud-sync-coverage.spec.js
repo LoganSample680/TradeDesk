@@ -667,6 +667,53 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(firstZjIdx).toBe(r.markerIdx);
   });
 
+  // ── _hashPayload is CANONICAL — key order never changes the fingerprint ──────
+  // Root cause of the phantom re-upload loop (delta-sync flow, 2026-07-03): the save
+  // path hashes rows in in-memory insertion order, but reconcile/load rebaseline from
+  // Postgres jsonb payloads — and Postgres re-sorts jsonb object keys. With a plain
+  // JSON.stringify hash the two orderings fingerprint differently, so every reconcile
+  // marked every row "changed" and every save re-uploaded the whole account, forever.
+  // _canonicalJson sorts keys recursively (arrays keep order — order IS data there),
+  // so the same data always hashes the same regardless of who serialized it.
+  test('_hashPayload — key order never changes the hash; array order + values still do', async () => {
+    const r = await page.evaluate(() => {
+      const a = { name: 'Zach', amount: 5, tags: ['x', 'y'], addr: { city: 'Austin', zip: '78701' } };
+      const b = { addr: { zip: '78701', city: 'Austin' }, tags: ['x', 'y'], amount: 5, name: 'Zach' };
+      const arrSwapped = { ...a, tags: ['y', 'x'] };
+      const valChanged = { ...a, amount: 6 };
+      // undefined/function semantics must match JSON.stringify: dropped from objects,
+      // null in arrays — a jsonb round-trip (which strips them) must not change the hash.
+      const withUndef = { name: 'Zach', amount: 5, tags: ['x', 'y'], addr: { city: 'Austin', zip: '78701' }, ghost: undefined, fn: function () {} };
+      const arrUndef1 = { list: [1, undefined, 3] };
+      const arrUndef2 = { list: [1, null, 3] };
+      // toJSON honored (review hardening): a Date must hash to its ISO string form,
+      // so an in-memory Date and the string it becomes after a jsonb round-trip match.
+      const iso = '2026-01-01T00:00:00.000Z';
+      const withDate = { name: 'Zach', when: new Date(iso) };
+      const withIso = { name: 'Zach', when: iso };
+      return {
+        orderInsensitive: _hashPayload(a) === _hashPayload(b),
+        arrayOrderMatters: _hashPayload(a) !== _hashPayload(arrSwapped),
+        valueMatters: _hashPayload(a) !== _hashPayload(valChanged),
+        undefDropped: _hashPayload(withUndef) === _hashPayload(a),
+        arrUndefIsNull: _hashPayload(arrUndef1) === _hashPayload(arrUndef2),
+        nested: _hashPayload({ o: { b: [{ z: 1, a: 2 }] } }) === _hashPayload({ o: { b: [{ a: 2, z: 1 }] } }),
+        primitives: _hashPayload(5) === _hashPayload(5) && _hashPayload('x') !== _hashPayload('y'),
+        nullSafe: typeof _hashPayload(null) === 'string',
+        dateMatchesIso: _hashPayload(withDate) === _hashPayload(withIso),
+      };
+    });
+    expect(r.orderInsensitive).toBe(true);  // THE fix — jsonb key re-sort must not re-upload
+    expect(r.arrayOrderMatters).toBe(true); // arrays are ordered data — never sort them
+    expect(r.valueMatters).toBe(true);
+    expect(r.dateMatchesIso).toBe(true);    // toJSON honored → no Date/jsonb phantom re-upload
+    expect(r.undefDropped).toBe(true);
+    expect(r.arrUndefIsNull).toBe(true);
+    expect(r.nested).toBe(true);
+    expect(r.primitives).toBe(true);
+    expect(r.nullSafe).toBe(true);
+  });
+
   // ── Phase-3 per-field merge — the two review-confirmed defects, fixed ─────────
   // (1) A protected pending edit must RE-UPLOAD: the hash stamped on merge must be the
   //     INCOMING cloud row's hash, never the merged row's — else the next save hash-skips
@@ -790,6 +837,54 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
       expect(r.amount).toBe(7);
       expect(r.passiveA).toBe(2);  // nothing clocked → byte-identical to the old whole-row take
       expect(r.passiveB).toBe(3);
+    });
+
+    // Regression — concurrent-writer field survival (data-safety guarantee, NOT an
+    // efficiency optimization). A prior attempt at this session gated the local-only-
+    // field branch on fcMs>syncedAt, reasoning that "already synced = no longer pending
+    // = safe to drop if absent from an incoming row" — intended to fix a separate
+    // over-upload bug (a field cleared long ago permanently poisoning the hash
+    // baseline). That gate was REVERTED: local field clocks are a client-side HLC
+    // timestamp stamped the instant an edit happens, while incMs/syncedAt are SERVER
+    // commit timestamps that lag behind by real network latency. Under genuine
+    // concurrent multi-writer load, a device's own just-landed edit can easily have
+    // fcMs <= syncedAt (its own save's ack bumps syncedAt before a racing peer's
+    // stale-base push is even processed) — the gate then dropped that device's OWN
+    // field the instant a concurrent peer's push arrived. Confirmed by the live
+    // swarm-convergence flow test (12 concurrent writers, only 5/12 kept their own
+    // marker). This test locks in the safe behavior permanently: a local-only field
+    // with ANY clock survives a racing peer's stale-base push, regardless of whether
+    // this device's own save already landed.
+    test('a concurrent writers own field survives a racing peers stale-base push, even after its own save already landed', async () => {
+      const r = await page.evaluate(() => {
+        const id = 'm3-swarm-1';
+        const savedFlag = window._opLogShadow;
+        try {
+          window._opLogShadow = true;
+          const local = { id, client_name: 'Shared', amount: 5000, sw_f_A: 'vA' };
+          // T0: row last known-synced (e.g. the initial seed broadcast every writer received)
+          (_rowSyncedAt['td_bids'] || (_rowSyncedAt['td_bids'] = new Map())).set(id, Date.now() - 5000);
+          // T1: THIS device sets its own field (real edit-time HLC stamp, "now")
+          _opStampFields('td_bids', id, { sw_f_A: 1 }, _hlcNow());
+          // Simulate: this device's OWN save just landed → syncedAt advances PAST the
+          // field's own clock (exactly what a successful _flushSaveNow() does).
+          _rowSyncedAt['td_bids'].set(id, Date.now() + 50);
+          // A concurrent peer's push arrives via realtime — its base snapshot predates
+          // this device's field, so it legitimately lacks sw_f_A (peer never saw it).
+          const incoming = { id, client_name: 'Shared', amount: 5000, sw_f_B: 'vB' };
+          const merged = window.__opApplyIncoming('td_bids', local, incoming, new Date().toISOString());
+          return {
+            survivedOwnField: merged ? merged.sw_f_A === 'vA' : null,
+            gotPeerField: merged ? merged.sw_f_B === 'vB' : null,
+          };
+        } finally {
+          _rowSyncedAt['td_bids'] && _rowSyncedAt['td_bids'].delete(id);
+          delete (_fieldClocks['td_bids'] || {})[id];
+          window._opLogShadow = savedFlag;
+        }
+      });
+      expect(r.survivedOwnField, 'a concurrent writer must never lose its own just-landed field to a racing peers stale-base push').toBe(true);
+      expect(r.gotPeerField, 'the peers own concurrent field must still land').toBe(true);
     });
 
     test('upload stamps _rowSyncedAt (the pending window closes when the save lands)', async () => {
@@ -1336,6 +1431,67 @@ test.describe('100-writer op channel + rebase', () => {
     expect(r.reappended).toBe(true);     // the offline-created row was NOT dropped
     expect(r.reappendedAmount).toBe(77);
     expect(r.hashIsIncoming).toBe(true);
+  });
+
+  // Regression — employee redaction must never poison a FIELD CLOCK (data-leak guard).
+  // Before: _opShadowDerive stamped a fresh field clock from an employee's REDACTED
+  // (zeroed) in-memory bid amount before supaSaveToCloud's _saveSkip even excluded
+  // td_bids from the upload. The network was never touched, but that phantom "locally
+  // edited, newer than the server" clock then outranked the contractor's real value on
+  // the next reload's field-clock merge (_opApplyIncoming) — an employee's redacted
+  // view silently zeroed the contractor's real bid amount in MEMORY. Fixed: the field
+  // clock stamp is skipped for redacted tables specifically — the op ITSELF (ring +
+  // durable log) still gets created as before, since the crew op-SYNC channel
+  // deliberately keeps redacted ops local and filters them only at push time (see the
+  // sibling "redacted-table ops never push" test above — this fix must not break that).
+  test('_opShadowDerive skips the field clock (not the op) for a redacted table', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _opShadowDerive !== 'function' || typeof _opFieldClocks !== 'function') return { skip: true };
+      const bidId = 991001;
+      const saved = {
+        emp: _isEmployee, empRec: _employeeRecord, flag: window._opLogShadow,
+        bidsSnap: bids.slice(),
+      };
+      try {
+        window._opLogShadow = true;
+        _isEmployee = false; _employeeRecord = null;
+        bids.length = 0;
+        bids.push({ id: bidId, name: 'RedactGuard', amount: 7777, status: 'sent' });
+        _opRebaseline();
+        _opShadowDerive(); // contractor's real save — establishes the genuine field clock
+        const clockBefore = { ..._opFieldClocks('td_bids', bidId) };
+        const opCountBefore = (typeof window.__opLast === 'function' && window.__opLast('td_bids', bidId)) ? 1 : 0;
+
+        // Become a redacted employee (no financials, no estimate permission → td_bids redacted)
+        // and simulate the RPC's zeroing, exactly like the live flow test does.
+        _isEmployee = true;
+        _employeeRecord = { permissions: { financials: false }, active: true, role: 'tech' };
+        const b = bids.find(x => x.id === bidId);
+        if (b) b.amount = 0;
+        _opShadowDerive(); // the redacted "save" derive — must NOT touch the field clock
+        const clockAfter = { ..._opFieldClocks('td_bids', bidId) };
+        const opAfter = typeof window.__opLast === 'function' ? window.__opLast('td_bids', bidId) : null;
+
+        return {
+          skip: false,
+          redactedTables: [...(typeof _employeeRedactedTables === 'function' ? _employeeRedactedTables() : [])],
+          amountClockUnchanged: clockBefore.amount === clockAfter.amount,
+          // The op itself must STILL be created/persisted (Phase 2's push-time filter
+          // needs something to filter) — only the field clock is guarded.
+          opStillCreated: !!opAfter,
+          opStillReflectsZero: !!(opAfter && opAfter.fields && opAfter.fields.amount === 0),
+        };
+      } finally {
+        _isEmployee = saved.emp; _employeeRecord = saved.empRec; window._opLogShadow = saved.flag;
+        bids.length = 0; saved.bidsSnap.forEach(x => bids.push(x));
+        try { _opRebaseline(); } catch (e) {}
+      }
+    });
+    if (r.skip) return;
+    expect(r.redactedTables, 'a financials:false employee with no estimate permission must have td_bids redacted').toContain('td_bids');
+    expect(r.amountClockUnchanged, 'a redacted derive must NOT advance the amount field clock — that is the signal a later merge trusts over the real server value').toBe(true);
+    expect(r.opStillCreated, 'the op itself must still be created/persisted — the crew push-time filter (sibling test) needs something to filter').toBe(true);
+    expect(r.opStillReflectsZero, 'the created op legitimately reflects the redacted value — filtering happens at push time, not here').toBe(true);
   });
 
   test('_effectiveUid — owner→self, crew→boss, dev-support→target (the Stripe/link routing identity)', async () => {

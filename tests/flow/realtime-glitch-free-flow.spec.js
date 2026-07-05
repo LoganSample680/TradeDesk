@@ -14,7 +14,7 @@
 //
 // Per CLAUDE.md §13.7 the seed bid is left in the account; only the extra device
 // page is closed.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -114,7 +114,7 @@ test.describe('realtime sync is glitch-free (multi-device)', () => {
     // Resource cleanup only — the seed bid stays in the account (CLAUDE.md §13.7).
     await pageB.close().catch(() => {});
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 

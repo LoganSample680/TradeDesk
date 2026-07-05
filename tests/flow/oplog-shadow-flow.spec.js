@@ -9,7 +9,7 @@
 //     (phantomDeleteCandidates stays 0) — the §9.8 trap that could delete an account.
 // Plus: the HLC is monotonic across calls. Gated behind window._opLogShadow, enabled
 // here via addInitScript BEFORE sign-in so the load-time baseline is built with it on.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -47,7 +47,7 @@ test.describe('oplog phase 0 — shadow op-derivation + HLC (observe-only)', () 
         return { ok, got: JSON.stringify(h) };
       },
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -73,7 +73,7 @@ test.describe('oplog phase 0 — shadow op-derivation + HLC (observe-only)', () 
         got: `stats=${JSON.stringify(p.__d)} op=${JSON.stringify(p.__op)}`,
       }),
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -106,7 +106,7 @@ test.describe('oplog phase 0 — shadow op-derivation + HLC (observe-only)', () 
         return { ok, got: `stats=${JSON.stringify(p.__d)} fields=${JSON.stringify(f)}` };
       },
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -129,7 +129,7 @@ test.describe('oplog phase 0 — shadow op-derivation + HLC (observe-only)', () 
       },
       rule: async (p) => ({ ok: p.__d.emitted === 0 && p.__d.phantomDeleteCandidates === 0, got: JSON.stringify(p.__d) }),
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });
@@ -186,7 +186,7 @@ test.describe('oplog phase 1+2+3 — durable op log + per-field merge + authorit
         got: `dbCount before=${p.__before} after=${p.__after} publishedToTdOps=${p.__published} clockAfterReload=${p.__clock}`,
       }),
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -215,7 +215,7 @@ test.describe('oplog phase 1+2+3 — durable op log + per-field merge + authorit
         got: `clock1=${p.__c1} clock2=${p.__c2}`,
       }),
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -245,7 +245,7 @@ test.describe('oplog phase 1+2+3 — durable op log + per-field merge + authorit
         return { ok, got: JSON.stringify(p.__r) };
       },
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -280,7 +280,7 @@ test.describe('oplog phase 1+2+3 — durable op log + per-field merge + authorit
         return { ok, got: JSON.stringify(r) };
       },
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -313,7 +313,7 @@ test.describe('oplog phase 1+2+3 — durable op log + per-field merge + authorit
         return { ok: r.present && r.draft, got: `present=${r.present} draft=${r.draft}` };
       },
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

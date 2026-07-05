@@ -8,7 +8,7 @@
 // NOTE: live GPS geo-fencing (arrive/depart time-on-site) can't run headless — it
 // needs real location pings within business hours — so this covers the
 // deterministic assignment half, which is where the dispatch data is written.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, cloudRows, seedName, seedAddr } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -70,7 +70,7 @@ test.describe('dispatch board (UI-driven)', () => {
     // NO cleanup — the assigned job + crew member stay in the dev account on purpose
     // so the owner can inspect what this test created (CLAUDE.md §13.7).
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
     expect(rep.overBudget).toBe(false);
   });

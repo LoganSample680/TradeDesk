@@ -105,6 +105,36 @@ Deno.serve(async (req) => {
     put('liens_filed_rate_pct', null, rate)
   } catch (e) { log.liens_filed_rate = String(e) }
 
+  // ── Raw interaction telemetry (analytics_events, last 24h) — clicks per page,
+  // page views, and flow-test step costs land beside the live-user data so UX
+  // hotspots show up in one place. Scope carries the page/step id. ──
+  try {
+    const since = new Date(Date.now() - 24 * 3_600_000).toISOString()
+    const { data: evts } = await sb.from('analytics_events')
+      .select('event, ctx, value').gte('ts', since).limit(20000)
+    const byKey = new Map<string, number[]>()
+    for (const e of (evts ?? [])) {
+      const k = String(e.event) + '|' + String(e.ctx ?? '')
+      if (!byKey.has(k)) byKey.set(k, [])
+      byKey.get(k)!.push(Number(e.value) || 0)
+    }
+    const totals: Record<string, number> = { click: 0, page: 0 }
+    for (const [k, vals] of byKey) {
+      const event = k.slice(0, k.indexOf('|'))
+      const ctx = k.slice(k.indexOf('|') + 1)
+      const sum = vals.reduce((s, x) => s + x, 0)
+      if (event === 'click' || event === 'page') {
+        totals[event] = (totals[event] || 0) + sum
+        if (ctx) rows.push({ day, metric: event === 'click' ? 'clicks_page' : 'views_page', scope: ctx.slice(0, 60), n: vals.length, median: null, p25: null, p75: null, avg: null, value: sum, updated_at: now })
+      } else if ((event === 'flow_step' || event === 'flow_total') && ctx) {
+        const d = dist(vals)
+        rows.push({ day, metric: event + '_clicks', scope: ctx.slice(0, 60), n: d?.n ?? 0, median: d?.median ?? null, p25: d?.p25 ?? null, p75: d?.p75 ?? null, avg: d?.avg ?? null, value: null, updated_at: now })
+      }
+    }
+    put('clicks_total_24h', null, totals.click || 0)
+    put('page_views_24h', null, totals.page || 0)
+  } catch (e) { log.raw_events = String(e) }
+
   // ── Write the day's rollup. ──
   let writeErr: string | null = null
   if (rows.length) {

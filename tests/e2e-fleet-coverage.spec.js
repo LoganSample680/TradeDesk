@@ -216,7 +216,11 @@ test.describe('Fleet P&L calculation — _fleetPnLCalc', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('mileage method — irsDeduction = miles × rate × bizPct (exact)', async () => {
+  // ASSERTION CHANGED 2026-07-03 (§11.4): the old expectation (miles × rate × bizPct)
+  // encoded the double-penalty bug — tracked trips already ARE business miles, so the
+  // business-use % must not be applied twice. New intended behavior matches the
+  // Schedule C engine (_vehSchedC): deduction = business miles × rate, regardless of bizUse.
+  test('mileage method — irsDeduction = business miles × rate (bizPct NOT re-applied)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _fleetPnLCalc !== 'function') return { skip: true };
       const v = { deductionMethod: 'mileage', bizUse: 80 };
@@ -227,9 +231,9 @@ test.describe('Fleet P&L calculation — _fleetPnLCalc', () => {
     if (result.skip) return;
     expect(result.method).toBe('mileage');
     expect(result.totalMiles).toBe(150);
-    // 150 mi × 0.67 × 0.80 = 80.40
-    expect(result.irsDeduction).toBeCloseTo(80.40, 2);
-    expect(result.totalDeduction).toBeCloseTo(80.40, 2);
+    // 150 business mi × 0.67 = 100.50 — bizUse (80%) does not re-scale business miles
+    expect(result.irsDeduction).toBeCloseTo(100.50, 2);
+    expect(result.totalDeduction).toBeCloseTo(100.50, 2);
     // maintenance is records-only under mileage method
     expect(result.maintCostYTD).toBe(150);
     expect(result.deductibleMaint).toBe(0);

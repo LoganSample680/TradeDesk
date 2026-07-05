@@ -176,7 +176,7 @@ function setOwnerName(name){
     else localStorage.removeItem('zp3_uname_'+_supaUser.id);
   }
   if(_user)_user.name=safe;
-  S.ownerName=safe;
+  if(S.ownerName!==safe){S.ownerName=safe;S.settingsTs=Date.now();}
 }
 let FED_BRACKETS={single:[],mfj:[],mfs:[],hoh:[]};
 let STD_DED={single:14600,mfj:29200,mfs:14600,hoh:21900};
@@ -274,6 +274,9 @@ function loadAll(){
     contracts=lp('zp3_contracts',[]);
     agreements=lp('zp3_agreements',[]);
     maintenance=lp('zp3_maint',[]);
+    // td_maintenance sync requires an id on every record; very old service
+    // records predating the id field get one now so they can ride the upload.
+    maintenance.forEach((m,i)=>{if(!m.id)m.id=Date.now()+i;});
     // Tax bracket migrations
     if(S.fedMFS===14600)S.fedMFS=15000;
     if(S.fedSingle===14600)S.fedSingle=15000;

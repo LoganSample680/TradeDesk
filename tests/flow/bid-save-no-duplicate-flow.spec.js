@@ -7,7 +7,7 @@
 // in-memory bids[] must agree. If the dedup chain in paint-estimate.js
 // `_paintEstAutosave` (editingBidId → lastCreatedBidId → localStorage lastBidId →
 // orphan-by-client) ever breaks, N saves create N rows and this fails loudly.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -113,7 +113,7 @@ test.describe('bid save — no duplicate in Make Money Today (UI-driven)', () =>
     // NO cleanup — the seed bid + client stay in the dev account on purpose so the
     // owner can inspect what this test created (CLAUDE.md §13.7). Manual delete only.
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
     expect(rep.overBudget).toBe(false);
   });

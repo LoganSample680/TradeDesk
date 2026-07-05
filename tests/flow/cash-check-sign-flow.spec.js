@@ -11,7 +11,7 @@
 //
 //   suspect chain: sign.html goToPayment → _paySign(cash|check) → submitCash
 //   (signed_proposals upsert).
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, seedProposal } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -103,7 +103,7 @@ test.describe('cash/check signing — proposal signed + marked paid (UI-driven)'
 
       // NO cleanup — the signed proposal stays in the dev account on purpose so the
       // owner can open it and see it executed (CLAUDE.md §13.7).
-      const rep = report(FLOW, BASELINE);
+      const rep = report(FLOW, BASELINE, page);
       expect(rep.totalClicks).toBeGreaterThan(0);
     });
   }

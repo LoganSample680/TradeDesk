@@ -5,7 +5,7 @@
 // gets audited — every rule here is a documented treatment that must never drift.
 // Each case is a step() so a regression throws a one-line finding() naming the
 // exact tax rule that broke.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -99,7 +99,7 @@ test.describe('sales-tax + income-tax engine correctness', () => {
       },
     });
 
-    const rep = report(FLOW, BASELINE);   // capture mode (pure computation, 0 clicks)
+    const rep = report(FLOW, BASELINE, page);   // capture mode (pure computation, 0 clicks)
     expect(rep.overBudget).toBe(false);
   });
 });

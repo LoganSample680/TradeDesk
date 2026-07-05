@@ -21,7 +21,7 @@
 // deleted by the test are left in the dev account to inspect; only the extra device
 // page is closed (resource cleanup). The whole point of this flow is that the deletes
 // DO propagate, so those specific rows are intentionally gone at the end.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -139,7 +139,7 @@ test.describe('realtime cross-device create + delete, both directions (UI-driven
 
     await B.close().catch(() => {});
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

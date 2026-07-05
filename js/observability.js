@@ -50,6 +50,67 @@
   try {
     window.addEventListener('error', function (e) { try { _logError('error', (e && e.message) || 'error', e && e.error && e.error.stack, { file: e && e.filename, line: e && e.lineno }); } catch (_x) {} });
     window.addEventListener('unhandledrejection', function (e) { try { var r = e && e.reason; _logError('unhandledrejection', (r && r.message) || String(r || 'rejection'), r && r.stack); } catch (_x) {} });
+    // console.error capture (kind 'console') — feeds the error_log → PR self-heal
+    // loop (§14). Wraps, never replaces: the original always still fires, so
+    // DevTools and Playwright's console listeners see everything unchanged.
+    var _origCErr = console.error;
+    console.error = function () {
+      try {
+        var msg = Array.prototype.slice.call(arguments).map(function (a) {
+          try { return (a && a.stack) ? String(a.stack).slice(0, 500) : (typeof a === 'object' ? JSON.stringify(a).slice(0, 300) : String(a)); } catch (_e2) { return '?'; }
+        }).join(' ');
+        _logError('console', msg, null, { page: _page() });
+      } catch (_x) {}
+      try { return _origCErr.apply(console, arguments); } catch (_x2) {}
+    };
+  } catch (_e) {}
+
+  // ── Dead-control detection (FIRST ineffective click) ─────────────────────────
+  // A dead button usually throws NOTHING — the tap just does nothing. Detect it
+  // from behavior on the FIRST click (owner decision 2026-07-03: don't wait for a
+  // rage-click): if 700ms after clicking a control there was NO effect of any
+  // kind — no DOM mutation anywhere, no navigation, no network request, no new
+  // tab — report kind 'dead-button' to error_log, which feeds the hotfix lane
+  // exactly like a crash. The effect net is deliberately wide (toasts, modals,
+  // re-renders, fetches, window.open all count) so a working control can't
+  // false-alarm; _seen dedupes to one report per control per session. Escape
+  // hatch: data-obs-quiet on a control exempts it.
+  var _netSeq = 0;
+  try {
+    var _origFetch = window.fetch;
+    if (typeof _origFetch === 'function') {
+      window.fetch = function () { _netSeq++; return _origFetch.apply(this, arguments); };
+    }
+    var _origXhrOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function () { _netSeq++; return _origXhrOpen.apply(this, arguments); };
+    var _origWinOpen = window.open;
+    window.open = function () { _netSeq++; return _origWinOpen.apply(this, arguments); };
+  } catch (_e) {}
+  function _ctlSig(el) {
+    try {
+      return (el.id ? '#' + el.id : (el.getAttribute('onclick') || '').slice(0, 80) || el.tagName) + '|' + (el.textContent || el.value || '').trim().slice(0, 40);
+    } catch (_e) { return '?'; }
+  }
+  try {
+    document.addEventListener('click', function (e) {
+      try {
+        var el = e.target && e.target.closest && e.target.closest('button,[onclick],[role="button"],a,input[type="submit"]');
+        if (!el || el.disabled || el.closest('[data-obs-quiet]')) return;
+        // Real links navigate/open apps on their own — that IS their effect.
+        var href = el.tagName === 'A' ? (el.getAttribute('href') || '') : '';
+        if (href && href !== '#' && href.indexOf('javascript:') !== 0) return;
+        var sig = _ctlSig(el), href0 = location.href, net0 = _netSeq, mutated = false;
+        var mo = new MutationObserver(function () { mutated = true; });
+        mo.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
+        setTimeout(function () {
+          try {
+            mo.disconnect();
+            if (mutated || location.href !== href0 || _netSeq !== net0) return;
+            _logError('dead-button', 'Dead control — no effect on click: ' + sig, null, { page: _page(), sig: sig });
+          } catch (_x) {}
+        }, 700);
+      } catch (_x) {}
+    }, true);
   } catch (_e) {}
 
   // ── Interaction telemetry (batched, aggregated server-side) ──────────────────

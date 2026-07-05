@@ -13,7 +13,7 @@
 //      deduction, etc.) — not just the pure math the existing tax spec covers.
 //
 // Seed data is left in the account per CLAUDE.md §13.7.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, cloudRows } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -57,7 +57,7 @@ test.describe('finance + tax correctness (UI-driven)', () => {
         return { ok: !!mem && !!ce, got: `mem=${JSON.stringify(mem)} cloud=${ce ? ce.amount + '/' + ce.date : 'ROW ABSENT'}` };
       },
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -112,7 +112,7 @@ test.describe('finance + tax correctness (UI-driven)', () => {
         return { ok: r.netSelf > 0 && r.hasSe && r.hasFed, got: `netSelf=${r.netSelf} expectSE=${r.expectSe}(${r.hasSe}) expectFed=${r.expectFed}(${r.hasFed})` };
       },
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

@@ -811,6 +811,170 @@ test.describe('Cloud Supabase and account functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // Boot waterfall v3 (§11.4 — behavior deliberately changed 2026-07-04): the
+  // cascade arms SYNCHRONOUSLY as the overlay lifts (no boot-hold, no popup gate)
+  // and plays BEHIND any popup (owner: blank white behind a popup looked odd).
+  // Delays are assigned inline over VISIBLE cards only, then self-removed.
+  test('boot waterfall — arms synchronously, staggers visible cards, self-removes', async () => {
+    const r = await page.evaluate(() => {
+      window._sboT0 = 0; // neutralize min-stage-time (tested separately)
+      document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+      document.getElementById('supa-boot-overlay')?.remove();
+      const o = document.createElement('div');
+      o.id = 'supa-boot-overlay';
+      document.body.appendChild(o);
+      document.getElementById('pg-dash').classList.add('active');
+      _removeBootOverlay();
+      const dash = document.getElementById('pg-dash');
+      const w = document.querySelector('#dash-widget-root > .td-dw');
+      // Inline per-card delay must be assigned (JS stagger, not fixed CSS holes).
+      const firstDelay = w ? w.style.animationDelay : '';
+      return {
+        cascade: dash.classList.contains('boot-cascade'),
+        noHold: !dash.classList.contains('boot-hold'),
+        anim: w ? getComputedStyle(w).animationName : 'no-widget',
+        hasInlineDelay: /ms$/.test(firstDelay),
+      };
+    });
+    expect(r.cascade).toBe(true);            // armed immediately — no async gate
+    expect(r.noHold).toBe(true);             // no boot-hold blank state
+    expect(r.anim).toContain('td-card-cascade');
+    expect(r.hasInlineDelay).toBe(true);     // JS-assigned stagger (smooth, gap-free)
+    // Self-removal: after the ripple window the class + inline delays clear.
+    await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 6000 });
+    const cleared = await page.evaluate(() => {
+      const w = document.querySelector('#dash-widget-root > .td-dw');
+      return { anim: w ? getComputedStyle(w).animationName : 'no-widget', delay: w ? w.style.animationDelay : '' };
+    });
+    expect(cleared.anim).not.toContain('td-card-cascade');
+    expect(cleared.delay).toBe('');          // inline stagger cleaned up
+  });
+
+  // OWNER RULE (revised): the cascade plays BEHIND a boot popup — a popup being
+  // open must NOT stop the dashboard from filling in under its scrim.
+  test('boot waterfall — plays behind an open boot popup (no blank backdrop)', async () => {
+    const r = await page.evaluate(() => {
+      window._sboT0 = 0;
+      document.getElementById('supa-boot-overlay')?.remove();
+      const o = document.createElement('div');
+      o.id = 'supa-boot-overlay';
+      document.body.appendChild(o);
+      const pop = document.createElement('div');
+      pop.className = 'zmodal-overlay';
+      pop.id = 'gate-popup';
+      pop.style.cssText = 'left:-9999px';
+      document.body.appendChild(pop);
+      document.getElementById('pg-dash').classList.add('active');
+      _removeBootOverlay();
+      return { cascade: document.getElementById('pg-dash').classList.contains('boot-cascade') };
+    });
+    expect(r.cascade).toBe(true); // cascading even with the popup up → dashboard fills in behind it
+    await page.evaluate(() => document.getElementById('gate-popup')?.remove());
+    await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 6000 });
+  });
+
+  // MIN STAGE TIME: a fast load must not cut the intro off — the overlay holds
+  // until it has been on screen ~2.8s, then lifts.
+  test('boot overlay min stage time — fast loads hold before the lift-away', async () => {
+    const r0 = await page.evaluate(() => {
+      document.getElementById('supa-boot-overlay')?.remove();
+      const o = document.createElement('div');
+      o.id = 'supa-boot-overlay';
+      document.body.appendChild(o);
+      window._sboT0 = Date.now(); // simulate: boot JUST started, data already loaded
+      _removeBootOverlay();
+      const el = document.getElementById('supa-boot-overlay');
+      return { present: !!el, fading: el ? el.classList.contains('td-fadeout') : false };
+    });
+    expect(r0.present).toBe(true);
+    expect(r0.fading).toBe(false); // held — the intro gets its stage time
+    await page.waitForFunction(() => {
+      const el = document.getElementById('supa-boot-overlay');
+      return !el || el.classList.contains('td-fadeout');
+    }, { timeout: 5000 });          // lifts once the ~2.8s window elapses
+    await page.evaluate(() => { window._sboT0 = 0; document.getElementById('supa-boot-overlay')?.remove(); });
+    // Let the deferred cascade from this boot settle so later tests see clean state.
+    await page.waitForFunction(() => !document.getElementById('pg-dash').classList.contains('boot-cascade'), { timeout: 6000 });
+  });
+
+  // Make Money Today entrance (owner request): _mmtFeedEnter adds .mmt-enter ONCE
+  // per session (window._mmtEntered), the CSS staggers the sections' fade-up, and
+  // it never replays on the frequent data-driven re-renders.
+  test('Make Money Today — one-shot staggered entrance, no replay', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _mmtFeedEnter !== 'function') return { skip: true };
+      window._mmtEntered = false;
+      const el = document.createElement('div');
+      el.id = 'dash-money-feed';
+      el.innerHTML = '<div class="mmt-sec">a</div><div class="mmt-sec">b</div>';
+      el.style.cssText = 'position:fixed;left:-9999px';
+      document.body.appendChild(el);
+      _mmtFeedEnter(el);
+      const first = el.classList.contains('mmt-enter');
+      const anim = getComputedStyle(el.firstChild).animationName;
+      el.classList.remove('mmt-enter');
+      _mmtFeedEnter(el);                          // second call same session…
+      const second = el.classList.contains('mmt-enter'); // …must be a no-op
+      el.remove();
+      return { skip: false, first, anim, second };
+    });
+    if (r.skip) return;
+    expect(r.first).toBe(true);            // plays the first time
+    expect(r.anim).toContain('mmt-in');    // stagger animation binds
+    expect(r.second).toBe(false);          // one-shot — never replays
+  });
+
+  // REGRESSION ("loading screen shows twice" on new builds): when a version/SW
+  // update reload is queued (_deferredReload/_reloadPending), _removeBootOverlay
+  // must keep the overlay UP so the reload happens beneath one continuous loading
+  // screen — never fade out, flash the dash, then boot a second loading screen.
+  test('boot overlay stays up when an update reload is queued (no double loading screen)', async () => {
+    const r = await page.evaluate(() => {
+      // ALWAYS start from a fresh overlay: an earlier test's overlay may still be
+      // mid-fade (td-fadeout, removal timer pending) — reusing it reads that stale
+      // class instead of this guard's behavior (the WebKit shard failure).
+      document.getElementById('supa-boot-overlay')?.remove();
+      const o = document.createElement('div');
+      o.id = 'supa-boot-overlay';
+      document.body.appendChild(o);
+      const savedDef = _deferredReload, savedPend = _reloadPending;
+      try {
+        _deferredReload = true; _reloadPending = false;
+        _removeBootOverlay();
+        const el = document.getElementById('supa-boot-overlay');
+        const keptOnDeferred = !!el && !el.classList.contains('td-fadeout');
+        _deferredReload = false; _reloadPending = true;
+        _removeBootOverlay();
+        const el2 = document.getElementById('supa-boot-overlay');
+        const keptOnPending = !!el2 && !el2.classList.contains('td-fadeout');
+        return { keptOnDeferred, keptOnPending };
+      } finally {
+        _deferredReload = savedDef; _reloadPending = savedPend;
+        document.getElementById('supa-boot-overlay')?.remove();
+      }
+    });
+    expect(r.keptOnDeferred).toBe(true);  // deferred mid-boot reload → overlay held
+    expect(r.keptOnPending).toBe(true);   // reload already executing → overlay held
+  });
+
+  // §8.4 popup entrance: every .zmodal card must ride the td-modal-in animation
+  // (fade + slide-up + settle) instead of hard-popping into the dim layer.
+  test('modals enter with td-modal-in (no hard pop)', async () => {
+    const r = await page.evaluate(() => {
+      const ov = document.createElement('div');
+      ov.className = 'zmodal-overlay';
+      ov.style.cssText = 'left:-9999px';
+      ov.innerHTML = '<div class="zmodal">hi</div>';
+      document.body.appendChild(ov);
+      const anim = getComputedStyle(ov.firstChild).animationName;
+      const overlayAnim = getComputedStyle(ov).animationName;
+      ov.remove();
+      return { anim, overlayAnim };
+    });
+    expect(r.anim).toContain('td-modal-in');
+    expect(r.overlayAnim).toContain('fadein');
+  });
+
   test('supaShowLogin — calls without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof supaShowLogin !== 'function') return { skip: true };
@@ -4743,6 +4907,57 @@ test.describe('Proposals photo, hub, contract, and form functions', () => {
       catch (e) { return { ok: true, note: e.message }; }
     });
     if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  // Regression — a sent interior-painting proposal was not reliably reaching the
+  // cloud. Before: sendProposalLink only called the fire-and-forget saveAll() (a
+  // 2s debounce timer) and returned as soon as the UI updated, so a caller that
+  // checked td_bids right after would deterministically see the write before it
+  // had even started (the same pattern already fixed this session in
+  // _sendCOToHub, sendGenericProposal, confirmJobDone, saveLien, and
+  // sendAgreementForSignature). Fixed: sendProposalLink now awaits
+  // _flushSaveNow() before it resolves.
+  test('sendProposalLink awaits the cloud write (_flushSaveNow) before resolving — does not just schedule it', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof sendProposalLink !== 'function') return { skip: true };
+      // index.html already has a real (empty) #est-proposal in the DOM — populate
+      // THAT element rather than appending a duplicate id (getElementById returns
+      // the first match in document order, so a second element is never seen).
+      const proposalEl = document.getElementById('est-proposal');
+      if (!proposalEl) return { skip: true };
+      const origProposalHtml = proposalEl.innerHTML;
+      proposalEl.innerHTML = '<div>Flush regression proposal</div>';
+      const origSupaEnabled = window.supaEnabled, origSupaUser = window._supaUser;
+      window.supaEnabled = () => true;
+      window._supaUser = window._supaUser || { id: 'e2e-flush-user', email: 'flush@e2e.test' };
+      let flushCalled = false, flushAwaitedBeforeResolve = false;
+      const origFlush = window._flushSaveNow;
+      window._flushSaveNow = () => {
+        flushCalled = true;
+        return new Promise(res => setTimeout(() => { flushAwaitedBeforeResolve = true; res(); }, 20));
+      };
+      const bidsBefore = bids.length;
+      let resolvedAfterFlush = false, err = null;
+      try {
+        await sendProposalLink();
+        resolvedAfterFlush = flushAwaitedBeforeResolve;
+      } catch (e) { err = e.message; }
+      finally {
+        window.supaEnabled = origSupaEnabled; window._supaUser = origSupaUser;
+        window._flushSaveNow = origFlush;
+        proposalEl.innerHTML = origProposalHtml;
+        document.getElementById('proposal-link-bar')?.remove();
+        // Clean up whatever bid this created — resource cleanup only, not a
+        // data-loss policy violation (this is a synthetic no-op-DOM run, not a
+        // real seeded flow row a live test leaves for the owner to inspect).
+        if (bids.length > bidsBefore) bids.length = bidsBefore;
+      }
+      return { flushCalled, resolvedAfterFlush, err };
+    });
+    if (result.skip) return;
+    expect(result.err, 'sendProposalLink threw: ' + result.err).toBeNull();
+    expect(result.flushCalled, 'sendProposalLink must call _flushSaveNow, not rely on the bare debounce timer').toBe(true);
+    expect(result.resolvedAfterFlush, 'sendProposalLink must AWAIT the flush — it cannot resolve before the cloud write settles').toBe(true);
   });
 
   test('copyProposalLink — calls without throwing', async () => {

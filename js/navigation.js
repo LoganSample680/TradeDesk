@@ -11,6 +11,7 @@ function goPg(id){
   }
   // Preserve currentClientId across navigation — only clear on explicit new client selection
   if(id==='pg-dash')window._fromDash=false;
+  try{if(window._obs)window._obs.track('page',id);}catch(_e){} // live page-view telemetry (inert on localhost)
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
   const _pgEl=document.getElementById(id);

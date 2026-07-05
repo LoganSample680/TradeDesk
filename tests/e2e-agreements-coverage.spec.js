@@ -931,6 +931,53 @@ test.describe('Agreements — network/storage paths (no-throw)', () => {
     expect(result.ok).toBe(true);
   });
 
+  // Regression — a sent agreement was not reliably reaching the cloud. Before:
+  // sendAgreementForSignature only called the fire-and-forget saveAll() (a 2s
+  // debounce timer) and returned as soon as the upload settled, so a caller that
+  // checked td_agreements right after would deterministically see the write
+  // before it had even started (the same pattern already fixed this session in
+  // _sendCOToHub, sendGenericProposal, confirmJobDone, and saveLien). Fixed:
+  // sendAgreementForSignature now awaits _flushSaveNow() before it resolves.
+  test('sendAgreementForSignature awaits the cloud write (_flushSaveNow) before resolving — does not just schedule it', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof sendAgreementForSignature !== 'function') return { skip: true };
+      const origAlert = window.zAlert, origUpload = window._agUpload;
+      const origSupaEnabled = window.supaEnabled, origSupaUser = window._supaUser;
+      const origShowLink = window._agShowLink, origRender = window.renderContracts;
+      window.zAlert = () => {};
+      window.supaEnabled = () => true;
+      window._supaUser = window._supaUser || { id: 'e2e-flush-user' };
+      window._agUpload = () => Promise.resolve({ error: null });
+      window._agShowLink = () => {};
+      window.renderContracts = () => {};
+      window.agreements = window.agreements || [];
+      const id = 11006;
+      window.agreements.push({ id, type: 'custom', party: 'Flush Client', body: 'B', status: 'draft', createdAt: '2026-01-01T00:00:00Z' });
+      let flushCalled = false, flushAwaitedBeforeResolve = false;
+      window._flushSaveNow = () => {
+        flushCalled = true;
+        return new Promise(res => setTimeout(() => { flushAwaitedBeforeResolve = true; res(); }, 20));
+      };
+      let resolvedAfterFlush = false, err = null;
+      try {
+        await sendAgreementForSignature(id);
+        resolvedAfterFlush = flushAwaitedBeforeResolve;
+      } catch (e) { err = e.message; }
+      finally {
+        window.zAlert = origAlert; window._agUpload = origUpload;
+        window.supaEnabled = origSupaEnabled; window._supaUser = origSupaUser;
+        window._agShowLink = origShowLink; window.renderContracts = origRender;
+        window.agreements = window.agreements.filter(a => a.id !== id);
+        document.getElementById('_ag-detail-ov')?.remove();
+      }
+      return { flushCalled, resolvedAfterFlush, err };
+    });
+    if (result.skip) return;
+    expect(result.err, 'sendAgreementForSignature threw: ' + result.err).toBeNull();
+    expect(result.flushCalled, 'sendAgreementForSignature must call _flushSaveNow, not rely on the bare debounce timer').toBe(true);
+    expect(result.resolvedAfterFlush, 'sendAgreementForSignature must AWAIT the flush — it cannot resolve before the cloud write settles').toBe(true);
+  });
+
   test('refreshAgreementSignatures — no-throw with no pending and with pending', async () => {
     const result = await page.evaluate(async () => {
       if (typeof refreshAgreementSignatures !== 'function') return { skip: true };

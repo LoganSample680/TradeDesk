@@ -167,20 +167,24 @@ test.describe('Drag-to-reorder — dashboard widgets', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('dash-widget-root exists with 6 .td-dw children', async () => {
+  // 10 widgets since the 2026-07-04 split (owner: every card movable): crew,
+  // alerts, contracts, goal were carved out of the old kpi+pipeline mega-widgets.
+  test('dash-widget-root exists with all 10 .td-dw card widgets', async () => {
     const rootExists = await page.locator('#dash-widget-root').count();
     expect(rootExists).toBe(1);
 
     const widgets = await page.evaluate(() =>
       [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.dataset.dw)
     );
-    expect(widgets).toHaveLength(6);
-    expect(widgets).toContain('kpi');
-    expect(widgets).toContain('pipeline');
-    expect(widgets).toContain('feed');
-    expect(widgets).toContain('quick');
-    expect(widgets).toContain('calendar');
-    expect(widgets).toContain('sources');
+    expect(widgets).toHaveLength(10);
+    for (const id of ['kpi', 'crew', 'alerts', 'contracts', 'goal', 'pipeline', 'feed', 'quick', 'calendar', 'sources']) {
+      expect(widgets).toContain(id);
+    }
+    // The crew card specifically must be its OWN widget (the un-movable-card bug).
+    const crewOwnWidget = await page.evaluate(() =>
+      document.querySelector('.td-dw[data-dw="crew"] > #dash-crew-today') !== null
+    );
+    expect(crewOwnWidget).toBe(true);
   });
 
   test('_initDashDrag and _applyDashOrder functions exist', async () => {
@@ -202,23 +206,42 @@ test.describe('Drag-to-reorder — dashboard widgets', () => {
       S.dashWidgetOrder = saved;
       return result;
     });
-    expect(order).toEqual(['kpi', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
+    expect(order).toEqual(['kpi', 'crew', 'alerts', 'contracts', 'goal', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
   });
 
-  test('_applyDashOrder reorders widgets in DOM', async () => {
-    await page.evaluate(() => _applyDashOrder(['sources', 'calendar', 'quick', 'feed', 'pipeline', 'kpi']));
+  test('_applyDashOrder reorders widgets in DOM (full 10-widget order)', async () => {
+    const full = ['sources', 'calendar', 'quick', 'feed', 'pipeline', 'goal', 'contracts', 'alerts', 'crew', 'kpi'];
+    await page.evaluate((o) => _applyDashOrder(o), full);
 
     const order = await page.evaluate(() =>
       [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.dataset.dw)
     );
-    expect(order).toEqual(['sources', 'calendar', 'quick', 'feed', 'pipeline', 'kpi']);
+    expect(order).toEqual(full);
 
     // Restore default
-    await page.evaluate(() => _applyDashOrder(['kpi', 'pipeline', 'feed', 'quick', 'calendar', 'sources']));
+    await page.evaluate(() => _applyDashOrder(_DASH_DEFAULT_ORDER.slice()));
     const restored = await page.evaluate(() =>
       [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.dataset.dw)
     );
-    expect(restored).toEqual(['kpi', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
+    expect(restored).toEqual(['kpi', 'crew', 'alerts', 'contracts', 'goal', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
+  });
+
+  // §11.4 companion: a PRE-SPLIT saved order (6 ids) must not dump the new cards
+  // at the bottom — each new widget slots in right after its default predecessor.
+  test('_mergeDashOrder inserts new widgets into an old saved order at their natural spot', async () => {
+    const merged = await page.evaluate(() =>
+      _mergeDashOrder(['sources', 'kpi', 'pipeline', 'feed', 'quick', 'calendar'])
+    );
+    // crew/alerts/contracts/goal follow kpi (their default predecessor), in default order.
+    expect(merged).toEqual(['sources', 'kpi', 'crew', 'alerts', 'contracts', 'goal', 'pipeline', 'feed', 'quick', 'calendar']);
+    // And applying the old order yields all 10 in the DOM, nothing orphaned.
+    const applied = await page.evaluate(() => {
+      _applyDashOrder(['sources', 'kpi', 'pipeline', 'feed', 'quick', 'calendar']);
+      const out = [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.dataset.dw);
+      _applyDashOrder(_DASH_DEFAULT_ORDER.slice());
+      return out;
+    });
+    expect(applied).toHaveLength(10);
   });
 
   test('_dashSortActive flag prevents duplicate listener registration', async () => {
@@ -270,8 +293,8 @@ test.describe('Drag-to-reorder — dashboard widgets', () => {
 
     // Reset to default
     await page.evaluate(() => {
-      S.dashWidgetOrder = ['kpi', 'pipeline', 'feed', 'quick', 'calendar', 'sources'];
-      _applyDashOrder(['kpi', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
+      S.dashWidgetOrder = _DASH_DEFAULT_ORDER.slice();
+      _applyDashOrder(_DASH_DEFAULT_ORDER.slice());
     });
   });
 
@@ -286,6 +309,103 @@ test.describe('Drag-to-reorder — dashboard widgets', () => {
     for (const { id, found } of results) {
       expect(found, `Element #${id} missing after widget wrapping`).toBe(true);
     }
+  });
+
+  // ── iOS-polish package: FLIP glide, drop-settle, offline-reorder re-push ──
+
+  test('_flipShift — shifted siblings glide via a transient translate, mutation applied', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _flipShift !== 'function') return { skip: true };
+      const box = document.createElement('div');
+      box.style.cssText = 'position:fixed;left:-9999px;top:0;width:200px';
+      box.innerHTML = '<div style="height:40px" id="fs-a"></div><div style="height:40px" id="fs-b"></div>';
+      document.body.appendChild(box);
+      const a = box.children[0], b = box.children[1];
+      // Move A below B — B shifts up 40px. _flipShift inverts B to its OLD spot and
+      // transitions to 0; the inline style is already the target ('0 0') when this
+      // returns, so the observable proof is the COMPUTED position: read synchronously
+      // (same task, transition at t=0), it must still sit at ~the old offset.
+      _flipShift(box, () => box.appendChild(a));
+      const computedY = parseFloat((getComputedStyle(b).translate.split(' ')[1] || '0'));
+      const inFlight = (b.style.transition || '').includes('translate');
+      const orderAfter = [...box.children].map(el => el.id);
+      // The transient inline styles must self-clean (transitionend or fallback timer).
+      await new Promise(res => setTimeout(res, 400));
+      const cleaned = b.style.translate === '' && b.style.transition === '';
+      box.remove();
+      return { skip: false, computedY, inFlight, orderAfter, cleaned };
+    });
+    if (r.skip) return;
+    expect(r.orderAfter).toEqual(['fs-b', 'fs-a']);   // the mutation ran
+    expect(r.computedY).toBeGreaterThan(20);          // B starts the glide from its old spot (~40px)
+    expect(r.inFlight).toBe(true);                    // the translate transition is armed
+    expect(r.cleaned).toBe(true);                     // no inline residue after the glide
+  });
+
+  test('drop-settle + lift CSS is wired (settle overrides the jiggle while it plays)', async () => {
+    const r = await page.evaluate(() => {
+      const host = document.createElement('div');
+      host.className = 'td-drag-active';
+      host.style.cssText = 'position:fixed;left:-9999px;top:0';
+      host.innerHTML = '<div class="td-dw td-drop-settle"></div>';
+      document.body.appendChild(host);
+      const anim = getComputedStyle(host.firstChild).animationName;
+      host.remove();
+      const ghost = document.createElement('div');
+      ghost.className = 'td-dw td-drag-ghost';
+      ghost.style.cssText = 'position:fixed;left:-9999px;top:0';
+      document.body.appendChild(ghost);
+      const lift = getComputedStyle(ghost).animationName;
+      ghost.remove();
+      return { anim, lift };
+    });
+    expect(r.anim).toContain('td-drop-settle');
+    expect(r.lift).toContain('td-lift');
+  });
+
+  test('offline reorder — dirty flag set without cloud, local layout wins over stale cloud, then clears', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _saveUserPrefs !== 'function' || typeof _loadUserPrefs !== 'function') return { skip: true };
+      const savedSupa = typeof _supa !== 'undefined' ? _supa : null;
+      const savedUser = typeof _supaUser !== 'undefined' ? _supaUser : null;
+      const savedOrder = S.dashWidgetOrder;
+      const uid = 'dirty-flag-test';
+      const dirtyKey = 'td_layout_' + uid + '_dirty';
+      try {
+        _supaUser = { id: uid };
+        // 1. OFFLINE reorder: no client → upsert can't land → dirty flag must persist.
+        _supa = null;
+        S.dashWidgetOrder = ['local', 'order'];
+        _saveUserPrefs();
+        const dirtyAfterOffline = localStorage.getItem(dirtyKey);
+        // 2. Back online: _loadUserPrefs sees the dirty flag → pushes LOCAL up and
+        //    must NOT apply the stale cloud row over it.
+        let upserted = null;
+        _supa = {
+          from: () => ({
+            select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { dash_widget_order: ['stale', 'cloud'] } }) }) }),
+            upsert: (row) => ({ then: (ok) => { upserted = row; ok && ok(); } }),
+          }),
+        };
+        await _loadUserPrefs();
+        const localWins = JSON.stringify(S.dashWidgetOrder) === JSON.stringify(['local', 'order']);
+        const dirtyCleared = localStorage.getItem(dirtyKey) === null;
+        const pushedLocal = upserted && JSON.stringify(upserted.dash_widget_order) === JSON.stringify(['local', 'order']);
+        // 3. Clean state: with the flag gone, the normal load path applies cloud again.
+        await _loadUserPrefs();
+        const cloudAppliesWhenClean = JSON.stringify(S.dashWidgetOrder) === JSON.stringify(['stale', 'cloud']);
+        return { skip: false, dirtyAfterOffline, localWins, dirtyCleared, pushedLocal, cloudAppliesWhenClean };
+      } finally {
+        try { _supa = savedSupa; _supaUser = savedUser; S.dashWidgetOrder = savedOrder; } catch (_e) {}
+        try { localStorage.removeItem(dirtyKey); localStorage.removeItem('td_layout_' + uid); } catch (_e) {}
+      }
+    });
+    if (r.skip) return;
+    expect(r.dirtyAfterOffline).toBe('1');     // offline reorder leaves the flag armed
+    expect(r.localWins).toBe(true);            // stale cloud row never clobbers the newer local layout
+    expect(r.pushedLocal).toBe(true);          // the local layout is what got pushed up
+    expect(r.dirtyCleared).toBe(true);         // confirmed write disarms the flag
+    expect(r.cloudAppliesWhenClean).toBe(true);// normal cloud-wins path intact when not dirty
   });
 
   test('assertNoErrors — no console errors from dashboard drag-reorder', async () => {

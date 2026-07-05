@@ -8,7 +8,7 @@
 // lands and assert the bid also round-tripped into the cloud (td_bids).
 //
 // Seed data is left in the dev account per CLAUDE.md §13.7.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, cloudRows } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -96,7 +96,7 @@ test.describe('generic estimator send → artifact (UI-driven)', () => {
       },
     });
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -142,7 +142,7 @@ test.describe('generic estimator send → artifact (UI-driven)', () => {
       },
     });
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

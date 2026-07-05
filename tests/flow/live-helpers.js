@@ -79,6 +79,20 @@ function localAccount() {
   return pool[idx] || null;
 }
 
+// SWARM account — the RESERVED last pool entry. global-setup always provisions
+// max(workers,3)+1 accounts, so the last one is never mapped to a worker
+// (localAccount uses parallelIndex) nor to accountPair (first two). The swarm
+// spec pins all N contexts to it so its 12-writer convergence run starts from a
+// DETERMINISTIC fixture instead of the suite-accumulated worker account —
+// §13.7's no-cleanup made the worker account grow with every spec that ran
+// before it, and 12 concurrent boots over that payload blew the swarm's time
+// budget in full-suite runs while passing solo (observed 2026-07-03).
+function swarmAccount() {
+  const pool = _loadLocalPool();
+  if (!pool || pool.length < 2) return null;
+  return pool[pool.length - 1];
+}
+
 // The full local-stack account pool (or [] when not in local-stack mode). Specs that need
 // MORE than one distinct account (e.g. the cross-account-bleed test's A and B) source them
 // from here instead of the cloud E2E_DEV2_* creds, which don't exist on the local stack.
@@ -138,6 +152,30 @@ function accountPair() {
 // rule not matching" without guessing. Length only — never the value.
 const BYPASS_STATUS = process.env.E2E_BYPASS_SECRET ? `set(${process.env.E2E_BYPASS_SECRET.length}ch)` : 'MISSING';
 
+// Attach the CI-only Cloudflare WAF bypass header to a context, scoped to the
+// APP'S OWN origin only. A blanket context.extraHTTPHeaders (the old approach)
+// attaches the header to EVERY request the context makes, including third-party
+// origins (Google Fonts, Cloudflare Insights, Stripe, the Supabase REST/Edge
+// Function host) — none of which allow this custom header in their CORS
+// preflight, so the browser blocks those requests. That silently broke font
+// loading, analytics, Stripe Connect status checks, and Supabase Edge Function
+// calls, surfacing as false "console error" / "failed to fetch" failures having
+// nothing to do with the app itself. Route-intercept and inject the header only
+// when the request's origin matches this context's own app origin instead.
+function scopeBypassHeader(context, baseURL) {
+  if (!process.env.E2E_BYPASS_SECRET || !baseURL) return;
+  const bypassSecret = process.env.E2E_BYPASS_SECRET;
+  const appOrigin = new URL(baseURL).origin;
+  return context.route('**/*', (route) => {
+    const reqUrl = new URL(route.request().url());
+    if (reqUrl.origin === appOrigin) {
+      route.continue({ headers: { ...route.request().headers(), 'x-e2e-bypass': bypassSecret } });
+    } else {
+      route.continue();
+    }
+  });
+}
+
 // Unique per process run. Stamped into every seeded record's name/marker field
 // so teardown can target exactly this run's rows. Uses PID + start time from the
 // env (never Math.random/Date.now in shared code) — good enough to be unique
@@ -162,10 +200,12 @@ function shouldTeardown() {
 
 // Sign in through the real login form, exactly as a user would: fill the email
 // and password fields, click Sign in, and wait for the dashboard to mount.
-async function signIn(page) {
+async function signIn(page, acctOverride) {
   // In local-stack mode, sign in as THIS worker's dedicated account (distinct
   // user_id per worker = isolation). Else use the shared cloud dev login.
-  const _acct = workerAccount();
+  // acctOverride: a spec can pin a SPECIFIC pool account (the swarm uses the
+  // reserved one so its fixture is deterministic — see swarmAccount()).
+  const _acct = acctOverride || workerAccount();
   const _cloud = _acct ? null : cloudAccountFor(pageBrowserName(page));
   const _email = _acct ? _acct.email : _cloud.email;
   const _password = _acct ? _acct.password : _cloud.password;
@@ -323,9 +363,27 @@ async function step(page, opts) {
 // Emit the friction profile (slowest-first + total clicks/ms) and grade against
 // the committed click budget. Clicks are DETERMINISTIC → hard gate (returns
 // overBudget for the caller to assert on). Time is advisory (logged, not gated).
-function report(tag, baseline) {
+function report(tag, baseline, page) {
   const totalMs = _LEDGER.reduce((s, r) => s + r.ms, 0);
   const totalClicks = _LEDGER.reduce((s, r) => s + r.interactions, 0);
+  // Ship the ledger into the SAME analytics pipe live users feed (analytics_events,
+  // via the app's own _obs → ingest-telemetry). Fire-and-forget: pass the page and
+  // each step lands as event 'flow_step' (ctx 'tag|label', value clicks) plus one
+  // 'flow_total'. Runs only against deployed origins (observability is inert on
+  // localhost), never blocks or fails the test.
+  if (page) {
+    try {
+      const shipped = _LEDGER.map(r => ({ label: (tag + '|' + r.label).slice(0, 78), clicks: r.interactions }));
+      page.evaluate(({ rows, tag2, total }) => {
+        try {
+          if (!window._obs) return;
+          rows.forEach(r => window._obs.track('flow_step', r.label, r.clicks));
+          window._obs.track('flow_total', tag2, total);
+          window._obs.flush();
+        } catch (_e) {}
+      }, { rows: shipped, tag2: tag, total: totalClicks }).catch(() => {});
+    } catch (_e) {}
+  }
   const rows = _LEDGER.slice().sort((a, b) => b.ms - a.ms);
   // eslint-disable-next-line no-console
   console.log(`\n⏱  FLOW LEDGER [${tag}] — total ${totalMs}ms · ${totalClicks} interactions (slowest first):`);
@@ -557,6 +615,8 @@ async function seedProposal(page, { clientId, bidId, amount, tag = 'seed' } = {}
 }
 
 module.exports = {
+  scopeBypassHeader,
+  swarmAccount,
   cloudRows,
   seedProposal,
   seedName,

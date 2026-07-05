@@ -10,7 +10,7 @@
 // so it is safe to run against the real account every time. A page that throws
 // while rendering real data — the single most common prod regression — fails here
 // with the exact page id, no repro needed.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, finding } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -71,7 +71,7 @@ test.describe('page crawler — every view renders clean (UI-driven)', () => {
     // Land back on the dashboard so the session is left in a normal state.
     await page.evaluate(() => goPg('pg-dash'));
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(errors, finding({
       page: 'crawler', control: 'console', rule: 'no page may log a console error while rendering live data',
       expected: 'zero console errors across all pages', got: errors.length + ' error(s): ' + errors.slice(0, 5).join(' || '),

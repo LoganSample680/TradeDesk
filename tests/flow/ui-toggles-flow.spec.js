@@ -3,7 +3,7 @@
 // Permissions block is a default-closed accordion that opens on tap, and a kanban column
 // header collapses the bid cards inside it. None need seeded data — they assert the real
 // render + the real click handler's effect on real globals/DOM.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, tap } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -36,7 +36,7 @@ test.describe('UI toggles — proposal tiles, permissions accordion, kanban coll
         return { ok: r.filter === 'signed' && r.tabActive, got: JSON.stringify(r) };
       },
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -71,7 +71,7 @@ test.describe('UI toggles — proposal tiles, permissions accordion, kanban coll
         got: `closedInitially=${p.__closed0} openAfterTap=${p.__openAfter}`,
       }),
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -110,7 +110,7 @@ test.describe('UI toggles — proposal tiles, permissions accordion, kanban coll
         return { ok: r.rendered && r.hasNew && !r.hasOld, got: JSON.stringify({ ...r, ins: p.__ins }) };
       },
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -142,7 +142,7 @@ test.describe('UI toggles — proposal tiles, permissions accordion, kanban coll
         got: JSON.stringify({ before: p.__before, after: p.__after }),
       }),
     });
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

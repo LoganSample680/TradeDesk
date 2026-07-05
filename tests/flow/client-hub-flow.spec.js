@@ -5,7 +5,7 @@
 // _buildClientHubSnapshot + _uploadClientHub) → then open the REAL client.html
 // hub (anon, no login, same /api proxy) and assert the proposal renders as a
 // .hub-bid-row under "Awaiting your signature" — NOT the "Hub not found" state.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, seedProposal } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -84,7 +84,7 @@ test.describe('client hub shows a real proposal (UI-driven)', () => {
     // NO cleanup — the client, bid + hub snapshot stay in the dev account on purpose
     // so the owner can inspect what this test created (CLAUDE.md §13.7).
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
@@ -153,7 +153,7 @@ test.describe('client hub shows a real proposal (UI-driven)', () => {
       rule: async () => ({ ok: hub.render.ok, got: hub.render.got }),
     });
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

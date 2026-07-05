@@ -10,7 +10,7 @@
 // no js/completion-invoice.js, no send/sign, and it is not cloud-synced. The
 // document chain is therefore HALF complete: change orders ship, completion
 // invoices do not. This test guards the half that exists.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, cloudRows } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -92,7 +92,7 @@ test.describe('change order document chain (UI-driven)', () => {
     // NO cleanup — the bid, change order + client stay in the dev account on purpose
     // so the owner can inspect what this test created (CLAUDE.md §13.7).
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

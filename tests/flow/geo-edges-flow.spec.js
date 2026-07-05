@@ -11,7 +11,7 @@
 //
 // Soft-skips if the geo tables aren't provisioned. In-memory jobs[] is restored,
 // never saved (CLAUDE.md §13.7 — the shared account is untouched).
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -130,7 +130,7 @@ test.describe('geo-fence edge cases (UI-driven via the real ping handler)', () =
       rule: async (p) => ({ ok: String(p.__cur) === String(jobMB), got: `currentJob=${p.__cur} expected=${jobMB}` }),
     });
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });

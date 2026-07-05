@@ -1,0 +1,36 @@
+# One-tap bridge: copies the GH_DISPATCH_TOKEN repo secret into the Supabase
+# edge-function secrets via the management API — so the owner never has to find
+# the Secrets screen in the Supabase dashboard (painful on mobile). Run it once
+# after adding/rotating the GH_DISPATCH_TOKEN repo secret; ingest-telemetry
+# picks it up on its next invocation and the error hot lane goes INSTANT.
+name: Sync Dispatch Token to Supabase
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      SB_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SB_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      PAT: ${{ secrets.GH_DISPATCH_TOKEN }}
+    steps:
+      - name: Push GH_DISPATCH_TOKEN into Supabase function secrets
+        run: |
+          set -euo pipefail
+          [ -n "$SB_TOKEN" ] && [ -n "$SB_REF" ] || { echo "::error::SUPABASE_ACCESS_TOKEN / SUPABASE_PROJECT_REF repo secrets missing"; exit 1; }
+          [ -n "$PAT" ] || { echo "::error::GH_DISPATCH_TOKEN repo secret not set — add it under Settings → Secrets and variables → Actions, then re-run"; exit 1; }
+          # Delete any existing copy first so re-runs and token rotations always land
+          # the fresh value (the create endpoint rejects duplicates). 404s are fine.
+          curl -sS -X DELETE "https://api.supabase.com/v1/projects/$SB_REF/secrets" \
+            -H "Authorization: Bearer $SB_TOKEN" -H "Content-Type: application/json" \
+            -d '["GH_DISPATCH_TOKEN"]' >/dev/null || true
+          code=$(curl -sS -o /tmp/resp.txt -w "%{http_code}" -X POST \
+            "https://api.supabase.com/v1/projects/$SB_REF/secrets" \
+            -H "Authorization: Bearer $SB_TOKEN" -H "Content-Type: application/json" \
+            -d "$(jq -n --arg v "$PAT" '[{name:"GH_DISPATCH_TOKEN", value:$v}]')")
+          echo "HTTP $code"
+          case "$code" in 200|201) echo "✓ GH_DISPATCH_TOKEN synced to Supabase — instant hot lane is armed";;
+            *) echo "::error::sync failed: $(cat /tmp/resp.txt)"; exit 1;; esac

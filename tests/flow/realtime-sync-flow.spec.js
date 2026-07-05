@@ -6,7 +6,7 @@
 // `data_saved` broadcast that triggers a silent reload (cloud.js
 // _initRealtimeSubscriptions). If neither path delivers the row, sync is broken
 // and this fails with the bid id that never arrived.
-const { test, expect } = require('@playwright/test');
+const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
@@ -69,7 +69,7 @@ test.describe('realtime cross-device sync (UI-driven)', () => {
     // extra device page is closed (resource cleanup, not data).
     await pageB.close().catch(() => {});
 
-    const rep = report(FLOW, BASELINE);
+    const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 });
