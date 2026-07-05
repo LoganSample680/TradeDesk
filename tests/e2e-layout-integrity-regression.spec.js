@@ -10,7 +10,7 @@
  * and that the app doesn't bleed past the viewport at mobile width.
  */
 
-const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
+const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors, goPg } = require('./helpers');
 
 test.describe('layout integrity — mobile', () => {
   let page;
@@ -54,8 +54,8 @@ test.describe('layout integrity — mobile', () => {
   // the app-wide 56px/90px convention, and phone/email stacks on mobile via .set-form-2col.
   test('settings: zip matches the app-wide city/state/zip proportions, and email never clips on mobile', async () => {
     await page.setViewportSize({ width: 390, height: 844 });
+    await goPg(page, 'pg-settings'); // navigates + waits for the .pg.active transition to settle
     const r = await page.evaluate(() => {
-      goPg && typeof goPg === 'function' && goPg('pg-settings');
       const zip = document.getElementById('set-bzip');
       const state = document.getElementById('set-bstate-display');
       const phone = document.getElementById('set-bphone');
@@ -66,6 +66,7 @@ test.describe('layout integrity — mobile', () => {
       const pr = phone.getBoundingClientRect(), er = email.getBoundingClientRect();
       return {
         missing: false,
+        pageActive: document.getElementById('pg-settings')?.classList.contains('active') || false,
         zipWiderThanState: zr.width > sr.width,       // 90px > 56px — matches app convention
         stacked: Math.abs(pr.top - er.top) > 5,        // email drops to its own row on mobile
         emailFullWidth: er.width >= pr.width * 1.5,    // gets the whole row, not a clipped half
@@ -75,6 +76,7 @@ test.describe('layout integrity — mobile', () => {
       };
     });
     expect(r.missing, 'zip/state/phone/email inputs must exist on the settings page').toBe(false);
+    expect(r.pageActive, 'pg-settings must actually be the active page before measuring layout').toBe(true);
     expect(r.zipWiderThanState, 'zip box must use the same 56px/90px proportions as every other city/state/zip control in the app').toBe(true);
     expect(r.stacked, 'phone and email must stack on mobile so email gets full row width').toBe(true);
     expect(r.emailFullWidth, 'email box must be roughly full-row width on mobile, not half-clipped').toBe(true);
