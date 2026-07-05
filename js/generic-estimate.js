@@ -1169,6 +1169,16 @@ function _byoUpdateRail(){
   // government and not the contractor's earnings, so including it inflates the margin.
   _updateMarginGauge('byo',sub);
 }
+// Comma-formats a BYO price field as the contractor types — native type="number"
+// inputs reject commas outright in every browser, so this field is plain text
+// with a digits-only filter + live thousands-grouping instead.
+function _byaFormatPriceInput(el){
+  const raw=(el.value||'').replace(/[^\d]/g,'');
+  el.value=raw?Number(raw).toLocaleString('en-US'):'';
+}
+function _byaPriceValue(id){
+  return parseFloat((document.getElementById(id)?.value||'').replace(/,/g,''))||0;
+}
 function _byoAddItem(sec){
   document.getElementById('_byo-add-modal')?.remove();
   const ov=document.createElement('div');ov.id='_byo-add-modal';
@@ -1176,7 +1186,7 @@ function _byoAddItem(sec){
   ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
     '<div style="font-weight:800;font-size:16px;margin-bottom:16px">Add to '+escHtml(sec)+'</div>'+
     '<div class="f" style="margin-bottom:10px"><label>What is it?</label><input type="text" id="_bya-label" placeholder="e.g. Bedroom 3 — walls only"></div>'+
-    '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="number" id="_bya-price" placeholder="0" min="0" step="50"></div></div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="text" inputmode="numeric" id="_bya-price" placeholder="0" oninput="_byaFormatPriceInput(this)"></div></div>'+
     '<div class="f" style="margin-bottom:6px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><input type="text" id="_bya-notes" placeholder="e.g. Two coats, ceilings included"></div>'+
     '<div style="font-size:11px;color:var(--text-3);margin-bottom:14px">Tab or Enter from Notes to save &amp; add another</div>'+
     '<div style="display:flex;gap:10px">'+
@@ -1215,7 +1225,7 @@ function _byoAddItem(sec){
 }
 function _byaConfirm(sec){
   const label=(document.getElementById('_bya-label')?.value||'').trim();
-  const price=parseFloat(document.getElementById('_bya-price')?.value)||0;
+  const price=_byaPriceValue('_bya-price');
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
   if(!label)return;
   const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
@@ -1226,7 +1236,7 @@ function _byaConfirm(sec){
 function _byaConfirmAndNext(sec){
   // Save current item (if label is filled) then immediately open a fresh modal for same section
   const label=(document.getElementById('_bya-label')?.value||'').trim();
-  const price=parseFloat(document.getElementById('_bya-price')?.value)||0;
+  const price=_byaPriceValue('_bya-price');
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
   if(label){
     const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
@@ -1244,7 +1254,7 @@ function _byoEditItem(idx){
   ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
     '<div style="font-weight:800;font-size:16px;margin-bottom:16px">Edit item</div>'+
     '<div class="f" style="margin-bottom:10px"><label>What is it?</label><input type="text" id="_bya-label" value="'+escHtml(it.label)+'" placeholder="e.g. Bedroom 3 — walls only"></div>'+
-    '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="number" id="_bya-price" value="'+it.price+'" placeholder="0" min="0" step="50"></div></div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="text" inputmode="numeric" id="_bya-price" value="'+(it.price?Number(it.price).toLocaleString('en-US'):'')+'" placeholder="0" oninput="_byaFormatPriceInput(this)"></div></div>'+
     '<div class="f" style="margin-bottom:16px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><input type="text" id="_bya-notes" value="'+escHtml(it.notes||'')+'" placeholder="e.g. Two coats, ceilings included"></div>'+
     '<div style="display:flex;gap:10px">'+
       '<button onclick="document.getElementById(\'_byo-add-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
@@ -1267,7 +1277,7 @@ function _byoEditItem(idx){
 function _byaEditConfirm(idx){
   const it=_byoItems[idx];if(!it)return;
   const label=(document.getElementById('_bya-label')?.value||'').trim();
-  const price=parseFloat(document.getElementById('_bya-price')?.value)||0;
+  const price=_byaPriceValue('_bya-price');
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
   if(!label)return;
   it.label=label;it.price=price;it.notes=notes;

@@ -5374,6 +5374,32 @@ test.describe('Tax, legal, and template functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // Regression — the BYO price field was a native <input type="number">, which
+  // rejects commas at the keystroke level (worst on iOS Safari/iPad, inconsistent
+  // elsewhere — the "won't accept comma" report). Fixed: the field is now plain
+  // text with a live comma-formatting oninput handler (_byaFormatPriceInput),
+  // and reads go through _byaPriceValue which strips commas before parsing —
+  // so typing "1500" displays as "1,500" and still stores as the number 1500.
+  test('_bya-price field auto-formats with commas and parses back to the correct number', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _byoAddItem !== 'function' || typeof _byaFormatPriceInput !== 'function') return { skip: true };
+      _byoAddItem('Introduction');
+      const el = document.getElementById('_bya-price');
+      if (!el) return { skip: true };
+      const fieldType = el.type;
+      el.value = '1500';
+      _byaFormatPriceInput(el);
+      const displayed = el.value;
+      const parsed = (typeof _byaPriceValue === 'function') ? _byaPriceValue('_bya-price') : null;
+      document.getElementById('_byo-add-modal')?.remove();
+      return { fieldType, displayed, parsed };
+    });
+    if (result.skip) return;
+    expect(result.fieldType, 'must not be type="number" — that is what rejected commas').not.toBe('number');
+    expect(result.displayed).toBe('1,500');
+    expect(result.parsed).toBe(1500);
+  });
+
   test('_byaConfirm — calls without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _byaConfirm !== 'function') return { skip: true };
