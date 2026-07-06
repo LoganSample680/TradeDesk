@@ -5548,6 +5548,27 @@ test.describe('Tax, legal, and template functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  test('_tmPreviewClient calls sendGenericProposal(true) — must preview, never actually send (regression)', async () => {
+    // Root cause: _tmPreviewClient used to call sendGenericProposal() with NO argument,
+    // so previewOnly was undefined (falsy) — T&M's "Preview as client" button silently
+    // sent a real, live proposal (signing link + possible SMS/email) instead of previewing.
+    // _byoPreviewClient has always correctly passed `true`; T&M must match it exactly.
+    const result = await page.evaluate(() => {
+      if (typeof _tmPreviewClient !== 'function' || typeof _byoPreviewClient !== 'function') return { skip: true };
+      const orig = window.sendGenericProposal;
+      let tmArg = 'not-called', byoArg = 'not-called';
+      window.sendGenericProposal = (previewOnly) => { tmArg = previewOnly; };
+      try { _tmPreviewClient(); } catch (e) {}
+      window.sendGenericProposal = (previewOnly) => { byoArg = previewOnly; };
+      try { _byoPreviewClient(); } catch (e) {}
+      window.sendGenericProposal = orig;
+      return { skip: false, tmArg, byoArg };
+    });
+    if (result.skip) return;
+    expect(result.tmArg).toBe(true);
+    expect(result.byoArg).toBe(true);
+  });
+
   test('no console errors during tax/legal/template tests', async () => {
     assertNoErrors(page, 'tax/legal/template');
   });

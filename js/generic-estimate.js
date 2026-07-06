@@ -1541,13 +1541,7 @@ function _tmSyncCadence(){
     if(_tmBillingCycle===c)el.classList.add('on');else el.classList.remove('on');
   });
 }
-function _tmPreviewClient(){
-  // Save draft first so the latest data is persisted, then open the existing proposal preview flow
-  saveGenericEstimate(true);
-  // Fall back to sending if no dedicated preview exists yet
-  showToast('Preview as client — sending proposal flow opens for review','👁');
-  if(typeof sendGenericProposal==='function')sendGenericProposal();
-}
+function _tmPreviewClient(){sendGenericProposal(true);}
 
 function _geiBack(){
   if(_geiStep>1){goGeiStep(_geiStep-1);return;}
