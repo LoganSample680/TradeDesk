@@ -1379,9 +1379,9 @@ body.dark .cal-cell.other{background:var(--cream)}
             <div id="err-cf-addr" style="display:none;font-size:11px;color:var(--c-red);margin-top:3px"></div>
           </div>
           <div class="f"><label>City</label><input id="cf-city" placeholder="Denver" autocomplete="address-level2" oninput="_updateAddrComputed()"></div>
-          <div class="f" style="display:grid;grid-template-columns:1fr 80px;gap:8px">
-            <div><label>State</label><input id="cf-state" placeholder="CO" maxlength="2" autocomplete="address-level1" oninput="this.value=this.value.toUpperCase();_updateAddrComputed()"></div>
-            <div><label>Zip</label><input id="cf-zip" placeholder="80203" maxlength="10" autocomplete="postal-code" oninput="_updateAddrComputed()"></div>
+          <div class="f" style="display:grid;grid-template-columns:1fr 80px;gap:8px;min-width:0">
+            <div style="min-width:0"><label>State</label><input id="cf-state" placeholder="CO" maxlength="2" autocomplete="address-level1" oninput="this.value=this.value.toUpperCase();_updateAddrComputed()"></div>
+            <div style="min-width:0"><label>Zip</label><input id="cf-zip" placeholder="80203" maxlength="10" autocomplete="postal-code" oninput="_updateAddrComputed()"></div>
           </div>
           <div class="f"><label>Email</label><input type="email" id="cf-email" placeholder="client@email.com" autocomplete="off"></div>
           <div class="f"><label>Property type</label><select id="cf-ptype"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>

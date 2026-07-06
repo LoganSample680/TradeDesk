@@ -97,6 +97,40 @@ test.describe('layout integrity — mobile', () => {
     expect(r.scrollValue - r.clientValue, 'a long email must not overflow its own box (no clipped text)').toBeLessThanOrEqual(2);
   });
 
+  // Regression (owner-reported, real device screenshot): on the New Lead / client record
+  // form, the State/Zip row is one grid cell (#cf-state/#cf-zip nested "1fr 80px" grid)
+  // sharing its column with Property type and Occupation (separate rows, same auto-fit
+  // column track). Without an explicit min-width:0 on that nested-grid wrapper and its
+  // 1fr (State) child, the State input's intrinsic min-content width can push the whole
+  // cell wider than its assigned column, so the Zip box's right edge lands a few px past
+  // Property type/Occupation's right edge — visibly "not in line" on the right.
+  test('client form: State/Zip cell right edge lines up with Property type / Occupation (no nested-grid overflow)', async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await goPg(page, 'pg-clients');
+    const r = await page.evaluate(() => {
+      if (typeof openNewClient !== 'function') return { missing: true };
+      openNewClient();
+      const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+      set('cf-street', '2020 SW Randolph Ave');
+      set('cf-city', 'Topeka');
+      set('cf-state', 'KS');
+      set('cf-zip', '66604');
+      const zip = document.getElementById('cf-zip');
+      const ptype = document.getElementById('cf-ptype');
+      const occupation = document.getElementById('cf-occupation');
+      if (!zip || !ptype || !occupation) return { missing: true };
+      return {
+        missing: false,
+        zipRight: zip.getBoundingClientRect().right,
+        ptypeRight: ptype.getBoundingClientRect().right,
+        occupationRight: occupation.getBoundingClientRect().right,
+      };
+    });
+    expect(r.missing, 'cf-zip / cf-ptype / cf-occupation must exist on the New Lead form').toBe(false);
+    expect(Math.abs(r.zipRight - r.ptypeRight), 'Zip box right edge must line up with Property type right edge').toBeLessThanOrEqual(1);
+    expect(Math.abs(r.zipRight - r.occupationRight), 'Zip box right edge must line up with Occupation right edge').toBeLessThanOrEqual(1);
+  });
+
   // Regression: the dashboard "Crew today" tile used background:var(--bg2) — the app's
   // convention for NESTED/inset surfaces sitting inside a card (buttons, sub-boxes, table
   // headers) — instead of var(--bg-card), the white top-level tile background every other
