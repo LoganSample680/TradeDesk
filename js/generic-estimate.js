@@ -930,6 +930,14 @@ function _openScopeSheet(containerId){
     '</div>'+itemsHtml;
   ov.appendChild(sheet);document.body.appendChild(ov);
 }
+// Shared Edit/Remove button pair for a line-item row — used by both BYO's
+// item rows and T&M's material category rows so the two lists look and
+// behave identically. event.stopPropagation() keeps a wrapping row-level
+// onclick (BYO toggles on/off; T&M opens edit) from also firing.
+function _geiRowActionBtns(editCall,delCall,delTitle){
+  return '<button onclick="event.stopPropagation();'+editCall+'" title="Edit" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--blue);touch-action:manipulation">Edit</button>'+
+    '<button onclick="event.stopPropagation();'+delCall+'" title="'+(delTitle||'Remove')+'" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:#A32D2D;touch-action:manipulation">✕</button>';
+}
 function _editEstTitle(titleId,btnId){
   const titleEl=document.getElementById(titleId);
   const btn=document.getElementById(btnId);
@@ -982,8 +990,7 @@ function _byoRenderSections(){
         '</div>'+
         '<div class="byo-price">$'+it.price.toLocaleString()+'</div>'+
         '<div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px">'+
-          '<button onclick="event.stopPropagation();_byoEditItem('+idx+')" title="Edit" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--blue);touch-action:manipulation">Edit</button>'+
-          '<button onclick="event.stopPropagation();_byoDelItem('+idx+')" title="Remove" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:#A32D2D;touch-action:manipulation">✕</button>'+
+          _geiRowActionBtns('_byoEditItem('+idx+')','_byoDelItem('+idx+')')+
         '</div>'+
       '</div>';
     }).join(''):
@@ -1656,13 +1663,15 @@ function _tmRenderMatList(){
     const rawTotal=l.total||((l.qty||0)*(l.rate||0));
     const dispTotal=Math.round(rawTotal*mm);
     return '<div class="tm-mat-row">'+
-      '<div style="flex:1;cursor:pointer;min-width:0" onclick="_tmEditMatCat('+i+')">'+
+      '<div style="flex:1;cursor:pointer;min-width:0;overflow-wrap:anywhere" onclick="_tmEditMatCat('+i+')">'+
         '<div class="tm-mat-cat">'+escHtml(l.desc||'Untitled')+'</div>'+
         (l.notes?'<div class="tm-mat-notes">'+escHtml(l.notes)+'</div>':'')+
       '</div>'+
-      '<div style="display:flex;align-items:flex-start;gap:0">'+
+      '<div style="display:flex;align-items:center;gap:8px">'+
         '<div class="tm-mat-est">$'+(dispTotal||0).toLocaleString()+'</div>'+
-        '<button class="tm-mat-del" onclick="_tmDelMatCat('+i+')" title="Remove category">×</button>'+
+        '<div style="display:flex;gap:4px;flex-shrink:0">'+
+          _geiRowActionBtns('_tmEditMatCat('+i+')','_tmDelMatCat('+i+')','Remove category')+
+        '</div>'+
       '</div>'+
     '</div>';
   }).join('');

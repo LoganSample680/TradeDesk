@@ -1019,9 +1019,6 @@ body.dark .cal-cell.other{background:var(--cream)}
 .tm-mat-cat{font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.1px}
 .tm-mat-notes{font-size:11px;color:var(--text-3);margin-top:2px;font-weight:500}
 .tm-mat-est{font-family:var(--font-display);font-size:14px;font-weight:800;letter-spacing:-.3px;color:var(--text);font-variant-numeric:tabular-nums}
-.tm-mat-del{background:none;border:0;color:var(--text-3);cursor:pointer;font-size:14px;padding:0 0 0 8px;opacity:0;transition:opacity .12s,color .12s;font-family:inherit;line-height:1}
-.tm-mat-row:hover .tm-mat-del{opacity:1}
-.tm-mat-del:hover{color:var(--c-red)}
 .tm-mat-empty{padding:14px 0;text-align:center;color:var(--text-3);font-size:12px;font-weight:500}
 
 /* Billing cadence chip (interactive variant of .chip) */
@@ -1038,7 +1035,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 .byo-row.req:hover{background:transparent}
 .byo-check{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--line-2);background:var(--bg-card);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:transparent;font-size:12px;font-weight:900}
 .byo-check.on{background:var(--denim);border-color:var(--denim);color:#fff}
-.byo-body{flex:1;min-width:0}
+.byo-body{flex:1;min-width:0;overflow-wrap:anywhere}
 .byo-label{font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.1px}
 .byo-meta{font-size:10px;color:var(--text-3);margin-top:3px;font-weight:600;letter-spacing:.04em;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .byo-price{font-family:var(--font-display);font-size:15px;font-weight:800;color:var(--text);letter-spacing:-.3px;font-variant-numeric:tabular-nums;min-width:64px;text-align:right;flex-shrink:0}

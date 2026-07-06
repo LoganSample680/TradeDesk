@@ -119,5 +119,63 @@ test.describe('layout integrity — mobile', () => {
     expect(r.usesInsetBg, 'the tile must NOT use var(--bg2) — that is the inset/nested-surface color, not a top-level tile background').toBe(false);
   });
 
+  // Regression: a BYO line-item note with no spaces (a long unbroken string —
+  // exactly what a contractor pastes/mashes into the notes textarea) overflowed
+  // its row and bled past the viewport edge on mobile. .byo-body had min-width:0
+  // (correct for the flex-shrink) but nothing telling the browser it's allowed to
+  // break a word with no natural break point — overflow-wrap:anywhere fixes it.
+  test('a long unbroken BYO item note wraps inside its row, does not bleed off-screen at 390px', async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const r = await page.evaluate(() => {
+      const c = { id: 79101, name: 'Bleed Test Client', addr: '1 Bleed St' };
+      clients = clients.filter(x => x.id !== 79101).concat([c]);
+      bids = bids.filter(x => x.client_id !== 79101);
+      openGenericEstimate(c, null, 'painting');
+      _geiIsFreeForm = true;
+      goGeiStep(2); // renders gei-byo-page shell via _byoShowPage (no saved bid, so byoItems resets to [])
+      const garbage = 'jdsjdjdjbddbdbdbbdnsjsksksnsnsnsmmsmsmssnsnsmssmsmsnsjdjdndjdjdjdjshshshshsjjsjsjsjsjjs';
+      _byoItems = [{ id: 1, section: 'Interior', label: 'Test', notes: garbage, price: 100, on: true }];
+      _byoRenderSections(); // re-render rows with the note now that the page shell exists
+      const overflow = document.documentElement.scrollWidth - window.innerWidth;
+      const metaEl = [...document.querySelectorAll('.byo-meta')].find(el => el.textContent.includes(garbage.slice(0, 20)));
+      return {
+        overflow,
+        metaFound: !!metaEl,
+        metaFitsRow: metaEl ? metaEl.getBoundingClientRect().right <= window.innerWidth + 1 : null,
+      };
+    });
+    expect(r.metaFound, 'the long-note row must actually be in the DOM for this test to mean anything').toBe(true);
+    expect(r.overflow, 'no horizontal bleed at 390px from a long unbroken notes string').toBeLessThanOrEqual(1);
+    expect(r.metaFitsRow, 'the notes text itself must stay within the viewport, not run off the right edge').toBe(true);
+  });
+
+  // Regression: T&M material category rows had no visible "Edit" affordance —
+  // only a hover-only (opacity:0 until :hover) delete "×", invisible/undiscoverable
+  // on touch devices, and inconsistent with BYO's always-visible Edit/✕ pair.
+  // Both lists now render from the same _geiRowActionBtns helper.
+  test('T&M material category row has a visible Edit button, matching BYO\'s row treatment', async () => {
+    const r = await page.evaluate(() => {
+      const c = { id: 79102, name: 'TM Edit Btn Client', addr: '1 Edit Btn Rd' };
+      clients = clients.filter(x => x.id !== 79102).concat([c]);
+      bids = bids.filter(x => x.client_id !== 79102);
+      openGenericEstimate(c, null, 'general');
+      _geiIsTM = true; _geiIsFreeForm = false;
+      _geiLines = [{ desc: 'Paint', qty: 1, rate: 200, total: 200, _tmLabor: false }];
+      goGeiStep(2); // renders gei-tm-page via _tmShowPage → _tmRenderMatList
+      const row = document.querySelector('#tm-mat-list .tm-mat-row');
+      const editBtn = row ? [...row.querySelectorAll('button')].find(b => b.textContent.trim() === 'Edit') : null;
+      const res = {
+        hasRow: !!row,
+        hasEditBtn: !!editBtn,
+        editVisible: editBtn ? getComputedStyle(editBtn).opacity !== '0' : null,
+      };
+      _geiIsTM = false;
+      return res;
+    });
+    expect(r.hasRow).toBe(true);
+    expect(r.hasEditBtn, 'material category row must have a visible "Edit" button').toBe(true);
+    expect(r.editVisible, 'the Edit button must be visible by default, not hover-only').toBe(true);
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });
