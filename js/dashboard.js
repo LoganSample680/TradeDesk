@@ -14,6 +14,48 @@ function _trendHtml(curr,prev,reverseColor){
   return '<div class="met-s" style="color:'+color+'">'+arrow+Math.abs(pct)+'% <span style="color:var(--text3);font-weight:500">vs LY</span></div>';
 }
 
+function _mmtNewLeads(){
+  return clients.filter(c=>{
+    if(getClientStage(c.id).stage!=='new')return false;
+    if(bids.some(b=>b.client_id===c.id))return false;
+    if(jobs.some(j=>j.client_id===c.id&&j.eventType==='estimate'))return false;
+    return true;
+  });
+}
+function _showNewLeadsPicker(){
+  const leads=_mmtNewLeads().slice().sort((a,b)=>{
+    const ac=a.created||'',bc=b.created||'';
+    if(ac!==bc)return ac.localeCompare(bc);
+    return (a.id||0)-(b.id||0);
+  });
+  document.getElementById('_leads-pick-ov')?.remove();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_leads-pick-ov';
+  const box=document.createElement('div');box.className='zmodal';
+  box.style.maxHeight='85vh';box.style.overflowY='auto';
+  const tk=todayKey();
+  const rows=leads.map(c=>{
+    const days=c.created?Math.floor((new Date(tk+'T12:00')-new Date(c.created+'T12:00'))/86400000):0;
+    const ageLabel=days<=0?'New today':days+'d ago';
+    return '<button onclick="_pickLeadForEstimate('+c.id+')" style="display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;padding:12px 4px;border:none;border-bottom:1px solid var(--border);background:none;cursor:pointer;font-family:inherit">'+
+      '<span style="font-size:14px;font-weight:700;color:var(--text)">'+escHtml(c.name)+'</span>'+
+      '<span style="font-size:11px;color:var(--text3);white-space:nowrap">'+ageLabel+'</span>'+
+    '</button>';
+  }).join('');
+  box.innerHTML=
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'+
+      '<div style="font-size:16px;font-weight:800">New leads — oldest first</div>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">✕</button>'+
+    '</div>'+
+    (rows||'<div style="font-size:13px;color:var(--text3);padding:12px 4px">No new leads.</div>');
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function _pickLeadForEstimate(clientId){
+  document.getElementById('_leads-pick-ov')?.remove();
+  const c=getClientById(clientId);
+  if(!c)return;
+  _doOpenEstimate(c);
+}
 function renderDash(){
   if(_renderDashRunning)return; // prevent cascade
   _renderDashRunning=true;
@@ -1218,12 +1260,7 @@ function renderTodayFeed(){
   });
 
   // BUILD — New leads with no estimates yet
-  const newLeads=clients.filter(c=>{
-    if(getClientStage(c.id).stage!=='new')return false;
-    if(bids.some(b=>b.client_id===c.id))return false;
-    if(jobs.some(j=>j.client_id===c.id&&j.eventType==='estimate'))return false;
-    return true;
-  });
+  const newLeads=_mmtNewLeads();
   if(newLeads.length){
     buildItems.push(
       '<div class="tf-card">'+
@@ -1232,7 +1269,7 @@ function renderTodayFeed(){
           '<div class="tf-name">'+(newLeads.length===1?'1 new lead ready':newLeads.length+' new leads ready')+'</div>'+
           '<div class="tf-sub" style="color:var(--blue)">Build estimates to move them forward</div>'+
         '</div>'+
-        '<div class="tf-acts"><button onclick="goPg(\'pg-leads\')" class="btn btn-sm btn-p" style="font-size:11px">View leads →</button></div>'+
+        '<div class="tf-acts"><button onclick="_showNewLeadsPicker()" class="btn btn-sm btn-p" style="font-size:11px">View leads →</button></div>'+
       '</div>'
     );
   }
