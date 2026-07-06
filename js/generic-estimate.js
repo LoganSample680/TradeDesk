@@ -1105,6 +1105,26 @@ function _editEstTitle(titleId,btnId){
 function _editByoTitle(){_editEstTitle('byo-tbar-title','byo-edit-title-btn');}
 function _editTMTitle(){_editEstTitle('tm-tbar-title','tm-edit-title-btn');}
 function _editScopeTitle(){_editEstTitle('gei-trade-title','scope-edit-title-btn');}
+// Shared item-row renderer — one row shape for BYO items (checkbox toggle +
+// edit/delete) and T&M material categories (no checkbox, add/edit/delete only):
+// title + price + actions on one header line; notes (if present) run full-width
+// below that line instead of being squeezed into a narrow left column next to
+// empty grey space under the price/action buttons.
+function _geiItemRowHtml(opts){
+  const{label,notes,price,editFn,delFn,delTitle,checked,rowOnclick,extraClass}=opts;
+  const checkHtml=checked!==undefined?'<div class="byo-check'+(checked?' on':'')+'">'+(checked?'✓':'')+'</div>':'';
+  return '<div class="byo-row'+(checked?' on':'')+(extraClass?' '+extraClass:'')+'"'+(rowOnclick?' onclick="'+rowOnclick+'"':'')+'>'+
+    '<div class="byo-row-hd">'+
+      checkHtml+
+      '<div class="byo-label">'+escHtml(label)+'</div>'+
+      '<div class="byo-price">$'+price.toLocaleString()+'</div>'+
+      '<div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px">'+
+        _geiRowActionBtns(editFn,delFn,delTitle)+
+      '</div>'+
+    '</div>'+
+    (notes?'<div class="byo-meta" style="font-size:11px;color:var(--text-3)">'+escHtml(notes)+'</div>':'')+
+  '</div>';
+}
 function _byoRenderSections(){
   _injectRrpItems();
   const wrap=document.getElementById('byo-sections');if(!wrap)return;
@@ -1116,17 +1136,11 @@ function _byoRenderSections(){
     const isCustom=!_BYO_DEFAULT_SECTIONS.includes(sec);
     const rowHtml=rows.length?rows.map(it=>{
       const idx=_byoItems.indexOf(it);
-      return '<div class="byo-row'+(it.on?' on':'')+'" onclick="_byoToggle('+idx+')">'+
-        '<div class="byo-check'+(it.on?' on':'')+'">'+( it.on?'✓':''  )+'</div>'+
-        '<div class="byo-body">'+
-          '<div class="byo-label">'+escHtml(it.label)+'</div>'+
-          (it.notes&&!it._rrp?'<div class="byo-meta" style="font-size:11px;color:var(--text-3)">'+escHtml(it.notes)+'</div>':'')+
-        '</div>'+
-        '<div class="byo-price">$'+it.price.toLocaleString()+'</div>'+
-        '<div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px">'+
-          _geiRowActionBtns('_byoEditItem('+idx+')','_byoDelItem('+idx+')')+
-        '</div>'+
-      '</div>';
+      return _geiItemRowHtml({
+        checked:it.on,rowOnclick:'_byoToggle('+idx+')',
+        label:it.label,notes:(it.notes&&!it._rrp)?it.notes:'',price:it.price,
+        editFn:'_byoEditItem('+idx+')',delFn:'_byoDelItem('+idx+')'
+      });
     }).join(''):
     '<div style="padding:14px 16px;font-size:12px;color:var(--text-3);font-style:italic">No items yet — tap + Add item</div>';
     return '<div class="card card-pad-0" style="margin-bottom:12px">'+
@@ -1828,18 +1842,10 @@ function _tmRenderMatList(){
   }
   el.innerHTML=mats.map(({l,i})=>{
     const rawTotal=l.total||((l.qty||0)*(l.rate||0));
-    return '<div class="tm-mat-row">'+
-      '<div style="flex:1;cursor:pointer;min-width:0;overflow-wrap:anywhere" onclick="_tmEditMatCat('+i+')">'+
-        '<div class="tm-mat-cat">'+escHtml(l.desc||'Untitled')+'</div>'+
-        (l.notes?'<div class="tm-mat-notes">'+escHtml(l.notes)+'</div>':'')+
-      '</div>'+
-      '<div style="display:flex;align-items:center;gap:8px">'+
-        '<div class="tm-mat-est">$'+(rawTotal||0).toLocaleString()+'</div>'+
-        '<div style="display:flex;gap:4px;flex-shrink:0">'+
-          _geiRowActionBtns('_tmEditMatCat('+i+')','_tmDelMatCat('+i+')','Remove category')+
-        '</div>'+
-      '</div>'+
-    '</div>';
+    return _geiItemRowHtml({
+      label:l.desc||'Untitled',notes:l.notes||'',price:rawTotal||0,
+      editFn:'_tmEditMatCat('+i+')',delFn:'_tmDelMatCat('+i+')',delTitle:'Remove category'
+    });
   }).join('');
 }
 function _tmAddMatCat(){ _tmMatCatModal(-1); }

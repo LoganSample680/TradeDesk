@@ -188,6 +188,10 @@ test.describe('layout integrity — mobile', () => {
   // vertically centered the checkbox and price/Edit/✕ cluster against the whole
   // row height — they floated in the middle of the wrapped paragraph instead of
   // staying next to the item title at the top, looking broken on any screen size.
+  // Note: alignment lives on the inner .byo-row-hd header line now, not .byo-row
+  // itself — .byo-row became a column container (header row + full-width notes
+  // below it) as part of taking advantage of the grey space notes used to waste
+  // next to the price/Edit/x buttons (see the next test).
   test('BYO item row: checkbox and price/actions stay top-aligned with the item title, even with a long wrapped note', async () => {
     const r = await page.evaluate(() => {
       const c = { id: 79102, name: 'Row Align Client', addr: '1 Row Align St' };
@@ -201,21 +205,57 @@ test.describe('layout integrity — mobile', () => {
       _byoRenderSections();
       const row = document.querySelector('.byo-row');
       if (!row) return { missing: true };
+      const hd = row.querySelector('.byo-row-hd');
       const check = row.querySelector('.byo-check');
       const label = row.querySelector('.byo-label');
       const price = row.querySelector('.byo-price');
       const lTop = label.getBoundingClientRect().top;
       return {
         missing: false,
-        alignItems: getComputedStyle(row).alignItems,
+        alignItems: hd ? getComputedStyle(hd).alignItems : null,
         checkNearLabel: Math.abs(check.getBoundingClientRect().top - lTop) < 5,
         priceNearLabel: Math.abs(price.getBoundingClientRect().top - lTop) < 5,
       };
     });
     expect(r.missing, 'the BYO item row must exist for this test to mean anything').toBe(false);
-    expect(r.alignItems).toBe('flex-start');
+    expect(r.alignItems).toBe('center');
     expect(r.checkNearLabel, 'checkbox must stay aligned with the item title, not centered against a tall note').toBe(true);
     expect(r.priceNearLabel, 'price must stay aligned with the item title, not centered against a tall note').toBe(true);
+  });
+
+  // Regression (owner-reported): a BYO item's notes were squeezed into the narrow
+  // middle column next to the checkbox, leaving the grey space under the price/
+  // Edit/x buttons empty for the rest of the note's height. Notes now render as
+  // their own full-width block below the header row instead. Same shared
+  // _geiItemRowHtml function drives both BYO items and T&M material categories.
+  test('BYO item row: notes render full-width below the header line, not squeezed into a narrow column', async () => {
+    const r = await page.evaluate(() => {
+      const c = { id: 79103, name: 'Row Width Client', addr: '1 Row Width St' };
+      clients = clients.filter(x => x.id !== 79103).concat([c]);
+      bids = bids.filter(x => x.client_id !== 79103);
+      openGenericEstimate(c, null, null, { mode: 'byo' });
+      goGeiStep(2);
+      _geiIsFreeForm = true;
+      const longNote = Array(20).fill('Long wrapped note line here').join(' ');
+      _byoItems = [{ id: 1, section: 'Materials', label: 'Bedroom', notes: longNote, price: 234234, on: true }];
+      _byoRenderSections();
+      const row = document.querySelector('.byo-row');
+      if (!row) return { missing: true };
+      const hd = row.querySelector('.byo-row-hd');
+      const meta = row.querySelector('.byo-meta');
+      if (!hd || !meta) return { missing: true };
+      const rowRect = row.getBoundingClientRect();
+      const hdRect = hd.getBoundingClientRect();
+      const metaRect = meta.getBoundingClientRect();
+      return {
+        missing: false,
+        metaBelowHeader: metaRect.top >= hdRect.bottom - 1,
+        metaUsesMostOfRowWidth: metaRect.width >= rowRect.width * 0.7,
+      };
+    });
+    expect(r.missing, 'the row, header, and notes elements must all exist for this test to mean anything').toBe(false);
+    expect(r.metaBelowHeader, 'notes must sit below the header row (checkbox/title/price/actions), not beside it').toBe(true);
+    expect(r.metaUsesMostOfRowWidth, 'notes must use most of the row width, not be squeezed into a narrow column').toBe(true);
   });
 
   // Regression: the estimate-builder row fix above did NOT cover the actual
@@ -456,7 +496,8 @@ test.describe('layout integrity — mobile', () => {
   // Regression: T&M material category rows had no visible "Edit" affordance —
   // only a hover-only (opacity:0 until :hover) delete "×", invisible/undiscoverable
   // on touch devices, and inconsistent with BYO's always-visible Edit/✕ pair.
-  // Both lists now render from the same _geiRowActionBtns helper.
+  // Both lists now render from the same _geiItemRowHtml helper (shared row shape),
+  // so T&M rows carry the .byo-row family of classes, not a separate .tm-mat-row.
   test('T&M material category row has a visible Edit button, matching BYO\'s row treatment', async () => {
     const r = await page.evaluate(() => {
       const c = { id: 79102, name: 'TM Edit Btn Client', addr: '1 Edit Btn Rd' };
@@ -466,7 +507,7 @@ test.describe('layout integrity — mobile', () => {
       _geiIsTM = true; _geiIsFreeForm = false;
       _geiLines = [{ desc: 'Paint', qty: 1, rate: 200, total: 200, _tmLabor: false }];
       goGeiStep(2); // renders gei-tm-page via _tmShowPage → _tmRenderMatList
-      const row = document.querySelector('#tm-mat-list .tm-mat-row');
+      const row = document.querySelector('#tm-mat-list .byo-row');
       const editBtn = row ? [...row.querySelectorAll('button')].find(b => b.textContent.trim() === 'Edit') : null;
       const res = {
         hasRow: !!row,
