@@ -264,6 +264,60 @@ test.describe('layout integrity — mobile', () => {
     expect(r.texts.some(t => t.includes('2,342,342'))).toBe(true);
   });
 
+  // Regression (owner-reported): a BYO item's notes printed in full TWICE in one
+  // proposal — once under "Scope of work" (added so scope-chip descriptions never
+  // get silently dropped when BYO has line items) and again in the pricing table's
+  // description cell (from the same _byoItems → _geiLines sync), eating a lot of
+  // extra proposal space with a repeated paragraph. Notes now suppress in the pricing
+  // table for regular BYO lines (already fully shown above); RRP and T&M lines have
+  // no scope-of-work duplicate, so their notes must still print in the pricing table.
+  test('a BYO item\'s notes print once (Scope of work), not again in the pricing table', async () => {
+    const r = await page.evaluate(async () => {
+      const c = { id: 79105, name: 'Notes Dup Client', addr: '1 Notes Dup Rd' };
+      clients = clients.filter(x => x.id !== 79105).concat([c]);
+      bids = bids.filter(x => x.client_id !== 79105);
+      openGenericEstimate(c, null, null, { mode: 'byo' });
+      _geiIsFreeForm = true;
+      const noteText = 'Sand surfaces smooth prior to two coats of premium latex paint';
+      _byoItems = [{ id: 1, section: 'Interior', label: 'Bedroom', notes: noteText, price: 500, on: true }];
+      _geiScopeChips = [];
+      _geiScopeNoScope = false;
+      let err = null;
+      try { await sendGenericProposal(true); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_prop-preview-ov');
+      const html = ov ? ov.innerHTML : '';
+      const occurrences = html.split(noteText).length - 1;
+      ov?.remove();
+      return { err, hasOverlay: !!ov, occurrences };
+    });
+    expect(r.err).toBe(null);
+    expect(r.hasOverlay).toBe(true);
+    expect(r.occurrences, 'the note text must appear exactly once, not duplicated between Scope of work and the pricing table').toBe(1);
+  });
+
+  test('T&M material category notes still print in the pricing table (no scope-of-work duplicate to suppress against)', async () => {
+    const r = await page.evaluate(async () => {
+      const c = { id: 79106, name: 'TM Notes Client', addr: '1 TM Notes Rd' };
+      clients = clients.filter(x => x.id !== 79106).concat([c]);
+      bids = bids.filter(x => x.client_id !== 79106);
+      openGenericEstimate(c, null, null, { mode: 'tm' });
+      goGeiStep(2);
+      _tmRatePerMan = 50; _tmEstHours = 8; _tmCrewCount = 1;
+      const noteText = 'Sherwin Williams Duration, satin finish';
+      _geiLines = [{ desc: 'Paint', qty: 1, rate: 500, total: 500, notes: noteText }];
+      let err = null;
+      try { await sendGenericProposal(true); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_prop-preview-ov');
+      const html = ov ? ov.innerHTML : '';
+      const found = html.includes(noteText);
+      ov?.remove();
+      return { err, hasOverlay: !!ov, found };
+    });
+    expect(r.err).toBe(null);
+    expect(r.hasOverlay).toBe(true);
+    expect(r.found, 'T&M material category notes must still print in the pricing table').toBe(true);
+  });
+
   // Regression: T&M material category rows had no visible "Edit" affordance —
   // only a hover-only (opacity:0 until :hover) delete "×", invisible/undiscoverable
   // on touch devices, and inconsistent with BYO's always-visible Edit/✕ pair.

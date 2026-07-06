@@ -2973,9 +2973,13 @@ async function sendGenericProposal(previewOnly){
   const _customTermsBlock=_byoTermsText
     ?`<div style="padding:16px 24px;border-top:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Additional Terms</div><div style="font-size:11px;color:#2d3748;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere">${escHtml(_byoTermsText)}</div></div>`
     :'';
-  const _mkLineRow=(l,amt,isRrp)=>{
+  const _mkLineRow=(l,amt,isRrp,suppressNotes)=>{
     const amtStr=isRrp&&amt===0?'<span style="font-size:11px;font-style:italic;color:#92400e">Included</span>':'$'+amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-    const notesHtml=l.notes?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:'';
+    // BYO's own notes already print in full under "Scope of work" above (_scopeBlocks) —
+    // repeating them again here doubled the same paragraph within one proposal and ate
+    // up a lot of extra room. Suppressed for regular BYO lines; RRP and T&M lines have
+    // no scope-of-work duplicate, so their notes still need to show here.
+    const notesHtml=(l.notes&&!suppressNotes)?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:'';
     const amtColor=isRrp&&amt===0?'#92400e':'#1a365d';
     return `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 18px;font-size:12px;color:#2d3748;overflow-wrap:anywhere"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${notesHtml}</td><td style="padding:9px 6px;text-align:center;font-size:12px;color:#64748b">${l.qty||1}</td><td style="padding:9px 18px 9px 4px;text-align:right;font-size:12px;font-weight:600;color:${amtColor};white-space:nowrap">${amtStr}</td></tr>`;
   };
@@ -2989,7 +2993,10 @@ async function sendGenericProposal(previewOnly){
       if(!sLines.length)return '';
       const isRrpSec=sec===_RRP_BYO_SECTION;
       const secHeader=sec?`<tr><td colspan="3" style="padding:5px 18px 4px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:${isRrpSec?'#92400e':'#64748b'};background:${isRrpSec?'#fffbeb':'#f8fafc'};border-bottom:1px solid #e2e8f0">${escHtml(sec)}</td></tr>`:'';
-      return secHeader+sLines.map(l=>_mkLineRow(l,(l.qty||1)*(l.rate||0),l._rrp||isRrpSec)).join('');
+      return secHeader+sLines.map(l=>{
+        const isRrp=l._rrp||isRrpSec;
+        return _mkLineRow(l,(l.qty||1)*(l.rate||0),isRrp,!isRrp);
+      }).join('');
     }).join('');
   }else{
     // T&M and other flows: flat list
