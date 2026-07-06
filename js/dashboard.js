@@ -36,16 +36,23 @@ function _showNewLeadsPicker(){
   const rows=leads.map(c=>{
     const days=c.created?Math.floor((new Date(tk+'T12:00')-new Date(c.created+'T12:00'))/86400000):0;
     const ageLabel=days<=0?'New today':days+'d ago';
-    return '<button onclick="_pickLeadForEstimate('+c.id+')" style="display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;padding:12px 4px;border:none;border-bottom:1px solid var(--border);background:none;cursor:pointer;font-family:inherit">'+
-      '<span style="font-size:14px;font-weight:700;color:var(--text)">'+escHtml(c.name)+'</span>'+
-      '<span style="font-size:11px;color:var(--text3);white-space:nowrap">'+ageLabel+'</span>'+
+    const initial=escHtml((c.name||'?').trim().charAt(0).toUpperCase()||'?');
+    return '<button onclick="_pickLeadForEstimate('+c.id+')" onmouseover="this.style.background=\'var(--bg2)\'" onmouseout="this.style.background=\'none\'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 8px;border:none;border-radius:var(--r);background:none;cursor:pointer;font-family:inherit;margin-bottom:4px;transition:background .12s ease">'+
+      '<div style="width:34px;height:34px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;flex-shrink:0">'+initial+'</div>'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:14px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(c.name)+'</div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+ageLabel+'</div>'+
+      '</div>'+
+      '<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:var(--text3);fill:none;stroke-width:2;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>'+
     '</button>';
   }).join('');
+  const countLabel=leads.length===1?'1 lead':leads.length+' leads';
   box.innerHTML=
-    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'+
-      '<div style="font-size:16px;font-weight:800">New leads — oldest first</div>'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">'+
+      '<div style="font-size:16px;font-weight:800">Leads waiting on an estimate</div>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">✕</button>'+
     '</div>'+
+    (leads.length?'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">'+countLabel+'</div>':'')+
     (rows||'<div style="font-size:13px;color:var(--text3);padding:12px 4px">No new leads.</div>');
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});

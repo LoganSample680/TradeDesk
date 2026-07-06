@@ -1590,6 +1590,29 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasOverlay).toBe(true);
   });
 
+  test('_showNewLeadsPicker title reads "Leads waiting on an estimate" and shows a lead count', async () => {
+    const r = await page.evaluate(() => {
+      const cid = 780450;
+      clients.unshift({ id: cid, name: 'Count Label Lead', addr: '1 Count St', created: todayKey() });
+      let err = '';
+      try { _showNewLeadsPicker(); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_leads-pick-ov');
+      const html = ov ? ov.innerHTML : '';
+      ov?.remove();
+      clients = clients.filter(c => c.id !== cid);
+      return {
+        err,
+        hasTitle: html.includes('Leads waiting on an estimate'),
+        hasOldTitle: html.includes('oldest first'),
+        hasCount: /1\s*lead\b/.test(html),
+      };
+    });
+    expect(r.err).toBe('');
+    expect(r.hasTitle).toBe(true);
+    expect(r.hasOldTitle).toBe(false);
+    expect(r.hasCount).toBe(true);
+  });
+
   test('clicking a lead name in the picker opens the estimate picker, not the client record', async () => {
     const r = await page.evaluate(() => {
       const cid = 780501;
