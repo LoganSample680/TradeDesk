@@ -507,7 +507,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.06.26.3';
+const APP_VERSION='07.06.26.4';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1495,29 +1495,10 @@ function _removeBootOverlay(){
     },700);
   },320);
 }
-// One-time recovery snapshot — runs the instant the app boots, BEFORE any cloud
-// load can overwrite zp3_cloud_cache. Freezes the device's current local data into
-// an untouchable key so a destructive sign-in merge can never erase it. Recoverable
-// per-bid via recoverBidRooms() / the "Recover rooms" button. Never overwritten once
-// written (the first boot after a data loss is the one that still holds the good copy).
-function _captureRecoverySnapshot(){
-  try{
-    if(localStorage.getItem('zp3_recovery_snapshot'))return; // already frozen — never clobber
-    const snap={
-      ts:Date.now(),
-      cloud_cache:localStorage.getItem('zp3_cloud_cache')||null,
-      est_full_draft:localStorage.getItem('zp3_est_full_draft')||null,
-      surf_draft:localStorage.getItem('zp3_surf_draft')||null,
-      offline_pending:localStorage.getItem('zp3_offline_pending')||null,
-    };
-    // Only persist if there is at least one source with data — avoids freezing an empty snapshot
-    if(snap.cloud_cache||snap.est_full_draft||snap.surf_draft||snap.offline_pending){
-      localStorage.setItem('zp3_recovery_snapshot',JSON.stringify(snap));
-    }
-  }catch(_e){}
-}
-// Count of distinct rooms/surfaces on a bid — used to decide which copy of a bid is
-// "richer" so a merge or recovery never replaces a fuller record with a sparser one.
+// Count of distinct rooms/surfaces on a bid — used by the sync merge to decide
+// which copy of a bid is "richer" so a merge never replaces a fuller record with
+// a sparser one. (surfaces/roomScopeMap are legacy paint-era fields — still
+// meaningful as a tiebreaker for old records; `updated` stamp decides first.)
 function _bidRichness(b){
   if(!b)return -1;
   const surf=Array.isArray(b.surfaces)?b.surfaces.length:0;
@@ -1532,54 +1513,8 @@ function _pickBid(a,b){
   if(ua!==ub)return ua>ub?a:b;
   return _bidRichness(a)>=_bidRichness(b)?a:b;
 }
-// Scan all local recovery sources for a copy of `bidId` richer than the one in memory,
-// and restore its surfaces + roomScopeMap. Returns true if anything was recovered.
-function recoverBidRooms(bidId){
-  const live=bids.find(x=>String(x.id)===String(bidId));
-  if(!live){if(typeof showToast==='function')showToast('Bid not found','⚠️');return false;}
-  const candidates=[];
-  const _pushFromBlob=(raw)=>{
-    if(!raw)return;
-    try{const d=JSON.parse(raw);
-      if(Array.isArray(d.bids)){const m=d.bids.find(x=>String(x.id)===String(bidId));if(m)candidates.push(m);}
-    }catch(_e){}
-  };
-  const _pushFromDraft=(raw)=>{
-    if(!raw)return;
-    try{const d=JSON.parse(raw);
-      // est_full_draft holds the in-progress estimate; only adopt it if it targets this bid
-      if((d.lastBidId&&String(d.lastBidId)===String(bidId))||(d.clientId&&String(d.clientId)===String(live.client_id))){
-        candidates.push({id:bidId,surfaces:d.surfaces||[],roomScopeMap:d.roomScopeMap||{}});
-      }
-    }catch(_e){}
-  };
-  // 1) Frozen recovery snapshot (captured at boot — the safest source)
-  let snap=null;try{snap=JSON.parse(localStorage.getItem('zp3_recovery_snapshot')||'null');}catch(_e){}
-  if(snap){_pushFromBlob(snap.cloud_cache);_pushFromBlob(snap.offline_pending);_pushFromDraft(snap.est_full_draft);}
-  // 2) Live local sources (may already be overwritten, but harmless to check)
-  _pushFromBlob(localStorage.getItem('zp3_cloud_cache'));
-  _pushFromBlob(localStorage.getItem('zp3_offline_pending'));
-  _pushFromDraft(localStorage.getItem('zp3_est_full_draft'));
-  // Choose the richest candidate that beats what's in memory now
-  let best=null;
-  candidates.forEach(c=>{if(_bidRichness(c)>_bidRichness(best))best=c;});
-  if(!best||_bidRichness(best)<=_bidRichness(live)){
-    if(typeof showToast==='function')showToast('No richer copy found to recover','ℹ️');
-    return false;
-  }
-  if(Array.isArray(best.surfaces)&&best.surfaces.length)live.surfaces=JSON.parse(JSON.stringify(best.surfaces));
-  if(best.roomScopeMap&&Object.keys(best.roomScopeMap).length)live.roomScopeMap=JSON.parse(JSON.stringify(best.roomScopeMap));
-  live.updated=Date.now();
-  saveAll();
-  if(typeof renderClientDetail==='function')renderClientDetail();
-  if(typeof showToast==='function')showToast('Recovered '+(Array.isArray(best.surfaces)?best.surfaces.length:0)+' surfaces','✅');
-  return true;
-}
-window.recoverBidRooms=recoverBidRooms;
-
 async function supaInit(){
   if(!supaEnabled())return;
-  _captureRecoverySnapshot(); // FIRST — freeze local data before any cloud load can overwrite it
   // AUTO-FALLBACK: if we're set to talk DIRECT to Supabase, confirm this network can
   // actually reach it before building the client. A 2.5s health probe — any HTTP
   // response (even 401) means reachable → stay direct; a DNS/network/timeout error

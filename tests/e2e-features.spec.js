@@ -5857,66 +5857,38 @@ test.describe('Int/ext estimate — cloud autosave (_paintEstAutosave)', () => {
     expect(result.rooms).toBe(1);
   });
 
-  test('recoverBidRooms restores surfaces from the recovery snapshot', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof recoverBidRooms !== 'function') return null;
-      if (typeof bids === 'undefined') return null;
-      const fakeId = 'recover-' + Date.now();
-      // Live bid lost its surfaces; snapshot holds the full copy
-      bids.push({ id: fakeId, status: 'Pending', client_name: 'Recover Test', surfaces: [], roomScopeMap: { 'Living': { spackle: { active: true } } } });
-      const snap = { ts: Date.now(), cloud_cache: JSON.stringify({ bids: [
-        { id: fakeId, surfaces: [{ id: 1, type: 'walls', room: 'Living', qty: 300 }, { id: 2, type: 'ceiling', room: 'Living', qty: 150 }], roomScopeMap: { 'Living': { spackle: { active: true } } } }
-      ] }) };
-      localStorage.setItem('zp3_recovery_snapshot', JSON.stringify(snap));
-      const ok = recoverBidRooms(fakeId);
-      const b = bids.find(x => x.id === fakeId);
-      const out = { ok, surf: b.surfaces?.length || 0 };
-      bids.splice(bids.findIndex(x => x.id === fakeId), 1);
-      localStorage.removeItem('zp3_recovery_snapshot');
-      return out;
-    });
-    if (result === null) return;
-    expect(result.ok).toBe(true);
-    expect(result.surf).toBe(2);
+  // The paint-era recovery system (boot snapshot + per-bid "Recover rooms") was
+  // removed with the owner's sign-off — it recovered surfaces/roomScopeMap for
+  // the deleted paint estimator and never worked reliably. §7.1: prove the old
+  // entry points are gone, not just unused. _pickBid/_bidRichness stay — they
+  // are live sync-merge logic, not part of the recovery feature.
+  test('recovery system removed — recoverBidRooms and _captureRecoverySnapshot are gone', async () => {
+    const r = await page.evaluate(() => ({
+      recoverFn: typeof recoverBidRooms,
+      captureFn: typeof _captureRecoverySnapshot,
+      scanFn: typeof _scanRecoverableEstimate,
+      windowBinding: typeof window.recoverBidRooms,
+      mergeHelpersKept: typeof _pickBid === 'function' && typeof _bidRichness === 'function',
+    }));
+    expect(r.recoverFn).toBe('undefined');
+    expect(r.captureFn).toBe('undefined');
+    expect(r.scanFn).toBe('undefined');
+    expect(r.windowBinding).toBe('undefined');
+    expect(r.mergeHelpersKept, '_pickBid/_bidRichness are live sync-merge logic and must survive the removal').toBe(true);
   });
 
-  test('recoverBidRooms does not downgrade a bid that already has more data', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof recoverBidRooms !== 'function') return null;
-      const fakeId = 'nodown-' + Date.now();
-      bids.push({ id: fakeId, status: 'Pending', client_name: 'NoDown', surfaces: [{ id: 1, type: 'walls', room: 'A', qty: 100 }, { id: 2, type: 'walls', room: 'B', qty: 100 }], roomScopeMap: {} });
-      const snap = { ts: Date.now(), cloud_cache: JSON.stringify({ bids: [{ id: fakeId, surfaces: [{ id: 1, type: 'walls', room: 'A', qty: 100 }], roomScopeMap: {} }] }) };
-      localStorage.setItem('zp3_recovery_snapshot', JSON.stringify(snap));
-      const ok = recoverBidRooms(fakeId);
-      const b = bids.find(x => x.id === fakeId);
-      const out = { ok, surf: b.surfaces.length };
-      bids.splice(bids.findIndex(x => x.id === fakeId), 1);
-      localStorage.removeItem('zp3_recovery_snapshot');
-      return out;
+  test('recovery system removed — no "Recover rooms" button renders on bid cards', async () => {
+    const r = await page.evaluate(() => {
+      const c = { id: 90201, name: 'Recover Btn Client', addr: '1 Gone St' };
+      clients = clients.filter(x => x.id !== 90201).concat([c]);
+      bids = bids.filter(x => x.client_id !== 90201);
+      bids.push({ id: 902011, client_id: 90201, client_name: c.name, amount: 400, deposit: 0, status: 'Pending', bid_date: todayKey(), trade_type: 'general', geiLines: [{ desc: 'Work', qty: 1, rate: 400, total: 400 }] });
+      currentClientId = 90201;
+      if (typeof renderClientDetail === 'function') try { renderClientDetail(); } catch (e) {}
+      const html = document.getElementById('pg-client-detail')?.innerHTML || '';
+      return { hasRecoverBtn: html.includes('Recover rooms') || html.includes('recoverBidRooms') };
     });
-    if (result === null) return;
-    expect(result.ok).toBe(false);
-    expect(result.surf).toBe(2); // unchanged — never downgraded
-  });
-
-  test('_scanRecoverableEstimate finds surfaces frozen in the boot snapshot', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _scanRecoverableEstimate !== 'function') return null;
-      const snap = { ts: Date.now(),
-        est_full_draft: JSON.stringify({ cname: 'Adam Ryder', surfaces: [], roomScopeMap: { A:{}, B:{} }, ts: Date.now() }),
-        surf_draft: JSON.stringify({ surfaces: [
-          { id:1, type:'walls', room:'A', qty:200 }, { id:2, type:'ceiling', room:'A', qty:150 }, { id:3, type:'walls', room:'B', qty:180 }
-        ], ts: Date.now() }) };
-      const prev = localStorage.getItem('zp3_recovery_snapshot');
-      localStorage.setItem('zp3_recovery_snapshot', JSON.stringify(snap));
-      const r = _scanRecoverableEstimate();
-      if (prev) localStorage.setItem('zp3_recovery_snapshot', prev); else localStorage.removeItem('zp3_recovery_snapshot');
-      return r ? { surf: r.surf, rooms: r.rooms, cname: r.cname } : null;
-    });
-    if (result === null) return;
-    expect(result.surf).toBe(3);      // grafted from the richer surf_draft
-    expect(result.rooms).toBe(2);     // roomScopeMap from est_full_draft
-    expect(result.cname).toBe('Adam Ryder');
+    expect(r.hasRecoverBtn).toBe(false);
   });
 
   test('no console errors in paint autosave tests', async () => {

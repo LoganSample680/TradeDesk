@@ -924,43 +924,22 @@ test.describe('Bid history infrastructure', () => {
   test.beforeAll(async ({ browser }) => { page = await bootApp(browser); });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('recoverBidRooms function exists and handles unknown bid gracefully', async () => {
+  // The paint-era recovery system was removed (owner-approved) — it snapshotted
+  // and restored surfaces/roomScopeMap for the deleted paint estimator and never
+  // worked reliably. §7.1: prove the entry points are gone AND the boot no longer
+  // writes the snapshot key.
+  test('recovery system removed — functions gone, boot writes no zp3_recovery_snapshot', async () => {
     const result = await page.evaluate(() => {
-      if (typeof recoverBidRooms !== 'function') return { missing: true };
-      const res = recoverBidRooms(999999999); // non-existent bid
-      return { returned: res !== undefined, type: typeof res };
+      return {
+        recoverFn: typeof recoverBidRooms,
+        captureFn: typeof _captureRecoverySnapshot,
+        // The app booted in beforeAll (supaInit ran) — the snapshot key must not appear
+        snapWritten: !!localStorage.getItem('zp3_recovery_snapshot'),
+      };
     });
-    if (result.missing) return;
-    // Should not throw — may return null/false/undefined
-    expect(true).toBe(true);
-  });
-
-  test('_captureRecoverySnapshot writes to localStorage on first call', async () => {
-    const result = await page.evaluate(() => {
-      try { localStorage.removeItem('zp3_recovery_snapshot'); } catch(e) {}
-      if (typeof _captureRecoverySnapshot !== 'function') return { missing: true };
-      // Seed some data
-      try { localStorage.setItem('zp3_cloud_cache', JSON.stringify([{ id: 1, name: 'Test' }])); } catch(e) {}
-      _captureRecoverySnapshot();
-      const snap = localStorage.getItem('zp3_recovery_snapshot');
-      return { hasSnap: !!snap, snapParseable: (() => { try { JSON.parse(snap); return true; } catch(e) { return false; } })() };
-    });
-    if (result.missing) return;
-    expect(result.hasSnap).toBe(true);
-    expect(result.snapParseable).toBe(true);
-  });
-
-  test('_captureRecoverySnapshot does NOT overwrite existing snapshot', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _captureRecoverySnapshot !== 'function') return { missing: true };
-      const original = '{"ts":1234567890,"cloud_cache":"original"}';
-      try { localStorage.setItem('zp3_recovery_snapshot', original); } catch(e) {}
-      _captureRecoverySnapshot(); // should no-op
-      const snap = localStorage.getItem('zp3_recovery_snapshot');
-      return { unchanged: snap === original };
-    });
-    if (result.missing) return;
-    expect(result.unchanged).toBe(true);
+    expect(result.recoverFn).toBe('undefined');
+    expect(result.captureFn).toBe('undefined');
+    expect(result.snapWritten, 'boot must no longer freeze a recovery snapshot').toBe(false);
   });
 
   test('no console errors in bid history tests', async () => {

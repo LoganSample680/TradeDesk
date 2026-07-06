@@ -4727,6 +4727,7 @@ test.describe('paint-estimate.js — deleted', () => {
         'goSurfStepA', 'goSurfStepB', 'goSurfScopeToMeasure', 'toggleSurfWhat', 'setSurfJobType',
         'renderEstSurfs', 'renderEstReview', 'renderEstRunning', 'goEstStep', 'buildScopeGrid',
         'setPaintSupply', 'swLoadColors', '_scanRecoverableEstimate', 'recoverLostEstimate',
+        'recoverBidRooms', '_captureRecoverySnapshot',
         'resumeEstimateDraft', 'sendProposalLink', 'buildProposal', '_doOpenEstimate'];
       return names.map(n => { let t; try { t = typeof eval(n); } catch (e) { t = 'undefined'; } return [n, t]; });
     });
