@@ -224,6 +224,46 @@ test.describe('layout integrity — mobile', () => {
     expect(r.overflow, 'no horizontal bleed at 390px from the generated proposal HTML').toBeLessThanOrEqual(1);
   });
 
+  // Regression (owner-reported, real device screenshot): large dollar amounts in the
+  // generated proposal preview wrapped mid-number ("$234,234.0" then "0" on its own
+  // line) because the amount <td>s had no white-space:nowrap, so the preview overlay's
+  // container-level overflow-wrap:anywhere (needed for long free-text descriptions)
+  // let big prices break at arbitrary character boundaries in their narrow column.
+  test('large dollar amounts in the proposal preview never wrap mid-number', async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const r = await page.evaluate(async () => {
+      const c = { id: 79104, name: 'Dollar Wrap Client', addr: '1 Dollar Wrap Rd' };
+      clients = clients.filter(x => x.id !== 79104).concat([c]);
+      bids = bids.filter(x => x.client_id !== 79104);
+      openGenericEstimate(c, null, null, { mode: 'byo' });
+      _geiIsFreeForm = true;
+      // Deliberately oversized figures — wider than the Amount column's 90px header hint.
+      _geiLines = [
+        { desc: 'Bedroom', qty: 1, rate: 234234, total: 234234, _byoSection: 'Interior' },
+        { desc: 'Exterior', qty: 1, rate: 2342342, total: 2342342, _byoSection: 'Exterior' },
+      ];
+      let err = null;
+      try { await sendGenericProposal(true); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_prop-preview-ov');
+      const amountCells = ov ? [...ov.querySelectorAll('td')].filter(td => td.textContent.trim().startsWith('$')) : [];
+      const res = {
+        err,
+        hasOverlay: !!ov,
+        cellCount: amountCells.length,
+        allNowrap: amountCells.every(td => getComputedStyle(td).whiteSpace === 'nowrap'),
+        texts: amountCells.map(td => td.textContent.trim()),
+      };
+      ov?.remove();
+      return res;
+    });
+    expect(r.err).toBe(null);
+    expect(r.hasOverlay).toBe(true);
+    expect(r.cellCount, 'the proposal must actually render dollar-amount cells for this test to mean anything').toBeGreaterThan(0);
+    expect(r.allNowrap, 'every dollar-amount cell must be white-space:nowrap so a big number can never break mid-digit').toBe(true);
+    expect(r.texts.some(t => t.includes('234,234'))).toBe(true);
+    expect(r.texts.some(t => t.includes('2,342,342'))).toBe(true);
+  });
+
   // Regression: T&M material category rows had no visible "Edit" affordance —
   // only a hover-only (opacity:0 until :hover) delete "×", invisible/undiscoverable
   // on touch devices, and inconsistent with BYO's always-visible Edit/✕ pair.
