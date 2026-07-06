@@ -229,7 +229,15 @@ test.describe('layout integrity — mobile', () => {
   // line) because the amount <td>s had no white-space:nowrap, so the preview overlay's
   // container-level overflow-wrap:anywhere (needed for long free-text descriptions)
   // let big prices break at arbitrary character boundaries in their narrow column.
-  test('large dollar amounts in the proposal preview never wrap mid-number', async () => {
+  //
+  // Superseded in part by the owner's later "strip everything but TOTAL + deposit"
+  // directive: per-room/per-item amounts (the original $234,234.00 cells this test
+  // checked) no longer render in the client proposal at all — only TOTAL and the
+  // deposit carry a dollar figure now. This test still guards the original bug's
+  // mechanism (a big number must never wrap mid-digit), just against the one cell
+  // that can still be huge: TOTAL, built from the same deliberately oversized line
+  // items so the underlying total is well past the old 90px column width.
+  test('large dollar amounts in the proposal preview never wrap mid-number (TOTAL only — per-item prices no longer render)', async () => {
     await page.setViewportSize({ width: 390, height: 844 });
     const r = await page.evaluate(async () => {
       const c = { id: 79104, name: 'Dollar Wrap Client', addr: '1 Dollar Wrap Rd' };
@@ -237,7 +245,7 @@ test.describe('layout integrity — mobile', () => {
       bids = bids.filter(x => x.client_id !== 79104);
       openGenericEstimate(c, null, null, { mode: 'byo' });
       _geiIsFreeForm = true;
-      // Deliberately oversized figures — wider than the Amount column's 90px header hint.
+      // Deliberately oversized figures — total is wider than the old 90px Amount column.
       _geiLines = [
         { desc: 'Bedroom', qty: 1, rate: 234234, total: 234234, _byoSection: 'Interior' },
         { desc: 'Exterior', qty: 1, rate: 2342342, total: 2342342, _byoSection: 'Exterior' },
@@ -245,23 +253,115 @@ test.describe('layout integrity — mobile', () => {
       let err = null;
       try { await sendGenericProposal(true); } catch (e) { err = e.message; }
       const ov = document.getElementById('_prop-preview-ov');
-      const amountCells = ov ? [...ov.querySelectorAll('td')].filter(td => td.textContent.trim().startsWith('$')) : [];
+      const dollarCells = ov ? [...ov.querySelectorAll('td')].filter(td => /\$[\d,]+\.\d{2}/.test(td.textContent)) : [];
+      const totalCell = dollarCells.find(td => td.textContent.includes('2,576,576'));
       const res = {
         err,
         hasOverlay: !!ov,
-        cellCount: amountCells.length,
-        allNowrap: amountCells.every(td => getComputedStyle(td).whiteSpace === 'nowrap'),
-        texts: amountCells.map(td => td.textContent.trim()),
+        dollarCellCount: dollarCells.length,
+        totalFound: !!totalCell,
+        totalIsNowrap: totalCell ? getComputedStyle(totalCell).whiteSpace === 'nowrap' : false,
+        // The old per-item cells must be gone — no $234,234.00 / $2,342,342.00 line shown.
+        hasPerRoomPrice: dollarCells.some(td => td.textContent.includes('234,234.00') || td.textContent.includes('2,342,342.00')),
       };
       ov?.remove();
       return res;
     });
     expect(r.err).toBe(null);
     expect(r.hasOverlay).toBe(true);
-    expect(r.cellCount, 'the proposal must actually render dollar-amount cells for this test to mean anything').toBeGreaterThan(0);
-    expect(r.allNowrap, 'every dollar-amount cell must be white-space:nowrap so a big number can never break mid-digit').toBe(true);
-    expect(r.texts.some(t => t.includes('234,234'))).toBe(true);
-    expect(r.texts.some(t => t.includes('2,342,342'))).toBe(true);
+    expect(r.hasPerRoomPrice, 'per-room/per-item dollar amounts must not render — only TOTAL and deposit show a price').toBe(false);
+    expect(r.totalFound, 'the TOTAL cell must contain the full combined figure for this test to mean anything').toBe(true);
+    expect(r.totalIsNowrap, 'the TOTAL cell must be white-space:nowrap so a big number can never break mid-digit').toBe(true);
+    expect(r.dollarCellCount, 'only TOTAL + deposit should carry a dollar figure').toBeLessThanOrEqual(2);
+  });
+
+  // Owner directive: clients seeing a per-room or per-material price (e.g. Interior
+  // $7,000 vs Materials $7,000) can anchor on those numbers and conclude they could
+  // buy the materials and hire cheaper labor themselves for less than the total bid.
+  // The client-facing proposal shows exactly two dollar figures — TOTAL and the
+  // deposit due — never a per-room, per-material, tax/markup, or NTE-cap breakdown.
+  // Applies to both BYO and T&M; scope descriptions (room/material names + notes)
+  // still show, just without a dollar amount attached to any of them.
+  test('proposal shows only TOTAL + deposit — no per-room, per-material, tax, or NTE-cap price (BYO)', async () => {
+    const r = await page.evaluate(async () => {
+      const c = { id: 79107, name: 'Total Only BYO Client', addr: '1 Total Only Rd' };
+      clients = clients.filter(x => x.id !== 79107).concat([c]);
+      bids = bids.filter(x => x.client_id !== 79107);
+      openGenericEstimate(c, null, null, { mode: 'byo' });
+      _geiIsFreeForm = true;
+      _geiLines = [
+        { desc: 'Bedroom', qty: 1, rate: 500, total: 500, _byoSection: 'Interior' },
+        { desc: 'Siding', qty: 1, rate: 700, total: 700, _byoSection: 'Exterior' },
+        { desc: 'Paint and primer', qty: 1, rate: 300, total: 300, _byoSection: 'Materials' },
+      ];
+      document.getElementById('gei-tax-pct').value = '8';
+      let err = null;
+      try { await sendGenericProposal(true); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_prop-preview-ov');
+      const html = ov ? ov.innerHTML : '';
+      const res = {
+        err,
+        hasOverlay: !!ov,
+        hasRoomNames: html.includes('Bedroom') && html.includes('Siding') && html.includes('Paint and primer'),
+        hasPerItemPrice: /\$500\.00|\$700\.00|\$300\.00/.test(html),
+        hasQtyHeader: html.includes('>Qty<'),
+        hasAmountHeader: html.includes('>Amount<'),
+        hasTaxRow: html.includes('Tax / markup') || html.includes('Sales tax') || html.includes('Materials tax'),
+        hasTotal: html.includes('TOTAL'),
+        hasDeposit: html.includes('Deposit'),
+      };
+      ov?.remove();
+      return res;
+    });
+    expect(r.err).toBe(null);
+    expect(r.hasOverlay).toBe(true);
+    expect(r.hasRoomNames, 'room/material names must still show — only the dollar amounts are stripped').toBe(true);
+    expect(r.hasPerItemPrice, 'no per-room/per-material dollar amount may render').toBe(false);
+    expect(r.hasQtyHeader, 'the Qty column must be gone').toBe(false);
+    expect(r.hasAmountHeader, 'the Amount column must be gone').toBe(false);
+    expect(r.hasTaxRow, 'no separate tax/markup breakdown row may render').toBe(false);
+    expect(r.hasTotal).toBe(true);
+    expect(r.hasDeposit).toBe(true);
+  });
+
+  test('proposal shows only TOTAL + deposit — no per-material or NTE-cap price (T&M)', async () => {
+    const r = await page.evaluate(async () => {
+      const c = { id: 79108, name: 'Total Only TM Client', addr: '1 Total Only TM Rd' };
+      clients = clients.filter(x => x.id !== 79108).concat([c]);
+      bids = bids.filter(x => x.client_id !== 79108);
+      openGenericEstimate(c, null, null, { mode: 'tm' });
+      goGeiStep(2);
+      // Drive the real DOM inputs — _tmInputChange reads live values from these, not
+      // from the module variables directly, so setting the variables alone is silently
+      // overwritten on the next recalc.
+      document.getElementById('tm-i-rate').value = '75';
+      document.getElementById('tm-i-days').value = '2';
+      _tmInputChange();
+      _geiLines.push({ desc: 'Fixtures', qty: 1, rate: 500, total: 500 });
+      document.getElementById('tm-i-nte').value = '2000';
+      let err = null;
+      try { await sendGenericProposal(true); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_prop-preview-ov');
+      const html = ov ? ov.innerHTML : '';
+      const res = {
+        err,
+        hasOverlay: !!ov,
+        hasMaterialName: html.includes('Fixtures'),
+        hasPerItemPrice: /\$500\.00/.test(html),
+        hasNteRow: html.includes('Not-to-exceed cap'),
+        hasTotal: html.includes('ESTIMATED TOTAL'),
+        hasDeposit: html.includes('Deposit'),
+      };
+      ov?.remove();
+      return res;
+    });
+    expect(r.err).toBe(null);
+    expect(r.hasOverlay).toBe(true);
+    expect(r.hasMaterialName, 'material category name must still show').toBe(true);
+    expect(r.hasPerItemPrice, 'no per-material dollar amount may render').toBe(false);
+    expect(r.hasNteRow, 'the standalone NTE-cap pricing row must be gone (still disclosed in Terms & Conditions)').toBe(false);
+    expect(r.hasTotal).toBe(true);
+    expect(r.hasDeposit).toBe(true);
   });
 
   // Regression (owner-reported): a BYO item's notes printed in full TWICE in one
