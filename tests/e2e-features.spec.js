@@ -2188,20 +2188,177 @@ test.describe('Employee dispatch and daily view', () => {
 
   test('employee nav gating hides financial and settings buttons', async () => {
     const result = await page.evaluate(() => {
+      const saved = _isEmployee, savedRec = _employeeRecord;
       _isEmployee = true;
       _employeeRecord = { id: 'test-emp-1', name: 'Test Worker', role: 'worker' };
-      if (typeof _applyEmployeeNavGating === 'function') _applyEmployeeNavGating();
+      // nb-taxes is gated by applyPermissions()'s canSeeTaxes() check, not
+      // _applyEmployeeNavGating() directly — call the real entry point so both are exercised.
+      if (typeof applyPermissions === 'function') applyPermissions();
       const hidden = ['nb-tracker','nb-taxes','nb-settings','nb-team','nb-leads']
         .map(id => document.getElementById(id))
         .filter(Boolean)
         .every(el => el.style.display === 'none');
-      _isEmployee = false;
-      _employeeRecord = null;
-      return { fnExists: typeof _applyEmployeeNavGating === 'function', hidden };
+      _isEmployee = saved;
+      _employeeRecord = savedRec;
+      return { fnExists: typeof applyPermissions === 'function', hidden };
     });
     if (!result.fnExists) return;
     expect(result.hidden).toBe(true);
     assertNoErrors(page, 'employee nav gating');
+  });
+
+  test('switching from an employee to an owner in the same tab RESTORES Settings/Team/Tracker nav (regression)', async () => {
+    // Root cause of the live bug: nav gating used to only ever HIDE contractor-only nav
+    // for employees, with nothing to un-hide it if a later account in the same tab
+    // (no page reload) turned out to be a real owner — the earlier employee session's
+    // display:none just stuck around forever, making Settings vanish for the owner too.
+    const result = await page.evaluate(() => {
+      const savedEmployee = _isEmployee, savedRec = _employeeRecord;
+      const ids = ['nb-tracker', 'nb-team', 'nb-settings', 'nb-licensing', 'nb-contracts', 'nb-hub', 'nb-money'];
+      const created = [];
+      ids.forEach(id => {
+        if (!document.getElementById(id)) { const el = document.createElement('div'); el.id = id; document.body.appendChild(el); created.push(id); }
+      });
+      // 1. An employee session hides everything (simulates account A).
+      _isEmployee = true;
+      _employeeRecord = { id: 'emp-switch-1', name: 'Worker A', role: 'tech' };
+      applyPermissions();
+      const hiddenAfterEmployee = ids.every(id => document.getElementById(id).style.display === 'none');
+      // 2. A DIFFERENT, real owner account signs in — in the live app this is exactly
+      // what loadAccountData()'s u.account_id branch does: reset _isEmployee then call
+      // applyPermissions() again, with NO page reload in between.
+      _isEmployee = false;
+      _employeeRecord = null;
+      applyPermissions();
+      const restoredAfterOwner = ids.every(id => document.getElementById(id).style.display !== 'none');
+      _isEmployee = savedEmployee; _employeeRecord = savedRec;
+      created.forEach(id => document.getElementById(id)?.remove());
+      return { hiddenAfterEmployee, restoredAfterOwner };
+    });
+    expect(result.hiddenAfterEmployee).toBe(true);
+    expect(result.restoredAfterOwner).toBe(true);
+    assertNoErrors(page, 'employee-to-owner nav restore');
+  });
+
+  test('nav-user click target restores to Settings for an owner after an employee session in the same tab', async () => {
+    const result = await page.evaluate(() => {
+      const savedEmployee = _isEmployee, savedRec = _employeeRecord;
+      let el = document.getElementById('nav-user');
+      const created = !el;
+      if (!el) { el = document.createElement('div'); el.id = 'nav-user'; document.body.appendChild(el); }
+      _isEmployee = true; _employeeRecord = { id: 'emp-switch-2', name: 'Worker B', role: 'tech' };
+      if (typeof _applyEmployeeNavGating === 'function') _applyEmployeeNavGating();
+      const employeeOnclickIsSignOutMenu = typeof el.onclick === 'function';
+      const employeeCursor = el.style.cursor;
+      _isEmployee = false; _employeeRecord = null;
+      if (typeof _applyEmployeeNavGating === 'function') _applyEmployeeNavGating();
+      const ownerCursor = el.style.cursor;
+      const ownerOnclickIsFunction = typeof el.onclick === 'function';
+      if (created) el.remove();
+      _isEmployee = savedEmployee; _employeeRecord = savedRec;
+      return { fnExists: typeof _applyEmployeeNavGating === 'function', employeeOnclickIsSignOutMenu, employeeCursor, ownerCursor, ownerOnclickIsFunction };
+    });
+    if (!result.fnExists) return;
+    // Employees get a clickable avatar too now (routes to sign-out menu, not Settings) —
+    // it must never be nulled, or a real employee has no way to sign out at all.
+    expect(result.employeeOnclickIsSignOutMenu).toBe(true);
+    expect(result.employeeCursor).toBe('pointer');
+    expect(result.ownerCursor).toBe('pointer');
+    expect(result.ownerOnclickIsFunction).toBe(true);
+  });
+
+  test('_employeeSignOutMenu exists and shows Cancel + Sign out for the current employee', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _employeeSignOutMenu !== 'function') return { fnExists: false };
+      const savedRec = _employeeRecord;
+      _employeeRecord = { id: 'emp-signout-1', name: 'Sign Out Tester', role: 'tech' };
+      _employeeSignOutMenu();
+      const ov = document.getElementById('_emp-signout-ov');
+      const html = ov ? ov.innerHTML : '';
+      ov?.remove();
+      _employeeRecord = savedRec;
+      return { fnExists: true, hasOverlay: !!ov, hasName: html.includes('Sign Out Tester'), hasCancel: html.includes('Cancel'), hasSignOut: html.includes('Sign out'), callsSupaSignOut: html.includes('supaSignOut()') };
+    });
+    if (!result.fnExists) return;
+    expect(result.hasOverlay).toBe(true);
+    expect(result.hasName).toBe(true);
+    expect(result.hasCancel).toBe(true);
+    expect(result.hasSignOut).toBe(true);
+    expect(result.callsSupaSignOut).toBe(true);
+  });
+
+  test('_employeeSignOutMenu — no throw with null _employeeRecord', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _employeeSignOutMenu !== 'function') return { fnExists: false };
+      const savedRec = _employeeRecord;
+      _employeeRecord = null;
+      let ok = true;
+      try { _employeeSignOutMenu(); } catch (e) { ok = false; }
+      document.getElementById('_emp-signout-ov')?.remove();
+      _employeeRecord = savedRec;
+      return { fnExists: true, ok };
+    });
+    if (!result.fnExists) return;
+    expect(result.ok).toBe(true);
+  });
+
+  test('mmi-signout is visible only for employees, hidden for owners', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _applyEmployeeNavGating !== 'function') return { fnExists: false };
+      const savedEmployee = _isEmployee, savedRec = _employeeRecord;
+      let el = document.getElementById('mmi-signout');
+      const created = !el;
+      if (!el) { el = document.createElement('div'); el.id = 'mmi-signout'; document.body.appendChild(el); }
+      _isEmployee = true; _employeeRecord = { id: 'emp-mmi-1', name: 'Mobile Worker', role: 'tech' };
+      _applyEmployeeNavGating();
+      const visibleForEmployee = el.style.display !== 'none';
+      _isEmployee = false; _employeeRecord = null;
+      _applyEmployeeNavGating();
+      const hiddenForOwner = el.style.display === 'none';
+      if (created) el.remove();
+      _isEmployee = savedEmployee; _employeeRecord = savedRec;
+      return { fnExists: true, visibleForEmployee, hiddenForOwner };
+    });
+    if (!result.fnExists) return;
+    expect(result.visibleForEmployee).toBe(true);
+    expect(result.hiddenForOwner).toBe(true);
+  });
+
+  test('loadAccountData resets stale _isEmployee state for a real owner account (regression)', async () => {
+    // Simulates the exact bug: _isEmployee left true from a previous employee session in
+    // the same tab, then a real owner account (one with its own accounts row) signs in.
+    const result = await page.evaluate(async () => {
+      if (typeof loadAccountData !== 'function' || typeof _supa === 'undefined' || !_supa) return { skip: true };
+      const savedEmployee = _isEmployee, savedRec = _employeeRecord, savedCid = _contractorUserId;
+      const savedSupa = _supa, savedSupaUser = _supaUser;
+      _isEmployee = true; _employeeRecord = { id: 'stale-emp', name: 'Stale', role: 'tech' }; _contractorUserId = 'stale-cid';
+      _supaUser = { id: 'owner-uid-1' };
+      _supa = {
+        from(table) {
+          const chain = {
+            select: () => chain, eq: () => chain,
+            maybeSingle: async () => {
+              if (table === 'users') return { data: { id: 'owner-uid-1', account_id: 'acct-1', role: 'owner' } };
+              if (table === 'accounts') return { data: { id: 'acct-1', business_name: 'Test Co' } };
+              if (table === 'account_config') return { data: null };
+              return { data: null };
+            },
+          };
+          if (table === 'vehicles') return { select: () => ({ eq: async () => ({ data: [] }) }) };
+          return chain;
+        },
+      };
+      let ok = true, err = '';
+      try { await loadAccountData(); } catch (e) { ok = false; err = e.message; }
+      const isEmployeeAfter = _isEmployee, employeeRecordAfter = _employeeRecord;
+      _isEmployee = savedEmployee; _employeeRecord = savedRec; _contractorUserId = savedCid;
+      _supa = savedSupa; _supaUser = savedSupaUser;
+      return { skip: false, ok, err, isEmployeeAfter, employeeRecordAfter };
+    });
+    if (result.skip) return;
+    expect(result.ok).toBe(true);
+    expect(result.isEmployeeAfter).toBe(false);
+    expect(result.employeeRecordAfter).toBe(null);
   });
 
   test('invite landing banner shown when pending invite in localStorage', async () => {
@@ -2476,6 +2633,8 @@ test.describe('Employee role/classification split and leads gating', () => {
   test('_applyEmployeeNavGating hides nb-leads when no leads perm', async () => {
     const result = await page.evaluate(() => {
       if (typeof _applyEmployeeNavGating !== 'function') return { fnExists: false };
+      const savedEmployee = _isEmployee;
+      _isEmployee = true;
       _employeeRecord = { id: 'test-emp3', name: 'Tech', role: 'tech', permissions: { mileage: true } };
       _applyEmployeeNavGating();
       const nbLeads = document.getElementById('nb-leads');
@@ -2483,6 +2642,7 @@ test.describe('Employee role/classification split and leads gating', () => {
       // Restore
       if (nbLeads) nbLeads.style.display = '';
       _employeeRecord = null;
+      _isEmployee = savedEmployee;
       return { fnExists: true, hidden };
     });
     if (!result.fnExists) return;
@@ -2495,12 +2655,15 @@ test.describe('Employee role/classification split and leads gating', () => {
       if (typeof _applyEmployeeNavGating !== 'function') return { fnExists: false };
       const nbLeads = document.getElementById('nb-leads');
       if (!nbLeads) return { fnExists: true, skipped: true };
+      const savedEmployee = _isEmployee;
       nbLeads.style.display = '';
+      _isEmployee = true;
       _employeeRecord = { id: 'test-emp4', name: 'Sales', role: 'office', permissions: { leads: true } };
       _applyEmployeeNavGating();
       const visible = nbLeads.style.display !== 'none';
       nbLeads.style.display = '';
       _employeeRecord = null;
+      _isEmployee = savedEmployee;
       return { fnExists: true, visible, skipped: false };
     });
     if (!result.fnExists) return;

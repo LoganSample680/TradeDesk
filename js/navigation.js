@@ -69,25 +69,59 @@ function goPg(id){
 }
 
 function _applyEmployeeNavGating(){
-  // Hide every contractor-only nav button (sidebar + mobile more menu)
-  const _gatedIds=['nb-tracker','nb-taxes','nb-team','nb-settings','nb-licensing','nb-contracts','nb-hub','nb-money',
-   'mmi-tracker','mmi-taxes','mmi-team','mmi-settings','mmi-licensing','mmi-contracts','mmi-hub','mmi-money',
+  // Symmetric: hide contractor-only nav for employees, RESTORE it for owners/co-owners.
+  // Root cause of "Settings vanished after switching to a different account in the same
+  // tab": this used to only ever hide (called from employee-detected sign-in paths), with
+  // nothing to un-hide it if a later sign-in in the same tab turned out to be a real owner
+  // account — the inline display:none from the earlier employee session just stuck around.
+  // Now called unconditionally from applyPermissions() on every account load, so it always
+  // reflects the CURRENT account's _isEmployee state instead of the previous one's.
+  // nb-taxes/mmi-taxes are owned exclusively by applyPermissions()'s canSeeTaxes() check
+  // (a finer-grained owner/co-owner test) — not listed here to avoid two functions
+  // fighting over the same element.
+  const _gatedIds=['nb-tracker','nb-team','nb-settings','nb-licensing','nb-contracts','nb-hub','nb-money',
+   'mmi-tracker','mmi-team','mmi-settings','mmi-licensing','mmi-contracts','mmi-hub','mmi-money',
   ];
-  // Only hide leads nav if the employee doesn't have the leads permission
-  if(!_employeeRecord?.permissions?.leads)_gatedIds.push('nb-leads','mtb-leads','mmi-leads');
-  _gatedIds.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='none';});
-  // Hide the Dispatch button inside the Jobs page header for employees
-  const _dispBtn=document.getElementById('jobs-dispatch-btn');if(_dispBtn)_dispBtn.style.display='none';
+  const _show=!_isEmployee;
+  _gatedIds.forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=_show?'':'none';});
+  // Leads nav: hidden only for employees without the leads permission; always shown otherwise.
+  const _leadsOk=!_isEmployee||!!_employeeRecord?.permissions?.leads;
+  ['nb-leads','mtb-leads','mmi-leads'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=_leadsOk?'':'none';});
+  // Dispatch button inside the Jobs page header — employee-only hide, always restored otherwise.
+  const _dispBtn=document.getElementById('jobs-dispatch-btn');if(_dispBtn)_dispBtn.style.display=_isEmployee?'none':'';
   // Grey (don't hide) the dashboard Estimate quick action for employees without
   // the estimate permission — the click still fires openEstimateForClient, which
-  // shows the request-access popup. Restore full opacity if they have it.
+  // shows the request-access popup. Full opacity for owners/co-owners always.
   const _qaEst=document.getElementById('qa-estimate-btn');
-  if(_qaEst){const _ok=!_employeeRecord?.permissions?.estimate?false:true;_qaEst.style.opacity=_ok?'':'0.55';}
-  // nav-user avatar: show employee name/role but don't link to settings
+  if(_qaEst){const _ok=!_isEmployee||!!_employeeRecord?.permissions?.estimate;_qaEst.style.opacity=_ok?'':'0.55';}
+  // nav-user avatar: employees can't reach the Settings page (goPg blocks it), but they
+  // still need a way to sign out — route their click to a small sign-out menu instead of
+  // nulling the click entirely. Owners/co-owners go to Settings as always.
   const nu=document.getElementById('nav-user');
-  if(nu){nu.style.cursor='default';nu.onclick=null;}
+  if(nu){nu.style.cursor='pointer';nu.onclick=_isEmployee?()=>_employeeSignOutMenu():()=>goPg('pg-settings');}
+  // Mobile "more" menu: same reasoning — a dedicated Sign out entry only for employees
+  // (owners already have Sign out inside Settings; don't add a redundant one for them).
+  const _mmiSignout=document.getElementById('mmi-signout');
+  if(_mmiSignout)_mmiSignout.style.display=_isEmployee?'':'none';
   const nr=document.getElementById('nav-user-role');
-  if(nr)nr.textContent=(_employeeRecord?.role||'employee').charAt(0).toUpperCase()+(_employeeRecord?.role||'employee').slice(1);
+  if(nr&&_isEmployee)nr.textContent=(_employeeRecord?.role||'employee').charAt(0).toUpperCase()+(_employeeRecord?.role||'employee').slice(1);
+}
+function _employeeSignOutMenu(){
+  closeMobileMore();
+  document.getElementById('_emp-signout-ov')?.remove();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_emp-signout-ov';
+  const box=document.createElement('div');box.className='zmodal';
+  const name=(_employeeRecord?.name||'').trim()||'there';
+  const role=(_employeeRecord?.role||'employee');
+  box.innerHTML=
+    '<div style="font-size:16px;font-weight:800;margin-bottom:2px">'+escHtml(name)+'</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:18px">'+escHtml(role.charAt(0).toUpperCase()+role.slice(1))+'</div>'+
+    '<div style="display:flex;gap:8px">'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove();if(supaEnabled())supaSignOut();" style="flex:1;padding:12px;border-radius:var(--r);border:none;background:#A32D2D;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Sign out</button>'+
+    '</div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 
 // ── Tab bar drag-to-reorder ────────────────────────────────────────────────

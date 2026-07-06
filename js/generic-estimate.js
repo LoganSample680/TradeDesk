@@ -106,15 +106,13 @@ function renderHittersList(){
 function applyPermissions(){
   const taxNav=document.getElementById('nb-taxes');
   if(taxNav)taxNav.style.display=canSeeTaxes()?'':'none';
-  // Hide restricted nav items for employees
-  if(_isEmployee){
-    ['nb-leads','nb-tracker','nb-team','nb-settings',
-     'mtb-leads','mmi-tracker','mmi-taxes','mmi-team','mmi-settings','mmi-money'].forEach(id=>{
-      const el=document.getElementById(id);if(el)el.style.display='none';
-    });
-    // Also hide taxes nav button (already hidden by canSeeTaxes but be explicit)
-    if(taxNav)taxNav.style.display='none';
-  }
+  const mmiTax=document.getElementById('mmi-taxes');
+  if(mmiTax)mmiTax.style.display=canSeeTaxes()?'':'none';
+  // Every other contractor-only nav item (symmetric hide-for-employee/restore-for-owner) —
+  // always run so a stale gate from an earlier account in the same tab can't survive a
+  // switch to a different account (see _applyEmployeeNavGating for why this must be
+  // unconditional, not just called when the incoming account happens to be an employee).
+  _applyEmployeeNavGating();
   _renderDevTradeCard();
   // Update nav user section
   const nameEl=document.getElementById('nav-user-name');

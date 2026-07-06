@@ -240,6 +240,13 @@ async function loadAccountData(){
   try{
     const{data:u}=await _supa.from('users').select('*').eq('id',_supaUser.id).maybeSingle();
     if(u&&u.account_id){
+      // This account has its own accounts row — it's a real owner/co-owner account, never
+      // a linked crew member. Reset explicitly: _isEmployee/_employeeRecord/_contractorUserId
+      // are shared globals that stay true/set from a PREVIOUS account's sign-in earlier in
+      // this tab (switching accounts doesn't reload the page), so without this an owner
+      // signing in right after an employee session inherits the employee's nav gating —
+      // Settings, Team, Tracker, etc. all vanish even though this account is a full owner.
+      _isEmployee=false;_employeeRecord=null;_contractorUserId=null;
       _user=u;
       const{data:a}=await _supa.from('accounts').select('*').eq('id',u.account_id).maybeSingle();
       _account=a;
@@ -268,7 +275,6 @@ async function loadAccountData(){
       _isEmployee=true;_contractorUserId=row.contractor_user_id;_employeeRecord=row;
       _user={id:_supaUser.id,email:_supaUser.email,name:row.name||'',role:row.role||'employee',account_id:null};
       applyPermissions();
-      if(typeof _applyEmployeeNavGating==='function')_applyEmployeeNavGating();
       if(welcome)showToast('Welcome to the team, '+escHtml(row.name||'there')+'! 👋','✅');
       try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'painting',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
       return true;
@@ -332,7 +338,6 @@ async function loadAccountData(){
         _employeeRecord={contractor_user_id:_pi.cid,email:_supaUser.email,employee_user_id:_supaUser.id,active:true};
         _user={id:_supaUser.id,email:_supaUser.email,name:'',role:'tech',account_id:null};
         applyPermissions();
-        if(typeof _applyEmployeeNavGating==='function')_applyEmployeeNavGating();
         localStorage.removeItem('_pendingEmpInvite');
         showToast('Welcome to the crew! 👋','✅');
         try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'painting',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
@@ -351,6 +356,7 @@ async function loadAccountData(){
     // No users row — check for pre-schema user via zj_data
     const{data:zd}=await _supa.from('zj_data').select('user_id').eq('user_id',_supaUser.id).maybeSingle();
     if(zd){
+      _isEmployee=false;_employeeRecord=null;_contractorUserId=null;
       _user={id:_supaUser.id,email:_supaUser.email,name:getOwnerName()||'',role:'owner',account_id:null};
       applyPermissions();
       try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:_activeTrade||'painting',isEmployee:false}));}catch(_e){}
@@ -364,12 +370,14 @@ async function loadAccountData(){
       const _ac=JSON.parse(localStorage.getItem('zp3_acct_'+_supaUser.id)||'null');
       if(_ac){
         _user=_ac.user||{id:_supaUser.id,email:_supaUser.email,name:getOwnerName()||'',role:'owner',account_id:null};
+        // Explicit both ways — _isEmployee is a shared global that may already be true
+        // from a different account earlier in this tab (see _applyEmployeeNavGating).
         if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;}
+        else{_isEmployee=false;_contractorUserId=null;_employeeRecord=null;}
         _activeTrade=_ac.activeTrade||'painting';
         if(_ac.account){_account=_ac.account;if(_account.business_name&&!S.bname)S.bname=_account.business_name;if(_account.phone&&!S.bphone)S.bphone=_account.phone;}
         if(_ac.config)_config=_ac.config;
         _renderNavTradeSwitcher();applyPermissions();
-        if(_isEmployee&&typeof _applyEmployeeNavGating==='function')_applyEmployeeNavGating();
         return true;
       }
     }catch(_ce){}
@@ -499,7 +507,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.05.26.23';
+const APP_VERSION='07.05.26.24';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1698,6 +1706,11 @@ async function supaInit(){
           // re-push into the incoming account's arrays right after this reset clears them.
           _teardownRealtimeChannels();
           _devSupportMode=false;_devSupportName='';_devSavedState=null;
+          // Outgoing account's employee identity must never leak into the incoming account —
+          // loadAccountData() re-derives this from the incoming account's own row, but reset
+          // it here too as the single foundational cross-account boundary (belt-and-suspenders
+          // with the per-branch resets in loadAccountData).
+          _isEmployee=false;_employeeRecord=null;_contractorUserId=null;
           // Wipe the outgoing account's in-memory records so they can't be merged/pushed up.
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           // Inbound-lead review queue lives OUTSIDE these arrays and was never cleared
