@@ -2385,6 +2385,68 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         expect(tmTail[i].body, `shared clause "${sharedTitles[i]}" must be identical in both modes`).toBe(byoTail[i].body);
       }
     });
+
+    test('regression: preview overlay applies the same T&C accordion as sign.html (was a raw uncollapsed dump — not actually "how they\'ll see it")', async () => {
+      const r = await page.evaluate(async () => {
+        const c = { id: 88904, name: 'Accordion Client', addr: '1 Accordion Rd' };
+        clients = clients.filter(x => x.id !== 88904).concat([c]);
+        bids = bids.filter(x => x.client_id !== 88904);
+        openGenericEstimate(c, null, 'general');
+        _geiIsTM = true; _geiIsFreeForm = false;
+        _tmRatePerMan = 50; _tmEstHours = 8; _tmCrewCount = 1;
+        _geiLines = [{ desc: 'Materials', qty: 1, rate: 500, total: 500, _tmLabor: false }];
+        await sendGenericProposal(true); // real _showProposalPreviewOverlay runs — no interception this time
+        const ov = document.getElementById('_prop-preview-ov');
+        const res = {
+          isFn: typeof _applyTermsAccordion === 'function',
+          hasToggleBtn: !!ov?.querySelector('[data-terms-toggle]'),
+          termsHeaderHidden: (() => {
+            const hdr = [...(ov?.querySelectorAll('div') || [])].find(d => d.dataset.termsHdr === '1');
+            return hdr ? hdr.style.display === 'none' : false;
+          })(),
+        };
+        ov?.remove();
+        _geiIsTM = false;
+        return res;
+      });
+      expect(r.isFn).toBe(true);
+      expect(r.hasToggleBtn).toBe(true);
+      expect(r.termsHeaderHidden).toBe(true);
+    });
+
+    test('regression: selected scope-chip descriptions carry into the proposal even when BYO has line items (was silently dropped by an if/else)', async () => {
+      const r = await page.evaluate(async () => {
+        const c = { id: 88903, name: 'Scope Carry Client', addr: '1 Scope Rd' };
+        clients = clients.filter(x => x.id !== 88903).concat([c]);
+        bids = bids.filter(x => x.client_id !== 88903);
+        openGenericEstimate(c, null, 'painting');
+        _geiIsFreeForm = true;
+        _geiIsTM = false;
+        _geiScopeNoScope = false;
+        // A chip WITH a clientDesc, per TRADE_SCOPE_CHIPS.painting.
+        _geiScopeChips = ['Interior painting'];
+        // BYO also has line items on — this used to make the code take the
+        // byoItems branch and skip the scope-chip section entirely.
+        _byoItems = [{ id: 1, section: 'Interior', label: 'Walls', price: 300, on: true }];
+        let captured = '';
+        const orig = window._showProposalPreviewOverlay;
+        window._showProposalPreviewOverlay = html => { captured = html; };
+        let err = null;
+        try { await sendGenericProposal(true); } catch (e) { err = e.message; }
+        window._showProposalPreviewOverlay = orig;
+        return {
+          err,
+          hasChipLabel: captured.includes('Interior painting'),
+          hasChipDesc: captured.includes('Walls, ceilings, and trim in agreed rooms'),
+          hasByoItem: captured.includes('>Walls<') || captured.includes('Walls</li>') || captured.includes('Walls<span'),
+        };
+      });
+      expect(r.err).toBe(null);
+      expect(r.hasChipLabel).toBe(true);
+      expect(r.hasChipDesc).toBe(true);
+      // BYO's own line-item detail must still show too — this is additive, not a replacement.
+      expect(r.hasByoItem).toBe(true);
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -2878,6 +2940,27 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         finally { document.getElementById('_scope-sheet-ov')?.remove(); localStorage.removeItem('zp3_scope_sheet_data'); }
       });
       expect(r.ok).toBe(true);
+    });
+
+    test('regression: sheet is a centered .zmodal, not a bottom-pinned sheet (was position:fixed;bottom:0, overriding the overlay\'s centering)', async () => {
+      const r = await page.evaluate(() => {
+        _geiTrade = 'painting'; _geiScopeChips = [];
+        _openScopeSheet('byo-scope-wrap');
+        const ov = document.getElementById('_scope-sheet-ov');
+        const sheet = ov?.firstElementChild;
+        const res = {
+          overlayCenters: getComputedStyle(ov).alignItems === 'center' && getComputedStyle(ov).justifyContent === 'center',
+          sheetIsZmodal: sheet?.classList.contains('zmodal'),
+          sheetPosition: sheet ? getComputedStyle(sheet).position : null,
+        };
+        ov?.remove();
+        return res;
+      });
+      expect(r.overlayCenters).toBe(true);
+      expect(r.sheetIsZmodal).toBe(true);
+      // A real .zmodal participates in the overlay's flexbox centering (static
+      // position) — the old bottom-sheet hardcoded position:fixed to escape it.
+      expect(r.sheetPosition).not.toBe('fixed');
     });
   });
 

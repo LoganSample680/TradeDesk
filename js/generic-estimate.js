@@ -677,6 +677,31 @@ function _geiDepositPct(){
 // The DIFFERENCES between T&M and BYO live here as data. The behavior that uses
 // them (_geiShowSharedChrome and the shared render functions above) is one code
 // path — a change to how either page looks or boots automatically hits both.
+//
+// SHARED KERNEL — the constant baseline every estimate type builds on. A new
+// estimate type (fixed-price, subscription, whatever comes next) is a new entry
+// in _GEI_MODES plus its own genuinely-unique fields (like T&M's crew/rate/days
+// inputs or BYO's line-item sections) — it reuses everything below, it never
+// re-implements it:
+//   • Page chrome:        _geiShowSharedChrome / _geiHidePage
+//   • Rendered components: _geiRenderTopBar, _geiRenderScopeCard,
+//                          _geiRenderProfitGauge, _geiRenderActionButtons,
+//                          _geiRenderDepositField
+//   • Deposit math:        _geiDepositPct (single source of truth, used by
+//                          saveGenericEstimate, sendGenericProposal,
+//                          _byoAutosave, _geiSignInPerson, _geiConfirmInPerson)
+//   • Scope-of-work:       TRADE_SCOPE_CHIPS / _GEN_SCOPE, _toggleScopeChip,
+//                          _renderScopeChips, _openScopeSheet — the one
+//                          "what's included" definition every mode shares;
+//                          it always carries into the sent proposal
+//                          (see the _scopeBlocks assembly in sendGenericProposal)
+//   • Save/send/sign:      saveGenericEstimate, sendGenericProposal,
+//                          _geiSignInPerson, _geiConfirmInPerson
+//   • Proposal T&C:        the single clause array in sendGenericProposal —
+//                          shared legal clauses exist once; a mode only
+//                          supplies its own payment-terms clauses at the top
+// If a change only touches one mode's genuinely-unique behavior, it belongs in
+// that mode's own function (_tmInputChange, _byoUpdateRail, etc.) — not here.
 const _GEI_MODES={
   tm:{
     pageId:'gei-tm-page',
@@ -863,8 +888,13 @@ function _openScopeSheet(containerId){
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   const trade=_geiTrade||getActiveTrade();
   const tradeItems=(typeof TRADE_SCOPE_ITEMS!=='undefined'&&TRADE_SCOPE_ITEMS[trade]);
+  // Centered like every other modal in the app (.zmodal — fade+slide+scale via
+  // the shared td-modal-in keyframe, §8.4) — this used to hardcode
+  // position:fixed;bottom:0, pinning it to the viewport bottom and overriding
+  // .zmodal-overlay's centering instead of using the shared modal pattern.
   const sheet=document.createElement('div');
-  sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;max-height:80vh;overflow-y:auto;background:var(--bg);border-radius:16px 16px 0 0;padding:16px 16px 40px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
+  sheet.className='zmodal';
+  sheet.style.cssText='max-width:480px;max-height:80vh;overflow-y:auto';
   let itemsHtml;
   if(tradeItems&&tradeItems.length){
     const allItems=[..._GEN_SCOPE,...tradeItems];
@@ -899,7 +929,6 @@ function _openScopeSheet(containerId){
     '<button onclick="document.getElementById(\'_scope-sheet-ov\').remove()" style="padding:6px 18px;border-radius:20px;border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Done</button>'+
     '</div>'+itemsHtml;
   ov.appendChild(sheet);document.body.appendChild(ov);
-  requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
 }
 function _editEstTitle(titleId,btnId){
   const titleEl=document.getElementById(titleId);
@@ -1500,6 +1529,10 @@ function _showProposalPreviewOverlay(proposalHtml){
   const body=document.createElement('div');
   body.style.cssText='flex:1;overflow-y:auto;padding:16px;box-sizing:border-box;background:#f0f4f8';
   body.innerHTML=proposalHtml;
+  // Same accordion sign.html applies to the real client-facing page (js/legal.js)
+  // — without this the preview showed the full uncollapsed T&C wall of text,
+  // which isn't actually "how they'll see it" per the header above.
+  if(typeof _applyTermsAccordion==='function')_applyTermsAccordion(body);
   ov.appendChild(hdr);ov.appendChild(body);
   document.body.appendChild(ov);
 }
@@ -2804,8 +2837,22 @@ async function sendGenericProposal(previewOnly){
   }
   const _hdrLabel=_geiIsTM?'⏱️ Time &amp; Materials':tradeIcon+' Service Proposal';
   const _nteRow=(_geiIsTM&&_tmNteCap)?`<tr style="background:#075985;color:rgba(255,255,255,.8)"><td colspan="2" style="padding:5px 18px;font-size:11px">Not-to-exceed cap</td><td style="padding:5px 18px;text-align:right;font-size:11px;font-weight:700">$${_tmNteCap.toLocaleString()}</td></tr>`:'';
-  // Scope section — BYO shows structured section/item list matching paint estimate style; others use chip pills
-  let _scopeSection='';
+  // Scope section — the scope-CHIP picker (with its plain-English clientDesc
+  // explanations) is the one shared, cross-mode "what's included" definition, so
+  // it renders whenever any chips are selected, in EVERY estimate type. BYO's
+  // own line-item section list is additional structured detail specific to BYO
+  // and renders alongside it, not instead of it (previously an if/else silently
+  // dropped the selected scope chips whenever BYO had any line items on).
+  const _scopeBlocks=[];
+  if(_geiScopeChips.length&&!_geiScopeNoScope){
+    const _allChipDefs=[...(TRADE_SCOPE_CHIPS[_geiTrade]||[]),...(TRADE_SCOPE_CHIPS.general||[]),..._GEN_SCOPE];
+    const _listItems=_geiScopeChips.map(l=>{
+      const chip=_allChipDefs.find(c=>c.label===l);
+      const desc=chip&&chip.clientDesc?`<span style="font-size:10.5px;color:#718096"> — ${escHtml(chip.clientDesc)}</span>`:'';
+      return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7">${escHtml(l)}${desc}</li>`;
+    }).join('');
+    _scopeBlocks.push(`<ol style="margin:0 0 10px;padding-left:18px">${_listItems}</ol>`);
+  }
   const _byoWorkItems2=_geiIsFreeForm?_byoItems.filter(it=>it.on&&!it._rrp):[];
   if(_geiIsFreeForm&&_byoWorkItems2.length>0&&!_geiScopeNoScope){
     const _scopeSecs2=[...(new Set(_byoWorkItems2.map(it=>it.section)))].filter(Boolean);
@@ -2814,16 +2861,11 @@ async function sendGenericProposal(previewOnly){
       const rows='<ol style="margin:4px 0 0;padding-left:18px">'+its.map(it=>`<li style="font-size:11.5px;color:#4a5568;line-height:1.7">${escHtml(it.label)}${it.notes?`<span style="font-size:10.5px;color:#718096"> — ${escHtml(it.notes)}</span>`:''}</li>`).join('')+'</ol>';
       return `<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:2px">${escHtml(sec)}</div>${rows}</div>`;
     }).join('');
-    _scopeSection=`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px">Scope of work</div>${_secBlocks2}</div>`;
-  }else if(_geiScopeChips.length&&!_geiScopeNoScope){
-    const _allChipDefs=[...(TRADE_SCOPE_CHIPS[_geiTrade]||[]),...(TRADE_SCOPE_CHIPS.general||[]),..._GEN_SCOPE];
-    const _listItems=_geiScopeChips.map(l=>{
-      const chip=_allChipDefs.find(c=>c.label===l);
-      const desc=chip&&chip.clientDesc?`<span style="font-size:10.5px;color:#718096"> — ${escHtml(chip.clientDesc)}</span>`:'';
-      return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7">${escHtml(l)}${desc}</li>`;
-    }).join('');
-    _scopeSection=`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px">Scope of work</div><ol style="margin:0;padding-left:18px">${_listItems}</ol></div>`;
+    _scopeBlocks.push(_secBlocks2);
   }
+  const _scopeSection=_scopeBlocks.length
+    ?`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px">Scope of work</div>${_scopeBlocks.join('')}</div>`
+    :'';
   const _geiEpaClient=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
   const _geiYearBuilt=_geiEpaClient?_geiEpaClient.yearBuilt||null:null;
   // EPA RRP (lead-safe) applies to pre-1978 homes where paint will be disturbed.
