@@ -463,7 +463,9 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       if(b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(b.panelSched)_panelSched=JSON.parse(JSON.stringify(b.panelSched));
       // An explicitly-resumed bid's OWN type wins — the record knows what it is,
-      // regardless of which button or stale state got us here.
+      // regardless of which button or stale state got us here. isTM takes
+      // precedence: bids autosaved before the dual-flag fix carry BOTH flags,
+      // and letting isFreeForm win resumed T&M drafts as empty BYO estimates.
       if(b.isTM){
         _geiIsTM=true;_geiIsFreeForm=false;
         _tmCrewCount=b.tmCrewCount||1;_tmRatePerMan=b.tmRatePerMan||0;
@@ -471,7 +473,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
         _tmMatMarkup=b.tmMatMarkup||b.geiTaxPct||0;
         _tmCapAction=b.tmCapAction||'Stop & get re-approval';
       }
-      if(b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
+      else if(b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
       // Deposit % is restored in _tmShowPage/_byoShowPage instead — the field
       // doesn't exist in the DOM yet at this point (rendered lazily on page show).
       _resumingExisting=true;
@@ -510,10 +512,12 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       if(_b.geiDuration)sf('gei-duration',_b.geiDuration);
       if(_b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(_b.panelSched)_panelSched=JSON.parse(JSON.stringify(_b.panelSched));
-      if(_b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
+      // isTM precedence — legacy dual-flag rows (see _byoAutosave note) must
+      // resume as T&M, never as an empty BYO.
+      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmMatMarkup=_b.tmMatMarkup||_b.geiTaxPct||20;_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
+      else if(_b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
       if(_b.scopeChips)_geiScopeChips=[..._b.scopeChips];
       _geiScopeNoScope=!!(_b.scopeNoScope);
-      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmMatMarkup=_b.tmMatMarkup||_b.geiTaxPct||20;_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
       // Deposit % is restored in _tmShowPage/_byoShowPage instead — the field
       // doesn't exist in the DOM yet at this point (rendered lazily on page show).
       // Purge other empty duplicates for this client+trade now that we have the right
@@ -1120,7 +1124,10 @@ function _byoAutosave(){
   if(!b)return;
   b.byoItems=JSON.parse(JSON.stringify(_byoItems));
   b.byoCustomSections=[..._byoCustomSections];
-  b.isFreeForm=true;
+  // Stamp the bid's REAL type — this used to write isFreeForm=true on every
+  // autosave, so a Time & Materials draft carried BOTH flags and resumed as
+  // Build Your Own with empty items (the "my work disappeared" bug).
+  b.isFreeForm=_geiIsFreeForm&&!_geiIsTM;
   b.estCrew=[..._estCrew];
   b.scopeChips=[..._geiScopeChips];
   b.scopeNoScope=_geiScopeNoScope||false;
@@ -1133,11 +1140,20 @@ function _byoAutosave(){
   }
   if(_geiIsTM){
     b.isTM=true;
+    b.isFreeForm=false;
     b.tmCrewCount=_tmCrewCount;
     b.tmRatePerMan=_tmRatePerMan;
     b.tmEstHours=_tmEstHours;
     b.tmBillingCycle=_tmBillingCycle;
     b.tmMatMarkup=_tmMatMarkup;
+    // T&M's actual content lives in _geiLines (labor line + material categories)
+    // — without this, autosave captured the rate/crew numbers but silently
+    // dropped every material category until the user hit "Save draft".
+    b.geiLines=JSON.parse(JSON.stringify(_geiLines));
+    const _nteCap=(typeof _moneyVal==='function'?_moneyVal('tm-i-nte'):0)||0;
+    b.tmNteCap=_nteCap;
+    b.tmNteEnabled=_nteCap>0;
+    b.tmCapAction=document.getElementById('tm-i-cap-action')?.value||_tmCapAction||'';
   }
   saveAll();
 }
@@ -1814,7 +1830,7 @@ function _tmDelMatCat(idx){
   _geiLines.splice(idx,1);
   _tmRenderMatList();_tmInputChange();
 }
-function _tmCadence(v){_tmBillingCycle=v;_tmSyncCadence();}
+function _tmCadence(v){_tmBillingCycle=v;_tmSyncCadence();_byoAutosave();}
 function _tmSyncCadence(){
   ['weekly','milestone','completion'].forEach(c=>{
     const el=document.getElementById('tm-cad-'+c);if(!el)return;

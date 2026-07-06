@@ -1665,7 +1665,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             </div>
             <div class="f">
               <label>What happens at cap</label>
-              <select id="tm-i-cap-action" onchange="_tmCapAction=this.value">
+              <select id="tm-i-cap-action" onchange="_tmCapAction=this.value;_byoAutosave()">
                 <option>Stop &amp; get re-approval</option>
                 <option>Continue at agreed rate</option>
                 <option>Switch to fixed-price quote</option>

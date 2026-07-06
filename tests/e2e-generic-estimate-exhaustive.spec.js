@@ -2388,6 +2388,67 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.stubCount).toBe(1);
     });
 
+    test('regression: an autosaved T&M draft round-trips — resumes as T&M with materials, NTE cap, cadence, and cap action intact', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90106, name: 'TM Roundtrip Client', addr: '6 Roundtrip Rd' };
+        clients = clients.filter(x => x.id !== 90106).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90106);
+        // Build a T&M estimate the way a user would
+        openGenericEstimate(c, null, null, { mode: 'tm' });
+        goGeiStep(2);
+        _tmRatePerMan = 75; _tmEstHours = 24; _tmCrewCount = 3; _tmBillingCycle = 'milestone';
+        _geiLines = [{ desc: 'Paint & primer', qty: 1, rate: 800, total: 800, notes: 'SW Duration' }];
+        const nteEl = document.getElementById('tm-i-nte'); if (nteEl) nteEl.value = '12,000';
+        const capEl = document.getElementById('tm-i-cap-action'); if (capEl) capEl.value = 'Continue at agreed rate';
+        _byoAutosave(); // what every keystroke triggers — NOT the explicit Save draft button
+        const bidId = _geiEditBidId;
+        const saved = bids.find(x => x.id === bidId);
+        const savedShape = {
+          isTM: !!saved.isTM, isFreeForm: !!saved.isFreeForm,
+          matCount: (saved.geiLines || []).length,
+          nteCap: saved.tmNteCap, capAction: saved.tmCapAction, cadence: saved.tmBillingCycle,
+        };
+        // Simulate leaving and coming back via the feed's Resume button
+        _geiLines = []; _tmRatePerMan = 0; _tmEstHours = 0; _geiIsFreeForm = true; _geiIsTM = false;
+        openGenericEstimate(getClientById(90106), bidId, 'general');
+        return {
+          savedShape,
+          resumedAsTM: _geiIsTM, resumedAsByo: _geiIsFreeForm,
+          rate: _tmRatePerMan, hours: _tmEstHours, crew: _tmCrewCount, cadence: _tmBillingCycle,
+          // _tmInputChange legitimately re-adds the synthetic labor line on
+          // resume (rate×crew×hours) — the material categories are what must survive.
+          matsRestored: _geiLines.filter(l => !l._tmLabor).length,
+        };
+      });
+      expect(r.savedShape.isTM).toBe(true);
+      expect(r.savedShape.isFreeForm, 'autosave must never stamp isFreeForm on a T&M bid').toBe(false);
+      expect(r.savedShape.matCount, 'autosave must capture material categories, not just rate numbers').toBe(1);
+      expect(r.savedShape.nteCap).toBe(12000);
+      expect(r.savedShape.capAction).toBe('Continue at agreed rate');
+      expect(r.savedShape.cadence).toBe('milestone');
+      expect(r.resumedAsTM, 'the autosaved draft must resume as T&M').toBe(true);
+      expect(r.resumedAsByo).toBe(false);
+      expect(r.rate).toBe(75);
+      expect(r.hours).toBe(24);
+      expect(r.crew).toBe(3);
+      expect(r.cadence).toBe('milestone');
+      expect(r.matsRestored).toBe(1);
+    });
+
+    test('regression: a legacy dual-flag record (isTM + isFreeForm, from the old autosave) resumes as T&M, not empty BYO', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90107, name: 'Dual Flag Client', addr: '7 Dual Rd' };
+        clients = clients.filter(x => x.id !== 90107).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90107);
+        bids.unshift({ id: 901071, client_id: 90107, client_name: c.name, amount: 2000, deposit: 0, status: 'Draft', draft: true, bid_date: todayKey(), trade_type: 'general', isTM: true, isFreeForm: true, tmRatePerMan: 50, tmEstHours: 40, tmCrewCount: 1, geiLines: [{ desc: 'Materials', qty: 1, rate: 500, total: 500 }], geiTaxPct: 0 });
+        openGenericEstimate(getClientById(90107), 901071, 'general');
+        return { isTM: _geiIsTM, isFreeForm: _geiIsFreeForm, rate: _tmRatePerMan };
+      });
+      expect(r.isTM, 'isTM must take precedence over a stray isFreeForm flag').toBe(true);
+      expect(r.isFreeForm).toBe(false);
+      expect(r.rate).toBe(50);
+    });
+
     test('regression: explicit bid resume derives type from the bid record — stale mode flags cannot corrupt it (feed Resume button)', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 90104, name: 'Stale Flag Client', addr: '4 Stale Rd' };
