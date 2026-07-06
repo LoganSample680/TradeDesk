@@ -2320,6 +2320,130 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     });
   });
 
+  test.describe('Draft handling — type-aware reuse, resume chooser, fresh versions', () => {
+    test('regression: picking Time & Materials never resumes a Build Your Own draft (cross-type bleed)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90101, name: 'TypeGuard Client', addr: '1 Guard Rd' };
+        clients = clients.filter(x => x.id !== 90101).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90101);
+        const byoDraft = { id: 901011, client_id: 90101, client_name: c.name, amount: 500, deposit: 0, status: 'Draft', draft: true, bid_date: todayKey(), trade_type: 'painting', isFreeForm: true, geiLines: [], geiTaxPct: 0, byoItems: [{ id: 1, section: 'Interior', label: 'Old BYO Item', price: 500, on: true }] };
+        bids.unshift(byoDraft);
+        openGenericEstimate(c, null, null, { mode: 'tm' });
+        return {
+          resumedTheByoDraft: _geiEditBidId === 901011,
+          isTM: _geiIsTM, isFreeForm: _geiIsFreeForm,
+          byoItemsLeaked: _byoItems.length > 0,
+          newDraftIsTypeStamped: !!bids.find(x => x.id === _geiEditBidId)?.isTM,
+        };
+      });
+      expect(r.resumedTheByoDraft, 'a T&M open must never resume a BYO draft').toBe(false);
+      expect(r.isTM).toBe(true);
+      expect(r.isFreeForm).toBe(false);
+      expect(r.byoItemsLeaked, 'no BYO items may leak into the T&M estimate').toBe(false);
+      expect(r.newDraftIsTypeStamped, 'the fresh stub must be type-stamped so re-picking T&M finds it').toBe(true);
+    });
+
+    test('_geiOpenModeEstimate shows the resume-or-fresh chooser for a non-empty same-type draft; "start fresh" creates a second version', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90102, name: 'Chooser Client', addr: '2 Chooser Rd' };
+        clients = clients.filter(x => x.id !== 90102).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90102);
+        const byoDraft = { id: 901021, client_id: 90102, client_name: c.name, amount: 750, deposit: 0, status: 'Draft', draft: true, bid_date: todayKey(), trade_type: 'painting', isFreeForm: true, geiLines: [], geiTaxPct: 0, byoItems: [{ id: 1, section: 'Interior', label: 'V1 Item', price: 750, on: true }] };
+        bids.unshift(byoDraft);
+        _geiOpenModeEstimate(c, null, 'byo');
+        const chooser = document.getElementById('_gei-draft-chooser');
+        const chooserShown = !!chooser;
+        const listsDraft = (chooser?.textContent || '').includes('750');
+        // Take the "start fresh" path
+        _geiStartFreshDraft();
+        const freshId = _geiEditBidId;
+        const chooserGone = !document.getElementById('_gei-draft-chooser');
+        const bothVersionsExist = !!bids.find(x => x.id === 901021) && !!bids.find(x => x.id === freshId) && freshId !== 901021;
+        const freshIsEmptyByo = !!bids.find(x => x.id === freshId)?.isFreeForm && _byoItems.length === 0;
+        return { chooserShown, listsDraft, chooserGone, bothVersionsExist, freshIsEmptyByo };
+      });
+      expect(r.chooserShown, 'non-empty same-type draft must trigger the chooser, not a silent resume').toBe(true);
+      expect(r.listsDraft).toBe(true);
+      expect(r.chooserGone).toBe(true);
+      expect(r.bothVersionsExist, 'start fresh must create a second version alongside the old draft').toBe(true);
+      expect(r.freshIsEmptyByo).toBe(true);
+    });
+
+    test('empty stubs are reused silently — no chooser, no duplicate blanks', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90103, name: 'Stub Client', addr: '3 Stub Rd' };
+        clients = clients.filter(x => x.id !== 90103).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90103);
+        _geiOpenModeEstimate(c, null, 'tm');
+        const firstId = _geiEditBidId;
+        _geiOpenModeEstimate(c, null, 'tm');
+        const secondId = _geiEditBidId;
+        const chooserShown = !!document.getElementById('_gei-draft-chooser');
+        document.getElementById('_gei-draft-chooser')?.remove();
+        const stubCount = bids.filter(x => x.client_id === 90103).length;
+        return { sameStubReused: firstId === secondId, chooserShown, stubCount };
+      });
+      expect(r.chooserShown, 'empty stubs must not trigger the chooser').toBe(false);
+      expect(r.sameStubReused, 'reopening the same type must reuse the empty stub, not spawn another').toBe(true);
+      expect(r.stubCount).toBe(1);
+    });
+
+    test('regression: explicit bid resume derives type from the bid record — stale mode flags cannot corrupt it (feed Resume button)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90104, name: 'Stale Flag Client', addr: '4 Stale Rd' };
+        clients = clients.filter(x => x.id !== 90104).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90104);
+        const tmDraft = { id: 901041, client_id: 90104, client_name: c.name, amount: 1200, deposit: 0, status: 'Draft', draft: true, bid_date: todayKey(), trade_type: 'general', isTM: true, tmRatePerMan: 60, tmEstHours: 16, tmCrewCount: 2, geiLines: [], geiTaxPct: 0 };
+        bids.unshift(tmDraft);
+        // Simulate having just been inside a BYO estimate (the stale-state bug)
+        _geiIsFreeForm = true; _geiIsTM = false;
+        openGenericEstimate(getClientById(90104), 901041, 'general');
+        return { isTM: _geiIsTM, isFreeForm: _geiIsFreeForm, rate: _tmRatePerMan };
+      });
+      expect(r.isTM, 'resuming a T&M bid must open as T&M regardless of stale flags').toBe(true);
+      expect(r.isFreeForm).toBe(false);
+      expect(r.rate).toBe(60);
+    });
+
+    test('_estimateTypeLabel — spelled out, never an acronym', async () => {
+      const r = await page.evaluate(() => ({
+        tm: _estimateTypeLabel({ isTM: true }),
+        byo: _estimateTypeLabel({ isFreeForm: true }),
+        legacy: _estimateTypeLabel({}),
+        nul: _estimateTypeLabel(null),
+      }));
+      expect(r.tm).toBe('Time & Materials');
+      expect(r.byo).toBe('Build Your Own');
+      expect(r.legacy).toBe('');
+      expect(r.nul).toBe('');
+    });
+
+    test('Make Money Today build section shows the spelled-out estimate type on draft cards', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90105, name: 'Feed Label Client', addr: '5 Feed Rd' };
+        clients = clients.filter(x => x.id !== 90105).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90105);
+        bids.unshift({ id: 901051, client_id: 90105, client_name: c.name, amount: 900, deposit: 0, status: 'Draft', draft: true, bid_date: todayKey(), trade_type: 'general', isTM: true, geiLines: [], geiTaxPct: 0 });
+        // §11.6: sections render items into innerHTML only when expanded
+        window._mmtCol_build = false;
+        renderTodayFeed();
+        // Scope assertions to THIS bid's card — the shared feed contains cards
+        // for other tests' fixtures (including a client literally named
+        // "TM Deposit Client"), so a feed-wide acronym scan false-positives.
+        const card = [...document.querySelectorAll('#dash-money-feed .tf-card')].find(el => el.textContent.includes('Feed Label Client'));
+        const cardText = card?.textContent || '';
+        return {
+          cardFound: !!card,
+          hasSpelledOut: cardText.includes('Time & Materials'),
+          hasAcronym: /T&M|BYO/.test(cardText.replace(/Time & Materials|Build Your Own/g, '')),
+        };
+      });
+      expect(r.cardFound, 'the draft card must be in the feed for this test to mean anything').toBe(true);
+      expect(r.hasSpelledOut, 'the card must show the spelled-out estimate type').toBe(true);
+      expect(r.hasAcronym, 'no acronyms on the card').toBe(false);
+    });
+  });
+
   test.describe('Proposal T&C — single clause list drives both modes (parity regression)', () => {
     // Captures the generated T&C section for one mode via the preview overlay.
     const captureTerms = (page, isTM, clientId) => page.evaluate(async ({ isTM, clientId }) => {

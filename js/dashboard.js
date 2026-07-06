@@ -1113,7 +1113,7 @@ function renderTodayFeed(){
           '<div class="tf-icon">📅</div>'+
           '<div class="tf-body">'+
             '<div class="tf-name">'+escHtml(cDisp)+'</div>'+
-            '<div class="tf-sub" style="color:var(--blue)">'+fmt(b.amount)+' · deposit paid · not yet scheduled</div>'+
+            '<div class="tf-sub" style="color:var(--blue)">'+((typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'')+fmt(b.amount)+' · deposit paid · not yet scheduled</div>'+
           '</div>'+
           '<div class="tf-acts">'+
             '<button onclick="schedFromBid('+b.id+')" class="btn btn-sm btn-p" style="font-size:11px">Schedule →</button>'+
@@ -1123,7 +1123,8 @@ function renderTodayFeed(){
     } else {
       // Deposit still needed — goes to Deposit & Schedule
       const depAmt=depositRequired?fmt(b.deposit):fmt(b.amount);
-      const subText=hasJob?'Job in progress · deposit not collected · '+depAmt:'Deposit required before scheduling · '+depAmt;
+      const _dTypeLbl=(typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'';
+      const subText=_dTypeLbl+(hasJob?'Job in progress · deposit not collected · '+depAmt:'Deposit required before scheduling · '+depAmt);
       depositItems.push(
         '<div class="tf-card">'+
           '<div class="tf-icon">'+(hasJob?'💰':'💳')+'</div>'+
@@ -1151,7 +1152,7 @@ function renderTodayFeed(){
         '<div class="tf-icon">🔥</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(c.name)+'</div>'+
-          '<div class="tf-sub" style="color:#A32D2D">2nd follow-up · '+fmt(b.amount)+' · '+Math.abs(daysOut)+'d waiting</div>'+
+          '<div class="tf-sub" style="color:#A32D2D">'+((typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'')+'2nd follow-up · '+fmt(b.amount)+' · '+Math.abs(daysOut)+'d waiting</div>'+
         '</div>'+
         '<div class="tf-acts">'+
           (c.phone?'<a href="tel:'+c.phone.replace(/\D/g,'')+'" onclick="autoLogContact('+c.id+',\'call\')" class="btn btn-sm" style="font-size:11px">Call</a>':'')+
@@ -1177,7 +1178,7 @@ function renderTodayFeed(){
         '<div class="tf-icon">⏰</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(c.name)+'</div>'+
-          '<div class="tf-sub" style="color:var(--amber)">Follow-up #'+stage+' · '+(daysOut>0?daysOut+'d overdue':'due today')+' · '+fmt(b.amount)+'</div>'+
+          '<div class="tf-sub" style="color:var(--amber)">'+((typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'')+'Follow-up #'+stage+' · '+(daysOut>0?daysOut+'d overdue':'due today')+' · '+fmt(b.amount)+'</div>'+
         '</div>'+
         '<div class="tf-acts">'+
           (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+smsBody+'" onclick="autoLogContact('+c.id+',\'followup_sent\');markFollowupSent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">📱 Send</a>':'')+
@@ -1236,7 +1237,7 @@ function renderTodayFeed(){
         '<div class="tf-icon">📨</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(c.name)+'</div>'+
-          '<div class="tf-sub" style="color:'+urgColor+'">'+fmt(b.amount)+' · '+daysStr+'</div>'+
+          '<div class="tf-sub" style="color:'+urgColor+'">'+((typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'')+fmt(b.amount)+' · '+daysStr+'</div>'+
           viewedBadge+
         '</div>'+
         '<div class="tf-acts">'+
@@ -1256,7 +1257,10 @@ function renderTodayFeed(){
     if(!displayName)return;
     const days=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
     const isDraft=b.status==='Draft'||b.draft;
-    const subLabel=isDraft&&!b.amount?'In progress — finish &amp; send':isDraft?'Draft — finish &amp; send':(fmt(b.amount)+' · built '+(days===0?'today':days+'d ago')+' · not sent yet');
+    // Estimate type spelled out (never an acronym) so the feed shows which
+    // kind of estimate was chosen without opening it.
+    const typeLbl=typeof _estimateTypeLabel==='function'?_estimateTypeLabel(b):'';
+    const subLabel=(typeLbl?typeLbl+' · ':'')+(isDraft&&!b.amount?'In progress — finish &amp; send':isDraft?'Draft — finish &amp; send':(fmt(b.amount)+' · built '+(days===0?'today':days+'d ago')+' · not sent yet'));
     buildItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">✏️</div>'+

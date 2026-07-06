@@ -340,17 +340,90 @@ async function _geiLookupClientTaxRate(){
   }
 }
 
-function openTMEstimate(c,bidId){
-  _geiIsTM=true;_geiIsFreeForm=false;
-  openGenericEstimate(c,bidId,null);
-  _geiIsFreeForm=false;
+function openTMEstimate(c,bidId){_geiOpenModeEstimate(c,bidId,'tm');}
+function openFreeFormEstimate(c,bidId){_geiOpenModeEstimate(c,bidId,'byo');}
+
+// Unsent estimate-builder drafts for a client, filtered by estimate type.
+// 'tm' matches only Time & Materials drafts; 'byo' matches everything else
+// (legacy scope drafts auto-migrate to Build Your Own on resume, so they
+// count as BYO). This is THE draft-matching rule — the resume chooser and
+// openGenericEstimate's silent-reuse both use it, so they can never disagree.
+function _geiFindDraftsFor(clientId,mode){
+  return bids.filter(b=>b.client_id===clientId&&!b.signingToken&&b.geiLines!==undefined
+    &&(b.status==='Draft'||b.status==='Pending')
+    &&(mode==='tm'?!!b.isTM:mode==='byo'?!b.isTM:true));
 }
-function openFreeFormEstimate(c,bidId){
-  _geiIsFreeForm=true;_geiIsTM=false;
-  openGenericEstimate(c,bidId,null);
+function _geiDraftIsEmpty(b){return !b.amount&&!(b.geiLines||[]).length&&!(b.byoItems||[]).length;}
+// Plain-English estimate-type label for a bid — spelled out, never an acronym.
+// Used anywhere a bid surfaces outside the estimate builder (Make Money Today
+// feed, pickers) so the contractor can always tell which type they chose.
+function _estimateTypeLabel(b){
+  if(!b)return'';
+  if(b.isTM)return'Time & Materials';
+  if(b.isFreeForm)return'Build Your Own';
+  return'';
 }
 
-function openGenericEstimate(c,bidId,_tradePick){
+// UI entry point for both estimate types. The rule the owner set: never
+// silently resume a draft that has real content, never create junk duplicates.
+//  • explicit bidId → open that bid (resume buttons, revise flows)
+//  • non-empty unsent draft(s) of the SAME type exist → chooser: resume one
+//    of them, or deliberately start a fresh version alongside them
+//  • only empty stubs (or nothing) → open directly; empty stubs are reused
+//    silently so abandoning the type picker twice never piles up blank drafts
+function _geiOpenModeEstimate(c,bidId,mode){
+  if(bidId){openGenericEstimate(c,bidId,null,{mode});return;}
+  const drafts=c?_geiFindDraftsFor(c.id,mode).filter(b=>!_geiDraftIsEmpty(b)):[];
+  if(!drafts.length){openGenericEstimate(c,null,null,{mode});return;}
+  _geiShowDraftChooser(c,mode,drafts);
+}
+function _geiShowDraftChooser(c,mode,drafts){
+  document.getElementById('_gei-draft-chooser')?.remove();
+  const modeLabel=mode==='tm'?'Time & Materials':'Build Your Own';
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_gei-draft-chooser';
+  const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='440px';
+  const rows=drafts.map(b=>{
+    const items=(b.byoItems||[]).length||(b.geiLines||[]).length;
+    const parts=[];
+    if(b.amount)parts.push('$'+Number(b.amount).toLocaleString());
+    if(items)parts.push(items+' item'+(items>1?'s':''));
+    if(b.bid_date)parts.push('started '+b.bid_date);
+    return '<button data-bid="'+b.id+'" onclick="_geiResumeChosenDraft(this.dataset.bid)" style="display:block;width:100%;text-align:left;padding:12px 14px;border:1.5px solid var(--border2);border-radius:10px;background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:8px">'+
+      '<span style="font-size:14px;font-weight:700;color:var(--text);display:block">'+escHtml(b.type||modeLabel+' draft')+'</span>'+
+      '<span style="font-size:12px;color:var(--text3)">'+escHtml(parts.join(' · ')||'No details yet')+'</span>'+
+    '</button>';
+  }).join('');
+  box.innerHTML=
+    '<div style="font-size:16px;font-weight:800;margin-bottom:4px">Unsent '+modeLabel+' draft'+(drafts.length>1?'s':'')+'</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(c?.name||'This client')+' already has '+(drafts.length>1?drafts.length+' unsent drafts':'an unsent draft')+' of this type. Pick one to keep working on it, or start a fresh version to send alongside it.</div>'+
+    rows+
+    '<button onclick="_geiStartFreshDraft()" style="display:block;width:100%;padding:13px;border-radius:10px;border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:4px">➕ Start a fresh '+modeLabel+' estimate</button>'+
+    '<button onclick="document.getElementById(\'_gei-draft-chooser\')?.remove()" style="display:block;width:100%;padding:11px;border-radius:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:4px">Cancel</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  ov.dataset.mode=mode;ov.dataset.clientId=c?.id||'';
+}
+function _geiResumeChosenDraft(bidId){
+  const ov=document.getElementById('_gei-draft-chooser');
+  const mode=ov?.dataset.mode;const clientId=Number(ov?.dataset.clientId);
+  ov?.remove();
+  const c=getClientById(clientId);if(!c)return;
+  openGenericEstimate(c,Number(bidId)||bidId,null,{mode});
+}
+function _geiStartFreshDraft(){
+  const ov=document.getElementById('_gei-draft-chooser');
+  const mode=ov?.dataset.mode;const clientId=Number(ov?.dataset.clientId);
+  ov?.remove();
+  const c=getClientById(clientId);if(!c)return;
+  openGenericEstimate(c,null,null,{mode,forceNew:true});
+}
+
+function openGenericEstimate(c,bidId,_tradePick,opts){
+  // Mode comes in explicitly (never inherited from whatever estimate was open
+  // last) — stale _geiIsTM/_geiIsFreeForm from a previous estimate was how a
+  // Time & Materials resume could open with Build Your Own state mixed in.
+  _geiIsTM=opts?.mode==='tm';
+  _geiIsFreeForm=opts?.mode==='byo';
   _geiClientId=c?.id||null;
   _geiEditBidId=bidId||null;
   _geiClientTaxRate=null;
@@ -389,27 +462,43 @@ function openGenericEstimate(c,bidId,_tradePick){
       if(b.geiDuration)sf('gei-duration',b.geiDuration);
       if(b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(b.panelSched)_panelSched=JSON.parse(JSON.stringify(b.panelSched));
-      if(b.isTM&&!_geiIsFreeForm){
-        _geiIsTM=true;
+      // An explicitly-resumed bid's OWN type wins — the record knows what it is,
+      // regardless of which button or stale state got us here.
+      if(b.isTM){
+        _geiIsTM=true;_geiIsFreeForm=false;
         _tmCrewCount=b.tmCrewCount||1;_tmRatePerMan=b.tmRatePerMan||0;
         _tmEstHours=b.tmEstHours||0;_tmBillingCycle=b.tmBillingCycle||'weekly';
         _tmMatMarkup=b.tmMatMarkup||b.geiTaxPct||0;
         _tmCapAction=b.tmCapAction||'Stop & get re-approval';
       }
-      if(b.isFreeForm)_geiIsFreeForm=true;
+      if(b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
       // Deposit % is restored in _tmShowPage/_byoShowPage instead — the field
       // doesn't exist in the DOM yet at this point (rendered lazily on page show).
       _resumingExisting=true;
     }
   }
-  if(!_geiEditBidId){
-    // Reuse any existing GEI draft or unsent bid for this client+trade (prevents duplicates).
-    // Two-pass: exact trade match first; then heal old bids with undefined trade_type.
-    const _tMatch=b=>b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&(b.status==='Draft'||b.status==='Pending');
+  if(!_geiEditBidId&&!opts?.forceNew){
+    // Reuse an existing unsent draft for this client (prevents duplicates).
+    // When a mode was picked (tm/byo), only drafts of that SAME type are
+    // candidates — picking Time & Materials must never silently resume a
+    // Build Your Own draft and drag its items along (the cross-type "bleed"
+    // the owner hit). Two-pass within candidates: exact trade match first,
+    // then heal old bids that predate the trade_type field.
+    // Non-empty candidates only reach here via the resume chooser
+    // (_geiOpenModeEstimate) when a mode is set; direct legacy calls keep the
+    // old silent-resume behavior unchanged.
+    const _mode=opts?.mode;
+    const _typeOk=b=>_mode==='tm'?!!b.isTM:_mode==='byo'?!b.isTM:true;
+    const _tMatch=b=>b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&(b.status==='Draft'||b.status==='Pending')&&_typeOk(b);
     let _existingGei=bids.find(b=>_tMatch(b)&&b.trade_type===_geiTrade);
     if(!_existingGei){
       // Fallback: pick up old bids that predate the trade_type field
       _existingGei=bids.find(b=>_tMatch(b)&&(b.trade_type===undefined||b.trade_type===null||b.trade_type===''));
+    }
+    if(!_existingGei&&_mode){
+      // Mode flows aren't trade-scoped — the chooser found drafts by type only,
+      // so match by type across trades too rather than spawning a duplicate.
+      _existingGei=bids.find(_tMatch);
     }
     if(_existingGei){
       _existingGei.trade_type=_geiTrade; // heal legacy bids
@@ -421,10 +510,10 @@ function openGenericEstimate(c,bidId,_tradePick){
       if(_b.geiDuration)sf('gei-duration',_b.geiDuration);
       if(_b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(_b.panelSched)_panelSched=JSON.parse(JSON.stringify(_b.panelSched));
-      if(_b.isFreeForm)_geiIsFreeForm=true;
+      if(_b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
       if(_b.scopeChips)_geiScopeChips=[..._b.scopeChips];
       _geiScopeNoScope=!!(_b.scopeNoScope);
-      if(_b.isTM&&!_geiIsFreeForm){_geiIsTM=true;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmMatMarkup=_b.tmMatMarkup||_b.geiTaxPct||20;_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
+      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmMatMarkup=_b.tmMatMarkup||_b.geiTaxPct||20;_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
       // Deposit % is restored in _tmShowPage/_byoShowPage instead — the field
       // doesn't exist in the DOM yet at this point (rendered lazily on page show).
       // Purge other empty duplicates for this client+trade now that we have the right
@@ -441,8 +530,12 @@ function openGenericEstimate(c,bidId,_tradePick){
   }
   if(!_geiEditBidId){
     const _draftClientName=c?c.name||'':'';
-    const _draftTypeLabel=(TRADE_META&&TRADE_META[_geiTrade])?TRADE_META[_geiTrade].label||'Trade':'Trade';
-    const draftBid={id:_newBidId(),client_id:_geiClientId,client_name:_draftClientName,bid_date:todayKey(),amount:0,deposit:0,type:_draftTypeLabel+' estimate',notes:'',status:'Draft',draft:true,trade_type:_geiTrade,geiLines:[],geiTaxPct:0};
+    const _draftTypeLabel=_geiIsTM?'Time & Materials':_geiIsFreeForm?'Build Your Own':((TRADE_META&&TRADE_META[_geiTrade])?TRADE_META[_geiTrade].label||'Trade':'Trade');
+    // Stamp the picked type on the stub immediately — a typeless stub can't be
+    // found by the type-aware reuse above, so backing out and re-picking the
+    // same type would spawn a duplicate blank draft every time.
+    const draftBid={id:_newBidId(),client_id:_geiClientId,client_name:_draftClientName,bid_date:todayKey(),amount:0,deposit:0,type:_draftTypeLabel+' estimate',notes:'',status:'Draft',draft:true,trade_type:_geiTrade,geiLines:[],geiTaxPct:0,
+      ...(_geiIsTM?{isTM:true}:{}),...(_geiIsFreeForm?{isFreeForm:true}:{})};
     bids.unshift(draftBid);_geiEditBidId=draftBid.id;saveAll();
   }
   // Auto-migrate old step-based estimates to BYO freeform when resumed
