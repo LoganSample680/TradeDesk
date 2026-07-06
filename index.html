@@ -1691,6 +1691,8 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="summary-divider"></div>
           <div id="tm-gauge-wrap"></div>
           <div class="summary-divider"></div>
+          <div id="tm-deposit-wrap"></div>
+          <div class="summary-divider"></div>
           <div class="td-micro" style="margin-bottom:6px">Billing cadence</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <span class="chip chip-int" id="tm-cad-weekly" onclick="_tmCadence('weekly')">Weekly</span>
@@ -1725,16 +1727,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div id="byo-labor-cost-wrap" style="display:none"></div>
           <div id="byo-gauge-wrap"></div>
           <div class="summary-divider"></div>
-          <div class="summary-row" style="align-items:center">
-            <span style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600">Deposit %</span>
-            <span style="display:flex;align-items:center;gap:4px">
-              <input type="number" id="byo-deposit-pct" value="25" min="0" max="100" step="5"
-                oninput="_byoUpdateRail();_byoAutosave()"
-                style="width:68px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:17px;font-weight:700;text-align:center;font-family:inherit;-moz-appearance:textfield">
-              <span style="font-size:15px;font-weight:700">%</span>
-            </span>
-          </div>
-          <div class="summary-row" style="color:var(--text-3)"><span>Balance later</span><span id="byo-rail-balance">$0</span></div>
+          <div id="byo-deposit-wrap"></div>
           <div id="byo-actions-wrap"></div>
         </div>
       </div>

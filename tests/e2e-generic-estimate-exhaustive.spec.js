@@ -2139,6 +2139,131 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     });
   });
 
+  test.describe('_geiRenderDepositField / _geiDepositPct — shared deposit % (T&M mirrors BYO)', () => {
+    test('_geiRenderDepositField — missing container does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _geiRenderDepositField('nope', 'x()'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('_geiRenderDepositField — golden path builds a 25-default pct input + balance row, wires oninput', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'rd1-deposit-wrap'; document.body.appendChild(wrap);
+        _geiRenderDepositField('rd1', '_tmInputChange()');
+        const pctEl = document.getElementById('rd1-deposit-pct');
+        const res = {
+          defaultVal: pctEl?.value,
+          oninput: pctEl?.getAttribute('oninput'),
+          hasBalance: !!document.getElementById('rd1-rail-balance'),
+        };
+        wrap.remove();
+        return res;
+      });
+      expect(r.defaultVal).toBe('25');
+      expect(r.oninput).toBe('_tmInputChange()');
+      expect(r.hasBalance).toBe(true);
+    });
+
+    test('_geiRenderDepositField — idempotent: a second call does not reset a user-edited value', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'rd2-deposit-wrap'; document.body.appendChild(wrap);
+        _geiRenderDepositField('rd2', '_tmInputChange()');
+        document.getElementById('rd2-deposit-pct').value = '40';
+        _geiRenderDepositField('rd2', '_tmInputChange()'); // second call — must be a no-op
+        const survived = document.getElementById('rd2-deposit-pct')?.value === '40';
+        wrap.remove();
+        return { survived };
+      });
+      expect(r.survived).toBe(true);
+    });
+
+    test('tm-deposit-wrap and byo-deposit-wrap both render a live deposit-pct field on page show', async () => {
+      const r = await page.evaluate(() => {
+        _tmShowPage();
+        _byoShowPage();
+        return {
+          tmDep: !!document.getElementById('tm-deposit-pct'),
+          byoDep: !!document.getElementById('byo-deposit-pct'),
+        };
+      });
+      expect(r.tmDep).toBe(true);
+      expect(r.byoDep).toBe(true);
+    });
+
+    test('_geiDepositPct — reads tm-deposit-pct when in T&M mode', async () => {
+      const r = await page.evaluate(() => {
+        _tmShowPage();
+        document.getElementById('tm-deposit-pct').value = '35';
+        _geiIsTM = true;
+        const pct = _geiDepositPct();
+        _geiIsTM = false;
+        return { pct };
+      });
+      expect(r.pct).toBe(35);
+    });
+
+    test('_geiDepositPct — reads byo-deposit-pct when not in T&M mode', async () => {
+      const r = await page.evaluate(() => {
+        _byoShowPage();
+        document.getElementById('byo-deposit-pct').value = '10';
+        _geiIsTM = false;
+        const pct = _geiDepositPct();
+        return { pct };
+      });
+      expect(r.pct).toBe(10);
+    });
+
+    test('_geiDepositPct — defaults to 25 when the field is missing from the DOM', async () => {
+      const r = await page.evaluate(() => {
+        // Clear the whole wrap (not just the input) — _geiRenderDepositField is
+        // idempotent on wrap.children.length, so a partial removal would leave it
+        // permanently unable to rebuild the field for later tests.
+        const wrap = document.getElementById('tm-deposit-wrap');
+        if (wrap) wrap.innerHTML = '';
+        _geiIsTM = true;
+        const pct = _geiDepositPct();
+        _geiIsTM = false;
+        return { pct };
+      });
+      expect(r.pct).toBe(25);
+      // restore the real page's deposit field for later tests in this file
+      await page.evaluate(() => { _tmShowPage(); });
+    });
+
+    test('regression: saveGenericEstimate computes T&M deposit from the live tm-deposit-pct field (was always defaulting to 20% of subtotal via a dead tm-dep-pct id)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 88801, name: 'TM Deposit Client', addr: '1 Deposit Rd' };
+        clients = clients.filter(x => x.id !== 88801).concat([c]);
+        bids = bids.filter(x => x.client_id !== 88801);
+        openGenericEstimate(c, null, 'general');
+        _geiIsTM = true;
+        _geiIsFreeForm = false;
+        goGeiStep(2); // renders gei-tm-page + tm-deposit-wrap via _tmShowPage
+        document.getElementById('tm-deposit-pct').value = '40';
+        _tmRatePerMan = 50; _tmEstHours = 8; _tmCrewCount = 1;
+        _geiLines = [{ desc: 'Materials', qty: 1, rate: 1000, total: 1000, _tmLabor: false }];
+        saveGenericEstimate(true);
+        const bid = bids.find(x => x.client_id === 88801);
+        return { deposit: bid?.deposit, amount: bid?.amount, tmDepositPct: bid?.tmDepositPct };
+      });
+      expect(r.tmDepositPct).toBe(40);
+      expect(r.deposit).toBe(Math.round(r.amount * 0.4));
+    });
+
+    test('regression: reopening a saved T&M bid restores its deposit % into the live field (back-calculated from deposit/amount)', async () => {
+      const r = await page.evaluate(() => {
+        const bid = bids.find(x => x.client_id === 88801);
+        _geiEditBidId = bid.id;
+        _geiIsTM = true;
+        _tmShowPage();
+        return { restoredPct: document.getElementById('tm-deposit-pct')?.value };
+      });
+      expect(r.restoredPct).toBe('40');
+    });
+  });
+
   // ═══════════════════════════════════════════════════════════════════════════
   // 31. _toggleScopeChip
   // ═══════════════════════════════════════════════════════════════════════════
