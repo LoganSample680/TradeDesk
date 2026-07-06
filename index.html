@@ -446,7 +446,7 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .detail-actions .btn:hover{background:rgba(255,255,255,.18)}
 .detail-actions .btn-p{background:var(--denim);border-color:transparent}
 /* ── Estimate type chooser ── */
-.chooser-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.chooser-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .chooser-card{background:var(--bg-card);border-radius:14px;border:1.5px solid var(--border);padding:24px 22px 20px;cursor:pointer;text-align:left;font-family:inherit;color:var(--text);transition:transform .12s,box-shadow .15s,border-color .15s;display:flex;flex-direction:column;gap:6px;position:relative;overflow:hidden}
 .chooser-card::before{content:"";position:absolute;inset:0 0 70% 0;background:linear-gradient(180deg,rgba(45,93,168,.07),transparent);pointer-events:none;opacity:0;transition:opacity .15s}
 .chooser-amber::before{background:linear-gradient(180deg,rgba(159,91,0,.07),transparent)}
@@ -468,7 +468,6 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .chooser-card-cta{margin-top:auto;padding-top:14px;font-size:12px;font-weight:800;letter-spacing:-.1px;color:var(--blue);display:flex;align-items:center;gap:4px}
 .chooser-amber .chooser-card-cta{color:var(--amber)}
 .chooser-green .chooser-card-cta{color:var(--green)}
-@media(max-width:900px){.chooser-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.chooser-grid{grid-template-columns:1fr}}
 
 /* ── Kanban ── */

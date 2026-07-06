@@ -267,27 +267,6 @@ function _closeStylePicker(){
 }
 function _showEstimateStylePicker(c,overrideAddr){
   _stylePickState={c,overrideAddr};
-  const trade=getActiveTrade();
-  const _SCOPE_DESC={
-    painting:'You define the work, the client sees one bottom-line price. Best for clearly-defined jobs like a full repaint or exterior project.',
-    electrical:'You define the work, the client sees one bottom-line price. Best for service upgrades, panel installs, or any clearly-scoped electrical job.',
-    plumbing:'You define the work, the client sees one bottom-line price. Best for fixture replacements, pipe repairs, or clearly-scoped plumbing installs.',
-    hvac:'You define the work, the client sees one bottom-line price. Best for equipment installs, duct work, or any clearly-scoped HVAC job.',
-    roofing:'You define the work, the client sees one bottom-line price. Best for full replacements, repairs, or gutter installs with known scope.',
-    landscaping:'You define the work, the client sees one bottom-line price. Best for installs, hardscape, or irrigation projects with a defined deliverable.',
-    general:'You define the work, the client sees one bottom-line price. Best for any job with a fixed scope and a single deliverable.',
-  };
-  const _TIPS={
-    painting:'Most painters use <b>Scope &amp; Price</b> for new clients and <b>T&M</b> for repeat customers with open-ended work. <b>Build Your Own</b> shines for upsells.',
-    electrical:'Most electricians use <b>Scope &amp; Price</b> for installs and upgrades, <b>T&M</b> for troubleshooting and service calls, and <b>Build Your Own</b> for whole-home packages.',
-    plumbing:'Most plumbers use <b>Scope &amp; Price</b> for installs and replacements, <b>T&M</b> for service calls with unknown scope, and <b>Build Your Own</b> for remodel packages.',
-    hvac:'Most HVAC contractors use <b>Scope &amp; Price</b> for equipment installs, <b>T&M</b> for diagnostics and service calls, and <b>Build Your Own</b> for maintenance packages.',
-    roofing:'Most roofers use <b>Scope &amp; Price</b> for replacements, <b>T&M</b> for repairs with unknown damage extent, and <b>Build Your Own</b> for full exterior packages.',
-    landscaping:'Most landscapers use <b>Scope &amp; Price</b> for install projects, <b>T&M</b> for open-ended maintenance, and <b>Build Your Own</b> for seasonal service packages.',
-    general:'Use <b>Scope &amp; Price</b> for fixed deliverables, <b>T&M</b> for open-ended or uncertain scope, and <b>Build Your Own</b> when the client wants to choose their services.',
-  };
-  const scopeDesc=_SCOPE_DESC[trade]||_SCOPE_DESC.general;
-  const tipText=_TIPS[trade]||_TIPS.general;
   const ov=document.createElement('div');
   ov.id='_style-pick-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:9000;background:var(--bg2);overflow-y:auto;opacity:0;transform:translateY(22px);transition:opacity .38s ease,transform .42s cubic-bezier(.22,.8,.2,1)';
@@ -303,7 +282,7 @@ function _showEstimateStylePicker(c,overrideAddr){
     </button>`;
   };
   ov.innerHTML=
-    '<div style="max-width:1100px;margin:0 auto;padding:24px 20px 40px">'+
+    '<div style="max-width:760px;margin:0 auto;padding:24px 20px 40px">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">'+
         '<div>'+
           '<div class="tbar-eyebrow">Pick estimate type</div>'+
@@ -312,9 +291,6 @@ function _showEstimateStylePicker(c,overrideAddr){
         '<button class="btn btn-ghost" onclick="_closeStylePicker()">Cancel</button>'+
       '</div>'+
       '<div class="chooser-grid">'+
-        card('scope','denim','📋','Most popular',
-          'Scope &amp; Price','Fixed scope, one final number',
-          ['Line items private from client','Internal labor + materials math','Single-price proposal','Deposit collected upfront'])+
         card('tm','amber','⏱️','Unknown scope','Time &amp; Materials','Flexible billing when you can\'t lock in a price',
           ['Hourly rate + crew size','Materials at cost + markup','Not-to-exceed cap (optional)','Weekly invoicing'])+
         card('freeform','green','🧩','A la carte','Build Your Own','List every service with its own price',
@@ -330,18 +306,11 @@ function _pickEstStyle(style){
     const {c,overrideAddr}=_stylePickState||{};
     if(!c)return;
     _stylePickState=null;
-    if(style==='scope'){_doOpenScopeEstimate(c,overrideAddr);}
-    else if(style==='tm'){openTMEstimate(c);}
+    if(style==='tm'){openTMEstimate(c);}
     else if(style==='freeform'){openFreeFormEstimate(c);}
   };
   if(ov){doIt();ov.style.opacity='0';ov.style.transform='translateY(10px)';setTimeout(()=>ov.remove(),220);}
   else{doIt();}
-}
-function _doOpenScopeEstimate(c,overrideAddr){
-  // Explicitly reset TM/BYO flags so switching types doesn't carry over the previous mode
-  if(typeof _geiIsTM!=='undefined')_geiIsTM=false;
-  if(typeof _geiIsFreeForm!=='undefined')_geiIsFreeForm=false;
-  _doOpenEstimate(c,overrideAddr,getActiveTrade());
 }
 
 function _doOpenEstimate(c,_overrideAddr,_forceTrade){
@@ -360,7 +329,7 @@ function _doOpenEstimate(c,_overrideAddr,_forceTrade){
   }
   const _trade=_forceTrade||getActiveTrade();
   _activeTrade=_trade;_renderNavTradeSwitcher();
-  openGenericEstimate(c,null,_trade);
+  openFreeFormEstimate(c);
 }
 
 let dashYear=new Date().getFullYear();

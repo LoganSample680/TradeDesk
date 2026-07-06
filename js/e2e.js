@@ -36,6 +36,7 @@ async function runE2ETest(){
     'setSurfJobType','onSurfRoomName','updateSurfWhatUI','saveEstFullDraft',
     'clearEstimatorForm','goEstStep','calcEst','renderEstSurfs','renderEstRunning',
     'buildScopeGrid','toggleScopeRoom','roomScopeOn','scopeOn','sendProposalLink',
+    '_doOpenScopeEstimate',
   ];
   for(const fn of mustNotExist){
     check(fn+' was removed with the paint estimator',()=>{
