@@ -183,6 +183,41 @@ test.describe('layout integrity — mobile', () => {
     expect(r.metaFitsRow, 'the notes text itself must stay within the viewport, not run off the right edge').toBe(true);
   });
 
+  // Regression (owner-reported, real device screenshot): .byo-row used
+  // align-items:center, so a long multi-line note (making the row very tall)
+  // vertically centered the checkbox and price/Edit/✕ cluster against the whole
+  // row height — they floated in the middle of the wrapped paragraph instead of
+  // staying next to the item title at the top, looking broken on any screen size.
+  test('BYO item row: checkbox and price/actions stay top-aligned with the item title, even with a long wrapped note', async () => {
+    const r = await page.evaluate(() => {
+      const c = { id: 79102, name: 'Row Align Client', addr: '1 Row Align St' };
+      clients = clients.filter(x => x.id !== 79102).concat([c]);
+      bids = bids.filter(x => x.client_id !== 79102);
+      openGenericEstimate(c, null, null, { mode: 'byo' });
+      goGeiStep(2);
+      _geiIsFreeForm = true;
+      const longNote = Array(20).fill('Long wrapped note line here').join(' ');
+      _byoItems = [{ id: 1, section: 'Materials', label: 'test', notes: longNote, price: 1232134, on: true }];
+      _byoRenderSections();
+      const row = document.querySelector('.byo-row');
+      if (!row) return { missing: true };
+      const check = row.querySelector('.byo-check');
+      const label = row.querySelector('.byo-label');
+      const price = row.querySelector('.byo-price');
+      const lTop = label.getBoundingClientRect().top;
+      return {
+        missing: false,
+        alignItems: getComputedStyle(row).alignItems,
+        checkNearLabel: Math.abs(check.getBoundingClientRect().top - lTop) < 5,
+        priceNearLabel: Math.abs(price.getBoundingClientRect().top - lTop) < 5,
+      };
+    });
+    expect(r.missing, 'the BYO item row must exist for this test to mean anything').toBe(false);
+    expect(r.alignItems).toBe('flex-start');
+    expect(r.checkNearLabel, 'checkbox must stay aligned with the item title, not centered against a tall note').toBe(true);
+    expect(r.priceNearLabel, 'price must stay aligned with the item title, not centered against a tall note').toBe(true);
+  });
+
   // Regression: the estimate-builder row fix above did NOT cover the actual
   // generated proposal HTML — a long unbroken BYO item note bled off-screen in
   // BOTH the "Scope of work" section AND the line-item "Description" table of
