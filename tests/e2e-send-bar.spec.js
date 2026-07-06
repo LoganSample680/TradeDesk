@@ -66,8 +66,9 @@ async function restoreFetch(page) {
 }
 
 /**
- * Seed the #proposal-link-bar with known values.
- * Removes any pre-existing bars first.
+ * Seed _pendingShareData with known values (the shared in-memory share-link
+ * state read by _proposalShareData() — replaces the old #proposal-link-bar
+ * DOM dataset that lived on the now-removed paint estimator page).
  */
 async function seedProposalLinkBar(page, {
   cemail = MOCK_CLIENT_EMAIL,
@@ -75,17 +76,8 @@ async function seedProposalLinkBar(page, {
   url = MOCK_SIGNING_URL,
 } = {}) {
   await page.evaluate(({ url, cemail, cphone }) => {
-    document.querySelectorAll('#proposal-link-bar').forEach(el => el.remove());
-    const bar = document.createElement('div');
-    bar.id = 'proposal-link-bar';
-    bar.style.display = 'block';
-    bar.dataset.signingUrl       = url;
-    bar.dataset.signingDirectUrl = url;
-    bar.dataset.cname  = 'Jerome Bettis';
-    bar.dataset.bname  = 'ZJ Painting';
-    bar.dataset.cphone = cphone;
-    bar.dataset.cemail = cemail;
-    document.body.appendChild(bar);
+    // Bare identifier, not window.X — _pendingShareData is a top-level `let` (js/data.js).
+    _pendingShareData = { url, cname: 'Jerome Bettis', bname: 'ZJ Painting', cphone, cemail };
   }, { url, cemail, cphone });
 }
 
@@ -112,7 +104,7 @@ async function submitEmailCompose(page, { toEmail } = {}) {
 
 // ── 1. DOM layout ──────────────────────────────────────────────────────────────
 
-test.describe('Send bar — DOM layout', () => {
+test.describe('Send bar — removed with the paint estimator', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -121,42 +113,18 @@ test.describe('Send bar — DOM layout', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
-    await goPg(page, 'pg-est');
   });
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('#proposal-link-bar has 📱 Text button', async () => {
-    const btn = page.locator('#proposal-link-bar button', { hasText: 'Text' });
-    await expect(btn).toHaveCount(1);
-    assertNoErrors(page, 'paint bar - Text button');
-  });
-
-  test('#proposal-link-bar has ✉️ Email button', async () => {
-    const btn = page.locator('#proposal-link-bar button', { hasText: 'Email' });
-    await expect(btn).toHaveCount(1);
-    assertNoErrors(page, 'paint bar - Email button');
-  });
-
-  test('#proposal-link-bar has ⬆️ Other app button', async () => {
-    const btn = page.locator('#proposal-link-bar button', { hasText: 'Other app' });
-    await expect(btn).toHaveCount(1);
-    assertNoErrors(page, 'paint bar - Other app button');
-  });
-
-  test('#proposal-link-bar does NOT have a Preview button (preview lives in Client Hub)', async () => {
-    const btn = page.locator('#proposal-link-bar button', { hasText: 'Preview' });
-    await expect(btn).toHaveCount(0);
-    assertNoErrors(page, 'paint bar - no Preview button');
-  });
-
-  test('#proposal-link-bar is hidden by default (before link is generated)', async () => {
-    const bar = page.locator('#proposal-link-bar');
-    const isHidden = await bar.evaluate(el => {
-      return getComputedStyle(el).display === 'none' || el.style.display === 'none';
-    });
-    expect(isHidden, 'proposal-link-bar should be hidden before link generated').toBe(true);
-    assertNoErrors(page, 'paint bar - hidden by default');
+  test('#proposal-link-bar and #pg-est are gone — the generic estimator send bar covers this now', async () => {
+    const r = await page.evaluate(() => ({
+      pgEst: !!document.getElementById('pg-est'),
+      proposalLinkBar: !!document.getElementById('proposal-link-bar'),
+    }));
+    expect(r.pgEst).toBe(false);
+    expect(r.proposalLinkBar).toBe(false);
+    assertNoErrors(page, 'paint bar removed');
   });
 });
 
@@ -219,16 +187,12 @@ test.describe('Generic estimate send bar — shows after proposal generated', ()
    *  in the file never executed, so each test must set up its own state. */
   async function seedGeiSendBar() {
     await page.evaluate(({ url, cemail, cphone, token, bidId, userId }) => {
-      const bar = document.getElementById('proposal-link-bar');
-      if (bar) {
-        bar.dataset.signingUrl       = url;
-        bar.dataset.signingDirectUrl = url;
-        bar.dataset.cname  = 'Jerome Bettis';
-        bar.dataset.bname  = 'ZJ Painting';
-        bar.dataset.cphone = cphone;
-        bar.dataset.cemail = cemail;
-      }
-      window._pendingSignToken = { bidId, token, proposalKey: `proposals/${userId}/${bidId}_${token}.json` };
+      // _pendingShareData/_pendingSignToken are top-level `let` bindings (js/data.js) —
+      // not on window — so they must be set as bare identifiers from inside this
+      // evaluated callback (which shares the page's global lexical scope), not via
+      // window.X (that would create an unrelated property the real code never reads).
+      _pendingShareData = { url, cname: 'Jerome Bettis', bname: 'ZJ Painting', cphone, cemail };
+      _pendingSignToken = { bidId, token, proposalKey: `proposals/${userId}/${bidId}_${token}.json` };
       const geiSendBar = document.getElementById('gei-send-bar');
       if (geiSendBar) geiSendBar.style.display = 'block';
       const geiSendBtn = document.getElementById('gei-send-btn');

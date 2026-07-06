@@ -499,7 +499,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.05.26.17';
+const APP_VERSION='07.05.26.18';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1430,12 +1430,8 @@ function _removeBootOverlay(){
       const bid=bids.find(b=>String(b.id)===resumeBid);
       if(bid){
         setTimeout(()=>{
-          // Generic/T&M/BYO bids — openGenericEstimate reads b.isTM / b.isFreeForm internally
-          if(bid.geiLines!==undefined){
-            openGenericEstimate(getClientById(bid.client_id),bid.id,bid.trade_type||'general');
-          }else{
-            openEditBid(bid.id);
-          }
+          // openGenericEstimate reads b.isTM / b.isFreeForm internally
+          openGenericEstimate(getClientById(bid.client_id),bid.id,bid.trade_type||'general');
         },80);
       }
     }
@@ -1640,7 +1636,7 @@ async function supaInit(){
         // NOTHING in the cloud to clobber, so settings saves are safe (onboarding's first save).
         _authSettingsLoaded=true;
         _removeBootOverlay();
-        renderDash();buildScopeGrid();
+        renderDash();
         if(typeof _fetchScopeRates==='function')_fetchScopeRates();
         supaSetStatus('cloud');
       }
@@ -1667,7 +1663,7 @@ async function supaInit(){
           _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
           _loadedFromCacheOnly=true;
           _mergeOnSignIn=true;
-          _removeBootOverlay();renderDash();buildScopeGrid();
+          _removeBootOverlay();renderDash();
           _showOfflineBanner();
           supaSetStatus('error');
           _cacheLoaded=true;
@@ -1676,7 +1672,7 @@ async function supaInit(){
       if(!_cacheLoaded){
         // Online or cache parse failed — show login screen
         _removeBootOverlay();
-        renderDash();buildScopeGrid();
+        renderDash();
         supaSetStatus('local');
         supaShowLogin();
       }
@@ -1778,7 +1774,7 @@ async function supaInit(){
           // Brand-new account (no cloud data) — settings saves are safe (nothing to clobber).
           _authSettingsLoaded=true;
           _removeBootOverlay();
-          renderDash();buildScopeGrid();
+          renderDash();
           supaSetStatus('cloud');
           goPg('pg-dash');
         }
@@ -1849,14 +1845,14 @@ async function supaInit(){
         _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
         _supaCloudLoaded=true;
         _loadedFromCacheOnly=true;
-        _removeBootOverlay();renderDash();buildScopeGrid();
+        _removeBootOverlay();renderDash();
         _showOfflineBanner();
         supaSetStatus('error');
         return;
       }catch(_ce){}
     }
     _removeBootOverlay();
-    renderDash();buildScopeGrid();
+    renderDash();
     supaSetStatus('local');
   }
 }
@@ -3082,7 +3078,7 @@ function _enterOfflineMode(){
   _mergeOfflinePendingToMemory(); // show any records created since the last cloud sync
   _loadedFromCacheOnly=true;
   _mergeOnSignIn=true; // merge any new records entered here when SIGNED_IN fires
-  _removeBootOverlay();renderDash();buildScopeGrid();
+  _removeBootOverlay();renderDash();
   goPg('pg-dash'); // always land on home, not whatever page the login overlay sat on top of
   _showOfflineBanner();
   // Immediately probe for connection so re-auth fires without waiting for the 5s tick
@@ -4327,7 +4323,7 @@ function discardInProgressBid(bidId){
   const _cid=_db?.client_id;
   zConfirm('Delete this pending bid? The client\'s signing link will stop working.',()=>{
     const idx=bids.findIndex(b=>b.id===bidId);
-    if(idx>-1){_userDelete(()=>{bids.splice(idx,1);clearEstFullDraft();saveAll();});renderDash();
+    if(idx>-1){_userDelete(()=>{bids.splice(idx,1);saveAll();});renderDash();
       if(_cid)_uploadClientHub(_cid).catch(e=>console.error('[hub upload]',e));}
   },{title:'Delete pending bid',yes:'Delete',danger:true});
 }
@@ -4351,7 +4347,7 @@ function editSentBid(bidId){
     });
   }
   delete b.signingToken;delete b.signingKey;b.draft=true;
-  saveAll();openEditBid(bidId,b.lastStep||1);
+  saveAll();openGenericEstimate(getClientById(b.client_id),bidId,b.trade_type||'general');
 }
 function resendProposalLink(bidId){
   const b=bids.find(x=>x.id===bidId);
@@ -4759,7 +4755,7 @@ async function supaLoadFromCloud({silent=false}={}){
       }catch(_e){}
     }
 
-    renderDash();buildScopeGrid();
+    renderDash();
     renderClientList&&renderClientList();renderLeadsPage&&renderLeadsPage();renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
     if(typeof _startPropQueue==='function')setTimeout(_startPropQueue,5000);
     if(typeof renderIncome==='function')renderIncome();
@@ -4960,11 +4956,11 @@ async function supaLoadFromCloud({silent=false}={}){
             }
           }
         }catch(_oe){}
-        if(!silent){_removeBootOverlay();renderDash();buildScopeGrid();}
+        if(!silent){_removeBootOverlay();renderDash();}
         _showOfflineBanner();supaSetStatus('error');return;
       }catch(_ce){console.warn('Cache load failed:',_ce);}
     }
-    _removeBootOverlay();renderDash();buildScopeGrid();supaSetStatus('error');
+    _removeBootOverlay();renderDash();supaSetStatus('error');
   }finally{
     _loadInProgress=false;
     // A version/SW-update reload arrived mid-load and was deferred (see
@@ -5165,7 +5161,7 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
 }
 // The full post-change render chain — every container a synced record can appear in.
 function _renderAllPages(){
-  renderDash&&renderDash();buildScopeGrid&&buildScopeGrid();
+  renderDash&&renderDash();
   renderClientList&&renderClientList();renderLeadsPage&&renderLeadsPage();
   renderJobsPage&&renderJobsPage();renderMoneyPage&&renderMoneyPage();
   if(typeof renderIncome==='function')renderIncome();
@@ -5698,7 +5694,6 @@ async function _autoSaveAndReload(){
   }catch(e){}
   const activePg=document.querySelector('.pg.active')?.id||'';
   try{
-    if(activePg==='pg-est')saveEstFullDraft();
     if(activePg==='pg-est-generic')saveGenericEstimate(true);
   }catch(e){}
   // Save resume state so we land back in the right place after reload

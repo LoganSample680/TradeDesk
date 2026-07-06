@@ -2725,18 +2725,14 @@ async function sendGenericProposal(previewOnly){
   if(b&&b.client_id){
     try{const _hu=await _uploadClientHub(b.client_id);if(_hu)shareUrl=_hu;}catch(e){}
   }
-  const bar=document.getElementById('proposal-link-bar');
-  const input=document.getElementById('proposal-link-input');
   const _cl=getClientById(b?b.client_id:null);
-  if(bar){
-    bar.dataset.signingUrl=shareUrl;
-    bar.dataset.signingDirectUrl=signingDirectUrl;
-    bar.dataset.cname=clientName;
-    bar.dataset.bname=bname;
-    bar.dataset.cphone=((_cl&&_cl.phone)||'').replace(/\D/g,'');
-    bar.dataset.cemail=(_cl&&_cl.email)||'';
-  }
-  if(input)input.value=shareUrl;
+  _pendingShareData={
+    url:shareUrl,
+    cname:clientName,
+    bname,
+    cphone:((_cl&&_cl.phone)||'').replace(/\D/g,''),
+    cemail:(_cl&&_cl.email)||'',
+  };
   _pendingSignToken={bidId,token,proposalKey};
   // Show send overlay (centered modal) — lets user choose Text / Email / Other app
   _showGeiSendOverlay();

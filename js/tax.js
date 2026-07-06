@@ -454,3 +454,74 @@ function estimateTax(netSelf,yr){
   const ksTax=Math.ceil(calcBrackets(ksTaxable,KS_BRACKETS[status]||KS_BRACKETS.single));
   return seTax+fedTax+ksTax;
 }
+
+let _bracketRefreshInProgress=false;
+Object.defineProperty(window,'_bracketRefreshInProgress',{get:()=>_bracketRefreshInProgress,set:v=>{_bracketRefreshInProgress=v;},configurable:true});
+async function autoRefreshTaxBrackets(){
+  if(!_supa||!_supaUser||_bracketRefreshInProgress)return;
+  const thisYear=new Date().getFullYear();
+  // S.bracketYear syncs to Supabase — once ANY device fetches for this year, all devices skip it
+  if(S.bracketYear===thisYear)return;
+  _bracketRefreshInProgress=true;
+  try{
+    const{data:{session}}=await _supa.auth.getSession();
+    if(!session)return;
+    const resp=await fetch(SUPA_URL+'/functions/v1/get-rates',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
+      body:JSON.stringify({type:'taxBrackets'})
+    });
+    if(!resp.ok)return;
+    const d=await resp.json();
+    if(d.error)return;
+    // Strict bounds — each threshold must be within ±15% of 2025 IRS baseline
+    const base={fedSingle:15000,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350};
+    const fields=Object.keys(base);
+    const valid=fields.every(k=>typeof d[k]==='number'&&d[k]>base[k]*0.85&&d[k]<base[k]*1.15);
+    const inc=[d.b10,d.b12,d.b22,d.b24,d.b32,d.b35].every((v,i,a)=>i===0||v>a[i-1]);
+    if(!valid||!inc)return;
+    const changed=fields.some(k=>Math.abs(d[k]-(S[k]||base[k]))>50);
+    if(changed){
+      fields.forEach(k=>{if(d[k])S[k]=d[k];});
+      if(d.fedMFJ&&d.fedMFJ>25000&&d.fedMFJ<40000)S.fedMFJ=d.fedMFJ;
+      if(d.fedHOH&&d.fedHOH>18000&&d.fedHOH<30000)S.fedHOH=d.fedHOH;
+      applySettings();saveAll();
+      showToast('Federal tax brackets updated for '+(d.year||thisYear),'📊');
+    }
+    // Update KS rates if returned (loose bounds — KS rates vary more)
+    if(typeof d.ksLow==='number'&&d.ksLow>0&&d.ksLow<15)S.ksLow=d.ksLow;
+    if(typeof d.ksHigh==='number'&&d.ksHigh>0&&d.ksHigh<15)S.ksHigh=d.ksHigh;
+    if(typeof d.ksTop==='number'&&d.ksTop>5000&&d.ksTop<100000)S.ksTop=d.ksTop;
+    if(typeof d.ksStdS==='number'&&d.ksStdS>1000&&d.ksStdS<15000)S.ksStdS=d.ksStdS;
+    if(typeof d.ksStdM==='number'&&d.ksStdM>1000&&d.ksStdM<20000)S.ksStdM=d.ksStdM;
+    S.bracketYear=thisYear;saveAll();
+    _refillSettingsFormUnlessEditing(); // refresh display spans — but never clobber in-progress edits
+    if(S.state)fetchStateBrackets(S.state);
+  }catch(e){}finally{_bracketRefreshInProgress=false;}
+}
+
+async function fetchStateBrackets(state){
+  if(!_supa||!_supaUser||!state)return;
+  const thisYear=new Date().getFullYear();
+  if(S.stateRates?.[state]?.year===thisYear)return;
+  try{
+    const{data:{session}}=await _supa.auth.getSession();
+    if(!session)return;
+    const resp=await fetch(SUPA_URL+'/functions/v1/get-rates',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
+      body:JSON.stringify({type:'stateBrackets',state})
+    });
+    if(!resp.ok)return;
+    const d=await resp.json();
+    if(d.error||d.state!==state)return;
+    if(!S.stateRates)S.stateRates={};
+    const prev=S.stateRates[state];
+    const changed=!prev||JSON.stringify(prev.brackets)!==JSON.stringify(d.brackets)||prev.stdS!==d.stdS;
+    d.year=thisYear;
+    S.stateRates[state]=d;
+    applySettings();saveAll();
+    _refillSettingsFormUnlessEditing();
+    if(changed)showToast((d.noTax?state+' has no income tax':state+' tax rates updated'),'📊');
+  }catch(e){}
+}

@@ -184,13 +184,13 @@ function _checkMultiPropertyThenOpen(c){
     const addrHint=resumeTarget.addr?' ('+resumeTarget.addr+')':'';
     zConfirm(c.name+' has an estimate in progress'+addrHint+'. Resume it or start one for a different property?',
       ()=>{
-        if(activeBids.length===1){openEditBid(resumeTarget.id);}
+        if(activeBids.length===1){openGenericEstimate(c,resumeTarget.id,resumeTarget.trade_type||getActiveTrade());}
         else{
           // Multiple in-progress — show picker
           const ov=document.createElement('div');ov.className='zmodal-overlay';
           const box=document.createElement('div');box.className='zmodal';
           box.innerHTML='<div style="font-size:16px;font-weight:800;margin-bottom:12px">Choose estimate to resume</div>'+
-            activeBids.map(b=>'<button onclick="this.closest(\'.zmodal-overlay\').remove();openEditBid('+b.id+')" style="width:100%;padding:11px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:8px;font-size:13px;color:var(--text)">'+escHtml(b.addr||b.name||'Estimate')+'<span style="font-size:11px;color:var(--text3);display:block;margin-top:2px">'+escHtml(b.bid_date||'')+'</span></button>').join('')+
+            activeBids.map(b=>'<button onclick="this.closest(\'.zmodal-overlay\').remove();openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||getActiveTrade())+'\')" style="width:100%;padding:11px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:8px;font-size:13px;color:var(--text)">'+escHtml(b.addr||b.name||'Estimate')+'<span style="font-size:11px;color:var(--text3);display:block;margin-top:2px">'+escHtml(b.bid_date||'')+'</span></button>').join('')+
             '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Cancel</button>';
           ov.appendChild(box);document.body.appendChild(ov);
           ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -291,7 +291,6 @@ function _showEstimateStylePicker(c,overrideAddr){
   const ov=document.createElement('div');
   ov.id='_style-pick-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:9000;background:var(--bg2);overflow-y:auto;opacity:0;transform:translateY(22px);transition:opacity .38s ease,transform .42s cubic-bezier(.22,.8,.2,1)';
-  const isPainting=trade==='painting'||trade==='general';
   const card=(id,tone,icon,eyebrow,title,sub,bullets)=>{
     const bul=bullets.map(b=>'<li><span>✓</span>'+b+'</li>').join('');
     return `<button class="chooser-card chooser-${tone}" onclick="_pickEstStyle('${id}')">
@@ -313,12 +312,9 @@ function _showEstimateStylePicker(c,overrideAddr){
         '<button class="btn btn-ghost" onclick="_closeStylePicker()">Cancel</button>'+
       '</div>'+
       '<div class="chooser-grid">'+
-        card('scope','denim',isPainting?'🖌️':'📋','Most popular',
-          isPainting?'Interior / Exterior':'Scope &amp; Price',
-          isPainting?'Surface-by-surface pricing':'Fixed scope, one final number',
-          isPainting
-            ?['Interior, exterior &amp; cabinet','Auto-calculates from room sq ft','Single-price proposal','Deposit collected upfront']
-            :['Line items private from client','Internal labor + materials math','Single-price proposal','Deposit collected upfront'])+
+        card('scope','denim','📋','Most popular',
+          'Scope &amp; Price','Fixed scope, one final number',
+          ['Line items private from client','Internal labor + materials math','Single-price proposal','Deposit collected upfront'])+
         card('tm','amber','⏱️','Unknown scope','Time &amp; Materials','Flexible billing when you can\'t lock in a price',
           ['Hourly rate + crew size','Materials at cost + markup','Not-to-exceed cap (optional)','Weekly invoicing'])+
         card('freeform','green','🧩','A la carte','Build Your Own','List every service with its own price',
@@ -364,127 +360,7 @@ function _doOpenEstimate(c,_overrideAddr,_forceTrade){
   }
   const _trade=_forceTrade||getActiveTrade();
   _activeTrade=_trade;_renderNavTradeSwitcher();
-  if(_trade!=='painting'&&_trade!=='general'){
-    openGenericEstimate(c,null,_trade);
-    return;
-  }
-  _resetNotesForNewEstimate();
-  // Full state wipe — prevents ANY bleed from a prior estimate session
-  _pendingSignToken=null;
-  const _plbD=document.getElementById('proposal-link-bar');if(_plbD){_plbD.style.display='none';_plbD.dataset.signingUrl='';}
-  const _sBtnD=document.getElementById('send-proposal-btn');if(_sBtnD){_sBtnD.textContent='🔗 Send to client';_sBtnD.disabled=false;}
-  _swLastProductByCategory={};
-  estSurfaces=[];estSurfId=0;clearSurfDraft();
-  scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
-  estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200',products:{interior:'pm200',exterior:'spe',trim:'pm200t'}};
-  surfRoom='';surfColor='';surfJobType='interior';surfWhatSelected=[];surfBQueue=[];surfBIdx=0;surfBMeasurements={};_swLastProductByCategory={};
-  // Clear persistent DOM fields so they don't bleed from the previous estimate
-  ['surf-room-name','laser-room-name','manual-room-name'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  const _sigTyped=document.getElementById('sig-typed');if(_sigTyped)_sigTyped.value='';
-  const _sigPrev=document.getElementById('sig-typed-preview');if(_sigPrev)_sigPrev.textContent='';
-  estLinkedClientId=currentClientId;
-  editingBidId=null;
-  // Reuse only a truly empty draft for this client (no surfaces, never worked on) — prevents
-  // orphan bids from accidental navigation away at step 1. Does NOT touch Pending bids with
-  // surfaces — those are real jobs for other properties and must stay in Estimates in Progress.
-  const _curTrade=getActiveTrade();
-  const _existingDraft=bids.find(b=>b.client_id===c.id&&b.draft===true&&b.status==='Draft'&&!b.signingToken&&(!b.surfaces||!b.surfaces.length)&&(b.trade_type===_curTrade||!b.trade_type));
-  if(_existingDraft){
-    lastCreatedBidId=_existingDraft.id;
-    if(_existingDraft.surfaces&&_existingDraft.surfaces.length){
-      estSurfaces=[..._existingDraft.surfaces];
-      estSurfId=estSurfaces.reduce((mx,s)=>Math.max(mx,s.id||0),0);
-    }
-    if(_existingDraft.roomScopeMap)roomScopeMap=JSON.parse(JSON.stringify(_existingDraft.roomScopeMap));
-    showToast('Resuming your previous estimate','✏️');
-  } else {
-    // Create a draft bid immediately so notes have an ID to attach to from the first stroke
-    const draftBid={
-      id:_newBidId(),
-      client_id:c.id,
-      client_name:c.name||'',
-      name:c.name||'',
-      phone:c.phone||'',
-      addr:c.addr||'',
-      bid_date:todayKey(),
-      amount:0,
-      status:'Draft',
-      draft:true,
-      notesCanvas:null,
-      surfaces:[],
-      scope:{},
-      trade_type:_trade,
-    };
-    bids.unshift(draftBid);
-    lastCreatedBidId=draftBid.id;
-    saveAll();
-  }
-  setTimeout(()=>{
-    const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
-    sf('e-cname',c.name||'');
-    sf('e-cphone',c.phone||'');
-    sf('e-caddr',_overrideAddr||c.addr||'');
-    if((_overrideAddr||c.addr)&&typeof _paintLookupClientTaxRate==='function')_paintLookupClientTaxRate();
-    // If client has multiple addresses, show a picker hint below the address field (skip if override provided)
-    _estAddrOptions=_overrideAddr?[{label:'New property',addr:_overrideAddr}]:[{label:'Primary',addr:c.addr||''},...(c.extraAddresses||[])];
-    const _addrField=document.getElementById('e-caddr');
-    const _oldHint=document.getElementById('_est-addr-picker');if(_oldHint)_oldHint.remove();
-    if(_addrField&&_estAddrOptions.length>1){
-      const _hint=document.createElement('div');_hint.id='_est-addr-picker';
-      _hint.style.cssText='margin-top:4px;display:flex;gap:6px;flex-wrap:wrap';
-      _hint.innerHTML=_estAddrOptions.map((a,i)=>'<button type="button" onclick="_pickEstAddr('+i+')" style="font-size:10px;padding:4px 9px;border:1px solid '+(i===0?'var(--blue)':'var(--border2)')+';border-radius:20px;background:'+(i===0?'var(--blue)':'var(--bg2)')+';color:'+(i===0?'#fff':'var(--text3)')+';cursor:pointer;font-family:inherit;font-weight:600">'+escHtml(a.label)+'</button>').join('');
-      _addrField.parentElement.appendChild(_hint);
-    }
-    sf('e-cnotes','');
-    if(c.ptype){const el=document.getElementById('e-cprop');if(el)el.value=c.ptype;}
-    if(S.bname)sf('e-bname',S.bname);
-    if(S.bphone)sf('e-bphone',S.bphone);
-    if(S.blic)sf('e-blic',S.blic);
-    sf('e-r-walls',S.rWalls||1.30);sf('e-r-ceil',S.rCeil||1.00);sf('e-r-trim',S.rTrim||3.25);sf('e-r-walls-adv',S.rWalls||1.30);sf('e-r-ceil-adv',S.rCeil||1.00);sf('e-r-trim-adv',S.rTrim||3.25);sf('e-r-door',S.rDoor||95);sf('e-r-door-adv',S.rDoor||95);sf('e-r-win',S.rWin||50);sf('e-r-ext',S.rExt||1.10);sf('e-r-deck',S.rDeck||1.00);
-    sf('e-r-door',S.rDoor||95);sf('e-r-win',S.rWin||50);sf('e-r-ext',S.rExt||1.10);
-    sf('e-r-deck',S.rDeck||1.00);sf('e-paint-rate',83);
-    SCOPE_ITEMS.forEach(sc=>{sf(sc.rateKey,sc.defaultRate);});
-    const cmiles=getClientMileage(currentClientId);
-    const totalMiles=cmiles.reduce((s,m)=>s+(m.miles||0),0);
-    if(totalMiles>0){
-      sf('e-travel', (Math.round(totalMiles*10)/10).toString());
-      const tel=document.getElementById('e-travel');
-      if(tel){tel.style.background='var(--green-lt)';tel.title=cmiles.length+' GPS trip(s) pre-filled';}
-    } else {
-      sf('e-travel','0');
-    }
-    const sel=document.getElementById('e-client-sel');
-    if(sel){
-      let found=false;
-      for(let i=0;i<sel.options.length;i++){if(parseInt(sel.options[i].value)===currentClientId){sel.selectedIndex=i;found=true;break;}}
-    }
-    const linked=document.getElementById('e-client-linked');
-    if(linked)linked.innerHTML='<span class="conn-tag">'+escHtml(c.name)+'</span>';
-    const adj=document.getElementById('est-adj');if(adj)adj.value=0;
-    const adjv=document.getElementById('est-adj-val');if(adjv)adjv.textContent='0%';
-    ['adj-type-hidden','adj-reason-hidden','inc-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-    const _ars=document.getElementById('adj-reason-summary');if(_ars)_ars.style.display='none';
-    scopeActiveMap={};scopeHrsStore={};roomScopeMap={};estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};
-  SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
-    const epEl=document.getElementById('e-paint');if(epEl)epEl.value='interior';const custEl2=document.getElementById('e-customer-paint');if(custEl2)custEl2.value='';
-    document.querySelectorAll('#paint-picker .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));
-    const edEl=document.getElementById('e-days');
-    if(edEl){edEl.value='';edEl.style.borderColor='#A32D2D';edEl.style.background='var(--red-lt)';}
-    const ecEl=document.getElementById('e-cond');if(ecEl)ecEl.value='1.0';
-  const wknd=document.getElementById('e-allow-weekend');if(wknd)wknd.checked=false;
-    document.querySelectorAll('[id^=cond-]').forEach(b=>b.classList.remove('active-surf-btn'));
-    // Mark client fields as filled (they came from record) — clears red borders
-    ['e-cname','e-cphone','e-caddr'].forEach(id=>{
-      const el=document.getElementById(id);
-      if(el&&el.value){markFieldFilled(el);}
-    });
-    // Re-check step 1 readiness — client fields filled, paint/days still needed
-    checkStep1Ready();
-    renderEstSurfs();
-    goEstStep(1);
-    goEstStep(3); // Jump to surfaces (step 2 is merged in)
-  },50);
-  goPg('pg-est');
+  openGenericEstimate(c,null,_trade);
 }
 
 let dashYear=new Date().getFullYear();
@@ -1740,14 +1616,14 @@ function renderCDBids(){
       if(lien&&lien.status!=='resolved'&&getBidBalance(b)<=0.01)actBtns.push('<button class="btn btn-sm" onclick="releaseLien('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">✓ Release lien</button>');
       // Recordable release doc — reachable any time after release (re-file, lost copy).
       if(lien&&lien.status==='resolved')actBtns.push('<button class="btn btn-sm" onclick="printKansasLienRelease('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">📄 Release doc</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="openEditBid('+b.id+')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">✎ Revise bid</button>');
+      actBtns.push('<button class="btn btn-sm" onclick="openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">✎ Revise bid</button>');
       actBtns.push('<button class="btn btn-sm" onclick="showSupplyList('+b.id+')" style="background:#FFF0E8;color:#854F0B;border-color:#E89B50">📦 Supply list</button>');
       actBtns.push('<button class="btn btn-sm" onclick="recoverBidRooms('+b.id+')" style="background:#F0F7FF;color:#1a365d;border-color:#9DBEE5">♻️ Recover rooms</button>');
       actBtns.push('');
     }
     if(!isWon){
       actBtns.push('<button class="btn btn-sm" onclick="sendBidEmail('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#9993; Send email</button>');
-      const _reviseFn=b.geiLines!==undefined?'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')':'openEditBid('+b.id+')';
+      const _reviseFn='openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')';
       actBtns.push('<button class="btn btn-sm" onclick="'+_reviseFn+'" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">✎ Revise bid</button>');
       actBtns.push('<button class="btn btn-sm" onclick="openBidNotes('+b.id+')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">📝 Notes</button>');
       actBtns.push('<button class="btn btn-sm" onclick="recoverBidRooms('+b.id+')" style="background:#F0F7FF;color:#1a365d;border-color:#9DBEE5">♻️ Recover rooms</button>');
@@ -2279,4 +2155,58 @@ function removeClientAddress(idx){
     saveAll();
     renderCDAddresses();
   });
+}
+
+// ── Property data auto-lookup ───────────────────────────────────────────────
+async function _lookupPropertyData(clientId,addrParts){
+  try{
+    const addr=[addrParts.street,addrParts.city,addrParts.state,addrParts.zip].filter(Boolean).join(' ');
+    const _ctrl=new AbortController();
+    const _t=setTimeout(()=>_ctrl.abort(),12000);
+    let res;try{res=await fetch('/api/property?addr='+encodeURIComponent(addr),{signal:_ctrl.signal});}finally{clearTimeout(_t);}
+    if(!res.ok||res.status===204)return;
+    const d=await res.json();
+    if(d.error)return;
+    const c=clients.find(x=>x.id===clientId);if(!c)return;
+    if(d.yearBuilt&&!c.yearBuilt)c.yearBuilt=d.yearBuilt;
+    if(d.sqft)c.sqft=d.sqft;
+    if(d.estValue)c.estimatedValue=d.estValue;
+    if(d.beds)c.bedrooms=d.beds;
+    if(d.baths)c.bathrooms=d.baths;
+    if(d.lastSalePrice)c.lastSalePrice=d.lastSalePrice;
+    if(d.lastSaleDate)c.lastSaleDate=d.lastSaleDate;
+    if(d.propertyUrl)c.assessorUrl=d.propertyUrl;
+    c.propDataSource='zillow';
+    c.propDataExact=true;
+    c.propDataFetchedAt=new Date().toISOString();
+    saveAll();
+    if(currentClientId===clientId)renderClientDetail();
+  }catch(e){console.warn('Property lookup failed:',e);}
+}
+
+// ── Background property data queue ────────────────────────────────────────────
+// Processes all clients with addresses but no Zillow data, one every 6.5s.
+// Fires automatically after login — handles onboarding imports and existing accounts.
+let _propQueue=[];
+let _propQueueTimer=null;
+
+function _startPropQueue(){
+  if(_propQueueTimer)return;
+  _propQueue=clients.filter(c=>(c.addr||c.street)&&!c.propDataFetchedAt).map(c=>c.id);
+  if(!_propQueue.length)return;
+  _propQueueTimer=setTimeout(_tickPropQueue,3000);
+}
+
+function _tickPropQueue(){
+  _propQueueTimer=null;
+  const id=_propQueue.shift();
+  if(id===undefined)return;
+  const c=clients.find(x=>x.id===id);
+  if(c&&(c.addr||c.street)&&!c.propDataFetchedAt){
+    const parts=c.street&&c.city
+      ?{street:c.street,city:c.city,state:c.state||'',zip:c.zip||''}
+      :(typeof _parseAddrParts==='function'?_parseAddrParts(c.addr||''):{street:c.addr||'',city:'',state:'',zip:''});
+    if(parts.street)_lookupPropertyData(id,parts);
+  }
+  if(_propQueue.length)_propQueueTimer=setTimeout(_tickPropQueue,6500);
 }

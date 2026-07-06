@@ -322,174 +322,6 @@ function renderTodayLegs(){
   '</div>';
 }
 
-
-function buildScopeGrid(roomName){
-  // Only fall back to surf-scope-first-grid when called WITH a roomName — prevents
-  // cloud-sync / navigation calls (no roomName) from clobbering the paint-estimate scope view.
-  const el=document.getElementById('est-scope-grid')||(roomName?document.getElementById('surf-scope-first-grid'):null);
-  if(!el)return;
-  _currentScopeRoom=roomName||'';
-  el.innerHTML=SCOPE_ITEMS.map(s=>{
-    const isOn=roomName?roomScopeOn(roomName,s.id):!!scopeActiveMap[s.id];
-    const roomAttr=roomName?(' data-room="'+encodeURIComponent(roomName)+'"'):'';
-    const clickHandler=roomName
-      ?'onclick="toggleScopeRoom(\''+s.id+'\',decodeURIComponent(this.dataset.room))"'
-      :'onclick="toggleScope(\''+s.id+'\')"';
-    const _lr=(window._scopeRates||{})[s.id+':painting']||(window._scopeRates||{})[s.id+':general'];
-    const _hint=_lr&&_lr.sample_count>=5?'~'+_lr.median_min+' min avg · '+_lr.sample_count+' jobs':s.hint;
-    return '<div class="stog'+(isOn?' on':'')+'" id="est-st-'+s.id+'" '+clickHandler+roomAttr+' style="align-items:flex-start">'+
-      '<input type="checkbox" id="est-sc-'+s.id+'" style="display:none"'+(isOn?' checked':'')+'>'+
-      '<div class="sdot" style="margin-top:2px"></div>'+
-      '<div style="flex:1;min-width:0">'+
-        '<div style="font-size:13px;font-weight:700">'+(s.icon||'')+' '+s.label+'</div>'+
-        '<span style="display:block;font-size:10px;color:var(--text3);font-weight:400;margin-top:1px;line-height:1.4">'+_hint+'</span>'+
-      '</div></div>';
-  }).join('');
-}
-function toggleScopeRoom(id, roomName){
-  const wasOn=roomScopeOn(roomName,id);
-  const nowOn=!wasOn;
-  const cb=document.getElementById('est-sc-'+id);
-  const tog=document.getElementById('est-st-'+id);
-  if(!nowOn){
-    if(roomScopeMap[roomName])delete roomScopeMap[roomName][id];
-    if(cb)cb.checked=false;if(tog)tog.classList.remove('on');
-  } else {
-    if(!roomScopeMap[roomName])roomScopeMap[roomName]={};
-    roomScopeMap[roomName][id]={active:true};
-    if(cb)cb.checked=true;if(tog)tog.classList.add('on');
-  }
-  saveEstFullDraft();
-  renderEstRunning();
-}
-function _saveScopeHoursRoom(id,roomName){
-  const hrs=parseFloat(document.getElementById('scope-hrs-popup')?.value)||0;
-  const rate=parseFloat(document.getElementById('scope-rate-popup')?.value)||45;
-  if(hrs>0){
-    setRoomScope(roomName,id,true,hrs,rate);
-    const badge=document.getElementById('scope-hrs-badge-'+id);
-    if(badge){badge.innerHTML=hrs+'h<br>$'+rate+'/hr';badge.style.display='';}
-    const tog=document.getElementById('est-st-'+id);if(tog)tog.classList.add('on');
-    const cb=document.getElementById('est-sc-'+id);if(cb)cb.checked=true;
-  } else {
-    if(roomScopeMap[roomName])delete roomScopeMap[roomName][id];
-    const cb=document.getElementById('est-sc-'+id);const tog=document.getElementById('est-st-'+id);
-    if(cb)cb.checked=false;if(tog)tog.classList.remove('on');
-    const badge=document.getElementById('scope-hrs-badge-'+id);
-    if(badge){badge.textContent='';badge.style.display='none';}
-  }
-  closeTopModal();renderEstRunning&&renderEstRunning();saveEstFullDraft();
-}
-function _cancelScopeHoursRoom(id,roomName){
-  if(!roomScopeOn(roomName,id)){
-    const cb=document.getElementById('est-sc-'+id);const tog=document.getElementById('est-st-'+id);
-    if(cb)cb.checked=false;if(tog)tog.classList.remove('on');
-  }
-  closeTopModal();
-}
-function toggleScope(id,force){
-  const wasOn=!!scopeActiveMap[id];
-  const nowOn=force!==undefined?!!force:!wasOn;
-  scopeActiveMap[id]=nowOn;
-  // Sync DOM if grid is rendered
-  const cb=document.getElementById('est-sc-'+id);
-  const tog=document.getElementById('est-st-'+id);
-  if(cb)cb.checked=nowOn;
-  if(tog)tog.classList.toggle('on',nowOn);
-  if(!nowOn){
-    delete scopeHrsStore[id];
-    const badge=document.getElementById('scope-hrs-badge-'+id);
-    if(badge){badge.textContent='';badge.style.display='none';}
-  }
-  checkStep2Ready();saveEstFullDraft();
-}
-function promptScopeHours(id,label){
-  const existing=scopeHrsStore[id]||{};
-  const existHrs=typeof existing==='object'?existing.hrs||'':existing||'';
-  const sc=SCOPE_ITEMS.find(x=>x.id===id);
-  const defaultRate=parseFloat(document.getElementById(sc?sc.rateKey:'')?.value)||sc?.defaultRate||45;
-  const existRate=typeof existing==='object'&&existing.rate?existing.rate:defaultRate;
-  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
-  const box=document.createElement('div');box.className='zmodal';
-  box.innerHTML=
-    '<div style="font-size:18px;font-weight:800;margin-bottom:2px">'+label+'</div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">Set hours and rate for this job</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">'+
-      '<div><label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Hours</label>'+
-        '<input type="number" id="scope-hrs-popup" value="'+existHrs+'" min="0" step="0.5" placeholder="0.0" inputmode="decimal"'+
-          ' style="font-size:28px;font-weight:700;padding:12px;border-radius:var(--r);border:2px solid var(--blue);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
-          ' oninput="_syncScopePopupHint()"></div>'+
-      '<div><label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Rate ($/hr)</label>'+
-        '<input type="number" id="scope-rate-popup" value="'+existRate+'" min="0" step="5" placeholder="45" inputmode="decimal"'+
-          ' style="font-size:28px;font-weight:700;padding:12px;border-radius:var(--r);border:2px solid var(--green);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
-          ' oninput="_syncScopePopupHint()"></div>'+
-    '</div>'+
-    '<div id="scope-popup-hint" style="font-size:13px;font-weight:700;color:var(--green-mid);text-align:center;margin-bottom:14px;min-height:20px"></div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
-      '<button id="scope-cancel-btn" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
-      '<button id="scope-save-btn" style="padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Save ✓</button>'+
-    '</div>';
-  overlay.appendChild(box);document.body.appendChild(overlay);
-  overlay.addEventListener('click',e=>{if(e.target===overlay)_cancelScopeHours(id);});
-  box.querySelector('#scope-cancel-btn').onclick=()=>_cancelScopeHours(id);
-  box.querySelector('#scope-save-btn').onclick=()=>_saveScopeHours(id);
-  setTimeout(()=>{
-    _syncScopePopupHint();
-    const inp=document.getElementById('scope-hrs-popup');if(inp){inp.focus();inp.select();}
-  },80);
-}
-function _syncScopePopupHint(){
-  const hrsEl=document.getElementById('scope-hrs-popup');
-  const rateEl=document.getElementById('scope-rate-popup');
-  const hint=document.getElementById('scope-popup-hint');
-  if(!hint)return;
-  const hrs=parseFloat(hrsEl?.value)||0;
-  const rate=parseFloat(rateEl?.value)||0;
-  if(hrs>0&&rate>0){
-    hint.textContent=hrs+'h × $'+rate+'/hr = $'+Math.round(hrs*rate);
-    hint.style.color='var(--green-mid)';
-  } else {
-    hint.textContent='';
-  }
-}
-function _saveScopeHours(id){
-  const hrsEl=document.getElementById('scope-hrs-popup');
-  const rateEl=document.getElementById('scope-rate-popup');
-  const hrs=parseFloat(hrsEl?hrsEl.value:0)||0;
-  const rate=parseFloat(rateEl?rateEl.value:0)||0;
-  const cost=hrs>0&&rate>0?Math.round(hrs*rate):0;
-  if(hrs>0){
-    scopeHrsStore[id]={hrs,rate,cost};
-    const badge=document.getElementById('scope-hrs-badge-'+id);
-    if(badge){badge.innerHTML=hrs+'h<br>$'+rate+'/hr';badge.style.display='';}
-  } else {
-    delete scopeHrsStore[id];
-    const cb=document.getElementById('est-sc-'+id);const tog=document.getElementById('est-st-'+id);
-    if(cb)cb.checked=false;if(tog)tog.classList.remove('on');
-    const badge=document.getElementById('scope-hrs-badge-'+id);
-    if(badge){badge.textContent='';badge.style.display='none';}
-  }
-  closeTopModal();renderEstRunning&&renderEstRunning();checkStep2Ready();saveEstFullDraft();
-}
-function _cancelScopeHours(id){
-  if(!scopeHrsStore[id]){
-    const cb=document.getElementById('est-sc-'+id);const tog=document.getElementById('est-st-'+id);
-    if(cb)cb.checked=false;if(tog)tog.classList.remove('on');
-  }
-  closeTopModal();
-}
-function scopeOn(id){return !!scopeActiveMap[id];}
-function roomScopeOn(roomName,id){return !!(roomScopeMap[roomName]&&roomScopeMap[roomName][id]&&roomScopeMap[roomName][id].active);}
-function setRoomScope(roomName,id,active,hrs,rate){
-  if(!roomScopeMap[roomName])roomScopeMap[roomName]={};
-  if(!active){delete roomScopeMap[roomName][id];return;}
-  const cost=hrs&&rate?Math.round(hrs*rate*100)/100:0;
-  roomScopeMap[roomName][id]={active:true,hrs:hrs||0,rate:rate||45,cost};
-}
-let surfJobType='interior', surfColor='', surfRoom='';
-Object.defineProperty(window,'surfRoom',{get:()=>surfRoom,set:v=>{surfRoom=v;},configurable:true});
-let _currentScopeRoom='';  // room name currently shown in scope grid
-
 // ── More menu toggle ──────────────────────────────────────────────────────
 // ── Leads page ────────────────────────────────────────────────────────────
 let leadFilter='all';
@@ -1743,6 +1575,88 @@ async function confirmJobDone(jobId){
   try{await _flushSaveNow();}catch(_e){}
 }
 function confirmMarkComplete(jobId){confirmJobDone(jobId);}
+
+// Post-job debrief — shown when marking job complete (only if the linked bid
+// has scope hours tracked; jobs with no roomScopeMap skip straight to complete)
+function showJobDebrief(jobId){
+  const job=jobs.find(j=>j.id===jobId);if(!job)return;
+  const bid=bids.find(b=>b.id===job.bid_id);
+  const roomScope=bid?.roomScopeMap||{};
+  const scopeRooms=Object.entries(roomScope).filter(([r,sc])=>Object.values(sc).some(e=>e&&e.active));
+  if(!scopeRooms.length){confirmMarkComplete(jobId);return;}
+  const ov=document.createElement('div');ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.style.maxHeight='88vh';box.style.overflowY='auto';
+  let debriefRows='';
+  scopeRooms.forEach(([room,sc])=>{
+    const items=SCOPE_ITEMS.filter(s=>sc[s.id]&&sc[s.id].active);
+    if(!items.length)return;
+    debriefRows+=`<div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:800;color:var(--text3);text-transform:uppercase;margin-bottom:6px">${escHtml(room)}</div>
+      ${items.map(s=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border2)">
+        <div style="font-size:13px;flex:1">${s.icon||''} ${s.label}</div>
+        <input type="number" min="0" step="0.25" placeholder="hrs" inputmode="decimal"
+          data-room="${encodeURIComponent(room)}" data-scope="${s.id}"
+          style="width:64px;padding:5px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13px;text-align:center">
+      </div>`).join('')}
+    </div>`;
+  });
+  box.innerHTML=
+    `<div style="font-size:17px;font-weight:800;margin-bottom:4px">How'd the job go?</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.6">Optional — enter actual hours for each task. Over time this builds your personal benchmarks so future estimates get sharper. Skip anything you didn't track.</div>
+    ${debriefRows}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px">
+      <button onclick="this.closest('.zmodal-overlay').remove();confirmMarkComplete(${jobId})"
+        style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Skip</button>
+      <button onclick="saveDebriefAndComplete(${jobId},this)"
+        style="padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Save & complete ✓</button>
+    </div>`;
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov){ov.remove();confirmMarkComplete(jobId);}});
+  // Pre-fill hours from clock entries
+  const breakdown=getJobScopeBreakdown(jobId);
+  if(Object.keys(breakdown).length){
+    box.querySelectorAll('input[data-scope]').forEach(inp=>{
+      const sid=inp.dataset.scope;
+      const mins=breakdown[sid]||0;
+      if(mins>0&&!inp.value){
+        inp.value=Math.round(mins/60*4)/4; // round to nearest 0.25
+      }
+    });
+  }
+}
+
+function saveDebriefAndComplete(jobId,btn){
+  const box=btn.closest('.zmodal');
+  const inputs=box.querySelectorAll('input[data-room][data-scope]');
+  let totalActualHrs=0;
+  inputs.forEach(inp=>{
+    const room=decodeURIComponent(inp.dataset.room);
+    const scopeId=inp.dataset.scope;
+    const hrs=parseFloat(inp.value)||0;
+    if(!hrs)return;
+    totalActualHrs+=hrs;
+    if(!S.scopeHistory)S.scopeHistory={};
+    if(!S.scopeHistory[scopeId])S.scopeHistory[scopeId]=[];
+    S.scopeHistory[scopeId].push({hrs,ts:Date.now()});
+    if(S.scopeHistory[scopeId].length>20)S.scopeHistory[scopeId]=S.scopeHistory[scopeId].slice(-20);
+  });
+  if(totalActualHrs>0){const j=jobs.find(x=>x.id===jobId);if(j)j.actualHours=Math.round(totalActualHrs*10)/10;}
+  saveAll();
+  // Upload actual hours to crowdsourced benchmark pool
+  const _debJob=jobs.find(x=>x.id===jobId);
+  const _debBid=_debJob?.bid_id?bids.find(b=>b.id===_debJob.bid_id):null;
+  const _debTrade=_debBid?.trade_type||'painting';
+  const _benchRows=[];
+  inputs.forEach(inp=>{
+    const scopeId=inp.dataset.scope;
+    const hrs=parseFloat(inp.value)||0;
+    if(hrs>0&&_user?.id)_benchRows.push({user_id:_user.id,scope_id:scopeId,trade:_debTrade,actual_hrs:hrs});
+  });
+  if(typeof _submitScopeBenchmarks==='function')_submitScopeBenchmarks(_benchRows);
+  btn.closest('.zmodal-overlay').remove();
+  confirmMarkComplete(jobId);
+}
 function showReviewRequestPrompt(clientId){
   const c=getClientById(clientId);if(!c)return;
   const firstName=c.name.split(' ')[0];

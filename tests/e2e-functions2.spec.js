@@ -223,7 +223,6 @@ test.describe('Paint estimate additional functions', () => {
       if (!window.estSurfaces) window.estSurfaces = [];
       estSurfaces.push({ id: 1, room: 'Living Room', type: 'walls', qty: 400, wallSqft: 400, coats: 2, primer: true });
       estSurfaces.push({ id: 2, room: 'Living Room', type: 'ceiling', qty: 180, coats: 1, primer: false });
-      if (typeof goPg === 'function') goPg('pg-est');
     });
     await page.waitForTimeout(400);
   });
@@ -1741,7 +1740,6 @@ test.describe('Paint estimate extra functions', () => {
         addr: '800 Paint St', city: 'Wichita', state: 'KS', zip: '67202' });
       if (!window.estSurfaces) window.estSurfaces = [];
       estSurfaces.push({ id: 10, room: 'Main Room', type: 'walls', qty: 500, wallSqft: 500, coats: 2, primer: false });
-      if (typeof goPg === 'function') goPg('pg-est');
     });
     await page.waitForTimeout(400);
   });

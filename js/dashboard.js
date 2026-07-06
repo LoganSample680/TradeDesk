@@ -72,9 +72,8 @@ function renderDash(){
       const hasJob=jobs.some(j=>(j.bid_id===b.id||(j.client_id===b.client_id&&!j.bid_id))&&j.eventType!=='estimate');
       return!(hasJob&&depositPaid);
     }).length;
-    // In-progress drafts (paint full draft OR generic Draft/Pending-unsent bids)
-    const _ld=loadEstFullDraft();
-    const _draftCount=(_ld&&_ld.cname?1:0)+bids.filter(b=>!b.signingToken&&(b.status==='Draft'||(b.status==='Pending'&&!b.bid_date))).length;
+    // In-progress drafts (Draft/Pending-unsent bids)
+    const _draftCount=bids.filter(b=>!b.signingToken&&(b.status==='Draft'||(b.status==='Pending'&&!b.bid_date))).length;
     const _attnItems=_collectItems.length+_urgFu+_pendingBids+_licAlerts+_wonNeedAction+_draftCount;
     if(_attnItems>0){
       let _biggestNote='';
@@ -1193,71 +1192,7 @@ function renderTodayFeed(){
     );
   });
 
-  // BUILD — Unsaved wizard draft
-  let draft=loadEstFullDraft();
-  if(draft&&draft.cname){
-    const alreadyWon=bids.some(b=>b.status==='Closed Won'&&(b.client_name||b.name||'').toLowerCase().trim()===(draft.cname||'').toLowerCase().trim());
-    const _draftBidId=draft?.lastBidId||null;
-    const alreadySent=_draftBidId&&bids.some(b=>b.id===_draftBidId&&b.signingToken);
-    if(alreadyWon||alreadySent){clearEstFullDraft();draft=null;}
-  }
-  const _activeDraftBidId=draft?.lastBidId||null;
-  // Track all bid IDs shown — prevents the same bid appearing from both the
-  // localStorage draft (via _activeDraftBidId) and bids[] simultaneously.
-  const _shownBidIds=new Set(_activeDraftBidId?[_activeDraftBidId]:[]);
-  // The lastBidId link is only useful if it still points at a real bid. After a
-  // discard or a cloud merge that re-IDs a copy, lastBidId can go stale — pointing
-  // at an ID no longer in bids[] — which lets the localStorage draft card AND its
-  // bids[] twin both render (the duplicate-card bug). Treat a stale link the same
-  // as a missing one so the name-based recovery below re-links and de-dups it.
-  const _hasValidLink=_activeDraftBidId&&bids.some(b=>String(b.id)===String(_activeDraftBidId));
-  // Recovery for missing or stale lastBidId: if exactly one draft/pending bid
-  // exists for the same client name, it IS the draft bid — exclude it and heal the
-  // localStorage link so future renders use ID-based dedup without this recovery.
-  if(!_hasValidLink&&draft?.cname){
-    const _dc=(draft.cname||'').toLowerCase().trim();
-    const _cands=bids.filter(b=>!b.signingToken&&(b.draft||b.status==='Pending'||(b.status==='Draft'&&b.geiLines!==undefined))&&((b.client_name||b.name||'').toLowerCase().trim()===_dc||(getClientById(b.client_id)?.name||'').toLowerCase().trim()===_dc));
-    if(_cands.length===1){
-      _shownBidIds.add(_cands[0].id);
-      try{const _r=localStorage.getItem('zp3_est_full_draft');if(_r){const _fd=JSON.parse(_r);_fd.lastBidId=_cands[0].id;localStorage.setItem('zp3_est_full_draft',JSON.stringify(_fd));}}catch(e){}
-    }
-  }
-  if(draft&&draft.cname){
-    buildItems.push(
-      '<div class="tf-card">'+
-        '<div class="tf-icon">✏️</div>'+
-        '<div class="tf-body">'+
-          '<div class="tf-name">'+escHtml(draft.cname)+'</div>'+
-          '<div class="tf-sub" style="color:var(--text3)">Unsaved draft — finish &amp; send</div>'+
-        '</div>'+
-        '<div class="tf-acts">'+
-          '<button onclick="resumeEstimateDraft()" class="btn btn-sm btn-p" style="font-size:11px">Resume →</button>'+
-          '<button onclick="clearEstFullDraft();renderDash()" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Discard</button>'+
-        '</div>'+
-      '</div>'
-    );
-  }
-  // RECOVER — backup snapshot holds an unsaved estimate richer than the live draft.
-  // Surfaces in surf_draft / est_full_draft that the live state lost are still frozen
-  // in the boot snapshot. Offer one-tap recovery when the backup beats what's loaded.
-  if(typeof _scanRecoverableEstimate==='function'){
-    const _rec=_scanRecoverableEstimate();
-    const _liveSurf=(draft&&Array.isArray(draft.surfaces))?draft.surfaces.length:0;
-    if(_rec&&_rec.surf>_liveSurf){
-      buildItems.push(
-        '<div class="tf-card" style="border:1px solid #9DBEE5;background:#F0F7FF">'+
-          '<div class="tf-icon">♻️</div>'+
-          '<div class="tf-body">'+
-            '<div class="tf-name">'+escHtml(_rec.cname||'Unsaved estimate')+'</div>'+
-            '<div class="tf-sub" style="color:#1a365d">Backup found — '+_rec.surf+' surfaces · '+_rec.rooms+' rooms</div>'+
-          '</div>'+
-          '<div class="tf-acts">'+
-            '<button onclick="recoverLostEstimate()" class="btn btn-sm btn-p" style="font-size:11px">Recover →</button>'+
-          '</div>'+
-        '</div>'
-      );
-    }
-  }
+  const _shownBidIds=new Set();
   bids.filter(b=>!b.signingToken&&(b.draft||b.status==='Pending'||(b.status==='Draft'&&b.geiLines!==undefined))&&!_shownBidIds.has(b.id)).forEach(b=>{
     _shownBidIds.add(b.id); // deduplicate within bids[] itself in case same id appears twice
     const c=getClientById(b.client_id);
@@ -1275,7 +1210,7 @@ function renderTodayFeed(){
           '<div class="tf-sub" style="color:var(--text3)">'+subLabel+'</div>'+
         '</div>'+
         '<div class="tf-acts">'+
-          '<button onclick="'+(b.geiLines!==undefined?'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')':'openEditBid('+b.id+','+(b.lastStep||1)+')')+'" class="btn btn-sm btn-p" style="font-size:11px">Resume →</button>'+
+          '<button onclick="openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')" class="btn btn-sm btn-p" style="font-size:11px">Resume →</button>'+
           '<button onclick="discardInProgressBid('+b.id+')" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Discard</button>'+
         '</div>'+
       '</div>'
@@ -2077,7 +2012,7 @@ function renderProposalsPage(){
     const _depPaid=getBidPaid(b.id);const deposit=b.status==='Closed Won'&&(b.deposit||0)>0.01&&_depPaid>=(b.deposit-0.01)?'<div style="font-size:10px;color:var(--green);font-weight:700;margin-top:2px">Deposit '+fmt(b.deposit)+' received</div>':'';
     const _lostLine=(b.status==='Closed Lost'&&b.lostReason)?'<div style="font-size:10px;color:#A32D2D;font-weight:600;margin-top:2px">'+escHtml(b.lostReason)+'</div>':'';
     const amt=b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'—');
-    const revFn=(b.status==='Closed Won'||b.clientCancelled)?'openBidDetail('+b.id+',\'bid\')':(b.geiLines!==undefined?'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')':'openEditBid('+b.id+')');
+    const revFn=(b.status==='Closed Won'||b.clientCancelled)?'openBidDetail('+b.id+',\'bid\')':'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')';
     const _canCloseOut=b.signingToken&&b.status!=='Closed Won'&&b.status!=='Closed Lost'&&b.status!=='Abandoned'&&!b.clientCancelled;
     const _coBtn=_canCloseOut?'<button class="btn btn-sm" onclick="event.stopPropagation();openCloseOutEstimate('+b.id+')" style="font-size:11px;font-weight:700;color:#A32D2D;border-color:#E5B5B5;background:#FEF2F2;margin-right:6px">Close out</button>':'';
     // Month section header — inserted as a spanning row when the month changes
@@ -2148,7 +2083,7 @@ function renderEstimatesPage(){
     const c=getClientById(b.client_id)||{name:b.client_name||b.name||'Unknown'};
     const proj=b.addr||b.type||'—';
     const amt=b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' / NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'—');
-    const revFn=b.geiLines!==undefined?'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')'  :'openEditBid('+b.id+')';
+    const revFn='openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')';
     return '<tr style="cursor:pointer" onclick="'+revFn+'">'+
       '<td><div style="font-weight:800">'+escHtml(c.name)+'</div>'+
       '<div style="font-size:10px;color:var(--text3);font-weight:500;margin-top:2px">'+escHtml((proj+'').split(',')[0])+'</div></td>'+

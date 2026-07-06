@@ -1533,3 +1533,31 @@ function updateLoggedTrip(id){
   if(document.getElementById('mil-table'))renderAllMileage();
   if(document.getElementById('cd-mile-list')&&currentClientId)renderCDMileage();
 }
+
+let _rateRefreshInProgress=false;
+Object.defineProperty(window,'_rateRefreshInProgress',{get:()=>_rateRefreshInProgress,set:v=>{_rateRefreshInProgress=v;},configurable:true});
+async function autoRefreshRates(){
+  if(!_supa||!_supaUser||_rateRefreshInProgress)return;
+  const thisYear=new Date().getFullYear();
+  // S.irsRateYear syncs to Supabase — once ANY device sets it for this year, all devices skip the fetch
+  if(S.irsRateYear===thisYear&&S.irsRate)return;
+  _rateRefreshInProgress=true;
+  try{
+    const{data:{session}}=await _supa.auth.getSession();
+    if(!session)return;
+    const resp=await fetch(SUPA_URL+'/functions/v1/get-rates',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
+      body:JSON.stringify({})
+    });
+    if(!resp.ok)return;
+    const d=await resp.json();
+    // Sanity bounds — IRS rate must be realistic (never below 50¢ or above $1.00/mi)
+    if(!d.irsRate||d.irsRate<0.50||d.irsRate>1.00)return;
+    if(Math.abs(d.irsRate-(S.irsRate||0))>0.0005){
+      showToast('IRS mileage rate updated to $'+(+d.irsRate).toFixed(3)+'/mi for '+d.year);
+      const el=document.getElementById('set-irs');if(el)el.value=d.irsRate;
+    }
+    S.irsRate=d.irsRate;S.irsRateYear=thisYear;saveAll();
+  }catch(e){}finally{_rateRefreshInProgress=false;}
+}

@@ -68,116 +68,18 @@ test.describe('data.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 1. _pickEstAddr
+  // 1. _pickEstAddr — removed with the paint estimator's multi-property address
+  //    hint (§7.1: assert the old entry point is actually gone)
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_pickEstAddr', () => {
-    test('null index — does not throw', async () => {
+    test('_pickEstAddr and _estAddrOptions were removed with the paint estimator', async () => {
       const r = await page.evaluate(() => {
-        try { _pickEstAddr(null); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
+        let fnType; try { fnType = typeof _pickEstAddr; } catch (e) { fnType = 'undefined'; }
+        let varDefined; try { _estAddrOptions; varDefined = true; } catch (e) { varDefined = false; }
+        return { fnType, varDefined };
       });
-      expect(r.ok).toBe(true);
-    });
-
-    test('undefined index — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { _pickEstAddr(undefined); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('negative index (-1) — returns early without throwing', async () => {
-      const r = await page.evaluate(() => {
-        try { _pickEstAddr(-1); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('very large index — returns early without throwing', async () => {
-      const r = await page.evaluate(() => {
-        try { _pickEstAddr(99999); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('string index — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { _pickEstAddr('abc'); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('golden path — sets input value and highlights correct button', async () => {
-      const r = await page.evaluate(() => {
-        // Seed addr options
-        _estAddrOptions = [
-          { addr: '123 Main St, Wichita KS 67202' },
-          { addr: '456 Elm St, Wichita KS 67203' }
-        ];
-
-        // Create picker DOM (use a temp id to avoid conflict with any existing _est-addr-picker)
-        const existingPicker = document.getElementById('_est-addr-picker');
-        if (existingPicker) existingPicker.id = '_est-addr-picker-bak';
-        const picker = document.createElement('div');
-        picker.id = '_est-addr-picker';
-        const b0 = document.createElement('button');
-        const b1 = document.createElement('button');
-        picker.appendChild(b0);
-        picker.appendChild(b1);
-        document.body.appendChild(picker);
-
-        // Use the existing #e-caddr element from index.html rather than creating a duplicate
-        const inp = document.getElementById('e-caddr');
-        const origVal = inp ? inp.value : '';
-
-        _pickEstAddr(0);
-
-        const val = inp ? inp.value : '';
-        const bg0 = b0.style.background;
-        const bg1 = b1.style.background;
-
-        // cleanup
-        picker.remove();
-        if (existingPicker) existingPicker.id = '_est-addr-picker';
-        if (inp) inp.value = origVal;
-        _estAddrOptions = [];
-
-        return { val, bg0, bg1 };
-      });
-      expect(r.val).toBe('123 Main St, Wichita KS 67202');
-      expect(r.bg0).toBe('var(--blue)');
-      expect(r.bg1).toBe('var(--bg2)');
-    });
-
-    test('valid index but missing DOM elements — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        // Remove any existing DOM elements
-        document.getElementById('e-caddr')?.remove();
-        document.getElementById('_est-addr-picker')?.remove();
-
-        _estAddrOptions = [{ addr: '789 Oak Ave' }];
-        try { _pickEstAddr(0); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-        finally { _estAddrOptions = []; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('concurrent calls (5x) — no crash', async () => {
-      const r = await page.evaluate(() => {
-        _estAddrOptions = [{ addr: 'Concurrent St' }, { addr: 'Second Ave' }];
-        let ok = 0;
-        for (let i = 0; i < 5; i++) {
-          try { _pickEstAddr(i % 2); ok++; } catch (_) {}
-        }
-        _estAddrOptions = [];
-        return ok;
-      });
-      expect(r).toBe(5);
+      expect(r.fnType).toBe('undefined');
+      expect(r.varDefined).toBe(false);
     });
   });
 
@@ -2495,11 +2397,6 @@ test.describe('data.js — exhaustive coverage', () => {
         return orig;
       });
       expect(typeof r).toBe('number');
-    });
-
-    test('_estAddrOptions is an array', async () => {
-      const r = await page.evaluate(() => Array.isArray(_estAddrOptions));
-      expect(r).toBe(true);
     });
 
     test('_weatherCache starts as null or object', async () => {

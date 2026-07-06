@@ -200,6 +200,12 @@ function showJobScorecard(jobId,collectBidId){
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov){ov.remove();if(balance>0.01)openPayPanel(collectBidId,'final');}});
 }
+function cleanRoomName(room){
+  const raw=(room||'').split(' — ')[0].replace('[Ext] ','').trim();
+  const types=['walls','ceiling','trim','doors','windows','cabinets','ext_walls','ext_trim','deck'];
+  for(const t of types){if(raw.endsWith(' '+t))return raw.slice(0,-(t.length+1)).trim();}
+  return raw;
+}
 // Alias called by post-job debrief after saving hours
 function showSupplyList(bidId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
@@ -1422,80 +1428,6 @@ function viewBidFromTimeline(bidId){
   },100);
 }
 
-function openEditBid(bidId,startStep){
-  const b=bids.find(x=>x.id===bidId);if(!b)return;
-  const c=getClientById(b.client_id||currentClientId);
-  // Full state wipe — prevents ANY bleed from a prior estimate session
-  _pendingSignToken=null;
-  _swLastProductByCategory={};
-  surfRoom='';surfColor='';surfWhatSelected=[];surfBQueue=[];surfBIdx=0;surfBMeasurements={};
-  surfJobType=b.surfaces&&b.surfaces.some(s=>['ext_walls','ext_trim','deck'].includes(s.type))?'exterior':'interior';
-  scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
-  estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200',products:{interior:'pm200',exterior:'spe',trim:'pm200t'}};
-  editingBidId=bidId;lastCreatedBidId=null;
-  estLinkedClientId=b.client_id||currentClientId;
-  estSurfaces=[];estSurfId=0;
-  clearEstFullDraft(); // editing existing bid — never offer to resume a new estimate
-  const _plbE=document.getElementById('proposal-link-bar');if(_plbE){_plbE.style.display='none';_plbE.dataset.signingUrl='';}
-  const _pliE=document.getElementById('proposal-link-input');if(_pliE)_pliE.value='';
-  const _sBtnE=document.getElementById('send-proposal-btn');if(_sBtnE){_sBtnE.textContent='🔗 Send to client';_sBtnE.disabled=false;}
-  goPg('pg-est');
-  buildScopeGrid();
-  setTimeout(()=>{
-    const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val||'';};
-    const _ebn=getBusinessName();if(_ebn&&_ebn!=='TradeDesk'&&!_ebn.includes('@'))sf('e-bname',_ebn);
-    if(S.bphone)sf('e-bphone',S.bphone);
-    if(S.blic)sf('e-blic',S.blic);
-    sf('e-labor-rate',S.laborRate||45);
-    sf('e-paint-rate',83);
-    sf('e-cname',c?c.name:b.name||'');
-    sf('e-cphone',c?c.phone:b.phone||'');
-    sf('e-caddr',c?c.addr:b.addr||'');
-    if((c?.addr||b?.addr)&&typeof _paintLookupClientTaxRate==='function')_paintLookupClientTaxRate();
-    sf('e-cnotes',b.notes||'');
-    ['e-cname','e-cphone','e-caddr'].forEach(id=>{const el=document.getElementById(id);if(el&&el.value)markFieldFilled(el);});
-    if(c&&c.ptype){const el=document.getElementById('e-cprop');if(el)el.value=c.ptype;}
-    if(b.days){
-      const el=document.getElementById('e-days');
-      if(el){el.value=b.days;el.style.borderColor='var(--border2)';el.style.background='var(--bg2)';}
-    }
-    const cmiles=getClientMileage(estLinkedClientId);
-    const totalMiles=cmiles.reduce((s,m)=>s+(m.miles||0),0);
-    if(totalMiles>0){sf('e-travel',(Math.round(totalMiles*10)/10).toString());}
-    const linked=document.getElementById('e-client-linked');
-    if(linked)linked.innerHTML='<span class="conn-tag">'+escHtml(c?c.name:'linked')+' — editing existing bid</span>';
-    estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};
-  SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
-    const _ptogE=document.getElementById('portfolio-toggle');
-    if(_ptogE){_ptogE.checked=!!b.isPortfolio;togglePortfolioShowcase();}
-    const _ppctE=document.getElementById('portfolio-pct');if(_ppctE)_ppctE.value=b.portfolioPct||15;
-    roomScopeMap=b.roomScopeMap?JSON.parse(JSON.stringify(b.roomScopeMap)):{};
-    if(b.scope&&Object.keys(b.scope).length){
-      Object.entries(b.scope).forEach(([id,val])=>toggleScope(id,!!val));
-      if(!Object.values(b.scope).some(Boolean))applyDefaultScope();
-    } else{applyDefaultScope();}
-    if(b.surfaces&&b.surfaces.length){estSurfaces=[...b.surfaces];estSurfId=Math.max(...b.surfaces.map(s=>s.id||0),0);}
-    if(b.cond){
-      const el=document.getElementById('e-cond');if(el)el.value=b.cond;
-      document.querySelectorAll('[id^=cond-]').forEach(b=>b.classList.remove('active-surf-btn'));
-      const condMap={'1.0':'cond-good','1.2':'cond-fair','1.5':'cond-poor'};
-      const cb=document.getElementById(condMap[b.cond]||'cond-good');if(cb)cb.classList.add('active-surf-btn');
-    }
-    if(b.paint){
-      const el=document.getElementById('e-paint');if(el)el.value=b.paint;
-      setPaintSupply(b.paint==='customer'?'customer':'zach');
-    }
-    if(b.colors!==undefined){const el=document.getElementById('e-colors');if(el){el.value=b.colors;el.style.borderColor='var(--border2)';el.style.background='var(--bg2)';}}
-    const adj=document.getElementById('est-adj');if(adj)adj.value=0;
-    const adjv=document.getElementById('est-adj-val');if(adjv)adjv.textContent='0%';
-    renderEstSurfs();
-    goEstStep(startStep||3); // step 2 merged into 3
-    const tip=document.querySelector('#est-s3 .tip');
-    if(tip)tip.innerHTML='<strong>Editing existing bid</strong> for '+escHtml(c?c.name:b.name||'client')+' · previous amount: '+fmt(b.amount)+'. Re-enter surfaces and adjust as needed.';
-    if((startStep||2)>=4){renderEstReview();renderEstRunning();}
-  },80);
-}
-
 function deleteBid(bidId){
   const b=bids.find(x=>x.id===bidId);
   zConfirm('Delete this bid'+(b?' ('+fmt(b.amount)+')':'')+' permanently? Payment records and any lien will also be removed.',()=>{
@@ -1504,7 +1436,7 @@ function deleteBid(bidId){
       bids=bids.filter(x=>x.id!==bidId);
       payments=payments.filter(p=>p.bid_id!==bidId);
       liens=liens.filter(l=>l.bid_id!==bidId);
-      clearEstFullDraft();saveAll();
+      saveAll();
     });
     renderClientDetail();
     if(_cid)_uploadClientHub(_cid).catch(e=>console.error('[hub upload]',e));
@@ -1683,6 +1615,44 @@ function getAutoCollStage(daysUnpaid,existingStage,lienRules){
   const cur=existingStage||'none';
   return(rank[auto]||0)>(rank[cur]||0)?auto:cur;
 }
+
+let _lienRefreshInProgress=false;
+async function autoRefreshLienRules(){
+  if(!_supa||!_supaUser||_lienRefreshInProgress)return;
+  const KEY='zp3_lien_year';
+  const thisYear=new Date().getFullYear();
+  if(+localStorage.getItem(KEY)===thisYear)return;
+  _lienRefreshInProgress=true;
+  try{
+    const{data:{session}}=await _supa.auth.getSession();
+    if(!session)return;
+    // Send current values so Claude can compare and return only changed states
+    const current={};
+    Object.keys(LIEN_RULES).forEach(k=>{if(k!=='default')current[k]=LIEN_RULES[k].filing_deadline_days;});
+    const resp=await fetch(SUPA_URL+'/functions/v1/get-rates',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
+      body:JSON.stringify({type:'lienRules',current})
+    });
+    if(!resp.ok)return;
+    const d=await resp.json();
+    if(d.error||!d.changes)return;
+    const changes=d.changes;
+    const changedStates=Object.keys(changes).filter(state=>{
+      const v=changes[state];
+      // Validate: must be a number between 30 and 400 days, and different from current
+      return typeof v==='number'&&v>=30&&v<=400&&v!==LIEN_RULES[state]?.filing_deadline_days;
+    });
+    if(changedStates.length){
+      changedStates.forEach(state=>{
+        if(LIEN_RULES[state])LIEN_RULES[state].filing_deadline_days=changes[state];
+      });
+      showToast('Lien deadline change detected for '+changedStates.join(', ')+' — verify before next filing','⚖️');
+    }
+    localStorage.setItem(KEY,String(thisYear));
+  }catch(e){}finally{_lienRefreshInProgress=false;}
+}
+
 function showFileLienDirect(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   const c=getClientById(bid.client_id);if(!c)return;

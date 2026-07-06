@@ -842,67 +842,26 @@ test.describe('Full app navigation coverage', () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // 10. ESTIMATOR — Deposit field, proposal build, per-room preview
 // ═══════════════════════════════════════════════════════════════════════════════
-test.describe('Paint estimator flow', () => {
+test.describe('Paint estimator flow — removed, replaced by generic estimator', () => {
   let page;
   test.beforeAll(async ({ browser }) => { page = await bootApp(browser); });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('e-deposit-pct input exists in estimator', async () => {
-    const count = await page.locator('#e-deposit-pct').count();
-    expect(count).toBe(1);
-  });
-
-  test('deposit pct input accepts 50 and shows it', async () => {
-    await page.evaluate(() => {
-      const el = document.getElementById('e-deposit-pct');
-      if (el) el.value = '50';
-    });
-    const val = await page.locator('#e-deposit-pct').inputValue();
-    expect(val).toBe('50');
-  });
-
-  test('buildProposal computes deposit from e-deposit-pct value', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof buildProposal !== 'function' || typeof calcEst !== 'function') return null;
-      if (typeof estSurfaces !== 'undefined') {
-        estSurfaces.length = 0;
-        estSurfaces.push({ id: 1, type: 'walls', qty: 400, wallSqft: 400, room: 'Living Room' });
-      }
-      const depEl = document.getElementById('e-deposit-pct');
-      if (depEl) depEl.value = '50';
-      const cnameEl = document.getElementById('e-cname');
-      if (cnameEl) cnameEl.value = 'Test Client';
-      try { buildProposal(); } catch(e) { return { error: e.message }; }
-      const propDiv = document.getElementById('est-proposal');
-      if (!propDiv) return { noProposal: true };
-      const html = propDiv.innerHTML;
+  test('e-deposit-pct, pg-est, buildProposal, calcEst are all gone', async () => {
+    const r = await page.evaluate(() => {
+      let buildProposalType, calcEstType;
+      try { buildProposalType = typeof buildProposal; } catch (e) { buildProposalType = 'undefined'; }
+      try { calcEstType = typeof calcEst; } catch (e) { calcEstType = 'undefined'; }
       return {
-        has50pct: /50%\s*Deposit/i.test(html),
-        hasDepositRow: /Deposit Due/i.test(html),
+        pgEst: !!document.getElementById('pg-est'),
+        eDepositPct: !!document.getElementById('e-deposit-pct'),
+        buildProposalType, calcEstType,
       };
     });
-    if (!result || result.error || result.noProposal) return;
-    if (result.hasDepositRow) {
-      expect(result.has50pct).toBe(true);
-    }
-  });
-
-  test('proposal does NOT show per-room dollar amounts (client view hides them)', async () => {
-    const result = await page.evaluate(() => {
-      const propDiv = document.getElementById('est-proposal');
-      if (!propDiv || !propDiv.innerHTML) return null;
-      const doc = (new DOMParser()).parseFromString(propDiv.innerHTML, 'text/html');
-      const roomTds = [...doc.querySelectorAll('td')].filter(td =>
-        (td.getAttribute('style') || '').includes('border-left:3px solid #2a4a7f')
-      );
-      const roomRowsHaveAmountCell = roomTds.some(td => {
-        const row = td.closest('tr');
-        return row && row.querySelectorAll('td').length > 1;
-      });
-      return { roomRowsHaveAmountCell, roomTdCount: roomTds.length };
-    });
-    if (!result) return;
-    expect(result.roomRowsHaveAmountCell).toBe(false);
+    expect(r.pgEst).toBe(false);
+    expect(r.eDepositPct).toBe(false);
+    expect(r.buildProposalType).toBe('undefined');
+    expect(r.calcEstType).toBe('undefined');
   });
 
   test('no console errors in estimator tests', async () => {
@@ -1080,232 +1039,39 @@ test.describe('Client hub — color selections display', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 15. MAKE MONEY TODAY — Dedup / idempotency: no phantom entries on re-render,
-//     save-and-exit, or backup snapshot capture
+// 15. MAKE MONEY TODAY — Dedup / idempotency: no phantom entries on re-render
+//     (the old localStorage "est_full_draft" dedup/heal mechanism this used to test
+//     was removed with the paint estimator — drafts now live only in bids[])
 // ═══════════════════════════════════════════════════════════════════════════════
 test.describe('Make Money Today — dedup idempotency', () => {
   let page;
   test.beforeAll(async ({ browser }) => { page = await bootApp(browser); });
   test.afterAll(async () => { await page.context().close(); });
 
-  // Calling renderDash() multiple times must not accumulate BUILD entries.
-  test('repeated renderDash() calls produce exactly one BUILD entry per draft', async () => {
-    await page.evaluate(() => {
-      try {
-        localStorage.setItem('zp3_est_full_draft', JSON.stringify({ cname: 'Idempotency Test Client', lastBidId: null, surfaces: [], ts: Date.now() }));
-      } catch(e) {}
+  test('the old localStorage draft dedup/heal helpers are gone', async () => {
+    const r = await page.evaluate(() => {
+      const names = ['_scanRecoverableEstimate', 'loadEstFullDraft', 'clearEstFullDraft', 'saveEstFullDraft'];
+      return names.map(n => { let t; try { t = typeof eval(n); } catch (e) { t = 'undefined'; } return [n, t]; });
     });
-    // Call renderDash 5 times in a row — simulates rapid-fire auto-refresh.
-    // _mmtCol_build=false expands the BUILD section so item cards appear in innerHTML.
-    await page.evaluate(() => {
-      window._mmtCol_build = false;
-      for (let i = 0; i < 5; i++) {
-        if (typeof renderDash === 'function') try { renderDash(); } catch(e) {}
-      }
-    });
+    for (const [name, type] of r) expect(type, name + ' should no longer be defined').toBe('undefined');
+  });
+
+  test('repeated renderDash() calls produce exactly one BUILD entry per bids[] draft', async () => {
+    const bidId = 88800;
+    await page.evaluate(id => {
+      window._mmtCol_build = false; // expand BUILD so cards render into innerHTML
+      bids = bids.filter(b => b.id !== id);
+      bids.unshift({ id, client_id: id, client_name: 'Idempotency Test Client', status: 'Draft', draft: true, amount: 0, bid_date: todayKey() });
+      for (let i = 0; i < 5; i++) { if (typeof renderDash === 'function') try { renderDash(); } catch (e) {} }
+    }, bidId);
     await page.waitForTimeout(400);
     const result = await page.evaluate(() => {
-      const mmtEl = document.getElementById('dash-money-feed') || document.querySelector('[id*="mmt"]');
-      if (!mmtEl) return { noEl: true };
-      const html = mmtEl.innerHTML || document.body.innerHTML;
-      // Count occurrences of the draft client name — must appear exactly once
-      const matches = (html.match(/Idempotency Test Client/g) || []).length;
-      return { matches, htmlLen: html.length };
+      const el = document.getElementById('dash-money-feed');
+      const html = el ? el.innerHTML : '';
+      return { matches: (html.match(/Idempotency Test Client/g) || []).length };
     });
-    await page.evaluate(() => { if (typeof clearEstFullDraft === 'function') clearEstFullDraft(); });
-    if (result.noEl) return;
+    await page.evaluate(id => { bids = bids.filter(b => b.id !== id); delete window._mmtCol_build; }, bidId);
     expect(result.matches).toBe(1);
-  });
-
-  // A draft with a matching in-progress bid (same lastBidId) must NOT show twice —
-  // once as the localStorage wizard draft AND once as the bids[] entry.
-  test('draft with matching lastBidId shows once, not twice (no double-listing)', async () => {
-    const draftBidId = 88800;
-    await page.evaluate(bidId => {
-      try {
-        localStorage.setItem('zp3_est_full_draft', JSON.stringify({ cname: 'Double List Test', lastBidId: bidId, surfaces: [{ id: 1, type: 'walls' }], ts: Date.now() }));
-      } catch(e) {}
-      // Also inject the corresponding in-progress bid (not yet sent)
-      if (typeof window.bids !== 'undefined') {
-        window.bids = window.bids.filter(b => b.id !== bidId);
-        window.bids.unshift({ id: bidId, client_id: 800, client_name: 'Double List Test', status: 'Draft', draft: true, amount: 0, signingToken: null });
-      }
-      // Expand BUILD section so cards are rendered into innerHTML
-      window._mmtCol_build = false;
-      if (typeof renderDash === 'function') try { renderDash(); } catch(e) {}
-    }, draftBidId);
-    await page.waitForTimeout(400);
-    const result = await page.evaluate(() => {
-      const html = document.getElementById('dash-money-feed')?.innerHTML || document.body.innerHTML;
-      return { count: (html.match(/Double List Test/g) || []).length };
-    });
-    await page.evaluate(() => { if (typeof clearEstFullDraft === 'function') clearEstFullDraft(); });
-    expect(result.count).toBe(1);
-  });
-
-  // When a bid transitions from draft → sent (signingToken added), the localStorage
-  // wizard draft for that bid must be cleared and NOT appear in BUILD.
-  test('draft clears from BUILD the moment the bid gets a signingToken', async () => {
-    const sentId = 88801;
-    await page.evaluate(bidId => {
-      try {
-        localStorage.setItem('zp3_est_full_draft', JSON.stringify({ cname: 'Token Clear Test', lastBidId: bidId, surfaces: [] }));
-      } catch(e) {}
-      if (typeof window.bids !== 'undefined') {
-        window.bids = window.bids.filter(b => b.id !== bidId);
-        // Inject already-sent bid
-        window.bids.unshift({ id: bidId, client_id: 801, client_name: 'Token Clear Test', status: 'Pending', signingToken: 'tok-clear-test' });
-      }
-      if (typeof renderDash === 'function') try { renderDash(); } catch(e) {}
-    }, sentId);
-    await page.waitForTimeout(400);
-    const result = await page.evaluate(() => {
-      const html = document.getElementById('dash-money-feed')?.innerHTML || document.body.innerHTML;
-      // After renderDash the draft should be cleared — BUILD should NOT show this client name
-      // (it may appear in PENDING as a sent bid, but not in BUILD as an unsaved draft)
-      return {
-        draftCleared: !localStorage.getItem('zp3_est_full_draft') || (() => {
-          try { const d = JSON.parse(localStorage.getItem('zp3_est_full_draft') || 'null'); return !d || !d.cname; } catch(e) { return true; }
-        })(),
-      };
-    });
-    expect(result.draftCleared).toBe(true);
-  });
-
-  // _captureRecoverySnapshot() should NOT cause a RECOVER entry to appear alongside
-  // a live draft when the snapshot has the same (or fewer) surfaces as the draft.
-  test('snapshot with same surface count as draft does NOT trigger RECOVER entry', async () => {
-    await page.evaluate(() => {
-      const surfaces = [{ id: 1, type: 'walls', room: 'Kitchen' }, { id: 2, type: 'ceiling', room: 'Kitchen' }];
-      try {
-        localStorage.setItem('zp3_est_full_draft', JSON.stringify({ cname: 'Snapshot Parity Test', lastBidId: null, surfaces }));
-      } catch(e) {}
-      // Write a snapshot with the SAME number of surfaces (should NOT trigger RECOVER)
-      try {
-        localStorage.setItem('zp3_recovery_snapshot', JSON.stringify({
-          ts: Date.now(), cloud_cache: '[]',
-          surf_draft: surfaces, // same count
-          est_full_draft: JSON.stringify({ cname: 'Snapshot Parity Test', surfaces }),
-        }));
-      } catch(e) {}
-      if (typeof renderDash === 'function') try { renderDash(); } catch(e) {}
-    });
-    await page.waitForTimeout(400);
-    const result = await page.evaluate(() => {
-      const html = document.getElementById('dash-money-feed')?.innerHTML || document.body.innerHTML;
-      // RECOVER section shows "Backup found — X surfaces" — must not appear when counts match
-      const hasRecover = /Backup found/i.test(html);
-      const hasDraft = /Snapshot Parity Test/i.test(html);
-      return { hasRecover, hasDraft };
-    });
-    await page.evaluate(() => {
-      if (typeof clearEstFullDraft === 'function') clearEstFullDraft();
-      try { localStorage.removeItem('zp3_recovery_snapshot'); } catch(e) {}
-    });
-    expect(result.hasRecover).toBe(false);
-  });
-
-  // Snapshot with MORE surfaces DOES trigger RECOVER — verifies the threshold logic.
-  test('snapshot with more surfaces than live draft DOES show RECOVER entry', async () => {
-    await page.evaluate(() => {
-      const liveSurfaces = [{ id: 1, type: 'walls', room: 'Living Room' }];
-      const snapSurfaces = [
-        { id: 1, type: 'walls', room: 'Living Room' },
-        { id: 2, type: 'ceiling', room: 'Living Room' },
-        { id: 3, type: 'walls', room: 'Bedroom' },
-      ];
-      try {
-        localStorage.setItem('zp3_est_full_draft', JSON.stringify({ cname: 'Recover Trigger Test', lastBidId: null, surfaces: liveSurfaces }));
-        localStorage.setItem('zp3_recovery_snapshot', JSON.stringify({
-          ts: Date.now(), cloud_cache: '[]',
-          surf_draft: snapSurfaces,
-          est_full_draft: JSON.stringify({ cname: 'Recover Trigger Test', surfaces: snapSurfaces }),
-        }));
-      } catch(e) {}
-      if (typeof renderDash === 'function') try { renderDash(); } catch(e) {}
-    });
-    await page.waitForTimeout(400);
-    const result = await page.evaluate(() => {
-      if (typeof _scanRecoverableEstimate !== 'function') return { notAvailable: true };
-      const rec = _scanRecoverableEstimate();
-      const html = document.getElementById('dash-money-feed')?.innerHTML || document.body.innerHTML;
-      return { scanResult: rec, hasRecover: /Backup found/i.test(html) };
-    });
-    await page.evaluate(() => {
-      if (typeof clearEstFullDraft === 'function') clearEstFullDraft();
-      try { localStorage.removeItem('zp3_recovery_snapshot'); } catch(e) {}
-    });
-    if (result.notAvailable) return;
-    if (result.scanResult) {
-      expect(result.scanResult.surf).toBeGreaterThan(1);
-    }
-  });
-
-  // After "save and exit" — navigator saves draft then re-renders — count stays 1.
-  test('save and exit does not duplicate: single entry survives multiple re-renders', async () => {
-    await page.evaluate(() => {
-      // Simulate "save and exit": draft is written, then saveAll() is called, then renderDash()
-      try {
-        localStorage.setItem('zp3_est_full_draft', JSON.stringify({ cname: 'Save Exit Test', lastBidId: null, surfaces: [{ id: 1, type: 'walls' }] }));
-      } catch(e) {}
-      // Simulate multiple rapid re-renders (as would happen from saveAll → syncUI → renderDash)
-      if (typeof renderDash === 'function') {
-        try { renderDash(); } catch(e) {}
-        try { renderDash(); } catch(e) {}
-        try { renderDash(); } catch(e) {}
-      }
-    });
-    await page.waitForTimeout(500);
-    const result = await page.evaluate(() => {
-      const html = document.getElementById('dash-money-feed')?.innerHTML || '';
-      return { count: (html.match(/Save Exit Test/g) || []).length };
-    });
-    await page.evaluate(() => { if (typeof clearEstFullDraft === 'function') clearEstFullDraft(); });
-    if (result.count === 0) return; // MMT el not found — skip assertion
-    expect(result.count).toBe(1);
-  });
-
-  // Stale-data recovery: draft saved before _patchDraftBidId existed (lastBidId:null)
-  // but exactly one matching draft bid exists in bids[].  renderDash() must:
-  //   a) show the client name exactly once (no duplicate cards), AND
-  //   b) heal lastBidId in localStorage so future renders use ID-based dedup.
-  test('draft with null lastBidId but matching bid name shows once and heals localStorage link', async () => {
-    const healBidId = 88802;
-    await page.evaluate(bidId => {
-      try {
-        localStorage.setItem('zp3_est_full_draft', JSON.stringify({
-          cname: 'Heal Link Test', lastBidId: null,
-          surfaces: [{ id: 1, type: 'walls' }], ts: Date.now()
-        }));
-      } catch(e) {}
-      if (typeof window.bids !== 'undefined') {
-        window.bids = window.bids.filter(b => b.id !== bidId);
-        window.bids.unshift({
-          id: bidId, client_id: 802,
-          client_name: 'Heal Link Test',
-          status: 'Draft', draft: true, amount: 0, signingToken: null
-        });
-      }
-      window._mmtCol_build = false;
-      if (typeof renderDash === 'function') try { renderDash(); } catch(e) {}
-    }, healBidId);
-    await page.waitForTimeout(400);
-    const result = await page.evaluate(bidId => {
-      const html = document.getElementById('dash-money-feed')?.innerHTML || '';
-      const count = (html.match(/Heal Link Test/g) || []).length;
-      let healed = false;
-      try {
-        const d = JSON.parse(localStorage.getItem('zp3_est_full_draft') || 'null');
-        healed = d?.lastBidId === bidId;
-      } catch(e) {}
-      return { count, healed };
-    }, healBidId);
-    await page.evaluate(bidId => {
-      if (typeof clearEstFullDraft === 'function') clearEstFullDraft();
-      if (typeof window.bids !== 'undefined') window.bids = window.bids.filter(b => b.id !== bidId);
-    }, healBidId);
-    expect(result.count).toBe(1);
-    expect(result.healed).toBe(true);
   });
 
   test('no console errors in MMT dedup tests', async () => {

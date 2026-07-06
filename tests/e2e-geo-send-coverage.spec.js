@@ -571,8 +571,6 @@ test.describe('Proposal send + helpers — _doGeiSend / _showEmailComposeModal /
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
-    await page.evaluate(() => { if (typeof goPg === 'function') goPg('pg-est'); });
-    await page.waitForTimeout(200);
   });
   test.afterAll(async () => { await page.context().close(); });
 

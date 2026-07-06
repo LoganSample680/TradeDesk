@@ -1454,38 +1454,32 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.count).toBe(1);
   });
 
-  test('renderTodayFeed: stale lastBidId — draft and its bids[] twin de-dup to one card', async () => {
+  test('renderTodayFeed: a bids[] draft renders exactly one card', async () => {
+    // The old localStorage-backed "est_full_draft" dedup/heal mechanism was removed
+    // with the paint estimator — every draft now lives only in bids[], so there is
+    // no longer a separate localStorage-draft card to de-dup against.
     const r = await page.evaluate(() => {
       window._mmtCol_build = false; // expand BUILD so cards render into innerHTML
-      // Saved draft bid in bids[] for "TEsty Test".
       const twin = {
         id: 76055, client_id: 76055, client_name: 'TEsty Test', name: 'TEsty Test',
         status: 'Draft', draft: true, amount: 0, bid_date: todayKey()
       };
       bids.unshift(twin);
-      // localStorage draft for the SAME client whose lastBidId points at a bid that
-      // no longer exists (stale link) — the reported duplicate-card condition.
-      const stale = { ts: Date.now(), cname: 'TEsty Test', lastBidId: 999999, surfaces: [] };
-      localStorage.setItem('zp3_est_full_draft', JSON.stringify(stale));
       try {
         renderTodayFeed();
         const el = document.getElementById('dash-money-feed');
         const count = el ? (el.innerHTML.match(/TEsty Test/g) || []).length : 0;
-        let healed = null;
-        try { healed = JSON.parse(localStorage.getItem('zp3_est_full_draft')).lastBidId; } catch (e) {}
-        return { ok: true, count, healed };
+        return { ok: true, count };
       }
       catch (e) { return { ok: false, err: e.message }; }
       finally {
         const i = bids.findIndex(b => b.id === 76055);
         if (i !== -1) bids.splice(i, 1);
-        localStorage.removeItem('zp3_est_full_draft');
         delete window._mmtCol_build;
       }
     });
     expect(r.ok).toBe(true);
-    expect(r.count).toBe(1);       // one card, not two
-    expect(r.healed).toBe(76055);  // stale link healed to the real bid id
+    expect(r.count).toBe(1); // one card, not two
   });
 
   test('MMT pending follow-up card has a Close out button using the same close-out framework', async () => {

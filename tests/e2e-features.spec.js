@@ -146,7 +146,7 @@ test.describe('Address autocomplete — Photon API', () => {
   test('address input field exists in new client form or estimate flow', async () => {
     // Navigate to where address autocomplete is wired
     await page.evaluate(() => {
-      if (typeof goPg === 'function') goPg('pg-est');
+      if (typeof goPg === 'function') goPg('pg-est-generic');
     });
     await page.waitForTimeout(400);
     const addrEl = await page.evaluate(() => {
@@ -1798,58 +1798,18 @@ test.describe('_addrAutoFull — shared address autocomplete utility', () => {
     expect(exists).toBe(false);
   });
 
-  // ── Field: e-caddr (paint estimate property address) ────────────────────
-  test('e-caddr input exists and _addrAutoFull is attached', async () => {
-    await goPg(page, 'pg-est');
-    await page.waitForTimeout(300);
-    const result = await page.evaluate(() => {
-      const el = document.getElementById('e-caddr');
-      return { exists: !!el, bound: !!(el && el._addrAutoFullBound), autocomplete: el && el.getAttribute('autocomplete') };
-    });
-    expect(result.exists).toBe(true);
-    expect(result.bound).toBe(true);
-    expect(result.autocomplete).toBe('off');
-  });
-
-  test('e-caddr — typing shows dropdown and clicking a suggestion fills the input', async () => {
-    await goPg(page, 'pg-est');
-    await page.waitForTimeout(300);
-    // Stub the geocoder so the real bound dropdown renders a known suggestion.
-    const result = await page.evaluate(async () => {
-      const el = document.getElementById('e-caddr');
-      if (!el || !el._addrAutoFullBound) return null;
-      const _origGeo = window._geocodeAddress;
-      window._geocodeAddress = async () => [{
-        line1: '123 Main St', line2: 'Wichita, KS 67202',
-        street: '123 Main St', city: 'Wichita', state: 'KS', zip: '67202',
-      }];
-      const _prevVal = el.value;
-      el.value = '123 Main';
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      await new Promise(r => setTimeout(r, 600));
-      const box = el.nextElementSibling;
-      const suggestion = box && box.firstElementChild;
-      const dropdownShown = !!(box && box.style.display === 'block' && suggestion);
-      if (suggestion) suggestion.click();
-      const filledValue = el.value;
-      window._geocodeAddress = _origGeo;
-      el.value = _prevVal;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      await new Promise(r => setTimeout(r, 100));
-      return { dropdownShown, filledValue };
-    });
-    if (result) {
-      expect(result.dropdownShown, 'dropdown must appear after typing in e-caddr').toBe(true);
-      expect(result.filledValue).toContain('123 Main St');
-      expect(result.filledValue).toContain('Wichita');
-    }
-    assertNoErrors(page, 'e-caddr autocomplete');
+  // ── Field: e-caddr (paint estimate property address) — removed with pg-est ──
+  test('e-caddr — removed along with the paint estimator page', async () => {
+    const result = await page.evaluate(() => ({
+      pgEst: !!document.getElementById('pg-est'),
+      eCaddr: !!document.getElementById('e-caddr'),
+    }));
+    expect(result.pgEst).toBe(false);
+    expect(result.eCaddr).toBe(false);
   });
 
   // ── Save-and-exit must never spawn a duplicate bid (upsert by stable id) ──
   test('save-and-exit twice (session id lost + client renamed) keeps exactly one bid', async () => {
-    await goPg(page, 'pg-est');
-    await page.waitForTimeout(300);
     const r = await page.evaluate(() => {
       const CN1 = 'Dedup Orig Name', CN2 = 'Dedup Renamed';
       const mine = b => [CN1, CN2].includes(b.name) || [CN1, CN2].includes(b.client_name);
@@ -4748,7 +4708,7 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
 
 
 // ── Paint estimate scope fixes: no scroll chaining, unified renderer, no hours popup ─────────
-test.describe('Paint estimate scope — scroll fix + unified renderer', () => {
+test.describe('Paint estimate scope — deleted with the surface estimator', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -4759,91 +4719,16 @@ test.describe('Paint estimate scope — scroll fix + unified renderer', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('surf-step-b has overscroll-behavior:none to kill iOS pull-to-refresh and scroll chaining', async () => {
-    const style = await page.locator('#surf-step-b').getAttribute('style');
-    expect(style).toContain('overscroll-behavior:none');
-  });
-
-  test('surf-scope-preset container removed from DOM', async () => {
-    const count = await page.locator('#surf-scope-preset').count();
-    expect(count).toBe(0);
-  });
-
-  test('applyStdScopePreset function removed', async () => {
-    const exists = await page.evaluate(() => typeof applyStdScopePreset === 'function');
-    expect(exists).toBe(false);
-  });
-
-  test('buildScopeGrid with roomName populates surf-scope-first-grid', async () => {
+  test('surf-step-b, buildScopeGrid, toggleScope, goSurfStepB all removed', async () => {
     const r = await page.evaluate(() => {
-      if (typeof buildScopeGrid !== 'function') return null;
-      if (typeof SCOPE_ITEMS === 'undefined') return null;
-      buildScopeGrid('Living Room');
-      const grid = document.getElementById('surf-scope-first-grid');
-      if (!grid) return null;
-      return { itemCount: grid.querySelectorAll('.stog').length, usesRoomHandler: grid.innerHTML.includes('toggleScopeRoom') };
+      const names = ['buildScopeGrid', 'toggleScope', 'goSurfStepB', 'onSurfRoomName', 'toggleSurfWhat', 'applyStdScopePreset'];
+      return {
+        surfStepB: !!document.getElementById('surf-step-b'),
+        types: names.map(n => { let t; try { t = typeof eval(n); } catch (e) { t = 'undefined'; } return [n, t]; }),
+      };
     });
-    if (r === null) return;
-    expect(r.itemCount).toBeGreaterThan(0);
-    expect(r.usesRoomHandler).toBe(true);
-  });
-
-  test('buildScopeGrid without roomName does NOT write to surf-scope-first-grid', async () => {
-    const r = await page.evaluate(() => {
-      if (typeof buildScopeGrid !== 'function') return null;
-      const grid = document.getElementById('surf-scope-first-grid');
-      if (!grid) return null;
-      const before = grid.innerHTML;
-      buildScopeGrid();
-      return { changed: grid.innerHTML !== before };
-    });
-    if (r === null) return;
-    expect(r.changed).toBe(false);
-  });
-
-  test('toggleScope does not open a scope-hours modal', async () => {
-    const r = await page.evaluate(() => {
-      if (typeof toggleScope !== 'function') return null;
-      const before = document.querySelectorAll('.zmodal-overlay').length;
-      try { toggleScope('protect'); } catch(e) {}
-      const after = document.querySelectorAll('.zmodal-overlay').length;
-      return { modalOpened: after > before };
-    });
-    if (r === null) return;
-    expect(r.modalOpened).toBe(false);
-  });
-
-  test('goSurfStepB sets pg-est overflow to hidden and resets scrollTop', async () => {
-    const r = await page.evaluate(() => {
-      if (typeof goSurfStepB !== 'function') return null;
-      if (typeof onSurfRoomName !== 'function') return null;
-      const pgEst = document.getElementById('pg-est');
-      if (!pgEst) return null;
-      // Simulate a scrolled state before opening the overlay
-      pgEst.scrollTop = 300;
-      // surfRoom is a top-level `let` (declared in js/jobs.js) living in the shared
-      // global lexical environment, NOT on window — assigning window.surfRoom would
-      // create a separate property the function never reads. Drive it through the
-      // production handler onSurfRoomName(), which mutates the real binding from inside
-      // its own closure. Same reason toggleSurfWhat() is used for surfWhatSelected.
-      let roomInput = document.getElementById('surf-room-name');
-      if (!roomInput) { roomInput = document.createElement('input'); roomInput.id = 'surf-room-name'; document.body.appendChild(roomInput); }
-      roomInput.value = 'Kitchen';
-      onSurfRoomName(roomInput);
-      if (typeof toggleSurfWhat === 'function') toggleSurfWhat('walls');
-      try { goSurfStepB(); } catch(e) {}
-      const overflowHidden = pgEst.style.overflowY === 'hidden';
-      const scrollReset = pgEst.scrollTop === 0;
-      document.getElementById('surf-step-b').style.display = 'none';
-      pgEst.style.overflowY = '';
-      // Reset the shared binding so later tests start from a clean room state
-      roomInput.value = ''; onSurfRoomName(roomInput);
-      if (typeof toggleSurfWhat === 'function') toggleSurfWhat('walls');
-      return { overflowHidden, scrollReset };
-    });
-    if (r === null) return;
-    expect(r.overflowHidden).toBe(true);
-    expect(r.scrollReset).toBe(true);
+    expect(r.surfStepB).toBe(false);
+    for (const [name, type] of r.types) expect(type, name + ' should no longer be defined').toBe('undefined');
   });
 
   test('no console errors in scope fix tests', async () => {
@@ -5347,18 +5232,9 @@ test.describe('UI cleanup — redundant elements removed', () => {
     expect(count).toBe(0);
   });
 
-  test('est-review div is direct child of its card with no header', async () => {
+  test('est-review — removed with the paint estimator', async () => {
     const reviewEl = await page.locator('#est-review').count();
-    expect(reviewEl).toBeGreaterThan(0);
-    // Confirm no sibling card-hd exists in the same card
-    const cardHdInReviewCard = await page.evaluate(() => {
-      const el = document.getElementById('est-review');
-      if (!el) return 0;
-      const card = el.closest('.card');
-      if (!card) return 0;
-      return card.querySelectorAll('.card-hd').length;
-    });
-    expect(cardHdInReviewCard).toBe(0);
+    expect(reviewEl).toBe(0);
   });
 
   test('step bar steps are evenly distributed — flex:1 applied', async () => {
@@ -5414,13 +5290,9 @@ test.describe('UI cleanup — redundant elements removed', () => {
     expect(result.base).toBeGreaterThanOrEqual(500);
   });
 
-  test('step 3 heading is Pricing tier not Property type', async () => {
-    const tierHeading = await page.evaluate(() => {
-      const cards = document.querySelectorAll('#est-s3 .card-hd');
-      return Array.from(cards).map(c => c.textContent.trim());
-    });
-    expect(tierHeading.some(t => t === 'Pricing tier')).toBe(true);
-    expect(tierHeading.some(t => t === 'Property type')).toBe(false);
+  test('est-s3 — removed with the paint estimator', async () => {
+    const count = await page.locator('#est-s3').count();
+    expect(count).toBe(0);
   });
 
   test('pg.active animation leaves no persistent transform stacking context', async () => {
@@ -5442,7 +5314,7 @@ test.describe('UI cleanup — redundant elements removed', () => {
   });
 });
 
-test.describe('Int/ext estimate review — profit gauge + compact summary', () => {
+test.describe('Int/ext estimate review — removed with the paint estimator', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -5455,46 +5327,19 @@ test.describe('Int/ext estimate review — profit gauge + compact summary', () =
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('renderEstReview renders compact summary with Total row', async () => {
+  test('renderEstReview, _paintGaugeUpdate, and the paint profit gauge DOM are all gone', async () => {
     const r = await page.evaluate(() => {
-      if (typeof renderEstReview !== 'function') return null;
-      estSurfaces = [{ room: 'Living Room', type: 'walls', qty: 400 }];
-      renderEstReview();
-      const el = document.getElementById('est-review');
-      return el ? el.innerHTML : null;
+      let renderEstReviewType, paintGaugeUpdateType;
+      try { renderEstReviewType = typeof renderEstReview; } catch (e) { renderEstReviewType = 'undefined'; }
+      try { paintGaugeUpdateType = typeof _paintGaugeUpdate; } catch (e) { paintGaugeUpdateType = 'undefined'; }
+      return {
+        renderEstReviewType, paintGaugeUpdateType,
+        gauge: !!document.getElementById('paint-profit-gauge'),
+      };
     });
-    if (r === null) return;
-    expect(r).toContain('Total');
-    expect(r).not.toContain('Labor hours'); // analysis hidden by default
-  });
-
-  test('analysis details collapsed by default (est-mets-detail hidden)', async () => {
-    const hidden = await page.evaluate(() => {
-      const d = document.getElementById('est-mets-detail');
-      return d ? d.hidden : null;
-    });
-    if (hidden === null) return;
-    expect(hidden).toBe(true);
-  });
-
-  test('profit gauge IDs present after renderEstReview', async () => {
-    const ids = await page.evaluate(() => ({
-      gauge: !!document.getElementById('paint-profit-gauge'),
-      dot: !!document.getElementById('paint-gauge-dot'),
-      pct: !!document.getElementById('paint-gauge-pct'),
-      hint: !!document.getElementById('paint-gauge-hint'),
-      costInput: !!document.getElementById('paint-expected-cost'),
-    }));
-    if (!ids.gauge) return;
-    expect(ids.gauge).toBe(true);
-    expect(ids.dot).toBe(true);
-    expect(ids.pct).toBe(true);
-    expect(ids.costInput).toBe(true);
-  });
-
-  test('_paintGaugeUpdate function exists', async () => {
-    const exists = await page.evaluate(() => typeof _paintGaugeUpdate === 'function');
-    expect(exists).toBe(true);
+    expect(r.renderEstReviewType).toBe('undefined');
+    expect(r.paintGaugeUpdateType).toBe('undefined');
+    expect(r.gauge).toBe(false);
   });
 
   test('no console errors in review gauge tests', async () => {
@@ -5680,19 +5525,13 @@ test.describe('Int/ext estimate — cloud autosave (_paintEstAutosave)', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_paintEstAutosave function exists', async () => {
-    const exists = await page.evaluate(() => typeof _paintEstAutosave === 'function');
-    expect(exists).toBe(true);
-  });
-
-  test('tbar-r has Save & exit navigation button (no manual Save draft button)', async () => {
-    // A "Save & exit" navigation button lives in tbar-r so users can leave without
-    // generating a bid. Autosave (_paintEstAutosave) handles drafting — no separate
-    // "Save draft" button should exist; only the exit-to-home navigation button.
-    const count = await page.locator('#pg-est .tbar-r button').count();
-    expect(count).toBe(1);
-    const label = await page.locator('#pg-est .tbar-r button').first().textContent();
-    expect(label).toContain('exit');
+  test('_paintEstAutosave and pg-est were removed with the paint estimator', async () => {
+    const r = await page.evaluate(() => {
+      let t; try { t = typeof _paintEstAutosave; } catch (e) { t = 'undefined'; }
+      return { paintEstAutosaveType: t, pgEst: !!document.getElementById('pg-est') };
+    });
+    expect(r.paintEstAutosaveType).toBe('undefined');
+    expect(r.pgEst).toBe(false);
   });
 
   test('_paintEstAutosave creates a draft bid in bids[] when client name is set', async () => {

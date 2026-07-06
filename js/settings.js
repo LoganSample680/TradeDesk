@@ -669,12 +669,6 @@ function saveScopeDefault(id,checked){
   S.defaultScope[id]=checked;
   _settingsChanged();
 }
-function applyDefaultScope(){
-  const defaults=S.defaultScope||{};
-  SCOPE_ITEMS.forEach(s=>{scopeActiveMap[s.id]=!!defaults[s.id];});
-  buildScopeGrid();
-  checkStep2Ready();
-}
 function _getSmsDefaults(){
   return {
     hub:`Hi {name}, here's your project hub from {business}: {url}`,
@@ -753,7 +747,7 @@ function loadSettingsForm(){
   sf('set-labor-rate',S.laborRate||45);sf('set-owner-name',getOwnerName()||'');sf('set-bname',S.bname);sf('set-state',S.state||'KS');
   _renderLogoPreview();
   if(S.state){const lbl=document.getElementById('set-state-label');const info=STATE_TAX[S.state];if(lbl&&info)lbl.textContent=info.name+' tax rates';}sf('set-subdomain',S.subdomain||'');sf('set-bphone',S.bphone);sf('set-blic',S.blic);sf('set-byears',S.byears||'');sf('set-bemail',S.bemail||'');sf('set-veh',S.veh);
-  sf('set-margin',S.margin);sf('set-deposit-pct',S.depositPct!=null?S.depositPct:25);sf('set-cov',S.cov);sf('set-mm',S.mm);sf('set-supplies-rate',S.suppliesRate||0.12);sf('set-r-walls',S.rWalls||1.30);sf('set-r-ceil',S.rCeil||1.00);sf('set-r-trim',S.rTrim||4.00);sf('set-r-door',S.rDoor||95);sf('set-r-win',S.rWin||50);sf('set-r-ext',S.rExt||1.10);sf('set-r-deck',S.rDeck||1.00);
+  sf('set-margin',S.margin);sf('set-deposit-pct',S.depositPct!=null?S.depositPct:25);sf('set-cov',S.cov);sf('set-mm',S.mm);sf('set-supplies-rate',S.suppliesRate||0.12);
   sf('set-review-url',S.reviewUrl||'');
   const brandColor=S.brandColor||'#2D5DA8';
   sf('set-brandcolor',brandColor);
@@ -781,63 +775,8 @@ function loadSettingsForm(){
   const ccPctEl=document.getElementById('set-cc-surcharge-pct');if(ccPctEl)ccPctEl.value=S.ccSurchargePct||3;
   const fcPctEl=document.getElementById('set-finance-charge-pct');if(fcPctEl)fcPctEl.value=S.financeChargePct!=null?S.financeChargePct:1.5;
   const wpEl=document.getElementById('set-warranty-period');if(wpEl)wpEl.value=S.warrantyPeriod||'1 year';
-  _renderSwPriceRows();
   _renderLogoPreviewBiz();
   _renderSetIndex();
-}
-// ── Sherwin-Williams price editor (Rates & pricing panel) ────────────────────
-// Rows are rendered dynamically (30+ products) into #set-sw-prices-list.
-// Inputs use id pattern set-swp-<productId> and show the effective contractor
-// price (hardcoded default + any S.swPrices override). Products without a
-// default price show an empty input with placeholder "—".
-const _SW_CAT_LABELS={interior:'Interior',ceiling:'Ceiling',exterior:'Exterior',deck:'Deck & Stain',trim:'Trim & Cabinet'};
-function _renderSwPriceRows(){
-  const wrap=document.getElementById('set-sw-prices-list');
-  if(!wrap||typeof SW_PRODUCTS==='undefined')return;
-  let html='';
-  Object.entries(SW_PRODUCTS).forEach(([cat,prods])=>{
-    html+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:10px 0 3px">'+(_SW_CAT_LABELS[cat]||cat)+'</div>';
-    prods.forEach(p=>{
-      const eff=typeof swEffectivePrice==='function'?swEffectivePrice(p):p;
-      html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:2px 0;font-size:12px;border-bottom:1px solid var(--border)">'+
-        '<span style="color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+p.name+'</span>'+
-        '<input type="number" id="set-swp-'+p.id+'" min="0" step="1" inputmode="decimal" placeholder="—" value="'+(eff.contractor!=null?eff.contractor:'')+'" style="width:70px;flex-shrink:0;padding:4px 6px;font-size:12px;text-align:right;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit">'+
-      '</div>';
-    });
-  });
-  wrap.innerHTML=html;
-}
-// Refill all SW price inputs with the hardcoded defaults. Display-only — the
-// cleared overrides are persisted when the user hits the panel's Save button.
-function _resetSwPriceInputs(){
-  if(typeof SW_PRODUCTS==='undefined')return;
-  Object.values(SW_PRODUCTS).flat().forEach(p=>{
-    const el=document.getElementById('set-swp-'+p.id);
-    if(el)el.value=p.contractor!=null?p.contractor:'';
-  });
-}
-// Rebuild S.swPrices from the set-swp-* inputs. Only stores values that differ
-// from the hardcoded SW_PRODUCTS defaults; an empty input removes the override.
-// If the editor isn't rendered (settings saved from another panel before the
-// rates panel ever loaded), existing overrides are carried over untouched.
-function _collectSwPriceOverrides(){
-  const out={};
-  if(typeof SW_PRODUCTS==='undefined')return S.swPrices||out;
-  Object.values(SW_PRODUCTS).flat().forEach(p=>{
-    const prev=(S.swPrices&&S.swPrices[p.id])||null;
-    const entry={};
-    // Retail isn't editable in this UI — preserve any existing retail override (AI refresh)
-    if(prev&&prev.retail!=null&&prev.retail!==p.retail)entry.retail=prev.retail;
-    const el=document.getElementById('set-swp-'+p.id);
-    if(el){
-      const n=parseFloat(el.value);
-      if(el.value.trim()!==''&&!isNaN(n)&&n>=0&&n!==p.contractor)entry.contractor=n;
-    }else if(prev&&prev.contractor!=null&&prev.contractor!==p.contractor){
-      entry.contractor=prev.contractor;
-    }
-    if(Object.keys(entry).length)out[p.id]=entry;
-  });
-  return out;
 }
 function saveSettings(){
   // Guard: saveSettings harvests EVERY field from the form. If the form was
@@ -854,7 +793,7 @@ function saveSettings(){
     smsReminder:gs('set-sms-reminder')||_smsD.reminder,
     smsSecond:gs('set-sms-second')||_smsD.second,
     smsIntent:gs('set-sms-intent')||_smsD.intent,
-    txStatus:gs('set-txstatus')||'single',goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:S.bitlyKey||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,depositPct:gf('set-deposit-pct')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.25,rWalls:gf('set-r-walls')||1.30,rCeil:gf('set-r-ceil')||1.00,rTrim:gf('set-r-trim')||3.25,rDoor:gf('set-r-door')||95,rWin:gf('set-r-win')||50,rExt:gf('set-r-ext')||1.10,rDeck:gf('set-r-deck')||1.00,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||'',
+    txStatus:gs('set-txstatus')||'single',goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:S.bitlyKey||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,depositPct:gf('set-deposit-pct')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.25,byears:parseInt(gs('set-byears'))||0,reviewUrl:gs('set-review-url')||'',brandColor:gs('set-brandcolor')||'',bwebsite:gs('set-bwebsite')||'',
     baddr:gs('set-baddr')||'',bcity:gs('set-bcity')||'',bzip:gs('set-bzip')||'',state:gs('set-bstate-display')||gs('set-state')||S.state||'',
     poweredBy:document.getElementById('set-powered-by')?.checked!==false,
     teamTracking:true, // crew tracking is always on — a condition of using TradeDesk
@@ -870,7 +809,7 @@ function saveSettings(){
     warrantyPeriod:document.getElementById('set-warranty-period')?.value||'1 year',
     salesTaxRate:(()=>{const _sr=v('set-sales-tax-rate').trim();return _sr===''?0:parseFloat(_sr)||0;})(),
     salesTaxRateSource:S.salesTaxRateSource||'',
-    swPrices:_collectSwPriceOverrides(),
+    swPrices:S.swPrices||{},
     // Last explicit settings save — lets cloud/cache loads detect a stale
     // incoming copy and keep local (see _mergeIncomingSettings in cloud.js)
     settingsTs:Date.now()};
@@ -1003,7 +942,7 @@ function clearAllData(){
         estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;
         gps={active:false,startCoords:null,startTime:null,clientId:null,clientName:'',timerInt:null,vehicle:'',purpose:''};
         if(_activeTimer){clearInterval(_activeTimer.timerInterval);_activeTimer=null;hideClockBanner();}
-        hideDriveBanner();clearSurfDraft();saveAll();
+        hideDriveBanner();saveAll();
       });
       // AWAIT the flush so the soft-delete lands in the cloud BEFORE we re-render or any
       // realtime reload fires — this is what stops the cleared rows from re-hydrating.
@@ -1056,7 +995,7 @@ function clearExpensesOnly(){
   },{title:'Clear expenses',yes:'Delete expenses',danger:true});
 }
 
-function resetSettings(){zConfirm('Reset all settings to defaults?',()=>{S={irsRate:.700,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:83,p2:65,p3:95,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00};applySettings();loadSettingsForm();},{title:'Reset settings',yes:'Reset',danger:false});}
+function resetSettings(){zConfirm('Reset all settings to defaults?',()=>{S={irsRate:.700,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,p1:83,p2:65,p3:95,mm:15};applySettings();loadSettingsForm();},{title:'Reset settings',yes:'Reset',danger:false});}
 function resetLocationPermission(){
   delete S.weatherLat;delete S.weatherLon;S.locationDenied=false;S.locationGranted=false;
   S.settingsTs=Date.now(); // win the next cloud merge so the reset sticks across reboot
@@ -1247,17 +1186,8 @@ async function removeTradeFromSettings(trade){
 }
 function _renderSettingsTradeSections(){
   const trade=getActiveTrade();
-  const isPainting=trade==='painting';
-  const sw=document.getElementById('set-rates-sw');
-  const lp=document.getElementById('set-rates-lp');
-  const lg=document.getElementById('set-rates-lg');
   const lgTitle=document.getElementById('set-rates-lg-title');
-  if(sw)sw.style.display=isPainting?'':'none';
-  if(lp)lp.style.display=isPainting?'':'none';
-  if(lg){
-    lg.style.display=isPainting?'none':'';
-    if(lgTitle){const meta=TRADE_META[trade]||{icon:'🔧',label:'Trade'};lgTitle.textContent=(meta.icon+' '+meta.label+' Labor Rates').trim();}
-  }
+  if(lgTitle){const meta=TRADE_META[trade]||{icon:'🔧',label:'Trade'};lgTitle.textContent=(meta.icon+' '+meta.label+' Labor Rates').trim();}
 }
 function _renderDevTradeCard(){
   if(!_config?.is_dev)return;
@@ -1788,7 +1718,7 @@ async function obSubmit(){
     await new Promise(r=>setTimeout(r,600));
     document.getElementById('onboarding-overlay')?.remove();
     window._obInProgress=false;
-    saveAll();applyPermissions();renderDash();buildScopeGrid();goPg('pg-dash');
+    saveAll();applyPermissions();renderDash();goPg('pg-dash');
   }catch(e){
     window._obInProgress=false;
     console.error('Onboarding failed:',e);

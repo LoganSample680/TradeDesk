@@ -63,7 +63,7 @@ function _wakeLockShouldHold(){
   const active=document.querySelector('.pg.active');
   if(!active)return false;
   const id=active.id||'';
-  return id==='pg-est'||id==='pg-est-generic';
+  return id==='pg-est-generic';
 }
 
 // ── Web Share API ─────────────────────────────────────────────────────────────

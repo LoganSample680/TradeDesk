@@ -277,7 +277,7 @@ test.describe('Client management — CRUD and validation', () => {
 //  FULL PAINT ESTIMATE UI FLOW — _doOpenEstimate → surfaces → save
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Full paint estimate UI flow', () => {
+test.describe('Full paint estimate UI flow — removed, replaced by generic estimator', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -290,8 +290,7 @@ test.describe('Full paint estimate UI flow', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_doOpenEstimate — navigates to pg-est and populates client fields', async () => {
-    // Create a client then open an estimate for them
+  test('openGenericEstimate — navigates to pg-est-generic and populates client fields', async () => {
     const clientId = await page.evaluate(() => {
       if (typeof clients === 'undefined') return null;
       const c = {
@@ -302,7 +301,6 @@ test.describe('Full paint estimate UI flow', () => {
         source: 'Google',
         ptype: 'Single family home',
       };
-      // Remove any existing entry with same id
       const idx = clients.findIndex(x => x.id === c.id);
       if (idx >= 0) clients.splice(idx, 1);
       clients.push(c);
@@ -312,308 +310,37 @@ test.describe('Full paint estimate UI flow', () => {
 
     await page.evaluate(() => {
       const c = clients.find(x => x.id === 88801);
-      if (c && typeof _doOpenEstimate === 'function') {
-        _doOpenEstimate(c, null, 'painting');
+      if (c && typeof openGenericEstimate === 'function') {
+        openGenericEstimate(c, null, 'general');
       }
-    });
-    // _doOpenEstimate calls goPg('pg-est') synchronously, but setTimeout populates fields
-    await page.waitForTimeout(300);
-
-    const result = await page.evaluate(() => ({
-      pgActive:  document.getElementById('pg-est')?.classList.contains('active'),
-      cname:     document.getElementById('e-cname')?.value || '',
-      cphone:    document.getElementById('e-cphone')?.value || '',
-    }));
-
-    expect(result.pgActive).toBe(true);
-    // Client name should be pre-filled
-    if (result.cname) expect(result.cname).toContain('Est Flow Client');
-  });
-
-  test('_doOpenEstimate — creates a draft bid entry in bids array', async () => {
-    const draftBid = await page.evaluate(() => {
-      if (typeof bids === 'undefined') return null;
-      return bids.find(b => b.client_id === 88801 && b.draft === true) || null;
-    });
-
-    expect(draftBid).not.toBeNull();
-    if (draftBid) {
-      expect(draftBid.status).toBe('Draft');
-      expect(draftBid.draft).toBe(true);
-    }
-  });
-
-  test('estimate step 3 — surface toggle buttons are present in DOM', async () => {
-    // Make sure we're on pg-est at step 3
-    await page.evaluate(() => {
-      if (typeof goEstStep === 'function') goEstStep(3);
     });
     await page.waitForTimeout(200);
 
-    // Verify surface toggle buttons exist — clicking them should not throw
-    const result = await page.evaluate(() => {
-      const surfaceIds = ['swhat-walls', 'swhat-ceiling', 'swhat-trim', 'swhat-doors'];
-      const found = surfaceIds.filter(id => !!document.getElementById(id));
-      // Click walls button and verify no error
-      const wallBtn = document.getElementById('swhat-walls');
-      let clickOk = false;
-      if (wallBtn) {
-        try { wallBtn.click(); clickOk = true; } catch(e) { clickOk = false; }
-      }
-      return { foundCount: found.length, wallsBtnExists: !!wallBtn, clickOk };
-    });
+    const result = await page.evaluate(() => ({
+      pgActive: document.getElementById('pg-est-generic')?.classList.contains('active'),
+      cname: document.getElementById('gei-client')?.value || '',
+    }));
 
-    // At least some surface buttons should exist
-    expect(result.foundCount).toBeGreaterThanOrEqual(1);
-    if (result.wallsBtnExists) {
-      expect(result.clickOk).toBe(true);
-    }
+    expect(result.pgActive).toBe(true);
+    if (result.cname) expect(result.cname).toContain('Est Flow Client');
   });
 
-  test('room name field — input is accepted and reflected', async () => {
-    const result = await page.evaluate(() => {
-      // Try multiple possible room name input IDs
-      const ids = ['surf-room-name', 'laser-room-name', 'manual-room-name', 'e-room-name'];
-      for (const id of ids) {
-        const el = document.getElementById(id);
-        if (el) {
-          el.value = 'Living Room';
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          return { id, value: el.value };
-        }
-      }
-      return { id: null, value: null };
-    });
-
-    if (result.id) {
-      expect(result.value).toBe('Living Room');
-    }
-  });
-
-  test('calcEst — returns a valid estimate object with numeric totals', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof calcEst !== 'function') return null;
-      try {
-        // Set minimal state so calcEst has something to work with
-        const f = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-        f('e-days', '3');
-        f('e-r-walls', '1.30');
-        f('e-r-ceil', '1.00');
-        f('e-r-trim', '3.25');
-        f('e-r-door', '95');
-        f('e-r-win', '50');
-        f('e-cond', '1.0');
-        f('e-travel', '0');
-        const est = calcEst();
-        return {
-          hasFinal:    typeof est.final === 'number',
-          finalPos:    (est.final || 0) >= 0,
-          hasLabor:    typeof est.laborTotal === 'number',
-          hasMat:      typeof est.matTotal === 'number',
-          hasBid:      typeof est.bid === 'number',
-        };
-      } catch (e) {
-        return { error: e.message };
-      }
-    });
-
-    if (result && !result.error) {
-      expect(result.hasFinal).toBe(true);
-      expect(result.finalPos).toBe(true);
-    }
-  });
-
-  test('saveAndExitEstimate — saves bid and returns to dashboard', async () => {
-    // Set a manual price override so the bid saves with a non-zero amount
-    await page.evaluate(() => {
-      const ov = document.getElementById('est-override') || document.getElementById('manual-price') || document.getElementById('price-override');
-      if (ov) { ov.value = '1800'; ov.dispatchEvent(new Event('input', { bubbles: true })); }
-      window._propFinal = window._propFinal || 1800;
-      if (typeof saveAndExitEstimate === 'function') {
-        try { saveAndExitEstimate(); } catch(e) { /* graceful fallback */ }
-      }
-    });
-    await page.waitForTimeout(600);
-
-    // Should end up on dashboard or proposals page after saving
-    const location = await page.evaluate(() => {
-      const dash = document.getElementById('pg-dash')?.classList.contains('active');
-      const props = document.getElementById('pg-proposals')?.classList.contains('active');
-      return { dash, props };
-    });
-    // Either destination is acceptable — the important thing is pg-est is no longer active
-    const estActive = await page.evaluate(() =>
-      document.getElementById('pg-est')?.classList.contains('active')
-    );
-    expect(estActive).toBe(false);
+  test('the old paint pg-est page and its entry points no longer exist', async () => {
+    const r = await page.evaluate(() => ({
+      pgEst: !!document.getElementById('pg-est'),
+      doOpenEstimateType: typeof _doOpenEstimate,
+      calcEstType: typeof calcEst,
+      buildProposalType: typeof buildProposal,
+    }));
+    expect(r.pgEst).toBe(false);
+    // _doOpenEstimate still exists but now always routes to the generic estimator
+    expect(r.doOpenEstimateType).toBe('function');
+    expect(r.calcEstType).toBe('undefined');
+    expect(r.buildProposalType).toBe('undefined');
   });
 
   test('no console errors during estimate flow tests', async () => {
-    assertNoErrors(page, 'paint estimate UI flow');
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-//  calcEst MATH + buildProposal HTML STRUCTURE
-// ════════════════════════════════════════════════════════════════════════════
-
-test.describe('calcEst math correctness + buildProposal HTML', () => {
-  let page;
-
-  test.beforeAll(async ({ browser }) => {
-    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
-    page = await ctx.newPage();
-    await mockAllExternal(page);
-    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
-    await waitForAppBoot(page);
-    // Navigate to estimator
-    await goPg(page, 'pg-est');
-  });
-
-  test.afterAll(async () => { await page.context().close(); });
-
-  test('calcEst — final >= bid (adjustments can only increase bid)', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof calcEst !== 'function') return null;
-      try {
-        // Inject a surface so calcEst has real material to work with
-        // NOTE: calcEst uses s.qty (not s.sqft) — skip if s.qty is falsy
-        estSurfaces = [{
-          id: 1, room: 'Test Room', type: 'walls',
-          qty: 400, wallSqft: 400, color: '', coats: 1, primer: false,
-        }];
-        const f = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-        f('e-days', '2');
-        f('e-r-walls', '1.30');
-        f('e-r-ceil', '1.00');
-        f('e-r-trim', '3.25');
-        f('e-r-door', '95');
-        f('e-r-win', '50');
-        f('e-cond', '1.0');
-        f('e-travel', '0');
-        const adj = document.getElementById('est-adj'); if (adj) adj.value = '0';
-        const est = calcEst();
-        return { final: est.final, bid: est.bid, adj: est.adj };
-      } catch (e) { return { error: e.message }; }
-    });
-
-    if (result && !result.error) {
-      expect(result.final).toBeGreaterThanOrEqual(0);
-      expect(result.bid).toBeGreaterThanOrEqual(0);
-    }
-  });
-
-  test('calcEst — more sqft produces higher labor total', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof calcEst !== 'function') return null;
-      try {
-        const f = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-        f('e-days', '2'); f('e-r-walls', '1.30'); f('e-r-ceil', '1.00'); f('e-cond', '1.0'); f('e-travel', '0');
-
-        // calcEst uses s.qty (not s.sqft); walls also needs wallSqft for labor
-        estSurfaces = [{ id: 1, room: 'Small Room', type: 'walls', qty: 200, wallSqft: 200, color: '', coats: 1, primer: false }];
-        const small = calcEst();
-
-        estSurfaces = [{ id: 1, room: 'Big Room', type: 'walls', qty: 800, wallSqft: 800, color: '', coats: 1, primer: false }];
-        const big = calcEst();
-
-        return { smallLabor: small.laborTotal, bigLabor: big.laborTotal };
-      } catch (e) { return { error: e.message }; }
-    });
-
-    if (result && !result.error) {
-      expect(result.bigLabor).toBeGreaterThan(result.smallLabor);
-    }
-  });
-
-  test('calcEst — travel miles add to base cost', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof calcEst !== 'function') return null;
-      try {
-        const f = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-        f('e-days', '2'); f('e-r-walls', '1.30'); f('e-r-ceil', '1.00'); f('e-cond', '1.0');
-        estSurfaces = [{ id: 1, room: 'Room', type: 'walls', qty: 400, wallSqft: 400, color: '', coats: 1, primer: false }];
-
-        f('e-travel', '0');
-        const noTravel = calcEst();
-        f('e-travel', '50');
-        const withTravel = calcEst();
-
-        return { noTravel: noTravel.travel || 0, withTravel: withTravel.travel || 0 };
-      } catch (e) { return { error: e.message }; }
-    });
-
-    if (result && !result.error) {
-      // Travel cost with miles should be >= without
-      expect(result.withTravel).toBeGreaterThanOrEqual(result.noTravel);
-    }
-  });
-
-  test('buildProposal — returns HTML string containing client name and dollar amount', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof buildProposal !== 'function') return null;
-      try {
-        // Set DOM fields buildProposal reads from
-        const f = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-        f('e-cname', 'Proposal Test Client');
-        f('e-caddr', '123 Test St, Wichita KS 67202');
-        f('e-days', '3');
-        f('e-bname', 'Zach Pro Painting');
-        f('e-bphone', '316-555-9999');
-        window._propFinal = 3500;
-        estSurfaces = [{
-          id: 1, room: 'Living Room', type: 'walls',
-          qty: 400, wallSqft: 400, color: '#FFFFFF', coats: 1, primer: false,
-        }];
-        const html = buildProposal();
-        return {
-          isString: typeof html === 'string',
-          hasClient: html.includes('Proposal Test Client'),
-          hasAmount: html.includes('3,500') || html.includes('3500'),
-          length:    html.length,
-        };
-      } catch (e) { return { error: e.message }; }
-    });
-
-    if (result && !result.error) {
-      expect(result.isString).toBe(true);
-      if (result.length > 0) {
-        expect(result.hasClient).toBe(true);
-      }
-    }
-  });
-
-  test('buildProposal — includes surface type in proposal body', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof buildProposal !== 'function') return null;
-      try {
-        const f = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-        f('e-cname', 'Surface Check Client');
-        f('e-caddr', '456 Surf Ave, Wichita KS 67202');
-        f('e-days', '2');
-        window._propFinal = 2000;
-        estSurfaces = [
-          { id: 1, room: 'Kitchen', type: 'walls',   qty: 300, wallSqft: 300, color: '', coats: 1, primer: false },
-          { id: 2, room: 'Kitchen', type: 'ceiling', qty: 150, color: '', coats: 1, primer: false },
-        ];
-        const html = buildProposal();
-        return {
-          hasRoom:    html.toLowerCase().includes('kitchen'),
-          hasWalls:   html.toLowerCase().includes('wall'),
-          hasCeiling: html.toLowerCase().includes('ceil'),
-        };
-      } catch (e) { return { error: e.message }; }
-    });
-
-    if (result && !result.error) {
-      // At least room name or surface types should appear
-      const hasContent = result.hasRoom || result.hasWalls || result.hasCeiling;
-      expect(hasContent).toBe(true);
-    }
-  });
-
-  test('no console errors during calcEst and buildProposal tests', async () => {
-    assertNoErrors(page, 'calcEst + buildProposal');
+    assertNoErrors(page, 'generic estimate UI flow');
   });
 });
 
@@ -831,7 +558,7 @@ test.describe('Navigation completeness — all 18 pages via goPg()', () => {
   test.afterAll(async () => { await page.context().close(); });
 
   const ALL_PAGES = [
-    'pg-dash', 'pg-clients', 'pg-est', 'pg-est-generic', 'pg-cal',
+    'pg-dash', 'pg-clients', 'pg-est-generic', 'pg-cal',
     'pg-schedule', 'pg-licensing', 'pg-team', 'pg-tracker', 'pg-taxes',
     'pg-settings', 'pg-checklist', 'pg-leads', 'pg-jobs', 'pg-money',
     'pg-gallery', 'pg-proposals',
@@ -1891,7 +1618,7 @@ test.describe('Sign / Closed Won flow — proposal status lifecycle', () => {
 //  MULTI-ROOM ESTIMATE — adding multiple rooms, surfaces accumulate
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Multi-room estimate — surfaces accumulate across rooms', () => {
+test.describe('Multi-line-item estimate — BYO lines accumulate (replaces the old multi-room surface flow)', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -1900,79 +1627,34 @@ test.describe('Multi-room estimate — surfaces accumulate across rooms', () => 
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
-    await goPg(page, 'pg-est');
+    await page.evaluate(() => {
+      if (typeof openFreeFormEstimate === 'function') openFreeFormEstimate(clients[0] || null);
+    });
   });
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('estSurfaces — starts empty for a new estimate session', async () => {
-    await page.evaluate(() => {
-      // Clear estimate state
-      estSurfaces = [];
-      estSurfId = 0;
-    });
-    const count = await page.evaluate(() => estSurfaces.length);
+  test('_geiLines — starts empty for a new estimate session', async () => {
+    const count = await page.evaluate(() => { _geiLines = []; return _geiLines.length; });
     expect(count).toBe(0);
   });
 
-  test('injecting surfaces directly — estSurfaces accumulates across multiple rooms', async () => {
+  test('injecting line items directly — _geiLines accumulates across multiple entries', async () => {
     const count = await page.evaluate(() => {
-      estSurfaces = [];
-      // NOTE: calcEst uses s.qty (not s.sqft); walls also need wallSqft for labor
-      const rooms = [
-        { room: 'Living Room', type: 'walls',   qty: 500, wallSqft: 500 },
-        { room: 'Living Room', type: 'ceiling', qty: 250 },
-        { room: 'Kitchen',    type: 'walls',   qty: 300, wallSqft: 300 },
-        { room: 'Kitchen',    type: 'ceiling', qty: 120 },
-        { room: 'Kitchen',    type: 'trim',    qty:  80 },
+      _geiLines = [];
+      const items = [
+        { desc: 'Living room paint', qty: 1, price: 500 },
+        { desc: 'Kitchen paint', qty: 1, price: 300 },
+        { desc: 'Trim work', qty: 1, price: 80 },
       ];
-      rooms.forEach((r, i) => {
-        estSurfaces.push({ id: i + 1, room: r.room, type: r.type, qty: r.qty, wallSqft: r.wallSqft, coats: 1, primer: false });
-      });
-      return estSurfaces.length;
+      items.forEach((it, i) => _geiLines.push({ id: i + 1, ...it }));
+      return _geiLines.length;
     });
-    expect(count).toBe(5);
+    expect(count).toBe(3);
   });
 
-  test('calcEst with multiple surfaces — total qty contributes proportionally', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof calcEst !== 'function') return null;
-      try {
-        // Ensure surfaces have correct qty from previous test
-        const f = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
-        f('e-days', '3'); f('e-r-walls', '1.30'); f('e-r-ceil', '1.00');
-        f('e-r-trim', '3.25'); f('e-cond', '1.0'); f('e-travel', '0');
-        const est = calcEst();
-        return { final: est.final, laborTotal: est.laborTotal, matTotal: est.matTotal };
-      } catch (e) { return { error: e.message }; }
-    });
-
-    if (result && !result.error) {
-      // With 5 surfaces totaling 1250 qty units, the bid should be non-trivial
-      expect(result.final).toBeGreaterThan(0);
-      expect(result.laborTotal).toBeGreaterThan(0);
-    }
-  });
-
-  test('renderEstSurfs — renders surface list without error', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof renderEstSurfs !== 'function') return null;
-      try {
-        renderEstSurfs();
-        const container = document.getElementById('est-surf-list') ||
-                          document.getElementById('surf-list') ||
-                          document.querySelector('.surf-list');
-        return { ok: true, hasContainer: !!container };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-
-    if (result) {
-      expect(result.ok).toBe(true);
-    }
-  });
-
-  test('no console errors during multi-room estimate tests', async () => {
-    assertNoErrors(page, 'multi-room estimate');
+  test('no console errors during multi-line-item estimate tests', async () => {
+    assertNoErrors(page, 'multi-line-item estimate');
   });
 });
 
