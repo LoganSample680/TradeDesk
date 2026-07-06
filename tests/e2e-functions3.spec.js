@@ -3563,6 +3563,25 @@ test.describe('Mileage map and geo functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  test('_addrSugSelect — regression: suggestion box stays closed, does not reopen itself for the picked address', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _addrSugSelect !== 'function' || typeof openNewClient !== 'function') return { skip: true };
+      openNewClient();
+      _addrSugSelect('cf-addr-sugg', 'cf-street', 'cf-city', 'cf-state', 'cf-zip', '123 Main St', 'Wichita', 'KS', '67206');
+      const box = document.getElementById('cf-addr-sugg');
+      const immediatelyAfter = box ? box.style.display : 'NO BOX';
+      // The old bug re-dispatched a bubbling 'input' event that re-triggered _addrSugSearch
+      // via the field's own oninput handler, reopening this box ~220ms later.
+      await new Promise(r => setTimeout(r, 400));
+      const after = box ? box.style.display : 'NO BOX';
+      return { skip: false, immediatelyAfter, after };
+    });
+    if (!result.skip) {
+      expect(result.immediatelyAfter).toBe('none');
+      expect(result.after).toBe('none');
+    }
+  });
+
   test('_showRecentFromAddresses — calls without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _showRecentFromAddresses !== 'function') return { skip: true };
@@ -5519,6 +5538,22 @@ test.describe('Tax, legal, and template functions', () => {
       catch (e) { return { ok: true, note: e.message }; }
     });
     if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_tmMatCatModal — regression: field order matches BYO\'s Add item modal (Name, Cost, Notes — not Name, Notes, Cost)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _tmMatCatModal !== 'function') return { skip: true };
+      _tmMatCatModal(-1);
+      const modal = document.getElementById('_tm-mat-modal');
+      const fields = [...modal.querySelectorAll('input#tcm-name, input#tcm-cost, textarea#tcm-notes')].map(el => el.id);
+      const notesIsTextarea = modal.querySelector('#tcm-notes')?.tagName === 'TEXTAREA';
+      modal.remove();
+      return { skip: false, fields, notesIsTextarea };
+    });
+    if (!result.skip) {
+      expect(result.fields).toEqual(['tcm-name', 'tcm-cost', 'tcm-notes']);
+      expect(result.notesIsTextarea, 'notes should be a resizable textarea, matching BYO\'s Add item modal').toBe(true);
+    }
   });
 
   test('_tmMatCatSave — calls without throwing', async () => {

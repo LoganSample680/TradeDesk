@@ -1625,7 +1625,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
       const html = ov ? ov.innerHTML : '';
       ov?.remove();
       clients = clients.filter(c => c.id !== knownMs);
-      return { err, hasDate: html.includes('Mar 15'), hasTime: /2:30\s*PM/i.test(html) };
+      return { err, hasDate: html.includes('Mar 15, 2026'), hasTime: /2:30\s*PM/i.test(html) };
     });
     expect(r.err).toBe('');
     expect(r.hasDate).toBe(true);

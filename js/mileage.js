@@ -580,7 +580,11 @@ function _addrSugSelect(suggId,streetId,cityId,stateId,zipId,street,city,state,z
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v;};
   set(streetId,street);set(cityId,city);set(stateId,state);set(zipId,zip);
   const box=document.getElementById(suggId);if(box)box.style.display='none';
-  document.getElementById(streetId)?.dispatchEvent(new Event('input',{bubbles:true}));
+  // Call the dependent UI update directly rather than re-dispatching a bubbling 'input'
+  // event on the street field — that event re-fires the SAME inline oninput handler that
+  // opened this box, which calls _addrSugSearch again and reopens the suggestion list
+  // ~220ms later for the address the user just picked (the "bubble won't go away" bug).
+  if(typeof _updateAddrComputed==='function')_updateAddrComputed();
   // For existing clients, fire lookup immediately on address selection
   if(editClientId&&street&&city)_lookupPropertyData(editClientId,{street,city,state,zip});
 }

@@ -317,7 +317,7 @@ Object.defineProperty(window,'_tmCrewCount',{get:()=>_tmCrewCount,set:v=>{_tmCre
 Object.defineProperty(window,'_tmRatePerMan',{get:()=>_tmRatePerMan,set:v=>{_tmRatePerMan=v;},configurable:true});
 Object.defineProperty(window,'_tmEstHours',{get:()=>_tmEstHours,set:v=>{_tmEstHours=v;},configurable:true});
 Object.defineProperty(window,'_tmBillingCycle',{get:()=>_tmBillingCycle,set:v=>{_tmBillingCycle=v;},configurable:true});
-let _tmMatMarkup=0,_tmCapAction='Stop & get re-approval';
+let _tmCapAction='Stop & get re-approval';
 let _geiIsFreeForm=false;
 Object.defineProperty(window,'_geiIsFreeForm',{get:()=>_geiIsFreeForm,set:v=>{_geiIsFreeForm=v;},configurable:true});
 let _geiClientTaxRate=null,_geiTaxLookupTimer=null;
@@ -464,7 +464,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   _geiEditBidId=bidId||null;
   _geiClientTaxRate=null;
   _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;_geiJobScope='repair';_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];
-  _tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmMatMarkup=0;_tmCapAction='Stop & get re-approval';
+  _tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmCapAction='Stop & get re-approval';
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
@@ -506,7 +506,6 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
         _geiIsTM=true;_geiIsFreeForm=false;
         _tmCrewCount=b.tmCrewCount||1;_tmRatePerMan=b.tmRatePerMan||0;
         _tmEstHours=b.tmEstHours||0;_tmBillingCycle=b.tmBillingCycle||'weekly';
-        _tmMatMarkup=b.tmMatMarkup||b.geiTaxPct||0;
         _tmCapAction=b.tmCapAction||'Stop & get re-approval';
       }
       else if(b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
@@ -550,7 +549,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       if(_b.panelSched)_panelSched=JSON.parse(JSON.stringify(_b.panelSched));
       // isTM precedence — legacy dual-flag rows (see _byoAutosave note) must
       // resume as T&M, never as an empty BYO.
-      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmMatMarkup=_b.tmMatMarkup||_b.geiTaxPct||20;_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
+      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
       else if(_b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
       if(_b.scopeChips)_geiScopeChips=[..._b.scopeChips];
       _geiScopeNoScope=!!(_b.scopeNoScope);
@@ -909,7 +908,6 @@ function _tmShowPage(){
   setV('tm-i-days',_tmEstHours?Math.round(_tmEstHours/8):'');
   const crewDisp=document.getElementById('tm-i-crew-count');
   if(crewDisp)crewDisp.textContent=Math.max(1,_tmCrewCount||1);
-  setV('tm-i-markup',_tmMatMarkup||'');
   if(b?.tmNteCap)setV('tm-i-nte',b.tmNteCap);
   if(b?.tmCapAction){setV('tm-i-cap-action',b.tmCapAction);_tmCapAction=b.tmCapAction;}
   // Restore who's on the job — drives the true-cost gauge via the shared crew picker.
@@ -1161,6 +1159,14 @@ function _byoAutosave(){
   if(!_geiEditBidId)return;
   const b=bids.find(x=>x.id===_geiEditBidId);
   if(!b)return;
+  // "Name your proposal" (#gei-desc) used to only get captured by the explicit Save
+  // button (saveGenericEstimate) — every autosave silently dropped a name edit until
+  // the user hit Save, so backing out mid-edit lost the new name.
+  const _trade=_geiTrade||getActiveTrade();
+  const _typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':(TRADE_META[_trade]?.label||'Trade')+' Proposal';
+  const _descVal=document.getElementById('gei-desc')?.value||'';
+  b.type=_descVal||_typeLabel;
+  b.geiDesc=_descVal;
   b.byoItems=JSON.parse(JSON.stringify(_byoItems));
   b.byoCustomSections=[..._byoCustomSections];
   // Stamp the bid's REAL type — this used to write isFreeForm=true on every
@@ -1184,7 +1190,6 @@ function _byoAutosave(){
     b.tmRatePerMan=_tmRatePerMan;
     b.tmEstHours=_tmEstHours;
     b.tmBillingCycle=_tmBillingCycle;
-    b.tmMatMarkup=_tmMatMarkup;
     // T&M's actual content lives in _geiLines (labor line + material categories)
     // — without this, autosave captured the rate/crew numbers but silently
     // dropped every material category until the user hit "Save draft".
@@ -1756,7 +1761,6 @@ function _tmInputChange(){
   // wizard) stays a real hour count internally, just derived from days×8 now.
   const daysInput=_moneyVal('tm-i-days');
   _tmEstHours=daysInput*8;
-  _tmMatMarkup=_moneyVal('tm-i-markup');
   const labor=_tmCrewCount*_tmRatePerMan*_tmEstHours;
   // Upsert labor line in _geiLines (same shape the rest of the app expects)
   const idx=_geiLines.findIndex(l=>l._tmLabor);
@@ -1772,15 +1776,13 @@ function _tmInputChange(){
   setT('tm-stat-labor','$'+labor.toLocaleString());
   setT('tm-stat-labor-s',(_tmRatePerMan&&daysInput)?daysInput+'d × 8hr × '+_tmCrewCount+' × $'+_tmRatePerMan:'—');
   setT('tm-stat-days',_tmEstHours);
-  // Materials subtotal — markup baked in, invisible to client
+  // Materials subtotal — shown at raw cost, no markup applied
   const matRaw=_geiLines.filter(l=>!l._tmLabor).reduce((s,l)=>s+(l.total||(l.qty||0)*(l.rate||0)),0);
-  const markupMult=_tmMatMarkup>0?(1+_tmMatMarkup/100):1;
-  const markedUpMat=Math.round(matRaw*markupMult);
-  const total=labor+markedUpMat;
+  const total=labor+matRaw;
   // Rail breakdown
   setT('tm-rail-total','$'+total.toLocaleString());
   setT('tm-rail-labor','$'+labor.toLocaleString());
-  setT('tm-rail-mat','$'+markedUpMat.toLocaleString());
+  setT('tm-rail-mat','$'+matRaw.toLocaleString());
   const _tmDeposit=Math.round(total*_geiDepositPct())/100;
   setT('tm-rail-balance','$'+(total-_tmDeposit).toLocaleString());
   let nte=_moneyVal('tm-i-nte');
@@ -1799,7 +1801,6 @@ function _tmInputChange(){
   const cd=document.getElementById('tm-crew-display');if(cd)cd.textContent=_tmCrewCount;
   setV('tm-nte-cap',nte||'');
   const nteOn=document.getElementById('tm-nte-on');if(nteOn)nteOn.checked=nte>0;
-  setV('gei-tax-pct',_tmMatMarkup); // materials markup folds into the existing tax/markup field
   // Keep the legacy line items + totals in sync (used by save/proposal)
   if(typeof renderGeiLines==='function')renderGeiLines();
   if(typeof calcGeiTotal==='function')calcGeiTotal();
@@ -1825,17 +1826,15 @@ function _tmRenderMatList(){
     el.innerHTML='<div class="tm-mat-empty">No material categories yet — tap "+ Add category" to start.</div>';
     return;
   }
-  const mm=_tmMatMarkup>0?(1+_tmMatMarkup/100):1;
   el.innerHTML=mats.map(({l,i})=>{
     const rawTotal=l.total||((l.qty||0)*(l.rate||0));
-    const dispTotal=Math.round(rawTotal*mm);
     return '<div class="tm-mat-row">'+
       '<div style="flex:1;cursor:pointer;min-width:0;overflow-wrap:anywhere" onclick="_tmEditMatCat('+i+')">'+
         '<div class="tm-mat-cat">'+escHtml(l.desc||'Untitled')+'</div>'+
         (l.notes?'<div class="tm-mat-notes">'+escHtml(l.notes)+'</div>':'')+
       '</div>'+
       '<div style="display:flex;align-items:center;gap:8px">'+
-        '<div class="tm-mat-est">$'+(dispTotal||0).toLocaleString()+'</div>'+
+        '<div class="tm-mat-est">$'+(rawTotal||0).toLocaleString()+'</div>'+
         '<div style="display:flex;gap:4px;flex-shrink:0">'+
           _geiRowActionBtns('_tmEditMatCat('+i+')','_tmDelMatCat('+i+')','Remove category')+
         '</div>'+
@@ -1857,8 +1856,9 @@ function _tmMatCatModal(idx){
   ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
     '<div style="font-weight:800;font-size:16px;color:var(--text);margin-bottom:16px">'+(isEdit?'Edit category':'Add material category')+'</div>'+
     '<div class="f" style="margin-bottom:10px"><label>Category name</label><input type="text" id="tcm-name" placeholder="e.g. Paint &amp; primer" value="'+escHtml(l?.desc||'')+'" style="font-size:15px"></div>'+
-    '<div class="f" style="margin-bottom:10px"><label>Notes <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input type="text" id="tcm-notes" placeholder="Brand, product type, etc." value="'+escHtml(l?.notes||'')+'"></div>'+
-    '<div class="f" style="margin-bottom:16px"><label>Estimated cost ($)</label><div class="input-prefix"><span>$</span><input type="number" id="tcm-cost" min="0" step="10" placeholder="0" value="'+(cur||'')+'" inputmode="decimal"></div></div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Estimated cost ($)</label><div class="input-prefix"><span>$</span><input type="number" id="tcm-cost" min="0" step="10" placeholder="0" value="'+(cur||'')+'" inputmode="decimal"></div></div>'+
+    '<div class="f" style="margin-bottom:6px"><label>Notes <span style="font-weight:400;color:var(--text3)">(optional)</span></label><textarea id="tcm-notes" rows="3" placeholder="Brand, product type, etc." style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit">'+escHtml(l?.notes||'')+'</textarea></div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">Tab from Notes to save</div>'+
     '<div style="display:flex;gap:10px">'+
       '<button onclick="document.getElementById(\'_tm-mat-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
       '<button onclick="_tmMatCatSave('+idx+')" class="btn btn-p" style="flex:2">'+(isEdit?'Save changes':'Add category')+'</button>'+
@@ -1866,7 +1866,29 @@ function _tmMatCatModal(idx){
   '</div>';
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  setTimeout(()=>document.getElementById('tcm-name')?.focus(),50);
+  setTimeout(()=>{
+    const nameEl=document.getElementById('tcm-name');
+    const costEl=document.getElementById('tcm-cost');
+    const notesEl=document.getElementById('tcm-notes');
+    if(nameEl)nameEl.focus();
+    // Same tab-chain as BYO's "Add item" modal (§ notes structure must match): Name → Cost
+    // → Notes, Tab from Notes saves. Enter now makes a newline in the notes textarea.
+    if(notesEl){
+      notesEl.addEventListener('keydown',e=>{
+        if(e.key==='Tab'&&!e.shiftKey){e.preventDefault();_tmMatCatSave(idx);}
+      });
+    }
+    if(nameEl){
+      nameEl.addEventListener('keydown',e=>{
+        if(e.key==='Enter'){e.preventDefault();costEl?.focus();}
+      });
+    }
+    if(costEl){
+      costEl.addEventListener('keydown',e=>{
+        if(e.key==='Enter'){e.preventDefault();notesEl?.focus();}
+      });
+    }
+  },50);
 }
 function _tmMatCatSave(idx){
   const name=(document.getElementById('tcm-name')?.value||'').trim();
@@ -2784,7 +2806,6 @@ function saveGenericEstimate(draft){
     tmReason:v('tm-reason'),tmReasonNote:v('tm-reason-note'),
     tmCrewCount:_tmCrewCount,tmRatePerMan:_tmRatePerMan,tmEstHours:_tmEstHours,
     tmBillingCycle:_tmBillingCycle||'weekly',
-    tmMatMarkup:_tmMatMarkup,
     tmCapAction:v('tm-i-cap-action')||_tmCapAction||'',
     tmDepositPct:_geiDepositPct(),
     tmDepositAmt:Math.round(total*_geiDepositPct()/100),
@@ -2946,7 +2967,6 @@ async function sendGenericProposal(previewOnly){
     ['Dispute Resolution','In the event of a dispute, both parties agree to attempt good-faith negotiation before pursuing arbitration or litigation. The prevailing party in any legal proceeding to enforce this agreement shall be entitled to recover reasonable attorney&apos;s fees and costs, to the extent permitted by law.'],
   ];
   const _tmPayTerms='<div style="font-size:11px;color:#2d3748;line-height:2">'+_termsClauses.map((c,i)=>`<div>${i+1}. <strong>${c[0]}:</strong> ${c[1]}</div>`).join('')+'</div>';
-  const _tmPropMarkupMult=(_geiIsTM&&_tmMatMarkup>0)?(1+_tmMatMarkup/100):1;
   // Safari lazy-parses function bodies on first call — extract ?.?? to plain variables
   const _byoTermsEl2=document.getElementById('byo-custom-terms');
   const _byoTermsText=(_byoTermsEl2?_byoTermsEl2.value:(_byoCustomTerms||'')).trim();
@@ -2974,12 +2994,11 @@ async function sendGenericProposal(previewOnly){
   }else{
     // T&M and other flows: flat list
     lineRows=_geiLines.filter(l=>l.desc||l.rate).map(l=>{
-      let amt=(l.qty||1)*(l.rate||0);
-      if(_geiIsTM&&!l._tmLabor)amt=Math.round(amt*_tmPropMarkupMult);
+      const amt=(l.qty||1)*(l.rate||0);
       return _mkLineRow(l,amt,l._rrp||false);
     }).join('');
   }
-  // Suppress markup/tax row for T&M — markup is already in the line prices
+  // Suppress tax/markup row for T&M — no markup is applied, line prices are raw cost
   const taxRow=(!_geiIsTM&&taxPct)?`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td colspan="2" style="padding:8px 18px;font-size:12px;color:#64748b">Tax / markup (${taxPct}%)</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$${(total*(taxPct/(100+taxPct))).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`:'';
   // Sales tax row — shown on proposal when applicable
   const _stRateP=_geiClientTaxRate!==null?(_geiClientTaxRate.rate??0):(parseFloat(S.salesTaxRate)||0);

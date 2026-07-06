@@ -648,6 +648,34 @@ test.describe('Pending bid delete confirmation', () => {
       expect(result.after).toBe(0);
     }
   });
+
+  test('discardInProgressBid — regression: still deletes when the bid carries a STRING id (realtime-delivered rows can have one, while this button\'s onclick always embeds a bare numeric literal)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof discardInProgressBid !== 'function') return null;
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      const _save = window.saveAll; const _render = window.renderDash;
+      window.saveAll = () => {}; window.renderDash = () => {};
+      window._uploadClientHub = () => Promise.resolve();
+      const stringId = String(Date.now());
+      const cid = Date.now() + 1;
+      clients.push({ id: cid, name: 'String Id Regression Client', addr: '1 Str St' });
+      bids.push({ id: stringId, client_id: cid, status: 'Draft', draft: true, geiLines: [] });
+      const before = bids.filter(b => String(b.id) === stringId).length;
+      // Same as the real card's onclick: a bare unquoted numeric literal, so the argument
+      // discardInProgressBid actually receives here is a NUMBER, not the original string.
+      discardInProgressBid(Number(stringId));
+      const yes = document.querySelector('#zmodal-yes');
+      if (yes) yes.click();
+      const after = bids.filter(b => String(b.id) === stringId).length;
+      clients = clients.filter(c => c.id !== cid);
+      window.saveAll = _save; window.renderDash = _render;
+      return { before, after };
+    });
+    if (result !== null) {
+      expect(result.before).toBe(1);
+      expect(result.after).toBe(0);
+    }
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════

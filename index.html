@@ -1618,10 +1618,6 @@ body.dark .cal-cell.other{background:var(--cream)}
               <label>Estimated days</label>
               <input type="text" inputmode="decimal" id="tm-i-days" placeholder="5" oninput="_fmtMoneyInput(this);_tmInputChange()">
             </div>
-            <div class="f">
-              <label>Materials markup <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>
-              <div class="input-suffix"><input type="text" inputmode="decimal" id="tm-i-markup" placeholder="0" oninput="_fmtMoneyInput(this);_tmInputChange()"><span>%</span></div>
-            </div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px">
             <div class="stat-tile">
@@ -1764,7 +1760,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="f" style="margin-bottom:8px"><label>Client name</label><input type="text" id="gei-client" placeholder="Client name"></div>
       <div class="f" style="margin-bottom:8px;position:relative"><label>Job address</label><input type="text" id="gei-addr" placeholder="123 Main St, Wichita KS 67201" autocomplete="off" oninput="_geiOnAddrInput();_lookupProperty(this.value,'geiaddr')"></div>
       <div id="prop-card-geiaddr" style="display:none;margin-top:6px;padding:10px 12px;background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r);font-size:12px"></div>
-      <div class="f" style="margin-bottom:8px"><label>Name your proposal</label><input type="text" id="gei-desc" placeholder="e.g. Water heater replacement"></div>
+      <div class="f" style="margin-bottom:8px"><label>Name your proposal</label><input type="text" id="gei-desc" placeholder="e.g. Water heater replacement" onblur="typeof _byoAutosave==='function'&&_byoAutosave()"></div>
       <div class="f" style="margin-bottom:8px"><label>Date</label><input type="date" id="gei-date"></div>
       <!-- T&M reason (shown in T&M mode) -->
       <div id="gei-tm-reason-wrap" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">

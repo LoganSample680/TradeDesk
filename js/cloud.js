@@ -507,7 +507,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.06.26.7';
+const APP_VERSION='07.06.26.8';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -4282,10 +4282,14 @@ function quickScheduleJob(bidId,startKey,clientId){
     onNo:()=>setTimeout(showScheduleAlerts,300)}),400);
 }
 function discardInProgressBid(bidId){
-  const _db=bids.find(b=>b.id===bidId);
+  // String-cast compare: a realtime-delivered bid can land with a string id (Postgres
+  // bigint columns serialize as strings) while this button's onclick always embeds a bare
+  // numeric literal (string-concatenated into the HTML attribute loses any quotes). A strict
+  // === here silently no-ops the whole delete — confirmed via regression test below.
+  const _db=bids.find(b=>String(b.id)===String(bidId));
   const _cid=_db?.client_id;
   zConfirm('Delete this pending bid? The client\'s signing link will stop working.',()=>{
-    const idx=bids.findIndex(b=>b.id===bidId);
+    const idx=bids.findIndex(b=>String(b.id)===String(bidId));
     if(idx>-1){_userDelete(()=>{bids.splice(idx,1);saveAll();});renderDash();
       if(_cid)_uploadClientHub(_cid).catch(e=>console.error('[hub upload]',e));}
   },{title:'Delete pending bid',yes:'Delete',danger:true});

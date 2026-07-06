@@ -5593,7 +5593,6 @@ test.describe('Estimate autosave — BYO and T&M fields', () => {
       _tmRatePerMan = 65;
       _tmEstHours = 8;
       _tmBillingCycle = 'weekly';
-      _tmMatMarkup = 15;
       _byoAutosave();
       const saved = bids.find(b => b.id === fakeId);
       bids.splice(bids.findIndex(b => b.id === fakeId), 1);
@@ -5675,7 +5674,6 @@ test.describe('Estimate autosave — BYO and T&M fields', () => {
       _tmRatePerMan = 75;
       _tmEstHours = 10;
       _tmBillingCycle = 'completion';
-      _tmMatMarkup = 0;
       // _tmRecalc() reads crew/rate/hours from DOM — sync DOM first
       const _crewEl = document.getElementById('tm-crew-display');
       if (_crewEl) _crewEl.textContent = '2';

@@ -41,7 +41,7 @@ function _showNewLeadsPicker(){
     // the relative label for older/fixture ids that predate this or aren't real timestamps.
     const _cts=Number(c.id);
     const hasRealTs=_cts>1e12;
-    const stamp=hasRealTs?(new Date(_cts).toLocaleDateString('en-US',{month:'short',day:'numeric'})+' · '+new Date(_cts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})):'';
+    const stamp=hasRealTs?(new Date(_cts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' · '+new Date(_cts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})):'';
     const subLabel=stamp?ageLabel+' · '+stamp:ageLabel;
     const initial=escHtml((c.name||'?').trim().charAt(0).toUpperCase()||'?');
     return '<button onclick="_pickLeadForEstimate('+c.id+')" onmouseover="this.style.background=\'var(--bg2)\'" onmouseout="this.style.background=\'none\'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 8px;border:none;border-radius:var(--r);background:none;cursor:pointer;font-family:inherit;margin-bottom:4px;transition:background .12s ease">'+

@@ -2388,6 +2388,32 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.stubCount).toBe(1);
     });
 
+    test('deletion-verification: materials markup was removed from T&M — no UI field, no hidden multiplier on displayed prices', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90109, name: 'No Markup Client', addr: '9 No Markup Rd' };
+        clients = clients.filter(x => x.id !== 90109).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90109);
+        openGenericEstimate(c, null, null, { mode: 'tm' });
+        goGeiStep(2);
+        _tmRatePerMan = 0; _tmEstHours = 0; _tmCrewCount = 1;
+        _geiLines = [{ desc: 'Fixtures', qty: 1, rate: 500, total: 500 }];
+        if (typeof _tmRenderMatList === 'function') _tmRenderMatList();
+        if (typeof _tmInputChange === 'function') _tmInputChange();
+        const matListText = document.getElementById('tm-mat-list')?.innerHTML || '';
+        const railMat = document.getElementById('tm-rail-mat')?.textContent || '';
+        return {
+          markupInputExists: !!document.getElementById('tm-i-markup'),
+          markupVarExists: typeof _tmMatMarkup !== 'undefined',
+          matListShowsRaw: matListText.includes('$500'),
+          railShowsRaw: railMat.includes('500'),
+        };
+      });
+      expect(r.markupInputExists, 'the "Materials markup %" input must be gone').toBe(false);
+      expect(r.markupVarExists, '_tmMatMarkup must no longer exist').toBe(false);
+      expect(r.matListShowsRaw, 'material row must show the raw $500 cost, no hidden markup applied').toBe(true);
+      expect(r.railShowsRaw, 'rail materials total must show the raw cost, no hidden markup applied').toBe(true);
+    });
+
     test('regression: an autosaved T&M draft round-trips — resumes as T&M with materials, NTE cap, cadence, and cap action intact', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 90106, name: 'TM Roundtrip Client', addr: '6 Roundtrip Rd' };
@@ -2433,6 +2459,23 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.crew).toBe(3);
       expect(r.cadence).toBe('milestone');
       expect(r.matsRestored).toBe(1);
+    });
+
+    test('regression: leaving the "Name your proposal" field autosaves the name — no explicit Save needed to survive a back-out', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90108, name: 'Name Autosave Client', addr: '8 Name Rd' };
+        clients = clients.filter(x => x.id !== 90108).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90108);
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        const bidId = _geiEditBidId;
+        const descEl = document.getElementById('gei-desc');
+        descEl.value = 'Kitchen Remodel Quote';
+        descEl.dispatchEvent(new Event('blur')); // simulate the user clicking out — no Save click
+        const saved = bids.find(x => x.id === bidId);
+        return { type: saved?.type, geiDesc: saved?.geiDesc };
+      });
+      expect(r.type).toBe('Kitchen Remodel Quote');
+      expect(r.geiDesc).toBe('Kitchen Remodel Quote');
     });
 
     test('regression: a legacy dual-flag record (isTM + isFreeForm, from the old autosave) resumes as T&M, not empty BYO', async () => {
