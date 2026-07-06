@@ -4124,7 +4124,7 @@ test.describe('Profit % gauge — T&M and BYO estimate rails', () => {
     expect(color).toBe('rgb(34, 197, 94)');
   });
 
-  test('gauge dot position matches the margin percent (high margin lands in green band)', async () => {
+  test('gauge dot position matches the margin percent (68% now lands in the amber band per owner threshold change)', async () => {
     const r = await page.evaluate(() => {
       const costEl = document.getElementById('tm-expected-cost');
       if (!costEl || typeof _updateMarginGauge !== 'function') return null;
@@ -4142,10 +4142,11 @@ test.describe('Profit % gauge — T&M and BYO estimate rails', () => {
     });
     if (r === null) return;
     expect(r.pctText).toBe('68%');
-    // Dot sits at its own margin % — within the gradient's green band (38%–78%), matching the green ring.
+    // Dot sits at its own margin % along the bar.
     expect(r.left).toBe('68%');
-    // Browsers normalize hex → rgb() when reading .style.color
-    expect(r.color).toBe('rgb(34, 197, 94)');
+    // Owner threshold change (2026-07-06): green tops out at 55% — 55-75% is now
+    // amber "double-check your cost numbers". Browsers normalize hex → rgb().
+    expect(r.color).toBe('rgb(245, 158, 11)');
   });
 
   test('gauge shows red zone when underpriced (10% margin)', async () => {

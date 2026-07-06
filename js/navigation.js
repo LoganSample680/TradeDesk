@@ -9,6 +9,11 @@ function goPg(id){
     if(_empBlocked.includes(id))id='pg-dash';
     else if(id==='pg-leads'&&!_employeeRecord?.permissions?.leads)id='pg-dash';
   }
+  // Leaving the estimate builder ON PURPOSE (bottom nav, save-and-exit flows)
+  // clears the auto-resume marker. Keyed on the CURRENT page being the estimate
+  // so boot-time goPg('pg-dash') calls can never wipe the marker before
+  // _maybeResumeActiveEstimate reads it.
+  if(id!=='pg-est-generic'&&document.querySelector('.pg.active')?.id==='pg-est-generic'&&typeof _geiClearActive==='function')_geiClearActive();
   // Preserve currentClientId across navigation — only clear on explicit new client selection
   if(id==='pg-dash')window._fromDash=false;
   try{if(window._obs)window._obs.track('page',id);}catch(_e){} // live page-view telemetry (inert on localhost)

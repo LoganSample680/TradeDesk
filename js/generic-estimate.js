@@ -364,6 +364,42 @@ function _estimateTypeLabel(b){
   return'';
 }
 
+// ── Active-estimate marker — auto-resume after a tab switch/app reopen ───────
+// While an estimate is open, a marker records where the contractor is. If the
+// app reloads (phone tab switch, accidental close), boot jumps straight back
+// into that estimate — it's the thing they were most likely coming back to
+// finish. The marker clears when they LEAVE the estimate on purpose (bottom
+// nav, back to the type picker), so deliberate exits never bounce them back.
+function _geiMarkActive(){
+  try{
+    if(!_geiEditBidId)return;
+    localStorage.setItem('zp3_active_estimate',JSON.stringify({
+      bidId:_geiEditBidId,clientId:_geiClientId,
+      uid:(typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null,
+      ts:Date.now(),
+    }));
+  }catch(_e){}
+}
+function _geiClearActive(){try{localStorage.removeItem('zp3_active_estimate');}catch(_e){}}
+// Called once from the boot reveal chain. Every guard is a reason NOT to hijack
+// the open: stale marker (>12h), different account, employee account, bid gone,
+// or bid already sent/decided — in all of those, boot lands on the dashboard.
+function _maybeResumeActiveEstimate(){
+  let m=null;
+  try{m=JSON.parse(localStorage.getItem('zp3_active_estimate')||'null');}catch(_e){}
+  if(!m||!m.bidId)return false;
+  if(Date.now()-(m.ts||0)>12*3600*1000){_geiClearActive();return false;}
+  if(typeof _isEmployee!=='undefined'&&_isEmployee){_geiClearActive();return false;}
+  const uid=(typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
+  if((m.uid||null)!==(uid||null)){_geiClearActive();return false;}
+  const b=bids.find(x=>String(x.id)===String(m.bidId));
+  if(!b||b.signingToken||!(b.status==='Draft'||b.status==='Pending')){_geiClearActive();return false;}
+  const c=getClientById(m.clientId)||getClientById(b.client_id);
+  if(!c){_geiClearActive();return false;}
+  openGenericEstimate(c,b.id,b.trade_type||'general');
+  return true;
+}
+
 // UI entry point for both estimate types. The rule the owner set: never
 // silently resume a draft that has real content, never create junk duplicates.
 //  • explicit bidId → open that bid (resume buttons, revise flows)
@@ -721,7 +757,7 @@ function _geiRenderProfitGauge(prefix,costOninput){
     '<input type="number" id="'+prefix+'-expected-cost" style="display:none" oninput="'+costOninput+'">'+
     '<div id="'+prefix+'-gauge-hint" style="display:none"></div>'+
     '<div id="'+prefix+'-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">'+
-      '<div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 15%,#F59E0B 30%,#22C55E 38%,#22C55E 78%,#F59E0B 92%,#EF4444 100%);margin:14px 10px 26px">'+
+      '<div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 15%,#F59E0B 30%,#22C55E 38%,#22C55E 58%,#F59E0B 72%,#EF4444 100%);margin:14px 10px 26px">'+
         '<div id="'+prefix+'-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>'+
       '</div>'+
       '<div style="text-align:center;padding-bottom:12px">'+
@@ -854,6 +890,7 @@ function _geiShowSharedChrome(prefix){
     const depEl=document.getElementById(prefix+'-deposit-pct');
     if(depEl)depEl.value=Math.round((b.deposit/b.amount)*100);
   }
+  _geiMarkActive(); // estimate is open — a reload should come straight back here
   return b;
 }
 function _geiHidePage(pageId){
@@ -875,6 +912,8 @@ function _tmShowPage(){
   setV('tm-i-markup',_tmMatMarkup||'');
   if(b?.tmNteCap)setV('tm-i-nte',b.tmNteCap);
   if(b?.tmCapAction){setV('tm-i-cap-action',b.tmCapAction);_tmCapAction=b.tmCapAction;}
+  // Restore who's on the job — drives the true-cost gauge via the shared crew picker.
+  _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
   _injectRrpItems();
   _tmRenderMatList();
   _tmInputChange();
@@ -1156,6 +1195,7 @@ function _byoAutosave(){
     b.tmCapAction=document.getElementById('tm-i-cap-action')?.value||_tmCapAction||'';
   }
   saveAll();
+  _geiMarkActive(); // keep the auto-resume marker fresh on every save
 }
 function _injectRrpItems(){
   const _rrpC=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
@@ -1202,6 +1242,11 @@ function _scopeHistoryHrs(id){
 // the contractor's own debrief history first, then the crowdsourced benchmark median.
 // Returns 0 when no scope has time data yet (the gauge stays materials-only until it does).
 function _estLaborHours(){
+  // T&M knows its hours exactly (days × 8 × the contractor's own entry) — no
+  // scope-history estimation needed. This one branch makes the entire crew
+  // picker + payroll-cost stack (_estLaborCost, _renderLaborPicker) work for
+  // both estimate types without duplicating any of it.
+  if(_geiIsTM)return _tmEstHours||0;
   const trade=_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'painting');
   const allItems=[..._GEN_SCOPE,...((typeof TRADE_SCOPE_ITEMS!=='undefined'&&TRADE_SCOPE_ITEMS[trade])||[])];
   let hrs=0;
@@ -1270,12 +1315,14 @@ function _estLaborCost(){
   return Math.round(hrs*crewRate);
 }
 // Toggle an employee on/off this job's crew, then refresh the expense + gauge.
+// Mode-aware: T&M refreshes through _tmInputChange, BYO through _byoUpdateRail.
 function _toggleCrewMember(email){
   email=(email||'').toLowerCase();
   const i=_estCrew.indexOf(email);
   if(i>=0)_estCrew.splice(i,1);else _estCrew.push(email);
-  const costEl=document.getElementById('byo-expected-cost');
+  const costEl=document.getElementById(_geiIsTM?'tm-expected-cost':'byo-expected-cost');
   if(costEl)delete costEl.dataset.userSet; // crew payroll drives the cost now
+  if(_geiIsTM){if(typeof _tmInputChange==='function')_tmInputChange();return;} // _tmInputChange autosaves
   if(typeof _byoUpdateRail==='function')_byoUpdateRail();
   if(typeof _byoAutosave==='function')_byoAutosave();
 }
@@ -1358,7 +1405,9 @@ function _updateMarginGauge(type,total){
   else if(margin<22){color='#EF4444';msg='Underpriced — consider raising your rate';}
   else if(margin<35){color='#F59E0B';msg='Below target — a bit of room to grow';}
   else if(margin<55){color='#22C55E';msg='Priced right — solid margin for this job';}
-  else if(margin<75){color='#22C55E';msg='Strong margin — you\'re building real profit here';}
+  // Owner call (2026-07-06): green ending at 75% read as "everything's fine" on
+  // margins that usually mean a cost got missed — green now tops out at 55%.
+  else if(margin<75){color='#F59E0B';msg='High margin — double-check your cost numbers';}
   else{color='#F59E0B';msg='Very high margin — double-check your numbers';}
   const dot=document.getElementById(type+'-gauge-dot');
   const pct=document.getElementById(type+'-gauge-pct');
@@ -1754,9 +1803,18 @@ function _tmInputChange(){
   // Keep the legacy line items + totals in sync (used by save/proposal)
   if(typeof renderGeiLines==='function')renderGeiLines();
   if(typeof calcGeiTotal==='function')calcGeiTotal();
-  // Auto-populate hidden cost field from crew labor so gauge shows without user input
+  // Crew picker (shared with BYO) — who's actually on this job drives true labor cost.
+  if(typeof _renderLaborPicker==='function')_renderLaborPicker('tm');
+  // TRUE cost feeds the gauge: materials at raw cost + what the selected crew
+  // actually costs the business (loaded pay rates × the T&M hours). No employees
+  // — or none selected — means the OWNER is doing the work: their labor costs
+  // the business $0 and the labor revenue correctly reads as profit. The old
+  // code fed the labor BILLING amount as "cost", which hid all labor profit and
+  // made every T&M job read as underpriced.
+  const _tmCrewCost=(typeof _estLaborCost==='function')?_estLaborCost():0;
+  const _tmTrueCost=Math.round(matRaw+_tmCrewCost);
   const _tmCostEl=document.getElementById('tm-expected-cost');
-  if(_tmCostEl&&labor>0){_tmCostEl.value=labor;}
+  if(_tmCostEl&&!_tmCostEl.dataset.userSet){_tmCostEl.value=_tmTrueCost>0?_tmTrueCost:'';}
   _updateMarginGauge('tm',total);
   _byoAutosave();
 }

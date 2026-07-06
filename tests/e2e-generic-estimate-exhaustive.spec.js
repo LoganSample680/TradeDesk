@@ -2466,6 +2466,131 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.rate).toBe(60);
     });
 
+    test('T&M gauge feeds TRUE cost — owner-only crew costs $0 labor; materials at raw cost (not the billed labor)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90108, name: 'TrueCost Client', addr: '8 TrueCost Rd' };
+        clients = clients.filter(x => x.id !== 90108).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90108);
+        const _savedEmps = S.employees; S.employees = []; // solo operator — the owner IS the crew
+        openGenericEstimate(c, null, null, { mode: 'tm' });
+        goGeiStep(2);
+        _tmRatePerMan = 50; _tmEstHours = 40; _tmCrewCount = 2;
+        _geiLines = [{ desc: 'Materials', qty: 1, rate: 1000, total: 1000, _tmLabor: false }];
+        const costEl = document.getElementById('tm-expected-cost');
+        if (costEl) { costEl.value = ''; delete costEl.dataset.userSet; }
+        _tmInputChange();
+        const fedCost = parseFloat(costEl?.value) || 0;
+        S.employees = _savedEmps;
+        return { fedCost };
+      });
+      // Solo owner: labor costs the business $0 — cost is materials at raw cost only.
+      // The old code fed $4,000 (2 crew × $50 × 40h of BILLED labor) as "cost".
+      expect(r.fedCost).toBe(1000);
+    });
+
+    test('T&M gauge cost includes selected crew payroll when employees are on the job (employee vs owner distinction)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90109, name: 'CrewCost Client', addr: '9 CrewCost Rd' };
+        clients = clients.filter(x => x.id !== 90109).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90109);
+        const _saved = { emps: S.employees, comp: typeof _teamComp !== 'undefined' ? _teamComp : undefined, loaded: typeof _teamCompLoaded !== 'undefined' ? _teamCompLoaded : undefined, burden: S.laborBurden };
+        S.employees = [{ id: 1, name: 'Joe Crew', email: 'joe@crew.com' }];
+        S.laborBurden = 1.3;
+        _teamComp = { 'joe@crew.com': { pay_type: 'hourly', pay_rate: 30 } }; // $39/hr loaded
+        _teamCompLoaded = true;
+        openGenericEstimate(c, null, null, { mode: 'tm' });
+        goGeiStep(2);
+        // Drive the DOM the way a user does — _tmInputChange derives hours from
+        // the days input, so setting the module variable alone gets overwritten.
+        const rateEl = document.getElementById('tm-i-rate'); if (rateEl) rateEl.value = '60';
+        const daysEl = document.getElementById('tm-i-days'); if (daysEl) daysEl.value = '2'; // 16h
+        _estCrew = ['joe@crew.com']; // Joe is on the job — his real wage is a cost
+        _geiLines = [{ desc: 'Materials', qty: 1, rate: 500, total: 500, _tmLabor: false }];
+        const costEl = document.getElementById('tm-expected-cost');
+        if (costEl) { costEl.value = ''; delete costEl.dataset.userSet; }
+        _tmInputChange();
+        const fedCost = parseFloat(costEl?.value) || 0;
+        const pickerVisible = (document.getElementById('tm-labor-cost-wrap')?.style.display) !== 'none';
+        S.employees = _saved.emps; if (_saved.comp !== undefined) _teamComp = _saved.comp; if (_saved.loaded !== undefined) _teamCompLoaded = _saved.loaded; S.laborBurden = _saved.burden;
+        _estCrew = [];
+        return { fedCost, pickerVisible };
+      });
+      // $500 materials + 16h × $39 loaded (Joe) = $1,124 true cost
+      expect(r.fedCost).toBe(1124);
+      expect(r.pickerVisible, 'the shared crew picker must render on the T&M rail when employees exist').toBe(true);
+    });
+
+    test('gauge bands: 68% margin is now amber (owner tightened green to top out at 55%)', async () => {
+      const r = await page.evaluate(() => {
+        if (!document.getElementById('gb1-gauge-wrap')) { const w = document.createElement('div'); w.id = 'gb1-gauge-wrap'; document.body.appendChild(w); }
+        _geiRenderProfitGauge('gb1', 'void(0)');
+        const costEl = document.getElementById('gb1-expected-cost');
+        costEl.value = '3200';
+        const gWrap = document.getElementById('gb1-profit-gauge');
+        gWrap.style.display = ''; gWrap.style.opacity = '1';
+        _updateMarginGauge('gb1', 10000); // 68% margin
+        const amber = document.getElementById('gb1-gauge-pct')?.style.color;
+        _updateMarginGauge('gb1', 5000); // (5000-3200)/5000 = 36% margin
+        const green = document.getElementById('gb1-gauge-pct')?.style.color;
+        document.getElementById('gb1-gauge-wrap')?.remove();
+        return { amber, green };
+      });
+      expect(r.amber).toBe('rgb(245, 158, 11)');
+      expect(r.green).toBe('rgb(34, 197, 94)');
+    });
+
+    test('auto-resume: marker set while estimating, cleared by deliberate nav away, boot resume honors and rejects correctly', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90110, name: 'AutoResume Client', addr: '10 Resume Rd' };
+        clients = clients.filter(x => x.id !== 90110).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90110);
+        localStorage.removeItem('zp3_active_estimate');
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        goGeiStep(2); // shows the page → marker written
+        const markerAfterOpen = JSON.parse(localStorage.getItem('zp3_active_estimate') || 'null');
+        const bidId = _geiEditBidId;
+        // Simulate reload: land on dashboard, then run the boot hook
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        document.getElementById('pg-dash')?.classList.add('active');
+        const resumed = _maybeResumeActiveEstimate();
+        const backOnEstimate = document.querySelector('.pg.active')?.id === 'pg-est-generic';
+        const resumedSameBid = _geiEditBidId === bidId;
+        // Deliberate exit via bottom nav must clear the marker
+        goPg('pg-dash');
+        const markerAfterNavAway = localStorage.getItem('zp3_active_estimate');
+        // With no marker, boot resume must do nothing
+        const resumedAgain = _maybeResumeActiveEstimate();
+        return { markerSet: !!markerAfterOpen && String(markerAfterOpen.bidId) === String(bidId), resumed, backOnEstimate, resumedSameBid, markerAfterNavAway, resumedAgain };
+      });
+      expect(r.markerSet, 'opening an estimate must write the auto-resume marker').toBe(true);
+      expect(r.resumed, 'boot must jump back into the open estimate').toBe(true);
+      expect(r.backOnEstimate).toBe(true);
+      expect(r.resumedSameBid).toBe(true);
+      expect(r.markerAfterNavAway, 'deliberately leaving the estimate must clear the marker').toBe(null);
+      expect(r.resumedAgain).toBe(false);
+    });
+
+    test('auto-resume: refuses a different account\'s marker and a sent bid', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90111, name: 'Guard Client', addr: '11 Guard Rd' };
+        clients = clients.filter(x => x.id !== 90111).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90111);
+        bids.unshift({ id: 901111, client_id: 90111, client_name: c.name, amount: 100, deposit: 0, status: 'Draft', draft: true, bid_date: todayKey(), trade_type: 'general', isFreeForm: true, geiLines: [], geiTaxPct: 0 });
+        // Marker stamped by a DIFFERENT account
+        localStorage.setItem('zp3_active_estimate', JSON.stringify({ bidId: 901111, clientId: 90111, uid: 'someone-else', ts: Date.now() }));
+        const otherAccount = _maybeResumeActiveEstimate();
+        const clearedAfterReject = localStorage.getItem('zp3_active_estimate');
+        // Marker for a bid that's already been SENT (signingToken) — never hijack into it
+        bids.find(x => x.id === 901111).signingToken = 'tok123';
+        localStorage.setItem('zp3_active_estimate', JSON.stringify({ bidId: 901111, clientId: 90111, uid: (typeof _supaUser !== 'undefined' && _supaUser) ? _supaUser.id : null, ts: Date.now() }));
+        const sentBid = _maybeResumeActiveEstimate();
+        return { otherAccount, clearedAfterReject, sentBid };
+      });
+      expect(r.otherAccount, 'a marker from another account must be rejected').toBe(false);
+      expect(r.clearedAfterReject).toBe(null);
+      expect(r.sentBid, 'a sent bid must never be auto-resumed into').toBe(false);
+    });
+
     test('_estimateTypeLabel — spelled out, never an acronym', async () => {
       const r = await page.evaluate(() => ({
         tm: _estimateTypeLabel({ isTM: true }),
