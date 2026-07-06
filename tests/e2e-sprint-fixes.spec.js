@@ -389,6 +389,12 @@ test.describe('Estimate toolbars — ← Home button and pencil rename icon', ()
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // tm-edit-title-btn lives inside tm-topbar-wrap, rendered by _geiRenderTopBar
+    // (called from _tmShowPage on a real page visit) rather than existing
+    // statically in the HTML — render it here since this block only checks DOM.
+    await page.evaluate(() => {
+      if (typeof _geiRenderTopBar === 'function') _geiRenderTopBar('tm', 'Time &amp; Materials proposal', '_editTMTitle');
+    });
   });
 
   test.afterAll(async () => { await page.context().close(); });
