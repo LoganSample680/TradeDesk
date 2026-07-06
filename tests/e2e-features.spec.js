@@ -3092,10 +3092,16 @@ test.describe('Scope-of-work chips', () => {
   });
 
   test('tm-scope-wrap and byo-scope-wrap elements exist in DOM', async () => {
-    const r = await page.evaluate(() => ({
-      tmScopeWrap: !!document.getElementById('tm-scope-wrap'),
-      byoScopeWrap: !!document.getElementById('byo-scope-wrap'),
-    }));
+    // Both wrap divs are now rendered into tm-scopecard-wrap/byo-scopecard-wrap by
+    // _geiRenderScopeCard (called from _tmShowPage/_byoShowPage) rather than existing
+    // statically in the HTML — render them first, same as a real page visit would.
+    const r = await page.evaluate(() => {
+      if (typeof _geiRenderScopeCard === 'function') { _geiRenderScopeCard('tm'); _geiRenderScopeCard('byo'); }
+      return {
+        tmScopeWrap: !!document.getElementById('tm-scope-wrap'),
+        byoScopeWrap: !!document.getElementById('byo-scope-wrap'),
+      };
+    });
     expect(r.tmScopeWrap).toBe(true);
     expect(r.byoScopeWrap).toBe(true);
   });
@@ -3103,6 +3109,7 @@ test.describe('Scope-of-work chips', () => {
   test('_renderScopeChips renders selected scope as line items, not pills', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderScopeChips !== 'function') return null;
+      if (typeof _geiRenderScopeCard === 'function') _geiRenderScopeCard('tm');
       _geiTrade = 'painting';
       _geiScopeNoScope = false;
       _geiScopeChips = ['Interior walls', 'Pressure wash'];
@@ -4051,6 +4058,16 @@ test.describe('Profit % gauge — T&M and BYO estimate rails', () => {
     await mockAllExternal(page);
     await page.goto('/');
     await waitForAppBoot(page);
+    // tm-profit-gauge/byo-profit-gauge are rendered into empty wrap divs by
+    // _geiRenderProfitGauge (called from _tmShowPage/_byoShowPage on a real page
+    // visit) rather than existing statically in the HTML — render them here so
+    // every test in this block sees the same elements a real visit would produce.
+    await page.evaluate(() => {
+      if (typeof _geiRenderProfitGauge === 'function') {
+        _geiRenderProfitGauge('tm', '_tmInputChange()');
+        _geiRenderProfitGauge('byo', "this.dataset.userSet='true';_byoUpdateRail();_byoAutosave()");
+      }
+    });
   });
   test.afterAll(() => page.close());
 
@@ -4590,6 +4607,15 @@ test.describe('BYO estimate — auto-save, auto-fill cost, gauge dollars, scope 
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // byo-expected-cost/byo-gauge-dollars live inside byo-gauge-wrap, rendered by
+    // _geiRenderProfitGauge (called from _byoShowPage on a real page visit) rather
+    // than existing statically — render once here since these tests don't drive
+    // the full goGeiStep() navigation that would trigger it.
+    await page.evaluate(() => {
+      if (typeof _geiRenderProfitGauge === 'function') {
+        _geiRenderProfitGauge('byo', "this.dataset.userSet='true';_byoUpdateRail();_byoAutosave()");
+      }
+    });
   });
   test.afterAll(async () => { await page.context().close(); });
 
@@ -5112,6 +5138,14 @@ test.describe('Crew labor cost in profit gauge', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // byo-expected-cost lives inside byo-gauge-wrap, rendered by _geiRenderProfitGauge
+    // (called from _byoShowPage on a real page visit) — render once here since these
+    // tests call _byoUpdateRail directly without driving full page navigation.
+    await page.evaluate(() => {
+      if (typeof _geiRenderProfitGauge === 'function') {
+        _geiRenderProfitGauge('byo', "this.dataset.userSet='true';_byoUpdateRail();_byoAutosave()");
+      }
+    });
   });
 
   test.afterAll(async () => { await page.context().close(); });
@@ -5358,6 +5392,10 @@ test.describe('UI cleanup — redundant elements removed', () => {
     await page.evaluate(() => {
       const el = document.getElementById('gei-byo-page');
       if (el) el.style.display = 'block';
+      // The back button is rendered into byo-topbar-wrap by _geiRenderTopBar
+      // (called from _byoShowPage on a real page visit) rather than existing
+      // statically in the HTML.
+      if (typeof _geiRenderTopBar === 'function') _geiRenderTopBar('byo', 'Build Your Own proposal', '_editByoTitle');
     });
     const backBtns = await page.locator('#gei-byo-page .tbar .link-back').count();
     expect(backBtns).toBe(1);
@@ -5367,6 +5405,7 @@ test.describe('UI cleanup — redundant elements removed', () => {
     await page.evaluate(() => {
       const el = document.getElementById('gei-tm-page');
       if (el) el.style.display = 'block';
+      if (typeof _geiRenderTopBar === 'function') _geiRenderTopBar('tm', 'Time &amp; Materials proposal', '_editTMTitle');
     });
     const backBtns = await page.locator('#gei-tm-page .tbar .link-back').count();
     expect(backBtns).toBe(1);

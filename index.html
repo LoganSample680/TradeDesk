@@ -1595,38 +1595,19 @@ body.dark .cal-cell.other{background:var(--cream)}
 
   <!-- T&M single-page layout (matches design spec EstimateTM.jsx) — shown when _geiIsTM=true -->
   <div id="gei-tm-page" style="display:none">
-    <div class="tbar">
-      <div class="tbar-l">
-        <button class="link-back" onclick="_geiBack()">← Job type</button>
-        <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
-          <span id="tm-tbar-title">Time &amp; Materials proposal</span>
-          <button onclick="_editTMTitle()" id="tm-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">✏️</button>
-        </div>
-        <div class="tbar-sub" id="tm-page-sub">—</div>
-      </div>
-      <div class="tbar-r">
-        <button class="btn" onclick="saveGenericEstimate(true)">💾 Save draft</button>
-        <button class="btn btn-ghost" onclick="_geiBack()">Cancel</button>
-      </div>
-    </div>
+    <div class="tbar" id="tm-topbar-wrap"></div>
 
     <div class="split-est">
       <div>
         <!-- Scope of work chips -->
-        <div class="card card-pad-0" style="margin-bottom:12px">
-          <div class="card-hd">
-            <div class="card-hd-title">Scope of work</div>
-            <div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="_openScopeSheet('tm-scope-wrap')">+ Add scope</button></div>
-          </div>
-          <div id="tm-scope-wrap"></div>
-        </div>
+        <div class="card card-pad-0" style="margin-bottom:12px" id="tm-scopecard-wrap"></div>
         <!-- Rates & crew -->
         <div class="card">
           <div class="td-h3" style="margin-bottom:10px">Rates &amp; crew</div>
           <div class="fg fg2">
             <div class="f">
               <label>Hourly rate · $/hr</label>
-              <div class="input-prefix"><span>$</span><input type="number" id="tm-i-rate" min="0" step="5" placeholder="75" oninput="_tmInputChange()"></div>
+              <div class="input-prefix"><span>$</span><input type="text" inputmode="decimal" id="tm-i-rate" placeholder="75" oninput="_fmtMoneyInput(this);_tmInputChange()"></div>
             </div>
             <div class="f">
               <label>Crew size</label>
@@ -1637,12 +1618,12 @@ body.dark .cal-cell.other{background:var(--cream)}
               </div>
             </div>
             <div class="f">
-              <label>Estimated hours</label>
-              <input type="number" id="tm-i-hours" min="0" step="1" placeholder="40" oninput="_tmInputChange()">
+              <label>Estimated days</label>
+              <input type="text" inputmode="decimal" id="tm-i-days" placeholder="5" oninput="_fmtMoneyInput(this);_tmInputChange()">
             </div>
             <div class="f">
               <label>Materials markup <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>
-              <div class="input-suffix"><input type="number" id="tm-i-markup" min="0" max="100" step="5" placeholder="0" oninput="_tmInputChange()"><span>%</span></div>
+              <div class="input-suffix"><input type="text" inputmode="decimal" id="tm-i-markup" placeholder="0" oninput="_fmtMoneyInput(this);_tmInputChange()"><span>%</span></div>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px">
@@ -1657,7 +1638,7 @@ body.dark .cal-cell.other{background:var(--cream)}
               <div class="stat-s" id="tm-stat-labor-s">—</div>
             </div>
             <div class="stat-tile">
-              <div class="stat-l">Working days</div>
+              <div class="stat-l">Total hours</div>
               <div class="stat-v" id="tm-stat-days">0</div>
               <div class="stat-s">at 8hr days</div>
             </div>
@@ -1683,7 +1664,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="fg fg2">
             <div class="f">
               <label>Cap amount</label>
-              <div class="input-prefix"><span>$</span><input type="number" id="tm-i-nte" placeholder="e.g. 12,000" min="0" step="500" oninput="_tmInputChange()"></div>
+              <div class="input-prefix"><span>$</span><input type="text" inputmode="decimal" id="tm-i-nte" placeholder="e.g. 12,000" oninput="_fmtMoneyInput(this);_tmInputChange()"></div>
             </div>
             <div class="f">
               <label>What happens at cap</label>
@@ -1708,19 +1689,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="summary-row"><span>Materials</span><span id="tm-rail-mat">$0</span></div>
           <div class="summary-row" id="tm-rail-nte-row" style="display:none;color:var(--c-amber)"><span>NTE cap</span><span id="tm-rail-nte-amt">$0</span></div>
           <div class="summary-divider"></div>
-          <input type="number" id="tm-expected-cost" style="display:none" oninput="_tmInputChange()">
-          <div id="tm-gauge-hint" style="display:none"></div>
-          <div id="tm-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">
-            <div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 15%,#F59E0B 30%,#22C55E 38%,#22C55E 78%,#F59E0B 92%,#EF4444 100%);margin:14px 10px 26px">
-              <div id="tm-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>
-            </div>
-            <div style="text-align:center;padding-bottom:12px">
-              <div id="tm-gauge-pct" style="font-size:30px;font-weight:900;line-height:1.1;color:var(--text);transition:color .4s ease">—</div>
-              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin:2px 0 2px">Profit %</div>
-              <div id="tm-gauge-dollars" style="font-size:15px;font-weight:700;margin:0 0 5px;transition:color .4s ease"></div>
-              <div id="tm-gauge-msg" style="font-size:11.5px;color:var(--text3);min-height:16px"></div>
-            </div>
-          </div>
+          <div id="tm-gauge-wrap"></div>
           <div class="summary-divider"></div>
           <div class="td-micro" style="margin-bottom:6px">Billing cadence</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -1728,12 +1697,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             <span class="chip chip-int" id="tm-cad-milestone" onclick="_tmCadence('milestone')">By milestone</span>
             <span class="chip chip-int" id="tm-cad-completion" onclick="_tmCadence('completion')">On completion</span>
           </div>
-          <button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">📨 Send T&amp;M proposal</button>
-          <button class="btn btn-xl btn-full" style="margin-top:8px;background:var(--green);color:#fff;border-color:var(--green)" onclick="_geiSignInPerson()">✍️ Sign in person</button>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
-            <button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_tmPreviewClient()">👁 Preview</button>
-            <button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_openComparisonPicker()">📊 Compare</button>
-          </div>
+          <div id="tm-actions-wrap"></div>
         </div>
       </div>
     </div>
@@ -1741,31 +1705,12 @@ body.dark .cal-cell.other{background:var(--cream)}
 
   <!-- Build Your Own (line-item) single-page layout (matches EstimateBYO.jsx) — shown when _geiIsFreeForm=true -->
   <div id="gei-byo-page" style="display:none">
-    <div class="tbar">
-      <div class="tbar-l">
-        <button class="link-back" onclick="_geiBack()">← Job type</button>
-        <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
-          <span id="byo-tbar-title">Build Your Own proposal</span>
-          <button onclick="_editByoTitle()" id="byo-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">✏️</button>
-        </div>
-        <div class="tbar-sub" id="byo-page-sub">—</div>
-      </div>
-      <div class="tbar-r">
-        <button class="btn" onclick="saveGenericEstimate(true)">💾 Save draft</button>
-        <button class="btn btn-ghost" onclick="_geiBack()">Cancel</button>
-      </div>
-    </div>
+    <div class="tbar" id="byo-topbar-wrap"></div>
 
     <div class="split-est">
       <div>
         <!-- Scope of work chips -->
-        <div class="card card-pad-0" style="margin-bottom:12px">
-          <div class="card-hd">
-            <div class="card-hd-title">Scope of work</div>
-            <div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="_openScopeSheet('byo-scope-wrap')">+ Add scope</button></div>
-          </div>
-          <div id="byo-scope-wrap"></div>
-        </div>
+        <div class="card card-pad-0" style="margin-bottom:12px" id="byo-scopecard-wrap"></div>
         <div id="byo-sections"></div>
 
       </div>
@@ -1778,19 +1723,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="summary-divider"></div>
           <!-- Crew labor cost — only rendered when the contractor has employees -->
           <div id="byo-labor-cost-wrap" style="display:none"></div>
-          <input type="number" id="byo-expected-cost" style="display:none" oninput="this.dataset.userSet='true';_byoUpdateRail();_byoAutosave()">
-          <div id="byo-gauge-hint" style="display:none"></div>
-          <div id="byo-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">
-            <div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 15%,#F59E0B 30%,#22C55E 38%,#22C55E 78%,#F59E0B 92%,#EF4444 100%);margin:14px 10px 26px">
-              <div id="byo-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>
-            </div>
-            <div style="text-align:center;padding-bottom:12px">
-              <div id="byo-gauge-pct" style="font-size:30px;font-weight:900;line-height:1.1;color:var(--text);transition:color .4s ease">—</div>
-              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin:2px 0 2px">Profit %</div>
-              <div id="byo-gauge-dollars" style="font-size:15px;font-weight:700;margin:0 0 5px;transition:color .4s ease"></div>
-              <div id="byo-gauge-msg" style="font-size:11.5px;color:var(--text3);min-height:16px"></div>
-            </div>
-          </div>
+          <div id="byo-gauge-wrap"></div>
           <div class="summary-divider"></div>
           <div class="summary-row" style="align-items:center">
             <span style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600">Deposit %</span>
@@ -1802,13 +1735,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             </span>
           </div>
           <div class="summary-row" style="color:var(--text-3)"><span>Balance later</span><span id="byo-rail-balance">$0</span></div>
-          <button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">📨 Send proposal</button>
-          <button class="btn btn-xl btn-full" style="margin-top:8px;background:var(--green);color:#fff;border-color:var(--green)" onclick="_geiSignInPerson()">✍️ Sign in person</button>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px">
-            <button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_byoPreviewClient()">👁 Preview</button>
-            <button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_byoDuplicateBid()">📋 Option B</button>
-            <button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_openComparisonPicker()">📊 Compare</button>
-          </div>
+          <div id="byo-actions-wrap"></div>
         </div>
       </div>
     </div>

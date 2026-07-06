@@ -1781,16 +1781,24 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     });
 
     test('hides legacy wizard elements', async () => {
+      // gei-tm-page is the REAL app page (index.html) — creating a second element with
+      // the same id and then unconditionally removing "gei-tm-page" in cleanup deletes
+      // whichever one getElementById finds first, which is the real one, permanently
+      // wiping it (and its render-target children) for every later test in this file.
       const r = await page.evaluate(() => {
+        const created = [];
         ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id => {
           let el = document.getElementById(id);
-          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'block'; document.body.appendChild(el); }
+          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'block'; document.body.appendChild(el); created.push(id); }
         });
-        const p = document.createElement('div'); p.id = 'gei-tm-page'; document.body.appendChild(p);
+        let p = document.getElementById('gei-tm-page');
+        const pCreated = !p;
+        if (!p) { p = document.createElement('div'); p.id = 'gei-tm-page'; document.body.appendChild(p); }
         try { _tmShowPage(); }
         catch (_) {}
         const hidden = ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].every(id => document.getElementById(id)?.style.display === 'none');
-        ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3','gei-tm-page'].forEach(id => document.getElementById(id)?.remove());
+        created.forEach(id => document.getElementById(id)?.remove());
+        if (pCreated) p.remove();
         return { hidden };
       });
       expect(r.hidden).toBe(true);
@@ -1831,16 +1839,20 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
 
     test('restores gei-old-tbar and gei-step-bar', async () => {
       const r = await page.evaluate(() => {
+        const created = [];
         ['gei-old-tbar','gei-step-bar'].forEach(id => {
           let el = document.getElementById(id);
-          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'none'; document.body.appendChild(el); }
+          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'none'; document.body.appendChild(el); created.push(id); }
           else { el.style.display = 'none'; }
         });
-        const p = document.createElement('div'); p.id = 'gei-tm-page'; document.body.appendChild(p);
+        let p = document.getElementById('gei-tm-page');
+        const pCreated = !p;
+        if (!p) { p = document.createElement('div'); p.id = 'gei-tm-page'; document.body.appendChild(p); }
         try { _tmHidePage(); }
         catch (_) {}
         const restored = ['gei-old-tbar','gei-step-bar'].every(id => document.getElementById(id)?.style.display === '');
-        ['gei-old-tbar','gei-step-bar','gei-tm-page'].forEach(id => document.getElementById(id)?.remove());
+        created.forEach(id => document.getElementById(id)?.remove());
+        if (pCreated) p.remove();
         return { restored };
       });
       expect(r.restored).toBe(true);
@@ -1881,16 +1893,21 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     });
 
     test('hides legacy wizard elements', async () => {
+      // gei-byo-page is the REAL app page — see the equivalent _tmShowPage test's comment.
       const r = await page.evaluate(() => {
+        const created = [];
         ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id => {
           let el = document.getElementById(id);
-          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'block'; document.body.appendChild(el); }
+          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'block'; document.body.appendChild(el); created.push(id); }
         });
-        const p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p);
+        let p = document.getElementById('gei-byo-page');
+        const pCreated = !p;
+        if (!p) { p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p); }
         try { _byoShowPage(); }
         catch (_) {}
         const hidden = ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].every(id => document.getElementById(id)?.style.display === 'none');
-        ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3','gei-byo-page'].forEach(id => document.getElementById(id)?.remove());
+        created.forEach(id => document.getElementById(id)?.remove());
+        if (pCreated) p.remove();
         return { hidden };
       });
       expect(r.hidden).toBe(true);
@@ -1898,12 +1915,14 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
 
     test('with valid bid — loads byoItems from bid', async () => {
       const r = await page.evaluate(() => {
-        const p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p);
+        let p = document.getElementById('gei-byo-page');
+        const pCreated = !p;
+        if (!p) { p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p); }
         _geiEditBidId = 44401;
         _byoItems = [];
         try { _byoShowPage(); return { ok: true, items: _byoItems.length }; }
         catch (e) { return { ok: false, err: e.message }; }
-        finally { p.remove(); }
+        finally { if (pCreated) p.remove(); }
       });
       expect(r.ok).toBe(true);
       expect(r.items).toBeGreaterThanOrEqual(0);
@@ -1944,16 +1963,20 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
 
     test('restores gei-old-tbar and gei-step-bar', async () => {
       const r = await page.evaluate(() => {
+        const created = [];
         ['gei-old-tbar','gei-step-bar'].forEach(id => {
           let el = document.getElementById(id);
-          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'none'; document.body.appendChild(el); }
+          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'none'; document.body.appendChild(el); created.push(id); }
           else { el.style.display = 'none'; }
         });
-        const p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p);
+        let p = document.getElementById('gei-byo-page');
+        const pCreated = !p;
+        if (!p) { p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p); }
         try { _byoHidePage(); }
         catch (_) {}
         const restored = ['gei-old-tbar','gei-step-bar'].every(id => document.getElementById(id)?.style.display === '');
-        ['gei-old-tbar','gei-step-bar','gei-byo-page'].forEach(id => document.getElementById(id)?.remove());
+        created.forEach(id => document.getElementById(id)?.remove());
+        if (pCreated) p.remove();
         return { restored };
       });
       expect(r.restored).toBe(true);
@@ -1962,6 +1985,157 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     test('concurrent calls (5x) — no crash', async () => {
       const ok = await concurrent('_byoHidePage()');
       expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // T&M/BYO shared render functions — one template, both modes (consolidation)
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_geiRenderTopBar / _geiRenderScopeCard / _geiRenderProfitGauge / _geiRenderActionButtons', () => {
+    test('_geiRenderTopBar — missing container does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _geiRenderTopBar('nope', 'X', '_editTMTitle'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('_geiRenderTopBar — golden path builds title, edit button, sub, save/cancel', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'rt-topbar-wrap'; document.body.appendChild(wrap);
+        _geiRenderTopBar('rt', 'My Title', '_editTMTitle');
+        const title = document.getElementById('rt-tbar-title');
+        const editBtn = document.getElementById('rt-edit-title-btn');
+        const sub = document.getElementById('rt-page-sub');
+        const res = {
+          titleText: title?.textContent,
+          editOnclick: editBtn?.getAttribute('onclick'),
+          hasSub: !!sub,
+          hasSaveDraft: wrap.innerHTML.includes('saveGenericEstimate(true)'),
+          hasCancel: wrap.innerHTML.includes('_geiBack()'),
+        };
+        wrap.remove();
+        return res;
+      });
+      expect(r.titleText).toBe('My Title');
+      expect(r.editOnclick).toBe('_editTMTitle()');
+      expect(r.hasSub).toBe(true);
+      expect(r.hasSaveDraft).toBe(true);
+      expect(r.hasCancel).toBe(true);
+    });
+
+    test('_geiRenderScopeCard — golden path wires +Add scope to the right container id', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'rt2-scopecard-wrap'; document.body.appendChild(wrap);
+        _geiRenderScopeCard('rt2');
+        const hasWrap = !!document.getElementById('rt2-scope-wrap');
+        const addBtnOnclick = wrap.querySelector('button')?.getAttribute('onclick');
+        wrap.remove();
+        return { hasWrap, addBtnOnclick };
+      });
+      expect(r.hasWrap).toBe(true);
+      expect(r.addBtnOnclick).toBe("_openScopeSheet('rt2-scope-wrap')");
+    });
+
+    test('_geiRenderProfitGauge — golden path builds gauge ids and wires the given oninput', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'rt3-gauge-wrap'; document.body.appendChild(wrap);
+        _geiRenderProfitGauge('rt3', '_tmInputChange()');
+        const costEl = document.getElementById('rt3-expected-cost');
+        const res = {
+          costOninput: costEl?.getAttribute('oninput'),
+          hasDot: !!document.getElementById('rt3-gauge-dot'),
+          hasPct: !!document.getElementById('rt3-gauge-pct'),
+          hasMsg: !!document.getElementById('rt3-gauge-msg'),
+        };
+        wrap.remove();
+        return res;
+      });
+      expect(r.costOninput).toBe('_tmInputChange()');
+      expect(r.hasDot).toBe(true);
+      expect(r.hasPct).toBe(true);
+      expect(r.hasMsg).toBe(true);
+    });
+
+    test('_geiRenderProfitGauge — idempotent: a second call does not rebuild/lose gauge state', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'rt4-gauge-wrap'; document.body.appendChild(wrap);
+        _geiRenderProfitGauge('rt4', '_tmInputChange()');
+        const dot = document.getElementById('rt4-gauge-dot');
+        dot.dataset.marker = 'still-here';
+        _geiRenderProfitGauge('rt4', '_tmInputChange()'); // second call — must be a no-op
+        const survived = document.getElementById('rt4-gauge-dot')?.dataset.marker === 'still-here';
+        wrap.remove();
+        return { survived };
+      });
+      expect(r.survived).toBe(true);
+    });
+
+    test('_geiRenderActionButtons — default (T&M-style): 2-column grid, "Send proposal", Preview via _geiPreviewClient', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'rt5-actions-wrap'; document.body.appendChild(wrap);
+        _geiRenderActionButtons('rt5', {});
+        const html = wrap.innerHTML;
+        const res = {
+          hasSendDefault: html.includes('Send proposal'),
+          hasSignInPerson: html.includes('_geiSignInPerson()'),
+          hasPreviewDefault: html.includes('_geiPreviewClient()'),
+          cols: wrap.querySelector('div[style*="grid-template-columns"]')?.style.gridTemplateColumns,
+        };
+        wrap.remove();
+        return res;
+      });
+      expect(r.hasSendDefault).toBe(true);
+      expect(r.hasSignInPerson).toBe(true);
+      expect(r.hasPreviewDefault).toBe(true);
+      expect(r.cols).toBe('repeat(2, 1fr)');
+    });
+
+    test('_geiRenderActionButtons — BYO-style options: custom send label + extra button widens the grid to 3 columns', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'rt6-actions-wrap'; document.body.appendChild(wrap);
+        _geiRenderActionButtons('rt6', { extraButtons: [{ label: '📋 Option B', onclick: '_byoDuplicateBid()' }] });
+        const html = wrap.innerHTML;
+        const res = {
+          hasOptionB: html.includes('_byoDuplicateBid()') && html.includes('Option B'),
+          cols: wrap.querySelector('div[style*="grid-template-columns"]')?.style.gridTemplateColumns,
+        };
+        wrap.remove();
+        return res;
+      });
+      expect(r.hasOptionB).toBe(true);
+      expect(r.cols).toBe('repeat(3, 1fr)');
+    });
+
+    test('_tmShowPage renders "Send T&M proposal" with a 2-column action grid (no Option B)', async () => {
+      // The real app page (index.html) already has gei-tm-page + its wrap containers —
+      // creating a second element with the same id would just orphan a duplicate in the
+      // DOM (getElementById always resolves the first match), so reuse the real ones.
+      const r = await page.evaluate(() => {
+        try { _tmShowPage(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      const r2 = await page.evaluate(() => {
+        const html = document.getElementById('tm-actions-wrap')?.innerHTML || '';
+        return { hasSend: html.includes('Send T&amp;M proposal') || html.includes('Send T&M proposal'), hasOptionB: html.includes('Option B') };
+      });
+      expect(r2.hasSend).toBe(true);
+      expect(r2.hasOptionB).toBe(false);
+    });
+
+    test('_byoShowPage renders "Send proposal" with Option B in a 3-column action grid', async () => {
+      const r = await page.evaluate(() => {
+        try { _byoShowPage(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      const r2 = await page.evaluate(() => {
+        const html = document.getElementById('byo-actions-wrap')?.innerHTML || '';
+        return { hasSend: html.includes('Send proposal') && !html.includes('Send T&amp;M'), hasOptionB: html.includes('Option B') };
+      });
+      expect(r2.hasSend).toBe(true);
+      expect(r2.hasOptionB).toBe(true);
     });
   });
 

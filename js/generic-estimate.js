@@ -588,6 +588,72 @@ function _tmSyncCycleButtons(){
   });
 }
 
+// ── T&M / BYO shared markup — one template, rendered per-prefix ─────────────
+// The two single-page layouts (EstimateTM.jsx / EstimateBYO.jsx equivalents) share
+// identical structure for the top bar, the profit gauge, and the Send/Preview/
+// Sign-in-person action row — only ids and a handful of parameters differ per mode.
+// Rendering from one function means a future change to any of these can never
+// silently apply to only one of the two modes (see the _tmPreviewClient regression
+// this consolidation followed).
+function _geiRenderTopBar(prefix,defaultTitle,editFnName){
+  const wrap=document.getElementById(prefix+'-topbar-wrap');if(!wrap)return;
+  wrap.innerHTML=
+    '<div class="tbar-l">'+
+      '<button class="link-back" onclick="_geiBack()">← Job type</button>'+
+      '<div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">'+
+        '<span id="'+prefix+'-tbar-title">'+defaultTitle+'</span>'+
+        '<button onclick="'+editFnName+'()" id="'+prefix+'-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">✏️</button>'+
+      '</div>'+
+      '<div class="tbar-sub" id="'+prefix+'-page-sub">—</div>'+
+    '</div>'+
+    '<div class="tbar-r">'+
+      '<button class="btn" onclick="saveGenericEstimate(true)">💾 Save draft</button>'+
+      '<button class="btn btn-ghost" onclick="_geiBack()">Cancel</button>'+
+    '</div>';
+}
+function _geiRenderScopeCard(prefix){
+  const wrap=document.getElementById(prefix+'-scopecard-wrap');if(!wrap)return;
+  wrap.innerHTML=
+    '<div class="card-hd">'+
+      '<div class="card-hd-title">Scope of work</div>'+
+      '<div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="_openScopeSheet(\''+prefix+'-scope-wrap\')">+ Add scope</button></div>'+
+    '</div>'+
+    '<div id="'+prefix+'-scope-wrap"></div>';
+}
+function _geiRenderProfitGauge(prefix,costOninput){
+  const wrap=document.getElementById(prefix+'-gauge-wrap');
+  if(!wrap||wrap.children.length)return; // idempotent — preserve gauge/animation state across repeat page shows
+  wrap.innerHTML=
+    '<input type="number" id="'+prefix+'-expected-cost" style="display:none" oninput="'+costOninput+'">'+
+    '<div id="'+prefix+'-gauge-hint" style="display:none"></div>'+
+    '<div id="'+prefix+'-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">'+
+      '<div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 15%,#F59E0B 30%,#22C55E 38%,#22C55E 78%,#F59E0B 92%,#EF4444 100%);margin:14px 10px 26px">'+
+        '<div id="'+prefix+'-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>'+
+      '</div>'+
+      '<div style="text-align:center;padding-bottom:12px">'+
+        '<div id="'+prefix+'-gauge-pct" style="font-size:30px;font-weight:900;line-height:1.1;color:var(--text);transition:color .4s ease">—</div>'+
+        '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin:2px 0 2px">Profit %</div>'+
+        '<div id="'+prefix+'-gauge-dollars" style="font-size:15px;font-weight:700;margin:0 0 5px;transition:color .4s ease"></div>'+
+        '<div id="'+prefix+'-gauge-msg" style="font-size:11.5px;color:var(--text3);min-height:16px"></div>'+
+      '</div>'+
+    '</div>';
+}
+function _geiRenderActionButtons(prefix,opts){
+  const wrap=document.getElementById(prefix+'-actions-wrap');if(!wrap)return;
+  const o=opts||{};
+  const cols=o.extraButtons?o.extraButtons.length+2:2;
+  const extra=(o.extraButtons||[]).map(b=>'<button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="'+b.onclick+'">'+b.label+'</button>').join('');
+  wrap.innerHTML=
+    '<button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">📨 '+(o.sendLabel||'Send proposal')+'</button>'+
+    '<button class="btn btn-xl btn-full" style="margin-top:8px;background:var(--green);color:#fff;border-color:var(--green)" onclick="_geiSignInPerson()">✍️ Sign in person</button>'+
+    '<div style="display:grid;grid-template-columns:repeat('+cols+',1fr);gap:6px;margin-top:8px">'+
+      '<button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="'+(o.previewOnclick||'_geiPreviewClient()')+'">👁 Preview</button>'+
+      extra+
+      '<button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_openComparisonPicker()">📊 Compare</button>'+
+    '</div>';
+}
+function _geiPreviewClient(){sendGenericProposal(true);}
+
 // ── T&M single-page layout (matches design spec EstimateTM.jsx) ──────────────
 function _tmShowPage(){
   // Hide legacy wizard UI inside pg-est-generic
@@ -595,6 +661,10 @@ function _tmShowPage(){
     const el=document.getElementById(id);if(el)el.style.display='none';
   });
   const p=document.getElementById('gei-tm-page');if(p)p.style.display='';
+  _geiRenderTopBar('tm','Time &amp; Materials proposal','_editTMTitle');
+  _geiRenderScopeCard('tm');
+  _geiRenderProfitGauge('tm','_tmInputChange()');
+  _geiRenderActionButtons('tm',{sendLabel:'Send T&amp;M proposal'});
   // Trade branding in title
   const _tm=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
   const titleEl=document.getElementById('tm-tbar-title');if(titleEl){const _customName=document.getElementById('gei-desc')?.value?.trim();titleEl.textContent=_customName||(_tm.icon+' '+_tm.label+' · Time & Materials');}
@@ -607,10 +677,12 @@ function _tmShowPage(){
     if(c?.addr)parts.push(c.addr.split(',')[0]);
     sub.textContent=parts.join(' · ')||'New estimate';
   }
-  // Populate inputs from current state
-  const setV=(id,v)=>{const e=document.getElementById(id);if(e)e.value=(v===0||v)?v:''};
+  // Populate inputs from current state — comma-formatted like the price fields
+  // elsewhere (_fmtMoneyInput/_moneyVal), so a restored value displays the same
+  // way it would after the contractor typed it.
+  const setV=(id,v)=>{const e=document.getElementById(id);if(e)e.value=(v===0||v)?Number(v).toLocaleString('en-US'):''};
   setV('tm-i-rate',_tmRatePerMan||'');
-  setV('tm-i-hours',_tmEstHours||'');
+  setV('tm-i-days',_tmEstHours?Math.round(_tmEstHours/8):'');
   const crewDisp=document.getElementById('tm-i-crew-count');
   if(crewDisp)crewDisp.textContent=Math.max(1,_tmCrewCount||1);
   setV('tm-i-markup',_tmMatMarkup||'');
@@ -657,6 +729,10 @@ function _byoShowPage(){
     const el=document.getElementById(id);if(el)el.style.display='none';
   });
   const p=document.getElementById('gei-byo-page');if(p)p.style.display='';
+  _geiRenderTopBar('byo','Build Your Own proposal','_editByoTitle');
+  _geiRenderScopeCard('byo');
+  _geiRenderProfitGauge('byo',"this.dataset.userSet='true';_byoUpdateRail();_byoAutosave()");
+  _geiRenderActionButtons('byo',{extraButtons:[{label:'📋 Option B',onclick:'_byoDuplicateBid()'}]});
   // Trade branding in title
   const _bm=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
   const byoTitle=document.getElementById('byo-tbar-title');
@@ -1353,7 +1429,7 @@ function _byoDeleteSection(sec){
   if(hasItems){zConfirm('Remove the "'+sec+'" section and all its items?',doDelete,{title:'Remove section',yes:'Remove',danger:true});}
   else doDelete();
 }
-function _byoPreviewClient(){sendGenericProposal(true);}
+function _byoPreviewClient(){_geiPreviewClient();}
 function _byoDuplicateBid(){
   if(!_geiEditBidId){showToast('Save your draft first, then duplicate','⚠️');return;}
   saveGenericEstimate(true);
@@ -1439,12 +1515,15 @@ function _tmCrewStep(delta){
   _tmInputChange();
 }
 function _tmInputChange(){
-  _tmRatePerMan=parseFloat(document.getElementById('tm-i-rate')?.value)||0;
+  _tmRatePerMan=_moneyVal('tm-i-rate');
   // Crew count driven by stepper; read stepper display, not a select
   const crewDisp=document.getElementById('tm-i-crew-count');
   if(crewDisp)_tmCrewCount=parseInt(crewDisp.textContent)||_tmCrewCount||1;
-  _tmEstHours=parseFloat(document.getElementById('tm-i-hours')?.value)||0;
-  _tmMatMarkup=parseFloat(document.getElementById('tm-i-markup')?.value)||0;
+  // The field is "Estimated days" — _tmEstHours (shared with save/resume/the legacy
+  // wizard) stays a real hour count internally, just derived from days×8 now.
+  const daysInput=_moneyVal('tm-i-days');
+  _tmEstHours=daysInput*8;
+  _tmMatMarkup=_moneyVal('tm-i-markup');
   const labor=_tmCrewCount*_tmRatePerMan*_tmEstHours;
   // Upsert labor line in _geiLines (same shape the rest of the app expects)
   const idx=_geiLines.findIndex(l=>l._tmLabor);
@@ -1454,13 +1533,12 @@ function _tmInputChange(){
   else if(labor>0)_geiLines.unshift(line);
   // Stat tiles
   const dayRate=_tmCrewCount*_tmRatePerMan*8;
-  const days=_tmEstHours>0?Math.ceil(_tmEstHours/8):0;
   const setT=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
   setT('tm-stat-day','$'+dayRate.toLocaleString());
   setT('tm-stat-day-s',_tmRatePerMan&&_tmCrewCount?_tmCrewCount+'-person crew · 8hr day':'enter rate & crew');
   setT('tm-stat-labor','$'+labor.toLocaleString());
-  setT('tm-stat-labor-s',(_tmRatePerMan&&_tmEstHours)?_tmEstHours+'hr × '+_tmCrewCount+' × $'+_tmRatePerMan:'—');
-  setT('tm-stat-days',days);
+  setT('tm-stat-labor-s',(_tmRatePerMan&&daysInput)?daysInput+'d × 8hr × '+_tmCrewCount+' × $'+_tmRatePerMan:'—');
+  setT('tm-stat-days',_tmEstHours);
   // Materials subtotal — markup baked in, invisible to client
   const matRaw=_geiLines.filter(l=>!l._tmLabor).reduce((s,l)=>s+(l.total||(l.qty||0)*(l.rate||0)),0);
   const markupMult=_tmMatMarkup>0?(1+_tmMatMarkup/100):1;
@@ -1470,7 +1548,7 @@ function _tmInputChange(){
   setT('tm-rail-total','$'+total.toLocaleString());
   setT('tm-rail-labor','$'+labor.toLocaleString());
   setT('tm-rail-mat','$'+markedUpMat.toLocaleString());
-  let nte=parseFloat(document.getElementById('tm-i-nte')?.value)||0;
+  let nte=_moneyVal('tm-i-nte');
   const nteInp=document.getElementById('tm-i-nte');
   if(nteInp&&nte>0&&nte<total){
     nteInp.style.borderColor='var(--red)';
@@ -1572,7 +1650,7 @@ function _tmSyncCadence(){
     if(_tmBillingCycle===c)el.classList.add('on');else el.classList.remove('on');
   });
 }
-function _tmPreviewClient(){sendGenericProposal(true);}
+function _tmPreviewClient(){_geiPreviewClient();}
 
 function _geiBack(){
   if(_geiStep>1){goGeiStep(_geiStep-1);return;}
@@ -2539,7 +2617,7 @@ async function sendGenericProposal(previewOnly){
     const _hasLineItems=_geiIsFreeForm?_byoItems.some(it=>it.on):_geiLines.length>0;
     if(!_geiScopeChips.length&&!_geiScopeNoScope&&!_hasLineItems){zAlert('Add scope items or tap "None" to skip scope on this proposal.',{title:'Scope required'});return;}
     if(_geiIsTM){
-      if(!_tmRatePerMan||!_tmEstHours){zAlert('Enter your hourly rate and estimated hours in the Time section.',{title:'Time & labor required'});return;}
+      if(!_tmRatePerMan||!_tmEstHours){zAlert('Enter your hourly rate and estimated days in the Rates & crew section.',{title:'Time & labor required'});return;}
       if(!_geiLines.some(l=>!l._tmLabor&&l.desc)){zAlert('Add at least one material or cost item in the Materials section.',{title:'Materials required'});return;}
     }else if(_geiIsFreeForm){
       const _byoOn=_byoItems.filter(it=>it.on);
