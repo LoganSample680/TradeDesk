@@ -6,7 +6,7 @@
  *
  * Specific regression locked in here: the BYO/T&M summary rail had a second, half-wired
  * `#byo-mob-bar` (position:fixed) that showed a stale $0 total and OVERLAPPED the rail's
- * own Send/Sign buttons on phones. It's retired (display:none); this proves it stays gone
+ * own Send/Sign buttons on phones. It's deleted outright now; this proves it stays gone
  * and that the app doesn't bleed past the viewport at mobile width.
  */
 
@@ -25,19 +25,10 @@ test.describe('layout integrity — mobile', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('the broken duplicate BYO sticky bar (#byo-mob-bar) is never shown on mobile', async () => {
+  test('the broken duplicate BYO sticky bar (#byo-mob-bar) was deleted, not just hidden', async () => {
     await page.setViewportSize({ width: 390, height: 844 });
-    const r = await page.evaluate(() => {
-      const bar = document.getElementById('byo-mob-bar');
-      return {
-        exists: !!bar,
-        shown: bar ? getComputedStyle(bar).display !== 'none' : false,
-      };
-    });
-    // The element may exist in the DOM, but it must never render (it's a half-wired
-    // duplicate of the summary rail's actions). If someone re-adds a display:block
-    // media rule, this fails.
-    expect(r.shown, '#byo-mob-bar must stay display:none — it duplicated/overlapped the rail actions').toBe(false);
+    const r = await page.evaluate(() => ({ exists: !!document.getElementById('byo-mob-bar') }));
+    expect(r.exists, '#byo-mob-bar must be gone from the DOM — it duplicated/overlapped the rail actions').toBe(false);
   });
 
   test('the app does not bleed past the viewport width on mobile (390px)', async () => {

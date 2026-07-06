@@ -1835,7 +1835,7 @@ function _cpOpen(bidId,view){
     if(scope.length)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Scope of work</div>'+scope.map(s=>'<div style="font-size:13px;padding:3px 0;border-bottom:1px solid var(--border)">'+escHtml(s)+'</div>').join('')+'</div>';
   }
 
-  if(b.notes)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Notes</div><div style="font-size:13px;color:var(--text2);line-height:1.5">'+escHtml(b.notes)+'</div></div>';
+  if(b.notes)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3)">Notes</div><button onclick="openBidNotes('+b.id+')" style="background:none;border:none;padding:0;cursor:pointer;font-size:13px;color:var(--blue);font-weight:700">Edit</button></div><div style="font-size:13px;color:var(--text2);line-height:1.5;white-space:pre-wrap">'+escHtml(b.notes)+'</div></div>';
 
   if(pays.length){
     bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Payment history</div>'+

@@ -1044,11 +1044,6 @@ body.dark .cal-cell.other{background:var(--cream)}
 .byo-price{font-family:var(--font-display);font-size:15px;font-weight:800;color:var(--text);letter-spacing:-.3px;font-variant-numeric:tabular-nums;min-width:64px;text-align:right;flex-shrink:0}
 .byo-edit{background:none;border:0;color:var(--text-3);cursor:pointer;font-size:10px;font-weight:700;font-family:inherit;padding:1px 4px;letter-spacing:.04em;text-transform:uppercase;text-decoration:underline;text-underline-offset:2px}
 .byo-edit:hover{color:var(--text)}
-/* Mobile sticky bar retired: its total (#byo-mob-total) was never wired so it showed a
-   stale $0, and being position:fixed it overlapped the summary-rail's own Send/Sign
-   buttons on phones. The summary-rail stacks below the form on mobile and already
-   provides the totals + all actions, so the bar was a broken duplicate. */
-.byo-mob-bar{display:none}
 
 /* Client hub directory page */
 .hub-dir-row{padding:14px 18px;border-bottom:1px solid var(--line);transition:background .12s;cursor:pointer}
@@ -1816,26 +1811,6 @@ body.dark .cal-cell.other{background:var(--cream)}
           </div>
         </div>
       </div>
-    </div>
-    <!-- Mobile sticky bottom bar — shown on narrow viewports via .byo-mob-bar CSS class -->
-    <div class="byo-mob-bar" id="byo-mob-bar" style="position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-top:1px solid var(--line);padding:10px 16px 18px;z-index:200">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <span style="font-size:12px;font-weight:600;color:var(--text3)">Total</span>
-        <span id="byo-mob-total" style="font-size:20px;font-weight:900;font-family:var(--font-display);color:var(--text)">$0</span>
-      </div>
-      <input type="number" id="byom-expected-cost" placeholder="Your cost (optional)" style="display:none;width:100%;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:15px;font-weight:600;font-family:inherit;margin-bottom:6px;box-sizing:border-box" oninput="_byoUpdateRail();_byoAutosave()">
-      <div id="byom-gauge-hint" style="display:none;font-size:11px;color:var(--text3);margin-bottom:4px"></div>
-      <div id="byom-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">
-        <div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 15%,#F59E0B 30%,#22C55E 38%,#22C55E 78%,#F59E0B 92%,#EF4444 100%);margin:6px 0 18px">
-          <div id="byom-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>
-        </div>
-        <div style="text-align:center;padding-bottom:6px">
-          <div id="byom-gauge-pct" style="font-size:26px;font-weight:900;line-height:1.1;color:var(--text);transition:color .4s ease">—</div>
-          <div id="byom-gauge-dollars" style="font-size:14px;font-weight:700;margin:0 0 3px;transition:color .4s ease"></div>
-          <div id="byom-gauge-msg" style="font-size:11px;color:var(--text3);min-height:14px"></div>
-        </div>
-      </div>
-      <button class="btn btn-p btn-full" style="margin-top:4px" onclick="sendGenericProposal()">📨 Send proposal</button>
     </div>
   </div>
 

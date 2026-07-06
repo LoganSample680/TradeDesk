@@ -36,12 +36,19 @@ function _showNewLeadsPicker(){
   const rows=leads.map(c=>{
     const days=c.created?Math.floor((new Date(tk+'T12:00')-new Date(c.created+'T12:00'))/86400000):0;
     const ageLabel=days<=0?'New today':days+'d ago';
+    // Client ids are Date.now() at creation (~13-digit epoch ms) — use that for a real
+    // date+time stamp rather than just the relative "Xd ago" label. Falls back to just
+    // the relative label for older/fixture ids that predate this or aren't real timestamps.
+    const _cts=Number(c.id);
+    const hasRealTs=_cts>1e12;
+    const stamp=hasRealTs?(new Date(_cts).toLocaleDateString('en-US',{month:'short',day:'numeric'})+' · '+new Date(_cts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})):'';
+    const subLabel=stamp?ageLabel+' · '+stamp:ageLabel;
     const initial=escHtml((c.name||'?').trim().charAt(0).toUpperCase()||'?');
     return '<button onclick="_pickLeadForEstimate('+c.id+')" onmouseover="this.style.background=\'var(--bg2)\'" onmouseout="this.style.background=\'none\'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 8px;border:none;border-radius:var(--r);background:none;cursor:pointer;font-family:inherit;margin-bottom:4px;transition:background .12s ease">'+
       '<div style="width:34px;height:34px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:14px;flex-shrink:0">'+initial+'</div>'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:14px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(c.name)+'</div>'+
-        '<div style="font-size:11px;color:var(--text3)">'+ageLabel+'</div>'+
+        '<div style="font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+subLabel+'</div>'+
       '</div>'+
       '<svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:var(--text3);fill:none;stroke-width:2;flex-shrink:0"><polyline points="9 18 15 12 9 6"/></svg>'+
     '</button>';
@@ -1811,7 +1818,7 @@ function openBidDetail(bidId,view){
   }else{
     bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:13px;color:var(--text3);text-align:center;padding:12px 0;font-style:italic">No line items or surfaces stored for this bid.</div></div>';
   }
-  if(b.notes)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Notes</div><div style="font-size:13px;color:var(--text2);line-height:1.6">'+escHtml(b.notes)+'</div></div>';
+  if(b.notes)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3)">Notes</div><button onclick="openBidNotes('+b.id+')" style="background:none;border:none;padding:0;cursor:pointer;font-size:13px;color:var(--blue);font-weight:700">Edit</button></div><div style="font-size:13px;color:var(--text2);line-height:1.6;white-space:pre-wrap">'+escHtml(b.notes)+'</div></div>';
   if(pays.length){
     bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Payment history</div>'+
       pays.map(p=>{const ref=p.type==='refund';return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+(ref?'REFUND':escHtml(p.method||p.type||'')+(p.ref?' #'+escHtml(p.ref):''))+'</span><span style="font-weight:700;color:'+(ref?'#A32D2D':'var(--green-mid)')+'">'+( ref?'↩ -':'+' )+fmt(Math.abs(p.amount))+'</span></div>';}).join('')+

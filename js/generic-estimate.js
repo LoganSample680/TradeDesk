@@ -1,4 +1,34 @@
-function openBidNotes(bidId){editingBidId=bidId;lastCreatedBidId=bidId;}
+function openBidNotes(bidId){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  editingBidId=bidId;lastCreatedBidId=bidId;
+  document.getElementById('_bid-notes-ov')?.remove();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_bid-notes-ov';
+  const box=document.createElement('div');box.className='zmodal';
+  box.style.maxWidth='480px';
+  box.innerHTML=
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'+
+      '<div style="font-size:16px;font-weight:800">Bid notes</div>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">✕</button>'+
+    '</div>'+
+    '<textarea id="_bid-notes-ta" rows="8" placeholder="Add notes about this bid..." style="width:100%;box-sizing:border-box;padding:12px;font-size:14px;line-height:1.5;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;margin-bottom:14px">'+escHtml(b.notes||'')+'</textarea>'+
+    '<div style="display:flex;gap:8px">'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
+      '<button onclick="_saveBidNotes('+bidId+')" style="flex:2;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
+    '</div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  setTimeout(()=>{const ta=document.getElementById('_bid-notes-ta');if(ta){ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}},50);
+}
+function _saveBidNotes(bidId){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  const ta=document.getElementById('_bid-notes-ta');
+  b.notes=(ta?ta.value:'').trim();
+  saveAll();
+  document.getElementById('_bid-notes-ov')?.remove();
+  if(typeof renderClientDetail==='function')try{renderClientDetail();}catch(e){}
+  if(typeof renderDash==='function')try{renderDash();}catch(e){}
+  showToast('Notes saved','✓');
+}
 function showNotesFab(){}
 function hideNotesFab(){}
 
@@ -1185,8 +1215,8 @@ function _byoAddItem(sec){
     '<div style="font-weight:800;font-size:16px;margin-bottom:16px">Add to '+escHtml(sec)+'</div>'+
     '<div class="f" style="margin-bottom:10px"><label>What is it?</label><input type="text" id="_bya-label" placeholder="e.g. Bedroom 3 — walls only"></div>'+
     '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="text" inputmode="numeric" id="_bya-price" placeholder="0" oninput="_byaFormatPriceInput(this)"></div></div>'+
-    '<div class="f" style="margin-bottom:6px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><input type="text" id="_bya-notes" placeholder="e.g. Two coats, ceilings included"></div>'+
-    '<div style="font-size:11px;color:var(--text-3);margin-bottom:14px">Tab or Enter from Notes to save &amp; add another</div>'+
+    '<div class="f" style="margin-bottom:6px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><textarea id="_bya-notes" rows="3" placeholder="e.g. Two coats, ceilings included" style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit"></textarea></div>'+
+    '<div style="font-size:11px;color:var(--text-3);margin-bottom:14px">Tab from Notes to save &amp; add another</div>'+
     '<div style="display:flex;gap:10px">'+
       '<button onclick="document.getElementById(\'_byo-add-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
       '<button data-sec="'+escHtml(sec)+'" onclick="_byaConfirm(this.dataset.sec)" class="btn btn-p" style="flex:2">Add item</button>'+
@@ -1201,8 +1231,9 @@ function _byoAddItem(sec){
     // Tab from label → price (default), Tab from price → notes (default)
     // Tab or Enter from notes → save + open next
     if(notesEl){
+      // Enter now makes a newline in the notes textarea — only Tab saves & advances.
       notesEl.addEventListener('keydown',e=>{
-        if(e.key==='Enter'||(e.key==='Tab'&&!e.shiftKey)){
+        if(e.key==='Tab'&&!e.shiftKey){
           e.preventDefault();
           _byaConfirmAndNext(sec);
         }
@@ -1253,7 +1284,7 @@ function _byoEditItem(idx){
     '<div style="font-weight:800;font-size:16px;margin-bottom:16px">Edit item</div>'+
     '<div class="f" style="margin-bottom:10px"><label>What is it?</label><input type="text" id="_bya-label" value="'+escHtml(it.label)+'" placeholder="e.g. Bedroom 3 — walls only"></div>'+
     '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="text" inputmode="numeric" id="_bya-price" value="'+(it.price?Number(it.price).toLocaleString('en-US'):'')+'" placeholder="0" oninput="_byaFormatPriceInput(this)"></div></div>'+
-    '<div class="f" style="margin-bottom:16px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><input type="text" id="_bya-notes" value="'+escHtml(it.notes||'')+'" placeholder="e.g. Two coats, ceilings included"></div>'+
+    '<div class="f" style="margin-bottom:16px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><textarea id="_bya-notes" rows="4" placeholder="e.g. Two coats, ceilings included" style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit">'+escHtml(it.notes||'')+'</textarea></div>'+
     '<div style="display:flex;gap:10px">'+
       '<button onclick="document.getElementById(\'_byo-add-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
       '<button onclick="_byaEditConfirm('+idx+')" class="btn btn-p" style="flex:2">Save changes</button>'+
@@ -1269,7 +1300,7 @@ function _byoEditItem(idx){
       labelEl.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();priceEl?.focus();}});
     }
     if(priceEl){priceEl.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();notesEl?.focus();}});}
-    if(notesEl){notesEl.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();_byaEditConfirm(idx);}});}
+    // Enter makes a newline in the notes textarea — Save changes button submits.
   },50);
 }
 function _byaEditConfirm(idx){

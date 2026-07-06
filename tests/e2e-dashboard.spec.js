@@ -1613,6 +1613,41 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasCount).toBe(true);
   });
 
+  test('_showNewLeadsPicker shows a real date+time stamp for the lead (regression)', async () => {
+    const r = await page.evaluate(() => {
+      // A real lead's id is Date.now() at creation — pin a known timestamp so the
+      // rendered stamp is deterministic: Mar 15 2026, 2:30 PM local.
+      const knownMs = new Date(2026, 2, 15, 14, 30, 0).getTime();
+      clients.unshift({ id: knownMs, name: 'Timestamp Lead', addr: '1 Stamp St', created: '2026-03-15' });
+      let err = '';
+      try { _showNewLeadsPicker(); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_leads-pick-ov');
+      const html = ov ? ov.innerHTML : '';
+      ov?.remove();
+      clients = clients.filter(c => c.id !== knownMs);
+      return { err, hasDate: html.includes('Mar 15'), hasTime: /2:30\s*PM/i.test(html) };
+    });
+    expect(r.err).toBe('');
+    expect(r.hasDate).toBe(true);
+    expect(r.hasTime).toBe(true);
+  });
+
+  test('_showNewLeadsPicker falls back to the relative label for non-timestamp ids (fixtures/legacy)', async () => {
+    const r = await page.evaluate(() => {
+      const cid = 780460; // small id — not a real Date.now() timestamp
+      clients.unshift({ id: cid, name: 'Legacy Id Lead', addr: '1 Legacy St', created: todayKey() });
+      let err = '';
+      try { _showNewLeadsPicker(); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_leads-pick-ov');
+      const html = ov ? ov.innerHTML : '';
+      ov?.remove();
+      clients = clients.filter(c => c.id !== cid);
+      return { err, hasNewToday: html.includes('New today') };
+    });
+    expect(r.err).toBe('');
+    expect(r.hasNewToday).toBe(true);
+  });
+
   test('clicking a lead name in the picker opens the estimate picker, not the client record', async () => {
     const r = await page.evaluate(() => {
       const cid = 780501;

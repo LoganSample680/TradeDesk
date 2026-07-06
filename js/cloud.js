@@ -507,7 +507,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.05.26.27';
+const APP_VERSION='07.05.26.28';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1732,6 +1732,14 @@ async function supaInit(){
         _saveSessionBackup(session);
         document.getElementById('supa-login-overlay')?.remove();
         document.getElementById('welcome-overlay')?.remove();
+        // Navigate to the dashboard NOW, before awaiting the account load below.
+        // loadAccountData() runs several sequential Supabase queries (users, accounts,
+        // account_config, vehicles) — without this, removing the login overlay exposes
+        // whatever page was active underneath for that entire duration. Signing out is
+        // only reachable from Settings, so every account switch on the same device
+        // landed the incoming account back on Settings until the load finally finished
+        // and the goPg('pg-dash') calls below caught up.
+        goPg('pg-dash');
         const hasAccount=await loadAccountData();
         if(hasAccount){
           // Trigger merge path if _mergeOnSignIn is set OR if zp3_offline_pending exists.

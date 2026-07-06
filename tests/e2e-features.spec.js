@@ -4350,7 +4350,10 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
     expect(r.notesWouldSuppressForRrp).toBe(true);
   });
 
-  test('mobile profit bar elements exist in DOM', async () => {
+  test('the dead duplicate mobile profit bar (#byo-mob-bar) was deleted, not just hidden', async () => {
+    // Was permanently display:none with byom-* ids never touched by any JS (confirmed via
+    // grep) — a broken duplicate of the summary rail's Send/Sign buttons. Deleted outright
+    // per CLAUDE.md §7 rather than left as inert markup.
     const r = await page.evaluate(() => ({
       bar: !!document.getElementById('byo-mob-bar'),
       total: !!document.getElementById('byo-mob-total'),
@@ -4360,29 +4363,13 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
       gaugeMsg: !!document.getElementById('byom-gauge-msg'),
       gaugeHint: !!document.getElementById('byom-gauge-hint'),
     }));
-    expect(r.bar).toBe(true);
-    expect(r.total).toBe(true);
-    expect(r.costInput).toBe(true);
-    expect(r.gauge).toBe(true);
-    expect(r.gaugePct).toBe(true);
-    expect(r.gaugeMsg).toBe(true);
-    expect(r.gaugeHint).toBe(true);
-  });
-
-  test('_updateMarginGauge works for byom prefix — updates pct and msg', async () => {
-    const r = await page.evaluate(() => {
-      // Set mobile cost input value
-      const costEl = document.getElementById('byom-expected-cost');
-      if (costEl) costEl.value = '1200';
-      _updateMarginGauge('byom', 2000);
-      const pct = document.getElementById('byom-gauge-pct')?.textContent;
-      const msg = document.getElementById('byom-gauge-msg')?.textContent;
-      const gaugeVisible = document.getElementById('byom-profit-gauge')?.style.display !== 'none';
-      return { pct, msg: !!msg, gaugeVisible };
-    });
-    expect(r.pct).toBe('40%');
-    expect(r.msg).toBe(true);
-    expect(r.gaugeVisible).toBe(true);
+    expect(r.bar).toBe(false);
+    expect(r.total).toBe(false);
+    expect(r.costInput).toBe(false);
+    expect(r.gauge).toBe(false);
+    expect(r.gaugePct).toBe(false);
+    expect(r.gaugeMsg).toBe(false);
+    expect(r.gaugeHint).toBe(false);
   });
 
   test('_injectRrpItems seeds T&M lines when _geiIsTM is true', async () => {
