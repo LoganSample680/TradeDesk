@@ -673,30 +673,75 @@ function _geiDepositPct(){
   return parseFloat(el?.value)||25;
 }
 
-// ── T&M single-page layout (matches design spec EstimateTM.jsx) ──────────────
-function _tmShowPage(){
-  // Hide legacy wizard UI inside pg-est-generic
+// ── Estimate mode registry ────────────────────────────────────────────────────
+// The DIFFERENCES between T&M and BYO live here as data. The behavior that uses
+// them (_geiShowSharedChrome and the shared render functions above) is one code
+// path — a change to how either page looks or boots automatically hits both.
+const _GEI_MODES={
+  tm:{
+    pageId:'gei-tm-page',
+    defaultTitle:'Time &amp; Materials proposal',
+    editFnName:'_editTMTitle',
+    titleSuffix:'Time & Materials',
+    gaugeOninput:'_tmInputChange()',
+    depositOninput:'_tmInputChange()',
+    actionOpts:{sendLabel:'Send T&amp;M proposal'},
+  },
+  byo:{
+    pageId:'gei-byo-page',
+    defaultTitle:'Build Your Own proposal',
+    editFnName:'_editByoTitle',
+    titleSuffix:'Build Your Own',
+    gaugeOninput:"this.dataset.userSet='true';_byoUpdateRail();_byoAutosave()",
+    depositOninput:'_byoUpdateRail();_byoAutosave()',
+    actionOpts:{extraButtons:[{label:'📋 Option B',onclick:'_byoDuplicateBid()'}]},
+  },
+};
+// Shared page chrome for both single-page estimate layouts: hide the legacy
+// wizard, show the page, render the shared components, brand the title, fill the
+// client sub-header, and restore the saved deposit %. Returns the saved bid (or
+// undefined) so each mode's show-page can do its own field restores from it.
+function _geiShowSharedChrome(prefix){
+  const m=_GEI_MODES[prefix];if(!m)return;
   ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.style.display='none';
   });
-  const p=document.getElementById('gei-tm-page');if(p)p.style.display='';
-  _geiRenderTopBar('tm','Time &amp; Materials proposal','_editTMTitle');
-  _geiRenderScopeCard('tm');
-  _geiRenderProfitGauge('tm','_tmInputChange()');
-  _geiRenderActionButtons('tm',{sendLabel:'Send T&amp;M proposal'});
-  _geiRenderDepositField('tm','_tmInputChange()');
+  const p=document.getElementById(m.pageId);if(p)p.style.display='';
+  _geiRenderTopBar(prefix,m.defaultTitle,m.editFnName);
+  _geiRenderScopeCard(prefix);
+  _geiRenderProfitGauge(prefix,m.gaugeOninput);
+  _geiRenderActionButtons(prefix,m.actionOpts);
+  _geiRenderDepositField(prefix,m.depositOninput);
   // Trade branding in title
-  const _tm=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
-  const titleEl=document.getElementById('tm-tbar-title');if(titleEl){const _customName=document.getElementById('gei-desc')?.value?.trim();titleEl.textContent=_customName||(_tm.icon+' '+_tm.label+' · Time & Materials');}
+  const tmMeta=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
+  const titleEl=document.getElementById(prefix+'-tbar-title');
+  if(titleEl){const _customName=document.getElementById('gei-desc')?.value?.trim();titleEl.textContent=_customName||(tmMeta.icon+' '+tmMeta.label+' · '+m.titleSuffix);}
   // Sub-header: client name · address
   const c=getClientById(_geiClientId);
-  const sub=document.getElementById('tm-page-sub');
+  const sub=document.getElementById(prefix+'-page-sub');
   if(sub){
     const parts=[];
     if(c?.name)parts.push(c.name);
     if(c?.addr)parts.push(c.addr.split(',')[0]);
     sub.textContent=parts.join(' · ')||'New estimate';
   }
+  // Restore deposit % from saved bid (back-calculate from deposit/amount) — the
+  // field was rendered fresh above, so this must come after _geiRenderDepositField.
+  const b=bids.find(x=>x.id===_geiEditBidId);
+  if(b?.amount>0&&b?.deposit>0){
+    const depEl=document.getElementById(prefix+'-deposit-pct');
+    if(depEl)depEl.value=Math.round((b.deposit/b.amount)*100);
+  }
+  return b;
+}
+function _geiHidePage(pageId){
+  const p=document.getElementById(pageId);if(p)p.style.display='none';
+  ['gei-old-tbar','gei-step-bar'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='';});
+}
+
+// ── T&M single-page layout (matches design spec EstimateTM.jsx) ──────────────
+function _tmShowPage(){
+  const b=_geiShowSharedChrome('tm');
   // Populate inputs from current state — comma-formatted like the price fields
   // elsewhere (_fmtMoneyInput/_moneyVal), so a restored value displays the same
   // way it would after the contractor typed it.
@@ -706,27 +751,15 @@ function _tmShowPage(){
   const crewDisp=document.getElementById('tm-i-crew-count');
   if(crewDisp)crewDisp.textContent=Math.max(1,_tmCrewCount||1);
   setV('tm-i-markup',_tmMatMarkup||'');
-  const b=bids.find(x=>x.id===_geiEditBidId);
   if(b?.tmNteCap)setV('tm-i-nte',b.tmNteCap);
   if(b?.tmCapAction){setV('tm-i-cap-action',b.tmCapAction);_tmCapAction=b.tmCapAction;}
-  // Restore deposit % from saved bid (back-calculate from deposit/amount) — field
-  // is rendered fresh above, so this can't run until after _geiRenderDepositField.
-  if(b?.amount>0&&b?.deposit>0){
-    const _depEl=document.getElementById('tm-deposit-pct');
-    if(_depEl)_depEl.value=Math.round((b.deposit/b.amount)*100);
-  }
   _injectRrpItems();
   _tmRenderMatList();
   _tmInputChange();
   _tmSyncCadence();
   _renderScopeChips('tm-scope-wrap');
 }
-function _tmHidePage(){
-  const p=document.getElementById('gei-tm-page');if(p)p.style.display='none';
-  ['gei-old-tbar','gei-step-bar'].forEach(id=>{
-    const el=document.getElementById(id);if(el)el.style.display='';
-  });
-}
+function _tmHidePage(){_geiHidePage('gei-tm-page');}
 
 // ── Build Your Own single-page layout ────────────────────────────────────────
 let _byoItems=[],_byoCustomSections=[],_byoCustomTerms='';
@@ -750,45 +783,20 @@ const _RRP_PROPOSAL_LINES=[
   'Documentation — Signed work plan, Renovate Right pamphlet, and post-job verification record.',
 ];
 function _byoShowPage(){
-  _tmHidePage(); // must run first — _tmHidePage re-shows gei-old-tbar, then we hide it below
-  ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id=>{
-    const el=document.getElementById(id);if(el)el.style.display='none';
-  });
-  const p=document.getElementById('gei-byo-page');if(p)p.style.display='';
-  _geiRenderTopBar('byo','Build Your Own proposal','_editByoTitle');
-  _geiRenderScopeCard('byo');
-  _geiRenderProfitGauge('byo',"this.dataset.userSet='true';_byoUpdateRail();_byoAutosave()");
-  _geiRenderActionButtons('byo',{extraButtons:[{label:'📋 Option B',onclick:'_byoDuplicateBid()'}]});
-  _geiRenderDepositField('byo','_byoUpdateRail();_byoAutosave()');
-  // Trade branding in title
-  const _bm=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
-  const byoTitle=document.getElementById('byo-tbar-title');
-  if(byoTitle){const _customName=document.getElementById('gei-desc')?.value?.trim();byoTitle.textContent=_customName||(_bm.icon+' '+_bm.label+' · Build Your Own');}
-  const c=getClientById(_geiClientId);
-  const sub=document.getElementById('byo-page-sub');
-  if(sub){const parts=[];if(c?.name)parts.push(c.name);if(c?.addr)parts.push(c.addr.split(',')[0]);sub.textContent=parts.join(' · ')||'New estimate';}
+  _tmHidePage(); // must run first — it re-shows gei-old-tbar; the shared chrome re-hides it
+  const b=_geiShowSharedChrome('byo');
   // Load items from saved bid, otherwise start blank
-  const b=bids.find(x=>x.id===_geiEditBidId);
   if(b?.byoItems&&b.byoItems.length){_byoItems=b.byoItems.map(x=>({...x}));}
   else{_byoItems=[];}
   _byoCustomSections=b?.byoCustomSections?[...b.byoCustomSections]:[];
   _byoCustomTerms=b?.byoCustomTerms||'';
   _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
-  // Restore deposit % from saved bid (back-calculate from deposit/amount) — field
-  // is rendered fresh above, so this can't run until after _geiRenderDepositField.
-  if(b?.amount>0&&b?.deposit>0){
-    const _depEl=document.getElementById('byo-deposit-pct');
-    if(_depEl)_depEl.value=Math.round((b.deposit/b.amount)*100);
-  }
   _injectRrpItems();
   _byoRenderSections();
   _byoUpdateRail(); // also renders the auto crew-labor cost line
   _renderScopeChips('byo-scope-wrap');
 }
-function _byoHidePage(){
-  const p=document.getElementById('gei-byo-page');if(p)p.style.display='none';
-  ['gei-old-tbar','gei-step-bar'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='';});
-}
+function _byoHidePage(){_geiHidePage('gei-byo-page');}
 function _toggleScopeChip(label){
   _geiScopeNoScope=false;
   const idx=_geiScopeChips.indexOf(label);
@@ -2683,9 +2691,9 @@ async function sendGenericProposal(previewOnly){
   // MUST be declared before the template literals below that use it — TDZ if declared after
   // Use the client's job address state, not the contractor's home state
   const _stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(v('gei-addr')):null)||(S&&S.state)||'KS';
-  const _tmDepRow=_geiIsTM
-    ?`<tr style="background:#0369a1;color:rgba(255,255,255,.88)"><td colspan="2" style="padding:6px 18px;font-size:11px;font-weight:600">Mobilization Deposit (${_tmDepPct}%) Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr>`
-    :`<tr style="background:#2a4a7f;color:rgba(255,255,255,.88)"><td colspan="2" style="padding:6px 18px;font-size:11px;font-weight:600">${_tmDepPct}% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr>`;
+  // One deposit-row template for both modes — only the label wording and accent
+  // color differ (T&M calls it a mobilization deposit).
+  const _tmDepRow=`<tr style="background:${_geiIsTM?'#0369a1':'#2a4a7f'};color:rgba(255,255,255,.88)"><td colspan="2" style="padding:6px 18px;font-size:11px;font-weight:600">${_geiIsTM?`Mobilization Deposit (${_tmDepPct}%)`:`${_tmDepPct}% Deposit`} Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr>`;
   const _fcPct=(S&&S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5);
   const _fcApr=Math.round(_fcPct*12*10)/10;
   const _warrantyPeriod=S?.warrantyPeriod||'1 year';
@@ -2699,9 +2707,36 @@ async function sendGenericProposal(previewOnly){
   const _permitClause=_geiTrade==='painting'
     ?`Painting and surface work does not typically require permits for standard residential repainting. If your municipality requires a permit for your specific project, ${_party} will notify you in advance. Any permit fees will be billed at cost with prior approval.`
     :`${_party} shall obtain all permits and inspections required for this scope of work in accordance with applicable local ordinances and codes. Any permit fees not included in this proposal will be billed at cost with prior Buyer approval.`;
-  const _tmPayTerms=_geiIsTM
-    ?`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Contract type:</strong> Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}</div><div>2. <strong>Mobilization deposit:</strong> ${_tmDepPct}% (${depositFmt}) due before work begins and before a start date is scheduled.</div><div>3. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div><div>4. <strong>Billing:</strong> ${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.</div><div>5. <strong>Change Orders:</strong> Any additional scope not described herein requires a written change order approved and signed by the client.</div><div>6. <strong>Limitation of Liability:</strong> ${_party} is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>7. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(_stateKey,_party)}</div><div>8. <strong>Finance Charges:</strong> Unpaid balances remaining 30 days after job completion are subject to a finance charge of ${_fcPct}% per month (${_fcApr}% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.</div><div>9. <strong>Workmanship Warranty:</strong> ${_warrantyClause}</div><div>10. <strong>Permits &amp; Inspections:</strong> ${_permitClause}</div><div>11. <strong>Schedule &amp; Delays:</strong> Completion dates are good-faith estimates and may be extended due to weather, material shortages, inspection delays, subcontractor availability, or other circumstances beyond ${_party}&apos;s reasonable control. ${_party} will provide timely written or verbal notice of any material delay.</div><div>12. <strong>Insurance:</strong> ${_party} maintains general liability insurance and, where required by law, workers&apos; compensation insurance. A certificate of insurance will be provided to Buyer upon written request prior to commencement of work.</div><div>13. <strong>Dispute Resolution:</strong> In the event of a dispute, both parties agree to attempt good-faith negotiation before pursuing arbitration or litigation. The prevailing party in any legal proceeding to enforce this agreement shall be entitled to recover reasonable attorney&apos;s fees and costs, to the extent permitted by law.</div></div>`
-    :`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> ${_tmDepPct}% due before work begins and before a start date is scheduled. Balance due upon completion.</div><div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div><div>3. <strong>Change Orders:</strong> Any additional work not described herein requires a written change order approved and signed by the client.</div><div>4. <strong>Limitation of Liability:</strong> ${_party} is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>5. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(_stateKey,_party)}</div><div>6. <strong>Finance Charges:</strong> Unpaid balances remaining 30 days after job completion are subject to a finance charge of ${_fcPct}% per month (${_fcApr}% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.</div><div>7. <strong>Workmanship Warranty:</strong> ${_warrantyClause}</div><div>8. <strong>Permits &amp; Inspections:</strong> ${_permitClause}</div><div>9. <strong>Schedule &amp; Delays:</strong> Completion dates are good-faith estimates and may be extended due to weather, material shortages, inspection delays, subcontractor availability, or other circumstances beyond ${_party}&apos;s reasonable control. ${_party} will provide timely written or verbal notice of any material delay.</div><div>10. <strong>Insurance:</strong> ${_party} maintains general liability insurance and, where required by law, workers&apos; compensation insurance. A certificate of insurance will be provided to Buyer upon written request prior to commencement of work.</div><div>11. <strong>Dispute Resolution:</strong> In the event of a dispute, both parties agree to attempt good-faith negotiation before pursuing arbitration or litigation. The prevailing party in any legal proceeding to enforce this agreement shall be entitled to recover reasonable attorney&apos;s fees and costs, to the extent permitted by law.</div></div>`;
+  // Terms & Conditions — ONE clause list for both modes. Every clause shared by
+  // T&M and BYO exists exactly once below; only the payment terms at the top
+  // genuinely differ (contract type + mobilization deposit + billing cadence for
+  // T&M vs a simple deposit for BYO). Numbering is generated from array order,
+  // so adding/removing a clause can never desync the two modes again.
+  // sign.html's legacy-proposal patcher keys on the "<div>N. <strong>Title:"
+  // shape — preserved verbatim by the renderer below.
+  const _cancelClause=`Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.`;
+  const _modeTerms=_geiIsTM?[
+    ['Contract type',`Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}`],
+    ['Mobilization deposit',`${_tmDepPct}% (${depositFmt}) due before work begins and before a start date is scheduled.`],
+    ['Cancellation &amp; Deposits',_cancelClause],
+    ['Billing',`${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.`],
+  ]:[
+    ['Deposit',`${_tmDepPct}% due before work begins and before a start date is scheduled. Balance due upon completion.`],
+    ['Cancellation &amp; Deposits',_cancelClause],
+  ];
+  const _termsClauses=[
+    ..._modeTerms,
+    ['Change Orders','Any additional work not described herein requires a written change order approved and signed by the client.'],
+    ['Limitation of Liability',`${_party} is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.`],
+    ['Mechanic&#39;s Lien',_lienNotice(_stateKey,_party)],
+    ['Finance Charges',`Unpaid balances remaining 30 days after job completion are subject to a finance charge of ${_fcPct}% per month (${_fcApr}% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.`],
+    ['Workmanship Warranty',_warrantyClause],
+    ['Permits &amp; Inspections',_permitClause],
+    ['Schedule &amp; Delays',`Completion dates are good-faith estimates and may be extended due to weather, material shortages, inspection delays, subcontractor availability, or other circumstances beyond ${_party}&apos;s reasonable control. ${_party} will provide timely written or verbal notice of any material delay.`],
+    ['Insurance',`${_party} maintains general liability insurance and, where required by law, workers&apos; compensation insurance. A certificate of insurance will be provided to Buyer upon written request prior to commencement of work.`],
+    ['Dispute Resolution','In the event of a dispute, both parties agree to attempt good-faith negotiation before pursuing arbitration or litigation. The prevailing party in any legal proceeding to enforce this agreement shall be entitled to recover reasonable attorney&apos;s fees and costs, to the extent permitted by law.'],
+  ];
+  const _tmPayTerms='<div style="font-size:11px;color:#2d3748;line-height:2">'+_termsClauses.map((c,i)=>`<div>${i+1}. <strong>${c[0]}:</strong> ${c[1]}</div>`).join('')+'</div>';
   const _tmPropMarkupMult=(_geiIsTM&&_tmMatMarkup>0)?(1+_tmMatMarkup/100):1;
   // Safari lazy-parses function bodies on first call — extract ?.?? to plain variables
   const _byoTermsEl2=document.getElementById('byo-custom-terms');

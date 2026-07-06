@@ -2264,6 +2264,129 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     });
   });
 
+  test.describe('_GEI_MODES / _geiShowSharedChrome — one code path for both estimate pages', () => {
+    test('_GEI_MODES registry has tm and byo entries with all keys the shared chrome needs', async () => {
+      const r = await page.evaluate(() => {
+        const need = ['pageId', 'defaultTitle', 'editFnName', 'titleSuffix', 'gaugeOninput', 'depositOninput', 'actionOpts'];
+        const check = m => m && need.every(k => m[k] !== undefined);
+        return { tm: check(_GEI_MODES.tm), byo: check(_GEI_MODES.byo), unknownSafe: (() => { try { _geiShowSharedChrome('nope'); return true; } catch (e) { return false; } })() };
+      });
+      expect(r.tm).toBe(true);
+      expect(r.byo).toBe(true);
+      expect(r.unknownSafe).toBe(true);
+    });
+
+    test('_geiShowSharedChrome renders the full chrome for BOTH modes from the one function', async () => {
+      const r = await page.evaluate(() => {
+        const probe = prefix => {
+          _geiShowSharedChrome(prefix);
+          return {
+            title: !!document.getElementById(prefix + '-tbar-title'),
+            scope: !!document.getElementById(prefix + '-scope-wrap'),
+            gauge: !!document.getElementById(prefix + '-profit-gauge'),
+            deposit: !!document.getElementById(prefix + '-deposit-pct'),
+            actions: (document.getElementById(prefix + '-actions-wrap')?.innerHTML || '').includes('_geiSignInPerson()'),
+            sub: (document.getElementById(prefix + '-page-sub')?.textContent || '') !== '—',
+          };
+        };
+        return { tm: probe('tm'), byo: probe('byo') };
+      });
+      for (const mode of ['tm', 'byo']) {
+        for (const part of ['title', 'scope', 'gauge', 'deposit', 'actions', 'sub']) {
+          expect(r[mode][part], `${mode} ${part}`).toBe(true);
+        }
+      }
+    });
+
+    test('_tmHidePage/_byoHidePage still hide their page and restore the legacy toolbar (shared _geiHidePage)', async () => {
+      const r = await page.evaluate(() => {
+        const probe = (showFn, hideFn, pageId) => {
+          showFn();
+          hideFn();
+          return {
+            pageHidden: document.getElementById(pageId)?.style.display === 'none',
+            tbarRestored: document.getElementById('gei-old-tbar')?.style.display === '',
+          };
+        };
+        return {
+          tm: probe(_tmShowPage, _tmHidePage, 'gei-tm-page'),
+          byo: probe(_byoShowPage, _byoHidePage, 'gei-byo-page'),
+        };
+      });
+      expect(r.tm.pageHidden).toBe(true);
+      expect(r.tm.tbarRestored).toBe(true);
+      expect(r.byo.pageHidden).toBe(true);
+      expect(r.byo.tbarRestored).toBe(true);
+    });
+  });
+
+  test.describe('Proposal T&C — single clause list drives both modes (parity regression)', () => {
+    // Captures the generated T&C section for one mode via the preview overlay.
+    const captureTerms = (page, isTM, clientId) => page.evaluate(async ({ isTM, clientId }) => {
+      const c = { id: clientId, name: 'Parity Client', addr: '1 Parity Rd, Wichita KS 67202' };
+      clients = clients.filter(x => x.id !== clientId).concat([c]);
+      bids = bids.filter(x => x.client_id !== clientId);
+      openGenericEstimate(c, null, 'general');
+      if (isTM) {
+        _geiIsTM = true; _geiIsFreeForm = false;
+        _tmRatePerMan = 50; _tmEstHours = 16; _tmCrewCount = 1;
+        _geiLines = [{ desc: 'Materials', qty: 1, rate: 500, total: 500, _tmLabor: false }];
+      } else {
+        _geiIsTM = false; _geiIsFreeForm = true;
+        _byoItems = [
+          { id: 1, section: 'Interior', label: 'Work', price: 400, on: true },
+          { id: 2, section: 'Materials', label: 'Supplies', price: 100, on: true },
+        ];
+      }
+      let captured = '';
+      const orig = window._showProposalPreviewOverlay;
+      window._showProposalPreviewOverlay = html => { captured = html; };
+      let err = null;
+      try { await sendGenericProposal(true); } catch (e) { err = e.message; }
+      window._showProposalPreviewOverlay = orig;
+      _geiIsTM = false;
+      const clauses = [];
+      const re = /<div>(\d+)\. <strong>(.*?):<\/strong> ([\s\S]*?)<\/div>/g;
+      let m;
+      while ((m = re.exec(captured)) !== null) clauses.push({ n: +m[1], title: m[2], body: m[3] });
+      return { err, clauses, hasDepRow: captured.includes('Due Before Work Begins') };
+    }, { isTM, clientId });
+
+    test('T&M and BYO T&C come from the same clause list — shared clauses are byte-identical, mode clauses differ, numbering intact', async () => {
+      const tm = await captureTerms(page, true, 88901);
+      const byo = await captureTerms(page, false, 88902);
+      expect(tm.err).toBe(null);
+      expect(byo.err).toBe(null);
+      expect(tm.hasDepRow).toBe(true);
+      expect(byo.hasDepRow).toBe(true);
+
+      // Numbering: generated from array order, sequential from 1 in both modes.
+      expect(tm.clauses.length).toBe(13);
+      expect(byo.clauses.length).toBe(11);
+      tm.clauses.forEach((c, i) => expect(c.n).toBe(i + 1));
+      byo.clauses.forEach((c, i) => expect(c.n).toBe(i + 1));
+
+      // Mode-specific heads (sign.html's legacy patcher depends on these shapes).
+      expect(tm.clauses[0].title).toBe('Contract type');
+      expect(tm.clauses[1].title).toBe('Mobilization deposit');
+      expect(tm.clauses[3].title).toBe('Billing');
+      expect(byo.clauses[0].title).toBe('Deposit');
+
+      // Shared tail: same titles in the same order in both modes...
+      const sharedTitles = ['Cancellation &amp; Deposits', 'Change Orders', 'Limitation of Liability', 'Mechanic&#39;s Lien', 'Finance Charges', 'Workmanship Warranty', 'Permits &amp; Inspections', 'Schedule &amp; Delays', 'Insurance', 'Dispute Resolution'];
+      const tailOf = clauses => clauses.filter(c => sharedTitles.includes(c.title));
+      const tmTail = tailOf(tm.clauses), byoTail = tailOf(byo.clauses);
+      expect(tmTail.map(c => c.title)).toEqual(sharedTitles);
+      expect(byoTail.map(c => c.title)).toEqual(sharedTitles);
+
+      // ...and BYTE-IDENTICAL bodies — the whole point of the single clause list.
+      // Same trade + same client state, so every shared clause must match exactly.
+      for (let i = 0; i < sharedTitles.length; i++) {
+        expect(tmTail[i].body, `shared clause "${sharedTitles[i]}" must be identical in both modes`).toBe(byoTail[i].body);
+      }
+    });
+  });
+
   // ═══════════════════════════════════════════════════════════════════════════
   // 31. _toggleScopeChip
   // ═══════════════════════════════════════════════════════════════════════════
