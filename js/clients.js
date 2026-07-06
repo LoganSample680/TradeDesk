@@ -291,10 +291,10 @@ function _showEstimateStylePicker(c,overrideAddr){
         '<button class="btn btn-ghost" onclick="_closeStylePicker()">Cancel</button>'+
       '</div>'+
       '<div class="chooser-grid">'+
-        card('tm','amber','⏱️','Unknown scope','Time &amp; Materials','Flexible billing when you can\'t lock in a price',
-          ['Hourly rate + crew size','Materials at cost + markup','Not-to-exceed cap (optional)','Weekly invoicing'])+
         card('freeform','green','🧩','A la carte','Build Your Own','List every service with its own price',
           ['Price each service individually','Mix labor, materials &amp; add-ons','Deposit collected upfront','Easy to upsell extras'])+
+        card('tm','amber','⏱️','Unknown scope','Time &amp; Materials','Flexible billing when you can\'t lock in a price',
+          ['Hourly rate + crew size','Materials at cost + markup','Not-to-exceed cap (optional)','Weekly invoicing'])+
       '</div>'+
     '</div>';
   document.body.appendChild(ov);
