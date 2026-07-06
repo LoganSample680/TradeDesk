@@ -1534,7 +1534,7 @@ function _showProposalPreviewOverlay(proposalHtml){
   hdr.style.cssText='background:#1a365d;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0';
   hdr.innerHTML='<span style="font-size:15px;font-weight:800">👁 Client preview — how they\'ll see it</span><button onclick="document.getElementById(\'_prop-preview-ov\')?.remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation">✕ Close</button>';
   const body=document.createElement('div');
-  body.style.cssText='flex:1;overflow-y:auto;padding:16px;box-sizing:border-box;background:#f0f4f8';
+  body.style.cssText='flex:1;overflow-y:auto;padding:16px;box-sizing:border-box;background:#f0f4f8;overflow-wrap:anywhere';
   body.innerHTML=proposalHtml;
   // Same accordion sign.html applies to the real client-facing page (js/legal.js)
   // — without this the preview showed the full uncollapsed T&C wall of text,
@@ -1573,8 +1573,8 @@ function _buildComparisonPreview(){
   if(!bidA||!bidB){showToast('Bids not found','⚠️');return;}
   const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const makeCard=(b,label,accentColor)=>{
-    const lineRows=(b.geiLines||[]).filter(l=>l.desc||l.rate).map(l=>`<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:7px 12px;font-size:12px;color:#2d3748"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${l.notes?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:''}</td><td style="padding:7px 8px;text-align:right;font-size:12px;font-weight:600;color:#1a365d">${fmt((l.qty||1)*(l.rate||0))}</td></tr>`).join('');
-    const notes=b.notes?`<div style="padding:10px 14px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.5"><strong>Notes:</strong> ${escHtml(b.notes)}</div>`:'';
+    const lineRows=(b.geiLines||[]).filter(l=>l.desc||l.rate).map(l=>`<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:7px 12px;font-size:12px;color:#2d3748;overflow-wrap:anywhere"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${l.notes?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:''}</td><td style="padding:7px 8px;text-align:right;font-size:12px;font-weight:600;color:#1a365d">${fmt((l.qty||1)*(l.rate||0))}</td></tr>`).join('');
+    const notes=b.notes?`<div style="padding:10px 14px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.5;overflow-wrap:anywhere"><strong>Notes:</strong> ${escHtml(b.notes)}</div>`:'';
     return `<div style="background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 2px 12px rgba(0,0,0,.08);margin-bottom:16px"><div style="background:${accentColor};color:#fff;padding:14px 16px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;opacity:.85">Option</div><div style="font-size:20px;font-weight:800;margin-top:2px">${label}</div><div style="font-size:13px;opacity:.85;margin-top:4px">${escHtml(b.type||'Proposal')}</div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><tbody>${lineRows}</tbody><tfoot><tr style="background:${accentColor};color:#fff"><td style="padding:10px 14px;font-weight:800;font-size:14px">TOTAL</td><td style="padding:10px 14px;text-align:right;font-weight:800;font-size:14px">${fmt(b.amount)}</td></tr></tfoot></table>${notes}<div style="padding:12px 14px;background:#f8fafc;text-align:center"><button style="width:100%;padding:12px;border-radius:10px;border:2px solid ${accentColor};background:#fff;color:${accentColor};font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;touch-action:manipulation">✓ I choose this option</button></div></div>`;
   };
   const compHtml=`<div style="max-width:560px;margin:0 auto;padding:16px 0"><div style="text-align:center;padding:16px 0 20px"><div style="font-size:18px;font-weight:800;color:#1a365d">Choose your option</div><div style="font-size:13px;color:#718096;margin-top:4px">Both options are from the same contractor. Review each and tap to accept the one that works best for you.</div></div>${makeCard(bidA,'A','#1a365d')}${makeCard(bidB,'B','#2a4a7f')}</div>`;
@@ -2784,13 +2784,13 @@ async function sendGenericProposal(previewOnly){
   const _byoTermsEl2=document.getElementById('byo-custom-terms');
   const _byoTermsText=(_byoTermsEl2?_byoTermsEl2.value:(_byoCustomTerms||'')).trim();
   const _customTermsBlock=_byoTermsText
-    ?`<div style="padding:16px 24px;border-top:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Additional Terms</div><div style="font-size:11px;color:#2d3748;line-height:1.8;white-space:pre-wrap">${escHtml(_byoTermsText)}</div></div>`
+    ?`<div style="padding:16px 24px;border-top:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Additional Terms</div><div style="font-size:11px;color:#2d3748;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere">${escHtml(_byoTermsText)}</div></div>`
     :'';
   const _mkLineRow=(l,amt,isRrp)=>{
     const amtStr=isRrp&&amt===0?'<span style="font-size:11px;font-style:italic;color:#92400e">Included</span>':'$'+amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
     const notesHtml=l.notes?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:'';
     const amtColor=isRrp&&amt===0?'#92400e':'#1a365d';
-    return `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 18px;font-size:12px;color:#2d3748"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${notesHtml}</td><td style="padding:9px 6px;text-align:center;font-size:12px;color:#64748b">${l.qty||1}</td><td style="padding:9px 18px 9px 4px;text-align:right;font-size:12px;font-weight:600;color:${amtColor}">${amtStr}</td></tr>`;
+    return `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 18px;font-size:12px;color:#2d3748;overflow-wrap:anywhere"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${notesHtml}</td><td style="padding:9px 6px;text-align:center;font-size:12px;color:#64748b">${l.qty||1}</td><td style="padding:9px 18px 9px 4px;text-align:right;font-size:12px;font-weight:600;color:${amtColor}">${amtStr}</td></tr>`;
   };
   let lineRows;
   if(_geiIsFreeForm){
@@ -2837,7 +2837,7 @@ async function sendGenericProposal(previewOnly){
       _stRowHtml=`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td colspan="2" style="padding:8px 18px;font-size:12px;color:#64748b">New construction: no tax</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$0.00</td></tr>`;
     }
   }
-  const notesHtml=v('gei-notes')?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6"><strong style="color:#1a365d">Notes:</strong> ${escHtml(v('gei-notes'))}</div>`:'';
+  const notesHtml=v('gei-notes')?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6;overflow-wrap:anywhere"><strong style="color:#1a365d">Notes:</strong> ${escHtml(v('gei-notes'))}</div>`:'';
   let _propPanelHtml='';
   if(_panelSched){
     const {l1:_pl1,l2:_pl2,imbalance:_pimb}=_panelCalcBalance();
@@ -2858,7 +2858,7 @@ async function sendGenericProposal(previewOnly){
     const _listItems=_geiScopeChips.map(l=>{
       const chip=_allChipDefs.find(c=>c.label===l);
       const desc=chip&&chip.clientDesc?`<span style="font-size:10.5px;color:#718096"> — ${escHtml(chip.clientDesc)}</span>`:'';
-      return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7">${escHtml(l)}${desc}</li>`;
+      return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(l)}${desc}</li>`;
     }).join('');
     _scopeBlocks.push(`<ol style="margin:0 0 10px;padding-left:18px">${_listItems}</ol>`);
   }
@@ -2867,7 +2867,7 @@ async function sendGenericProposal(previewOnly){
     const _scopeSecs2=[...(new Set(_byoWorkItems2.map(it=>it.section)))].filter(Boolean);
     const _secBlocks2=_scopeSecs2.map(sec=>{
       const its=_byoWorkItems2.filter(it=>it.section===sec);
-      const rows='<ol style="margin:4px 0 0;padding-left:18px">'+its.map(it=>`<li style="font-size:11.5px;color:#4a5568;line-height:1.7">${escHtml(it.label)}${it.notes?`<span style="font-size:10.5px;color:#718096"> — ${escHtml(it.notes)}</span>`:''}</li>`).join('')+'</ol>';
+      const rows='<ol style="margin:4px 0 0;padding-left:18px">'+its.map(it=>`<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(it.label)}${it.notes?`<span style="font-size:10.5px;color:#718096"> — ${escHtml(it.notes)}</span>`:''}</li>`).join('')+'</ol>';
       return `<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:2px">${escHtml(sec)}</div>${rows}</div>`;
     }).join('');
     _scopeBlocks.push(_secBlocks2);

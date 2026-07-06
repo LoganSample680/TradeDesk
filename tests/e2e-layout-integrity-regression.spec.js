@@ -149,6 +149,47 @@ test.describe('layout integrity — mobile', () => {
     expect(r.metaFitsRow, 'the notes text itself must stay within the viewport, not run off the right edge').toBe(true);
   });
 
+  // Regression: the estimate-builder row fix above did NOT cover the actual
+  // generated proposal HTML — a long unbroken BYO item note bled off-screen in
+  // BOTH the "Scope of work" section AND the line-item "Description" table of
+  // the real client preview (owner-reported: garbled text confined correctly on
+  // the estimate page but not in the proposal). Root cause: the notes/description
+  // divs generated inline inside sendGenericProposal had their own separate inline
+  // styles with no overflow-wrap, so the estimate-page CSS class fix never applied
+  // to them. Fixed at both the specific render sites AND the outer containers
+  // (#prop-html in sign.html, the preview overlay body) as a defense-in-depth net.
+  test('a long unbroken BYO item note does not bleed off-screen inside the generated proposal preview (scope section + line-item table)', async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const r = await page.evaluate(async () => {
+      const c = { id: 79103, name: 'Proposal Bleed Client', addr: '1 Proposal Bleed Rd' };
+      clients = clients.filter(x => x.id !== 79103).concat([c]);
+      bids = bids.filter(x => x.client_id !== 79103);
+      openGenericEstimate(c, null, 'painting');
+      _geiIsFreeForm = true;
+      const garbage = 'Sjdbdhfbdbdbdndbdbsnsbbdbddndndnbdndndndbdndndndndndsjdjdjdjshshshshahaha';
+      _byoItems = [{ id: 1, section: 'Interior', label: 'Dining', notes: garbage, price: 300, on: true }];
+      let err = null;
+      try { await sendGenericProposal(true); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_prop-preview-ov');
+      const overflow = document.documentElement.scrollWidth - window.innerWidth;
+      const garbledEl = ov ? [...ov.querySelectorAll('*')].filter(el => el.children.length === 0).find(el => el.textContent.includes(garbage.slice(0, 20))) : null;
+      const res = {
+        err,
+        hasOverlay: !!ov,
+        garbledFound: !!garbledEl,
+        garbledFitsScreen: garbledEl ? garbledEl.getBoundingClientRect().right <= window.innerWidth + 1 : null,
+        overflow,
+      };
+      ov?.remove();
+      return res;
+    });
+    expect(r.err).toBe(null);
+    expect(r.hasOverlay).toBe(true);
+    expect(r.garbledFound, 'the garbled note must actually render in the generated proposal for this test to mean anything').toBe(true);
+    expect(r.garbledFitsScreen, 'the garbled note must wrap within the viewport inside the proposal, not run off the right edge').toBe(true);
+    expect(r.overflow, 'no horizontal bleed at 390px from the generated proposal HTML').toBeLessThanOrEqual(1);
+  });
+
   // Regression: T&M material category rows had no visible "Edit" affordance —
   // only a hover-only (opacity:0 until :hover) delete "×", invisible/undiscoverable
   // on touch devices, and inconsistent with BYO's always-visible Edit/✕ pair.
