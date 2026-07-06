@@ -939,7 +939,7 @@ function clearAllData(){
       _userDelete(()=>{
         clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];maintenance=[];payments=[];liens=[];timeEntries=[];events=[];photos=[];licenses=[];contracts=[];agreements=[];checksState={};
         S.employees=[];_setVehicles([]); // stamped wipe — must beat any stale cloud copy in the merge
-        estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;
+        estLinkedClientId=null;editingBidId=null;
         gps={active:false,startCoords:null,startTime:null,clientId:null,clientName:'',timerInt:null,vehicle:'',purpose:''};
         if(_activeTimer){clearInterval(_activeTimer.timerInterval);_activeTimer=null;hideClockBanner();}
         hideDriveBanner();saveAll();
@@ -972,7 +972,7 @@ function clearClientsOnly(){
     if(typeof _setDeliberateWipe==='function')_setDeliberateWipe(true);
     _userDelete(()=>{
       clients=[];bids=[];jobs=[];income=[];payments=[];liens=[];
-      estSurfaces=[];estSurfId=0;estLinkedClientId=null;editingBidId=null;
+      estLinkedClientId=null;editingBidId=null;
       saveAll();
     });
     try{ if(typeof _flushSaveNow==='function') await _flushSaveNow(); }catch(_e){}

@@ -24,7 +24,7 @@ function _newBidId(){return Date.now()*1000+Math.floor(Math.random()*999);}
 let currentClientId=null,editClientId=null,clientFilter='all';
 Object.defineProperty(window,'currentClientId',{get:()=>currentClientId,set:v=>{currentClientId=v;},configurable:true});
 Object.defineProperty(window,'editClientId',{get:()=>editClientId,set:v=>{editClientId=v;},configurable:true});
-let estSurfaces=[],estSurfId=0,estStep=1,estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
+let estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
 let _pendingSignToken=null; // {bidId,token,proposalKey} — committed to bid only when SMS/email is actually sent
 let _pendingShareData=null; // {url,cname,bname,cphone,cemail} for the just-generated proposal link — read by _proposalShareData()
 let sigCanvas,sigCtx,isSigning=false;
