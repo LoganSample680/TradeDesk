@@ -12,12 +12,15 @@ test.describe('jobs.js — exhaustive coverage', () => {
   let page;
 
   // Idempotent fixture seed — filter-then-push so it's safe to re-run. Called in
-  // beforeAll AND beforeEach: a late-resolving cloud/cache load reassigns the
-  // in-memory arrays after the initial seed and drops these fixtures, so tests
-  // running after that clobber saw undefined scopes/time-entries (task #22 race).
-  // Re-seeding before EVERY test guarantees the canonical fixture is present at
-  // the moment each test reads it — one file-scoped fix for the whole spec.
-  const seedFixtures = () => page.evaluate(() => {
+  // beforeAll AND beforeEach, AND (crucially) inside the same page.evaluate as
+  // every test that asserts seeded values: a late-resolving cloud/cache load
+  // reassigns the in-memory arrays after boot (task #22 race), and it can land
+  // in the gap BETWEEN beforeEach's evaluate and the test body's evaluate — the
+  // beforeEach re-seed alone still flaked on WebKit shard 3 (getJobClockTotal
+  // read 0, fd9b3ba run). page.evaluate is atomic, so seeding at the top of the
+  // reading evaluate fully closes the race; between-call re-seeds stay as a
+  // cheap best-effort for tests that only mutate.
+  const SEED_FIXTURES_FN = () => {
     clients = clients.filter(c => c.id !== 79901 && c.id !== 79902);
     bids    = bids.filter(b => b.id !== 78801 && b.id !== 78802);
     jobs    = jobs.filter(j => j.id !== 77701 && j.id !== 77702 && j.id !== 77703);
@@ -51,7 +54,8 @@ test.describe('jobs.js — exhaustive coverage', () => {
       { id: 9990002, job_id: 77701, date: '2026-06-01', minutes: 45, scope_id: 'prime',  scope_label: 'Primer coat' },
       { id: 9990003, job_id: 77701, date: '2026-06-01', minutes: 30, scope_id: null,     scope_label: null }
     );
-  });
+  };
+  const seedFixtures = () => page.evaluate(() => window.__seedJobsFixtures());
 
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -60,6 +64,9 @@ test.describe('jobs.js — exhaustive coverage', () => {
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
 
+    // Install the seed as an in-page function so test bodies can re-run it
+    // atomically inside their own evaluate (see SEED_FIXTURES_FN comment).
+    await page.evaluate(`window.__seedJobsFixtures = ${SEED_FIXTURES_FN.toString()}`);
     await seedFixtures();
 
     await page.evaluate(() => {
@@ -203,6 +210,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
     test('job with no bid — falls back to default clock scopes', async () => {
       const r = await page.evaluate(() => {
         try {
+          window.__seedJobsFixtures();
           const res = getJobScopes(77703);
           return { ok: true, len: res.length, ids: res.map(s => s.id) };
         } catch (e) { return { ok: false, err: e.message }; }
@@ -214,6 +222,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
     test('no duplicate ids returned even when extraScopes overlaps bid scopes', async () => {
       const r = await page.evaluate(() => {
         try {
+          window.__seedJobsFixtures();
           const j = jobs.find(x => x.id === 77701);
           const prev = j.extraScopes;
           j.extraScopes = ['sand', 'popcorn'];
@@ -231,6 +240,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
     test('extraScopes as object with id — included correctly', async () => {
       const r = await page.evaluate(() => {
         try {
+          window.__seedJobsFixtures();
           const j = jobs.find(x => x.id === 77701);
           const prev = j.extraScopes;
           j.extraScopes = [{ id: 'custom_test_xyz', label: 'Custom XYZ', icon: '🔧', hint: '', ratePerSqFt: 0, flatRate: 0, clientDesc: '' }];
@@ -245,6 +255,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
 
     test('concurrent calls — no corruption', async () => {
       const r = await page.evaluate(() => {
+        window.__seedJobsFixtures();
         let ok = 0;
         for (let i = 0; i < 5; i++) {
           try { getJobScopes(77701); ok++; } catch (_) {}
@@ -289,6 +300,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
     test('golden path — correct minutes per scope_id, __other for null scope', async () => {
       const r = await page.evaluate(() => {
         try {
+          window.__seedJobsFixtures();
           const res = getJobScopeBreakdown(77701);
           return { ok: true, sand: res.sand, prime: res.prime, other: res['__other'] };
         } catch (e) { return { ok: false, err: e.message }; }
@@ -309,6 +321,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
 
     test('concurrent calls — stable results', async () => {
       const r = await page.evaluate(() => {
+        window.__seedJobsFixtures();
         let ok = 0;
         for (let i = 0; i < 5; i++) {
           try { const res = getJobScopeBreakdown(77701); if (res.sand === 90) ok++; } catch (_) {}
@@ -352,7 +365,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
 
     test('golden path — sum of minutes across all time entries for job', async () => {
       const r = await page.evaluate(() => {
-        try { return { ok: true, v: getJobClockTotal(77701) }; }
+        try { window.__seedJobsFixtures(); return { ok: true, v: getJobClockTotal(77701) }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
@@ -362,6 +375,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
     test('entry with missing minutes — treated as 0', async () => {
       const r = await page.evaluate(() => {
         try {
+          window.__seedJobsFixtures();
           timeEntries.push({ id: 9990099, job_id: 77701, date: '2026-06-02', scope_id: 'sand' }); // no minutes field
           const v = getJobClockTotal(77701);
           timeEntries = timeEntries.filter(e => e.id !== 9990099);
@@ -374,6 +388,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
 
     test('concurrent calls — stable', async () => {
       const r = await page.evaluate(() => {
+        window.__seedJobsFixtures();
         let ok = 0;
         for (let i = 0; i < 5; i++) {
           try { if (getJobClockTotal(77701) === 165) ok++; } catch (_) {}
