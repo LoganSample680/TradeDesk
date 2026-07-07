@@ -342,6 +342,12 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-co-btn-approve{padding:7px 12px;border-radius:8px;background:var(--ink);color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer;font-family:inherit}
 .hub-co-btn-decline{padding:7px 12px;border-radius:8px;background:transparent;color:var(--text2);border:1.5px solid var(--border2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
 
+/* Loading spinner — same treatment as sign.html, so a loading moment on the
+   client hub matches the vibe of the rest of the client-facing surfaces
+   instead of a plain "Loading…" text block sitting there doing nothing. */
+.hub-spinner{width:32px;height:32px;border-radius:50%;border:3px solid var(--border2);border-top-color:var(--denim);margin:0 auto 12px;animation:hub-spin .8s linear infinite}
+@keyframes hub-spin{to{transform:rotate(360deg)}}
+
 /* ── Change order signing modal ── */
 @keyframes hub-ov-fade{from{opacity:0}to{opacity:1}}
 @keyframes hub-modal-enter{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
@@ -2120,7 +2126,7 @@ async function _launchCheckout(bidId,amount,label){
   // Open modal with loading state immediately
   document.getElementById('stripe-modal-biz').textContent=_hub.contractorName||'Secure Payment';
   document.getElementById('stripe-modal-amt').textContent=fmt(amount/100)+' · Secured by Stripe';
-  document.getElementById('checkout-embed-container').innerHTML='<div style="padding:32px 20px;text-align:center;color:#9ca3af;font-size:14px">Loading payment options…</div>';
+  document.getElementById('checkout-embed-container').innerHTML='<div style="padding:32px 20px;text-align:center"><div class="hub-spinner"></div><div style="color:#9ca3af;font-size:14px">Loading payment options…</div></div>';
   const submitBtn=document.getElementById('checkout-submit-btn');
   if(submitBtn){submitBtn.disabled=true;submitBtn.style.display='none';submitBtn.textContent='Pay '+fmt(amount/100)+' — Secured by Stripe';}
   document.getElementById('stripe-overlay').style.display='block';
@@ -2300,7 +2306,7 @@ async function openProposal(bidId){
   const bid=_hub.bids.find(b=>b.id===bidId);
   if(!bid||!bid.proposalKey){alert('Proposal document not available. Please contact us.');return;}
   const ov=document.getElementById('prop-overlay'),ct=document.getElementById('prop-content');
-  ct.innerHTML='<div style="text-align:center;padding:60px 20px;color:#999;font-size:16px">Loading proposal…</div>';
+  ct.innerHTML='<div style="text-align:center;padding:60px 20px"><div class="hub-spinner"></div><div style="color:#999;font-size:16px">Loading proposal…</div></div>';
   ov.style.opacity='0';ov.style.display='block';requestAnimationFrame(()=>ov.style.opacity='1');scrollTo(0,0);
   try{
     const{data:propData,error}=await _fetchStorageJson(bid.proposalKey);

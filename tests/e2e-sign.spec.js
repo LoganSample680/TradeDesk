@@ -1423,6 +1423,21 @@ test.describe('client.html — all 5 tabs', () => {
     const html = await page.evaluate(() => document.getElementById('view-payments')?.innerHTML || '');
     expect(html.length).toBeGreaterThan(10);
   });
+
+  // Owner directive: the client hub's loading moments were plain gray "Loading…"
+  // text with no animation — choppy/dead compared to the polish just added to
+  // sign.html. _launchCheckout writes its loading state synchronously before
+  // its first await, so it's already in the DOM the instant the call returns.
+  test('payment checkout modal shows an animated spinner while loading, not just static text', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _launchCheckout !== 'function' || typeof _hub === 'undefined') return null;
+      const bid = _hub.bids && _hub.bids[0];
+      if (!bid) return null;
+      _launchCheckout(bid.id, 100000, 'Pay').catch(() => {});
+      return document.getElementById('checkout-embed-container')?.innerHTML || '';
+    });
+    if (r !== null) expect(r).toContain('hub-spinner');
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
