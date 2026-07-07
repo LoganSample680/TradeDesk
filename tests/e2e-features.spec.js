@@ -4150,6 +4150,59 @@ test.describe('client hub — progress photos render as a dated milestone timeli
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+//  CLIENT HUB — empty "Daily updates" card hidden so a pending signature
+//  isn't pushed below a placeholder with nothing in it
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('client hub — Daily updates card hides when there is nothing to show', () => {
+  test('no active jobs — card is absent and "Awaiting your signature" is the first thing in the main column', async ({ page }) => {
+    const hub = {
+      clientId: 905, contractorUserId: FAKE_USER_ID, contractorName: 'Feed Co', businessName: 'Feed Co',
+      clientName: 'Feed Client', clientAddr: '4 Feed Rd',
+      bids: [{ id: 5101, status: 'Pending', type: 'Roof Repair', amount: 3000, deposit: 750, balance: 3000, bid_date: '2026-07-01', signHubUrl: 'https://example.com/sign', paid: 0 }],
+      jobs: [], payments: [], messages: [], notifications: [], invoices: [], photos: [],
+    };
+    await page.addInitScript(h => { window.__mockHubData = h; }, hub);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=905&u=${FAKE_USER_ID}&t=feedtok905`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1500);
+    expect(await page.locator('.hub-feed-hd:has-text("Daily updates")').count()).toBe(0);
+    const mainCol = page.locator('.hub-col-main');
+    const firstHd = await mainCol.locator('.hub-feed-hd').first().textContent();
+    expect(firstHd).toContain('Awaiting your signature');
+    assertNoErrors(page, 'empty daily updates card hidden');
+  });
+
+  test('an active job — Daily updates card still renders with the job in it', async ({ page }) => {
+    const hub = {
+      clientId: 906, contractorUserId: FAKE_USER_ID, contractorName: 'Feed Co', businessName: 'Feed Co',
+      clientName: 'Feed Client 2', clientAddr: '5 Feed Rd',
+      bids: [], jobs: [{ id: 5201, name: 'Roof Repair Job', status: 'active', start: '2026-07-01', days: 3 }],
+      payments: [], messages: [], notifications: [], invoices: [], photos: [],
+    };
+    await page.addInitScript(h => { window.__mockHubData = h; }, hub);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=906&u=${FAKE_USER_ID}&t=feedtok906`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1500);
+    const feedCard = page.locator('.hub-feed-hd:has-text("Daily updates")');
+    expect(await feedCard.count()).toBe(1);
+    expect(await page.locator('.hub-feed-item').count()).toBe(1);
+    assertNoErrors(page, 'populated daily updates card renders');
+  });
+
+  test('boot overlay shows client-facing loading copy', async ({ page }) => {
+    // Regression guard for the boot-overlay label — must read as addressed to the
+    // client ("Loading your client hub…"), not a generic unlabeled "Project Hub" tag.
+    const hub = { clientId: 907, contractorUserId: FAKE_USER_ID, contractorName: 'Boot Co', businessName: 'Boot Co', clientName: 'Boot Client', bids: [], jobs: [], payments: [], messages: [], notifications: [], invoices: [], photos: [] };
+    await page.addInitScript(h => { window.__mockHubData = h; }, hub);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=907&u=${FAKE_USER_ID}&t=boottok907`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    const bootText = await page.locator('#boot-overlay').textContent();
+    expect(bootText).toContain('Loading your client hub');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 //  BUILD FEED — in-progress drafts are user intent and always render
 // ════════════════════════════════════════════════════════════════════════════
 

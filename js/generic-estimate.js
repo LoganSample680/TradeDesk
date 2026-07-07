@@ -3111,6 +3111,7 @@ async function sendGenericProposal(previewOnly){
     rrpRenovatorCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
     bwebsite:S.bwebsite||'',
     baddr:S.baddr||'',
+    poweredBy:S.poweredBy!==false,
   };
   const _uploadRes=await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(e=>({error:e}));
   if(_uploadRes&&_uploadRes.error){showToast('Upload failed — check connection and try again','error');console.error('[proposal upload]',_uploadRes.error);return;}
@@ -3455,6 +3456,7 @@ async function _sendIndProposal(){
     rrpFirmCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_firm'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
     rrpRenovatorName:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.holderName||'';})(),
     rrpRenovatorCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
+    poweredBy:S.poweredBy!==false,
   };
   showToast('Uploading proposal…','⏳');
   await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(e=>console.error('[ind proposal upload]',e));

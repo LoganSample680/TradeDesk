@@ -96,9 +96,6 @@ input[type=text]:focus{border-color:var(--denim)}
 /* Sticky bar */
 #sticky-bar{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--border);padding:12px 16px;display:none;flex-direction:column;align-items:stretch;gap:8px;z-index:200;box-shadow:0 -4px 24px rgba(27,22,18,.12)}
 
-/* Float call */
-#float-call{position:fixed;bottom:80px;right:16px;width:52px;height:52px;border-radius:50%;background:#16a34a;display:none;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,.25);z-index:201;font-size:20px;text-decoration:none}
-
 /* --- sig-* new classes --- */
 
 /* Eyebrow label */
@@ -172,7 +169,7 @@ input[type=text]:focus{border-color:var(--denim)}
 
 
 @media print{
-  .topbar,#sticky-bar,#float-call,.step-dots,#portfolio-offer-card,.sig-pad,.btn,.btn-sec,button{display:none!important}
+  .topbar,#sticky-bar,.step-dots,#portfolio-offer-card,.sig-pad,.btn,.btn-sec,button{display:none!important}
   /* Accordion-collapsed terms must always appear in the printed/PDF contract */
   #prop-html [data-terms-hdr],#prop-html [data-terms-body]{display:block!important}
   .wrap{padding:8px;max-width:100%}
@@ -442,7 +439,7 @@ input[type=text]:focus{border-color:var(--denim)}
     </div>
   </div>
 
-  <div style="text-align:center;padding:28px 16px 12px;font-size:11px;color:var(--text3);font-weight:500">Powered by <strong style="font-weight:700;color:var(--text2)">TradeDesk Pro</strong></div>
+  <div id="powered-by-footer" style="text-align:center;padding:28px 16px 12px;font-size:11px;color:var(--text3);font-weight:500">Powered by <strong style="font-weight:700;color:var(--text2)">TradeDesk Pro</strong></div>
 </div>
 
 <!-- Decline confirmation modal -->
@@ -466,9 +463,6 @@ input[type=text]:focus{border-color:var(--denim)}
   <button id="approve-btn" onclick="approveAndSign()" style="width:100%;padding:14px 22px;border-radius:var(--r);border:none;background:var(--ink);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);box-shadow:0 3px 16px rgba(27,22,18,.3);transition:background .3s"><span id="approve-btn-label"></span></button>
   <button onclick="window.print()" class="btn-ghost" style="width:100%;padding:6px;font-size:12px">Download PDF</button>
 </div>
-
-<!-- Floating call button -->
-<a id="float-call" href="" data-has-phone="0"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.362 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg></a>
 
 <script>
 document.getElementById('approve-btn-label').innerHTML=svgIcon('✓',{size:16})+' Approve &amp; Sign';
@@ -512,7 +506,6 @@ function show(id){
   });
   const onSign=id==='pg-sign';
   const sb=document.getElementById('sticky-bar');
-  const fc=document.getElementById('float-call');
   if(sb){
     if(onSign){
       sb.style.transform='translateY(100%)';sb.style.transition='';sb.style.display='flex';
@@ -521,7 +514,6 @@ function show(id){
       }));
     }else{sb.style.display='none';sb.style.transform='';sb.style.transition='';}
   }
-  if(fc)fc.style.display=onSign&&fc.dataset.hasPhone==='1'?'flex':'none';
 }
 
 function _showPortfolioOffer(){
@@ -688,10 +680,9 @@ async function init(){
     // Sticky bar total
     const stickyTotal=document.getElementById('sticky-total');
     if(stickyTotal)stickyTotal.textContent=fmt(_prop.amount);
-    // Floating call button
-    const fc=document.getElementById('float-call');
-    if(fc&&_prop.businessPhone){fc.href='tel:'+_prop.businessPhone.replace(/\D/g,'');fc.dataset.hasPhone='1';}
     document.getElementById('amt-total').textContent=fmt(_prop.amount);
+    // Contractor-configurable — Settings → "Show 'Powered by'" (S.poweredBy, default true).
+    if(_prop.poweredBy===false){const _pbf=document.getElementById('powered-by-footer');if(_pbf)_pbf.style.display='none';}
     // Update cash section with actual business name
     const _cashMsg=document.getElementById('cash-confirm-msg');
     if(_cashMsg)_cashMsg.textContent=' Your proposal is signed and your spot is reserved. '+_biz+' will collect the deposit when they arrive.';

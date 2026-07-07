@@ -394,7 +394,7 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
 <div id="boot-overlay">
   <div id="boot-logo-wrap" style="display:none;margin-bottom:14px"><img id="boot-logo" style="height:54px;max-width:200px;object-fit:contain;border-radius:6px;display:block"></div>
   <div id="boot-name" style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-.3px;text-align:center;padding:0 32px;line-height:1.25;margin-bottom:5px;max-width:300px"></div>
-  <div style="font-size:11px;color:rgba(255,255,255,.3);font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:32px">Project Hub</div>
+  <div style="font-size:11px;color:rgba(255,255,255,.3);font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:32px">Loading your client hub…</div>
   <div style="width:110px;height:2px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden"><div id="boot-bar" style="height:100%;width:0%;background:#2D5DA8;border-radius:2px;transition:width 1.4s cubic-bezier(.4,0,.2,1)"></div></div>
 </div>
 
@@ -1157,17 +1157,17 @@ function renderOverview(){
   // Main col
   html+='<div class="hub-col-main">';
 
-  // Feed: daily updates
-  html+='<div class="card">';
-  html+='<div class="hub-feed-hd">Daily updates</div>';
+  // Feed: daily updates — hidden entirely when there's nothing to show, so
+  // "Awaiting your signature" (the highest-priority action) isn't pushed below
+  // an empty placeholder card with nothing in it.
   if(activeJobs.length){
+    html+='<div class="card">';
+    html+='<div class="hub-feed-hd">Daily updates</div>';
     activeJobs.forEach(j=>{
       html+='<div class="hub-feed-item"><div class="hub-feed-dot"></div><div><div class="hub-feed-title">'+esc(j.name)+'</div><div class="hub-feed-meta">'+(j.start?'Starts '+fmtDate(j.start):'')+(j.days?' · '+j.days+(j.days===1?' day':' days'):'In progress')+'</div></div></div>';
     });
-  }else{
-    html+='<div class="hub-feed-empty">No updates yet — we\'ll post progress here.</div>';
+    html+='</div>';
   }
-  html+='</div>';
 
   // Awaiting signature
   if(pendingBids.length){

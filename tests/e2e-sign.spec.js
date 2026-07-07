@@ -1765,6 +1765,33 @@ test.describe('sign.html — audit/simplify pass (emoji, pay-tile placement, dea
   test('no console errors on the audit/simplify pass', async () => {
     assertNoErrors(page, 'sign.html audit/simplify pass');
   });
+
+  test('floating green call button is gone — contact is already covered by the "Questions?" row', async () => {
+    const r = await page.evaluate(() => ({
+      elCount: document.querySelectorAll('#float-call').length,
+      cssHasRule: document.documentElement.innerHTML.includes('float-call'),
+    }));
+    expect(r.elCount, '#float-call element must be deleted, not just hidden').toBe(0);
+    expect(r.cssHasRule, 'no stray #float-call reference should remain in markup/CSS').toBe(false);
+  });
+
+  test('"Powered by TradeDesk Pro" shows by default (poweredBy unset on this mock proposal)', async () => {
+    const footer = page.locator('#powered-by-footer');
+    await expect(footer).toBeVisible();
+  });
+});
+
+test.describe('sign.html — "Powered by" respects the contractor\'s Settings toggle', () => {
+  test('poweredBy:false on the proposal snapshot hides the footer', async ({ page }) => {
+    await mockAllExternal(page, { alreadySigned: false, proposalData: { ...MOCK_PROPOSAL, poweredBy: false }, bidId: FAKE_BID_ID_1 });
+    await page.goto(
+      `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 }
+    );
+    await page.waitForTimeout(2000);
+    await expect(page.locator('#powered-by-footer')).toBeHidden();
+    assertNoErrors(page, 'poweredBy:false hides footer');
+  });
 });
 
 // ── Cancellation clause patch — old proposals upgraded on-the-fly ────────────
