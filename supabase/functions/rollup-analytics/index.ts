@@ -135,6 +135,47 @@ Deno.serve(async (req) => {
     put('page_views_24h', null, totals.page || 0)
   } catch (e) { log.raw_events = String(e) }
 
+  // ── Sign-flow funnel (sign_step events, last 24h) — one row per step so
+  // Jarvis can chart drop-off, plus in-proposal time-to-sign stitched per
+  // anonymized bid_hash (approved → signed elapsed hours). The broader
+  // opened→signed timing already ships above as time_to_sign_from_open_hrs. ──
+  try {
+    const since = new Date(Date.now() - 24 * 3_600_000).toISOString()
+    const { data: steps } = await sb.from('analytics_events')
+      .select('ctx, ts, meta').eq('event', 'sign_step').gte('ts', since).limit(20000)
+    const stepCounts: Record<string, number> = {}
+    const byBid = new Map<string, { step: string; ts: string }[]>()
+    for (const s of (steps ?? [])) {
+      const step = String(s.ctx || ''); if (!step) continue
+      stepCounts[step] = (stepCounts[step] || 0) + 1
+      const bh = (s as any).meta?.bid_hash
+      if (bh) { if (!byBid.has(bh)) byBid.set(bh, []); byBid.get(bh)!.push({ step, ts: s.ts as string }) }
+    }
+    for (const step of Object.keys(stepCounts)) {
+      rows.push({ day, metric: 'sign_funnel_24h', scope: step, n: stepCounts[step], median: null, p25: null, p75: null, avg: null, value: stepCounts[step], updated_at: now })
+    }
+    const inProposalHrs: number[] = []
+    for (const evs of byBid.values()) {
+      const done = evs.find((e) => e.step === 'signed'); if (!done) continue
+      const first = evs.reduce((a, b) => (a.ts < b.ts ? a : b))
+      const h = HOURS(first.ts, done.ts); if (h >= 0) inProposalHrs.push(h)
+    }
+    put('approved_to_signed_hrs', dist(inProposalHrs))
+  } catch (e) { log.sign_funnel = String(e) }
+
+  // ── Funnel state snapshot — where every proposal currently sits (furthest
+  // step ever reached, from proposal_views). Guarded separately: the columns
+  // arrive with migration 20260726 and may lag in some environments. ──
+  try {
+    const { data: fs } = await sb.from('proposal_views')
+      .select('furthest_step').not('furthest_step', 'is', null)
+    const counts: Record<string, number> = {}
+    for (const r of (fs ?? [])) { const s = String((r as any).furthest_step); counts[s] = (counts[s] || 0) + 1 }
+    for (const step of Object.keys(counts)) {
+      rows.push({ day, metric: 'sign_funnel_state', scope: step, n: counts[step], median: null, p25: null, p75: null, avg: null, value: counts[step], updated_at: now })
+    }
+  } catch (e) { log.sign_funnel_state = String(e) }
+
   // ── Write the day's rollup. ──
   let writeErr: string | null = null
   if (rows.length) {
