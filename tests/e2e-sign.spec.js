@@ -1090,6 +1090,24 @@ test.describe('sign.html — portfolio discount offer', () => {
     });
     expect(accepted).toBe(false);
   });
+
+  // Owner directive: the offer sat above the scope/terms card (first thing a
+  // client saw, before reading what they're buying) — moved below it so the
+  // client reads the scope first, and the offer no longer uses a competing
+  // gradient hero banner (.po-hdr/.po-body) — it's a plain card like the rest
+  // of the page now.
+  test('portfolio card appears AFTER Scope & terms in DOM order, as a plain card (no gradient hero banner)', async () => {
+    const r = await page.evaluate(() => {
+      const scope = document.getElementById('prop-html');
+      const offer = document.getElementById('portfolio-offer-card');
+      return {
+        scopeBeforeOffer: !!(scope && offer && (scope.compareDocumentPosition(offer) & Node.DOCUMENT_POSITION_FOLLOWING)),
+        isPlainCard: !!(offer && offer.classList.contains('card')),
+      };
+    });
+    expect(r.scopeBeforeOffer, 'client should read the scope of work before seeing the optional photo-discount pitch').toBe(true);
+    expect(r.isPlainCard).toBe(true);
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1657,6 +1675,80 @@ test.describe('sign.html — proposal layout', () => {
 
   test('no console errors on sign page layout', async () => {
     assertNoErrors(page, 'sign page layout');
+  });
+});
+
+// ── Owner directive: audit + simplify sign.html (the actual signing/payment
+// screen — the most important one a client touches) — same "no decorative
+// emoji" pass already applied to the proposal document, plus real friction
+// fixes: the "how much to pay" decision used to be picked on the sign screen
+// AND restated on the payment screen; the meta grid (Signed by/Initials/Date/
+// Method) was pure filler; the portfolio upsell card sat above the scope/terms
+// a client hadn't read yet. Locked in here so none of it creeps back.
+test.describe('sign.html — audit/simplify pass (emoji, pay-tile placement, dead code)', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL, bidId: FAKE_BID_ID_1 });
+    await page.goto(
+      `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 }
+    );
+    await page.waitForTimeout(2000);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('no decorative pictographic emoji anywhere on the page', async () => {
+    const hasEmoji = await page.evaluate(() => {
+      const re = /[\u{1F300}-\u{1FAFF}]/u;
+      return re.test(document.documentElement.innerHTML);
+    });
+    expect(hasEmoji, 'sign.html must carry no decorative emoji — this is the most important screen a client touches').toBe(false);
+  });
+
+  test('dead CSS/markup from the pre-audit page is gone', async () => {
+    const r = await page.evaluate(() => ({
+      sigMetaCount: document.querySelectorAll('.sig-meta').length,
+      optCashCount: document.querySelectorAll('#opt-cash').length,
+    }));
+    expect(r.sigMetaCount, 'the Signed-by/Initials/Date/Method filler grid must be removed, not just hidden').toBe(0);
+    expect(r.optCashCount, '#opt-cash never existed in the current markup — confirms the dead querySelector reference was deleted, not just made to fail silently forever').toBe(0);
+  });
+
+  test('pay-amount tiles live on the payment screen (pg-pay), not the sign screen (pg-sign-action)', async () => {
+    const r = await page.evaluate(() => {
+      const tile = document.getElementById('pay-tile-dep');
+      const signAction = document.getElementById('pg-sign-action');
+      const pay = document.getElementById('pg-pay');
+      return {
+        tileExists: !!tile,
+        tileInSignAction: !!(tile && signAction && signAction.contains(tile)),
+        tileInPay: !!(tile && pay && pay.contains(tile)),
+      };
+    });
+    expect(r.tileExists).toBe(true);
+    expect(r.tileInSignAction, '"how much to pay" must not be decided a second time on the sign screen').toBe(false);
+    expect(r.tileInPay, 'the pay-amount choice belongs directly above the amount it produces, on the payment screen').toBe(true);
+  });
+
+  test('sticky bar: Approve & Sign is the first/primary button, Download PDF is a secondary link beneath it', async () => {
+    const r = await page.evaluate(() => {
+      const bar = document.getElementById('sticky-bar');
+      if (!bar) return null;
+      const buttons = Array.from(bar.querySelectorAll('button'));
+      return buttons.map(b => b.textContent.trim());
+    });
+    expect(r).not.toBeNull();
+    expect(r[0]).toContain('Approve');
+    expect(r.some(t => t.includes('Download PDF'))).toBe(true);
+    expect(r.indexOf(r.find(t => t.includes('Approve')))).toBeLessThan(r.indexOf(r.find(t => t.includes('Download PDF'))));
+  });
+
+  test('no console errors on the audit/simplify pass', async () => {
+    assertNoErrors(page, 'sign.html audit/simplify pass');
   });
 });
 
