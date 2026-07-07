@@ -7,6 +7,7 @@
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://js.stripe.com/v3/"></script>
+<script src="js/icons.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -405,7 +406,7 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
         <div id="stripe-modal-biz" style="font-size:15px;font-weight:800;color:#fff"></div>
         <div id="stripe-modal-amt" style="font-size:12px;color:rgba(255,255,255,.6);margin-top:2px"></div>
       </div>
-      <button onclick="closePaymentModal()" style="background:rgba(255,255,255,.12);border:none;color:#fff;font-size:18px;line-height:1;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center">✕</button>
+      <button onclick="closePaymentModal()" style="background:rgba(255,255,255,.12);border:none;color:#fff;font-size:18px;line-height:1;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center"><script>document.write(svgIcon('✕',{size:18}))</script></button>
     </div>
     <div id="checkout-embed-container" style="padding:12px 12px 0"></div>
     <div style="padding:12px 18px 18px">
@@ -421,7 +422,7 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
   <span id="topbar-name" class="topbar-name"></span>
   <div class="topbar-actions">
     <div class="notif-wrap">
-      <button class="topbar-icon-btn" id="notif-btn" onclick="toggleNotifPanel(event)" aria-label="Notifications">🔔</button>
+      <button class="topbar-icon-btn" id="notif-btn" onclick="toggleNotifPanel(event)" aria-label="Notifications"><script>document.write(svgIcon('🔔',{size:20}))</script></button>
       <span class="notif-unread-dot" id="notif-dot"></span>
       <div class="notif-panel" id="notif-panel">
         <div class="notif-hd">
@@ -431,7 +432,7 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
         <div id="notif-list"></div>
       </div>
     </div>
-    <button class="topbar-icon-btn" onclick="openHelp()" aria-label="Help">❓</button>
+    <button class="topbar-icon-btn" onclick="openHelp()" aria-label="Help"><script>document.write(svgIcon('❓',{size:20}))</script></button>
     <div class="acct-wrap" id="acct-wrap">
       <button class="acct-chip" id="acct-chip" onclick="toggleAcctMenu(event)" aria-label="Account menu">
         <div class="acct-avatar" id="acct-avatar"></div>
@@ -439,9 +440,9 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
         <span class="acct-chevron">▾</span>
       </button>
       <div class="acct-dropdown" id="acct-dropdown">
-        <button class="acct-menu-item" onclick="closeAcctMenu()">👤 Profile</button>
-        <button class="acct-menu-item" onclick="toggleNotifPanel(event);closeAcctMenu()">🔔 Notifications</button>
-        <button class="acct-menu-item" onclick="closeAcctMenu()" style="color:#c0392b">🚪 Sign out</button>
+        <button class="acct-menu-item" onclick="closeAcctMenu()"><script>document.write(svgIcon('👤'))</script> Profile</button>
+        <button class="acct-menu-item" onclick="toggleNotifPanel(event);closeAcctMenu()"><script>document.write(svgIcon('🔔'))</script> Notifications</button>
+        <button class="acct-menu-item" onclick="closeAcctMenu()" style="color:#c0392b"><script>document.write(svgIcon('🚪'))</script> Sign out</button>
       </div>
     </div>
   </div>
@@ -452,18 +453,18 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
   <nav class="left-nav" id="left-nav">
     <div class="nav-client" id="nav-client-info"></div>
     <div role="tablist">
-      <div class="nav-item active" id="ni-overview" role="tab" aria-selected="true" onclick="switchView('overview')"><span class="nav-icon">🏠</span>Overview</div>
-      <div class="nav-item" id="ni-project" role="tab" aria-selected="false" onclick="switchView('project')"><span class="nav-icon">🔨</span>Project</div>
-      <div class="nav-item" id="ni-payments" role="tab" aria-selected="false" onclick="switchView('payments')"><span class="nav-icon">💳</span>Payments</div>
-      <div class="nav-item" id="ni-documents" role="tab" aria-selected="false" onclick="switchView('documents')"><span class="nav-icon">📁</span>Documents</div>
-      <div class="nav-item" id="ni-messages" role="tab" aria-selected="false" onclick="switchView('messages')"><span class="nav-icon">💬</span>Messages</div>
+      <div class="nav-item active" id="ni-overview" role="tab" aria-selected="true" onclick="switchView('overview')"><span class="nav-icon"><script>document.write(svgIcon('🏠',{size:22}))</script></span>Overview</div>
+      <div class="nav-item" id="ni-project" role="tab" aria-selected="false" onclick="switchView('project')"><span class="nav-icon"><script>document.write(svgIcon('🔨',{size:22}))</script></span>Project</div>
+      <div class="nav-item" id="ni-payments" role="tab" aria-selected="false" onclick="switchView('payments')"><span class="nav-icon"><script>document.write(svgIcon('💳',{size:22}))</script></span>Payments</div>
+      <div class="nav-item" id="ni-documents" role="tab" aria-selected="false" onclick="switchView('documents')"><span class="nav-icon"><script>document.write(svgIcon('📁',{size:22}))</script></span>Documents</div>
+      <div class="nav-item" id="ni-messages" role="tab" aria-selected="false" onclick="switchView('messages')"><span class="nav-icon"><script>document.write(svgIcon('💬',{size:22}))</script></span>Messages</div>
     </div>
     <div class="nav-footer" id="nav-footer"></div>
   </nav>
 
   <div class="main-content">
     <div class="pg-status" id="pg-err" style="display:none">
-      <div class="pg-status-icon">🔗</div>
+      <div class="pg-status-icon"><script>document.write(svgIcon('🔗',{size:48}))</script></div>
       <h2>Hub not found</h2>
       <p>This link may have expired. Contact us for a new link.</p>
     </div>
@@ -479,11 +480,11 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
 
 <!-- Bottom nav (mobile) -->
 <nav class="bottom-nav" id="bottom-nav" role="tablist">
-  <button class="bn-item active" id="bni-overview" role="tab" aria-selected="true" onclick="switchView('overview')"><span class="bn-icon">🏠</span>Overview</button>
-  <button class="bn-item" id="bni-project" role="tab" aria-selected="false" onclick="switchView('project')"><span class="bn-icon">🔨</span>Project</button>
-  <button class="bn-item" id="bni-payments" role="tab" aria-selected="false" onclick="switchView('payments')"><span class="bn-icon">💳</span>Payments</button>
-  <button class="bn-item" id="bni-documents" role="tab" aria-selected="false" onclick="switchView('documents')"><span class="bn-icon">📁</span>Documents</button>
-  <button class="bn-item" id="bni-messages" role="tab" aria-selected="false" onclick="switchView('messages')"><span class="bn-icon">💬</span>Messages</button>
+  <button class="bn-item active" id="bni-overview" role="tab" aria-selected="true" onclick="switchView('overview')"><span class="bn-icon"><script>document.write(svgIcon('🏠',{size:22}))</script></span>Overview</button>
+  <button class="bn-item" id="bni-project" role="tab" aria-selected="false" onclick="switchView('project')"><span class="bn-icon"><script>document.write(svgIcon('🔨',{size:22}))</script></span>Project</button>
+  <button class="bn-item" id="bni-payments" role="tab" aria-selected="false" onclick="switchView('payments')"><span class="bn-icon"><script>document.write(svgIcon('💳',{size:22}))</script></span>Payments</button>
+  <button class="bn-item" id="bni-documents" role="tab" aria-selected="false" onclick="switchView('documents')"><span class="bn-icon"><script>document.write(svgIcon('📁',{size:22}))</script></span>Documents</button>
+  <button class="bn-item" id="bni-messages" role="tab" aria-selected="false" onclick="switchView('messages')"><span class="bn-icon"><script>document.write(svgIcon('💬',{size:22}))</script></span>Messages</button>
 </nav>
 
 <!-- Help drawer -->
@@ -492,19 +493,19 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
     <div class="help-handle"></div>
     <div class="help-title">Help & FAQ</div>
     <div class="help-sec">
-      <div class="help-sec-hd">💳 How payments work</div>
+      <div class="help-sec-hd"><script>document.write(svgIcon('💳'))</script> How payments work</div>
       <div class="help-sec-body"><span class="hub-cn-name">Your contractor</span> sends you a secure payment link. You can pay by card, ACH bank transfer, or Apple Pay. Deposits are due before work begins; the final balance is due on completion. All payments are processed securely — <span class="hub-cn-name">your contractor</span> never sees your card details.</div>
     </div>
     <div class="help-sec">
-      <div class="help-sec-hd">✍️ How signing works</div>
+      <div class="help-sec-hd"><script>document.write(svgIcon('✍'))</script> How signing works</div>
       <div class="help-sec-body">When you receive a proposal, tap <strong>Review &amp; Sign</strong>. You'll see the full scope of work and price. Sign with your finger or mouse and submit. You'll receive a confirmation email with a copy of the signed agreement.</div>
     </div>
     <div class="help-sec">
-      <div class="help-sec-hd">📞 Contacting <span class="hub-cn-name">your contractor</span></div>
+      <div class="help-sec-hd"><script>document.write(svgIcon('📞'))</script> Contacting <span class="hub-cn-name">your contractor</span></div>
       <div class="help-sec-body">Use the Call, Text, or Email buttons on the Overview tab to reach <span class="hub-cn-name">your contractor</span> directly. For non-urgent questions, the Messages tab keeps everything in one place so nothing gets lost in your inbox.</div>
     </div>
     <div class="help-sec">
-      <div class="help-sec-hd">❓ Common questions</div>
+      <div class="help-sec-hd"><script>document.write(svgIcon('❓'))</script> Common questions</div>
       <div class="help-sec-body">
         <strong>Can I change the scope after signing?</strong> Yes — <span class="hub-cn-name">your contractor</span> can send a change order for your approval.<br><br>
         <strong>Is this hub link private?</strong> Yes. The link is unique to you and not publicly indexed.<br><br>
@@ -522,18 +523,18 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
     <div id="hub-lb-tag" class="hub-lb-tag"></div>
   </div>
   <button class="hub-lb-arrow hub-lb-next" onclick="event.stopPropagation();lbNav(1)" aria-label="Next photo">›</button>
-  <button class="hub-lb-close" onclick="closeLightbox()" aria-label="Close lightbox">✕</button>
+  <button class="hub-lb-close" onclick="closeLightbox()" aria-label="Close lightbox"><script>document.write(svgIcon('✕',{size:20}))</script></button>
 </div>
 
 <!-- Invoice overlay -->
 <div id="inv-overlay">
-  <button class="inv-close no-print" onclick="closeInvoice()">✕</button>
+  <button class="inv-close no-print" onclick="closeInvoice()"><script>document.write(svgIcon('✕',{size:20}))</script></button>
   <div class="inv-wrap" id="inv-content"></div>
 </div>
 
 <!-- Proposal overlay -->
 <div id="prop-overlay">
-  <button class="prop-close no-print" onclick="closeProp()">✕</button>
+  <button class="prop-close no-print" onclick="closeProp()"><script>document.write(svgIcon('✕',{size:20}))</script></button>
   <div class="prop-wrap" id="prop-content"></div>
 </div>
 
@@ -815,7 +816,7 @@ async function initOnboard(t,u,c){
   const formHtml=
     '<div class="main-content" style="padding-top:72px;padding-bottom:40px;max-width:480px">'+
     '<div style="text-align:center;margin-bottom:28px">'+
-      '<div style="font-size:36px;margin-bottom:8px">📋</div>'+
+      '<div style="font-size:36px;margin-bottom:8px">'+svgIcon('📋',{size:36})+'</div>'+
       '<div style="font-size:22px;font-weight:800;letter-spacing:-.3px;margin-bottom:6px">'+(firstName?'Hi '+esc(firstName)+'!':'Get your free quote')+'</div>'+
       '<div style="font-size:14px;color:var(--text2);line-height:1.6">'+esc(contractorName)+' needs a couple details to prepare your quote — takes about 2 minutes.</div>'+
     '</div>'+
@@ -924,7 +925,7 @@ async function submitOnboard(userId,clientId){
     // Show brief confirmation then transition to hub (or quote-in-progress)
     document.querySelector('.body-wrap').innerHTML=
       '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px 20px;text-align:center">'+
-      '<div style="font-size:64px;margin-bottom:20px">✅</div>'+
+      '<div style="font-size:64px;margin-bottom:20px">'+svgIcon('✅',{size:48})+'</div>'+
       '<div style="font-size:24px;font-weight:800;margin-bottom:10px">Got it!</div>'+
       '<div style="font-size:15px;color:var(--text2);line-height:1.7;max-width:340px">'+esc(_hub?.contractorName||'Your contractor')+' is preparing your quote.</div>'+
       '</div>';
@@ -942,7 +943,7 @@ function showQuoteInProgress(h){
   const phone=h?.contractorPhone||'';
   document.getElementById('pg-hub').innerHTML=
     '<div class="pg-status" style="display:block">'+
-    '<div class="pg-status-icon">📋</div>'+
+    '<div class="pg-status-icon">'+svgIcon('📋',{size:48})+'</div>'+
     '<h2>Quote in progress</h2>'+
     '<p>'+esc(name)+' has your details and is preparing your free quote.</p>'+
     (phone?'<a href="tel:'+phone.replace(/\D/g,'')+'" style="display:inline-block;margin-top:20px;background:var(--ink);color:#fff;padding:14px 28px;border-radius:var(--r);font-weight:700;text-decoration:none;font-size:15px">Call '+esc(phone)+'</a>':'')+
@@ -1070,10 +1071,10 @@ function renderOverview(){
   if(h.contractorPhone){
     const phone=h.contractorPhone.replace(/\D/g,'');
     html+='<div class="hub-mobile-strip">';
-    html+='<a href="tel:'+phone+'" class="hub-mstrip-btn">📞 Call</a>';
-    html+='<a href="sms:'+phone+'" class="hub-mstrip-btn hub-mstrip-sec">💬 Text</a>';
-    if(h.contractorEmail)html+='<a href="mailto:'+esc(h.contractorEmail)+'" class="hub-mstrip-btn hub-mstrip-sec">📧 Email</a>';
-    html+='<button class="hub-mstrip-btn hub-mstrip-sec" onclick="openHelp()">📅 Schedule</button>';
+    html+='<a href="tel:'+phone+'" class="hub-mstrip-btn">'+svgIcon('📞')+' Call</a>';
+    html+='<a href="sms:'+phone+'" class="hub-mstrip-btn hub-mstrip-sec">'+svgIcon('💬')+' Text</a>';
+    if(h.contractorEmail)html+='<a href="mailto:'+esc(h.contractorEmail)+'" class="hub-mstrip-btn hub-mstrip-sec">'+svgIcon('📧')+' Email</a>';
+    html+='<button class="hub-mstrip-btn hub-mstrip-sec" onclick="openHelp()">'+svgIcon('📅')+' Schedule</button>';
     html+='</div>';
   }
 
@@ -1098,7 +1099,7 @@ function renderOverview(){
     html+='<span style="font-weight:800;color:'+deltaColor+'">'+deltaLabel+'</span>';
     html+='<span style="font-weight:800">= '+fmt(co.newAmount)+'</span>';
     html+='</div>';
-    html+='<button class="hub-btn hub-btn-sign" style="width:100%" onclick="_showCODoc('+bid.id+','+co.coNum+')">✍️ Review &amp; sign Change Order #'+co.coNum+'</button>';
+    html+='<button class="hub-btn hub-btn-sign" style="width:100%" onclick="_showCODoc('+bid.id+','+co.coNum+')">'+svgIcon('✍')+' Review &amp; sign Change Order #'+co.coNum+'</button>';
     html+='</div>';
   });
 
@@ -1132,7 +1133,7 @@ function renderOverview(){
       }
     });
   }else if(totalPaid>0.01){
-    html+='<div class="hub-paid-banner"><div style="font-size:28px">✅</div><div><div class="hub-paid-title">Paid in full</div><div class="hub-paid-sub">'+fmt(totalPaid)+' received — thank you!</div></div></div>';
+    html+='<div class="hub-paid-banner"><div style="font-size:28px">'+svgIcon('✅',{size:28})+'</div><div><div class="hub-paid-title">Paid in full</div><div class="hub-paid-sub">'+fmt(totalPaid)+' received — thank you!</div></div></div>';
   }
 
   // Two-col layout
@@ -1163,7 +1164,7 @@ function renderOverview(){
          dollar amount before the client reads the scope triggers loss-aversion and
          kills conversions. Price is revealed inside the proposal after scope context. */
       if(b.signHubUrl){
-        html+='<a href="'+esc(_signHref(b.signHubUrl))+'" class="hub-btn hub-btn-sign" style="width:100%">✍️ Review &amp; Sign →</a>';
+        html+='<a href="'+esc(_signHref(b.signHubUrl))+'" class="hub-btn hub-btn-sign" style="width:100%">'+svgIcon('✍')+' Review &amp; Sign →</a>';
       }else{
         html+='<div class="hub-bid-pending-msg">Sign link on the way — check back soon</div>';
       }
@@ -1181,7 +1182,7 @@ function renderOverview(){
       const isPaid=!isCancelled&&(b.balance||0)<0.01;
       const dotCls=isCancelled?'cancelled':(isPaid?'done':'active');
       const badgeCls=isCancelled?'hub-badge-cancelled':(isPaid?'hub-badge-paid':'hub-badge-due');
-      const badgeTxt=isCancelled?'Cancelled 🚫':(isPaid?'Paid ✓':'Balance due');
+      const badgeTxt=isCancelled?'Cancelled '+svgIcon('🚫'):(isPaid?'Paid '+svgIcon('✓'):'Balance due');
       html+='<div class="hub-timeline-item">';
       html+='<div class="hub-timeline-dot '+dotCls+'"></div>';
       html+='<div class="hub-timeline-body">';
@@ -1204,8 +1205,8 @@ function renderOverview(){
   if(h.contractorPhone){
     html+='<div class="hub-side-card">';
     html+='<div class="hub-side-hd">Contact us</div>';
-    html+='<a href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" class="hub-contact-btn">📞 Call '+esc(h.contractorPhone)+'</a>';
-    html+='<a href="sms:'+h.contractorPhone.replace(/\D/g,'')+'" class="hub-contact-btn hub-contact-btn-sec">💬 Send a text</a>';
+    html+='<a href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" class="hub-contact-btn">'+svgIcon('📞')+' Call '+esc(h.contractorPhone)+'</a>';
+    html+='<a href="sms:'+h.contractorPhone.replace(/\D/g,'')+'" class="hub-contact-btn hub-contact-btn-sec">'+svgIcon('💬')+' Send a text</a>';
     html+='</div>';
   }
 
@@ -1243,7 +1244,7 @@ function renderProject(){
   let html='<div class="view-title">Project &amp; Photos</div>';
 
   if(!allJobs.length&&!allPhotos.length){
-    html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">📷</div><div class="hub-empty-title">No photos yet</div><div class="hub-empty-body">'+_cn('Your contractor')+' will upload progress photos here as work begins. Check back soon!</div></div></div>';
+    html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">'+svgIcon('📷',{size:48})+'</div><div class="hub-empty-title">No photos yet</div><div class="hub-empty-body">'+_cn('Your contractor')+' will upload progress photos here as work begins. Check back soon!</div></div></div>';
     document.getElementById('view-project').innerHTML=html;return;
   }
 
@@ -1301,7 +1302,7 @@ function renderProject(){
       });
       html+='</div>';
     }else{
-      html+='<div style="font-size:12px;color:var(--text3);padding-top:'+(job.start||job.name?'8':'0')+'px;border-top:'+(job.start||job.name?'1px solid var(--border)':'none')+'">📷 Progress photos will appear here</div>';
+      html+='<div style="font-size:12px;color:var(--text3);padding-top:'+(job.start||job.name?'8':'0')+'px;border-top:'+(job.start||job.name?'1px solid var(--border)':'none')+'">'+svgIcon('📷')+' Progress photos will appear here</div>';
     }
     html+='</div>';
   });
@@ -1342,7 +1343,7 @@ function renderPayments(){
   let html='<div class="view-title">Payments</div>';
 
   if(!wonBids.length){
-    html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">💳</div><div class="hub-empty-title">No invoices yet</div><div class="hub-empty-body">Payments and invoices will appear here once a proposal is signed.</div></div></div>';
+    html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">'+svgIcon('💳',{size:48})+'</div><div class="hub-empty-title">No invoices yet</div><div class="hub-empty-body">Payments and invoices will appear here once a proposal is signed.</div></div></div>';
     document.getElementById('view-payments').innerHTML=html;return;
   }
 
@@ -1367,7 +1368,7 @@ function renderPayments(){
     html+='<div onclick="_togglePay('+bid_id+')" style="background:'+hdrBg+';padding:14px 16px;cursor:pointer;position:relative">';
     html+='<div style="display:flex;align-items:center;gap:10px">';
     html+='<div style="flex:1;min-width:0">';
-    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:4px">'+esc(bid.type||'Estimate')+(isPaid?' · Paid ✓':' · Balance due')+'</div>';
+    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:4px">'+esc(bid.type||'Estimate')+(isPaid?' · Paid '+svgIcon('✓'):' · Balance due')+'</div>';
     html+='<div style="display:flex;align-items:baseline;gap:7px">';
     html+='<span style="font-size:28px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-1.5px;line-height:1">'+fmt(isPaid?total:balance)+'</span>';
     html+='<span style="font-size:12px;color:rgba(255,255,255,.4);font-weight:500">'+(isPaid?'paid in full':'remaining')+'</span>';
@@ -1439,7 +1440,7 @@ function renderPayments(){
     // Invoice link — only once the job is marked complete (same gate as Documents)
     if(bid.completion_date){
       html+='<button onclick="openInvoice('+bid_id+')" style="display:flex;align-items:center;gap:10px;width:100%;padding:12px 16px;background:var(--bg-card);border:none;border-top:0;cursor:pointer;font-family:inherit;text-align:left">';
-      html+='<div style="width:32px;height:32px;background:var(--bg);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">📄</div>';
+      html+='<div style="width:32px;height:32px;background:var(--bg);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">'+svgIcon('📄')+'</div>';
       html+='<div style="flex:1;font-size:13px;font-weight:700;color:var(--text)">View invoice</div>';
       html+='<div style="font-size:18px;color:var(--text3)">›</div>';
       html+='</button>';
@@ -1515,7 +1516,7 @@ function _cancelSetContent(html){
 function _cancelHdr(title){
   return '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
     '<div style="font-size:13px;font-weight:800;color:#1a365d">'+title+'</div>'+
-    '<button onclick="_cancelClose()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1">✕</button>'+
+    '<button onclick="_cancelClose()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1">'+svgIcon('✕',{size:22})+'</button>'+
   '</div>';
 }
 function _showCancelForm(bidId){
@@ -1534,7 +1535,7 @@ function _showCancelForm(bidId){
   if(bid.cancelledAt){_cancelShowConfirmed(bid);return;}
   if(!open){
     _cancelSetContent(_cancelHdr('Notice of Cancellation')+
-      '<div style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:11px;color:#64748b;font-weight:700">🔒 Cancellation window closed '+dl.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</div>'+
+      '<div style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:11px;color:#64748b;font-weight:700">'+svgIcon('🔒')+' Cancellation window closed '+dl.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</div>'+
       '<p style="margin:0;font-size:12px;color:#64748b">The cancellation window for this agreement has closed.</p>');
     return;
   }
@@ -1576,12 +1577,12 @@ function _cancelShowStep2(){
   const contractorName=esc((_hub&&_hub.contractorName)||'your contractor');
   let h=_cancelHdr('Notice of Cancellation');
   h+='<div style="text-align:center;padding:4px 0 16px">';
-  h+='<div style="font-size:36px;margin-bottom:12px">📞</div>';
+  h+='<div style="font-size:36px;margin-bottom:12px">'+svgIcon('📞',{size:36})+'</div>';
   h+='<div style="font-size:16px;font-weight:800;color:#1a1a18;margin-bottom:10px">Have you spoken with '+contractorName+' first?</div>';
   h+='<div style="font-size:13px;color:#64748b;line-height:1.65;margin-bottom:20px">Most concerns — pricing, scheduling, scope — can be resolved with a quick conversation. Once you cancel, the contract is voided and <strong>cannot be reinstated</strong>.</div>';
   if(phone){
-    h+='<a href="tel:'+phone+'" style="display:block;width:100%;padding:13px;border-radius:10px;background:#1b1612;color:#fff;font-size:15px;font-weight:800;text-decoration:none;text-align:center;margin-bottom:10px;box-sizing:border-box">📞 Call '+contractorName+'</a>';
-    h+='<a href="sms:'+phone+'" style="display:block;width:100%;padding:12px;border:1.5px solid #1b1612;border-radius:10px;background:#fff;color:#1b1612;font-size:14px;font-weight:700;text-decoration:none;text-align:center;margin-bottom:20px;box-sizing:border-box">💬 Text '+contractorName+'</a>';
+    h+='<a href="tel:'+phone+'" style="display:block;width:100%;padding:13px;border-radius:10px;background:#1b1612;color:#fff;font-size:15px;font-weight:800;text-decoration:none;text-align:center;margin-bottom:10px;box-sizing:border-box">'+svgIcon('📞',{size:15})+' Call '+contractorName+'</a>';
+    h+='<a href="sms:'+phone+'" style="display:block;width:100%;padding:12px;border:1.5px solid #1b1612;border-radius:10px;background:#fff;color:#1b1612;font-size:14px;font-weight:700;text-decoration:none;text-align:center;margin-bottom:20px;box-sizing:border-box">'+svgIcon('💬',{size:14})+' Text '+contractorName+'</a>';
   }
   h+='<button id="cancel-proceed-btn" onclick="_cancelShowStep3()" style="background:none;border:none;font-size:12px;color:#94a3b8;cursor:pointer;font-family:inherit;text-decoration:underline;padding:4px">I\'ve already tried — I still want to cancel</button>';
   h+='</div>';
@@ -1646,7 +1647,7 @@ function _cancelShowConfirmed(bid){
   h+='<div style="text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;margin-bottom:10px">'+cancelStatute+' — Detach &amp; Retain</div>';
   h+='<div style="text-align:center;font-size:14px;font-weight:800;text-transform:uppercase;color:#1a365d;margin-bottom:14px">NOTICE OF CANCELLATION</div>';
   h+='<div style="font-size:12px;color:#2d3748;line-height:1.8"><p style="margin:0 0 8px"><strong>Date of Transaction:</strong> '+txDate+'</p><p style="margin:0 0 10px;font-weight:700">YOU MAY CANCEL THIS TRANSACTION, WITHOUT ANY PENALTY OR OBLIGATION, WITHIN '+daysWord+' BUSINESS DAYS FROM THE ABOVE DATE.</p></div>';
-  h+='<div style="border-top:1px solid #e2e8f0;padding-top:14px"><div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:12px 14px;font-size:12px;color:#991B1B"><strong>🚫 Cancellation submitted</strong><br>Signed by '+esc(bid.cancelledName||'you')+' · '+dt;
+  h+='<div style="border-top:1px solid #e2e8f0;padding-top:14px"><div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:12px 14px;font-size:12px;color:#991B1B"><strong>'+svgIcon('🚫')+' Cancellation submitted</strong><br>Signed by '+esc(bid.cancelledName||'you')+' · '+dt;
   if(refundNote)h+='<br><span style="color:#92400E">'+refundNote+'</span>';
   h+='<br>'+_cn('Your contractor')+' has been notified.</div></div>';
   _cancelSetContent(h);
@@ -1663,8 +1664,8 @@ function _showEpaDoc(bidId){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px 20px 26px;max-width:520px;width:100%;max-height:88vh;overflow-y:auto">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
-      '<div style="font-size:13px;font-weight:800;color:#92400E">⚠️ EPA Renovate Right Disclosure</div>'+
-      '<button onclick="document.getElementById(\'epa-doc-ov\').remove()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1">✕</button>'+
+      '<div style="font-size:13px;font-weight:800;color:#92400E">'+svgIcon('⚠',{size:13})+' EPA Renovate Right Disclosure</div>'+
+      '<button onclick="document.getElementById(\'epa-doc-ov\').remove()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1">'+svgIcon('✕',{size:22})+'</button>'+
     '</div>'+
     '<div style="text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;margin-bottom:10px">EPA 40 CFR Part 745 — Pre-Renovation Disclosure</div>'+
     '<div style="text-align:center;font-size:14px;font-weight:800;text-transform:uppercase;color:#92400E;margin-bottom:14px">Confirmation of Receipt</div>'+
@@ -1672,7 +1673,7 @@ function _showEpaDoc(bidId){
       '<p style="margin:0 0 10px">I confirm that I received a copy of the EPA pamphlet <em>"Renovate Right: Important Lead Hazard Information for Families, Child Care Providers and Schools"</em> informing me of the potential risk of lead hazard exposure from renovation activity to be performed in my dwelling. I received this pamphlet before the work began.</p>'+
       (bid.rrpFirmCert?'<p style="margin:0 0 6px"><strong>EPA Certified Firm #:</strong> '+esc(bid.rrpFirmCert)+'</p>':'')+
       (bid.rrpRenovatorName?'<p style="margin:0 0 10px"><strong>Certified Renovator:</strong> '+esc(bid.rrpRenovatorName)+'</p>':'')+
-      '<p style="margin:0 0 4px"><a href="https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools" target="_blank" rel="noopener" style="color:#1d4ed8;font-weight:700">📄 View the Renovate Right pamphlet →</a></p>'+
+      '<p style="margin:0 0 4px"><a href="https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools" target="_blank" rel="noopener" style="color:#1d4ed8;font-weight:700">'+svgIcon('📄')+' View the Renovate Right pamphlet →</a></p>'+
     '</div>'+
     '<div style="border-top:2px solid #1a1a18;margin-top:18px;padding-top:14px">'+
       '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#666;margin-bottom:8px">Acknowledged &amp; Signed</div>'+
@@ -1716,8 +1717,8 @@ function _showCODoc(bidId,coNum){
   const dt=co.signedAt?new Date(co.signedAt).toLocaleString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
   let h='<div style="background:#fff;border-radius:14px;max-width:520px;width:100%;margin:auto;padding:22px 20px 26px;box-sizing:border-box;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch">';
   h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">';
-  h+='<div style="font-size:13px;font-weight:800;color:#1a365d">📋 Change Order</div>';
-  h+='<button onclick="document.getElementById(\'co-hub-ov\').remove()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1" aria-label="Close">✕</button>';
+  h+='<div style="font-size:13px;font-weight:800;color:#1a365d">'+svgIcon('📋',{size:13})+' Change Order</div>';
+  h+='<button onclick="document.getElementById(\'co-hub-ov\').remove()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1" aria-label="Close">'+svgIcon('✕',{size:22})+'</button>';
   h+='</div>';
   // CO number badge
   h+='<div style="display:inline-block;background:#EBF2FB;color:#1a365d;font-size:12px;font-weight:800;padding:4px 12px;border-radius:20px;margin-bottom:16px">CO #'+co.coNum+'</div>';
@@ -1761,7 +1762,7 @@ function _showCODoc(bidId,coNum){
     h+='<canvas id="co-hub-canvas" width="500" height="140" style="width:100%;height:140px;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;touch-action:none;cursor:crosshair;display:block;margin-bottom:4px"></canvas>';
     h+='<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button onclick="_clearCOHubCanvas()" style="font-size:11px;color:#6b7280;background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear</button></div>';
     h+='<div id="co-hub-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:6px"></div>';
-    h+='<button id="co-hub-sign-btn" onclick="_submitCOHubSign('+bid.id+','+co.coNum+')" style="width:100%;padding:13px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">✓ Sign Change Order</button>';
+    h+='<button id="co-hub-sign-btn" onclick="_submitCOHubSign('+bid.id+','+co.coNum+')" style="width:100%;padding:13px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✓',{size:14})+' Sign Change Order</button>';
   }
   h+='</div>';
   const ov=document.createElement('div');
@@ -1846,7 +1847,7 @@ async function _submitCOHubSign(bidId,coNum){
       const _deltaLabel=(co.type==='sub'?'−':'+')+fmt(co.amount);
       const _dtFmt=new Date(ts).toLocaleString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
       _ovEl.innerHTML='<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;margin:auto;padding:32px 24px 28px;box-sizing:border-box;text-align:center">'+
-        '<div style="font-size:48px;margin-bottom:12px">✅</div>'+
+        '<div style="font-size:48px;margin-bottom:12px">'+svgIcon('✅',{size:48})+'</div>'+
         '<div style="font-size:20px;font-weight:900;color:#1a1a18;margin-bottom:8px">You\'re all set!</div>'+
         '<div style="font-size:14px;color:#475569;margin-bottom:24px">Change Order #'+co.coNum+' has been signed.</div>'+
         '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:16px;margin-bottom:24px;text-align:left">'+
@@ -1862,7 +1863,7 @@ async function _submitCOHubSign(bidId,coNum){
   }catch(e){
     console.warn('change order sign:',e);
     if(errEl)errEl.textContent='Could not submit — '+(e.message||'please try again or contact '+_cnText('your contractor')+'.');
-    if(btn){btn.disabled=false;btn.textContent='✓ Sign Change Order';}
+    if(btn){btn.disabled=false;btn.innerHTML=svgIcon('✓',{size:14})+' Sign Change Order';}
   }
 }
 async function _submitCancellation(bidId){
@@ -1907,7 +1908,7 @@ function renderDocuments(){
   let html='<div class="view-title">Documents</div>';
 
   if(!wonBids.length&&!lostBids.length&&!h.epaRequired&&!(_hub._clientDocs&&_hub._clientDocs.length)){
-    html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">📁</div><div class="hub-empty-title">No documents yet</div><div class="hub-empty-body">Signed proposals and invoices will appear here once a proposal is signed.</div></div></div>';
+    html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">'+svgIcon('📁',{size:48})+'</div><div class="hub-empty-title">No documents yet</div><div class="hub-empty-body">Signed proposals and invoices will appear here once a proposal is signed.</div></div></div>';
   }
 
   // One accordion card per signed estimate — invoice + agreement nested inside
@@ -1924,7 +1925,7 @@ function renderDocuments(){
     html+='<div onclick="_toggleDoc('+bid.id+')" style="background:'+hdrBg+';padding:14px 16px;cursor:pointer">';
     html+='<div style="display:flex;align-items:center;gap:10px">';
     html+='<div style="flex:1;min-width:0">';
-    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:3px">'+esc(bid.type||'Estimate')+(_isCancelled?' · Cancelled 🚫':(isPaid?' · Paid ✓':' · Balance due'))+'</div>';
+    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:3px">'+esc(bid.type||'Estimate')+(_isCancelled?' · Cancelled '+svgIcon('🚫'):(isPaid?' · Paid '+svgIcon('✓'):' · Balance due'))+'</div>';
     html+='<div style="font-size:16px;font-weight:800;color:#fff;line-height:1.2">'+esc(bid.type||'Project')+'</div>';
     html+='<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:3px">Signed '+fmtDate(bid.signedAt||bid.bid_date)+' · '+fmt(bid.amount||0)+' · '+docCount+' doc'+(docCount!==1?'s':'')+'</div>';
     html+='</div>';
@@ -1934,30 +1935,30 @@ function renderDocuments(){
     // Collapsible body
     html+='<div id="db-'+bid.id+'" style="background:var(--bg-card);display:'+(autoOpen?'block':'none')+'">';
     html+='<div style="padding:0 16px">';
-    if(bid.completion_date){html+=_docRow('📄','Invoice','View or print a detailed invoice','<span class="hub-doc-tag hub-doc-tag-invoice" style="margin-left:6px">Invoice</span>','openInvoice('+bid.id+')','');}
+    if(bid.completion_date){html+=_docRow(svgIcon('📄',{size:18}),'Invoice','View or print a detailed invoice','<span class="hub-doc-tag hub-doc-tag-invoice" style="margin-left:6px">Invoice</span>','openInvoice('+bid.id+')','');}
     if(bid.proposalKey){
       const _sigMeta=bid.signedAt
-        ?'✍️ Signed by '+esc(bid.signerName||'client')+' · '+new Date(bid.signedAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
+        ?svgIcon('✍',{size:11})+' Signed by '+esc(bid.signerName||'client')+' · '+new Date(bid.signedAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
         :'Tap to view signed proposal';
-      html+=_docRow('📋','Signed Agreement',_sigMeta,'<span class="hub-doc-tag hub-doc-tag-contract" style="margin-left:6px">Contract</span>','openProposal('+bid.id+')','');
+      html+=_docRow(svgIcon('📋',{size:18}),'Signed Agreement',_sigMeta,'<span class="hub-doc-tag hub-doc-tag-contract" style="margin-left:6px">Contract</span>','openProposal('+bid.id+')','');
     }
     // EPA RRP disclosure — doc 2 of the signing flow on pre-1978 homes. Acknowledged
     // with the same signature as the agreement, so it shows the same signer + timestamp.
     if(_hasEpaDoc){
       const _epaTs=bid.epaAckAt||bid.signedAt;
-      const _epaMeta='✍️ Acknowledged by '+esc(bid.signerName||'client')+' · '+new Date(_epaTs).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-      html+=_docRow('⚠️','EPA Renovate Right Disclosure',_epaMeta,'<span class="hub-doc-tag hub-doc-tag-epa" style="margin-left:6px">EPA</span>','_showEpaDoc('+bid.id+')','');
+      const _epaMeta=svgIcon('✍',{size:11})+' Acknowledged by '+esc(bid.signerName||'client')+' · '+new Date(_epaTs).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+      html+=_docRow(svgIcon('⚠',{size:18}),'EPA Renovate Right Disclosure',_epaMeta,'<span class="hub-doc-tag hub-doc-tag-epa" style="margin-left:6px">EPA</span>','_showEpaDoc('+bid.id+')','');
     }
     // Change orders — signed ones render like the EPA doc (signature + metadata);
     // pending ones open the review & sign modal.
     _bidCOs.forEach(co=>{
       const _coMeta=co.signedAt
-        ?'✍️ Signed by '+esc(co.signerName||'client')+' · '+new Date(co.signedAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
+        ?svgIcon('✍',{size:11})+' Signed by '+esc(co.signerName||'client')+' · '+new Date(co.signedAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
         :'Review &amp; sign — '+(co.type==='sub'?'−':'+')+fmt(co.amount)+' adjustment';
       const _coTag=co.signedAt
         ?'<span class="hub-doc-tag hub-doc-tag-contract" style="margin-left:6px">Signed</span>'
         :'<span class="hub-doc-tag" style="margin-left:6px;background:#FEF3C7;color:#92400E">Action needed</span>';
-      html+=_docRow('📋','Change Order #'+co.coNum,_coMeta,_coTag,'_showCODoc('+bid.id+','+co.coNum+')','');
+      html+=_docRow(svgIcon('📋',{size:18}),'Change Order #'+co.coNum,_coMeta,_coTag,'_showCODoc('+bid.id+','+co.coNum+')','');
     });
     // Cancellation notice — e-signable while the rescission window is open
     // (_cancelWindowOpen is the authority); the row removes itself entirely once
@@ -1974,7 +1975,7 @@ function renderDocuments(){
         ?'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#FEE2E2;color:#991B1B">Cancelled</span>'
         :'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#FEF3C7;color:#92400E">Active</span>';
       html+='<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="_showCancelForm('+bid.id+')">'+
-        '<div style="width:36px;height:36px;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⚖️</div>'+
+        '<div style="width:36px;height:36px;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">'+svgIcon('⚖',{size:18})+'</div>'+
         '<div style="flex:1;min-width:0">'+
           '<div style="font-size:13px;font-weight:700;color:var(--text)">'+_cd+'-Day Cancellation Right'+_cancelTag+'</div>'+
           '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+_cancelMeta+'</div>'+
@@ -2010,7 +2011,7 @@ function renderDocuments(){
     html+='<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:'+(_note?'4px':'10px')+'">Reason: '+_reason+'</div>';
     if(_note)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.5">'+_note+'</div>';
     if(bid.proposalKey){
-      html+=_docRow('📋','Proposal','View the proposal that was sent (read-only)','<span class="hub-doc-tag" style="margin-left:6px;background:#E5E7EB;color:#374151">Declined</span>','openProposal('+bid.id+')','');
+      html+=_docRow(svgIcon('📋',{size:18}),'Proposal','View the proposal that was sent (read-only)','<span class="hub-doc-tag" style="margin-left:6px;background:#E5E7EB;color:#374151">Declined</span>','openProposal('+bid.id+')','');
     }
     html+='</div>';
     html+='</div>'; // end body
@@ -2022,7 +2023,7 @@ function renderDocuments(){
     html+='<div class="card" style="margin-bottom:12px">';
     html+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Your uploads</div>';
     _hub._clientDocs.forEach(d=>{
-      html+=_docRow('📎',esc(d.name),d.meta||'Uploaded by you','<span class="hub-doc-tag hub-doc-tag-client" style="margin-left:6px">Yours</span>','',d.url);
+      html+=_docRow(svgIcon('📎',{size:18}),esc(d.name),d.meta||'Uploaded by you','<span class="hub-doc-tag hub-doc-tag-client" style="margin-left:6px">Yours</span>','',d.url);
     });
     html+='</div>';
   }
@@ -2031,12 +2032,12 @@ function renderDocuments(){
   if(h.epaRequired){
     html+='<div class="card" style="margin-bottom:12px">';
     html+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Compliance</div>';
-    html+=_docRow('⚠️','EPA Lead Paint Pamphlet','Renovate Right — required for pre-1978 homes','<span class="hub-doc-tag hub-doc-tag-epa" style="margin-left:6px">EPA</span>','','https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools');
+    html+=_docRow(svgIcon('⚠',{size:18}),'EPA Lead Paint Pamphlet','Renovate Right — required for pre-1978 homes','<span class="hub-doc-tag hub-doc-tag-epa" style="margin-left:6px">EPA</span>','','https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools');
     html+='</div>';
   }
 
   // Upload button
-  html+='<div style="margin-bottom:14px"><button class="btn btn-sec" style="width:auto;padding:10px 18px;font-size:13px" onclick="_uploadClientDoc()">📎 Upload a document</button></div>';
+  html+='<div style="margin-bottom:14px"><button class="btn btn-sec" style="width:auto;padding:10px 18px;font-size:13px" onclick="_uploadClientDoc()">'+svgIcon('📎',{size:13})+' Upload a document</button></div>';
 
   // Contractor info
   html+='<div class="card">';
@@ -2068,25 +2069,25 @@ function renderMessages(){
   html+='<div class="hub-chat-messages">';
   // System message
   html+='<div class="hub-msg hub-msg-contractor">';
-  html+='👋 Welcome to your project hub. Send us a message or call/text anytime.';
+  html+=svgIcon('👋',{size:13})+' Welcome to your project hub. Send us a message or call/text anytime.';
   html+='<div class="hub-msg-time">'+cName+'</div>';
   html+='</div>';
   if(!phone){
     html+='<div style="text-align:center;padding:20px 0;color:var(--text3);font-size:13px">Contact info not available yet.</div>';
   }else{
     html+='<div style="display:flex;gap:8px;justify-content:center;margin-top:8px">';
-    html+='<a href="tel:'+phone.replace(/\D/g,'')+'" style="padding:10px 18px;background:var(--ink);color:#fff;border-radius:22px;font-size:13px;font-weight:700;text-decoration:none">📞 Call</a>';
-    html+='<a href="sms:'+phone.replace(/\D/g,'')+'" style="padding:10px 18px;background:transparent;color:var(--text);border:1.5px solid var(--border2);border-radius:22px;font-size:13px;font-weight:700;text-decoration:none">💬 Text</a>';
+    html+='<a href="tel:'+phone.replace(/\D/g,'')+'" style="padding:10px 18px;background:var(--ink);color:#fff;border-radius:22px;font-size:13px;font-weight:700;text-decoration:none">'+svgIcon('📞',{size:13})+' Call</a>';
+    html+='<a href="sms:'+phone.replace(/\D/g,'')+'" style="padding:10px 18px;background:transparent;color:var(--text);border:1.5px solid var(--border2);border-radius:22px;font-size:13px;font-weight:700;text-decoration:none">'+svgIcon('💬',{size:13})+' Text</a>';
     html+='</div>';
     html+='<div style="text-align:center;padding:16px 0">';
-    html+='<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Start the conversation 👋</div>';
+    html+='<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Start the conversation '+svgIcon('👋',{size:13})+'</div>';
     html+='<button onclick="const inp=document.getElementById(\'chat-input\');if(inp){inp.value=\'Hi! I\'m checking in on my project.\';inp.focus();}" style="padding:9px 18px;border-radius:22px;background:var(--bg);color:var(--text2);border:1.5px solid var(--border2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Say hi to '+cName+' →</button>';
     html+='</div>';
   }
   html+='</div>';
   html+='<div class="hub-chat-input">';
   html+='<input type="text" placeholder="Message '+cName+'…" id="chat-input" onkeydown="if(event.key===\'Enter\')_sendChatMsg()">';
-  html+='<button class="hub-chat-attach" onclick="_attachChatFile()" aria-label="Attach file">📎</button>';
+  html+='<button class="hub-chat-attach" onclick="_attachChatFile()" aria-label="Attach file">'+svgIcon('📎')+'</button>';
   html+='<button class="hub-chat-send" onclick="_sendChatMsg()">Send</button>';
   html+='</div>';
   html+='</div>';
@@ -2108,7 +2109,7 @@ function renderInvoices(){
     html+='<div style="font-size:18px;font-weight:800;flex-shrink:0;margin-left:10px;color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">'+fmt(b.amount)+'</div></div>';
     html+='<div style="margin-bottom:10px"><span class="badge" style="background:'+(isPaid?'var(--green-lt)':'var(--red-lt)')+';color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">'+( isPaid?'Paid in full':'Balance: '+fmt(b.balance))+'</span></div>';
     if(!isPaid)html+=_payBtn(b,_hub);
-    if(b.completion_date||(job&&job.completion_date))html+='<button onclick="openInvoice('+b.id+')" class="btn btn-sec">📄 View Invoice</button>';
+    if(b.completion_date||(job&&job.completion_date))html+='<button onclick="openInvoice('+b.id+')" class="btn btn-sec">'+svgIcon('📄')+' View Invoice</button>';
     html+='</div>';
   });
   const el=document.getElementById('view-invoices');if(el)el.innerHTML=html;
@@ -2226,7 +2227,7 @@ function _showCashMsg(){
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom,0)';
   ov.innerHTML='<div style="background:var(--bg);border-radius:20px 20px 0 0;padding:24px 20px 32px;width:100%;max-width:480px;text-align:center">'+
-    '<div style="font-size:32px;margin-bottom:12px">💵</div>'+
+    '<div style="font-size:32px;margin-bottom:12px">'+svgIcon('💵',{size:32})+'</div>'+
     '<div style="font-size:17px;font-weight:800;margin-bottom:8px">Paying with cash?</div>'+
     '<div style="font-size:14px;color:var(--text2);line-height:1.5;margin-bottom:20px">Contact '+biz+' directly to arrange your cash payment. They\'ll mark it as received once collected.</div>'+
     '<button onclick="this.closest(\'[data-cash-ov]\').remove()" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--bg2);color:var(--text);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Got it</button>'+
@@ -2249,7 +2250,7 @@ function showPaymentSuccess(bidId){
   const bid=_hub.bids.find(b=>b.id===bidId);
   const banner=document.createElement('div');
   banner.style.cssText='position:fixed;top:60px;left:0;right:0;z-index:300;background:#16a34a;color:#fff;padding:14px 20px;text-align:center;font-size:14px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.2)';
-  banner.textContent='✅ Payment received — thank you! We\'ll be in touch.';
+  banner.innerHTML=svgIcon('✅',{size:14})+' Payment received — thank you! We\'ll be in touch.';
   document.body.appendChild(banner);setTimeout(()=>banner.remove(),6000);
   if(bid){bid.paymentStatus='paid';bid.balance=0;renderAll();}
 }
@@ -2283,7 +2284,7 @@ function openInvoice(bidId){
   });
   html+='<div class="inv-total-row inv-total-grand"><span>Balance due</span><span>'+fmt(balance)+'</span></div></div>';
   html+='<div style="background:'+bdBg+';border:2px solid '+bdBrd+';border-radius:8px;padding:16px 20px;margin-top:24px;display:flex;justify-content:space-between;align-items:center">';
-  html+='<div><div style="font-size:12px;font-weight:700;color:'+bdClr+';text-transform:uppercase;letter-spacing:.05em">'+(isPaid?'Paid in full ✓':'Balance due')+'</div>';
+  html+='<div><div style="font-size:12px;font-weight:700;color:'+bdClr+';text-transform:uppercase;letter-spacing:.05em">'+(isPaid?'Paid in full '+svgIcon('✓',{size:12}):'Balance due')+'</div>';
   html+='<div style="font-size:11px;color:'+bdClr+';margin-top:3px">'+(isPaid?'Thank you for your business!':'Please remit payment at your earliest convenience')+'</div>';
   if(!isPaid&&h.stripeEnabled)html+='<button id="pay-inv-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" style="margin-top:10px;background:var(--red);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 10px rgba(180,40,40,.30)">Pay now — Secured by Stripe</button>';
   html+='</div><div style="font-size:28px;font-weight:800;color:'+bdClr+'">'+fmt(balance)+'</div></div>';
@@ -2423,8 +2424,8 @@ function _renderApprovalsCard(approvals){
       h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">';
       h+='<div><div class="hub-approv-label">'+esc(a.label)+'</div><div style="font-size:11px;color:var(--text3)">+'+fmt(a.amount)+'</div></div>';
       h+='<div style="display:flex;gap:6px">';
-      h+='<button class="hub-co-btn-approve" onclick="_approveChange(\''+esc(a.id)+'\',true)">✓ Approve</button>';
-      h+='<button class="hub-co-btn-decline" onclick="_approveChange(\''+esc(a.id)+'\',false)">✕</button>';
+      h+='<button class="hub-co-btn-approve" onclick="_approveChange(\''+esc(a.id)+'\',true)">'+svgIcon('✓',{size:12})+' Approve</button>';
+      h+='<button class="hub-co-btn-decline" onclick="_approveChange(\''+esc(a.id)+'\',false)">'+svgIcon('✕',{size:12})+'</button>';
       h+='</div></div></div>';
     }
   });
@@ -2499,7 +2500,7 @@ async function _attachChatFile(){
         if(file.type.startsWith('image/')){
           bubble.innerHTML='<img src="'+esc(publicUrl)+'" style="max-width:200px;border-radius:8px;display:block" onclick="openPhoto(\''+esc(publicUrl)+'\',\'\')">';
         }else{
-          bubble.innerHTML='<a href="'+esc(publicUrl)+'" target="_blank" style="color:#fff">📎 '+esc(file.name)+'</a>';
+          bubble.innerHTML='<a href="'+esc(publicUrl)+'" target="_blank" style="color:#fff">'+svgIcon('📎',{size:13})+' '+esc(file.name)+'</a>';
         }
         bubble.innerHTML+='<div class="hub-msg-time">just now</div>';
         msgs.appendChild(bubble);
@@ -2536,7 +2537,7 @@ function renderNotifPanel(){
   if(!list)return;
   const notifs=_seedNotifs();
   if(!notifs.length){
-    list.innerHTML='<div class="notif-empty">You\'re all caught up 🎉</div>';
+    list.innerHTML='<div class="notif-empty">You\'re all caught up '+svgIcon('🎉',{size:13})+'</div>';
   }else{
     list.innerHTML=notifs.map(n=>`
       <div class="notif-item" onclick="markRead(${n.id})">

@@ -73,25 +73,25 @@ function _renderStripeConnectUI(el,data){
     if(data&&data.has_stored_account){
       el.innerHTML=
         '<div style="display:flex;align-items:flex-start;gap:8px;background:#FFF8F0;border:1px solid var(--amber);border-radius:var(--r);padding:10px 12px;margin-bottom:10px">'+
-          '<span style="font-size:16px">⚠️</span>'+
+          '<span style="font-size:16px">'+svgIcon('⚠',{size:16})+'</span>'+
           '<div>'+
             '<div style="font-size:13px;font-weight:700;color:#856404">Existing Stripe connection can’t be verified here</div>'+
             '<div style="font-size:11px;color:var(--text3);line-height:1.5">A Stripe account is linked but isn’t reachable in this environment (test vs live mode). Reset the connection to link a fresh account.</div>'+
           '</div>'+
         '</div>'+
-        '<button class="btn btn-p btn-sm" onclick="startStripeConnect()">⚡ Connect a new account</button>'+
+        '<button class="btn btn-p btn-sm" onclick="startStripeConnect()">'+svgIcon('⚡')+' Connect a new account</button>'+
         '<button class="btn btn-sm" onclick="disconnectStripeConnect()" style="margin-left:8px;font-size:12px;color:var(--red)">Reset connection</button>';
       return;
     }
     el.innerHTML=
       '<div style="font-size:13px;color:var(--text2);margin-bottom:10px;line-height:1.5">Connect your Stripe account so clients can pay you directly via card or bank transfer. Money lands in your Stripe account instantly.</div>'+
-      '<button class="btn btn-p" onclick="startStripeConnect()" style="font-size:13px;padding:10px 18px">⚡ Connect Stripe Account</button>';
+      '<button class="btn btn-p" onclick="startStripeConnect()" style="font-size:13px;padding:10px 18px">'+svgIcon('⚡')+' Connect Stripe Account</button>';
     return;
   }
   if(data.connected&&!data.charges_enabled){
     el.innerHTML=
       '<div style="display:flex;align-items:center;gap:8px;background:#FFF8F0;border:1px solid var(--amber);border-radius:var(--r);padding:10px 12px;margin-bottom:10px">'+
-        '<span style="font-size:16px">⚠️</span>'+
+        '<span style="font-size:16px">'+svgIcon('⚠',{size:16})+'</span>'+
         '<div>'+
           '<div style="font-size:13px;font-weight:700;color:#856404">Stripe setup incomplete</div>'+
           '<div style="font-size:11px;color:var(--text3)">Account created but onboarding not finished.</div>'+
@@ -104,7 +104,7 @@ function _renderStripeConnectUI(el,data){
   // Fully connected
   el.innerHTML=
     '<div style="display:flex;align-items:center;gap:8px;background:var(--green-lt);border:1px solid var(--green);border-radius:var(--r);padding:10px 12px;margin-bottom:10px">'+
-      '<span style="font-size:18px">✅</span>'+
+      '<span style="font-size:18px">'+svgIcon('✅',{size:18})+'</span>'+
       '<div style="flex:1">'+
         '<div style="font-size:13px;font-weight:700;color:var(--green-mid)">Stripe connected — payments active</div>'+
         '<div style="font-size:11px;color:var(--text3)">Account: '+escHtml(data.stripe_account_id)+(data.payouts_enabled?' · Payouts on':' · Payouts pending')+'</div>'+
@@ -126,11 +126,11 @@ async function startStripeConnect(){
       body:JSON.stringify({returnUrl:(window._tdNativeReturnUrl||window.location.href.split('#')[0])})
     });
     const data=await res.json();
-    if(data.error){zAlert('Stripe error: '+data.error);if(btn){btn.disabled=false;btn.textContent='⚡ Connect Stripe Account';}return;}
+    if(data.error){zAlert('Stripe error: '+data.error);if(btn){btn.disabled=false;btn.textContent='Connect Stripe Account';}return;}
     window.location.href=data.url;
   }catch(e){
     zAlert('Could not start Stripe Connect: '+e.message);
-    if(btn){btn.disabled=false;btn.textContent='⚡ Connect Stripe Account';}
+    if(btn){btn.disabled=false;btn.textContent='Connect Stripe Account';}
   }
 }
 
@@ -218,11 +218,11 @@ async function sendPaymentLink(bidId){
       const ov=document.createElement('div');ov.className='zmodal-overlay';
       const box=document.createElement('div');box.className='zmodal';
       box.innerHTML=
-        '<div style="font-size:17px;font-weight:800;margin-bottom:4px">💳 Payment link ready</div>'+
+        '<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('💳')+' Payment link ready</div>'+
         '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+escHtml(c.name||'')+' · '+fmt(balance)+' due</div>'+
         '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:12px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+url+'</div>'+
-        '<button onclick="navigator.clipboard.writeText(\''+url+'\').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">📋 Copy link</button>'+
-        (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+escHtml(c.name.split(' ')[0])+', here\\\'s your payment link for '+fmt(balance)+' owed to '+(S.bname||'us')+': '+url+' — Thank you!\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">📱 Open in Messages</button>':'')+
+        '<button onclick="navigator.clipboard.writeText(\''+url+'\').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📋')+' Copy link</button>'+
+        (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+escHtml(c.name.split(' ')[0])+', here\\\'s your payment link for '+fmt(balance)+' owed to '+(S.bname||'us')+': '+url+' — Thank you!\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱')+' Open in Messages</button>':'')+
         '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
       ov.appendChild(box);document.body.appendChild(ov);
       ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -507,7 +507,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.07.26.4';
+const APP_VERSION='07.07.26.14';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1274,7 +1274,7 @@ function _showLpDeletePopup(row){
   ov.id='_lp-del-popup';
   ov.style.cssText='position:fixed;inset:0;z-index:99990;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);padding:20px';
   ov.innerHTML='<div style="background:var(--bg);border-radius:16px;padding:24px;width:100%;max-width:300px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.35)">'+
-    '<div style="font-size:32px;margin-bottom:8px">🗑️</div>'+
+    '<div style="font-size:32px;margin-bottom:8px">'+svgIcon('🗑',{size:32})+'</div>'+
     '<div style="font-size:15px;font-weight:800;margin-bottom:4px">Delete '+escHtml(label)+'?</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:20px;line-height:1.4">'+sub+'</div>'+
     '<div style="display:flex;gap:10px">'+
@@ -2019,7 +2019,7 @@ async function _submitInviteEmployee(){
   // Show step 2 in same modal
   const box=document.getElementById('_emp-invite-ov')?.querySelector('.zmodal');
   if(!box)return;
-  const _emailSentLine=email?'<div style="font-size:13px;color:var(--green-mid);margin-bottom:10px">📧 Invite sent to '+escHtml(email)+'</div>':'';
+  const _emailSentLine=email?'<div style="font-size:13px;color:var(--green-mid);margin-bottom:10px">'+svgIcon('📧')+' Invite sent to '+escHtml(email)+'</div>':'';
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:6px">Invite Link Ready</div>'+
     _emailSentLine+
@@ -2081,7 +2081,7 @@ function renderDispatch(){
       .sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
     const rc=ROLE_COLORS[emp.role]||'var(--text2)';
     const optBtn=empJobs.length>=2
-      ?'<button onclick="_dispatchOptimizeRoute(\''+emp.id+'\')" style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue);cursor:pointer;font-family:inherit">⚡ Optimize route</button>'
+      ?'<button onclick="_dispatchOptimizeRoute(\''+emp.id+'\')" style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue);cursor:pointer;font-family:inherit">'+svgIcon('⚡')+' Optimize route</button>'
       :'';
     return '<div style="min-width:200px;flex:1;max-width:320px">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:8px;padding:0 2px">'+
@@ -2092,9 +2092,9 @@ function renderDispatch(){
     '</div>';
   }).join('');
   el.innerHTML=
-    '<div class="tbar"><div class="tbar-title">📋 Dispatch Board</div>'+
+    '<div class="tbar"><div class="tbar-title">'+svgIcon('📋')+' Dispatch Board</div>'+
       '<div style="display:flex;gap:6px">'+
-        (S.teamTracking?'<button onclick="_renderCrewMap()" style="font-size:12px;padding:6px 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">📍 Crew map</button>':'')+
+        (S.teamTracking?'<button onclick="_renderCrewMap()" style="font-size:12px;padding:6px 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">'+svgIcon('📍')+' Crew map</button>':'')+
         '<button onclick="goPg(\'pg-jobs\')" style="font-size:12px;padding:6px 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">← Jobs</button>'+
       '</div>'+
     '</div>'+
@@ -2228,7 +2228,7 @@ async function _renderCrewMap(){
   document.getElementById('_crew-map-ov')?.remove();
   const ov=document.createElement('div');ov.id='_crew-map-ov';ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
-  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">📍 Crew locations</div>'+
+  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('📍')+' Crew locations</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Last-known position during today\'s business hours.</div>'+
     '<div id="_crew-map-body" style="font-size:13px;color:var(--text3)">Loading…</div>'+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:10px">Close</button>';
@@ -2255,8 +2255,8 @@ async function _renderCrewMap(){
     const ago=_timeAgo(r.ts);
     const mapUrl='https://www.google.com/maps?q='+r.lat+','+r.lon;
     return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
-      '<div><div style="font-size:13px;font-weight:700">'+nm+'</div><div style="font-size:11px;color:var(--text3)">📍 '+ago+'</div></div>'+
-      '<a href="'+mapUrl+'" target="_blank" style="font-size:11px;font-weight:700;background:var(--blue-lt);color:var(--blue);border:1px solid var(--blue);border-radius:var(--r);padding:6px 10px;text-decoration:none">🗺 Map</a>'+
+      '<div><div style="font-size:13px;font-weight:700">'+nm+'</div><div style="font-size:11px;color:var(--text3)">'+svgIcon('📍')+' '+ago+'</div></div>'+
+      '<a href="'+mapUrl+'" target="_blank" style="font-size:11px;font-weight:700;background:var(--blue-lt);color:var(--blue);border:1px solid var(--blue);border-radius:var(--r);padding:6px 10px;text-decoration:none">'+svgIcon('🗺')+' Map</a>'+
     '</div>';
   }).join('');
 }
@@ -2273,14 +2273,14 @@ function _checkEmployeeVehiclePicker(){
   sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
   const vehList=vehs.map(v=>{
     const label=[v.year,v.make,v.model].filter(Boolean).join(' ')||escHtml(v.name||v.id||'Vehicle');
-    return '<button onclick="_pickVehicle(\''+v.id+'\',\''+escHtml(label)+'\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;margin-bottom:8px;min-height:44px">🚗 '+escHtml(label)+'</button>';
+    return '<button onclick="_pickVehicle(\''+v.id+'\',\''+escHtml(label)+'\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;margin-bottom:8px;min-height:44px">'+svgIcon('🚗')+' '+escHtml(label)+'</button>';
   }).join('');
   sheet.innerHTML=
     '<div style="font-size:15px;font-weight:800;margin-bottom:4px">Which vehicle are you in today?</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Drive time is only logged for company vehicles — personal vehicle trips stay private.</div>'+
     vehList+
-    '<button onclick="_pickVehicle(\'personal\',\'Personal vehicle\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;margin-bottom:8px;min-height:44px;color:var(--text2)">🚗 My personal vehicle — no mileage logged</button>'+
-    '<button onclick="_pickVehicle(\'none\',\'On foot\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;margin-bottom:8px;min-height:44px;color:var(--text2)">🚶 On foot / no vehicle</button>';
+    '<button onclick="_pickVehicle(\'personal\',\'Personal vehicle\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;margin-bottom:8px;min-height:44px;color:var(--text2)">'+svgIcon('🚗')+' My personal vehicle — no mileage logged</button>'+
+    '<button onclick="_pickVehicle(\'none\',\'On foot\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;margin-bottom:8px;min-height:44px;color:var(--text2)">'+svgIcon('🚶')+' On foot / no vehicle</button>';
   ov.appendChild(sheet);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
@@ -2399,8 +2399,8 @@ function renderTeam(){
           '</div>'+
           (e.role!=='owner'?'<button onclick="openEditEmployeeModal('+i+')" style="font-size:11px;padding:4px 10px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">Edit</button>':'')+
         '</div>'+
-        (e.phone?'<div style="font-size:11px;color:var(--text3);margin-top:4px">📞 '+escHtml(e.phone)+'</div>':'')+
-        (e.email?'<div style="font-size:11px;color:var(--text3);margin-top:3px">📧 '+escHtml(e.email)+' <span style="font-size:9px;font-weight:700;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:6px">Invite sent</span></div>':'')+
+        (e.phone?'<div style="font-size:11px;color:var(--text3);margin-top:4px">'+svgIcon('📞')+' '+escHtml(e.phone)+'</div>':'')+
+        (e.email?'<div style="font-size:11px;color:var(--text3);margin-top:3px">'+svgIcon('📧')+' '+escHtml(e.email)+' <span style="font-size:9px;font-weight:700;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:6px">Invite sent</span></div>':'')+
         '<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.5">'+perms+'</div>'+
       '</div>';
     }).join('');
@@ -2421,16 +2421,16 @@ function renderTeam(){
     return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px'+(hasLoc?';cursor:pointer':'')+'" '+(hasLoc?'onclick="window.open(\''+mapUrl+'\',\'_blank\')"':'')+'>'+
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
         '<div style="display:flex;align-items:center;gap:10px">'+
-          '<div style="font-size:22px">'+(d.label==='iPad'||d.label==='iPhone'?'📱':'💻')+'</div>'+
+          '<div style="font-size:22px">'+(d.label==='iPad'||d.label==='iPhone'?svgIcon('📱',{size:22}):svgIcon('💻',{size:22}))+'</div>'+
           '<div>'+
             '<div style="font-size:13px;font-weight:700">'+dname+(isMe?' <span style="font-size:9px;background:var(--blue);color:#fff;padding:1px 6px;border-radius:8px">This device</span>':'')+typeTag+'</div>'+
             '<div style="font-size:10px;color:'+(isActive?'var(--green-mid)':'var(--text3)')+'">'+
-              (isActive?'🟢 Active':'⚪ Last seen '+ago)+'</div>'+
-            (hasLoc?'<div style="font-size:10px;color:var(--blue);margin-top:1px">📍 Tap to view on map · '+locAgo+'</div>':'')+
+              (isActive?svgIcon('🟢')+' Active':svgIcon('⚪')+' Last seen '+ago)+'</div>'+
+            (hasLoc?'<div style="font-size:10px;color:var(--blue);margin-top:1px">'+svgIcon('📍')+' Tap to view on map · '+locAgo+'</div>':'')+
           '</div>'+
         '</div>'+
         '<div style="display:flex;gap:6px;align-items:center">'+
-          (hasLoc?'<span style="font-size:11px;font-weight:700;background:var(--blue-lt);color:var(--blue);border:1px solid var(--blue);border-radius:var(--r);padding:5px 10px;white-space:nowrap">🗺 Map</span>':'')+
+          (hasLoc?'<span style="font-size:11px;font-weight:700;background:var(--blue-lt);color:var(--blue);border:1px solid var(--blue);border-radius:var(--r);padding:5px 10px;white-space:nowrap">'+svgIcon('🗺')+' Map</span>':'')+
           '<button onclick="event.stopPropagation();renameDevice(\''+d.id+'\')" style="font-size:10px;color:var(--text2);border:1px solid var(--border2);border-radius:var(--r);padding:5px 8px;background:none;cursor:pointer;font-family:inherit">Rename</button>'+
           (!isMe?'<button onclick="event.stopPropagation();removeDevice(\''+d.id+'\')" style="font-size:10px;color:#A32D2D;border:1px solid #A32D2D;border-radius:var(--r);padding:5px 8px;background:none;cursor:pointer;font-family:inherit">Remove</button>':'')+
         '</div>'+
@@ -2445,7 +2445,7 @@ function renderTeam(){
   if(subEl){
     subEl.innerHTML=!subs.length
       ?'<div style="font-size:12px;color:var(--text3);padding:6px 0">No subs yet. Add a subcontractor to assign them to jobs and track what you owe.</div>'
-      :('<button onclick="open1099Report()" style="width:100%;margin-bottom:10px;padding:9px;border-radius:var(--r);border:1.5px solid var(--blue);background:var(--blue-lt,rgba(45,93,168,.06));color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">📋 1099 payments report — who you paid, per job</button>')+
+      :('<button onclick="open1099Report()" style="width:100%;margin-bottom:10px;padding:9px;border-radius:var(--r);border:1.5px solid var(--blue);background:var(--blue-lt,rgba(45,93,168,.06));color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('📋')+' 1099 payments report — who you paid, per job</button>')+
        subs.map((s,i)=>
           '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
             '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
@@ -2458,8 +2458,8 @@ function renderTeam(){
               '</div>'+
               '<button onclick="openEditSubModal('+i+')" style="font-size:11px;padding:4px 10px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">Edit</button>'+
             '</div>'+
-            (s.phone?'<div style="font-size:11px;color:var(--text3);margin-top:4px">📞 '+escHtml(s.phone)+'</div>':'')+
-            (s.rate?'<div style="font-size:11px;color:var(--text3);margin-top:2px">💰 '+escHtml(s.rate)+'</div>':'')+
+            (s.phone?'<div style="font-size:11px;color:var(--text3);margin-top:4px">'+svgIcon('📞')+' '+escHtml(s.phone)+'</div>':'')+
+            (s.rate?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+svgIcon('💰')+' '+escHtml(s.rate)+'</div>':'')+
           '</div>'
         ).join('');
   }
@@ -2578,7 +2578,7 @@ function _employeeModalHTML(emp,idx){
     '<div onclick="_togglePermsAccordion(this)" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none;padding:10px 0;margin-bottom:2px">'+
       '<span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Permissions'+
         ((e.permissions?Object.values(e.permissions).filter(Boolean).length:0)?' · '+Object.values(e.permissions).filter(Boolean).length+' on':'')+'</span>'+
-      '<span class="perms-chev" style="font-size:11px;color:var(--text3);transition:transform .18s cubic-bezier(.22,1,.36,1)">▶</span>'+
+      '<span class="perms-chev" style="font-size:11px;color:var(--text3);transition:transform .18s cubic-bezier(.22,1,.36,1)">'+svgIcon('▶',{size:11})+'</span>'+
     '</div>'+
     '<div class="perms-acc" style="max-height:0;overflow:hidden;transition:max-height .2s cubic-bezier(.22,1,.36,1)">'+
     '<div style="display:grid;gap:6px;margin-bottom:14px">'+
@@ -2856,7 +2856,7 @@ function open1099Report(yr){
           '</div>'+
           '<div style="font-size:10px;margin:3px 0 7px">'+
             (p.needs1099?'<span style="background:#FFF3CD;border:1px solid #D4A017;color:#6B4C00;font-weight:700;padding:1px 7px;border-radius:8px">1099-NEC required — file by Jan 31</span> ':'')+
-            (p.needs1099?(p.w9&&p.ein?'<span style="color:var(--green-mid);font-weight:700">✓ W-9 + EIN on file</span>':'<span style="color:var(--amber);font-weight:700">⚠️ get W-9'+(p.ein?'':' + EIN')+(p.subId?' — edit the sub in Team':' — add them to your sub roster (Team) so filing info attaches')+'</span>'):'')+
+            (p.needs1099?(p.w9&&p.ein?'<span style="color:var(--green-mid);font-weight:700">'+svgIcon('✓')+' W-9 + EIN on file</span>':'<span style="color:var(--amber);font-weight:700">'+svgIcon('⚠')+' get W-9'+(p.ein?'':' + EIN')+(p.subId?' — edit the sub in Team':' — add them to your sub roster (Team) so filing info attaches')+'</span>'):'')+
           '</div>'+
           p.rows.map(r=>
             '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:3px 0;border-top:1px solid var(--border)">'+
@@ -2902,13 +2902,13 @@ function renderHiringCalc(){
   const ratio=monthlyProfit>0?monthlyProfit/totalMonthly:0;
   let signal,sigColor,sigBg,advice;
   if(ratio>=2.5){
-    signal='🟢 Ready to hire';sigColor='#1a7340';sigBg='#EAF3DE';
+    signal=svgIcon('🟢')+' Ready to hire';sigColor='#1a7340';sigBg='#EAF3DE';
     advice='Your profit covers the full cost of a W-2 employee '+ratio.toFixed(1)+'x over. You have the buffer to hire, train, and absorb slow months.';
   }else if(ratio>=1.5){
-    signal='🟡 Getting close';sigColor='#856404';sigBg='#FEF3C7';
+    signal=svgIcon('🟡')+' Getting close';sigColor='#856404';sigBg='#FEF3C7';
     advice='You could technically afford it, but the margin is thin. One slow month could put you in the red. Aim to grow monthly profit to '+fmt(Math.round(totalMonthly*2.5))+' before hiring.';
   }else{
-    signal='🔴 Not yet';sigColor='#A32D2D';sigBg='#FEE8E8';
+    signal=svgIcon('🔴')+' Not yet';sigColor='#A32D2D';sigBg='#FEE8E8';
     advice='Monthly profit of '+fmt(monthlyProfit)+' doesn\'t cover the '+fmt(totalMonthly)+'/mo cost of a W-2 hire. You need '+fmt(Math.round(totalMonthly*2.5))+'/mo profit to hire safely.';
   }
 
@@ -2977,11 +2977,11 @@ function renderHiringCalc(){
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">W-2 vs 1099 — the real talk</div>'+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
           '<div style="padding:10px;background:#EAF3DE;border-radius:var(--r)">'+
-            '<div style="font-size:11px;font-weight:800;color:var(--green-mid);margin-bottom:6px">✅ W-2 Employee</div>'+
+            '<div style="font-size:11px;font-weight:800;color:var(--green-mid);margin-bottom:6px">'+svgIcon('✅')+' W-2 Employee</div>'+
             '<div style="font-size:10px;color:var(--text2);line-height:1.7">You control their hours &amp; methods<br>Build real team culture<br>Workers comp covers injuries<br>Loyalty + retention<br>Easier to train your way<br>Qualifies for benefits</div>'+
           '</div>'+
           '<div style="padding:10px;background:#FEE8E8;border-radius:var(--r)">'+
-            '<div style="font-size:11px;font-weight:800;color:#A32D2D;margin-bottom:6px">⚠️ 1099 "Copout"</div>'+
+            '<div style="font-size:11px;font-weight:800;color:#A32D2D;margin-bottom:6px">'+svgIcon('⚠')+' 1099 "Copout"</div>'+
             '<div style="font-size:10px;color:var(--text2);line-height:1.7">IRS misclassification risk<br>YOU may be liable for injuries<br>Worker pays 15.3% FICA<br>No control over their methods<br>Harder to enforce standards<br>Damages trust &amp; culture</div>'+
           '</div>'+
         '</div>'+
@@ -3077,7 +3077,7 @@ function supaShowLogin(opts={}){
         const _roStyle=_inputStyle+';background:var(--bg3);color:var(--text3);cursor:default';
         return '<div style="max-width:360px;width:100%">'+
           '<div style="text-align:center;margin-bottom:24px">'+
-            '<div style="font-size:36px;margin-bottom:10px">👷</div>'+
+            '<div style="font-size:36px;margin-bottom:10px">'+svgIcon('👷',{size:36})+'</div>'+
             '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:6px">'+(_piEname?'Hey '+escHtml(_piEname)+', you\'re invited!':'You\'ve been invited!')+'</div>'+
             '<div style="font-size:13px;color:var(--text3);line-height:1.5"><strong style="color:var(--text2)">'+_piBname+'</strong> has added you to their crew on TradeDesk. Set up your account to see your assigned jobs.</div>'+
           '</div>'+
@@ -4158,7 +4158,7 @@ function showScheduleAlerts(){
   const _stripeReady=_stripeConnectStatus?.charges_enabled;
   const _depositAmt=_alertBid?Math.round((_alertBid.amount||0)*0.25*100)/100:0;
   box.innerHTML=
-    '<div style="text-align:center;font-size:32px;margin-bottom:6px">'+(a.isPaid?'💰':'🎉')+'</div>'+
+    '<div style="text-align:center;font-size:32px;margin-bottom:6px">'+(a.isPaid?svgIcon('💰',{size:32}):svgIcon('🎉',{size:32}))+'</div>'+
     '<div style="font-size:18px;font-weight:800;text-align:center;margin-bottom:4px">New signature!'+moreNote+'</div>'+
     '<div style="font-size:14px;color:var(--text3);text-align:center;margin-bottom:20px">'+
       escHtml(a.name)+' signed their painting proposal'+payLine+'.'+
@@ -4168,7 +4168,7 @@ function showScheduleAlerts(){
     '</button>'+
     ((!_depositAlready&&_stripeReady&&_depositAmt>0)?
       '<button id="_sched-alert-deposit" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:#635BFF;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:16px">'+
-        '💳 Collect '+fmt(_depositAmt)+' deposit now'+
+        svgIcon('💳')+' Collect '+fmt(_depositAmt)+' deposit now'+
       '</button>':'')+
     '<div style="text-align:center">'+
       '<button id="_sched-alert-later" style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit;padding:4px 8px;text-decoration:underline;text-underline-offset:2px">'+
@@ -4244,8 +4244,8 @@ function showScheduleSuggestion(clientId,bidId,clientNameFallback){
     '</div>'+
     '<div style="font-size:11px;color:var(--text3);text-align:center;margin-bottom:14px">Confirm with client, then tap "Lock it in"</div>'+
     '<div style="display:grid;gap:8px;margin-bottom:8px">'+
-      (phone?'<a href="'+smsHref+'" style="display:block;padding:13px;border-radius:var(--r);border:none;background:#27AE60;color:#fff;font-size:15px;font-weight:700;text-align:center;text-decoration:none">📱 Text '+escHtml(firstName||'')+' to confirm</a>':'')+
-      (callHref?'<a href="'+callHref+'" style="display:block;padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;text-align:center;text-decoration:none">📞 Call '+escHtml(firstName||'')+'</a>':'')+
+      (phone?'<a href="'+smsHref+'" style="display:block;padding:13px;border-radius:var(--r);border:none;background:#27AE60;color:#fff;font-size:15px;font-weight:700;text-align:center;text-decoration:none">'+svgIcon('📱')+' Text '+escHtml(firstName||'')+' to confirm</a>':'')+
+      (callHref?'<a href="'+callHref+'" style="display:block;padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;text-align:center;text-decoration:none">'+svgIcon('📞')+' Call '+escHtml(firstName||'')+'</a>':'')+
     '</div>'+
     '<button id="sched-lock-btn" onclick="quickScheduleJob('+bidId+',\''+startKey+'\','+clientId+')" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">✓ Lock it in — '+startLabel+'</button>'+
     '<button onclick="document.getElementById(\'sched-suggest-overlay\').remove();'+(bidId?'schedFromBid('+bidId+')':'goPg(\'pg-schedule\')')+'" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-bottom:6px">Pick a different date</button>'+
@@ -4278,7 +4278,7 @@ function quickScheduleJob(bidId,startKey,clientId){
   // Offer to go to calendar, then chain to next alert either way
   setTimeout(()=>zConfirm('Job locked in for '+parseD(startKey).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+'.'+_moreStr+'\n\nView on calendar?',
     ()=>{goPg('pg-cal');setTimeout(showScheduleAlerts,600);},
-    {title:'✓ Scheduled!',yes:'View calendar',no:_nextAlerts.length?'Next client ('+_nextAlerts.length+')':'Done',danger:false,
+    {title:svgIcon('✓')+' Scheduled!',yes:'View calendar',no:_nextAlerts.length?'Next client ('+_nextAlerts.length+')':'Done',danger:false,
     onNo:()=>setTimeout(showScheduleAlerts,300)}),400);
 }
 function discardInProgressBid(bidId){
@@ -5336,7 +5336,7 @@ function checkFridaySummary(){
   const ov=document.createElement('div');ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
-    '<div style="text-align:center;font-size:28px;margin-bottom:6px">📊</div>'+
+    '<div style="text-align:center;font-size:28px;margin-bottom:6px">'+svgIcon('📊',{size:28})+'</div>'+
     '<div style="font-size:16px;font-weight:800;text-align:center;margin-bottom:16px">Week in Review</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">'+
       '<div style="background:var(--green-lt);border-radius:var(--r);padding:12px;text-align:center">'+
@@ -5431,7 +5431,7 @@ function showDailyBriefing(){
       schedItems.map(j=>{
         const c=getClientById(j.client_id);
         const nm=c?c.name:'Unknown';
-        const icon=j.eventType==='estimate'?'📋':'🔨';
+        const icon=j.eventType==='estimate'?svgIcon('📋'):svgIcon('🔨');
         // A job record can lack eventType (it's implicitly a job); the icon already
         // defaults to 🔨 in that case, so default the label to 'job' too — calling
         // .charAt on an undefined eventType throws (cloud.js:3708 console error).
@@ -5466,8 +5466,8 @@ function showDailyBriefing(){
           (tc&&tc.phone&&next.smsKey?
             '<button onclick="collSendSMS(bids.find(x=>x.id=='+top.b.id+'),\''+next.smsKey+'\');this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:9px;border-radius:var(--r);border:none;background:var(--amber);color:#1a1a1a;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+next.label+'</button>':
             (isFileable?
-              '<button onclick="this.closest(\'.zmodal-overlay\').remove();showFileLienDirect('+top.b.id+')" style="flex:1;padding:9px;border-radius:var(--r);border:none;background:#3D0000;color:#FFB3B3;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">⚖️ File Lien</button>':
-              (tc&&tc.phone?'<a href="tel:'+tc.phone.replace(/\D/g,'')+'" onclick="autoLogContact('+tc.id+',\'call\');this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:9px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none;display:block;text-align:center">📞 Call '+escHtml(tc.name.split(' ')[0])+'</a>':'')))+
+              '<button onclick="this.closest(\'.zmodal-overlay\').remove();showFileLienDirect('+top.b.id+')" style="flex:1;padding:9px;border-radius:var(--r);border:none;background:#3D0000;color:#FFB3B3;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('⚖')+' File Lien</button>':
+              (tc&&tc.phone?'<a href="tel:'+tc.phone.replace(/\D/g,'')+'" onclick="autoLogContact('+tc.id+',\'call\');this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:9px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none;display:block;text-align:center">'+svgIcon('📞')+' Call '+escHtml(tc.name.split(' ')[0])+'</a>':'')))+
           '<button onclick="openPayPanel('+top.b.id+');this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:9px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Log payment</button>'+
         '</div>'+
       '</div>'+
@@ -5521,7 +5521,7 @@ function showDailyBriefing(){
     const checklistLabel=paintBid?'View supply list →':'View checklist →';
     sections+=
       '<div style="background:var(--blue-lt);border-radius:var(--r);padding:10px 12px;margin-bottom:14px">'+
-        '<div style="font-size:12px;font-weight:700;color:var(--blue);margin-bottom:3px">🛒 Supply check for tomorrow</div>'+
+        '<div style="font-size:12px;font-weight:700;color:var(--blue);margin-bottom:3px">'+svgIcon('🛒')+' Supply check for tomorrow</div>'+
         '<div style="font-size:12px;color:var(--text2)">Job'+(tmrJobs.length>1?'s':'')+': '+escHtml(tmrClients)+'</div>'+
         '<div style="margin-top:6px"><button onclick="'+checklistAction+'" style="padding:6px 14px;border-radius:20px;border:none;background:var(--blue);color:#fff;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">'+checklistLabel+'</button></div>'+
       '</div>';

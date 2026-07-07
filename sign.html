@@ -7,6 +7,7 @@
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://js.stripe.com/v3/"></script>
+<script src="js/icons.js"></script>
 <script src="js/legal.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
@@ -359,7 +360,7 @@ input[type=text]:focus{border-color:var(--denim)}
           <div id="pay-tile-dep-badge" class="sig-pay-opt-badge">Deposit</div>
           <div id="pay-tile-dep-amt" class="sig-pay-opt-amt"></div>
           <div id="pay-tile-dep-note" class="sig-pay-opt-sub"></div>
-          <div class="sig-pay-opt-sel">✓ Selected</div>
+          <div class="sig-pay-opt-sel"></div>
         </div>
         <div id="pay-tile-full" class="sig-pay-opt" onclick="_selectPayTile('full')">
           <div class="sig-pay-opt-badge" style="color:#3B6D11">Pay in Full</div>
@@ -462,7 +463,7 @@ input[type=text]:focus{border-color:var(--denim)}
 <div id="sticky-bar" style="flex-direction:column;gap:6px">
   <!-- sticky-total kept hidden for JS compatibility -->
   <div id="sticky-total" style="display:none"></div>
-  <button id="approve-btn" onclick="approveAndSign()" style="width:100%;padding:14px 22px;border-radius:var(--r);border:none;background:var(--ink);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);box-shadow:0 3px 16px rgba(27,22,18,.3);transition:background .3s">✓ Approve &amp; Sign</button>
+  <button id="approve-btn" onclick="approveAndSign()" style="width:100%;padding:14px 22px;border-radius:var(--r);border:none;background:var(--ink);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);box-shadow:0 3px 16px rgba(27,22,18,.3);transition:background .3s"><span id="approve-btn-label"></span></button>
   <button onclick="window.print()" class="btn-ghost" style="width:100%;padding:6px;font-size:12px">Download PDF</button>
 </div>
 
@@ -470,6 +471,7 @@ input[type=text]:focus{border-color:var(--denim)}
 <a id="float-call" href="" data-has-phone="0"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.362 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg></a>
 
 <script>
+document.getElementById('approve-btn-label').innerHTML=svgIcon('✓',{size:16})+' Approve &amp; Sign';
 const SUPA_URL='https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
 // _supa is session-isolated: it never loads a stored login, so every data call on
@@ -554,7 +556,7 @@ function portfolioAccept(){
     window._portfolioAccepted=true;
     document.getElementById('po-btns').style.display='none';
     document.getElementById('po-confirmed').style.display='block';
-    document.getElementById('po-confirmed-msg').textContent='✓ Discount applied — '+fmt(savings)+' saved!';
+    document.getElementById('po-confirmed-msg').innerHTML=svgIcon('✓',{size:14})+' Discount applied — '+fmt(savings)+' saved!';
     document.getElementById('amt-total').textContent=fmt(discP);
     document.getElementById('amt-dep').textContent='Deposit to start: '+fmt(newDep);
     document.getElementById('amt-bal').textContent='Balance on completion: '+fmt(newBal);
@@ -641,7 +643,7 @@ async function init(){
         '<div class="row"><span class="rl">Signed</span><span class="rv">'+signedDate+'</span></div>'+
         (_prop.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none">Call '+escHtmlN(_prop.businessName||'us')+'</a></span></div>':'');
       const _stamp=document.getElementById('done-stamp');
-      if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">✓ Signed &amp; Approved</div>';_stamp.style.display='block';}
+      if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">'+svgIcon('✓',{size:14})+' Signed &amp; Approved</div>';_stamp.style.display='block';}
       show('pg-done');return;
     }
     // Log view via Edge Function — skip entirely when preview=1 (contractor previewing, not a real client open).
@@ -1069,7 +1071,7 @@ function _renderPayTiles(){
     const amtEl=td.querySelector('.sig-pay-opt-amt');
     if(amtEl)amtEl.style.color=depSel?'var(--denim)':'var(--text)';
     const selEl=td.querySelector('.sig-pay-opt-sel');
-    if(selEl)selEl.style.color=depSel?'var(--denim)':'transparent';
+    if(selEl){selEl.innerHTML=svgIcon('✓',{size:14})+' Selected';selEl.style.color=depSel?'var(--denim)':'transparent';}
   }
   if(tf){
     tf.style.display=showFull?'':'none';
@@ -1175,7 +1177,7 @@ function showDone(method){
     '<div class="row"><span class="rl">Payment</span><span class="rv">'+payLabel+'</span></div>'+
     (_prop?.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none">Call '+escHtmlN(_prop.businessName||'us')+'</a></span></div>':'');
   const _stamp=document.getElementById('done-stamp');
-  if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">✓ Signed &amp; Approved</div>';_stamp.style.display='block';}
+  if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">'+svgIcon('✓',{size:14})+' Signed &amp; Approved</div>';_stamp.style.display='block';}
   const hubUrl=new URLSearchParams(location.search).get('hub')||'';
   const hubCta=document.getElementById('done-hub-cta');
   if(hubCta&&hubUrl){hubCta.href=hubUrl;hubCta.style.display='block';}

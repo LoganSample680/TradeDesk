@@ -1239,22 +1239,22 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="td-micro" style="margin-bottom:10px">Quick actions</div>
         <div class="qa-grid">
           <button class="qa qa-p" onclick="goPg('pg-clients');setTimeout(()=>openNewClient(),100)">
-            <span class="qa-emoji">👤</span><span>New lead</span>
+            <span class="qa-emoji" data-ico="👤" data-ico-size="22"></span><span>New lead</span>
           </button>
           <button class="qa" onclick="quickAction('drive')">
-            <span class="qa-emoji">🚗</span><span>Drive</span>
+            <span class="qa-emoji" data-ico="🚗" data-ico-size="22"></span><span>Drive</span>
           </button>
           <button class="qa" id="qa-estimate-btn" onclick="quickAction('estimate')">
-            <span class="qa-emoji">📋</span><span>Estimate</span>
+            <span class="qa-emoji" data-ico="📋" data-ico-size="22"></span><span>Estimate</span>
           </button>
           <button class="qa" onclick="quickAction('schedule')">
-            <span class="qa-emoji">📅</span><span>Schedule</span>
+            <span class="qa-emoji" data-ico="📅" data-ico-size="22"></span><span>Schedule</span>
           </button>
           <button class="qa" onclick="quickAction('expense')">
-            <span class="qa-emoji">🧾</span><span>Expense</span>
+            <span class="qa-emoji" data-ico="🧾" data-ico-size="22"></span><span>Expense</span>
           </button>
           <button class="qa qa-g" id="qa-collect-btn" onclick="quickAction('collect')">
-            <span class="qa-emoji">💰</span><span id="qa-collect-label">Collect</span>
+            <span class="qa-emoji" data-ico="💰" data-ico-size="22"></span><span id="qa-collect-label">Collect</span>
           </button>
         </div>
       </div>
@@ -1390,7 +1390,7 @@ body.dark .cal-cell.other{background:var(--cream)}
               <input id="cf-year-built" type="number" min="1800" max="2030" placeholder="e.g. 1965" oninput="checkYearBuilt()" style="flex:1">
               <button type="button" class="btn btn-sm btn-g" id="cf-year-lookup" onclick="lookupYearBuilt()" style="display:none;white-space:nowrap">&#128269; Look up</button>
             </div>
-            <div id="cf-year-warn" style="display:none;font-size:12px;color:var(--amber);font-weight:700;margin-top:4px">⚠️ Pre-1978 — Lead paint pamphlet required</div>
+            <div id="cf-year-warn" style="display:none;font-size:12px;color:var(--amber);font-weight:700;margin-top:4px"><span data-ico="⚠" data-ico-size="14"></span> Pre-1978 — Lead paint pamphlet required</div>
           </div>
           <div class="f">
             <label>Occupation</label>
@@ -1502,7 +1502,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <span style="font-size:13px;font-weight:700">Bids &amp; payments</span>
       <div style="display:flex;gap:6px">
-        <button class="btn btn-sm" onclick="openClientProposals(currentClientId)" style="font-size:12px">📄 Proposals</button>
+        <button class="btn btn-sm" onclick="openClientProposals(currentClientId)" style="font-size:12px"><span data-ico="📄" data-ico-size="14"></span> Proposals</button>
         <button class="btn btn-p btn-sm" onclick="quickBid()">+ Add bid</button>
       </div>
     </div>
@@ -1579,7 +1579,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="tbar-eyebrow" id="gei-tbar-eyebrow">General estimate</div>
       <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
         <span id="gei-trade-title">Estimate</span>
-        <button onclick="_editScopeTitle()" id="scope-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">✏️</button>
+        <button onclick="_editScopeTitle()" id="scope-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)"><span data-ico="✏" data-ico-size="16"></span></button>
       </div>
     </div>
     <div class="tbar-r">
@@ -1646,7 +1646,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           </div>
           <div class="tm-mat-list" id="tm-mat-list"></div>
           <div class="tip" style="margin-top:12px">
-            <span style="font-size:18px">🧾</span>
+            <span data-ico="🧾" data-ico-size="18"></span>
             <div><b>Markup is baked into displayed prices.</b> Clients see the all-in price only — markup is never shown to them.</div>
           </div>
         </div>
@@ -1735,17 +1735,17 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="card" style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Property type</div>
       <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-bottom:10px">
-        <button id="gei-prop-res"  onclick="_geiSetPropertyType('residential')" class="btn btn-sm" style="border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)">🏠 Residential</button>
-        <button id="gei-prop-comm" onclick="_geiSetPropertyType('commercial')"  class="btn btn-sm" style="border:2px solid var(--border2);background:var(--bg2);color:var(--text2)">🏢 Commercial</button>
+        <button id="gei-prop-res"  onclick="_geiSetPropertyType('residential')" class="btn btn-sm" style="border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)"><span data-ico="🏠" data-ico-size="14"></span> Residential</button>
+        <button id="gei-prop-comm" onclick="_geiSetPropertyType('commercial')"  class="btn btn-sm" style="border:2px solid var(--border2);background:var(--bg2);color:var(--text2)"><span data-ico="🏢" data-ico-size="14"></span> Commercial</button>
       </div>
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Work type</div>
       <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-bottom:8px">
-        <button id="gei-work-repair"   onclick="_geiSetWorkType('repair')"      class="btn btn-sm" style="border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)">🔧 Repair / Remodel</button>
-        <button id="gei-work-newbuild" onclick="_geiSetWorkType('improvement')" class="btn btn-sm" style="border:2px solid var(--border2);background:var(--bg2);color:var(--text2)">🏗️ New Build / Addition</button>
+        <button id="gei-work-repair"   onclick="_geiSetWorkType('repair')"      class="btn btn-sm" style="border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)"><span data-ico="🔧" data-ico-size="14"></span> Repair / Remodel</button>
+        <button id="gei-work-newbuild" onclick="_geiSetWorkType('improvement')" class="btn btn-sm" style="border:2px solid var(--border2);background:var(--bg2);color:var(--text2)"><span data-ico="🏗" data-ico-size="14"></span> New Build / Addition</button>
       </div>
       <div id="gei-jtype-note" style="font-size:11px;color:var(--text3)"></div>
       <div style="display:flex;gap:6px;margin-top:8px">
-        <button id="gei-emrg-btn" onclick="_geiToggleEmergency()" class="btn btn-sm" style="flex:1;font-size:12px;border:2px solid var(--border2);background:var(--bg2);color:var(--text2)">🚨 Emergency / after-hours</button>
+        <button id="gei-emrg-btn" onclick="_geiToggleEmergency()" class="btn btn-sm" style="flex:1;font-size:12px;border:2px solid var(--border2);background:var(--bg2);color:var(--text2)"><span data-ico="🚨" data-ico-size="14"></span> Emergency / after-hours</button>
       </div>
     </div>
     <div class="card" style="margin-bottom:12px">
@@ -1755,7 +1755,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <!-- Free-form chip (shown in Build Your Own mode) -->
       <div id="gei-ff-chip" style="display:none;margin-bottom:12px">
-        <span style="display:inline-flex;align-items:center;gap:6px;background:#f0fdf4;color:#166534;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px">✏️ Build Your Own Proposal</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;background:#f0fdf4;color:#166534;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px"><span data-ico="✏" data-ico-size="14"></span> Build Your Own Proposal</span>
       </div>
       <div class="f" style="margin-bottom:8px"><label>Client name</label><input type="text" id="gei-client" placeholder="Client name"></div>
       <div class="f" style="margin-bottom:8px;position:relative"><label>Job address</label><input type="text" id="gei-addr" placeholder="123 Main St, Wichita KS 67201" autocomplete="off" oninput="_geiOnAddrInput();_lookupProperty(this.value,'geiaddr')"></div>
@@ -1826,7 +1826,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <button onclick="goGeiStep(3)" class="btn btn-p" style="margin-top:10px;margin-bottom:4px">Review &amp; send proposal →</button>
     </div>
     <div id="gei-svc-wrap" style="display:flex;justify-content:flex-end;margin-bottom:4px">
-      <button onclick="showGeiOnboarding({force:true})" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border2);border-radius:var(--r);color:var(--text3);cursor:pointer;font-family:inherit">⚙️ Change services</button>
+      <button onclick="showGeiOnboarding({force:true})" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border2);border-radius:var(--r);color:var(--text3);cursor:pointer;font-family:inherit"><span data-ico="⚙" data-ico-size="13"></span> Change services</button>
     </div>
     <div id="gei-templates"></div>
   </div>
@@ -1903,7 +1903,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div id="gei-tax-rate-note" style="display:none;font-size:11px;margin-bottom:6px;padding:0 2px"></div>
       <!-- Prompt shown when no sales tax rate configured and no address entered -->
       <div id="gei-tax-rate-prompt" style="display:none;align-items:center;gap:6px;padding:7px 10px;background:var(--amber-lt,#fffbeb);border:1px solid var(--amber,#f59e0b);border-radius:var(--r);margin-bottom:8px;font-size:12px">
-        <span style="color:var(--amber-dk,#92400e)">⚠ Sales tax rate not set</span>
+        <span style="color:var(--amber-dk,#92400e)"><span data-ico="⚠" data-ico-size="14"></span> Sales tax rate not set</span>
         <button onclick="openSalesTaxSetup()" style="margin-left:auto;background:none;border:none;color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;padding:0">Set rate →</button>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid var(--border)">
@@ -1931,15 +1931,15 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="f"><label>Est. duration</label><input type="text" id="gei-duration" placeholder="e.g. 4 hrs, 2 days"></div>
     </div>
     <div id="gei-panel-section" style="margin-bottom:12px"></div>
-    <button id="gei-send-btn" class="btn btn-p" onclick="sendGenericProposal()" style="margin-bottom:8px">🔗 Save &amp; get client link</button>
+    <button id="gei-send-btn" class="btn btn-p" onclick="sendGenericProposal()" style="margin-bottom:8px"><span data-ico="🔗" data-ico-size="14"></span> Save &amp; get client link</button>
     <button class="btn" onclick="saveGenericEstimate(true)" style="font-size:13px;color:var(--text2)">Save as draft</button>
   </div>
   <!-- Send bar — shown after proposal is generated; same buttons as paint estimate -->
   <div id="gei-send-bar" style="display:none;margin:0 14px 80px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:12px 14px">
-    <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:10px;text-align:center">✓ Link ready — send to client</div>
+    <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:10px;text-align:center"><span data-ico="✓" data-ico-size="14"></span> Link ready — send to client</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-      <button onclick="sendProposalViaSms()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">📱 Text</button>
-      <button onclick="sendProposalViaEmail()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">✉️ Email</button>
+      <button onclick="sendProposalViaSms()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center"><span data-ico="📱" data-ico-size="16"></span> Text</button>
+      <button onclick="sendProposalViaEmail()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center"><span data-ico="✉" data-ico-size="16"></span> Email</button>
     </div>
     <button onclick="shareProposalLink()" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">⬆️ Other app (WhatsApp, AirDrop…)</button>
     <div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">Bid saved as Pending. You'll get a follow-up reminder in 3 days if no response.</div>
@@ -1964,7 +1964,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
 </div>
 <div class="pg" id="pg-schedule">
-  <div class="tbar"><div class="tbar-title">Schedule</div><button class="btn btn-sm" onclick="openTimeOffModal()" style="background:var(--amber-lt);border-color:#D97706;color:#92400E;font-weight:700">🏖 Time off</button></div>
+  <div class="tbar"><div class="tbar-title">Schedule</div><button class="btn btn-sm" onclick="openTimeOffModal()" style="background:var(--amber-lt);border-color:#D97706;color:#92400E;font-weight:700"><span data-ico="🏖" data-ico-size="14"></span> Time off</button></div>
 
   
   <div class="fbar" style="margin-bottom:12px">
@@ -2086,8 +2086,8 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
   </div>
   <div class="fbar" style="margin-bottom:16px;padding-left:2px">
-    <button type="button" class="fb active" id="ft-t-fleet" onclick="setFleetTab('fleet')">🚗 Fleet</button>
-    <button type="button" class="fb" id="ft-t-team" onclick="setFleetTab('team')">👷 Team</button>
+    <button type="button" class="fb active" id="ft-t-fleet" onclick="setFleetTab('fleet')"><span data-ico="🚗" data-ico-size="14"></span> Fleet</button>
+    <button type="button" class="fb" id="ft-t-team" onclick="setFleetTab('team')"><span data-ico="👷" data-ico-size="14"></span> Team</button>
   </div>
   <div id="ft-fleet">
     <div id="fleet-vehicle-list"></div>
@@ -2107,7 +2107,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="card" style="margin-top:12px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Devices</div>
-        <button onclick="registerDevice(true);renderTeam()" class="btn btn-sm" style="font-size:10px;padding:3px 8px">📍 Update my location</button>
+        <button onclick="registerDevice(true);renderTeam()" class="btn btn-sm" style="font-size:10px;padding:3px 8px"><span data-ico="📍" data-ico-size="12"></span> Update my location</button>
       </div>
       <div id="team-page-devices"></div>
     </div>
@@ -2132,7 +2132,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button type="button" class="fb" id="tr-t-mileage" onclick="setTrTab('mileage',this)">Mileage</button>
     <button type="button" class="fb" id="tr-t-jobs" onclick="setTrTab('jobs',this)">Jobs</button>
     <button type="button" class="fb" id="tr-t-summary" onclick="setTrTab('summary',this)">Summary</button>
-    <button type="button" class="fb" id="tr-t-hiring" onclick="setTrTab('hiring',this)">👥 Hiring</button>
+    <button type="button" class="fb" id="tr-t-hiring" onclick="setTrTab('hiring',this)"><span data-ico="👥" data-ico-size="14"></span> Hiring</button>
   </div>
   <div id="tr-income">
     
@@ -2145,7 +2145,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div id="tr-expenses" style="display:none">
     <div class="card">
       <div class="card-hd">Scan a receipt
-        <span><button class="btn btn-sm btn-p" onclick="triggerReceiptScan()">📷 Scan</button></span>
+        <span><button class="btn btn-sm btn-p" onclick="triggerReceiptScan()"><span data-ico="📷" data-ico-size="14"></span> Scan</button></span>
       </div>
       <div class="tip" id="scan-tip">Take a photo of any receipt — AI reads the vendor, amount, date and category automatically.</div>
       <input type="file" id="receipt-file-input" accept="image/*" capture="environment" style="display:none" onchange="processReceiptPhoto(this)">
@@ -2214,7 +2214,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
     <select id="tax-yr-sel" onchange="setTaxYear(parseInt(this.value))" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);cursor:pointer;width:100%"></select>
   </div>
-  <div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-size:11px;color:#92400E;line-height:1.6"><strong>⚠️ Not a licensed tax tool.</strong> These numbers are estimates only — not a substitute for a CPA. Do not file taxes based solely on these figures. Consult a qualified tax professional, especially for self-employment tax and quarterly payments.</div>
+  <div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-size:11px;color:#92400E;line-height:1.6"><strong><span data-ico="⚠" data-ico-size="13"></span> Not a licensed tax tool.</strong> These numbers are estimates only — not a substitute for a CPA. Do not file taxes based solely on these figures. Consult a qualified tax professional, especially for self-employment tax and quarterly payments.</div>
   <div class="fbs" style="margin-bottom:14px">
     <button type="button" class="fb active" id="tx-tab-current" onclick="setTaxTab('current',this)">Current year</button>
   </div>
@@ -2288,7 +2288,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 
     <!-- search -->
     <div style="display:flex;align-items:center;gap:8px;background:var(--bg-card);border:1.5px solid var(--border2);border-radius:12px;padding:10px 14px;margin:0 16px 14px;color:var(--text3)">
-      <span>🔍</span>
+      <span data-ico="🔍" data-ico-size="16"></span>
       <input id="set-search-input" placeholder="Search settings…" oninput="_filterSetRows(this.value)" style="flex:1;border:0;background:transparent;outline:none;font-family:inherit;font-size:13px;color:var(--text);padding:0;width:auto">
     </div>
 
@@ -2320,7 +2320,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;padding-left:4px">Your business</div>
       <div class="card" style="padding:0;overflow:hidden">
         <div class="set-idx-row" data-search="business info name phone email license contact address" onclick="_openSetDetail('biz')">
-          <div class="set-idx-icon">🏢</div>
+          <div class="set-idx-icon"><span data-ico="🏢" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Business info</div>
             <div class="set-idx-sub">Name, address, phone, email, license #</div>
@@ -2329,7 +2329,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-chev">›</div>
         </div>
         <div class="set-idx-row" data-search="branding logo color hub subdomain preview powered" onclick="_openSetDetail('branding')">
-          <div class="set-idx-icon">🎨</div>
+          <div class="set-idx-icon"><span data-ico="🎨" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Branding</div>
             <div class="set-idx-sub">Logo, brand color, white-label client hub</div>
@@ -2338,7 +2338,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-chev">›</div>
         </div>
         <div class="set-idx-row" data-search="rates pricing labor margin deposit estimator goals" onclick="_openSetDetail('rates')">
-          <div class="set-idx-icon">💵</div>
+          <div class="set-idx-icon"><span data-ico="💵" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Rates &amp; pricing</div>
             <div class="set-idx-sub">Default labor rate, deposit %, IRS mileage rate</div>
@@ -2347,7 +2347,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-chev">›</div>
         </div>
         <div class="set-idx-row" data-search="legal terms conditions UETA change order clause proposal" onclick="_openSetDetail('legal')">
-          <div class="set-idx-icon">📋</div>
+          <div class="set-idx-icon"><span data-ico="📋" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Legal &amp; terms</div>
             <div class="set-idx-sub">Proposal terms, change-order clause, UETA disclosure</div>
@@ -2356,7 +2356,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-chev">›</div>
         </div>
         <div class="set-idx-row" data-search="trades painting roofing flooring business type" onclick="_openSetDetail('trades')">
-          <div class="set-idx-icon">🏗️</div>
+          <div class="set-idx-icon"><span data-ico="🏗" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title" id="set-idx-trades-title">Your trades</div>
             <div class="set-idx-sub" id="set-idx-trades-sub">Manage your trade lines</div>
@@ -2371,7 +2371,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;padding-left:4px">Operations</div>
       <div class="card" style="padding:0;overflow:hidden">
         <div class="set-idx-row" data-search="integrations stripe payments" onclick="_openSetDetail('integrations')">
-          <div class="set-idx-icon">🔌</div>
+          <div class="set-idx-icon"><span data-ico="🔌" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Integrations</div>
             <div class="set-idx-sub">Stripe payments</div>
@@ -2380,7 +2380,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-chev">›</div>
         </div>
         <div class="set-idx-row" data-search="tax setup taxes mileage rate federal state brackets filing" onclick="_openSetDetail('taxes')">
-          <div class="set-idx-icon">📄</div>
+          <div class="set-idx-icon"><span data-ico="📄" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Tax setup</div>
             <div class="set-idx-sub">State, filing status, quarterly schedule</div>
@@ -2389,7 +2389,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-chev">›</div>
         </div>
         <div class="set-idx-row" data-search="cloud sync backup restore location" onclick="_openSetDetail('cloud')">
-          <div class="set-idx-icon">☁️</div>
+          <div class="set-idx-icon"><span data-ico="☁" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Cloud sync</div>
             <div class="set-idx-sub">Backup, restore, device list</div>
@@ -2398,7 +2398,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-chev">›</div>
         </div>
         <div class="set-idx-row" data-search="sms notifications templates messages follow up email push" onclick="_openSetDetail('notifications')">
-          <div class="set-idx-icon">💬</div>
+          <div class="set-idx-icon"><span data-ico="💬" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Notifications</div>
             <div class="set-idx-sub">Email + push for new leads, signed proposals, payments</div>
@@ -2414,7 +2414,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;padding-left:4px">Advanced</div>
       <div class="card" style="padding:0;overflow:hidden">
         <div class="set-idx-row" data-search="data export download reset factory danger" onclick="_openSetDetail('data')">
-          <div class="set-idx-icon">📦</div>
+          <div class="set-idx-icon"><span data-ico="📦" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Data &amp; export</div>
             <div class="set-idx-sub">Download data, factory reset</div>
@@ -2422,7 +2422,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-chev">›</div>
         </div>
         <div class="set-idx-row" id="set-idx-row-dev" style="display:none" data-search="developer dev tools debug api" onclick="_openSetDetail('dev')">
-          <div class="set-idx-icon">🛠️</div>
+          <div class="set-idx-icon"><span data-ico="🛠" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Developer</div>
             <div class="set-idx-sub">Trade switcher, debug tools, legal inspector</div>
@@ -2449,13 +2449,13 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-biz">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">🏢</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="🏢" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Business info</div><div style="font-size:11px;color:var(--text3)">Shown on proposals, invoices, and your client hub</div></div>
     </div>
     <div style="padding:16px">
       <div class="set-form-card">
         <div class="set-form-card-hd">
-          <div style="font-size:28px;line-height:1">🏢</div>
+          <div style="font-size:28px;line-height:1"><span data-ico="🏢" data-ico-size="28"></span></div>
           <div><div style="font-size:15px;font-weight:800">Business info</div><div style="font-size:11px;color:var(--text3);margin-top:1px">Shown on proposals, invoices, and your client hub</div></div>
         </div>
         <div class="set-form-row">
@@ -2528,7 +2528,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="set-form-row" style="border-top:2px solid var(--border);padding-top:14px;margin-top:6px">
           <div><div class="set-form-lbl">Crew location tracking</div><div class="set-form-hint">Auto-logs drive mileage and time-on-site for dispatched crew during business hours only. Always on — a standard part of running your crew on TradeDesk.</div></div>
           <div class="set-form-ctrl">
-            <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--green-mid);font-weight:700"><span style="font-size:15px">✓</span><span>Active during business hours</span></div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--green-mid);font-weight:700"><span data-ico="✓" data-ico-size="15"></span><span>Active during business hours</span></div>
           </div>
         </div>
         <div class="set-form-row">
@@ -2568,13 +2568,13 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-branding">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">🎨</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="🎨" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Branding</div><div style="font-size:11px;color:var(--text3)">Applied to client hub, intake, proposals, and signature pages</div></div>
     </div>
     <div style="padding:16px">
       <div class="set-form-card">
         <div class="set-form-card-hd">
-          <div style="font-size:28px;line-height:1">🎨</div>
+          <div style="font-size:28px;line-height:1"><span data-ico="🎨" data-ico-size="28"></span></div>
           <div><div style="font-size:15px;font-weight:800">Branding</div><div style="font-size:11px;color:var(--text3);margin-top:1px">Applied to client hub, intake, proposals, and signature pages</div></div>
         </div>
         <div class="set-form-row">
@@ -2636,7 +2636,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-rates">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">💵</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="💵" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Rates &amp; pricing</div><div style="font-size:11px;color:var(--text3)">Labor rate, deposit, margin &amp; estimator defaults</div></div>
     </div>
     <div style="padding:16px">
@@ -2699,7 +2699,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-notifications">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">💬</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="💬" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Notifications</div><div style="font-size:11px;color:var(--text3)">SMS templates sent to clients</div></div>
     </div>
     <div style="padding:16px">
@@ -2732,14 +2732,14 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-legal">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">📋</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="📋" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Legal &amp; terms</div><div style="font-size:11px;color:var(--text3)">Proposal terms, change-order clause, UETA disclosure</div></div>
     </div>
     <div style="padding:16px">
       <div class="tip" style="margin-bottom:14px">These terms appear on every proposal and are required for enforceable contracts in most states. Keep them up to date each year.</div>
       <div class="set-form-card">
         <div class="set-form-card-hd">
-          <div style="font-size:24px;line-height:1">📋</div>
+          <div style="font-size:24px;line-height:1"><span data-ico="📋" data-ico-size="24"></span></div>
           <div><div style="font-size:15px;font-weight:800">Proposal terms</div><div style="font-size:11px;color:var(--text3)">Shown at the bottom of every estimate before signing</div></div>
         </div>
         <div style="padding:14px 16px">
@@ -2750,7 +2750,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <div class="set-form-card">
         <div class="set-form-card-hd">
-          <div style="font-size:24px;line-height:1">🔄</div>
+          <div style="font-size:24px;line-height:1"><span data-ico="🔄" data-ico-size="24"></span></div>
           <div><div style="font-size:15px;font-weight:800">Change-order clause</div><div style="font-size:11px;color:var(--text3)">Appended to every change order document</div></div>
         </div>
         <div style="padding:14px 16px">
@@ -2759,7 +2759,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <div class="set-form-card" style="margin-bottom:16px">
         <div class="set-form-card-hd">
-          <div style="font-size:24px;line-height:1">✍️</div>
+          <div style="font-size:24px;line-height:1"><span data-ico="✍" data-ico-size="24"></span></div>
           <div><div style="font-size:15px;font-weight:800">UETA disclosure</div><div style="font-size:11px;color:var(--text3)">Electronic signature consent statement</div></div>
         </div>
         <div style="padding:14px 16px">
@@ -2775,7 +2775,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-trades">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">🏗️</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="🏗" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px" id="set-trades-det-title">Your trades</div><div style="font-size:11px;color:var(--text3)">Manage which trades you offer</div></div>
     </div>
     <div style="padding:16px">
@@ -2787,14 +2787,14 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-integrations">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">🔌</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="🔌" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Integrations</div><div style="font-size:11px;color:var(--text3)">External services connected to your account</div></div>
     </div>
     <div style="padding:16px">
       <div style="font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.5">Third-party services you opt into. Each shows its connection status and a tap-target to connect or manage.</div>
       <div class="set-form-card" style="margin-bottom:14px">
         <div class="set-form-card-hd">
-          <div style="font-size:24px;line-height:1">🔌</div>
+          <div style="font-size:24px;line-height:1"><span data-ico="🔌" data-ico-size="24"></span></div>
           <div><div style="font-size:15px;font-weight:800">Connected services</div><div style="font-size:11px;color:var(--text3)">at a glance</div></div>
         </div>
         <div id="integrations-list">
@@ -2832,7 +2832,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-taxes">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">📄</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="📄" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Tax setup</div><div style="font-size:11px;color:var(--text3)">Mileage rate, federal brackets, state rates</div></div>
     </div>
     <div style="padding:16px">
@@ -2893,7 +2893,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-cloud">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">☁️</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="☁" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Cloud sync</div><div style="font-size:11px;color:var(--text3)">Backup, restore, and device access</div></div>
     </div>
     <div style="padding:16px">
@@ -2902,7 +2902,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
         <button class="btn btn-p" onclick="if(supaEnabled())supaSignOut()" style="width:100%;padding:13px">Sign out of cloud sync</button>
-        <button id="location-settings-btn" class="btn" onclick="resetLocationPermission()" style="width:100%;padding:13px;font-size:13px">📍 Location access</button>
+        <button id="location-settings-btn" class="btn" onclick="resetLocationPermission()" style="width:100%;padding:13px;font-size:13px"><span data-ico="📍" data-ico-size="14"></span> Location access</button>
         <button class="btn" onclick="resetSettings()" style="width:100%;padding:13px;font-size:13px">Reset all settings to defaults</button>
       </div>
     </div>
@@ -2912,7 +2912,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-data">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">📦</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="📦" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Data &amp; export</div><div style="font-size:11px;color:var(--text3)">Delete by category or factory reset</div></div>
     </div>
     <div style="padding:16px">
@@ -2952,7 +2952,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="background:var(--bg-card);border-radius:var(--r);border:1px solid var(--c-red);padding:16px">
         <div style="font-size:13px;font-weight:700;color:var(--c-red);margin-bottom:4px">Factory reset</div>
         <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Wipes everything — clients, bids, mileage, expenses, fleet, settings. Cannot be undone.</div>
-        <button class="btn btn-r" onclick="clearAllData()" style="width:100%;padding:12px;font-size:13px">🗑️ Clear ALL data — start fresh</button>
+        <button class="btn btn-r" onclick="clearAllData()" style="width:100%;padding:12px;font-size:13px"><span data-ico="🗑" data-ico-size="14"></span> Clear ALL data — start fresh</button>
       </div>
 
     </div>
@@ -2962,7 +2962,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-dev">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">🛠️</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="🛠" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Developer</div><div style="font-size:11px;color:var(--text3)">Trade switcher, debug tools</div></div>
     </div>
     <div style="padding:16px">
@@ -2973,7 +2973,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 
       <!-- Legal Compliance Inspector -->
       <div style="border-top:1px solid var(--border);padding-top:14px">
-        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">⚖️ Legal Compliance Inspector</div>
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px"><span data-ico="⚖" data-ico-size="14"></span> Legal Compliance Inspector</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
           <div class="f" style="margin:0">
             <label style="font-size:10px">State</label>
@@ -3077,7 +3077,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="tbar-sub" id="jobs-count-sub"></div>
     </div>
     <div class="tbar-r">
-      <button class="btn btn-sm" id="jobs-dispatch-btn" onclick="goPg('pg-dispatch')">📋 Dispatch</button>
+      <button class="btn btn-sm" id="jobs-dispatch-btn" onclick="goPg('pg-dispatch')"><span data-ico="📋" data-ico-size="14"></span> Dispatch</button>
       <button class="btn btn-p btn-sm" onclick="goPg('pg-schedule')">+ Schedule</button>
     </div>
   </div>
@@ -3097,7 +3097,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="tbar-sub" id="money-lien-sub">Pre-written SMS for each escalation stage. Lien deadlines auto-tracked under applicable state law.</div>
     </div>
     <div class="tbar-r">
-      <button class="btn btn-sm" id="money-send-all-btn" onclick="collSendAllReminders()" style="display:none">📤 Send all reminders</button>
+      <button class="btn btn-sm" id="money-send-all-btn" onclick="collSendAllReminders()" style="display:none"><span data-ico="📤" data-ico-size="14"></span> Send all reminders</button>
       <button class="btn btn-p btn-sm" onclick="openManualInvoiceModal()">+ Manual invoice</button>
     </div>
   </div>
@@ -3190,7 +3190,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
   <div style="display:flex;gap:5px;flex-shrink:0">
     <button onclick="nextClockTask()" style="background:#1E4D2B;color:#6EE7A0;border:1px solid #2D7A44;border-radius:var(--r);padding:5px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">→ Next</button>
-    <button onclick="doneForDay()" style="background:#1A3A5A;color:#7EC8E3;border:1px solid #2A5A8A;border-radius:var(--r);padding:5px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">✓ Done</button>
+    <button onclick="doneForDay()" style="background:#1A3A5A;color:#7EC8E3;border:1px solid #2A5A8A;border-radius:var(--r);padding:5px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap"><span data-ico="✓" data-ico-size="13"></span> Done</button>
     <button onclick="clockOut()" style="background:rgba(163,45,45,.7);color:#fff;border:none;border-radius:var(--r);padding:5px 8px;font-size:14px;cursor:pointer;font-family:inherit;flex-shrink:0" title="Clock out">⏹</button>
   </div>
 </div>
@@ -3385,6 +3385,18 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
 </div>
 <script src="js/lib/xlsx.min.js"></script>
+<script src="js/icons.js"></script>
+<script>
+// Hydrate static emoji-icon placeholders — this file writes most of its UI as
+// literal HTML parsed long before this <script> tag runs, so those spots can't
+// call svgIcon() inline. Instead they carry data-ico (the emoji) and optional
+// data-ico-size, and this single pass — right after icons.js defines svgIcon —
+// swaps every one of them for its inline-SVG rendering.
+document.querySelectorAll('[data-ico]').forEach(function(el){
+  var sz = el.getAttribute('data-ico-size');
+  el.innerHTML = svgIcon(el.getAttribute('data-ico'), sz ? {size:+sz} : undefined);
+});
+</script>
 <script src="js/constants.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/data.js"></script>
@@ -3645,21 +3657,21 @@ if(supaEnabled()){
     <div style="font-size:12px;color:var(--text3);margin-bottom:16px">All imported contacts are tagged <strong>Existing Contact</strong> as their lead source.</div>
     <div id="import-phone-opt" style="display:none;margin-bottom:10px">
       <button onclick="_importPhoneContacts()" style="width:100%;text-align:left;padding:14px 16px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit">
-        <div style="font-weight:700;font-size:14px;color:var(--text)">📱 From your phone contacts</div>
+        <div style="font-weight:700;font-size:14px;color:var(--text)"><span data-ico="📱" data-ico-size="14"></span> From your phone contacts</div>
         <div style="font-size:11px;color:var(--text3);margin-top:2px">Pick contacts directly from your device</div>
       </button>
     </div>
     <div style="margin-bottom:10px">
       <label style="display:block;padding:14px 16px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer">
         <input type="file" accept=".csv" style="display:none" onchange="_handleImportFile(this.files[0]);this.value=''">
-        <div style="font-weight:700;font-size:14px;color:var(--text)">📄 Upload CSV</div>
+        <div style="font-weight:700;font-size:14px;color:var(--text)"><span data-ico="📄" data-ico-size="14"></span> Upload CSV</div>
         <div style="font-size:11px;color:var(--text3);margin-top:2px">From Jobber, HouseCall Pro, spreadsheet, or any app</div>
       </label>
     </div>
     <div style="margin-bottom:6px">
       <label style="display:block;padding:14px 16px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer">
         <input type="file" accept=".vcf,.vcard" style="display:none" onchange="_handleImportFile(this.files[0]);this.value=''">
-        <div style="font-weight:700;font-size:14px;color:var(--text)">👤 Upload vCard (.vcf)</div>
+        <div style="font-weight:700;font-size:14px;color:var(--text)"><span data-ico="👤" data-ico-size="14"></span> Upload vCard (.vcf)</div>
         <div style="font-size:11px;color:var(--text3);margin-top:2px">Export from Apple Contacts, Google Contacts, or Outlook</div>
       </label>
     </div>

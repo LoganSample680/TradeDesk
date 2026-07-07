@@ -1480,23 +1480,31 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
     });
+    // Old behavior: showToast rendered its icon arg as a literal emoji character,
+    // so .toast-icon's textContent equaled the glyph itself ('✓', '★', etc.).
+    // New behavior: showToast (js/utils.js) now renders any icon it has an SVG
+    // mapping for (js/icons.js) as an inline <svg> via innerHTML — an SVG element
+    // has no text content, so textContent is empty even though the icon rendered
+    // correctly. Assert on the SVG markup instead of the (now absent) text.
     test('no icon — defaults to checkmark', async () => {
       const r = await page.evaluate(() => {
         showToast('Hello');
-        const icon = document.querySelector('.toast .toast-icon')?.textContent || '';
+        const el = document.querySelector('.toast .toast-icon');
+        const html = el?.innerHTML || '';
         document.querySelectorAll('.toast').forEach(e => e.remove());
-        return icon;
+        return html;
       });
-      expect(r).toContain('✓');
+      expect(r).toContain('<svg');
     });
     test('custom icon renders', async () => {
       const r = await page.evaluate(() => {
         showToast('Hi', '★');
-        const icon = document.querySelector('.toast .toast-icon')?.textContent || '';
+        const el = document.querySelector('.toast .toast-icon');
+        const html = el?.innerHTML || '';
         document.querySelectorAll('.toast').forEach(e => e.remove());
-        return icon;
+        return html;
       });
-      expect(r).toContain('★');
+      expect(r).toContain('<svg');
     });
     test('close button removes toast', async () => {
       const r = await page.evaluate(() => {

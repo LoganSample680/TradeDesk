@@ -6,6 +6,7 @@
 <title>Review &amp; Sign Contract</title>
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/icons.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -45,11 +46,11 @@ input[type=text]{width:100%;padding:12px;border:1px solid var(--border2);border-
 <div class="wrap">
 
   <div class="pg active" id="pg-load">
-    <div class="center"><div class="big">📄</div><div class="muted">Loading contract…</div></div>
+    <div class="center"><div class="big" id="load-icon-el"></div><div class="muted">Loading contract…</div></div>
   </div>
 
   <div class="pg" id="pg-err">
-    <div class="center"><div class="big">🔍</div><h1 style="font-size:18px">Contract not found</h1><div class="muted" style="margin-top:6px">This link may be invalid or expired. Ask the sender for a new one.</div></div>
+    <div class="center"><div class="big" id="err-icon-el"></div><h1 style="font-size:18px">Contract not found</h1><div class="muted" style="margin-top:6px">This link may be invalid or expired. Ask the sender for a new one.</div></div>
   </div>
 
   <div class="pg" id="pg-sign">
@@ -75,12 +76,12 @@ input[type=text]{width:100%;padding:12px;border:1px solid var(--border2);border-
         <label for="agree-ck" style="margin:0;text-transform:none;letter-spacing:0;font-weight:500;color:var(--text2)">I have read this agreement and agree to be bound by its terms. I consent to signing electronically (UETA / E-SIGN).</label>
       </div>
       <button class="btn btn-p" id="submit-btn" onclick="submitSignature()" disabled style="margin-top:18px">Sign &amp; agree</button>
-      <div class="disclaimer">⚠️ Not legal advice. This document is provided as-is by the sender. Consult an attorney if you have questions before signing.</div>
+      <div class="disclaimer"><span id="disclaimer-icon-el"></span> Not legal advice. This document is provided as-is by the sender. Consult an attorney if you have questions before signing.</div>
     </div>
   </div>
 
   <div class="pg" id="pg-done">
-    <div class="center"><div class="big">✅</div><h1 style="font-size:20px">Signed</h1><div class="muted" id="done-msg" style="margin-top:6px">Your signature has been recorded. The sender has been notified.</div></div>
+    <div class="center"><div class="big" id="done-icon-el"></div><h1 style="font-size:20px">Signed</h1><div class="muted" id="done-msg" style="margin-top:6px">Your signature has been recorded. The sender has been notified.</div></div>
     <div id="done-invite-wrap" style="display:none;padding:0 4px 20px"></div>
   </div>
 
@@ -92,6 +93,10 @@ const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{auth:{persistSession:false,autoRefreshToken:false,storageKey:'sb-csign-isolated'}});
 
 let _doc=null,_key=null,_sigData=null;
+document.getElementById('load-icon-el').innerHTML=svgIcon('📄',{size:48});
+document.getElementById('err-icon-el').innerHTML=svgIcon('🔍',{size:48});
+document.getElementById('disclaimer-icon-el').innerHTML=svgIcon('⚠',{size:11});
+document.getElementById('done-icon-el').innerHTML=svgIcon('✅',{size:48});
 function _showInviteLink(){
   const iw=document.getElementById('done-invite-wrap');
   if(!iw||!_doc?.inviteUrl)return;

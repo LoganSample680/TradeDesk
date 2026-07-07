@@ -23,12 +23,12 @@ function _agFmtDate(iso){if(!iso)return'';try{const d=iso.length<=10?new Date(is
 function _agStatusChip(a){
   if(a.status==='signed'){
     const when=a.signedAt?(' '+_agFmtDate(a.signedAt)):'';
-    return '<span style="display:inline-flex;align-items:center;gap:4px;background:var(--blue-lt,#e6f0fb);color:var(--blue);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700">✍️ Signed'+escHtml(when)+'</span>';
+    return '<span style="display:inline-flex;align-items:center;gap:4px;background:var(--blue-lt,#e6f0fb);color:var(--blue);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700">'+svgIcon('✍️')+' Signed'+escHtml(when)+'</span>';
   }
   if(a.status==='sent'){
-    return '<span style="display:inline-flex;align-items:center;gap:4px;background:#fff7e6;color:#92400e;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700">⏳ Sent</span>';
+    return '<span style="display:inline-flex;align-items:center;gap:4px;background:#fff7e6;color:#92400e;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700">'+svgIcon('⏳')+' Sent</span>';
   }
-  return '<span style="display:inline-flex;align-items:center;gap:4px;background:var(--bg3,#eef1f6);color:var(--text3);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700">📝 Draft</span>';
+  return '<span style="display:inline-flex;align-items:center;gap:4px;background:var(--bg3,#eef1f6);color:var(--text3);border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700">'+svgIcon('📝')+' Draft</span>';
 }
 
 // Short one-line summary of the key term (e.g. "20% of net profit").
@@ -49,13 +49,13 @@ function renderContracts(){
   let html='';
   // Disclaimer banner — mirrors the tone of the lien / tax-tool disclaimers.
   html+='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:var(--r);padding:10px 14px;margin-bottom:14px;font-size:12px;color:#92400e;line-height:1.45">'+
-    '⚠️ <strong>Not legal advice</strong> — these templates are organizational tools only. Have an attorney review before relying on this.</div>';
+    svgIcon('⚠️')+' <strong>Not legal advice</strong> — these templates are organizational tools only. Have an attorney review before relying on this.</div>';
   // Search
   html+='<input id="contracts-search" oninput="_agSearchInput(this.value)" value="'+escHtml(_agSearch)+'" placeholder="Search by party name…" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;font-size:14px;box-sizing:border-box;margin-bottom:12px">';
   // Status filter chips
   const counts={all:agreements.length,draft:0,sent:0,signed:0};
   agreements.forEach(a=>{counts[a.status]=(counts[a.status]||0)+1;});
-  const chips=[['all','All'],['draft','📝 Draft'],['sent','⏳ Sent'],['signed','✍️ Signed']];
+  const chips=[['all','All'],['draft',svgIcon('📝')+' Draft'],['sent',svgIcon('⏳')+' Sent'],['signed',svgIcon('✍️')+' Signed']];
   html+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">';
   chips.forEach(([id,lbl])=>{
     const active=_agFilter===id;
@@ -74,7 +74,7 @@ function _agRenderList(){
   if(_agFilter!=='all')list=list.filter(a=>a.status===_agFilter);
   if(q)list=list.filter(a=>(a.party||'').toLowerCase().includes(q)||(a.title||'').toLowerCase().includes(q));
   if(!list.length){
-    el.innerHTML='<div style="text-align:center;padding:40px 20px;color:var(--text3)"><div style="font-size:40px;margin-bottom:12px">📄</div><div style="font-size:15px;font-weight:700;margin-bottom:6px">'+(agreements.length?'No matching contracts':'No contracts yet')+'</div><div style="font-size:13px">Write up a profit-share deal, employment agreement, or custom contract and send it for e-signature.</div><button onclick="openNewAgreement()" class="btn btn-p" style="margin-top:16px">+ New contract</button></div>';
+    el.innerHTML='<div style="text-align:center;padding:40px 20px;color:var(--text3)"><div style="margin-bottom:12px">'+svgIcon('📄',{size:40})+'</div><div style="font-size:15px;font-weight:700;margin-bottom:6px">'+(agreements.length?'No matching contracts':'No contracts yet')+'</div><div style="font-size:13px">Write up a profit-share deal, employment agreement, or custom contract and send it for e-signature.</div><button onclick="openNewAgreement()" class="btn btn-p" style="margin-top:16px">+ New contract</button></div>';
     return;
   }
   let html='';
@@ -82,7 +82,7 @@ function _agRenderList(){
     html+='<div onclick="openAgreementDetail('+a.id+')" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:10px;cursor:pointer">';
     html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px">';
     html+='<div style="min-width:0"><div style="font-size:14px;font-weight:700;color:var(--text);line-height:1.3">'+escHtml(a.party||'Unnamed party')+'</div>';
-    html+='<div style="font-size:12px;color:var(--text3);margin-top:2px">'+_agTypeEmoji(a.type)+' '+escHtml(_agTypeLabel(a.type))+(a.title?' · '+escHtml(a.title):'')+'</div></div>';
+    html+='<div style="font-size:12px;color:var(--text3);margin-top:2px">'+svgIcon(_agTypeEmoji(a.type))+' '+escHtml(_agTypeLabel(a.type))+(a.title?' · '+escHtml(a.title):'')+'</div></div>';
     html+=_agStatusChip(a);
     html+='</div>';
     html+='<div style="font-size:12px;color:var(--text2,#555);margin-top:4px">'+escHtml(_agKeyTerm(a))+'</div>';
@@ -150,7 +150,7 @@ function _showAgreementModal(a){
     '</div>'+
     '<div class="f"><label>Terms</label><textarea id="_ag-body" rows="8" style="width:100%;box-sizing:border-box;font-family:inherit;font-size:13px;line-height:1.5;padding:10px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text)">'+escHtml(a?.body||'')+'</textarea></div>'+
     '<div class="f"><label>Effective date</label><input id="_ag-eff" type="date" value="'+escHtml(a?.effectiveDate||todayKey())+'"></div>'+
-    '<div style="font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:var(--r);padding:8px 10px;margin:4px 0 14px;line-height:1.4">⚠️ Not legal advice — have an attorney review before relying on this.</div>'+
+    '<div style="font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:var(--r);padding:8px 10px;margin:4px 0 14px;line-height:1.4">'+svgIcon('⚠️')+' Not legal advice — have an attorney review before relying on this.</div>'+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Cancel</button>'+
       '<button onclick="_agSave()" class="btn btn-p" style="flex:1">Save</button>'+
@@ -230,7 +230,7 @@ function openAgreementDetail(id){
   let html='';
   html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px">';
   html+='<div style="font-size:18px;font-weight:800;line-height:1.25">'+escHtml(a.title||_agTypeLabel(a.type))+'</div>'+_agStatusChip(a)+'</div>';
-  html+='<div style="font-size:13px;color:var(--text3);margin-bottom:2px">'+_agTypeEmoji(a.type)+' '+escHtml(_agTypeLabel(a.type))+' · '+escHtml(a.party||'')+'</div>';
+  html+='<div style="font-size:13px;color:var(--text3);margin-bottom:2px">'+svgIcon(_agTypeEmoji(a.type))+' '+escHtml(_agTypeLabel(a.type))+' · '+escHtml(a.party||'')+'</div>';
   if(a.effectiveDate)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Effective '+_agFmtDate(a.effectiveDate)+'</div>';
   html+='<div style="white-space:pre-wrap;font-size:13px;line-height:1.55;color:var(--text2,#444);background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:12px;max-height:220px;overflow-y:auto;margin-bottom:14px">'+escHtml(a.body||'')+'</div>';
   if(a.status==='signed'&&a.sigData){
@@ -240,10 +240,10 @@ function openAgreementDetail(id){
   // Action buttons
   html+='<div style="display:flex;flex-wrap:wrap;gap:8px">';
   if(a.status==='draft'){
-    html+='<button onclick="sendAgreementForSignature('+a.id+')" class="btn btn-p" style="flex:1 1 100%">📤 Send for signature</button>';
+    html+='<button onclick="sendAgreementForSignature('+a.id+')" class="btn btn-p" style="flex:1 1 100%">'+svgIcon('📤')+' Send for signature</button>';
     html+='<button onclick="openEditAgreement('+a.id+');document.getElementById(\'_ag-detail-ov\').remove()" class="btn" style="flex:1">Edit</button>';
   }else{
-    html+='<button onclick="copyAgreementLink('+a.id+')" class="btn btn-p" style="flex:1 1 100%">🔗 Copy sign link</button>';
+    html+='<button onclick="copyAgreementLink('+a.id+')" class="btn btn-p" style="flex:1 1 100%">'+svgIcon('🔗')+' Copy sign link</button>';
     if(a.status==='sent')html+='<button onclick="markAgreementSigned('+a.id+')" class="btn" style="flex:1">Mark signed</button>';
   }
   html+='';
@@ -327,11 +327,11 @@ function _agShowLink(a){
   const box=document.createElement('div');box.className='zmodal';
   box.style.animation='td-ag-sheet .22s cubic-bezier(.22,1,.36,1) both';
   box.innerHTML=
-    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">📤 Ready to sign</div>'+
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('📤')+' Ready to sign</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+escHtml(a.party||'')+' · '+escHtml(_agTypeLabel(a.type))+'</div>'+
     '<div style="background:var(--bg);border:1px solid var(--border2,var(--border));border-radius:var(--r);padding:10px 12px;font-size:11px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+escHtml(url)+'</div>'+
-    '<button onclick="navigator.clipboard.writeText('+JSON.stringify(url)+').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" class="btn btn-p" style="width:100%;margin-bottom:8px">📋 Copy link</button>'+
-    (a.partyClientId||a.party?'<button onclick="_agSms('+a.id+')" class="btn" style="width:100%;margin-bottom:8px">📱 Send via Messages</button>':'')+
+    '<button onclick="navigator.clipboard.writeText('+JSON.stringify(url)+').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" class="btn btn-p" style="width:100%;margin-bottom:8px">'+svgIcon('📋')+' Copy link</button>'+
+    (a.partyClientId||a.party?'<button onclick="_agSms('+a.id+')" class="btn" style="width:100%;margin-bottom:8px">'+svgIcon('📱')+' Send via Messages</button>':'')+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="width:100%">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   navigator.clipboard&&navigator.clipboard.writeText(url).catch(()=>{});

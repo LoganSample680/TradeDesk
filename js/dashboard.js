@@ -57,7 +57,7 @@ function _showNewLeadsPicker(){
   box.innerHTML=
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">'+
       '<div style="font-size:16px;font-weight:800">Leads waiting on an estimate</div>'+
-      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">✕</button>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">'+svgIcon('✕',{size:20})+'</button>'+
     '</div>'+
     (leads.length?'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">'+countLabel+'</div>':'')+
     (rows||'<div style="font-size:13px;color:var(--text3);padding:12px 4px">No new leads.</div>');
@@ -109,7 +109,7 @@ function renderDash(){
   const closeRatio=totalDecided>0?Math.round(wonBidsAll/totalDecided*100):null;
   const closeColor=closeRatio===null?'var(--text3)':closeRatio>=40?'var(--green-mid)':closeRatio>=25?'var(--amber)':'#A32D2D';
   const closeLabel=closeRatio===null?'—':closeRatio+'%';
-  const closeSub=closeRatio===null?'No decided bids yet':closeRatio>=40?'Above avg ✓':closeRatio>=25?'Near avg (~33%)':'Below avg — follow up more';
+  const closeSub=closeRatio===null?'No decided bids yet':closeRatio>=40?'Above avg '+svgIcon('✓',{size:12}):closeRatio>=25?'Near avg (~33%)':'Below avg — follow up more';
   const wonBidAmts=bids.filter(b=>b.status==='Closed Won').map(b=>b.amount||0);
   const avgJobVal=wonBidAmts.length?Math.round(wonBidAmts.reduce((s,a)=>s+a,0)/wonBidAmts.length):null;
 
@@ -157,7 +157,7 @@ function renderDash(){
       const v=(S.vehicles||[]).find(x=>String(x.id)===String(vehId));
       if(v)vehLabel=[v.year,v.make,v.model].filter(Boolean).join(' ')||v.name||'Vehicle';
     }
-    function _empStatusLabel(s){return s==='done'?'Completed ✓':s==='arrived'?'On site':s==='enroute'?'On my way':'Not started';}
+    function _empStatusLabel(s){return s==='done'?'Completed '+svgIcon('✓',{size:12}):s==='arrived'?'On site':s==='enroute'?'On my way':'Not started';}
     function _empStatusColor(s){return s==='done'?'var(--c-green)':s==='arrived'?'var(--blue)':s==='enroute'?'var(--amber)':'var(--text3)';}
     function _empActionBtn(j){
       const st=(j.empStatus||{})[empId]||null;
@@ -179,18 +179,18 @@ function renderDash(){
         _jTasks.map(t=>{
           const _doneInfo=t.done&&t.doneBy?'<div style="font-size:10px;color:var(--green-mid);margin-top:1px">'+escHtml(t.doneBy)+(t.doneAt?' · '+_fmtEmpTaskTime(t.doneAt):'')+'</div>':'';
           return '<div style="display:flex;align-items:flex-start;gap:8px;padding:3px 0">'+
-          '<button onclick="_empToggleTask('+j.id+','+t.id+')" style="flex-shrink:0;margin-top:1px;width:22px;height:22px;border-radius:50%;border:2px solid '+(t.done?'var(--green-mid)':'var(--border2)')+';background:'+(t.done?'var(--green-mid)':'transparent')+';cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center">'+(t.done?'<span style="color:#fff;font-size:9px;font-weight:900">✓</span>':'')+
+          '<button onclick="_empToggleTask('+j.id+','+t.id+')" style="flex-shrink:0;margin-top:1px;width:22px;height:22px;border-radius:50%;border:2px solid '+(t.done?'var(--green-mid)':'var(--border2)')+';background:'+(t.done?'var(--green-mid)':'transparent')+';cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center">'+(t.done?svgIcon('✓',{size:12,color:'#fff',strokeWidth:3}):'')+
           '</button>'+
           '<div><span style="font-size:12px;'+(t.done?'text-decoration:line-through;color:var(--text3)':'color:var(--text)')+'">'+escHtml(t.text)+'</span>'+_doneInfo+'</div>'+
           '</div>';
         }).join('')+
-        (_jTasks.every(t=>t.done)?'<div style="font-size:11px;color:var(--green-mid);font-weight:700;margin-top:4px">All tasks complete ✓</div>':'')+
+        (_jTasks.every(t=>t.done)?'<div style="font-size:11px;color:var(--green-mid);font-weight:700;margin-top:4px">All tasks complete '+svgIcon('✓',{size:11})+'</div>':'')+
         '</div>':'';
       return '<div style="padding:12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:10px">'+
         '<div style="font-size:14px;font-weight:700;margin-bottom:4px">'+escHtml(c.name)+'</div>'+
         (addr?'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
           '<div style="font-size:12px;color:var(--text2);flex:1">'+escHtml(addr)+'</div>'+
-          (mapsUrl?'<a href="'+mapsUrl+'" style="font-size:11px;font-weight:700;color:var(--blue);text-decoration:none;white-space:nowrap;min-height:36px;display:flex;align-items:center;padding:4px 8px;border-radius:var(--r);border:1px solid var(--blue)">🗺 Navigate</a>':'')+
+          (mapsUrl?'<a href="'+mapsUrl+'" style="font-size:11px;font-weight:700;color:var(--blue);text-decoration:none;white-space:nowrap;min-height:36px;display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--blue)">'+svgIcon('🗺',{size:12})+' Navigate</a>':'')+
         '</div>':'')+
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
           '<span style="font-size:11px;font-weight:700;color:'+statusColor+'">'+statusLabel+'</span>'+
@@ -202,7 +202,7 @@ function renderDash(){
     kpiEl.innerHTML=
       '<div id="emp-today-jobs" style="margin-bottom:16px">'+
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Today\'s Jobs</div>'+
-        (vehLabel?'<div id="_emp-vehicle-display" style="font-size:12px;color:var(--text2);margin-bottom:10px">🚗 Driving: '+escHtml(vehLabel)+'</div>':'<div id="_emp-vehicle-display" style="font-size:12px;color:var(--text2);margin-bottom:10px"></div>')+
+        (vehLabel?'<div id="_emp-vehicle-display" style="font-size:12px;color:var(--text2);margin-bottom:10px">'+svgIcon('🚗',{size:13})+' Driving: '+escHtml(vehLabel)+'</div>':'<div id="_emp-vehicle-display" style="font-size:12px;color:var(--text2);margin-bottom:10px"></div>')+
         (myDayJobs.length?jobCards:'<div style="font-size:13px;color:var(--text3);padding:12px 0;line-height:1.5">No jobs assigned for today. Check back after your contractor updates the schedule.</div>')+
       '</div>';
   } else if(kpiEl){
@@ -257,7 +257,7 @@ function renderDash(){
     if(_lossYears>=3){
       _hobbyEl.style.display='block';
       _hobbyEl.innerHTML='<div style="background:#FFF8E7;border:1.5px solid #D4A017;border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">'+
-        '<div style="font-size:12px;font-weight:700;color:#78350F;margin-bottom:3px">⚠️ '+_lossYears+' of last 5 years show net losses</div>'+
+        '<div style="font-size:12px;font-weight:700;color:#78350F;margin-bottom:3px">'+svgIcon('⚠',{size:12})+' '+_lossYears+' of last 5 years show net losses</div>'+
         '<div style="font-size:12px;color:var(--text2);line-height:1.5">You\'ve had losses several years in a row. The IRS may start asking questions — talk to your CPA about showing you run this as a real business.</div>'+
       '</div>';
     }else{_hobbyEl.style.display='none';}
@@ -273,7 +273,7 @@ function renderDash(){
     if(closeRatio!==null&&closeRatio<25&&totalDecided>=3){
       closeTip.style.display='block';
       closeTip.innerHTML='<div style="background:#FFF8F0;border:1px solid var(--amber);border-radius:var(--rl);padding:12px 14px">'+
-        '<div style="font-size:12px;font-weight:700;color:#B8600A;margin-bottom:4px">&#128273; Closing ratio is '+closeRatio+'% — below average</div>'+
+        '<div style="font-size:12px;font-weight:700;color:#B8600A;margin-bottom:4px">'+svgIcon('🔑',{size:12})+' Closing ratio is '+closeRatio+'% — below average</div>'+
         '<div style="font-size:12px;color:var(--text2);line-height:1.5">Industry average is around 33%. Common reasons: slow follow-up, price too high, or not enough urgency at the estimate.</div>'+
       '</div>';
     } else {
@@ -290,9 +290,9 @@ function renderDash(){
   if(lsub)lsub.textContent=subLeads;
   const collectItems=bids.filter(b=>b.status==='Closed Won'&&!b.clientCancelled&&getBidBalance(b)>0.01&&b.completion_date);
   const collectOwed=collectItems.reduce((s,b)=>s+getBidBalance(b),0);
-  const subCollect=collectItems.length===0?'Nothing to collect 🎉':collectItems.length+' job'+(collectItems.length!==1?'s':'')+' · '+fmt(collectOwed)+' owed';
+  const subCollect=collectItems.length===0?'Nothing to collect '+svgIcon('🎉',{size:12}):collectItems.length+' job'+(collectItems.length!==1?'s':'')+' · '+fmt(collectOwed)+' owed';
   const csub=document.getElementById('dash-collect-sub');
-  if(csub){csub.textContent=subCollect;csub.style.color=collectItems.length?'#A32D2D':'var(--text3)';}
+  if(csub){csub.innerHTML=subCollect;csub.style.color=collectItems.length?'#A32D2D':'var(--text3)';}
 
   if(!_isEmployee)renderPipeline();
   else{const pe=document.getElementById('dash-pipeline');if(pe)pe.innerHTML='';}
@@ -314,7 +314,7 @@ function renderDash(){
     if(_nearbyJob&&!_activeTimer){
       _nearbyEl.style.display='block';
       _nearbyEl.innerHTML='<div style="background:linear-gradient(135deg,#1E4D2B,#2D7A44);border-radius:var(--r);padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="openClockInSheet('+_nearbyJob.jobId+')">'+
-        '<span style="font-size:24px">🔨</span>'+
+        '<span style="font-size:24px;display:inline-flex">'+svgIcon('🔨',{size:24,color:'#fff'})+'</span>'+
         '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800;color:#fff">You\'re at '+escHtml(_nearbyJob.clientName)+'\'s</div>'+
         '<div style="font-size:12px;color:rgba(255,255,255,.75)">'+escHtml(_nearbyJob.addr)+' · Tap to clock in</div></div>'+
         '<span style="font-size:20px;color:rgba(255,255,255,.6)">▶</span></div>';
@@ -426,7 +426,7 @@ function renderDashToday(){
     ];
     el.innerHTML=
       '<div style="text-align:center;padding:12px 0">'+
-        '<div style="font-size:22px;margin-bottom:6px">'+(dow===0||dow===6?'🛋️':'🎯')+'</div>'+
+        '<div style="font-size:22px;margin-bottom:6px">'+(dow===0||dow===6?svgIcon('🛋',{size:22}):svgIcon('🎯',{size:22}))+'</div>'+
         '<div style="font-size:13px;font-weight:700;margin-bottom:4px">'+msgs[dow]+'</div>'+
         '<div style="font-size:11px;color:var(--text3);margin-top:4px">Open day — check Make Money Today</div>'+
       '</div>';
@@ -444,14 +444,14 @@ function renderDashToday(){
         const _aId=j.assignedTo&&j.assignedDate===tk?j.assignedTo:null;
         const _aEmp=_aId?_crewEmps.find(e=>String(e.id)===String(_aId)):null;
         return '<div onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:8px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)">'+
-          (_aEmp?'<span style="font-size:11px;font-weight:700;color:var(--blue);background:var(--blue-lt,#e6f0fb);padding:3px 9px;border-radius:20px">👤 '+escHtml(_aEmp.name)+'</span>':
+          (_aEmp?'<span style="font-size:11px;font-weight:700;color:var(--blue);background:var(--blue-lt,#e6f0fb);padding:3px 9px;border-radius:20px">'+svgIcon('👤',{size:11})+' '+escHtml(_aEmp.name)+'</span>':
                  '<span style="font-size:11px;color:var(--text3)">No crew assigned</span>')+
           '<button onclick="_openCrewAssignSheet('+j.id+')" style="margin-left:auto;padding:4px 12px;border-radius:20px;border:1px solid var(--border2);background:transparent;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--blue)">+ Assign</button>'+
         '</div>';
       }
       const _days=parseInt(j.days)||1;
       return '<div onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:8px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)">'+
-        '<span style="font-size:11px;font-weight:700;color:var(--blue);background:var(--blue-lt,#e6f0fb);padding:3px 9px;border-radius:20px">👤 You</span>'+
+        '<span style="font-size:11px;font-weight:700;color:var(--blue);background:var(--blue-lt,#e6f0fb);padding:3px 9px;border-radius:20px">'+svgIcon('👤',{size:11})+' You</span>'+
         '<span style="font-size:11px;color:var(--text3);margin-left:2px">'+_days+' day'+(_days!==1?'s':'')+' on schedule</span>'+
       '</div>';
     })():'';
@@ -475,7 +475,7 @@ function renderDashToday(){
         '</div>'+
         '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'+
           (j.client_id&&isEst?
-            '<div onclick="event.stopPropagation();sendReminderSMS('+j.client_id+')" style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:7px 9px;cursor:pointer" title="Send reminder">💬</div>'
+            '<div onclick="event.stopPropagation();sendReminderSMS('+j.client_id+')" style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:7px 9px;cursor:pointer" title="Send reminder">'+svgIcon('💬',{size:16})+'</div>'
           :'')+
           '<span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px;background:'+(isEst?'rgba(127,119,221,.15)':'rgba(24,95,165,.12)')+';color:'+(isEst?'#7F77DD':'var(--blue)')+'">'+
             (isEst?'Estimate':'Active')+
@@ -515,7 +515,7 @@ function _openCrewAssignSheet(jobId){
         '<div style="flex:1;min-width:0;text-align:left"><div style="font-size:14px;font-weight:700;color:'+(isAsgn?'var(--blue)':'var(--text)')+'">'+escHtml(e.name)+'</div>'+
         (e.role?'<div style="font-size:11px;color:var(--text3)">'+escHtml(roleLabels[e.role]||e.role)+'</div>':'')+
         '</div>'+
-        (isAsgn?'<span style="font-size:18px;color:var(--blue)">✓</span>':'')+
+        (isAsgn?'<span style="font-size:18px;color:var(--blue)">'+svgIcon('✓',{size:18})+'</span>':'')+
       '</button>';
     }).join('')+
     (curEmpId?'<button onclick="_assignCrewToJob('+jobId+',null)" style="margin-top:2px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;width:100%">Remove assignment</button>':'')+
@@ -547,12 +547,12 @@ function _assignCrewToJob(jobId,empId){
 
 function getNextCollAction(stage){
   const map={
-    none:     {label:'💬 Send Reminder',    smsKey:'reminder',  next:'reminder'},
-    reminder: {label:'💬 Send 2nd Notice',  smsKey:'second',    next:'second'},
-    second:   {label:'💬 Send Intent',      smsKey:'intent',    next:'intent'},
-    intent:   {label:'⚖️ File Lien',         smsKey:null,        next:'lien_ready'},
-    lien_ready:{label:'⚖️ File Lien Now',    smsKey:null,        next:'lien_filed'},
-    lien_filed:{label:'✓ Release Lien',     smsKey:null,        next:'resolved'},
+    none:     {label:svgIcon('💬',{size:14})+' Send Reminder',    smsKey:'reminder',  next:'reminder'},
+    reminder: {label:svgIcon('💬',{size:14})+' Send 2nd Notice',  smsKey:'second',    next:'second'},
+    second:   {label:svgIcon('💬',{size:14})+' Send Intent',      smsKey:'intent',    next:'intent'},
+    intent:   {label:svgIcon('⚖',{size:14})+' File Lien',         smsKey:null,        next:'lien_ready'},
+    lien_ready:{label:svgIcon('⚖',{size:14})+' File Lien Now',    smsKey:null,        next:'lien_filed'},
+    lien_filed:{label:svgIcon('✓',{size:14})+' Release Lien',     smsKey:null,        next:'resolved'},
   };
   return map[stage]||map['none'];
 }
@@ -643,7 +643,7 @@ function checkUnpaidOnLoad(){
   const isFileable=stage==='intent'||stage==='lien_ready';
   const lienFiled=stage==='lien_filed';
   const otherCount=unpaid.length-1;
-  const urgIcon=days>=30?'🚨':days>=14?'⚠️':'💰';
+  const urgIcon=days>=30?svgIcon('🚨',{size:30,color:'#A32D2D'}):days>=14?svgIcon('⚠',{size:30,color:'var(--amber)'}):svgIcon('💰',{size:30,color:'var(--green-mid)'});
   const urgLabel=days>=30?'30+ days overdue — act now':days>=14?'Seriously overdue':days>=7?'Overdue':'Balance due';
   const urgColor=days>=14?'#A32D2D':'var(--amber)';
   let actionBtn='';
@@ -651,13 +651,13 @@ function checkUnpaidOnLoad(){
     // "View lien" must show the FILED lien document — not the client record.
     // printKansasLien() is the same action the filed-lien card button uses
     // ("View lien doc"), rendering the recorded lien in its own window.
-    actionBtn='<button onclick="this.closest(\'.zmodal-overlay\').remove();printKansasLien('+b.id+')" style="flex:2;padding:13px;border-radius:var(--r);border:none;background:#3D0000;color:#FFB3B3;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">⚖️ View lien</button>';
+    actionBtn='<button onclick="this.closest(\'.zmodal-overlay\').remove();printKansasLien('+b.id+')" style="flex:2;padding:13px;border-radius:var(--r);border:none;background:#3D0000;color:#FFB3B3;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('⚖',{size:14})+' View lien</button>';
   } else if(isFileable){
-    actionBtn='<button onclick="this.closest(\'.zmodal-overlay\').remove();showFileLienDirect('+b.id+')" style="flex:2;padding:13px;border-radius:var(--r);border:none;background:#3D0000;color:#FFB3B3;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">⚖️ File Lien</button>';
+    actionBtn='<button onclick="this.closest(\'.zmodal-overlay\').remove();showFileLienDirect('+b.id+')" style="flex:2;padding:13px;border-radius:var(--r);border:none;background:#3D0000;color:#FFB3B3;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('⚖',{size:14})+' File Lien</button>';
   } else if(next.smsKey&&c.phone){
     actionBtn='<button onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+next.smsKey+'\');this.closest(\'.zmodal-overlay\').remove()" style="flex:2;padding:13px;border-radius:var(--r);border:none;background:var(--amber);color:#1a1a1a;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+next.label+'</button>';
   } else if(c.phone){
-    actionBtn='<a href="tel:'+c.phone.replace(/\D/g,'')+'" onclick="autoLogContact('+c.id+',\'call\')" style="flex:2;padding:13px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none;display:block;text-align:center">📞 Call now</a>';
+    actionBtn='<a href="tel:'+c.phone.replace(/\D/g,'')+'" onclick="autoLogContact('+c.id+',\'call\')" style="flex:2;padding:13px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none;display:block;text-align:center">'+svgIcon('📞',{size:14})+' Call now</a>';
   }
   const ov=document.createElement('div');ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
@@ -672,7 +672,7 @@ function checkUnpaidOnLoad(){
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:13px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Later</button>'+
       actionBtn+
     '</div>'+
-    '<button onclick="this.closest(\'.zmodal-overlay\').remove();openPayPanel('+b.id+')" style="width:100%;padding:11px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">💳 Log payment received</button>';
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove();openPayPanel('+b.id+')" style="width:100%;padding:11px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('💳',{size:13})+' Log payment received</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
@@ -1052,7 +1052,7 @@ function renderTodayFeed(){
     const hasExpired=licAlerts.some(l=>_licStatus(l)==='expired');
     alertItems.push(
       '<div class="tf-card" onclick="goPg(\'pg-licensing\')" style="cursor:pointer">'+
-        '<div class="tf-icon">'+(hasExpired?'🚨':'⚠️')+'</div>'+
+        '<div class="tf-icon">'+(hasExpired?svgIcon('🚨',{size:18}):svgIcon('⚠',{size:18}))+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+(hasExpired?licAlerts.filter(l=>_licStatus(l)==='expired').length+' expired license'+(licAlerts.filter(l=>_licStatus(l)==='expired').length>1?'s':''):'')+(hasExpired&&licAlerts.some(l=>_licStatus(l)==='soon')?' · ':'')+(!hasExpired&&licAlerts.filter(l=>_licStatus(l)==='soon').length?licAlerts.filter(l=>_licStatus(l)==='soon').length+' expiring soon':'')+'</div>'+
           '<div class="tf-sub" style="color:'+(hasExpired?'var(--red)':'var(--amber)')+'">'+licAlerts.slice(0,2).map(l=>escHtml(l.label)).join(', ')+(licAlerts.length>2?' +more':'')+'</div>'+
@@ -1082,12 +1082,12 @@ function renderTodayFeed(){
     // row is the same size regardless of label. Call removed — texting is the
     // collections channel and the row only has space for two even buttons.
     if(next.smsKey&&c.phone)actBtns+='<button onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+next.smsKey+'\')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+next.label+'</button>';
-    else if(isFileable)actBtns+='<button onclick="showFileLienDirect('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">⚖️ File Lien</button>';
-    else if(lienStage)actBtns+='<button onclick="printKansasLien('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">⚖️ View lien doc</button>';
+    else if(isFileable)actBtns+='<button onclick="showFileLienDirect('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">'+svgIcon('⚖',{size:11})+' File Lien</button>';
+    else if(lienStage)actBtns+='<button onclick="printKansasLien('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">'+svgIcon('⚖',{size:11})+' View lien doc</button>';
     actBtns+='<button onclick="openPayPanel('+b.id+')" class="btn btn-sm btn-g" style="font-size:11px">Collect →</button>';
     finalPayItems.push(
       '<div class="tf-card">'+
-        '<div class="tf-icon">💰</div>'+
+        '<div class="tf-icon">'+svgIcon('💰',{size:18})+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(c.name)+urgTag+countdownTag+'</div>'+
           '<div class="tf-sub" style="color:#A32D2D">'+fmt(bal)+' owed · '+daysAgo+'d since completion</div>'+
@@ -1110,7 +1110,7 @@ function renderTodayFeed(){
       // Deposit collected (or not required) — just needs scheduling
       scheduleItems.push(
         '<div class="tf-card">'+
-          '<div class="tf-icon">📅</div>'+
+          '<div class="tf-icon">'+svgIcon('📅',{size:18})+'</div>'+
           '<div class="tf-body">'+
             '<div class="tf-name">'+escHtml(cDisp)+'</div>'+
             '<div class="tf-sub" style="color:var(--blue)">'+((typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'')+fmt(b.amount)+' · deposit paid · not yet scheduled</div>'+
@@ -1127,7 +1127,7 @@ function renderTodayFeed(){
       const subText=_dTypeLbl+(hasJob?'Job in progress · deposit not collected · '+depAmt:'Deposit required before scheduling · '+depAmt);
       depositItems.push(
         '<div class="tf-card">'+
-          '<div class="tf-icon">'+(hasJob?'💰':'💳')+'</div>'+
+          '<div class="tf-icon">'+(hasJob?svgIcon('💰',{size:18}):svgIcon('💳',{size:18}))+'</div>'+
           '<div class="tf-body">'+
             '<div class="tf-name">'+escHtml(cDisp)+'</div>'+
             '<div class="tf-sub" style="color:'+(hasJob?'#A32D2D':'var(--blue)')+'">'+subText+'</div>'+
@@ -1149,14 +1149,14 @@ function renderTodayFeed(){
     const daysOut=b.followup?Math.floor((new Date(tk+'T12:00')-new Date(b.followup+'T12:00'))/86400000):0;
     pendingItems.push(
       '<div class="tf-card">'+
-        '<div class="tf-icon">🔥</div>'+
+        '<div class="tf-icon">'+svgIcon('🔥',{size:18})+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(c.name)+'</div>'+
           '<div class="tf-sub" style="color:#A32D2D">'+((typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'')+'2nd follow-up · '+fmt(b.amount)+' · '+Math.abs(daysOut)+'d waiting</div>'+
         '</div>'+
         '<div class="tf-acts">'+
           (c.phone?'<a href="tel:'+c.phone.replace(/\D/g,'')+'" onclick="autoLogContact('+c.id+',\'call\')" class="btn btn-sm" style="font-size:11px">Call</a>':'')+
-          (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+smsBody+'" onclick="autoLogContact('+c.id+',\'second_followup\');markFollowupSent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">📱 Send</a>':'')+
+          (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+smsBody+'" onclick="autoLogContact('+c.id+',\'second_followup\');markFollowupSent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+svgIcon('📱',{size:11})+' Send</a>':'')+
           '<button onclick="_snoozeFollowup('+b.id+',2)" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Snooze 2d</button>'+
           '<button onclick="markFUWon('+b.id+','+b.client_id+')" class="btn btn-sm btn-g" style="font-size:11px">Won ✓</button>'+
           '<button onclick="openCloseOutEstimate('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:#A32D2D;color:#A32D2D">Close out</button>'+
@@ -1181,10 +1181,10 @@ function renderTodayFeed(){
           '<div class="tf-sub" style="color:var(--amber)">'+((typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'')+'Follow-up #'+stage+' · '+(daysOut>0?daysOut+'d overdue':'due today')+' · '+fmt(b.amount)+'</div>'+
         '</div>'+
         '<div class="tf-acts">'+
-          (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+smsBody+'" onclick="autoLogContact('+c.id+',\'followup_sent\');markFollowupSent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">📱 Send</a>':'')+
+          (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+smsBody+'" onclick="autoLogContact('+c.id+',\'followup_sent\');markFollowupSent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+svgIcon('📱',{size:11})+' Send</a>':'')+
           (c.phone?'<a href="tel:'+c.phone.replace(/\D/g,'')+'" onclick="autoLogContact('+c.id+',\'call\')" class="btn btn-sm" style="font-size:11px">Call</a>':'')+
           '<button onclick="_snoozeFollowup('+b.id+',2)" class="btn btn-sm" style="font-size:11px;color:var(--text3)">Snooze 2d</button>'+
-          '<button onclick="markFUWon('+b.id+','+b.client_id+')" class="btn btn-sm btn-g" style="font-size:11px">Won ✓</button>'+
+          '<button onclick="markFUWon('+b.id+','+b.client_id+')" class="btn btn-sm btn-g" style="font-size:11px">Won '+svgIcon('✓',{size:11})+'</button>'+
           '<button onclick="openCloseOutEstimate('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:#A32D2D;color:#A32D2D">Close out</button>'+
         '</div>'+
       '</div>'
@@ -1220,11 +1220,11 @@ function renderTodayFeed(){
     let viewedBadge='';
     if(_hubTs){
       const _cStr=_hubCnt>1?' · '+_hubCnt+'×':'';
-      viewedBadge='<div style="font-size:11px;font-weight:700;color:#2563eb;margin-top:3px">🔗 Hub opened · '+_localTs(_hubTs)+_cStr+'</div>';
+      viewedBadge='<div style="font-size:11px;font-weight:700;color:#2563eb;margin-top:3px">'+svgIcon('🔗',{size:11})+' Hub opened · '+_localTs(_hubTs)+_cStr+'</div>';
     }
     if(_clientTs){
       const _cStr=_clientCnt>1?' · '+_clientCnt+'×':'';
-      viewedBadge+='<div style="font-size:11px;font-weight:700;color:#16a34a;margin-top:2px">👁 Proposal opened · '+_localTs(_clientTs)+_cStr+'</div>';
+      viewedBadge+='<div style="font-size:11px;font-weight:700;color:#16a34a;margin-top:2px">'+svgIcon('👁',{size:11})+' Proposal opened · '+_localTs(_clientTs)+_cStr+'</div>';
     }
     if(!_hubTs&&!_clientTs){
       viewedBadge='<div style="font-size:11px;color:var(--text3);margin-top:3px">Client hasn\'t opened yet</div>';
@@ -1234,7 +1234,7 @@ function renderTodayFeed(){
     }
     pendingItems.push(
       '<div class="tf-card">'+
-        '<div class="tf-icon">📨</div>'+
+        '<div class="tf-icon">'+svgIcon('📨',{size:18})+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(c.name)+'</div>'+
           '<div class="tf-sub" style="color:'+urgColor+'">'+((typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'')+fmt(b.amount)+' · '+daysStr+'</div>'+
@@ -1263,7 +1263,7 @@ function renderTodayFeed(){
     const subLabel=(typeLbl?typeLbl+' · ':'')+(isDraft&&!b.amount?'In progress — finish &amp; send':isDraft?'Draft — finish &amp; send':(fmt(b.amount)+' · built '+(days===0?'today':days+'d ago')+' · not sent yet'));
     buildItems.push(
       '<div class="tf-card">'+
-        '<div class="tf-icon">✏️</div>'+
+        '<div class="tf-icon">'+svgIcon('✏',{size:18})+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(displayName)+'</div>'+
           (b.type?'<div class="tf-sub" style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:1px">'+escHtml(b.type)+'</div>':'')+
@@ -1282,7 +1282,7 @@ function renderTodayFeed(){
   if(newLeads.length){
     buildItems.push(
       '<div class="tf-card">'+
-        '<div class="tf-icon">🙋</div>'+
+        '<div class="tf-icon">'+svgIcon('🙋',{size:18})+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+(newLeads.length===1?'1 new lead ready':newLeads.length+' new leads ready')+'</div>'+
           '<div class="tf-sub" style="color:var(--blue)">Build estimates to move them forward</div>'+
@@ -1333,10 +1333,10 @@ function renderTodayFeed(){
 
   el.innerHTML=
     (alertItems.length?'<div>'+alertItems.join('')+'</div>':'')+
-    _sec('build','✏️','Build','var(--text2)',buildItems,showBuild)+
-    _sec('pending','📨','Pending','#7c3aed',pendingItems,showPending)+
-    _sec('dep-sched','💳','Deposit & Schedule','var(--blue)',[...depositItems,...scheduleItems],showDepSched)+
-    _sec('collect','💰','Collect','#A32D2D',finalPayItems,showFinalPay);
+    _sec('build',svgIcon('✏',{size:14}),'Build','var(--text2)',buildItems,showBuild)+
+    _sec('pending',svgIcon('📨',{size:14}),'Pending','#7c3aed',pendingItems,showPending)+
+    _sec('dep-sched',svgIcon('💳',{size:14}),'Deposit & Schedule','var(--blue)',[...depositItems,...scheduleItems],showDepSched)+
+    _sec('collect',svgIcon('💰',{size:14}),'Collect','#A32D2D',finalPayItems,showFinalPay);
   _mmtFeedEnter(el);
 }
 
@@ -1368,7 +1368,7 @@ function checkGoalPrompt(){
     const box=document.createElement('div');
     box.className='zmodal';
     box.innerHTML=
-      '<div style="font-size:22px;text-align:center;margin-bottom:8px">🎯</div>'+
+      '<div style="font-size:22px;text-align:center;margin-bottom:8px">'+svgIcon('🎯',{size:22})+'</div>'+
       '<div class="zmodal-title" style="text-align:center">5 paid jobs — milestone!</div>'+
       '<div class="zmodal-msg" style="text-align:center">Your average job is '+fmt(avgVal)+'. Set a monthly revenue goal and the app will track your progress and tell you exactly how many estimates you need.</div>'+
       '<div class="zmodal-btns" style="flex-direction:column;gap:8px">'+
@@ -1436,7 +1436,7 @@ function renderGoal(){
       '</div>'+
       '<div style="display:flex;justify-content:space-between;align-items:center">'+
         '<div style="font-size:13px;font-weight:700;color:'+barColor+'">'+
-          (pct>=100?'🎯 Goal hit!':pct+'% — '+fmt(remaining)+' to go')+
+          (pct>=100?svgIcon('🎯',{size:13})+' Goal hit!':pct+'% — '+fmt(remaining)+' to go')+
         '</div>'+
         '<div style="font-size:11px;color:'+(onTrack?'var(--green-mid)':'var(--amber)')+'">'+
           (onTrack?'On track':'Behind pace')+
@@ -1470,7 +1470,7 @@ function renderLeadSources(){
   }
 
   const PALETTE=['#185FA5','#63B841','#D85A30','#7F77DD','#E89A3C','#3BAABF','#A32D2D','#2C7A3A','#8C8C8C'];
-  const ICONS={'Door to door':'🚪','Door hanger':'📄','Vehicle / truck wrap':'🚛','Yard sign':'🪧','Word of mouth':'💬','Word of mouth (organic)':'💬','Referral':'🤝','Referral — someone sent them':'🤝','Real estate agent':'🏡','Property manager':'🏢','Builder / contractor':'🔨','Repeat customer':'🔄','Google / online':'🔍','Facebook':'📘','Nextdoor':'🏘️','Instagram':'📸','Craigslist':'📋','Church / community':'⛪','Neighborhood event':'🎪','Other':'📋','No source set':'❓'};
+  const ICONS={'Door to door':svgIcon('🚪',{size:14}),'Door hanger':svgIcon('📄',{size:14}),'Vehicle / truck wrap':svgIcon('🚛',{size:14}),'Yard sign':svgIcon('🪧',{size:14}),'Word of mouth':svgIcon('💬',{size:14}),'Word of mouth (organic)':svgIcon('💬',{size:14}),'Referral':svgIcon('🤝',{size:14}),'Referral — someone sent them':svgIcon('🤝',{size:14}),'Real estate agent':svgIcon('🏡',{size:14}),'Property manager':svgIcon('🏢',{size:14}),'Builder / contractor':svgIcon('🔨',{size:14}),'Repeat customer':svgIcon('🔄',{size:14}),'Google / online':svgIcon('🔍',{size:14}),'Facebook':svgIcon('📘',{size:14}),'Nextdoor':svgIcon('🏘',{size:14}),'Instagram':svgIcon('📸',{size:14}),'Craigslist':svgIcon('📋',{size:14}),'Church / community':svgIcon('⛪',{size:14}),'Neighborhood event':svgIcon('🎪',{size:14}),'Other':svgIcon('📋',{size:14}),'No source set':svgIcon('❓',{size:14})};
 
   const sources={};
   clients.forEach(c=>{
@@ -1517,7 +1517,7 @@ function renderLeadSources(){
     const roiStr=roi!==null?(roi+'×'):cost>0?'0×':'—';
     const roiCls=roi===null?'':roi>=3?' green':roi>=1?'':' red';
     return `<tr>
-      <td style="font-weight:700">${ICONS[src]||'📋'} ${escHtml(src)}</td>
+      <td style="font-weight:700">${ICONS[src]||svgIcon('📋',{size:14})} ${escHtml(src)}</td>
       <td class="num">${d.leads}</td>
       <td class="num">${d.won}</td>
       <td class="num${crCls}">${crStr}</td>
@@ -1533,7 +1533,7 @@ function renderLeadSources(){
     :'';
 
   const noSrcNote=noSrc?`<div style="font-size:11px;color:var(--text3);padding:8px 18px 4px">${noSrc} client${noSrc>1?'s':''} with no source set</div>`:'';
-  const roiHint=!hasAnyROI?`<div style="font-size:11px;color:var(--text3);padding:6px 18px 10px">💡 Log an <strong>Advertising &amp; marketing</strong> expense to see Cost &amp; ROI columns</div>`:'';
+  const roiHint=!hasAnyROI?`<div style="font-size:11px;color:var(--text3);padding:6px 18px 10px">${svgIcon('💡',{size:11})} Log an <strong>Advertising &amp; marketing</strong> expense to see Cost &amp; ROI columns</div>`:'';
 
   el.innerHTML=`<div style="overflow-x:auto"><table class="tbl">
     <thead><tr>
@@ -1552,7 +1552,7 @@ function renderLeadSources(){
 function closeSourceDetail(){const el=document.getElementById('source-detail');if(el)el.style.display='none';}
 function showSourceDetail(src){
   const el=document.getElementById('source-detail');if(!el)return;
-  const ICONS={'Door to door':'🚪','Door hanger':'📄','Vehicle / truck wrap':'🚛','Yard sign':'🪧','Word of mouth':'💬','Word of mouth (organic)':'💬','Referral':'🤝','Referral — someone sent them':'🤝','Real estate agent':'🏡','Property manager':'🏢','Builder / contractor':'🔨','Repeat customer':'🔄','Google / online':'🔍','Facebook':'📘','Nextdoor':'🏘️','Instagram':'📸','Craigslist':'📋','Church / community':'⛪','Neighborhood event':'🎪','Other':'📋','No source set':'❓'};
+  const ICONS={'Door to door':svgIcon('🚪',{size:14}),'Door hanger':svgIcon('📄',{size:14}),'Vehicle / truck wrap':svgIcon('🚛',{size:14}),'Yard sign':svgIcon('🪧',{size:14}),'Word of mouth':svgIcon('💬',{size:14}),'Word of mouth (organic)':svgIcon('💬',{size:14}),'Referral':svgIcon('🤝',{size:14}),'Referral — someone sent them':svgIcon('🤝',{size:14}),'Real estate agent':svgIcon('🏡',{size:14}),'Property manager':svgIcon('🏢',{size:14}),'Builder / contractor':svgIcon('🔨',{size:14}),'Repeat customer':svgIcon('🔄',{size:14}),'Google / online':svgIcon('🔍',{size:14}),'Facebook':svgIcon('📘',{size:14}),'Nextdoor':svgIcon('🏘',{size:14}),'Instagram':svgIcon('📸',{size:14}),'Craigslist':svgIcon('📋',{size:14}),'Church / community':svgIcon('⛪',{size:14}),'Neighborhood event':svgIcon('🎪',{size:14}),'Other':svgIcon('📋',{size:14}),'No source set':svgIcon('❓',{size:14})};
   const srcClients=clients.filter(c=>(c.source||'Unknown')===src);
   let won=0,lost=0,revenue=0,pending=0;
   srcClients.forEach(c=>{
@@ -1569,8 +1569,8 @@ function showSourceDetail(src){
   el.style.display='block';
   el.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
-      '<div style="font-size:13px;font-weight:700">'+(ICONS[src]||'📋')+' '+escHtml(src||'')+'</div>'+
-      '<button onclick="closeSourceDetail()" style="border:none;background:none;font-size:16px;cursor:pointer;color:var(--text3)">&#10005;</button>'+
+      '<div style="font-size:13px;font-weight:700">'+(ICONS[src]||svgIcon('📋',{size:14}))+' '+escHtml(src||'')+'</div>'+
+      '<button onclick="closeSourceDetail()" style="border:none;background:none;font-size:16px;cursor:pointer;color:var(--text3)">'+svgIcon('✕',{size:16})+'</button>'+
     '</div>'+
     '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">'+
       '<div><div style="font-size:20px;font-weight:800">'+srcClients.length+'</div><div style="font-size:10px;color:var(--text3)">Leads</div></div>'+
@@ -1671,7 +1671,7 @@ function openIntakeFormModal(){
   const url=base+'intake.html';
   const ov=document.createElement('div');ov.className='zmodal-overlay';
   ov.innerHTML='<div class="zmodal" style="max-width:360px">'+
-    '<div class="zmodal-title">📋 Client Intake Form</div>'+
+    '<div class="zmodal-title">'+svgIcon('📋',{size:16})+' Client Intake Form</div>'+
     '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">Share this link with prospects so they can submit their info before you arrive. New submissions appear automatically at the top of Leads.</div>'+
     '<div style="display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;margin-bottom:14px">'+
       '<div style="font-size:12px;color:var(--text3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(url)+'</div>'+
@@ -1687,7 +1687,7 @@ function openIntakeFormModal(){
 function _copyIntakeUrl(url){
   navigator.clipboard.writeText(url).then(()=>{
     const btn=document.getElementById('_intake-copy-btn');
-    if(btn){const orig=btn.textContent;btn.textContent='✓ Copied';setTimeout(()=>{btn.textContent=orig;},1600);}
+    if(btn){const orig=btn.textContent;btn.innerHTML=svgIcon('✓',{size:12})+' Copied';setTimeout(()=>{btn.textContent=orig;},1600);}
     if(typeof showToast==='function')showToast('Intake form link copied','📋');
   }).catch(()=>{if(typeof showToast==='function')showToast('Could not copy link','⚠️');});
 }
@@ -1725,7 +1725,7 @@ function renderLeadsPage(){
     leadsEyebrow.textContent=allLeadCount+' lead'+(allLeadCount!==1?'s':'')+(fuCount?' · '+fuCount+' need follow-up':'');
   }
 
-  if(!filtered.length){el.innerHTML=_inboundReviewHTML()+'<div class="empty"><div class="em-emoji">🎯</div><h3>No '+( leadFilter==='all'?'active leads':leadFilter.replace('_',' '))+' right now</h3><p>Add a lead above to start tracking prospects.</p></div>';return;}
+  if(!filtered.length){el.innerHTML=_inboundReviewHTML()+'<div class="empty"><div class="em-emoji">'+svgIcon('🎯',{size:44})+'</div><h3>No '+( leadFilter==='all'?'active leads':leadFilter.replace('_',' '))+' right now</h3><p>Add a lead above to start tracking prospects.</p></div>';return;}
 
   const stgBdgMap={
     incomplete:    {cls:'sf-pending', label:'NEEDS SETUP'},
@@ -1785,8 +1785,8 @@ function openBidDetail(bidId,view){
   function _tabBtn(v,label,active){return '<button id="bdd-tab-'+v+'" onclick="_bddView(\''+v+'\')" style="padding:7px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;border:1.5px solid '+(active?'var(--blue)':'var(--border2)')+';background:'+(active?'var(--blue-lt)':'var(--bg)')+';color:'+(active?'var(--blue-dk)':'var(--text2)')+'">'+label+'</button>';}
   ov.innerHTML=
     '<div style="position:sticky;top:0;background:var(--bg);border-bottom:2px solid var(--border);padding:10px 14px;display:flex;align-items:center;gap:10px;z-index:2">'+
-      '<button onclick="document.querySelector(\'[data-bdov]\').remove()" style="padding:7px 12px;border-radius:8px;border:1.5px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text);white-space:nowrap">✕ Close</button>'+
-      '<div id="bdd-tabs" style="display:flex;gap:6px;flex:1;justify-content:center">'+_tabBtn('bid','📋 Our bid',view==='bid')+_tabBtn('proposal','📄 Client view',view==='proposal')+'</div>'+
+      '<button onclick="document.querySelector(\'[data-bdov]\').remove()" style="padding:7px 12px;border-radius:8px;border:1.5px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text);white-space:nowrap">'+svgIcon('✕',{size:13})+' Close</button>'+
+      '<div id="bdd-tabs" style="display:flex;gap:6px;flex:1;justify-content:center">'+_tabBtn('bid',svgIcon('📋',{size:12})+' Our bid',view==='bid')+_tabBtn('proposal',svgIcon('📄',{size:12})+' Client view',view==='proposal')+'</div>'+
       '<div style="width:70px"></div>'+
     '</div>'+
     '<div style="padding:14px 16px;background:#1a365d;color:#fff">'+
@@ -1873,7 +1873,7 @@ function openBidDetail(bidId,view){
   const storageKey=b.signingKey||b.proposalKey||null;
   function _sigBadge(){
     if(!b.signedAt)return '';
-    return '<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">✓</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>';
+    return '<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">'+svgIcon('✓',{size:16,color:'#065F46'})+'</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>';
   }
   function _sigFooter(sigUrl){
     if(!b.signedAt||!sigUrl)return '';
@@ -1913,7 +1913,7 @@ function openBidDetail(bidId,view){
           b.signatureDataUrl=prop.signatureDataUrl||'';
           let colorTop='';
           const choices=prop.colorChoices||[];
-          if(choices.length)colorTop='<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 16px;margin-bottom:16px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">🎨 Client Color Selections</div>'+choices.map(ch=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px"><span style="font-weight:600;color:#1E3A5F">'+escHtml(ch.room)+'</span><span style="color:#1E40AF;font-weight:700">'+escHtml(ch.colorName)+(ch.swCode?' <span style="font-size:11px;opacity:.7">('+escHtml(ch.swCode)+')</span>':'')+'</span></div>').join('')+'</div>';
+          if(choices.length)colorTop='<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 16px;margin-bottom:16px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">'+svgIcon('🎨',{size:11,color:'#1E40AF'})+' Client Color Selections</div>'+choices.map(ch=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px"><span style="font-weight:600;color:#1E3A5F">'+escHtml(ch.room)+'</span><span style="color:#1E40AF;font-weight:700">'+escHtml(ch.colorName)+(ch.swCode?' <span style="font-size:11px;opacity:.7">('+escHtml(ch.swCode)+')</span>':'')+'</span></div>').join('')+'</div>';
           _renderPropHTML(html,colorTop);
         }catch(e){propPane.innerHTML='<div style="padding:40px;text-align:center;color:var(--text3);font-style:italic">Error parsing proposal.</div>';}
       });
@@ -1969,7 +1969,7 @@ function renderProposalsPage(){
   const list=document.getElementById('proposals-list');
   if(!list)return;
   if(!filtered.length){
-    list.innerHTML='<div class="empty"><div class="em-emoji">📨</div><h3>Nothing here</h3><p>Try a different filter, or start a new estimate from a client card.</p></div>';
+    list.innerHTML='<div class="empty"><div class="em-emoji">'+svgIcon('📨',{size:44})+'</div><h3>Nothing here</h3><p>Try a different filter, or start a new estimate from a client card.</p></div>';
     return;
   }
 
@@ -2005,13 +2005,13 @@ function renderProposalsPage(){
           '<div style="flex:1;min-width:0">'+
             '<div style="font-size:15px;font-weight:800">'+escHtml(c.name)+'</div>'+
             '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escHtml((proj+'').split(',')[0])+'</div>'+
-            '<div style="font-size:11px;color:var(--green-mid);font-weight:600;margin-top:3px">✓ Signed '+dateStr+(b.signedName?' · '+escHtml(b.signedName):'')+'</div>'+
+            '<div style="font-size:11px;color:var(--green-mid);font-weight:600;margin-top:3px">'+svgIcon('✓',{size:11})+' Signed '+dateStr+(b.signedName?' · '+escHtml(b.signedName):'')+'</div>'+
           '</div>'+
           '<div style="font-size:18px;font-weight:800;color:var(--green-mid);margin-left:12px;flex-shrink:0">'+fmt(b.amount)+'</div>'+
         '</div>'+
         '<div style="display:flex;gap:8px">'+
-          '<button onclick="openBidDetail('+b.id+',\'bid\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700">📋 Our bid</button>'+
-          (b.proposalHtml?'<button onclick="openBidDetail('+b.id+',\'proposal\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700;background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">📄 Client view</button>':'<span style="flex:1;font-size:11px;color:var(--text3);display:flex;align-items:center;justify-content:center;font-style:italic">No proposal saved</span>')+
+          '<button onclick="openBidDetail('+b.id+',\'bid\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700">'+svgIcon('📋',{size:12})+' Our bid</button>'+
+          (b.proposalHtml?'<button onclick="openBidDetail('+b.id+',\'proposal\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700;background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('📄',{size:12})+' Client view</button>':'<span style="flex:1;font-size:11px;color:var(--text3);display:flex;align-items:center;justify-content:center;font-style:italic">No proposal saved</span>')+
         '</div>'+
       '</div>';
     }
@@ -2045,7 +2045,7 @@ function renderProposalsPage(){
 
   // All other tabs — flat table
   const statusChip=b=>{
-    if(b.clientCancelled)return '<span class="bdg-soft sf-lost">🚫 CLIENT CANCELLED</span>';
+    if(b.clientCancelled)return '<span class="bdg-soft sf-lost">'+svgIcon('🚫',{size:11})+' CLIENT CANCELLED</span>';
     if(b.status==='Closed Won')return '<span class="bdg-soft sf-won">SIGNED</span>';
     if(b.status==='Closed Lost'||b.status==='Abandoned')return '<span class="bdg-soft sf-lost">DECLINED</span>';
     if(b.draft||b.status==='Draft')return '<span class="bdg-soft sf-done">DRAFT</span>';
@@ -2127,7 +2127,7 @@ function renderEstimatesPage(){
     return '<span class="bdg-soft sf-deposit">Scope &amp; Price</span>';
   };
   const statusChip=b=>{
-    if(b.clientCancelled)return '<span class="bdg-soft sf-lost">🚫 CLIENT CANCELLED</span>';
+    if(b.clientCancelled)return '<span class="bdg-soft sf-lost">'+svgIcon('🚫',{size:11})+' CLIENT CANCELLED</span>';
     if(b.status==='Closed Won')return '<span class="bdg-soft sf-won">SIGNED</span>';
     if(b.status==='Closed Lost'||b.status==='Abandoned')return '<span class="bdg-soft sf-lost">DECLINED</span>';
     if(b.draft||b.status==='Draft')return '<span class="bdg-soft sf-done">DRAFT</span>';

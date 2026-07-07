@@ -327,7 +327,7 @@ async function _lookupProperty(addr,cardId){
       card.innerHTML=
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
           '<span style="font-weight:600;color:var(--text)">Property Info</span>'+
-          (leadPaint?'<span style="font-size:10px;background:#fef2f2;color:#991b1b;padding:2px 8px;border-radius:4px;font-weight:700">⚠ Pre-1978</span>':'')+
+          (leadPaint?'<span style="font-size:10px;background:#fef2f2;color:#991b1b;padding:2px 8px;border-radius:4px;font-weight:700">'+svgIcon('⚠',{size:11})+' Pre-1978</span>':'')+
         '</div>'+
         (leadPaint?'<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:6px 10px;margin-bottom:8px;color:#991b1b;font-size:11px;font-weight:600;line-height:1.4">Lead paint protocol required — EPA RRP Rule applies to renovation work</div>':'')+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">'+

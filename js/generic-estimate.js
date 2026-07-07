@@ -8,7 +8,7 @@ function openBidNotes(bidId){
   box.innerHTML=
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'+
       '<div style="font-size:16px;font-weight:800">Bid notes</div>'+
-      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">✕</button>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">'+svgIcon('✕',{size:16})+'</button>'+
     '</div>'+
     '<textarea id="_bid-notes-ta" rows="8" placeholder="Add notes about this bid..." style="width:100%;box-sizing:border-box;padding:12px;font-size:14px;line-height:1.5;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;margin-bottom:14px">'+escHtml(b.notes||'')+'</textarea>'+
     '<div style="display:flex;gap:8px">'+
@@ -101,8 +101,8 @@ function renderHittersList(){
           '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap">'+
             '<div style="font-size:14px;font-weight:700">'+escHtml(c.name)+'</div>'+
             '<span style="font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px;background:'+tierColor+'22;color:'+tierColor+'">'+tier+'-tier</span>'+
-            (isRealtor?'<span style="font-size:10px;font-weight:700;color:var(--amber)">🏡 Realtor</span>':'')+ 
-            (isPM?'<span style="font-size:10px;font-weight:700;color:var(--blue)">🏢 PM</span>':'')+
+            (isRealtor?'<span style="font-size:10px;font-weight:700;color:var(--amber)">'+svgIcon('🏡',{size:10})+' Realtor</span>':'')+ 
+            (isPM?'<span style="font-size:10px;font-weight:700;color:var(--blue)">'+svgIcon('🏢',{size:10})+' PM</span>':'')+
           '</div>'+
           (c.occupation?'<div style="font-size:11px;color:var(--text2);margin-bottom:2px">'+c.occupation+'</div>':'')+
           '<div style="font-size:11px;color:var(--text3)">Last contact: '+daysLabel+
@@ -117,12 +117,12 @@ function renderHittersList(){
       '</div>'+
       (hasEmail?
         '<div style="margin-top:8px;display:flex;gap:6px">'+
-          '<a href="mailto:'+escHtml(c.email)+'" onclick="event.stopPropagation()" class="btn btn-sm" style="font-size:11px;text-decoration:none">📧 Email</a>'+
-          (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'" onclick="event.stopPropagation()" class="btn btn-sm" style="font-size:11px;text-decoration:none">💬 Text</a>':'')+ 
+          '<a href="mailto:'+escHtml(c.email)+'" onclick="event.stopPropagation()" class="btn btn-sm" style="font-size:11px;text-decoration:none">'+svgIcon('📧',{size:11})+' Email</a>'+
+          (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'" onclick="event.stopPropagation()" class="btn btn-sm" style="font-size:11px;text-decoration:none">'+svgIcon('💬',{size:11})+' Text</a>':'')+ 
         '</div>':
         (c.phone?
           '<div style="margin-top:8px">'+
-            '<a href="sms:'+c.phone.replace(/\D/g,'')+'" onclick="event.stopPropagation()" class="btn btn-sm" style="font-size:11px;text-decoration:none">💬 Text</a>'+
+            '<a href="sms:'+c.phone.replace(/\D/g,'')+'" onclick="event.stopPropagation()" class="btn btn-sm" style="font-size:11px;text-decoration:none">'+svgIcon('💬',{size:11})+' Text</a>'+
           '</div>':'')
       )+
     '</div>';
@@ -155,7 +155,7 @@ function applyPermissions(){
   const name=(_rawName&&!_rawName.includes('@'))?_rawName:(S.bname||'My Account');
   if(nameEl)nameEl.textContent=name;
   if(roleEl)roleEl.textContent=_isEmployee?'Employee':getRole().charAt(0).toUpperCase()+getRole().slice(1);
-  if(avatarEl)avatarEl.textContent=(name==='My Account'?'👤':name.charAt(0).toUpperCase());
+  if(avatarEl)avatarEl.innerHTML=(name==='My Account'?svgIcon('👤',{size:18}):escHtml(name.charAt(0).toUpperCase()));
 }
 
 // ── Multi-trade support ───────────────────────────────────────────────
@@ -293,7 +293,7 @@ function _renderNavTradeSwitcher(){
   pills.innerHTML=lines.map(t=>{
     const m=TRADE_META[t]||{icon:'🔧',label:t};
     const sel=t===active;
-    return`<button onclick="setActiveTrade('${t}')" style="padding:4px 8px;border-radius:20px;border:1px solid ${sel?'var(--blue)':'rgba(255,255,255,.15)'};background:${sel?'var(--blue)':'rgba(255,255,255,.06)'};color:${sel?'#fff':'rgba(255,255,255,.55)'};font-size:11px;font-weight:${sel?700:400};cursor:pointer;font-family:inherit">${m.icon} ${m.label}</button>`;
+    return`<button onclick="setActiveTrade('${t}')" style="padding:4px 8px;border-radius:20px;border:1px solid ${sel?'var(--blue)':'rgba(255,255,255,.15)'};background:${sel?'var(--blue)':'rgba(255,255,255,.06)'};color:${sel?'#fff':'rgba(255,255,255,.55)'};font-size:11px;font-weight:${sel?700:400};cursor:pointer;font-family:inherit">${svgIcon(m.icon,{size:11})} ${m.label}</button>`;
   }).join('');
 }
 
@@ -433,7 +433,7 @@ function _geiShowDraftChooser(c,mode,drafts){
     '<div style="font-size:16px;font-weight:800;margin-bottom:4px">Unsent '+modeLabel+' draft'+(drafts.length>1?'s':'')+'</div>'+
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(c?.name||'This client')+' already has '+(drafts.length>1?drafts.length+' unsent drafts':'an unsent draft')+' of this type. Pick one to keep working on it, or start a fresh version to send alongside it.</div>'+
     rows+
-    '<button onclick="_geiStartFreshDraft()" style="display:block;width:100%;padding:13px;border-radius:10px;border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:4px">➕ Start a fresh '+modeLabel+' estimate</button>'+
+    '<button onclick="_geiStartFreshDraft()" style="display:block;width:100%;padding:13px;border-radius:10px;border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:4px">'+svgIcon('➕',{size:14})+' Start a fresh '+modeLabel+' estimate</button>'+
     '<button onclick="document.getElementById(\'_gei-draft-chooser\')?.remove()" style="display:block;width:100%;padding:11px;border-radius:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:4px">Cancel</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -471,7 +471,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   const trade=_geiTrade;
   const m=TRADE_META[trade]||{icon:'🔧',label:trade.charAt(0).toUpperCase()+trade.slice(1)};
   const titleEl=document.getElementById('gei-trade-title');
-  if(titleEl)titleEl.textContent=m.icon+' '+m.label+' Proposal';
+  if(titleEl)titleEl.innerHTML=svgIcon(m.icon,{size:24})+' '+m.label+' Proposal';
   const eyebrowEl=document.getElementById('gei-tbar-eyebrow');
   if(eyebrowEl)eyebrowEl.textContent=m.label+' proposal';
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val||'';};
@@ -731,12 +731,12 @@ function _geiRenderTopBar(prefix,defaultTitle,editFnName){
       '<button class="link-back" onclick="_geiBack()">← Job type</button>'+
       '<div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">'+
         '<span id="'+prefix+'-tbar-title">'+defaultTitle+'</span>'+
-        '<button onclick="'+editFnName+'()" id="'+prefix+'-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">✏️</button>'+
+        '<button onclick="'+editFnName+'()" id="'+prefix+'-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">'+svgIcon('✏',{size:16})+'</button>'+
       '</div>'+
       '<div class="tbar-sub" id="'+prefix+'-page-sub">—</div>'+
     '</div>'+
     '<div class="tbar-r">'+
-      '<button class="btn" onclick="saveGenericEstimate(true)">💾 Save draft</button>'+
+      '<button class="btn" onclick="saveGenericEstimate(true)">'+svgIcon('💾',{size:14})+' Save draft</button>'+
       '<button class="btn btn-ghost" onclick="_geiBack()">Cancel</button>'+
     '</div>';
 }
@@ -773,12 +773,12 @@ function _geiRenderActionButtons(prefix,opts){
   const cols=o.extraButtons?o.extraButtons.length+2:2;
   const extra=(o.extraButtons||[]).map(b=>'<button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="'+b.onclick+'">'+b.label+'</button>').join('');
   wrap.innerHTML=
-    '<button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">📨 '+(o.sendLabel||'Send proposal')+'</button>'+
-    '<button class="btn btn-xl btn-full" style="margin-top:8px;background:var(--green);color:#fff;border-color:var(--green)" onclick="_geiSignInPerson()">✍️ Sign in person</button>'+
+    '<button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">'+svgIcon('📨',{size:16})+' '+(o.sendLabel||'Send proposal')+'</button>'+
+    '<button class="btn btn-xl btn-full" style="margin-top:8px;background:var(--green);color:#fff;border-color:var(--green)" onclick="_geiSignInPerson()">'+svgIcon('✍',{size:16})+' Sign in person</button>'+
     '<div style="display:grid;grid-template-columns:repeat('+cols+',1fr);gap:6px;margin-top:8px">'+
-      '<button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="'+(o.previewOnclick||'_geiPreviewClient()')+'">👁 Preview</button>'+
+      '<button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="'+(o.previewOnclick||'_geiPreviewClient()')+'">'+svgIcon('👁',{size:11})+' Preview</button>'+
       extra+
-      '<button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_openComparisonPicker()">📊 Compare</button>'+
+      '<button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_openComparisonPicker()">'+svgIcon('📊',{size:11})+' Compare</button>'+
     '</div>';
 }
 function _geiPreviewClient(){sendGenericProposal(true);}
@@ -851,7 +851,7 @@ const _GEI_MODES={
     titleSuffix:'Build Your Own',
     gaugeOninput:"this.dataset.userSet='true';_byoUpdateRail();_byoAutosave()",
     depositOninput:'_byoUpdateRail();_byoAutosave()',
-    actionOpts:{extraButtons:[{label:'📋 Option B',onclick:'_byoDuplicateBid()'}]},
+    actionOpts:{extraButtons:[{label:svgIcon('📋',{size:11})+' Option B',onclick:'_byoDuplicateBid()'}]},
   },
 };
 // Shared page chrome for both single-page estimate layouts: hide the legacy
@@ -872,7 +872,7 @@ function _geiShowSharedChrome(prefix){
   // Trade branding in title
   const tmMeta=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
   const titleEl=document.getElementById(prefix+'-tbar-title');
-  if(titleEl){const _customName=document.getElementById('gei-desc')?.value?.trim();titleEl.textContent=_customName||(tmMeta.icon+' '+tmMeta.label+' · '+m.titleSuffix);}
+  if(titleEl){const _customName=document.getElementById('gei-desc')?.value?.trim();titleEl.innerHTML=_customName?escHtml(_customName):(svgIcon(tmMeta.icon,{size:24})+' '+tmMeta.label+' · '+m.titleSuffix);}
   // Sub-header: client name · address
   const c=getClientById(_geiClientId);
   const sub=document.getElementById(prefix+'-page-sub');
@@ -981,7 +981,7 @@ function _updateScopeSheetBtn(label){
   btn.style.background=on?'var(--blue-lt,#e6f0fb)':'var(--bg-card,var(--bg2))';
   const lbl=btn.querySelector('._sc-lbl');if(lbl)lbl.style.color=on?'var(--blue)':'var(--text)';
   const ck=btn.querySelector('._sc-ck');
-  if(ck){ck.style.background=on?'var(--blue)':'transparent';ck.style.borderColor=on?'var(--blue)':'var(--border2)';ck.textContent=on?'✓':'';}
+  if(ck){ck.style.background=on?'var(--blue)':'transparent';ck.style.borderColor=on?'var(--blue)':'var(--border2)';ck.innerHTML=on?svgIcon('✓',{size:9,color:'#fff'}):'';}
 }
 function _renderScopeChips(containerId){
   const wrap=document.getElementById(containerId);if(!wrap)return;
@@ -1008,7 +1008,7 @@ function _renderScopeChips(containerId){
     const c=allItems.find(x=>x.label===l)||{icon:'✓',label:l};
     const border=i<_geiScopeChips.length-1?'border-bottom:1px solid var(--border)':'';
     html+='<div style="display:flex;align-items:center;gap:11px;padding:11px 16px;'+border+'">'+
-      '<span style="font-size:17px;line-height:1;flex-shrink:0">'+escHtml(c.icon||'✓')+'</span>'+
+      '<span style="font-size:17px;line-height:1;flex-shrink:0">'+svgIcon(c.icon||'✓',{size:17})+'</span>'+
       '<span style="flex:1;min-width:0;font-size:13px;font-weight:700;color:var(--text);line-height:1.35">'+escHtml(c.label)+'</span>'+
       '<button type="button" onclick="_toggleScopeChip('+escHtml(JSON.stringify(l))+')" aria-label="Remove '+escHtml(c.label)+'" style="flex-shrink:0;border:none;background:none;color:var(--text3);font-size:18px;font-weight:700;cursor:pointer;padding:2px 6px;line-height:1;font-family:inherit">×</button>'+
     '</div>';
@@ -1037,9 +1037,9 @@ function _openScopeSheet(containerId){
         const on=_geiScopeChips.includes(s.label);
         const sid='_scb-'+s.label.replace(/[^a-z0-9]/gi,'_');
         return '<div id="'+sid+'" onclick="_toggleScopeChip('+escHtml(JSON.stringify(s.label))+')" style="display:flex;align-items:center;gap:10px;padding:12px 13px;border-radius:14px;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue-lt,#e6f0fb)':'var(--bg-card,var(--bg2))')+';cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .14s,border-color .14s;min-height:52px">'+
-          '<span style="font-size:19px;line-height:1;flex-shrink:0">'+(s.icon||'✓')+'</span>'+
+          '<span style="font-size:19px;line-height:1;flex-shrink:0">'+svgIcon(s.icon||'✓',{size:19})+'</span>'+
           '<span class="_sc-lbl" style="font-size:13px;font-weight:700;color:'+(on?'var(--blue)':'var(--text)')+';flex:1;line-height:1.25">'+escHtml(s.label)+'</span>'+
-          '<span class="_sc-ck" style="flex-shrink:0;width:20px;height:20px;border-radius:50%;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue)':'transparent')+';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;color:#fff">'+(on?'✓':'')+'</span>'+
+          '<span class="_sc-ck" style="flex-shrink:0;width:20px;height:20px;border-radius:50%;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue)':'transparent')+';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;color:#fff">'+(on?svgIcon('✓',{size:9,color:'#fff'}):'')+'</span>'+
         '</div>';
       }).join('')+
     '</div>';
@@ -1050,9 +1050,9 @@ function _openScopeSheet(containerId){
         const on=_geiScopeChips.includes(c.label);
         const sid='_scb-'+c.label.replace(/[^a-z0-9]/gi,'_');
         return '<button type="button" id="'+sid+'" onclick="_toggleScopeChip('+escHtml(JSON.stringify(c.label))+')" style="display:flex;align-items:center;gap:10px;text-align:left;padding:11px 12px;border-radius:14px;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue-lt,#e6f0fb)':'var(--bg-card,var(--bg2))')+';cursor:pointer;font-family:inherit;min-height:52px;-webkit-tap-highlight-color:transparent;transition:background .14s,border-color .14s">'+
-          '<span style="font-size:19px;line-height:1;flex-shrink:0">'+escHtml(c.icon)+'</span>'+
+          '<span style="font-size:19px;line-height:1;flex-shrink:0">'+svgIcon(c.icon,{size:19})+'</span>'+
           '<span class="_sc-lbl" style="font-size:13px;font-weight:600;color:'+(on?'var(--blue)':'var(--text)')+';flex:1;line-height:1.25">'+escHtml(c.label)+'</span>'+
-          '<span class="_sc-ck" style="flex-shrink:0;width:20px;height:20px;border-radius:50%;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue)':'transparent')+';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;color:#fff">'+(on?'✓':'')+'</span>'+
+          '<span class="_sc-ck" style="flex-shrink:0;width:20px;height:20px;border-radius:50%;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue)':'transparent')+';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;color:#fff">'+(on?svgIcon('✓',{size:9,color:'#fff'}):'')+'</span>'+
         '</button>';
       }).join('')+
     '</div>';
@@ -1070,7 +1070,7 @@ function _openScopeSheet(containerId){
 // onclick (BYO toggles on/off; T&M opens edit) from also firing.
 function _geiRowActionBtns(editCall,delCall,delTitle){
   return '<button onclick="event.stopPropagation();'+editCall+'" title="Edit" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--blue);touch-action:manipulation">Edit</button>'+
-    '<button onclick="event.stopPropagation();'+delCall+'" title="'+(delTitle||'Remove')+'" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:#A32D2D;touch-action:manipulation">✕</button>';
+    '<button onclick="event.stopPropagation();'+delCall+'" title="'+(delTitle||'Remove')+'" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:#A32D2D;touch-action:manipulation">'+svgIcon('✕',{size:12})+'</button>';
 }
 function _editEstTitle(titleId,btnId){
   const titleEl=document.getElementById(titleId);
@@ -1112,7 +1112,7 @@ function _editScopeTitle(){_editEstTitle('gei-trade-title','scope-edit-title-btn
 // empty grey space under the price/action buttons.
 function _geiItemRowHtml(opts){
   const{label,notes,price,editFn,delFn,delTitle,checked,rowOnclick,extraClass}=opts;
-  const checkHtml=checked!==undefined?'<div class="byo-check'+(checked?' on':'')+'">'+(checked?'✓':'')+'</div>':'';
+  const checkHtml=checked!==undefined?'<div class="byo-check'+(checked?' on':'')+'">'+(checked?svgIcon('✓',{size:14}):'')+'</div>':'';
   return '<div class="byo-row'+(checked?' on':'')+(extraClass?' '+extraClass:'')+'"'+(rowOnclick?' onclick="'+rowOnclick+'"':'')+'>'+
     '<div class="byo-row-hd">'+
       checkHtml+
@@ -1146,7 +1146,7 @@ function _byoRenderSections(){
     return '<div class="card card-pad-0" style="margin-bottom:12px">'+
       '<div class="card-hd"><div class="card-hd-title">'+escHtml(sec)+'</div>'+
       '<div style="display:flex;gap:6px">'+
-        (isCustom?'<button class="btn btn-sm" data-sec="'+escHtml(sec)+'" onclick="_byoDeleteSection(this.dataset.sec)" style="color:#A32D2D;border-color:#A32D2D" title="Remove section">✕</button>':'')+
+        (isCustom?'<button class="btn btn-sm" data-sec="'+escHtml(sec)+'" onclick="_byoDeleteSection(this.dataset.sec)" style="color:#A32D2D;border-color:#A32D2D" title="Remove section">'+svgIcon('✕',{size:12})+'</button>':'')+
         '<button class="btn btn-sm" data-sec="'+escHtml(sec)+'" onclick="_byoAddItem(this.dataset.sec)">+ Add item</button>'+
       '</div></div>'+
       '<div>'+rowHtml+'</div>'+
@@ -1156,7 +1156,7 @@ function _byoRenderSections(){
     '<button class="btn btn-ghost btn-full" onclick="_byoAddSection()" style="border:1.5px dashed var(--border2)">+ Add section</button>'+
   '</div>';
   const tcCard='<div class="card card-pad-0" style="margin-bottom:12px">'+
-    '<div class="card-hd"><div class="card-hd-title">📋 Terms &amp; Conditions</div></div>'+
+    '<div class="card-hd"><div class="card-hd-title">'+svgIcon('📋',{size:14})+' Terms &amp; Conditions</div></div>'+
     '<div style="padding:12px 14px">'+
       '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">Custom terms print on the proposal below the standard payment terms.</div>'+
       '<textarea id="byo-custom-terms" rows="5" placeholder="e.g. All paint supplied by client. Contractor not responsible for pre-existing damage to surfaces..." '+
@@ -1363,7 +1363,7 @@ function _renderLaborPicker(type){
     const on=_estCrew.indexOf(email)>=0;
     const first=(e.name||'').split(' ')[0]||e.name;
     const t=_employeeTrust(e);
-    const star=i===0&&t.count>0?'★ ':''; // top-ranked, proven crew
+    const star=i===0&&t.count>0?svgIcon('★',{size:11})+' ':''; // top-ranked, proven crew
     const jobsTag=t.count>0?'<span style="opacity:.6;font-weight:600"> · '+t.count+'</span>':'';
     const nj=_empNextJob(e);
     const bookedTag=nj?'<span style="opacity:.75;font-weight:600;color:#B45309"> · '+_shortDate(nj.start)+'</span>':'';
@@ -1384,7 +1384,7 @@ function _renderLaborPicker(type){
     body='<span style="color:var(--c-amber)">Set pay rates on the Team page (or build job-time history) to price this crew.</span>';
   }else{
     const ppl=_estCrew.length;
-    const conflictNote=bookedSelected.length?'<div style="margin-top:4px;font-size:10px;color:#B45309">⚠ '+bookedSelected.map(e=>(e.name||'').split(' ')[0]+' has a job '+_shortDate(_empNextJob(e).start)).join(' · ')+'</div>':'';
+    const conflictNote=bookedSelected.length?'<div style="margin-top:4px;font-size:10px;color:#B45309">'+svgIcon('⚠',{size:10})+' '+bookedSelected.map(e=>(e.name||'').split(' ')[0]+' has a job '+_shortDate(_empNextJob(e).start)).join(' · ')+'</div>':'';
     body='<span style="color:#A32D2D;font-weight:800;font-size:14px">− '+fmt(cost)+'</span>'+
       '<span style="color:var(--text3)"> crew payroll · '+ppl+' '+(ppl>1?'people':'person')+' · ~'+hrs+' hrs · incl. benefits</span>'+conflictNote;
   }
@@ -1709,7 +1709,7 @@ function _showProposalPreviewOverlay(proposalHtml){
   ov.style.cssText='position:fixed;inset:0;z-index:9500;background:#0007;display:flex;flex-direction:column';
   const hdr=document.createElement('div');
   hdr.style.cssText='background:#1a365d;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0';
-  hdr.innerHTML='<span style="font-size:15px;font-weight:800">👁 Client preview — how they\'ll see it</span><button onclick="document.getElementById(\'_prop-preview-ov\')?.remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation">✕ Close</button>';
+  hdr.innerHTML='<span style="font-size:15px;font-weight:800">'+svgIcon('👁',{size:15,color:'#fff'})+' Client preview — how they\'ll see it</span><button onclick="document.getElementById(\'_prop-preview-ov\')?.remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation">'+svgIcon('✕',{size:14,color:'#fff'})+' Close</button>';
   const body=document.createElement('div');
   body.style.cssText='flex:1;overflow-y:auto;padding:16px;box-sizing:border-box;background:#f0f4f8;overflow-wrap:anywhere';
   body.innerHTML=proposalHtml;
@@ -1738,7 +1738,7 @@ function _openComparisonPicker(){
     const label=b.type||('Bid '+(i+1));
     return `<label style="display:flex;align-items:center;gap:12px;padding:12px;border:1.5px solid var(--border2);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" name="cmp-bid" value="${b.id}" style="width:20px;height:20px;accent-color:var(--blue);flex-shrink:0"><span style="flex:1"><span style="font-size:14px;font-weight:700;display:block">${escHtml(label)}</span><span style="font-size:12px;color:var(--text-3)">$${total.toLocaleString()} · ${b.status||'Draft'}</span></span></label>`;
   }).join('');
-  box.innerHTML=`<div style="font-size:17px;font-weight:800;margin-bottom:4px">📊 Compare & Send</div><div style="font-size:13px;color:var(--text-3);margin-bottom:16px">Pick exactly 2 bids — your client will see both side by side and can choose one.</div>${rows}<button onclick="_buildComparisonPreview()" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;touch-action:manipulation;margin-top:8px">👁 Preview comparison</button><button onclick="document.getElementById('_cmp-picker-ov')?.remove()" style="width:100%;padding:12px;border-radius:var(--rl);border:none;background:none;color:var(--text-3);font-size:14px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>`;
+  box.innerHTML=`<div style="font-size:17px;font-weight:800;margin-bottom:4px">${svgIcon('📊',{size:17})} Compare & Send</div><div style="font-size:13px;color:var(--text-3);margin-bottom:16px">Pick exactly 2 bids — your client will see both side by side and can choose one.</div>${rows}<button onclick="_buildComparisonPreview()" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;touch-action:manipulation;margin-top:8px">${svgIcon('👁',{size:16,color:'#fff'})} Preview comparison</button><button onclick="document.getElementById('_cmp-picker-ov')?.remove()" style="width:100%;padding:12px;border-radius:var(--rl);border:none;background:none;color:var(--text-3);font-size:14px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>`;
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
@@ -1752,7 +1752,7 @@ function _buildComparisonPreview(){
   const makeCard=(b,label,accentColor)=>{
     const lineRows=(b.geiLines||[]).filter(l=>l.desc||l.rate).map(l=>`<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:7px 12px;font-size:12px;color:#2d3748;overflow-wrap:anywhere"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${l.notes?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:''}</td><td style="padding:7px 8px;text-align:right;font-size:12px;font-weight:600;color:#1a365d">${fmt((l.qty||1)*(l.rate||0))}</td></tr>`).join('');
     const notes=b.notes?`<div style="padding:10px 14px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.5;overflow-wrap:anywhere"><strong>Notes:</strong> ${escHtml(b.notes)}</div>`:'';
-    return `<div style="background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 2px 12px rgba(0,0,0,.08);margin-bottom:16px"><div style="background:${accentColor};color:#fff;padding:14px 16px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;opacity:.85">Option</div><div style="font-size:20px;font-weight:800;margin-top:2px">${label}</div><div style="font-size:13px;opacity:.85;margin-top:4px">${escHtml(b.type||'Proposal')}</div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><tbody>${lineRows}</tbody><tfoot><tr style="background:${accentColor};color:#fff"><td style="padding:10px 14px;font-weight:800;font-size:14px">TOTAL</td><td style="padding:10px 14px;text-align:right;font-weight:800;font-size:14px">${fmt(b.amount)}</td></tr></tfoot></table>${notes}<div style="padding:12px 14px;background:#f8fafc;text-align:center"><button style="width:100%;padding:12px;border-radius:10px;border:2px solid ${accentColor};background:#fff;color:${accentColor};font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;touch-action:manipulation">✓ I choose this option</button></div></div>`;
+    return `<div style="background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 2px 12px rgba(0,0,0,.08);margin-bottom:16px"><div style="background:${accentColor};color:#fff;padding:14px 16px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;opacity:.85">Option</div><div style="font-size:20px;font-weight:800;margin-top:2px">${label}</div><div style="font-size:13px;opacity:.85;margin-top:4px">${escHtml(b.type||'Proposal')}</div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><tbody>${lineRows}</tbody><tfoot><tr style="background:${accentColor};color:#fff"><td style="padding:10px 14px;font-weight:800;font-size:14px">TOTAL</td><td style="padding:10px 14px;text-align:right;font-weight:800;font-size:14px">${fmt(b.amount)}</td></tr></tfoot></table>${notes}<div style="padding:12px 14px;background:#f8fafc;text-align:center"><button style="width:100%;padding:12px;border-radius:10px;border:2px solid ${accentColor};background:#fff;color:${accentColor};font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;touch-action:manipulation">${svgIcon('✓',{size:15,color:accentColor})} I choose this option</button></div></div>`;
   };
   const compHtml=`<div style="max-width:560px;margin:0 auto;padding:16px 0"><div style="text-align:center;padding:16px 0 20px"><div style="font-size:18px;font-weight:800;color:#1a365d">Choose your option</div><div style="font-size:13px;color:#718096;margin-top:4px">Both options are from the same contractor. Review each and tap to accept the one that works best for you.</div></div>${makeCard(bidA,'A','#1a365d')}${makeCard(bidB,'B','#2a4a7f')}</div>`;
   document.getElementById('_cmp-picker-ov')?.remove();
@@ -2152,8 +2152,8 @@ function _geiOpenCatSheet(catLabel){
     const isCustomRate=p.isCustom;
     const gasTag=job.gasLic?`<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:3px;padding:1px 5px;margin-left:6px">GAS LIC</span>`:'';
     const rateLabel=isCustomRate
-      ?`<span style="color:#16a34a;font-size:10px;margin-top:2px">✓ your rate</span>`
-      :`<span style="color:var(--text3);font-size:10px;margin-top:2px">📍 ${S.state||'US'} avg${_geiNewWork&&(job.nw||1)<1?' · new work':''}</span>`;
+      ?`<span style="color:#16a34a;font-size:10px;margin-top:2px">${svgIcon('✓',{size:10,color:'#16a34a'})} your rate</span>`
+      :`<span style="color:var(--text3);font-size:10px;margin-top:2px">${svgIcon('📍',{size:10})} ${S.state||'US'} avg${_geiNewWork&&(job.nw||1)<1?' · new work':''}</span>`;
     const inputBorder=isCustomRate?'border:1.5px solid #16a34a':'border:1.5px solid var(--border2)';
     const inputColor=isCustomRate?'color:#16a34a':'color:var(--blue)';
     const inputId='_gei-rate-'+job.id;
@@ -2173,8 +2173,8 @@ function _geiOpenCatSheet(catLabel){
     </div>`;
   }).join('');
 
-  const firstTimeBanner=(!S.myRates||!Object.keys(S.myRates).length)?`<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--r);padding:10px 14px;margin-bottom:12px;font-size:12px;color:#1e40af;line-height:1.5">📍 Showing <strong>${S.state||'US'} market averages</strong> (BLS labor data). Edit any price to set your own rate — saves automatically.</div>`:'';
-  const newWorkBadge=_geiNewWork?`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--r);padding:6px 12px;margin-bottom:10px;font-size:12px;color:#15803d;font-weight:600">🏗️ New construction rates active — lower labor</div>`:'';
+  const firstTimeBanner=(!S.myRates||!Object.keys(S.myRates).length)?`<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--r);padding:10px 14px;margin-bottom:12px;font-size:12px;color:#1e40af;line-height:1.5">${svgIcon('📍',{size:12,color:'#1e40af'})} Showing <strong>${S.state||'US'} market averages</strong> (BLS labor data). Edit any price to set your own rate — saves automatically.</div>`:'';
+  const newWorkBadge=_geiNewWork?`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--r);padding:6px 12px;margin-bottom:10px;font-size:12px;color:#15803d;font-weight:600">${svgIcon('🏗',{size:12,color:'#15803d'})} New construction rates active — lower labor</div>`:'';
   sheet.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <div style="font-size:16px;font-weight:800;color:var(--text)">${catLabel}</div>
@@ -2211,8 +2211,8 @@ function _geiRenderTemplates(){
   const visibleIds=_geiVisibleJobIds();
 
   let html='';
-  if(_geiEmergency)html+=`<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:9px 12px;font-size:12px;color:#b91c1c;margin-bottom:12px;font-weight:600">🚨 Emergency mode — labor rates ×1.5 · after-hours surcharge added</div>`;
-  if(_geiNewWork)html+=`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--r);padding:7px 12px;font-size:12px;color:#15803d;margin-bottom:12px;font-weight:600">🏗️ New construction rates active — lower labor</div>`;
+  if(_geiEmergency)html+=`<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:9px 12px;font-size:12px;color:#b91c1c;margin-bottom:12px;font-weight:600">${svgIcon('🚨',{size:12,color:'#b91c1c'})} Emergency mode — labor rates ×1.5 · after-hours surcharge added</div>`;
+  if(_geiNewWork)html+=`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--r);padding:7px 12px;font-size:12px;color:#15803d;margin-bottom:12px;font-weight:600">${svgIcon('🏗',{size:12,color:'#15803d'})} New construction rates active — lower labor</div>`;
 
   // Category tile grid for trades with categories
   const cats=TRADE_JOB_CATS[trade];
@@ -2228,7 +2228,7 @@ function _geiRenderTemplates(){
       const safeLabel=escHtml(catLabel);
       html+=`<button data-cat="${escHtml(catLabel)}" onclick="_geiOpenCatSheet(this.dataset.cat)"
         style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px 8px;border-radius:var(--rl);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;gap:5px;min-height:85px;text-align:center">
-        <span style="font-size:28px;line-height:1">${emoji}</span>
+        <span style="font-size:28px;line-height:1">${svgIcon(emoji,{size:28})}</span>
         <span style="font-size:12px;font-weight:700;color:var(--text)">${escHtml(name)}</span>
         <span style="font-size:10px;color:var(--text3)">${catJobs.length} service${catJobs.length!==1?'s':''}</span>
       </button>`;
@@ -2279,10 +2279,10 @@ function showGeiOnboarding(opts){
     const mult=STATE_LABOR_MULT[S.state]||1.0;
     const multNote=mult!==1.0?` (${mult>1?'+':''}${Math.round((mult-1)*100)}% vs national avg)`:'';
     ov.innerHTML=`<div style="background:var(--bg);border-radius:var(--rl);width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-sizing:border-box;padding:22px 18px 28px">
-      <div style="font-size:20px;font-weight:800;color:var(--text);margin-bottom:4px">⚡ Set up your services</div>
+      <div style="font-size:20px;font-weight:800;color:var(--text);margin-bottom:4px">${svgIcon('⚡',{size:20})} Set up your services</div>
       <div style="font-size:12px;color:var(--text3);margin-bottom:14px">Takes about 30 seconds · you can change this anytime</div>
       <div style="background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--blue-dk)">
-        📍 You're in <strong>${stateStr}</strong> — market rates loaded${multNote}
+        ${svgIcon('📍',{size:12,color:'var(--blue-dk)'})} You're in <strong>${stateStr}</strong> — market rates loaded${multNote}
         <button onclick="document.getElementById('_gei-state-sel')?.classList.toggle('show')" style="margin-left:8px;background:none;border:none;color:var(--blue);font-size:11px;cursor:pointer;text-decoration:underline;font-family:inherit">Change</button>
         <select id="_gei-state-sel" class="show" onchange="S.state=this.value;_settingsChanged();showGeiOnboarding()" style="display:block;margin-top:8px;padding:6px 8px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;background:var(--bg);color:var(--text);width:100%">
           ${['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'].map(st=>`<option value="${st}"${S.state===st?' selected':''}>${st}</option>`).join('')}
@@ -2293,9 +2293,9 @@ function showGeiOnboarding(opts){
         ${BUNDLE_CARDS.map(b=>{
           const on=selected.has(b.id);
           return `<button onclick="_geiOnboardToggle('${b.id}')" data-bid="${b.id}" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px 8px;border-radius:var(--rl);border:2px solid ${on?'var(--blue)':'var(--border2)'};background:${on?'var(--blue-lt)':'var(--bg2)'};cursor:pointer;font-family:inherit;gap:5px;min-height:80px;text-align:center;box-sizing:border-box">
-            <span style="font-size:26px;line-height:1">${b.emoji}</span>
+            <span style="font-size:26px;line-height:1">${svgIcon(b.emoji,{size:26})}</span>
             <span style="font-size:11px;font-weight:700;color:${on?'var(--blue-dk)':'var(--text)'};white-space:pre-line;line-height:1.3">${b.label}</span>
-            ${on?'<span style="font-size:10px;color:var(--blue);font-weight:700">✓</span>':''}
+            ${on?'<span style="font-size:10px;color:var(--blue);font-weight:700">'+svgIcon('✓',{size:10,color:'var(--blue)'})+'</span>':''}
           </button>`;
         }).join('')}
       </div>
@@ -2364,7 +2364,7 @@ function _geiSyncJobTypeButtons(){
   if(_geiJobScope==='improvement'&&typeof getJobTaxTreatment==='function'){
     const st=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
     const t=getJobTaxTreatment(st,_geiTrade||'general','improvement',_geiIsCommercial?'commercial':'residential');
-    noteEl.textContent=t.certificate?'⚠ '+t.certificate.form+' required — client must sign before work begins.':'New construction: no tax';
+    noteEl.innerHTML=t.certificate?svgIcon('⚠',{size:11})+' '+escHtml(t.certificate.form)+' required — client must sign before work begins.':'New construction: no tax';
     noteEl.style.color=t.certificate?'var(--amber-dk)':'var(--text3)';
   } else {
     noteEl.textContent='';
@@ -2391,7 +2391,7 @@ function _geiSyncJobScopeButtons(){
   if(noteEl&&_geiJobScope==='improvement'&&typeof getJobTaxTreatment==='function'){
     const stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
     const t=getJobTaxTreatment(stateKey,_geiTrade||'general','improvement',_geiIsCommercial?'commercial':'residential');
-    noteEl.textContent=t.certificate?'⚠ '+t.certificate.form+' required — client must sign before work begins.':'New construction: no tax';
+    noteEl.innerHTML=t.certificate?svgIcon('⚠',{size:11})+' '+escHtml(t.certificate.form)+' required — client must sign before work begins.':'New construction: no tax';
     noteEl.style.color=t.certificate?'var(--amber-dk)':'var(--text3)';
   } else if(noteEl){
     noteEl.textContent='';
@@ -2527,7 +2527,7 @@ function renderGeiLines(){
           <div id="gei-line-total-${i}" style="font-size:18px;font-weight:800;color:var(--blue);line-height:1.2">${totalFmt}</div>
         </div>
       </div>
-      ${isLabor?'':`<div style="display:flex;justify-content:flex-end;margin-top:8px"><button onclick="_geiSaveToPriceBook(${i})" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:11px;font-weight:600;font-family:inherit;padding:0;display:flex;align-items:center;gap:3px">🔖 Save to price book</button></div>`}
+      ${isLabor?'':`<div style="display:flex;justify-content:flex-end;margin-top:8px"><button onclick="_geiSaveToPriceBook(${i})" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:11px;font-weight:600;font-family:inherit;padding:0;display:flex;align-items:center;gap:3px">${svgIcon('🔖',{size:11})} Save to price book</button></div>`}
     </div>`;
   }).join('');
 }
@@ -2592,12 +2592,12 @@ function _panelRenderSection(){
   const el=document.getElementById('gei-panel-section');if(!el)return;
   if(_geiTrade!=='electrical'){el.innerHTML='';return;}
   if(!_panelSched){
-    el.innerHTML=`<button onclick="_panelOpen()" style="width:100%;padding:12px;border-radius:var(--r);border:1.5px dashed var(--border2);background:var(--bg2);color:var(--text3);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">📋 Add panel schedule <span style="font-size:11px;font-weight:400">(optional — leave with the panel)</span></button>`;
+    el.innerHTML=`<button onclick="_panelOpen()" style="width:100%;padding:12px;border-radius:var(--r);border:1.5px dashed var(--border2);background:var(--bg2);color:var(--text3);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">${svgIcon('📋',{size:13})} Add panel schedule <span style="font-size:11px;font-weight:400">(optional — leave with the panel)</span></button>`;
     return;
   }
   const {l1,l2,slots,used,imbalance,spare}=_panelCalcBalance();
   const pa=_panelSched.panelAmps||200;
-  const imbalBadge=imbalance>0.10?`<span style="background:#fef2f2;color:#dc2626;border:1px solid #fca5a5;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:8px">⚠️ ${(imbalance*100).toFixed(0)}% imbalance</span>`:'<span style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:8px">✓ balanced</span>';
+  const imbalBadge=imbalance>0.10?`<span style="background:#fef2f2;color:#dc2626;border:1px solid #fca5a5;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:8px">${svgIcon('⚠',{size:11,color:'#dc2626'})} ${(imbalance*100).toFixed(0)}% imbalance</span>`:`<span style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:8px">${svgIcon('✓',{size:11,color:'#16a34a'})} balanced</span>`;
   const circuits=_panelSched.circuits||[];
   const rowStyle='display:grid;grid-template-columns:1fr 52px 70px 60px 34px 34px 20px;gap:4px;align-items:center;margin-bottom:5px';
   const hdStyle='font-size:10px;font-weight:700;color:var(--text3);text-align:center';
@@ -2626,9 +2626,9 @@ function _panelRenderSection(){
   const l2Pct=Math.max(l1,l2)>0?Math.round(l2/Math.max(l1,l2)*100):50;
   el.innerHTML=`<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">📋 Panel schedule</div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">${svgIcon('📋',{size:11})} Panel schedule</div>
       <div style="display:flex;gap:6px">
-        <button onclick="_panelPrint()" style="padding:5px 11px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">🖨️ Print</button>
+        <button onclick="_panelPrint()" style="padding:5px 11px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">${svgIcon('🖨',{size:12})} Print</button>
         <button onclick="_panelClose()" style="padding:5px 11px;border-radius:var(--r);border:1.5px solid #fca5a5;background:#fef2f2;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:#dc2626">Remove</button>
       </div>
     </div>
@@ -2682,15 +2682,15 @@ function _panelPrint(){
   const addr=document.getElementById('gei-addr')?.value||'';
   const dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
   const biz=S.bname||getBusinessName()||'';
-  const imbalTxt=imbalance>0.10?`<span style="color:#dc2626;font-weight:700">⚠️ ${(imbalance*100).toFixed(0)}% imbalance — rebalance recommended</span>`:`<span style="color:#16a34a;font-weight:700">✓ Balanced (${(imbalance*100).toFixed(0)}% difference)</span>`;
+  const imbalTxt=imbalance>0.10?`<span style="color:#dc2626;font-weight:700">${svgIcon('⚠',{size:13,color:'#dc2626'})} ${(imbalance*100).toFixed(0)}% imbalance — rebalance recommended</span>`:`<span style="color:#16a34a;font-weight:700">${svgIcon('✓',{size:13,color:'#16a34a'})} Balanced (${(imbalance*100).toFixed(0)}% difference)</span>`;
   const rows=circuits.map((c,i)=>`<tr>
     <td style="text-align:center;padding:4px 6px;border:1px solid #ccc">${i+1}</td>
     <td style="padding:4px 8px;border:1px solid #ccc">${escHtml(c.desc||'—')}</td>
     <td style="text-align:center;padding:4px 6px;border:1px solid #ccc;font-weight:700">${c.amps||''}A</td>
     <td style="text-align:center;padding:4px 6px;border:1px solid #ccc">${c.phase==='2pole'?'2-pole':c.phase}</td>
     <td style="text-align:center;padding:4px 6px;border:1px solid #ccc">${escHtml(c.gauge||'')}</td>
-    <td style="text-align:center;padding:4px 6px;border:1px solid #ccc">${c.afci?'✓':''}</td>
-    <td style="text-align:center;padding:4px 6px;border:1px solid #ccc">${c.gfci?'✓':''}</td>
+    <td style="text-align:center;padding:4px 6px;border:1px solid #ccc">${c.afci?svgIcon('✓',{size:12}):''}</td>
+    <td style="text-align:center;padding:4px 6px;border:1px solid #ccc">${c.gfci?svgIcon('✓',{size:12}):''}</td>
   </tr>`).join('');
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Panel Schedule</title>
   <style>
@@ -2704,7 +2704,7 @@ function _panelPrint(){
     @media print{button{display:none!important}}
   </style></head><body>
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
-    <div><h1>⚡ Panel Schedule</h1><div class="meta">${escHtml(biz)}${client?' · '+escHtml(client):''}${addr?' · '+escHtml(addr):''}<br>Date: ${dateStr}</div></div>
+    <div><h1>${svgIcon('⚡',{size:18})} Panel Schedule</h1><div class="meta">${escHtml(biz)}${client?' · '+escHtml(client):''}${addr?' · '+escHtml(addr):''}<br>Date: ${dateStr}</div></div>
     <div style="text-align:right;font-size:13px"><strong>${pa}A Main Panel</strong><br>${used} of ${slots} slots used · ${spare} spare<br>${imbalTxt}</div>
   </div>
   <div class="stats">
@@ -2717,7 +2717,7 @@ function _panelPrint(){
     <th>#</th><th style="text-align:left">Circuit description</th><th>Amps</th><th>Phase</th><th>Wire gauge</th><th>AFCI</th><th>GFCI</th>
   </tr></thead><tbody>${rows}</tbody></table>
   <div style="margin-top:16px;font-size:10px;color:#888;border-top:1px solid #ddd;padding-top:8px">Generated by TradeDesk · ${escHtml(biz)} · ${dateStr}</div>
-  <button onclick="window.print()" style="margin-top:16px;padding:10px 24px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:700;cursor:pointer">🖨️ Print / Save PDF</button>
+  <button onclick="window.print()" style="margin-top:16px;padding:10px 24px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:700;cursor:pointer">${svgIcon('🖨',{size:14,color:'#fff'})} Print / Save PDF</button>
   </body></html>`;
   const win=window.open('','_blank');
   if(win){win.document.write(html);win.document.close();}
@@ -2785,7 +2785,7 @@ function calcGeiTotal(){
   const rateNote=document.getElementById('gei-tax-rate-note');
   if(rateNote){
     if(_geiClientTaxRate?.warning&&sub>0&&_stScope!=='improvement'){
-      rateNote.textContent='⚠ '+_geiClientTaxRate.warning;rateNote.style.color='var(--amber-dk,#b45309)';rateNote.style.display='block';
+      rateNote.innerHTML=svgIcon('⚠',{size:11})+' '+escHtml(_geiClientTaxRate.warning);rateNote.style.color='var(--amber-dk,#b45309)';rateNote.style.display='block';
     } else if(_geiClientTaxRate?.source==='db_zip'&&_stRate>0){
       rateNote.textContent='Rate: '+_stRate+'% (client address ZIP)';rateNote.style.color='var(--text3)';rateNote.style.display='block';
     } else {
@@ -3155,7 +3155,7 @@ function _geiCopyShareLink(btn){
   const url=_proposalShareData().url;
   if(!url)return;
   navigator.clipboard.writeText(url).catch(()=>{});
-  if(btn){btn.textContent='✓ Copied!';setTimeout(()=>btn.textContent='📋 Copy link',2000);}
+  if(btn){btn.innerHTML=svgIcon('✓',{size:14})+' Copied!';setTimeout(()=>{btn.innerHTML=svgIcon('📋',{size:14})+' Copy link';},2000);}
 }
 
 // ─── Industrial Equipment Estimate ──────────────────────────────────────────
@@ -3179,7 +3179,7 @@ function _renderIndModal(){
   const tierHtml=Object.keys(IND_TIERS).map(k=>{
     const t=IND_TIERS[k];const sel=k===_indTier;
     return '<button onclick="_setIndTier(\''+k+'\')" style="padding:10px 8px;border-radius:var(--r);border:2px solid '+(sel?'var(--blue)':'var(--border2)')+';background:'+(sel?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;text-align:left;width:100%">'+
-      '<div style="font-size:12px;font-weight:700;color:'+(sel?'var(--blue-dk)':'var(--text)')+'">'+(sel?'✓ ':'')+t.badge+' '+t.name+'</div>'+
+      '<div style="font-size:12px;font-weight:700;color:'+(sel?'var(--blue-dk)':'var(--text)')+'">'+(sel?svgIcon('✓',{size:12,color:'var(--blue-dk)'})+' ':'')+t.badge+' '+t.name+'</div>'+
       '<div style="font-size:10px;color:var(--text3);margin-top:2px;line-height:1.4">'+t.desc+'</div></button>';
   }).join('');
   const typeOpts=Object.keys(IND_EQUIP_TYPES).map(k=>'<option value="'+k+'">'+IND_EQUIP_TYPES[k].name+'</option>').join('');
@@ -3191,7 +3191,7 @@ function _renderIndModal(){
   box.innerHTML=
     '<div style="position:sticky;top:0;background:var(--bg);z-index:10;padding:16px 16px 12px;border-bottom:1px solid var(--border)">'+
       '<div style="display:flex;align-items:center;justify-content:space-between">'+
-        '<div><div style="font-size:17px;font-weight:800">🏗️ Industrial Equipment</div>'+
+        '<div><div style="font-size:17px;font-weight:800">'+svgIcon('🏗',{size:17})+' Industrial Equipment</div>'+
           '<div style="font-size:12px;color:var(--text3);margin-top:2px">'+(c?escHtml(c.name):'No client')+'</div></div>'+
         '<button onclick="document.getElementById(\'ind-equip-ov\').remove()" style="width:30px;height:30px;border-radius:50%;border:none;background:var(--bg2);color:var(--text2);font-size:18px;cursor:pointer;font-family:inherit">×</button>'+
       '</div>'+
@@ -3201,7 +3201,7 @@ function _renderIndModal(){
     // ── AI Scope Helper ──
     '<div style="margin-bottom:14px;padding:12px;background:linear-gradient(135deg,#fffbeb,#fff7ed);border-radius:var(--r);border:1.5px solid #fed7aa">'+
       '<div style="font-size:11px;font-weight:800;color:#c2410c;margin-bottom:8px;display:flex;align-items:center;gap:6px">'+
-        '<span>✨</span> AI Scope Helper'+
+        '<span>'+svgIcon('✨',{size:12,color:'#c2410c'})+'</span> AI Scope Helper'+
         '<span style="font-size:10px;font-weight:500;color:#9a3412;margin-left:4px">— describe what you see, we\'ll suggest the equipment</span>'+
       '</div>'+
       '<textarea id="ind-desc-inp" rows="2" placeholder="e.g. Two small drum dryers, a baghouse, and the control house — heavy rust on dryers, last painted 5+ years ago" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1.5px solid #fed7aa;border-radius:var(--r);background:#fff;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;margin-bottom:8px"></textarea>'+
@@ -3238,7 +3238,7 @@ function _renderIndModal(){
 
     // ── Paint & Color Specs ──
     '<div style="margin-top:14px;padding:12px;background:var(--bg2);border-radius:var(--r);border:1px solid var(--border2)">'+
-      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:10px">🎨 Paint & Color Specs</div>'+
+      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:10px">'+svgIcon('🎨',{size:10})+' Paint & Color Specs</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">'+
         '<div>'+
           '<div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px">Topcoat color</div>'+
@@ -3263,8 +3263,8 @@ function _renderIndModal(){
 
     // ── Actions ──
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">'+
-      '<button onclick="_saveIndBid()" style="padding:14px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">💾 Save Draft</button>'+
-      '<button onclick="_sendIndProposal()" style="padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">🔗 Save & Send to Client</button>'+
+      '<button onclick="_saveIndBid()" style="padding:14px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('💾',{size:14})+' Save Draft</button>'+
+      '<button onclick="_sendIndProposal()" style="padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('🔗',{size:14,color:'#fff'})+' Save & Send to Client</button>'+
     '</div>'+
     '</div>';
   _renderIndPieces();_renderIndResult();
@@ -3319,7 +3319,7 @@ function _renderIndPieces(){
           '<div style="font-size:12px;font-weight:700;color:var(--text)">'+(p.qty>1?p.qty+'× ':'')+p.name+'</div>'+
           '<div style="font-size:10px;color:var(--text3);margin-top:1px">'+
             (totalSqft?'~'+totalSqft.toLocaleString()+' sq ft':'custom sq ft')+
-            (p.lift?' · <span style="color:#c2410c;font-weight:600">⚠️ Lift needed</span>':'')+
+            (p.lift?' · <span style="color:#c2410c;font-weight:600">'+svgIcon('⚠',{size:10,color:'#c2410c'})+' Lift needed</span>':'')+
             (p.note?' · '+escHtml(p.note):'')+
           '</div>'+
         '</div>'+
@@ -3357,8 +3357,8 @@ function _renderIndResult(){
   }
   const crewLabel=r.crew===1?'Solo — you handle it':r.crew===2?'You + 1 helper needed':r.crew===3?'3-person crew needed':'Full 4-person crew';
   const crewColor=r.crew===1?'#16a34a':r.crew===2?'#2563eb':r.crew>=3?'#d97706':'#1a1a1a';
-  const liftLine=r.liftNeeded?'<div style="margin-top:6px;padding:7px 10px;background:#fff7ed;border-radius:var(--r);font-size:11px;color:#c2410c;font-weight:600">⚠️ Man-lift rental likely needed (~$350/day) — add as line item if not on site</div>':'';
-  const scaffLine=r.flags.some(f=>f&&f.includes('Scaffolding'))?'<div style="margin-top:6px;padding:7px 10px;background:#fef9c3;border-radius:var(--r);font-size:11px;color:#854d0e;font-weight:600">🏗️ Scaffolding may be needed on one or more pieces — verify on-site</div>':'';
+  const liftLine=r.liftNeeded?'<div style="margin-top:6px;padding:7px 10px;background:#fff7ed;border-radius:var(--r);font-size:11px;color:#c2410c;font-weight:600">'+svgIcon('⚠',{size:11,color:'#c2410c'})+' Man-lift rental likely needed (~$350/day) — add as line item if not on site</div>':'';
+  const scaffLine=r.flags.some(f=>f&&f.includes('Scaffolding'))?'<div style="margin-top:6px;padding:7px 10px;background:#fef9c3;border-radius:var(--r);font-size:11px;color:#854d0e;font-weight:600">'+svgIcon('🏗',{size:11,color:'#854d0e'})+' Scaffolding may be needed on one or more pieces — verify on-site</div>':'';
   el.innerHTML=
     '<div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);border-radius:var(--r);padding:16px;color:#fff">'+
       '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;opacity:.7;margin-bottom:10px">Estimate Summary</div>'+
@@ -3434,11 +3434,11 @@ async function _sendIndProposal(){
   const resolvedTopcoat=color||(tier.products.split('→')[1]?.trim()||'Per spec');
   const equipRows=_indPieces.map(p=>{
     const totalSqft=p.qty*p.sqft;
-    return `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 14px;font-size:12px;font-weight:600;color:#2d3748">${escHtml(p.name)}</td><td style="padding:9px 8px;text-align:center;font-size:12px;color:#64748b">${p.qty}</td><td style="padding:9px 8px;text-align:right;font-size:12px;color:#64748b">${totalSqft?totalSqft.toLocaleString():'-'}</td><td style="padding:9px 14px;font-size:11px;color:#94a3b8">${escHtml(p.note||'')}${p.lift?' ⚠️ Lift':''}${p.note&&p.lift?' / ':''}</td></tr>`;
+    return `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 14px;font-size:12px;font-weight:600;color:#2d3748">${escHtml(p.name)}</td><td style="padding:9px 8px;text-align:center;font-size:12px;color:#64748b">${p.qty}</td><td style="padding:9px 8px;text-align:right;font-size:12px;color:#64748b">${totalSqft?totalSqft.toLocaleString():'-'}</td><td style="padding:9px 14px;font-size:11px;color:#94a3b8">${escHtml(p.note||'')}${p.lift?' '+svgIcon('⚠',{size:11,color:'#94a3b8'})+' Lift':''}${p.note&&p.lift?' / ':''}</td></tr>`;
   }).join('');
-  const liftWarning=r.liftNeeded?'<div style="padding:10px 18px;background:#fff7ed;border-bottom:1px solid #fed7aa;font-size:11px;color:#c2410c;font-weight:600">⚠️ Man-lift rental likely required (~$350/day) — verify availability before scheduling</div>':'';
+  const liftWarning=r.liftNeeded?'<div style="padding:10px 18px;background:#fff7ed;border-bottom:1px solid #fed7aa;font-size:11px;color:#c2410c;font-weight:600">'+svgIcon('⚠',{size:11,color:'#c2410c'})+' Man-lift rental likely required (~$350/day) — verify availability before scheduling</div>':'';
   const notesSection=notes?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6"><strong style="color:#7c2d12">Site Notes:</strong> ${escHtml(notes)}</div>`:'';
-  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#7c2d12 0%,#c2410c 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">🏗️ Industrial Coating Estimate</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#7c2d12">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#7c2d12">Industrial Equipment Coating</div><div style="font-size:11px;color:#718096;margin-top:3px">${tier.badge} ${tier.name} Specification</div><div style="font-size:11px;color:#718096;margin-top:2px">Valid 30 days from date above</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Equipment</th><th style="padding:8px 8px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:40px">Qty</th><th style="padding:8px 8px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:72px">~Sq Ft</th><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px">Notes</th></tr></thead><tbody>${equipRows}</tbody></table><div style="padding:14px 18px;border-top:1px solid #e2e8f0;background:#fafafa"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px">Coating Specification</div><div style="font-size:12px;color:#374151;line-height:1.9"><div><strong>Prep method:</strong> ${escHtml(tier.desc)}</div><div><strong>Primer:</strong> ${escHtml(resolvedPrimer)}</div><div><strong>Topcoat:</strong> ${escHtml(resolvedTopcoat)}</div><div><strong>Finish:</strong> ${escHtml(finish)}</div>${colorNotes?`<div><strong>Color notes:</strong> ${escHtml(colorNotes)}</div>`:''}</div></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0"><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Surface Area</div><div style="font-size:16px;font-weight:800;color:#374151">${r.totalSqft.toLocaleString()} sqft</div></div><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Duration</div><div style="font-size:16px;font-weight:800;color:#374151">${r.calDays}–${r.calDays+1} days</div></div><div style="padding:12px 14px"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Crew</div><div style="font-size:16px;font-weight:800;color:#374151">${crewLabel}</div></div></div>${liftWarning}<table style="width:100%;border-collapse:collapse"><tr style="background:#7c2d12;color:#fff"><td style="padding:12px 18px;font-weight:800;font-size:13px">ESTIMATE RANGE</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:14px">${rangeStr}</td></tr><tr style="background:#c2410c;color:rgba(255,255,255,.88)"><td style="padding:7px 18px;font-size:12px;font-weight:800">MIDPOINT BID</td><td style="padding:7px 18px;text-align:right;font-size:13px;font-weight:800">${totalFmt}</td></tr><tr style="background:#9a3412;color:rgba(255,255,255,.85)"><td style="padding:6px 18px;font-size:11px;font-weight:600">25% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr></table>${notesSection}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div><div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> 25% due before work begins.</div><div>2. <strong>Balance:</strong> Remainder due upon completion.</div><div>3. <strong>Warranty:</strong> All workmanship warranted for 1 year.</div></div></div></div>`;
+  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#7c2d12 0%,#c2410c 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">${svgIcon('🏗',{size:11,color:'#fff'})} Industrial Coating Estimate</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#7c2d12">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#7c2d12">Industrial Equipment Coating</div><div style="font-size:11px;color:#718096;margin-top:3px">${tier.badge} ${tier.name} Specification</div><div style="font-size:11px;color:#718096;margin-top:2px">Valid 30 days from date above</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Equipment</th><th style="padding:8px 8px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:40px">Qty</th><th style="padding:8px 8px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:72px">~Sq Ft</th><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px">Notes</th></tr></thead><tbody>${equipRows}</tbody></table><div style="padding:14px 18px;border-top:1px solid #e2e8f0;background:#fafafa"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px">Coating Specification</div><div style="font-size:12px;color:#374151;line-height:1.9"><div><strong>Prep method:</strong> ${escHtml(tier.desc)}</div><div><strong>Primer:</strong> ${escHtml(resolvedPrimer)}</div><div><strong>Topcoat:</strong> ${escHtml(resolvedTopcoat)}</div><div><strong>Finish:</strong> ${escHtml(finish)}</div>${colorNotes?`<div><strong>Color notes:</strong> ${escHtml(colorNotes)}</div>`:''}</div></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0"><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Surface Area</div><div style="font-size:16px;font-weight:800;color:#374151">${r.totalSqft.toLocaleString()} sqft</div></div><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Duration</div><div style="font-size:16px;font-weight:800;color:#374151">${r.calDays}–${r.calDays+1} days</div></div><div style="padding:12px 14px"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Crew</div><div style="font-size:16px;font-weight:800;color:#374151">${crewLabel}</div></div></div>${liftWarning}<table style="width:100%;border-collapse:collapse"><tr style="background:#7c2d12;color:#fff"><td style="padding:12px 18px;font-weight:800;font-size:13px">ESTIMATE RANGE</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:14px">${rangeStr}</td></tr><tr style="background:#c2410c;color:rgba(255,255,255,.88)"><td style="padding:7px 18px;font-size:12px;font-weight:800">MIDPOINT BID</td><td style="padding:7px 18px;text-align:right;font-size:13px;font-weight:800">${totalFmt}</td></tr><tr style="background:#9a3412;color:rgba(255,255,255,.85)"><td style="padding:6px 18px;font-size:11px;font-weight:600">25% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr></table>${notesSection}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div><div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> 25% due before work begins.</div><div>2. <strong>Balance:</strong> Remainder due upon completion.</div><div>3. <strong>Warranty:</strong> All workmanship warranted for 1 year.</div></div></div></div>`;
   const token=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
   const proposalKey=`proposals/${_supaUser.id}/${_indBidId}_${token}.json`;
   const _indYearBuilt=c?c.yearBuilt||null:null;
@@ -3550,7 +3550,7 @@ function _geiSignInPerson(){
   ov.innerHTML=
     '<div style="background:var(--bg-card,#fff);border-radius:18px 18px 0 0;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;box-sizing:border-box">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px;border-bottom:1px solid var(--border)">'+
-        '<div style="font-size:17px;font-weight:800">✍️ Sign in person</div>'+
+        '<div style="font-size:17px;font-weight:800">'+svgIcon('✍',{size:17})+' Sign in person</div>'+
         '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null" style="background:none;border:none;font-size:22px;color:var(--text3);cursor:pointer;padding:0;line-height:1">×</button>'+
       '</div>'+
       '<div style="padding:14px 18px 28px">'+
@@ -3655,7 +3655,7 @@ async function _geiConfirmInPerson(){
   const dtFmt=new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
   if(ov){
     ov.innerHTML='<div style="background:var(--bg-card,#fff);border-radius:18px 18px 0 0;width:100%;max-width:520px;padding:32px 24px 40px;box-sizing:border-box;text-align:center">'+
-      '<div style="font-size:48px;margin-bottom:12px">✅</div>'+
+      '<div style="font-size:48px;margin-bottom:12px">'+svgIcon('✅',{size:48,color:'#16a34a'})+'</div>'+
       '<div style="font-size:20px;font-weight:900;color:var(--text);margin-bottom:8px">You\'re all set!</div>'+
       '<div style="font-size:14px;color:var(--text3);margin-bottom:24px">The contract has been signed.</div>'+
       '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:16px;margin-bottom:24px;text-align:left">'+
@@ -3665,7 +3665,7 @@ async function _geiConfirmInPerson(){
         '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #dcfce7"><span style="color:#374151">Signed by</span><strong>'+escHtml(pname)+'</strong></div>'+
         '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0"><span style="color:#374151">Date &amp; time</span><span>'+dtFmt+'</span></div>'+
       '</div>'+
-      '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null;goPg(\'pg-dash\');setTimeout(showScheduleAlerts,400)" style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit">🏠 Back to home</button>'+
+      '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null;goPg(\'pg-dash\');setTimeout(showScheduleAlerts,400)" style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('🏠',{size:16,color:'#fff'})+' Back to home</button>'+
     '</div>';
   }
   // Background: write to signed_proposals + upload client hub

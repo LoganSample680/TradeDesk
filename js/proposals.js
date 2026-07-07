@@ -15,7 +15,7 @@ function renderGallery(){
   const filtered=photos.filter(p=>_galleryFilter==='all'||p.type===_galleryFilter);
   if(sub)sub.textContent=filtered.length+' photo'+(filtered.length!==1?'s':'');
   if(!filtered.length){
-    el.innerHTML='<div class="empty-state"><div class="empty-state-icon">📷</div><h3>No photos yet</h3><p>Tap "+ Add photos" to upload before/after shots of your jobs. Photos will appear in client proposals and portals.</p></div>';
+    el.innerHTML='<div class="empty-state"><div class="empty-state-icon">'+svgIcon('📷',{size:44})+'</div><h3>No photos yet</h3><p>Tap "+ Add photos" to upload before/after shots of your jobs. Photos will appear in client proposals and portals.</p></div>';
     return;
   }
   // Group by client
@@ -35,7 +35,7 @@ function renderGallery(){
         '<div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.6));padding:4px 6px">'+
           '<span style="font-size:9px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:.04em">'+escHtml(p.type)+'</span>'+
         '</div>'+
-        '<button onclick="event.stopPropagation();deletePhoto(\''+p.id+'\')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);border:none;color:#fff;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center">✕</button>'+
+        '<button onclick="event.stopPropagation();deletePhoto(\''+p.id+'\')" style="position:absolute;top:4px;right:4px;background:rgba(0,0,0,.5);border:none;color:#fff;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;line-height:1;display:flex;align-items:center;justify-content:center">'+svgIcon('✕',{size:12})+'</button>'+
       '</div>').join('')+
       '</div></div>';
   });
@@ -46,7 +46,7 @@ function openPhotoViewer(photoId){
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
   ov.innerHTML=
-    '<button onclick="this.closest(\'div\').remove()" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;line-height:1">✕</button>'+
+    '<button onclick="this.closest(\'div\').remove()" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;line-height:1">'+svgIcon('✕',{size:18})+'</button>'+
     '<img src="'+p.url+'" style="max-width:100%;max-height:80vh;border-radius:var(--r);object-fit:contain">'+
     '<div style="margin-top:12px;text-align:center">'+
       '<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.06em">'+escHtml(p.type)+'</div>'+
@@ -74,19 +74,19 @@ function openGalleryUpload(jobId,clientId){
   const jobOptions=jobs.filter(j=>j.status==='done'||j.status==='active').slice(0,30)
     .map(j=>'<option value="'+j.id+'"'+(jobId===j.id?' selected':'')+'>'+escHtml(j.name)+' — '+escHtml(clients.find(c=>c.id===j.client_id)?.name||'')+'</option>').join('');
   box.innerHTML=
-    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">📷 Add photo</div>'+
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('📷')+' Add photo</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">Upload a job photo to your gallery</div>'+
     '<div class="f" style="margin-bottom:12px"><label>Photo type</label>'+
       '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">'+
         ['before','after','progress'].map(t=>'<label style="display:flex;align-items:center;justify-content:center;gap:4px;padding:10px;border:2px solid var(--border2);border-radius:var(--r);cursor:pointer;font-size:13px;font-weight:600">'+
           '<input type="radio" name="photo-type" value="'+t+'" style="display:none" onchange="this.closest(\'label\').closest(\'div\').querySelectorAll(\'label\').forEach(l=>l.style.borderColor=\'var(--border2)\');this.closest(\'label\').style.borderColor=\'var(--blue)\'">'+
-          {before:'📸 Before',after:'✅ After',progress:'🔨 Progress'}[t]+'</label>').join('')+
+          {before:svgIcon('📸')+' Before',after:svgIcon('✅')+' After',progress:svgIcon('🔨')+' Progress'}[t]+'</label>').join('')+
       '</div>'+
     '</div>'+
     (jobOptions?'<div class="f" style="margin-bottom:12px"><label>Job <span style="font-weight:400;color:var(--text3)">(optional)</span></label><select id="gup-job" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;color:var(--text);font-family:inherit"><option value="">— No job selected —</option>'+jobOptions+'</select></div>':'')+
     '<div class="f" style="margin-bottom:12px"><label>Caption <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input id="gup-caption" placeholder="e.g. Living room accent wall" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;color:var(--text);font-family:inherit"></div>'+
     '<input type="file" id="gup-file" accept="image/*" multiple style="display:none" onchange="processGalleryUpload(this)">'+
-    '<button onclick="document.getElementById(\'gup-file\').click()" style="width:100%;padding:14px;border-radius:var(--r);border:2px dashed var(--border2);background:var(--bg);color:var(--text2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">📂 Choose photos</button>'+
+    '<button onclick="document.getElementById(\'gup-file\').click()" style="width:100%;padding:14px;border-radius:var(--r);border:2px dashed var(--border2);background:var(--bg);color:var(--text2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📂')+' Choose photos</button>'+
     '<div id="gup-status" style="font-size:12px;color:var(--text3);text-align:center;min-height:16px;margin-bottom:8px"></div>'+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
@@ -127,7 +127,7 @@ async function processGalleryUpload(input){
     }catch(e){console.warn('photo upload:',e);}
   }
   saveAll();renderGallery();
-  if(status)status.textContent='✓ '+uploaded+' photo'+(uploaded!==1?'s':'')+' added';
+  if(status)status.innerHTML=svgIcon('✓')+' '+uploaded+' photo'+(uploaded!==1?'s':'')+' added';
   showToast(uploaded+' photo'+(uploaded!==1?'s':'')+' added to gallery','📷');
 }
 
@@ -333,15 +333,22 @@ function sendClientHubLink(clientId){
   const ov=document.createElement('div');ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
-    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">📋 Client Hub ready</div>'+
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('📋')+' Client Hub ready</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+escHtml(c.name||'Client')+' · view proposals, pay balance, download invoices</div>'+
     '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:11px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+url+'</div>'+
-    '<button onclick="navigator.clipboard.writeText(\''+url+'\').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">📋 Copy link</button>'+
-    (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+firstName+', here\\\'s your project hub from '+biz+' — view your proposals, pay your balance, and download invoices anytime: '+url+'\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">📱 Send via Messages</button>':'')+
+    '<button id="_hub-copy-link-btn" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📋')+' Copy link</button>'+
+    (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+firstName+', here\\\'s your project hub from '+biz+' — view your proposals, pay your balance, and download invoices anytime: '+url+'\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱')+' Send via Messages</button>':'')+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   navigator.clipboard.writeText(url).catch(()=>{});
+  // Wired via addEventListener (not an inline onclick string) since the success
+  // state swaps in an SVG icon — inline HTML attributes can't safely carry the
+  // quote characters an <svg ...> tag needs.
+  box.querySelector('#_hub-copy-link-btn')?.addEventListener('click',function(){
+    navigator.clipboard.writeText(url).then(()=>showToast('Copied!','📋'));
+    this.innerHTML=svgIcon('✓')+' Copied';
+  });
 }
 async function _refreshClientHub(clientId){
   const c=clients.find(x=>x.id===clientId);
@@ -376,10 +383,10 @@ function showHubMenu(clientId){
   hdr.style.cssText='text-align:center;padding-bottom:4px';
   hdr.innerHTML='<div style="width:36px;height:4px;background:var(--border2);border-radius:2px;margin:0 auto 12px"></div>'
     +'<div style="font-size:14px;font-weight:700;color:var(--text2)">Client Hub</div>';
-  const mkBtn=(label,bg,color,fn)=>{const b=document.createElement('button');b.textContent=label;b.style.cssText='padding:14px;border:none;border-radius:var(--r);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;background:'+bg+';color:'+color;b.onclick=fn;return b;};
+  const mkBtn=(label,bg,color,fn)=>{const b=document.createElement('button');b.innerHTML=label;b.style.cssText='padding:14px;border:none;border-radius:var(--r);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;background:'+bg+';color:'+color;b.onclick=fn;return b;};
   sheet.appendChild(hdr);
-  sheet.appendChild(mkBtn('📋  Copy link','var(--blue)','#fff',()=>{navigator.clipboard.writeText(hubUrl).then(()=>showToast('Hub link copied','📋')).catch(()=>showToast('Copy failed','⚠️'));ov.remove();}));
-  sheet.appendChild(mkBtn('🔗  Open hub','var(--blue-lt)','var(--blue)',()=>{ov.remove();window.location.href=hubUrl;}));
+  sheet.appendChild(mkBtn(svgIcon('📋')+'  Copy link','var(--blue)','#fff',()=>{navigator.clipboard.writeText(hubUrl).then(()=>showToast('Hub link copied','📋')).catch(()=>showToast('Copy failed','⚠️'));ov.remove();}));
+  sheet.appendChild(mkBtn(svgIcon('🔗')+'  Open hub','var(--blue-lt)','var(--blue)',()=>{ov.remove();window.location.href=hubUrl;}));
   sheet.appendChild(mkBtn('← Back','var(--bg2)','var(--text2)',()=>ov.remove()));
   ov.appendChild(sheet);
   document.body.appendChild(ov);
@@ -394,7 +401,7 @@ function copyProposalLink(){
   if(!input)return;
   navigator.clipboard.writeText(input.value).catch(()=>{input.select();document.execCommand('copy');});
   const btn=document.querySelector('[onclick="copyProposalLink()"]');
-  if(btn){btn.textContent='✓ Copied!';setTimeout(()=>btn.textContent='📋 Copy link',2000);}
+  if(btn){btn.innerHTML=svgIcon('✓')+' Copied!';setTimeout(()=>btn.innerHTML=svgIcon('📋')+' Copy link',2000);}
 }
 function shareProposalLink(){
   const d=_proposalShareData();
@@ -414,12 +421,12 @@ function _showGeiSendOverlay(){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   ov.innerHTML=
     '<div style="width:100%;max-width:420px;background:var(--bg);border-radius:var(--r);padding:22px 16px 24px;box-sizing:border-box">'+
-      '<div style="font-size:15px;font-weight:800;color:var(--blue-dk);margin-bottom:16px;text-align:center">✓ Link ready — send to client</div>'+
+      '<div style="font-size:15px;font-weight:800;color:var(--blue-dk);margin-bottom:16px;text-align:center">'+svgIcon('✓')+' Link ready — send to client</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'+
-        '<button onclick="_doGeiSend(\'sms\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">📱 Text</button>'+
-        '<button onclick="_doGeiSend(\'email\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">✉️ Email</button>'+
+        '<button onclick="_doGeiSend(\'sms\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">'+svgIcon('📱')+' Text</button>'+
+        '<button onclick="_doGeiSend(\'email\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">'+svgIcon('✉')+' Email</button>'+
       '</div>'+
-      '<button onclick="_doGeiSend(\'other\')" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">⬆️ Other app (WhatsApp, AirDrop…)</button>'+
+      '<button onclick="_doGeiSend(\'other\')" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">'+svgIcon('⬆️')+' Other app (WhatsApp, AirDrop…)</button>'+
       '<div style="font-size:11px;color:var(--text3);margin-top:10px;text-align:center">Bid saved as Pending. You\'ll get a follow-up reminder in 3 days if no response.</div>'+
     '</div>';
   document.body.appendChild(ov);
@@ -499,8 +506,8 @@ function _showEmailComposeModal(d,opts){
   ov.innerHTML=
     '<div style="width:100%;max-width:520px;max-height:90vh;overflow-y:auto;background:var(--bg);border-radius:var(--r);padding:20px 16px 28px;box-sizing:border-box">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'+
-        '<div style="font-size:17px;font-weight:800">'+((opts&&opts.title)||'✉️ Email proposal')+'</div>'+
-        '<button onclick="document.getElementById(\'_email-compose-overlay\').remove()" style="background:none;border:none;font-size:22px;color:var(--text3);cursor:pointer;padding:0 4px;font-family:inherit">✕</button>'+
+        '<div style="font-size:17px;font-weight:800">'+((opts&&opts.title)||svgIcon('✉')+' Email proposal')+'</div>'+
+        '<button onclick="document.getElementById(\'_email-compose-overlay\').remove()" style="background:none;border:none;font-size:22px;color:var(--text3);cursor:pointer;padding:0 4px;font-family:inherit">'+svgIcon('✕',{size:18})+'</button>'+
       '</div>'+
       '<div style="margin-bottom:10px">'+
         '<label style="font-size:12px;font-weight:700;color:var(--text2);display:block;margin-bottom:4px">To</label>'+
@@ -680,11 +687,11 @@ function _showLocModal(onGranted,onDenied){
   box.className='zmodal';
   box.innerHTML=
     '<div style="text-align:center;margin-bottom:16px">'+
-      '<div style="font-size:40px;margin-bottom:10px">📍</div>'+
+      '<div style="font-size:40px;margin-bottom:10px">'+svgIcon('📍',{size:40})+'</div>'+
       '<div style="font-size:18px;font-weight:800;margin-bottom:6px">Allow location access?</div>'+
       '<div style="font-size:13px;color:var(--text2);line-height:1.6">TradeDesk uses your location for:<br>'+
-      '<strong>🌤 Live weather</strong> on your calendar<br>'+
-      '<strong>🚗 GPS tracking</strong> for mileage deductions<br><br>'+
+      '<strong>'+svgIcon('🌤')+' Live weather</strong> on your calendar<br>'+
+      '<strong>'+svgIcon('🚗')+' GPS tracking</strong> for mileage deductions<br><br>'+
       'Your location is never shared or stored on our servers — it stays on your device only.</div>'+
     '</div>'+
     '<button id="loc-allow-btn" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Allow location access</button>'+
@@ -769,8 +776,8 @@ async function renderCalGrid(){
       '</div>'+
       (wx?'<div style="font-size:9px;color:'+(wx.rain?'#A32D2D':'var(--text3)')+';font-weight:600;margin-bottom:1px;line-height:1">'+wx.hi+'°/'+wx.lo+'°'+(wx.precip>20?' · '+wx.precip+'%':'')+'</div>':'')+
       dj.map(({job,isBuf})=>{
-        if(job.eventType==='task'){const done=job.status==='done';return'<div class="cjob" style="background:'+(done?'#9CA3AF':'#6366F1')+';font-size:9px">'+(done?'✓ ':'☐ ')+escHtml(job.name)+'</div>';}
-        return'<div class="cjob" style="background:'+(isBuf?lighten(job.color):job.color)+';'+(isBuf?'color:'+job.color+';':'')+'">'+(isBuf?'buf':(job.eventType==='estimate'?'📋 ':'')+escHtml(job.name))+'</div>';
+        if(job.eventType==='task'){const done=job.status==='done';return'<div class="cjob" style="background:'+(done?'#9CA3AF':'#6366F1')+';font-size:9px">'+(done?svgIcon('✓',{size:10})+' ':svgIcon('☐',{size:10})+' ')+escHtml(job.name)+'</div>';}
+        return'<div class="cjob" style="background:'+(isBuf?lighten(job.color):job.color)+';'+(isBuf?'color:'+job.color+';':'')+'">'+(isBuf?'buf':(job.eventType==='estimate'?svgIcon('📋',{size:10})+' ':'')+escHtml(job.name))+'</div>';
       }).join('')+
     '</div>';
   });
@@ -826,7 +833,7 @@ function expandCalDay(key){
           const done=job.status==='done';
           return '<div style="display:flex;align-items:flex-start;gap:10px;padding:9px 10px;background:var(--bg2);border-radius:var(--r);margin-bottom:4px'+(done?';opacity:.6':'')+'">'+
             '<button onclick="completeCalTask('+job.id+')" style="border:none;background:none;cursor:pointer;padding:0;margin-top:1px;flex-shrink:0;font-size:17px;line-height:1;color:'+(done?'#6366F1':'var(--text3)')+'">'+
-              (done?'☑':'☐')+
+              (done?svgIcon('☑',{size:17}):svgIcon('☐',{size:17}))+
             '</button>'+
             '<div style="flex:1;min-width:0">'+
               '<div style="font-size:13px;font-weight:700'+(done?';text-decoration:line-through;color:var(--text3)':'')+'">'+
@@ -882,7 +889,7 @@ function expandCalDay(key){
               const c=job.client_id?getClientById(job.client_id):null;
               const isEst=job.eventType==='estimate';
               return '<div style="background:'+job.color+';border-radius:var(--r);padding:8px 10px;margin-bottom:4px;color:#fff">'+
-                '<div style="font-size:11px;font-weight:800;text-transform:uppercase;opacity:.85;margin-bottom:2px">'+(isEst?'📋 Estimate':'🎨 Paint job')+'</div>'+
+                '<div style="font-size:11px;font-weight:800;text-transform:uppercase;opacity:.85;margin-bottom:2px">'+(isEst?svgIcon('📋')+' Estimate':svgIcon('🎨')+' Paint job')+'</div>'+
                 '<div style="font-size:13px;font-weight:700">'+job.name+'</div>'+
                 '<div style="font-size:10px;opacity:.9;margin-top:1px">'+(job.hours?job.hours+'hr':'')+(job.addr?' · '+job.addr:'')+'</div>'+
                 '<div style="display:flex;gap:6px;margin-top:6px">'+
@@ -1019,7 +1026,7 @@ function showKpiChart(type){
   box.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'+
       '<div style="font-size:15px;font-weight:800">'+titles[type]+'</div>'+
-      '<button id="kpi-chart-close" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">✕</button>'+
+      '<button id="kpi-chart-close" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">'+svgIcon('✕',{size:18})+'</button>'+
     '</div>'+
     '<div id="bc-callout" style="min-height:36px;display:flex;align-items:center;justify-content:center;margin-bottom:4px">'+
       '<span style="font-size:12px;color:var(--text3)">Tap a bar to see value</span>'+
@@ -1071,7 +1078,7 @@ function markBidHandshake(bidId){
       saveAll();renderCDBids();renderDash();
       showToast('Marked as handshake — no signed contract on file','🤝');
     },
-    {title:'🤝 Handshake deal — are you sure?',yes:'Yes, proceed without signature',no:'Cancel',danger:true}
+    {title:svgIcon('🤝')+' Handshake deal — are you sure?',yes:'Yes, proceed without signature',no:'Cancel',danger:true}
   );
 }
 function markBidAbandoned(bidId,cid){markFUAbandoned(bidId,cid);}
@@ -1103,7 +1110,7 @@ function goToExpenses(){goToTrackerTab('expenses');}
 function showWorkflowGate(msg,btnLabel,btnAction){
   const o=document.createElement('div');o.className='zmodal-overlay';
   o.innerHTML='<div class="zmodal" style="text-align:center">'+
-    '<div style="font-size:32px;margin-bottom:10px">⚠️</div>'+
+    '<div style="font-size:32px;margin-bottom:10px">'+svgIcon('⚠',{size:32})+'</div>'+
     '<div style="font-size:16px;font-weight:800;margin-bottom:8px">One step first</div>'+
     '<div style="font-size:13px;color:var(--text3);margin-bottom:18px;line-height:1.5">'+msg+'</div>'+
     '<button onclick="('+btnAction+')();document.querySelector(\'.zmodal-overlay\')?.remove()" '+
@@ -1139,7 +1146,7 @@ function showChangeOrderModal(bidId,clientId){
         '<div style="font-size:18px;font-weight:800">Change Order #'+coNum+'</div>'+
         '<div style="font-size:12px;color:var(--text3);margin-top:2px">'+escHtml(c.name)+'</div>'+
       '</div>'+
-      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:var(--bg2);border:1px solid var(--border2);color:var(--text3);font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1">✕</button>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:var(--bg2);border:1px solid var(--border2);color:var(--text3);font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1">'+svgIcon('✕',{size:16})+'</button>'+
     '</div>'+
     // Original contract box
     '<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:12px 14px;margin-bottom:16px">'+
@@ -1282,10 +1289,10 @@ function _showCOSignDocument(b,c,coData,clientId){
       // Action buttons
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
         '<button onclick="this.closest(\'[style*=fixed]\').remove();showChangeOrderModal('+b.id+','+clientId+')" style="padding:13px;border-radius:8px;border:1.5px solid #d1d5db;background:#f9fafb;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:#374151">← Back</button>'+
-        '<button onclick="_submitCOSign('+b.id+','+clientId+')" style="padding:13px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">✓ Sign Change Order</button>'+
+        '<button onclick="_submitCOSign('+b.id+','+clientId+')" style="padding:13px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✓')+' Sign Change Order</button>'+
       '</div>'+
       // Remote option — client reviews & signs from their hub instead of in person
-      '<button id="co-send-hub-btn" onclick="_sendCOToHub('+b.id+','+clientId+')" style="width:100%;margin-top:10px;padding:13px;border-radius:8px;border:1.5px solid #2563eb;background:#EFF6FF;color:#1d4ed8;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">📤 Send to Client Hub — client signs remotely</button>'+
+      '<button id="co-send-hub-btn" onclick="_sendCOToHub('+b.id+','+clientId+')" style="width:100%;margin-top:10px;padding:13px;border-radius:8px;border:1.5px solid #2563eb;background:#EFF6FF;color:#1d4ed8;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('📤')+' Send to Client Hub — client signs remotely</button>'+
     '</div>';
   ov.appendChild(doc);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov){_coSignDrawing=false;ov.remove();}});
@@ -1425,12 +1432,12 @@ function _showCONotifyModal(clientId,coNum){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   ov.innerHTML=
     '<div style="width:100%;max-width:420px;background:var(--bg);border-radius:var(--r);padding:22px 16px 24px;box-sizing:border-box">'+
-      '<div style="font-size:15px;font-weight:800;color:var(--blue-dk);margin-bottom:16px;text-align:center">✓ CO #'+coNum+' ready — send to client</div>'+
+      '<div style="font-size:15px;font-weight:800;color:var(--blue-dk);margin-bottom:16px;text-align:center">'+svgIcon('✓')+' CO #'+coNum+' ready — send to client</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'+
-        '<button onclick="_doCOSend(\'sms\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">📱 Text</button>'+
-        '<button onclick="_doCOSend(\'email\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">✉️ Email</button>'+
+        '<button onclick="_doCOSend(\'sms\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">'+svgIcon('📱')+' Text</button>'+
+        '<button onclick="_doCOSend(\'email\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">'+svgIcon('✉')+' Email</button>'+
       '</div>'+
-      '<button onclick="_doCOSend(\'other\')" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">⬆️ Other app (WhatsApp, AirDrop…)</button>'+
+      '<button onclick="_doCOSend(\'other\')" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">'+svgIcon('⬆️')+' Other app (WhatsApp, AirDrop…)</button>'+
       '<div style="font-size:11px;color:var(--text3);margin-top:10px;text-align:center">'+escHtml(c.name||'The client')+' signs the change order in their project hub.</div>'+
     '</div>';
   document.body.appendChild(ov);
@@ -1454,7 +1461,7 @@ function _sendCOViaEmail(){
   const d=_coShareData;if(!d)return;
   const firstName=d.cname.split(/[\s,&]+/)[0];
   _showEmailComposeModal(d,{
-    title:'✉️ Email change order',
+    title:svgIcon('✉')+' Email change order',
     subject:'Change Order #'+d.coNum+' from '+d.bname+' — signature needed',
     body:'Hey '+firstName+',\n\nQuick update on your project — Change Order #'+d.coNum+' is ready for your review. It lays out the change in scope and the updated contract total, and you can sign it right from your project hub:\n\n'+d.url+'\n\nDon\'t hesitate to reach out with any questions!\n\n'+d.bname,
     clientId:d.clientId,

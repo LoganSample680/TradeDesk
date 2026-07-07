@@ -3679,9 +3679,14 @@ test.describe('Scope of work — collapsed + sheet picker', () => {
       const before = [..._geiScopeChips];
       if (tile) tile.click();
       const after = [..._geiScopeChips];
-      // Tile should now show a checkmark in its _sc-ck element
+      // Tile should now show a checkmark in its _sc-ck element. Old behavior:
+      // the checkmark was a literal '✓' text character. New behavior (this
+      // session's icon-system migration): it's rendered via svgIcon('✓'), an
+      // inline <svg> — an SVG element contributes no text, so textContent is
+      // now empty even when the checkmark correctly renders. Assert on the
+      // <svg> markup instead.
       const ck = tile ? tile.querySelector('._sc-ck') : null;
-      const checked = ck ? ck.textContent.trim() === '✓' : false;
+      const checked = ck ? ck.innerHTML.includes('<svg') : false;
       sheet.remove();
       return { hasPrice, tileId, beforeLen: before.length, afterLen: after.length, checked };
     });

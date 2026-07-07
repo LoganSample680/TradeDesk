@@ -29,7 +29,7 @@ function renderCDOpportunities(){
       const m=TRADE_META[o.trade_type]||{icon:'🔧',label:o.trade_type||'Trade'};
       return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid var(--border)">'+
         '<div style="display:flex;align-items:center;gap:10px;min-width:0;flex:1">'+
-          '<div style="font-size:20px;flex-shrink:0">'+m.icon+'</div>'+
+          '<div style="font-size:20px;flex-shrink:0">'+svgIcon(m.icon,{size:20})+'</div>'+
           '<div style="min-width:0"><div style="font-size:13px;font-weight:700">'+escHtml(o.type)+'</div>'+
           '<div style="font-size:11px;color:var(--text3)">'+m.label+(o.notes?' · '+escHtml((o.notes||'').substring(0,40)):'')+'</div></div>'+
         '</div>'+
@@ -53,7 +53,7 @@ function openAddOpportunity(){
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">Track cross-trade work for '+escHtml(c.name)+'</div>'+
     '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">Trade</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px" id="opp-trade-grid">'+
-    lines.map(id=>{const m=TRADE_META[id]||{icon:'🔧',label:id};const sel=id===_oppSelTrade;return'<button onclick="oppPickTrade(\''+id+'\')" id="opptrade-'+id+'" style="padding:10px 8px;border-radius:var(--r);border:2px solid '+(sel?'var(--blue)':'var(--border2)')+';background:'+(sel?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;text-align:center;font-size:12px;font-weight:'+(sel?700:400)+'"><div style="font-size:18px;margin-bottom:2px">'+m.icon+'</div>'+m.label+'</button>';}).join('')+
+    lines.map(id=>{const m=TRADE_META[id]||{icon:'🔧',label:id};const sel=id===_oppSelTrade;return'<button onclick="oppPickTrade(\''+id+'\')" id="opptrade-'+id+'" style="padding:10px 8px;border-radius:var(--r);border:2px solid '+(sel?'var(--blue)':'var(--border2)')+';background:'+(sel?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;text-align:center;font-size:12px;font-weight:'+(sel?700:400)+'"><div style="font-size:18px;margin-bottom:2px">'+svgIcon(m.icon,{size:18})+'</div>'+m.label+'</button>';}).join('')+
     '</div>'+
     '<div style="margin-bottom:12px"><div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:6px">Description</div><input id="opp-title" type="text" placeholder="e.g. Electrical diagnostic, HVAC tune-up" style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
     '<div style="margin-bottom:14px"><div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:6px">Notes (optional)</div><input id="opp-notes" type="text" placeholder="Any details..." style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
@@ -151,7 +151,7 @@ function showJobScorecard(jobId,collectBidId){
   const ov=document.createElement('div');ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
-    '<div style="text-align:center;margin-bottom:4px;font-size:28px">🎉</div>'+
+    '<div style="text-align:center;margin-bottom:4px;font-size:28px">'+svgIcon('🎉',{size:28})+'</div>'+
     '<div style="font-size:18px;font-weight:800;text-align:center;margin-bottom:2px">Job Complete</div>'+
     '<div style="font-size:12px;color:var(--text3);text-align:center;margin-bottom:18px">'+escHtml(clientName)+'</div>'+
     '<div style="background:var(--bg2);border-radius:var(--r);padding:14px;margin-bottom:14px">'+
@@ -181,7 +181,7 @@ function showJobScorecard(jobId,collectBidId){
       const scopeRows=Object.entries(bd).filter(([,m])=>m>0).map(([sid,m])=>{
         const si=sid==='__other'?{icon:'➕',label:'Other'}:(SCOPE_ITEMS.find(x=>x.id===sid)||{icon:'⏱',label:sid});
         return '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0">'+
-          '<span style="font-size:12px;color:var(--text2)">'+si.icon+' '+si.label+'</span>'+
+          '<span style="font-size:12px;color:var(--text2)">'+svgIcon(si.icon,{size:12})+' '+si.label+'</span>'+
           '<span style="font-size:12px;font-weight:600;color:var(--text)">'+_fmtMin(m)+'</span>'+
         '</div>';
       }).join('');
@@ -195,7 +195,7 @@ function showJobScorecard(jobId,collectBidId){
       '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+j.client_id+')" '+
         'style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Close</button>'+
       (balance>0.01?'<button onclick="this.closest(\'.zmodal-overlay\').remove();openPayPanel('+collectBidId+',\'final\')" '+
-        'style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">💳 Collect '+fmt(balance)+' →</button>':'')+
+        'style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('💳',{size:14})+' Collect '+fmt(balance)+' →</button>':'')+
     '</div>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov){ov.remove();if(balance>0.01)openPayPanel(collectBidId,'final');}});
@@ -356,10 +356,10 @@ function showSupplyList(bidId){
 
   // ── Assemble sections ──────────────────────────────────────
   const sections=[
-    {id:'paint',label:'🎨 Paint',color:'#1a365d',bg:'#EBF2FB',items:paintItems},
-    {id:'prep',label:'🔧 Prep supplies',color:'#854F0B',bg:'#FFF7ED',items:scopeItems.filter(i=>i.cat==='prep')},
-    {id:'tools',label:'🪣 Tools & protection',color:'#2d6a4f',bg:'#F0FBF4',items:[...coreItems,...scopeItems].filter(i=>i.cat==='tools')},
-    {id:'rental',label:'🏗️ Rentals',color:'#5B21B6',bg:'#F5F3FF',items:scopeItems.filter(i=>i.cat==='rental')},
+    {id:'paint',label:svgIcon('🎨',{size:11})+' Paint',color:'#1a365d',bg:'#EBF2FB',items:paintItems},
+    {id:'prep',label:svgIcon('🔧',{size:11})+' Prep supplies',color:'#854F0B',bg:'#FFF7ED',items:scopeItems.filter(i=>i.cat==='prep')},
+    {id:'tools',label:svgIcon('🪣',{size:11})+' Tools & protection',color:'#2d6a4f',bg:'#F0FBF4',items:[...coreItems,...scopeItems].filter(i=>i.cat==='tools')},
+    {id:'rental',label:svgIcon('🏗',{size:11})+' Rentals',color:'#5B21B6',bg:'#F5F3FF',items:scopeItems.filter(i=>i.cat==='rental')},
   ].filter(s=>s.items.length>0);
 
   // ── Build modal ────────────────────────────────────────────
@@ -374,13 +374,13 @@ function showSupplyList(bidId){
   hdr.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
       '<div>'+
-        '<div style="font-size:18px;font-weight:800;line-height:1.1">📦 Supply List</div>'+
+        '<div style="font-size:18px;font-weight:800;line-height:1.1">'+svgIcon('📦',{size:18})+' Supply List</div>'+
         '<div style="font-size:12px;opacity:.85;margin-top:3px">'+escHtml(c?c.name:'Job')+' · '+(totalSqFt?totalSqFt.toLocaleString()+' sq ft · ':'')+totalRooms+' room'+(totalRooms!==1?'s':'')+' · '+coats+' coat'+(coats!==1?'s':'')+'</div>'+
       '</div>'+
-      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0">✕</button>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:rgba(255,255,255,.2);border:none;color:#fff;font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0">'+svgIcon('✕',{size:18})+'</button>'+
     '</div>'+
     '<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">'+
-      '<button onclick="supplyCheckAll(this)" style="font-size:11px;padding:4px 10px;border-radius:20px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;cursor:pointer;font-family:inherit">✓ Check all</button>'+
+      '<button onclick="supplyCheckAll(this)" style="font-size:11px;padding:4px 10px;border-radius:20px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;cursor:pointer;font-family:inherit">'+svgIcon('✓',{size:11})+' Check all</button>'+
       '<button onclick="supplyUncheckAll(this)" style="font-size:11px;padding:4px 10px;border-radius:20px;background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;cursor:pointer;font-family:inherit">↺ Uncheck all</button>'+
     '</div>';
   box.appendChild(hdr);
@@ -409,7 +409,7 @@ function showSupplyList(bidId){
         const swatchSize=36;
         const swatchHtml=item.hex
           ?'<div style="width:'+swatchSize+'px;height:'+swatchSize+'px;border-radius:6px;background:'+item.hex+';border:1px solid rgba(0,0,0,.15);flex-shrink:0"></div>'
-          :'<div style="width:'+swatchSize+'px;height:'+swatchSize+'px;border-radius:6px;background:var(--border2);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px">🎨</div>';
+          :'<div style="width:'+swatchSize+'px;height:'+swatchSize+'px;border-radius:6px;background:var(--border2);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px">'+svgIcon('🎨',{size:18})+'</div>';
         // Full SW-style spec: Product Line · Color Name (SW XXXX) · Finish
         const fullSpec=[
           item.prod||'',
@@ -765,7 +765,7 @@ function printInvoice(bidId){
 
 <div class="balance-due">
   <div>
-    <div class="balance-label">${balance<0.01?'Paid in full ✓':'Balance due'}</div>
+    <div class="balance-label">${balance<0.01?'Paid in full '+svgIcon('✓',{size:12}):'Balance due'}</div>
     ${balance>=0.01?`<div style="font-size:11px;color:#B8600A;margin-top:3px">Please remit payment at your earliest convenience</div>`:'<div style="font-size:11px;color:#3B8C2A;margin-top:3px">Thank you for your business!</div>'}
   </div>
   <div class="balance-amount">${fmt(balance)}</div>
@@ -823,17 +823,17 @@ function openPayPanel(bidId, autoType){
   overlay.className='zmodal-overlay pay-modal-overlay';
 
   const refundBtn='<button type="button" data-ptype="refund" onclick="selectPayType(this,'+bidId+')" style="text-align:left;padding:11px 14px;border-radius:var(--r);border:1.5px solid var(--red-lt,#FEE2E2);background:var(--red-lt,#FFF0F0);cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center">'+
-    '<div style="font-size:13px;font-weight:700;color:#A32D2D">↩ Issue refund to client</div>'+
+    '<div style="font-size:13px;font-weight:700;color:#A32D2D">'+svgIcon('↩',{size:13})+' Issue refund to client</div>'+
     '<div style="font-size:12px;font-weight:700;color:#A32D2D">'+(overpaidAmt>0.01?'-'+fmt(overpaidAmt):'')+'</div>'+
   '</button>';
   const cancelRefundBtn=rawPaid>0.01
     ?'<button type="button" onclick="closePayPanel();showCancellationRefund('+bidId+')" style="text-align:left;padding:11px 14px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit">'+
-        '<div style="font-size:13px;font-weight:700;color:#A32D2D">✕ Client cancelled</div>'+
+        '<div style="font-size:13px;font-weight:700;color:#A32D2D">'+svgIcon('✕',{size:13})+' Client cancelled</div>'+
       '</button>'
     :'';
   const overpaidBanner=overpaidAmt>0.01
     ?'<div style="background:#FFF3CD;border:1px solid #FFC107;border-radius:var(--r);padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">'+
-        '<div><div style="font-size:13px;font-weight:700;color:#856404">⚠ Refund owed</div>'+
+        '<div><div style="font-size:13px;font-weight:700;color:#856404">'+svgIcon('⚠',{size:13})+' Refund owed</div>'+
         '<div style="font-size:11px;color:#856404">Client paid '+fmt(rawPaid)+' but bid is now '+fmt(total)+'. Refund: <strong>'+fmt(overpaidAmt)+'</strong></div></div>'+
       '</div>'
     :'';
@@ -843,14 +843,14 @@ function openPayPanel(bidId, autoType){
   const hasQr=!!(_hubUrl&&balance>0.50);
   const stripeCompact=hasStripe
     ?'<button type="button" data-ptype="stripe" onclick="selectPayType(this,'+bidId+')" style="padding:12px 8px;border-radius:var(--r);border:1.5px solid #635BFF;background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px">'+
-        '<span style="font-size:20px">💳</span>'+
+        '<span style="font-size:20px">'+svgIcon('💳',{size:20})+'</span>'+
         '<span style="font-size:12px;font-weight:700;color:#635BFF">Card link</span>'+
         '<span style="font-size:11px;color:var(--text3)">'+fmt(balance)+'</span>'+
       '</button>'
     :'';
   const qrCompact=hasQr
     ?'<button type="button" onclick="showPayQr('+bidId+')" style="padding:12px 8px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center;display:flex;flex-direction:column;align-items:center;gap:4px">'+
-        '<span style="font-size:20px">📱</span>'+
+        '<span style="font-size:20px">'+svgIcon('📱',{size:20})+'</span>'+
         '<span style="font-size:12px;font-weight:700">QR code</span>'+
         '<span style="font-size:11px;color:var(--text3)">Client scans</span>'+
       '</button>'
@@ -889,7 +889,7 @@ function openPayPanel(bidId, autoType){
     '<div class="zmodal">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'+
         '<div style="font-size:17px;font-weight:800">'+(showFinalOnly?'Collect payment':'Log payment')+'</div>'+
-        '<button onclick="closePayPanel()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">✕</button>'+
+        '<button onclick="closePayPanel()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">'+svgIcon('✕',{size:20})+'</button>'+
       '</div>'+
       overpaidBanner+
       '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+bid.client_name+' · '+fmt(total)+' total · '+fmt(balance)+' balance</div>'+
@@ -1212,7 +1212,7 @@ async function _issueCardRefund(bidId,amount,bid){
       saveAll();
     }
     renderCDBids&&renderCDBids();renderDash&&renderDash();renderMoneyPage&&renderMoneyPage();refreshCollectLabel&&refreshCollectLabel();
-    _refundBanner('↩ Refund of '+fmt(refAmt)+' issued to '+(bid&&bid.client_name?bid.client_name:'client')+'’s card');
+    _refundBanner(svgIcon('↩',{size:15})+' Refund of '+fmt(refAmt)+' issued to '+(bid&&bid.client_name?bid.client_name:'client')+'’s card');
   }catch(e){
     _refundBanner('Refund failed: '+(e&&e.message?e.message:e),true);
   }
@@ -1278,7 +1278,7 @@ function logPayment(){
     banner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;animation:slideDown .3s ease';
     banner.innerHTML=
       '<div style="background:#A32D2D;color:#fff;padding:14px 16px;text-align:center;font-size:15px;font-weight:700">'+
-        '↩ Refund of '+fmt(a)+' logged'+
+        svgIcon('↩',{size:15})+' Refund of '+fmt(a)+' logged'+
       '</div>'+
       '<div style="background:#7A1A1A;color:#fff;padding:8px 16px;text-align:center;font-size:12px">'+
         'Payment records updated · balance recalculated'+
@@ -1310,10 +1310,10 @@ function logPayment(){
     banner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;animation:slideDown .3s ease';
     banner.innerHTML=
       '<div style="background:var(--green);color:#fff;padding:14px 16px;text-align:center;font-size:15px;font-weight:700">'+
-        '✓ Paid in full — '+fmt(bid.amount)+' received'+
+        svgIcon('✓',{size:15})+' Paid in full — '+fmt(bid.amount)+' received'+
       '</div>'+
       '<div style="background:#1A4A0A;color:#fff;padding:10px 16px;text-align:center;font-size:13px">'+
-        '&#128176; Set aside <strong>'+fmt(reserveFromThis)+'</strong> from this payment for taxes ('+reserveRate+'%)'+
+        svgIcon('💰',{size:13})+' Set aside <strong>'+fmt(reserveFromThis)+'</strong> from this payment for taxes ('+reserveRate+'%)'+
       '</div>';
     document.body.appendChild(banner);
     setTimeout(()=>banner.remove(),5000);
@@ -1372,7 +1372,7 @@ function editPayment(id){
   sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
   const isRef=p.type==='refund';
   sheet.innerHTML=
-    '<div style="font-size:15px;font-weight:800;margin-bottom:12px">✎ Edit '+(isRef?'refund':'payment')+'</div>'+
+    '<div style="font-size:15px;font-weight:800;margin-bottom:12px">'+svgIcon('✎',{size:15})+' Edit '+(isRef?'refund':'payment')+'</div>'+
     '<div class="f" style="margin-bottom:10px"><label>Amount</label><input id="_epay-amount" type="text" inputmode="decimal" value="'+_moneyStr(Math.abs(p.amount||0))+'" oninput="_fmtMoneyInput(this)" style="font-size:15px;padding:11px"></div>'+
     '<div class="f" style="margin-bottom:10px"><label>Date</label><input id="_epay-date" type="date" value="'+escHtml(p.date||'')+'" style="font-size:15px;padding:11px"></div>'+
     '<div class="f" style="margin-bottom:10px"><label>Method</label><input id="_epay-method" value="'+escHtml(p.method||'')+'" placeholder="Cash, Check, Card…" style="font-size:15px;padding:11px"></div>'+
@@ -1530,8 +1530,8 @@ function collSendSMS(bid,stageKey){
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'+
-      '<div style="font-size:15px;font-weight:800">💬 '+stageLabel+' — '+escHtml(c.name)+'</div>'+
-      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">✕</button>'+
+      '<div style="font-size:15px;font-weight:800">'+svgIcon('💬',{size:15})+' '+stageLabel+' — '+escHtml(c.name)+'</div>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">'+svgIcon('✕',{size:20})+'</button>'+
     '</div>'+
     '<div style="background:var(--bg2);border-radius:var(--r);padding:12px;font-size:12px;color:var(--text);line-height:1.6;margin-bottom:14px;max-height:160px;overflow-y:auto">'+escHtml(msg)+'</div>'+
     '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">Amount: <strong>'+fmt(bal)+'</strong> · Sending to: '+escHtml(c.phone)+'</div>'+
@@ -1540,7 +1540,7 @@ function collSendSMS(bid,stageKey){
       '<button onclick="_doCollSMS(\''+phone+'\',\''+encodeURIComponent(msg)+'\',bids.find(x=>x.id=='+bid.id+'),\''+newStage+'\',\''+stageLabel+'\');this.closest(\'.zmodal-overlay\').remove()" style="flex:2;padding:12px;border-radius:var(--r);border:none;background:var(--amber);color:#1a1a1a;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Send via Messages →</button>'+
     '</div>'+
     '<div style="margin-top:10px">'+
-      '<button onclick="_markCollSMSSent(bids.find(x=>x.id=='+bid.id+'),\''+newStage+'\',\''+stageLabel+'\');this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text2)">✓ Already sent — mark as sent</button>'+
+      '<button onclick="_markCollSMSSent(bids.find(x=>x.id=='+bid.id+'),\''+newStage+'\',\''+stageLabel+'\');this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text2)">'+svgIcon('✓',{size:12})+' Already sent — mark as sent</button>'+
     '</div>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -1573,9 +1573,9 @@ function setClientRisk(cid,level){
 }
 function riskBadge(cid){
   const r=getClientRisk(cid);
-  if(r==='blacklisted')return '<span style="font-size:10px;font-weight:800;background:#000;color:#fff;padding:2px 6px;border-radius:4px">🚫 BLACKLISTED</span>';
-  if(r==='high_risk')return '<span style="font-size:10px;font-weight:800;background:#A32D2D;color:#fff;padding:2px 6px;border-radius:4px">⚠️ HIGH RISK</span>';
-  if(r==='watch')return '<span style="font-size:10px;font-weight:800;background:var(--amber);color:#fff;padding:2px 6px;border-radius:4px">👁 Watch</span>';
+  if(r==='blacklisted')return '<span style="font-size:10px;font-weight:800;background:#000;color:#fff;padding:2px 6px;border-radius:4px">'+svgIcon('🚫',{size:10})+' BLACKLISTED</span>';
+  if(r==='high_risk')return '<span style="font-size:10px;font-weight:800;background:#A32D2D;color:#fff;padding:2px 6px;border-radius:4px">'+svgIcon('⚠',{size:10})+' HIGH RISK</span>';
+  if(r==='watch')return '<span style="font-size:10px;font-weight:800;background:var(--amber);color:#fff;padding:2px 6px;border-radius:4px">'+svgIcon('👁',{size:10})+' Watch</span>';
   return '';
 }
 function getCountyForBid(bid){
@@ -1662,15 +1662,15 @@ function showFileLienDirect(bidId){
   const{stateCode,county}=getCountyForBid(bid);
   const filingInfo=getCountyFilingInfo(stateCode);
   const mapsUrl=_lienMapsUrl(county,stateCode);
-  const warningHtml=daysUntilDeadline<=0?'<div style="background:#3D0000;color:#FFB3B3;border-radius:var(--r);padding:10px 12px;margin-bottom:14px;font-size:12px">⚠️ Lien window may be expired — consult an attorney before filing.</div>':daysUntilDeadline<=30?'<div style="background:var(--amber-lt);color:#856404;border-radius:var(--r);padding:10px 12px;margin-bottom:14px;font-size:12px">⏰ '+daysUntilDeadline+' days left to file — act now.</div>':'';
+  const warningHtml=daysUntilDeadline<=0?'<div style="background:#3D0000;color:#FFB3B3;border-radius:var(--r);padding:10px 12px;margin-bottom:14px;font-size:12px">'+svgIcon('⚠',{size:12})+' Lien window may be expired — consult an attorney before filing.</div>':daysUntilDeadline<=30?'<div style="background:var(--amber-lt);color:#856404;border-radius:var(--r);padding:10px 12px;margin-bottom:14px;font-size:12px">'+svgIcon('⏰',{size:12})+' '+daysUntilDeadline+' days left to file — act now.</div>':'';
   const notesHtml=filingInfo.notes.map(n=>'<div style="display:flex;gap:6px;margin-bottom:4px"><span style="color:var(--blue);flex-shrink:0">→</span><span>'+escHtml(n)+'</span></div>').join('');
   const ov=document.createElement('div');ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
   box.style.maxHeight='90vh';box.style.overflowY='auto';
   box.innerHTML=
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'+
-      '<div style="font-size:16px;font-weight:800">⚖️ File Mechanic\'s Lien</div>'+
-      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">✕</button>'+
+      '<div style="font-size:16px;font-weight:800">'+svgIcon('⚖',{size:16})+' File Mechanic\'s Lien</div>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">'+svgIcon('✕',{size:20})+'</button>'+
     '</div>'+warningHtml+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">'+
       '<div style="background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center"><div style="font-size:18px;font-weight:800;color:#A32D2D">'+fmt(bal)+'</div><div style="font-size:10px;color:var(--text3);margin-top:2px">Amount claimed</div></div>'+
@@ -1680,10 +1680,10 @@ function showFileLienDirect(bidId){
     '<div style="font-size:12px;color:var(--text2);margin-bottom:4px"><strong>Property:</strong> '+escHtml(addr||'—')+'</div>'+
     '<div style="font-size:12px;color:var(--text2);margin-bottom:14px"><strong>Completion:</strong> '+escHtml(bid.completion_date||'—')+'</div>'+
     '<div style="background:var(--blue-lt);border-radius:var(--r);padding:12px 14px;margin-bottom:14px">'+
-      '<div style="font-size:12px;font-weight:800;color:var(--blue);margin-bottom:6px">📍 Filing Instructions — '+escHtml(stateCode)+'</div>'+
+      '<div style="font-size:12px;font-weight:800;color:var(--blue);margin-bottom:6px">'+svgIcon('📍',{size:12})+' Filing Instructions — '+escHtml(stateCode)+'</div>'+
       '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:2px">'+escHtml(filingInfo.office)+'</div>'+
       '<div style="font-size:10px;color:var(--text3);margin-bottom:8px">'+escHtml(filingInfo.cite)+'</div>'+
-      '<a href="'+mapsUrl+'" target="_blank" style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--blue);font-weight:600;text-decoration:none;margin-bottom:10px">📍 Find '+escHtml(filingInfo.office)+' in Maps →</a>'+
+      '<a href="'+mapsUrl+'" target="_blank" style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--blue);font-weight:600;text-decoration:none;margin-bottom:10px">'+svgIcon('📍',{size:12})+' Find '+escHtml(filingInfo.office)+' in Maps →</a>'+
       '<div style="font-size:11px;color:var(--text2);line-height:1.7">'+notesHtml+'</div>'+
     '</div>'+
     '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">Deadlines shown are for general guidance. Verify requirements with your county recorder before filing.</div>'+
@@ -1730,7 +1730,7 @@ function renderDashActiveLiens(){
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
         '<div><div style="font-size:13px;font-weight:700">'+escHtml(l.client_name)+'</div>'+
         '<div style="font-size:11px;color:var(--text3)">'+fmt(l.amount)+' claimed · filed '+escHtml(l.date||'')+(l.county?' · '+escHtml(l.county):'')+'</div>'+
-        (expiring?'<div style="font-size:10px;font-weight:800;color:#A32D2D;margin-top:2px">⚠️ Expires in ~'+daysLeft+' days</div>':'<div style="font-size:11px;color:var(--text3)">~'+daysLeft+' days remaining</div>')+'</div>'+
+        (expiring?'<div style="font-size:10px;font-weight:800;color:#A32D2D;margin-top:2px">'+svgIcon('⚠',{size:10})+' Expires in ~'+daysLeft+' days</div>':'<div style="font-size:11px;color:var(--text3)">~'+daysLeft+' days remaining</div>')+'</div>'+
         (bid?'<button class="btn btn-sm" onclick="openClientDetail('+bid.client_id+')" style="font-size:10px">View</button>':'')+
       '</div></div>';
   }).join('');

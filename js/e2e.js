@@ -153,11 +153,11 @@ function _showE2EResults(results){
   const rows=results.map(r=>{
     if(r.section)return`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#93c5fd;margin:10px 0 4px">${r.section}</div>`;
     const bg=r.ok?'rgba(34,197,94,.12)':'rgba(239,68,68,.15)';
-    const icon=r.ok?'✓':'✗';
+    const icon=r.ok?svgIcon('✓',{size:12}):svgIcon('✗',{size:12});
     const color=r.ok?'#86efac':'#fca5a5';
     return`<div style="padding:5px 8px;border-radius:4px;margin-bottom:3px;background:${bg};font-size:12px">
       <span style="color:${color};font-weight:700;margin-right:6px">${icon}</span>${r.name}
-      ${r.err?`<div style="font-size:10px;color:#fca5a5;margin-top:2px;padding-left:16px">⚠ ${r.err}</div>`:''}
+      ${r.err?`<div style="font-size:10px;color:#fca5a5;margin-top:2px;padding-left:16px">${svgIcon('⚠',{size:10})} ${r.err}</div>`:''}
     </div>`;
   }).join('');
   const html=`<div id="_e2e_overlay" style="position:fixed;inset:0;z-index:99999;background:rgba(10,10,20,.92);padding:16px;overflow-y:auto;font-family:var(--font,monospace)">

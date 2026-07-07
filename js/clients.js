@@ -22,9 +22,9 @@ function openEstimateForClient(){
   const c=getClientById(currentClientId);
   if(!c){showWorkflowGate('Select a client first before starting an estimate.','Choose Client','function(){goPg(\'pg-clients\');}');return;}
   const r=getClientRisk(c.id);
-  if(r==='blacklisted'){zAlert('This client is blacklisted. Estimates are blocked.',{title:'🚫 Blocked'});return;}
+  if(r==='blacklisted'){zAlert('This client is blacklisted. Estimates are blocked.',{title:svgIcon('🚫')+' Blocked'});return;}
   if(r==='high_risk'){
-    zConfirm('⚠️ This client previously required a lien for payment. Continue with estimate?',
+    zConfirm(svgIcon('⚠️')+' This client previously required a lien for payment. Continue with estimate?',
       ()=>_rrpGateThenEstimate(c),{title:'High risk client',yes:'Proceed',danger:true});
     return;
   }
@@ -36,7 +36,7 @@ function _showEstimateRequestModal(){
   if(typeof zConfirm==='function'){
     zConfirm("You don't have permission to create estimates yet. Send a request to your manager for access?",
       ()=>_submitEstimateRequest(),
-      {title:'🔒 Estimate access',yes:'Request access'});
+      {title:svgIcon('🔒')+' Estimate access',yes:'Request access'});
   }else if(typeof zAlert==='function'){
     zAlert('You do not have permission to create estimates. Ask your manager for access.',{title:'Permission needed'});
   }
@@ -93,7 +93,7 @@ function _showRrpModal(c,onProceed){
   const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_rrp-gate-overlay';
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
-    '<div style="font-size:16px;font-weight:800;margin-bottom:4px">⚠️ Pre-1978 Home — Built '+c.yearBuilt+'</div>'+
+    '<div style="font-size:16px;font-weight:800;margin-bottom:4px">'+svgIcon('⚠️')+' Pre-1978 Home — Built '+c.yearBuilt+'</div>'+
     '<div style="font-size:13px;color:var(--text2);margin-bottom:8px;line-height:1.5">Will painted surfaces be disturbed during this job?</div>'+
     '<div style="font-size:11.5px;color:var(--text3);margin-bottom:14px;line-height:1.5">EPA RRP applies when &gt;6 sq ft interior or &gt;20 sq ft exterior painted surface is disturbed.</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">'+
@@ -138,7 +138,7 @@ function _gateAddressThenEstimate(c){
     const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_addr-gate-overlay';
     const box=document.createElement('div');box.className='zmodal';
     box.innerHTML=
-      '<div style="font-size:18px;margin-bottom:6px">📍 Address required</div>'+
+      '<div style="font-size:18px;margin-bottom:6px">'+svgIcon('📍')+' Address required</div>'+
       '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">Add '+escHtml(c.name)+'\'s property address before starting an estimate. You can\'t measure or quote without it.</div>'+
       '<div style="position:relative;margin-bottom:14px">'+
 '<input id="_addr-gate-inp" type="text" placeholder="123 Main St, City, ST" autocomplete="off" '+
@@ -237,7 +237,7 @@ function _showTradePicker(title,cb){
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+title+'</div>'+
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">Which trade is this for?</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">'+
-    lines.map(id=>{const m=TRADE_META[id]||{icon:'🔧',label:id};return'<button onclick="_pickTrade(\''+id+'\')" style="padding:14px 10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center"><div style="font-size:22px;margin-bottom:4px">'+m.icon+'</div><div style="font-size:13px;font-weight:700;color:var(--text)">'+m.label+'</div></button>';}).join('')+
+    lines.map(id=>{const m=TRADE_META[id]||{icon:'🔧',label:id};return'<button onclick="_pickTrade(\''+id+'\')" style="padding:14px 10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center"><div style="font-size:22px;margin-bottom:4px">'+svgIcon(m.icon,{size:22})+'</div><div style="font-size:13px;font-weight:700;color:var(--text)">'+m.label+'</div></button>';}).join('')+
     '</div>'+
     '<button onclick="document.getElementById(\'_trade-pick-ov\')?.remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
   ov.appendChild(box);document.body.appendChild(ov);
@@ -271,7 +271,7 @@ function _showEstimateStylePicker(c,overrideAddr){
   ov.id='_style-pick-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:9000;background:var(--bg2);overflow-y:auto;opacity:0;transform:translateY(22px);transition:opacity .38s ease,transform .42s cubic-bezier(.22,.8,.2,1)';
   const card=(id,tone,icon,eyebrow,title,sub,bullets)=>{
-    const bul=bullets.map(b=>'<li><span>✓</span>'+b+'</li>').join('');
+    const bul=bullets.map(b=>'<li><span>'+svgIcon('✓')+'</span>'+b+'</li>').join('');
     return `<button class="chooser-card chooser-${tone}" onclick="_pickEstStyle('${id}')">
       <div class="chooser-card-eyebrow">${eyebrow}</div>
       <div class="chooser-card-icon">${icon}</div>
@@ -291,9 +291,9 @@ function _showEstimateStylePicker(c,overrideAddr){
         '<button class="btn btn-ghost" onclick="_closeStylePicker()">Cancel</button>'+
       '</div>'+
       '<div class="chooser-grid">'+
-        card('freeform','green','🧩','A la carte','Build Your Own','List every service with its own price',
+        card('freeform','green',svgIcon('🧩',{size:36}),'A la carte','Build Your Own','List every service with its own price',
           ['Price each service individually','Mix labor, materials &amp; add-ons','Deposit collected upfront','Easy to upsell extras'])+
-        card('tm','amber','⏱️','Unknown scope','Time &amp; Materials','Flexible billing when you can\'t lock in a price',
+        card('tm','amber',svgIcon('⏱️',{size:36}),'Unknown scope','Time &amp; Materials','Flexible billing when you can\'t lock in a price',
           ['Hourly rate + crew size','Materials at cost + markup','Not-to-exceed cap (optional)','Weekly invoicing'])+
       '</div>'+
     '</div>';
@@ -406,7 +406,7 @@ function renderClientHubPage(){
   const sorted=[...clients].sort((a,b)=>(b.created||'').localeCompare(a.created||''));
   if(subEl)subEl.textContent=sorted.length?sorted.length+' client'+(sorted.length!==1?'s':'')+'  · tap any row to preview':'Every client has a private project portal — preview, share, or copy any link.';
   if(!sorted.length){
-    el.innerHTML='<div class="card hub-empty-card"><div style="font-size:36px;margin-bottom:8px">📂</div><h3>No clients yet</h3><p>Add your first client from the Clients tab and a private hub link is created automatically.</p><button class="btn btn-p" onclick="goPg(\'pg-clients\')">Go to Clients →</button></div>';
+    el.innerHTML='<div class="card hub-empty-card"><div style="font-size:36px;margin-bottom:8px">'+svgIcon('📂',{size:36})+'</div><h3>No clients yet</h3><p>Add your first client from the Clients tab and a private hub link is created automatically.</p><button class="btn btn-p" onclick="goPg(\'pg-clients\')">Go to Clients →</button></div>';
     return;
   }
   const rowHtml=c=>{
@@ -420,9 +420,9 @@ function renderClientHubPage(){
     const smsBody=_smsApply(S.smsHub||_getSmsDefaults().hub,{name:firstName,business:bname,url});
     const addrLine=c.addr?c.addr.split(',')[0]:'';
     const metaParts=[addrLine?escHtml(addrLine):'',c.phone?escHtml(c.phone):''].filter(Boolean).join(' · ');
-    const actions='<button class="btn btn-sm" onclick="event.stopPropagation();_previewClientHub(\''+url+'\',\''+escHtml(c.name||'')+'\','+c.id+')" >👁 Preview</button>'+
-      '<button class="btn btn-sm" onclick="event.stopPropagation();_clientHubCopy(\''+url+'\',this)">📋 Copy</button>'+
-      (phone?'<button class="btn btn-sm btn-p" onclick="event.stopPropagation();window.location.href=\'sms:'+phone+'?body='+encodeURIComponent(smsBody)+'\'">📱 Send</button>':'');
+    const actions='<button class="btn btn-sm" onclick="event.stopPropagation();_previewClientHub(\''+url+'\',\''+escHtml(c.name||'')+'\','+c.id+')" >'+svgIcon('👁')+' Preview</button>'+
+      '<button class="btn btn-sm" onclick="event.stopPropagation();_clientHubCopy(\''+url+'\',this)">'+svgIcon('📋')+' Copy</button>'+
+      (phone?'<button class="btn btn-sm btn-p" onclick="event.stopPropagation();window.location.href=\'sms:'+phone+'?body='+encodeURIComponent(smsBody)+'\'">'+svgIcon('📱')+' Send</button>':'');
     return '<div class="hub-dir-row" onclick="openClientDetail('+c.id+',\'clients\')">'+
       '<div class="hub-dir-l">'+
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
@@ -1050,8 +1050,8 @@ function _showImportPreview(parsed){
   const hasEmail=toImport.some(c=>c.email);
   const hasAddr=toImport.some(c=>c.addr||c.city);
   summary.innerHTML='<strong>'+toImport.length+' contacts ready to import</strong>'+
-    (hasEmail?' <span style="color:var(--green-mid)">· Email ✓</span>':'')+
-    (hasAddr?' <span style="color:var(--green-mid)">· Address ✓</span>':'')+
+    (hasEmail?' <span style="color:var(--green-mid)">· Email '+svgIcon('✓')+'</span>':'')+
+    (hasAddr?' <span style="color:var(--green-mid)">· Address '+svgIcon('✓')+'</span>':'')+
     (skipped?' <span style="color:var(--text3)">· '+skipped+' skipped (already in list)</span>':'');
   list.innerHTML=toImport.slice(0,25).map(c=>
     '<div style="padding:7px 10px;border-bottom:1px solid var(--border2)">'+
@@ -1128,15 +1128,15 @@ function renderClientDetail(){
     '<div class="detail-name">'+escHtml(c.name)+' '+riskBadge(c.id)+'</div>'+
     '<div class="detail-addr">'+
       escHtml(c.addr||'No address')+(c.ptype?' · '+escHtml(c.ptype):'')+(c.yearBuilt?' · Built '+c.yearBuilt:'')+
-      (getActiveTrade()==='painting'&&!c.yearBuilt?'<span onclick="openEditClient()" style="color:#fbbf24;font-weight:700;cursor:pointer;margin-left:6px">⚠️ Add year built</span>':'')+
+      (getActiveTrade()==='painting'&&!c.yearBuilt?'<span onclick="openEditClient()" style="color:#fbbf24;font-weight:700;cursor:pointer;margin-left:6px">'+svgIcon('⚠️')+' Add year built</span>':'')+
     '</div>'+
     '<div class="detail-actions">'+
-      (c.phone?'<button class="btn" onclick="callClient()">📞 Call</button>':'')+
-      (c.phone?'<button class="btn" onclick="textClient();event.stopPropagation()">💬 SMS</button>':'')+
-      (c.email?'<button class="btn" onclick="emailClient()">✉️ Email</button>':'')+
-      (!gps.active?'<button class="btn" onclick="startDriveToClient()">🚗 Drive there</button>':'')+
-      '<button class="btn" onclick="showHubMenu('+c.id+')">🔗 Client hub</button>'+
-      '<button class="btn btn-p"'+(_canEstimate()?'':' style="opacity:.55"')+' onclick="openEstimateForClient()">'+(_canEstimate()?'':'🔒 ')+'+ New estimate</button>'+
+      (c.phone?'<button class="btn" onclick="callClient()">'+svgIcon('📞')+' Call</button>':'')+
+      (c.phone?'<button class="btn" onclick="textClient();event.stopPropagation()">'+svgIcon('💬')+' SMS</button>':'')+
+      (c.email?'<button class="btn" onclick="emailClient()">'+svgIcon('✉️')+' Email</button>':'')+
+      (!gps.active?'<button class="btn" onclick="startDriveToClient()">'+svgIcon('🚗')+' Drive there</button>':'')+
+      '<button class="btn" onclick="showHubMenu('+c.id+')">'+svgIcon('🔗')+' Client hub</button>'+
+      '<button class="btn btn-p"'+(_canEstimate()?'':' style="opacity:.55"')+' onclick="openEstimateForClient()">'+(_canEstimate()?'':svgIcon('🔒')+' ')+'+ New estimate</button>'+
     '</div>'+
     '';
   // Metric tiles — outside hero in split-3-eq grid
@@ -1201,7 +1201,7 @@ function renderClientDetail(){
     </div>`
     :totalPaidAll>0?
     `<div style="background:var(--green-lt);border:1px solid #97C459;border-radius:var(--rl);padding:10px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
-      <div style="font-size:12px;font-weight:700;color:var(--green-mid)">✓ Paid in full</div>
+      <div style="font-size:12px;font-weight:700;color:var(--green-mid)">${svgIcon('✓')} Paid in full</div>
       <div style="font-size:14px;font-weight:700;color:var(--green-mid)">${fmt(totalPaidAll)}</div>
     </div>`:'';
   // Lien alert — any won bid with balance overdue 30+ days
@@ -1217,18 +1217,18 @@ function renderClientDetail(){
     const _lienFC=typeof _calcFinanceCharge==='function'?_calcFinanceCharge(_lienBid):0;
     const _lienTotal=_lienBal+_lienFC;
     lienAlertHTML=`<div style="background:#3D0000;border:2px solid #A32D2D;border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#FFB3B3;margin-bottom:8px">⚠️ Balance overdue 30+ days</div>
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#FFB3B3;margin-bottom:8px">${svgIcon('⚠️')} Balance overdue 30+ days</div>
       <div style="font-size:12px;color:rgba(255,179,179,.75);line-height:1.9;margin-bottom:10px">
         <div style="display:flex;justify-content:space-between"><span>Contract balance:</span><span style="font-weight:700;color:#FFB3B3">${fmt(_lienBal)}</span></div>
         ${_lienFC>0.01?`<div style="display:flex;justify-content:space-between"><span>Finance charge:</span><span style="font-weight:700;color:#FFB3B3">${fmt(_lienFC)}</span></div>`:''}
         <div style="border-top:1px solid rgba(163,45,45,.5);margin:4px 0"></div>
         <div style="display:flex;justify-content:space-between;font-weight:800;color:#FFB3B3"><span>Total lienable:</span><span>${fmt(_lienTotal)}</span></div>
       </div>
-      <button onclick="showFileLienDirect(${_lienBid.id})" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:#A32D2D;color:#FFB3B3;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">📋 Prepare Lien Document</button>
+      <button onclick="showFileLienDirect(${_lienBid.id})" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:#A32D2D;color:#FFB3B3;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">${svgIcon('📋')} Prepare Lien Document</button>
     </div>`;
   }
-  const intakeInfoHTML=(c.callTime||c.notes)?`<div style="padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📞 Best time to call:</span> ${escHtml(c.callTime)}</div>`:''}${c.notes?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📋 Intake notes:</span> ${escHtml(c.notes)}</div>`:''}</div>`:'';
-  const epaHTML=(c.yearBuilt&&c.yearBuilt<1978)?`<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 12px;${balanceHTML||intakeInfoHTML?'margin-top:10px;':''}font-size:12px;font-weight:700;color:#856404">⚠️ Pre-1978 — EPA RRP applies if &gt;6 sq ft interior or &gt;20 sq ft exterior paint disturbed</div>`:'';
+  const intakeInfoHTML=(c.callTime||c.notes)?`<div style="padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">${svgIcon('📞')} Best time to call:</span> ${escHtml(c.callTime)}</div>`:''}${c.notes?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">${svgIcon('📋')} Intake notes:</span> ${escHtml(c.notes)}</div>`:''}</div>`:'';
+  const epaHTML=(c.yearBuilt&&c.yearBuilt<1978)?`<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 12px;${balanceHTML||intakeInfoHTML?'margin-top:10px;':''}font-size:12px;font-weight:700;color:#856404">${svgIcon('⚠️')} Pre-1978 — EPA RRP applies if &gt;6 sq ft interior or &gt;20 sq ft exterior paint disturbed</div>`:'';
   const _metsContent=balanceHTML+lienAlertHTML+intakeInfoHTML+epaHTML;
   const _metsEl=document.getElementById('cd-client-mets');
   _metsEl.innerHTML=_metsContent;
@@ -1241,19 +1241,19 @@ function renderClientDetail(){
       const _onbSent=c.onboardingSentAt?'Link sent '+_relTime(c.onboardingSentAt):'';
       _cdActions.innerHTML=
         '<div style="background:var(--amber-lt);border:1.5px solid var(--amber);border-radius:var(--rl);padding:14px 16px;margin-bottom:4px">'+
-          '<div style="font-size:12px;font-weight:700;color:#856404;margin-bottom:10px">📋 Needs onboarding — send link so they can fill in their address &amp; project details</div>'+
-          '<button onclick="sendOnboardingLink('+c.id+')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--amber);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">📲 Send onboarding link</button>'+
+          '<div style="font-size:12px;font-weight:700;color:#856404;margin-bottom:10px">'+svgIcon('📋')+' Needs onboarding — send link so they can fill in their address &amp; project details</div>'+
+          '<button onclick="sendOnboardingLink('+c.id+')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--amber);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('📲')+' Send onboarding link</button>'+
           (_onbSent?'<div style="font-size:11px;color:#856404;margin-top:8px;text-align:center">'+_onbSent+'</div>':'')+
         '</div>';
     }else{
       _cdActions.innerHTML=
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
           '<button onclick="schedForClient()" style="padding:12px;border-radius:var(--rl);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px">'+
-            '<span style="font-size:18px">📅</span><span>Schedule estimate</span>'+
+            '<span style="font-size:18px">'+svgIcon('📅')+'</span><span>Schedule estimate</span>'+
             '<span style="font-size:10px;color:var(--text3);font-weight:400">Pick a date &amp; time</span>'+
           '</button>'+
           '<button onclick="openEstimateForClient()" style="padding:12px;border-radius:var(--rl);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px'+(_canEstimate()?'':';opacity:.55')+'">'+
-            '<span style="font-size:18px">'+(_canEstimate()?'📋':'🔒')+'</span><span>Start estimate now</span>'+
+            '<span style="font-size:18px">'+(_canEstimate()?svgIcon('📋'):svgIcon('🔒'))+'</span><span>Start estimate now</span>'+
             '<span style="font-size:10px;color:var(--blue);font-weight:400">I\'m already here</span>'+
           '</button>'+
         '</div>';
@@ -1294,7 +1294,7 @@ function renderCDRisk(){
       ).join('')+
     '</div>'+
     (r==='blacklisted'?'<div style="font-size:11px;color:#A32D2D;margin-top:8px;font-weight:700">Estimates and scheduling are blocked for this client.</div>':'')+
-    (r==='high_risk'?'<div style="font-size:11px;color:var(--amber);margin-top:8px">⚠️ Previous lien filed. Require full payment before scheduling.</div>':'');
+    (r==='high_risk'?'<div style="font-size:11px;color:var(--amber);margin-top:8px">'+svgIcon('⚠️')+' Previous lien filed. Require full payment before scheduling.</div>':'');
 }
 function renderClientNotes(){
   const c=getClientById(currentClientId);if(!c)return;
@@ -1412,7 +1412,7 @@ function renderCDTimeline(){
       }).join('');
       return '<div style="margin-bottom:8px">'+
         '<div data-tlgroup="'+domId+'" onclick="toggleTlGroup(this.dataset.tlgroup)" style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;user-select:none">'+
-          '<span id="'+domId+'-arrow" style="font-size:10px;color:var(--text3);transition:transform .2s;display:inline-block">▶</span>'+
+          '<span id="'+domId+'-arrow" style="font-size:10px;color:var(--text3);transition:transform .2s;display:inline-block">'+svgIcon('▶')+'</span>'+
           '<span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:'+(isToday?'var(--blue)':'var(--text3)')+'">'+dayLabel+'</span>'+
           '<span style="font-size:10px;color:var(--text3)">('+evts.length+')</span>'+
         '</div>'+
@@ -1513,7 +1513,7 @@ function renderCDBids(){
     alertEl.innerHTML=alerts.map(b=>{
       const days=daysSince(b.completion_date);
       const lien=getBidLien(b.id);
-      if(lien&&lien.status==='filed')return '<div class="lien-banner"><div><span style="font-size:11px;font-weight:800">⚠ LIEN FILED</span><br><span style="font-size:12px">'+fmt(getBidBalance(b))+' outstanding · '+escHtml(lien.county)+'</span></div><button class="btn btn-sm" onclick="openLienPanel('+b.id+')" style="background:rgba(255,100,100,.2);border-color:rgba(255,100,100,.4);color:#FFB3B3;font-size:11px">Edit lien</button></div>';
+      if(lien&&lien.status==='filed')return '<div class="lien-banner"><div><span style="font-size:11px;font-weight:800">'+svgIcon('⚠')+' LIEN FILED</span><br><span style="font-size:12px">'+fmt(getBidBalance(b))+' outstanding · '+escHtml(lien.county)+'</span></div><button class="btn btn-sm" onclick="openLienPanel('+b.id+')" style="background:rgba(255,100,100,.2);border-color:rgba(255,100,100,.4);color:#FFB3B3;font-size:11px">Edit lien</button></div>';
       if(lien&&lien.status==='intent')return '<div class="overdue-banner"><div><span style="font-size:11px;font-weight:700;color:var(--red)">NOTICE OF INTENT SENT</span><br><span style="font-size:12px">'+fmt(getBidBalance(b))+' owed · '+days+' days since completion</span></div><button class="btn btn-sm btn-r" onclick="openLienPanel('+b.id+')">Update lien</button></div>';
       if(days>=30)return '<div class="overdue-banner"><div><span style="font-size:11px;font-weight:700;color:var(--red)">'+days+' DAYS OVERDUE</span><br><span style="font-size:12px">'+fmt(getBidBalance(b))+' owed since '+b.completion_date+'</span></div><button class="btn btn-sm btn-r" onclick="openLienPanel('+b.id+')">File lien</button></div>';
       if(days>=7)return '<div class="tip tip-w"><strong>Balance '+days+' days past completion</strong> — '+fmt(getBidBalance(b))+' owed. <button class="btn btn-sm" onclick="openPayPanel('+b.id+')" style="margin-left:6px">Log payment</button></div>';
@@ -1547,7 +1547,7 @@ function renderCDBids(){
         // NO DELETE BUTTON (owner directive): the visible control is EDIT — fix the
         // record in place. Deletion is dev-only via the 3s long-press (data-lp-*,
         // cloud.js) and inert for everyone else. Nobody deletes payments in normal use.
-        payHTML+=bpays.map(p=>{const isRef=p.type==='refund';const amtDisp=isRef?'<strong style="color:#A32D2D">↩ -'+fmt(Math.abs(p.amount))+'</strong>':'<strong style="color:var(--green-mid)">+'+fmt(p.amount)+'</strong>';const typeLabel=isRef?'REFUND':(escHtml(p.method)+(p.ref?' #'+escHtml(p.ref):''));return '<div data-lp-id="'+p.id+'" data-lp-type="payment" data-lp-label="'+escHtml('Payment '+fmt(Math.abs(p.amount)))+'" style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+typeLabel+'</span><span>'+amtDisp+' <button onclick="editPayment('+p.id+')" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1px solid var(--border2);background:none;color:var(--text2);cursor:pointer;font-family:inherit">✎ Edit</button></span></div>';}).join('');
+        payHTML+=bpays.map(p=>{const isRef=p.type==='refund';const amtDisp=isRef?'<strong style="color:#A32D2D">'+svgIcon('↩')+' -'+fmt(Math.abs(p.amount))+'</strong>':'<strong style="color:var(--green-mid)">+'+fmt(p.amount)+'</strong>';const typeLabel=isRef?'REFUND':(escHtml(p.method)+(p.ref?' #'+escHtml(p.ref):''));return '<div data-lp-id="'+p.id+'" data-lp-type="payment" data-lp-label="'+escHtml('Payment '+fmt(Math.abs(p.amount)))+'" style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+typeLabel+'</span><span>'+amtDisp+' <button onclick="editPayment('+p.id+')" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1px solid var(--border2);background:none;color:var(--text2);cursor:pointer;font-family:inherit">'+svgIcon('✎')+' Edit</button></span></div>';}).join('');
         payHTML+='</div>';
       }
       if(lien){
@@ -1568,33 +1568,33 @@ function renderCDBids(){
     const actBtns=[];
     if(isWon){
       // Close job button — when won but not yet marked complete
-      if(!b.completion_date){const linkedJob=jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id);const jid=linkedJob?.id;if(jid)actBtns.push('<button class="btn btn-sm" onclick="markJobDone('+jid+')" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid)">✓ Close job</button>');}
+      if(!b.completion_date){const linkedJob=jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id);const jid=linkedJob?.id;if(jid)actBtns.push('<button class="btn btn-sm" onclick="markJobDone('+jid+')" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid)">'+svgIcon('✓')+' Close job</button>');}
       if(balance>0.01)actBtns.push('<button class="btn btn-sm btn-g" onclick="openPayPanel('+b.id+')">+ Log payment</button>');
-      if(balance>0.01&&_stripeConnectStatus?.charges_enabled)actBtns.push('<button class="btn btn-sm" onclick="sendPaymentLink('+b.id+')" style="background:#635BFF;color:#fff;border-color:#635BFF;font-size:11px">💳 Send pay link</button>');
-      if(balance>0.01&&b.completion_date){const _c=getClientById(b.client_id);if(_c&&_c.phone){const _msg=encodeURIComponent('Hi '+(_c.name||'').split(' ')[0]+', this is '+(S.bname||'your contractor')+'. Just a friendly reminder that a balance of '+fmt(balance)+' is outstanding for your job at '+(b.addr||_c.addr||'your property')+'. Please let us know when you can take care of this. Thank you!');actBtns.push('<a href="sms:'+_c.phone.replace(/\D/g,'')+'&body='+_msg+'" onclick="autoLogContact('+b.client_id+',\'payment_request\')" class="btn btn-sm" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid);text-decoration:none">📲 Request pay</a>');}}
-      if(getBidPaid(b.id)>(b.amount||0)+0.01)actBtns.push('<button class="btn btn-sm" onclick="openPayPanel('+b.id+')" style="background:#FFF0F0;color:#A32D2D;border-color:#A32D2D">↩ Issue refund</button>');
+      if(balance>0.01&&_stripeConnectStatus?.charges_enabled)actBtns.push('<button class="btn btn-sm" onclick="sendPaymentLink('+b.id+')" style="background:#635BFF;color:#fff;border-color:#635BFF;font-size:11px">'+svgIcon('💳')+' Send pay link</button>');
+      if(balance>0.01&&b.completion_date){const _c=getClientById(b.client_id);if(_c&&_c.phone){const _msg=encodeURIComponent('Hi '+(_c.name||'').split(' ')[0]+', this is '+(S.bname||'your contractor')+'. Just a friendly reminder that a balance of '+fmt(balance)+' is outstanding for your job at '+(b.addr||_c.addr||'your property')+'. Please let us know when you can take care of this. Thank you!');actBtns.push('<a href="sms:'+_c.phone.replace(/\D/g,'')+'&body='+_msg+'" onclick="autoLogContact('+b.client_id+',\'payment_request\')" class="btn btn-sm" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid);text-decoration:none">'+svgIcon('📲')+' Request pay</a>');}}
+      if(getBidPaid(b.id)>(b.amount||0)+0.01)actBtns.push('<button class="btn btn-sm" onclick="openPayPanel('+b.id+')" style="background:#FFF0F0;color:#A32D2D;border-color:#A32D2D">'+svgIcon('↩')+' Issue refund</button>');
       actBtns.push('<button class="btn btn-sm" onclick="toggleBidSummary('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128196; View bid</button>');
       actBtns.push('<button class="btn btn-sm" onclick="printInvoice('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128438; Print invoice</button>');
       if(!scheduledIds.has(b.id))actBtns.push('<button class="btn btn-sm btn-p" onclick="schedFromBid('+b.id+')">Schedule →</button>');
-      if(!lien&&balance>0.01&&days>=14)actBtns.push('<button class="btn btn-sm btn-r" onclick="showFileLienDirect('+b.id+')">⚖️ File lien</button>');
+      if(!lien&&balance>0.01&&days>=14)actBtns.push('<button class="btn btn-sm btn-r" onclick="showFileLienDirect('+b.id+')">'+svgIcon('⚖️')+' File lien</button>');
       else if(lien&&lien.status!=='resolved')actBtns.push('<button class="btn btn-sm btn-r" onclick="openLienPanel('+b.id+')">Lien status</button>');
       // SMS escalation buttons based on days overdue
-      if(balance>0.01&&days>=7&&days<14)actBtns.push('<button class="btn btn-sm" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'reminder\')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">💬 Remind</button>');
-      if(balance>0.01&&days>=14&&days<21)actBtns.push('<button class="btn btn-sm" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'second\')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">💬 2nd notice</button>');
-      if(balance>0.01&&days>=21)actBtns.push('<button class="btn btn-sm btn-r" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'intent\')">💬 Intent to lien</button>');
-      if(lien&&lien.status!=='resolved'&&getBidBalance(b)<=0.01)actBtns.push('<button class="btn btn-sm" onclick="releaseLien('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">✓ Release lien</button>');
+      if(balance>0.01&&days>=7&&days<14)actBtns.push('<button class="btn btn-sm" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'reminder\')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">'+svgIcon('💬')+' Remind</button>');
+      if(balance>0.01&&days>=14&&days<21)actBtns.push('<button class="btn btn-sm" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'second\')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">'+svgIcon('💬')+' 2nd notice</button>');
+      if(balance>0.01&&days>=21)actBtns.push('<button class="btn btn-sm btn-r" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'intent\')">'+svgIcon('💬')+' Intent to lien</button>');
+      if(lien&&lien.status!=='resolved'&&getBidBalance(b)<=0.01)actBtns.push('<button class="btn btn-sm" onclick="releaseLien('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">'+svgIcon('✓')+' Release lien</button>');
       // Recordable release doc — reachable any time after release (re-file, lost copy).
-      if(lien&&lien.status==='resolved')actBtns.push('<button class="btn btn-sm" onclick="printKansasLienRelease('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">📄 Release doc</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">✎ Revise bid</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="showSupplyList('+b.id+')" style="background:#FFF0E8;color:#854F0B;border-color:#E89B50">📦 Supply list</button>');
+      if(lien&&lien.status==='resolved')actBtns.push('<button class="btn btn-sm" onclick="printKansasLienRelease('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">'+svgIcon('📄')+' Release doc</button>');
+      actBtns.push('<button class="btn btn-sm" onclick="openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('✎')+' Revise bid</button>');
+      actBtns.push('<button class="btn btn-sm" onclick="showSupplyList('+b.id+')" style="background:#FFF0E8;color:#854F0B;border-color:#E89B50">'+svgIcon('📦')+' Supply list</button>');
       actBtns.push('');
     }
     if(!isWon){
       actBtns.push('<button class="btn btn-sm" onclick="sendBidEmail('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#9993; Send email</button>');
       const _reviseFn='openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')';
-      actBtns.push('<button class="btn btn-sm" onclick="'+_reviseFn+'" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">✎ Revise bid</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="openBidNotes('+b.id+')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">📝 Notes</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="markBidHandshake('+b.id+')" style="background:#FFF8E8;color:#856404;border-color:var(--amber);font-size:11px">🤝 Handshake</button>');
+      actBtns.push('<button class="btn btn-sm" onclick="'+_reviseFn+'" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('✎')+' Revise bid</button>');
+      actBtns.push('<button class="btn btn-sm" onclick="openBidNotes('+b.id+')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">'+svgIcon('📝')+' Notes</button>');
+      actBtns.push('<button class="btn btn-sm" onclick="markBidHandshake('+b.id+')" style="background:#FFF8E8;color:#856404;border-color:var(--amber);font-size:11px">'+svgIcon('🤝')+' Handshake</button>');
       actBtns.push('<button class="btn btn-sm" onclick="markBidAbandoned('+b.id+')" style="background:#FFF8F0;color:#A32D2D;border-color:#A32D2D">No response</button>');
       actBtns.push('');
     }
@@ -1633,11 +1633,11 @@ function renderCDBids(){
               let badge='';
               if(hubTs){
                 const cStr=hubCnt>1?' · '+hubCnt+'×':'';
-                badge+='<div style="font-size:11px;color:#2563eb;margin-top:2px">🔗 Hub opened · '+_localTs(hubTs)+cStr+'</div>';
+                badge+='<div style="font-size:11px;color:#2563eb;margin-top:2px">'+svgIcon('🔗')+' Hub opened · '+_localTs(hubTs)+cStr+'</div>';
               }
               if(clientTs){
                 const cStr=clientCnt>1?' · '+clientCnt+'×':'';
-                badge+='<div style="font-size:11px;color:var(--green-mid);margin-top:2px">👁 Proposal opened · '+_localTs(clientTs)+cStr+'</div>';
+                badge+='<div style="font-size:11px;color:var(--green-mid);margin-top:2px">'+svgIcon('👁')+' Proposal opened · '+_localTs(clientTs)+cStr+'</div>';
               }
               if(!hubTs&&!clientTs){
                 badge+='<div style="font-size:11px;color:var(--text3);margin-top:2px">Client hasn\'t opened yet</div>';
@@ -1649,12 +1649,12 @@ function renderCDBids(){
             })():'')+
         '</div>'+
         '<div style="text-align:right">'+
-          (b.isTM?'<span style="display:inline-block;font-size:10px;font-weight:700;background:#dbeafe;color:#1d4ed8;border-radius:10px;padding:2px 7px;margin-bottom:3px">⏱️ T&M</span><br>':'')+
+          (b.isTM?'<span style="display:inline-block;font-size:10px;font-weight:700;background:#dbeafe;color:#1d4ed8;border-radius:10px;padding:2px 7px;margin-bottom:3px">'+svgIcon('⏱️')+' T&M</span><br>':'')+
           '<div style="font-size:16px;font-weight:700;color:var(--green-mid)">'+(b.isTM&&b.tmNteCap?'Est. '+fmt(b.amount)+' / NTE '+fmt(b.tmNteCap):fmt(b.amount))+'</div>'+
           (b.isTM&&b.tmDepositAmt?'<div style="font-size:11px;color:var(--text3)">Deposit: '+fmt(b.tmDepositAmt)+'</div>':'')+
           '<span class="bdg '+(SBADGE[b.status]||'')+'">'+b.status+'</span>'+
           (_rrpRequired?'<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:4px;padding:2px 6px;font-weight:700;margin-left:4px">RRP</span>':'')+
-          (b.handshake?'<br><span style="font-size:10px;font-weight:700;background:#FFF8E8;color:#856404;border:1px solid var(--amber);border-radius:4px;padding:1px 6px;white-space:nowrap;display:inline-block;margin-top:3px">🤝 Handshake</span>':'')+
+          (b.handshake?'<br><span style="font-size:10px;font-weight:700;background:#FFF8E8;color:#856404;border:1px solid var(--amber);border-radius:4px;padding:1px 6px;white-space:nowrap;display:inline-block;margin-top:3px">'+svgIcon('🤝')+' Handshake</span>':'')+
         '</div>'+
       '</div>'+
       payHTML+
@@ -1703,7 +1703,7 @@ function openClientProposals(clientId){
       ?new Date(b.signedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
       :(b._dk||'Unknown date');
     const signedLine=b.signedAt
-      ?'<span style="color:var(--green-mid);font-size:11px;font-weight:600">✓ Signed '+dateStr+(b.signedName?' · '+escHtml(b.signedName):'')+'</span>'
+      ?'<span style="color:var(--green-mid);font-size:11px;font-weight:600">'+svgIcon('✓')+' Signed '+dateStr+(b.signedName?' · '+escHtml(b.signedName):'')+'</span>'
       :'<span style="color:var(--text3);font-size:11px">Won '+dateStr+'</span>';
     return '<div class="card" style="margin:0 0 10px;border-radius:12px">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">'+
@@ -1714,9 +1714,9 @@ function openClientProposals(clientId){
         '<div style="font-size:18px;font-weight:800;color:var(--green-mid);margin-left:12px;flex-shrink:0">'+fmt(b.amount)+'</div>'+
       '</div>'+
       '<div style="display:flex;gap:8px">'+
-        '<button onclick="_cpOpen('+b.id+',\'bid\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700">📋 Our bid</button>'+
+        '<button onclick="_cpOpen('+b.id+',\'bid\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700">'+svgIcon('📋')+' Our bid</button>'+
         (b.proposalHtml
-          ?'<button onclick="_cpOpen('+b.id+',\'proposal\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700;background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">📄 Client view</button>'
+          ?'<button onclick="_cpOpen('+b.id+',\'proposal\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700;background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('📄')+' Client view</button>'
           :'<span style="flex:1;font-size:11px;color:var(--text3);display:flex;align-items:center;justify-content:center;font-style:italic">No proposal saved</span>')+
       '</div>'+
     '</div>';
@@ -1837,7 +1837,7 @@ function _cpOpen(bidId,view){
 
   if(pays.length){
     bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Payment history</div>'+
-      pays.map(p=>{const ref=p.type==='refund';return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+(ref?'REFUND':escHtml(p.method||p.type)+(p.ref?' #'+escHtml(p.ref):''))+'</span><span style="font-weight:700;color:'+(ref?'#A32D2D':'var(--green-mid)')+'">'+( ref?'↩ -':'+' )+fmt(Math.abs(p.amount))+'</span></div>';}).join('')+
+      pays.map(p=>{const ref=p.type==='refund';return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+(ref?'REFUND':escHtml(p.method||p.type)+(p.ref?' #'+escHtml(p.ref):''))+'</span><span style="font-weight:700;color:'+(ref?'#A32D2D':'var(--green-mid)')+'">'+( ref?svgIcon('↩')+' -':'+' )+fmt(Math.abs(p.amount))+'</span></div>';}).join('')+
       '<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;padding:8px 0 0"><span>Total paid</span><span style="color:var(--green-mid)">'+fmt(paid)+'</span></div>'+
     '</div>';
   }
@@ -1847,7 +1847,7 @@ function _cpOpen(bidId,view){
   // Build proposal pane (client view)
   const propPane=document.getElementById('cp-prop-pane');
   const _cpStorageKey=b.signingKey||b.proposalKey||null;
-  const _cpSignedBadge=b.signedAt?'<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">✓</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>':'';
+  const _cpSignedBadge=b.signedAt?'<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">'+svgIcon('✓')+'</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>':'';
   // Signature block pinned at the bottom of the client view — image from the stored
   // proposal JSON when available, falling back to the name/timestamp on the bid so the
   // block still shows when the storage write was missed at signing time.
@@ -1872,7 +1872,7 @@ function _cpOpen(bidId,view){
         const prop=JSON.parse(txt);
         // Upgrade the signature block with the drawn signature image
         if(prop.signatureDataUrl||prop.signerName){const old=document.getElementById('cp-sig-block');const wrap=document.createElement('div');wrap.innerHTML=_cpSigBlock(prop);if(old&&wrap.firstChild)old.replaceWith(wrap.firstChild);else if(wrap.firstChild)propPane.appendChild(wrap.firstChild);}
-        const choices=prop.colorChoices||[];if(!choices.length)return;const cd=document.createElement('div');cd.style.cssText='background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 16px;margin-bottom:16px';cd.innerHTML='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">🎨 Client Color Selections</div>'+choices.map(ch=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px"><span style="font-weight:600;color:#1E3A5F">'+escHtml(ch.room)+'</span><span style="color:#1E40AF;font-weight:700">'+escHtml(ch.colorName)+(ch.swCode?' <span style="font-size:11px;opacity:.7">('+escHtml(ch.swCode)+')</span>':'')+'</span></div>').join('');propPane.insertBefore(cd,propPane.firstChild);}catch(e){}});}).catch(()=>{});
+        const choices=prop.colorChoices||[];if(!choices.length)return;const cd=document.createElement('div');cd.style.cssText='background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 16px;margin-bottom:16px';cd.innerHTML='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">'+svgIcon('🎨')+' Client Color Selections</div>'+choices.map(ch=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px"><span style="font-weight:600;color:#1E3A5F">'+escHtml(ch.room)+'</span><span style="color:#1E40AF;font-weight:700">'+escHtml(ch.colorName)+(ch.swCode?' <span style="font-size:11px;opacity:.7">('+escHtml(ch.swCode)+')</span>':'')+'</span></div>').join('');propPane.insertBefore(cd,propPane.firstChild);}catch(e){}});}).catch(()=>{});
     }
   }else if(_cpStorageKey&&typeof _supa!=='undefined'){
     propPane.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--text3);font-size:13px">Loading proposal…</div>';
@@ -1885,7 +1885,7 @@ function _cpOpen(bidId,view){
         b.proposalHtml=html;
         let colorTop='';
         const choices=prop.colorChoices||[];
-        if(choices.length)colorTop='<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 16px;margin-bottom:16px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">🎨 Client Color Selections</div>'+choices.map(ch=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px"><span style="font-weight:600;color:#1E3A5F">'+escHtml(ch.room)+'</span><span style="color:#1E40AF;font-weight:700">'+escHtml(ch.colorName)+(ch.swCode?' <span style="font-size:11px;opacity:.7">('+escHtml(ch.swCode)+')</span>':'')+'</span></div>').join('')+'</div>';
+        if(choices.length)colorTop='<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 16px;margin-bottom:16px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">'+svgIcon('🎨')+' Client Color Selections</div>'+choices.map(ch=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px"><span style="font-weight:600;color:#1E3A5F">'+escHtml(ch.room)+'</span><span style="color:#1E40AF;font-weight:700">'+escHtml(ch.colorName)+(ch.swCode?' <span style="font-size:11px;opacity:.7">('+escHtml(ch.swCode)+')</span>':'')+'</span></div>').join('')+'</div>';
         propPane.innerHTML=colorTop+_cpSignedBadge+html+_cpSigBlock(prop);
       }catch(e){propPane.innerHTML='<div style="padding:40px;text-align:center;color:var(--text3);font-style:italic">Error parsing proposal.</div>';}});
     }).catch(()=>{propPane.innerHTML='<div style="padding:40px;text-align:center;color:var(--text3);font-style:italic">Could not load proposal.</div>';});
@@ -1897,7 +1897,7 @@ function _cpOpen(bidId,view){
   function _tabBtn(v,label,active){
     return '<button id="cp-tab-'+v+'" onclick="_cpView(\''+v+'\')" style="padding:7px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;border:1.5px solid '+(active?'var(--blue)':'var(--border2)')+';background:'+(active?'var(--blue-lt)':'var(--bg)')+';color:'+(active?'var(--blue-dk)':'var(--text2)')+'">'+label+'</button>';
   }
-  document.getElementById('cp-tabs').innerHTML=_tabBtn('bid','📋 Our bid',view==='bid')+_tabBtn('proposal','📄 Client view',view==='proposal');
+  document.getElementById('cp-tabs').innerHTML=_tabBtn('bid',svgIcon('📋')+' Our bid',view==='bid')+_tabBtn('proposal',svgIcon('📄')+' Client view',view==='proposal');
   _cpView(view);
 }
 function _cpView(v){
@@ -1953,11 +1953,11 @@ function renderCDJobs(){
         const _h2=Math.floor(_el2/3600),_m2=Math.floor((_el2%3600)/60),_s2=_el2%60;
         const _ts2=(_h2?_h2+'h ':'')+_m2+':'+((_s2<10?'0':'')+_s2);
         const _sl2=_activeTimer.scopeLabel?_activeTimer.scopeLabel+' ':'';
-        clockBtnCD='<button class="btn btn-sm" onclick="clockOut()" style="border-color:#E97B00;color:#E97B00;background:#FFF3E0">⏹ '+_sl2+_ts2+'</button>';
+        clockBtnCD='<button class="btn btn-sm" onclick="clockOut()" style="border-color:#E97B00;color:#E97B00;background:#FFF3E0">'+svgIcon('⏹')+' '+_sl2+_ts2+'</button>';
       }else{
         const logged=getJobClockTotal(j.id);
         const loggedLabel=logged>0?_fmtMin(logged)+' logged · ':'';
-        clockBtnCD='<button class="btn btn-sm" onclick="openClockInSheet('+j.id+')" style="border-color:var(--border2);color:var(--text2)">▶ '+(logged>0?loggedLabel:'')+'Clock in</button>';
+        clockBtnCD='<button class="btn btn-sm" onclick="openClockInSheet('+j.id+')" style="border-color:var(--border2);color:var(--text2)">'+svgIcon('▶')+' '+(logged>0?loggedLabel:'')+'Clock in</button>';
       }
     }
     return '<div class="card" style="margin-bottom:8px;border-left:3px solid '+(j.color||'var(--blue)')+'" data-lp-id="'+j.id+'" data-lp-type="job" data-lp-label="'+escHtml(j.name||'job')+'">'+
@@ -2040,26 +2040,26 @@ function renderCDAddresses(){
   const openKey='_cdpropOpen_'+currentClientId;
   const isOpen=!!window[openKey];
   const hasProp=!!(c.yearBuilt||c.sqft||c.estimatedValue||c.stories||c.bedrooms||c.bathrooms||c.exteriorMaterial||c.roofType||c.garage||c.lotSize||c.lastSaleDate||c.isRental);
-  const pre78Badge=c.yearBuilt&&c.yearBuilt<1978?`<span style="font-size:10px;background:rgba(163,45,45,.12);color:#A32D2D;border-radius:4px;padding:2px 5px;font-weight:700;margin-left:5px">⚠️ Pre-1978</span>`:'';
+  const pre78Badge=c.yearBuilt&&c.yearBuilt<1978?`<span style="font-size:10px;background:rgba(163,45,45,.12);color:#A32D2D;border-radius:4px;padding:2px 5px;font-weight:700;margin-left:5px">${svgIcon('⚠️')} Pre-1978</span>`:'';
   const srcBadge=c.propDataFetchedAt
     ?(c.propDataExact===false?`<span style="font-size:10px;color:var(--text3);margin-left:4px">(area avg)</span>`:'')
-    :(c.street&&c.city?`<button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_lookupPropertyData(${c.id},{street:'${escHtml(c.street||'')}',city:'${escHtml(c.city||'')}',state:'${escHtml(c.state||'')}',zip:'${escHtml(c.zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:11px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;margin-left:6px">🏠 Look up</button>`:'');
-  const chevron=hasProp?`<span style="font-size:9px;color:var(--text3);display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s;margin-right:2px">▶</span>`:'';
+    :(c.street&&c.city?`<button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_lookupPropertyData(${c.id},{street:'${escHtml(c.street||'')}',city:'${escHtml(c.city||'')}',state:'${escHtml(c.state||'')}',zip:'${escHtml(c.zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:11px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;margin-left:6px">${svgIcon('🏠')} Look up</button>`:'');
+  const chevron=hasProp?`<span style="font-size:9px;color:var(--text3);display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s;margin-right:2px">${svgIcon('▶')}</span>`:'';
   const propPanel=hasProp&&isOpen?`<div style="padding:10px 0 4px;border-top:1px solid var(--border);margin-top:8px">
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px${c.exteriorMaterial||c.roofType||c.garage||c.isRental||c.lastSaleDate||c.lastSalePrice||c.assessorUrl?';margin-bottom:8px':''}">
-      ${c.yearBuilt?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.yearBuilt}</div><div style="font-size:10px;color:var(--text3)">📅 Year built</div></div>`:''}
-      ${c.sqft?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Number(c.sqft).toLocaleString()}</div><div style="font-size:10px;color:var(--text3)">📐 Sq ft</div></div>`:''}
-      ${c.estimatedValue?`<div style="min-width:0"><div style="font-size:14px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fmt(c.estimatedValue)}</div><div style="font-size:10px;color:var(--text3)">💰 Est. value</div></div>`:''}
-      ${c.stories?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.stories}</div><div style="font-size:10px;color:var(--text3)">🏢 Stories</div></div>`:''}
-      ${c.bedrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.bedrooms}</div><div style="font-size:10px;color:var(--text3)">🛏 Beds</div></div>`:''}
-      ${c.bathrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.bathrooms}</div><div style="font-size:10px;color:var(--text3)">🛁 Baths</div></div>`:''}
-      ${c.lotSize?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(String(c.lotSize))}</div><div style="font-size:10px;color:var(--text3)">🌳 Lot</div></div>`:''}
+      ${c.yearBuilt?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.yearBuilt}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('📅')} Year built</div></div>`:''}
+      ${c.sqft?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Number(c.sqft).toLocaleString()}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('📐')} Sq ft</div></div>`:''}
+      ${c.estimatedValue?`<div style="min-width:0"><div style="font-size:14px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fmt(c.estimatedValue)}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('💰')} Est. value</div></div>`:''}
+      ${c.stories?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.stories}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🏢')} Stories</div></div>`:''}
+      ${c.bedrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.bedrooms}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🛏')} Beds</div></div>`:''}
+      ${c.bathrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.bathrooms}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🛁')} Baths</div></div>`:''}
+      ${c.lotSize?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(String(c.lotSize))}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🌳')} Lot</div></div>`:''}
     </div>
     ${c.exteriorMaterial||c.roofType||c.garage||c.isRental?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:${c.lastSaleDate||c.lastSalePrice||c.assessorUrl?'8px':'0'}">
-      ${c.exteriorMaterial?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🏠 ${escHtml(String(c.exteriorMaterial))}</span>`:''}
-      ${c.roofType?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🏗️ ${escHtml(String(c.roofType))}</span>`:''}
-      ${c.garage?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🚗 ${escHtml(String(c.garage))}</span>`:''}
-      ${c.isRental?`<span style="font-size:11px;background:rgba(233,123,0,.12);border:1px solid rgba(233,123,0,.3);border-radius:20px;padding:3px 8px;color:#E97B00;font-weight:700">🔑 Rental</span>`:''}
+      ${c.exteriorMaterial?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">${svgIcon('🏠')} ${escHtml(String(c.exteriorMaterial))}</span>`:''}
+      ${c.roofType?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">${svgIcon('🏗️')} ${escHtml(String(c.roofType))}</span>`:''}
+      ${c.garage?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">${svgIcon('🚗')} ${escHtml(String(c.garage))}</span>`:''}
+      ${c.isRental?`<span style="font-size:11px;background:rgba(233,123,0,.12);border:1px solid rgba(233,123,0,.3);border-radius:20px;padding:3px 8px;color:#E97B00;font-weight:700">${svgIcon('🔑')} Rental</span>`:''}
     </div>`:''}
     ${c.lastSaleDate||c.lastSalePrice?`<div style="font-size:12px;color:var(--text3);padding-top:6px;border-top:1px solid var(--border);margin-bottom:${c.assessorUrl?'6px':'0'}">Last sold ${c.lastSaleDate?new Date(c.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${c.lastSalePrice?' · <strong style="color:var(--text)">'+fmt(c.lastSalePrice)+'</strong>':''}</div>`:''}
     ${c.assessorUrl?`<a href="${escHtml(c.assessorUrl)}" target="_blank" style="font-size:11px;color:var(--blue)">${c.propDataSource==='zillow'?'View on Zillow →':'County record →'}</a>`:''}

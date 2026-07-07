@@ -110,9 +110,9 @@ function _renderBrandSwatches(selected) {
   const isPreset = _BRAND_SWATCHES.some(c => c.toLowerCase() === cur);
   container.innerHTML = _BRAND_SWATCHES.map(c => {
     const active = c.toLowerCase() === cur;
-    return `<button class="set-swatch${active ? ' active' : ''}" style="background:${c}" onclick="_pickedBrandColor('${c}')" title="${c}">${active ? '<span style="font-size:18px;color:#fff;line-height:1">✓</span>' : ''}</button>`;
+    return `<button class="set-swatch${active ? ' active' : ''}" style="background:${c}" onclick="_pickedBrandColor('${c}')" title="${c}">${active ? '<span style="font-size:18px;color:#fff;line-height:1">' + svgIcon('✓', {size: 18}) + '</span>' : ''}</button>`;
   }).join('') +
-  `<button class="set-swatch${!isPreset ? ' active' : ''}" style="background:${!isPreset ? cur : 'var(--bg2)'};border:2px dashed var(--border2)" onclick="document.getElementById('set-brandcolor').click()" title="Custom color"><span style="font-size:18px;${!isPreset ? 'color:#fff' : 'color:var(--text3)'};line-height:1">${!isPreset ? '✓' : '+'}</span></button>`;
+  `<button class="set-swatch${!isPreset ? ' active' : ''}" style="background:${!isPreset ? cur : 'var(--bg2)'};border:2px dashed var(--border2)" onclick="document.getElementById('set-brandcolor').click()" title="Custom color"><span style="font-size:18px;${!isPreset ? 'color:#fff' : 'color:var(--text3)'};line-height:1">${!isPreset ? svgIcon('✓', {size: 18}) : '+'}</span></button>`;
   const selEl = document.getElementById('set-brand-selected');
   if (selEl) selEl.textContent = 'Selected · ' + (selected || '#2D5DA8').toUpperCase();
 }
@@ -127,7 +127,7 @@ function _checkSubdomain(val) {
   if (!el) return;
   if (!val) { el.textContent = ''; return; }
   if (/^[a-z0-9-]{3,30}$/.test(val)) {
-    el.innerHTML = '<span style="color:var(--green)">✓ Available</span>';
+    el.innerHTML = '<span style="color:var(--green)">' + svgIcon('✓') + ' Available</span>';
   } else {
     el.innerHTML = '<span style="color:var(--text3)">Use lowercase letters, numbers, hyphens (3–30 chars)</span>';
   }
@@ -286,7 +286,7 @@ function renderLicensing(){
   html+='</div>';
   // Summary bar
   if(expired||soon){
-    html+='<div style="background:'+(expired?'#fef2f2':'#fffbeb')+';border:1px solid '+(expired?'#fecaca':'#fde68a')+';border-radius:var(--r);padding:10px 14px;margin:10px 0 14px;font-size:13px;font-weight:700;color:'+(expired?'#991b1b':'#92400e')+'">'+(expired?'⚠️ '+expired+' expired':'')+(expired&&soon?' · ':'')+( soon?'🟡 '+soon+' expiring within 30 days':'')+'</div>';
+    html+='<div style="background:'+(expired?'#fef2f2':'#fffbeb')+';border:1px solid '+(expired?'#fecaca':'#fde68a')+';border-radius:var(--r);padding:10px 14px;margin:10px 0 14px;font-size:13px;font-weight:700;color:'+(expired?'#991b1b':'#92400e')+'">'+(expired?svgIcon('⚠',{size:13})+' '+expired+' expired':'')+(expired&&soon?' · ':'')+( soon?svgIcon('🟡',{size:13})+' '+soon+' expiring within 30 days':'')+'</div>';
   }
   // Filter tabs
   const cats=['all',...LIC_CAT_ORDER.filter(c=>licenses.some(l=>l.cat===c))];
@@ -299,7 +299,7 @@ function renderLicensing(){
     html+='</div>';
   }
   if(!licenses.length){
-    html+='<div style="text-align:center;padding:40px 20px;color:var(--text3)"><div style="font-size:40px;margin-bottom:12px">📋</div><div style="font-size:15px;font-weight:700;margin-bottom:6px">No records yet</div><div style="font-size:13px">Add your business licenses, insurance policies, EPA certifications, and more.</div><button onclick="openAddLicense()" class="btn btn-p" style="margin-top:16px">+ Add first record</button></div>';
+    html+='<div style="text-align:center;padding:40px 20px;color:var(--text3)"><div style="font-size:40px;margin-bottom:12px">'+svgIcon('📋',{size:40})+'</div><div style="font-size:15px;font-weight:700;margin-bottom:6px">No records yet</div><div style="font-size:13px">Add your business licenses, insurance policies, EPA certifications, and more.</div><button onclick="openAddLicense()" class="btn btn-p" style="margin-top:16px">+ Add first record</button></div>';
     body.innerHTML=html;return;
   }
   // Group by category
@@ -320,12 +320,12 @@ function renderLicensing(){
       html+='<div style="font-size:14px;font-weight:700;color:var(--text);line-height:1.3">'+escHtml(l.label||t.label||'Record')+'</div>';
       html+=_licStatusBadge(l);
       html+='</div>';
-      if(l.holderName)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:4px">👤 '+escHtml(l.holderName)+'</div>';
-      if(l.licenseNumber)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:4px">🔢 '+escHtml(l.licenseNumber)+'</div>';
+      if(l.holderName)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:4px">'+svgIcon('👤',{size:12})+' '+escHtml(l.holderName)+'</div>';
+      if(l.licenseNumber)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:4px">'+svgIcon('🔢',{size:12})+' '+escHtml(l.licenseNumber)+'</div>';
       if(isEquip){
         if(l.make||l.model||l.serial)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:4px">'+escHtml([l.make,l.model,l.serial?'SN: '+l.serial:''].filter(Boolean).join(' · '))+'</div>';
         if(lastLog)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:8px">Last entry: '+fmtDateShort(lastLog.date)+' — '+escHtml(lastLog.type)+'</div>';
-        html+='<div style="display:flex;gap:8px;margin-top:8px"><button onclick="openHepaLog('+l.id+')" class="btn btn-sm" style="font-size:11px">📋 Log ('+logCount+')</button><button onclick="openEditLicense('+l.id+')" class="btn btn-sm" style="font-size:11px">Edit</button></div>';
+        html+='<div style="display:flex;gap:8px;margin-top:8px"><button onclick="openHepaLog('+l.id+')" class="btn btn-sm" style="font-size:11px">'+svgIcon('📋',{size:11})+' Log ('+logCount+')</button><button onclick="openEditLicense('+l.id+')" class="btn btn-sm" style="font-size:11px">Edit</button></div>';
       } else {
         if(l.issueDate||l.expiryDate){
           html+='<div style="font-size:12px;color:var(--text3);margin-bottom:4px">';
@@ -584,7 +584,7 @@ function openTimeOffModal(){
   const render=()=>{
     const blocks=S.timeOff||[];
     box.innerHTML=
-      '<div style="font-size:17px;font-weight:800;margin-bottom:4px">🏖 Time off</div>'+
+      '<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('🏖',{size:17})+' Time off</div>'+
       '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Block dates from scheduling</div>'+
       (blocks.length?'<div style="margin-bottom:12px">'+blocks.map((b,i)=>
         '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--amber-lt);border:1px solid #D97706;border-radius:var(--r);padding:8px 10px;margin-bottom:6px">'+
@@ -1003,7 +1003,7 @@ function resetLocationPermission(){
   updateLocationBtn();
   requestLocationPermission(()=>{
     updateLocationBtn();
-    zAlert('Location access granted. Weather and GPS drive are now enabled.',{title:'✓ Location enabled'});
+    zAlert('Location access granted. Weather and GPS drive are now enabled.',{title:svgIcon('✓')+' Location enabled'});
   },()=>{
     updateLocationBtn();
     zAlert('Location not allowed. You can try again any time from Settings.',{title:'Location blocked'});
@@ -1011,9 +1011,9 @@ function resetLocationPermission(){
 }
 function updateLocationBtn(){
   const btn=document.getElementById('location-settings-btn');if(!btn)return;
-  if(S.locationDenied){btn.textContent='📍 Location: Off — tap to enable';btn.style.color='var(--text3)';}
-  else if(S.weatherLat){btn.textContent='📍 Location: On ✓';btn.style.color='var(--green-mid)';}
-  else{btn.textContent='📍 Location access';btn.style.color='';}
+  if(S.locationDenied){btn.innerHTML=svgIcon('📍')+' Location: Off — tap to enable';btn.style.color='var(--text3)';}
+  else if(S.weatherLat){btn.innerHTML=svgIcon('📍')+' Location: On '+svgIcon('✓');btn.style.color='var(--green-mid)';}
+  else{btn.innerHTML=svgIcon('📍')+' Location access';btn.style.color='';}
 }
 
 // EVERY vehicle write goes through here. Stamps BOTH timestamps:
@@ -1143,7 +1143,7 @@ function renderSettingsTrades(){
     lines.map(t=>{
       const m=TRADE_META[t]||{icon:'🔧',label:t};
       return '<div style="display:inline-flex;align-items:center;gap:5px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:20px;padding:5px 10px 5px 10px;font-size:13px;font-weight:600;color:var(--blue-dk)">'+
-        m.icon+' '+m.label+
+        svgIcon(m.icon)+' '+m.label+
         (lines.length>1?'<button onclick="removeTradeFromSettings(\''+t+'\')" style="background:none;border:none;cursor:pointer;color:var(--blue-dk);font-size:15px;line-height:1;padding:0 0 0 4px;font-family:inherit;opacity:.6">×</button>':'')+
       '</div>';
     }).join('')+
@@ -1151,7 +1151,7 @@ function renderSettingsTrades(){
     (available.length?
       '<div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">Add a trade</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'+
-      available.map(t=>{const m=TRADE_META[t]||{icon:'🔧',label:t};return'<button onclick="addTradeFromSettings(\''+t+'\')" style="padding:10px 6px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center;font-size:12px"><div style="font-size:18px;margin-bottom:2px">'+m.icon+'</div>'+m.label+'</button>';}).join('')+
+      available.map(t=>{const m=TRADE_META[t]||{icon:'🔧',label:t};return'<button onclick="addTradeFromSettings(\''+t+'\')" style="padding:10px 6px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center;font-size:12px"><div style="font-size:18px;margin-bottom:2px">'+svgIcon(m.icon,{size:18})+'</div>'+m.label+'</button>';}).join('')+
       '</div>':
       '<div style="font-size:11px;color:var(--text3)">All trades active.</div>'
     );
@@ -1187,7 +1187,7 @@ async function removeTradeFromSettings(trade){
 function _renderSettingsTradeSections(){
   const trade=getActiveTrade();
   const lgTitle=document.getElementById('set-rates-lg-title');
-  if(lgTitle){const meta=TRADE_META[trade]||{icon:'🔧',label:'Trade'};lgTitle.textContent=(meta.icon+' '+meta.label+' Labor Rates').trim();}
+  if(lgTitle){const meta=TRADE_META[trade]||{icon:'🔧',label:'Trade'};lgTitle.innerHTML=(svgIcon(meta.icon)+' '+meta.label+' Labor Rates').trim();}
 }
 function _renderDevTradeCard(){
   if(!_config?.is_dev)return;
@@ -1204,14 +1204,14 @@ function _renderDevTradeCard(){
   ];
   const grid=document.getElementById('dev-trade-grid');
   if(!grid)return;
-  grid.innerHTML=trades.map(t=>`<button onclick="devSwitchTrade('${t.id}')" style="padding:10px 6px;border-radius:var(--r);border:2px solid ${t.id===current?'var(--blue)':'var(--border2)'};background:${t.id===current?'var(--blue-lt)':'var(--bg2)'};cursor:pointer;font-family:inherit;text-align:center;font-size:12px;font-weight:${t.id===current?'700':'400'}"><div style="font-size:18px">${t.icon}</div>${t.label}</button>`).join('');
+  grid.innerHTML=trades.map(t=>`<button onclick="devSwitchTrade('${t.id}')" style="padding:10px 6px;border-radius:var(--r);border:2px solid ${t.id===current?'var(--blue)':'var(--border2)'};background:${t.id===current?'var(--blue-lt)':'var(--bg2)'};cursor:pointer;font-family:inherit;text-align:center;font-size:12px;font-weight:${t.id===current?'700':'400'}"><div style="font-size:18px">${svgIcon(t.icon,{size:18})}</div>${t.label}</button>`).join('');
   const sup=document.getElementById('dev-support-section');
   if(sup)sup.innerHTML=`
 <div style="padding-top:12px;border-top:1px solid var(--border2)">
   <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:8px">Support View</div>
-  <button onclick="_devLoadUserAccount('zach')" style="width:100%;padding:9px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">👁 View Zach's account</button>
+  <button onclick="_devLoadUserAccount('zach')" style="width:100%;padding:9px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">${svgIcon('👁',{size:13})} View Zach's account</button>
 
-  ${_devSupportMode?`<div style="margin-top:8px;padding:8px 10px;background:var(--amber-lt);border-radius:var(--r);font-size:11px;color:#856404;display:flex;justify-content:space-between;align-items:center"><span>👁 Viewing: ${escHtml(_devSupportName)}</span><button onclick="_devExitSupportMode()" style="font-size:10px;padding:3px 8px;border:1px solid #856404;border-radius:4px;background:none;color:#856404;cursor:pointer;font-family:inherit">Exit</button></div>`:''}
+  ${_devSupportMode?`<div style="margin-top:8px;padding:8px 10px;background:var(--amber-lt);border-radius:var(--r);font-size:11px;color:#856404;display:flex;justify-content:space-between;align-items:center"><span>${svgIcon('👁',{size:11})} Viewing: ${escHtml(_devSupportName)}</span><button onclick="_devExitSupportMode()" style="font-size:10px;padding:3px 8px;border:1px solid #856404;border-radius:4px;background:none;color:#856404;cursor:pointer;font-family:inherit">Exit</button></div>`:''}
   ${_devRenderSnapshots('zach')}
 </div>`;
   // Init legal inspector with current state and today's date
@@ -1277,7 +1277,7 @@ function renderObStep(){
           const active=i+1===_ob.step;
           return '<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;background:'+(active?'rgba(255,255,255,.15)':done?'rgba(255,255,255,.06)':'transparent')+';transition:background .2s">'+
             '<div style="width:28px;height:28px;border-radius:50%;background:'+(done?'#63B841':active?'#fff':'rgba(255,255,255,.2)')+';display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:'+(done?'13':'14')+'px;font-weight:700;color:'+(done?'#fff':active?'var(--blue)':'rgba(255,255,255,.5)')+'">'+
-              (done?'✓':''+(i+1))+
+              (done?svgIcon('✓',{size:14}):''+(i+1))+
             '</div>'+
             '<div>'+
               '<div style="font-size:13px;font-weight:'+(active?'700':'600')+';color:'+(active||done?'#fff':'rgba(255,255,255,.5)')+'">'+s.title+'</div>'+
@@ -1338,11 +1338,11 @@ function obInput(id,label,placeholder,type,value){
 function obStep1(el){
   el.innerHTML=
     '<div style="padding-top:20px">'+
-      '<div style="font-size:40px;margin-bottom:20px">🔨</div>'+
+      '<div style="font-size:40px;margin-bottom:20px">'+svgIcon('🔨',{size:40})+'</div>'+
       '<div style="font-size:30px;font-weight:800;line-height:1.2;margin-bottom:12px;letter-spacing:-.02em">Run your business<br>from one place.</div>'+
       '<div style="font-size:15px;color:var(--text3);line-height:1.7;margin-bottom:32px">Estimates, jobs, payments, mileage — everything a contractor needs, built for the field.</div>'+
       '<div style="display:grid;gap:10px;margin-bottom:36px">'+
-        ['📋 Estimates & proposals in minutes','💰 Collect payments on the spot','📍 Mileage & expense tracking','📊 Taxes and business analytics'].map(f=>
+        [svgIcon('📋')+' Estimates & proposals in minutes',svgIcon('💰')+' Collect payments on the spot',svgIcon('📍')+' Mileage & expense tracking',svgIcon('📊')+' Taxes and business analytics'].map(f=>
           '<div style="display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;color:var(--text2)"><span>'+f+'</span></div>'
         ).join('')+
       '</div>'+
@@ -1352,7 +1352,7 @@ function obStep1(el){
 
 function obStep2(el){
   el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">👤</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Create your account</div><div style="font-size:14px;color:var(--text3)">Your email and password to sign in</div></div>'+
+    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Create your account</div><div style="font-size:14px;color:var(--text3)">Your email and password to sign in</div></div>'+
     obInput('ob-name','Your full name','John Smith','text',_ob.name)+
     obInput('ob-email','Email','you@yourbusiness.com','email',_ob.email)+
     obInput('ob-pass','Password (min 6 chars)','••••••••','password','')+
@@ -1397,15 +1397,15 @@ function obStep3(el){
     {id:'other',icon:'🛠️',label:'Other'},
   ];
   el.innerHTML=
-    '<div style="margin-bottom:24px"><div style="font-size:28px;margin-bottom:10px">🔧</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">What trades do you work?</div><div style="font-size:14px;color:var(--text3)">Select all that apply — tap to toggle. First selected = primary trade.</div></div>'+
+    '<div style="margin-bottom:24px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('🔧',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">What trades do you work?</div><div style="font-size:14px;color:var(--text3)">Select all that apply — tap to toggle. First selected = primary trade.</div></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">'+
     types.map(t=>{
       const sel=_ob.tradeLines.includes(t.id);
       const isPrimary=_ob.tradeLines[0]===t.id;
       return '<button onclick="obSelectType(\''+t.id+'\')" id="obtype-'+t.id+'" style="padding:16px 12px;border-radius:var(--r);border:2px solid '+(sel?'var(--blue)':'var(--border2)')+';background:'+(sel?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;text-align:center;position:relative">'+
         (isPrimary?'<div style="position:absolute;top:6px;right:6px;background:var(--blue);color:#fff;font-size:9px;font-weight:700;border-radius:3px;padding:1px 4px">PRIMARY</div>':'')+
-        (sel&&!isPrimary?'<div style="position:absolute;top:6px;right:6px;font-size:14px">✓</div>':'')+
-        '<div style="font-size:24px;margin-bottom:4px">'+t.icon+'</div>'+
+        (sel&&!isPrimary?'<div style="position:absolute;top:6px;right:6px;font-size:14px">'+svgIcon('✓',{size:14})+'</div>':'')+
+        '<div style="font-size:24px;margin-bottom:4px">'+svgIcon(t.icon,{size:24})+'</div>'+
         '<div style="font-size:13px;font-weight:700;color:var(--text)">'+t.label+'</div>'+
       '</button>';
     }).join('')+
@@ -1442,7 +1442,7 @@ function obSelectType(t){
     } else if(sel){
       if(badge)badge.remove();
       if(!check){check=document.createElement('div');check.className='ob-check-badge';check.style.cssText='position:absolute;top:6px;right:6px;font-size:14px';btn.appendChild(check);}
-      check.textContent='✓';
+      check.innerHTML=svgIcon('✓',{size:14});
     } else {
       if(badge)badge.remove();
       if(check)check.remove();
@@ -1459,7 +1459,7 @@ function obNext3(){
 
 function obStep4(el){
   el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">🏢</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Business info</div><div style="font-size:14px;color:var(--text3)">Appears on your proposals and estimates</div></div>'+
+    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('🏢',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Business info</div><div style="font-size:14px;color:var(--text3)">Appears on your proposals and estimates</div></div>'+
     obInput('ob-bname','Business name','Your Business Name','text',_ob.businessName)+
     '<div class="f" style="margin-bottom:14px"><label>Phone number</label>'+
     '<input type="tel" id="ob-bphone" placeholder="316-555-0100" value="'+((_ob.phone)||'')+'" maxlength="12" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,10).replace(/^(\\d{3})(\\d{3})(\\d{1,4})$/,\'$1-$2-$3\').replace(/^(\\d{3})(\\d{1,3})$/,\'$1-$2\')" style="font-size:16px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"></div>'+
@@ -1496,10 +1496,10 @@ function obNext4(){
 
 function obStepBrand(el){
   el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">🖼️</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Your brand</div><div style="font-size:14px;color:var(--text3)">Add a logo to appear on every proposal</div></div>'+
+    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('🖼',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Your brand</div><div style="font-size:14px;color:var(--text3)">Add a logo to appear on every proposal</div></div>'+
     '<div style="margin-bottom:20px">'+
       '<div style="width:120px;height:120px;border:2px dashed var(--border2);border-radius:var(--rl);display:flex;align-items:center;justify-content:center;margin-bottom:10px;background:var(--bg2);cursor:pointer" onclick="document.getElementById(\'set-logo-file\').click()" id="set-logo-preview">'+
-        (S.logoData?'<img src="'+S.logoData+'" style="max-width:100%;max-height:100%;object-fit:contain">':'<span style="font-size:32px">🖼️</span>')+
+        (S.logoData?'<img src="'+S.logoData+'" style="max-width:100%;max-height:100%;object-fit:contain">':'<span style="font-size:32px">'+svgIcon('🖼',{size:32})+'</span>')+
       '</div>'+
       '<button onclick="document.getElementById(\'set-logo-file\').click()" style="padding:9px 16px;border-radius:8px;border:1.5px solid var(--border2);background:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;margin-right:8px">Upload PNG logo</button>'+
       (S.logoData?'<button onclick="S.logoData=\'\';saveAll();applyBrandLogo();_renderLogoPreview();" style="padding:9px 16px;border-radius:8px;border:1.5px solid var(--border2);background:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text3)">Remove</button>':'')+
@@ -1528,14 +1528,14 @@ function obStep5(el){
     {id:'apprentice',icon:'🛠️',label:'Apprentice',desc:'Limited view'},
   ];
   el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">⚡</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Your role</div><div style="font-size:14px;color:var(--text3)">Controls what you can see and do in TradeDesk</div></div>'+
+    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('⚡',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Your role</div><div style="font-size:14px;color:var(--text3)">Controls what you can see and do in TradeDesk</div></div>'+
     '<div style="display:grid;gap:10px;margin-bottom:20px">'+
     roles.map(r=>'<button onclick="obSelectRole(\''+r.id+'\')" id="obrole-'+r.id+'" style="text-align:left;padding:14px;border-radius:var(--r);border:2px solid '+(
       _ob.role===r.id?'var(--blue)':'var(--border2)'
     )+';background:'+(
       _ob.role===r.id?'var(--blue-lt)':'var(--bg2)'
     )+';cursor:pointer;font-family:inherit;display:flex;gap:12px;align-items:center">'+
-      '<div style="font-size:24px">'+r.icon+'</div>'+
+      '<div style="font-size:24px">'+svgIcon(r.icon,{size:24})+'</div>'+
       '<div><div style="font-size:14px;font-weight:700;color:var(--text)">'+r.label+'</div>'+
       '<div style="font-size:11px;color:var(--text3)">'+r.desc+'</div></div>'+
     '</button>').join('')+
@@ -1555,7 +1555,7 @@ function obSelectRole(r){
 
 function obStep6(el){
   el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">🚗</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Your vehicles</div><div style="font-size:14px;color:var(--text3)">At least one required for mileage tracking</div></div>'+
+    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('🚗',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Your vehicles</div><div style="font-size:14px;color:var(--text3)">At least one required for mileage tracking</div></div>'+
     '<div id="ob-veh-list">'+(_ob.vehicles.length?_ob.vehicles.map((v,i)=>obVehRow(v,i)).join(''):'')+'</div>'+
     '<button onclick="obAddVehicle()" style="width:100%;padding:12px;border-radius:var(--r);border:2px dashed var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;color:var(--blue);font-weight:700;margin-bottom:14px">+ Add vehicle</button>'+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
@@ -1601,7 +1601,7 @@ function obNext6(){
 
 function obStep7(el){
   el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">👥</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Add your team</div><div style="font-size:14px;color:var(--text3)">Optional — you can add crew later in Settings</div></div>'+
+    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👥',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Add your team</div><div style="font-size:14px;color:var(--text3)">Optional — you can add crew later in Settings</div></div>'+
     '<div id="ob-team-list">'+(_ob.team.length?_ob.team.map((m,i)=>obTeamRow(m,i)).join(''):'')+'</div>'+
     '<button onclick="obAddTeam()" style="width:100%;padding:12px;border-radius:var(--r);border:2px dashed var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;color:var(--blue);font-weight:700;margin-bottom:14px">+ Add team member</button>'+
     obBtn('Continue','_ob.step=9;renderObStep()')+
@@ -1629,7 +1629,7 @@ function obAddTeam(){
 
 function obStep8(el){
   el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">💳</div>'+
+    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('💳',{size:28})+'</div>'+
     '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Accept card payments</div>'+
     '<div style="font-size:14px;color:var(--text3)">Optional — clients can always pay cash if you skip this</div></div>'+
     '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:var(--r);padding:14px;margin-bottom:16px;font-size:13px;color:#166534;line-height:1.7">'+
@@ -1644,7 +1644,7 @@ function obStep8(el){
 }
 function obStep9(el){
   el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">✓</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">You\'re all set</div><div style="font-size:14px;color:var(--text3)">Review your details before creating your account</div></div>'+
+    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('✓',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">You\'re all set</div><div style="font-size:14px;color:var(--text3)">Review your details before creating your account</div></div>'+
     '<div style="background:var(--bg2);border-radius:var(--r);padding:14px;margin-bottom:16px">'+
       '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px"><span style="color:var(--text2)">Name</span><strong>'+_ob.name+'</strong></div>'+
       '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px"><span style="color:var(--text2)">Email</span><strong>'+_ob.email+'</strong></div>'+
@@ -1835,7 +1835,7 @@ function runSearch(q){
     grp.slice(0,MAX_PER).forEach(r=>{
       window._searchResults.push(r);
       html+=`<div class="search-result-item" onclick="_searchResults[${flatIdx}].action()">
-        <div class="search-result-icon" style="background:${r.bg}">${r.icon}</div>
+        <div class="search-result-icon" style="background:${r.bg}">${svgIcon(r.icon)}</div>
         <div style="min-width:0;flex:1">
           <div class="search-result-name">${escHtml(r.name||'')}</div>
           <div class="search-result-meta">${escHtml(r.meta||'')}${r.sub?' · '+escHtml(r.sub):''}</div>

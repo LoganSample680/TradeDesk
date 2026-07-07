@@ -139,9 +139,13 @@ function zPrompt(msg, onOk, opts={}){
 
 function showToast(msg,icon,duration){
   icon=icon||'✓';duration=duration||3500;
+  // Renders the icon arg as a real SVG when we have one mapped (js/icons.js) —
+  // covers ~200 showToast call sites app-wide from one place, instead of
+  // touching each call site's emoji argument individually.
+  const _iconHtml=(typeof hasSvgIcon==='function'&&hasSvgIcon(icon))?svgIcon(icon,{size:15}):icon;
   const t=document.createElement('div');
   t.className='toast';
-  t.innerHTML='<span class="toast-icon">'+icon+'</span><span style="flex:1">'+msg+'</span><button class="toast-close" onclick="this.parentElement.remove()">×</button>';
+  t.innerHTML='<span class="toast-icon">'+_iconHtml+'</span><span style="flex:1">'+msg+'</span><button class="toast-close" onclick="this.parentElement.remove()">×</button>';
   document.body.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';t.style.transform='scale(.9) translateY(8px)';t.style.transition='all .3s';setTimeout(()=>t.remove(),300);},duration);
 }
