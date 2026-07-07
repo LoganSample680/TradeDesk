@@ -159,11 +159,11 @@ function _buildClientHubSnapshot(clientId){
   });
   const clientPhotos=photos.filter(p=>p.client_id===clientId);
   const snapshotJobs=cjobs.map(j=>{
-    const jPhotos=clientPhotos.filter(p=>p.job_id===j.id).map(p=>({url:p.url,type:p.type,caption:p.caption||''}));
+    const jPhotos=clientPhotos.filter(p=>p.job_id===j.id).map(p=>({url:p.url,type:p.type,caption:p.caption||'',uploadedAt:p.uploadedAt||''}));
     return {id:j.id,bid_id:j.bid_id||null,name:j.name||'Job',start:j.start||'',days:j.days||0,status:j.status||'scheduled',completion_date:j.completion_date||'',photos:jPhotos};
   });
   const snapshotPayments=cpayments.map(p=>({date:p.date||'',type:p.type||'',amount:p.amount||0,bid_id:p.bid_id||null,ref:p.ref||'',method:p.method||''}));
-  const jobPhotos=clientPhotos.map(p=>({url:p.url,type:p.type,caption:p.caption||'',job_name:p.job_name||'',job_id:p.job_id||null}));
+  const jobPhotos=clientPhotos.map(p=>({url:p.url,type:p.type,caption:p.caption||'',job_name:p.job_name||'',job_id:p.job_id||null,uploadedAt:p.uploadedAt||''}));
   // Extract optional chaining BEFORE the return object — Safari crashes on ?. inside { }
   const _snapUserId=_effectiveUid()||'';
   const _snapUserEmail=_supaUser?_supaUser.email||'':'';
@@ -202,6 +202,34 @@ function _ensureClientToken(clientId){
 }
 // Cheap deterministic hash of the hub JSON — gates redundant re-uploads.
 function _hubHash(s){let h=0;for(let i=0;i<s.length;i++){h=((h<<5)-h+s.charCodeAt(i))|0;}return h;}
+// ── Client-hub live push ──────────────────────────────────────────────────
+// client.html polls its storage snapshot every 30s (_refreshHub) as the
+// guaranteed path. This broadcast is purely an accelerator — a content-free
+// "something changed, go refetch" nudge on a per-client Realtime channel,
+// mirroring the sig-feed-<uid> pattern in cloud.js. No hub data rides on the
+// broadcast itself (the token still gates the actual storage fetch), so a
+// dropped or never-connected socket just falls back to the 30s poll — the
+// client never sees stale-forever data either way.
+const _hubBroadcastChans={};
+function _broadcastHubUpdate(clientId){
+  if(!supaEnabled()||!_supa)return;
+  try{
+    const chName='hub-upd-'+_effectiveUid()+'-'+clientId;
+    let ch=_hubBroadcastChans[chName];
+    if(!ch){
+      ch=_supa.channel(chName);
+      _hubBroadcastChans[chName]=ch;
+      ch.subscribe(status=>{
+        if(status==='SUBSCRIBED'){
+          ch._tdReady=true;
+          if(ch._tdPending){ch.send({type:'broadcast',event:'updated',payload:{}});ch._tdPending=false;}
+        }
+      });
+    }
+    if(ch._tdReady)ch.send({type:'broadcast',event:'updated',payload:{}});
+    else ch._tdPending=true;
+  }catch(_e){}
+}
 async function _uploadClientHub(clientId){
   if(!supaEnabled()||!_supaUser)return null;
   const c=clients.find(x=>x.id===clientId);if(!c)return null;
@@ -235,6 +263,7 @@ async function _uploadClientHub(clientId){
     live.clientToken=c.clientToken;
     live.clientHubKey=key;live.clientHubHash=_hash;
     saveAll();
+    _broadcastHubUpdate(clientId);
   };
   const _queueHub=()=>{
     try{
@@ -364,6 +393,7 @@ async function _refreshClientHub(clientId){
     // Same live-object rule as _uploadClientHub — never stamp a pre-await reference.
     const live=clients.find(x=>x.id===clientId)||c;
     live.clientHubKey=key;saveAll();
+    _broadcastHubUpdate(clientId);
   }catch(e){console.warn('hub refresh:',e);}
 }
 function copyHubLink(url){navigator.clipboard.writeText(url).then(()=>showToast('Hub link copied','📋')).catch(()=>showToast('Could not copy — tap the URL above','⚠️'));}

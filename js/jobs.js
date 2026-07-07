@@ -765,11 +765,12 @@ function openJobSheet(clientId){
   const existingPhotos=jobForPhotos?(jobForPhotos.photos||[]):[];
   const beforePhotos=existingPhotos.filter(p=>p.type==='before');
   const afterPhotos=existingPhotos.filter(p=>p.type==='after');
+  const progressPhotos=existingPhotos.filter(p=>p.type==='progress');
   let photosHtml='';
   if(photoJobId){
     const renderThumb=(p,idx,type)=>'<div style="position:relative;width:80px;height:80px;flex-shrink:0">'+
-      '<img src="'+p.data+'" style="width:80px;height:80px;object-fit:cover;border-radius:var(--r);border:2px solid '+(type==='before'?'var(--amber)':'var(--green-mid)')+'">'+
-      ''+
+      '<img src="'+p.data+'" style="width:80px;height:80px;object-fit:cover;border-radius:var(--r);border:2px solid '+(type==='before'?'var(--amber)':type==='after'?'var(--green-mid)':'var(--denim)')+'">'+
+      (p.caption?'<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);color:#fff;font-size:9px;font-weight:700;padding:2px 4px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:0 0 var(--r) var(--r)">'+escHtml(p.caption)+'</div>':'')+
     '</div>';
     const shareBtn=beforePhotos.length&&afterPhotos.length
       ?'<button onclick="_shareBeforeAfterCard('+clientId+')" style="display:inline-flex;align-items:center;gap:5px;margin-top:10px;padding:8px 14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;width:100%;justify-content:center">'+svgIcon('📤')+' Share before/after card</button>'
@@ -793,6 +794,17 @@ function openJobSheet(clientId){
             '</div>'+
             '<label style="display:inline-flex;align-items:center;gap:5px;margin-top:6px;padding:7px 12px;border-radius:var(--r);border:1px dashed var(--green-mid);color:var(--green-mid);font-size:11px;font-weight:700;cursor:pointer;background:var(--green-lt)">'+
               '<input type="file" accept="image/*" capture="environment" onchange="addJobPhoto('+photoJobId+',this,\'after\');this.closest(\'.zmodal-overlay\').remove();setTimeout(()=>openJobSheet('+clientId+'),600)" style="display:none">+ After</label>'+
+          '</div>'+
+        '</div>'+
+        '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">'+
+          '<div style="font-size:11px;font-weight:700;color:var(--denim);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">Progress ('+progressPhotos.length+')</div>'+
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;min-height:40px;margin-bottom:8px">'+
+            progressPhotos.map((p,i)=>renderThumb(p,i,'progress')).join('')+
+          '</div>'+
+          '<div style="display:flex;gap:6px">'+
+            '<input type="text" id="_progLbl-'+photoJobId+'" maxlength="60" placeholder="Label (optional) — e.g. Framing, Rough-in" style="flex:1;min-width:0;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;font-family:inherit">'+
+            '<label style="display:inline-flex;align-items:center;gap:5px;padding:7px 12px;border-radius:var(--r);border:1px dashed var(--denim);color:var(--denim);font-size:11px;font-weight:700;cursor:pointer;background:var(--bg2);flex-shrink:0;white-space:nowrap">'+
+              '<input type="file" accept="image/*" capture="environment" onchange="addJobPhoto('+photoJobId+',this,\'progress\',document.getElementById(\'_progLbl-'+photoJobId+'\').value);this.closest(\'.zmodal-overlay\').remove();setTimeout(()=>openJobSheet('+clientId+'),600)" style="display:none">+ Photo</label>'+
           '</div>'+
         '</div>'+
         shareBtn+
@@ -1252,15 +1264,16 @@ function sendOMWText(clientId){
   const msg='Hi '+firstName+', this is '+biz+' — I\'m on my way! I\'ll be there shortly.';
   window.location.href='sms:'+c.phone.replace(/\D/g,'')+'&body='+encodeURIComponent(msg);
 }
-function addJobPhoto(jobId,input,type){
+function addJobPhoto(jobId,input,type,caption){
   const file=input.files[0];if(!file)return;
+  caption=(caption||'').trim().slice(0,60);
   const reader=new FileReader();
   reader.onload=async e=>{
     const j=jobs.find(x=>x.id===jobId);if(!j)return;
     if(!j.photos)j.photos=[];
-    j.photos.push({type,data:e.target.result,ts:new Date().toISOString()});
+    j.photos.push({type,data:e.target.result,ts:new Date().toISOString(),caption});
     saveAll();
-    showToast((type==='before'?'Before':'After')+' photo saved','📸');
+    showToast((type==='before'?'Before':type==='after'?'After':caption||'Progress')+' photo saved','📸');
     // Upload to gallery storage → push to global photos[] → refresh client hub
     if(typeof supaEnabled==='function'&&supaEnabled()&&_supaUser&&_supa){
       try{
@@ -1273,7 +1286,7 @@ function addJobPhoto(jobId,input,type){
           if(publicUrl){
             const c=clients.find(x=>x.id===j.client_id);
             const _photoClientName=c?c.name||'':'';
-            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type,caption:'',client_id:j.client_id||null,client_name:_photoClientName,job_id:jobId,job_name:j.name||'',uploadedAt:new Date().toISOString()});
+            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type,caption,client_id:j.client_id||null,client_name:_photoClientName,job_id:jobId,job_name:j.name||'',uploadedAt:new Date().toISOString()});
             saveAll();
             typeof _uploadClientHub==='function'&&_uploadClientHub(j.client_id).catch(()=>{});
           }
@@ -1317,7 +1330,7 @@ async function _drainPhotoQueue(){
           if(publicUrl){
             const c=clients.find(x=>x.id===j.client_id);
             const _drainClientName=c?c.name||'':'';
-            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type:p.type,caption:'',client_id:j.client_id||null,client_name:_drainClientName,job_id:j.id,job_name:j.name||'',uploadedAt:new Date().toISOString()});
+            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type:p.type,caption:p.caption||'',client_id:j.client_id||null,client_name:_drainClientName,job_id:j.id,job_name:j.name||'',uploadedAt:new Date().toISOString()});
             typeof _uploadClientHub==='function'&&_uploadClientHub(j.client_id).catch(()=>{});
           }
           delete p.pendingUpload;delete p._uploadExt;delete p._uploadMime;

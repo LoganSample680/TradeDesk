@@ -371,6 +371,9 @@ function _supabaseShim() {
         channel: (name) => ({
           on: function() { return this; },
           subscribe: function(cb) { if(cb) cb('SUBSCRIBED'); return this; },
+          // Records every broadcast send so specs can assert a live-push nudge
+          // was attempted, mirroring the __storageFetches capture above.
+          send: function(msg) { (global.__channelBroadcasts = global.__channelBroadcasts || []).push({ name: name, msg: msg }); return Promise.resolve('ok'); },
           unsubscribe: () => {},
         }),
         removeChannel: () => {},

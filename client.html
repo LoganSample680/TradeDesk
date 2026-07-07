@@ -723,6 +723,20 @@ function _startHubRefresh(){
   if(_hubRefreshTimer)clearInterval(_hubRefreshTimer); // never stack timers
   _hubRefreshTimer=setInterval(_refreshHub,30000);
 }
+// Live push — a content-free "something changed" nudge on a per-client Realtime
+// broadcast channel (mirrors the contractor app's sig-feed-<uid> pattern), so a
+// status change lands in seconds instead of waiting out the 30s poll above. The
+// poll stays as-is: if this channel never connects or a message drops, the next
+// tick still catches up — nothing here is required for correctness.
+let _hubLiveChan=null;
+function _startHubLiveChannel(u,c){
+  if(!_supa||_hubLiveChan)return;
+  try{
+    _hubLiveChan=_supa.channel('hub-upd-'+u+'-'+c);
+    _hubLiveChan.on('broadcast',{event:'updated'},()=>{_refreshHub();});
+    _hubLiveChan.subscribe();
+  }catch(e){}
+}
 async function init(){
   const p=new URLSearchParams(location.search);
   const t=p.get('t'),u=p.get('u'),c=p.get('c'),mode=p.get('mode');
@@ -745,6 +759,7 @@ async function init(){
     await Promise.race([_mergeSignedProposals(_hub,u),new Promise(r=>setTimeout(r,6000))]);
     applyBranding(_hub);renderAll();
     _startHubRefresh();
+    _startHubLiveChannel(u,c);
     // Activate the correct view BEFORE revealing pg-hub so there's no flash
     const _hv=location.hash.slice(1);
     if(!location.hash.startsWith('#paid-')&&!location.hash.startsWith('#invoice-')){
@@ -1254,7 +1269,10 @@ function renderProject(){
     const jobPhotos=job.photos||[];
     const beforePhotos=jobPhotos.filter(p=>p.type==='before');
     const afterPhotos=jobPhotos.filter(p=>p.type==='after');
-    const otherPhotos=jobPhotos.filter(p=>p.type!=='before'&&p.type!=='after');
+    // Chronological — this IS the milestone timeline for the job, so it must read
+    // in the order things actually happened, not upload-request-arrival order.
+    const progressPhotos=jobPhotos.filter(p=>p.type==='progress').slice().sort((a,b)=>(a.uploadedAt||'').localeCompare(b.uploadedAt||''));
+    const otherPhotos=jobPhotos.filter(p=>p.type!=='before'&&p.type!=='after'&&p.type!=='progress');
     const isDone=job.status==='done';
     const isActive=job.status==='active';
     const statusLabel=isDone?'Complete':isActive?'In progress':'Scheduled';
@@ -1267,41 +1285,54 @@ function renderProject(){
     html+='</div>';
     html+='<span style="font-size:11px;font-weight:700;color:'+statusColor+';flex-shrink:0;margin-left:10px">'+statusLabel+'</span>';
     html+='</div>';
-    if(beforePhotos.length&&afterPhotos.length){
-      const b=beforePhotos[beforePhotos.length-1];
-      const a=afterPhotos[afterPhotos.length-1];
-      const bIdx=jobPhotos.indexOf(b);
-      const aIdx=jobPhotos.indexOf(a);
-      html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">';
-      html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+bIdx+')" aria-label="Before">';
-      html+='<img src="'+esc(b.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
-      html+='<div class="hub-photo-tag">Before</div></div>';
-      html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+aIdx+')" aria-label="After">';
-      html+='<img src="'+esc(a.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
-      html+='<div class="hub-photo-tag">After</div></div>';
+    if(beforePhotos.length||afterPhotos.length){
+      html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px'+((progressPhotos.length||otherPhotos.length)?';margin-bottom:14px':'')+'">';
+      if(beforePhotos.length){
+        const b=beforePhotos[beforePhotos.length-1];
+        const bIdx=jobPhotos.indexOf(b);
+        html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+bIdx+')" aria-label="Before">';
+        html+='<img src="'+esc(b.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+        html+='<div class="hub-photo-tag">Before</div></div>';
+      }else html+='<div></div>';
+      if(afterPhotos.length){
+        const a=afterPhotos[afterPhotos.length-1];
+        const aIdx=jobPhotos.indexOf(a);
+        html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+aIdx+')" aria-label="After">';
+        html+='<img src="'+esc(a.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+        html+='<div class="hub-photo-tag">After</div></div>';
+      }else html+='<div></div>';
       html+='</div>';
-      if(otherPhotos.length){
-        html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px;margin-top:6px">';
-        otherPhotos.forEach(p=>{
-          const idx=jobPhotos.indexOf(p);
-          const tag=p.type==='progress'?'Progress':p.type==='before-after'?'B&A':p.type;
-          html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+idx+')">';
-          html+='<img src="'+esc(p.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
-          html+='<div class="hub-photo-tag">'+tag+'</div></div>';
-        });
-        html+='</div>';
-      }
-    }else if(jobPhotos.length){
+    }
+    // Milestone timeline — one entry per progress photo, oldest first, dated and
+    // (if the contractor typed one) labeled, so a multi-week remodel reads as a
+    // day-by-day story instead of a flat thumbnail grid.
+    if(progressPhotos.length){
+      html+='<div class="hub-timeline"'+(otherPhotos.length?' style="margin-bottom:14px"':'')+'>';
+      progressPhotos.forEach(p=>{
+        const idx=jobPhotos.indexOf(p);
+        const dayNum=(job.start&&p.uploadedAt)?Math.floor((new Date(p.uploadedAt)-new Date(job.start+'T00:00:00'))/86400000)+1:null;
+        const dateLabel=p.uploadedAt?fmtDate(p.uploadedAt.slice(0,10)):'';
+        html+='<div class="hub-log-item">';
+        html+='<div class="hub-log-dot"></div>';
+        html+='<div class="hub-log-body">';
+        html+='<div class="hub-log-date">'+(dayNum&&dayNum>0?'Day '+dayNum+(dateLabel?' · '+dateLabel:''):dateLabel)+'</div>';
+        html+='<div class="hub-log-text">'+(p.caption?esc(p.caption):'Progress photo')+'</div>';
+        html+='<div class="hub-log-photos"><img class="hub-log-photo-sq" src="'+esc(p.url)+'" loading="lazy" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+idx+')" onerror="this.style.display=\'none\'"></div>';
+        html+='</div></div>';
+      });
+      html+='</div>';
+    }
+    if(otherPhotos.length){
       html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px">';
-      jobPhotos.forEach((p,idx)=>{
-        const tag=p.type==='before'?'Before':p.type==='after'?'After':p.type==='progress'?'Progress':p.type==='before-after'?'B&A':'';
+      otherPhotos.forEach(p=>{
+        const idx=jobPhotos.indexOf(p);
         html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+idx+')">';
         html+='<img src="'+esc(p.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
-        if(tag)html+='<div class="hub-photo-tag">'+tag+'</div>';
         html+='</div>';
       });
       html+='</div>';
-    }else{
+    }
+    if(!jobPhotos.length){
       html+='<div style="font-size:12px;color:var(--text3);padding-top:'+(job.start||job.name?'8':'0')+'px;border-top:'+(job.start||job.name?'1px solid var(--border)':'none')+'">'+svgIcon('📷')+' Progress photos will appear here</div>';
     }
     html+='</div>';

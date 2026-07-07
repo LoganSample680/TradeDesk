@@ -3902,6 +3902,251 @@ test.describe('_uploadClientHub — stamps the LIVE client object', () => {
     expect(r.token.length).toBeGreaterThan(0);  // token restored onto the live object too
     assertNoErrors(page, 'hub live-object stamp');
   });
+
+  test('a successful hub upload sends a live-push broadcast — client hub refreshes in seconds, not up to 30s', async () => {
+    // The client hub polls its storage snapshot every 30s (client.html _refreshHub).
+    // _broadcastHubUpdate is the accelerator: a content-free nudge on a per-client
+    // Realtime channel so a status change (payment logged, job marked done, a
+    // photo added) reaches an open hub instantly instead of sitting for up to 30s.
+    const r = await page.evaluate(async (cid) => {
+      window.__channelBroadcasts = [];
+      clients = clients.filter(c => c.id !== cid);
+      clients.push({ id: cid, name: 'Live Push C', phone: '3165550999', clientToken: 'livepushtok', clientHubKey: '' });
+      window._supaUser = window._supaUser || { id: 'livepush-user-1', email: 'lp@t.com' };
+      await _uploadClientHub(cid);
+      const hit = (window.__channelBroadcasts || []).find(b => b.name.indexOf('hub-upd-') === 0 && b.name.indexOf('-' + cid) > -1);
+      return { found: !!hit, event: hit && hit.msg && hit.msg.event };
+    }, 886200);
+    expect(r.found).toBe(true);
+    expect(r.event).toBe('updated');
+    assertNoErrors(page, 'hub live-push broadcast');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CLIENT HUB — live push channel (client.html side)
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('client hub — subscribes to and reacts to the live-push channel', () => {
+  let page;
+  const LIVE_PUSH_HUB = {
+    clientId: 903, contractorUserId: FAKE_USER_ID, contractorName: 'Live Push Co', businessName: 'Live Push Co',
+    clientName: 'Live Push Client', clientAddr: '2 Live Push Ln',
+    bids: [], payments: [], jobs: [], photos: [], messages: [], notifications: [], invoices: [],
+  };
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await page.addInitScript(hub => { window.__mockHubData = hub; }, LIVE_PUSH_HUB);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=903&u=${FAKE_USER_ID}&t=livepushtok903`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1500);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('boot subscribes a hub-upd-<uid>-<clientId> channel for broadcast "updated"', async () => {
+    // _startHubLiveChannel/_hubLiveChan are top-level `let`/`function` bindings in
+    // client.html's classic script — re-invokable from page.evaluate the same way
+    // the existing _uploadClientHub cert above manipulates index.html's _supa.
+    const r = await page.evaluate((u) => {
+      const handlers = {};
+      const origChannel = _supa.channel.bind(_supa);
+      _supa.channel = function(name) {
+        const ch = origChannel(name);
+        const origOn = ch.on.bind(ch);
+        ch.on = function(type, filter, cb) {
+          if (type === 'broadcast' && filter && filter.event === 'updated') handlers[name] = cb;
+          return origOn(type, filter, cb);
+        };
+        return ch;
+      };
+      _hubLiveChan = null; // clear the boot-time channel so a fresh subscribe is observable
+      _startHubLiveChannel(u, '903');
+      _supa.channel = origChannel;
+      window.__hubLiveHandlers = handlers;
+      return { key: 'hub-upd-' + u + '-903', found: !!handlers['hub-upd-' + u + '-903'] };
+    }, FAKE_USER_ID);
+    expect(r.found).toBe(true);
+  });
+
+  test('firing the broadcast handler triggers an immediate hub refresh — not a 30s wait', async () => {
+    const r = await page.evaluate((u) => {
+      const key = 'hub-upd-' + u + '-903';
+      const cb = (window.__hubLiveHandlers || {})[key];
+      if (!cb) return { found: false };
+      let refreshed = false;
+      const origRefresh = window._refreshHub;
+      window._refreshHub = function() { refreshed = true; return origRefresh.apply(this, arguments); };
+      cb();
+      window._refreshHub = origRefresh;
+      return { found: true, refreshed };
+    }, FAKE_USER_ID);
+    expect(r.found).toBe(true);
+    expect(r.refreshed).toBe(true);
+  });
+
+  test('no console errors from the live-push channel', async () => {
+    assertNoErrors(page, 'client hub live-push channel');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  PROGRESS PHOTOS — optional milestone label, threaded through to the snapshot
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('addJobPhoto — progress type carries an optional milestone caption', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('a captioned progress photo lands in job.photos AND the global photos[] with the caption intact', async () => {
+    const r = await page.evaluate(async (jobId) => {
+      window._supaUser = window._supaUser || { id: 'progphoto-user-1', email: 'pp@t.com' };
+      jobs = jobs.filter(j => j.id !== jobId);
+      jobs.push({ id: jobId, client_id: 886300, name: 'Progress Photo Job', status: 'active', photos: [] });
+      const dt = new DataTransfer();
+      dt.items.add(new File(['dummy'], 'progress.jpg', { type: 'image/jpeg' }));
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.files = dt.files;
+      await new Promise((resolve) => {
+        addJobPhoto(jobId, inp, 'progress', 'Rough-in complete');
+        // FileReader.onload is async — poll until the job's local photo record lands.
+        const check = () => {
+          const j = jobs.find(x => x.id === jobId);
+          if (j && j.photos.length) resolve(); else setTimeout(check, 30);
+        };
+        check();
+      });
+      const j = jobs.find(x => x.id === jobId);
+      const globalRow = photos.find(p => p.job_id === jobId);
+      return {
+        localCaption: j.photos[0] && j.photos[0].caption,
+        localType: j.photos[0] && j.photos[0].type,
+        globalCaption: globalRow && globalRow.caption,
+      };
+    }, 886301);
+    expect(r.localType).toBe('progress');
+    expect(r.localCaption).toBe('Rough-in complete');
+    expect(r.globalCaption).toBe('Rough-in complete'); // caption reaches the uploaded row, not just the local base64 copy
+    assertNoErrors(page, 'progress photo caption');
+  });
+
+  test('caption is trimmed and capped at 60 chars — never bloats the hub snapshot', async () => {
+    const r = await page.evaluate(async (jobId) => {
+      jobs = jobs.filter(j => j.id !== jobId);
+      jobs.push({ id: jobId, client_id: 886300, name: 'Progress Photo Job 2', status: 'active', photos: [] });
+      const longCaption = '  ' + 'x'.repeat(200) + '  ';
+      const dt = new DataTransfer();
+      dt.items.add(new File(['dummy'], 'progress2.jpg', { type: 'image/jpeg' }));
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.files = dt.files;
+      await new Promise((resolve) => {
+        addJobPhoto(jobId, inp, 'progress', longCaption);
+        const check = () => {
+          const j = jobs.find(x => x.id === jobId);
+          if (j && j.photos.length) resolve(); else setTimeout(check, 30);
+        };
+        check();
+      });
+      const j = jobs.find(x => x.id === jobId);
+      return { caption: j.photos[0].caption };
+    }, 886302);
+    expect(r.caption.length).toBeLessThanOrEqual(60);
+    expect(r.caption.startsWith(' ')).toBe(false); // trimmed
+  });
+
+  test('_buildClientHubSnapshot carries uploadedAt through to the nested job photo — the timeline needs it to sort/group', async () => {
+    const r = await page.evaluate((clientId) => {
+      if (typeof _buildClientHubSnapshot !== 'function') return { skip: true };
+      clients = clients.filter(c => c.id !== clientId);
+      clients.push({ id: clientId, name: 'Snap Photo Client', clientToken: 'snapphototok' });
+      const jobId = clientId + 1;
+      jobs = jobs.filter(j => j.id !== jobId);
+      jobs.push({ id: jobId, client_id: clientId, name: 'Snap Photo Job', status: 'active' });
+      const stamp = new Date().toISOString();
+      photos = photos.filter(p => p.job_id !== jobId);
+      photos.push({ id: Date.now(), url: 'https://example.com/p.jpg', type: 'progress', caption: 'Framing', client_id: clientId, job_id: jobId, job_name: 'Snap Photo Job', uploadedAt: stamp });
+      const snap = _buildClientHubSnapshot(clientId);
+      const j = snap.jobs.find(x => x.id === jobId);
+      return { skip: false, uploadedAt: j && j.photos[0] && j.photos[0].uploadedAt, caption: j && j.photos[0] && j.photos[0].caption, stamp };
+    }, 886310);
+    if (r.skip) return;
+    expect(r.uploadedAt).toBe(r.stamp);
+    expect(r.caption).toBe('Framing');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CLIENT HUB — Project tab renders a milestone timeline for progress photos
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('client hub — progress photos render as a dated milestone timeline', () => {
+  let page;
+  const TIMELINE_HUB = {
+    clientId: 904, contractorUserId: FAKE_USER_ID, contractorName: 'Timeline Co', businessName: 'Timeline Co',
+    clientName: 'Timeline Client', clientAddr: '3 Timeline Ave',
+    bids: [], payments: [], messages: [], notifications: [], invoices: [],
+    jobs: [{
+      id: 5001, bid_id: null, name: 'Kitchen Remodel', start: '2026-06-01', days: 10, status: 'active', completion_date: '',
+      photos: [
+        { url: 'https://example.com/before.jpg', type: 'before', caption: '', uploadedAt: '2026-06-01T09:00:00.000Z' },
+        { url: 'https://example.com/demo.jpg', type: 'progress', caption: 'Demo day', uploadedAt: '2026-06-02T09:00:00.000Z' },
+        { url: 'https://example.com/framing.jpg', type: 'progress', caption: 'Framing complete', uploadedAt: '2026-06-04T09:00:00.000Z' },
+        { url: 'https://example.com/after.jpg', type: 'after', caption: '', uploadedAt: '2026-06-11T09:00:00.000Z' },
+      ],
+    }],
+    photos: [],
+  };
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await page.addInitScript(hub => { window.__mockHubData = hub; }, TIMELINE_HUB);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=904&u=${FAKE_USER_ID}&t=timelinetok904`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => switchView('project'));
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('before/after still render as the top highlight pair', async () => {
+    const html = await page.locator('#view-project').innerHTML();
+    expect(html).toContain('Before');
+    expect(html).toContain('After');
+  });
+
+  test('progress photos render as timeline entries, oldest first, with their milestone label', async () => {
+    const r = await page.evaluate(() => {
+      const items = Array.from(document.querySelectorAll('#view-project .hub-timeline .hub-log-item'));
+      return items.map(it => ({
+        date: it.querySelector('.hub-log-date')?.textContent || '',
+        text: it.querySelector('.hub-log-text')?.textContent || '',
+      }));
+    });
+    expect(r.length).toBe(2);
+    expect(r[0].text).toBe('Demo day');
+    expect(r[1].text).toBe('Framing complete');
+    // Demo day (day 2) must render before Framing complete (day 4) — chronological, not upload order.
+    expect(r[0].date).toContain('Day 2');
+    expect(r[1].date).toContain('Day 4');
+  });
+
+  test('no console errors from the milestone timeline', async () => {
+    assertNoErrors(page, 'client hub milestone timeline');
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
